@@ -1,4 +1,5 @@
 {
   "name": "booking-system",
+  "buildCommand": "",
   "outputDirectory": "docs/html"
 }
