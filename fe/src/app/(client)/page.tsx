@@ -353,7 +353,7 @@ export default function LandingPage() {
             Ready to simplify your bookings?
           </h2>
           <p className="text-muted text-base sm:text-lg mb-8 max-w-xl mx-auto">
-            Join studios and practitioners who use Teeko to fill classes and
+            Join studios and practitioners who use Booked4U to fill classes and
             grow their community.
           </p>
           <Link
@@ -372,7 +372,7 @@ export default function LandingPage() {
             <div className="w-7 h-7 rounded-lg bg-accent flex items-center justify-center">
               <span className="text-white font-bold text-xs">T</span>
             </div>
-            <span className="font-serif text-lg text-ink">Teeko</span>
+            <span className="font-serif text-lg text-ink">Booked4U</span>
           </div>
 
           <nav className="flex items-center gap-6">
@@ -388,7 +388,7 @@ export default function LandingPage() {
           </nav>
 
           <p className="text-xs text-muted">
-            &copy; {new Date().getFullYear()} Teeko. All rights reserved.
+            &copy; {new Date().getFullYear()} Booked4U. All rights reserved.
           </p>
         </div>
       </footer>

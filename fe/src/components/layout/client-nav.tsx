@@ -32,7 +32,7 @@ export function ClientNav() {
             <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center">
               <span className="text-white font-bold text-sm">T</span>
             </div>
-            <span className="font-serif text-xl text-ink">Teeko</span>
+            <span className="font-serif text-xl text-ink">Booked4U</span>
           </Link>
 
           {/* Desktop Nav */}

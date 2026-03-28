@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Teeko — Booking Platform",
+  title: "Booked4U — Booking Platform",
   description: "Modern booking and management platform for class-based businesses",
 };
 
