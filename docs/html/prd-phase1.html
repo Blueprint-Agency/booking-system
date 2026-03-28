@@ -705,13 +705,13 @@
             <thead><tr><th>Module</th><th>What It Delivers</th></tr></thead>
             <tbody>
               <tr><td>Booking Portal</td><td>Client-facing web app at <code>{slug}.platform.com</code>; session discovery, calendar/list view, filters, 1–2 step booking flow</td></tr>
-              <tr><td>Authentication</td><td>Client self-registration + email verification; Admin-created accounts for staff/instructors; JWT sessions</td></tr>
+              <tr><td>Authentication</td><td>Client self-registration + email verification; Admin-created accounts for staff/instructors</td></tr>
               <tr><td>Payments</td><td>Stripe-only; drop-in (single session), packages (N-session bundles), and monthly memberships</td></tr>
               <tr><td>Session Management</td><td>Create/edit sessions with recurrence (RRULE), capacity limits, waitlist config, late-entry rules; supports Regular, Workshop, and Event types</td></tr>
               <tr><td>Booking Management</td><td>Session rosters, manual add/remove (admin), automated waitlist promotion, attendance status tracking</td></tr>
-              <tr><td>Client CRM</td><td>Full client profiles with package/membership status, attendance history, admin notes, tags, and waiver records</td></tr>
+              <tr><td>Client CRM</td><td>Full client profiles with package/membership status, attendance history, admin notes, and waiver records</td></tr>
               <tr><td>QR Check-In</td><td>Per-client QR code; camera-based scanner in web app; auto late/no-show enforcement based on configurable cutoff</td></tr>
-              <tr><td>Digital Waiver</td><td>Admin-defined waiver; e-signature required on first booking; versioned; stored per client</td></tr>
+              <tr><td>Digital Waiver</td><td>Admin-defined waiver; e-signature required on first booking; stored per client</td></tr>
               <tr><td>Policy Engine</td><td>Configurable per tenant: cancellation windows, no-show penalties, waitlist rules, late-entry cutoff</td></tr>
               <tr><td>Instructor Management</td><td>Assign to sessions, compensation tracking (base pay, per-client commission, revenue %, workshop rates); read-only reports</td></tr>
               <tr><td>Staff Management</td><td>Staff accounts with scoped permissions, leave request/approval workflow, staff calendar</td></tr>
@@ -817,7 +817,6 @@
 
         <h3>Session Management</h3>
         <ul>
-          <li>JWT-based auth with refresh tokens</li>
           <li>Access token expiry: 15 min | Refresh token: 7 days</li>
           <li>Persistent login (remember me) option</li>
           <li>Logout invalidates token server-side</li>
@@ -1036,9 +1035,8 @@
               <tr><td>active_membership</td><td>Plan name, renewal date</td></tr>
               <tr><td>sessions_attended_lifetime</td><td>Computed count</td></tr>
               <tr><td>no_show_count</td><td>Lifetime count; used for policy enforcement</td></tr>
-              <tr><td>waiver</td><td>Signed status, date, waiver version, file link</td></tr>
+              <tr><td>waiver</td><td>Signed status, date, file link</td></tr>
               <tr><td>notes</td><td>Multi-entry admin notes with timestamps</td></tr>
-              <tr><td>tags</td><td>Admin-defined labels (e.g., VIP, injured, new)</td></tr>
             </tbody>
           </table>
         </div>
@@ -1046,8 +1044,7 @@
         <h3>Client List View</h3>
         <ul>
           <li>Search by name / email / phone</li>
-          <li>Filter by: membership status, package status, activity (active/inactive), tags</li>
-          <li>Bulk actions: send email, export CSV</li>
+          <li>Filter by: membership status, package status, activity (active/inactive)</li>
         </ul>
 
         <h4>Activity Status Definition</h4>
@@ -1106,8 +1103,7 @@
           <li>Waiver content defined by Admin (HTML / rich text)</li>
           <li>Trigger: first booking or first login — client must complete before proceeding</li>
           <li>Client must scroll to bottom and click "I Agree" with typed full name (e-signature)</li>
-          <li>Signature record stores: <code>client_id</code>, <code>timestamp</code>, <code>ip_address</code>, <code>waiver_version</code></li>
-          <li>If Admin updates the waiver content, existing clients must re-sign on next booking</li>
+          <li>Signature record stores: <code>client_id</code>, <code>timestamp</code>, <code>ip_address</code></li>
           <li>Signed waiver stored as PDF; accessible from client profile</li>
         </ul>
       </section>
@@ -1291,7 +1287,7 @@
               <tr><td>Availability</td><td>99.5% uptime target</td></tr>
               <tr><td>Data isolation</td><td>Strict multi-tenant row-level isolation</td></tr>
               <tr><td>Payment security</td><td>PCI compliance delegated to Stripe; no card data stored on platform</td></tr>
-              <tr><td>Auth security</td><td>Passwords bcrypt-hashed; JWT: 15 min access / 7 day refresh</td></tr>
+              <tr><td>Auth security</td><td>Passwords bcrypt-hashed</td></tr>
               <tr><td>Email provider</td><td>TBD (SendGrid / Resend) — see Open Questions</td></tr>
             </tbody>
           </table>

@@ -30,9 +30,9 @@ Phase 1 delivers the complete operational core: booking, payments, attendance, C
 | **Payments** | Stripe-only; drop-in (single session), packages (N-session bundles), and monthly memberships |
 | **Session Management** | Create/edit sessions with recurrence (RRULE), capacity limits, waitlist config, late-entry rules; supports Regular, Workshop, and Event types |
 | **Booking Management** | Session rosters, manual add/remove (admin), automated waitlist promotion, attendance status tracking |
-| **Client CRM** | Full client profiles with package/membership status, attendance history, admin notes, tags, and waiver records |
+| **Client CRM** | Full client profiles with package/membership status, attendance history, admin notes, and waiver records |
 | **QR Check-In** | Per-client QR code; camera-based scanner in web app; auto late/no-show enforcement based on configurable cutoff |
-| **Digital Waiver** | Admin-defined waiver; e-signature required on first booking; versioned; stored per client |
+| **Digital Waiver** | Admin-defined waiver; e-signature required on first booking; stored per client |
 | **Policy Engine** | Configurable per tenant: cancellation windows, no-show penalties, waitlist rules, late-entry cutoff |
 | **Instructor Management** | Assign to sessions, compensation tracking (base pay, per-client commission, revenue %, workshop rates); read-only reports |
 | **Staff Management** | Staff accounts with scoped permissions, leave request/approval workflow, staff calendar |
@@ -99,11 +99,6 @@ The following are explicitly deferred to Phase 2:
 - Created by Admin only (no self-registration)
 - Role assigned at creation: `admin`, `staff`, `instructor`
 - Password reset via email link
-
-#### Session Management
-- JWT-based auth with refresh tokens
-- Persistent login (remember me) option
-- Logout invalidates token server-side
 
 ---
 
@@ -261,12 +256,10 @@ Accessible post-login at `/account`.
 | No-show count | Lifetime count |
 | Waiver | Signed status, date, file |
 | Notes | Private admin notes (multi-entry with timestamps) |
-| Tags | Admin-defined labels (e.g., VIP, injured, new) |
 
 #### Client List View
 - Search by name / email / phone
-- Filter by: membership status, package status, activity (active/inactive), tags
-- Bulk actions: send email, export CSV
+- Filter by: membership status, package status, activity (active/inactive)
 
 #### Activity Status Definition
 - **Active**: at least 1 booking in the last 30 days
@@ -301,8 +294,7 @@ Accessible post-login at `/account`.
 - Waiver is a text document defined by Admin (HTML/rich text)
 - Trigger: first time a client completes a booking (before payment confirmation) or on first login
 - Client must scroll to bottom and click "I Agree" with typed full name (e-signature)
-- Waiver signature record stores: client ID, timestamp, IP address, waiver version
-- If waiver is updated by Admin, existing clients must re-sign on next booking
+- Waiver signature record stores: client ID, timestamp, IP address
 - Waiver PDF stored and accessible from client profile
 
 ---
