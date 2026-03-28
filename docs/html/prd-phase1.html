@@ -3,27 +3,33 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Phase 1 — Product Requirements Document</title>
+  <title>PRD — Phase 1 Booking & Management System</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --ink: #1a1a2e;
-      --paper: #faf9f6;
-      --warm: #f5f0e8;
-      --accent: #c4956a;
-      --accent-deep: #a67548;
-      --accent-glow: #e8c9a8;
-      --sage: #7a8f72;
-      --sage-light: #e8ede6;
-      --muted: #8b8b8b;
-      --border: #e2ddd5;
-      --card: #ffffff;
-      --shadow-soft: 0 2px 20px rgba(26, 26, 46, 0.06);
-      --shadow-hover: 0 8px 40px rgba(26, 26, 46, 0.1);
-      --radius: 16px;
-      --radius-sm: 10px;
+      --bg: #0d0d0d;
+      --surface: #141414;
+      --surface2: #1c1c1c;
+      --border: #2a2a2a;
+      --border-light: #333;
+      --text: #e8e8e8;
+      --text-muted: #6b6b6b;
+      --text-dim: #3f3f3f;
+      --accent: #00e5a0;
+      --accent-dim: rgba(0, 229, 160, 0.08);
+      --accent-border: rgba(0, 229, 160, 0.2);
+      --warn: #f5a623;
+      --warn-dim: rgba(245, 166, 35, 0.08);
+      --danger: #e05252;
+      --info: #4d9cf6;
+      --info-dim: rgba(77, 156, 246, 0.08);
+      --mono: 'IBM Plex Mono', monospace;
+      --sans: 'IBM Plex Sans', sans-serif;
+      --sidebar-w: 260px;
+      --radius: 8px;
+      --radius-sm: 5px;
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -31,1360 +37,1399 @@
     html { scroll-behavior: smooth; }
 
     body {
-      font-family: 'Outfit', sans-serif;
-      background: var(--paper);
-      color: var(--ink);
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text);
+      font-size: 15px;
       line-height: 1.7;
-      font-weight: 400;
-      font-size: 16px;
       -webkit-font-smoothing: antialiased;
     }
 
-    /* ── HERO ── */
-    .hero {
-      position: relative;
+    /* ── LAYOUT ── */
+    .layout {
+      display: flex;
       min-height: 100vh;
+    }
+
+    /* ── SIDEBAR ── */
+    .sidebar {
+      width: var(--sidebar-w);
+      flex-shrink: 0;
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      overflow-y: auto;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
       display: flex;
       flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      text-align: center;
-      padding: 60px 24px;
-      overflow: hidden;
-      background: linear-gradient(165deg, #1a1a2e 0%, #2d2b55 40%, #3a3568 70%, #4a4178 100%);
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
     }
 
-    .hero::before {
-      content: '';
-      position: absolute;
-      top: -40%;
-      right: -20%;
-      width: 800px;
-      height: 800px;
-      background: radial-gradient(circle, rgba(196, 149, 106, 0.15) 0%, transparent 70%);
-      border-radius: 50%;
-      animation: float 20s ease-in-out infinite;
+    .sidebar::-webkit-scrollbar { width: 4px; }
+    .sidebar::-webkit-scrollbar-thumb { background: var(--border); }
+
+    .sidebar-header {
+      padding: 24px 20px 16px;
+      border-bottom: 1px solid var(--border);
     }
 
-    .hero::after {
-      content: '';
-      position: absolute;
-      bottom: -30%;
-      left: -15%;
-      width: 600px;
-      height: 600px;
-      background: radial-gradient(circle, rgba(122, 143, 114, 0.12) 0%, transparent 70%);
-      border-radius: 50%;
-      animation: float 25s ease-in-out infinite reverse;
-    }
-
-    @keyframes float {
-      0%, 100% { transform: translate(0, 0) scale(1); }
-      33% { transform: translate(30px, -40px) scale(1.05); }
-      66% { transform: translate(-20px, 20px) scale(0.95); }
-    }
-
-    .hero-content {
-      position: relative;
-      z-index: 2;
-      max-width: 720px;
-    }
-
-    .hero-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 20px;
-      background: rgba(255, 255, 255, 0.08);
-      border: 1px solid rgba(255, 255, 255, 0.12);
-      border-radius: 100px;
-      color: var(--accent-glow);
-      font-size: 13px;
-      font-weight: 500;
-      letter-spacing: 1.5px;
-      text-transform: uppercase;
-      margin-bottom: 40px;
-      backdrop-filter: blur(10px);
-      animation: fadeDown 0.8s ease-out;
-    }
-
-    .hero-badge::before {
-      content: '';
-      width: 6px;
-      height: 6px;
-      background: var(--accent);
-      border-radius: 50%;
-      animation: pulse 2s ease-in-out infinite;
-    }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50% { opacity: 0.5; transform: scale(1.5); }
-    }
-
-    .hero h1 {
-      font-family: 'DM Serif Display', serif;
-      font-size: clamp(42px, 7vw, 80px);
-      color: #ffffff;
-      line-height: 1.1;
-      margin-bottom: 24px;
-      font-weight: 400;
-      animation: fadeUp 0.8s ease-out 0.2s both;
-    }
-
-    .hero h1 em {
-      font-style: italic;
-      color: var(--accent-glow);
-    }
-
-    .hero-sub {
-      font-size: clamp(17px, 2.2vw, 20px);
-      color: rgba(255, 255, 255, 0.6);
-      max-width: 520px;
-      margin: 0 auto 48px;
-      font-weight: 300;
-      line-height: 1.6;
-      animation: fadeUp 0.8s ease-out 0.4s both;
-    }
-
-    .hero-meta {
-      display: flex;
-      gap: 32px;
-      justify-content: center;
-      flex-wrap: wrap;
-      animation: fadeUp 0.8s ease-out 0.6s both;
-    }
-
-    .hero-meta span {
-      font-size: 13px;
-      color: rgba(255, 255, 255, 0.35);
-      font-weight: 400;
-      letter-spacing: 0.5px;
-    }
-
-    .hero-meta strong {
-      color: rgba(255, 255, 255, 0.7);
-      font-weight: 500;
-    }
-
-    @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(24px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    @keyframes fadeDown {
-      from { opacity: 0; transform: translateY(-12px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    .hero-scroll {
-      position: absolute;
-      bottom: 40px;
-      left: 50%;
-      transform: translateX(-50%);
-      z-index: 2;
-      animation: fadeUp 0.8s ease-out 1s both;
-    }
-
-    .hero-scroll a {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 8px;
-      color: rgba(255, 255, 255, 0.3);
-      text-decoration: none;
+    .sidebar-header .logo {
+      font-family: var(--mono);
       font-size: 11px;
+      font-weight: 600;
       letter-spacing: 2px;
       text-transform: uppercase;
-      transition: color 0.3s;
+      color: var(--accent);
+      margin-bottom: 12px;
     }
 
-    .hero-scroll a:hover { color: rgba(255, 255, 255, 0.6); }
-
-    .hero-scroll svg {
-      width: 20px;
-      height: 20px;
-      animation: bobDown 2s ease-in-out infinite;
-    }
-
-    @keyframes bobDown {
-      0%, 100% { transform: translateY(0); }
-      50% { transform: translateY(6px); }
-    }
-
-    /* ── NAV ── */
-    .toc {
-      position: sticky;
-      top: 0;
-      z-index: 100;
-      background: rgba(250, 249, 246, 0.85);
-      backdrop-filter: blur(20px);
-      border-bottom: 1px solid var(--border);
-      padding: 0 24px;
-      transition: box-shadow 0.3s;
-    }
-
-    .toc.scrolled { box-shadow: 0 2px 20px rgba(0,0,0,0.06); }
-
-    .toc-inner {
-      max-width: 1100px;
-      margin: 0 auto;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      overflow-x: auto;
-      scrollbar-width: none;
-      padding: 14px 0;
-    }
-
-    .toc-inner::-webkit-scrollbar { display: none; }
-
-    .toc a {
-      white-space: nowrap;
-      padding: 6px 16px;
-      border-radius: 100px;
+    .sidebar-header h1 {
       font-size: 13px;
-      font-weight: 500;
-      color: var(--muted);
-      text-decoration: none;
-      transition: all 0.25s;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.4;
     }
 
-    .toc a:hover {
-      color: var(--ink);
-      background: var(--warm);
-    }
-
-    .toc a.active {
-      color: var(--ink);
-      background: var(--warm);
-    }
-
-    /* ── LAYOUT ── */
-    .container {
-      max-width: 900px;
-      margin: 0 auto;
-      padding: 0 24px;
-    }
-
-    section {
-      padding: 100px 0;
+    .doc-meta {
+      padding: 16px 20px;
       border-bottom: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
     }
 
-    section:last-child { border-bottom: none; }
+    .meta-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+    }
 
-    /* ── SECTION HEADERS ── */
-    .section-label {
+    .meta-row .label { color: var(--text-muted); font-family: var(--mono); }
+    .meta-row .value { color: var(--text); font-weight: 500; }
+
+    .status-badge {
       display: inline-flex;
       align-items: center;
-      gap: 8px;
-      font-size: 12px;
+      gap: 5px;
+      padding: 2px 8px;
+      background: var(--warn-dim);
+      border: 1px solid rgba(245,166,35,0.25);
+      border-radius: 100px;
+      font-size: 10px;
       font-weight: 600;
-      letter-spacing: 2.5px;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: var(--warn);
+    }
+
+    .status-badge::before {
+      content: '';
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--warn);
+    }
+
+    nav.toc {
+      flex: 1;
+      padding: 12px 0;
+    }
+
+    .toc-section {
+      margin-bottom: 4px;
+    }
+
+    .toc-section-title {
+      padding: 8px 20px 4px;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      font-family: var(--mono);
+    }
+
+    .toc a {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 7px 20px;
+      font-size: 13px;
+      color: var(--text-muted);
+      text-decoration: none;
+      transition: all 0.15s;
+      border-left: 2px solid transparent;
+      line-height: 1.3;
+    }
+
+    .toc a:hover { color: var(--text); background: var(--surface2); }
+    .toc a.active { color: var(--accent); border-left-color: var(--accent); background: var(--accent-dim); }
+
+    .toc a .num {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--text-dim);
+      min-width: 20px;
+    }
+
+    .toc a.active .num { color: var(--accent); opacity: 0.7; }
+
+    /* ── MAIN ── */
+    .main {
+      margin-left: var(--sidebar-w);
+      flex: 1;
+      min-width: 0;
+    }
+
+    .doc-header {
+      padding: 48px 64px 40px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .doc-header .tag {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 2px;
       text-transform: uppercase;
       color: var(--accent);
       margin-bottom: 16px;
     }
 
-    .section-label::before {
-      content: '';
-      width: 24px;
-      height: 2px;
-      background: var(--accent);
-      border-radius: 2px;
-    }
-
-    h2 {
-      font-family: 'DM Serif Display', serif;
-      font-size: clamp(32px, 4.5vw, 44px);
-      font-weight: 400;
-      line-height: 1.2;
-      margin-bottom: 20px;
-      color: var(--ink);
-    }
-
-    .section-intro {
-      font-size: 18px;
-      color: var(--muted);
-      max-width: 640px;
-      line-height: 1.7;
-      font-weight: 300;
-      margin-bottom: 56px;
-    }
-
-    h3 {
-      font-family: 'DM Serif Display', serif;
-      font-size: 24px;
-      font-weight: 400;
-      margin-bottom: 16px;
-      color: var(--ink);
-    }
-
-    h4 {
-      font-size: 15px;
-      font-weight: 600;
-      letter-spacing: 0.5px;
-      margin-bottom: 12px;
-      color: var(--ink);
-    }
-
-    p {
-      margin-bottom: 16px;
-      color: #4a4a5a;
-      line-height: 1.75;
-    }
-
-    /* ── GOALS GRID ── */
-    .goals-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      gap: 20px;
-      margin-top: 40px;
-    }
-
-    .goal-card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 32px 28px;
-      transition: all 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-    }
-
-    .goal-card:hover {
-      transform: translateY(-4px);
-      box-shadow: var(--shadow-hover);
-      border-color: var(--accent-glow);
-    }
-
-    .goal-icon {
-      width: 48px;
-      height: 48px;
-      border-radius: 14px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 20px;
-      font-size: 22px;
-    }
-
-    .goal-icon.fill { background: linear-gradient(135deg, #e8c9a8, #c4956a); }
-    .goal-icon.noshow { background: linear-gradient(135deg, #e8ede6, #7a8f72); }
-    .goal-icon.time { background: linear-gradient(135deg, #d8d4f0, #6b62a0); }
-    .goal-icon.revenue { background: linear-gradient(135deg, #f0d8d8, #b06868); }
-
-    .goal-card h4 {
+    .doc-header h2 {
+      font-size: clamp(22px, 3vw, 32px);
+      font-weight: 700;
+      color: var(--text);
       margin-bottom: 8px;
-      font-size: 16px;
+      line-height: 1.2;
     }
 
-    .goal-card p {
+    .doc-header p {
+      color: var(--text-muted);
       font-size: 14px;
-      margin: 0;
-      color: var(--muted);
-      line-height: 1.6;
     }
 
-    /* ── PROBLEMS TABLE ── */
-    .problems-table {
-      width: 100%;
-      border-collapse: separate;
-      border-spacing: 0;
-      margin: 32px 0;
-      border-radius: var(--radius);
-      overflow: hidden;
-      border: 1px solid var(--border);
-      background: var(--card);
-    }
-
-    .problems-table th {
-      background: var(--warm);
-      padding: 16px 24px;
-      text-align: left;
-      font-size: 12px;
-      font-weight: 600;
-      letter-spacing: 1.5px;
-      text-transform: uppercase;
-      color: var(--muted);
-    }
-
-    .problems-table td {
-      padding: 16px 24px;
-      border-top: 1px solid var(--border);
-      font-size: 15px;
-      color: #4a4a5a;
-    }
-
-    .problems-table tr:hover td { background: rgba(196, 149, 106, 0.03); }
-
-    .problems-table td:first-child {
-      font-weight: 500;
-      color: var(--ink);
-      width: 40%;
-    }
-
-    /* ── ROLE CARDS ── */
-    .roles-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 20px;
-    }
-
-    @media (max-width: 640px) {
-      .roles-grid { grid-template-columns: 1fr; }
-    }
-
-    .role-card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 32px;
-      transition: all 0.3s;
-    }
-
-    .role-card:hover {
-      box-shadow: var(--shadow-soft);
-      border-color: var(--accent-glow);
-    }
-
-    .role-avatar {
-      width: 44px;
-      height: 44px;
-      border-radius: 12px;
+    .meta-chips {
       display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 20px;
-      margin-bottom: 20px;
-      background: var(--warm);
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-top: 20px;
     }
 
-    .role-card h3 { font-size: 20px; margin-bottom: 8px; }
+    .chip {
+      padding: 4px 12px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      font-size: 12px;
+      font-family: var(--mono);
+      color: var(--text-muted);
+    }
 
-    .role-card p {
+    .chip span { color: var(--text); }
+
+    /* ── CONTENT ── */
+    .content {
+      padding: 0 64px 80px;
+      max-width: 920px;
+    }
+
+    section {
+      padding-top: 56px;
+    }
+
+    .section-head {
+      display: flex;
+      align-items: baseline;
+      gap: 16px;
+      margin-bottom: 6px;
+    }
+
+    .section-num {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    h2.section-title {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .section-desc {
       font-size: 14px;
-      color: var(--muted);
-      margin: 0;
+      color: var(--text-muted);
+      margin-bottom: 28px;
+      max-width: 620px;
       line-height: 1.65;
     }
 
-    /* ── FEATURE BLOCKS ── */
-    .feature-block {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 40px;
-      margin-bottom: 24px;
-      transition: all 0.3s;
+    .divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 48px 0 0;
     }
 
-    .feature-block:hover {
-      box-shadow: var(--shadow-soft);
+    h3 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+      margin: 32px 0 12px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
 
-    .feature-block h3 {
+    h3::before {
+      content: '';
+      width: 3px;
+      height: 14px;
+      background: var(--accent);
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+
+    h4 {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin: 20px 0 8px;
+      font-family: var(--mono);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    p {
+      font-size: 14px;
+      color: #b0b0b0;
+      margin-bottom: 12px;
+      line-height: 1.75;
+    }
+
+    ul, ol {
+      padding-left: 0;
+      list-style: none;
       margin-bottom: 12px;
     }
 
-    .feature-block > p:first-of-type {
-      color: var(--muted);
-      margin-bottom: 24px;
-    }
-
-    .feature-list {
-      list-style: none;
-      padding: 0;
-    }
-
-    .feature-list li {
+    ul li, ol li {
       position: relative;
-      padding: 10px 0 10px 28px;
-      font-size: 15px;
-      color: #4a4a5a;
-      border-bottom: 1px solid rgba(0,0,0,0.04);
+      padding: 5px 0 5px 20px;
+      font-size: 14px;
+      color: #b0b0b0;
       line-height: 1.6;
     }
 
-    .feature-list li:last-child { border-bottom: none; }
-
-    .feature-list li::before {
-      content: '';
+    ul li::before {
+      content: '–';
       position: absolute;
       left: 0;
-      top: 18px;
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--accent-glow);
-      border: 2px solid var(--accent);
+      color: var(--text-dim);
+      font-family: var(--mono);
     }
 
-    .feature-list li strong {
-      color: var(--ink);
+    ol { counter-reset: ol-counter; }
+    ol li { counter-increment: ol-counter; }
+    ol li::before {
+      content: counter(ol-counter) '.';
+      position: absolute;
+      left: 0;
+      color: var(--accent);
+      font-family: var(--mono);
+      font-size: 12px;
       font-weight: 600;
     }
 
+    li strong, p strong { color: var(--text); font-weight: 600; }
+
+    code {
+      font-family: var(--mono);
+      font-size: 12px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 1px 6px;
+      color: var(--accent);
+    }
+
+    /* ── TABLES ── */
+    .table-wrap {
+      overflow-x: auto;
+      margin: 16px 0;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    thead tr {
+      background: var(--surface2);
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      padding: 10px 16px;
+      text-align: left;
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+
+    td {
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      color: #b0b0b0;
+      vertical-align: top;
+      line-height: 1.5;
+    }
+
+    tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: rgba(255,255,255,0.015); }
+
+    td:first-child { color: var(--text); font-weight: 500; }
+
+    .check { color: var(--accent); font-weight: 700; }
+    .dash { color: var(--text-dim); }
+
+    /* ── CALLOUT BOXES ── */
+    .callout {
+      padding: 14px 18px;
+      border-radius: var(--radius);
+      margin: 16px 0;
+      font-size: 13px;
+      line-height: 1.6;
+      border-left: 3px solid;
+    }
+
+    .callout.info {
+      background: var(--info-dim);
+      border-color: var(--info);
+      color: #9cc4f8;
+    }
+
+    .callout.warn {
+      background: var(--warn-dim);
+      border-color: var(--warn);
+      color: #f8c97a;
+    }
+
+    .callout.success {
+      background: var(--accent-dim);
+      border-color: var(--accent);
+      color: #7de8c4;
+    }
+
+    .callout strong { color: inherit; font-weight: 700; }
+
+    /* ── FIELD TABLE ── */
+    .field-table {
+      margin: 16px 0;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    .field-table table { font-size: 13px; }
+    .field-table td:first-child { font-family: var(--mono); font-size: 12px; color: var(--accent); font-weight: 400; }
+    .field-table td:nth-child(2) { color: var(--info); font-family: var(--mono); font-size: 12px; }
+    .field-table td:nth-child(3) { color: #b0b0b0; }
+
     /* ── FLOW STEPS ── */
-    .flow-steps {
-      display: flex;
-      gap: 16px;
-      margin: 24px 0;
-      flex-wrap: wrap;
+    .flow {
+      margin: 16px 0;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
     }
 
     .flow-step {
-      flex: 1;
-      min-width: 160px;
-      position: relative;
-      background: var(--warm);
-      border-radius: var(--radius-sm);
-      padding: 24px 20px;
-      text-align: center;
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      transition: background 0.15s;
     }
 
-    .flow-step::after {
-      content: '\2192';
-      position: absolute;
-      right: -14px;
-      top: 50%;
-      transform: translateY(-50%);
-      color: var(--border);
-      font-size: 20px;
-      z-index: 1;
+    .flow-step:last-child { border-bottom: none; }
+    .flow-step:hover { background: var(--surface2); }
+
+    .flow-step .step-n {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      background: var(--accent-dim);
+      border: 1px solid var(--accent-border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--accent);
+      flex-shrink: 0;
+      margin-top: 2px;
     }
 
-    .flow-step:last-child::after { display: none; }
+    .flow-step .step-body { flex: 1; }
+    .flow-step .step-body strong { display: block; font-size: 13px; color: var(--text); margin-bottom: 2px; }
+    .flow-step .step-body span { font-size: 13px; color: var(--text-muted); }
 
-    .step-num {
-      font-family: 'DM Serif Display', serif;
-      font-size: 28px;
+    /* ── PERMISSION MATRIX ── */
+    .perm-table td:not(:first-child) { text-align: center; }
+    .perm-table th:not(:first-child) { text-align: center; }
+
+    /* ── KPI TABLE ── */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      margin: 16px 0;
+    }
+
+    .kpi-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      transition: border-color 0.2s;
+    }
+
+    .kpi-card:hover { border-color: var(--border-light); }
+
+    .kpi-card .kpi-label {
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    .kpi-card .kpi-target {
+      font-size: 16px;
+      font-weight: 700;
       color: var(--accent);
       margin-bottom: 4px;
     }
 
-    .flow-step p {
-      font-size: 14px;
-      color: var(--muted);
-      margin: 0;
+    .kpi-card .kpi-measure {
+      font-size: 12px;
+      color: var(--text-dim);
+      line-height: 1.5;
     }
 
-    /* ── QR SECTION ── */
-    .qr-flow {
-      background: linear-gradient(135deg, var(--warm), var(--sage-light));
+    /* ── OPEN QUESTIONS ── */
+    .question-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin: 16px 0;
+    }
+
+    .question-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+      padding: 14px 18px;
+      background: var(--surface);
+      border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 40px;
-      margin: 24px 0;
+      transition: border-color 0.15s;
     }
 
-    .qr-flow h4 {
-      font-family: 'DM Serif Display', serif;
-      font-size: 22px;
-      font-weight: 400;
-      margin-bottom: 20px;
+    .question-item:hover { border-color: var(--border-light); }
+
+    .q-num {
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--warn);
+      background: var(--warn-dim);
+      border: 1px solid rgba(245,166,35,0.2);
+      border-radius: 5px;
+      padding: 2px 7px;
+      flex-shrink: 0;
     }
 
-    .qr-steps {
-      list-style: none;
-      padding: 0;
-      counter-reset: qr;
+    .q-body { flex: 1; }
+    .q-body .q-text { font-size: 13px; color: var(--text); margin-bottom: 4px; }
+    .q-body .q-meta { font-size: 12px; color: var(--text-dim); font-family: var(--mono); }
+
+    .q-status {
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      font-family: var(--mono);
+      flex-shrink: 0;
+      background: rgba(107,107,107,0.1);
+      border: 1px solid rgba(107,107,107,0.2);
+      color: var(--text-muted);
     }
 
-    .qr-steps li {
-      counter-increment: qr;
-      position: relative;
-      padding: 12px 0 12px 48px;
-      font-size: 15px;
-      color: #4a4a5a;
+    /* ── SCOPE OUT ── */
+    .scope-out {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 8px;
+      margin: 16px 0;
     }
 
-    .qr-steps li::before {
-      content: counter(qr);
-      position: absolute;
-      left: 0;
-      top: 10px;
-      width: 32px;
-      height: 32px;
-      border-radius: 10px;
-      background: var(--card);
+    .scope-item {
       display: flex;
       align-items: center;
-      justify-content: center;
-      font-family: 'DM Serif Display', serif;
-      font-size: 16px;
-      color: var(--accent-deep);
-      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-    }
-
-    /* ── COMPENSATION ── */
-    .comp-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 12px;
-      margin: 20px 0;
-    }
-
-    .comp-item {
-      background: var(--warm);
-      border-radius: var(--radius-sm);
-      padding: 16px 20px;
-      font-size: 14px;
-      color: var(--ink);
-      font-weight: 500;
-      text-align: center;
-    }
-
-    /* ── POLICY CARDS ── */
-    .policy-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 20px;
-    }
-
-    @media (max-width: 640px) {
-      .policy-grid { grid-template-columns: 1fr; }
-    }
-
-    .policy-card {
-      background: var(--card);
+      gap: 10px;
+      padding: 10px 14px;
+      background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 32px;
-      border-top: 3px solid var(--accent);
+      font-size: 13px;
+      color: var(--text-muted);
     }
 
-    .policy-card h3 {
-      font-size: 20px;
-      margin-bottom: 16px;
-    }
-
-    .policy-card ul {
-      list-style: none;
-      padding: 0;
-    }
-
-    .policy-card li {
-      padding: 6px 0;
-      font-size: 14px;
-      color: #4a4a5a;
-      line-height: 1.6;
-      position: relative;
-      padding-left: 18px;
-    }
-
-    .policy-card li::before {
-      content: '\2022';
-      position: absolute;
-      left: 0;
-      color: var(--accent);
-      font-weight: bold;
-    }
-
-    /* ── UX PRINCIPLES ── */
-    .ux-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-      gap: 20px;
-    }
-
-    .ux-card {
-      padding: 28px;
-      border-radius: var(--radius);
-      background: var(--card);
+    .scope-item::before {
+      content: '→ P2';
+      font-family: var(--mono);
+      font-size: 9px;
+      font-weight: 700;
+      padding: 2px 6px;
+      background: rgba(107,107,107,0.1);
       border: 1px solid var(--border);
-      transition: all 0.3s;
-    }
-
-    .ux-card:hover { border-color: var(--accent-glow); }
-
-    .ux-card h4 {
-      font-family: 'DM Serif Display', serif;
-      font-size: 19px;
-      font-weight: 400;
-      margin-bottom: 8px;
-    }
-
-    .ux-card p {
-      font-size: 14px;
-      color: var(--muted);
-      margin: 0;
-      line-height: 1.6;
-    }
-
-    /* ── METRICS TABLE ── */
-    .metrics-table {
-      width: 100%;
-      border-collapse: separate;
-      border-spacing: 0;
-      border-radius: var(--radius);
-      overflow: hidden;
-      border: 1px solid var(--border);
-      background: var(--card);
-    }
-
-    .metrics-table th {
-      background: var(--ink);
-      color: rgba(255,255,255,0.8);
-      padding: 16px 24px;
-      text-align: left;
-      font-size: 12px;
-      font-weight: 600;
-      letter-spacing: 1.5px;
-      text-transform: uppercase;
-    }
-
-    .metrics-table td {
-      padding: 18px 24px;
-      border-top: 1px solid var(--border);
-      font-size: 15px;
-    }
-
-    .metrics-table td:first-child {
-      font-weight: 600;
-      color: var(--ink);
-    }
-
-    .metrics-table td:last-child { color: var(--muted); }
-    .metrics-table tr:hover td { background: rgba(196, 149, 106, 0.03); }
-
-    /* ── EXCLUDED LIST ── */
-    .excluded-list {
-      list-style: none;
-      padding: 0;
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-      gap: 12px;
-    }
-
-    .excluded-list li {
-      padding: 16px 20px;
-      background: var(--warm);
-      border-radius: var(--radius-sm);
-      font-size: 14px;
-      color: var(--muted);
-      position: relative;
-      padding-left: 40px;
-    }
-
-    .excluded-list li::before {
-      content: '\2192';
-      position: absolute;
-      left: 16px;
-      color: var(--accent);
-      font-weight: bold;
-    }
-
-    /* ── ACCESS CALLOUT ── */
-    .access-callout {
-      background: linear-gradient(135deg, #1a1a2e, #2d2b55);
-      border-radius: var(--radius);
-      padding: 48px;
-      text-align: center;
-      color: white;
-    }
-
-    .access-callout h3 {
-      color: white;
-      font-size: 28px;
-      margin-bottom: 16px;
-    }
-
-    .access-callout p { color: rgba(255,255,255,0.6); }
-
-    .access-url {
-      display: inline-block;
-      margin: 24px 0;
-      padding: 16px 40px;
-      background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(255,255,255,0.15);
-      border-radius: var(--radius-sm);
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 18px;
-      color: var(--accent-glow);
+      border-radius: 4px;
+      color: var(--text-dim);
+      flex-shrink: 0;
       letter-spacing: 0.5px;
     }
 
-    /* ── FOOTER ── */
-    .footer {
-      padding: 60px 24px;
-      text-align: center;
-      border-top: 1px solid var(--border);
-    }
+    /* ── NOTIFICATION TABLE ── */
+    .notif-table td:first-child { font-family: var(--mono); font-size: 12px; color: #b0b0b0; font-weight: 400; }
+    .notif-table td:nth-child(2) { color: var(--info); font-size: 13px; }
 
-    .footer p {
-      font-size: 13px;
-      color: var(--muted);
-    }
-
-    .footer strong { color: var(--ink); }
-
-    /* ── UTILITIES ── */
-    .mono {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 14px;
-      background: var(--warm);
-      padding: 2px 8px;
-      border-radius: 6px;
-      color: var(--accent-deep);
-    }
-
-    .divider {
-      width: 48px;
-      height: 3px;
-      background: var(--accent);
-      border-radius: 3px;
-      margin: 32px 0;
-    }
-
-    .note {
-      padding: 20px 24px;
-      background: var(--sage-light);
-      border-left: 3px solid var(--sage);
-      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-      font-size: 14px;
-      color: #4a5a46;
-      margin: 20px 0;
-      line-height: 1.65;
-    }
-
-    /* ── ANIMATIONS ── */
-    .reveal {
-      opacity: 0;
-      transform: translateY(32px);
-      transition: opacity 0.7s ease, transform 0.7s ease;
-    }
-
-    .reveal.visible {
-      opacity: 1;
-      transform: translateY(0);
-    }
-
-    @media (max-width: 768px) {
-      .feature-block { padding: 28px; }
-      .flow-steps { flex-direction: column; }
-      .flow-step::after { display: none; }
-      section { padding: 64px 0; }
-      .access-callout { padding: 32px 24px; }
-      .access-url { font-size: 14px; padding: 12px 24px; }
+    @media (max-width: 900px) {
+      .sidebar { display: none; }
+      .main { margin-left: 0; }
+      .doc-header, .content { padding-left: 24px; padding-right: 24px; }
     }
   </style>
 </head>
 <body>
 
-  <!-- ═══ HERO ═══ -->
-  <div class="hero">
-    <div class="hero-content">
-      <div class="hero-badge">Phase 1 &middot; Product Requirements</div>
-      <h1>Booking &amp;<br><em>Management</em> System</h1>
-      <p class="hero-sub">Built to fill more sessions, reduce no-shows, and give you back your time.</p>
-      <div class="hero-meta">
-        <span>Version <strong>1.0</strong></span>
-        <span>Status <strong>Draft</strong></span>
-        <span>Date <strong>March 28, 2026</strong></span>
-        <span>For <strong>Business Owner</strong></span>
+<div class="layout">
+
+  <!-- ═══ SIDEBAR ═══ -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo">PRD</div>
+      <h1>Booking &amp; Management<br>SaaS Platform</h1>
+    </div>
+    <div class="doc-meta">
+      <div class="meta-row"><span class="label">version</span><span class="value">1.0</span></div>
+      <div class="meta-row"><span class="label">date</span><span class="value">2026-03-28</span></div>
+      <div class="meta-row"><span class="label">phase</span><span class="value">Phase 1</span></div>
+      <div class="meta-row"><span class="label">status</span><span class="status-badge">Draft</span></div>
+    </div>
+    <nav class="toc">
+      <div class="toc-section">
+        <div class="toc-section-title">Overview</div>
+        <a href="#overview" class="active"><span class="num">01</span> Product Overview</a>
+        <a href="#roles"><span class="num">02</span> User Roles</a>
+        <a href="#multitenancy"><span class="num">03</span> Multi-Tenancy</a>
+      </div>
+      <div class="toc-section">
+        <div class="toc-section-title">Functional Requirements</div>
+        <a href="#auth"><span class="num">4.1</span> Auth &amp; Accounts</a>
+        <a href="#portal"><span class="num">4.2</span> Booking Portal</a>
+        <a href="#account"><span class="num">4.3</span> Client Account</a>
+        <a href="#payments"><span class="num">4.4</span> Payments &amp; Packages</a>
+        <a href="#invoices"><span class="num">4.5</span> Invoices</a>
+        <a href="#sessions"><span class="num">4.6</span> Session Management</a>
+        <a href="#bookings"><span class="num">4.7</span> Booking Management</a>
+        <a href="#crm"><span class="num">4.8</span> Client CRM</a>
+        <a href="#checkin"><span class="num">4.9</span> QR Check-In</a>
+        <a href="#waiver"><span class="num">4.10</span> Digital Waiver</a>
+        <a href="#policies"><span class="num">4.11</span> Policy Engine</a>
+        <a href="#instructors"><span class="num">4.12</span> Instructors</a>
+        <a href="#staff"><span class="num">4.13</span> Staff Management</a>
+        <a href="#sales"><span class="num">4.14</span> Sales Tracking</a>
+        <a href="#analytics"><span class="num">4.15</span> Analytics</a>
+      </div>
+      <div class="toc-section">
+        <div class="toc-section-title">Specifications</div>
+        <a href="#nonfunctional"><span class="num">05</span> Non-Functional</a>
+        <a href="#notifications"><span class="num">06</span> Email Triggers</a>
+        <a href="#openquestions"><span class="num">07</span> Open Questions</a>
+      </div>
+    </nav>
+  </aside>
+
+  <!-- ═══ MAIN ═══ -->
+  <main class="main">
+
+    <div class="doc-header">
+      <div class="tag">Phase 1 · Product Requirements Document</div>
+      <h2>Booking &amp; Management SaaS Platform</h2>
+      <p>Internal specification for product managers and the engineering team.</p>
+      <div class="meta-chips">
+        <div class="chip">version <span>1.0</span></div>
+        <div class="chip">date <span>2026-03-28</span></div>
+        <div class="chip">audience <span>PM / Engineering</span></div>
+        <div class="chip">phase <span>1 of 2</span></div>
       </div>
     </div>
-    <div class="hero-scroll">
-      <a href="#overview">
-        <span>Scroll</span>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
-      </a>
-    </div>
-  </div>
 
-  <!-- ═══ NAV ═══ -->
-  <nav class="toc" id="toc">
-    <div class="toc-inner">
-      <a href="#overview">Overview</a>
-      <a href="#roles">Roles</a>
-      <a href="#client">Client</a>
-      <a href="#admin">Admin</a>
-      <a href="#policies">Policies</a>
-      <a href="#ux">UX</a>
-      <a href="#metrics">Metrics</a>
-      <a href="#future">Future</a>
-      <a href="#access">Access</a>
-    </div>
-  </nav>
+    <div class="content">
 
-  <!-- ═══ OVERVIEW ═══ -->
-  <section id="overview">
-    <div class="container">
-      <div class="reveal">
-        <div class="section-label">Section 01</div>
-        <h2>Overview</h2>
-        <p class="section-intro">This document describes the first version of your new booking and management system. It covers everything your business needs to run day-to-day operations: session scheduling, client bookings, payments, attendance tracking, and staff management.</p>
-        <p>Clients access the system through a dedicated web address on our platform (e.g., <span class="mono">yourbusiness.platform.com</span>) that works beautifully on phones, tablets, and desktops — no app download required.</p>
-      </div>
-
-      <div class="reveal">
-        <h3>What This Solves</h3>
-        <table class="problems-table">
-          <thead>
-            <tr><th>Problem Today</th><th>How the System Helps</th></tr>
-          </thead>
-          <tbody>
-            <tr><td>Manual class management is time-consuming</td><td>Automated scheduling, waitlists, and attendance tracking</td></tr>
-            <tr><td>No-shows waste staff time and revenue</td><td>Configurable cancellation policies and no-show penalties</td></tr>
-            <tr><td>Payment tracking is scattered</td><td>All payments, packages, and invoices in one place</td></tr>
-            <tr><td>Hard to see what's working</td><td>Dashboard with occupancy, revenue, and client activity</td></tr>
-            <tr><td>Onboarding new clients is manual</td><td>Digital waiver and self-service account creation</td></tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="reveal">
-        <h3>Goals</h3>
-        <div class="goals-grid">
-          <div class="goal-card">
-            <div class="goal-icon fill">&#9650;</div>
-            <h4>Fill More Sessions</h4>
-            <p>Easy booking, automated waitlists, and real-time availability keep your schedule full.</p>
-          </div>
-          <div class="goal-card">
-            <div class="goal-icon noshow">&#10003;</div>
-            <h4>Reduce No-Shows</h4>
-            <p>Cancellation policies, attendance rules, and accountability discourage no-shows.</p>
-          </div>
-          <div class="goal-card">
-            <div class="goal-icon time">&#9201;</div>
-            <h4>Save Admin Time</h4>
-            <p>Automate invoicing, waitlist management, and attendance tracking.</p>
-          </div>
-          <div class="goal-card">
-            <div class="goal-icon revenue">&#36;</div>
-            <h4>Increase Revenue</h4>
-            <p>Sell packages and memberships directly through the system.</p>
-          </div>
+      <!-- ═══ 1. OVERVIEW ═══ -->
+      <section id="overview">
+        <div class="section-head">
+          <span class="section-num">01</span>
+          <h2 class="section-title">Product Overview</h2>
         </div>
-      </div>
-    </div>
-  </section>
 
-  <!-- ═══ ROLES ═══ -->
-  <section id="roles">
-    <div class="container">
-      <div class="reveal">
-        <div class="section-label">Section 02</div>
-        <h2>Who Uses the System</h2>
-        <p class="section-intro">Four distinct roles, each with their own experience tailored to their needs.</p>
-      </div>
+        <h3>Problem Statement</h3>
+        <p>Fitness and wellness studios currently rely on generic booking tools that lack flexibility to enforce studio-specific policies, track instructor compensation, or provide meaningful business analytics. Admin overhead is high due to manual attendance tracking, waitlist management, and payment reconciliation.</p>
 
-      <div class="roles-grid reveal">
-        <div class="role-card">
-          <div class="role-avatar">&#128587;</div>
-          <h3>Clients</h3>
-          <p>Book and pay for sessions, manage their account, and check in at the venue. This is the primary audience — the experience should feel effortless.</p>
-        </div>
-        <div class="role-card">
-          <div class="role-avatar">&#128188;</div>
-          <h3>Business Admin / Owner</h3>
-          <p>Full control over the entire system: sessions, schedules, clients, staff, finances, and settings. The operational command center.</p>
-        </div>
-        <div class="role-card">
-          <div class="role-avatar">&#129495;</div>
-          <h3>Instructors</h3>
-          <p>View their assigned class schedule and track their earnings — pay breakdowns and commissions.</p>
-        </div>
-        <div class="role-card">
-          <div class="role-avatar">&#128187;</div>
-          <h3>Front-Desk Staff</h3>
-          <p>Handle day-to-day operations: scanning client QR codes for check-in, making manual bookings, and managing walk-ins.</p>
-        </div>
-      </div>
-    </div>
-  </section>
+        <h3>Product Goal</h3>
+        <p>Build a multi-tenant SaaS booking and operations platform for class-based businesses. Each tenant gets a dedicated subdomain (<code>{slug}.platform.com</code>) with a client-facing booking portal and a full admin backend.</p>
+        <p>Phase 1 delivers the complete operational core: booking, payments, attendance, CRM, staff management, and reporting.</p>
 
-  <!-- ═══ STUDENT EXPERIENCE ═══ -->
-  <section id="client">
-    <div class="container">
-      <div class="reveal">
-        <div class="section-label">Section 03</div>
-        <h2>Client Experience</h2>
-        <p class="section-intro">A seamless journey from discovering a session to attending it — designed to feel effortless on any device.</p>
-      </div>
-
-      <div class="feature-block reveal">
-        <h3>Finding &amp; Booking a Session</h3>
-        <p>Clients see available sessions in a calendar view or scrollable list. They can filter by category, instructor, or level.</p>
-        <ul class="feature-list">
-          <li><strong>Calendar view</strong> — weekly/monthly calendar showing session times at a glance</li>
-          <li><strong>List view</strong> — a scrollable list, ideal for mobile browsing</li>
-          <li><strong>Smart filters</strong> — narrow by category, instructor / staff member, or level</li>
-          <li><strong>Real-time availability</strong> — see exactly how many spots remain</li>
-          <li><strong>Waitlist</strong> — join automatically when a session is full; get notified when a spot opens</li>
-        </ul>
-
-        <h4 style="margin-top: 32px;">Booking Flow</h4>
-        <div class="flow-steps">
-          <div class="flow-step">
-            <div class="step-num">1</div>
-            <p>Select a session</p>
+        <h3>Success Metrics (KPIs)</h3>
+        <div class="kpi-grid">
+          <div class="kpi-card">
+            <div class="kpi-label">Session Fill Rate</div>
+            <div class="kpi-target">↑ vs. baseline</div>
+            <div class="kpi-measure">Sessions booked / total capacity</div>
           </div>
-          <div class="flow-step">
-            <div class="step-num">2</div>
-            <p>Confirm booking</p>
+          <div class="kpi-card">
+            <div class="kpi-label">No-Show Rate</div>
+            <div class="kpi-target">↓ vs. baseline</div>
+            <div class="kpi-measure">No-shows / total bookings</div>
           </div>
-          <div class="flow-step">
-            <div class="step-num">3</div>
-            <p>Receive confirmation</p>
+          <div class="kpi-card">
+            <div class="kpi-label">Admin Time Saved</div>
+            <div class="kpi-target">&gt; 50%</div>
+            <div class="kpi-measure">Self-reported at 30/60/90 days post-launch</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Client Retention (30d)</div>
+            <div class="kpi-target">&gt; 60%</div>
+            <div class="kpi-measure">Repeat bookings within 30 days of first</div>
+          </div>
+          <div class="kpi-card">
+            <div class="kpi-label">Package Conversion</div>
+            <div class="kpi-target">&gt; 30%</div>
+            <div class="kpi-measure">Package purchases / new client signups</div>
           </div>
         </div>
-        <div class="note">One to two clicks to book. No unnecessary steps, forms, or confirmations.</div>
-      </div>
 
-      <div class="feature-block reveal">
-        <h3>Paying for Sessions</h3>
-        <p>Flexible payment options to suit every client. All payments processed securely via Stripe.</p>
-        <ul class="feature-list">
-          <li><strong>Pay per session</strong> — single payment at the time of booking</li>
-          <li><strong>Session packages</strong> — buy a bundle (e.g., 5 or 10 sessions) and use them over time</li>
-          <li><strong>Monthly memberships</strong> — recurring subscription for unlimited or set number of sessions per month</li>
-        </ul>
-      </div>
-
-      <div class="feature-block reveal">
-        <h3>My Account</h3>
-        <p>Everything a client needs, all in one place.</p>
-        <ul class="feature-list">
-          <li><strong>Upcoming bookings</strong> — see what's scheduled, with session details</li>
-          <li><strong>Cancel or reschedule</strong> — within the business's cancellation policy window</li>
-          <li><strong>Package balance</strong> — see how many sessions remain in a purchased package</li>
-          <li><strong>History</strong> — past bookings, attendance records, and payment receipts</li>
-          <li><strong>Invoices</strong> — download or review any invoice from previous purchases</li>
-        </ul>
-      </div>
-
-      <div class="feature-block reveal">
-        <h3>Digital Waiver</h3>
-        <p>First-time onboarding — handled once, stored permanently.</p>
-        <ul class="feature-list">
-          <li>The waiver form appears automatically during the first booking or account setup</li>
-          <li>Clients read and e-sign on their device</li>
-          <li>The signed waiver is stored securely under their profile</li>
-          <li>Admin can access it at any time for compliance</li>
-        </ul>
-        <div class="note">No paper forms, no scanning — it's handled once and stored permanently.</div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ═══ ADMIN EXPERIENCE ═══ -->
-  <section id="admin">
-    <div class="container">
-      <div class="reveal">
-        <div class="section-label">Section 04</div>
-        <h2>Admin Experience</h2>
-        <p class="section-intro">Your operational command center — manage sessions, clients, staff, and finances from a single dashboard.</p>
-      </div>
-
-      <div class="feature-block reveal">
-        <h3>Session &amp; Schedule Management</h3>
-        <p>Create and manage your full schedule from one place.</p>
-        <ul class="feature-list">
-          <li><strong>Create sessions</strong> with name, type, level, duration, instructor, and price</li>
-          <li><strong>Recurring schedules</strong> — e.g., "Beginner Class every Monday and Wednesday at 9am"</li>
-          <li><strong>Capacity limits</strong> — set maximum clients per session</li>
-          <li><strong>Waitlist rules</strong> — enable/disable, set maximum waitlist size</li>
-          <li><strong>Late-entry rules</strong> — configurable cutoff (e.g., 10 minutes after session starts)</li>
-          <li><strong>Workshops &amp; events</strong> — one-off sessions with custom pricing and capacity</li>
-        </ul>
-        <div class="note">Changes to the schedule are reflected immediately on the client booking site.</div>
-      </div>
-
-      <div class="feature-block reveal">
-        <h3>Booking Management</h3>
-        <p>See who's in every session and manage bookings hands-on.</p>
-        <ul class="feature-list">
-          <li><strong>Session rosters</strong> — full list of booked clients for any session</li>
-          <li><strong>Manual add/remove</strong> — handle phone bookings, walk-ins, or removals</li>
-          <li><strong>Automated waitlist</strong> — cancelled spots are automatically filled and clients notified</li>
-          <li><strong>Attendance status</strong> — mark each client as Attended, Late, or No-Show</li>
-        </ul>
-      </div>
-
-      <div class="feature-block reveal">
-        <h3>Client CRM</h3>
-        <p>A complete profile for every client, all in one place.</p>
-        <ul class="feature-list">
-          <li><strong>Contact details</strong> — name, email, phone number</li>
-          <li><strong>Package status</strong> — active packages, remaining sessions, expiry dates</li>
-          <li><strong>Membership status</strong> — current plan, renewal date</li>
-          <li><strong>Attendance history</strong> — full record of sessions attended, late arrivals, and no-shows</li>
-          <li><strong>Notes</strong> — private notes about health considerations, preferences, special accommodations</li>
-        </ul>
-
-        <div class="qr-flow">
-          <h4>QR Code Check-In</h4>
-          <p style="color: #4a5a46; margin-bottom: 20px;">Each client has a unique QR code in their account, accessible on their phone.</p>
-          <ol class="qr-steps">
-            <li>Client arrives and shows their QR code on their phone</li>
-            <li>Front-desk staff scans it using any device with a camera</li>
-            <li>System confirms check-in and records attendance</li>
-            <li>If arrival exceeds the late cutoff (default: 10 min), check-in is blocked</li>
-          </ol>
+        <h3>Out of Scope — Phase 1</h3>
+        <div class="scope-out">
+          <div class="scope-item">Online / hybrid sessions (Zoom, recordings)</div>
+          <div class="scope-item">Referral program</div>
+          <div class="scope-item">WhatsApp / SMS notifications</div>
+          <div class="scope-item">Automated marketing campaigns</div>
+          <div class="scope-item">Loyalty and points system</div>
+          <div class="scope-item">PayNow and GrabPay payments</div>
+          <div class="scope-item">Multi-location support</div>
         </div>
-      </div>
+      </section>
 
-      <div class="feature-block reveal">
-        <h3>Instructor Management</h3>
-        <p>Manage your teaching team and track what they're owed.</p>
-        <ul class="feature-list">
-          <li><strong>Assign instructors</strong> to specific sessions</li>
-          <li><strong>View schedules</strong> — each instructor's upcoming sessions at a glance</li>
-          <li><strong>Compensation tracking</strong> — the system calculates and displays earnings</li>
+      <hr class="divider">
+
+      <!-- ═══ 2. ROLES ═══ -->
+      <section id="roles">
+        <div class="section-head">
+          <span class="section-num">02</span>
+          <h2 class="section-title">User Roles &amp; Permissions</h2>
+        </div>
+        <p class="section-desc">Four distinct roles with scoped permissions. Roles are assigned at account creation and cannot be self-selected.</p>
+
+        <div class="table-wrap">
+          <table class="perm-table">
+            <thead>
+              <tr>
+                <th>Permission</th>
+                <th>Client</th>
+                <th>Instructor</th>
+                <th>Staff</th>
+                <th>Admin</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>Browse &amp; book sessions</td><td class="check">✓</td><td class="dash">—</td><td class="dash">—</td><td class="dash">—</td></tr>
+              <tr><td>Cancel / reschedule own booking</td><td class="check">✓</td><td class="dash">—</td><td class="dash">—</td><td class="dash">—</td></tr>
+              <tr><td>View own account &amp; history</td><td class="check">✓</td><td class="dash">—</td><td class="dash">—</td><td class="dash">—</td></tr>
+              <tr><td>View assigned schedule</td><td class="dash">—</td><td class="check">✓</td><td class="dash">—</td><td class="dash">—</td></tr>
+              <tr><td>View own compensation report</td><td class="dash">—</td><td class="check">✓</td><td class="dash">—</td><td class="dash">—</td></tr>
+              <tr><td>Scan QR / check in clients</td><td class="dash">—</td><td class="dash">—</td><td class="check">✓</td><td class="check">✓</td></tr>
+              <tr><td>Manual booking add/remove</td><td class="dash">—</td><td class="dash">—</td><td class="check">✓</td><td class="check">✓</td></tr>
+              <tr><td>View session rosters</td><td class="dash">—</td><td class="dash">—</td><td class="check">✓</td><td class="check">✓</td></tr>
+              <tr><td>Submit leave requests</td><td class="dash">—</td><td class="check">✓</td><td class="check">✓</td><td class="dash">—</td></tr>
+              <tr><td>Manage sessions &amp; schedules</td><td class="dash">—</td><td class="dash">—</td><td class="dash">—</td><td class="check">✓</td></tr>
+              <tr><td>Manage clients &amp; CRM</td><td class="dash">—</td><td class="dash">—</td><td class="dash">—</td><td class="check">✓</td></tr>
+              <tr><td>Manage staff &amp; instructors</td><td class="dash">—</td><td class="dash">—</td><td class="dash">—</td><td class="check">✓</td></tr>
+              <tr><td>Configure business policies</td><td class="dash">—</td><td class="dash">—</td><td class="dash">—</td><td class="check">✓</td></tr>
+              <tr><td>View full analytics</td><td class="dash">—</td><td class="dash">—</td><td class="dash">—</td><td class="check">✓</td></tr>
+              <tr><td>Approve / reject leave</td><td class="dash">—</td><td class="dash">—</td><td class="dash">—</td><td class="check">✓</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <hr class="divider">
+
+      <!-- ═══ 3. MULTI-TENANCY ═══ -->
+      <section id="multitenancy">
+        <div class="section-head">
+          <span class="section-num">03</span>
+          <h2 class="section-title">Multi-Tenancy</h2>
+        </div>
+        <ul>
+          <li>Each tenant is provisioned with a unique subdomain: <code>{slug}.platform.com</code></li>
+          <li>All data is fully isolated per tenant — no cross-tenant data leakage</li>
+          <li>Admin, staff, instructor, and client accounts are scoped to a single tenant</li>
+          <li>Tenant-level configuration: policies, pricing, branding (logo, colors), notification settings</li>
         </ul>
-        <h4 style="margin-top: 20px;">Compensation Rates</h4>
-        <div class="comp-grid">
-          <div class="comp-item">Base pay per session</div>
-          <div class="comp-item">Per-client commission</div>
-          <div class="comp-item">Revenue commission</div>
-          <div class="comp-item">Extra hour pay</div>
-          <div class="comp-item">Workshop rates</div>
-        </div>
-        <div class="note">Compensation reports are for visibility only — actual payment to instructors is handled outside the system.</div>
-      </div>
+      </section>
 
-      <div class="feature-block reveal">
-        <h3>Staff Management</h3>
-        <p>Manage your team beyond instructors.</p>
-        <ul class="feature-list">
-          <li><strong>Staff accounts</strong> — create accounts for front-desk staff, managers, etc.</li>
-          <li><strong>Roles &amp; permissions</strong> — control what each staff member can see and do</li>
-          <li><strong>Leave management</strong> — submit, approve, or reject leave requests</li>
-          <li><strong>Calendar visibility</strong> — see who's working on any given day</li>
+      <hr class="divider">
+
+      <!-- ═══ 4.1 AUTH ═══ -->
+      <section id="auth">
+        <div class="section-head">
+          <span class="section-num">4.1</span>
+          <h2 class="section-title">Authentication &amp; Accounts</h2>
+        </div>
+
+        <h3>Client Registration</h3>
+        <ul>
+          <li>Self-registration via email + password</li>
+          <li>OAuth login (Google) — optional at launch, TBD</li>
+          <li>Email verification required before first booking</li>
+          <li>First booking triggers digital waiver flow (see §4.10)</li>
         </ul>
-      </div>
 
-      <div class="feature-block reveal">
-        <h3>Sales Tracking</h3>
-        <p>Know who's selling and how much.</p>
-        <ul class="feature-list">
-          <li><strong>Sales by staff member</strong> — see which team member sold what</li>
-          <li><strong>Commission calculation</strong> — automatic calculation based on your rules, displayed in reports</li>
+        <h3>Staff / Instructor / Admin Accounts</h3>
+        <ul>
+          <li>Created by Admin only — no self-registration</li>
+          <li>Role assigned at creation: <code>admin</code>, <code>staff</code>, <code>instructor</code></li>
+          <li>Password reset via email link</li>
         </ul>
-      </div>
 
-      <div class="feature-block reveal">
-        <h3>Payments &amp; Packages</h3>
-        <p>Full control over your pricing and revenue.</p>
-        <ul class="feature-list">
-          <li><strong>Single session prices</strong> — set per-session rates</li>
-          <li><strong>Session packages</strong> — bundles like 5 or 10 sessions at a discounted rate</li>
-          <li><strong>Monthly memberships</strong> — recurring billing for regular clients</li>
-          <li><strong>Transaction history</strong> — all payments, filterable by date, client, or type</li>
+        <h3>Session Management</h3>
+        <ul>
+          <li>JWT-based auth with refresh tokens</li>
+          <li>Access token expiry: 15 min | Refresh token: 7 days</li>
+          <li>Persistent login (remember me) option</li>
+          <li>Logout invalidates token server-side</li>
         </ul>
-      </div>
+      </section>
 
-      <div class="feature-block reveal">
-        <h3>Invoices</h3>
-        <p>Every purchase automatically generates a professional invoice.</p>
-        <ul class="feature-list">
-          <li>Sent to the client's email immediately after payment</li>
-          <li>Stored in the client's account for future reference</li>
-          <li>Accessible to admin at any time</li>
-          <li>Includes: date, description, amount paid, payment method</li>
+      <hr class="divider">
+
+      <!-- ═══ 4.2 PORTAL ═══ -->
+      <section id="portal">
+        <div class="section-head">
+          <span class="section-num">4.2</span>
+          <h2 class="section-title">Client Booking Portal</h2>
+        </div>
+        <p class="section-desc">Client-facing interface accessible at <code>{slug}.platform.com</code>.</p>
+
+        <h3>Session Discovery</h3>
+        <ul>
+          <li>Default view: <strong>list view</strong> sorted by date/time ascending</li>
+          <li>Toggle to <strong>calendar view</strong> (weekly layout)</li>
+          <li>Filters: session category (multi-select), instructor (multi-select), level/tier (multi-select), date range</li>
+          <li>Session card displays: name, category, level, date/time/duration, instructor, spots remaining (real-time), price or "Included in package"</li>
+          <li>Status badge: <code>Open</code> | <code>Waitlist</code> | <code>Full</code> | <code>Cancelled</code></li>
         </ul>
-      </div>
 
-      <div class="feature-block reveal">
-        <h3>Dashboard &amp; Analytics</h3>
-        <p>A real-time overview of your business's performance.</p>
-        <ul class="feature-list">
-          <li><strong>Session occupancy rate</strong> — how full are your sessions? Which are consistently under-booked?</li>
-          <li><strong>Revenue tracking</strong> — daily, weekly, and monthly revenue trends</li>
-          <li><strong>Active vs. inactive clients</strong> — who's booking vs. who hasn't visited recently</li>
-          <li><strong>Package sales performance</strong> — which packages sell best, revenue by type</li>
+        <h3>Booking Flow</h3>
+        <div class="flow">
+          <div class="flow-step"><div class="step-n">1</div><div class="step-body"><strong>Select session</strong><span>Client opens session detail page/modal</span></div></div>
+          <div class="flow-step"><div class="step-n">2</div><div class="step-body"><strong>Payment path decision</strong><span>If active package with balance → deduct from package (skip payment). Otherwise → Stripe Checkout.</span></div></div>
+          <div class="flow-step"><div class="step-n">3</div><div class="step-body"><strong>Confirm</strong><span>On successful payment or package deduction → booking created</span></div></div>
+          <div class="flow-step"><div class="step-n">4</div><div class="step-body"><strong>Confirmation</strong><span>Success screen shown + confirmation email sent to client</span></div></div>
+        </div>
+
+        <h3>Waitlist</h3>
+        <ul>
+          <li>When session is at capacity, "Join Waitlist" CTA is shown</li>
+          <li>Waitlist is an ordered FIFO queue per session</li>
+          <li>On booking cancellation: system auto-promotes the first waitlisted client — creates booking, deducts package or sends payment link, dispatches notification email</li>
+          <li>Clients can remove themselves from waitlist at any time</li>
         </ul>
-      </div>
-    </div>
-  </section>
 
-  <!-- ═══ POLICIES ═══ -->
-  <section id="policies">
-    <div class="container">
-      <div class="reveal">
-        <div class="section-label">Section 05</div>
-        <h2>Configurable Business Policies</h2>
-        <p class="section-intro">The system ships with sensible defaults, but everything can be adjusted to match your business's way of working.</p>
-      </div>
+        <h3>Cancellation / Reschedule (Client-Side)</h3>
+        <ul>
+          <li>Accessible from "My Bookings"</li>
+          <li>System checks cancellation policy window before allowing action</li>
+          <li>Within window: booking cancelled, credit returned (package credit or refund)</li>
+          <li>Outside window: penalty applied per policy config (forfeit session or charge fee)</li>
+          <li>Reschedule = cancel + rebook; treated as a new booking for all policy checks</li>
+        </ul>
+      </section>
 
-      <div class="policy-grid reveal">
-        <div class="policy-card">
-          <h3>Cancellation Policy</h3>
-          <ul>
-            <li>Set a cancellation window (e.g., 12 hours before a session)</li>
-            <li>Define late-cancel consequences (session deducted or penalty fee)</li>
-            <li>Choose whether late cancellations count as no-shows</li>
-          </ul>
+      <hr class="divider">
+
+      <!-- ═══ 4.3 CLIENT ACCOUNT ═══ -->
+      <section id="account">
+        <div class="section-head">
+          <span class="section-num">4.3</span>
+          <h2 class="section-title">Client Account</h2>
         </div>
-        <div class="policy-card">
-          <h3>No-Show Policy</h3>
-          <ul>
-            <li>Track no-shows automatically via attendance records</li>
-            <li>Set consequences (e.g., warning or booking restriction after 3 no-shows)</li>
-          </ul>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Section</th><th>Contents</th></tr></thead>
+            <tbody>
+              <tr><td>Upcoming Bookings</td><td>Future bookings with cancel/reschedule action</td></tr>
+              <tr><td>Booking History</td><td>Past sessions with attendance status (Attended / Late / No-Show)</td></tr>
+              <tr><td>My Packages</td><td>Active packages: sessions remaining, expiry date</td></tr>
+              <tr><td>Membership</td><td>Current plan, next billing date, cancel option</td></tr>
+              <tr><td>Invoices</td><td>All invoices; downloadable as PDF</td></tr>
+              <tr><td>Profile</td><td>Name, email, phone, password change</td></tr>
+              <tr><td>My QR Code</td><td>Unique QR code for venue check-in</td></tr>
+            </tbody>
+          </table>
         </div>
-        <div class="policy-card">
-          <h3>Waitlist Rules</h3>
-          <ul>
-            <li>Enable or disable per session</li>
-            <li>Set maximum waitlist size</li>
-            <li>Automatic promotion when a spot opens</li>
-          </ul>
+      </section>
+
+      <hr class="divider">
+
+      <!-- ═══ 4.4 PAYMENTS ═══ -->
+      <section id="payments">
+        <div class="section-head">
+          <span class="section-num">4.4</span>
+          <h2 class="section-title">Payments &amp; Packages</h2>
         </div>
-        <div class="policy-card">
-          <h3>Late-Entry Cutoff</h3>
-          <ul>
-            <li>Set the grace period (default: 10 minutes)</li>
-            <li>After cutoff, clients cannot check in</li>
-            <li>Late arrivals past cutoff are marked as no-shows</li>
-          </ul>
+
+        <h3>Payment Methods — Phase 1</h3>
+        <div class="callout success"><strong>Stripe only.</strong> Credit / debit card via Stripe Checkout. No other payment methods in Phase 1.</div>
+
+        <h3>Pricing Products</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Type</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td>Drop-in</td><td>Single session purchase at fixed price</td></tr>
+              <tr><td>Package</td><td>Bundle of N sessions; fixed price; optional expiry date (configurable by admin)</td></tr>
+              <tr><td>Membership</td><td>Recurring monthly subscription via Stripe Subscriptions; grants N sessions/month or unlimited</td></tr>
+            </tbody>
+          </table>
         </div>
-      </div>
-    </div>
-  </section>
 
-  <!-- ═══ UX PRINCIPLES ═══ -->
-  <section id="ux">
-    <div class="container">
-      <div class="reveal">
-        <div class="section-label">Section 06</div>
-        <h2>User Experience Principles</h2>
-        <p class="section-intro">The design philosophy that guides every screen, interaction, and decision.</p>
-      </div>
+        <h3>Purchase Flow</h3>
+        <ul>
+          <li>Client selects product → Stripe Checkout session created server-side</li>
+          <li>On <code>payment_intent.succeeded</code> webhook: entitlement granted, invoice generated</li>
+          <li>Failed payments: retry handled by Stripe; client notified by email</li>
+        </ul>
 
-      <div class="ux-grid reveal">
-        <div class="ux-card">
-          <h4>Mobile-First</h4>
-          <p>Optimized for small screens first, scaling beautifully to tablets and desktops. Most clients will book from their phone.</p>
+        <h3>Package / Membership Logic</h3>
+        <ul>
+          <li>Package balance decremented on each confirmed booking</li>
+          <li>Expired packages cannot be used; remaining sessions forfeited unless admin manually extends</li>
+          <li>Memberships auto-renew monthly via Stripe</li>
+          <li>Admin can manually add or deduct sessions from a client's package</li>
+          <li>If package is exhausted mid-booking, system falls back to drop-in price</li>
+        </ul>
+      </section>
+
+      <hr class="divider">
+
+      <!-- ═══ 4.5 INVOICES ═══ -->
+      <section id="invoices">
+        <div class="section-head">
+          <span class="section-num">4.5</span>
+          <h2 class="section-title">Invoice System</h2>
         </div>
-        <div class="ux-card">
-          <h4>Minimal Clicks</h4>
-          <p>Booking a session takes no more than 1-2 taps. No unnecessary steps, forms, or confirmations.</p>
+        <ul>
+          <li>Invoice auto-generated on every successful payment</li>
+          <li>Contains: invoice number, date, line items, amount, payment method, business name/logo</li>
+          <li>Delivered to client's email immediately after payment</li>
+          <li>Stored on client profile; downloadable as PDF</li>
+          <li>Accessible to Admin from client profile or invoice list view</li>
+        </ul>
+        <div class="callout info"><strong>Note:</strong> No tax / GST calculation in Phase 1. Line items show pre-tax amounts only.</div>
+      </section>
+
+      <hr class="divider">
+
+      <!-- ═══ 4.6 SESSIONS ═══ -->
+      <section id="sessions">
+        <div class="section-head">
+          <span class="section-num">4.6</span>
+          <h2 class="section-title">Session &amp; Schedule Management</h2>
         </div>
-        <div class="ux-card">
-          <h4>Real-Time</h4>
-          <p>Slot availability updates instantly. No risk of double-booking or stale information.</p>
+
+        <h3>Session Object — Fields</h3>
+        <div class="field-table table-wrap">
+          <table>
+            <thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead>
+            <tbody>
+              <tr><td>name</td><td>string</td><td>Required</td></tr>
+              <tr><td>category</td><td>string</td><td>Admin-defined taxonomy</td></tr>
+              <tr><td>level</td><td>enum</td><td>Beginner / Intermediate / Advanced / N/A</td></tr>
+              <tr><td>type</td><td>enum</td><td>Regular / Workshop / Event</td></tr>
+              <tr><td>instructor_id</td><td>relation</td><td>Links to Instructor profile</td></tr>
+              <tr><td>capacity</td><td>integer</td><td>Max bookable spots</td></tr>
+              <tr><td>waitlist_enabled</td><td>boolean</td><td></td></tr>
+              <tr><td>waitlist_max</td><td>integer</td><td>Nullable = unlimited</td></tr>
+              <tr><td>datetime</td><td>datetime</td><td>TZ-aware</td></tr>
+              <tr><td>duration_minutes</td><td>integer</td><td></td></tr>
+              <tr><td>rrule</td><td>RRULE string</td><td>Nullable for one-off sessions</td></tr>
+              <tr><td>late_cutoff_minutes</td><td>integer</td><td>Nullable; falls back to global setting</td></tr>
+              <tr><td>price_dropin</td><td>decimal</td><td></td></tr>
+              <tr><td>status</td><td>enum</td><td>Scheduled / Cancelled / Completed</td></tr>
+            </tbody>
+          </table>
         </div>
-        <div class="ux-card">
-          <h4>Clear Feedback</h4>
-          <p>Every action gives immediate, clear confirmation — on screen and via email.</p>
+
+        <h3>Recurrence</h3>
+        <ul>
+          <li>Admin defines recurring sessions via RRULE (weekly, bi-weekly, custom)</li>
+          <li>Editing a recurring session: prompt — "This session only" or "All future sessions"</li>
+          <li>Cancelling a session: all active bookings on that session are cancelled; clients notified by email</li>
+        </ul>
+
+        <h3>Session Types</h3>
+        <ul>
+          <li><strong>Regular</strong> — standard session with recurring support; package-eligible</li>
+          <li><strong>Workshop / Event</strong> — one-off; custom pricing; package eligibility configurable per session</li>
+        </ul>
+      </section>
+
+      <hr class="divider">
+
+      <!-- ═══ 4.7 BOOKING MGMT ═══ -->
+      <section id="bookings">
+        <div class="section-head">
+          <span class="section-num">4.7</span>
+          <h2 class="section-title">Booking Management (Admin)</h2>
         </div>
-        <div class="ux-card">
-          <h4>Clean &amp; Modern</h4>
-          <p>A professional, uncluttered interface that reflects well on your brand.</p>
+        <ul>
+          <li>View roster for any session: client name, booking status, check-in status, package used</li>
+          <li>Manually add a client to a session — bypasses capacity limit (admin override)</li>
+          <li>Manually remove a client — cancellation policy NOT applied</li>
+          <li>Bulk attendance marking: "Mark all Attended" or mark individually</li>
+          <li>Attendance statuses: <code>Pending</code> → <code>Attended</code> | <code>Late</code> | <code>No-Show</code></li>
+          <li>Filter sessions by date, instructor, category, status</li>
+        </ul>
+      </section>
+
+      <hr class="divider">
+
+      <!-- ═══ 4.8 CRM ═══ -->
+      <section id="crm">
+        <div class="section-head">
+          <span class="section-num">4.8</span>
+          <h2 class="section-title">Client CRM (Admin)</h2>
         </div>
-      </div>
-    </div>
-  </section>
 
-  <!-- ═══ METRICS ═══ -->
-  <section id="metrics">
-    <div class="container">
-      <div class="reveal">
-        <div class="section-label">Section 07</div>
-        <h2>How We Measure Success</h2>
-        <p class="section-intro">After launch, we track these metrics to ensure the system is delivering real value.</p>
-      </div>
+        <h3>Client Profile Fields</h3>
+        <div class="field-table table-wrap">
+          <table>
+            <thead><tr><th>Field</th><th>Notes</th></tr></thead>
+            <tbody>
+              <tr><td>full_name, email, phone</td><td>Core contact info</td></tr>
+              <tr><td>registration_date</td><td>Auto-set on signup</td></tr>
+              <tr><td>active_packages</td><td>Sessions remaining, expiry per package</td></tr>
+              <tr><td>active_membership</td><td>Plan name, renewal date</td></tr>
+              <tr><td>sessions_attended_lifetime</td><td>Computed count</td></tr>
+              <tr><td>no_show_count</td><td>Lifetime count; used for policy enforcement</td></tr>
+              <tr><td>waiver</td><td>Signed status, date, waiver version, file link</td></tr>
+              <tr><td>notes</td><td>Multi-entry admin notes with timestamps</td></tr>
+              <tr><td>tags</td><td>Admin-defined labels (e.g., VIP, injured, new)</td></tr>
+            </tbody>
+          </table>
+        </div>
 
-      <div class="reveal">
-        <table class="metrics-table">
-          <thead>
-            <tr><th>Metric</th><th>What It Tells Us</th></tr>
-          </thead>
-          <tbody>
-            <tr><td>Session Fill Rate</td><td>Are more spots being filled compared to before?</td></tr>
-            <tr><td>No-Show Rate</td><td>Are no-shows decreasing with policies and accountability?</td></tr>
-            <tr><td>Admin Time Saved</td><td>How many hours per week are freed up from manual tasks?</td></tr>
-            <tr><td>Client Retention</td><td>Are clients coming back and staying active?</td></tr>
-            <tr><td>Package Conversion</td><td>Are clients buying packages/memberships vs. single sessions?</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </section>
+        <h3>Client List View</h3>
+        <ul>
+          <li>Search by name / email / phone</li>
+          <li>Filter by: membership status, package status, activity (active/inactive), tags</li>
+          <li>Bulk actions: send email, export CSV</li>
+        </ul>
 
-  <!-- ═══ FUTURE ═══ -->
-  <section id="future">
-    <div class="container">
-      <div class="reveal">
-        <div class="section-label">Section 08</div>
-        <h2>What's Not Included in Phase 1</h2>
-        <p class="section-intro">These features are planned for future phases and will be prioritized after the core system is running.</p>
-      </div>
+        <h4>Activity Status Definition</h4>
+        <ul>
+          <li><strong>Active:</strong> at least 1 booking in the last 30 days</li>
+          <li><strong>Inactive:</strong> no bookings in the last 30 days</li>
+        </ul>
+      </section>
 
-      <ul class="excluded-list reveal">
-        <li>Online / hybrid sessions (Zoom integration, recorded sessions)</li>
-        <li>Referral program (referral codes and rewards)</li>
-        <li>WhatsApp / SMS notifications and marketing</li>
-        <li>Automated marketing campaigns</li>
-        <li>Loyalty and points system</li>
-        <li>PayNow and GrabPay payment methods</li>
-      </ul>
-    </div>
-  </section>
+      <hr class="divider">
 
-  <!-- ═══ ACCESS ═══ -->
-  <section id="access">
-    <div class="container">
-      <div class="reveal">
-        <div class="section-label">Section 09</div>
-        <h2>How Clients Access the System</h2>
-      </div>
+      <!-- ═══ 4.9 CHECK-IN ═══ -->
+      <section id="checkin">
+        <div class="section-head">
+          <span class="section-num">4.9</span>
+          <h2 class="section-title">QR Code Check-In</h2>
+        </div>
 
-      <div class="access-callout reveal">
-        <h3>A Dedicated Booking URL</h3>
-        <p>Clients access the system through a standalone, responsive website on our platform.</p>
-        <div class="access-url">yourbusiness.platform.com</div>
-        <p>No app download needed. Works on any device with a browser.<br>Share it on social media, print on flyers, or link from your existing website.</p>
-      </div>
-    </div>
-  </section>
+        <h3>Check-In Flow</h3>
+        <div class="flow">
+          <div class="flow-step"><div class="step-n">1</div><div class="step-body"><strong>Client presents QR</strong><span>Each client has a persistent unique QR (encoded with <code>client_id</code>)</span></div></div>
+          <div class="flow-step"><div class="step-n">2</div><div class="step-body"><strong>Staff scans</strong><span>Camera-based scanner in web app; no dedicated hardware required</span></div></div>
+          <div class="flow-step"><div class="step-n">3</div><div class="step-body"><strong>System validates</strong><span>Checks: booking exists for an active session, late cutoff not exceeded</span></div></div>
+          <div class="flow-step"><div class="step-n">4</div><div class="step-body"><strong>Result</strong><span>Success → status set to <code>Attended</code> or <code>Late</code>. Failure → error message shown (see failure states below)</span></div></div>
+        </div>
 
-  <!-- ═══ FOOTER ═══ -->
-  <div class="footer">
-    <p><strong>Phase 1 — Product Requirements Document</strong> &middot; Version 1.0 &middot; March 2026</p>
-  </div>
+        <h3>Late Window Logic</h3>
+        <ul>
+          <li><code>late_cutoff_minutes</code> is configurable per session; falls back to global default (default: 10 min)</li>
+          <li>If <code>current_time &gt; session_start + late_cutoff</code>: check-in blocked → status = <code>No-Show</code></li>
+          <li>If <code>current_time &gt; session_start</code> but within cutoff window: check-in allowed → status = <code>Late</code></li>
+        </ul>
 
-  <script>
-    // Scroll reveal
-    const reveals = document.querySelectorAll('.reveal');
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add('visible');
-        }
-      });
-    }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+        <h3>Failure States</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Condition</th><th>Behaviour</th></tr></thead>
+            <tbody>
+              <tr><td>No booking found for this session</td><td>Show error; do not check in</td></tr>
+              <tr><td>Late cutoff exceeded</td><td>Block check-in; set status to <code>No-Show</code>; show error</td></tr>
+              <tr><td>Already checked in</td><td>Show warning; no status change</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
 
-    reveals.forEach(el => observer.observe(el));
+      <hr class="divider">
 
-    // Sticky nav shadow
-    const toc = document.getElementById('toc');
-    window.addEventListener('scroll', () => {
-      toc.classList.toggle('scrolled', window.scrollY > 100);
+      <!-- ═══ 4.10 WAIVER ═══ -->
+      <section id="waiver">
+        <div class="section-head">
+          <span class="section-num">4.10</span>
+          <h2 class="section-title">Digital Waiver</h2>
+        </div>
+        <ul>
+          <li>Waiver content defined by Admin (HTML / rich text)</li>
+          <li>Trigger: first booking or first login — client must complete before proceeding</li>
+          <li>Client must scroll to bottom and click "I Agree" with typed full name (e-signature)</li>
+          <li>Signature record stores: <code>client_id</code>, <code>timestamp</code>, <code>ip_address</code>, <code>waiver_version</code></li>
+          <li>If Admin updates the waiver content, existing clients must re-sign on next booking</li>
+          <li>Signed waiver stored as PDF; accessible from client profile</li>
+        </ul>
+      </section>
+
+      <hr class="divider">
+
+      <!-- ═══ 4.11 POLICIES ═══ -->
+      <section id="policies">
+        <div class="section-head">
+          <span class="section-num">4.11</span>
+          <h2 class="section-title">Business Policy Engine</h2>
+        </div>
+        <p class="section-desc">All policies are configured per tenant by Admin. System enforces them automatically.</p>
+
+        <h3>Cancellation Policy</h3>
+        <div class="field-table table-wrap">
+          <table>
+            <thead><tr><th>Setting</th><th>Type</th><th>Default</th></tr></thead>
+            <tbody>
+              <tr><td>cancellation_window_hours</td><td>integer</td><td>12</td></tr>
+              <tr><td>late_cancel_penalty</td><td>enum: none | forfeit_session | charge_fee</td><td>forfeit_session</td></tr>
+              <tr><td>late_cancel_fee_amount</td><td>decimal</td><td>—</td></tr>
+              <tr><td>count_late_cancel_as_no_show</td><td>boolean</td><td>false</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>No-Show Policy</h3>
+        <div class="field-table table-wrap">
+          <table>
+            <thead><tr><th>Setting</th><th>Type</th><th>Default</th></tr></thead>
+            <tbody>
+              <tr><td>auto_mark_no_show</td><td>boolean</td><td>true</td></tr>
+              <tr><td>no_show_threshold (per 30 days)</td><td>integer</td><td>3</td></tr>
+              <tr><td>threshold_action</td><td>enum: none | warning_email | booking_block</td><td>warning_email</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Waitlist Policy</h3>
+        <div class="field-table table-wrap">
+          <table>
+            <thead><tr><th>Setting</th><th>Type</th><th>Default</th></tr></thead>
+            <tbody>
+              <tr><td>auto_promote_on_cancel</td><td>boolean</td><td>true</td></tr>
+              <tr><td>waitlist_enabled_by_default</td><td>boolean</td><td>true</td></tr>
+              <tr><td>default_max_waitlist_size</td><td>integer</td><td>null (unlimited)</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Late-Entry Policy</h3>
+        <div class="field-table table-wrap">
+          <table>
+            <thead><tr><th>Setting</th><th>Type</th><th>Default</th></tr></thead>
+            <tbody>
+              <tr><td>late_cutoff_minutes</td><td>integer</td><td>10</td></tr>
+              <tr><td>block_checkin_after_cutoff</td><td>boolean</td><td>true</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <hr class="divider">
+
+      <!-- ═══ 4.12 INSTRUCTORS ═══ -->
+      <section id="instructors">
+        <div class="section-head">
+          <span class="section-num">4.12</span>
+          <h2 class="section-title">Instructor Management</h2>
+        </div>
+
+        <h3>Compensation Config (per instructor)</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Rate Type</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td>Base pay per session</td><td>Fixed amount per session taught</td></tr>
+              <tr><td>Per-client commission</td><td>Amount per attending client</td></tr>
+              <tr><td>Revenue commission</td><td>% of session revenue</td></tr>
+              <tr><td>Extra hour rate</td><td>For sessions exceeding standard duration</td></tr>
+              <tr><td>Workshop / event rate</td><td>Override rate for non-regular session types</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Compensation Report</h3>
+        <ul>
+          <li>Per instructor: sessions taught, clients attended, calculated earnings broken down by rate type</li>
+          <li>Filterable by date range; exportable to CSV</li>
+        </ul>
+        <div class="callout warn"><strong>Read-only.</strong> No payout processing in Phase 1. Report is display only.</div>
+      </section>
+
+      <hr class="divider">
+
+      <!-- ═══ 4.13 STAFF ═══ -->
+      <section id="staff">
+        <div class="section-head">
+          <span class="section-num">4.13</span>
+          <h2 class="section-title">Staff Management</h2>
+        </div>
+
+        <h3>Staff Accounts</h3>
+        <ul>
+          <li>Role <code>staff</code>: front-desk operations only (check-in, view rosters, manual booking add/remove)</li>
+          <li>Admin creates and deactivates accounts; no self-registration</li>
+        </ul>
+
+        <h3>Leave Management</h3>
+        <ul>
+          <li>Staff / Instructors submit leave requests: type (annual / sick / other), date range, notes</li>
+          <li>Admin sees pending requests in a queue; approves or rejects with optional comment</li>
+          <li>Approved leave reflected on staff calendar</li>
+          <li><strong>Note:</strong> System does not auto-block sessions when leave is approved — manual responsibility</li>
+        </ul>
+
+        <h3>Staff Calendar</h3>
+        <ul>
+          <li>View showing all staff/instructor schedules and approved leave</li>
+          <li>Date range navigation</li>
+        </ul>
+      </section>
+
+      <hr class="divider">
+
+      <!-- ═══ 4.14 SALES ═══ -->
+      <section id="sales">
+        <div class="section-head">
+          <span class="section-num">4.14</span>
+          <h2 class="section-title">Sales &amp; Commission Tracking</h2>
+        </div>
+        <ul>
+          <li>Each booking / package purchase records the <code>staff_id</code> of the staff member who processed it (manual bookings only); auto-bookings record <code>null</code></li>
+          <li>Sales report: groupable by staff member, filterable by date range</li>
+          <li>Commission: configurable rate per staff member (% of sale or flat fee per sale)</li>
+          <li>Report is read-only; CSV export available</li>
+        </ul>
+      </section>
+
+      <hr class="divider">
+
+      <!-- ═══ 4.15 ANALYTICS ═══ -->
+      <section id="analytics">
+        <div class="section-head">
+          <span class="section-num">4.15</span>
+          <h2 class="section-title">Analytics Dashboard</h2>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Widget</th><th>Data Shown</th></tr></thead>
+            <tbody>
+              <tr><td>Session occupancy rate</td><td>Avg % full per session; trend over time</td></tr>
+              <tr><td>Revenue</td><td>Total revenue by day/week/month; MRR for memberships</td></tr>
+              <tr><td>Top sessions</td><td>Sessions ranked by attendance count</td></tr>
+              <tr><td>Client activity</td><td>Active vs. inactive count; new signups over time</td></tr>
+              <tr><td>Package sales</td><td>Revenue and volume by package type</td></tr>
+              <tr><td>No-show rate</td><td>No-shows / bookings ratio over time</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout info"><strong>Scope:</strong> Date range filter across all widgets. All widgets are read-only in Phase 1 — no drill-down detail views.</div>
+      </section>
+
+      <hr class="divider">
+
+      <!-- ═══ 5. NON-FUNCTIONAL ═══ -->
+      <section id="nonfunctional">
+        <div class="section-head">
+          <span class="section-num">05</span>
+          <h2 class="section-title">Non-Functional Requirements</h2>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Requirement</th><th>Specification</th></tr></thead>
+            <tbody>
+              <tr><td>Platform</td><td>Responsive web app (PWA) — no native app in Phase 1</td></tr>
+              <tr><td>Browser support</td><td>Last 2 versions: Chrome, Safari, Firefox, Edge</td></tr>
+              <tr><td>Mobile</td><td>Mobile-first; all client-facing flows must work at 375px+ viewport</td></tr>
+              <tr><td>Performance</td><td>Core booking flow &lt; 2s load time on 4G</td></tr>
+              <tr><td>Availability</td><td>99.5% uptime target</td></tr>
+              <tr><td>Data isolation</td><td>Strict multi-tenant row-level isolation</td></tr>
+              <tr><td>Payment security</td><td>PCI compliance delegated to Stripe; no card data stored on platform</td></tr>
+              <tr><td>Auth security</td><td>Passwords bcrypt-hashed; JWT: 15 min access / 7 day refresh</td></tr>
+              <tr><td>Email provider</td><td>TBD (SendGrid / Resend) — see Open Questions</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <hr class="divider">
+
+      <!-- ═══ 6. NOTIFICATIONS ═══ -->
+      <section id="notifications">
+        <div class="section-head">
+          <span class="section-num">06</span>
+          <h2 class="section-title">Email Notification Triggers</h2>
+        </div>
+        <div class="table-wrap">
+          <table class="notif-table">
+            <thead><tr><th>Trigger</th><th>Recipient</th><th>Key Content</th></tr></thead>
+            <tbody>
+              <tr><td>Booking confirmed</td><td>Client</td><td>Session details, cancellation policy reminder</td></tr>
+              <tr><td>Booking cancelled (by client)</td><td>Client</td><td>Cancellation confirmation, policy outcome (penalty or refund)</td></tr>
+              <tr><td>Booking cancelled (by admin)</td><td>Client</td><td>Cancellation notice</td></tr>
+              <tr><td>Promoted from waitlist</td><td>Client</td><td>New booking confirmation</td></tr>
+              <tr><td>Payment successful</td><td>Client</td><td>Invoice PDF attached</td></tr>
+              <tr><td>Waiver required</td><td>Client</td><td>Link to sign waiver before booking proceeds</td></tr>
+              <tr><td>No-show threshold reached</td><td>Client</td><td>Warning notice or booking restriction notification</td></tr>
+              <tr><td>Leave request submitted</td><td>Admin</td><td>New pending request notification</td></tr>
+              <tr><td>Leave approved / rejected</td><td>Staff / Instructor</td><td>Decision + optional comment</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <hr class="divider">
+
+      <!-- ═══ 7. OPEN QUESTIONS ═══ -->
+      <section id="openquestions">
+        <div class="section-head">
+          <span class="section-num">07</span>
+          <h2 class="section-title">Open Questions</h2>
+        </div>
+        <p class="section-desc">Items requiring a decision before or during development.</p>
+
+        <div class="question-list">
+          <div class="question-item">
+            <div class="q-num">Q1</div>
+            <div class="q-body">
+              <div class="q-text">What is the platform domain name?</div>
+              <div class="q-meta">owner: product</div>
+            </div>
+            <div class="q-status">Open</div>
+          </div>
+          <div class="question-item">
+            <div class="q-num">Q2</div>
+            <div class="q-body">
+              <div class="q-text">Which transactional email provider? SendGrid vs Resend?</div>
+              <div class="q-meta">owner: engineering</div>
+            </div>
+            <div class="q-status">Open</div>
+          </div>
+          <div class="question-item">
+            <div class="q-num">Q3</div>
+            <div class="q-body">
+              <div class="q-text">Can clients transfer package credits to another client?</div>
+              <div class="q-meta">owner: product</div>
+            </div>
+            <div class="q-status">Open</div>
+          </div>
+          <div class="question-item">
+            <div class="q-num">Q4</div>
+            <div class="q-body">
+              <div class="q-text">Is membership pause functionality required in Phase 1?</div>
+              <div class="q-meta">owner: product</div>
+            </div>
+            <div class="q-status">Open</div>
+          </div>
+          <div class="question-item">
+            <div class="q-num">Q5</div>
+            <div class="q-body">
+              <div class="q-text">Do workshop/event sessions consume package credits by default, or always drop-in price?</div>
+              <div class="q-meta">owner: product</div>
+            </div>
+            <div class="q-status">Open</div>
+          </div>
+          <div class="question-item">
+            <div class="q-num">Q6</div>
+            <div class="q-body">
+              <div class="q-text">Does the no-show booking block auto-lift after a period, or require Admin to manually clear?</div>
+              <div class="q-meta">owner: product</div>
+            </div>
+            <div class="q-status">Open</div>
+          </div>
+        </div>
+      </section>
+
+    </div><!-- /content -->
+  </main><!-- /main -->
+</div><!-- /layout -->
+
+<script>
+  // Active sidebar link on scroll
+  const sections = document.querySelectorAll('section[id]');
+  const links = document.querySelectorAll('.toc a');
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const id = entry.target.getAttribute('id');
+        links.forEach(l => {
+          l.classList.remove('active');
+          if (l.getAttribute('href') === '#' + id) l.classList.add('active');
+        });
+      }
     });
+  }, { rootMargin: '-20% 0px -75% 0px' });
 
-    // Active nav link
-    const sections = document.querySelectorAll('section[id]');
-    const navLinks = document.querySelectorAll('.toc a');
-
-    window.addEventListener('scroll', () => {
-      let current = '';
-      sections.forEach(section => {
-        const top = section.offsetTop - 120;
-        if (window.scrollY >= top) {
-          current = section.getAttribute('id');
-        }
-      });
-      navLinks.forEach(link => {
-        link.classList.remove('active');
-        if (link.getAttribute('href') === '#' + current) {
-          link.classList.add('active');
-        }
-      });
-    });
-  </script>
+  sections.forEach(s => observer.observe(s));
+</script>
 
 </body>
 </html>

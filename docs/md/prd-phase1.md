@@ -1,292 +1,443 @@
 # Phase 1 — Product Requirements Document
 
-## Booking & Management System
-
+**Product:** Booking & Management SaaS Platform
 **Version:** 1.0
 **Date:** March 28, 2026
 **Status:** Draft
-**Audience:** Business Owner / Client
+**Audience:** Product Manager / Engineering Team
+**Author:** TBD
 
 ---
 
-## 1. Overview
+## 1. Product Overview
 
-This document describes the first version of your new booking and management system. It covers everything your business needs to run day-to-day operations: class scheduling, client bookings, payments, attendance tracking, and staff management.
+### 1.1 Problem Statement
 
-Clients access the system through a dedicated web address on our platform (e.g., `yourbusiness.platform.com`) that works beautifully on phones, tablets, and desktops — no app download required.
+Fitness and wellness studios currently rely on generic booking tools (e.g., Reserv) that lack the flexibility to enforce studio-specific policies, track instructor compensation, or provide meaningful business analytics. Admin overhead is high due to manual attendance tracking, waitlist management, and payment reconciliation.
 
-### What This Solves
+### 1.2 Product Goal
 
-| Problem Today | How the System Helps |
-|---|---|
-| Manual class management is time-consuming | Automated scheduling, waitlists, and attendance tracking |
-| No-shows waste staff time and revenue | Configurable cancellation policies and no-show penalties |
-| Payment tracking is scattered | All payments, packages, and invoices in one place |
-| Hard to see what's working | Dashboard with occupancy, revenue, and student activity |
-| Onboarding new clients is manual | Digital waiver and self-service account creation |
+Build a multi-tenant SaaS booking and operations platform for class-based businesses. Each tenant gets a dedicated subdomain (`yourbusiness.platform.com`) with a client-facing booking portal and a full admin backend.
 
-### Goals
+Phase 1 delivers the complete operational core: booking, payments, attendance, CRM, staff management, and reporting.
 
-- **Fill more sessions** — easy booking, automated waitlists, and real-time availability
-- **Reduce no-shows** — cancellation policies, attendance rules, and accountability
-- **Save admin time** — automate repetitive tasks like invoicing, waitlist management, and attendance
-- **Increase revenue** — sell packages and memberships directly through the system
+### 1.3 Success Metrics (KPIs)
 
----
+| Metric | Target | Measurement |
+|---|---|---|
+| Session fill rate | Increase vs. baseline | Sessions booked / total capacity |
+| No-show rate | Decrease vs. baseline | No-shows / total bookings |
+| Admin time on manual tasks | Reduce by 50%+ | Self-reported at 30/60/90 days |
+| Client retention (30-day) | > 60% return rate | Repeat bookings within 30 days |
+| Package conversion rate | > 30% of new clients | Package purchases / new signups |
 
-## 2. Who Uses the System
+### 1.4 Out of Scope — Phase 1
 
-### Clients
-Book and pay for sessions, manage their account, and check in at the venue. This is the primary audience — the experience should feel effortless.
+The following are explicitly deferred to Phase 2:
 
-### Business Admin / Owner
-Full control over the entire system: classes, schedules, clients, staff, finances, and settings. This is the operational command center.
-
-### Instructors
-View their assigned class schedule and track their earnings (pay breakdowns, commissions).
-
-### Front-Desk Staff
-Handle day-to-day operations like scanning client QR codes for check-in, making manual bookings, and managing walk-ins.
-
----
-
-## 3. Client Experience
-
-### 3.1 Finding and Booking a Session
-
-When a client visits the booking site, they see available sessions displayed in two ways:
-
-- **Calendar view** — a weekly/monthly calendar showing class times at a glance
-- **List view** — a scrollable list, ideal for mobile
-
-Clients can filter sessions by:
-- Category (e.g., class type, service type)
-- Instructor / staff member
-- Level or tier (if applicable)
-
-Each session shows:
-- Date, time, and duration
-- Instructor name
-- Available spots (real-time)
-- Price or package eligibility
-
-**Booking flow:**
-1. Select a class
-2. Confirm booking (one or two clicks)
-3. Receive confirmation (on-screen + email)
-
-If a session is full, the client can join the waitlist. They are automatically moved in if a spot opens up and notified immediately.
-
-### 3.2 Paying for Sessions
-
-Clients can pay in the way that suits them:
-
-- **Pay per session** — single payment at the time of booking
-- **Session packages** — buy a bundle (e.g., 5 or 10 sessions) and use them over time
-- **Monthly memberships** — recurring subscription for unlimited or set number of sessions per month
-
-All payments are processed securely via credit or debit card (powered by Stripe). Clients see a clear breakdown before confirming payment.
-
-### 3.3 My Account
-
-Every client has a personal account where they can:
-
-- **View upcoming bookings** — see what's scheduled, with session details
-- **Cancel or reschedule** — within the business's cancellation policy window
-- **Track package balance** — see how many sessions remain in a purchased package
-- **View history** — past bookings, attendance records, and payment receipts
-- **Access invoices** — download or review any invoice from previous purchases
-
-### 3.4 Digital Waiver (First-Time Onboarding)
-
-Before attending their first session, new clients complete a digital waiver form:
-- The form appears automatically during the first booking or account setup
-- Clients read and e-sign the waiver on their device
-- The signed waiver is stored securely under their profile
-- Admin can access it at any time for compliance purposes
-
-No paper forms, no scanning — it's handled once and stored permanently.
-
----
-
-## 4. Admin Experience
-
-### 4.1 Class & Schedule Management
-
-Create and manage your full class schedule from a single dashboard:
-
-- **Create classes** with details: name, type, level, duration, instructor, price
-- **Set recurring schedules** — e.g., "Beginner Class every Monday and Wednesday at 9am"
-- **Define capacity** — maximum clients per session
-- **Waitlist rules** — enable/disable waitlists, set maximum waitlist size
-- **Late-entry rules** — set a cutoff time (e.g., clients cannot check in more than 10 minutes after a session starts)
-- **Workshops & special events** — create one-off sessions with custom pricing and capacity
-
-Changes to the schedule are reflected immediately on the student booking site.
-
-### 4.2 Booking Management
-
-See who's in every class and manage bookings hands-on:
-
-- **Session rosters** — view the full list of booked clients for any session
-- **Manual add/remove** — add a client to a session or remove them (e.g., phone bookings, walk-ins)
-- **Automated waitlist filling** — when a client cancels, the next person on the waitlist is automatically booked in and notified
-- **Attendance status** — mark each client as: Attended, Late, or No-Show
-
-### 4.3 Client CRM
-
-A complete profile for every client, all in one place:
-
-- **Contact details** — name, email, phone number
-- **Package status** — active packages, remaining sessions, expiry dates
-- **Membership status** — current plan, renewal date
-- **Attendance history** — full record of sessions attended, late arrivals, and no-shows
-- **Notes** — add private notes about a client (e.g., health considerations, preferences, special accommodations)
-
-#### QR Code Check-In
-
-Each client has a unique QR code in their account (accessible on their phone). Here's how check-in works:
-
-1. Client arrives and shows their QR code on their phone
-2. Front-desk staff scans it using any device with a camera
-3. System confirms check-in and records attendance
-4. If the client arrives more than the configured late cutoff (default: 10 minutes after session start), check-in is blocked and they are marked as a no-show
-
-This replaces manual roll calls and ensures accurate attendance records.
-
-### 4.4 Instructor Management
-
-Manage your teaching team:
-
-- **Assign instructors to classes** — link each class to its instructor
-- **View instructor schedules** — see each instructor's upcoming classes at a glance
-- **Compensation tracking** — the system calculates and displays what each instructor is owed based on configurable rates:
-  - Base pay per session taught
-  - Commission per client attending
-  - Commission on revenue generated
-  - Extra hour pay
-  - Special workshop rates
-
-Compensation reports are for visibility only — actual payment to instructors is handled outside the system.
-
-### 4.5 Staff Management
-
-Manage your team beyond instructors:
-
-- **Staff accounts** — create accounts for front-desk staff, managers, etc.
-- **Roles & permissions** — control what each staff member can see and do
-- **Leave management** — staff can submit leave requests; admin can approve or reject them
-- **Calendar visibility** — see who's working on any given day
-
-### 4.6 Sales Tracking
-
-Know who's selling and how much:
-
-- **Track package and membership sales by staff member** — see which team member sold what
-- **Commission calculation** — the system calculates sales commission based on your rules and displays it in reports
-
-### 4.7 Payments & Packages
-
-Full control over your pricing and revenue:
-
-- **Create pricing options:**
-  - Single session prices
-  - Session packages (e.g., 5 sessions for $X, 10 sessions for $Y)
-  - Monthly memberships (recurring billing)
-- **Transaction history** — view all payments, filterable by date, client, or type
-- **Stripe dashboard** — all card payments flow through Stripe for security and reliability
-
-### 4.8 Invoices
-
-Every purchase automatically generates a professional invoice:
-
-- Sent to the client's email immediately after payment
-- Stored in the client's account for future reference
-- Accessible to admin at any time
-- Includes: date, description, amount paid, payment method
-
-### 4.9 Dashboard & Analytics
-
-A real-time overview of your business's performance:
-
-- **Session occupancy rate** — how full are your sessions? Which ones are consistently under-booked?
-- **Revenue tracking** — daily, weekly, and monthly revenue trends
-- **Active vs. inactive clients** — how many clients are actively booking vs. those who haven't visited recently
-- **Package sales performance** — which packages sell best, revenue by package type
-
----
-
-## 5. Configurable Business Policies
-
-The system ships with sensible default rules, but everything can be adjusted by the admin to match your business's way of working:
-
-### Cancellation Policy
-- Set a cancellation window (e.g., "clients must cancel at least 12 hours before a session")
-- Define what happens if they cancel late (e.g., session deducted from package, or a penalty fee)
-- Choose whether late cancellations count as no-shows
-
-### No-Show Policy
-- Track no-shows automatically via attendance records
-- Set consequences (e.g., after 3 no-shows in a month, client receives a warning or booking restriction)
-
-### Waitlist Rules
-- Enable or disable per class
-- Set maximum waitlist size
-- Automatic promotion: when a spot opens, the next student on the waitlist is booked in and notified
-
-### Late-Entry Cutoff
-- Set the grace period (default: 10 minutes after session start)
-- After the cutoff, clients cannot check in and are marked as a no-show
-
----
-
-## 6. User Experience Principles
-
-The system is designed around these principles:
-
-- **Mobile-first** — most clients will book from their phone. The experience is optimized for small screens first, and scales up beautifully on tablets and desktops.
-- **Minimal clicks** — booking a session should take no more than 1-2 taps. No unnecessary steps, forms, or confirmations.
-- **Real-time** — slot availability updates instantly. No risk of double-booking or stale information.
-- **Clear feedback** — every action (booking, cancellation, payment) gives the client immediate, clear confirmation on screen and via email.
-- **Clean, modern design** — a professional, uncluttered interface that reflects well on your brand.
-
----
-
-## 7. How We Measure Success
-
-After launch, we will track these metrics to ensure the system is delivering value:
-
-| Metric | What It Tells Us |
-|---|---|
-| **Session fill rate** | Are more spots being filled compared to before? |
-| **No-show rate** | Are no-shows decreasing with policies and accountability? |
-| **Admin time saved** | How many hours per week are freed up from manual tasks? |
-| **Client retention** | Are clients coming back and staying active? |
-| **Package conversion rate** | Are clients buying packages/memberships vs. single sessions? |
-
----
-
-## 8. What's Not Included in Phase 1
-
-The following features are planned for future phases and are **not** part of this initial launch:
-
-- Online/hybrid classes (Zoom integration, recorded sessions)
-- Referral program (referral codes and rewards)
-- WhatsApp / SMS notifications and marketing
+- Online / hybrid sessions (Zoom, recorded content)
+- Referral program
+- WhatsApp / SMS notifications
 - Automated marketing campaigns
 - Loyalty and points system
 - PayNow and GrabPay payment methods
 
-These will be prioritized based on business needs after the core system is running.
+---
+
+## 2. User Roles & Permissions
+
+| Permission | Client | Instructor | Staff | Admin |
+|---|---|---|---|---|
+| Browse & book sessions | ✓ | — | — | — |
+| Cancel / reschedule own booking | ✓ | — | — | — |
+| View own account & history | ✓ | — | — | — |
+| View assigned schedule | — | ✓ | — | — |
+| View own compensation report | — | ✓ | — | — |
+| Scan QR / check in clients | — | — | ✓ | ✓ |
+| Manual booking add/remove | — | — | ✓ | ✓ |
+| View session rosters | — | — | ✓ | ✓ |
+| Submit leave requests | — | ✓ | ✓ | — |
+| Manage sessions & schedules | — | — | — | ✓ |
+| Manage clients & CRM | — | — | — | ✓ |
+| Manage staff & instructors | — | — | — | ✓ |
+| Configure business policies | — | — | — | ✓ |
+| View full analytics | — | — | — | ✓ |
+| Approve / reject leave | — | — | — | ✓ |
 
 ---
 
-## 9. How Clients Access the System
+## 3. Multi-Tenancy
 
-Clients will access the booking system through a dedicated web address on our platform, such as:
+- Each tenant is provisioned with a unique subdomain: `{slug}.platform.com`
+- All data is fully isolated per tenant (no cross-tenant data leakage)
+- Admin, staff, instructor, and client accounts are scoped to a single tenant
+- Tenant-level configuration covers: policies, pricing, branding (logo, colors), and notification settings
 
-> `yourbusiness.platform.com`
+---
 
-This is a standalone, responsive website — no app download needed. It works on any device with a web browser: phones, tablets, laptops, and desktops.
+## 4. Functional Requirements
 
-The URL can be shared on your social media, printed on flyers, or linked from your existing website.
+---
+
+### 4.1 Authentication & Accounts
+
+#### Client Registration
+- Self-registration via email + password
+- OAuth login (Google) — optional at launch
+- Email verification required before first booking
+- First booking triggers digital waiver flow (see §4.10)
+
+#### Staff / Instructor / Admin Accounts
+- Created by Admin only (no self-registration)
+- Role assigned at creation: `admin`, `staff`, `instructor`
+- Password reset via email link
+
+#### Session Management
+- JWT-based auth with refresh tokens
+- Persistent login (remember me) option
+- Logout invalidates token server-side
+
+---
+
+### 4.2 Client Booking Portal
+
+The client-facing interface accessible at `yourbusiness.platform.com`.
+
+#### Session Discovery
+- Default view: **list view** sorted by date/time ascending
+- Toggle to **calendar view** (weekly layout)
+- Filters:
+  - Session category (multi-select)
+  - Instructor (multi-select)
+  - Level / tier (multi-select, if configured)
+  - Date range picker
+- Each session card displays:
+  - Name, category, level
+  - Date, time, duration
+  - Instructor name
+  - Spots remaining (real-time)
+  - Price OR "Included in your package" if client has an active package
+  - Status badge: `Open` | `Waitlist` | `Full` | `Cancelled`
+
+#### Booking Flow
+1. Client selects a session → detail modal/page shown
+2. If spots available: "Book Now" CTA
+3. If package balance > 0: deduct from package (no payment step)
+4. If paying per session: proceed to Stripe Checkout
+5. On success: confirmation screen + confirmation email sent
+6. If session is full: "Join Waitlist" CTA — adds client to ordered waitlist queue
+
+#### Waitlist
+- Clients can join waitlist when session is at capacity
+- When a booking is cancelled, the system automatically promotes the first waitlisted client:
+  - Booking created for that client
+  - Session deducted from their package (if applicable) or payment link sent
+  - Notification email dispatched
+- Clients can remove themselves from waitlist at any time
+
+#### Cancellation / Reschedule (Client-side)
+- Available from "My Bookings" in account area
+- System checks cancellation policy (see §4.11) before allowing
+- If within allowed window: booking cancelled, session credit returned to package or refund initiated
+- If outside allowed window: policy penalty applied (session forfeited or fee charged)
+- Reschedule = cancel + rebook (treated as a new booking for policy purposes)
+
+---
+
+### 4.3 Client Account
+
+Accessible post-login at `/account`.
+
+| Section | Contents |
+|---|---|
+| Upcoming Bookings | List of future bookings with cancel/reschedule action |
+| Booking History | Past sessions with attendance status |
+| My Packages | Active packages: sessions remaining, expiry date |
+| Membership | Current plan, next billing date, cancel option |
+| Invoices | List of all invoices; downloadable PDF |
+| Profile | Name, email, phone, password change |
+| My QR Code | Unique QR for check-in (see §4.9) |
+
+---
+
+### 4.4 Payments & Packages
+
+#### Payment Methods (Phase 1)
+- Credit / debit card via **Stripe Checkout**
+- No other payment methods in Phase 1
+
+#### Pricing Products (Admin-configurable)
+| Type | Description |
+|---|---|
+| Drop-in | Single session purchase at fixed price |
+| Package | Bundle of N sessions at fixed price; optional expiry date |
+| Membership | Recurring subscription (monthly); grants N sessions/month or unlimited |
+
+#### Purchase Flow
+- Client selects a product → Stripe Checkout session created
+- On `payment_intent.succeeded` webhook: entitlement granted, invoice generated
+- Failed payments: retry handled by Stripe; client notified by email
+
+#### Package / Membership Logic
+- Package balance is decremented on each successful booking
+- Expired packages cannot be used; sessions remaining are forfeited (unless admin manually extends)
+- Memberships auto-renew monthly via Stripe Subscriptions
+- Admin can manually add / deduct sessions from a client's package
+- If client's package is exhausted during booking, system falls back to drop-in price
+
+---
+
+### 4.5 Invoice System
+
+- Invoice auto-generated on every successful payment
+- Invoice contains: invoice number, date, line items, amount, payment method, business name/logo
+- Delivered to client's email immediately after payment
+- Stored against client profile; downloadable as PDF
+- Accessible to Admin from client profile or invoice list view
+- No tax/GST calculation in Phase 1 (line items show pre-tax amounts)
+
+---
+
+### 4.6 Session & Schedule Management (Admin)
+
+#### Session Object
+| Field | Type | Notes |
+|---|---|---|
+| Name | string | Required |
+| Category | string | Admin-defined taxonomy |
+| Level | enum | Beginner / Intermediate / Advanced / N/A |
+| Type | enum | Regular / Workshop / Event |
+| Instructor | relation | Links to Instructor profile |
+| Capacity | integer | Max bookable spots |
+| Waitlist enabled | boolean | |
+| Waitlist max size | integer | Nullable (unlimited if null) |
+| Date / Time | datetime | |
+| Duration | integer | Minutes |
+| Recurrence rule | RRULE string | Nullable for one-off sessions |
+| Late cutoff | integer | Minutes after start; inherited from global setting if null |
+| Price (drop-in) | decimal | |
+| Status | enum | Scheduled / Cancelled / Completed |
+
+#### Recurrence
+- Admin defines recurring sessions via RRULE (weekly, bi-weekly, custom)
+- Editing a recurring session: prompt to apply change to "This session only" or "All future sessions"
+- Cancelling a session: all bookings on that session are cancelled; clients notified by email
+
+#### Session Types
+- **Regular**: standard class with recurring support
+- **Workshop / Event**: one-off; can have different pricing; not package-eligible by default (configurable)
+
+---
+
+### 4.7 Booking Management (Admin)
+
+- View roster for any session: client name, booking status, check-in status, package used
+- Manually add a client to a session (bypasses capacity limit — admin override)
+- Manually remove a client from a session (no cancellation policy applied)
+- Bulk attendance marking: mark all as Attended, or mark individually
+- Attendance statuses: `Pending` → `Attended` | `Late` | `No-Show`
+- Filter sessions by date, instructor, category, status
+
+---
+
+### 4.8 Client CRM (Admin)
+
+#### Client Profile
+| Field | Notes |
+|---|---|
+| Full name, email, phone | Core contact info |
+| Registration date | Auto-set |
+| Active package(s) | Sessions remaining, expiry |
+| Active membership | Plan, renewal date |
+| Total sessions attended | Lifetime count |
+| No-show count | Lifetime count |
+| Waiver | Signed status, date, file |
+| Notes | Private admin notes (multi-entry with timestamps) |
+| Tags | Admin-defined labels (e.g., VIP, injured, new) |
+
+#### Client List View
+- Search by name / email / phone
+- Filter by: membership status, package status, activity (active/inactive), tags
+- Bulk actions: send email, export CSV
+
+#### Activity Status Definition
+- **Active**: at least 1 booking in the last 30 days
+- **Inactive**: no bookings in the last 30 days
+
+---
+
+### 4.9 QR Code Check-In
+
+#### Check-In Flow
+1. Each client has a persistent unique QR code (encoded with their `client_id`)
+2. Staff/Admin opens the check-in scanner (camera-based, web app)
+3. Staff scans client's QR code
+4. System validates:
+   - Client has a booking for an active session (started ≤ X minutes ago)
+   - Late cutoff not exceeded
+5. On success: attendance status set to `Attended` (or `Late` if within late window); confirmation shown on screen
+6. On failure states:
+   - No booking found → error message
+   - Late cutoff exceeded → block check-in; status set to `No-Show`; error message shown
+   - Already checked in → warning message
+
+#### Late Window Logic
+- `late_window_minutes` is configurable per session (default: global setting, default global: 10 min)
+- If `current_time > session_start + late_window_minutes`: check-in blocked, status = `No-Show`
+- If `current_time > session_start` but within late window: check-in allowed, status = `Late`
+
+---
+
+### 4.10 Digital Waiver
+
+- Waiver is a text document defined by Admin (HTML/rich text)
+- Trigger: first time a client completes a booking (before payment confirmation) or on first login
+- Client must scroll to bottom and click "I Agree" with typed full name (e-signature)
+- Waiver signature record stores: client ID, timestamp, IP address, waiver version
+- If waiver is updated by Admin, existing clients must re-sign on next booking
+- Waiver PDF stored and accessible from client profile
+
+---
+
+### 4.11 Business Policy Engine
+
+All policies are configured per tenant by Admin. System enforces them automatically.
+
+#### Cancellation Policy
+| Setting | Type | Default |
+|---|---|---|
+| Cancellation window | integer (hours) | 12 |
+| Late cancel penalty | enum: `none` \| `forfeit_session` \| `charge_fee` | `forfeit_session` |
+| Late cancel fee amount | decimal | — |
+| Count late cancel as no-show | boolean | false |
+
+#### No-Show Policy
+| Setting | Type | Default |
+|---|---|---|
+| Auto-mark no-show after late cutoff | boolean | true |
+| No-show threshold (per rolling 30 days) | integer | 3 |
+| Threshold action | enum: `none` \| `warning_email` \| `booking_block` | `warning_email` |
+
+#### Waitlist Policy
+| Setting | Type | Default |
+|---|---|---|
+| Auto-promote on cancellation | boolean | true |
+| Waitlist enabled by default for new sessions | boolean | true |
+| Default max waitlist size | integer | null (unlimited) |
+
+#### Late-Entry Policy
+| Setting | Type | Default |
+|---|---|---|
+| Late cutoff (minutes after session start) | integer | 10 |
+| Block check-in after cutoff | boolean | true |
+
+---
+
+### 4.12 Instructor Management (Admin)
+
+#### Instructor Profile
+- Name, contact details, bio (optional)
+- Assigned sessions (view only from this screen)
+- Compensation configuration:
+  - Base pay per session (fixed amount)
+  - Per-client commission (amount per attending client)
+  - Revenue commission (% of session revenue)
+  - Extra hour rate (for sessions over standard duration)
+  - Workshop / event rate (override for non-regular sessions)
+
+#### Compensation Report
+- Per instructor: sessions taught in period, clients attended, calculated earnings broken down by rate type
+- Date range filter
+- Export to CSV
+- **Read-only** — no payout processing in Phase 1
+
+---
+
+### 4.13 Staff Management (Admin)
+
+#### Staff Accounts
+- Role: `staff` (front-desk operations only)
+- Admin creates/deactivates accounts
+- Permissions: check-in, view rosters, manual booking add/remove
+
+#### Leave Management
+- Staff / Instructors can submit leave requests: type (annual/sick/other), date range, notes
+- Admin sees pending requests in a queue
+- Admin approves or rejects with optional comment
+- Approved leave reflected in staff availability calendar
+- No auto-blocking of sessions when leave approved (manual responsibility)
+
+#### Staff Calendar
+- View showing all staff/instructor working schedules and approved leave
+- Date range navigation
+
+---
+
+### 4.14 Sales & Commission Tracking
+
+- Each booking and package purchase records the `staff_id` of the staff member who processed it (if manually added by staff) — auto-bookings record null
+- Sales report: groupable by staff member, date range
+- Commission calculation: configurable rate per staff member (% of sales or flat per sale)
+- Report is read-only; export to CSV
+
+---
+
+### 4.15 Analytics Dashboard (Admin)
+
+| Widget | Data |
+|---|---|
+| Session occupancy rate | Avg % full per session; trend over time |
+| Revenue | Total revenue by day/week/month; MRR for memberships |
+| Top sessions | Sessions by attendance count |
+| Client activity | Active vs. inactive count; new signups over time |
+| Package sales | Revenue and volume by package type |
+| No-show rate | No-shows / bookings ratio over time |
+
+- Date range filter across all widgets
+- All widgets are read-only in Phase 1 (no drill-down detail pages)
+
+---
+
+## 5. Non-Functional Requirements
+
+| Requirement | Specification |
+|---|---|
+| Platform | Responsive web app (PWA) — no native app in Phase 1 |
+| Browser support | Last 2 versions: Chrome, Safari, Firefox, Edge |
+| Mobile | Mobile-first; all client-facing flows must work on 375px+ viewport |
+| Performance | Core booking flow < 2s load time on 4G |
+| Availability | 99.5% uptime target |
+| Data isolation | Strict multi-tenant row-level isolation |
+| Payments | PCI compliance delegated to Stripe; no card data stored on platform |
+| Auth security | Passwords hashed (bcrypt); JWT expiry 15 min access / 7 day refresh |
+| Email | Transactional email via provider TBD (SendGrid / Resend); triggers: booking confirmation, cancellation, waitlist promotion, invoice, waiver |
+
+---
+
+## 6. Email Notification Triggers
+
+| Trigger | Recipient | Template |
+|---|---|---|
+| Booking confirmed | Client | Booking details, session info, cancellation policy |
+| Booking cancelled (by client) | Client | Cancellation confirmation, policy outcome |
+| Booking cancelled (by admin) | Client | Cancellation notice |
+| Promoted from waitlist | Client | New booking confirmation |
+| Payment successful | Client | Invoice attached |
+| Waiver reminder | Client | Link to sign waiver |
+| No-show warning threshold reached | Client | Warning / restriction notice |
+| Leave request submitted | Admin | New request notification |
+| Leave approved / rejected | Staff / Instructor | Decision notification |
+
+---
+
+## 7. Open Questions
+
+| # | Question | Owner | Status |
+|---|---|---|---|
+| 1 | What is the platform domain name? | Product | Open |
+| 2 | Which email provider? SendGrid vs Resend | Engineering | Open |
+| 3 | Should clients be able to transfer package credits to another client? | Product | Open |
+| 4 | Membership pause feature needed in Phase 1? | Product | Open |
+| 5 | Do workshop sessions consume package credits by default, or is it always drop-in? | Product | Open |
+| 6 | Should the no-show booking block auto-lift, or require admin to manually clear? | Product | Open |
+| 7 | Multi-location support needed within Phase 1? | Product | Open |
