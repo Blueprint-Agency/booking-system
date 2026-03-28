@@ -1,263 +1,387 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Booking System — Documents</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet" />
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Booking System — Document Index</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
     :root {
-      --bg: #0c0c0e;
-      --surface: #111114;
-      --border: #222228;
-      --text: #e8e3d8;
-      --muted: #5a5a65;
-      --accent: #c9a464;
-      --accent-dim: rgba(201, 164, 100, 0.12);
+      --ink: #1a1a2e;
+      --paper: #faf9f6;
+      --warm: #f5f0e8;
+      --accent: #c4956a;
+      --accent-deep: #a67548;
+      --accent-glow: #e8c9a8;
+      --sage: #7a8f72;
+      --sage-light: #e8ede6;
+      --muted: #8b8b8b;
+      --border: #e2ddd5;
+      --card: #ffffff;
+      --shadow-soft: 0 2px 20px rgba(26, 26, 46, 0.06);
+      --shadow-hover: 0 8px 40px rgba(26, 26, 46, 0.1);
+      --radius: 16px;
+      --radius-sm: 10px;
     }
 
-    html, body {
-      height: 100%;
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'JetBrains Mono', monospace;
-      overflow-x: hidden;
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Outfit', sans-serif;
+      background: var(--paper);
+      color: var(--ink);
+      line-height: 1.7;
+      font-weight: 400;
+      font-size: 16px;
+      -webkit-font-smoothing: antialiased;
     }
 
-    /* grain overlay */
-    body::before {
-      content: '';
-      position: fixed;
-      inset: 0;
-      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
-      pointer-events: none;
-      z-index: 0;
-      opacity: 0.6;
-    }
-
-    .wrap {
+    /* ── HERO ── */
+    .hero {
       position: relative;
-      z-index: 1;
-      min-height: 100vh;
+      min-height: 72vh;
       display: flex;
       flex-direction: column;
-      max-width: 820px;
-      margin: 0 auto;
-      padding: 0 32px;
-    }
-
-    /* ── Header ── */
-    header {
-      padding: 72px 0 56px;
-      border-bottom: 1px solid var(--border);
-      opacity: 0;
-      animation: fadeUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.1s forwards;
-    }
-
-    .eyebrow {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 10px;
-      font-weight: 300;
-      letter-spacing: 0.22em;
-      text-transform: uppercase;
-      color: var(--accent);
-      margin-bottom: 20px;
-    }
-
-    h1 {
-      font-family: 'Cormorant Garamond', serif;
-      font-size: clamp(42px, 6vw, 68px);
-      font-weight: 300;
-      line-height: 1.05;
-      letter-spacing: -0.01em;
-      color: var(--text);
-    }
-
-    h1 em {
-      font-style: italic;
-      color: var(--accent);
-    }
-
-    .meta {
-      margin-top: 18px;
-      font-size: 11px;
-      font-weight: 300;
-      color: var(--muted);
-      letter-spacing: 0.06em;
-    }
-
-    /* ── Doc list ── */
-    .doc-list {
-      flex: 1;
-      padding: 48px 0;
-    }
-
-    .section-label {
-      font-size: 10px;
-      font-weight: 300;
-      letter-spacing: 0.2em;
-      text-transform: uppercase;
-      color: var(--muted);
-      margin-bottom: 24px;
-      opacity: 0;
-      animation: fadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.3s forwards;
-    }
-
-    .doc-item {
-      display: flex;
-      align-items: stretch;
-      gap: 0;
-      border-top: 1px solid var(--border);
-      text-decoration: none;
-      color: inherit;
-      position: relative;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      padding: 80px 24px 100px;
       overflow: hidden;
-      opacity: 0;
-      animation: fadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-      transition: background 0.3s ease;
+      background: linear-gradient(165deg, #1a1a2e 0%, #2d2b55 40%, #3a3568 70%, #4a4178 100%);
     }
 
-    .doc-item:last-child { border-bottom: 1px solid var(--border); }
-
-    .doc-item::before {
+    .hero::before {
       content: '';
       position: absolute;
-      left: 0;
-      top: 0;
-      bottom: 0;
-      width: 2px;
+      top: -40%;
+      right: -20%;
+      width: 800px;
+      height: 800px;
+      background: radial-gradient(circle, rgba(196, 149, 106, 0.15) 0%, transparent 70%);
+      border-radius: 50%;
+      animation: float 20s ease-in-out infinite;
+    }
+
+    .hero::after {
+      content: '';
+      position: absolute;
+      bottom: -30%;
+      left: -15%;
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, rgba(122, 143, 114, 0.12) 0%, transparent 70%);
+      border-radius: 50%;
+      animation: float 25s ease-in-out infinite reverse;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translate(0, 0) scale(1); }
+      33%       { transform: translate(30px, -40px) scale(1.05); }
+      66%       { transform: translate(-20px, 20px) scale(0.95); }
+    }
+
+    .hero-content {
+      position: relative;
+      z-index: 2;
+      max-width: 680px;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 20px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 100px;
+      color: var(--accent-glow);
+      font-size: 13px;
+      font-weight: 500;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      margin-bottom: 40px;
+      backdrop-filter: blur(10px);
+      animation: fadeDown 0.8s ease-out both;
+    }
+
+    .hero-badge::before {
+      content: '';
+      width: 6px;
+      height: 6px;
       background: var(--accent);
-      transform: scaleY(0);
-      transform-origin: bottom;
-      transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+      border-radius: 50%;
+      animation: pulse 2s ease-in-out infinite;
     }
 
-    .doc-item:hover {
-      background: var(--accent-dim);
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.5; transform: scale(1.5); }
     }
 
-    .doc-item:hover::before {
-      transform: scaleY(1);
-    }
-
-    .doc-num {
-      font-size: 10px;
-      font-weight: 300;
-      color: var(--muted);
-      letter-spacing: 0.08em;
-      width: 52px;
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      padding: 28px 0 28px 20px;
-      transition: color 0.3s ease;
-    }
-
-    .doc-item:hover .doc-num { color: var(--accent); }
-
-    .doc-body {
-      flex: 1;
-      padding: 28px 24px 28px 0;
-    }
-
-    .doc-title {
-      font-family: 'Cormorant Garamond', serif;
-      font-size: 22px;
+    .hero h1 {
+      font-family: 'DM Serif Display', serif;
+      font-size: clamp(40px, 6vw, 72px);
+      color: #ffffff;
+      line-height: 1.1;
+      margin-bottom: 20px;
       font-weight: 400;
-      letter-spacing: 0.01em;
-      color: var(--text);
-      margin-bottom: 6px;
-      transition: color 0.3s ease;
+      animation: fadeUp 0.8s ease-out 0.2s both;
     }
 
-    .doc-item:hover .doc-title { color: var(--accent); }
+    .hero h1 em {
+      font-style: italic;
+      color: var(--accent-glow);
+    }
 
-    .doc-filename {
-      font-size: 10px;
+    .hero-sub {
+      font-size: clamp(16px, 2vw, 18px);
+      color: rgba(255,255,255,0.55);
+      max-width: 480px;
+      margin: 0 auto 48px;
       font-weight: 300;
-      color: var(--muted);
-      letter-spacing: 0.08em;
+      line-height: 1.6;
+      animation: fadeUp 0.8s ease-out 0.4s both;
     }
 
-    .doc-arrow {
+    .hero-meta {
       display: flex;
-      align-items: center;
-      padding: 28px 20px 28px 0;
-      color: var(--muted);
-      font-size: 16px;
-      transition: transform 0.3s ease, color 0.3s ease;
+      gap: 32px;
+      justify-content: center;
+      flex-wrap: wrap;
+      animation: fadeUp 0.8s ease-out 0.6s both;
     }
 
-    .doc-item:hover .doc-arrow {
-      transform: translateX(4px);
-      color: var(--accent);
+    .hero-meta span {
+      font-size: 13px;
+      color: rgba(255,255,255,0.35);
+      font-weight: 400;
+      letter-spacing: 0.5px;
     }
 
-    /* ── Footer ── */
-    footer {
-      padding: 32px 0 48px;
-      border-top: 1px solid var(--border);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 10px;
-      font-weight: 300;
-      color: var(--muted);
-      letter-spacing: 0.1em;
-      opacity: 0;
-      animation: fadeUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) 0.8s forwards;
-    }
+    .hero-meta strong { color: rgba(255,255,255,0.7); font-weight: 500; }
 
-    /* ── Animation ── */
     @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(16px); }
+      from { opacity: 0; transform: translateY(24px); }
       to   { opacity: 1; transform: translateY(0); }
     }
 
-    .doc-item:nth-child(1) { animation-delay: 0.40s; }
-    .doc-item:nth-child(2) { animation-delay: 0.50s; }
-    .doc-item:nth-child(3) { animation-delay: 0.60s; }
-    .doc-item:nth-child(4) { animation-delay: 0.70s; }
-    .doc-item:nth-child(5) { animation-delay: 0.75s; }
+    @keyframes fadeDown {
+      from { opacity: 0; transform: translateY(-12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── SECTION ── */
+    .section {
+      padding: 80px 24px 100px;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .section-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 40px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .section-title {
+      font-family: 'DM Serif Display', serif;
+      font-size: 32px;
+      font-weight: 400;
+      color: var(--ink);
+    }
+
+    .section-count {
+      font-size: 13px;
+      color: var(--muted);
+      font-weight: 400;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* ── DOC CARDS ── */
+    .doc-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+      gap: 20px;
+    }
+
+    .doc-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 32px;
+      text-decoration: none;
+      color: inherit;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-shadow: var(--shadow-soft);
+      transition: box-shadow 0.3s ease, transform 0.3s ease, border-color 0.3s ease;
+      animation: fadeUp 0.6s ease-out both;
+    }
+
+    .doc-card:hover {
+      box-shadow: var(--shadow-hover);
+      transform: translateY(-3px);
+      border-color: var(--accent);
+    }
+
+    .doc-card:nth-child(1) { animation-delay: 0.1s; }
+    .doc-card:nth-child(2) { animation-delay: 0.2s; }
+    .doc-card:nth-child(3) { animation-delay: 0.3s; }
+    .doc-card:nth-child(4) { animation-delay: 0.4s; }
+    .doc-card:nth-child(5) { animation-delay: 0.5s; }
+
+    .doc-card-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .doc-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 14px;
+      background: var(--warm);
+      border-radius: 100px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--accent-deep);
+    }
+
+    .doc-num {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .doc-title {
+      font-family: 'DM Serif Display', serif;
+      font-size: 22px;
+      font-weight: 400;
+      color: var(--ink);
+      line-height: 1.25;
+    }
+
+    .doc-desc {
+      font-size: 14px;
+      color: var(--muted);
+      font-weight: 400;
+      line-height: 1.6;
+      flex: 1;
+    }
+
+    .doc-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 16px;
+      border-top: 1px solid var(--border);
+    }
+
+    .doc-filename {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .doc-arrow {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--warm);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      color: var(--accent-deep);
+      transition: background 0.25s ease, transform 0.25s ease;
+    }
+
+    .doc-card:hover .doc-arrow {
+      background: var(--accent);
+      color: #fff;
+      transform: translateX(3px);
+    }
+
+    /* ── FOOTER ── */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 32px 24px;
+      text-align: center;
+      font-size: 13px;
+      color: var(--muted);
+      font-weight: 400;
+    }
+
+    footer strong { color: var(--ink); font-weight: 600; }
   </style>
 </head>
 <body>
-  <div class="wrap">
 
-    <header>
-      <p class="eyebrow">Blueprint Agency &nbsp;/&nbsp; Booking System</p>
-      <h1>Document<br /><em>Archive</em></h1>
-      <p class="meta">Internal reference documents &nbsp;·&nbsp; All phases</p>
-    </header>
-
-    <main class="doc-list">
-      <p class="section-label">Documents &nbsp;— &nbsp;<span id="doc-count"></span></p>
-
-      <a class="doc-item" href="prd-phase1.html">
-        <span class="doc-num">01</span>
-        <div class="doc-body">
-          <div class="doc-title">Product Requirements — Phase 1</div>
-          <div class="doc-filename">prd-phase1.html</div>
-        </div>
-        <span class="doc-arrow">→</span>
-      </a>
-
-    </main>
-
-    <footer>
-      <span>Booking System</span>
-      <span id="footer-date"></span>
-    </footer>
-
+  <!-- HERO -->
+  <div class="hero">
+    <div class="hero-content">
+      <div class="hero-badge">Blueprint Agency · Booking System</div>
+      <h1>Document <em>Index</em></h1>
+      <p class="hero-sub">Internal reference documents, product requirements, and technical specifications.</p>
+      <div class="hero-meta">
+        <span><strong id="doc-count">—</strong> Documents</span>
+        <span><strong>Phase 1</strong> Active</span>
+        <span><strong>Internal</strong> Use Only</span>
+      </div>
+    </div>
   </div>
+
+  <!-- DOC LIST -->
+  <section class="section">
+    <div class="container">
+      <div class="section-header">
+        <h2 class="section-title">All Documents</h2>
+        <span class="section-count" id="section-count"></span>
+      </div>
+
+      <div class="doc-grid">
+
+        <a class="doc-card" href="prd-phase1.html">
+          <div class="doc-card-top">
+            <span class="doc-tag">PRD</span>
+            <span class="doc-num">01</span>
+          </div>
+          <div class="doc-title">Product Requirements — Phase 1</div>
+          <div class="doc-desc">Core booking flow, user roles, feature scope, and technical requirements for the initial release.</div>
+          <div class="doc-footer">
+            <span class="doc-filename">prd-phase1.html</span>
+            <span class="doc-arrow">→</span>
+          </div>
+        </a>
+
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <strong>Booking System</strong> &nbsp;·&nbsp; Blueprint Agency &nbsp;·&nbsp; <span id="year"></span>
+  </footer>
+
   <script>
-    document.getElementById('footer-date').textContent = new Date().getFullYear();
-    const items = document.querySelectorAll('.doc-item');
-    document.getElementById('doc-count').textContent = items.length + ' file' + (items.length !== 1 ? 's' : '');
+    document.getElementById('year').textContent = new Date().getFullYear();
+    const cards = document.querySelectorAll('.doc-card');
+    const count = cards.length + ' file' + (cards.length !== 1 ? 's' : '');
+    document.getElementById('doc-count').textContent = cards.length;
+    document.getElementById('section-count').textContent = count;
   </script>
+
 </body>
 </html>
