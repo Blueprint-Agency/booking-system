@@ -1,0 +1,58 @@
+[
+  {
+    "id": "inst-1",
+    "name": "Maya Chen",
+    "email": "maya@example.com",
+    "phone": "+1 555-0101",
+    "bio": "Certified instructor with 8 years of experience in mindful movement and strength training.",
+    "compensation": {
+      "basePerSession": 50,
+      "perClientCommission": 3,
+      "revenueCommissionPercent": 10,
+      "extraHourRate": 30,
+      "workshopRate": 120
+    }
+  },
+  {
+    "id": "inst-2",
+    "name": "James Okafor",
+    "email": "james@example.com",
+    "phone": "+1 555-0102",
+    "bio": "Specialist in high-intensity interval training and functional fitness.",
+    "compensation": {
+      "basePerSession": 55,
+      "perClientCommission": 2.5,
+      "revenueCommissionPercent": 8,
+      "extraHourRate": 35,
+      "workshopRate": 100
+    }
+  },
+  {
+    "id": "inst-3",
+    "name": "Priya Sharma",
+    "email": "priya@example.com",
+    "phone": "+1 555-0103",
+    "bio": "Holistic wellness coach focusing on flexibility, breathwork, and recovery.",
+    "compensation": {
+      "basePerSession": 45,
+      "perClientCommission": 3.5,
+      "revenueCommissionPercent": 12,
+      "extraHourRate": 28,
+      "workshopRate": 110
+    }
+  },
+  {
+    "id": "inst-4",
+    "name": "Leo Martinez",
+    "email": "leo@example.com",
+    "phone": "+1 555-0104",
+    "bio": "Former athlete turned coach, specializing in endurance and performance.",
+    "compensation": {
+      "basePerSession": 60,
+      "perClientCommission": 2,
+      "revenueCommissionPercent": 10,
+      "extraHourRate": 40,
+      "workshopRate": 150
+    }
+  }
+]

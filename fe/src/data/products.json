@@ -1,0 +1,79 @@
+[
+  {
+    "id": "prod-1",
+    "name": "Single Session",
+    "type": "drop-in",
+    "price": 25,
+    "sessionCount": null,
+    "expiryDays": null,
+    "sessionsPerMonth": null,
+    "description": "Pay per session. No commitment required.",
+    "active": true
+  },
+  {
+    "id": "prod-2",
+    "name": "Premium Drop-in",
+    "type": "drop-in",
+    "price": 35,
+    "sessionCount": null,
+    "expiryDays": null,
+    "sessionsPerMonth": null,
+    "description": "Access to premium and workshop sessions.",
+    "active": true
+  },
+  {
+    "id": "prod-3",
+    "name": "Starter Pack",
+    "type": "package",
+    "price": 90,
+    "sessionCount": 5,
+    "expiryDays": 30,
+    "sessionsPerMonth": null,
+    "description": "5 sessions to use within 30 days. Great for trying us out.",
+    "active": true
+  },
+  {
+    "id": "prod-4",
+    "name": "Standard Pack",
+    "type": "package",
+    "price": 160,
+    "sessionCount": 10,
+    "expiryDays": 60,
+    "sessionsPerMonth": null,
+    "description": "10 sessions valid for 60 days. Our most popular package.",
+    "active": true
+  },
+  {
+    "id": "prod-5",
+    "name": "Pro Pack",
+    "type": "package",
+    "price": 280,
+    "sessionCount": 20,
+    "expiryDays": 90,
+    "sessionsPerMonth": null,
+    "description": "20 sessions valid for 90 days. Best value for regulars.",
+    "active": true
+  },
+  {
+    "id": "prod-6",
+    "name": "Essential Membership",
+    "type": "membership",
+    "price": 89,
+    "sessionCount": null,
+    "expiryDays": null,
+    "sessionsPerMonth": 8,
+    "description": "8 sessions per month with auto-renewal.",
+    "active": true
+  },
+  {
+    "id": "prod-7",
+    "name": "Unlimited Membership",
+    "type": "membership",
+    "price": 149,
+    "sessionCount": null,
+    "expiryDays": null,
+    "sessionsPerMonth": null,
+    "description": "Unlimited sessions every month. The ultimate commitment.",
+    "active": true
+  }
+]

@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__plugin_context-mode_context-mode__ctx_batch_execute",
+      "Bash(git:*)",
+      "Bash(node:*)",
+      "Read(//c/Users/chris/Desktop/blueprint/teeko/**)",
+      "Read(//c/Users/chris/Desktop/blueprint/**)",
+      "Bash(npx create-next-app@latest fe --typescript --tailwind --eslint --app --src-dir --import-alias \"@/*\" --use-npm --no-turbopack)",
+      "Bash(ls C:/Users/chris/Desktop/blueprint/teeko/booking-system/fe/src/app/\\\\\\(client\\\\\\)/account/qr/)",
+      "Bash(npm run:*)",
+      "Bash(find src:*)",
+      "Bash(cd:*)",
+      "Bash(curl:*)",
+      "mcp__plugin_vercel_vercel__list_teams",
+      "mcp__plugin_vercel_vercel__list_projects",
+      "mcp__plugin_vercel_vercel__get_project"
+    ]
+  }
+}

@@ -1,0 +1,3 @@
+[
+  { "id": "mem-1", "clientId": "cli-1", "productId": "prod-7", "status": "active", "nextBillingDate": "2026-04-15", "sessionsUsedThisMonth": 6, "sessionsPerMonth": null, "startedAt": "2025-10-15" }
+]
