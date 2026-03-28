@@ -495,46 +495,6 @@
     .perm-table td:not(:first-child) { text-align: center; }
     .perm-table th:not(:first-child) { text-align: center; }
 
-    /* ── KPI TABLE ── */
-    .kpi-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 12px;
-      margin: 16px 0;
-    }
-
-    .kpi-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 20px;
-      transition: border-color 0.2s;
-    }
-
-    .kpi-card:hover { border-color: var(--border-light); }
-
-    .kpi-card .kpi-label {
-      font-family: var(--mono);
-      font-size: 10px;
-      font-weight: 600;
-      letter-spacing: 1.5px;
-      text-transform: uppercase;
-      color: var(--text-muted);
-      margin-bottom: 8px;
-    }
-
-    .kpi-card .kpi-target {
-      font-size: 16px;
-      font-weight: 700;
-      color: var(--accent);
-      margin-bottom: 4px;
-    }
-
-    .kpi-card .kpi-measure {
-      font-size: 12px;
-      color: var(--text-dim);
-      line-height: 1.5;
-    }
 
     /* ── OPEN QUESTIONS ── */
     .question-list {
@@ -713,33 +673,26 @@
         <p>Build a multi-tenant SaaS booking and operations platform for class-based businesses. Each tenant gets a dedicated subdomain (<code>{slug}.platform.com</code>) with a client-facing booking portal and a full admin backend.</p>
         <p>Phase 1 delivers the complete operational core: booking, payments, attendance, CRM, staff management, and reporting.</p>
 
-        <h3>Success Metrics (KPIs)</h3>
-        <div class="kpi-grid">
-          <div class="kpi-card">
-            <div class="kpi-label">Session Fill Rate</div>
-            <div class="kpi-target">↑ vs. baseline</div>
-            <div class="kpi-measure">Sessions booked / total capacity</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-label">No-Show Rate</div>
-            <div class="kpi-target">↓ vs. baseline</div>
-            <div class="kpi-measure">No-shows / total bookings</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-label">Admin Time Saved</div>
-            <div class="kpi-target">&gt; 50%</div>
-            <div class="kpi-measure">Self-reported at 30/60/90 days post-launch</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-label">Client Retention (30d)</div>
-            <div class="kpi-target">&gt; 60%</div>
-            <div class="kpi-measure">Repeat bookings within 30 days of first</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-label">Package Conversion</div>
-            <div class="kpi-target">&gt; 30%</div>
-            <div class="kpi-measure">Package purchases / new client signups</div>
-          </div>
+        <h3>Core Features — Phase 1 Scope</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Module</th><th>What It Delivers</th></tr></thead>
+            <tbody>
+              <tr><td>Booking Portal</td><td>Client-facing web app at <code>{slug}.platform.com</code>; session discovery, calendar/list view, filters, 1–2 step booking flow</td></tr>
+              <tr><td>Authentication</td><td>Client self-registration + email verification; Admin-created accounts for staff/instructors; JWT sessions</td></tr>
+              <tr><td>Payments</td><td>Stripe-only; drop-in (single session), packages (N-session bundles), and monthly memberships</td></tr>
+              <tr><td>Session Management</td><td>Create/edit sessions with recurrence (RRULE), capacity limits, waitlist config, late-entry rules; supports Regular, Workshop, and Event types</td></tr>
+              <tr><td>Booking Management</td><td>Session rosters, manual add/remove (admin), automated waitlist promotion, attendance status tracking</td></tr>
+              <tr><td>Client CRM</td><td>Full client profiles with package/membership status, attendance history, admin notes, tags, and waiver records</td></tr>
+              <tr><td>QR Check-In</td><td>Per-client QR code; camera-based scanner in web app; auto late/no-show enforcement based on configurable cutoff</td></tr>
+              <tr><td>Digital Waiver</td><td>Admin-defined waiver; e-signature required on first booking; versioned; stored per client</td></tr>
+              <tr><td>Policy Engine</td><td>Configurable per tenant: cancellation windows, no-show penalties, waitlist rules, late-entry cutoff</td></tr>
+              <tr><td>Instructor Management</td><td>Assign to sessions, compensation tracking (base pay, per-client commission, revenue %, workshop rates); read-only reports</td></tr>
+              <tr><td>Staff Management</td><td>Staff accounts with scoped permissions, leave request/approval workflow, staff calendar</td></tr>
+              <tr><td>Invoices</td><td>Auto-generated PDF per payment; emailed to client; stored on profile; accessible by admin</td></tr>
+              <tr><td>Analytics Dashboard</td><td>Occupancy, revenue, client activity, package sales, no-show rate; date-range filterable</td></tr>
+            </tbody>
+          </table>
         </div>
 
         <h3>Out of Scope — Phase 1</h3>

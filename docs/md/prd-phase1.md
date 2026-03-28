@@ -21,15 +21,23 @@ Build a multi-tenant SaaS booking and operations platform for class-based busine
 
 Phase 1 delivers the complete operational core: booking, payments, attendance, CRM, staff management, and reporting.
 
-### 1.3 Success Metrics (KPIs)
+### 1.3 Core Features — Phase 1 Scope
 
-| Metric | Target | Measurement |
-|---|---|---|
-| Session fill rate | Increase vs. baseline | Sessions booked / total capacity |
-| No-show rate | Decrease vs. baseline | No-shows / total bookings |
-| Admin time on manual tasks | Reduce by 50%+ | Self-reported at 30/60/90 days |
-| Client retention (30-day) | > 60% return rate | Repeat bookings within 30 days |
-| Package conversion rate | > 30% of new clients | Package purchases / new signups |
+| Module | What It Delivers |
+|---|---|
+| **Booking Portal** | Client-facing web app at `{slug}.platform.com`; session discovery, calendar/list view, filters, 1–2 step booking flow |
+| **Authentication** | Client self-registration + email verification; Admin-created accounts for staff/instructors; JWT sessions |
+| **Payments** | Stripe-only; drop-in (single session), packages (N-session bundles), and monthly memberships |
+| **Session Management** | Create/edit sessions with recurrence (RRULE), capacity limits, waitlist config, late-entry rules; supports Regular, Workshop, and Event types |
+| **Booking Management** | Session rosters, manual add/remove (admin), automated waitlist promotion, attendance status tracking |
+| **Client CRM** | Full client profiles with package/membership status, attendance history, admin notes, tags, and waiver records |
+| **QR Check-In** | Per-client QR code; camera-based scanner in web app; auto late/no-show enforcement based on configurable cutoff |
+| **Digital Waiver** | Admin-defined waiver; e-signature required on first booking; versioned; stored per client |
+| **Policy Engine** | Configurable per tenant: cancellation windows, no-show penalties, waitlist rules, late-entry cutoff |
+| **Instructor Management** | Assign to sessions, compensation tracking (base pay, per-client commission, revenue %, workshop rates); read-only reports |
+| **Staff Management** | Staff accounts with scoped permissions, leave request/approval workflow, staff calendar |
+| **Invoices** | Auto-generated PDF per payment; emailed to client; stored on profile; accessible by admin |
+| **Analytics Dashboard** | Occupancy, revenue, client activity, package sales, no-show rate; date-range filterable |
 
 ### 1.4 Out of Scope — Phase 1
 
