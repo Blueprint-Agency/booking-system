@@ -39,137 +39,8 @@
       -webkit-font-smoothing: antialiased;
     }
 
-    /* ── HERO ── */
-    .hero {
-      position: relative;
-      min-height: 72vh;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: center;
-      text-align: center;
-      padding: 80px 24px 100px;
-      overflow: hidden;
-      background: linear-gradient(165deg, #1a1a2e 0%, #2d2b55 40%, #3a3568 70%, #4a4178 100%);
-    }
-
-    .hero::before {
-      content: '';
-      position: absolute;
-      top: -40%;
-      right: -20%;
-      width: 800px;
-      height: 800px;
-      background: radial-gradient(circle, rgba(196, 149, 106, 0.15) 0%, transparent 70%);
-      border-radius: 50%;
-      animation: float 20s ease-in-out infinite;
-    }
-
-    .hero::after {
-      content: '';
-      position: absolute;
-      bottom: -30%;
-      left: -15%;
-      width: 600px;
-      height: 600px;
-      background: radial-gradient(circle, rgba(122, 143, 114, 0.12) 0%, transparent 70%);
-      border-radius: 50%;
-      animation: float 25s ease-in-out infinite reverse;
-    }
-
-    @keyframes float {
-      0%, 100% { transform: translate(0, 0) scale(1); }
-      33%       { transform: translate(30px, -40px) scale(1.05); }
-      66%       { transform: translate(-20px, 20px) scale(0.95); }
-    }
-
-    .hero-content {
-      position: relative;
-      z-index: 2;
-      max-width: 680px;
-    }
-
-    .hero-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 20px;
-      background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(255,255,255,0.12);
-      border-radius: 100px;
-      color: var(--accent-glow);
-      font-size: 13px;
-      font-weight: 500;
-      letter-spacing: 1.5px;
-      text-transform: uppercase;
-      margin-bottom: 40px;
-      backdrop-filter: blur(10px);
-      animation: fadeDown 0.8s ease-out both;
-    }
-
-    .hero-badge::before {
-      content: '';
-      width: 6px;
-      height: 6px;
-      background: var(--accent);
-      border-radius: 50%;
-      animation: pulse 2s ease-in-out infinite;
-    }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 1; transform: scale(1); }
-      50%       { opacity: 0.5; transform: scale(1.5); }
-    }
-
-    .hero h1 {
-      font-family: 'DM Serif Display', serif;
-      font-size: clamp(40px, 6vw, 72px);
-      color: #ffffff;
-      line-height: 1.1;
-      margin-bottom: 20px;
-      font-weight: 400;
-      animation: fadeUp 0.8s ease-out 0.2s both;
-    }
-
-    .hero h1 em {
-      font-style: italic;
-      color: var(--accent-glow);
-    }
-
-    .hero-sub {
-      font-size: clamp(16px, 2vw, 18px);
-      color: rgba(255,255,255,0.55);
-      max-width: 480px;
-      margin: 0 auto 48px;
-      font-weight: 300;
-      line-height: 1.6;
-      animation: fadeUp 0.8s ease-out 0.4s both;
-    }
-
-    .hero-meta {
-      display: flex;
-      gap: 32px;
-      justify-content: center;
-      flex-wrap: wrap;
-      animation: fadeUp 0.8s ease-out 0.6s both;
-    }
-
-    .hero-meta span {
-      font-size: 13px;
-      color: rgba(255,255,255,0.35);
-      font-weight: 400;
-      letter-spacing: 0.5px;
-    }
-
-    .hero-meta strong { color: rgba(255,255,255,0.7); font-weight: 500; }
-
     @keyframes fadeUp {
       from { opacity: 0; transform: translateY(24px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-
-    @keyframes fadeDown {
-      from { opacity: 0; transform: translateY(-12px); }
       to   { opacity: 1; transform: translateY(0); }
     }
 
@@ -330,20 +201,6 @@
 </head>
 <body>
 
-  <!-- HERO -->
-  <div class="hero">
-    <div class="hero-content">
-      <div class="hero-badge">Blueprint Agency · Booking System</div>
-      <h1>Document <em>Index</em></h1>
-      <p class="hero-sub">Internal reference documents, product requirements, and technical specifications.</p>
-      <div class="hero-meta">
-        <span><strong id="doc-count">—</strong> Documents</span>
-        <span><strong>Phase 1</strong> Active</span>
-        <span><strong>Internal</strong> Use Only</span>
-      </div>
-    </div>
-  </div>
-
   <!-- DOC LIST -->
   <section class="section">
     <div class="container">
@@ -379,7 +236,6 @@
     document.getElementById('year').textContent = new Date().getFullYear();
     const cards = document.querySelectorAll('.doc-card');
     const count = cards.length + ' file' + (cards.length !== 1 ? 's' : '');
-    document.getElementById('doc-count').textContent = cards.length;
     document.getElementById('section-count').textContent = count;
   </script>
 
