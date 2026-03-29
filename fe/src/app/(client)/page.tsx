@@ -199,22 +199,23 @@ export default function LandingPage() {
               >
                 <Link
                   href={`/explore/${tenant.slug}`}
-                  className="block bg-card border border-border rounded-xl p-6 shadow-soft hover:shadow-hover transition-all duration-300 hover:-translate-y-1"
+                  className="block bg-card border border-border rounded-xl overflow-hidden shadow-soft hover:shadow-hover transition-all duration-300 hover:-translate-y-1"
                 >
-                  <div className="flex items-start gap-4">
-                    <div className="w-14 h-14 rounded-xl bg-accent-glow/30 flex items-center justify-center text-2xl shrink-0">
-                      {tenant.logoEmoji}
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="font-serif text-lg text-ink mb-1 truncate">
-                        {tenant.name}
-                      </h3>
-                      <span className="inline-block px-2 py-0.5 text-[11px] font-mono uppercase tracking-wider text-accent-deep bg-accent-glow/30 rounded-full mb-2">
-                        {tenant.industry}
-                      </span>
-                      <p className="text-sm text-muted leading-relaxed line-clamp-2">
-                        {tenant.shortDescription}
-                      </p>
+                  <img src={tenant.coverUrl} alt={tenant.name} className="w-full h-28 object-cover" />
+                  <div className="p-5">
+                    <div className="flex items-start gap-3">
+                      <img src={tenant.logoUrl} alt={tenant.name + " logo"} className="w-10 h-10 rounded-full object-cover border-2 border-white shadow-soft shrink-0 -mt-7" />
+                      <div className="min-w-0">
+                        <h3 className="font-serif text-lg text-ink mb-1 truncate">
+                          {tenant.name}
+                        </h3>
+                        <span className="inline-block px-2 py-0.5 text-[11px] font-mono uppercase tracking-wider text-accent-deep bg-accent-glow/30 rounded-full mb-2">
+                          {tenant.industry}
+                        </span>
+                        <p className="text-sm text-muted leading-relaxed line-clamp-2">
+                          {tenant.shortDescription}
+                        </p>
+                      </div>
                     </div>
                   </div>
                 </Link>

@@ -7,6 +7,8 @@ export interface Tenant {
   shortDescription: string;
   location: string;
   logoEmoji: string;
+  logoUrl: string;
+  coverUrl: string;
   coverGradient: string;
   status: "active" | "incomplete" | "suspended";
   plan: "starter" | "growth" | "professional";
@@ -106,6 +108,7 @@ export interface Instructor {
   email: string;
   phone: string;
   bio: string;
+  avatarUrl: string;
   compensation: {
     basePerSession: number;
     perClientCommission: number;

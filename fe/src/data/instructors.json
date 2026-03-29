@@ -11,7 +11,8 @@
       "revenueCommissionPercent": 10,
       "extraHourRate": 30,
       "workshopRate": 120
-    }
+    },
+    "avatarUrl": "https://placehold.co/200x200/f5f0e8/c4956a?text=MC&font=playfair-display"
   },
   {
     "id": "inst-2",
@@ -25,7 +26,8 @@
       "revenueCommissionPercent": 8,
       "extraHourRate": 35,
       "workshopRate": 100
-    }
+    },
+    "avatarUrl": "https://placehold.co/200x200/e8ede6/7a8f72?text=JO&font=playfair-display"
   },
   {
     "id": "inst-3",
@@ -39,7 +41,8 @@
       "revenueCommissionPercent": 12,
       "extraHourRate": 28,
       "workshopRate": 110
-    }
+    },
+    "avatarUrl": "https://placehold.co/200x200/eef4fb/5a8ac4?text=PS&font=playfair-display"
   },
   {
     "id": "inst-4",
@@ -53,6 +56,7 @@
       "revenueCommissionPercent": 10,
       "extraHourRate": 40,
       "workshopRate": 150
-    }
+    },
+    "avatarUrl": "https://placehold.co/200x200/faf3e0/d4a843?text=LM&font=playfair-display"
   }
 ]

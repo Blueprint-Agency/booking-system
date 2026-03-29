@@ -10,7 +10,9 @@
     "logoEmoji": "🧘",
     "coverGradient": "from-amber-100 to-orange-200",
     "status": "active",
-    "plan": "professional"
+    "plan": "professional",
+    "logoUrl": "https://placehold.co/200x200/f5f0e8/c4956a?text=SY&font=playfair-display",
+    "coverUrl": "https://placehold.co/1200x400/f5e6d3/c4956a?text=Sunrise+Yoga+Studio&font=playfair-display"
   },
   {
     "id": "tenant-2",
@@ -23,7 +25,9 @@
     "logoEmoji": "🏺",
     "coverGradient": "from-stone-200 to-amber-100",
     "status": "active",
-    "plan": "growth"
+    "plan": "growth",
+    "logoUrl": "https://placehold.co/200x200/e8e0d5/8b7355?text=C%26C&font=playfair-display",
+    "coverUrl": "https://placehold.co/1200x400/d4c5b0/8b7355?text=Clay+%26+Co+Pottery&font=playfair-display"
   },
   {
     "id": "tenant-3",
@@ -36,7 +40,9 @@
     "logoEmoji": "👨‍🍳",
     "coverGradient": "from-red-100 to-orange-100",
     "status": "active",
-    "plan": "growth"
+    "plan": "growth",
+    "logoUrl": "https://placehold.co/200x200/f5e0d0/c45a3a?text=TKL&font=playfair-display",
+    "coverUrl": "https://placehold.co/1200x400/f0d5c0/c45a3a?text=The+Kitchen+Lab&font=playfair-display"
   },
   {
     "id": "tenant-4",
@@ -49,7 +55,9 @@
     "logoEmoji": "🎵",
     "coverGradient": "from-violet-100 to-indigo-200",
     "status": "active",
-    "plan": "starter"
+    "plan": "starter",
+    "logoUrl": "https://placehold.co/200x200/e5daf5/6b4fa0?text=RA&font=playfair-display",
+    "coverUrl": "https://placehold.co/1200x400/d5c5f0/6b4fa0?text=Rhythm+Academy&font=playfair-display"
   },
   {
     "id": "tenant-5",
@@ -62,7 +70,9 @@
     "logoEmoji": "🧠",
     "coverGradient": "from-teal-100 to-emerald-100",
     "status": "active",
-    "plan": "growth"
+    "plan": "growth",
+    "logoUrl": "https://placehold.co/200x200/d5ebe0/4a8060?text=ZW&font=playfair-display",
+    "coverUrl": "https://placehold.co/1200x400/c5e0d5/4a8060?text=Zen+Wellness+Centre&font=playfair-display"
   },
   {
     "id": "tenant-6",
@@ -75,6 +85,8 @@
     "logoEmoji": "💻",
     "coverGradient": "from-sky-100 to-blue-200",
     "status": "active",
-    "plan": "starter"
+    "plan": "starter",
+    "logoUrl": "https://placehold.co/200x200/d0e5f5/3a7ab0?text=CC&font=playfair-display",
+    "coverUrl": "https://placehold.co/1200x400/c0d8f0/3a7ab0?text=Code+Camp+SG&font=playfair-display"
   }
 ]

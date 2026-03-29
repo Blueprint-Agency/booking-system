@@ -342,11 +342,11 @@ export default function TenantSessionDetailPage() {
           >
             <h2 className="font-serif text-lg text-ink mb-4">Instructor</h2>
             <div className="flex items-start gap-4">
-              <div className="w-14 h-14 rounded-full bg-accent-glow flex items-center justify-center flex-shrink-0">
-                <span className="text-lg font-semibold text-accent-deep">
-                  {getInitials(instructorName)}
-                </span>
-              </div>
+              <img
+                src={instructor?.avatarUrl || 'https://placehold.co/200x200/f5f0e8/8b8b8b?text=??&font=playfair-display'}
+                alt={instructorName}
+                className="w-14 h-14 rounded-full object-cover border-2 border-border flex-shrink-0"
+              />
               <div>
                 <p className="text-base font-medium text-ink mb-1">
                   {instructorName}

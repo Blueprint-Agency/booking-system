@@ -30,10 +30,6 @@ function getInstructor(id: string): Instructor | undefined {
   return typedInstructors.find((i) => i.id === id);
 }
 
-function getInstructorName(id: string): string {
-  const inst = getInstructor(id);
-  return inst ? inst.name : "Instructor";
-}
 
 export default function TenantProfilePage() {
   const { slug } = useParams<{ slug: string }>();
@@ -107,42 +103,43 @@ export default function TenantProfilePage() {
         transition={{ duration: 0.5, delay: 0.05 }}
         className="mb-8"
       >
-        <div
-          className={cn(
-            "relative h-48 rounded-xl bg-gradient-to-r overflow-hidden",
-            tenant.coverGradient
-          )}
-        >
-          <div className="absolute inset-0 flex items-end p-6">
-            <div className="flex items-end gap-4">
-              <div className="w-16 h-16 rounded-xl bg-card/90 backdrop-blur-sm flex items-center justify-center text-5xl shadow-soft">
-                {tenant.logoEmoji}
-              </div>
-              <div className="pb-1">
-                <h1 className="font-serif text-3xl text-ink drop-shadow-sm">
-                  {tenant.name}
-                </h1>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-card/80 backdrop-blur-sm text-ink">
-                    {tenant.industry}
-                  </span>
-                  <span className="flex items-center gap-1 text-xs text-ink/70">
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
-                      <circle cx="12" cy="10" r="3" />
-                    </svg>
-                    {tenant.location}
-                  </span>
-                </div>
+        <div className="relative rounded-xl overflow-hidden">
+          <img
+            src={tenant.coverUrl}
+            alt={tenant.name + ' cover'}
+            className="w-full h-48 sm:h-64 object-cover"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+          <div className="absolute bottom-0 left-0 right-0 p-6 flex items-end gap-4">
+            <img
+              src={tenant.logoUrl}
+              alt={tenant.name + ' logo'}
+              className="w-20 h-20 rounded-xl object-cover border-4 border-white shadow-hover flex-shrink-0"
+            />
+            <div className="pb-1">
+              <h1 className="font-serif text-3xl text-white drop-shadow-sm">
+                {tenant.name}
+              </h1>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-card/80 backdrop-blur-sm text-ink">
+                  {tenant.industry}
+                </span>
+                <span className="flex items-center gap-1 text-xs text-white/80">
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
+                    <circle cx="12" cy="10" r="3" />
+                  </svg>
+                  {tenant.location}
+                </span>
               </div>
             </div>
           </div>
@@ -195,7 +192,8 @@ export default function TenantProfilePage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
               {tenantSessions.map((session, i) => {
                 const isCancelled = session.status === "cancelled";
-                const instructorName = getInstructorName(session.instructorId);
+                const instructor = getInstructor(session.instructorId);
+                const instructorName = instructor ? instructor.name : "Instructor";
 
                 return (
                   <motion.div
@@ -243,9 +241,16 @@ export default function TenantProfilePage() {
                       </p>
 
                       {/* Instructor */}
-                      <p className="text-sm text-muted mb-3">
-                        {instructorName}
-                      </p>
+                      <div className="flex items-center gap-2 text-sm text-muted mb-3">
+                        {instructor?.avatarUrl && (
+                          <img
+                            src={instructor.avatarUrl}
+                            alt={instructorName}
+                            className="w-6 h-6 rounded-full object-cover"
+                          />
+                        )}
+                        <span>{instructorName}</span>
+                      </div>
 
                       {/* Capacity + Price */}
                       <div className="flex items-center justify-between mt-auto pt-3 border-t border-border">

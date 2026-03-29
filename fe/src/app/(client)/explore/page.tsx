@@ -154,20 +154,21 @@ export default function ExplorePage() {
                   href={`/explore/${tenant.slug}`}
                   className="block bg-card border border-border rounded-xl overflow-hidden shadow-soft hover:shadow-hover transition-all duration-300 hover:-translate-y-1"
                 >
-                  {/* Cover Gradient Strip */}
-                  <div
-                    className={cn(
-                      "h-3 bg-gradient-to-r",
-                      tenant.coverGradient
-                    )}
+                  {/* Cover Image */}
+                  <img
+                    src={tenant.coverUrl}
+                    alt={tenant.name}
+                    className="w-full h-32 object-cover rounded-t-xl"
                   />
 
                   <div className="p-6">
                     {/* Logo + Name */}
                     <div className="flex items-start gap-4 mb-3">
-                      <div className="w-12 h-12 rounded-full bg-warm flex items-center justify-center flex-shrink-0 text-2xl">
-                        {tenant.logoEmoji}
-                      </div>
+                      <img
+                        src={tenant.logoUrl}
+                        alt={tenant.name + ' logo'}
+                        className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-soft flex-shrink-0"
+                      />
                       <div className="min-w-0">
                         <h3 className="font-serif text-lg text-ink truncate">
                           {tenant.name}
