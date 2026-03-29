@@ -594,7 +594,7 @@
     }
 
     .scope-item::before {
-      content: '→ P2';
+      content: '\2192 P2';
       font-family: var(--mono);
       font-size: 9px;
       font-weight: 700;
@@ -639,25 +639,27 @@
         <div class="toc-section-title">Overview</div>
         <a href="#overview" class="active"><span class="num">01</span> Product Overview</a>
         <a href="#roles"><span class="num">02</span> User Roles</a>
-        <a href="#multitenancy"><span class="num">03</span> Multi-Tenancy</a>
+        <a href="#multitenancy"><span class="num">03</span> Platform &amp; Multi-Tenancy</a>
       </div>
       <div class="toc-section">
         <div class="toc-section-title">Functional Requirements</div>
-        <a href="#auth"><span class="num">4.1</span> Auth &amp; Accounts</a>
-        <a href="#portal"><span class="num">4.2</span> Booking Portal</a>
-        <a href="#account"><span class="num">4.3</span> Client Account</a>
-        <a href="#payments"><span class="num">4.4</span> Payments &amp; Packages</a>
-        <a href="#invoices"><span class="num">4.5</span> Invoices</a>
-        <a href="#sessions"><span class="num">4.6</span> Session Management</a>
-        <a href="#bookings"><span class="num">4.7</span> Booking Management</a>
-        <a href="#crm"><span class="num">4.8</span> Client CRM</a>
-        <a href="#checkin"><span class="num">4.9</span> QR Check-In</a>
-        <a href="#waiver"><span class="num">4.10</span> Digital Waiver</a>
-        <a href="#policies"><span class="num">4.11</span> Policy Engine</a>
-        <a href="#instructors"><span class="num">4.12</span> Instructors</a>
-        <a href="#staff"><span class="num">4.13</span> Staff Management</a>
-        <a href="#sales"><span class="num">4.14</span> Sales Tracking</a>
-        <a href="#analytics"><span class="num">4.15</span> Analytics</a>
+        <a href="#marketplace"><span class="num">4.1</span> Platform Marketplace</a>
+        <a href="#subscription"><span class="num">4.2</span> Tenant Subscription</a>
+        <a href="#auth"><span class="num">4.3</span> Auth &amp; Accounts</a>
+        <a href="#portal"><span class="num">4.4</span> Booking Portal</a>
+        <a href="#account"><span class="num">4.5</span> Client Account</a>
+        <a href="#payments"><span class="num">4.6</span> Payments &amp; Packages</a>
+        <a href="#invoices"><span class="num">4.7</span> Invoices</a>
+        <a href="#sessions"><span class="num">4.8</span> Session Management</a>
+        <a href="#bookings"><span class="num">4.9</span> Booking Management</a>
+        <a href="#crm"><span class="num">4.10</span> Client CRM</a>
+        <a href="#checkin"><span class="num">4.11</span> QR Check-In</a>
+        <a href="#waiver"><span class="num">4.12</span> Digital Waiver</a>
+        <a href="#policies"><span class="num">4.13</span> Policy Engine</a>
+        <a href="#instructors"><span class="num">4.14</span> Instructors</a>
+        <a href="#staff"><span class="num">4.15</span> Staff Management</a>
+        <a href="#sales"><span class="num">4.16</span> Sales Tracking</a>
+        <a href="#analytics"><span class="num">4.17</span> Analytics</a>
       </div>
       <div class="toc-section">
         <div class="toc-section-title">Specifications</div>
@@ -693,19 +695,27 @@
         </div>
 
         <h3>Problem Statement</h3>
-        <p>Fitness and wellness studios currently rely on generic booking tools that lack flexibility to enforce studio-specific policies, track instructor compensation, or provide meaningful business analytics. Admin overhead is high due to manual attendance tracking, waitlist management, and payment reconciliation.</p>
+        <p><strong>For businesses (tenants):</strong> Class-based businesses — fitness studios, art workshops, cooking schools, music academies, and more — currently rely on generic booking tools (e.g., Reserv) that lack the flexibility to enforce business-specific policies, track instructor compensation, or provide meaningful analytics. Admin overhead is high due to manual attendance tracking, waitlist management, and payment reconciliation. Beyond operations, these businesses also lack a unified channel to reach new customers and increase their visibility.</p>
+        <p><strong>For customers (students):</strong> Consumers looking for classes, workshops, and experiences have no single destination to discover and compare offerings across different providers and industries. They must visit each business's individual website, making discovery fragmented and inconvenient.</p>
 
         <h3>Product Goal</h3>
-        <p>Build a multi-tenant SaaS booking and operations platform for class-based businesses. Each tenant gets a dedicated subdomain (<code>{slug}.platform.com</code>) with a client-facing booking portal and a full admin backend.</p>
-        <p>Phase 1 delivers the complete operational core: booking, payments, attendance, CRM, staff management, and reporting.</p>
+        <p>Build a <strong>marketplace and multi-tenant SaaS platform</strong> for class-based businesses. Booked4U serves two audiences:</p>
+        <ol>
+          <li><strong>Businesses (tenants)</strong> subscribe to a Booked4U plan to be listed on the marketplace and gain access to a full operations backend — booking management, payments, attendance, CRM, staff management, and reporting.</li>
+          <li><strong>Customers (students)</strong> use the Booked4U marketplace to discover, browse, and book sessions across multiple tenants and industries from a single platform.</li>
+        </ol>
+        <p>Each tenant also gets a dedicated profile page on the marketplace and a full admin backend. Students are not locked to a single tenant — they register once on Booked4U and can browse and book across any listed business.</p>
+        <p>Phase 1 delivers the marketplace, tenant onboarding, and the complete operational core.</p>
 
         <h3>Core Features — Phase 1 Scope</h3>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Module</th><th>What It Delivers</th></tr></thead>
             <tbody>
-              <tr><td>Booking Portal</td><td>Client-facing web app at <code>{slug}.platform.com</code>; session discovery, calendar/list view, filters, 1–2 step booking flow</td></tr>
-              <tr><td>Authentication</td><td>Client self-registration + email verification; Admin-created accounts for staff/instructors</td></tr>
+              <tr><td>Platform Marketplace</td><td>Public-facing directory at <code>booked4u.com</code>; browse tenants by industry/category/location; tenant profile pages with sessions; dual landing page for students and business owners</td></tr>
+              <tr><td>Tenant Subscription</td><td>Tiered subscription plans for businesses to join the marketplace; Stripe-powered billing; tenant onboarding flow</td></tr>
+              <tr><td>Booking Portal</td><td>Tenant-scoped booking experience; session discovery, calendar/list view, filters, 1–2 step booking flow (accessed after selecting a tenant from the marketplace)</td></tr>
+              <tr><td>Authentication</td><td>Client self-registration + email verification; Admin-created accounts for staff/instructors; JWT sessions</td></tr>
               <tr><td>Payments</td><td>Stripe-only; drop-in (single session), packages (N-session bundles), and monthly memberships</td></tr>
               <tr><td>Session Management</td><td>Create/edit sessions with recurrence (RRULE), capacity limits, waitlist config, late-entry rules; supports Regular, Workshop, and Event types</td></tr>
               <tr><td>Booking Management</td><td>Session rosters, manual add/remove (admin), automated waitlist promotion, attendance status tracking</td></tr>
@@ -729,7 +739,6 @@
           <div class="scope-item">Automated marketing campaigns</div>
           <div class="scope-item">Loyalty and points system</div>
           <div class="scope-item">PayNow and GrabPay payments</div>
-          <div class="scope-item">Multi-location support</div>
         </div>
       </section>
 
@@ -741,7 +750,7 @@
           <span class="section-num">02</span>
           <h2 class="section-title">User Roles &amp; Permissions</h2>
         </div>
-        <p class="section-desc">Four distinct roles with scoped permissions. Roles are assigned at account creation and cannot be self-selected.</p>
+        <p class="section-desc">Clients (students) operate at the <strong>platform level</strong> — they register once on Booked4U and can browse/book across any tenant. All other roles (Instructor, Staff, Admin) are <strong>tenant-scoped</strong> — they belong to a specific business.</p>
 
         <div class="table-wrap">
           <table class="perm-table">
@@ -755,9 +764,10 @@
               </tr>
             </thead>
             <tbody>
-              <tr><td>Browse &amp; book sessions</td><td class="check">✓</td><td class="dash">—</td><td class="dash">—</td><td class="dash">—</td></tr>
+              <tr><td>Browse marketplace &amp; discover tenants</td><td class="check">✓</td><td class="dash">—</td><td class="dash">—</td><td class="dash">—</td></tr>
+              <tr><td>Browse &amp; book sessions (any tenant)</td><td class="check">✓</td><td class="dash">—</td><td class="dash">—</td><td class="dash">—</td></tr>
               <tr><td>Cancel / reschedule own booking</td><td class="check">✓</td><td class="dash">—</td><td class="dash">—</td><td class="dash">—</td></tr>
-              <tr><td>View own account &amp; history</td><td class="check">✓</td><td class="dash">—</td><td class="dash">—</td><td class="dash">—</td></tr>
+              <tr><td>View own account &amp; history (cross-tenant)</td><td class="check">✓</td><td class="dash">—</td><td class="dash">—</td><td class="dash">—</td></tr>
               <tr><td>View assigned schedule</td><td class="dash">—</td><td class="check">✓</td><td class="dash">—</td><td class="dash">—</td></tr>
               <tr><td>View own compensation report</td><td class="dash">—</td><td class="check">✓</td><td class="dash">—</td><td class="dash">—</td></tr>
               <tr><td>Scan QR / check in clients</td><td class="dash">—</td><td class="dash">—</td><td class="check">✓</td><td class="check">✓</td></tr>
@@ -777,116 +787,114 @@
 
       <hr class="divider">
 
-      <!-- ═══ 3. MULTI-TENANCY ═══ -->
+      <!-- ═══ 3. PLATFORM & MULTI-TENANCY ═══ -->
       <section id="multitenancy">
         <div class="section-head">
           <span class="section-num">03</span>
-          <h2 class="section-title">Multi-Tenancy</h2>
+          <h2 class="section-title">Platform &amp; Multi-Tenancy</h2>
         </div>
+
+        <h3>Platform Level (Marketplace)</h3>
         <ul>
-          <li>Each tenant is provisioned with a unique subdomain: <code>{slug}.platform.com</code></li>
-          <li>All data is fully isolated per tenant — no cross-tenant data leakage</li>
-          <li>Admin, staff, instructor, and client accounts are scoped to a single tenant</li>
-          <li>Tenant-level configuration: policies, pricing, branding (logo, colors), notification settings</li>
+          <li>The Booked4U marketplace lives at the platform domain (e.g., <code>booked4u.com</code>)</li>
+          <li>Students register once on the platform and can browse and book across all listed tenants</li>
+          <li>Student accounts, booking history, and payment methods are platform-level — not locked to a single tenant</li>
+          <li>The marketplace provides tenant discovery by industry, category, and location</li>
+        </ul>
+
+        <h3>Tenant Level (Business Operations)</h3>
+        <ul>
+          <li>Each tenant (business) subscribes to a Booked4U plan to be listed on the marketplace</li>
+          <li>Tenant operational data is fully isolated (no cross-tenant data leakage for business data)</li>
+          <li>Admin, staff, and instructor accounts are scoped to a single tenant</li>
+          <li>Tenant-level configuration covers: policies, pricing, branding (logo, cover image, description), and notification settings</li>
+          <li>Each tenant gets a public profile page on the marketplace showing their business info and available sessions</li>
         </ul>
       </section>
 
       <hr class="divider">
 
-      <!-- ═══ 4.1 AUTH ═══ -->
-      <section id="auth">
+      <!-- ═══ 4.1 PLATFORM MARKETPLACE ═══ -->
+      <section id="marketplace">
         <div class="section-head">
           <span class="section-num">4.1</span>
-          <h2 class="section-title">Authentication &amp; Accounts</h2>
+          <h2 class="section-title">Platform Marketplace</h2>
         </div>
+        <p class="section-desc">The public-facing marketplace at <code>booked4u.com</code> serves as the primary entry point for both students and business owners.</p>
 
-        <h3>Client Registration</h3>
+        <h3>Landing Page</h3>
+        <p>The landing page addresses two audiences with a split value proposition:</p>
         <ul>
-          <li>Self-registration via email + password</li>
-          <li>OAuth login (Google) — optional at launch, TBD</li>
-          <li>Email verification required before first booking</li>
-          <li>First booking triggers digital waiver flow (see §4.10)</li>
+          <li><strong>For students:</strong> "Discover and book classes, workshops, and experiences across providers — all in one place." CTA: "Explore Classes"</li>
+          <li><strong>For businesses:</strong> "List your studio on Booked4U and reach more customers." CTA: "List Your Business"</li>
         </ul>
 
-        <h3>Staff / Instructor / Admin Accounts</h3>
+        <h3>Tenant Discovery (Explore)</h3>
         <ul>
-          <li>Created by Admin only — no self-registration</li>
-          <li>Role assigned at creation: <code>admin</code>, <code>staff</code>, <code>instructor</code></li>
-          <li>Password reset via email link</li>
+          <li>Students can browse all listed tenants from the <code>/explore</code> page</li>
+          <li><strong>Filters:</strong> Industry / category (e.g., Fitness, Arts &amp; Crafts, Cooking, Music, Wellness, Education), Location / area, Search by business name or keyword</li>
+          <li>Each tenant is displayed as a card showing: business name, logo, cover image, industry tag, short description, rating (Phase 2), and number of upcoming sessions</li>
+          <li>Clicking a tenant card navigates to the tenant's profile page</li>
         </ul>
 
-        <h3>Session Management</h3>
+        <h3>Tenant Profile Page (<code>/explore/[slug]</code>)</h3>
         <ul>
-          <li>Access token expiry: 15 min | Refresh token: 7 days</li>
-          <li>Persistent login (remember me) option</li>
-          <li>Logout invalidates token server-side</li>
+          <li>Public page showing the tenant's business information: name, logo, cover image, description, location, industry</li>
+          <li>Lists all upcoming sessions from this tenant (same session card format as the booking portal)</li>
+          <li>Students can filter/browse sessions and proceed to book — this is the entry point into the tenant-scoped booking flow</li>
+          <li>Only sessions from the selected tenant are shown</li>
+        </ul>
+
+        <h3>Cross-Tenant Student Experience</h3>
+        <ul>
+          <li>Students register once on Booked4U and maintain a single account</li>
+          <li>From their account, students can view bookings and history across all tenants</li>
+          <li>Package and membership purchases remain tenant-scoped (a package bought from Studio A cannot be used at Studio B)</li>
+          <li>Payment methods are stored at the platform level via Stripe</li>
         </ul>
       </section>
 
       <hr class="divider">
 
-      <!-- ═══ 4.2 PORTAL ═══ -->
-      <section id="portal">
+      <!-- ═══ 4.2 TENANT SUBSCRIPTION ═══ -->
+      <section id="subscription">
         <div class="section-head">
           <span class="section-num">4.2</span>
-          <h2 class="section-title">Client Booking Portal</h2>
-        </div>
-        <p class="section-desc">Client-facing interface accessible at <code>{slug}.platform.com</code>.</p>
-
-        <h3>Session Discovery</h3>
-        <ul>
-          <li>Default view: <strong>list view</strong> sorted by date/time ascending</li>
-          <li>Toggle to <strong>calendar view</strong> (weekly layout)</li>
-          <li>Filters: session category (multi-select), instructor (multi-select), level/tier (multi-select), date range</li>
-          <li>Session card displays: name, category, level, date/time/duration, instructor, spots remaining (real-time), price or "Included in package"</li>
-          <li>Status badge: <code>Open</code> | <code>Waitlist</code> | <code>Full</code> | <code>Cancelled</code></li>
-        </ul>
-
-        <h3>Booking Flow</h3>
-        <div class="flow">
-          <div class="flow-step"><div class="step-n">1</div><div class="step-body"><strong>Select session</strong><span>Client opens session detail page/modal</span></div></div>
-          <div class="flow-step"><div class="step-n">2</div><div class="step-body"><strong>Payment path decision</strong><span>If active package with balance → deduct from package (skip payment). Otherwise → Stripe Checkout.</span></div></div>
-          <div class="flow-step"><div class="step-n">3</div><div class="step-body"><strong>Confirm</strong><span>On successful payment or package deduction → booking created</span></div></div>
-          <div class="flow-step"><div class="step-n">4</div><div class="step-body"><strong>Confirmation</strong><span>Success screen shown + confirmation email sent to client</span></div></div>
+          <h2 class="section-title">Tenant Subscription &amp; Onboarding</h2>
         </div>
 
-        <h3>Waitlist</h3>
-        <ul>
-          <li>When session is at capacity, "Join Waitlist" CTA is shown</li>
-          <li>Waitlist is an ordered FIFO queue per session</li>
-          <li>On booking cancellation: system auto-promotes the first waitlisted client — creates booking, deducts package or sends payment link, dispatches notification email</li>
-          <li>Clients can remove themselves from waitlist at any time</li>
-        </ul>
-
-        <h3>Cancellation / Reschedule (Client-Side)</h3>
-        <ul>
-          <li>Accessible from "My Bookings"</li>
-          <li>System checks cancellation policy window before allowing action</li>
-          <li>Within window: booking cancelled, credit returned (package credit or refund)</li>
-          <li>Outside window: penalty applied per policy config (forfeit session or charge fee)</li>
-          <li>Reschedule = cancel + rebook; treated as a new booking for all policy checks</li>
-        </ul>
-      </section>
-
-      <hr class="divider">
-
-      <!-- ═══ 4.3 CLIENT ACCOUNT ═══ -->
-      <section id="account">
-        <div class="section-head">
-          <span class="section-num">4.3</span>
-          <h2 class="section-title">Client Account</h2>
-        </div>
+        <h3>Subscription Plans</h3>
+        <p>Businesses subscribe to a Booked4U plan to be listed on the marketplace and access the admin backend. Plans are billed monthly via Stripe.</p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Section</th><th>Contents</th></tr></thead>
+            <thead><tr><th>Plan</th><th>What's Included</th></tr></thead>
             <tbody>
-              <tr><td>Upcoming Bookings</td><td>Future bookings with cancel/reschedule action</td></tr>
-              <tr><td>Booking History</td><td>Past sessions with attendance status (Attended / Late / No-Show)</td></tr>
-              <tr><td>My Packages</td><td>Active packages: sessions remaining, expiry date</td></tr>
-              <tr><td>Membership</td><td>Current plan, next billing date, cancel option</td></tr>
-              <tr><td>Invoices</td><td>All invoices; downloadable as PDF</td></tr>
-              <tr><td>Profile</td><td>Name, email, phone, password change</td></tr>
-              <tr><td>My QR Code</td><td>Unique QR code for venue check-in</td></tr>
+              <tr><td>Starter</td><td>Marketplace listing, up to 5 active sessions, 1 admin account, basic analytics</td></tr>
+              <tr><td>Growth</td><td>Everything in Starter + unlimited sessions, up to 3 staff/instructor accounts, full analytics, priority support</td></tr>
+              <tr><td>Professional</td><td>Everything in Growth + unlimited staff accounts, custom branding, API access (Phase 2), dedicated support</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout info"><strong>Note:</strong> Plan limits and pricing are configured by the Booked4U platform team (not by tenants).</div>
+
+        <h3>Tenant Onboarding Flow</h3>
+        <div class="flow">
+          <div class="flow-step"><div class="step-n">1</div><div class="step-body"><strong>Landing page</strong><span>Business owner clicks "List Your Business" on the landing page</span></div></div>
+          <div class="flow-step"><div class="step-n">2</div><div class="step-body"><strong>Registration</strong><span>Business name, owner name, email, password</span></div></div>
+          <div class="flow-step"><div class="step-n">3</div><div class="step-body"><strong>Business profile setup</strong><span>Industry, description, logo, cover image, location</span></div></div>
+          <div class="flow-step"><div class="step-n">4</div><div class="step-body"><strong>Plan selection &amp; payment</strong><span>Choose plan and complete payment via Stripe Checkout</span></div></div>
+          <div class="flow-step"><div class="step-n">5</div><div class="step-body"><strong>Provisioning</strong><span>On success: tenant is provisioned, admin account created, redirect to admin dashboard</span></div></div>
+          <div class="flow-step"><div class="step-n">6</div><div class="step-body"><strong>Go live</strong><span>Tenant listing goes live on the marketplace once profile is complete</span></div></div>
+        </div>
+
+        <h3>Tenant Listing Status</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Status</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr><td>Active</td><td>Subscription current, listing visible on marketplace</td></tr>
+              <tr><td>Incomplete</td><td>Profile not yet complete, listing hidden</td></tr>
+              <tr><td>Suspended</td><td>Subscription lapsed or payment failed, listing hidden, existing bookings honoured but no new bookings accepted</td></tr>
             </tbody>
           </table>
         </div>
@@ -894,10 +902,113 @@
 
       <hr class="divider">
 
-      <!-- ═══ 4.4 PAYMENTS ═══ -->
-      <section id="payments">
+      <!-- ═══ 4.3 AUTH ═══ -->
+      <section id="auth">
+        <div class="section-head">
+          <span class="section-num">4.3</span>
+          <h2 class="section-title">Authentication &amp; Accounts</h2>
+        </div>
+
+        <h3>Client (Student) Registration — Platform Level</h3>
+        <ul>
+          <li>Self-registration via email + password on <code>booked4u.com</code></li>
+          <li>OAuth login (Google) — optional at launch</li>
+          <li>Email verification required before first booking</li>
+          <li>Single account used across all tenants</li>
+          <li>First booking with any tenant triggers that tenant's digital waiver flow (see §4.12)</li>
+        </ul>
+
+        <h3>Tenant (Business Owner) Registration — Platform Level</h3>
+        <ul>
+          <li>Self-registration via "List Your Business" flow (see §4.2)</li>
+          <li>Creates both a tenant and the first admin account</li>
+          <li>Email verification required</li>
+        </ul>
+
+        <h3>Staff / Instructor / Admin Accounts — Tenant Level</h3>
+        <ul>
+          <li>Created by tenant Admin only (no self-registration)</li>
+          <li>Role assigned at creation: <code>admin</code>, <code>staff</code>, <code>instructor</code></li>
+          <li>Scoped to a single tenant</li>
+          <li>Password reset via email link</li>
+        </ul>
+      </section>
+
+      <hr class="divider">
+
+      <!-- ═══ 4.4 PORTAL ═══ -->
+      <section id="portal">
         <div class="section-head">
           <span class="section-num">4.4</span>
+          <h2 class="section-title">Client Booking Portal</h2>
+        </div>
+        <p class="section-desc">The tenant-scoped booking interface. Students reach this via the marketplace — either by browsing <code>/explore</code> and selecting a tenant, or by navigating directly to <code>/explore/[slug]</code>.</p>
+
+        <h3>Session Discovery</h3>
+        <ul>
+          <li>Default view: <strong>list view</strong> sorted by date/time ascending</li>
+          <li>Toggle to <strong>calendar view</strong> (weekly layout)</li>
+          <li>Filters: session category (multi-select), instructor (multi-select), level/tier (multi-select, if configured), date range picker</li>
+          <li>Session card displays: name, category, level, date/time/duration, instructor, spots remaining (real-time), price or "Included in your package"</li>
+          <li>Status badge: <code>Open</code> | <code>Waitlist</code> | <code>Full</code> | <code>Cancelled</code></li>
+        </ul>
+
+        <h3>Booking Flow</h3>
+        <div class="flow">
+          <div class="flow-step"><div class="step-n">1</div><div class="step-body"><strong>Select session</strong><span>Client selects a session → detail modal/page shown</span></div></div>
+          <div class="flow-step"><div class="step-n">2</div><div class="step-body"><strong>Payment path decision</strong><span>If package balance > 0: deduct from package (no payment step). If paying per session: proceed to Stripe Checkout.</span></div></div>
+          <div class="flow-step"><div class="step-n">3</div><div class="step-body"><strong>Confirm</strong><span>On success: confirmation screen + confirmation email sent</span></div></div>
+          <div class="flow-step"><div class="step-n">4</div><div class="step-body"><strong>Full session</strong><span>If session is full: "Join Waitlist" CTA — adds client to ordered waitlist queue</span></div></div>
+        </div>
+
+        <h3>Waitlist</h3>
+        <ul>
+          <li>Clients can join waitlist when session is at capacity</li>
+          <li>When a booking is cancelled, the system automatically promotes the first waitlisted client: booking created, session deducted from package (if applicable) or payment link sent, notification email dispatched</li>
+          <li>Clients can remove themselves from waitlist at any time</li>
+        </ul>
+
+        <h3>Cancellation / Reschedule (Client-Side)</h3>
+        <ul>
+          <li>Available from "My Bookings" in account area</li>
+          <li>System checks cancellation policy (see §4.13) before allowing</li>
+          <li>If within allowed window: booking cancelled, session credit returned to package or refund initiated</li>
+          <li>If outside allowed window: policy penalty applied (session forfeited or fee charged)</li>
+          <li>Reschedule = cancel + rebook (treated as a new booking for policy purposes)</li>
+        </ul>
+      </section>
+
+      <hr class="divider">
+
+      <!-- ═══ 4.5 CLIENT ACCOUNT ═══ -->
+      <section id="account">
+        <div class="section-head">
+          <span class="section-num">4.5</span>
+          <h2 class="section-title">Client Account</h2>
+        </div>
+        <p class="section-desc">Platform-level account accessible post-login at <code>/account</code>. Shows data across all tenants the student has interacted with.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Section</th><th>Contents</th></tr></thead>
+            <tbody>
+              <tr><td>Upcoming Bookings</td><td>List of future bookings across all tenants, grouped by tenant, with cancel/reschedule action</td></tr>
+              <tr><td>Booking History</td><td>Past sessions across all tenants with attendance status</td></tr>
+              <tr><td>My Packages</td><td>Active packages per tenant: sessions remaining, expiry date, tenant name</td></tr>
+              <tr><td>Membership</td><td>Current membership plans per tenant, next billing date, cancel option</td></tr>
+              <tr><td>Invoices</td><td>List of all invoices across tenants; downloadable PDF</td></tr>
+              <tr><td>Profile</td><td>Name, email, phone, password change</td></tr>
+              <tr><td>My QR Code</td><td>Unique QR for check-in (see §4.11)</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <hr class="divider">
+
+      <!-- ═══ 4.6 PAYMENTS ═══ -->
+      <section id="payments">
+        <div class="section-head">
+          <span class="section-num">4.6</span>
           <h2 class="section-title">Payments &amp; Packages</h2>
         </div>
 
@@ -910,42 +1021,42 @@
             <thead><tr><th>Type</th><th>Description</th></tr></thead>
             <tbody>
               <tr><td>Drop-in</td><td>Single session purchase at fixed price</td></tr>
-              <tr><td>Package</td><td>Bundle of N sessions; fixed price; optional expiry date (configurable by admin)</td></tr>
-              <tr><td>Membership</td><td>Recurring monthly subscription via Stripe Subscriptions; grants N sessions/month or unlimited</td></tr>
+              <tr><td>Package</td><td>Bundle of N sessions at fixed price; optional expiry date</td></tr>
+              <tr><td>Membership</td><td>Recurring subscription (monthly); grants N sessions/month or unlimited</td></tr>
             </tbody>
           </table>
         </div>
 
         <h3>Purchase Flow</h3>
         <ul>
-          <li>Client selects product → Stripe Checkout session created server-side</li>
+          <li>Client selects a product → Stripe Checkout session created</li>
           <li>On <code>payment_intent.succeeded</code> webhook: entitlement granted, invoice generated</li>
           <li>Failed payments: retry handled by Stripe; client notified by email</li>
         </ul>
 
         <h3>Package / Membership Logic</h3>
         <ul>
-          <li>Package balance decremented on each confirmed booking</li>
-          <li>Expired packages cannot be used; remaining sessions forfeited unless admin manually extends</li>
-          <li>Memberships auto-renew monthly via Stripe</li>
-          <li>Admin can manually add or deduct sessions from a client's package</li>
-          <li>If package is exhausted mid-booking, system falls back to drop-in price</li>
+          <li>Package balance is decremented on each successful booking</li>
+          <li>Expired packages cannot be used; sessions remaining are forfeited (unless admin manually extends)</li>
+          <li>Memberships auto-renew monthly via Stripe Subscriptions</li>
+          <li>Admin can manually add / deduct sessions from a client's package</li>
+          <li>If client's package is exhausted during booking, system falls back to drop-in price</li>
         </ul>
       </section>
 
       <hr class="divider">
 
-      <!-- ═══ 4.5 INVOICES ═══ -->
+      <!-- ═══ 4.7 INVOICES ═══ -->
       <section id="invoices">
         <div class="section-head">
-          <span class="section-num">4.5</span>
+          <span class="section-num">4.7</span>
           <h2 class="section-title">Invoice System</h2>
         </div>
         <ul>
           <li>Invoice auto-generated on every successful payment</li>
-          <li>Contains: invoice number, date, line items, amount, payment method, business name/logo</li>
+          <li>Invoice contains: invoice number, date, line items, amount, payment method, business name/logo</li>
           <li>Delivered to client's email immediately after payment</li>
-          <li>Stored on client profile; downloadable as PDF</li>
+          <li>Stored against client profile; downloadable as PDF</li>
           <li>Accessible to Admin from client profile or invoice list view</li>
         </ul>
         <div class="callout info"><strong>Note:</strong> No tax / GST calculation in Phase 1. Line items show pre-tax amounts only.</div>
@@ -953,10 +1064,10 @@
 
       <hr class="divider">
 
-      <!-- ═══ 4.6 SESSIONS ═══ -->
+      <!-- ═══ 4.8 SESSIONS ═══ -->
       <section id="sessions">
         <div class="section-head">
-          <span class="section-num">4.6</span>
+          <span class="section-num">4.8</span>
           <h2 class="section-title">Session &amp; Schedule Management</h2>
         </div>
 
@@ -972,11 +1083,11 @@
               <tr><td>instructor_id</td><td>relation</td><td>Links to Instructor profile</td></tr>
               <tr><td>capacity</td><td>integer</td><td>Max bookable spots</td></tr>
               <tr><td>waitlist_enabled</td><td>boolean</td><td></td></tr>
-              <tr><td>waitlist_max</td><td>integer</td><td>Nullable = unlimited</td></tr>
-              <tr><td>datetime</td><td>datetime</td><td>TZ-aware</td></tr>
-              <tr><td>duration_minutes</td><td>integer</td><td></td></tr>
+              <tr><td>waitlist_max</td><td>integer</td><td>Nullable (unlimited if null)</td></tr>
+              <tr><td>datetime</td><td>datetime</td><td></td></tr>
+              <tr><td>duration_minutes</td><td>integer</td><td>Minutes</td></tr>
               <tr><td>rrule</td><td>RRULE string</td><td>Nullable for one-off sessions</td></tr>
-              <tr><td>late_cutoff_minutes</td><td>integer</td><td>Nullable; falls back to global setting</td></tr>
+              <tr><td>late_cutoff_minutes</td><td>integer</td><td>Nullable; inherited from global setting if null</td></tr>
               <tr><td>price_dropin</td><td>decimal</td><td></td></tr>
               <tr><td>status</td><td>enum</td><td>Scheduled / Cancelled / Completed</td></tr>
             </tbody>
@@ -986,30 +1097,30 @@
         <h3>Recurrence</h3>
         <ul>
           <li>Admin defines recurring sessions via RRULE (weekly, bi-weekly, custom)</li>
-          <li>Editing a recurring session: prompt — "This session only" or "All future sessions"</li>
-          <li>Cancelling a session: all active bookings on that session are cancelled; clients notified by email</li>
+          <li>Editing a recurring session: prompt to apply change to "This session only" or "All future sessions"</li>
+          <li>Cancelling a session: all bookings on that session are cancelled; clients notified by email</li>
         </ul>
 
         <h3>Session Types</h3>
         <ul>
-          <li><strong>Regular</strong> — standard session with recurring support; package-eligible</li>
-          <li><strong>Workshop / Event</strong> — one-off; custom pricing; package eligibility configurable per session</li>
+          <li><strong>Regular</strong> — standard class with recurring support</li>
+          <li><strong>Workshop / Event</strong> — one-off; can have different pricing; not package-eligible by default (configurable)</li>
         </ul>
       </section>
 
       <hr class="divider">
 
-      <!-- ═══ 4.7 BOOKING MGMT ═══ -->
+      <!-- ═══ 4.9 BOOKING MGMT ═══ -->
       <section id="bookings">
         <div class="section-head">
-          <span class="section-num">4.7</span>
+          <span class="section-num">4.9</span>
           <h2 class="section-title">Booking Management (Admin)</h2>
         </div>
         <ul>
           <li>View roster for any session: client name, booking status, check-in status, package used</li>
-          <li>Manually add a client to a session — bypasses capacity limit (admin override)</li>
-          <li>Manually remove a client — cancellation policy NOT applied</li>
-          <li>Bulk attendance marking: "Mark all Attended" or mark individually</li>
+          <li>Manually add a client to a session (bypasses capacity limit — admin override)</li>
+          <li>Manually remove a client from a session (no cancellation policy applied)</li>
+          <li>Bulk attendance marking: mark all as Attended, or mark individually</li>
           <li>Attendance statuses: <code>Pending</code> → <code>Attended</code> | <code>Late</code> | <code>No-Show</code></li>
           <li>Filter sessions by date, instructor, category, status</li>
         </ul>
@@ -1017,10 +1128,10 @@
 
       <hr class="divider">
 
-      <!-- ═══ 4.8 CRM ═══ -->
+      <!-- ═══ 4.10 CRM ═══ -->
       <section id="crm">
         <div class="section-head">
-          <span class="section-num">4.8</span>
+          <span class="section-num">4.10</span>
           <h2 class="section-title">Client CRM (Admin)</h2>
         </div>
 
@@ -1030,13 +1141,13 @@
             <thead><tr><th>Field</th><th>Notes</th></tr></thead>
             <tbody>
               <tr><td>full_name, email, phone</td><td>Core contact info</td></tr>
-              <tr><td>registration_date</td><td>Auto-set on signup</td></tr>
-              <tr><td>active_packages</td><td>Sessions remaining, expiry per package</td></tr>
-              <tr><td>active_membership</td><td>Plan name, renewal date</td></tr>
+              <tr><td>registration_date</td><td>Auto-set</td></tr>
+              <tr><td>active_packages</td><td>Sessions remaining, expiry</td></tr>
+              <tr><td>active_membership</td><td>Plan, renewal date</td></tr>
               <tr><td>sessions_attended_lifetime</td><td>Computed count</td></tr>
               <tr><td>no_show_count</td><td>Lifetime count; used for policy enforcement</td></tr>
               <tr><td>waiver</td><td>Signed status, date, file link</td></tr>
-              <tr><td>notes</td><td>Multi-entry admin notes with timestamps</td></tr>
+              <tr><td>notes</td><td>Private admin notes (multi-entry with timestamps)</td></tr>
             </tbody>
           </table>
         </div>
@@ -1056,10 +1167,10 @@
 
       <hr class="divider">
 
-      <!-- ═══ 4.9 CHECK-IN ═══ -->
+      <!-- ═══ 4.11 CHECK-IN ═══ -->
       <section id="checkin">
         <div class="section-head">
-          <span class="section-num">4.9</span>
+          <span class="section-num">4.11</span>
           <h2 class="section-title">QR Code Check-In</h2>
         </div>
 
@@ -1067,15 +1178,15 @@
         <div class="flow">
           <div class="flow-step"><div class="step-n">1</div><div class="step-body"><strong>Client presents QR</strong><span>Each client has a persistent unique QR (encoded with <code>client_id</code>)</span></div></div>
           <div class="flow-step"><div class="step-n">2</div><div class="step-body"><strong>Staff scans</strong><span>Camera-based scanner in web app; no dedicated hardware required</span></div></div>
-          <div class="flow-step"><div class="step-n">3</div><div class="step-body"><strong>System validates</strong><span>Checks: booking exists for an active session, late cutoff not exceeded</span></div></div>
+          <div class="flow-step"><div class="step-n">3</div><div class="step-body"><strong>System validates</strong><span>Checks: client has a booking for an active session (started ≤ X minutes ago), late cutoff not exceeded</span></div></div>
           <div class="flow-step"><div class="step-n">4</div><div class="step-body"><strong>Result</strong><span>Success → status set to <code>Attended</code> or <code>Late</code>. Failure → error message shown (see failure states below)</span></div></div>
         </div>
 
         <h3>Late Window Logic</h3>
         <ul>
-          <li><code>late_cutoff_minutes</code> is configurable per session; falls back to global default (default: 10 min)</li>
-          <li>If <code>current_time &gt; session_start + late_cutoff</code>: check-in blocked → status = <code>No-Show</code></li>
-          <li>If <code>current_time &gt; session_start</code> but within cutoff window: check-in allowed → status = <code>Late</code></li>
+          <li><code>late_window_minutes</code> is configurable per session (default: global setting, default global: 10 min)</li>
+          <li>If <code>current_time &gt; session_start + late_window_minutes</code>: check-in blocked, status = <code>No-Show</code></li>
+          <li>If <code>current_time &gt; session_start</code> but within late window: check-in allowed, status = <code>Late</code></li>
         </ul>
 
         <h3>Failure States</h3>
@@ -1093,27 +1204,27 @@
 
       <hr class="divider">
 
-      <!-- ═══ 4.10 WAIVER ═══ -->
+      <!-- ═══ 4.12 WAIVER ═══ -->
       <section id="waiver">
         <div class="section-head">
-          <span class="section-num">4.10</span>
+          <span class="section-num">4.12</span>
           <h2 class="section-title">Digital Waiver</h2>
         </div>
         <ul>
-          <li>Waiver content defined by Admin (HTML / rich text)</li>
-          <li>Trigger: first booking or first login — client must complete before proceeding</li>
+          <li>Waiver is a text document defined by Admin (HTML/rich text)</li>
+          <li>Trigger: first time a client completes a booking (before payment confirmation) or on first login</li>
           <li>Client must scroll to bottom and click "I Agree" with typed full name (e-signature)</li>
-          <li>Signature record stores: <code>client_id</code>, <code>timestamp</code>, <code>ip_address</code></li>
-          <li>Signed waiver stored as PDF; accessible from client profile</li>
+          <li>Waiver signature record stores: <code>client_id</code>, <code>timestamp</code>, <code>ip_address</code></li>
+          <li>Waiver PDF stored and accessible from client profile</li>
         </ul>
       </section>
 
       <hr class="divider">
 
-      <!-- ═══ 4.11 POLICIES ═══ -->
+      <!-- ═══ 4.13 POLICIES ═══ -->
       <section id="policies">
         <div class="section-head">
-          <span class="section-num">4.11</span>
+          <span class="section-num">4.13</span>
           <h2 class="section-title">Business Policy Engine</h2>
         </div>
         <p class="section-desc">All policies are configured per tenant by Admin. System enforces them automatically.</p>
@@ -1123,7 +1234,7 @@
           <table>
             <thead><tr><th>Setting</th><th>Type</th><th>Default</th></tr></thead>
             <tbody>
-              <tr><td>cancellation_window_hours</td><td>integer</td><td>12</td></tr>
+              <tr><td>cancellation_window_hours</td><td>integer (hours)</td><td>12</td></tr>
               <tr><td>late_cancel_penalty</td><td>enum: none | forfeit_session | charge_fee</td><td>forfeit_session</td></tr>
               <tr><td>late_cancel_fee_amount</td><td>decimal</td><td>—</td></tr>
               <tr><td>count_late_cancel_as_no_show</td><td>boolean</td><td>false</td></tr>
@@ -1137,7 +1248,7 @@
             <thead><tr><th>Setting</th><th>Type</th><th>Default</th></tr></thead>
             <tbody>
               <tr><td>auto_mark_no_show</td><td>boolean</td><td>true</td></tr>
-              <tr><td>no_show_threshold (per 30 days)</td><td>integer</td><td>3</td></tr>
+              <tr><td>no_show_threshold (per rolling 30 days)</td><td>integer</td><td>3</td></tr>
               <tr><td>threshold_action</td><td>enum: none | warning_email | booking_block</td><td>warning_email</td></tr>
             </tbody>
           </table>
@@ -1169,12 +1280,18 @@
 
       <hr class="divider">
 
-      <!-- ═══ 4.12 INSTRUCTORS ═══ -->
+      <!-- ═══ 4.14 INSTRUCTORS ═══ -->
       <section id="instructors">
         <div class="section-head">
-          <span class="section-num">4.12</span>
+          <span class="section-num">4.14</span>
           <h2 class="section-title">Instructor Management</h2>
         </div>
+
+        <h3>Instructor Profile</h3>
+        <ul>
+          <li>Name, contact details, bio (optional)</li>
+          <li>Assigned sessions (view only from this screen)</li>
+        </ul>
 
         <h3>Compensation Config (per instructor)</h3>
         <div class="table-wrap">
@@ -1192,80 +1309,83 @@
 
         <h3>Compensation Report</h3>
         <ul>
-          <li>Per instructor: sessions taught, clients attended, calculated earnings broken down by rate type</li>
-          <li>Filterable by date range; exportable to CSV</li>
+          <li>Per instructor: sessions taught in period, clients attended, calculated earnings broken down by rate type</li>
+          <li>Date range filter</li>
+          <li>Export to CSV</li>
         </ul>
-        <div class="callout warn"><strong>Read-only.</strong> No payout processing in Phase 1. Report is display only.</div>
+        <div class="callout warn"><strong>Read-only.</strong> No payout processing in Phase 1.</div>
       </section>
 
       <hr class="divider">
 
-      <!-- ═══ 4.13 STAFF ═══ -->
+      <!-- ═══ 4.15 STAFF ═══ -->
       <section id="staff">
         <div class="section-head">
-          <span class="section-num">4.13</span>
+          <span class="section-num">4.15</span>
           <h2 class="section-title">Staff Management</h2>
         </div>
 
         <h3>Staff Accounts</h3>
         <ul>
-          <li>Role <code>staff</code>: front-desk operations only (check-in, view rosters, manual booking add/remove)</li>
-          <li>Admin creates and deactivates accounts; no self-registration</li>
+          <li>Role: <code>staff</code> (front-desk operations only)</li>
+          <li>Admin creates/deactivates accounts</li>
+          <li>Permissions: check-in, view rosters, manual booking add/remove</li>
         </ul>
 
         <h3>Leave Management</h3>
         <ul>
-          <li>Staff / Instructors submit leave requests: type (annual / sick / other), date range, notes</li>
-          <li>Admin sees pending requests in a queue; approves or rejects with optional comment</li>
-          <li>Approved leave reflected on staff calendar</li>
-          <li><strong>Note:</strong> System does not auto-block sessions when leave is approved — manual responsibility</li>
+          <li>Staff / Instructors can submit leave requests: type (annual/sick/other), date range, notes</li>
+          <li>Admin sees pending requests in a queue</li>
+          <li>Admin approves or rejects with optional comment</li>
+          <li>Approved leave reflected in staff availability calendar</li>
+          <li>No auto-blocking of sessions when leave approved (manual responsibility)</li>
         </ul>
 
         <h3>Staff Calendar</h3>
         <ul>
-          <li>View showing all staff/instructor schedules and approved leave</li>
+          <li>View showing all staff/instructor working schedules and approved leave</li>
           <li>Date range navigation</li>
         </ul>
       </section>
 
       <hr class="divider">
 
-      <!-- ═══ 4.14 SALES ═══ -->
+      <!-- ═══ 4.16 SALES ═══ -->
       <section id="sales">
         <div class="section-head">
-          <span class="section-num">4.14</span>
+          <span class="section-num">4.16</span>
           <h2 class="section-title">Sales &amp; Commission Tracking</h2>
         </div>
         <ul>
-          <li>Each booking / package purchase records the <code>staff_id</code> of the staff member who processed it (manual bookings only); auto-bookings record <code>null</code></li>
-          <li>Sales report: groupable by staff member, filterable by date range</li>
-          <li>Commission: configurable rate per staff member (% of sale or flat fee per sale)</li>
-          <li>Report is read-only; CSV export available</li>
+          <li>Each booking and package purchase records the <code>staff_id</code> of the staff member who processed it (if manually added by staff) — auto-bookings record <code>null</code></li>
+          <li>Sales report: groupable by staff member, date range</li>
+          <li>Commission calculation: configurable rate per staff member (% of sales or flat per sale)</li>
+          <li>Report is read-only; export to CSV</li>
         </ul>
       </section>
 
       <hr class="divider">
 
-      <!-- ═══ 4.15 ANALYTICS ═══ -->
+      <!-- ═══ 4.17 ANALYTICS ═══ -->
       <section id="analytics">
         <div class="section-head">
-          <span class="section-num">4.15</span>
+          <span class="section-num">4.17</span>
           <h2 class="section-title">Analytics Dashboard</h2>
         </div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Widget</th><th>Data Shown</th></tr></thead>
+            <thead><tr><th>Widget</th><th>Data</th></tr></thead>
             <tbody>
               <tr><td>Session occupancy rate</td><td>Avg % full per session; trend over time</td></tr>
               <tr><td>Revenue</td><td>Total revenue by day/week/month; MRR for memberships</td></tr>
-              <tr><td>Top sessions</td><td>Sessions ranked by attendance count</td></tr>
+              <tr><td>Top sessions</td><td>Sessions by attendance count</td></tr>
               <tr><td>Client activity</td><td>Active vs. inactive count; new signups over time</td></tr>
               <tr><td>Package sales</td><td>Revenue and volume by package type</td></tr>
               <tr><td>No-show rate</td><td>No-shows / bookings ratio over time</td></tr>
             </tbody>
           </table>
         </div>
-        <div class="callout info"><strong>Scope:</strong> Date range filter across all widgets. All widgets are read-only in Phase 1 — no drill-down detail views.</div>
+        <div class="callout info"><strong>Scope:</strong> Date range filter across all widgets. All widgets are read-only in Phase 1 — no drill-down detail pages.</div>
       </section>
 
       <hr class="divider">
@@ -1282,13 +1402,13 @@
             <tbody>
               <tr><td>Platform</td><td>Responsive web app (PWA) — no native app in Phase 1</td></tr>
               <tr><td>Browser support</td><td>Last 2 versions: Chrome, Safari, Firefox, Edge</td></tr>
-              <tr><td>Mobile</td><td>Mobile-first; all client-facing flows must work at 375px+ viewport</td></tr>
+              <tr><td>Mobile</td><td>Mobile-first; all client-facing flows must work on 375px+ viewport</td></tr>
               <tr><td>Performance</td><td>Core booking flow &lt; 2s load time on 4G</td></tr>
               <tr><td>Availability</td><td>99.5% uptime target</td></tr>
-              <tr><td>Data isolation</td><td>Strict multi-tenant row-level isolation</td></tr>
-              <tr><td>Payment security</td><td>PCI compliance delegated to Stripe; no card data stored on platform</td></tr>
-              <tr><td>Auth security</td><td>Passwords bcrypt-hashed</td></tr>
-              <tr><td>Email provider</td><td>TBD (SendGrid / Resend) — see Open Questions</td></tr>
+              <tr><td>Data isolation</td><td>Strict tenant-level row-level isolation for business data; student accounts are platform-level</td></tr>
+              <tr><td>Payments</td><td>PCI compliance delegated to Stripe; no card data stored on platform</td></tr>
+              <tr><td>Auth security</td><td>Passwords hashed (bcrypt); JWT expiry 15 min access / 7 day refresh</td></tr>
+              <tr><td>Email</td><td>Transactional email via provider TBD (SendGrid / Resend); triggers: booking confirmation, cancellation, waitlist promotion, invoice, waiver</td></tr>
             </tbody>
           </table>
         </div>
@@ -1306,15 +1426,18 @@
           <table class="notif-table">
             <thead><tr><th>Trigger</th><th>Recipient</th><th>Key Content</th></tr></thead>
             <tbody>
-              <tr><td>Booking confirmed</td><td>Client</td><td>Session details, cancellation policy reminder</td></tr>
-              <tr><td>Booking cancelled (by client)</td><td>Client</td><td>Cancellation confirmation, policy outcome (penalty or refund)</td></tr>
+              <tr><td>Booking confirmed</td><td>Client</td><td>Booking details, session info, cancellation policy</td></tr>
+              <tr><td>Booking cancelled (by client)</td><td>Client</td><td>Cancellation confirmation, policy outcome</td></tr>
               <tr><td>Booking cancelled (by admin)</td><td>Client</td><td>Cancellation notice</td></tr>
               <tr><td>Promoted from waitlist</td><td>Client</td><td>New booking confirmation</td></tr>
-              <tr><td>Payment successful</td><td>Client</td><td>Invoice PDF attached</td></tr>
-              <tr><td>Waiver required</td><td>Client</td><td>Link to sign waiver before booking proceeds</td></tr>
-              <tr><td>No-show threshold reached</td><td>Client</td><td>Warning notice or booking restriction notification</td></tr>
-              <tr><td>Leave request submitted</td><td>Admin</td><td>New pending request notification</td></tr>
-              <tr><td>Leave approved / rejected</td><td>Staff / Instructor</td><td>Decision + optional comment</td></tr>
+              <tr><td>Payment successful</td><td>Client</td><td>Invoice attached</td></tr>
+              <tr><td>Waiver reminder</td><td>Client</td><td>Link to sign waiver</td></tr>
+              <tr><td>No-show warning threshold reached</td><td>Client</td><td>Warning / restriction notice</td></tr>
+              <tr><td>Leave request submitted</td><td>Admin</td><td>New request notification</td></tr>
+              <tr><td>Leave approved / rejected</td><td>Staff / Instructor</td><td>Decision notification</td></tr>
+              <tr><td>Tenant subscription confirmed</td><td>Business owner</td><td>Plan details, getting started guide</td></tr>
+              <tr><td>Tenant subscription payment failed</td><td>Business owner</td><td>Retry payment link</td></tr>
+              <tr><td>Tenant listing goes live</td><td>Business owner</td><td>Confirmation + marketplace link</td></tr>
             </tbody>
           </table>
         </div>
@@ -1342,7 +1465,7 @@
           <div class="question-item">
             <div class="q-num">Q2</div>
             <div class="q-body">
-              <div class="q-text">Which transactional email provider? SendGrid vs Resend?</div>
+              <div class="q-text">Which email provider? SendGrid vs Resend?</div>
               <div class="q-meta">owner: engineering</div>
             </div>
             <div class="q-status">Open</div>
@@ -1350,7 +1473,7 @@
           <div class="question-item">
             <div class="q-num">Q3</div>
             <div class="q-body">
-              <div class="q-text">Can clients transfer package credits to another client?</div>
+              <div class="q-text">Should clients be able to transfer package credits to another client?</div>
               <div class="q-meta">owner: product</div>
             </div>
             <div class="q-status">Open</div>
@@ -1358,7 +1481,7 @@
           <div class="question-item">
             <div class="q-num">Q4</div>
             <div class="q-body">
-              <div class="q-text">Is membership pause functionality required in Phase 1?</div>
+              <div class="q-text">Membership pause feature needed in Phase 1?</div>
               <div class="q-meta">owner: product</div>
             </div>
             <div class="q-status">Open</div>
@@ -1366,7 +1489,7 @@
           <div class="question-item">
             <div class="q-num">Q5</div>
             <div class="q-body">
-              <div class="q-text">Do workshop/event sessions consume package credits by default, or always drop-in price?</div>
+              <div class="q-text">Do workshop sessions consume package credits by default, or is it always drop-in?</div>
               <div class="q-meta">owner: product</div>
             </div>
             <div class="q-status">Open</div>
@@ -1374,7 +1497,55 @@
           <div class="question-item">
             <div class="q-num">Q6</div>
             <div class="q-body">
-              <div class="q-text">Does the no-show booking block auto-lift after a period, or require Admin to manually clear?</div>
+              <div class="q-text">Should the no-show booking block auto-lift, or require admin to manually clear?</div>
+              <div class="q-meta">owner: product</div>
+            </div>
+            <div class="q-status">Open</div>
+          </div>
+          <div class="question-item">
+            <div class="q-num">Q7</div>
+            <div class="q-body">
+              <div class="q-text">Multi-location support needed within Phase 1?</div>
+              <div class="q-meta">owner: product</div>
+            </div>
+            <div class="q-status">Open</div>
+          </div>
+          <div class="question-item">
+            <div class="q-num">Q8</div>
+            <div class="q-body">
+              <div class="q-text">What are the exact pricing tiers for tenant subscription plans (Starter/Growth/Professional)?</div>
+              <div class="q-meta">owner: product</div>
+            </div>
+            <div class="q-status">Open</div>
+          </div>
+          <div class="question-item">
+            <div class="q-num">Q9</div>
+            <div class="q-body">
+              <div class="q-text">Should the marketplace show tenant ratings/reviews in Phase 1, or defer to Phase 2?</div>
+              <div class="q-meta">owner: product</div>
+            </div>
+            <div class="q-status">Open</div>
+          </div>
+          <div class="question-item">
+            <div class="q-num">Q10</div>
+            <div class="q-body">
+              <div class="q-text">What industries/categories should be available at launch?</div>
+              <div class="q-meta">owner: product</div>
+            </div>
+            <div class="q-status">Open</div>
+          </div>
+          <div class="question-item">
+            <div class="q-num">Q11</div>
+            <div class="q-body">
+              <div class="q-text">Should tenants have a free trial period before requiring a paid plan?</div>
+              <div class="q-meta">owner: product</div>
+            </div>
+            <div class="q-status">Open</div>
+          </div>
+          <div class="question-item">
+            <div class="q-num">Q12</div>
+            <div class="q-body">
+              <div class="q-text">Do tenants get their own subdomain in addition to the marketplace listing, or marketplace-only in Phase 1?</div>
               <div class="q-meta">owner: product</div>
             </div>
             <div class="q-status">Open</div>
