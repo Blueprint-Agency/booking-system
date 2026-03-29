@@ -13,19 +13,28 @@
 
 ### 1.1 Problem Statement
 
-Fitness and wellness studios currently rely on generic booking tools (e.g., Reserv) that lack the flexibility to enforce studio-specific policies, track instructor compensation, or provide meaningful business analytics. Admin overhead is high due to manual attendance tracking, waitlist management, and payment reconciliation.
+**For businesses (tenants):** Class-based businesses — fitness studios, art workshops, cooking schools, music academies, and more — currently rely on generic booking tools (e.g., Reserv) that lack the flexibility to enforce business-specific policies, track instructor compensation, or provide meaningful analytics. Admin overhead is high due to manual attendance tracking, waitlist management, and payment reconciliation. Beyond operations, these businesses also lack a unified channel to reach new customers and increase their visibility.
+
+**For customers (students):** Consumers looking for classes, workshops, and experiences have no single destination to discover and compare offerings across different providers and industries. They must visit each business's individual website, making discovery fragmented and inconvenient.
 
 ### 1.2 Product Goal
 
-Build a multi-tenant SaaS booking and operations platform for class-based businesses. Each tenant gets a dedicated subdomain (`yourbusiness.platform.com`) with a client-facing booking portal and a full admin backend.
+Build a **marketplace and multi-tenant SaaS platform** for class-based businesses. Booked4U serves two audiences:
 
-Phase 1 delivers the complete operational core: booking, payments, attendance, CRM, staff management, and reporting.
+1. **Businesses (tenants)** subscribe to a Booked4U plan to be listed on the marketplace and gain access to a full operations backend — booking management, payments, attendance, CRM, staff management, and reporting.
+2. **Customers (students)** use the Booked4U marketplace to discover, browse, and book sessions across multiple tenants and industries from a single platform.
+
+Each tenant also gets a dedicated profile page on the marketplace and a full admin backend. Students are not locked to a single tenant — they register once on Booked4U and can browse and book across any listed business.
+
+Phase 1 delivers the marketplace, tenant onboarding, and the complete operational core.
 
 ### 1.3 Core Features — Phase 1 Scope
 
 | Module | What It Delivers |
 |---|---|
-| **Booking Portal** | Client-facing web app at `{slug}.platform.com`; session discovery, calendar/list view, filters, 1–2 step booking flow |
+| **Platform Marketplace** | Public-facing directory at `booked4u.com`; browse tenants by industry/category/location; tenant profile pages with sessions; dual landing page for students and business owners |
+| **Tenant Subscription** | Tiered subscription plans for businesses to join the marketplace; Stripe-powered billing; tenant onboarding flow |
+| **Booking Portal** | Tenant-scoped booking experience; session discovery, calendar/list view, filters, 1–2 step booking flow (accessed after selecting a tenant from the marketplace) |
 | **Authentication** | Client self-registration + email verification; Admin-created accounts for staff/instructors; JWT sessions |
 | **Payments** | Stripe-only; drop-in (single session), packages (N-session bundles), and monthly memberships |
 | **Session Management** | Create/edit sessions with recurrence (RRULE), capacity limits, waitlist config, late-entry rules; supports Regular, Workshop, and Event types |
@@ -54,11 +63,14 @@ The following are explicitly deferred to Phase 2:
 
 ## 2. User Roles & Permissions
 
+Clients (students) operate at the **platform level** — they register once on Booked4U and can browse/book across any tenant. All other roles (Instructor, Staff, Admin) are **tenant-scoped** — they belong to a specific business.
+
 | Permission | Client | Instructor | Staff | Admin |
 |---|---|---|---|---|
-| Browse & book sessions | ✓ | — | — | — |
+| Browse marketplace & discover tenants | ✓ | — | — | — |
+| Browse & book sessions (any tenant) | ✓ | — | — | — |
 | Cancel / reschedule own booking | ✓ | — | — | — |
-| View own account & history | ✓ | — | — | — |
+| View own account & history (cross-tenant) | ✓ | — | — | — |
 | View assigned schedule | — | ✓ | — | — |
 | View own compensation report | — | ✓ | — | — |
 | Scan QR / check in clients | — | — | ✓ | ✓ |
@@ -74,12 +86,22 @@ The following are explicitly deferred to Phase 2:
 
 ---
 
-## 3. Multi-Tenancy
+## 3. Platform & Multi-Tenancy
 
-- Each tenant is provisioned with a unique subdomain: `{slug}.platform.com`
-- All data is fully isolated per tenant (no cross-tenant data leakage)
-- Admin, staff, instructor, and client accounts are scoped to a single tenant
-- Tenant-level configuration covers: policies, pricing, branding (logo, colors), and notification settings
+### 3.1 Platform Level (Marketplace)
+
+- The Booked4U marketplace lives at the platform domain (e.g., `booked4u.com`)
+- Students register once on the platform and can browse and book across all listed tenants
+- Student accounts, booking history, and payment methods are platform-level — not locked to a single tenant
+- The marketplace provides tenant discovery by industry, category, and location
+
+### 3.2 Tenant Level (Business Operations)
+
+- Each tenant (business) subscribes to a Booked4U plan to be listed on the marketplace
+- Tenant operational data is fully isolated (no cross-tenant data leakage for business data)
+- Admin, staff, and instructor accounts are scoped to a single tenant
+- Tenant-level configuration covers: policies, pricing, branding (logo, cover image, description), and notification settings
+- Each tenant gets a public profile page on the marketplace showing their business info and available sessions
 
 ---
 
@@ -87,24 +109,99 @@ The following are explicitly deferred to Phase 2:
 
 ---
 
-### 4.1 Authentication & Accounts
+### 4.1 Platform Marketplace
 
-#### Client Registration
-- Self-registration via email + password
+The public-facing marketplace at `booked4u.com` serves as the primary entry point for both students and business owners.
+
+#### Landing Page
+
+The landing page addresses two audiences with a split value proposition:
+
+- **For students**: "Discover and book classes, workshops, and experiences across providers — all in one place." CTA: "Explore Classes"
+- **For businesses**: "List your studio on Booked4U and reach more customers." CTA: "List Your Business"
+
+#### Tenant Discovery (Explore)
+
+- Students can browse all listed tenants from the `/explore` page
+- **Filters:**
+  - Industry / category (e.g., Fitness, Arts & Crafts, Cooking, Music, Wellness, Education)
+  - Location / area
+  - Search by business name or keyword
+- Each tenant is displayed as a card showing: business name, logo, cover image, industry tag, short description, rating (Phase 2), and number of upcoming sessions
+- Clicking a tenant card navigates to the tenant's profile page
+
+#### Tenant Profile Page (`/explore/[slug]`)
+
+- Public page showing the tenant's business information: name, logo, cover image, description, location, industry
+- Lists all upcoming sessions from this tenant (same session card format as the booking portal)
+- Students can filter/browse sessions and proceed to book — this is the entry point into the tenant-scoped booking flow
+- Only sessions from the selected tenant are shown
+
+#### Cross-Tenant Student Experience
+
+- Students register once on Booked4U and maintain a single account
+- From their account, students can view bookings and history across all tenants
+- Package and membership purchases remain tenant-scoped (a package bought from Studio A cannot be used at Studio B)
+- Payment methods are stored at the platform level via Stripe
+
+---
+
+### 4.2 Tenant Subscription & Onboarding
+
+#### Subscription Plans
+
+Businesses subscribe to a Booked4U plan to be listed on the marketplace and access the admin backend. Plans are billed monthly via Stripe.
+
+| Plan | What's Included |
+|---|---|
+| **Starter** | Marketplace listing, up to 5 active sessions, 1 admin account, basic analytics |
+| **Growth** | Everything in Starter + unlimited sessions, up to 3 staff/instructor accounts, full analytics, priority support |
+| **Professional** | Everything in Growth + unlimited staff accounts, custom branding, API access (Phase 2), dedicated support |
+
+Plan limits and pricing are configured by the Booked4U platform team (not by tenants).
+
+#### Tenant Onboarding Flow
+
+1. Business owner clicks "List Your Business" on the landing page
+2. Registration: business name, owner name, email, password
+3. Business profile setup: industry, description, logo, cover image, location
+4. Plan selection and payment via Stripe Checkout
+5. On success: tenant is provisioned, admin account created, redirect to admin dashboard
+6. Tenant listing goes live on the marketplace once profile is complete
+
+#### Tenant Listing Status
+
+- **Active**: subscription current, listing visible on marketplace
+- **Incomplete**: profile not yet complete, listing hidden
+- **Suspended**: subscription lapsed or payment failed, listing hidden, existing bookings honoured but no new bookings accepted
+
+---
+
+### 4.3 Authentication & Accounts
+
+#### Client (Student) Registration — Platform Level
+- Self-registration via email + password on `booked4u.com`
 - OAuth login (Google) — optional at launch
 - Email verification required before first booking
-- First booking triggers digital waiver flow (see §4.10)
+- Single account used across all tenants
+- First booking with any tenant triggers that tenant's digital waiver flow (see §4.12)
 
-#### Staff / Instructor / Admin Accounts
-- Created by Admin only (no self-registration)
+#### Tenant (Business Owner) Registration — Platform Level
+- Self-registration via "List Your Business" flow (see §4.2)
+- Creates both a tenant and the first admin account
+- Email verification required
+
+#### Staff / Instructor / Admin Accounts — Tenant Level
+- Created by tenant Admin only (no self-registration)
 - Role assigned at creation: `admin`, `staff`, `instructor`
+- Scoped to a single tenant
 - Password reset via email link
 
 ---
 
-### 4.2 Client Booking Portal
+### 4.4 Client Booking Portal
 
-The client-facing interface accessible at `yourbusiness.platform.com`.
+The tenant-scoped booking interface. Students reach this via the marketplace — either by browsing `/explore` and selecting a tenant, or by navigating directly to `/explore/[slug]`.
 
 #### Session Discovery
 - Default view: **list view** sorted by date/time ascending
@@ -140,30 +237,30 @@ The client-facing interface accessible at `yourbusiness.platform.com`.
 
 #### Cancellation / Reschedule (Client-side)
 - Available from "My Bookings" in account area
-- System checks cancellation policy (see §4.11) before allowing
+- System checks cancellation policy (see §4.13) before allowing
 - If within allowed window: booking cancelled, session credit returned to package or refund initiated
 - If outside allowed window: policy penalty applied (session forfeited or fee charged)
 - Reschedule = cancel + rebook (treated as a new booking for policy purposes)
 
 ---
 
-### 4.3 Client Account
+### 4.5 Client Account
 
-Accessible post-login at `/account`.
+Platform-level account accessible post-login at `/account`. Shows data across all tenants the student has interacted with.
 
 | Section | Contents |
 |---|---|
-| Upcoming Bookings | List of future bookings with cancel/reschedule action |
-| Booking History | Past sessions with attendance status |
-| My Packages | Active packages: sessions remaining, expiry date |
-| Membership | Current plan, next billing date, cancel option |
-| Invoices | List of all invoices; downloadable PDF |
+| Upcoming Bookings | List of future bookings across all tenants, grouped by tenant, with cancel/reschedule action |
+| Booking History | Past sessions across all tenants with attendance status |
+| My Packages | Active packages per tenant: sessions remaining, expiry date, tenant name |
+| Membership | Current membership plans per tenant, next billing date, cancel option |
+| Invoices | List of all invoices across tenants; downloadable PDF |
 | Profile | Name, email, phone, password change |
-| My QR Code | Unique QR for check-in (see §4.9) |
+| My QR Code | Unique QR for check-in (see §4.11) |
 
 ---
 
-### 4.4 Payments & Packages
+### 4.6 Payments & Packages
 
 #### Payment Methods (Phase 1)
 - Credit / debit card via **Stripe Checkout**
@@ -190,7 +287,7 @@ Accessible post-login at `/account`.
 
 ---
 
-### 4.5 Invoice System
+### 4.7 Invoice System
 
 - Invoice auto-generated on every successful payment
 - Invoice contains: invoice number, date, line items, amount, payment method, business name/logo
@@ -201,7 +298,7 @@ Accessible post-login at `/account`.
 
 ---
 
-### 4.6 Session & Schedule Management (Admin)
+### 4.8 Session & Schedule Management (Admin)
 
 #### Session Object
 | Field | Type | Notes |
@@ -232,7 +329,7 @@ Accessible post-login at `/account`.
 
 ---
 
-### 4.7 Booking Management (Admin)
+### 4.9 Booking Management (Admin)
 
 - View roster for any session: client name, booking status, check-in status, package used
 - Manually add a client to a session (bypasses capacity limit — admin override)
@@ -243,7 +340,7 @@ Accessible post-login at `/account`.
 
 ---
 
-### 4.8 Client CRM (Admin)
+### 4.10 Client CRM (Admin)
 
 #### Client Profile
 | Field | Notes |
@@ -267,7 +364,7 @@ Accessible post-login at `/account`.
 
 ---
 
-### 4.9 QR Code Check-In
+### 4.11 QR Code Check-In
 
 #### Check-In Flow
 1. Each client has a persistent unique QR code (encoded with their `client_id`)
@@ -289,7 +386,7 @@ Accessible post-login at `/account`.
 
 ---
 
-### 4.10 Digital Waiver
+### 4.12 Digital Waiver
 
 - Waiver is a text document defined by Admin (HTML/rich text)
 - Trigger: first time a client completes a booking (before payment confirmation) or on first login
@@ -299,7 +396,7 @@ Accessible post-login at `/account`.
 
 ---
 
-### 4.11 Business Policy Engine
+### 4.13 Business Policy Engine
 
 All policies are configured per tenant by Admin. System enforces them automatically.
 
@@ -333,7 +430,7 @@ All policies are configured per tenant by Admin. System enforces them automatica
 
 ---
 
-### 4.12 Instructor Management (Admin)
+### 4.14 Instructor Management (Admin)
 
 #### Instructor Profile
 - Name, contact details, bio (optional)
@@ -353,7 +450,7 @@ All policies are configured per tenant by Admin. System enforces them automatica
 
 ---
 
-### 4.13 Staff Management (Admin)
+### 4.15 Staff Management (Admin)
 
 #### Staff Accounts
 - Role: `staff` (front-desk operations only)
@@ -373,7 +470,7 @@ All policies are configured per tenant by Admin. System enforces them automatica
 
 ---
 
-### 4.14 Sales & Commission Tracking
+### 4.16 Sales & Commission Tracking
 
 - Each booking and package purchase records the `staff_id` of the staff member who processed it (if manually added by staff) — auto-bookings record null
 - Sales report: groupable by staff member, date range
@@ -382,7 +479,7 @@ All policies are configured per tenant by Admin. System enforces them automatica
 
 ---
 
-### 4.15 Analytics Dashboard (Admin)
+### 4.17 Analytics Dashboard (Admin)
 
 | Widget | Data |
 |---|---|
@@ -407,7 +504,7 @@ All policies are configured per tenant by Admin. System enforces them automatica
 | Mobile | Mobile-first; all client-facing flows must work on 375px+ viewport |
 | Performance | Core booking flow < 2s load time on 4G |
 | Availability | 99.5% uptime target |
-| Data isolation | Strict multi-tenant row-level isolation |
+| Data isolation | Strict tenant-level row-level isolation for business data; student accounts are platform-level |
 | Payments | PCI compliance delegated to Stripe; no card data stored on platform |
 | Auth security | Passwords hashed (bcrypt); JWT expiry 15 min access / 7 day refresh |
 | Email | Transactional email via provider TBD (SendGrid / Resend); triggers: booking confirmation, cancellation, waitlist promotion, invoice, waiver |
@@ -427,6 +524,9 @@ All policies are configured per tenant by Admin. System enforces them automatica
 | No-show warning threshold reached | Client | Warning / restriction notice |
 | Leave request submitted | Admin | New request notification |
 | Leave approved / rejected | Staff / Instructor | Decision notification |
+| Tenant subscription confirmed | Business owner | Plan details, getting started guide |
+| Tenant subscription payment failed | Business owner | Retry payment link |
+| Tenant listing goes live | Business owner | Confirmation + marketplace link |
 
 ---
 
@@ -441,3 +541,8 @@ All policies are configured per tenant by Admin. System enforces them automatica
 | 5 | Do workshop sessions consume package credits by default, or is it always drop-in? | Product | Open |
 | 6 | Should the no-show booking block auto-lift, or require admin to manually clear? | Product | Open |
 | 7 | Multi-location support needed within Phase 1? | Product | Open |
+| 8 | What are the exact pricing tiers for tenant subscription plans (Starter/Growth/Professional)? | Product | Open |
+| 9 | Should the marketplace show tenant ratings/reviews in Phase 1, or defer to Phase 2? | Product | Open |
+| 10 | What industries/categories should be available at launch? | Product | Open |
+| 11 | Should tenants have a free trial period before requiring a paid plan? | Product | Open |
+| 12 | Do tenants get their own subdomain in addition to the marketplace listing, or marketplace-only in Phase 1? | Product | Open |

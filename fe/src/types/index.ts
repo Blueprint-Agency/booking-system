@@ -1,5 +1,20 @@
+export interface Tenant {
+  id: string;
+  slug: string;
+  name: string;
+  industry: string;
+  description: string;
+  shortDescription: string;
+  location: string;
+  logoEmoji: string;
+  coverGradient: string;
+  status: "active" | "incomplete" | "suspended";
+  plan: "starter" | "growth" | "professional";
+}
+
 export interface Session {
   id: string;
+  tenantId: string;
   name: string;
   category: string;
   level: "beginner" | "intermediate" | "advanced" | "all";

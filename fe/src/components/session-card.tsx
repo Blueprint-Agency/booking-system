@@ -12,18 +12,20 @@ export function SessionCard({
   hasPackage = false,
   className,
   style,
+  href,
 }: {
   session: Session;
   instructor?: Instructor;
   hasPackage?: boolean;
   className?: string;
   style?: React.CSSProperties;
+  href?: string;
 }) {
   const isCancelled = session.status === "cancelled";
 
   return (
     <Link
-      href={`/sessions/${session.id}`}
+      href={href || `/sessions/${session.id}`}
       className={cn(
         "block bg-card border border-border rounded-lg p-6 transition-all duration-300",
         "hover:shadow-hover hover:-translate-y-0.5 hover:border-accent",

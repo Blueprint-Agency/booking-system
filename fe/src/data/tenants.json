@@ -1,0 +1,80 @@
+[
+  {
+    "id": "tenant-1",
+    "slug": "sunrise-yoga",
+    "name": "Sunrise Yoga Studio",
+    "industry": "Fitness",
+    "description": "A welcoming yoga and fitness studio in the heart of Tiong Bahru. We offer a range of classes from gentle morning flows to high-intensity training, led by experienced instructors who are passionate about helping you achieve your wellness goals. Whether you're a beginner or advanced practitioner, you'll find a class that fits your level and schedule.",
+    "shortDescription": "Yoga, fitness & wellness classes for all levels",
+    "location": "Tiong Bahru, Singapore",
+    "logoEmoji": "🧘",
+    "coverGradient": "from-amber-100 to-orange-200",
+    "status": "active",
+    "plan": "professional"
+  },
+  {
+    "id": "tenant-2",
+    "slug": "clay-and-co",
+    "name": "Clay & Co Pottery",
+    "industry": "Arts & Crafts",
+    "description": "A creative pottery studio offering wheel-throwing, hand-building, and glazing workshops. Perfect for date nights, team bonding, or solo creative time. All materials included — just bring your imagination. Our experienced potters guide you through every step, from centering clay to finishing your masterpiece.",
+    "shortDescription": "Pottery workshops — wheel-throwing, hand-building & glazing",
+    "location": "Jalan Besar, Singapore",
+    "logoEmoji": "🏺",
+    "coverGradient": "from-stone-200 to-amber-100",
+    "status": "active",
+    "plan": "growth"
+  },
+  {
+    "id": "tenant-3",
+    "slug": "the-kitchen-lab",
+    "name": "The Kitchen Lab",
+    "industry": "Cooking",
+    "description": "Hands-on cooking classes covering cuisines from around the world. From Japanese ramen to Italian pasta-making, our professional chef instructors teach techniques you can replicate at home. Classes include all ingredients, recipes, and of course — you get to eat what you cook!",
+    "shortDescription": "Hands-on cooking classes — cuisines from around the world",
+    "location": "Dempsey Hill, Singapore",
+    "logoEmoji": "👨‍🍳",
+    "coverGradient": "from-red-100 to-orange-100",
+    "status": "active",
+    "plan": "growth"
+  },
+  {
+    "id": "tenant-4",
+    "slug": "rhythm-academy",
+    "name": "Rhythm Academy",
+    "industry": "Music",
+    "description": "Group music lessons and jam sessions for guitar, drums, piano, and vocals. Our classes are designed for adults who want to pick up an instrument or improve their skills in a fun, social environment. No experience needed — just a love for music.",
+    "shortDescription": "Group music lessons — guitar, drums, piano & vocals",
+    "location": "Bugis, Singapore",
+    "logoEmoji": "🎵",
+    "coverGradient": "from-violet-100 to-indigo-200",
+    "status": "active",
+    "plan": "starter"
+  },
+  {
+    "id": "tenant-5",
+    "slug": "zen-wellness",
+    "name": "Zen Wellness Centre",
+    "industry": "Wellness",
+    "description": "A holistic wellness centre offering meditation, sound healing, and mindfulness workshops. Our serene space in Holland Village is designed to help you disconnect from the noise and reconnect with yourself. Led by certified practitioners with years of experience.",
+    "shortDescription": "Meditation, sound healing & mindfulness workshops",
+    "location": "Holland Village, Singapore",
+    "logoEmoji": "🧠",
+    "coverGradient": "from-teal-100 to-emerald-100",
+    "status": "active",
+    "plan": "growth"
+  },
+  {
+    "id": "tenant-6",
+    "slug": "code-camp-sg",
+    "name": "Code Camp SG",
+    "industry": "Education",
+    "description": "Weekend coding workshops for beginners and intermediate learners. Learn Python, JavaScript, data science, and web development in small, interactive group sessions. Our instructors are industry professionals who break down complex concepts into practical, project-based lessons.",
+    "shortDescription": "Weekend coding workshops — Python, JavaScript & more",
+    "location": "One-North, Singapore",
+    "logoEmoji": "💻",
+    "coverGradient": "from-sky-100 to-blue-200",
+    "status": "active",
+    "plan": "starter"
+  }
+]

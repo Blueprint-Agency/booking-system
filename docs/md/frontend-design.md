@@ -1,4 +1,4 @@
-# Frontend Design Document — Teeko Booking Platform (Phase 1 Prototype)
+# Frontend Design Document — Booked4U Marketplace & Booking Platform (Phase 1 Prototype)
 
 **Product:** Booking & Management SaaS Platform
 **Version:** 1.0
@@ -19,11 +19,12 @@ The prototype lets stakeholders navigate real pages with mock data, testing all 
 
 ### 1.2 Scope
 
-- **Client booking portal** — public-facing session browser + authenticated account area
+- **Platform marketplace** — dual-audience landing page, tenant directory (explore), tenant profile pages, business onboarding
+- **Student booking portal** — tenant-scoped session browser + cross-tenant authenticated account area
 - **Admin dashboard** — full operations backend covering all PRD features
 - **Instructor portal** — schedule, compensation, leave (3 pages)
 - **Staff portal** — check-in scanner, leave (2 pages)
-- **Total**: 48 unique routes across 4 portals
+- **Total**: 55 unique routes across 5 areas
 
 ### 1.3 Technical Stack
 
@@ -44,7 +45,7 @@ The prototype lets stakeholders navigate real pages with mock data, testing all 
 
 **Warm Minimal** — clean and modern with warm tones (cream, terracotta, sage). Premium and calm. The aesthetic is aligned with the existing documentation portal and evokes trust without being sterile.
 
-**Content**: Generic SaaS placeholder content (not themed to a specific business type). Session names, instructor names, and categories are neutral to show the platform's flexibility across business types.
+**Content**: Marketplace mock data includes multiple tenants across different industries (yoga studio, pottery workshop, cooking school, music academy, etc.) to demonstrate the cross-tenant browsing experience. Session names, instructor names, and categories are varied across tenants to show the platform's flexibility.
 
 ---
 
@@ -150,26 +151,42 @@ Derived from the existing `docs/html/index.html` design tokens.
 
 ## 3. Page Inventory
 
-### 3.1 Client Portal — 18 Routes
+### 3.1 Platform & Client Portal — 24 Routes
+
+#### Platform-Level (Marketplace)
 
 | Route | Page | Auth Required |
 |-------|------|:---:|
-| `/` | Landing / marketing page | No |
-| `/login` | Login form | No |
-| `/register` | Registration form | No |
+| `/` | Dual-audience landing page (students + businesses) | No |
+| `/explore` | Tenant directory — browse businesses by industry, category, location | No |
+| `/explore/[slug]` | Tenant profile page — business info + upcoming sessions | No |
+| `/explore/[slug]/sessions` | Tenant-scoped session discovery (list + calendar toggle) | No* |
+| `/explore/[slug]/sessions/[id]` | Session detail + booking CTA (tenant-scoped) | No* |
+| `/for-business` | Business-facing landing — value prop + plan comparison | No |
+| `/for-business/register` | Tenant onboarding — business registration + plan selection | No |
+
+#### Student Auth & Booking
+
+| Route | Page | Auth Required |
+|-------|------|:---:|
+| `/login` | Login form (students) | No |
+| `/register` | Student registration form | No |
 | `/verify-email` | Email verification status | No |
 | `/forgot-password` | Password reset request | No |
 | `/reset-password` | Password reset form | No |
-| `/sessions` | Session discovery (list + calendar toggle) | No* |
-| `/sessions/[id]` | Session detail + booking CTA | No* |
 | `/checkout` | Stripe Checkout simulation | Yes |
 | `/booking/confirmation` | Booking confirmation | Yes |
-| `/waiver` | Digital waiver signing | Yes |
-| `/account` | Account overview / upcoming bookings | Yes |
-| `/account/history` | Booking history | Yes |
-| `/account/packages` | Active packages | Yes |
-| `/account/membership` | Membership details | Yes |
-| `/account/invoices` | Invoice list | Yes |
+| `/waiver` | Digital waiver signing (tenant-scoped) | Yes |
+
+#### Student Account (Cross-Tenant)
+
+| Route | Page | Auth Required |
+|-------|------|:---:|
+| `/account` | Account overview — upcoming bookings across all tenants | Yes |
+| `/account/history` | Booking history across all tenants | Yes |
+| `/account/packages` | Active packages grouped by tenant | Yes |
+| `/account/membership` | Membership details grouped by tenant | Yes |
+| `/account/invoices` | Invoice list across all tenants | Yes |
 | `/account/profile` | Profile settings | Yes |
 | `/account/qr` | My QR code | Yes |
 
@@ -223,17 +240,18 @@ Derived from the existing `docs/html/index.html` design tokens.
 
 ## 4. Navigation & Information Architecture
 
-### 4.1 Client Portal — Top Navigation Bar
+### 4.1 Platform & Client Portal — Top Navigation Bar
 
 ```
-┌───────────────────────────────────────────────────────────┐
-│  [Logo: Teeko]      Sessions    Pricing    [Login/Avatar]  │
-└───────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│  [Logo: Booked4U]    Explore    For Business    [Login/Avatar]          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 **States:**
-- **Unauthenticated**: Logo | Sessions | Pricing | Login button
-- **Authenticated**: Logo | Sessions | My Bookings | Avatar dropdown → Account, My QR, Logout
+- **Unauthenticated**: Logo | Explore | For Business | Login button
+- **Authenticated (student)**: Logo | Explore | My Bookings | Avatar dropdown → Account, My QR, Logout
+- **On tenant profile page** (`/explore/[slug]`): Logo shows breadcrumb back to Explore; tenant name displayed; Sessions link scoped to tenant
 - **Mobile (< 768px)**: Logo | Hamburger → slide-out drawer with all links
 
 **Behavior**: Sticky top, transparent on landing hero → solid on scroll. Always solid on interior pages.
@@ -283,15 +301,103 @@ A floating pill anchored to the bottom-right corner. Allows the reviewer to swit
 
 ### 5.1 Landing Page (`/`)
 
-**Purpose**: Marketing page that communicates the platform value proposition.
+**Purpose**: Dual-audience marketplace landing page that serves both students looking to book classes and businesses looking to list on the platform.
 
 **Layout:**
-- **Hero**: Headline (DM Serif Display, 48px) + subtitle (Outfit, 18px, muted) + two CTAs: "Browse Sessions" (accent, filled) and "Get Started" (accent, outlined)
-- **Features grid**: 3–4 benefit cards (easy booking, real-time availability, flexible packages, mobile check-in) with icons
-- **Pricing preview**: 3 tier cards — Drop-in, Package, Membership — showing summary pricing with "Learn More" links
-- **Footer**: Navigation links, copyright, business info
 
-**Responsive**: Single column on mobile, stacked hero, swipeable pricing cards.
+- **Hero**: Headline (DM Serif Display, 48px) — e.g., "Discover classes, workshops & experiences." Subtitle (Outfit, 18px, muted) — e.g., "Book across studios and creators — all in one place." Two CTAs:
+  - "Explore Classes" (accent, filled) → `/explore`
+  - "List Your Business" (accent-deep, outlined) → `/for-business`
+
+- **Featured tenants**: Horizontal scroll row of tenant cards (logo, name, industry tag, short tagline). Clicking navigates to `/explore/[slug]`. Section heading: "Popular on Booked4U"
+
+- **How it works — Students**: 3-step horizontal strip with icons:
+  1. "Browse" — Discover studios, workshops, and classes across industries
+  2. "Book" — Pick a session and reserve your spot in seconds
+  3. "Show up" — Check in with your QR code and enjoy
+
+- **How it works — Businesses**: 3-step horizontal strip with icons:
+  1. "Sign up" — Create your business profile in minutes
+  2. "Get listed" — Appear on the Booked4U marketplace instantly
+  3. "Grow" — Reach new customers and manage bookings effortlessly
+
+- **Industry categories**: Grid of category cards (Fitness, Arts & Crafts, Cooking, Music, Wellness, Education, etc.) with icons. Each links to `/explore?industry={category}`
+
+- **Business CTA banner**: Full-width section — "Run a studio or workshop? Reach more customers with Booked4U." CTA: "Learn More" → `/for-business`
+
+- **Footer**: Navigation links (Explore, For Business, Login, Register), copyright, business info
+
+**Responsive**: Single column on mobile, stacked hero, horizontal scroll for featured tenants and category cards.
+
+### 5.1a Explore Page (`/explore`)
+
+**Purpose**: Tenant directory — students browse and discover businesses across industries.
+
+**Layout:**
+- **Search bar** (top, prominent): Search by business name, keyword, or category
+- **Filter bar**: Industry dropdown (multi-select), Location / area dropdown, Sort by (Popular, Newest, Name A–Z)
+- **Result count**: "Showing 24 businesses"
+- **Tenant card grid**: 3 columns desktop, 2 tablet, 1 mobile
+
+**Tenant Card:**
+```
+┌──────────────────────────────────────────┐
+│  [Cover Image]                           │
+│  [Logo]  Business Name                   │
+│  [Industry Tag]                          │
+│  Short description (2 lines max)         │
+│  12 upcoming sessions            →       │
+└──────────────────────────────────────────┘
+```
+
+- Cover image: 16:9 aspect ratio, fallback gradient if none uploaded
+- Industry tag: pill badge in `--accent-glow`
+- Upcoming session count: muted text, shows real count from mock data
+- Click anywhere → `/explore/[slug]`
+
+**Empty state**: "No businesses found matching your search. Try different filters."
+
+**Responsive**: Cards stack single-column on mobile. Search bar full-width. Filters collapse to a "Filters" button → opens bottom sheet.
+
+### 5.1b Tenant Profile Page (`/explore/[slug]`)
+
+**Purpose**: Public-facing business profile — shows business info and all upcoming sessions. This is the entry point into the tenant-scoped booking flow.
+
+**Layout:**
+- **Cover image**: Full-width banner (16:9), fallback gradient
+- **Profile header**: Logo (overlapping cover bottom-left), business name (DM Serif Display, 32px), industry tag, location, short description
+- **Tab bar**: "Sessions" (default) | "About"
+
+**Sessions tab:**
+- Same session card format and filters as §5.3 (Category, Instructor, Level, Date range), but scoped to this tenant only
+- View toggle: List (default) | Calendar
+- Clicking a session card → `/explore/[slug]/sessions/[id]` (session detail page)
+
+**About tab:**
+- Full business description
+- Location / address
+- Contact info (if provided)
+
+**Responsive**: Cover image scales to viewport. Profile header stacks vertically on mobile. Tab content full-width.
+
+### 5.1c For Business Page (`/for-business`)
+
+**Purpose**: Business-facing landing page — value proposition and plan comparison for tenant subscription.
+
+**Layout:**
+- **Hero**: Headline — e.g., "Grow your business with Booked4U." Subtitle — "Get listed on the marketplace, manage bookings, and reach new customers." CTA: "Get Started" → `/for-business/register`
+
+- **Benefits grid**: 4 cards with icons:
+  - "Marketplace visibility" — Appear in front of thousands of students browsing for classes
+  - "Booking management" — Schedules, rosters, waitlists, and attendance in one place
+  - "Payments & packages" — Stripe-powered drop-in, package, and membership billing
+  - "Business analytics" — Occupancy, revenue, and client insights at a glance
+
+- **Plan comparison**: 3-column pricing table (Starter / Growth / Professional) per PRD §4.2. Each column shows: plan name, price, feature list, CTA button → `/for-business/register?plan={plan}`
+
+- **CTA banner**: "Ready to get started?" + "Create Your Business Profile" button
+
+**Responsive**: Single column on mobile. Plan cards stack vertically with "Most Popular" highlighted.
 
 ### 5.2 Auth Pages
 
@@ -326,9 +432,9 @@ All auth pages share the same layout: centered card (max-width 400px) on `--warm
 - Password strength indicator
 - "Reset Password" button
 
-### 5.3 Session Discovery (`/sessions`)
+### 5.3 Session Discovery (`/explore/[slug]/sessions`)
 
-**Purpose**: Browse and filter available sessions.
+**Purpose**: Browse and filter available sessions within a selected tenant. Students reach this page from the tenant profile page or by navigating directly.
 
 **Layout:**
 - **Filter bar** (top): Category dropdown, Instructor dropdown, Level dropdown, Date range picker
@@ -365,9 +471,9 @@ All auth pages share the same layout: centered card (max-width 400px) on `--warm
 - List view: full-width cards
 - Calendar view: horizontal scroll with day selector
 
-### 5.4 Session Detail (`/sessions/[id]`)
+### 5.4 Session Detail (`/explore/[slug]/sessions/[id]`)
 
-**Purpose**: Full session information + booking action.
+**Purpose**: Full session information + booking action. Scoped to the selected tenant.
 
 **Layout:**
 - **Header**: Session name (DM Serif Display, 28px), category tag, level badge, type badge (Regular/Workshop/Event)
@@ -425,29 +531,32 @@ All auth pages share the same layout: centered card (max-width 400px) on `--warm
 **Layout**: Sidebar sub-navigation (desktop) or horizontal tab bar (mobile) linking to all account sections.
 
 #### Account Overview (`/account`)
-- **Quick stats row**: Next session (date/time), Active package (sessions left), Membership status
-- **Upcoming bookings list**: Session cards with "Cancel" and "Reschedule" action buttons
-- Empty state: "No upcoming bookings — Browse Sessions" link
+- **Quick stats row**: Next session (date/time + tenant name), Active packages (count across tenants), Memberships (count)
+- **Upcoming bookings list**: Session cards grouped by tenant, each showing tenant name + logo, with "Cancel" and "Reschedule" action buttons
+- Empty state: "No upcoming bookings — Explore Classes" link → `/explore`
 
 #### Booking History (`/account/history`)
-- **Table/list**: Session name, Date, Time, Attendance status badge
+- **Table/list**: Tenant name, Session name, Date, Time, Attendance status badge
 - Attendance badges: `Attended` (sage), `Late` (warning), `No-Show` (error)
-- Date range filter
+- Filters: Date range, Tenant dropdown
 - Empty state: "No past bookings yet"
 
 #### My Packages (`/account/packages`)
-- **Package cards**: Name, sessions remaining (circular progress ring), expiry date, purchase date
+- **Package cards grouped by tenant**: Tenant name + logo header, then package cards underneath
+- Each card: Package name, sessions remaining (circular progress ring), expiry date, purchase date
 - Expired packages shown greyed out with "Expired" badge
-- "Browse Packages" CTA if none active
+- "Explore Classes" CTA if none active → `/explore`
 
 #### Membership (`/account/membership`)
-- **Current plan card**: Plan name, price/month, next billing date, sessions used this month (if limited)
+- **Membership cards grouped by tenant**: Tenant name + logo header, then membership card underneath
+- Each card: Plan name, price/month, next billing date, sessions used this month (if limited)
 - "Cancel Membership" button → confirmation dialog with consequences text
-- If no membership: "View Plans" CTA
+- If no memberships: "Explore Classes" CTA → `/explore`
 
 #### Invoices (`/account/invoices`)
-- **Table**: Invoice number (mono font), date, description, amount, status badge (Paid/Pending)
+- **Table**: Invoice number (mono font), tenant name, date, description, amount, status badge (Paid/Pending)
 - Each row: "Download PDF" action
+- Filter: Tenant dropdown
 - Empty state: "No invoices yet"
 
 #### Profile (`/account/profile`)
@@ -473,7 +582,7 @@ All auth pages share the same layout: centered card (max-width 400px) on `--warm
    - **Outside window (fee)**: "Late cancellation fee of $X will be charged."
 3. "Confirm Cancellation" (error color) and "Keep Booking" buttons
 
-**Reschedule**: Cancel dialog includes "Reschedule Instead?" link → redirects to `/sessions` with relevant filters pre-applied. Reschedule is treated as cancel + new booking per PRD.
+**Reschedule**: Cancel dialog includes "Reschedule Instead?" link → redirects to `/explore/[slug]/sessions` (same tenant) with relevant filters pre-applied. Reschedule is treated as cancel + new booking per PRD.
 
 ---
 
@@ -808,17 +917,20 @@ Each result card has a "Scan Next" button to reset.
 
 ## 7. Key User Flows
 
-### Flow 1: Client Books a Session
+### Flow 1: Student Discovers & Books a Session
 
 ```
-/sessions → Browse/Filter → Click session card
-  → /sessions/[id] → View details
-    → "Book Now" CTA
-      → [If first booking] → /waiver → Sign → Return
-      → [If paying] → /checkout → Mock payment → Success
-      → [If using package] → Direct booking
-    → /booking/confirmation → Success
-    → Session appears in /account → Upcoming bookings
+/ → Landing page → "Explore Classes" CTA
+  → /explore → Browse tenants by industry/category/location
+  → Click tenant card → /explore/[slug] → Tenant profile
+  → Browse sessions → /explore/[slug]/sessions → Filter → Click session card
+    → /explore/[slug]/sessions/[id] → View details
+      → "Book Now" CTA
+        → [If first booking with this tenant] → /waiver → Sign → Return
+        → [If paying] → /checkout → Mock payment → Success
+        → [If using package] → Direct booking
+      → /booking/confirmation → Success
+      → Session appears in /account → Upcoming bookings (grouped by tenant)
 ```
 
 ### Flow 2: Client Cancels a Booking
@@ -833,10 +945,10 @@ Each result card has a "Scan Next" button to reset.
   → Toast: "Booking cancelled"
 ```
 
-### Flow 3: Client Joins Waitlist
+### Flow 3: Student Joins Waitlist
 
 ```
-/sessions/[id] → Session is full
+/explore/[slug]/sessions/[id] → Session is full
   → "Join Waitlist (Position #3)" CTA
   → Confirmation: "You've been added to the waitlist"
   → Booking appears in /account with "Waitlisted" badge
@@ -897,6 +1009,20 @@ Each result card has a "Scan Next" button to reset.
   → Leave block appears on /admin/staff-calendar
 ```
 
+### Flow 8: Business Owner Lists on Booked4U
+
+```
+/ → Landing page → "List Your Business" CTA
+  → /for-business → Value proposition + plan comparison
+  → "Get Started" CTA → /for-business/register
+    → Step 1: Business name, owner name, email, password
+    → Step 2: Industry, description, logo upload, cover image, location
+    → Step 3: Select plan (Starter / Growth / Professional)
+    → Step 4: Stripe Checkout for plan payment
+  → On success: tenant provisioned → redirect to /admin
+  → Listing goes live on /explore once profile is complete
+```
+
 ---
 
 ## 8. Component Library
@@ -905,6 +1031,7 @@ Each result card has a "Scan Next" button to reset.
 
 | Component | Description |
 |-----------|-------------|
+| `TenantCard` | Business card for explore page — cover image, logo, name, industry tag, description, upcoming session count |
 | `SessionCard` | Compact session display for list views — name, time, instructor, capacity, status |
 | `StatusBadge` | Colored pill badge for statuses: Open, Waitlist, Full, Cancelled, Attended, Late, No-Show, Pending, Active, Inactive, etc. |
 | `CapacityBar` | Visual progress bar showing booked/total spots |

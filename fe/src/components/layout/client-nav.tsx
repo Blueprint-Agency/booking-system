@@ -6,8 +6,8 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 
 const NAV_LINKS = [
-  { href: "/sessions", label: "Sessions" },
-  { href: "/pricing", label: "Pricing" },
+  { href: "/explore", label: "Explore" },
+  { href: "/for-business", label: "For Business" },
 ];
 
 const AUTH_LINKS = [
@@ -30,7 +30,7 @@ export function ClientNav() {
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center">
-              <span className="text-white font-bold text-sm">T</span>
+              <span className="text-white font-bold text-sm">B</span>
             </div>
             <span className="font-serif text-xl text-ink">Booked4U</span>
           </Link>

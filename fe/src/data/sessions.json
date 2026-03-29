@@ -1,6 +1,7 @@
 [
   {
     "id": "ses-1",
+    "tenantId": "tenant-1",
     "name": "Morning Flow",
     "category": "Wellness",
     "level": "beginner",
@@ -41,7 +42,8 @@
     "waitlistMaxSize": 5,
     "lateCutoffMinutes": 10,
     "packageEligible": true,
-    "description": "High-intensity circuit training combining bodyweight and equipment exercises."
+    "description": "High-intensity circuit training combining bodyweight and equipment exercises.",
+    "tenantId": "tenant-1"
   },
   {
     "id": "ses-3",
@@ -63,7 +65,8 @@
     "waitlistMaxSize": null,
     "lateCutoffMinutes": null,
     "packageEligible": true,
-    "description": "Gentle stretching and breathwork session suitable for all levels."
+    "description": "Gentle stretching and breathwork session suitable for all levels.",
+    "tenantId": "tenant-1"
   },
   {
     "id": "ses-4",
@@ -85,7 +88,8 @@
     "waitlistMaxSize": 3,
     "lateCutoffMinutes": 5,
     "packageEligible": true,
-    "description": "Fast-paced interval training for maximum results in minimum time."
+    "description": "Fast-paced interval training for maximum results in minimum time.",
+    "tenantId": "tenant-1"
   },
   {
     "id": "ses-5",
@@ -107,7 +111,8 @@
     "waitlistMaxSize": null,
     "lateCutoffMinutes": null,
     "packageEligible": true,
-    "description": "Wind down with restorative poses and guided relaxation techniques."
+    "description": "Wind down with restorative poses and guided relaxation techniques.",
+    "tenantId": "tenant-1"
   },
   {
     "id": "ses-6",
@@ -129,7 +134,8 @@
     "waitlistMaxSize": 5,
     "lateCutoffMinutes": 10,
     "packageEligible": true,
-    "description": "Targeted core strengthening with progressive difficulty."
+    "description": "Targeted core strengthening with progressive difficulty.",
+    "tenantId": "tenant-1"
   },
   {
     "id": "ses-7",
@@ -151,7 +157,8 @@
     "waitlistMaxSize": null,
     "lateCutoffMinutes": null,
     "packageEligible": true,
-    "description": "Deep flexibility work focusing on hips, shoulders, and spine mobility."
+    "description": "Deep flexibility work focusing on hips, shoulders, and spine mobility.",
+    "tenantId": "tenant-1"
   },
   {
     "id": "ses-8",
@@ -173,7 +180,8 @@
     "waitlistMaxSize": 5,
     "lateCutoffMinutes": 10,
     "packageEligible": true,
-    "description": "Advanced full-body conditioning for experienced participants."
+    "description": "Advanced full-body conditioning for experienced participants.",
+    "tenantId": "tenant-1"
   },
   {
     "id": "ses-9",
@@ -195,7 +203,8 @@
     "waitlistMaxSize": null,
     "lateCutoffMinutes": null,
     "packageEligible": true,
-    "description": "Energizing morning session combining dynamic movement with breathwork."
+    "description": "Energizing morning session combining dynamic movement with breathwork.",
+    "tenantId": "tenant-1"
   },
   {
     "id": "ses-10",
@@ -217,7 +226,8 @@
     "waitlistMaxSize": 5,
     "lateCutoffMinutes": 15,
     "packageEligible": false,
-    "description": "In-depth workshop covering joint mobility assessment and corrective exercises."
+    "description": "In-depth workshop covering joint mobility assessment and corrective exercises.",
+    "tenantId": "tenant-1"
   },
   {
     "id": "ses-11",
@@ -239,7 +249,8 @@
     "waitlistMaxSize": null,
     "lateCutoffMinutes": null,
     "packageEligible": true,
-    "description": "Quick midday session to reset your body and mind."
+    "description": "Quick midday session to reset your body and mind.",
+    "tenantId": "tenant-1"
   },
   {
     "id": "ses-12",
@@ -261,7 +272,8 @@
     "waitlistMaxSize": 5,
     "lateCutoffMinutes": 10,
     "packageEligible": true,
-    "description": "Heart-pumping cardio session combining running drills and plyometrics."
+    "description": "Heart-pumping cardio session combining running drills and plyometrics.",
+    "tenantId": "tenant-1"
   },
   {
     "id": "ses-13",
@@ -283,7 +295,8 @@
     "waitlistMaxSize": null,
     "lateCutoffMinutes": null,
     "packageEligible": true,
-    "description": "Extended restorative session with props, gentle holds, and guided meditation."
+    "description": "Extended restorative session with props, gentle holds, and guided meditation.",
+    "tenantId": "tenant-1"
   },
   {
     "id": "ses-14",
@@ -305,7 +318,8 @@
     "waitlistMaxSize": 3,
     "lateCutoffMinutes": 10,
     "packageEligible": true,
-    "description": "Sport-specific conditioning drills for competitive athletes."
+    "description": "Sport-specific conditioning drills for competitive athletes.",
+    "tenantId": "tenant-1"
   },
   {
     "id": "ses-15",
@@ -327,7 +341,8 @@
     "waitlistMaxSize": 10,
     "lateCutoffMinutes": 20,
     "packageEligible": false,
-    "description": "Open community event featuring live music, movement, and connection."
+    "description": "Open community event featuring live music, movement, and connection.",
+    "tenantId": "tenant-1"
   },
   {
     "id": "ses-16",
@@ -349,7 +364,8 @@
     "waitlistMaxSize": 5,
     "lateCutoffMinutes": null,
     "packageEligible": true,
-    "description": "Targeted upper body workout with dumbbells and resistance bands."
+    "description": "Targeted upper body workout with dumbbells and resistance bands.",
+    "tenantId": "tenant-1"
   },
   {
     "id": "ses-17",
@@ -371,7 +387,8 @@
     "waitlistMaxSize": null,
     "lateCutoffMinutes": null,
     "packageEligible": true,
-    "description": "Explore various breathing techniques for stress relief and energy."
+    "description": "Explore various breathing techniques for stress relief and energy.",
+    "tenantId": "tenant-1"
   },
   {
     "id": "ses-18",
@@ -393,7 +410,8 @@
     "waitlistMaxSize": 5,
     "lateCutoffMinutes": 10,
     "packageEligible": true,
-    "description": "The ultimate weekend challenge — 75 minutes of non-stop effort."
+    "description": "The ultimate weekend challenge — 75 minutes of non-stop effort.",
+    "tenantId": "tenant-1"
   },
   {
     "id": "ses-19",
@@ -415,7 +433,8 @@
     "waitlistMaxSize": null,
     "lateCutoffMinutes": null,
     "packageEligible": true,
-    "description": "Slow, intentional movement to close out the week."
+    "description": "Slow, intentional movement to close out the week.",
+    "tenantId": "tenant-1"
   },
   {
     "id": "ses-20",
@@ -437,6 +456,306 @@
     "waitlistMaxSize": 5,
     "lateCutoffMinutes": 15,
     "packageEligible": false,
-    "description": "A 2.5 hour endurance workshop pushing your limits with coached intervals."
+    "description": "A 2.5 hour endurance workshop pushing your limits with coached intervals.",
+    "tenantId": "tenant-1"
+  },
+  {
+    "id": "ses-21",
+    "tenantId": "tenant-2",
+    "name": "Wheel-Throwing Basics",
+    "category": "Pottery",
+    "level": "beginner",
+    "type": "regular",
+    "instructorId": "inst-20",
+    "capacity": 8,
+    "bookedCount": 6,
+    "waitlistCount": 0,
+    "date": "2026-04-07",
+    "time": "10:00",
+    "duration": 120,
+    "price": 65,
+    "status": "scheduled",
+    "recurrence": "RRULE:FREQ=WEEKLY;BYDAY=MO,SA",
+    "waitlistEnabled": true,
+    "waitlistMaxSize": 3,
+    "lateCutoffMinutes": 15,
+    "packageEligible": true,
+    "description": "Learn the fundamentals of wheel-throwing — centering, pulling, and shaping your first bowl."
+  },
+  {
+    "id": "ses-22",
+    "tenantId": "tenant-2",
+    "name": "Hand-Building Workshop",
+    "category": "Pottery",
+    "level": "all",
+    "type": "workshop",
+    "instructorId": "inst-20",
+    "capacity": 10,
+    "bookedCount": 8,
+    "waitlistCount": 1,
+    "date": "2026-04-12",
+    "time": "14:00",
+    "duration": 150,
+    "price": 85,
+    "status": "scheduled",
+    "recurrence": null,
+    "waitlistEnabled": true,
+    "waitlistMaxSize": 5,
+    "lateCutoffMinutes": 15,
+    "packageEligible": false,
+    "description": "Create unique pieces using coil, slab, and pinch techniques. All materials included."
+  },
+  {
+    "id": "ses-23",
+    "tenantId": "tenant-2",
+    "name": "Glazing & Finishing",
+    "category": "Pottery",
+    "level": "intermediate",
+    "type": "regular",
+    "instructorId": "inst-21",
+    "capacity": 6,
+    "bookedCount": 4,
+    "waitlistCount": 0,
+    "date": "2026-04-08",
+    "time": "18:30",
+    "duration": 90,
+    "price": 55,
+    "status": "scheduled",
+    "recurrence": "RRULE:FREQ=WEEKLY;BYDAY=TU",
+    "waitlistEnabled": true,
+    "waitlistMaxSize": 3,
+    "lateCutoffMinutes": 10,
+    "packageEligible": true,
+    "description": "Learn glazing techniques to finish your bisque-fired pieces with color and texture."
+  },
+  {
+    "id": "ses-24",
+    "tenantId": "tenant-3",
+    "name": "Japanese Ramen From Scratch",
+    "category": "Japanese",
+    "level": "intermediate",
+    "type": "workshop",
+    "instructorId": "inst-30",
+    "capacity": 12,
+    "bookedCount": 11,
+    "waitlistCount": 2,
+    "date": "2026-04-12",
+    "time": "11:00",
+    "duration": 180,
+    "price": 95,
+    "status": "scheduled",
+    "recurrence": null,
+    "waitlistEnabled": true,
+    "waitlistMaxSize": 5,
+    "lateCutoffMinutes": 15,
+    "packageEligible": false,
+    "description": "Make tonkotsu broth, fresh noodles, chashu pork, and all the toppings from scratch."
+  },
+  {
+    "id": "ses-25",
+    "tenantId": "tenant-3",
+    "name": "Italian Pasta Masterclass",
+    "category": "Italian",
+    "level": "beginner",
+    "type": "regular",
+    "instructorId": "inst-31",
+    "capacity": 10,
+    "bookedCount": 7,
+    "waitlistCount": 0,
+    "date": "2026-04-07",
+    "time": "18:00",
+    "duration": 150,
+    "price": 85,
+    "status": "scheduled",
+    "recurrence": "RRULE:FREQ=WEEKLY;BYDAY=MO",
+    "waitlistEnabled": true,
+    "waitlistMaxSize": 5,
+    "lateCutoffMinutes": 15,
+    "packageEligible": true,
+    "description": "Hand-roll pasta, make sauces from scratch, and plate like a pro."
+  },
+  {
+    "id": "ses-26",
+    "tenantId": "tenant-3",
+    "name": "Thai Street Food",
+    "category": "Thai",
+    "level": "all",
+    "type": "regular",
+    "instructorId": "inst-30",
+    "capacity": 12,
+    "bookedCount": 5,
+    "waitlistCount": 0,
+    "date": "2026-04-09",
+    "time": "18:00",
+    "duration": 120,
+    "price": 75,
+    "status": "scheduled",
+    "recurrence": "RRULE:FREQ=WEEKLY;BYDAY=WE",
+    "waitlistEnabled": true,
+    "waitlistMaxSize": null,
+    "lateCutoffMinutes": 15,
+    "packageEligible": true,
+    "description": "Pad thai, green curry, and mango sticky rice — authentic recipes made simple."
+  },
+  {
+    "id": "ses-27",
+    "tenantId": "tenant-4",
+    "name": "Acoustic Guitar for Beginners",
+    "category": "Guitar",
+    "level": "beginner",
+    "type": "regular",
+    "instructorId": "inst-40",
+    "capacity": 8,
+    "bookedCount": 6,
+    "waitlistCount": 0,
+    "date": "2026-04-07",
+    "time": "19:00",
+    "duration": 60,
+    "price": 40,
+    "status": "scheduled",
+    "recurrence": "RRULE:FREQ=WEEKLY;BYDAY=MO,TH",
+    "waitlistEnabled": true,
+    "waitlistMaxSize": 3,
+    "lateCutoffMinutes": 10,
+    "packageEligible": true,
+    "description": "Learn chords, strumming patterns, and play your first songs in weeks."
+  },
+  {
+    "id": "ses-28",
+    "tenantId": "tenant-4",
+    "name": "Drum Circle Jam",
+    "category": "Drums",
+    "level": "all",
+    "type": "regular",
+    "instructorId": "inst-41",
+    "capacity": 10,
+    "bookedCount": 8,
+    "waitlistCount": 0,
+    "date": "2026-04-08",
+    "time": "20:00",
+    "duration": 90,
+    "price": 35,
+    "status": "scheduled",
+    "recurrence": "RRULE:FREQ=WEEKLY;BYDAY=TU",
+    "waitlistEnabled": true,
+    "waitlistMaxSize": 5,
+    "lateCutoffMinutes": 10,
+    "packageEligible": true,
+    "description": "Group drumming session — no experience needed. Feel the rhythm and play together."
+  },
+  {
+    "id": "ses-29",
+    "tenantId": "tenant-5",
+    "name": "Guided Meditation",
+    "category": "Meditation",
+    "level": "beginner",
+    "type": "regular",
+    "instructorId": "inst-50",
+    "capacity": 20,
+    "bookedCount": 12,
+    "waitlistCount": 0,
+    "date": "2026-04-07",
+    "time": "07:30",
+    "duration": 45,
+    "price": 20,
+    "status": "scheduled",
+    "recurrence": "RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR",
+    "waitlistEnabled": true,
+    "waitlistMaxSize": null,
+    "lateCutoffMinutes": 5,
+    "packageEligible": true,
+    "description": "Morning meditation practice with breathing techniques and body scan."
+  },
+  {
+    "id": "ses-30",
+    "tenantId": "tenant-5",
+    "name": "Sound Bath Healing",
+    "category": "Sound Healing",
+    "level": "all",
+    "type": "regular",
+    "instructorId": "inst-51",
+    "capacity": 15,
+    "bookedCount": 14,
+    "waitlistCount": 3,
+    "date": "2026-04-09",
+    "time": "19:30",
+    "duration": 75,
+    "price": 45,
+    "status": "scheduled",
+    "recurrence": "RRULE:FREQ=WEEKLY;BYDAY=WE",
+    "waitlistEnabled": true,
+    "waitlistMaxSize": 5,
+    "lateCutoffMinutes": 10,
+    "packageEligible": true,
+    "description": "Immerse yourself in healing sounds from crystal bowls, gongs, and chimes."
+  },
+  {
+    "id": "ses-31",
+    "tenantId": "tenant-5",
+    "name": "Mindfulness Workshop",
+    "category": "Mindfulness",
+    "level": "all",
+    "type": "workshop",
+    "instructorId": "inst-50",
+    "capacity": 16,
+    "bookedCount": 9,
+    "waitlistCount": 0,
+    "date": "2026-04-13",
+    "time": "10:00",
+    "duration": 120,
+    "price": 55,
+    "status": "scheduled",
+    "recurrence": null,
+    "waitlistEnabled": true,
+    "waitlistMaxSize": 5,
+    "lateCutoffMinutes": 15,
+    "packageEligible": false,
+    "description": "Half-day workshop exploring mindfulness techniques for daily life and stress management."
+  },
+  {
+    "id": "ses-32",
+    "tenantId": "tenant-6",
+    "name": "Python for Beginners",
+    "category": "Programming",
+    "level": "beginner",
+    "type": "regular",
+    "instructorId": "inst-60",
+    "capacity": 15,
+    "bookedCount": 13,
+    "waitlistCount": 2,
+    "date": "2026-04-12",
+    "time": "10:00",
+    "duration": 180,
+    "price": 60,
+    "status": "scheduled",
+    "recurrence": "RRULE:FREQ=WEEKLY;BYDAY=SA",
+    "waitlistEnabled": true,
+    "waitlistMaxSize": 5,
+    "lateCutoffMinutes": 15,
+    "packageEligible": true,
+    "description": "Start your coding journey with Python — variables, loops, functions, and your first project."
+  },
+  {
+    "id": "ses-33",
+    "tenantId": "tenant-6",
+    "name": "Build a Website with JavaScript",
+    "category": "Web Dev",
+    "level": "intermediate",
+    "type": "workshop",
+    "instructorId": "inst-61",
+    "capacity": 12,
+    "bookedCount": 10,
+    "waitlistCount": 0,
+    "date": "2026-04-13",
+    "time": "10:00",
+    "duration": 240,
+    "price": 85,
+    "status": "scheduled",
+    "recurrence": null,
+    "waitlistEnabled": true,
+    "waitlistMaxSize": 5,
+    "lateCutoffMinutes": 15,
+    "packageEligible": false,
+    "description": "Full-day workshop building a responsive website from scratch using HTML, CSS, and JavaScript."
   }
 ]
