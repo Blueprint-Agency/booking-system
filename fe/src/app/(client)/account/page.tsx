@@ -157,10 +157,10 @@ export default function AccountOverview() {
           <div className="bg-card border border-border rounded-lg p-8 text-center">
             <p className="text-muted text-sm mb-4">No upcoming bookings</p>
             <Link
-              href="/sessions"
+              href="/classes"
               className="inline-flex items-center gap-2 px-5 py-2.5 bg-accent text-white text-sm font-medium rounded-md hover:bg-accent-deep transition-colors duration-200"
             >
-              Browse Sessions
+              Browse Classes
             </Link>
           </div>
         ) : (
@@ -181,7 +181,7 @@ export default function AccountOverview() {
                 >
                   <div className="flex-1 min-w-0">
                     <Link
-                      href={`/sessions/${session.id}`}
+                      href={`/classes`}
                       className="font-serif text-lg text-ink hover:text-accent-deep transition-colors duration-200"
                     >
                       {session.name}
@@ -199,7 +199,7 @@ export default function AccountOverview() {
 
                   <div className="flex items-center gap-2 shrink-0">
                     <Link
-                      href="/sessions"
+                      href={`/classes`}
                       className="px-4 py-2 text-sm font-medium text-accent-deep border border-accent-glow rounded-md hover:bg-accent-glow/20 transition-colors duration-200"
                     >
                       Reschedule

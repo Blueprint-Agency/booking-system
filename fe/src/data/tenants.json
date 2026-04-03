@@ -1,18 +1,18 @@
 [
   {
     "id": "tenant-1",
-    "slug": "sunrise-yoga",
-    "name": "Sunrise Yoga Studio",
-    "industry": "Fitness",
-    "description": "A welcoming yoga and fitness studio in the heart of Tiong Bahru. We offer a range of classes from gentle morning flows to high-intensity training, led by experienced instructors who are passionate about helping you achieve your wellness goals. Whether you're a beginner or advanced practitioner, you'll find a class that fits your level and schedule.",
-    "shortDescription": "Yoga, fitness & wellness classes for all levels",
+    "slug": "yoga-sadhana",
+    "name": "Yoga Sadhana",
+    "industry": "Yoga",
+    "description": "A traditional yoga studio in the heart of Tiong Bahru, Singapore. Founded by Master Sumit with over 20 years of practice, Yoga Sadhana offers group classes, specialised workshops, and private sessions rooted in Hatha, Ashtanga, and Vinyasa traditions. Whether you are stepping on the mat for the first time or deepening an existing practice, our instructors meet you where you are.",
+    "shortDescription": "Traditional yoga classes, workshops & private sessions in Tiong Bahru",
     "location": "Tiong Bahru, Singapore",
     "logoEmoji": "🧘",
     "coverGradient": "from-amber-100 to-orange-200",
     "status": "active",
     "plan": "professional",
-    "logoUrl": "https://placehold.co/200x200/f5f0e8/c4956a?text=SY&font=playfair-display",
-    "coverUrl": "https://placehold.co/1200x400/f5e6d3/c4956a?text=Sunrise+Yoga+Studio&font=playfair-display"
+    "logoUrl": "https://placehold.co/200x200/f5f0e8/c4956a?text=YS&font=playfair-display",
+    "coverUrl": "https://placehold.co/1200x400/f5e6d3/c4956a?text=Yoga+Sadhana&font=playfair-display"
   },
   {
     "id": "tenant-2",

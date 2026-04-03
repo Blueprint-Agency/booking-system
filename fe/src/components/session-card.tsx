@@ -25,7 +25,7 @@ export function SessionCard({
 
   return (
     <Link
-      href={href || `/sessions/${session.id}`}
+      href={href || `/classes`}
       className={cn(
         "block bg-card border border-border rounded-lg p-6 transition-all duration-300",
         "hover:shadow-hover hover:-translate-y-0.5 hover:border-accent",

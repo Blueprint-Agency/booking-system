@@ -1,8 +1,8 @@
-# Frontend Design Document — Booked4U Marketplace & Booking Platform (Phase 1 Prototype)
+# Frontend Design Document — Yoga Sadhana Client Booking Portal (Phase 1 Prototype)
 
-**Product:** Booking & Management SaaS Platform
-**Version:** 1.0
-**Date:** March 29, 2026
+**Product:** Yoga Sadhana Client Booking Portal
+**Version:** 1.1
+**Date:** April 3, 2026
 **Status:** Draft
 **Audience:** Design / Engineering / Client Stakeholder
 **Author:** TBD
@@ -13,18 +13,17 @@
 
 ### 1.1 Purpose
 
-This document defines the complete frontend specification for the Phase 1 clickable prototype. It covers every page, component, user flow, and design token needed to build a testable interface — without any backend dependency.
+This document defines the complete frontend specification for the Phase 1 clickable prototype. It covers every page, component, user flow, and design token needed to build a testable client-facing interface — without any backend dependency.
 
-The prototype lets stakeholders navigate real pages with mock data, testing all user flows (booking, cancellation, check-in, admin operations) before backend development begins.
+The prototype lets stakeholders navigate real pages with mock data, testing all client flows (browsing, booking, purchasing, account management) before backend development begins.
 
 ### 1.2 Scope
 
-- **Platform marketplace** — dual-audience landing page, tenant directory (explore), tenant profile pages, business onboarding
-- **Student booking portal** — tenant-scoped session browser + cross-tenant authenticated account area
-- **Admin dashboard** — full operations backend covering all PRD features
-- **Instructor portal** — schedule, compensation, leave (3 pages)
-- **Staff portal** — check-in scanner, leave (2 pages)
-- **Total**: 55 unique routes across 5 areas
+- **Platform landing & explore** — studio directory, studio profile pages
+- **Client booking portal** — packages, classes (weekly calendar), workshops, private sessions
+- **Auth flows** — register, login, verify phone/email, forgot/reset password
+- **Client account area** — bookings, history, packages, membership, invoices, QR, referral
+- **Total**: 27 unique routes
 
 ### 1.3 Technical Stack
 
@@ -44,8 +43,6 @@ The prototype lets stakeholders navigate real pages with mock data, testing all 
 ### 1.4 Design Direction
 
 **Warm Minimal** — clean and modern with warm tones (cream, terracotta, sage). Premium and calm. The aesthetic is aligned with the existing documentation portal and evokes trust without being sterile.
-
-**Content**: Marketplace mock data includes multiple tenants across different industries (yoga studio, pottery workshop, cooking school, music academy, etc.) to demonstrate the cross-tenant browsing experience. Session names, instructor names, and categories are varied across tenants to show the platform's flexibility.
 
 ---
 
@@ -92,23 +89,13 @@ Derived from the existing `docs/html/index.html` design tokens.
 | `--status-info` | `#5a8ac4` | Informational badges |
 | `--status-info-bg` | `#eef4fb` | Info backgrounds |
 
-#### Admin Sidebar
-
-| Token | Value | Usage |
-|-------|-------|-------|
-| `--sidebar-bg` | `#1a1a2e` | Dark sidebar background |
-| `--sidebar-text` | `#b8b8cc` | Inactive menu items |
-| `--sidebar-active` | `#ffffff` | Active menu item text |
-| `--sidebar-hover` | `#2a2a4e` | Hover background |
-| `--sidebar-accent` | `#c4956a` | Active indicator bar |
-
 ### 2.2 Typography
 
 | Role | Font | Weight | Usage |
 |------|------|--------|-------|
 | Display headings | DM Serif Display | 400 | Page titles, hero text, section headers |
 | Body / UI | Outfit | 300–700 | All interface text, buttons, labels, navigation |
-| Mono / Data | JetBrains Mono | 400–500 | IDs, timestamps, invoice numbers, metrics, code |
+| Mono / Data | JetBrains Mono | 400–500 | IDs, timestamps, invoice numbers, QR labels |
 
 **Type Scale**: 11 · 12 · 13 · 14 · **16 (base)** · 18 · 20 · 24 · 28 · 32 · 40 · 48 px
 
@@ -151,253 +138,143 @@ Derived from the existing `docs/html/index.html` design tokens.
 
 ## 3. Page Inventory
 
-### 3.1 Platform & Client Portal — 24 Routes
+### 3.1 Platform & Booking — 27 Routes
 
-#### Platform-Level (Marketplace)
-
-| Route | Page | Auth Required |
-|-------|------|:---:|
-| `/` | Dual-audience landing page (students + businesses) | No |
-| `/explore` | Tenant directory — browse businesses by industry, category, location | No |
-| `/explore/[slug]` | Tenant profile page — business info + upcoming sessions | No |
-| `/explore/[slug]/sessions` | Tenant-scoped session discovery (list + calendar toggle) | No* |
-| `/explore/[slug]/sessions/[id]` | Session detail + booking CTA (tenant-scoped) | No* |
-| `/for-business` | Business-facing landing — value prop + plan comparison | No |
-| `/for-business/register` | Tenant onboarding — business registration + plan selection | No |
-
-#### Student Auth & Booking
+#### Platform-Level
 
 | Route | Page | Auth Required |
 |-------|------|:---:|
-| `/login` | Login form (students) | No |
-| `/register` | Student registration form | No |
+| `/` | Landing page (studio + student-facing) | No |
+| `/explore` | Studio directory — browse by category/location | No |
+| `/explore/[slug]` | Studio profile — entry point to booking | No |
+| `/explore/[slug]/packages` | Packages — bundles, unlimited plans, private session packs | No |
+| `/explore/[slug]/classes` | Classes — weekly calendar, credit-based booking | No* |
+| `/explore/[slug]/classes/[id]` | Class detail + booking confirmation step | No* |
+| `/explore/[slug]/workshops` | Workshops — card/list view, direct purchase | No |
+| `/explore/[slug]/private-sessions` | Private Sessions — instructor listing, request-based | No* |
+
+#### Auth
+
+| Route | Page | Auth Required |
+|-------|------|:---:|
+| `/login` | Sign in | No |
+| `/register` | Create account | No |
 | `/verify-email` | Email verification status | No |
-| `/forgot-password` | Password reset request | No |
-| `/reset-password` | Password reset form | No |
+| `/verify-phone` | Phone OTP verification (registration + password reset) | No |
+| `/forgot-password` | Password reset — phone number entry | No |
+| `/reset-password` | New password entry (post-OTP) | No |
 | `/checkout` | Stripe Checkout simulation | Yes |
-| `/booking/confirmation` | Booking confirmation | Yes |
-| `/waiver` | Digital waiver signing (tenant-scoped) | Yes |
+| `/checkout/confirmation` | Package / workshop purchase confirmation step (before Stripe) | Yes |
+| `/booking/confirmation` | Booking confirmation (post-payment or post-credit-deduction) | Yes |
 
-#### Student Account (Cross-Tenant)
+#### Client Account
 
 | Route | Page | Auth Required |
 |-------|------|:---:|
-| `/account` | Account overview — upcoming bookings across all tenants | Yes |
-| `/account/history` | Booking history across all tenants | Yes |
-| `/account/packages` | Active packages grouped by tenant | Yes |
-| `/account/membership` | Membership details grouped by tenant | Yes |
-| `/account/invoices` | Invoice list across all tenants | Yes |
+| `/account` | Overview — upcoming bookings | Yes |
+| `/account/history` | Booking history + class ratings | Yes |
+| `/account/packages` | Active packages | Yes |
+| `/account/membership` | Membership status + contact sales | Yes |
+| `/account/invoices` | Invoice list | Yes |
 | `/account/profile` | Profile settings | Yes |
 | `/account/qr` | My QR code | Yes |
+| `/account/referral` | Referral code + tracking | Yes |
 
-*Enhanced UI when logged in (package pricing, booking actions)
+*Enhanced UI when authenticated (package status, booking actions)
 
-### 3.2 Admin Dashboard — 25 Routes
-
-| Route | Page |
-|-------|------|
-| `/admin` | Analytics dashboard home |
-| `/admin/sessions` | Session list / management |
-| `/admin/sessions/new` | Create session form |
-| `/admin/sessions/[id]` | Edit session |
-| `/admin/sessions/[id]/roster` | Session roster + attendance |
-| `/admin/schedule` | Calendar schedule view |
-| `/admin/bookings` | All bookings list |
-| `/admin/clients` | Client CRM list |
-| `/admin/clients/[id]` | Client profile detail (tabbed) |
-| `/admin/check-in` | QR code scanner |
-| `/admin/products` | Packages / memberships / drop-in config |
-| `/admin/products/new` | Create product form |
-| `/admin/products/[id]` | Edit product |
-| `/admin/invoices` | Invoice list |
-| `/admin/invoices/[id]` | Invoice detail |
-| `/admin/instructors` | Instructor list |
-| `/admin/instructors/[id]` | Instructor profile + compensation config |
-| `/admin/instructors/compensation` | Compensation report |
-| `/admin/staff` | Staff list |
-| `/admin/leave` | Leave requests queue |
-| `/admin/staff-calendar` | Staff/instructor availability calendar |
-| `/admin/policies` | Business policy configuration |
-| `/admin/sales` | Sales & commission reports |
-| `/admin/settings` | Tenant settings (branding, notifications) |
-
-### 3.3 Instructor Portal — 3 Routes
-
-| Route | Page |
-|-------|------|
-| `/instructor` | My schedule |
-| `/instructor/compensation` | My compensation report |
-| `/instructor/leave` | My leave requests |
-
-### 3.4 Staff Portal — 2 Routes
-
-| Route | Page |
-|-------|------|
-| `/staff/check-in` | QR scanner |
-| `/staff/leave` | My leave requests |
+> **Note:** `/for-business` remains accessible via direct URL and is linked from the landing page footer only — it is not shown in the primary consumer navigation.
 
 ---
 
 ## 4. Navigation & Information Architecture
 
-### 4.1 Platform & Client Portal — Top Navigation Bar
+### 4.1 Top Navigation Bar
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│  [Logo: Booked4U]    Explore    For Business    [Login/Avatar]          │
+│  [Logo: Yoga Sadhana]    Explore    [Login / Avatar]                    │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 **States:**
-- **Unauthenticated**: Logo | Explore | For Business | Login button
-- **Authenticated (student)**: Logo | Explore | My Bookings | Avatar dropdown → Account, My QR, Logout
-- **On tenant profile page** (`/explore/[slug]`): Logo shows breadcrumb back to Explore; tenant name displayed; Sessions link scoped to tenant
+- **Unauthenticated**: Logo | Explore | Login button
+- **Authenticated**: Logo | Explore | My Bookings | Avatar dropdown → Account, My QR, Logout
+- **On studio profile page** (`/explore/[slug]`): Logo shows breadcrumb back to Explore; studio name; sub-nav tabs (Packages / Classes / Workshops / Private Sessions)
 - **Mobile (< 768px)**: Logo | Hamburger → slide-out drawer with all links
+
+> **Note**: "For Business" is intentionally excluded from the consumer nav bar. It remains accessible at `/for-business` via footer link only.
 
 **Behavior**: Sticky top, transparent on landing hero → solid on scroll. Always solid on interior pages.
 
-### 4.2 Admin Dashboard — Sidebar + Top Bar
-
-```
-┌──────────┬────────────────────────────────────────────────┐
-│          │  [Breadcrumbs]                [Search] [Avatar] │
-│  SIDEBAR ├────────────────────────────────────────────────┤
-│          │                                                │
-│ Dashboard│               PAGE CONTENT                     │
-│ Sessions │                                                │
-│ Clients  │                                                │
-│ Team     │                                                │
-│ Finance  │                                                │
-│ Settings │                                                │
-│          │                                                │
-└──────────┴────────────────────────────────────────────────┘
-```
-
-**Sidebar sections** (collapsible groups):
-
-| Section | Items |
-|---------|-------|
-| Dashboard | Analytics home |
-| Sessions | Session list, Schedule, Check-in |
-| Clients | Client list, Bookings |
-| Team | Instructors, Staff, Leave requests, Staff calendar |
-| Finance | Products, Invoices, Compensation, Sales |
-| Settings | Policies, Tenant settings |
-
-**Sidebar behavior:**
-- Full width: 240px with labels
-- Collapsed (tablet): 56px icon-only mode
-- Hidden (mobile): hamburger toggle, slides over content
-- Dark background (`--sidebar-bg: #1a1a2e`)
-- Active item: white text + left accent bar (`--sidebar-accent`)
-
-### 4.3 Role Switcher (Development Aid)
-
-A floating pill anchored to the bottom-right corner. Allows the reviewer to switch between Client / Admin / Instructor / Staff views instantly without logging in/out. Only visible in prototype mode.
-
 ---
 
-## 5. Client Portal — Page Specifications
+## 5. Page Specifications
 
 ### 5.1 Landing Page (`/`)
 
-**Purpose**: Dual-audience marketplace landing page that serves both students looking to book classes and businesses looking to list on the platform.
+**Purpose**: Studio discovery page for clients looking to book classes.
 
 **Layout:**
 
-- **Hero**: Headline (DM Serif Display, 48px) — e.g., "Discover classes, workshops & experiences." Subtitle (Outfit, 18px, muted) — e.g., "Book across studios and creators — all in one place." Two CTAs:
+- **Hero**: Headline (DM Serif Display, 48px) — e.g., "Discover yoga classes, workshops & private sessions." Subtitle (Outfit, 18px, muted). Single CTA:
   - "Explore Classes" (accent, filled) → `/explore`
-  - "List Your Business" (accent-deep, outlined) → `/for-business`
 
-- **Featured tenants**: Horizontal scroll row of tenant cards (logo, name, industry tag, short tagline). Clicking navigates to `/explore/[slug]`. Section heading: "Popular on Booked4U"
+- **Featured studios**: Horizontal scroll row of studio cards (logo, name, tag, short tagline). Clicking → `/explore/[slug]`. Section heading: "Featured Studios"
 
-- **How it works — Students**: 3-step horizontal strip with icons:
-  1. "Browse" — Discover studios, workshops, and classes across industries
-  2. "Book" — Pick a session and reserve your spot in seconds
-  3. "Show up" — Check in with your QR code and enjoy
+- **How it works — Clients**: 3-step horizontal strip with icons:
+  1. "Browse" — Discover classes, workshops, and experiences
+  2. "Book" — Pick a session and reserve your spot
+  3. "Show up" — Check in with your QR code
 
-- **How it works — Businesses**: 3-step horizontal strip with icons:
-  1. "Sign up" — Create your business profile in minutes
-  2. "Get listed" — Appear on the Booked4U marketplace instantly
-  3. "Grow" — Reach new customers and manage bookings effortlessly
+- **Category grid**: Cards (Yoga, Fitness, Wellness, etc.) linking to `/explore?category={cat}`
 
-- **Industry categories**: Grid of category cards (Fitness, Arts & Crafts, Cooking, Music, Wellness, Education, etc.) with icons. Each links to `/explore?industry={category}`
+- **Footer**: Navigation links (Explore, Login, Register), subtle "For Business" text link (muted, low visual hierarchy), copyright
 
-- **Business CTA banner**: Full-width section — "Run a studio or workshop? Reach more customers with Booked4U." CTA: "Learn More" → `/for-business`
-
-- **Footer**: Navigation links (Explore, For Business, Login, Register), copyright, business info
-
-**Responsive**: Single column on mobile, stacked hero, horizontal scroll for featured tenants and category cards.
+**Responsive**: Single column on mobile, stacked hero, horizontal scroll for featured studios and category cards.
 
 ### 5.1a Explore Page (`/explore`)
 
-**Purpose**: Tenant directory — students browse and discover businesses across industries.
+**Purpose**: Studio directory — clients browse and discover businesses.
 
 **Layout:**
-- **Search bar** (top, prominent): Search by business name, keyword, or category
-- **Filter bar**: Industry dropdown (multi-select), Location / area dropdown, Sort by (Popular, Newest, Name A–Z)
-- **Result count**: "Showing 24 businesses"
-- **Tenant card grid**: 3 columns desktop, 2 tablet, 1 mobile
+- **Search bar** (top, prominent): Search by studio name, keyword, or category
+- **Filter bar**: Category dropdown, Location dropdown, Sort by (Popular, Newest, Name A–Z)
+- **Result count**: "Showing 24 studios"
+- **Studio card grid**: 3 columns desktop, 2 tablet, 1 mobile
 
-**Tenant Card:**
+**Studio Card:**
 ```
 ┌──────────────────────────────────────────┐
 │  [Cover Image]                           │
-│  [Logo]  Business Name                   │
-│  [Industry Tag]                          │
+│  [Logo]  Studio Name                     │
+│  [Category Tag]                          │
 │  Short description (2 lines max)         │
-│  12 upcoming sessions            →       │
+│  12 upcoming sessions             →      │
 └──────────────────────────────────────────┘
 ```
 
-- Cover image: 16:9 aspect ratio, fallback gradient if none uploaded
+- Cover image: 16:9 aspect ratio, fallback gradient
 - Industry tag: pill badge in `--accent-glow`
-- Upcoming session count: muted text, shows real count from mock data
 - Click anywhere → `/explore/[slug]`
 
-**Empty state**: "No businesses found matching your search. Try different filters."
+**Empty state**: "No studios found matching your search. Try different filters."
 
-**Responsive**: Cards stack single-column on mobile. Search bar full-width. Filters collapse to a "Filters" button → opens bottom sheet.
+**Responsive**: Cards stack single-column on mobile. Filters collapse to bottom sheet.
 
-### 5.1b Tenant Profile Page (`/explore/[slug]`)
+### 5.1b Studio Profile Page (`/explore/[slug]`)
 
-**Purpose**: Public-facing business profile — shows business info and all upcoming sessions. This is the entry point into the tenant-scoped booking flow.
+**Purpose**: Public-facing studio profile — entry point into the booking flow.
 
 **Layout:**
 - **Cover image**: Full-width banner (16:9), fallback gradient
-- **Profile header**: Logo (overlapping cover bottom-left), business name (DM Serif Display, 32px), industry tag, location, short description
-- **Tab bar**: "Sessions" (default) | "About"
-
-**Sessions tab:**
-- Same session card format and filters as §5.3 (Category, Instructor, Level, Date range), but scoped to this tenant only
-- View toggle: List (default) | Calendar
-- Clicking a session card → `/explore/[slug]/sessions/[id]` (session detail page)
+- **Profile header**: Logo (overlapping cover), studio name (DM Serif Display, 32px), category tag, location, short description
+- **Sub-nav tabs**: Packages | Classes | Workshops | Private Sessions | About
+  - Default tab: Classes (if active), otherwise first active tab
 
 **About tab:**
-- Full business description
-- Location / address
-- Contact info (if provided)
+- Full studio description, location/address, contact info
 
-**Responsive**: Cover image scales to viewport. Profile header stacks vertically on mobile. Tab content full-width.
-
-### 5.1c For Business Page (`/for-business`)
-
-**Purpose**: Business-facing landing page — value proposition and plan comparison for tenant subscription.
-
-**Layout:**
-- **Hero**: Headline — e.g., "Grow your business with Booked4U." Subtitle — "Get listed on the marketplace, manage bookings, and reach new customers." CTA: "Get Started" → `/for-business/register`
-
-- **Benefits grid**: 4 cards with icons:
-  - "Marketplace visibility" — Appear in front of thousands of students browsing for classes
-  - "Booking management" — Schedules, rosters, waitlists, and attendance in one place
-  - "Payments & packages" — Stripe-powered drop-in, package, and membership billing
-  - "Business analytics" — Occupancy, revenue, and client insights at a glance
-
-- **Plan comparison**: 3-column pricing table (Starter / Growth / Professional) per PRD §4.2. Each column shows: plan name, price, feature list, CTA button → `/for-business/register?plan={plan}`
-
-- **CTA banner**: "Ready to get started?" + "Create Your Business Profile" button
-
-**Responsive**: Single column on mobile. Plan cards stack vertically with "Most Popular" highlighted.
+**Responsive**: Cover image scales to viewport. Profile header stacks vertically on mobile. Tabs scroll horizontally on mobile.
 
 ### 5.2 Auth Pages
 
@@ -407,530 +284,301 @@ All auth pages share the same layout: centered card (max-width 400px) on `--warm
 - Email + password fields
 - "Remember me" checkbox
 - "Forgot password?" link
-- Divider: "or continue with"
-- Google OAuth button
 - "Don't have an account? Create one" link
 - Form validation: inline error messages, loading state on submit
 
 #### Register (`/register`)
-- Full name, email, phone, password, confirm password
-- Terms & conditions checkbox with link
+- First name
+- Phone number + inline "Send OTP" button — OTP verification required
+- Email (verification email sent on submit)
+- Password (minimum 8 characters)
+- Confirm password
+- Gender (dropdown: Male / Female / Prefer not to say) — optional
+- Date of birth (date picker) — optional
+- Referral code (optional; auto-prefilled from referral link if present)
+- Terms & conditions checkbox
 - "Create Account" button
 - "Already have an account? Log in" link
+
+After submit: phone OTP must be verified (`/verify-phone`) and email must be verified (`/verify-email`) before first booking.
 
 #### Verify Email (`/verify-email`)
 - Illustration (envelope icon)
 - "Check your inbox" heading + instruction text
 - "Resend verification email" link with cooldown timer
 
+#### Verify Phone (`/verify-phone`)
+- 6-digit OTP input
+- "Verify" button
+- "Resend code" link with cooldown timer
+- Used for both registration and password reset
+
 #### Forgot Password (`/forgot-password`)
-- Email field + "Send Reset Link" button
-- Success state: "If an account exists, we've sent a reset link"
+- Phone number field + "Send OTP" button
+- On submit: OTP sent → redirects to `/verify-phone`
+- On successful OTP: redirects to `/reset-password`
 
 #### Reset Password (`/reset-password`)
 - New password + confirm password fields
 - Password strength indicator
-- "Reset Password" button
+- "Reset Password" button → on success, redirect to `/login`
 
-### 5.3 Session Discovery (`/explore/[slug]/sessions`)
+### 5.3 Classes Page (`/explore/[slug]/classes`)
 
-**Purpose**: Browse and filter available sessions within a selected tenant. Students reach this page from the tenant profile page or by navigating directly.
-
-**Layout:**
-- **Filter bar** (top): Category dropdown, Instructor dropdown, Level dropdown, Date range picker
-- **View toggle**: List (default) | Calendar — icon buttons
-- **Result count**: "Showing 12 sessions"
-
-**List View** — vertical stack of session cards, sorted by date ascending:
-
-```
-┌──────────────────────────────────────────┐
-│  [Category Tag]  [Level Badge]           │
-│  Session Name                  status •  │
-│  Mon, Apr 7 · 10:00 AM · 60 min         │
-│  Instructor Name                         │
-│  4 spots left              [$25 / Pkg ✓] │
-└──────────────────────────────────────────┘
-```
-
-**Session Card details:**
-- Category tag: pill badge in `--accent-glow`
-- Level badge: Beginner (sage) / Intermediate (info) / Advanced (accent-deep)
-- Status indicator: `Open` (sage dot) | `Waitlist` (warning dot) | `Full` (muted dot) | `Cancelled` (error dot, strikethrough)
-- Price: dollar amount, OR "Included in Package" if client has active package
-- Spots remaining: count with visual urgency (< 3 spots: warning color)
-
-**Calendar View** — weekly grid:
-- Columns: Mon–Sun
-- Rows: hourly time slots (7 AM – 9 PM)
-- Sessions as colored blocks (category-based coloring)
-- Click block → navigates to session detail
-
-**Mobile:**
-- Filters collapse to a "Filters" button → opens bottom sheet
-- List view: full-width cards
-- Calendar view: horizontal scroll with day selector
-
-### 5.4 Session Detail (`/explore/[slug]/sessions/[id]`)
-
-**Purpose**: Full session information + booking action. Scoped to the selected tenant.
+**Purpose**: Browse bookable group classes. Consumes credits only — no dollar price shown.
 
 **Layout:**
-- **Header**: Session name (DM Serif Display, 28px), category tag, level badge, type badge (Regular/Workshop/Event)
-- **Schedule block**: Date, time, duration, recurrence note (e.g., "Every Monday")
-- **Instructor card**: Avatar, name, short bio
-- **Capacity bar**: Visual progress bar (booked/total), "X spots remaining" text
-- **Description**: Session description text (if any)
-- **CTA area**: Context-dependent button
 
-**CTA States:**
+**Weekly Calendar View:**
+- Full-week header row (MON 1, TUE 2, …, SUN 7), selected day highlighted
+- Subheading: "Classes on [Day], [Date]" — updates on day click
+- Left/Right week navigation + "Today" button
+- Each row = one class on the selected day, sorted by start time:
 
-| Client State | Button |
-|-------------|--------|
-| Spots available + has package | "Book Now — Use Package" (sage, filled) |
-| Spots available + no package | "Book Now — $25" (accent, filled) |
-| Full + waitlist enabled | "Join Waitlist (Position #N)" (warning, outlined) |
-| Full + no waitlist | "Session Full" (muted, disabled) |
-| Already booked | "You're Booked ✓" (sage, disabled) + "Cancel Booking" text link |
-| On waitlist | "On Waitlist (Position #N)" (warning, disabled) + "Leave Waitlist" text link |
-| Not logged in | "Log In to Book" (accent, filled) |
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  [Thumbnail]  [YOGA]  Infra Stretch         Book Now             │
+│               Master Sumit · 8:30am +08 · 60 min                │
+│               1 credit required · You have 9 credits left        │
+└──────────────────────────────────────────────────────────────────┘
+```
 
-### 5.5 Checkout (`/checkout`)
+**Credit info display (dynamic per client state):**
+- Bundle package: "1 credit required · You have X credits left"
+- Unlimited package: "1 credit required · You have unlimited credits"
+- No package / exhausted: "1 credit required · No credits available"
+- Not logged in: "Log in to see your credit balance"
 
-**Purpose**: Simulated Stripe Checkout for drop-in / package / membership purchases.
+**Book Now button states:**
+- Has credits + spots open: "Book Now" (sage, filled)
+- Spots open + no credits (new user or exhausted): "Book Now" (grey, visually disabled but clickable) → pop-up dialog: "You need a package to book this class." with "Buy a Package" CTA → `/explore/[slug]/packages`
+- Full + waitlist enabled: "Join Waitlist" (warning, outlined)
+- Full + no waitlist: "Full" (muted, disabled)
+- Already booked: "Booked ✓" (sage, disabled)
+- Not logged in: "Log In to Book" (accent, filled)
+
+**Mobile**: Horizontal day-selector strip at top; class rows full-width below.
+
+### 5.3a Class Detail / Booking (`/explore/[slug]/classes/[id]`)
+
+**Purpose**: Confirmation step before credit deduction.
+
+**Layout:**
+- Class image, name (DM Serif Display, 28px), category tag, level badge
+- Schedule block: date, time, duration, recurrence note ("Every Monday")
+- Instructor card: avatar, name, short bio
+- Capacity bar: booked/total, "X spots remaining"
+- Credit summary: "1 credit will be deducted from your [Package Name]"
+- **"Reserve Now"** button (sage) → deducts 1 credit → success dialog
+- Success dialog: "Your booking is confirmed! Please arrive 15 minutes before class." CTA: "I will attend on time"
+
+### 5.3b Workshops Page (`/explore/[slug]/workshops`)
+
+**Purpose**: Browse and purchase one-off or limited-run events. Direct purchase, no credits.
+
+**Layout:**
+- List sorted by date, upcoming first
+- Each workshop entry:
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  Phu Quoc Retreat                                        │
+│  Single session, Class Pack, or Unlimited options        │
+│                               [View packages ▼]         │
+└──────────────────────────────────────────────────────────┘
+```
+
+- Accordion expander reveals **workshop packages**:
+
+```
+  ┌───────────────────────────────────────────────────────────┐
+  │  Twin Sharing Room  ·  1 Class  ·  $1,900.00  [Purchase]  │
+  │  Single Room        ·  1 Class  ·  $2,200.00  [Purchase]  │
+  └───────────────────────────────────────────────────────────┘
+```
+
+**Purchase button states:**
+- Available: "Purchase" (accent, filled) → 3-step checkout
+- Sold out / max enrolment: "Sold Out" (muted, disabled) + **"Join Waitlist"** below
+- Workshop ended (past date): "Ended" (muted, disabled)
+- Already purchased: "Purchased ✓" (sage, disabled)
+
+**Purchase flow (Purchase → Confirmation → Checkout):**
+1. Client clicks **Purchase** on a workshop package
+2. **Confirmation page** (`/checkout/confirmation`): shows workshop name, package name/description, price, and a **Confirm Purchase** button
+3. Client clicks **Confirm Purchase** → Stripe Checkout (3-step simulated):
+   - **Step 1: Personal Information** — pre-filled name/email, phone input
+   - **Step 2: Pay With** — payment method selection
+   - **Step 3: Review Your Order** — order summary sidebar (workshop image, name, expiry, total)
+4. On success: confirmation screen + confirmation email
+
+**Mobile**: Full-width entries; accordion expands below; sticky order summary moves to bottom sheet on checkout.
+
+### 5.3c Private Sessions Page (`/explore/[slug]/private-sessions`)
+
+**Purpose**: Request personal training sessions. Not instant booking — request-based.
+
+**Layout:**
+- Page intro: "Book a private session with one of our instructors"
+- Instructor grid (2 columns desktop, 1 mobile):
+
+```
+┌─────────────────────────────────┐
+│  [Photo]                        │
+│  Instructor Name                │
+│  Bio / specialties (2 lines)    │
+│  [Schedule Private Class]       │
+└─────────────────────────────────┘
+```
+
+**Button states:**
+- Available: "Schedule Private Class" (accent, filled)
+- Unavailable: "Not Available" (muted, disabled)
+
+**Request flow:**
+1. Confirmation page: instructor details + **"Request Appointment"** button
+2. On submit: pending notification — "Your request is pending. We will update you within 12 hours."
+
+### 5.3d Packages Page (`/explore/[slug]/packages`)
+
+**Purpose**: Browse and purchase credit bundles, unlimited plans, and private session packages.
+
+**Layout — Three sections:**
+
+**Bundle Packages (Credits):**
+- Cards: package name, credit count, price, "Buy Now" CTA → checkout
+
+**Unlimited Packages:**
+- Cards: package name, duration (e.g., "3 months"), price, "unlimited" badge, "Buy Now" CTA
+
+**Private Session Packages:**
+- Cards: package name, format (1-on-1 / 2-on-1), session count, price, "Buy Now" CTA
+
+**Package card example (Bundle):**
+```
+┌──────────────────────────────────────┐
+│  10-Class Pack                       │
+│  10 credits · Valid 6 months         │
+│  SGD $300.00                         │
+│  [Buy Now]                           │
+└──────────────────────────────────────┘
+```
+
+**Purchase flow (Buy Now → Confirmation → Checkout):**
+1. Client clicks **Buy Now** on a package card
+2. **Confirmation page** (`/checkout/confirmation`): shows package name, credit/session count, validity period, price, and a **Confirm Purchase** button
+3. Client clicks **Confirm Purchase** → Stripe Checkout (simulated)
+4. On success → `/booking/confirmation`
+
+**Mobile**: Single-column card stack per section.
+
+### 5.4 Checkout (`/checkout`)
+
+**Purpose**: Simulated Stripe Checkout for package purchases.
 
 **Layout** (two-column, stacked on mobile):
 - **Left**: Order summary — item name, quantity, price, subtotal, total
 - **Right**: Mock payment form — card number, expiry, CVC, name on card, "Pay $XX" button
 - Success → redirects to `/booking/confirmation`
 
-### 5.6 Digital Waiver (`/waiver`)
-
-**Purpose**: Collect digital signature before first booking.
-
-**Layout:**
-- **Waiver document**: Scrollable container with rich text content (terms, liability, policies)
-- **Signature area** (below document):
-  - "Type your full name as your electronic signature" label
-  - Full name input field
-  - "I Agree" button — **disabled** until: (a) scrolled to bottom of document, AND (b) name field is not empty
-- **Success state**: "Waiver Signed" confirmation card with checkmark, date/time, "Continue to Booking" button
-
-### 5.7 Booking Confirmation (`/booking/confirmation`)
+### 5.5 Booking Confirmation (`/booking/confirmation`)
 
 **Layout**: Centered success card:
 - Large checkmark icon (sage)
 - "Booking Confirmed" heading
 - Session details: name, date, time, instructor
-- Package balance update (if applicable): "9 sessions remaining"
+- Package balance update: "9 credits remaining"
 - "Add to Calendar" link (mock)
 - "View My Bookings" button → `/account`
 
-### 5.8 Account Pages (`/account/*`)
+### 5.6 Account Pages (`/account/*`)
 
-**Layout**: Sidebar sub-navigation (desktop) or horizontal tab bar (mobile) linking to all account sections.
+**Layout**: Sidebar sub-navigation (desktop) or horizontal tab bar (mobile).
 
 #### Account Overview (`/account`)
-- **Quick stats row**: Next session (date/time + tenant name), Active packages (count across tenants), Memberships (count)
-- **Upcoming bookings list**: Session cards grouped by tenant, each showing tenant name + logo, with "Cancel" and "Reschedule" action buttons
-- Empty state: "No upcoming bookings — Explore Classes" link → `/explore`
+- **Quick stats row**: Next session (date/time + studio name), Active packages (count), Credits remaining
+- **Upcoming bookings list**: Session cards with studio name + logo, cancel/reschedule actions, and per-session QR code (collapsible)
+- Empty state: "No upcoming bookings — Explore Classes" → `/explore`
 
 #### Booking History (`/account/history`)
-- **Table/list**: Tenant name, Session name, Date, Time, Attendance status badge
-- Attendance badges: `Attended` (sage), `Late` (warning), `No-Show` (error)
-- Filters: Date range, Tenant dropdown
+- **Table/list**: Studio name, Session name, Date, Time, Attendance status badge, Rating
+- Attendance badges: `Attended` (sage), `Late` (warning), `No-Show` (error), `Cancelled` (muted)
+- **Rating column**: Dropdown menu (options: 1 star → 5 stars):
+  - **Unrated**: Dropdown placeholder "Rate class", `--muted` color
+  - **Rated**: Dropdown shows selected value (e.g., "4 stars"); `--accent` color
+  - **Unavailable** (non-attended): Dropdown disabled, greyed out, cursor default
+  - On submit: brief "Rated ✓" toast (no page reload)
+- Filters: Date range, Studio dropdown
 - Empty state: "No past bookings yet"
 
 #### My Packages (`/account/packages`)
-- **Package cards grouped by tenant**: Tenant name + logo header, then package cards underneath
-- Each card: Package name, sessions remaining (circular progress ring), expiry date, purchase date
-- Expired packages shown greyed out with "Expired" badge
+- **Package cards grouped by studio**: Studio name + logo header, then cards underneath:
+  - **Bundle credits**: credit count remaining (circular progress ring) + expiry date
+  - **Unlimited packages**: "Unlimited" badge + expiry date
+  - **Private sessions**: session count remaining per format (1-on-1 / 2-on-1) + expiry date
+- Each card: package name, purchase date
+- Expired packages shown greyed with "Expired" badge
 - "Explore Classes" CTA if none active → `/explore`
 
 #### Membership (`/account/membership`)
-- **Membership cards grouped by tenant**: Tenant name + logo header, then membership card underneath
-- Each card: Plan name, price/month, next billing date, sessions used this month (if limited)
-- "Cancel Membership" button → confirmation dialog with consequences text
+- **Membership cards grouped by studio**: Studio name + logo, then membership card
+- Each card: Plan name, package expiry date, status badge (Active / Expired)
+- **No "Cancel Membership" button** — replaced with **"Contact Sales Team"** CTA that opens a WhatsApp link
 - If no memberships: "Explore Classes" CTA → `/explore`
 
 #### Invoices (`/account/invoices`)
-- **Table**: Invoice number (mono font), tenant name, date, description, amount, status badge (Paid/Pending)
+- **Table**: Invoice number (mono font), studio name, date, description, amount, status (Paid/Pending)
 - Each row: "Download PDF" action
-- Filter: Tenant dropdown
+- Filter: Studio dropdown
 - Empty state: "No invoices yet"
 
 #### Profile (`/account/profile`)
 - **Form sections**:
-  - Personal info: Full name, email (read-only with lock icon), phone
+  - Personal info: First name, email (read-only with lock icon), phone, gender (select), date of birth
   - Password change: Current password, new password, confirm new password
 - "Save Changes" button with loading state
 
 #### My QR Code (`/account/qr`)
-- **Large QR code** centered on page (generated from mock client_id)
-- "Show this QR code at the front desk for check-in" instruction text
-- Brightness boost hint: "Tip: increase your screen brightness for faster scanning"
+- **Large QR code** centered on page (generated from mock client ID)
+- "Show this QR code at the front desk for check-in"
+- "Tip: increase your screen brightness for faster scanning"
 
-### 5.9 Cancellation / Reschedule Flow
+#### Referral (`/account/referral`)
+- **Referral code display**: Large 6-digit alphanumeric code (JetBrains Mono, prominent), "Copy Code" button
+- **Shareable link**: `booked4u.com/r/[CODE]` with "Copy Link" button
+- **Referral stats**: Total referrals (count), Converted (count with first booking completed)
+- **Referral table**: Referee first name, date registered, status badge (`Registered` / `Converted`)
+
+### 5.7 Cancellation / Reschedule Flow
 
 **Trigger**: "Cancel" button on any upcoming booking card.
 
 **Cancellation dialog:**
 1. Session details summary (name, date, time)
 2. Policy outcome — one of:
-   - **Within window**: "You're cancelling more than 12 hours in advance. Your session credit will be returned to your package."
-   - **Outside window (forfeit)**: "You're cancelling within 12 hours of the session. Per the studio's cancellation policy, your session credit will be forfeited."
+   - **Within window**: "You're cancelling more than 12 hours in advance. Your session credit will be returned."
+   - **Outside window (forfeit)**: "You're cancelling within 12 hours. Your session credit will be forfeited."
    - **Outside window (fee)**: "Late cancellation fee of $X will be charged."
 3. "Confirm Cancellation" (error color) and "Keep Booking" buttons
 
-**Reschedule**: Cancel dialog includes "Reschedule Instead?" link → redirects to `/explore/[slug]/sessions` (same tenant) with relevant filters pre-applied. Reschedule is treated as cancel + new booking per PRD.
+**Reschedule**: Dialog includes "Reschedule Instead?" link → redirects to `/explore/[slug]/classes` with filters pre-applied.
 
 ---
 
-## 6. Admin Dashboard — Page Specifications
+## 6. Key User Flows
 
-### 6.1 Analytics Dashboard (`/admin`)
-
-**Purpose**: At-a-glance business health overview.
-
-**Layout:**
-
-**Stat Cards** (top, 3-column grid on desktop / 2-column on tablet / 1-column on mobile):
-
-| Card | Data | Detail |
-|------|------|--------|
-| Total Revenue | $12,450 | +8.2% vs last month |
-| Active Clients | 142 | Trend arrow |
-| Session Occupancy | 78% | Mini sparkline |
-| No-Show Rate | 4.2% | Trend arrow |
-| Package Sales | 23 | This month count |
-| New Signups | 18 | This month count |
-
-**Chart Widgets** (2x2 grid below stats):
-
-1. **Revenue over time** — Line chart with day/week/month toggle
-2. **Top Sessions** — Horizontal bar chart, top 5 by attendance
-3. **Client Activity** — Donut chart: active vs inactive
-4. **Occupancy Trend** — Area chart over 30 days
-
-**Global date range filter** at top-right applies to all widgets.
-
-### 6.2 Session Management
-
-#### Session List (`/admin/sessions`)
-
-**Data table columns**: Name, Category, Level, Type, Instructor, Date/Time, Capacity (progress bar: booked/total), Status badge
-
-**Actions**: Filter by category, instructor, type, status, date range. "+ New Session" primary button.
-
-**Row actions**: Edit, View Roster, Cancel Session (with confirmation)
-
-#### Create / Edit Session (`/admin/sessions/new`, `/admin/sessions/[id]`)
-
-**Multi-section form:**
-
-| Section | Fields |
-|---------|--------|
-| Basic Info | Name (text), Category (select + create new), Level (select: Beginner/Intermediate/Advanced/N/A), Type (select: Regular/Workshop/Event) |
-| Schedule | Date (date picker), Start time (time picker), Duration in minutes (number), Recurrence (select: None/Weekly/Bi-weekly/Custom) |
-| Capacity | Max spots (number), Waitlist enabled (toggle), Max waitlist size (number, shown when waitlist enabled) |
-| Pricing | Drop-in price (currency input), Package-eligible (toggle) |
-| Instructor | Select from instructor list (searchable select) |
-| Late Cutoff | Minutes after start (number), or "Use global default" checkbox |
-
-**Recurrence editing**: When editing a recurring session, dialog prompt: "Apply to this session only" or "All future sessions"
-
-### 6.3 Session Roster (`/admin/sessions/[id]/roster`)
-
-**Purpose**: View and manage bookings + attendance for a specific session.
-
-**Layout:**
-- **Session summary header**: Name, date, time, instructor, capacity bar (e.g., "12 / 15 spots filled")
-- **Roster table**:
-
-| Column | Content |
-|--------|---------|
-| Client Name | Linked to client profile |
-| Booking Status | Confirmed / Waitlisted |
-| Check-in Status | Pending (muted) / Attended (sage) / Late (warning) / No-Show (error) |
-| Package Used | Package name or "Drop-in" |
-| Actions | Mark Attended / Late / No-Show (dropdown) |
-
-- **Bulk action**: "Mark All Attended" button (top of table)
-- **"+ Add Client"** button: Opens client search modal. Admin override — bypasses capacity limit.
-- **"Remove"** action per row: Confirmation dialog, no cancellation policy applied (admin override)
-
-### 6.4 Schedule Calendar (`/admin/schedule`)
-
-**Layout**: Full calendar view with week/month toggle.
-- Sessions displayed as colored blocks (category-based coloring)
-- Click any session block → navigates to its roster page
-- **Filters**: Instructor, Category (applied as calendar overlays)
-- **Navigation**: Previous/Next week/month arrows, "Today" button
-
-### 6.5 Booking Management (`/admin/bookings`)
-
-**Data table**: Client Name, Session Name, Date, Booking Status, Check-in Status, Package Used, Booked At.
-- Search by client or session name
-- Filter by status, check-in status, date range
-- Row action: View session roster
-
-### 6.6 Client CRM
-
-#### Client List (`/admin/clients`)
-
-**Data table columns**: Name, Email, Phone, Membership Status, Active Package, Last Booking Date, Activity Status, Tags
-
-**Search**: By name, email, or phone
-**Filters**: Membership status (active/inactive/none), Package status (has active/expired/none), Activity (active/inactive), Tags (multi-select)
-**Bulk actions**: "Export CSV", "Send Email" (mock)
-**Row action**: Click → client profile
-
-#### Client Profile (`/admin/clients/[id]`)
-
-**Tabbed layout** with 6 tabs:
-
-**Overview tab:**
-- Contact info: name, email, phone
-- Key stats: Registration date, Total sessions attended, No-show count, Activity status badge
-- Tags: Editable inline tag chips (click to add/remove). Example tags: VIP, New, Injured
-- Quick actions: "Add to Session", "Add Package"
-
-**Bookings tab:**
-- Upcoming bookings list with cancel action
-- Past bookings list with attendance status
-
-**Packages & Membership tab:**
-- Active packages: name, sessions remaining (progress bar), expiry date
-- Manual actions: "+ Add Sessions", "- Deduct Sessions" with quantity input
-- Membership: plan name, billing date, status
-- Manual action: "Extend Package" (change expiry date)
-
-**Invoices tab:**
-- Invoice table for this client only
-- Same columns as main invoice list
-
-**Waiver tab:**
-- Signed status: Yes/No badge
-- If signed: date, time, waiver version, "View Waiver PDF" link
-- If not signed: "Waiver not yet signed" warning
-
-**Notes tab:**
-- Timestamped admin notes list (newest first)
-- Each note: author, date/time, text content
-- "Add Note" textarea + submit button at top
-
-### 6.7 QR Check-In Scanner (`/admin/check-in`)
-
-**Purpose**: Staff/Admin scans client QR codes to mark attendance.
-
-**Layout:**
-- Camera viewfinder area (mock — shows placeholder graphic)
-- "Scan QR Code" instruction text
-- **Mock scan buttons** (since camera won't work in prototype):
-  - "Simulate: Attended" → green result
-  - "Simulate: Late" → yellow result
-  - "Simulate: No Booking" → red result
-  - "Simulate: Cutoff Exceeded" → red result
-  - "Simulate: Already Checked In" → orange result
-
-**Result Cards:**
-
-| State | Card Color | Content |
-|-------|-----------|---------|
-| Attended | Green (`--sage`) | Client name, session name, "Checked In" + timestamp |
-| Late | Yellow (`--status-warning`) | Client name, session name, "Checked In (Late)" + timestamp |
-| No Booking | Red (`--status-error`) | "No booking found for this client" |
-| Cutoff Exceeded | Red (`--status-error`) | "Check-in blocked — late cutoff exceeded. Marked as No-Show." |
-| Already Checked In | Orange (`--status-warning`) | Client name, "Already checked in at [time]" |
-
-Each result card has a "Scan Next" button to reset.
-
-### 6.8 Products Management (`/admin/products`)
-
-**Layout**: Three tabs — **Drop-in** | **Packages** | **Memberships**
-
-**Each tab**: Card grid of configured products.
-
-**Product Card:**
-- Product name
-- Price (formatted)
-- Details: session count + expiry for packages; monthly price + session limit for memberships
-- Active/Inactive badge
-- Edit / Deactivate actions
-
-**Create / Edit form** (`/admin/products/new`, `/admin/products/[id]`):
-
-| Field | Type |
-|-------|------|
-| Name | text |
-| Type | select: Drop-in / Package / Membership |
-| Price | currency |
-| Session count | number (packages/memberships) |
-| Expiry days | number (packages only) |
-| Sessions per month | number (memberships, or "Unlimited" toggle) |
-| Description | textarea |
-| Active | toggle |
-
-### 6.9 Invoice Management
-
-#### Invoice List (`/admin/invoices`)
-
-**Data table**: Invoice # (mono font), Client Name, Date, Amount, Status (Paid/Pending badge), Actions (View, Download PDF)
-
-**Filters**: Date range, Status, Client search
-
-#### Invoice Detail (`/admin/invoices/[id]`)
-
-**Invoice preview layout** (printable):
-- Business logo + name (from tenant settings)
-- Invoice number, issue date
-- Client name + contact info
-- Line items table: description, quantity, unit price, amount
-- Subtotal, total
-- Payment method, payment date
-- Status badge
-
-### 6.10 Instructor Management
-
-#### Instructor List (`/admin/instructors`)
-
-**Display**: Cards or table — Name, contact, sessions this month, total earnings this month
-**Action**: "+ Add Instructor" button
-
-#### Instructor Profile (`/admin/instructors/[id]`)
-
-- **Bio section**: Name, email, phone, bio text
-- **Assigned sessions**: List of upcoming sessions for this instructor
-- **Compensation config form**:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| Base pay per session | currency | Fixed amount per session taught |
-| Per-client commission | currency | Amount per attending client |
-| Revenue commission | percentage | % of session revenue |
-| Extra hour rate | currency | For sessions exceeding standard duration |
-| Workshop/event rate | currency | Override rate for non-regular sessions |
-
-### 6.11 Compensation Report (`/admin/instructors/compensation`)
-
-**Layout:**
-- **Date range picker** at top
-- **Table per instructor**: Sessions taught, Total clients attended, Earnings breakdown (base, per-client, revenue %, extra hours, workshops), Total earnings
-- **Summary row**: Totals across all instructors
-- **"Export CSV"** button
-
-### 6.12 Staff Management (`/admin/staff`)
-
-**Data table**: Name, Role, Email, Status (Active/Deactivated badge)
-**"+ Add Staff"** button → modal form: Name, Email, Role (select: Staff / Instructor)
-**Row actions**: Deactivate / Reactivate
-
-### 6.13 Leave Management (`/admin/leave`)
-
-**Layout**: Three tabs — **Pending** | **Approved** | **Rejected**
-
-**Leave Request Card:**
-- Staff/instructor name + avatar
-- Leave type badge: Annual (info) / Sick (warning) / Other (muted)
-- Date range: start – end date
-- Notes from requester
-- Submitted date
-
-**Pending tab actions:**
-- "Approve" button (sage) + optional comment field
-- "Reject" button (error) + optional comment field
-
-**Status badges**: Pending (warning), Approved (sage), Rejected (error)
-
-### 6.14 Staff Calendar (`/admin/staff-calendar`)
-
-**Layout**: Calendar showing all staff/instructor schedules + approved leave blocks.
-- Color-coded by person
-- Leave blocks shown as hatched/striped overlays
-- Date range navigation (week/month)
-- Filter by specific staff member
-
-### 6.15 Business Policies (`/admin/policies`)
-
-**Layout**: Four collapsible accordion sections. Each section has its own "Save" button.
-
-#### Cancellation Policy
-
-| Field | Type | Default |
-|-------|------|---------|
-| Cancellation window | number (hours) | 12 |
-| Late cancel penalty | select: None / Forfeit Session / Charge Fee | Forfeit Session |
-| Late cancel fee amount | currency (shown when "Charge Fee" selected) | — |
-| Count late cancel as no-show | toggle | Off |
-
-#### No-Show Policy
-
-| Field | Type | Default |
-|-------|------|---------|
-| Auto-mark no-show after cutoff | toggle | On |
-| No-show threshold (per 30 days) | number | 3 |
-| Threshold action | select: None / Warning Email / Booking Block | Warning Email |
-
-#### Waitlist Policy
-
-| Field | Type | Default |
-|-------|------|---------|
-| Auto-promote on cancellation | toggle | On |
-| Waitlist enabled by default | toggle | On |
-| Default max waitlist size | number (blank = unlimited) | — |
-
-#### Late-Entry Policy
-
-| Field | Type | Default |
-|-------|------|---------|
-| Late cutoff (minutes after session start) | number | 10 |
-| Block check-in after cutoff | toggle | On |
-
-### 6.16 Sales & Commission (`/admin/sales`)
-
-**Layout:**
-- **Date range filter**
-- **Summary stat cards**: Total revenue, Total commissions
-- **Sales table**: Staff name, Bookings processed, Package sales count, Total sales value, Commission rate (% or flat), Commission earned
-- **"Export CSV"** button
-
-### 6.17 Tenant Settings (`/admin/settings`)
-
-**Layout**: Three sections.
-
-**Branding:**
-- Logo upload area (drag & drop)
-- Business name (text input)
-- Primary color picker (with preview)
-- Subdomain display (read-only, e.g., "yourbusiness.platform.com")
-
-**Notifications:**
-- Toggle switches for each email notification trigger (per PRD §6):
-  - Booking confirmed, Booking cancelled (client), Booking cancelled (admin), Waitlist promotion, Payment successful, Waiver reminder, No-show warning, Leave request submitted, Leave approved/rejected
-
-**General:**
-- Timezone (select)
-- Currency (select)
-- Default session duration (number, minutes)
-
----
-
-## 7. Key User Flows
-
-### Flow 1: Student Discovers & Books a Session
+### Flow 1: Client Discovers & Books a Class
 
 ```
 / → Landing page → "Explore Classes" CTA
-  → /explore → Browse tenants by industry/category/location
-  → Click tenant card → /explore/[slug] → Tenant profile
-  → Browse sessions → /explore/[slug]/sessions → Filter → Click session card
-    → /explore/[slug]/sessions/[id] → View details
-      → "Book Now" CTA
-        → [If first booking with this tenant] → /waiver → Sign → Return
-        → [If paying] → /checkout → Mock payment → Success
-        → [If using package] → Direct booking
-      → /booking/confirmation → Success
-      → Session appears in /account → Upcoming bookings (grouped by tenant)
+  → /explore → Browse studios by category/location
+  → Click studio card → /explore/[slug] → Studio profile
+  → Classes tab → /explore/[slug]/classes
+  → Browse weekly calendar → click "Book Now" on a class row
+    → /explore/[slug]/classes/[id] → View details
+      → "Reserve Now" (1 credit deducted)
+    → Success dialog: "Your booking is confirmed!"
+    → Session appears in /account → Upcoming bookings
 ```
 
 ### Flow 2: Client Cancels a Booking
@@ -945,11 +593,11 @@ Each result card has a "Scan Next" button to reset.
   → Toast: "Booking cancelled"
 ```
 
-### Flow 3: Student Joins Waitlist
+### Flow 3: Client Joins Waitlist
 
 ```
-/explore/[slug]/sessions/[id] → Session is full
-  → "Join Waitlist (Position #3)" CTA
+/explore/[slug]/classes → Class is full
+  → "Join Waitlist" button
   → Confirmation: "You've been added to the waitlist"
   → Booking appears in /account with "Waitlisted" badge
   → [Mock: another client cancels]
@@ -957,135 +605,79 @@ Each result card has a "Scan Next" button to reset.
   → Booking status changes to "Confirmed"
 ```
 
-### Flow 4: Admin Creates a Recurring Session
+### Flow 4: Client Purchases a Package
 
 ```
-/admin/sessions → Click "+ New Session"
-  → /admin/sessions/new → Fill form
-    → Name, Category, Instructor, etc.
-    → Recurrence: "Weekly on Monday, Wednesday, Friday"
-    → Set capacity, pricing
-  → Save
-  → Sessions appear in /admin/sessions list
-  → Sessions appear on /admin/schedule calendar
-  → Can edit one occurrence or all future
+/explore/[slug]/packages → Browse package sections
+  → Click "Buy Now" on a Bundle/Unlimited/Private Session package
+  → /checkout/confirmation → Review package details
+  → "Confirm Purchase"
+  → /checkout → Enter mock payment details → "Pay $XXX"
+  → /booking/confirmation → Package activated
+  → Credits/sessions visible in /account/packages
 ```
 
-### Flow 5: QR Check-In
+### Flow 5: Client Requests a Private Session
 
 ```
-/admin/check-in → Scanner ready state
-  → "Simulate Scan" → Select scenario
-    → [Attended] → Green card: "Checked In"
-    → [Late] → Yellow card: "Checked In (Late)"
-    → [No Booking] → Red card: "No booking found"
-    → [Cutoff] → Red card: "Marked as No-Show"
-    → [Already In] → Orange card: "Already checked in"
-  → "Scan Next" → Reset to ready state
-```
-
-### Flow 6: Admin Manages a Client
-
-```
-/admin/clients → Search by name
-  → Click client row → /admin/clients/[id]
-  → Overview tab: View stats, edit tags
-  → Packages tab: Add sessions to package
-  → Notes tab: Add a private admin note
-  → Waiver tab: Check waiver status
-  → Bookings tab: Review attendance history
-```
-
-### Flow 7: Leave Request Cycle
-
-```
-/instructor/leave → "Request Leave" button
-  → Form: Type, Start date, End date, Notes
-  → Submit → Shows in pending list
-
-/admin/leave → Pending tab
-  → Review request details
-  → "Approve" with comment → Status changes to Approved
-  → Leave block appears on /admin/staff-calendar
-```
-
-### Flow 8: Business Owner Lists on Booked4U
-
-```
-/ → Landing page → "List Your Business" CTA
-  → /for-business → Value proposition + plan comparison
-  → "Get Started" CTA → /for-business/register
-    → Step 1: Business name, owner name, email, password
-    → Step 2: Industry, description, logo upload, cover image, location
-    → Step 3: Select plan (Starter / Growth / Professional)
-    → Step 4: Stripe Checkout for plan payment
-  → On success: tenant provisioned → redirect to /admin
-  → Listing goes live on /explore once profile is complete
+/explore/[slug]/private-sessions → Browse instructor cards
+  → Click "Schedule Private Class" on an instructor
+  → Confirmation page with instructor details
+  → Click "Request Appointment"
+  → Pending notification: "Your request is pending. We will update you within 12 hours."
+  → Request confirmed → 1 session deducted, client notified
 ```
 
 ---
 
-## 8. Component Library
+## 7. Component Library
 
-### 8.1 Shared Components (used across portals)
+### 7.1 Shared Components
 
 | Component | Description |
 |-----------|-------------|
-| `TenantCard` | Business card for explore page — cover image, logo, name, industry tag, description, upcoming session count |
-| `SessionCard` | Compact session display for list views — name, time, instructor, capacity, status |
-| `StatusBadge` | Colored pill badge for statuses: Open, Waitlist, Full, Cancelled, Attended, Late, No-Show, Pending, Active, Inactive, etc. |
+| `TenantCard` | Studio card for explore page — cover image, logo, name, category tag, description |
+| `SessionRow` | Class row in weekly calendar — thumbnail, tag, title, instructor, time, duration, credit info, Book Now |
+| `StatusBadge` | Colored pill badge for statuses: Attended, Late, No-Show, Cancelled, Waitlisted, Active, Expired, etc. |
 | `CapacityBar` | Visual progress bar showing booked/total spots |
 | `DateRangePicker` | Date range selection with calendar popover |
 | `FilterBar` | Horizontal row of filter dropdowns with clear/reset |
 | `EmptyState` | Illustration + message + optional CTA for empty lists |
-| `PageHeader` | Page title (DM Serif Display) + breadcrumbs + action buttons |
-| `StatCard` | Metric card: large number, label, trend indicator (arrow + percentage) |
+| `PageHeader` | Page title (DM Serif Display) + breadcrumbs |
+| `StatCard` | Metric card: large number, label |
 | `DataTable` | Sortable, filterable table with pagination and row actions |
 | `ConfirmDialog` | Modal dialog for destructive action confirmation |
 | `Toast` | Success/error/info notification (bottom-right, auto-dismiss) |
-| `RoleSwitcher` | Floating bottom-right pill for switching user roles |
 | `LoadingSkeleton` | Shimmer placeholder matching component shapes |
 
-### 8.2 Client-Specific Components
+### 7.2 Client-Specific Components
 
 | Component | Description |
 |-----------|-------------|
-| `SessionCalendar` | Weekly calendar grid view with time slots and session blocks |
-| `BookingCard` | Upcoming/past booking display with actions (cancel, reschedule) |
-| `PackageCard` | Package display with circular progress ring and expiry info |
-| `MembershipCard` | Membership plan display with billing info and cancel option |
-| `InvoiceRow` | Invoice table row with download PDF action |
-| `WaiverForm` | Scrollable document + typed-name signature + agree button |
+| `WeeklyCalendar` | Full-week calendar grid view with day selector and class rows |
+| `ClassRow` | Individual class entry in calendar — all button states |
+| `WorkshopCard` | Workshop entry with accordion for package tiers |
+| `InstructorCard` | Instructor card with Schedule/Not Available button state |
+| `PackageCard` | Package display with credit count, price, validity, Buy Now CTA |
+| `BookingCard` | Upcoming/past booking display with actions (cancel, reschedule) and QR code |
+| `CreditRing` | Circular progress ring showing credits remaining |
+| `MembershipCard` | Active/expired membership with Contact Sales Team CTA |
+| `InvoiceRow` | Invoice table row with Download PDF action |
+| `RatingDropdown` | Dropdown menu (1–5 stars) for booking history rating column |
 | `QRDisplay` | Large QR code renderer with instruction text |
 | `CheckoutForm` | Mock Stripe payment form (card fields + pay button) |
 | `AccountNav` | Sidebar (desktop) / tab bar (mobile) for account section navigation |
+| `ReferralCard` | Referral code display with copy button + shareable link |
 
-### 8.3 Admin-Specific Components
-
-| Component | Description |
-|-----------|-------------|
-| `AdminSidebar` | Collapsible dark sidebar with grouped navigation |
-| `AdminTopBar` | Breadcrumbs + search bar + profile avatar |
-| `ChartWidget` | Wrapper for Recharts with title, date toggle, responsive sizing |
-| `RosterTable` | Session attendance table with bulk mark + individual status dropdowns |
-| `ClientProfileTabs` | Tabbed layout for client detail (6 tabs) |
-| `ScannerView` | QR scanner mock with viewfinder graphic + result state cards |
-| `PolicyForm` | Collapsible policy section with labeled form fields and save button |
-| `CompensationTable` | Instructor earnings breakdown table with totals |
-| `LeaveRequestCard` | Leave request display with approve/reject action buttons |
-| `ProductCard` | Package/membership/drop-in product card for admin view |
-| `SessionForm` | Multi-section form for creating/editing sessions |
-| `CalendarView` | Full-page calendar for schedules/availability (week + month modes) |
-
-### 8.4 shadcn/ui Components to Install
+### 7.3 shadcn/ui Components to Install
 
 Button, Card, Dialog, DropdownMenu, Input, Label, Select, Textarea, Table, Tabs, Badge, Avatar, Separator, Sheet, Tooltip, Switch, Checkbox, RadioGroup, Calendar, Popover, Command, Skeleton, Sonner (toasts), ScrollArea, Progress, Form, Collapsible, Accordion
 
 ---
 
-## 9. Responsive Strategy
+## 8. Responsive Strategy
 
-### 9.1 Breakpoints
+### 8.1 Breakpoints
 
 | Width | Name | Target |
 |-------|------|--------|
@@ -1096,47 +688,35 @@ Button, Card, Dialog, DropdownMenu, Input, Label, Select, Textarea, Table, Tabs,
 | 1280px | `xl` | Desktop |
 | 1536px | `2xl` | Large screens |
 
-### 9.2 Client Portal (mobile-first)
+### 8.2 Client Portal (mobile-first)
 
 | Breakpoint | Behavior |
 |------------|----------|
-| < 768px | Single column layout. Top nav collapses to hamburger drawer. Filters open as bottom sheet. Session cards full-width. Account nav becomes horizontal tab bar. |
+| < 768px | Single column layout. Top nav collapses to hamburger drawer. Filters open as bottom sheet. Session rows full-width. Account nav becomes horizontal tab bar. |
 | 768px–1024px | Two-column grids where appropriate. Expanded top nav. Filter bar inline. |
-| > 1024px | Full desktop layout. Account sidebar navigation visible. Three-column grids for pricing/packages. |
-
-### 9.3 Admin Dashboard (sidebar layout)
-
-| Breakpoint | Behavior |
-|------------|----------|
-| < 768px | Sidebar hidden behind hamburger toggle (slides over content). All content single column. Stat cards stack vertically. Charts full-width. |
-| 768px–1024px | Collapsed icon-only sidebar (56px). Content area with 2-column grids for stat cards and charts. |
-| > 1024px | Full sidebar (240px) with labels. Content area with 3-column stat cards, 2-column charts. |
+| > 1024px | Full desktop layout. Account sidebar navigation visible. Three-column grids for package cards. |
 
 ---
 
-## 10. Mock Data Schema
+## 9. Mock Data Schema
 
-### 10.1 Fixture Files
+### 9.1 Fixture Files
 
 All fixtures stored in `/src/data/` as JSON files with corresponding TypeScript types in `/src/types/`.
 
 | File | Records | Purpose |
 |------|:-------:|---------|
-| `sessions.json` | 20 | Session catalog with varied categories, levels, instructors, statuses |
-| `clients.json` | 20 | Client profiles with varied activity levels, packages, tags |
-| `bookings.json` | 50 | Booking records linking clients to sessions, varied statuses |
-| `instructors.json` | 4 | Instructor profiles with different compensation structures |
-| `staff.json` | 3 | Staff accounts (1 admin, 2 staff) |
-| `products.json` | 7 | 2 drop-in, 3 packages, 2 memberships |
-| `client-packages.json` | 8 | Active/expired packages for various clients |
-| `invoices.json` | 15 | Invoice records with line items |
-| `leave-requests.json` | 6 | Mix of pending, approved, rejected requests |
-| `analytics.json` | 1 | Monthly data arrays for dashboard charts |
-| `policies.json` | 1 | Current business policy configuration |
-| `tenant.json` | 1 | Business name, branding, timezone, currency |
-| `users.json` | 4 | One mock user per role for role switcher |
+| `sessions.json` | 20 | Classes and workshops with categories, instructors, schedules |
+| `bookings.json` | 30 | Booking records for mock client — varied statuses |
+| `instructors.json` | 4 | Instructor profiles with bios and private session availability |
+| `packages.json` | 14 | All package tiers: bundles, unlimited, private session packs |
+| `client-packages.json` | 5 | Active/expired package entitlements for mock client |
+| `invoices.json` | 10 | Invoice records with line items |
+| `referrals.json` | 4 | Referral records: registered and converted |
+| `tenant.json` | 1 | Studio name, branding, timezone, currency (Yoga Sadhana) |
+| `workshops.json` | 3 | Workshop entries with package tiers |
 
-### 10.2 Key Type Definitions
+### 9.2 Key Type Definitions
 
 ```typescript
 // Core entity types (defined in /src/types/)
@@ -1146,7 +726,7 @@ interface Session {
   name: string
   category: string
   level: 'beginner' | 'intermediate' | 'advanced' | 'all'
-  type: 'regular' | 'workshop' | 'event'
+  type: 'regular' | 'workshop' | 'private'
   instructorId: string
   capacity: number
   bookedCount: number
@@ -1154,96 +734,82 @@ interface Session {
   date: string        // ISO date
   time: string        // HH:mm
   duration: number    // minutes
-  price: number
   status: 'scheduled' | 'cancelled' | 'completed'
   recurrence: string | null  // RRULE or null
   waitlistEnabled: boolean
-  waitlistMaxSize: number | null
-  lateCutoffMinutes: number | null
-  packageEligible: boolean
   description: string
-}
-
-interface Client {
-  id: string
-  name: string
-  email: string
-  phone: string
-  registeredAt: string
-  activityStatus: 'active' | 'inactive'
-  noShowCount: number
-  totalSessions: number
-  tags: string[]
-  waiverSigned: boolean
-  waiverSignedAt: string | null
-  waiverVersion: string | null
-}
-
-interface Booking {
-  id: string
-  clientId: string
-  sessionId: string
-  status: 'confirmed' | 'cancelled' | 'waitlisted'
-  checkInStatus: 'pending' | 'attended' | 'late' | 'no-show'
-  packageId: string | null
-  createdAt: string
-}
-
-interface Product {
-  id: string
-  name: string
-  type: 'drop-in' | 'package' | 'membership'
-  price: number
-  sessionCount: number | null
-  expiryDays: number | null
-  sessionsPerMonth: number | null  // null = unlimited
-  description: string
-  active: boolean
-}
-
-interface Invoice {
-  id: string
-  clientId: string
-  invoiceNumber: string
-  date: string
-  amount: number
-  status: 'paid' | 'pending'
-  paymentMethod: string
-  items: { description: string; quantity: number; unitPrice: number; amount: number }[]
 }
 
 interface Instructor {
   id: string
   name: string
-  email: string
-  phone: string
   bio: string
-  compensation: {
-    basePerSession: number
-    perClientCommission: number
-    revenueCommissionPercent: number
-    extraHourRate: number
-    workshopRate: number
-  }
+  photo: string
+  specialties: string[]
+  privateSessionAvailable: boolean
+  privateFormats: ('1on1' | '2on1')[]
+}
+
+interface Package {
+  id: string
+  name: string
+  type: 'bundle' | 'unlimited' | 'private-session'
+  format: '1on1' | '2on1' | null  // for private-session only
+  creditCount: number | null       // bundle only
+  sessionCount: number | null      // private-session only
+  durationMonths: number | null    // unlimited only
+  price: number
+  currency: string
+  active: boolean
+}
+
+interface ClientPackage {
+  id: string
+  packageId: string
+  type: 'bundle' | 'unlimited' | 'private-session'
+  creditsRemaining: number | null
+  sessionsRemaining: number | null
+  purchasedAt: string
+  expiresAt: string | null
+  status: 'active' | 'expired'
+}
+
+interface Booking {
+  id: string
+  sessionId: string
+  status: 'confirmed' | 'cancelled' | 'waitlisted'
+  checkInStatus: 'pending' | 'attended' | 'late' | 'no-show'
+  packageId: string | null
+  rating: number | null  // 1–5
+  createdAt: string
+}
+
+interface Invoice {
+  id: string
+  invoiceNumber: string
+  date: string
+  amount: number
+  currency: string
+  status: 'paid' | 'pending'
+  paymentMethod: string
+  items: { description: string; quantity: number; unitPrice: number; amount: number }[]
 }
 ```
 
-### 10.3 Data Relationships
+### 9.3 Data Relationships
 
 ```
-sessions.instructorId     → instructors.id
-bookings.clientId         → clients.id
-bookings.sessionId        → sessions.id
-bookings.packageId        → client-packages.id
-client-packages.clientId  → clients.id
-client-packages.productId → products.id
-invoices.clientId         → clients.id
-leave-requests.staffId    → staff.id | instructors.id
+sessions.instructorId         → instructors.id
+bookings.sessionId            → sessions.id
+bookings.packageId            → client-packages.id
+client-packages.packageId     → packages.id
+referrals.refereeId           → (mock client)
+invoices                      → (mock client)
 ```
 
 ---
 
-## 11. Implementation Order
+## 10. Implementation Order
 
 ### Phase A — Foundation
 1. Initialize Next.js App Router with TypeScript + Tailwind
@@ -1251,71 +817,48 @@ leave-requests.staffId    → staff.id | instructors.id
 3. Set up CSS variables matching the design system palette
 4. Import Google Fonts (DM Serif Display, Outfit, JetBrains Mono)
 5. Create client portal layout (top nav + page shell)
-6. Create admin dashboard layout (sidebar + top bar + content area)
-7. Create all mock data JSON fixtures + TypeScript types
-8. Build shared components: StatusBadge, StatCard, PageHeader, EmptyState, RoleSwitcher
+6. Create all mock data JSON fixtures + TypeScript types
+7. Build shared components: StatusBadge, PageHeader, EmptyState, LoadingSkeleton, Toast
 
-### Phase B — Client Core
-1. Landing page (hero, features, pricing preview)
-2. Auth pages (login, register, verify, forgot/reset password)
-3. Session discovery (list view + calendar view + filters)
-4. Session detail (all CTA states)
-5. Checkout simulation
-6. Digital waiver
-7. Booking confirmation
+### Phase B — Booking Core
+1. Landing page (hero, featured studios, how it works, category grid)
+2. Auth pages (login, register, verify-email, verify-phone, forgot/reset password)
+3. Explore — studio directory (search, filters, studio cards)
+4. Studio profile page (cover, header, sub-nav tabs)
+5. Packages page (three sections: bundle, unlimited, private sessions)
+6. Classes page — weekly calendar view (all button states, credit info)
+7. Class detail / booking confirmation page
+8. Workshops page (accordion, purchase button states)
+9. Private Sessions page (instructor grid, request flow)
+10. Checkout simulation
+11. Booking confirmation page
 
 ### Phase C — Client Account
-1. Account layout with sub-navigation
-2. Upcoming bookings with cancel/reschedule
-3. Booking history
-4. Packages + Membership pages
-5. Invoices
-6. Profile settings
-7. QR code page
+1. Account layout with sub-navigation (sidebar desktop / tab bar mobile)
+2. Overview page (upcoming bookings, per-session QR codes)
+3. Booking history (attendance badges, inline star rating)
+4. My Packages page (credit rings, unlimited badge, private session counts)
+5. Membership page (Contact Sales Team CTA)
+6. Invoices page
+7. Profile settings
+8. My QR Code page
+9. Referral page
 
-### Phase D — Admin Core
-1. Analytics dashboard (stat cards + charts)
-2. Session management (list + CRUD forms)
-3. Session roster + attendance
-4. Schedule calendar
-5. QR check-in scanner (mock states)
-
-### Phase E — Admin CRM
-1. Client list (search, filter, bulk actions)
-2. Client profile (all 6 tabs)
-3. Bookings management
-
-### Phase F — Admin Team & Finance
-1. Instructor management + compensation config
-2. Compensation report
-3. Staff management
-4. Leave management (approve/reject flow)
-5. Staff calendar
-6. Products management
-7. Invoice management
-8. Sales & commission reports
-
-### Phase G — Admin Settings + Sub-portals
-1. Business policies configuration
-2. Tenant settings
-3. Instructor portal (3 pages)
-4. Staff portal (2 pages)
-
-### Phase H — Final Polish
+### Phase D — Final Polish
 1. Responsive pass on all pages (375px–1536px)
 2. Loading skeleton states
 3. Page enter animations (fadeUp with stagger)
 4. Empty states for all lists
-5. Edge case displays (error states, no data, expired)
+5. Edge case displays (error states, no data, expired packages)
 6. Full navigation walkthrough test
 
 ---
 
-## 12. Open Decisions
+## 11. Open Decisions
 
 | # | Question | Impact |
 |---|----------|--------|
-| 1 | Should the prototype include dark mode toggle? | Design system would need dark variants for all tokens |
-| 2 | How realistic should calendar interactions be? (Drag to reschedule, etc.) | Implementation complexity for admin schedule view |
-| 3 | Should email notification templates be visually mocked? | Additional pages for email preview |
-| 4 | Include a "Pricing" public page separate from landing? | Additional client portal route |
+| 1 | Should the prototype include dark mode toggle? | Design system needs dark token variants |
+| 2 | Should email notification templates be visually mocked? | Additional pages for email preview |
+| 3 | Include a "Pricing" public page separate from landing? | Additional route |
+| 4 | How realistic should the weekly calendar be? (drag interactions, etc.) | Implementation complexity |

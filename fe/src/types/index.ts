@@ -60,6 +60,7 @@ export interface Booking {
   status: "confirmed" | "cancelled" | "waitlisted";
   checkInStatus: "pending" | "attended" | "late" | "no-show";
   packageId: string | null;
+  rating: number | null;
   createdAt: string;
 }
 
@@ -109,6 +110,7 @@ export interface Instructor {
   phone: string;
   bio: string;
   avatarUrl: string;
+  available: boolean;
   compensation: {
     basePerSession: number;
     perClientCommission: number;

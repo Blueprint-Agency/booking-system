@@ -216,7 +216,7 @@ export default function WaiverPage() {
                   transition={{ delay: 0.7, duration: 0.4 }}
                 >
                   <Link
-                    href="/sessions"
+                    href="/classes"
                     className={cn(
                       "mt-8 inline-flex items-center justify-center gap-2 rounded-md px-6 py-3 text-sm font-semibold text-white transition-all",
                       "bg-accent hover:bg-accent-deep active:scale-[0.98] shadow-soft hover:shadow-hover"

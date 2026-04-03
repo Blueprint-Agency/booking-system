@@ -1,62 +1,66 @@
 [
   {
     "id": "inst-1",
-    "name": "Maya Chen",
-    "email": "maya@example.com",
-    "phone": "+1 555-0101",
-    "bio": "Certified instructor with 8 years of experience in mindful movement and strength training.",
+    "name": "Master Sumit",
+    "email": "sumit@yogasadhana.sg",
+    "phone": "+65 9123 4567",
+    "bio": "Founder and head instructor with 20 years of traditional Hatha and Ashtanga practice. Trained in Mysore, India under the Sri K. Pattabhi Jois lineage.",
+    "available": true,
     "compensation": {
-      "basePerSession": 50,
-      "perClientCommission": 3,
-      "revenueCommissionPercent": 10,
-      "extraHourRate": 30,
-      "workshopRate": 120
+      "basePerSession": 80,
+      "perClientCommission": 5,
+      "revenueCommissionPercent": 15,
+      "extraHourRate": 50,
+      "workshopRate": 200
     },
-    "avatarUrl": "https://placehold.co/200x200/f5f0e8/c4956a?text=MC&font=playfair-display"
+    "avatarUrl": "https://placehold.co/200x200/f5f0e8/c4956a?text=MS&font=playfair-display"
   },
   {
     "id": "inst-2",
-    "name": "James Okafor",
-    "email": "james@example.com",
-    "phone": "+1 555-0102",
-    "bio": "Specialist in high-intensity interval training and functional fitness.",
+    "name": "Ananya Patel",
+    "email": "ananya@yogasadhana.sg",
+    "phone": "+65 9234 5678",
+    "bio": "Vinyasa and Yin specialist with 10 years of teaching experience. Passionate about therapeutic yoga and breath-centred movement.",
+    "available": true,
     "compensation": {
-      "basePerSession": 55,
-      "perClientCommission": 2.5,
-      "revenueCommissionPercent": 8,
-      "extraHourRate": 35,
-      "workshopRate": 100
+      "basePerSession": 60,
+      "perClientCommission": 4,
+      "revenueCommissionPercent": 12,
+      "extraHourRate": 40,
+      "workshopRate": 160
     },
-    "avatarUrl": "https://placehold.co/200x200/e8ede6/7a8f72?text=JO&font=playfair-display"
+    "avatarUrl": "https://placehold.co/200x200/e8ede6/7a8f72?text=AP&font=playfair-display"
   },
   {
     "id": "inst-3",
-    "name": "Priya Sharma",
-    "email": "priya@example.com",
-    "phone": "+1 555-0103",
-    "bio": "Holistic wellness coach focusing on flexibility, breathwork, and recovery.",
+    "name": "Priya Nair",
+    "email": "priya@yogasadhana.sg",
+    "phone": "+65 9345 6789",
+    "bio": "Restorative and Pranayama teacher certified in Iyengar methodology. Focuses on precision alignment and therapeutic breathwork.",
+    "available": false,
     "compensation": {
-      "basePerSession": 45,
+      "basePerSession": 55,
       "perClientCommission": 3.5,
       "revenueCommissionPercent": 12,
-      "extraHourRate": 28,
-      "workshopRate": 110
+      "extraHourRate": 35,
+      "workshopRate": 140
     },
-    "avatarUrl": "https://placehold.co/200x200/eef4fb/5a8ac4?text=PS&font=playfair-display"
+    "avatarUrl": "https://placehold.co/200x200/eef4fb/5a8ac4?text=PN&font=playfair-display"
   },
   {
     "id": "inst-4",
-    "name": "Leo Martinez",
-    "email": "leo@example.com",
-    "phone": "+1 555-0104",
-    "bio": "Former athlete turned coach, specializing in endurance and performance.",
+    "name": "Ravi Kumar",
+    "email": "ravi@yogasadhana.sg",
+    "phone": "+65 9456 7890",
+    "bio": "Power Yoga and Ashtanga instructor. Former competitive athlete who discovered yoga for recovery and now teaches full-time.",
+    "available": true,
     "compensation": {
-      "basePerSession": 60,
-      "perClientCommission": 2,
+      "basePerSession": 65,
+      "perClientCommission": 3,
       "revenueCommissionPercent": 10,
       "extraHourRate": 40,
       "workshopRate": 150
     },
-    "avatarUrl": "https://placehold.co/200x200/faf3e0/d4a843?text=LM&font=playfair-display"
+    "avatarUrl": "https://placehold.co/200x200/faf3e0/d4a843?text=RK&font=playfair-display"
   }
 ]

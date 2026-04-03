@@ -9,6 +9,7 @@ const NAV_ITEMS = [
   { href: "/account/history", label: "History" },
   { href: "/account/packages", label: "Packages" },
   { href: "/account/membership", label: "Membership" },
+  { href: "/account/referral", label: "Referral" },
   { href: "/account/invoices", label: "Invoices" },
   { href: "/account/profile", label: "Profile" },
   { href: "/account/qr", label: "My QR" },
