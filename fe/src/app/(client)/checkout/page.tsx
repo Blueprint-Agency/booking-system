@@ -4,42 +4,90 @@ import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Lock } from "lucide-react";
 import { motion } from "framer-motion";
-import { cn, formatCurrency } from "@/lib/utils";
-import type { Product } from "@/types";
-import productsData from "@/data/products.json";
+import { cn, formatCurrency, formatDate, formatTime } from "@/lib/utils";
+import type { Session, Instructor } from "@/types";
+import sessionsData from "@/data/sessions.json";
+import instructorsData from "@/data/instructors.json";
 
-const products = productsData as Product[];
+const allSessions = sessionsData as Session[];
+const allInstructors = instructorsData as Instructor[];
 
 const inputClass =
   "w-full bg-warm border border-border rounded-md px-4 py-3 text-sm font-mono focus:ring-2 focus:ring-accent/30 focus:border-accent outline-none transition placeholder:text-muted";
 
-function productSubtitle(product: Product): string {
-  if (product.type === "drop-in") return "Single session access";
-  if (product.type === "package" && product.sessionCount && product.expiryDays)
-    return `${product.sessionCount} sessions · valid ${product.expiryDays} days`;
-  if (product.type === "membership" && product.sessionsPerMonth)
-    return `${product.sessionsPerMonth} sessions/month · auto-renews`;
-  if (product.type === "membership") return "Unlimited sessions/month · auto-renews";
-  return "";
-}
+// All purchasable packages — mirrors packages/page.tsx data
+type PackageItem = { id: string; name: string; subtitle: string; price: number };
+
+const PACKAGE_CATALOGUE: PackageItem[] = [
+  { id: "b-otp",    name: "One-time Pass",             subtitle: "1 credit · valid 1 day",        price: 40 },
+  { id: "b-10",     name: "Bundle of 10",               subtitle: "10 credits · valid 90 days",    price: 300 },
+  { id: "b-20",     name: "Bundle of 20",               subtitle: "20 credits · valid 180 days",   price: 550 },
+  { id: "b-30",     name: "Bundle of 30",               subtitle: "30 credits · valid 365 days",   price: 750 },
+  { id: "b-50",     name: "Bundle of 50",               subtitle: "50 credits · valid 365 days",   price: 1100 },
+  { id: "b-100",    name: "Bundle of 100",              subtitle: "100 credits · valid 365 days",  price: 2000 },
+  { id: "b-travel", name: "Travel Package",             subtitle: "5 credits · valid 30 days",     price: 60 },
+  { id: "u-3",      name: "3-Month Unlimited",          subtitle: "Unlimited classes · 3 months",  price: 600 },
+  { id: "u-6",      name: "6-Month Unlimited",          subtitle: "Unlimited classes · 6 months",  price: 1000 },
+  { id: "u-12",     name: "12-Month Unlimited",         subtitle: "Unlimited classes · 12 months", price: 1700 },
+  { id: "p1-10",    name: "VIP 1-on-1 · 10 Sessions",  subtitle: "10 private sessions",           price: 1600 },
+  { id: "p1-20",    name: "VIP 1-on-1 · 20 Sessions",  subtitle: "20 private sessions",           price: 3000 },
+  { id: "p1-30",    name: "VIP 1-on-1 · 30 Sessions",  subtitle: "30 private sessions",           price: 4200 },
+  { id: "p1-40",    name: "VIP 1-on-1 · 40 Sessions",  subtitle: "40 private sessions",           price: 5200 },
+  { id: "p1-50",    name: "VIP 1-on-1 · 50 Sessions",  subtitle: "50 private sessions",           price: 6000 },
+  { id: "p1-100",   name: "VIP 1-on-1 · 100 Sessions", subtitle: "100 private sessions",          price: 11000 },
+  { id: "p2-10",    name: "VIP 2-on-1 · 10 Sessions",  subtitle: "10 private sessions",           price: 2000 },
+  { id: "p2-20",    name: "VIP 2-on-1 · 20 Sessions",  subtitle: "20 private sessions",           price: 3600 },
+  { id: "p2-30",    name: "VIP 2-on-1 · 30 Sessions",  subtitle: "30 private sessions",           price: 4800 },
+  { id: "p2-50",    name: "VIP 2-on-1 · 50 Sessions",  subtitle: "50 private sessions",           price: 7500 },
+];
 
 function CheckoutContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [loading, setLoading] = useState(false);
 
-  const productId = searchParams.get("product");
-  const product = productId ? products.find((p) => p.id === productId) : null;
+  const packageId = searchParams.get("package");
+  const sessionId = searchParams.get("session");
+  const type = searchParams.get("type");
 
-  // Fallback to Standard Pack if no product param
-  const item = product ?? products.find((p) => p.id === "prod-4")!;
-  const total = item.price;
+  // Resolve what's being purchased
+  let orderName = "";
+  let orderSubtitle = "";
+  let orderExtra: string | null = null;
+  let total = 0;
+  let confirmUrl = "/booking/confirmation";
+
+  if (type === "workshop" && sessionId) {
+    const session = allSessions.find((s) => s.id === sessionId);
+    const instructor = allInstructors.find((i) => i.id === session?.instructorId);
+    if (session) {
+      orderName = session.name;
+      orderSubtitle = `${formatDate(session.date)} · ${formatTime(session.time)} · ${session.duration} min`;
+      orderExtra = instructor ? `with ${instructor.name}` : null;
+      total = session.price ?? 0;
+      confirmUrl = `/booking/confirmation?type=workshop&session=${sessionId}`;
+    }
+  } else if (packageId) {
+    const pkg = PACKAGE_CATALOGUE.find((p) => p.id === packageId);
+    if (pkg) {
+      orderName = pkg.name;
+      orderSubtitle = pkg.subtitle;
+      total = pkg.price;
+      confirmUrl = `/booking/confirmation?type=package&package=${packageId}`;
+    }
+  }
+
+  // Fallback if nothing resolved
+  if (!orderName) {
+    orderName = "Bundle of 10";
+    orderSubtitle = "10 credits · valid 90 days";
+    total = 300;
+    confirmUrl = "/booking/confirmation?type=package&package=b-10";
+  }
 
   function handlePay() {
     setLoading(true);
-    setTimeout(() => {
-      router.push("/booking/confirmation");
-    }, 1500);
+    setTimeout(() => router.push(confirmUrl), 1500);
   }
 
   return (
@@ -66,14 +114,14 @@ function CheckoutContent() {
               <div className="space-y-3">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <p className="text-sm font-medium text-ink">{item.name}</p>
-                    <p className="text-xs text-muted mt-0.5">{productSubtitle(item)}</p>
-                    {item.description && (
-                      <p className="text-xs text-muted/70 mt-1 leading-relaxed">{item.description}</p>
+                    <p className="text-sm font-medium text-ink">{orderName}</p>
+                    <p className="text-xs text-muted mt-0.5">{orderSubtitle}</p>
+                    {orderExtra && (
+                      <p className="text-xs text-muted/70 mt-1">{orderExtra}</p>
                     )}
                   </div>
                   <p className="text-sm font-medium text-ink whitespace-nowrap">
-                    {formatCurrency(item.price)}
+                    {formatCurrency(total)}
                   </p>
                 </div>
               </div>
@@ -84,9 +132,6 @@ function CheckoutContent() {
                 <p className="text-sm font-semibold text-ink">Total</p>
                 <p className="text-lg font-semibold text-ink">
                   {formatCurrency(total)}
-                  {item.type === "membership" && (
-                    <span className="text-xs font-normal text-muted ml-1">/mo</span>
-                  )}
                 </p>
               </div>
             </div>
