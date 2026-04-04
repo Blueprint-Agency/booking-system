@@ -182,6 +182,7 @@ export function ClientNav() {
                 {label}
               </Link>
             ))}
+            <div className="border-t border-border my-2" />
             {isAuth ? (
               <>
                 <Link
@@ -194,22 +195,7 @@ export function ClientNav() {
                       : "text-muted hover:text-ink hover:bg-warm"
                   )}
                 >
-                  My Bookings
-                </Link>
-                <div className="border-t border-border my-2" />
-                <Link
-                  href="/account/qr"
-                  onClick={() => setMobileOpen(false)}
-                  className="px-3 py-2.5 text-sm font-medium rounded-md text-muted hover:text-ink hover:bg-warm transition-colors"
-                >
-                  My QR Code
-                </Link>
-                <Link
-                  href="/account/profile"
-                  onClick={() => setMobileOpen(false)}
-                  className="px-3 py-2.5 text-sm font-medium rounded-md text-muted hover:text-ink hover:bg-warm transition-colors"
-                >
-                  Profile
+                  My Account
                 </Link>
                 <Link
                   href="/login"

@@ -1,0 +1,252 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e5]:
+        - link "Y Yoga Sadhana" [ref=e6] [cursor=pointer]:
+          - /url: /
+          - generic [ref=e8]: "Y"
+          - generic [ref=e9]: Yoga Sadhana
+        - navigation [ref=e10]:
+          - link "Classes" [ref=e11] [cursor=pointer]:
+            - /url: /classes
+          - link "Workshops" [ref=e12] [cursor=pointer]:
+            - /url: /workshops
+          - link "Private Sessions" [ref=e13] [cursor=pointer]:
+            - /url: /private-sessions
+          - link "Packages" [ref=e14] [cursor=pointer]:
+            - /url: /packages
+          - link "My Bookings" [ref=e15] [cursor=pointer]:
+            - /url: /account
+        - button "Account menu" [ref=e18]:
+          - generic [ref=e19]: SK
+    - main [ref=e20]:
+      - generic [ref=e21]:
+        - generic [ref=e22]:
+          - generic [ref=e23]:
+            - heading "Classes" [level=1] [ref=e24]
+            - paragraph [ref=e25]: Book group yoga classes using your credits.
+          - generic [ref=e26]:
+            - img [ref=e27]
+            - generic [ref=e29]: 8 credits
+            - generic [ref=e30]: · Bundle of 10
+        - generic [ref=e31]:
+          - button "Prev" [ref=e32]:
+            - img [ref=e33]
+            - text: Prev
+          - generic [ref=e35]: Mon Apr 7 – Sun Apr 13, 2026
+          - button "Next" [ref=e36]:
+            - text: Next
+            - img [ref=e37]
+        - generic [ref=e39]:
+          - generic [ref=e40]:
+            - generic [ref=e41]:
+              - paragraph [ref=e42]: Mon
+              - paragraph [ref=e43]: "7"
+            - generic [ref=e44]:
+              - generic [ref=e45]: Yoga
+              - heading "Morning Sadhana" [level=4] [ref=e46]
+              - generic [ref=e47]:
+                - paragraph [ref=e48]: Master Sumit
+                - paragraph [ref=e49]: 7:00 AM · 60 min
+              - generic [ref=e50]:
+                - paragraph [ref=e51]: 1 credit required
+                - paragraph [ref=e52]: You have 8 credits left
+              - link "Book Now" [ref=e53] [cursor=pointer]:
+                - /url: /booking/confirmation?type=class&session=ses-1
+              - paragraph [ref=e54]: Only 3 spots left
+            - generic [ref=e55]:
+              - generic [ref=e56]: Yoga
+              - heading "Pranayama" [level=4] [ref=e57]
+              - generic [ref=e58]:
+                - paragraph [ref=e59]: Priya Nair
+                - paragraph [ref=e60]: 9:00 AM · 45 min
+              - generic [ref=e61]:
+                - paragraph [ref=e62]: 1 credit required
+                - paragraph [ref=e63]: You have 8 credits left
+              - link "Book Now" [ref=e64] [cursor=pointer]:
+                - /url: /booking/confirmation?type=class&session=ses-2
+            - generic [ref=e65]:
+              - generic [ref=e66]: Yoga
+              - heading "Infra Stretch" [level=4] [ref=e67]
+              - generic [ref=e68]:
+                - paragraph [ref=e69]: Ananya Patel
+                - paragraph [ref=e70]: 12:00 PM · 45 min
+              - generic [ref=e71]:
+                - paragraph [ref=e72]: 1 credit required
+                - paragraph [ref=e73]: You have 8 credits left
+              - link "Book Now" [ref=e74] [cursor=pointer]:
+                - /url: /booking/confirmation?type=class&session=ses-3
+            - generic [ref=e75]:
+              - generic [ref=e76]: Yoga
+              - heading "Vinyasa Flow" [level=4] [ref=e77]
+              - generic [ref=e78]:
+                - paragraph [ref=e79]: Ravi Kumar
+                - paragraph [ref=e80]: 5:30 PM · 60 min
+              - generic [ref=e81]:
+                - paragraph [ref=e82]: 1 credit required
+                - paragraph [ref=e83]: You have 8 credits left
+              - link "Book Now" [ref=e84] [cursor=pointer]:
+                - /url: /booking/confirmation?type=class&session=ses-4
+              - paragraph [ref=e85]: Only 1 spot left
+            - generic [ref=e86]:
+              - generic [ref=e87]: Yoga
+              - heading "Yin Yoga" [level=4] [ref=e88]
+              - generic [ref=e89]:
+                - paragraph [ref=e90]: Priya Nair
+                - paragraph [ref=e91]: 7:00 PM · 75 min
+              - generic [ref=e92]:
+                - paragraph [ref=e93]: 1 credit required
+                - paragraph [ref=e94]: You have 8 credits left
+              - link "Book Now" [ref=e95] [cursor=pointer]:
+                - /url: /booking/confirmation?type=class&session=ses-5
+          - generic [ref=e96]:
+            - generic [ref=e97]:
+              - paragraph [ref=e98]: Tue
+              - paragraph [ref=e99]: "8"
+            - generic [ref=e100]:
+              - generic [ref=e101]: Yoga
+              - heading "Ashtanga Flow" [level=4] [ref=e102]
+              - generic [ref=e103]:
+                - paragraph [ref=e104]: Ravi Kumar
+                - paragraph [ref=e105]: 8:00 AM · 60 min
+              - generic [ref=e106]:
+                - paragraph [ref=e107]: 1 credit required
+                - paragraph [ref=e108]: You have 8 credits left
+              - link "Book Now" [ref=e109] [cursor=pointer]:
+                - /url: /booking/confirmation?type=class&session=ses-6
+              - paragraph [ref=e110]: Only 3 spots left
+            - generic [ref=e111]:
+              - generic [ref=e112]: Yoga
+              - heading "Hip Opening" [level=4] [ref=e113]
+              - generic [ref=e114]:
+                - paragraph [ref=e115]: Ananya Patel
+                - paragraph [ref=e116]: 10:30 AM · 60 min
+              - generic [ref=e117]:
+                - paragraph [ref=e118]: 1 credit required
+                - paragraph [ref=e119]: You have 8 credits left
+              - link "Book Now" [ref=e120] [cursor=pointer]:
+                - /url: /booking/confirmation?type=class&session=ses-7
+            - generic [ref=e121]:
+              - generic [ref=e122]: Yoga
+              - heading "Power Yoga" [level=4] [ref=e123]
+              - generic [ref=e124]:
+                - paragraph [ref=e125]: Master Sumit
+                - paragraph [ref=e126]: 6:00 PM · 60 min
+              - paragraph [ref=e127]: Class full
+              - link "Join Waitlist" [ref=e128] [cursor=pointer]:
+                - /url: /booking/confirmation?type=class&session=ses-8
+          - generic [ref=e129]:
+            - generic [ref=e130]:
+              - paragraph [ref=e131]: Wed
+              - paragraph [ref=e132]: "9"
+            - generic [ref=e133]:
+              - generic [ref=e134]: Yoga
+              - heading "Sunrise Vinyasa" [level=4] [ref=e135]
+              - generic [ref=e136]:
+                - paragraph [ref=e137]: Master Sumit
+                - paragraph [ref=e138]: 6:30 AM · 60 min
+              - generic [ref=e139]:
+                - paragraph [ref=e140]: 1 credit required
+                - paragraph [ref=e141]: You have 8 credits left
+              - link "Book Now" [ref=e142] [cursor=pointer]:
+                - /url: /booking/confirmation?type=class&session=ses-9
+            - generic [ref=e143]:
+              - generic [ref=e144]: Yoga
+              - heading "Midday Reset" [level=4] [ref=e145]
+              - generic [ref=e146]:
+                - paragraph [ref=e147]: Ananya Patel
+                - paragraph [ref=e148]: 12:15 PM · 30 min
+              - generic [ref=e149]:
+                - paragraph [ref=e150]: 1 credit required
+                - paragraph [ref=e151]: You have 8 credits left
+              - link "Book Now" [ref=e152] [cursor=pointer]:
+                - /url: /booking/confirmation?type=class&session=ses-11
+            - generic [ref=e153]:
+              - generic [ref=e154]: Yoga
+              - heading "Flow & Restore" [level=4] [ref=e155]
+              - generic [ref=e156]:
+                - paragraph [ref=e157]: Priya Nair
+                - paragraph [ref=e158]: 5:00 PM · 60 min
+              - generic [ref=e159]:
+                - paragraph [ref=e160]: 1 credit required
+                - paragraph [ref=e161]: You have 8 credits left
+              - link "Book Now" [ref=e162] [cursor=pointer]:
+                - /url: /booking/confirmation?type=class&session=ses-12
+              - paragraph [ref=e163]: Only 1 spot left
+          - generic [ref=e164]:
+            - generic [ref=e165]:
+              - paragraph [ref=e166]: Thu
+              - paragraph [ref=e167]: "10"
+            - generic [ref=e168]:
+              - generic [ref=e169]: Yoga
+              - heading "Restorative Yoga" [level=4] [ref=e170]
+              - generic [ref=e171]:
+                - paragraph [ref=e172]: Priya Nair
+                - paragraph [ref=e173]: 9:00 AM · 75 min
+              - generic [ref=e174]:
+                - paragraph [ref=e175]: 1 credit required
+                - paragraph [ref=e176]: You have 8 credits left
+              - link "Book Now" [ref=e177] [cursor=pointer]:
+                - /url: /booking/confirmation?type=class&session=ses-13
+            - generic [ref=e178]:
+              - generic [ref=e179]: Yoga
+              - heading "Power Vinyasa" [level=4] [ref=e180]
+              - generic [ref=e181]:
+                - paragraph [ref=e182]: Ravi Kumar
+                - paragraph [ref=e183]: 6:30 PM · 60 min
+              - generic [ref=e184]:
+                - paragraph [ref=e185]: 1 credit required
+                - paragraph [ref=e186]: You have 8 credits left
+              - link "Book Now" [ref=e187] [cursor=pointer]:
+                - /url: /booking/confirmation?type=class&session=ses-14
+              - paragraph [ref=e188]: Only 2 spots left
+          - generic [ref=e189]:
+            - generic [ref=e190]:
+              - paragraph [ref=e191]: Fri
+              - paragraph [ref=e192]: "11"
+            - generic [ref=e193]:
+              - generic [ref=e194]: Yoga
+              - heading "Shoulder & Back Flow" [level=4] [ref=e195]
+              - generic [ref=e196]:
+                - paragraph [ref=e197]: Ananya Patel
+                - paragraph [ref=e198]: 8:00 AM · 45 min
+              - generic [ref=e199]:
+                - paragraph [ref=e200]: 1 credit required
+                - paragraph [ref=e201]: You have 8 credits left
+              - link "Book Now" [ref=e202] [cursor=pointer]:
+                - /url: /booking/confirmation?type=class&session=ses-16
+            - generic [ref=e203]:
+              - generic [ref=e204]: Yoga
+              - heading "Breathwork & Meditation" [level=4] [ref=e205]
+              - generic [ref=e206]:
+                - paragraph [ref=e207]: Priya Nair
+                - paragraph [ref=e208]: 11:00 AM · 60 min
+              - generic [ref=e209]:
+                - paragraph [ref=e210]: 1 credit required
+                - paragraph [ref=e211]: You have 8 credits left
+              - link "Book Now" [ref=e212] [cursor=pointer]:
+                - /url: /booking/confirmation?type=class&session=ses-17
+          - generic [ref=e213]:
+            - generic [ref=e214]:
+              - paragraph [ref=e215]: Sat
+              - paragraph [ref=e216]: "12"
+            - generic [ref=e217]:
+              - generic [ref=e218]: Yoga
+              - heading "Saturday Sadhana" [level=4] [ref=e219]
+              - generic [ref=e220]:
+                - paragraph [ref=e221]: Master Sumit
+                - paragraph [ref=e222]: 8:00 AM · 75 min
+              - generic [ref=e223]:
+                - paragraph [ref=e224]: 1 credit required
+                - paragraph [ref=e225]: You have 8 credits left
+              - link "Book Now" [ref=e226] [cursor=pointer]:
+                - /url: /booking/confirmation?type=class&session=ses-18
+              - paragraph [ref=e227]: Only 1 spot left
+          - generic [ref=e228]:
+            - generic [ref=e229]:
+              - paragraph [ref=e230]: Sun
+              - paragraph [ref=e231]: "13"
+            - paragraph [ref=e233]: No classes
+    - button "Prototype" [ref=e235]: Prototype
+  - button "Open Next.js Dev Tools" [ref=e242] [cursor=pointer]:
+    - img [ref=e243]

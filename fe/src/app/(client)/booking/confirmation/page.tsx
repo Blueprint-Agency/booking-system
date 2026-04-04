@@ -70,7 +70,6 @@ function SuccessIcon() {
 // ── CLASS: review before booking ──────────────────────
 function ClassConfirmation({ session, instructor }: { session: Session; instructor: Instructor | undefined }) {
   const [confirmed, setConfirmed] = useState(false);
-  const spotsLeft = session.capacity - session.bookedCount;
 
   return (
     <div className="max-w-lg mx-auto px-4 sm:px-6 py-10 sm:py-14">
@@ -132,12 +131,6 @@ function ClassConfirmation({ session, instructor }: { session: Session; instruct
           )}
         </div>
 
-        <div className="border-t border-border mt-5 pt-4 flex items-center justify-between text-sm">
-          <span className="text-muted">{spotsLeft} of {session.capacity} spots remaining</span>
-          <div className="w-24 h-1.5 bg-warm rounded-full overflow-hidden">
-            <div className="h-full bg-accent rounded-full" style={{ width: `${(spotsLeft / session.capacity) * 100}%` }} />
-          </div>
-        </div>
       </motion.div>
 
       {/* Credit summary */}
@@ -152,6 +145,19 @@ function ClassConfirmation({ session, instructor }: { session: Session; instruct
               <polyline points="20 6 9 17 4 12" />
             </svg>
           </div>
+        </div>
+      </motion.div>
+
+      {/* Cancellation policy */}
+      <motion.div {...fadeUp} transition={{ duration: 0.5, delay: 0.22 }} className="bg-warm border border-border rounded-xl p-4 mb-6 flex gap-3">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted shrink-0 mt-0.5">
+          <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+        </svg>
+        <div className="space-y-1">
+          <p className="text-xs font-medium text-ink">Cancellation policy</p>
+          <p className="text-xs text-muted">Cancel <span className="font-medium text-ink">more than 3 hours</span> before class — full credit refund.</p>
+          <p className="text-xs text-muted">Cancel <span className="font-medium text-ink">within 3 hours</span> — no credit refund.</p>
+          <p className="text-xs text-muted mt-1">Repeated last-minute cancellations for the same class may result in a booking restriction.</p>
         </div>
       </motion.div>
 

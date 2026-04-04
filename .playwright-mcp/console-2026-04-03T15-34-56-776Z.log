@@ -1,0 +1,95 @@
+[     131ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/0w58_next_dist_035anf_._.js:2431
+[     735ms] [LOG] [Fast Refresh] done in 708ms @ http://localhost:3000/_next/static/chunks/0w58_next_dist_035anf_._.js:2431
+[     848ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3000/_next/static/chunks/0w58_next_dist_035anf_._.js:2431
+[     904ms] [LOG] [HMR] connected @ http://localhost:3000/_next/static/chunks/0w58_next_dist_035anf_._.js:2431
+[  112738ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/0w58_next_dist_035anf_._.js:2431
+[  112911ms] [LOG] [Fast Refresh] done in 182ms @ http://localhost:3000/_next/static/chunks/0w58_next_dist_035anf_._.js:2431
+[  124538ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/0w58_next_dist_035anf_._.js:2431
+[  124669ms] [ERROR] ./Desktop/blueprint/teeko/booking-system/fe/src/app/(client)/classes/page.tsx:393:7
+Expected ',', got '{'
+  391 |       </div>
+  392 |
+> 393 |       {/* ── Mobile: accordion per day ─────────────────── */}
+      |       ^
+  394 |       <div className="lg:hidden space-y-1.5">
+  395 |         {weekDays.map((day, di) => {
+  396 |           const sessions = getSessionsForDay(day);
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./Desktop/blueprint/teeko/booking-system/fe/src/app/(client)/classes/page.tsx [Client Component Browser]
+    ./Desktop/blueprint/teeko/booking-system/fe/src/app/(client)/classes/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./Desktop/blueprint/teeko/booking-system/fe/src/app/(client)/classes/page.tsx [Client Component SSR]
+    ./Desktop/blueprint/teeko/booking-system/fe/src/app/(client)/classes/page.tsx [Server Component] @ http://localhost:3000/_next/static/chunks/0w58_next_dist_035anf_._.js:3272
+[  124888ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/0w58_next_dist_035anf_._.js:2431
+[  124927ms] [ERROR] ./Desktop/blueprint/teeko/booking-system/fe/src/app/(client)/classes/page.tsx:393:7
+Expected ',', got '{'
+  391 |       </div>
+  392 |
+> 393 |       {/* ── Mobile: accordion per day ─────────────────── */}
+      |       ^
+  394 |       <div className="lg:hidden space-y-1.5">
+  395 |         {weekDays.map((day, di) => {
+  396 |           const sessions = getSessionsForDay(day);
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./Desktop/blueprint/teeko/booking-system/fe/src/app/(client)/classes/page.tsx [Client Component Browser]
+    ./Desktop/blueprint/teeko/booking-system/fe/src/app/(client)/classes/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./Desktop/blueprint/teeko/booking-system/fe/src/app/(client)/classes/page.tsx [Client Component SSR]
+    ./Desktop/blueprint/teeko/booking-system/fe/src/app/(client)/classes/page.tsx [Server Component] @ http://localhost:3000/_next/static/chunks/0w58_next_dist_035anf_._.js:3272
+[  139454ms] [ERROR] ./Desktop/blueprint/teeko/booking-system/fe/src/app/(client)/classes/page.tsx:393:7
+Expected ',', got '{'
+  391 |       </div>
+  392 |
+> 393 |       {/* ── Mobile: accordion per day ─────────────────── */}
+      |       ^
+  394 |       <div className="lg:hidden space-y-1.5">
+  395 |         {weekDays.map((day, di) => {
+  396 |           const sessions = getSessionsForDay(day);
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./Desktop/blueprint/teeko/booking-system/fe/src/app/(client)/classes/page.tsx [Client Component Browser]
+    ./Desktop/blueprint/teeko/booking-system/fe/src/app/(client)/classes/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./Desktop/blueprint/teeko/booking-system/fe/src/app/(client)/classes/page.tsx [Client Component SSR]
+    ./Desktop/blueprint/teeko/booking-system/fe/src/app/(client)/classes/page.tsx [Server Component] @ http://localhost:3000/_next/static/chunks/0w58_next_dist_035anf_._.js:3272
+[  139488ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/0w58_next_dist_035anf_._.js:2431
+[  145394ms] [ERROR] ./Desktop/blueprint/teeko/booking-system/fe/src/app/(client)/classes/page.tsx:393:7
+Expected ',', got '{'
+  391 |       </div>
+  392 |
+> 393 |       {/* ── Mobile: accordion per day ─────────────────── */}
+      |       ^
+  394 |       <div className="lg:hidden space-y-1.5">
+  395 |         {weekDays.map((day, di) => {
+  396 |           const sessions = getSessionsForDay(day);
+
+Parsing ecmascript source code failed
+
+Import traces:
+  Client Component Browser:
+    ./Desktop/blueprint/teeko/booking-system/fe/src/app/(client)/classes/page.tsx [Client Component Browser]
+    ./Desktop/blueprint/teeko/booking-system/fe/src/app/(client)/classes/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./Desktop/blueprint/teeko/booking-system/fe/src/app/(client)/classes/page.tsx [Client Component SSR]
+    ./Desktop/blueprint/teeko/booking-system/fe/src/app/(client)/classes/page.tsx [Server Component] @ http://localhost:3000/_next/static/chunks/0w58_next_dist_035anf_._.js:3272
+[  145505ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/0w58_next_dist_035anf_._.js:2431
+[  145712ms] [LOG] [Fast Refresh] done in 207ms @ http://localhost:3000/_next/static/chunks/0w58_next_dist_035anf_._.js:2431
+[  145854ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/0w58_next_dist_035anf_._.js:2431
+[  146167ms] [LOG] [Fast Refresh] done in 426ms @ http://localhost:3000/_next/static/chunks/0w58_next_dist_035anf_._.js:2431
+[  146391ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/0w58_next_dist_035anf_._.js:2431
+[  146400ms] [LOG] [Fast Refresh] done in 117ms @ http://localhost:3000/_next/static/chunks/0w58_next_dist_035anf_._.js:2431

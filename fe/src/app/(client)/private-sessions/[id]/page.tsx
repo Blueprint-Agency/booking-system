@@ -12,21 +12,6 @@ const typedInstructors = instructorsData as Instructor[];
 
 const fadeUp = { initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 } };
 
-const PACKAGES_1ON1 = [
-  { sessions: 10,  price: 1600 },
-  { sessions: 20,  price: 3000 },
-  { sessions: 30,  price: 4200 },
-  { sessions: 40,  price: 5200 },
-  { sessions: 50,  price: 6000 },
-  { sessions: 100, price: 11000 },
-];
-
-const PACKAGES_2ON1 = [
-  { sessions: 10, price: 2000 },
-  { sessions: 20, price: 3600 },
-  { sessions: 30, price: 4800 },
-  { sessions: 50, price: 7500 },
-];
 
 export default function PrivateSessionConfirmPage() {
   const { id } = useParams<{ id: string }>();
@@ -73,33 +58,12 @@ export default function PrivateSessionConfirmPage() {
         </div>
       </motion.div>
 
-      {/* Package reference */}
-      <motion.div {...fadeUp} transition={{ duration: 0.5, delay: 0.1 }} className="bg-warm border border-border rounded-xl p-5 mb-6 space-y-4">
-        <p className="text-sm font-medium text-ink">Session packages</p>
-        <div>
-          <p className="text-xs text-muted mb-2 font-mono uppercase tracking-wider">1-on-1 Personal Training</p>
-          <div className="flex flex-wrap gap-2">
-            {PACKAGES_1ON1.map((p) => (
-              <span key={p.sessions} className="text-xs bg-card border border-border px-3 py-1.5 rounded-md text-ink">
-                {p.sessions} sessions — S${p.price.toLocaleString()}
-              </span>
-            ))}
-          </div>
-        </div>
-        <div>
-          <p className="text-xs text-muted mb-2 font-mono uppercase tracking-wider">2-on-1 Personal Training</p>
-          <div className="flex flex-wrap gap-2">
-            {PACKAGES_2ON1.map((p) => (
-              <span key={p.sessions} className="text-xs bg-card border border-border px-3 py-1.5 rounded-md text-ink">
-                {p.sessions} sessions — S${p.price.toLocaleString()}
-              </span>
-            ))}
-          </div>
-        </div>
+      {/* Pricing hint */}
+      <motion.div {...fadeUp} transition={{ duration: 0.5, delay: 0.1 }} className="mb-6">
         <p className="text-xs text-muted">
-          Package payment is arranged after confirmation.{" "}
-          <Link href="/packages" className="text-accent hover:text-accent-deep underline underline-offset-2">
-            View all packages →
+          Packages from S$1,600 · 1 credit = 30 mins ·{" "}
+          <Link href="/packages#pt" className="text-accent hover:text-accent-deep underline underline-offset-2 transition-colors">
+            View pricing →
           </Link>
         </p>
       </motion.div>

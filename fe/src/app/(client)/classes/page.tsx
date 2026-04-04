@@ -58,98 +58,72 @@ const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const DAY_LABELS_FULL = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-function SpotsBar({ booked, capacity }: { booked: number; capacity: number }) {
-  const spotsLeft = capacity - booked;
-  const fillPct = Math.round((booked / capacity) * 100);
-
-  if (spotsLeft === 0) return null;
-
-  const isScarce = spotsLeft <= 2;
-  const isLow = spotsLeft <= 5;
-
-  const barColor = isScarce ? "bg-error/70" : isLow ? "bg-warning/60" : "bg-sage/50";
-  const trackColor = isScarce ? "bg-error/10" : isLow ? "bg-warning/10" : "bg-border/60";
-  const textColor = isScarce ? "text-error" : isLow ? "text-warning" : "text-muted";
-
-  return (
-    <div className="space-y-1">
-      <div className={cn("h-1 w-full rounded-full overflow-hidden", trackColor)}>
-        <div
-          className={cn("h-full rounded-full transition-all", barColor)}
-          style={{ width: `${fillPct}%` }}
-        />
-      </div>
-      <span className={cn("text-[10px] font-mono", textColor)}>
-        {spotsLeft} of {capacity} spots left
-      </span>
-    </div>
-  );
-}
-
 function ClassCard({ session }: { session: Session }) {
   const [showDialog, setShowDialog] = useState(false);
   const isFull = session.bookedCount >= session.capacity;
-  const spotsLeft = session.capacity - session.bookedCount;
   const canBook = userHasCredits && !isFull;
 
   return (
     <>
       <div className={cn(
-        "py-1.5 flex flex-col gap-2",
+        "h-full py-1.5 flex flex-col gap-2",
         isFull && "opacity-60"
       )}>
-        {/* Time + duration row */}
-        <div className="flex items-baseline justify-between">
-          <span className={cn(
-            "text-[15px] font-semibold tracking-tight",
+        {/* Content — grows to fill cell height */}
+        <div className="flex-1 flex flex-col gap-2">
+          {/* Time + duration row */}
+          <div className="flex items-baseline justify-between">
+            <span className={cn(
+              "text-[15px] font-semibold tracking-tight",
+              isFull ? "text-muted" : "text-ink"
+            )}>
+              {formatTime(session.time)}
+            </span>
+            <span className="text-[11px] text-muted font-mono">{session.duration}m</span>
+          </div>
+
+          {/* Class name */}
+          <h4 className={cn(
+            "font-serif text-[15px] leading-snug",
             isFull ? "text-muted" : "text-ink"
           )}>
-            {formatTime(session.time)}
-          </span>
-          <span className="text-[11px] text-muted font-mono">{session.duration}m</span>
+            {session.name}
+          </h4>
+
+          {/* Instructor */}
+          <p className="text-xs text-muted">{getInstructorName(session.instructorId)}</p>
+
+          {/* Description */}
+          {session.description && (
+            <p className="text-[11px] text-muted/70 leading-relaxed line-clamp-2">{session.description}</p>
+          )}
         </div>
 
-        {/* Class name */}
-        <h4 className={cn(
-          "font-serif text-[15px] leading-snug",
-          isFull ? "text-muted" : "text-ink"
-        )}>
-          {session.name}
-        </h4>
-
-        {/* Instructor */}
-        <p className="text-xs text-muted">{getInstructorName(session.instructorId)}</p>
-
-        {/* Spots bar */}
-        {!isFull && (
-          <SpotsBar booked={session.bookedCount} capacity={session.capacity} />
-        )}
-
-        {/* CTA */}
+        {/* CTA — always pinned to bottom */}
         {isFull ? (
           session.waitlistEnabled ? (
             <Link
               href={`/booking/confirmation?type=class&session=${session.id}`}
-              className="w-full text-center text-xs py-2 bg-warning-bg text-warning border border-warning/30 rounded-lg hover:bg-warning/10 transition-colors mt-1"
+              className="w-full text-center text-xs py-2 bg-warning-bg text-warning border border-warning/30 rounded-lg hover:bg-warning/10 transition-colors"
             >
               Join Waitlist
             </Link>
           ) : (
-            <div className="w-full text-center text-xs py-2 text-muted bg-warm rounded-lg mt-1 border border-border">
+            <div className="w-full text-center text-xs py-2 text-muted bg-warm rounded-lg border border-border">
               Full
             </div>
           )
         ) : canBook ? (
           <Link
             href={`/booking/confirmation?type=class&session=${session.id}`}
-            className="w-full text-center text-xs py-2 bg-accent text-white rounded-lg hover:bg-accent-deep transition-colors mt-1 font-medium"
+            className="w-full text-center text-xs py-2 bg-accent text-white rounded-lg hover:bg-accent-deep transition-colors font-medium"
           >
             Book
           </Link>
         ) : (
           <button
             onClick={() => setShowDialog(true)}
-            className="w-full text-xs py-2 bg-warm text-muted/70 rounded-lg border border-border hover:bg-border/40 transition-colors cursor-pointer mt-1"
+            className="w-full text-xs py-2 bg-warm text-muted/70 rounded-lg border border-border hover:bg-border/40 transition-colors cursor-pointer"
           >
             Book
           </button>

@@ -78,11 +78,12 @@ export default function PrivateSessionsPage() {
         <ul className="text-sm text-muted space-y-1 list-disc list-inside">
           <li>Submit a session request — no upfront payment needed</li>
           <li>We confirm availability and details within 12 hours</li>
-          <li>Once confirmed, your private session package is activated</li>
-          <li>Sessions use your private session balance, not class credits</li>
+          <li>Once confirmed, your PT package is activated</li>
+          <li>Sessions use PT credits (1 credit = 30 mins) — separate from group class credits</li>
+          <li>You can hold multiple PT packages and credits are auto-deducted from the soonest-expiring one</li>
         </ul>
         <p className="text-sm text-muted mt-3">
-          Don&apos;t have a private session package?{" "}
+          Don&apos;t have a PT package?{" "}
           <Link href="/packages" className="text-accent hover:text-accent-deep underline underline-offset-2 transition-colors">
             Browse packages →
           </Link>

@@ -36,6 +36,8 @@ type PrivateItem = {
   id: string;
   name: string;
   sessions: number;
+  credits?: number;
+  creditRate?: number;
   price: number;
   type: "1on1" | "2on1";
 };
@@ -57,12 +59,12 @@ const UNLIMITED: UnlimitedItem[] = [
 ];
 
 const PRIVATE_1ON1: PrivateItem[] = [
-  { id: "p1-10",  name: "VIP 10 Sessions",  sessions: 10,  price: 1600,  type: "1on1" },
-  { id: "p1-20",  name: "VIP 20 Sessions",  sessions: 20,  price: 3000,  type: "1on1" },
-  { id: "p1-30",  name: "VIP 30 Sessions",  sessions: 30,  price: 4200,  type: "1on1" },
-  { id: "p1-40",  name: "VIP 40 Sessions",  sessions: 40,  price: 5200,  type: "1on1" },
-  { id: "p1-50",  name: "VIP 50 Sessions",  sessions: 50,  price: 6000,  type: "1on1" },
-  { id: "p1-100", name: "VIP 100 Sessions", sessions: 100, price: 11000, type: "1on1" },
+  { id: "p1-10",  name: "VIP 10",  sessions: 10,  credits: 20,  creditRate: 80, price: 1600,  type: "1on1" },
+  { id: "p1-20",  name: "VIP 20",  sessions: 20,  credits: 40,  creditRate: 75, price: 3000,  type: "1on1" },
+  { id: "p1-30",  name: "VIP 30",  sessions: 30,  credits: 60,  creditRate: 70, price: 4200,  type: "1on1" },
+  { id: "p1-40",  name: "VIP 40",  sessions: 40,  credits: 80,  creditRate: 65, price: 5200,  type: "1on1" },
+  { id: "p1-50",  name: "VIP 50",  sessions: 50,  credits: 100, creditRate: 60, price: 6000,  type: "1on1" },
+  { id: "p1-100", name: "VIP 100", sessions: 100, credits: 200, creditRate: 55, price: 11000, type: "1on1" },
 ];
 
 const PRIVATE_2ON1: PrivateItem[] = [
@@ -103,7 +105,7 @@ export default function PackagesPage() {
       <motion.div initial="hidden" animate="visible" custom={0} variants={fadeUp}>
         <h1 className="font-serif text-3xl sm:text-4xl text-ink mb-2">Packages</h1>
         <p className="text-muted text-base max-w-xl">
-          Choose a plan that fits your practice. Credits are used for group classes; sessions are for private training.
+          Choose a plan that fits your practice. Group class credits for classes; PT credits for personal training. Both can be held at the same time.
         </p>
       </motion.div>
 
@@ -238,12 +240,12 @@ export default function PackagesPage() {
       {/* ── Section 2: Private Sessions ───────────────────── */}
       <motion.section initial="hidden" whileInView="visible" viewport={{ once: true }} custom={0} variants={fadeUp}>
         <SectionHeader
-          title="Private Sessions (VIP)"
-          subtitle="One-on-one or semi-private training with our instructors. These use sessions — separate from class credits."
+          title="Personal Training (VIP)"
+          subtitle="One-on-one or semi-private training with our instructors. PT uses credits — 1 credit = 30 mins. PT credits are separate from group class credits."
         />
 
         <InfoNote>
-          Private session packages use sessions (not credits). You may hold a credit bundle or unlimited plan alongside a private session package.
+          PT packages give you PT credits, which are separate from your group class credits. 1 PT credit = 30 mins of personal training. You may hold both a class package and a PT package at the same time.
         </InfoNote>
 
         <div className="mt-8 space-y-10">
@@ -256,10 +258,14 @@ export default function PackagesPage() {
                 <motion.div key={item.id} custom={i + 1} variants={fadeUp} initial="hidden" whileInView="visible" viewport={{ once: true }}>
                   <div className="bg-card border border-border rounded-xl p-4 flex flex-col gap-3 text-center h-full">
                     <div className="flex-1">
-                      <p className="text-2xl font-semibold text-ink">{item.sessions}</p>
-                      <p className="text-xs text-muted mt-0.5">sessions</p>
+                      <p className="text-2xl font-semibold text-ink">{item.credits}</p>
+                      <p className="text-xs text-muted mt-0.5">PT credits</p>
+                      <p className="text-[11px] text-muted/60 mt-1">{item.sessions} sessions</p>
                     </div>
-                    <p className="text-base font-semibold text-ink">S${item.price.toLocaleString()}</p>
+                    <div>
+                      <p className="text-base font-semibold text-ink">S${item.price.toLocaleString()}</p>
+                      <p className="text-[11px] font-mono text-muted">${item.creditRate}/credit</p>
+                    </div>
                     <Link
                       href={`/checkout?package=${item.id}`}
                       className="block w-full py-2 text-xs font-medium text-white bg-accent rounded-md hover:bg-accent-deep transition-colors"
