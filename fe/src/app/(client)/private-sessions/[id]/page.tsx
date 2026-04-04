@@ -5,10 +5,14 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { EmptyState } from "@/components/empty-state";
-import type { Instructor } from "@/types";
+import { getLocation } from "@/lib/utils";
+import { MOCK_USER } from "@/data/mock-user";
+import type { Instructor, Location } from "@/types";
 import instructorsData from "@/data/instructors.json";
+import locationsData from "@/data/locations.json";
 
 const typedInstructors = instructorsData as Instructor[];
+const typedLocations = locationsData as Location[];
 
 const fadeUp = { initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 } };
 
@@ -17,6 +21,10 @@ export default function PrivateSessionConfirmPage() {
   const { id } = useParams<{ id: string }>();
   const instructor = typedInstructors.find((i) => i.id === id);
   const [submitted, setSubmitted] = useState(false);
+  const instructorLocations = instructor?.locationIds
+    ? typedLocations.filter((l) => instructor.locationIds.includes(l.id))
+    : [];
+  const [preferredLocation, setPreferredLocation] = useState(instructorLocations[0]?.id ?? "");
 
   if (!instructor) {
     return (
@@ -54,19 +62,97 @@ export default function PrivateSessionConfirmPage() {
           <div>
             <h1 className="font-serif text-2xl text-ink mb-1">{instructor.name}</h1>
             <p className="text-sm text-muted leading-relaxed">{instructor.bio}</p>
+            {instructorLocations.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {instructorLocations.map((loc) => (
+                  <span key={loc.id} className="inline-flex items-center gap-1 text-[10px] font-mono text-muted bg-warm px-2 py-0.5 rounded-full border border-border">
+                    <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
+                    </svg>
+                    {loc.shortName}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </motion.div>
 
-      {/* Pricing hint */}
+      {/* PT credit balance */}
       <motion.div {...fadeUp} transition={{ duration: 0.5, delay: 0.1 }} className="mb-6">
-        <p className="text-xs text-muted">
-          Packages from S$1,600 · 1 credit = 30 mins ·{" "}
-          <Link href="/packages#pt" className="text-accent hover:text-accent-deep underline underline-offset-2 transition-colors">
-            View pricing →
-          </Link>
-        </p>
+        {/* 1-on-1 PT credits */}
+        {MOCK_USER.pt1on1Credits > 0 && (
+          <div className="bg-accent-glow/20 border border-accent/15 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-accent-deep" />
+                <span className="text-sm font-semibold text-accent-deep">{MOCK_USER.pt1on1Credits} PT credits (1-on-1)</span>
+              </div>
+              <span className="text-[11px] text-muted">{MOCK_USER.pt1on1PackageName}</span>
+            </div>
+            <div className="w-full h-1.5 rounded-full bg-accent/15 overflow-hidden mb-1.5">
+              <div className="h-full rounded-full bg-accent" style={{ width: `${(MOCK_USER.pt1on1Credits / MOCK_USER.pt1on1PackageTotal) * 100}%` }} />
+            </div>
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] text-muted">1 credit = 30 mins · 60-min session uses 2 credits</p>
+              <p className="text-[11px] text-muted">expires {new Date(MOCK_USER.pt1on1PackageExpiry).toLocaleDateString("en-SG", { day: "numeric", month: "short" })}</p>
+            </div>
+          </div>
+        )}
+
+        {/* 2-on-1 PT credits */}
+        {MOCK_USER.pt2on1Credits > 0 && MOCK_USER.pt2on1PackageExpiry && (
+          <div className="bg-warning-bg border border-warning/20 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-warning" />
+                <span className="text-sm font-semibold text-warning">{MOCK_USER.pt2on1Credits} PT credits (2-on-1)</span>
+              </div>
+              <span className="text-[11px] text-muted">{MOCK_USER.pt2on1PackageName}</span>
+            </div>
+            <div className="w-full h-1.5 rounded-full bg-warning/15 overflow-hidden mb-1.5">
+              <div className="h-full rounded-full bg-warning" style={{ width: `${(MOCK_USER.pt2on1Credits / MOCK_USER.pt2on1PackageTotal) * 100}%` }} />
+            </div>
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] text-muted">1 credit = 30 mins</p>
+              <p className="text-[11px] text-muted">expires {new Date(MOCK_USER.pt2on1PackageExpiry).toLocaleDateString("en-SG", { day: "numeric", month: "short" })}</p>
+            </div>
+          </div>
+        )}
+
+        {/* No PT credits at all */}
+        {MOCK_USER.pt1on1Credits === 0 && MOCK_USER.pt2on1Credits === 0 && (
+          <div className="bg-warning-bg border border-warning/20 rounded-xl p-4">
+            <p className="text-sm font-medium text-warning mb-1">No PT credits</p>
+            <p className="text-xs text-muted">
+              You need PT credits to book private sessions. 1 credit = 30 mins.{" "}
+              <Link href="/packages" className="text-accent hover:text-accent-deep underline underline-offset-2 transition-colors">
+                Buy a PT package →
+              </Link>
+            </p>
+          </div>
+        )}
       </motion.div>
+
+      {/* Preferred location */}
+      {instructorLocations.length > 1 && (
+        <motion.div {...fadeUp} transition={{ duration: 0.5, delay: 0.13 }} className="mb-6">
+          <label className="block text-sm font-medium text-ink mb-2">Preferred location</label>
+          <div className="inline-flex rounded-lg border border-border bg-warm p-1">
+            {instructorLocations.map((loc) => (
+              <button
+                key={loc.id}
+                onClick={() => setPreferredLocation(loc.id)}
+                className={`px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 whitespace-nowrap ${
+                  preferredLocation === loc.id ? "bg-card text-ink shadow-soft" : "text-muted hover:text-ink"
+                }`}
+              >
+                {loc.name}
+              </button>
+            ))}
+          </div>
+        </motion.div>
+      )}
 
       {/* Request CTA */}
       <motion.div {...fadeUp} transition={{ duration: 0.5, delay: 0.15 }}>
@@ -109,11 +195,34 @@ export default function PrivateSessionConfirmPage() {
               </motion.div>
 
               <h2 className="font-serif text-2xl text-ink mb-2">Request received!</h2>
-              <p className="text-sm text-muted leading-relaxed mb-6">
+              <p className="text-sm text-muted leading-relaxed mb-4">
                 We&apos;ve noted your interest in a private session with{" "}
-                <span className="font-medium text-ink">{instructor.name}</span>.
+                <span className="font-medium text-ink">{instructor.name}</span>
+                {preferredLocation && getLocation(preferredLocation) && (
+                  <> at <span className="font-medium text-ink">{getLocation(preferredLocation)!.name}</span></>
+                )}.
                 Our team will reach out within <span className="font-medium text-ink">12 hours</span> to confirm availability and next steps.
               </p>
+
+              {/* PT credit note */}
+              {MOCK_USER.pt1on1Credits > 0 && (
+                <div className="bg-accent-glow/20 border border-accent/15 rounded-lg p-3 mb-5 text-left">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted">Your 1-on-1 PT credits</span>
+                    <span className="text-xs font-semibold text-accent-deep">{MOCK_USER.pt1on1Credits} credits</span>
+                  </div>
+                  <p className="text-[10px] text-muted mt-1">Credits will be deducted once the session is confirmed.</p>
+                </div>
+              )}
+              {MOCK_USER.pt2on1Credits > 0 && (
+                <div className="bg-warning-bg border border-warning/15 rounded-lg p-3 mb-5 text-left">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs text-muted">Your 2-on-1 PT credits</span>
+                    <span className="text-xs font-semibold text-warning">{MOCK_USER.pt2on1Credits} credits</span>
+                  </div>
+                  <p className="text-[10px] text-muted mt-1">Credits will be deducted once the session is confirmed.</p>
+                </div>
+              )}
 
               <Link
                 href="/account"

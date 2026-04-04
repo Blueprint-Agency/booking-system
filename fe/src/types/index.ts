@@ -14,9 +14,20 @@ export interface Tenant {
   plan: "starter" | "growth" | "professional";
 }
 
+export interface Location {
+  id: string;
+  tenantId: string;
+  name: string;
+  shortName: string;
+  address: string;
+  area: string;
+  mapUrl?: string;
+}
+
 export interface Session {
   id: string;
   tenantId: string;
+  locationId: string | null;
   name: string;
   category: string;
   level: "beginner" | "intermediate" | "advanced" | "all";
@@ -36,6 +47,11 @@ export interface Session {
   lateCutoffMinutes: number | null;
   packageEligible: boolean;
   description: string;
+  workshopPackages?: {
+    name: string;
+    description: string;
+    price: number;
+  }[];
 }
 
 export interface Client {
@@ -68,6 +84,7 @@ export interface Product {
   id: string;
   name: string;
   type: "drop-in" | "package" | "membership";
+  creditType: "class" | "pt";
   price: number;
   sessionCount: number | null;
   expiryDays: number | null;
@@ -111,6 +128,7 @@ export interface Instructor {
   bio: string;
   avatarUrl: string;
   available: boolean;
+  locationIds: string[];
   compensation: {
     basePerSession: number;
     perClientCommission: number;

@@ -1,5 +1,7 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
+import type { Location } from "@/types";
+import locationsData from "@/data/locations.json";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -35,4 +37,19 @@ export function spotsText(booked: number, capacity: number): string {
   if (remaining <= 0) return "Full";
   if (remaining <= 3) return `${remaining} spots left`;
   return `${remaining} spots left`;
+}
+
+const typedLocations = locationsData as Location[];
+
+export function getLocation(locationId: string | null): Location | undefined {
+  if (!locationId) return undefined;
+  return typedLocations.find((l) => l.id === locationId);
+}
+
+export function getLocationName(locationId: string | null): string {
+  return getLocation(locationId)?.shortName ?? "";
+}
+
+export function getTenantLocations(tenantId: string): Location[] {
+  return typedLocations.filter((l) => l.tenantId === tenantId);
 }

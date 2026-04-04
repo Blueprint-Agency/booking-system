@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { cn, formatDate, formatTime } from "@/lib/utils";
+import { cn, formatDate, formatTime, getLocationName } from "@/lib/utils";
 import type { Session, Instructor } from "@/types";
 import sessionsData from "@/data/sessions.json";
 import instructorsData from "@/data/instructors.json";
@@ -11,10 +11,10 @@ import instructorsData from "@/data/instructors.json";
 const typedSessions = sessionsData as Session[];
 const typedInstructors = instructorsData as Instructor[];
 
-// Tenant-1 workshops and events, sorted soonest first
+// Tenant-1 workshops and events, sorted latest first
 const WORKSHOPS = typedSessions
   .filter((s) => s.tenantId === "tenant-1" && (s.type === "workshop" || s.type === "event"))
-  .sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+  .sort((a, b) => b.date.localeCompare(a.date) || b.time.localeCompare(a.time));
 
 const TODAY = new Date("2026-04-03");
 
@@ -72,11 +72,25 @@ function WorkshopCard({ session }: { session: Session }) {
             )}
           </div>
           <h3 className="font-serif text-lg text-ink">{session.name}</h3>
-          <p className="text-sm text-muted mt-0.5">{formatDate(session.date)} · {formatTime(session.time)} · {session.duration} min</p>
+          <p className="text-sm text-muted mt-0.5">
+            {formatDate(session.date)} · {formatTime(session.time)} · {session.duration} min
+            {getLocationName(session.locationId) && (
+              <span className="inline-flex items-center gap-1 ml-2 text-[10px] font-mono text-muted/70 bg-warm px-1.5 py-0.5 rounded border border-border align-middle">
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
+                </svg>
+                {getLocationName(session.locationId)}
+              </span>
+            )}
+          </p>
         </div>
         <div className="flex items-center gap-3 shrink-0">
           <span className="text-base font-semibold text-ink">
-            {session.price === 0 ? "Free" : `S$${session.price}`}
+            {session.price === 0
+              ? "Free"
+              : session.workshopPackages && session.workshopPackages.length > 1
+                ? `From S$${Math.min(...session.workshopPackages.map((p) => p.price))}`
+                : `S$${session.price}`}
           </span>
           <svg
             width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
@@ -125,47 +139,87 @@ function WorkshopCard({ session }: { session: Session }) {
                 </div>
               </div>
 
-              {/* Package row */}
+              {/* Packages / pricing */}
               <div className="border-t border-border pt-4">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <div>
-                    <p className="text-[10px] font-mono uppercase tracking-wider text-muted mb-1">Package</p>
-                    <p className="font-serif text-lg text-ink">
-                      {session.price === 0 ? "Free — no payment needed" : `S$${session.price} per person`}
-                    </p>
-                    {session.price > 0 && (
-                      <p className="text-xs text-muted mt-0.5">
-                        {session.packageEligible ? "Credits accepted" : "Direct payment only"}
-                      </p>
-                    )}
-                  </div>
+                <p className="text-[10px] font-mono uppercase tracking-wider text-muted mb-3">
+                  {session.price === 0 ? "Pricing" : "Packages"}
+                </p>
 
-                  {/* CTA */}
-                  <div className="flex flex-col gap-2 sm:items-end">
+                {session.price === 0 ? (
+                  /* Free event — single row */
+                  <div className="flex items-center justify-between">
+                    <p className="font-serif text-lg text-ink">Free — no payment needed</p>
                     {isDisabled ? (
-                      <>
-                        <button
-                          disabled
-                          className="px-5 py-2.5 text-sm font-medium bg-warm text-muted rounded-md border border-border cursor-not-allowed"
-                        >
+                      <div className="flex flex-col gap-2 items-end">
+                        <button disabled className="px-5 py-2.5 text-sm font-medium bg-warm text-muted rounded-md border border-border cursor-not-allowed">
                           {isPast ? "Workshop Ended" : "Fully Enrolled"}
                         </button>
                         {isFull && !isPast && session.waitlistEnabled && (
-                          <button className="text-sm text-accent hover:text-accent-deep transition-colors underline underline-offset-2">
-                            Join waitlist
-                          </button>
+                          <button className="text-sm text-accent hover:text-accent-deep transition-colors underline underline-offset-2">Join waitlist</button>
                         )}
-                      </>
+                      </div>
                     ) : (
-                      <Link
-                        href={`/workshops/${session.id}`}
-                        className="px-5 py-2.5 text-sm font-medium text-white bg-accent rounded-md hover:bg-accent-deep transition-colors text-center"
-                      >
+                      <Link href={`/workshops/${session.id}`} className="px-5 py-2.5 text-sm font-medium text-white bg-accent rounded-md hover:bg-accent-deep transition-colors">
+                        Register
+                      </Link>
+                    )}
+                  </div>
+                ) : session.workshopPackages && session.workshopPackages.length > 0 ? (
+                  /* Per-package list */
+                  <div className="space-y-3">
+                    {session.workshopPackages.map((pkg, pi) => (
+                      <div key={pi} className="bg-card border border-border rounded-lg p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-ink">{pkg.name}</p>
+                          <p className="text-xs text-muted mt-0.5">{pkg.description}</p>
+                        </div>
+                        <div className="flex items-center gap-4 shrink-0">
+                          <span className="font-serif text-lg text-ink">S${pkg.price}</span>
+                          {isDisabled ? (
+                            <div className="flex flex-col gap-1.5 items-end">
+                              <button disabled className="px-4 py-2 text-sm font-medium bg-warm text-muted rounded-md border border-border cursor-not-allowed">
+                                {isPast ? "Ended" : "Full"}
+                              </button>
+                              {isFull && !isPast && session.waitlistEnabled && (
+                                <button className="text-xs text-accent hover:text-accent-deep transition-colors underline underline-offset-2">Join waitlist</button>
+                              )}
+                            </div>
+                          ) : (
+                            <Link
+                              href={`/workshops/${session.id}?package=${pi}`}
+                              className="px-4 py-2 text-sm font-medium text-white bg-accent rounded-md hover:bg-accent-deep transition-colors"
+                            >
+                              Purchase
+                            </Link>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    <p className="text-xs text-muted">Direct payment only — credits cannot be used</p>
+                  </div>
+                ) : (
+                  /* Fallback: single price, no packages defined */
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div>
+                      <p className="font-serif text-lg text-ink">S${session.price} per person</p>
+                      <p className="text-xs text-muted mt-0.5">Direct payment only — credits cannot be used</p>
+                    </div>
+                    {isDisabled ? (
+                      <div className="flex flex-col gap-2 items-end">
+                        <button disabled className="px-5 py-2.5 text-sm font-medium bg-warm text-muted rounded-md border border-border cursor-not-allowed">
+                          {isPast ? "Workshop Ended" : "Fully Enrolled"}
+                        </button>
+                        {isFull && !isPast && session.waitlistEnabled && (
+                          <button className="text-sm text-accent hover:text-accent-deep transition-colors underline underline-offset-2">Join waitlist</button>
+                        )}
+                      </div>
+                    ) : (
+                      <Link href={`/workshops/${session.id}`} className="px-5 py-2.5 text-sm font-medium text-white bg-accent rounded-md hover:bg-accent-deep transition-colors text-center">
                         Purchase
                       </Link>
                     )}
                   </div>
-                </div>
+                )}
               </div>
             </div>
           </motion.div>
@@ -178,11 +232,15 @@ function WorkshopCard({ session }: { session: Session }) {
 export default function WorkshopsPage() {
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
-      <div className="mb-8">
-        <h1 className="font-serif text-3xl text-ink mb-2">Workshops</h1>
-        <p className="text-sm text-muted max-w-xl">
-          Specialised sessions that go deeper. One-time events with limited spots — book early to secure your place.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-8">
+        <div>
+          <h1 className="font-serif text-3xl text-ink mb-2">Workshops</h1>
+          <p className="text-sm text-muted max-w-xl">
+            Specialised sessions that go deeper. One-time events with limited spots — book early to secure your place.
+          </p>
+        </div>
+
+        {/* Direct payment only — no credits for workshops */}
       </div>
 
       {WORKSHOPS.length === 0 ? (

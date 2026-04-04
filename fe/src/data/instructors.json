@@ -6,6 +6,7 @@
     "phone": "+65 9123 4567",
     "bio": "Founder and head instructor with 20 years of traditional Hatha and Ashtanga practice. Trained in Mysore, India under the Sri K. Pattabhi Jois lineage.",
     "available": true,
+    "locationIds": ["loc-1", "loc-2"],
     "compensation": {
       "basePerSession": 80,
       "perClientCommission": 5,
@@ -22,6 +23,7 @@
     "phone": "+65 9234 5678",
     "bio": "Vinyasa and Yin specialist with 10 years of teaching experience. Passionate about therapeutic yoga and breath-centred movement.",
     "available": true,
+    "locationIds": ["loc-1"],
     "compensation": {
       "basePerSession": 60,
       "perClientCommission": 4,
@@ -38,6 +40,7 @@
     "phone": "+65 9345 6789",
     "bio": "Restorative and Pranayama teacher certified in Iyengar methodology. Focuses on precision alignment and therapeutic breathwork.",
     "available": false,
+    "locationIds": ["loc-2"],
     "compensation": {
       "basePerSession": 55,
       "perClientCommission": 3.5,
@@ -54,6 +57,7 @@
     "phone": "+65 9456 7890",
     "bio": "Power Yoga and Ashtanga instructor. Former competitive athlete who discovered yoga for recovery and now teaches full-time.",
     "available": true,
+    "locationIds": ["loc-1", "loc-2"],
     "compensation": {
       "basePerSession": 65,
       "perClientCommission": 3,

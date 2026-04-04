@@ -3,20 +3,23 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
-import { cn, formatTime } from "@/lib/utils";
+import { cn, formatTime, getTenantLocations, getLocationName } from "@/lib/utils";
+import { LocationFilter } from "@/components/location-filter";
+import { MOCK_USER } from "@/data/mock-user";
 import type { Session, Instructor } from "@/types";
 import sessionsData from "@/data/sessions.json";
 import instructorsData from "@/data/instructors.json";
 
 const typedSessions = sessionsData as Session[];
 const typedInstructors = instructorsData as Instructor[];
+const TENANT_LOCATIONS = getTenantLocations("tenant-1");
 
-const YOGA_SESSIONS = typedSessions.filter(
+const ALL_YOGA_SESSIONS = typedSessions.filter(
   (s) => s.tenantId === "tenant-1" && s.type === "regular"
 );
 
-const USER_CREDITS = 8;
-const USER_PACKAGE = "Bundle of 10";
+const USER_CREDITS = MOCK_USER.classCredits;
+const USER_PACKAGE = MOCK_USER.classPackageName;
 const userHasCredits = USER_CREDITS > 0;
 
 const BASE_MONDAY = new Date(2026, 3, 7);
@@ -43,9 +46,9 @@ function toDateStr(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-function getSessionsForDay(date: Date): Session[] {
+function getSessionsForDay(date: Date, sessions: Session[]): Session[] {
   const ds = toDateStr(date);
-  return YOGA_SESSIONS.filter((s) => s.date === ds && s.status !== "cancelled").sort((a, b) =>
+  return sessions.filter((s) => s.date === ds && s.status !== "cancelled").sort((a, b) =>
     a.time.localeCompare(b.time)
   );
 }
@@ -58,10 +61,11 @@ const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const DAY_LABELS_FULL = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-function ClassCard({ session }: { session: Session }) {
+function ClassCard({ session, showLocation }: { session: Session; showLocation: boolean }) {
   const [showDialog, setShowDialog] = useState(false);
   const isFull = session.bookedCount >= session.capacity;
   const canBook = userHasCredits && !isFull;
+  const locationName = getLocationName(session.locationId);
 
   return (
     <>
@@ -71,16 +75,21 @@ function ClassCard({ session }: { session: Session }) {
       )}>
         {/* Content — grows to fill cell height */}
         <div className="flex-1 flex flex-col gap-2">
-          {/* Time + duration row */}
-          <div className="flex items-baseline justify-between">
-            <span className={cn(
-              "text-[15px] font-semibold tracking-tight",
-              isFull ? "text-muted" : "text-ink"
-            )}>
-              {formatTime(session.time)}
+          {/* Tag + duration row */}
+          <div className="flex items-center justify-between gap-1">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-accent-deep bg-accent-glow/30 px-1.5 py-0.5 rounded-full border border-accent/20 leading-none">
+              {session.category}
             </span>
             <span className="text-[11px] text-muted font-mono">{session.duration}m</span>
           </div>
+
+          {/* Time */}
+          <span className={cn(
+            "text-[15px] font-semibold tracking-tight",
+            isFull ? "text-muted" : "text-ink"
+          )}>
+            {formatTime(session.time)}
+          </span>
 
           {/* Class name */}
           <h4 className={cn(
@@ -93,9 +102,39 @@ function ClassCard({ session }: { session: Session }) {
           {/* Instructor */}
           <p className="text-xs text-muted">{getInstructorName(session.instructorId)}</p>
 
-          {/* Description */}
+          {/* Dynamic credit text */}
+          {!isFull && (
+            <p className="text-[11px] text-muted/80 leading-snug">
+              <span className="text-sage font-medium">1 credit</span>
+              {" · "}
+              {MOCK_USER.classPackageUnlimited
+                ? <span className="text-sage">unlimited credits</span>
+                : userHasCredits
+                  ? <span>{USER_CREDITS} left</span>
+                  : <span className="text-error">no credits</span>
+              }
+            </p>
+          )}
+
+          {/* Location badge */}
+          {showLocation && locationName && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-mono text-muted/70 bg-warm px-1.5 py-0.5 rounded border border-border w-fit">
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
+              </svg>
+              {locationName}
+            </span>
+          )}
+
+          {/* Description — truncated with hover popover */}
           {session.description && (
-            <p className="text-[11px] text-muted/70 leading-relaxed line-clamp-2">{session.description}</p>
+            <div className="relative group/desc">
+              <p className="text-[11px] text-muted/70 leading-relaxed line-clamp-2 cursor-help">{session.description}</p>
+              <div className="absolute left-0 bottom-full mb-1.5 w-64 p-3 bg-ink text-white text-[11px] leading-relaxed rounded-lg shadow-lg opacity-0 invisible group-hover/desc:opacity-100 group-hover/desc:visible transition-all duration-200 z-30 pointer-events-none">
+                {session.description}
+                <div className="absolute left-4 top-full w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-ink" />
+              </div>
+            </div>
           )}
         </div>
 
@@ -154,7 +193,7 @@ function ClassCard({ session }: { session: Session }) {
               </div>
               <h3 className="font-serif text-lg text-ink text-center mb-2">Package required</h3>
               <p className="text-sm text-muted text-center mb-6">
-                You need an active package to book classes. Purchase a credit bundle or unlimited plan to get started.
+                You must purchase a package to book a class. Choose a credit bundle or unlimited plan to get started.
               </p>
               <div className="flex gap-3">
                 <button
@@ -193,9 +232,15 @@ function getTodayDayIndex(weekDays: Date[]): number {
 
 export default function ClassesPage() {
   const [weekOffset, setWeekOffset] = useState(0);
+  const [selectedLocation, setSelectedLocation] = useState<string | "all">("all");
   const monday = getWeekStart(weekOffset);
   const weekDays = getWeekDays(monday);
   const sunday = weekDays[6];
+
+  const filteredSessions = selectedLocation === "all"
+    ? ALL_YOGA_SESSIONS
+    : ALL_YOGA_SESSIONS.filter((s) => s.locationId === selectedLocation);
+  const showLocationBadge = selectedLocation === "all";
 
   const todayIndex = getTodayDayIndex(weekDays);
   const weekContainsToday = todayIndex !== -1;
@@ -223,11 +268,21 @@ export default function ClassesPage() {
 
         {/* Credit balance badge */}
         {userHasCredits ? (
-          <div className="inline-flex items-center gap-2.5 px-4 py-2.5 bg-sage-light border border-sage/20 rounded-xl text-sm self-start">
-            <span className="w-2 h-2 rounded-full bg-sage inline-block" />
-            <span className="text-sage font-semibold">{USER_CREDITS} credits</span>
-            <span className="text-muted text-xs">· {USER_PACKAGE}</span>
-          </div>
+          <Link href="/account/packages" className="group self-start">
+            <div className="px-4 py-2.5 bg-sage-light border border-sage/20 rounded-xl text-sm group-hover:border-sage/40 transition-colors">
+              <div className="flex items-center gap-2.5">
+                <span className="w-2 h-2 rounded-full bg-sage inline-block" />
+                <span className="text-sage font-semibold">{USER_CREDITS} credits</span>
+                <span className="text-muted text-xs">· {USER_PACKAGE}</span>
+              </div>
+              <div className="flex items-center gap-2 mt-1.5">
+                <div className="flex-1 h-1 rounded-full bg-sage/20 overflow-hidden">
+                  <div className="h-full rounded-full bg-sage" style={{ width: `${(MOCK_USER.classCredits / MOCK_USER.classPackageTotal) * 100}%` }} />
+                </div>
+                <span className="text-[10px] text-muted">expires {new Date(MOCK_USER.classPackageExpiry).toLocaleDateString("en-SG", { day: "numeric", month: "short" })}</span>
+              </div>
+            </div>
+          </Link>
         ) : (
           <Link
             href="/packages"
@@ -236,6 +291,15 @@ export default function ClassesPage() {
             Buy a Package
           </Link>
         )}
+      </div>
+
+      {/* Location filter */}
+      <div className="mb-6">
+        <LocationFilter
+          locations={TENANT_LOCATIONS}
+          selected={selectedLocation}
+          onChange={setSelectedLocation}
+        />
       </div>
 
       {/* Week navigation */}
@@ -313,7 +377,7 @@ export default function ClassesPage() {
 
         {/* Session rows — one row per slot so columns align */}
         {(() => {
-          const allSessions = weekDays.map((d) => getSessionsForDay(d));
+          const allSessions = weekDays.map((d) => getSessionsForDay(d, filteredSessions));
           const maxSlots = Math.max(...allSessions.map((s) => s.length), 1);
           return Array.from({ length: maxSlots }, (_, rowIdx) => (
             <div key={rowIdx} className="grid grid-cols-7 border-t border-border bg-card">
@@ -330,7 +394,7 @@ export default function ClassesPage() {
                     )}
                   >
                     {session ? (
-                      <ClassCard session={session} />
+                      <ClassCard session={session} showLocation={showLocationBadge} />
                     ) : (
                       <div className="h-full" />
                     )}
@@ -345,7 +409,7 @@ export default function ClassesPage() {
       {/* ── Mobile: accordion per day ─────────────────── */}
       <div className="lg:hidden space-y-1.5">
         {weekDays.map((day, di) => {
-          const sessions = getSessionsForDay(day);
+          const sessions = getSessionsForDay(day, filteredSessions);
           const isToday = toDateStr(day) === TODAY_STR;
           const isOpen = expandedDay === di;
           const sessionCount = sessions.length;
@@ -404,11 +468,15 @@ export default function ClassesPage() {
                     transition={{ duration: 0.22, ease: "easeInOut" }}
                     className="overflow-hidden"
                   >
-                    <div className="p-3 space-y-2 bg-warm border-t border-border">
+                    <div className="p-3 space-y-3 bg-warm border-t border-border">
                       {sessions.length === 0 ? (
                         <p className="text-sm text-muted text-center py-6">No classes scheduled</p>
                       ) : (
-                        sessions.map((s) => <ClassCard key={s.id} session={s} />)
+                        sessions.map((s) => (
+                          <div key={s.id} className="bg-card border border-border rounded-lg p-3.5">
+                            <ClassCard session={s} showLocation={showLocationBadge} />
+                          </div>
+                        ))
                       )}
                     </div>
                   </motion.div>

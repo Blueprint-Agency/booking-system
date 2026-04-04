@@ -1,7 +1,9 @@
 [
-  { "id": "cpk-1", "clientId": "cli-1", "productId": "prod-4", "sessionsRemaining": 4, "sessionsTotal": 10, "purchasedAt": "2026-03-01", "expiresAt": "2026-04-30", "status": "active" },
+  { "id": "cpk-1", "clientId": "cli-1", "productId": "prod-4", "sessionsRemaining": 8, "sessionsTotal": 10, "purchasedAt": "2026-03-01", "expiresAt": "2026-06-15", "status": "active" },
+  { "id": "cpk-1-pt", "clientId": "cli-1", "productId": "prod-pt-10", "sessionsRemaining": 6, "sessionsTotal": 20, "purchasedAt": "2026-03-01", "expiresAt": "2026-09-01", "status": "active" },
   { "id": "cpk-2", "clientId": "cli-2", "productId": "prod-3", "sessionsRemaining": 2, "sessionsTotal": 5, "purchasedAt": "2026-03-10", "expiresAt": "2026-04-09", "status": "active" },
   { "id": "cpk-3", "clientId": "cli-4", "productId": "prod-4", "sessionsRemaining": 0, "sessionsTotal": 10, "purchasedAt": "2025-12-01", "expiresAt": "2026-01-30", "status": "expired" },
+  { "id": "cpk-3-old", "clientId": "cli-1", "productId": "prod-3", "sessionsRemaining": 0, "sessionsTotal": 5, "purchasedAt": "2025-11-15", "expiresAt": "2025-12-15", "status": "expired" },
   { "id": "cpk-4", "clientId": "cli-5", "productId": "prod-3", "sessionsRemaining": 3, "sessionsTotal": 5, "purchasedAt": "2026-03-15", "expiresAt": "2026-04-14", "status": "active" },
   { "id": "cpk-5", "clientId": "cli-6", "productId": "prod-5", "sessionsRemaining": 12, "sessionsTotal": 20, "purchasedAt": "2026-03-05", "expiresAt": "2026-06-03", "status": "active" },
   { "id": "cpk-6", "clientId": "cli-9", "productId": "prod-4", "sessionsRemaining": 7, "sessionsTotal": 10, "purchasedAt": "2026-03-18", "expiresAt": "2026-05-17", "status": "active" },

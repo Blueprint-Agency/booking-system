@@ -127,8 +127,8 @@ export default function RegisterPage() {
             {/* Gender */}
             <div>
               <label htmlFor="gender" className={labelClass}>Gender</label>
-              <select id="gender" className={cn(inputClass, "cursor-pointer")}>
-                <option value="" disabled selected>Select gender</option>
+              <select id="gender" defaultValue="" className={cn(inputClass, "cursor-pointer")}>
+                <option value="" disabled>Select gender</option>
                 <option value="male">Male</option>
                 <option value="female">Female</option>
                 <option value="prefer-not-to-say">Prefer not to say</option>

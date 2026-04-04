@@ -1,0 +1,20 @@
+[
+  {
+    "id": "loc-1",
+    "tenantId": "tenant-1",
+    "name": "Breadtalk IHQ",
+    "shortName": "Breadtalk",
+    "address": "30 Tai Seng Street, #01-01, Singapore 534013",
+    "area": "Lavender",
+    "mapUrl": "https://maps.app.goo.gl/PbJ2UX6NwZz9tJF76"
+  },
+  {
+    "id": "loc-2",
+    "tenantId": "tenant-1",
+    "name": "Outram Park Studio",
+    "shortName": "Outram",
+    "address": "3 Park Crescent, #02-01, Singapore 088983",
+    "area": "Outram Park",
+    "mapUrl": "https://maps.app.goo.gl/LfuppkVjuKDJUjpq8"
+  }
+]

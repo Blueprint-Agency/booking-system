@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
+import { MOCK_USER } from "@/data/mock-user";
 
 const fadeUp = {
   hidden: { opacity: 0, y: 32 },
@@ -102,7 +103,7 @@ export default function HomePage() {
             className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent-glow/30 border border-accent/20 text-accent-deep text-xs font-medium mb-6"
           >
             <span className="w-1.5 h-1.5 rounded-full bg-accent-deep" />
-            Tiong Bahru, Singapore
+            Lavender &amp; Outram Park, Singapore
           </motion.div>
 
           <motion.h1
@@ -154,6 +155,79 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* ── Your credits (logged-in users) ─────────────────── */}
+      {MOCK_USER.classCredits > 0 && (
+        <section className="py-8 px-6 sm:px-8">
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true }}
+            custom={0}
+            variants={fadeUp}
+            className="max-w-2xl mx-auto"
+          >
+            <Link href="/account/packages" className="block group">
+              <div className="bg-card border border-border rounded-xl p-5 sm:p-6 hover:shadow-soft hover:border-sage/30 transition-all">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-medium text-ink">Your Credits</h3>
+                  <span className="text-[11px] text-accent font-medium group-hover:underline">View all packages →</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Class credits */}
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-sage-light flex items-center justify-center shrink-0">
+                      <span className="text-base font-semibold text-sage">{MOCK_USER.classCredits}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-ink">Class credits</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <div className="flex-1 h-1 rounded-full bg-sage/20 overflow-hidden">
+                          <div className="h-full rounded-full bg-sage" style={{ width: `${(MOCK_USER.classCredits / MOCK_USER.classPackageTotal) * 100}%` }} />
+                        </div>
+                        <span className="text-[10px] text-muted shrink-0">{MOCK_USER.classPackageName}</span>
+                      </div>
+                    </div>
+                  </div>
+                  {/* PT credits */}
+                  {MOCK_USER.pt1on1Credits > 0 && (
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-accent-glow/30 flex items-center justify-center shrink-0">
+                        <span className="text-base font-semibold text-accent-deep">{MOCK_USER.pt1on1Credits}</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-ink">PT credits (1-on-1)</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <div className="flex-1 h-1 rounded-full bg-accent/20 overflow-hidden">
+                            <div className="h-full rounded-full bg-accent" style={{ width: `${(MOCK_USER.pt1on1Credits / MOCK_USER.pt1on1PackageTotal) * 100}%` }} />
+                          </div>
+                          <span className="text-[10px] text-muted shrink-0">{MOCK_USER.pt1on1PackageName}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {MOCK_USER.pt2on1Credits > 0 && (
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-warning-bg flex items-center justify-center shrink-0">
+                        <span className="text-base font-semibold text-warning">{MOCK_USER.pt2on1Credits}</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-ink">PT credits (2-on-1)</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <div className="flex-1 h-1 rounded-full bg-warning/20 overflow-hidden">
+                            <div className="h-full rounded-full bg-warning" style={{ width: `${(MOCK_USER.pt2on1Credits / MOCK_USER.pt2on1PackageTotal) * 100}%` }} />
+                          </div>
+                          <span className="text-[10px] text-muted shrink-0">{MOCK_USER.pt2on1PackageName}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </Link>
+          </motion.div>
+        </section>
+      )}
+
       {/* ── What we offer ─────────────────────────────────── */}
       <section className="py-14 sm:py-20 px-6 sm:px-8 bg-warm">
         <div className="max-w-6xl mx-auto">
@@ -191,6 +265,82 @@ export default function HomePage() {
                     <p className="text-sm opacity-80 leading-relaxed">{item.description}</p>
                   </div>
                 </Link>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Our Studios ──────────────────────────────────────��� */}
+      <section className="py-14 sm:py-20 px-6 sm:px-8">
+        <div className="max-w-6xl mx-auto">
+          <motion.div
+            initial="hidden"
+            whileInView="visible"
+            viewport={{ once: true, margin: "-80px" }}
+            custom={0}
+            variants={fadeUp}
+            className="mb-8"
+          >
+            <h2 className="font-serif text-2xl sm:text-3xl text-ink mb-2">Our studios</h2>
+            <p className="text-sm text-muted">Two locations across Singapore. Your credits work at both.</p>
+          </motion.div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+            {[
+              {
+                name: "Breadtalk IHQ",
+                area: "Lavender",
+                address: "30 Tai Seng Street, #01-01, Singapore 534013",
+                mapUrl: "https://maps.app.goo.gl/PbJ2UX6NwZz9tJF76",
+                description: "Our flagship studio in the Breadtalk IHQ building. Spacious practice rooms with natural light, full prop library, and shower facilities.",
+              },
+              {
+                name: "Outram Park Studio",
+                area: "Outram Park",
+                address: "3 Park Crescent, #02-01, Singapore 088983",
+                mapUrl: "https://maps.app.goo.gl/LfuppkVjuKDJUjpq8",
+                description: "An intimate studio near Outram Park MRT. Cosy setting ideal for smaller classes, restorative sessions, and private training.",
+              },
+            ].map((studio, i) => (
+              <motion.div
+                key={studio.name}
+                initial="hidden"
+                whileInView="visible"
+                viewport={{ once: true, margin: "-40px" }}
+                custom={i + 1}
+                variants={fadeUp}
+              >
+                <div className="bg-card border border-border rounded-xl p-6 h-full flex flex-col gap-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-accent-glow/30 flex items-center justify-center shrink-0">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent-deep">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h3 className="font-serif text-xl text-ink">{studio.name}</h3>
+                      <p className="text-xs font-mono text-accent-deep mt-0.5">{studio.area}</p>
+                    </div>
+                  </div>
+                  <p className="text-sm text-muted leading-relaxed flex-1">{studio.description}</p>
+                  <div className="pt-3 border-t border-border">
+                    <p className="text-xs text-muted mb-2">{studio.address}</p>
+                    <a
+                      href={studio.mapUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-accent-deep hover:text-accent transition-colors"
+                    >
+                      View on Google Maps
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                        <polyline points="15 3 21 3 21 9" />
+                        <line x1="10" y1="14" x2="21" y2="3" />
+                      </svg>
+                    </a>
+                  </div>
+                </div>
               </motion.div>
             ))}
           </div>
