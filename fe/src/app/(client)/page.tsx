@@ -18,7 +18,7 @@ const OFFERINGS = [
     href: "/classes",
     label: "Classes",
     description: "Group yoga sessions across all levels — book with your credits.",
-    color: "bg-accent-glow/30 text-accent-deep border-accent/20 hover:bg-accent-glow/50 hover:border-accent/40",
+    color: "bg-accent/10 text-accent-deep border-accent/20 hover:bg-accent/15 hover:border-accent/40",
     icon: (
       <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <path d="M4 6h16M4 12h16M4 18h7" />
@@ -29,7 +29,7 @@ const OFFERINGS = [
     href: "/workshops",
     label: "Workshops",
     description: "Specialised deep-dives and community events with limited spots.",
-    color: "bg-sage-light text-sage border-sage/20 hover:bg-sage-light hover:border-sage/40",
+    color: "bg-sage/10 text-sage border-sage/20 hover:bg-sage/15 hover:border-sage/40",
     icon: (
       <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="10" />
@@ -41,7 +41,7 @@ const OFFERINGS = [
     href: "/private-sessions",
     label: "Private Sessions",
     description: "1-on-1 or 2-on-1 personal training with our instructors.",
-    color: "bg-warning-bg text-warning border-warning/20 hover:bg-warning-bg hover:border-warning/40",
+    color: "bg-warning/10 text-warning border-warning/20 hover:bg-warning/15 hover:border-warning/40",
     icon: (
       <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
@@ -53,7 +53,7 @@ const OFFERINGS = [
     href: "/packages",
     label: "Packages",
     description: "Credit bundles, unlimited access, and VIP private session plans.",
-    color: "bg-info-bg text-info border-info/20 hover:bg-info-bg hover:border-info/40",
+    color: "bg-warm text-ink border-border hover:bg-warm hover:border-accent/30",
     icon: (
       <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <rect x="2" y="7" width="20" height="14" rx="2" />
@@ -68,19 +68,19 @@ const HOW_IT_WORKS = [
     step: "1",
     title: "Pick a class",
     description: "Browse the weekly schedule and find a session that fits your day.",
-    color: "bg-accent-glow/40 text-accent-deep",
+    color: "bg-accent/15 text-accent-deep",
   },
   {
     step: "2",
     title: "Reserve your spot",
     description: "Use your credits to book instantly. No payment at the door.",
-    color: "bg-sage-light text-sage",
+    color: "bg-sage/10 text-sage",
   },
   {
     step: "3",
     title: "Show up & practise",
     description: "Arrive 15 minutes early, scan your QR code, and step onto the mat.",
-    color: "bg-warning-bg text-warning",
+    color: "bg-warning/10 text-warning",
   },
 ];
 
@@ -90,8 +90,8 @@ export default function HomePage() {
       {/* ── Hero ─────────────────────────────────────────── */}
       <section className="relative py-24 sm:py-36 px-6 sm:px-8">
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute -top-24 -right-24 w-[500px] h-[500px] rounded-full bg-accent-glow/20 blur-3xl" />
-          <div className="absolute -bottom-32 -left-32 w-[400px] h-[400px] rounded-full bg-sage-light/40 blur-3xl" />
+          <div className="absolute -top-24 -right-24 w-[500px] h-[500px] rounded-full bg-accent/10 blur-3xl" />
+          <div className="absolute -bottom-32 -left-32 w-[400px] h-[400px] rounded-full bg-sage/10 blur-3xl" />
         </div>
 
         <div className="relative max-w-3xl mx-auto text-center">
@@ -100,7 +100,7 @@ export default function HomePage() {
             animate="visible"
             custom={0}
             variants={fadeUp}
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent-glow/30 border border-accent/20 text-accent-deep text-xs font-medium mb-6"
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-accent/10 border border-accent/20 text-accent-deep text-xs font-medium mb-6"
           >
             <span className="w-1.5 h-1.5 rounded-full bg-accent-deep" />
             Lavender &amp; Outram Park, Singapore
@@ -137,7 +137,7 @@ export default function HomePage() {
           >
             <Link
               href="/classes"
-              className="inline-flex items-center gap-2 px-7 py-3.5 bg-accent text-white font-medium rounded-lg hover:bg-accent-deep transition-colors duration-200 text-base"
+              className="inline-flex items-center gap-2 px-7 py-3.5 bg-accent text-inverse font-medium rounded-lg hover:bg-accent-deep transition-colors duration-200 text-base"
             >
               Browse Classes
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -175,7 +175,7 @@ export default function HomePage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {/* Class credits */}
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-sage-light flex items-center justify-center shrink-0">
+                    <div className="w-10 h-10 rounded-lg bg-sage/10 flex items-center justify-center shrink-0">
                       <span className="text-base font-semibold text-sage">{MOCK_USER.classCredits}</span>
                     </div>
                     <div className="flex-1 min-w-0">
@@ -191,7 +191,7 @@ export default function HomePage() {
                   {/* PT credits */}
                   {MOCK_USER.pt1on1Credits > 0 && (
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-accent-glow/30 flex items-center justify-center shrink-0">
+                      <div className="w-10 h-10 rounded-lg bg-accent/15 flex items-center justify-center shrink-0">
                         <span className="text-base font-semibold text-accent-deep">{MOCK_USER.pt1on1Credits}</span>
                       </div>
                       <div className="flex-1 min-w-0">
@@ -207,7 +207,7 @@ export default function HomePage() {
                   )}
                   {MOCK_USER.pt2on1Credits > 0 && (
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-warning-bg flex items-center justify-center shrink-0">
+                      <div className="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center shrink-0">
                         <span className="text-base font-semibold text-warning">{MOCK_USER.pt2on1Credits}</span>
                       </div>
                       <div className="flex-1 min-w-0">
@@ -257,7 +257,7 @@ export default function HomePage() {
                   href={item.href}
                   className={`flex flex-col gap-4 p-6 rounded-xl border transition-all duration-200 hover:shadow-soft hover:-translate-y-0.5 h-full ${item.color}`}
                 >
-                  <div className="w-12 h-12 rounded-xl bg-white/40 flex items-center justify-center">
+                  <div className="w-12 h-12 rounded-xl bg-inverse/30 flex items-center justify-center">
                     {item.icon}
                   </div>
                   <div>
@@ -313,7 +313,7 @@ export default function HomePage() {
               >
                 <div className="bg-card border border-border rounded-xl p-6 h-full flex flex-col gap-4">
                   <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-accent-glow/30 flex items-center justify-center shrink-0">
+                    <div className="w-10 h-10 rounded-lg bg-accent/15 flex items-center justify-center shrink-0">
                       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent-deep">
                         <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
                       </svg>
@@ -448,7 +448,7 @@ export default function HomePage() {
           >
             <Link
               href="/packages"
-              className="inline-flex items-center gap-2 px-6 py-3 text-sm font-medium text-white bg-accent rounded-lg hover:bg-accent-deep transition-colors"
+              className="inline-flex items-center gap-2 px-6 py-3 text-sm font-medium text-inverse bg-accent rounded-lg hover:bg-accent-deep transition-colors"
             >
               View packages & pricing
             </Link>
@@ -461,7 +461,7 @@ export default function HomePage() {
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-6">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg bg-accent flex items-center justify-center">
-              <span className="text-white font-bold text-xs">Y</span>
+              <span className="text-inverse font-bold text-xs">Y</span>
             </div>
             <span className="font-serif text-lg text-ink">Yoga Sadhana</span>
           </div>

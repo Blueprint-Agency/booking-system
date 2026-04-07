@@ -51,7 +51,7 @@ export function ClientNav() {
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2 shrink-0">
             <div className="w-8 h-8 rounded-lg bg-accent flex items-center justify-center">
-              <span className="text-white font-bold text-sm">Y</span>
+              <span className="text-inverse font-bold text-sm">Y</span>
             </div>
             <span className="font-serif text-xl text-ink">Yoga Sadhana</span>
           </Link>
@@ -65,7 +65,7 @@ export function ClientNav() {
                 className={cn(
                   "px-3 py-2 text-sm font-medium rounded-md transition-colors duration-200",
                   isActive(href)
-                    ? "text-accent-deep bg-accent-glow/40"
+                    ? "text-accent-deep bg-accent/15"
                     : "text-muted hover:text-ink hover:bg-warm"
                 )}
               >
@@ -78,7 +78,7 @@ export function ClientNav() {
                 className={cn(
                   "px-3 py-2 text-sm font-medium rounded-md transition-colors duration-200",
                   isActive("/account")
-                    ? "text-accent-deep bg-accent-glow/40"
+                    ? "text-accent-deep bg-accent/15"
                     : "text-muted hover:text-ink hover:bg-warm"
                 )}
               >
@@ -95,14 +95,14 @@ export function ClientNav() {
                   {/* Credit pill — always visible */}
                   <Link
                     href="/account/packages"
-                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-sage-light border border-sage/20 hover:border-sage/40 transition-colors"
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-sage/10 border border-sage/20 hover:border-sage/40 transition-colors"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <span className="w-1.5 h-1.5 rounded-full bg-sage" />
                     <span className="text-xs font-semibold text-sage">{MOCK_USER.classCredits}</span>
                     <span className="text-[10px] text-muted">credits</span>
                   </Link>
-                  <div className="w-8 h-8 rounded-full bg-accent-glow flex items-center justify-center text-xs font-semibold text-accent-deep group-hover:bg-accent group-hover:text-white transition-colors duration-200">
+                  <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center text-xs font-semibold text-accent-deep group-hover:bg-accent group-hover:text-inverse transition-colors duration-200">
                     {MOCK_USER.initials}
                   </div>
                 </button>
@@ -178,7 +178,7 @@ export function ClientNav() {
                   <div className="border-t border-border my-1" />
                   <Link
                     href="/login"
-                    className="block px-4 py-2 text-sm text-error hover:bg-error-bg/40 transition-colors"
+                    className="block px-4 py-2 text-sm text-error hover:bg-error/10 transition-colors"
                   >
                     Log out
                   </Link>
@@ -187,7 +187,7 @@ export function ClientNav() {
             ) : (
               <Link
                 href="/login"
-                className="px-4 py-2 text-sm font-medium text-white bg-accent rounded-md hover:bg-accent-deep transition-colors duration-200"
+                className="px-4 py-2 text-sm font-medium text-inverse bg-accent rounded-md hover:bg-accent-deep transition-colors duration-200"
               >
                 Log In
               </Link>
@@ -236,7 +236,7 @@ export function ClientNav() {
                 className={cn(
                   "px-3 py-2.5 text-sm font-medium rounded-md transition-colors",
                   isActive(href)
-                    ? "text-accent-deep bg-accent-glow/40"
+                    ? "text-accent-deep bg-accent/15"
                     : "text-muted hover:text-ink hover:bg-warm"
                 )}
               >
@@ -246,7 +246,7 @@ export function ClientNav() {
             {isAuth ? (
               <>
                 {/* Mobile credit summary */}
-                <div className="mx-3 my-2 p-3 rounded-lg bg-sage-light/60 border border-sage/15">
+                <div className="mx-3 my-2 p-3 rounded-lg bg-sage/10 border border-sage/20">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span className="w-1.5 h-1.5 rounded-full bg-sage" />
@@ -288,7 +288,7 @@ export function ClientNav() {
                   className={cn(
                     "px-3 py-2.5 text-sm font-medium rounded-md transition-colors",
                     isActive("/account")
-                      ? "text-accent-deep bg-accent-glow/40"
+                      ? "text-accent-deep bg-accent/15"
                       : "text-muted hover:text-ink hover:bg-warm"
                   )}
                 >
@@ -297,7 +297,7 @@ export function ClientNav() {
                 <Link
                   href="/login"
                   onClick={() => setMobileOpen(false)}
-                  className="px-3 py-2.5 text-sm font-medium rounded-md text-error hover:bg-error-bg/40 transition-colors"
+                  className="px-3 py-2.5 text-sm font-medium rounded-md text-error hover:bg-error/10 transition-colors"
                 >
                   Log out
                 </Link>
@@ -306,7 +306,7 @@ export function ClientNav() {
               <Link
                 href="/login"
                 onClick={() => setMobileOpen(false)}
-                className="px-3 py-2.5 text-sm font-medium rounded-md bg-accent text-white hover:bg-accent-deep transition-colors"
+                className="px-3 py-2.5 text-sm font-medium rounded-md bg-accent text-inverse hover:bg-accent-deep transition-colors"
               >
                 Log In
               </Link>

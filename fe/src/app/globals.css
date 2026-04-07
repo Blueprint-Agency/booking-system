@@ -5,40 +5,36 @@
   --font-sans: "Outfit", sans-serif;
   --font-mono: "JetBrains Mono", monospace;
 
+  /* Neutral foundation */
   --color-ink: #1a1a2e;
   --color-paper: #faf9f6;
   --color-warm: #f5f0e8;
   --color-card: #ffffff;
+  --color-inverse: #ffffff;
   --color-border: #e2ddd5;
   --color-muted: #8b8b8b;
 
+  /* Primary accent — terracotta */
   --color-accent: #c4956a;
   --color-accent-deep: #a67548;
-  --color-accent-glow: #e8c9a8;
 
+  /* Semantic status */
   --color-sage: #7a8f72;
-  --color-sage-light: #e8ede6;
-
   --color-warning: #d4a843;
-  --color-warning-bg: #faf3e0;
   --color-error: #c45a5a;
-  --color-error-bg: #fdf0f0;
-  --color-info: #5a8ac4;
-  --color-info-bg: #eef4fb;
 
+  /* Sidebar */
   --color-sidebar-bg: #1a1a2e;
   --color-sidebar-text: #b8b8cc;
-  --color-sidebar-active: #ffffff;
   --color-sidebar-hover: #2a2a4e;
-  --color-sidebar-accent: #c4956a;
 
   --radius-sm: 8px;
   --radius-md: 12px;
   --radius-lg: 16px;
   --radius-xl: 24px;
 
-  --shadow-soft: 0 2px 16px rgba(26, 26, 46, 0.10);
-  --shadow-hover: 0 8px 32px rgba(26, 26, 46, 0.14);
+  --shadow-soft: 0 2px 16px rgba(26, 26, 46, 0.08);
+  --shadow-hover: 0 8px 32px rgba(26, 26, 46, 0.13);
   --shadow-modal: 0 16px 64px rgba(26, 26, 46, 0.18);
 }
 
@@ -62,6 +58,13 @@
     font-family: var(--font-serif);
     font-weight: 400;
     line-height: 1.2;
+  }
+
+  /* Global focus-visible ring — consistent across all interactive elements */
+  *:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 4px;
   }
 }
 

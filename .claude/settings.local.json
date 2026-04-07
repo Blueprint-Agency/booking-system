@@ -63,7 +63,11 @@
       "Read(//c/Users/chris/.claude/plans//**)",
       "Read(//c/tmp/**)",
       "Bash(rm \"fe/src/app/\\(client\\)/sessions/page.tsx\" \"fe/src/app/\\(client\\)/sessions/[id]/page.tsx\")",
-      "Bash(rmdir \"fe/src/app/\\(client\\)/sessions/[id]\" \"fe/src/app/\\(client\\)/sessions\")"
+      "Bash(rmdir \"fe/src/app/\\(client\\)/sessions/[id]\" \"fe/src/app/\\(client\\)/sessions\")",
+      "Bash(where python:*)",
+      "Bash(where python3:*)",
+      "Bash(py --version)",
+      "Bash(find /c/Users/chris/Desktop/blueprint/teeko/booking-system/fe/src -name \"*.tsx\" -type f -exec grep -h \"class=\\\\|className=\" {} \\\\;)"
     ]
   }
 }

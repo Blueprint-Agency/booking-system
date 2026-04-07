@@ -2,45 +2,45 @@ import { cn } from "@/lib/utils";
 
 const variants: Record<string, string> = {
   // Session status
-  scheduled: "bg-sage-light text-sage",
-  open: "bg-sage-light text-sage",
-  waitlist: "bg-warning-bg text-warning",
+  scheduled: "bg-sage/10 text-sage",
+  open: "bg-sage/10 text-sage",
+  waitlist: "bg-warning/10 text-warning",
   full: "bg-warm text-muted",
-  cancelled: "bg-error-bg text-error",
+  cancelled: "bg-error/10 text-error",
   completed: "bg-warm text-muted",
 
   // Booking status
-  confirmed: "bg-sage-light text-sage",
-  waitlisted: "bg-warning-bg text-warning",
+  confirmed: "bg-sage/10 text-sage",
+  waitlisted: "bg-warning/10 text-warning",
 
   // Check-in status
   pending: "bg-warm text-muted",
-  attended: "bg-sage-light text-sage",
-  late: "bg-warning-bg text-warning",
-  "no-show": "bg-error-bg text-error",
+  attended: "bg-sage/10 text-sage",
+  late: "bg-warning/10 text-warning",
+  "no-show": "bg-error/10 text-error",
 
   // Activity
-  active: "bg-sage-light text-sage",
+  active: "bg-sage/10 text-sage",
   inactive: "bg-warm text-muted",
 
   // Payment
-  paid: "bg-sage-light text-sage",
+  paid: "bg-sage/10 text-sage",
 
   // Level
-  beginner: "bg-sage-light text-sage",
-  intermediate: "bg-info-bg text-info",
-  advanced: "bg-accent-glow text-accent-deep",
+  beginner: "bg-sage/10 text-sage",
+  intermediate: "bg-accent/10 text-accent-deep",
+  advanced: "bg-accent/15 text-accent-deep",
   all: "bg-warm text-muted",
 
   // Type
   regular: "bg-warm text-muted",
-  workshop: "bg-accent-glow text-accent-deep",
-  event: "bg-info-bg text-info",
+  workshop: "bg-accent/15 text-accent-deep",
+  event: "bg-warm text-muted",
 
   // Category accents
-  Wellness: "bg-accent-glow text-accent-deep",
-  Fitness: "bg-info-bg text-info",
-  Recovery: "bg-sage-light text-sage",
+  Wellness: "bg-accent/15 text-accent-deep",
+  Fitness: "bg-warm text-muted",
+  Recovery: "bg-sage/10 text-sage",
 };
 
 export function StatusBadge({
