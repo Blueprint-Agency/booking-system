@@ -2,18 +2,22 @@
 
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Lock } from "lucide-react";
-import { motion } from "framer-motion";
+import { Lock, ShoppingCart, Tag, Check } from "lucide-react";
 import { cn, formatCurrency, formatDate, formatTime } from "@/lib/utils";
 import type { Session, Instructor } from "@/types";
 import sessionsData from "@/data/sessions.json";
 import instructorsData from "@/data/instructors.json";
+import { BookingSurface } from "@/components/booking/booking-surface";
+import { EmptyState } from "@/components/ui/empty-state";
+
+// Mock referral codes: SADHANA20 = S$20 off, FRIEND10 = S$10 off
+const REFERRAL_CODES: Record<string, number> = {
+  SADHANA20: 20,
+  FRIEND10: 10,
+};
 
 const allSessions = sessionsData as Session[];
 const allInstructors = instructorsData as Instructor[];
-
-const inputClass =
-  "w-full bg-warm border border-border rounded-md px-4 py-3 text-sm font-mono focus:ring-2 focus:ring-accent/30 focus:border-accent outline-none transition placeholder:text-muted";
 
 // All purchasable packages — mirrors packages/page.tsx data
 type PackageItem = { id: string; name: string; subtitle: string; price: number };
@@ -41,11 +45,74 @@ const PACKAGE_CATALOGUE: PackageItem[] = [
   { id: "p2-50",    name: "VIP 2-on-1 · 50 Sessions",  subtitle: "50 private sessions",           price: 7500 },
 ];
 
+type Step = 1 | 2 | 3;
+
+const STEP_LABELS = ["Personal info", "Pay with", "Review"] as const;
+
+const labelClass = "text-xs uppercase tracking-wider text-muted mb-2 block";
+const inputClass =
+  "rounded-xl border border-ink/10 bg-paper px-4 py-3 text-sm w-full focus:border-accent focus:outline-none transition-colors";
+
+function StepIndicator({ current }: { current: Step }) {
+  return (
+    <div className="flex items-center justify-center gap-0">
+      {([1, 2, 3] as Step[]).map((n, idx) => {
+        const active = n === current;
+        const done = n < current;
+        return (
+          <div key={n} className="flex items-center">
+            <div className="flex flex-col items-center">
+              <div
+                className={cn(
+                  "h-10 w-10 rounded-full flex items-center justify-center text-sm font-bold",
+                  active
+                    ? "bg-ink text-paper"
+                    : done
+                    ? "bg-ink/20 text-ink"
+                    : "bg-warm text-muted"
+                )}
+              >
+                {n}
+              </div>
+              <span className="text-xs mt-2 text-muted whitespace-nowrap">
+                {STEP_LABELS[idx]}
+              </span>
+            </div>
+            {idx < 2 && (
+              <div
+                className={cn(
+                  "h-px w-12 md:w-20 mx-2 mb-5",
+                  n < current ? "bg-ink/30" : "bg-ink/10"
+                )}
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function CheckoutContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const [step, setStep] = useState<Step>(1);
   const [loading, setLoading] = useState(false);
 
+  // Form state
+  const [firstName, setFirstName] = useState("Sarah");
+  const [lastName, setLastName] = useState("Chen");
+  const [email, setEmail] = useState("sarah.chen@email.com");
+  const [phone, setPhone] = useState("+65 9123 4567");
+  const [cardNumber, setCardNumber] = useState("4242 4242 4242 4242");
+  const [expiry, setExpiry] = useState("12/28");
+  const [cvc, setCvc] = useState("123");
+  const [nameOnCard, setNameOnCard] = useState("Sarah Chen");
+  const [referralInput, setReferralInput] = useState("");
+  const [referralApplied, setReferralApplied] = useState<{ code: string; amount: number } | null>(null);
+  const [referralError, setReferralError] = useState<string | null>(null);
+
+  // Cart data source: URL params
   const packageId = searchParams.get("package");
   const sessionId = searchParams.get("session");
   const type = searchParams.get("type");
@@ -77,12 +144,37 @@ function CheckoutContent() {
     }
   }
 
-  // Fallback if nothing resolved
-  if (!orderName) {
-    orderName = "Bundle of 10";
-    orderSubtitle = "10 credits · valid 90 days";
-    total = 300;
-    confirmUrl = "/booking/confirmation?type=package&package=b-10";
+  const hasCart = !!orderName;
+  const discount = referralApplied ? Math.min(referralApplied.amount, total) : 0;
+  const subtotal = total;
+  const discounted = Math.max(subtotal - discount, 0);
+  const tax = Math.round(discounted * 0.09 * 100) / 100;
+  const grandTotal = discounted + tax;
+
+  function applyReferral() {
+    const code = referralInput.trim().toUpperCase();
+    if (!code) return;
+    const amount = REFERRAL_CODES[code];
+    if (!amount) {
+      setReferralError("Invalid referral code");
+      setReferralApplied(null);
+      return;
+    }
+    setReferralError(null);
+    setReferralApplied({ code, amount });
+  }
+
+  if (!hasCart) {
+    return (
+      <BookingSurface maxWidth="lg" padding="default">
+        <EmptyState
+          icon={ShoppingCart}
+          title="Your cart is empty"
+          description="Pick a package or workshop to get started."
+          cta={{ href: "/packages", label: "Browse packages" }}
+        />
+      </BookingSurface>
+    );
   }
 
   function handlePay() {
@@ -90,99 +182,215 @@ function CheckoutContent() {
     setTimeout(() => router.push(confirmUrl), 1500);
   }
 
+  function handleContinue() {
+    if (step < 3) setStep((s) => (s + 1) as Step);
+    else handlePay();
+  }
+
+  function handleBack() {
+    if (step > 1) setStep((s) => (s - 1) as Step);
+  }
+
   return (
-    <div className="min-h-screen bg-paper px-4 py-12 sm:py-20">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="mx-auto max-w-4xl"
-      >
-        <h1 className="font-serif text-3xl text-ink mb-8">Checkout</h1>
+    <>
+<div id="form">
+        <BookingSurface maxWidth="lg" padding="default">
+          {/* Step indicator */}
+          <StepIndicator current={step} />
 
-        <div className="grid gap-8 lg:grid-cols-5">
-          {/* Order Summary */}
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.1 }}
-            className="lg:col-span-2"
-          >
-            <div className="rounded-lg border border-border bg-card p-6 shadow-soft">
-              <h2 className="font-serif text-xl text-ink mb-5">Order Summary</h2>
-
-              <div className="space-y-3">
-                <div className="flex items-start justify-between gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-10 mt-10">
+            {/* Left column — step fields */}
+            <div>
+              {step === 1 && (
+                <div className="space-y-5">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelClass}>First name</label>
+                      <input
+                        className={inputClass}
+                        value={firstName}
+                        onChange={(e) => setFirstName(e.target.value)}
+                        placeholder="First name"
+                      />
+                    </div>
+                    <div>
+                      <label className={labelClass}>Last name</label>
+                      <input
+                        className={inputClass}
+                        value={lastName}
+                        onChange={(e) => setLastName(e.target.value)}
+                        placeholder="Last name"
+                      />
+                    </div>
+                  </div>
                   <div>
-                    <p className="text-sm font-medium text-ink">{orderName}</p>
-                    <p className="text-xs text-muted mt-0.5">{orderSubtitle}</p>
-                    {orderExtra && (
-                      <p className="text-xs text-muted/70 mt-1">{orderExtra}</p>
+                    <label className={labelClass}>Email address</label>
+                    <input
+                      type="email"
+                      className={inputClass}
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="you@email.com"
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Phone number</label>
+                    <input
+                      type="tel"
+                      className={inputClass}
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value)}
+                      placeholder="+65 9000 0000"
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Referral code (optional)</label>
+                    {referralApplied ? (
+                      <div className="flex items-center justify-between rounded-xl border border-accent-deep/30 bg-accent/10 px-4 py-3 text-sm">
+                        <span className="inline-flex items-center gap-2 text-ink">
+                          <Check className="h-4 w-4 text-accent-deep" />
+                          <span className="font-mono font-medium">{referralApplied.code}</span>
+                          <span className="text-muted">— {formatCurrency(referralApplied.amount)} off</span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReferralApplied(null);
+                            setReferralInput("");
+                          }}
+                          className="text-xs text-muted hover:text-ink underline"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex gap-2">
+                          <div className="relative flex-1">
+                            <Tag className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted" />
+                            <input
+                              type="text"
+                              className={cn(inputClass, "pl-9 uppercase")}
+                              value={referralInput}
+                              onChange={(e) => {
+                                setReferralInput(e.target.value);
+                                if (referralError) setReferralError(null);
+                              }}
+                              placeholder="SADHANA20"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={applyReferral}
+                            className="rounded-xl border border-ink/10 px-4 py-3 text-sm font-medium hover:border-accent transition-colors"
+                          >
+                            Apply
+                          </button>
+                        </div>
+                        {referralError && (
+                          <p className="text-xs text-red-600 mt-1.5">{referralError}</p>
+                        )}
+                      </>
                     )}
                   </div>
-                  <p className="text-sm font-medium text-ink whitespace-nowrap">
-                    {formatCurrency(total)}
+                </div>
+              )}
+
+              {step === 2 && (
+                <div className="space-y-5">
+                  <div>
+                    <label className={labelClass}>Card number</label>
+                    <input
+                      className={inputClass}
+                      value={cardNumber}
+                      onChange={(e) => setCardNumber(e.target.value)}
+                      placeholder="1234 5678 9012 3456"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelClass}>Expiry</label>
+                      <input
+                        className={inputClass}
+                        value={expiry}
+                        onChange={(e) => setExpiry(e.target.value)}
+                        placeholder="MM/YY"
+                      />
+                    </div>
+                    <div>
+                      <label className={labelClass}>CVC</label>
+                      <input
+                        className={inputClass}
+                        value={cvc}
+                        onChange={(e) => setCvc(e.target.value)}
+                        placeholder="123"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className={labelClass}>Name on card</label>
+                    <input
+                      className={inputClass}
+                      value={nameOnCard}
+                      onChange={(e) => setNameOnCard(e.target.value)}
+                      placeholder="Full name"
+                    />
+                  </div>
+                  <p className="flex items-center gap-1.5 text-xs text-muted pt-1">
+                    <Lock className="h-3 w-3" />
+                    Secured by Stripe
                   </p>
                 </div>
-              </div>
+              )}
 
-              <div className="my-5 border-t border-border" />
-
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-ink">Total</p>
-                <p className="text-lg font-semibold text-ink">
-                  {formatCurrency(total)}
-                </p>
-              </div>
-            </div>
-          </motion.div>
-
-          {/* Payment Form */}
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.2 }}
-            className="lg:col-span-3"
-          >
-            <div className="rounded-lg border border-border bg-card p-6 shadow-soft">
-              <h2 className="font-serif text-xl text-ink mb-5">Payment Details</h2>
-
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handlePay();
-                }}
-                className="space-y-4"
-              >
-                <div>
-                  <label className="block text-xs font-medium text-muted mb-1.5">Card number</label>
-                  <input type="text" defaultValue="4242 4242 4242 4242" className={inputClass} readOnly />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
+              {step === 3 && (
+                <div className="space-y-6">
                   <div>
-                    <label className="block text-xs font-medium text-muted mb-1.5">Expiry</label>
-                    <input type="text" defaultValue="12/28" className={inputClass} readOnly />
+                    <p className={labelClass}>Personal info</p>
+                    <div className="rounded-xl border border-ink/10 bg-warm/40 px-4 py-3 text-sm text-ink space-y-1">
+                      <p>{firstName} {lastName}</p>
+                      <p className="text-muted">{email}</p>
+                      <p className="text-muted">{phone}</p>
+                    </div>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-muted mb-1.5">CVC</label>
-                    <input type="text" defaultValue="123" className={inputClass} readOnly />
+                    <p className={labelClass}>Payment</p>
+                    <div className="rounded-xl border border-ink/10 bg-warm/40 px-4 py-3 text-sm text-ink space-y-1">
+                      <p>•••• •••• •••• {cardNumber.slice(-4)}</p>
+                      <p className="text-muted">Expires {expiry} · {nameOnCard}</p>
+                    </div>
+                  </div>
+                  <div>
+                    <p className={labelClass}>Order</p>
+                    <div className="rounded-xl border border-ink/10 bg-warm/40 px-4 py-3 text-sm text-ink space-y-1">
+                      <p className="font-medium">{orderName}</p>
+                      <p className="text-muted">{orderSubtitle}</p>
+                      {orderExtra && <p className="text-muted/70">{orderExtra}</p>}
+                    </div>
                   </div>
                 </div>
+              )}
 
-                <div>
-                  <label className="block text-xs font-medium text-muted mb-1.5">Name on card</label>
-                  <input type="text" placeholder="Full name" className={inputClass} defaultValue="Sarah Chen" />
-                </div>
-
+              {/* Step footer */}
+              <div className="flex items-center justify-between mt-8 pt-6 border-t border-ink/10">
+                {step > 1 ? (
+                  <button
+                    type="button"
+                    onClick={handleBack}
+                    className="rounded-full border border-ink/10 px-5 py-3 text-sm font-medium hover:border-accent transition-colors"
+                  >
+                    Back
+                  </button>
+                ) : (
+                  <span />
+                )}
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={handleContinue}
                   disabled={loading}
                   className={cn(
-                    "w-full mt-2 rounded-md py-3.5 text-sm font-semibold text-white transition-all",
-                    loading
-                      ? "bg-accent/70 cursor-not-allowed"
-                      : "bg-accent hover:bg-accent-deep active:scale-[0.98] shadow-soft hover:shadow-hover"
+                    "rounded-full bg-ink text-paper px-6 py-3 text-sm font-medium transition-colors",
+                    loading ? "opacity-60 cursor-not-allowed" : "hover:bg-ink/90"
                   )}
                 >
                   {loading ? (
@@ -193,21 +401,60 @@ function CheckoutContent() {
                       </svg>
                       Processing...
                     </span>
+                  ) : step === 3 ? (
+                    `Pay ${formatCurrency(grandTotal)}`
                   ) : (
-                    `Pay ${formatCurrency(total)}`
+                    "Continue"
                   )}
                 </button>
-
-                <p className="flex items-center justify-center gap-1.5 text-xs text-muted pt-1">
-                  <Lock className="h-3 w-3" />
-                  Secured by Stripe
-                </p>
-              </form>
+              </div>
             </div>
-          </motion.div>
-        </div>
-      </motion.div>
-    </div>
+
+            {/* Right column — sticky order summary */}
+            <div className="sticky top-24 self-start rounded-2xl border border-ink/10 bg-paper p-6">
+              <p className="text-xs uppercase tracking-wider text-muted mb-4">Order summary</p>
+
+              <div className="flex gap-3 items-start py-3 border-b border-ink/5 last:border-0">
+                    <div className="h-12 w-12 rounded-lg bg-warm shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-ink">{orderName}</p>
+                      <p className="text-xs text-muted mt-0.5">{orderSubtitle}</p>
+                      {orderExtra && (
+                        <p className="text-xs text-muted/70 mt-0.5">{orderExtra}</p>
+                      )}
+                    </div>
+                    <p className="text-sm font-semibold shrink-0">{formatCurrency(subtotal)}</p>
+                  </div>
+
+                  <div className="mt-3 space-y-1">
+                    <div className="flex justify-between py-2 text-sm">
+                      <span>Subtotal</span>
+                      <span>{formatCurrency(subtotal)}</span>
+                    </div>
+                    {referralApplied && discount > 0 && (
+                      <div className="flex justify-between py-2 text-sm text-accent-deep">
+                        <span>Referral ({referralApplied.code})</span>
+                        <span>−{formatCurrency(discount)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between py-2 text-sm text-muted">
+                      <span>GST (9%)</span>
+                      <span>{formatCurrency(tax)}</span>
+                    </div>
+                    <div className="flex justify-between text-base font-bold text-ink mt-2 pt-2 border-t border-ink/10">
+                      <span>Total</span>
+                      <span>{formatCurrency(grandTotal)}</span>
+                    </div>
+                  </div>
+
+              <p className="text-xs text-muted mt-4">
+                By completing your purchase you agree to our Terms of Service and Privacy Policy. All prices in SGD.
+              </p>
+            </div>
+          </div>
+        </BookingSurface>
+      </div>
+    </>
   );
 }
 

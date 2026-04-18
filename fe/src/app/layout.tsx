@@ -2,8 +2,12 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Booked4U — Booking Platform",
-  description: "Modern booking and management platform for class-based businesses",
+  title: "Yoga Sadhana — Singapore Yoga Studio",
+  description: "Build strength, improve flexibility, and find balance through yoga at Yoga Sadhana Singapore.",
+  icons: {
+    icon: "/brand/favicon.jpg",
+    apple: "/brand/apple-icon.jpg",
+  },
 };
 
 export default function RootLayout({
@@ -17,7 +21,7 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
-          href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
           rel="stylesheet"
         />
       </head>

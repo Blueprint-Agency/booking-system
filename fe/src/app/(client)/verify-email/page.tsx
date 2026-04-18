@@ -1,87 +1,94 @@
 "use client";
 
-import Link from "next/link";
-import { motion } from "framer-motion";
-
-const fadeUp = {
-  hidden: { opacity: 0, y: 24 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] as const },
-  },
-};
+import { useEffect, useRef, useState } from "react";
+import { AuthSplitShell } from "@/components/auth/auth-split-shell";
 
 export default function VerifyEmailPage() {
+  const email = "jane@example.com";
+  const [otp, setOtp] = useState<string[]>(["", "", "", "", "", ""]);
+  const [cooldown, setCooldown] = useState(0);
+  const inputsRef = useRef<Array<HTMLInputElement | null>>([]);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
+
+  const handleChange = (i: number, value: string) => {
+    const digit = value.replace(/\D/g, "").slice(-1);
+    const next = [...otp];
+    next[i] = digit;
+    setOtp(next);
+    if (digit && i < 5) {
+      inputsRef.current[i + 1]?.focus();
+    }
+  };
+
+  const handleKeyDown = (
+    i: number,
+    e: React.KeyboardEvent<HTMLInputElement>,
+  ) => {
+    if (e.key === "Backspace" && !otp[i] && i > 0) {
+      inputsRef.current[i - 1]?.focus();
+    }
+  };
+
+  const handleResend = () => {
+    if (cooldown > 0) return;
+    setCooldown(30);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+  };
+
   return (
-    <div className="min-h-[calc(100vh-64px)] flex items-center justify-center px-4 py-16 bg-warm">
-      {/* Decorative glow */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-[500px] h-[350px] rounded-full bg-info-bg/40 blur-3xl" />
-      </div>
+    <AuthSplitShell
+      imageKey="hero-meditation-01"
+      quote="One step closer to your first class."
+    >
+      <h1 className="text-3xl font-extrabold tracking-tight text-ink">
+        Verify your email
+      </h1>
+      <p className="text-sm text-muted mt-2">
+        We sent a 6-digit code to {email}. Enter it below.
+      </p>
 
-      <motion.div
-        initial="hidden"
-        animate="visible"
-        variants={fadeUp}
-        className="relative w-full max-w-md"
-      >
-        <div className="bg-card rounded-xl shadow-hover border border-border p-8 sm:p-10 text-center">
-          {/* Envelope icon */}
-          <div className="w-16 h-16 rounded-full bg-info-bg mx-auto mb-6 flex items-center justify-center">
-            <svg
-              width="28"
-              height="28"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="var(--color-info)"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <rect x="2" y="4" width="20" height="16" rx="2" />
-              <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
-            </svg>
-          </div>
-
-          <h1 className="font-serif text-2xl sm:text-3xl text-ink mb-3">
-            Check your inbox
-          </h1>
-
-          <p className="text-muted text-sm leading-relaxed mb-2">
-            We&apos;ve sent a verification link to
-          </p>
-          <p className="text-ink font-medium text-sm mb-6">
-            jane@example.com
-          </p>
-
-          <div className="bg-warm rounded-md p-4 mb-8">
-            <p className="text-sm text-muted leading-relaxed">
-              Click the link in the email to verify your account. If you
-              don&apos;t see it, check your spam folder. The link expires in 24
-              hours.
-            </p>
-          </div>
-
-          {/* Resend */}
-          <button
-            type="button"
-            className="w-full py-3 text-sm font-semibold text-accent-deep border-2 border-accent-glow rounded-md hover:bg-accent-glow/20 transition-all duration-300 mb-4"
-          >
-            Resend Verification Email
-          </button>
-
-          <p className="text-sm text-muted">
-            Wrong email?{" "}
-            <Link
-              href="/register"
-              className="text-accent-deep font-medium hover:text-accent transition-colors"
-            >
-              Go back
-            </Link>
-          </p>
+      <form onSubmit={handleSubmit}>
+        <div className="mt-10 flex gap-2 justify-between">
+          {otp.map((digit, i) => (
+            <input
+              key={i}
+              ref={(el) => {
+                inputsRef.current[i] = el;
+              }}
+              value={digit}
+              onChange={(e) => handleChange(i, e.target.value)}
+              onKeyDown={(e) => handleKeyDown(i, e)}
+              maxLength={1}
+              inputMode="numeric"
+              className="h-14 w-12 rounded-xl border border-ink/10 bg-paper text-center text-2xl font-bold text-ink focus:border-accent focus:outline-none"
+            />
+          ))}
         </div>
-      </motion.div>
-    </div>
+
+        <button
+          type="button"
+          onClick={handleResend}
+          disabled={cooldown > 0}
+          className="text-sm text-accent-deep mt-4 hover:underline disabled:opacity-50 disabled:no-underline"
+        >
+          {cooldown > 0 ? `Resend code in ${cooldown}s` : "Resend code"}
+        </button>
+
+        <button
+          type="submit"
+          className="w-full rounded-full bg-ink text-paper py-3 text-sm font-medium hover:bg-ink/90 mt-6"
+        >
+          Verify
+        </button>
+      </form>
+    </AuthSplitShell>
   );
 }

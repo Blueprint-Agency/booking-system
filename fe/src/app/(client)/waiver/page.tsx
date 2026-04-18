@@ -1,13 +1,11 @@
 "use client";
 
-import { useState, useRef, useCallback } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
-import { Check, ChevronDown, ArrowRight } from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Check, ArrowRight } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { cn } from "@/lib/utils";
-
-const inputClass =
-  "w-full bg-warm border border-border rounded-md px-4 py-3 text-sm font-mono focus:ring-2 focus:ring-accent/30 focus:border-accent outline-none transition placeholder:text-muted";
+import { AuthSplitShell } from "@/components/auth/auth-split-shell";
 
 const WAIVER_TEXT = [
   {
@@ -32,28 +30,25 @@ const WAIVER_TEXT = [
   },
 ];
 
-export default function WaiverPage() {
-  const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
+function WaiverContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const returnTo = searchParams.get("returnTo");
+  const [acknowledged, setAcknowledged] = useState(false);
   const [fullName, setFullName] = useState("");
   const [signed, setSigned] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
 
-  const canSign = hasScrolledToBottom && fullName.trim().length > 0;
-
-  const handleScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const threshold = 20;
-    const atBottom =
-      el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
-    if (atBottom && !hasScrolledToBottom) {
-      setHasScrolledToBottom(true);
-    }
-  }, [hasScrolledToBottom]);
+  const canSign = acknowledged && fullName.trim().length > 0;
 
   function handleSign() {
     if (!canSign) return;
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("waiverSigned", "true");
+    }
     setSigned(true);
+    if (returnTo) {
+      setTimeout(() => router.push(returnTo), 1200);
+    }
   }
 
   const now = new Date();
@@ -69,168 +64,119 @@ export default function WaiverPage() {
   });
 
   return (
-    <div className="min-h-screen bg-paper px-4 py-12 sm:py-20">
-      <div className="mx-auto max-w-2xl">
-        <AnimatePresence mode="wait">
-          {!signed ? (
-            <motion.div
-              key="form"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              transition={{ duration: 0.4 }}
+    <AuthSplitShell
+      imageKey="hero-pilates-01"
+      quote="Practice safely. Practice well."
+    >
+      <AnimatePresence mode="wait">
+        {!signed ? (
+          <motion.div
+            key="form"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.4 }}
+          >
+            <h1 className="text-3xl font-extrabold tracking-tight text-ink">
+              Studio waiver
+            </h1>
+            <p className="text-sm text-muted mt-2">
+              Please read and acknowledge before your first class.
+            </p>
+
+            <div className="max-h-80 overflow-y-auto rounded-xl border border-ink/10 bg-warm p-6 text-sm text-ink/80 leading-relaxed space-y-3 mt-6">
+              {WAIVER_TEXT.map((section) => (
+                <p key={section.title}>
+                  <strong className="font-semibold text-ink">
+                    {section.title}.
+                  </strong>{" "}
+                  {section.body}
+                </p>
+              ))}
+            </div>
+
+            <label className="flex items-start gap-3 mt-6 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={acknowledged}
+                onChange={(e) => setAcknowledged(e.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-ink"
+              />
+              <span className="text-sm text-ink/80">
+                I have read and agree to the terms above.
+              </span>
+            </label>
+
+            <div className="flex gap-3 mt-4">
+              <input
+                type="text"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder="Type your full name"
+                className="flex-1 rounded-xl border border-ink/10 bg-paper px-4 py-3 text-sm font-mono focus:border-accent focus:outline-none"
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSign}
+              disabled={!canSign}
+              className="w-full rounded-full bg-ink text-paper py-3 text-sm font-medium hover:bg-ink/90 mt-6 disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              {/* Heading */}
-              <h1 className="font-serif text-3xl text-ink mb-2">
-                Digital Waiver
-              </h1>
-              <p className="text-sm text-muted mb-6">
-                Please read the full document before signing.
-              </p>
-
-              {/* Scrollable Document */}
-              <div className="relative">
-                <div
-                  ref={scrollRef}
-                  onScroll={handleScroll}
-                  className="max-h-[400px] overflow-y-auto bg-warm rounded-lg p-6 border border-border"
-                >
-                  <div className="space-y-6">
-                    {WAIVER_TEXT.map((section) => (
-                      <div key={section.title}>
-                        <h3 className="text-sm font-semibold text-ink mb-2">
-                          {section.title}
-                        </h3>
-                        <p className="text-sm leading-relaxed text-ink/75">
-                          {section.body}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Scroll hint */}
-                <AnimatePresence>
-                  {!hasScrolledToBottom && (
-                    <motion.div
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      className="absolute bottom-0 left-0 right-0 flex items-center justify-center gap-1.5 bg-gradient-to-t from-warm via-warm/90 to-transparent pt-10 pb-3 rounded-b-[--radius-lg] pointer-events-none"
-                    >
-                      <ChevronDown className="h-4 w-4 text-muted animate-bounce" />
-                      <span className="text-xs font-medium text-muted">
-                        Scroll to read full document
-                      </span>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-
-              {/* Signature Section */}
-              <div className="mt-8 space-y-4">
-                <div>
-                  <label className="block text-xs font-medium text-muted mb-1.5">
-                    Type your full name as your electronic signature
-                  </label>
-                  <input
-                    type="text"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    placeholder="Full name"
-                    className={inputClass}
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleSign}
-                  disabled={!canSign}
-                  className={cn(
-                    "w-full rounded-md py-3.5 text-sm font-semibold transition-all",
-                    canSign
-                      ? "bg-sage text-white hover:bg-sage/90 active:scale-[0.98] shadow-soft hover:shadow-hover"
-                      : "bg-muted/30 text-muted cursor-not-allowed"
-                  )}
-                >
-                  I Agree
-                </button>
-
-                {!hasScrolledToBottom && (
-                  <p className="text-center text-xs text-muted">
-                    You must scroll to the bottom of the waiver to continue.
-                  </p>
-                )}
-              </div>
-            </motion.div>
-          ) : (
+              I agree and sign
+            </button>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="success"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.5 }}
+            className="text-center"
+          >
             <motion.div
-              key="success"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.5 }}
-              className="text-center"
+              initial={{ scale: 0 }}
+              animate={{ scale: 1 }}
+              transition={{
+                type: "spring",
+                stiffness: 260,
+                damping: 20,
+                delay: 0.15,
+              }}
+              className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-ink"
             >
-              <div className="mx-auto max-w-md rounded-lg border border-border bg-card p-8 shadow-soft">
-                {/* Checkmark */}
-                <motion.div
-                  initial={{ scale: 0 }}
-                  animate={{ scale: 1 }}
-                  transition={{
-                    type: "spring",
-                    stiffness: 260,
-                    damping: 20,
-                    delay: 0.15,
-                  }}
-                  className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-sage"
-                >
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: 0.4 }}
-                  >
-                    <Check className="h-10 w-10 text-white" strokeWidth={3} />
-                  </motion.div>
-                </motion.div>
-
-                <motion.div
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.5, duration: 0.4 }}
-                >
-                  <h2 className="mt-6 font-serif text-2xl text-ink">
-                    Waiver Signed
-                  </h2>
-                  <p className="mt-2 text-sm text-muted">
-                    {signedDateStr} at {signedTimeStr}
-                  </p>
-                  <p className="mt-1 text-sm text-muted">
-                    Signed by:{" "}
-                    <span className="font-mono text-ink">{fullName}</span>
-                  </p>
-                </motion.div>
-
-                <motion.div
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.7, duration: 0.4 }}
-                >
-                  <Link
-                    href="/classes"
-                    className={cn(
-                      "mt-8 inline-flex items-center justify-center gap-2 rounded-md px-6 py-3 text-sm font-semibold text-white transition-all",
-                      "bg-accent hover:bg-accent-deep active:scale-[0.98] shadow-soft hover:shadow-hover"
-                    )}
-                  >
-                    Continue to Booking
-                    <ArrowRight className="h-4 w-4" />
-                  </Link>
-                </motion.div>
-              </div>
+              <Check className="h-10 w-10 text-paper" strokeWidth={3} />
             </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-    </div>
+
+            <h2 className="mt-6 text-2xl font-extrabold tracking-tight text-ink">
+              Waiver signed
+            </h2>
+            <p className="mt-2 text-sm text-muted">
+              {signedDateStr} at {signedTimeStr}
+            </p>
+            <p className="mt-1 text-sm text-muted">
+              Signed by:{" "}
+              <span className="font-mono text-ink">{fullName}</span>
+            </p>
+
+            <Link
+              href="/classes"
+              className="mt-8 inline-flex items-center justify-center gap-2 rounded-full bg-ink text-paper px-6 py-3 text-sm font-medium hover:bg-ink/90"
+            >
+              Continue to booking
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </AuthSplitShell>
+  );
+}
+
+export default function WaiverPage() {
+  return (
+    <Suspense fallback={null}>
+      <WaiverContent />
+    </Suspense>
   );
 }

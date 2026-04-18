@@ -1,19 +1,24 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { useSearchParams, useRouter } from "next/navigation";
+import { Clock, Droplets, Shirt, Check, Info } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 import { formatDate, formatTime, getLocation } from "@/lib/utils";
 import type { Session, Instructor } from "@/types";
-import { MOCK_USER } from "@/data/mock-user";
 import sessionsData from "@/data/sessions.json";
 import instructorsData from "@/data/instructors.json";
+import { MOCK_USER } from "@/data/mock-user";
+import { CLASS_CANCELLATION_POLICY } from "@/data/policy";
+import { CtaBanner } from "@/components/marketing/cta-banner";
+import { BookingSurface } from "@/components/booking/booking-surface";
+import { SectionHeading } from "@/components/booking/section-heading";
 
 const allSessions = sessionsData as Session[];
 const allInstructors = instructorsData as Instructor[];
 
-// Mirrors packages/page.tsx and checkout/page.tsx data
+// ── Mirrors packages/page.tsx and checkout/page.tsx ──────────────────────────
 const PACKAGE_DISPLAY: Record<string, { name: string; subtitle: string }> = {
   "b-otp":    { name: "One-time Pass",             subtitle: "1 credit · valid 1 day" },
   "b-10":     { name: "Bundle of 10",               subtitle: "10 credits · valid 90 days" },
@@ -37,421 +42,465 @@ const PACKAGE_DISPLAY: Record<string, { name: string; subtitle: string }> = {
   "p2-50":    { name: "VIP 2-on-1 · 50 Sessions",  subtitle: "50 private sessions" },
 };
 
-// Mock user state — from central source
-const USER_CREDITS = MOCK_USER.classCredits;
-const USER_PACKAGE = MOCK_USER.classPackageName;
+// ── What's next tips ──────────────────────────────────────────────────────────
+const NEXT_STEPS = [
+  {
+    icon: Clock,
+    heading: "Arrive 10 minutes early",
+    body: "Give yourself time to settle in, sign in at the front desk, and prepare your space.",
+  },
+  {
+    icon: Droplets,
+    heading: "Bring water and a towel",
+    body: "Stay hydrated throughout class. A towel keeps your mat fresh and your practice comfortable.",
+  },
+  {
+    icon: Shirt,
+    heading: "Wear comfortable clothing",
+    body: "Choose breathable, stretchy fabrics that let you move freely in every pose.",
+  },
+];
 
-const fadeUp = { initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 } };
-
-// ── Reusable animated checkmark ───────────────────────
-function SuccessIcon() {
-  return (
-    <motion.div
-      initial={{ scale: 0, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
-      transition={{ type: "spring", stiffness: 260, damping: 20 }}
-      className="w-20 h-20 rounded-full bg-sage flex items-center justify-center mx-auto mb-6"
-    >
-      <motion.svg
-        width="36" height="36" viewBox="0 0 24 24" fill="none"
-        stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-        className="text-white"
-      >
-        <motion.path
-          d="M5 13l4 4L19 7"
-          initial={{ pathLength: 0, opacity: 0 }}
-          animate={{ pathLength: 1, opacity: 1 }}
-          transition={{ duration: 0.4, delay: 0.3 }}
-        />
-      </motion.svg>
-    </motion.div>
-  );
-}
-
-// ── CLASS: review before booking ──────────────────────
-function ClassConfirmation({ session, instructor }: { session: Session; instructor: Instructor | undefined }) {
+// ── CLASS: review step → success flow ────────────────────────────────────────
+function ClassConfirmation({
+  session,
+  instructor,
+  bookingRef,
+}: {
+  session: Session;
+  instructor: Instructor | undefined;
+  bookingRef: string;
+}) {
+  const router = useRouter();
   const [confirmed, setConfirmed] = useState(false);
   const location = getLocation(session.locationId);
   const hasMultiplePackages = MOCK_USER.classPackages.length > 1;
-  const [selectedPackageId, setSelectedPackageId] = useState(MOCK_USER.classPackages[0]?.id ?? "");
-  const selectedPkg = MOCK_USER.classPackages.find((p) => p.id === selectedPackageId) ?? MOCK_USER.classPackages[0];
+  const [selectedPackageId, setSelectedPackageId] = useState(
+    MOCK_USER.classPackages[0]?.id ?? ""
+  );
+
+  function handleReserve() {
+    if (typeof window !== "undefined" && sessionStorage.getItem("waiverSigned") !== "true") {
+      const returnTo = `/booking/confirmation?type=class&session=${session.id}`;
+      router.push(`/waiver?returnTo=${encodeURIComponent(returnTo)}`);
+      return;
+    }
+    setConfirmed(true);
+  }
+  const selectedPkg =
+    MOCK_USER.classPackages.find((p) => p.id === selectedPackageId) ??
+    MOCK_USER.classPackages[0];
+
+  if (confirmed) {
+    return (
+      <SessionSuccess
+        session={session}
+        instructor={instructor}
+        bookingRef={bookingRef}
+        arrivalLocationName={location?.name}
+      />
+    );
+  }
 
   return (
-    <div className="max-w-lg mx-auto px-4 sm:px-6 py-10 sm:py-14">
-      {/* Breadcrumb */}
-      <motion.nav {...fadeUp} transition={{ duration: 0.4 }} className="flex items-center gap-1.5 text-sm text-muted mb-6">
-        <Link href="/classes" className="hover:text-ink transition-colors">Classes</Link>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="9 18 15 12 9 6" />
-        </svg>
-        <span className="text-ink font-medium">Confirm Booking</span>
-      </motion.nav>
+    <div className="max-w-xl mx-auto px-4 sm:px-6 py-10 sm:py-14">
+      <BookingSurface maxWidth="md" padding="loose">
+        <SectionHeading
+          eyebrow="Review & reserve"
+          title="Confirm your booking"
+          align="center"
+        />
 
-      <motion.h1 {...fadeUp} transition={{ duration: 0.5, delay: 0.05 }} className="font-serif text-3xl text-ink mb-2">
-        Confirm your booking
-      </motion.h1>
-      <motion.p {...fadeUp} transition={{ duration: 0.5, delay: 0.1 }} className="text-sm text-muted mb-8">
-        Please review the class details before reserving your spot.
-      </motion.p>
-
-      {/* Class details */}
-      <motion.div {...fadeUp} transition={{ duration: 0.5, delay: 0.15 }} className="bg-card border border-border rounded-xl p-6 mb-4">
-        <div className="flex items-start gap-3 mb-5">
-          <span className="text-[10px] font-mono uppercase tracking-wider text-accent-deep bg-accent-glow/30 px-2 py-0.5 rounded-full">
-            {session.category}
-          </span>
-          <span className="text-[10px] font-mono uppercase tracking-wider text-muted bg-warm px-2 py-0.5 rounded-full border border-border capitalize">
-            {session.level === "all" ? "All levels" : session.level}
-          </span>
-        </div>
-
-        <h2 className="font-serif text-2xl text-ink mb-4">{session.name}</h2>
-
-        <div className="space-y-3">
-          <div className="flex items-center gap-3 text-sm">
-            <div className="w-8 h-8 rounded-md bg-warm flex items-center justify-center shrink-0">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent-deep">
-                <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
-              </svg>
-            </div>
-            <span className="text-ink">{formatDate(session.date)}</span>
-          </div>
-          <div className="flex items-center gap-3 text-sm">
-            <div className="w-8 h-8 rounded-md bg-warm flex items-center justify-center shrink-0">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent-deep">
-                <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
-              </svg>
-            </div>
-            <span className="text-ink">{formatTime(session.time)} · {session.duration} min</span>
-          </div>
-          {instructor && (
-            <div className="flex items-center gap-3 text-sm">
-              <div className="w-8 h-8 rounded-md bg-warm flex items-center justify-center shrink-0">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent-deep">
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
-                </svg>
-              </div>
-              <span className="text-ink">{instructor.name}</span>
-            </div>
-          )}
+        {/* Session details */}
+        <div className="text-center">
+          <p className="text-2xl font-bold text-ink">{session.name}</p>
+          <p className="text-lg text-muted mt-2">
+            {formatDate(session.date)} · {formatTime(session.time)}
+            {session.duration ? ` · ${session.duration} min` : ""}
+          </p>
           {location && (
-            <div className="flex items-center gap-3 text-sm">
-              <div className="w-8 h-8 rounded-md bg-warm flex items-center justify-center shrink-0">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent-deep">
-                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
-                </svg>
-              </div>
-              <div>
-                <span className="text-ink">{location.name}</span>
-                <span className="text-muted text-xs ml-1.5">· {location.area}</span>
-              </div>
-            </div>
+            <p className="text-sm text-muted mt-1">
+              {location.name}
+              {location.area ? ` · ${location.area}` : ""}
+            </p>
+          )}
+          {instructor && (
+            <p className="text-sm text-muted mt-1">with {instructor.name}</p>
           )}
         </div>
 
-      </motion.div>
-
-      {/* Package selection (if multiple packages) */}
-      {hasMultiplePackages && (
-        <motion.div {...fadeUp} transition={{ duration: 0.5, delay: 0.18 }} className="bg-card border border-border rounded-xl p-5 mb-4">
-          <p className="text-sm font-medium text-ink mb-3">Deduct credit from</p>
-          <div className="space-y-2">
-            {MOCK_USER.classPackages.map((pkg) => (
-              <label
-                key={pkg.id}
-                className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all ${
-                  selectedPackageId === pkg.id
-                    ? "border-sage bg-sage-light/40 shadow-soft"
-                    : "border-border hover:bg-warm"
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="package"
-                  value={pkg.id}
-                  checked={selectedPackageId === pkg.id}
-                  onChange={() => setSelectedPackageId(pkg.id)}
-                  className="w-4 h-4 text-sage focus:ring-sage/30 border-border"
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-ink">{pkg.name}</p>
-                  <p className="text-xs text-muted mt-0.5">
-                    {pkg.unlimited
-                      ? "Unlimited credits"
-                      : `${pkg.creditsRemaining} of ${pkg.creditsTotal} credits remaining`}
-                    {" · expires "}
-                    {new Date(pkg.expiresAt).toLocaleDateString("en-SG", { day: "numeric", month: "short" })}
-                  </p>
-                </div>
-                <span className="text-sm font-semibold text-sage">{pkg.unlimited ? "∞" : pkg.creditsRemaining}</span>
-              </label>
-            ))}
-          </div>
-        </motion.div>
-      )}
-
-      {/* Credit summary */}
-      <motion.div {...fadeUp} transition={{ duration: 0.5, delay: 0.2 }} className="bg-sage-light border border-sage/20 rounded-xl p-5 mb-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-ink">1 credit will be used</p>
-            <p className="text-xs text-muted mt-0.5">
-              {selectedPkg
-                ? `${selectedPkg.name} · ${selectedPkg.unlimited ? "unlimited" : `${selectedPkg.creditsRemaining - 1} credits remaining`} after booking`
-                : `${USER_PACKAGE} · ${USER_CREDITS - 1} credits remaining after booking`}
+        {/* Package selection (if multiple packages) */}
+        {hasMultiplePackages && (
+          <div className="mt-8 rounded-2xl border border-border bg-card p-5">
+            <p className="text-sm font-semibold text-ink mb-3">
+              Deduct credit from
             </p>
-          </div>
-          <div className="w-10 h-10 rounded-full bg-sage/20 flex items-center justify-center">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-sage">
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-          </div>
-        </div>
-      </motion.div>
-
-      {/* Cancellation policy */}
-      <motion.div {...fadeUp} transition={{ duration: 0.5, delay: 0.22 }} className="bg-warm border border-border rounded-xl p-4 mb-6 flex gap-3">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted shrink-0 mt-0.5">
-          <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
-        </svg>
-        <div className="space-y-1">
-          <p className="text-xs font-medium text-ink">Cancellation policy</p>
-          <p className="text-xs text-muted">Cancel <span className="font-medium text-ink">more than 3 hours</span> before class — full credit refund.</p>
-          <p className="text-xs text-muted">Cancel <span className="font-medium text-ink">within 3 hours</span> — no credit refund.</p>
-          <p className="text-xs text-muted mt-1">Repeated last-minute cancellations for the same class may result in a booking restriction.</p>
-        </div>
-      </motion.div>
-
-      {/* Actions */}
-      <motion.div {...fadeUp} transition={{ duration: 0.5, delay: 0.25 }} className="flex flex-col gap-3">
-        <button
-          onClick={() => setConfirmed(true)}
-          className="w-full py-3.5 text-sm font-semibold text-white bg-accent rounded-lg hover:bg-accent-deep transition-colors shadow-soft hover:shadow-hover active:scale-[0.99]"
-        >
-          Reserve Now
-        </button>
-        <Link href="/classes" className="w-full text-center py-3 text-sm text-muted hover:text-ink transition-colors">
-          Back to Classes
-        </Link>
-      </motion.div>
-
-      {/* Success dialog */}
-      <AnimatePresence>
-        {confirmed && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 backdrop-blur-sm px-4">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 16 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-              className="bg-card rounded-2xl px-8 py-10 max-w-sm w-full shadow-modal text-center"
-            >
-              <SuccessIcon />
-              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6, duration: 0.4 }}>
-                <h2 className="font-serif text-2xl text-ink mb-3 leading-snug">Your booking is confirmed!</h2>
-                <p className="text-sm text-muted mb-5">
-                  Please arrive at {location ? <span className="font-semibold text-ink">{location.name}</span> : "the studio"}{" "}
-                  <span className="font-semibold text-ink">15 minutes before class</span> to sign in and settle in.
-                </p>
-
-                {/* Updated credit balance */}
-                <div className="bg-sage-light/60 border border-sage/15 rounded-lg p-3 mb-6">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs text-muted">Remaining balance</span>
-                    <span className="text-xs font-semibold text-sage">
-                      {selectedPkg
-                        ? selectedPkg.unlimited ? "Unlimited" : `${selectedPkg.creditsRemaining - 1} credits`
-                        : `${USER_CREDITS - 1} credits`}
-                    </span>
-                  </div>
-                  {selectedPkg && !selectedPkg.unlimited ? (
-                    <>
-                      <div className="w-full h-1.5 rounded-full bg-sage/20 overflow-hidden">
-                        <div className="h-full rounded-full bg-sage transition-all" style={{ width: `${((selectedPkg.creditsRemaining - 1) / selectedPkg.creditsTotal) * 100}%` }} />
-                      </div>
-                      <p className="text-[10px] text-muted mt-1">{selectedPkg.name} · expires {new Date(selectedPkg.expiresAt).toLocaleDateString("en-SG", { day: "numeric", month: "short" })}</p>
-                    </>
-                  ) : (
-                    <>
-                      <div className="w-full h-1.5 rounded-full bg-sage/20 overflow-hidden">
-                        <div className="h-full rounded-full bg-sage transition-all" style={{ width: `${((USER_CREDITS - 1) / MOCK_USER.classPackageTotal) * 100}%` }} />
-                      </div>
-                      <p className="text-[10px] text-muted mt-1">{USER_PACKAGE} · expires {new Date(MOCK_USER.classPackageExpiry).toLocaleDateString("en-SG", { day: "numeric", month: "short" })}</p>
-                    </>
-                  )}
-                </div>
-
-                <Link
-                  href="/account"
-                  onClick={() => setConfirmed(false)}
-                  className="block w-full py-3.5 text-sm font-semibold text-white bg-accent rounded-lg hover:bg-accent-deep transition-colors"
-                >
-                  I will attend on time
-                </Link>
-              </motion.div>
-            </motion.div>
+            <div className="space-y-2">
+              {MOCK_USER.classPackages.map((pkg) => {
+                const selected = selectedPackageId === pkg.id;
+                return (
+                  <label
+                    key={pkg.id}
+                    className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                      selected
+                        ? "border-sage bg-sage/10 shadow-soft"
+                        : "border-border hover:bg-warm"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="package"
+                      value={pkg.id}
+                      checked={selected}
+                      onChange={() => setSelectedPackageId(pkg.id)}
+                      className="w-4 h-4 accent-sage border-border"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-ink">{pkg.name}</p>
+                      <p className="text-xs text-muted mt-0.5">
+                        {pkg.unlimited
+                          ? "Unlimited credits"
+                          : `${pkg.creditsRemaining} of ${pkg.creditsTotal} credits remaining`}
+                        {" · expires "}
+                        {new Date(pkg.expiresAt).toLocaleDateString("en-SG", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </p>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
           </div>
         )}
-      </AnimatePresence>
+
+        {/* Credit summary */}
+        <div className="mt-4 rounded-2xl border border-sage/20 bg-sage/10 p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-ink">
+                {selectedPkg?.unlimited
+                  ? "Unlimited classes — no credit deducted"
+                  : "1 credit will be used"}
+              </p>
+              <p className="text-xs text-muted mt-0.5">
+                {selectedPkg
+                  ? selectedPkg.unlimited
+                    ? `${selectedPkg.name} · unlimited bookings until ${new Date(selectedPkg.expiresAt).toLocaleDateString("en-SG", { day: "numeric", month: "short", year: "numeric" })}`
+                    : `${selectedPkg.name} · ${selectedPkg.creditsRemaining - 1} credits remaining after booking`
+                  : `${MOCK_USER.classPackageName} · ${MOCK_USER.classCredits - 1} credits remaining after booking`}
+              </p>
+            </div>
+            <div className="w-10 h-10 shrink-0 rounded-full bg-sage/20 flex items-center justify-center">
+              <Check size={18} className="text-sage" strokeWidth={2} />
+            </div>
+          </div>
+        </div>
+
+        {/* Cancellation policy */}
+        <div className="mt-4 rounded-2xl border border-border bg-warm p-4 flex gap-3">
+          <Info size={16} className="text-muted shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <p className="text-xs font-semibold text-ink">Cancellation policy</p>
+            <p className="text-xs text-muted">
+              Cancel{" "}
+              <span className="font-medium text-ink">more than {CLASS_CANCELLATION_POLICY.window}</span>{" "}
+              before class — full credit refund.
+            </p>
+            <p className="text-xs text-muted">
+              Cancel <span className="font-medium text-ink">within {CLASS_CANCELLATION_POLICY.window}</span>{" "}
+              — no credit refund.
+            </p>
+            <p className="text-xs text-muted mt-1">
+              {CLASS_CANCELLATION_POLICY.repeat}
+            </p>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="mt-8 flex flex-col gap-3">
+          <button
+            onClick={handleReserve}
+            className="w-full py-3.5 text-sm font-semibold text-paper bg-accent rounded-full hover:bg-accent-deep transition-colors shadow-soft hover:shadow-hover active:scale-[0.99]"
+          >
+            Reserve Now
+          </button>
+          <Link
+            href="/classes"
+            className="w-full text-center py-3 text-sm text-muted hover:text-ink transition-colors"
+          >
+            Back to Classes
+          </Link>
+        </div>
+      </BookingSurface>
     </div>
   );
 }
 
-// ── WORKSHOP: post-payment success ────────────────────
-function WorkshopSuccess({ session, instructor }: { session: Session; instructor: Instructor | undefined }) {
+// ── Session-based success (class or workshop) ─────────────────────────────────
+function SessionSuccess({
+  session,
+  instructor,
+  bookingRef,
+  arrivalLocationName,
+}: {
+  session: Session;
+  instructor: Instructor | undefined;
+  bookingRef: string;
+  arrivalLocationName?: string;
+}) {
   const location = getLocation(session.locationId);
+  const studioName = arrivalLocationName ?? location?.name;
+
   return (
-    <div className="max-w-lg mx-auto px-4 sm:px-6 py-16 text-center">
-      <SuccessIcon />
-      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5, duration: 0.4 }}>
-        <h1 className="font-serif text-3xl text-ink mb-3">You&apos;re registered!</h1>
-        <p className="text-sm text-muted mb-8">Your spot has been reserved. A confirmation has been sent to your email.</p>
+    <>
+      {/* 2. Summary */}
+      <div id="summary">
+        <BookingSurface maxWidth="md" padding="loose">
+          <SectionHeading
+            eyebrow="Your booking"
+            title="Session details"
+            align="center"
+          />
 
-        <div className="bg-card border border-border rounded-xl p-6 text-left mb-8 space-y-3">
-          <h2 className="font-serif text-xl text-ink mb-3">{session.name}</h2>
-          <div className="flex items-center gap-3 text-sm">
-            <div className="w-7 h-7 rounded-md bg-warm flex items-center justify-center shrink-0">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent-deep">
-                <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
-              </svg>
-            </div>
-            <span className="text-ink">{formatDate(session.date)} · {formatTime(session.time)}</span>
+          {/* Details stack */}
+          <div className="text-center">
+            <p className="text-2xl font-bold text-ink">{session.name}</p>
+            <p className="text-lg text-muted mt-2">
+              {formatDate(session.date)} · {formatTime(session.time)}
+              {session.duration ? ` · ${session.duration} min` : ""}
+            </p>
+            {location && (
+              <p className="text-sm text-muted mt-1">
+                {location.name}
+                {location.area ? ` · ${location.area}` : ""}
+              </p>
+            )}
+            {instructor && (
+              <p className="text-sm text-muted mt-1">with {instructor.name}</p>
+            )}
           </div>
-          <div className="flex items-center gap-3 text-sm">
-            <div className="w-7 h-7 rounded-md bg-warm flex items-center justify-center shrink-0">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent-deep">
-                <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
-              </svg>
-            </div>
-            <span className="text-ink">{session.duration} min</span>
+
+          {/* QR block */}
+          <div className="h-48 w-48 mx-auto mt-8 rounded-2xl border border-ink/10 bg-paper p-4 flex items-center justify-center">
+            <QRCodeSVG
+              value={bookingRef}
+              size={152}
+              level="M"
+              bgColor="#faf8f3"
+              fgColor="#0d1a3e"
+            />
           </div>
-          {instructor && (
-            <div className="flex items-center gap-3 text-sm">
-              <div className="w-7 h-7 rounded-md bg-warm flex items-center justify-center shrink-0">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent-deep">
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
-                </svg>
-              </div>
-              <span className="text-ink">{instructor.name}</span>
-            </div>
-          )}
-          {location && (
-            <div className="flex items-center gap-3 text-sm">
-              <div className="w-7 h-7 rounded-md bg-warm flex items-center justify-center shrink-0">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-accent-deep">
-                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
-                </svg>
-              </div>
-              <div>
-                <span className="text-ink">{location.name}</span>
-                <span className="text-muted text-xs ml-1.5">· {location.area}</span>
-              </div>
-            </div>
-          )}
+          <p className="text-xs uppercase tracking-wider text-muted mt-4 text-center">
+            Scan at the studio
+          </p>
+
+          {/* Action row */}
+          <div className="mt-10 flex gap-3 justify-center">
+            <button className="rounded-full border border-ink/10 px-5 py-3 text-sm font-medium hover:border-accent transition-colors">
+              Add to calendar
+            </button>
+            <Link
+              href="/account"
+              className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 transition-colors"
+            >
+              View in account
+            </Link>
+          </div>
+        </BookingSurface>
+      </div>
+
+      {/* 3. What's next */}
+      <section className="bg-paper py-16">
+        <div className="max-w-5xl mx-auto px-6">
+          <SectionHeading
+            align="center"
+            eyebrow="What's next"
+            title="Before your class"
+          />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {NEXT_STEPS.map(({ icon: Icon, heading, body }, idx) => {
+              const resolvedBody =
+                idx === 0 && studioName
+                  ? `Please arrive at ${studioName} 15 minutes before class to sign in and settle in.`
+                  : body;
+              return (
+                <div
+                  key={heading}
+                  className="rounded-2xl bg-card border border-ink/10 p-6 text-center"
+                >
+                  <div className="w-14 h-14 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-4">
+                    <Icon size={28} className="text-accent" strokeWidth={1.5} />
+                  </div>
+                  <h3 className="text-base font-semibold text-ink mb-2">
+                    {heading}
+                  </h3>
+                  <p className="text-sm text-muted leading-relaxed">
+                    {resolvedBody}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
         </div>
+      </section>
 
-        <Link
-          href="/account"
-          className="block w-full py-3.5 text-sm font-semibold text-white bg-accent rounded-lg hover:bg-accent-deep transition-colors mb-3"
-        >
-          View My Bookings
-        </Link>
-        <Link href="/workshops" className="block w-full text-center py-3 text-sm text-muted hover:text-ink transition-colors">
-          Browse More Workshops
-        </Link>
-      </motion.div>
-    </div>
+      {/* 4. Closing CTA */}
+      <CtaBanner
+        imageKey="cta-community"
+        headline="Keep your momentum"
+        subheadline="Book your next class while you're here."
+        primaryCta={{ href: "/classes", label: "Browse classes" }}
+      />
+    </>
   );
 }
 
-// ── PACKAGE: post-payment success ─────────────────────
+// ── Package post-payment success (preserved) ──────────────────────────────────
 function PackageSuccess({ packageId }: { packageId: string }) {
-  const pkg = PACKAGE_DISPLAY[packageId] ?? { name: "Package", subtitle: "Credits added to your account" };
+  const pkg =
+    PACKAGE_DISPLAY[packageId] ?? {
+      name: "Package",
+      subtitle: "Credits added to your account",
+    };
 
   return (
-    <div className="max-w-lg mx-auto px-4 sm:px-6 py-16 text-center">
-      <SuccessIcon />
-      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5, duration: 0.4 }}>
-        <h1 className="font-serif text-3xl text-ink mb-3">Package activated!</h1>
-        <p className="text-sm text-muted mb-8">Your credits are ready to use. An invoice has been sent to your email.</p>
+    <>
+      {/* Summary */}
+      <div id="summary">
+        <BookingSurface maxWidth="md" padding="loose">
+          <SectionHeading
+            eyebrow="Your purchase"
+            title="Package details"
+            align="center"
+          />
 
-        <div className="bg-sage-light border border-sage/20 rounded-xl p-6 text-left mb-8">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-semibold text-ink">{pkg.name}</p>
-              <p className="text-xs text-muted mt-0.5">{pkg.subtitle}</p>
-            </div>
-            <div className="w-10 h-10 rounded-full bg-sage/20 flex items-center justify-center shrink-0">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-sage">
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            </div>
+          <div className="text-center">
+            <p className="text-2xl font-bold text-ink">{pkg.name}</p>
+            <p className="text-lg text-muted mt-2">{pkg.subtitle}</p>
           </div>
-        </div>
 
-        <Link
-          href="/classes"
-          className="block w-full py-3.5 text-sm font-semibold text-white bg-accent rounded-lg hover:bg-accent-deep transition-colors mb-3"
-        >
-          Start Booking Classes
-        </Link>
-        <Link href="/account/packages" className="block w-full text-center py-3 text-sm text-muted hover:text-ink transition-colors">
-          View My Packages
-        </Link>
-      </motion.div>
-    </div>
+          <div className="mt-10 flex gap-3 justify-center">
+            <Link
+              href="/classes"
+              className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 transition-colors"
+            >
+              Start booking classes
+            </Link>
+            <Link
+              href="/account/packages"
+              className="rounded-full border border-ink/10 px-5 py-3 text-sm font-medium hover:border-accent transition-colors"
+            >
+              View my packages
+            </Link>
+          </div>
+        </BookingSurface>
+      </div>
+
+      {/* Closing CTA */}
+      <CtaBanner
+        imageKey="cta-community"
+        headline="Keep your momentum"
+        subheadline="Book your next class while you're here."
+        primaryCta={{ href: "/classes", label: "Browse classes" }}
+      />
+    </>
   );
 }
 
-// ── Router ─────────────────────────────────────────────
+// ── Router ────────────────────────────────────────────────────────────────────
 function ConfirmationContent() {
   const searchParams = useSearchParams();
   const type = searchParams.get("type");
   const sessionId = searchParams.get("session");
   const packageId = searchParams.get("package");
 
-  // Class booking pre-confirmation (coming from /classes)
+  // Generate a booking reference for QR from URL params or a stable mock
+  const bookingRef = sessionId
+    ? `YS-BOOKING-${sessionId.toUpperCase()}`
+    : "YS-BOOKING-MOCK";
+
+  // Class booking: review step → success
   if (type === "class" && sessionId) {
     const session = allSessions.find((s) => s.id === sessionId);
-    const instructor = allInstructors.find((i) => i.id === session?.instructorId);
+    const instructor = allInstructors.find(
+      (i) => i.id === session?.instructorId
+    );
     if (session) {
-      return <ClassConfirmation session={session} instructor={instructor} />;
+      return (
+        <ClassConfirmation
+          session={session}
+          instructor={instructor}
+          bookingRef={bookingRef}
+        />
+      );
     }
   }
 
-  // Workshop post-payment
+  // Workshop post-payment success
   if (type === "workshop" && sessionId) {
     const session = allSessions.find((s) => s.id === sessionId);
-    const instructor = allInstructors.find((i) => i.id === session?.instructorId);
+    const instructor = allInstructors.find(
+      (i) => i.id === session?.instructorId
+    );
     if (session) {
-      return <WorkshopSuccess session={session} instructor={instructor} />;
+      return (
+        <SessionSuccess
+          session={session}
+          instructor={instructor}
+          bookingRef={bookingRef}
+        />
+      );
     }
   }
 
-  // Package post-payment
+  // Package post-payment success
   if (type === "package" && packageId) {
     return <PackageSuccess packageId={packageId} />;
   }
 
-  // Fallback: no params — use first available session as mock
-  const fallback = allSessions.find((s) => s.type === "regular" && s.tenantId === "tenant-1");
-  const instructor = allInstructors.find((i) => i.id === fallback?.instructorId);
+  // Fallback: use first available session as mock
+  const fallback = allSessions.find(
+    (s) => s.type === "regular" && s.tenantId === "tenant-1"
+  );
+  const instructor = allInstructors.find(
+    (i) => i.id === fallback?.instructorId
+  );
   if (fallback) {
-    return <ClassConfirmation session={fallback} instructor={instructor} />;
+    return (
+      <SessionSuccess
+        session={fallback}
+        instructor={instructor}
+        bookingRef="YS-BOOKING-DEMO"
+      />
+    );
   }
 
-  // Last resort static fallback
+  // Last resort
   return (
     <div className="max-w-lg mx-auto px-4 py-16 text-center">
       <p className="text-muted text-sm">Nothing to confirm.</p>
-      <Link href="/classes" className="mt-4 inline-block text-sm text-accent hover:underline">Back to Classes</Link>
+      <Link
+        href="/classes"
+        className="mt-4 inline-block text-sm text-accent hover:underline"
+      >
+        Back to Classes
+      </Link>
     </div>
   );
 }
 
 export default function BookingConfirmationPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-paper px-4 py-12 text-muted text-sm">Loading...</div>}>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-paper px-4 py-12 text-muted text-sm">
+          Loading...
+        </div>
+      }
+    >
       <ConfirmationContent />
     </Suspense>
   );

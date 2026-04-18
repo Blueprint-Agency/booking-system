@@ -2,17 +2,12 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { CtaBanner } from "@/components/marketing/cta-banner";
+import { BookingSurface } from "@/components/booking/booking-surface";
+import { SectionHeading } from "@/components/booking/section-heading";
 
-const fadeUp = {
-  hidden: { opacity: 0, y: 20 },
-  visible: (i: number) => ({
-    opacity: 1,
-    y: 0,
-    transition: { delay: i * 0.06, duration: 0.5, ease: [0.22, 1, 0.36, 1] as const },
-  }),
-};
+// ── Inline data (no products.json — data lives here) ──────────────────────────
 
 type BundleItem = {
   id: string;
@@ -43,13 +38,13 @@ type PrivateItem = {
 };
 
 const BUNDLES: BundleItem[] = [
-  { id: "b-otp", name: "One-time Pass", credits: "1 credit", price: 40, tag: "1 day" },
-  { id: "b-10",  name: "Bundle of 10",  credits: "10 credits", price: 300, tag: "90 days" },
-  { id: "b-20",  name: "Bundle of 20",  credits: "20 credits", price: 550, tag: "180 days", highlight: true },
-  { id: "b-30",  name: "Bundle of 30",  credits: "30 credits", price: 750, tag: "365 days" },
-  { id: "b-50",  name: "Bundle of 50",  credits: "50 credits", price: 1100, tag: "365 days" },
-  { id: "b-100", name: "Bundle of 100", credits: "100 credits", price: 2000, tag: "365 days" },
-  { id: "b-travel", name: "Travel Package", credits: "5 credits", price: 60, tag: "30 days", pending: true },
+  { id: "b-otp",    name: "One-time Pass",  credits: "1 credit",    price: 40,   tag: "1 day" },
+  { id: "b-10",     name: "Bundle of 10",   credits: "10 credits",  price: 300,  tag: "90 days" },
+  { id: "b-20",     name: "Bundle of 20",   credits: "20 credits",  price: 550,  tag: "180 days", highlight: true },
+  { id: "b-30",     name: "Bundle of 30",   credits: "30 credits",  price: 750,  tag: "365 days" },
+  { id: "b-50",     name: "Bundle of 50",   credits: "50 credits",  price: 1100, tag: "365 days" },
+  { id: "b-100",    name: "Bundle of 100",  credits: "100 credits", price: 2000, tag: "365 days" },
+  { id: "b-travel", name: "Travel Package", credits: "5 credits",   price: 60,   tag: "30 days",  pending: true },
 ];
 
 const UNLIMITED: UnlimitedItem[] = [
@@ -74,246 +69,238 @@ const PRIVATE_2ON1: PrivateItem[] = [
   { id: "p2-50", name: "VIP 50 Sessions", sessions: 50, price: 7500, type: "2on1" },
 ];
 
-function InfoNote({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex items-start gap-3 bg-info-bg border border-info/20 rounded-md px-4 py-3 text-sm text-info">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-0.5">
-        <circle cx="12" cy="12" r="10" />
-        <line x1="12" y1="8" x2="12" y2="12" />
-        <line x1="12" y1="16" x2="12.01" y2="16" />
-      </svg>
-      <span>{children}</span>
-    </div>
-  );
-}
+// ── Tab definitions ────────────────────────────────────────────────────────────
 
-function SectionHeader({ title, subtitle }: { title: string; subtitle: string }) {
-  return (
-    <div className="mb-6">
-      <h2 className="font-serif text-2xl text-ink mb-1">{title}</h2>
-      <p className="text-sm text-muted">{subtitle}</p>
-    </div>
-  );
-}
+type MainTab = "classCredits" | "pt1on1" | "pt2on1";
+type ClassSubTab = "bundle" | "unlimited";
+
+const MAIN_TABS: { key: MainTab; label: string }[] = [
+  { key: "classCredits", label: "Class Credits" },
+  { key: "pt1on1",       label: "PT 1-on-1" },
+  { key: "pt2on1",       label: "PT 2-on-1" },
+];
+
+// ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function PackagesPage() {
-  const [activeTab, setActiveTab] = useState<"bundle" | "unlimited">("bundle");
+  const [activeTab, setActiveTab] = useState<MainTab>("classCredits");
+  const [classSubTab, setClassSubTab] = useState<ClassSubTab>("bundle");
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-10 sm:py-14 space-y-16">
-      {/* Page heading */}
-      <motion.div initial="hidden" animate="visible" custom={0} variants={fadeUp}>
-        <h1 className="font-serif text-3xl sm:text-4xl text-ink mb-2">Packages</h1>
-        <p className="text-muted text-base max-w-xl">
-          Choose a plan that fits your practice. Group class credits for classes; PT credits for personal training. Both can be held at the same time.
-        </p>
-      </motion.div>
+    <>
+<div id="packages">
+        <BookingSurface maxWidth="xl" padding="default">
+          <SectionHeading
+            eyebrow="Choose your track"
+            title="Three package families"
+          />
 
-      {/* Cross-location note */}
-      <motion.div initial="hidden" animate="visible" custom={0.5} variants={fadeUp}>
-        <div className="flex items-start gap-3 bg-sage-light border border-sage/20 rounded-md px-4 py-3 text-sm text-sage">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 mt-0.5">
-            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
-          </svg>
-          <span>All packages and credits are valid across both studio locations — <strong>Breadtalk IHQ</strong> and <strong>Outram Park</strong>.</span>
-        </div>
-      </motion.div>
+          {/* ── Main tab strip ──────────────────────────────────── */}
+          <div className="flex justify-center gap-2 mb-10">
+            {MAIN_TABS.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={cn(
+                  "rounded-full px-6 py-2.5 text-sm font-medium transition-colors",
+                  activeTab === tab.key
+                    ? "bg-ink text-paper"
+                    : "bg-transparent text-muted hover:text-ink border border-ink/10"
+                )}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
 
-      {/* ── Section 1: Class Credits ──────────────────────── */}
-      <motion.section initial="hidden" whileInView="visible" viewport={{ once: true }} custom={0} variants={fadeUp}>
-        <SectionHeader
-          title="Class Credits"
-          subtitle="Use credits to book any group class. 1 credit = 1 class attendance."
-        />
+          {/* ── Class Credits tab ───────────────────────────────── */}
+          {activeTab === "classCredits" && (
+            <div className="space-y-8">
+              {/* Sub-toggle: Bundle / Unlimited */}
+              <div className="flex justify-center gap-2">
+                {(["bundle", "unlimited"] as ClassSubTab[]).map((sub) => (
+                  <button
+                    key={sub}
+                    onClick={() => setClassSubTab(sub)}
+                    className={cn(
+                      "rounded-full px-6 py-2.5 text-sm font-medium transition-colors",
+                      classSubTab === sub
+                        ? "bg-ink text-paper"
+                        : "bg-transparent text-muted hover:text-ink border border-ink/10"
+                    )}
+                  >
+                    {sub === "bundle" ? "Credit Bundles" : "Unlimited Access"}
+                  </button>
+                ))}
+              </div>
 
-        {/* Toggle: Bundle / Unlimited */}
-        <div className="inline-flex rounded-lg border border-border bg-warm p-1 mb-8">
-          <button
-            onClick={() => setActiveTab("bundle")}
-            className={cn(
-              "px-5 py-2 text-sm font-medium rounded-md transition-all duration-200",
-              activeTab === "bundle" ? "bg-card text-ink shadow-soft" : "text-muted hover:text-ink"
-            )}
-          >
-            Credit Bundles
-          </button>
-          <button
-            onClick={() => setActiveTab("unlimited")}
-            className={cn(
-              "px-5 py-2 text-sm font-medium rounded-md transition-all duration-200",
-              activeTab === "unlimited" ? "bg-card text-ink shadow-soft" : "text-muted hover:text-ink"
-            )}
-          >
-            Unlimited Access
-          </button>
-        </div>
+              {/* Bundle cards */}
+              {classSubTab === "bundle" && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {BUNDLES.map((item) => (
+                    <div
+                      key={item.id}
+                      className={cn(
+                        "relative rounded-2xl bg-paper border border-ink/10 p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all",
+                        item.highlight && "border-accent",
+                        item.pending && "opacity-75"
+                      )}
+                    >
+                      {item.highlight && (
+                        <span className="absolute -top-2.5 left-4 text-[10px] font-mono uppercase tracking-wider bg-accent text-white px-2.5 py-0.5 rounded-full">
+                          Most popular
+                        </span>
+                      )}
+                      {item.pending && (
+                        <span className="absolute -top-2.5 right-4 text-[10px] font-mono uppercase tracking-wider bg-warning/15 text-warning border border-warning/20 px-2.5 py-0.5 rounded-full">
+                          Coming soon
+                        </span>
+                      )}
+                      <div>
+                        <p className="text-4xl font-extrabold text-ink">{item.credits}</p>
+                        <p className="text-base font-medium text-ink mt-0.5">{item.name}</p>
+                      </div>
+                      <p className="text-2xl font-bold mt-4">S${item.price.toLocaleString()}</p>
+                      <ul className="text-sm text-muted space-y-2 mt-6 flex-1">
+                        <li>Valid for {item.tag}</li>
+                        <li>Use at both studio locations</li>
+                        <li>1 credit = 1 class attendance</li>
+                      </ul>
+                      {item.pending ? (
+                        <span className="mt-6 w-full text-center rounded-full bg-ink/10 text-muted px-5 py-3 text-sm font-medium">
+                          Coming soon
+                        </span>
+                      ) : (
+                        <Link
+                          href={`/checkout?package=${item.id}`}
+                          className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
+                        >
+                          Purchase
+                        </Link>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
 
-        <InfoNote>
-          Credit bundles and unlimited access cannot be purchased at the same time. You may combine either with private session packages.
-        </InfoNote>
-
-        {/* Bundle cards */}
-        {activeTab === "bundle" && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 mt-6">
-            {BUNDLES.map((item, i) => (
-              <motion.div key={item.id} custom={i + 1} variants={fadeUp} initial="hidden" whileInView="visible" viewport={{ once: true }}>
-                <div className={cn(
-                  "relative bg-card border rounded-xl p-5 flex flex-col gap-4 h-full",
-                  item.highlight ? "border-accent shadow-hover" : "border-border",
-                  item.pending && "opacity-75"
-                )}>
-                  {item.highlight && (
-                    <span className="absolute -top-2.5 left-4 text-[10px] font-mono uppercase tracking-wider bg-accent text-white px-2.5 py-0.5 rounded-full">
-                      Most popular
-                    </span>
-                  )}
-                  {item.pending && (
-                    <span className="absolute -top-2.5 right-4 text-[10px] font-mono uppercase tracking-wider bg-warning-bg text-warning border border-warning/20 px-2.5 py-0.5 rounded-full">
-                      Coming soon
-                    </span>
-                  )}
-                  <div className="flex-1">
-                    <h3 className="font-serif text-lg text-ink mb-1">{item.name}</h3>
-                    <p className="text-sm text-muted mb-3">{item.credits}</p>
-                    <span className="inline-block text-[11px] font-mono text-muted bg-warm px-2 py-0.5 rounded-md border border-border">
-                      Valid {item.tag}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between pt-4 border-t border-border">
-                    <span className="text-2xl font-semibold text-ink">S${item.price.toLocaleString()}</span>
-                    {item.pending ? (
-                      <span className="text-xs text-muted font-medium">Pending</span>
-                    ) : (
+              {/* Unlimited cards */}
+              {classSubTab === "unlimited" && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {UNLIMITED.map((item) => (
+                    <div
+                      key={item.id}
+                      className={cn(
+                        "relative rounded-2xl bg-paper border border-ink/10 p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all",
+                        item.highlight && "border-accent"
+                      )}
+                    >
+                      {item.highlight && (
+                        <span className="absolute -top-2.5 left-4 text-[10px] font-mono uppercase tracking-wider bg-accent text-white px-2.5 py-0.5 rounded-full">
+                          Best value
+                        </span>
+                      )}
+                      <div>
+                        <p className="text-4xl font-extrabold text-ink">{item.duration}</p>
+                        <p className="text-base font-medium text-ink mt-0.5">{item.name}</p>
+                      </div>
+                      <p className="text-2xl font-bold mt-4">S${item.price.toLocaleString()}</p>
+                      <ul className="text-sm text-muted space-y-2 mt-6 flex-1">
+                        <li>Unlimited classes for {item.duration}</li>
+                        <li>All group classes included</li>
+                        <li>No class limit per week</li>
+                        <li>Valid across both locations</li>
+                      </ul>
                       <Link
                         href={`/checkout?package=${item.id}`}
-                        className="px-4 py-2 text-sm font-medium text-white bg-accent rounded-md hover:bg-accent-deep transition-colors"
+                        className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
                       >
                         Purchase
                       </Link>
-                    )}
-                  </div>
+                    </div>
+                  ))}
                 </div>
-              </motion.div>
-            ))}
-          </div>
-        )}
+              )}
+            </div>
+          )}
 
-        {/* Unlimited cards */}
-        {activeTab === "unlimited" && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
-            {UNLIMITED.map((item, i) => (
-              <motion.div key={item.id} custom={i + 1} variants={fadeUp} initial="hidden" whileInView="visible" viewport={{ once: true }}>
-                <div className={cn(
-                  "relative bg-card border rounded-xl p-6 flex flex-col gap-4 h-full",
-                  item.highlight ? "border-accent shadow-hover" : "border-border"
-                )}>
-                  {item.highlight && (
-                    <span className="absolute -top-2.5 left-4 text-[10px] font-mono uppercase tracking-wider bg-accent text-white px-2.5 py-0.5 rounded-full">
-                      Best value
-                    </span>
-                  )}
-                  <div className="flex-1">
-                    <h3 className="font-serif text-xl text-ink mb-1">{item.name}</h3>
-                    <p className="text-sm text-muted mb-3">Unlimited classes for {item.duration}</p>
-                    <div className="flex items-center gap-1.5 text-sage text-sm">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                      All group classes included
-                    </div>
-                    <div className="flex items-center gap-1.5 text-sage text-sm mt-1">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                      No class limit per week
-                    </div>
-                    <span className="inline-block text-[11px] font-mono text-muted bg-warm px-2 py-0.5 rounded-md border border-border mt-3">
-                      Valid {item.duration}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between pt-4 border-t border-border">
-                    <span className="text-2xl font-semibold text-ink">S${item.price.toLocaleString()}</span>
-                    <Link
-                      href={`/checkout?package=${item.id}`}
-                      className="px-4 py-2 text-sm font-medium text-white bg-accent rounded-md hover:bg-accent-deep transition-colors"
-                    >
-                      Purchase
-                    </Link>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        )}
-      </motion.section>
-
-      {/* ── Section 2: Private Sessions ───────────────────── */}
-      <motion.section initial="hidden" whileInView="visible" viewport={{ once: true }} custom={0} variants={fadeUp}>
-        <SectionHeader
-          title="Personal Training (VIP)"
-          subtitle="One-on-one or semi-private training with our instructors. PT uses credits — 1 credit = 30 mins. PT credits are separate from group class credits."
-        />
-
-        <InfoNote>
-          PT packages give you PT credits, which are separate from your group class credits. 1 PT credit = 30 mins of personal training. You may hold both a class package and a PT package at the same time.
-        </InfoNote>
-
-        <div className="mt-8 space-y-10">
-          {/* 1-on-1 */}
-          <div>
-            <h3 className="font-serif text-xl text-ink mb-1">1-on-1 Personal Training</h3>
-            <p className="text-sm text-muted mb-5">Fully dedicated time with one of our instructors, tailored entirely to your goals.</p>
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-              {PRIVATE_1ON1.map((item, i) => (
-                <motion.div key={item.id} custom={i + 1} variants={fadeUp} initial="hidden" whileInView="visible" viewport={{ once: true }}>
-                  <div className="bg-card border border-border rounded-xl p-4 flex flex-col gap-3 text-center h-full">
-                    <div className="flex-1">
-                      <p className="text-2xl font-semibold text-ink">{item.credits}</p>
-                      <p className="text-xs text-muted mt-0.5">PT credits</p>
-                      <p className="text-[11px] text-muted/60 mt-1">{item.sessions} sessions</p>
-                    </div>
+          {/* ── PT 1-on-1 tab ───────────────────────────────────── */}
+          {activeTab === "pt1on1" && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted text-center max-w-xl mx-auto">
+                Fully dedicated time with one of our instructors, tailored entirely to your goals. PT credits are separate from group class credits — 1 PT credit = 30 mins.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+                {PRIVATE_1ON1.map((item) => (
+                  <div
+                    key={item.id}
+                    className="rounded-2xl bg-paper border border-ink/10 p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all"
+                  >
                     <div>
-                      <p className="text-base font-semibold text-ink">S${item.price.toLocaleString()}</p>
-                      <p className="text-[11px] font-mono text-muted">${item.creditRate}/credit</p>
+                      <p className="text-4xl font-extrabold text-ink">{item.credits}</p>
+                      <p className="text-base font-medium text-ink mt-0.5">{item.name}</p>
                     </div>
+                    <p className="text-2xl font-bold mt-4">S${item.price.toLocaleString()}</p>
+                    <ul className="text-sm text-muted space-y-2 mt-6 flex-1">
+                      <li>{item.sessions} personal training sessions</li>
+                      <li>1 PT credit = 30 mins</li>
+                      {item.creditRate && <li>S${item.creditRate}/credit</li>}
+                      <li>Valid across both locations</li>
+                    </ul>
                     <Link
                       href={`/checkout?package=${item.id}`}
-                      className="block w-full py-2 text-xs font-medium text-white bg-accent rounded-md hover:bg-accent-deep transition-colors"
+                      className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
                     >
                       Purchase
                     </Link>
                   </div>
-                </motion.div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* 2-on-1 */}
-          <div>
-            <h3 className="font-serif text-xl text-ink mb-1">2-on-1 Personal Training</h3>
-            <p className="text-sm text-muted mb-5">Train with a partner. Shared cost, shared motivation, same dedicated instructor.</p>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {PRIVATE_2ON1.map((item, i) => (
-                <motion.div key={item.id} custom={i + 1} variants={fadeUp} initial="hidden" whileInView="visible" viewport={{ once: true }}>
-                  <div className="bg-card border border-border rounded-xl p-4 flex flex-col gap-3 text-center h-full">
-                    <div className="flex-1">
-                      <p className="text-2xl font-semibold text-ink">{item.sessions}</p>
-                      <p className="text-xs text-muted mt-0.5">sessions</p>
+          {/* ── PT 2-on-1 tab ───────────────────────────────────── */}
+          {activeTab === "pt2on1" && (
+            <div className="space-y-4">
+              <p className="text-sm text-muted text-center max-w-xl mx-auto">
+                Train with a partner. Shared cost, shared motivation, same dedicated instructor. Split the price between two people.
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+                {PRIVATE_2ON1.map((item) => (
+                  <div
+                    key={item.id}
+                    className="rounded-2xl bg-paper border border-ink/10 p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all"
+                  >
+                    <div>
+                      <p className="text-4xl font-extrabold text-ink">{item.sessions}</p>
+                      <p className="text-base font-medium text-ink mt-0.5">{item.name}</p>
                     </div>
-                    <p className="text-base font-semibold text-ink">S${item.price.toLocaleString()}</p>
+                    <p className="text-2xl font-bold mt-4">S${item.price.toLocaleString()}</p>
+                    <ul className="text-sm text-muted space-y-2 mt-6 flex-1">
+                      <li>{item.sessions} semi-private sessions</li>
+                      <li>Train with one partner</li>
+                      <li>Dedicated instructor throughout</li>
+                      <li>Valid across both locations</li>
+                    </ul>
                     <Link
                       href={`/checkout?package=${item.id}`}
-                      className="block w-full py-2 text-xs font-medium text-white bg-accent rounded-md hover:bg-accent-deep transition-colors"
+                      className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
                     >
                       Purchase
                     </Link>
                   </div>
-                </motion.div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
-        </div>
-      </motion.section>
-    </div>
+          )}
+        </BookingSurface>
+      </div>
+
+      <CtaBanner
+        imageKey="cta-community"
+        headline="Not sure which package fits?"
+        subheadline="Book a free intro call and we'll help you pick."
+        primaryCta={{ href: "/private-sessions", label: "Talk to us" }}
+      />
+    </>
   );
 }

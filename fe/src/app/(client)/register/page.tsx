@@ -2,189 +2,307 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { motion } from "framer-motion";
+import { AuthSplitShell } from "@/components/auth/auth-split-shell";
 import { cn } from "@/lib/utils";
 
-const fadeUp = {
-  hidden: { opacity: 0, y: 24 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] as const },
-  },
-};
+const inputClass =
+  "rounded-xl border border-ink/10 bg-paper px-4 py-3 text-sm w-full focus:border-accent focus:outline-none";
+const labelClass =
+  "text-xs uppercase tracking-wider text-muted mb-2 block";
 
-const inputClass = "w-full px-4 py-3 text-sm bg-warm border border-border rounded-md text-ink placeholder:text-muted/60 outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all duration-200";
-const labelClass = "block text-sm font-medium text-ink mb-1.5";
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_REGEX = /^\+?[0-9\s\-]{8,}$/;
 
 export default function RegisterPage() {
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [birthday, setBirthday] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [gender, setGender] = useState("");
+  const [agreed, setAgreed] = useState(false);
+  const [otp, setOtp] = useState("");
+
   const [otpSent, setOtpSent] = useState(false);
   const [otpVerified, setOtpVerified] = useState(false);
   const [emailVerified, setEmailVerified] = useState(false);
 
+  const emailValid = EMAIL_REGEX.test(email);
+  const phoneValid = PHONE_REGEX.test(phone);
+  const passwordValid = password.length >= 8;
+  const passwordsMatch = password === confirmPassword && confirmPassword.length > 0;
+
+  const canSubmit =
+    firstName.trim().length > 0 &&
+    lastName.trim().length > 0 &&
+    emailValid &&
+    emailVerified &&
+    phoneValid &&
+    otpVerified &&
+    passwordValid &&
+    passwordsMatch &&
+    gender.length > 0 &&
+    agreed;
+
   return (
-    <div className="min-h-[calc(100vh-64px)] flex items-center justify-center px-4 py-16 bg-warm">
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 w-[600px] h-[400px] rounded-full bg-sage-light/30 blur-3xl" />
-      </div>
+    <AuthSplitShell
+      imageKey="hero-pilates-01"
+      quote="Every student begins with a single breath."
+    >
+      <h1 className="text-3xl font-extrabold tracking-tight text-ink">
+        Create your account
+      </h1>
+      <p className="text-sm text-muted mt-2">Two locations. One practice.</p>
 
-      <motion.div initial="hidden" animate="visible" variants={fadeUp} className="relative w-full max-w-md">
-        <div className="bg-card rounded-xl shadow-hover border border-border p-8 sm:p-10">
-          {/* Header */}
-          <div className="text-center mb-8">
-            <div className="w-12 h-12 rounded-lg bg-sage mx-auto mb-4 flex items-center justify-center">
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-                <circle cx="9" cy="7" r="4" />
-                <line x1="19" y1="8" x2="19" y2="14" />
-                <line x1="22" y1="11" x2="16" y2="11" />
-              </svg>
-            </div>
-            <h1 className="font-serif text-2xl sm:text-3xl text-ink mb-2">Create your account</h1>
-            <p className="text-sm text-muted">Start your yoga journey with Yoga Sadhana</p>
-          </div>
-
-          <form onSubmit={(e) => e.preventDefault()} className="space-y-4">
-            {/* First name */}
-            <div>
-              <label htmlFor="firstName" className={labelClass}>First name</label>
-              <input id="firstName" type="text" placeholder="Jane" className={inputClass} />
-            </div>
-
-            {/* Phone + OTP */}
-            <div>
-              <label htmlFor="phone" className={labelClass}>Phone number</label>
-              <div className="flex gap-2">
-                <input
-                  id="phone"
-                  type="tel"
-                  placeholder="+65 9123 4567"
-                  className={cn(inputClass, "flex-1")}
-                />
-                <button
-                  type="button"
-                  onClick={() => { setOtpSent(true); setOtpVerified(false); }}
-                  className="shrink-0 px-4 py-3 text-sm font-medium text-white bg-accent rounded-md hover:bg-accent-deep transition-colors"
-                >
-                  {otpSent ? "Resend" : "Send OTP"}
-                </button>
-              </div>
-              {otpSent && !otpVerified && (
-                <div className="mt-2 flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="Enter 6-digit OTP"
-                    maxLength={6}
-                    className={cn(inputClass, "flex-1")}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setOtpVerified(true)}
-                    className="shrink-0 px-4 py-3 text-sm font-medium text-white bg-sage rounded-md hover:bg-sage/90 transition-colors"
-                  >
-                    Verify
-                  </button>
-                </div>
-              )}
-              {otpVerified && (
-                <p className="mt-1.5 text-xs text-sage flex items-center gap-1">
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>
-                  Phone verified
-                </p>
-              )}
-            </div>
-
-            {/* Email + verification */}
-            <div>
-              <label htmlFor="email" className={labelClass}>Email address</label>
-              <div className="flex gap-2">
-                <input id="email" type="email" placeholder="you@example.com" className={cn(inputClass, "flex-1")} />
-                <button
-                  type="button"
-                  onClick={() => setEmailVerified(true)}
-                  className="shrink-0 px-4 py-3 text-sm font-medium text-muted border border-border rounded-md hover:text-ink hover:bg-warm transition-colors whitespace-nowrap"
-                >
-                  {emailVerified ? "Sent ✓" : "Verify"}
-                </button>
-              </div>
-              {emailVerified && (
-                <p className="mt-1.5 text-xs text-muted">Verification email sent — check your inbox.</p>
-              )}
-            </div>
-
-            {/* Password */}
-            <div>
-              <label htmlFor="password" className={labelClass}>Password</label>
-              <input id="password" type="password" placeholder="At least 8 characters" className={inputClass} />
-            </div>
-
-            {/* Confirm password */}
-            <div>
-              <label htmlFor="confirmPassword" className={labelClass}>Confirm password</label>
-              <input id="confirmPassword" type="password" placeholder="Repeat your password" className={inputClass} />
-            </div>
-
-            {/* Gender */}
-            <div>
-              <label htmlFor="gender" className={labelClass}>Gender</label>
-              <select id="gender" defaultValue="" className={cn(inputClass, "cursor-pointer")}>
-                <option value="" disabled>Select gender</option>
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-                <option value="prefer-not-to-say">Prefer not to say</option>
-              </select>
-            </div>
-
-            {/* Birthday */}
-            <div>
-              <label htmlFor="birthday" className={labelClass}>Birthday</label>
-              <input id="birthday" type="date" className={inputClass} />
-            </div>
-
-            {/* Referral code */}
-            <div>
-              <label htmlFor="referralCode" className={labelClass}>
-                Referral code
-                <span className="ml-1.5 text-xs font-normal text-muted">(optional)</span>
-              </label>
-              <input
-                id="referralCode"
-                type="text"
-                placeholder="e.g. YS8472"
-                maxLength={6}
-                className={cn(inputClass, "font-mono uppercase tracking-widest")}
-              />
-              <p className="text-xs text-muted mt-1">Automatically filled if you joined via a referral link.</p>
-            </div>
-
-            {/* Terms */}
-            <label className="flex items-start gap-3 cursor-pointer group pt-1">
-              <input type="checkbox" className="mt-0.5 w-4 h-4 rounded border-border text-accent focus:ring-accent/30 bg-warm shrink-0" />
-              <span className="text-sm text-muted group-hover:text-ink transition-colors leading-snug">
-                I agree to the{" "}
-                <Link href="#" className="text-accent-deep hover:text-accent underline underline-offset-2">Terms of Service</Link>
-                {" "}and{" "}
-                <Link href="#" className="text-accent-deep hover:text-accent underline underline-offset-2">Privacy Policy</Link>
-              </span>
+      <form
+        onSubmit={(e) => e.preventDefault()}
+        className="mt-10 space-y-4"
+        noValidate
+      >
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label htmlFor="firstName" className={labelClass}>
+              First name
             </label>
-
-            {/* Submit */}
-            <button
-              type="submit"
-              className="w-full py-3 text-sm font-semibold text-white bg-accent rounded-md hover:bg-accent-deep shadow-soft hover:shadow-hover transition-all duration-300 mt-2"
-            >
-              Create Account
-            </button>
-          </form>
-
-          <p className="text-center text-sm text-muted mt-6">
-            Already have an account?{" "}
-            <Link href="/login" className="text-accent-deep font-medium hover:text-accent transition-colors">
-              Sign in
-            </Link>
-          </p>
+            <input
+              id="firstName"
+              type="text"
+              required
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              placeholder="Jane"
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label htmlFor="lastName" className={labelClass}>
+              Last name
+            </label>
+            <input
+              id="lastName"
+              type="text"
+              required
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              placeholder="Doe"
+              className={inputClass}
+            />
+          </div>
         </div>
-      </motion.div>
-    </div>
+
+        <div>
+          <label htmlFor="email" className={labelClass}>
+            Email address
+          </label>
+          <div className="flex gap-2">
+            <input
+              id="email"
+              type="email"
+              required
+              value={email}
+              onChange={(e) => {
+                setEmail(e.target.value);
+                if (emailVerified) setEmailVerified(false);
+              }}
+              placeholder="you@example.com"
+              className={cn(inputClass, "flex-1")}
+            />
+            <button
+              type="button"
+              disabled={!emailValid}
+              onClick={() => setEmailVerified(true)}
+              className="shrink-0 rounded-xl border border-ink/10 px-4 py-3 text-xs font-medium text-muted hover:text-ink hover:bg-ink/5 transition-colors whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {emailVerified ? "Verified" : "Verify"}
+            </button>
+          </div>
+          {email.length > 0 && !emailValid && (
+            <p className="mt-1.5 text-xs text-red-600">Enter a valid email address.</p>
+          )}
+          {emailVerified && (
+            <p className="mt-1.5 text-xs text-accent-deep">Email verified.</p>
+          )}
+        </div>
+
+        <div>
+          <label htmlFor="phone" className={labelClass}>
+            Phone number
+          </label>
+          <div className="flex gap-2">
+            <input
+              id="phone"
+              type="tel"
+              required
+              value={phone}
+              onChange={(e) => {
+                setPhone(e.target.value);
+                if (otpVerified) setOtpVerified(false);
+                if (otpSent) setOtpSent(false);
+              }}
+              placeholder="+65 9123 4567"
+              className={cn(inputClass, "flex-1")}
+            />
+            <button
+              type="button"
+              disabled={!phoneValid}
+              onClick={() => {
+                setOtpSent(true);
+                setOtpVerified(false);
+              }}
+              className="shrink-0 rounded-xl bg-ink text-paper px-4 py-3 text-xs font-medium hover:bg-ink/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {otpSent ? "Resend" : "Send OTP"}
+            </button>
+          </div>
+          {phone.length > 0 && !phoneValid && (
+            <p className="mt-1.5 text-xs text-red-600">Enter a valid phone number.</p>
+          )}
+          {otpSent && !otpVerified && (
+            <div className="mt-2 flex gap-2">
+              <input
+                type="text"
+                inputMode="numeric"
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
+                placeholder="Enter 6-digit OTP"
+                maxLength={6}
+                className={cn(inputClass, "flex-1")}
+              />
+              <button
+                type="button"
+                disabled={otp.length !== 6}
+                onClick={() => setOtpVerified(true)}
+                className="shrink-0 rounded-xl border border-ink/10 px-4 py-3 text-xs font-medium text-ink hover:bg-ink/5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Verify
+              </button>
+            </div>
+          )}
+          {otpVerified && (
+            <p className="mt-1.5 text-xs text-accent-deep">Phone verified.</p>
+          )}
+        </div>
+
+        <div>
+          <label htmlFor="birthday" className={labelClass}>
+            Date of birth
+          </label>
+          <input
+            id="birthday"
+            type="date"
+            value={birthday}
+            onChange={(e) => setBirthday(e.target.value)}
+            className={inputClass}
+          />
+        </div>
+
+        <div>
+          <label htmlFor="password" className={labelClass}>
+            Password
+          </label>
+          <input
+            id="password"
+            type="password"
+            required
+            minLength={8}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="At least 8 characters"
+            className={inputClass}
+          />
+          {password.length > 0 && !passwordValid && (
+            <p className="mt-1.5 text-xs text-red-600">Password must be at least 8 characters.</p>
+          )}
+        </div>
+
+        <div>
+          <label htmlFor="confirmPassword" className={labelClass}>
+            Confirm password
+          </label>
+          <input
+            id="confirmPassword"
+            type="password"
+            required
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="Repeat your password"
+            className={inputClass}
+          />
+          {confirmPassword.length > 0 && !passwordsMatch && (
+            <p className="mt-1.5 text-xs text-red-600">Passwords do not match.</p>
+          )}
+        </div>
+
+        <div>
+          <label htmlFor="gender" className={labelClass}>
+            Gender
+          </label>
+          <select
+            id="gender"
+            required
+            value={gender}
+            onChange={(e) => setGender(e.target.value)}
+            className={cn(inputClass, "cursor-pointer")}
+          >
+            <option value="" disabled>
+              Select gender
+            </option>
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+            <option value="prefer-not-to-say">Prefer not to say</option>
+          </select>
+        </div>
+
+        <div>
+          <label htmlFor="referralCode" className={labelClass}>
+            Referral code (optional)
+          </label>
+          <input
+            id="referralCode"
+            type="text"
+            placeholder="e.g. YS8472"
+            maxLength={6}
+            className={cn(inputClass, "font-mono uppercase tracking-widest")}
+          />
+        </div>
+
+        <label className="flex items-start gap-3 mt-4">
+          <input
+            type="checkbox"
+            checked={agreed}
+            onChange={(e) => setAgreed(e.target.checked)}
+            className="mt-0.5 w-4 h-4 rounded border-ink/20 text-accent focus:ring-accent/30 bg-paper shrink-0"
+          />
+          <span className="text-xs text-muted">
+            I agree to the{" "}
+            <Link href="/terms" className="text-accent-deep">
+              Terms
+            </Link>{" "}
+            and{" "}
+            <Link href="/privacy" className="text-accent-deep">
+              Privacy Policy
+            </Link>
+            .
+          </span>
+        </label>
+
+        <button
+          type="submit"
+          disabled={!canSubmit}
+          className="w-full rounded-full bg-ink text-paper py-3 text-sm font-medium hover:bg-ink/90 mt-6 disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          Create account
+        </button>
+      </form>
+
+      <p className="text-sm text-muted text-center mt-8">
+        Already have an account?{" "}
+        <Link href="/login" className="text-accent-deep font-medium">
+          Sign in
+        </Link>
+      </p>
+    </AuthSplitShell>
   );
 }

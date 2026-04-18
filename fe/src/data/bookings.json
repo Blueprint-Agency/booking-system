@@ -1,6 +1,6 @@
 [
   { "id": "bk-1", "clientId": "cli-1", "sessionId": "ses-1", "status": "confirmed", "checkInStatus": "pending", "packageId": "cpk-1", "rating": null, "createdAt": "2026-03-25T10:00:00Z" },
-  { "id": "bk-2", "clientId": "cli-1", "sessionId": "ses-5", "status": "confirmed", "checkInStatus": "pending", "packageId": "cpk-1", "rating": null, "createdAt": "2026-03-25T10:05:00Z" },
+  { "id": "bk-2", "clientId": "cli-1", "sessionId": "ses-5", "status": "confirmed", "checkInStatus": "pending", "packageId": "cpk-1", "rating": null, "createdAt": "2026-03-25T10:05:00Z", "promotedFromWaitlist": true },
   { "id": "bk-3", "clientId": "cli-1", "sessionId": "ses-9", "status": "confirmed", "checkInStatus": "pending", "packageId": "cpk-1", "rating": null, "createdAt": "2026-03-26T08:00:00Z" },
   { "id": "bk-4", "clientId": "cli-2", "sessionId": "ses-2", "status": "waitlisted", "checkInStatus": "pending", "packageId": null, "rating": null, "createdAt": "2026-03-25T11:00:00Z" },
   { "id": "bk-5", "clientId": "cli-2", "sessionId": "ses-6", "status": "confirmed", "checkInStatus": "pending", "packageId": "cpk-2", "rating": null, "createdAt": "2026-03-25T11:15:00Z" },

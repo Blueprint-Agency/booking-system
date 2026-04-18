@@ -78,6 +78,7 @@ export interface Booking {
   packageId: string | null;
   rating: number | null;
   createdAt: string;
+  promotedFromWaitlist?: boolean;
 }
 
 export interface Product {

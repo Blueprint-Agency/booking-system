@@ -2,14 +2,21 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { motion, AnimatePresence } from "framer-motion";
-import { cn, formatDate, formatTime, getLocationName } from "@/lib/utils";
-import type { Session, Instructor } from "@/types";
+import Image from "next/image";
+import { BookingSurface } from "@/components/booking/booking-surface";
+import { SectionHeading } from "@/components/booking/section-heading";
+import { LocationFilter } from "@/components/location-filter";
+import { formatDate, formatTime } from "@/lib/utils";
+import { img } from "@/data/images";
+import type { Session, Instructor, Location } from "@/types";
 import sessionsData from "@/data/sessions.json";
 import instructorsData from "@/data/instructors.json";
+import locationsData from "@/data/locations.json";
 
 const typedSessions = sessionsData as Session[];
 const typedInstructors = instructorsData as Instructor[];
+const typedLocations = locationsData as Location[];
+const TENANT_LOCATIONS = typedLocations.filter((l) => l.tenantId === "tenant-1");
 
 // Tenant-1 workshops and events, sorted latest first
 const WORKSHOPS = typedSessions
@@ -22,245 +29,168 @@ function getInstructor(id: string): Instructor | undefined {
   return typedInstructors.find((i) => i.id === id);
 }
 
-function WorkshopCard({ session }: { session: Session }) {
-  const [open, setOpen] = useState(false);
-  const instructor = getInstructor(session.instructorId);
+const LEVEL_STYLES: Record<Session["level"], { label: string; cls: string }> = {
+  beginner: { label: "Beginner", cls: "bg-sage/15 text-sage border-sage/25" },
+  intermediate: { label: "Intermediate", cls: "bg-warning/15 text-warning border-warning/30" },
+  advanced: { label: "Advanced", cls: "bg-error/15 text-error border-error/30" },
+  all: { label: "All levels", cls: "bg-accent/10 text-accent-deep border-accent/25" },
+};
+
+function WorkshopCard({ workshop }: { workshop: Session }) {
+  const instructor = getInstructor(workshop.instructorId);
   const instructorName = instructor?.name ?? "Instructor";
-
-  const sessionDate = new Date(session.date + "T00:00:00");
+  const sessionDate = new Date(workshop.date + "T00:00:00");
   const isPast = sessionDate < TODAY;
-  const isFull = session.bookedCount >= session.capacity;
-  const isDisabled = isPast || isFull;
-  const spotsLeft = session.capacity - session.bookedCount;
+  const isFull = workshop.bookedCount >= workshop.capacity;
+  const isFree = workshop.price === 0;
+  const seatsLeft = workshop.capacity - workshop.bookedCount;
 
-  const levelColors: Record<string, string> = {
-    beginner: "bg-sage-light text-sage border-sage/20",
-    intermediate: "bg-warning-bg text-warning border-warning/20",
-    advanced: "bg-error-bg text-error border-error/20",
-    all: "bg-accent-glow/30 text-accent-deep border-accent/20",
-  };
+  const priceLabel = isFree
+    ? "Free"
+    : workshop.workshopPackages && workshop.workshopPackages.length > 1
+      ? `From S$${Math.min(...workshop.workshopPackages.map((p) => p.price))}`
+      : `S$${workshop.price}`;
+
+  const statusLabel = isPast
+    ? "Workshop Ended"
+    : isFull
+      ? "Fully Enrolled"
+      : null;
+
+  const level = LEVEL_STYLES[workshop.level];
+  const canWaitlist = !isPast && isFull && workshop.waitlistEnabled;
+
+  // CTA copy — Register for free, Purchase for paid
+  const ctaLabel = isPast
+    ? "View details"
+    : isFull
+      ? canWaitlist
+        ? "Join waitlist →"
+        : "View details"
+      : isFree
+        ? "Register →"
+        : "Purchase →";
+
+  const cardImage = img("cat-workshop");
 
   return (
-    <div className={cn(
-      "bg-card border border-border rounded-xl overflow-hidden transition-shadow",
-      open && "shadow-hover"
-    )}>
-      {/* Card header — always visible */}
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-start justify-between gap-4 p-5 text-left hover:bg-warm/50 transition-colors"
-      >
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap mb-2">
-            <span className={cn("text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full border", levelColors[session.level] ?? levelColors.all)}>
-              {session.level === "all" ? "All levels" : session.level}
+    <Link
+      href={`/workshops/${workshop.id}`}
+      className="rounded-2xl overflow-hidden border border-ink/10 bg-paper hover:shadow-hover transition-shadow group block flex flex-col"
+    >
+      {/* Photo */}
+      <div className="photo-warm aspect-[4/3] relative overflow-hidden">
+        <Image
+          src={cardImage.unsplash}
+          alt={cardImage.alt}
+          fill
+          className="object-cover group-hover:scale-[1.03] transition-transform duration-500"
+          sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
+        />
+        {statusLabel && (
+          <div className="absolute top-3 left-3">
+            <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-1 rounded-full bg-ink/60 text-paper">
+              {statusLabel}
             </span>
-            {session.type === "event" && (
-              <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full bg-info-bg text-info border border-info/20">
-                Community event
-              </span>
-            )}
-            {isPast && (
-              <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full bg-warm text-muted border border-border">
-                Ended
-              </span>
-            )}
-            {isFull && !isPast && (
-              <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full bg-error-bg text-error border border-error/20">
-                Full
-              </span>
-            )}
           </div>
-          <h3 className="font-serif text-lg text-ink">{session.name}</h3>
-          <p className="text-sm text-muted mt-0.5">
-            {formatDate(session.date)} · {formatTime(session.time)} · {session.duration} min
-            {getLocationName(session.locationId) && (
-              <span className="inline-flex items-center gap-1 ml-2 text-[10px] font-mono text-muted/70 bg-warm px-1.5 py-0.5 rounded border border-border align-middle">
-                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
-                  <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
-                </svg>
-                {getLocationName(session.locationId)}
-              </span>
-            )}
-          </p>
-        </div>
-        <div className="flex items-center gap-3 shrink-0">
-          <span className="text-base font-semibold text-ink">
-            {session.price === 0
-              ? "Free"
-              : session.workshopPackages && session.workshopPackages.length > 1
-                ? `From S$${Math.min(...session.workshopPackages.map((p) => p.price))}`
-                : `S$${session.price}`}
-          </span>
-          <svg
-            width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-            strokeLinecap="round" strokeLinejoin="round"
-            className={cn("text-muted transition-transform duration-200", open && "rotate-180")}
-          >
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
-        </div>
-      </button>
-
-      {/* Expandable detail */}
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.25 }}
-            className="overflow-hidden"
-          >
-            <div className="border-t border-border p-5 bg-warm/30 space-y-5">
-              {/* Description */}
-              <p className="text-sm text-muted leading-relaxed">{session.description}</p>
-
-              {/* Details grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                <div>
-                  <p className="text-[10px] font-mono uppercase tracking-wider text-muted mb-1">Instructor</p>
-                  <div className="flex items-center gap-2">
-                    {instructor?.avatarUrl && (
-                      <img src={instructor.avatarUrl} alt={instructorName} className="w-6 h-6 rounded-full object-cover" />
-                    )}
-                    <span className="text-sm font-medium text-ink">{instructorName}</span>
-                  </div>
-                </div>
-                <div>
-                  <p className="text-[10px] font-mono uppercase tracking-wider text-muted mb-1">Capacity</p>
-                  <p className="text-sm font-medium text-ink">
-                    {spotsLeft > 0 ? `${spotsLeft} of ${session.capacity} spots left` : "Full"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-mono uppercase tracking-wider text-muted mb-1">Duration</p>
-                  <p className="text-sm font-medium text-ink">{session.duration} minutes</p>
-                </div>
-              </div>
-
-              {/* Packages / pricing */}
-              <div className="border-t border-border pt-4">
-                <p className="text-[10px] font-mono uppercase tracking-wider text-muted mb-3">
-                  {session.price === 0 ? "Pricing" : "Packages"}
-                </p>
-
-                {session.price === 0 ? (
-                  /* Free event — single row */
-                  <div className="flex items-center justify-between">
-                    <p className="font-serif text-lg text-ink">Free — no payment needed</p>
-                    {isDisabled ? (
-                      <div className="flex flex-col gap-2 items-end">
-                        <button disabled className="px-5 py-2.5 text-sm font-medium bg-warm text-muted rounded-md border border-border cursor-not-allowed">
-                          {isPast ? "Workshop Ended" : "Fully Enrolled"}
-                        </button>
-                        {isFull && !isPast && session.waitlistEnabled && (
-                          <button className="text-sm text-accent hover:text-accent-deep transition-colors underline underline-offset-2">Join waitlist</button>
-                        )}
-                      </div>
-                    ) : (
-                      <Link href={`/workshops/${session.id}`} className="px-5 py-2.5 text-sm font-medium text-white bg-accent rounded-md hover:bg-accent-deep transition-colors">
-                        Register
-                      </Link>
-                    )}
-                  </div>
-                ) : session.workshopPackages && session.workshopPackages.length > 0 ? (
-                  /* Per-package list */
-                  <div className="space-y-3">
-                    {session.workshopPackages.map((pkg, pi) => (
-                      <div key={pi} className="bg-card border border-border rounded-lg p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-ink">{pkg.name}</p>
-                          <p className="text-xs text-muted mt-0.5">{pkg.description}</p>
-                        </div>
-                        <div className="flex items-center gap-4 shrink-0">
-                          <span className="font-serif text-lg text-ink">S${pkg.price}</span>
-                          {isDisabled ? (
-                            <div className="flex flex-col gap-1.5 items-end">
-                              <button disabled className="px-4 py-2 text-sm font-medium bg-warm text-muted rounded-md border border-border cursor-not-allowed">
-                                {isPast ? "Ended" : "Full"}
-                              </button>
-                              {isFull && !isPast && session.waitlistEnabled && (
-                                <button className="text-xs text-accent hover:text-accent-deep transition-colors underline underline-offset-2">Join waitlist</button>
-                              )}
-                            </div>
-                          ) : (
-                            <Link
-                              href={`/workshops/${session.id}?package=${pi}`}
-                              className="px-4 py-2 text-sm font-medium text-white bg-accent rounded-md hover:bg-accent-deep transition-colors"
-                            >
-                              Purchase
-                            </Link>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                    <p className="text-xs text-muted">Direct payment only — credits cannot be used</p>
-                  </div>
-                ) : (
-                  /* Fallback: single price, no packages defined */
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <div>
-                      <p className="font-serif text-lg text-ink">S${session.price} per person</p>
-                      <p className="text-xs text-muted mt-0.5">Direct payment only — credits cannot be used</p>
-                    </div>
-                    {isDisabled ? (
-                      <div className="flex flex-col gap-2 items-end">
-                        <button disabled className="px-5 py-2.5 text-sm font-medium bg-warm text-muted rounded-md border border-border cursor-not-allowed">
-                          {isPast ? "Workshop Ended" : "Fully Enrolled"}
-                        </button>
-                        {isFull && !isPast && session.waitlistEnabled && (
-                          <button className="text-sm text-accent hover:text-accent-deep transition-colors underline underline-offset-2">Join waitlist</button>
-                        )}
-                      </div>
-                    ) : (
-                      <Link href={`/workshops/${session.id}`} className="px-5 py-2.5 text-sm font-medium text-white bg-accent rounded-md hover:bg-accent-deep transition-colors text-center">
-                        Purchase
-                      </Link>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </motion.div>
         )}
-      </AnimatePresence>
-    </div>
+        {workshop.type === "event" && (
+          <div className="absolute top-3 right-3">
+            <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-1 rounded-full bg-accent text-paper">
+              Event
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Body */}
+      <div className="p-6 flex flex-col flex-1">
+        {/* Level + seats row */}
+        <div className="flex items-center gap-2 mb-3">
+          <span className={`text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full border ${level.cls}`}>
+            {level.label}
+          </span>
+          {!isPast && !isFull && (
+            <span className="text-[11px] text-muted">
+              {seatsLeft} of {workshop.capacity} spots left
+            </span>
+          )}
+        </div>
+
+        <h3 className="text-xl font-bold text-ink leading-snug">{workshop.name}</h3>
+        <p className="text-sm text-muted mt-1">
+          {instructorName} · {formatDate(workshop.date)} · {formatTime(workshop.time)}
+        </p>
+
+        {/* Pricing tiers list (if multiple) */}
+        {!isFree && workshop.workshopPackages && workshop.workshopPackages.length > 1 && (
+          <ul className="mt-3 space-y-0.5">
+            {workshop.workshopPackages.map((tier, i) => (
+              <li key={i} className="flex justify-between text-xs text-muted">
+                <span>{tier.name}</span>
+                <span className="font-medium text-ink">S${tier.price}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {/* Payment note */}
+        {!isFree && (
+          <p className="text-[11px] text-muted/80 mt-3 leading-snug">
+            Direct payment only — credits cannot be used.
+          </p>
+        )}
+
+        <div className="mt-auto pt-4 flex items-center justify-between">
+          <span className="text-base font-semibold text-ink">{priceLabel}</span>
+          <span className="text-sm font-medium text-accent group-hover:text-accent-deep transition-colors">
+            {ctaLabel}
+          </span>
+        </div>
+      </div>
+    </Link>
   );
 }
 
 export default function WorkshopsPage() {
+  const [selectedLocation, setSelectedLocation] = useState<string | "all">("all");
+
+  const filteredWorkshops =
+    selectedLocation === "all"
+      ? WORKSHOPS
+      : WORKSHOPS.filter((w) => w.locationId === selectedLocation);
+
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-8">
-        <div>
-          <h1 className="font-serif text-3xl text-ink mb-2">Workshops</h1>
-          <p className="text-sm text-muted max-w-xl">
-            Specialised sessions that go deeper. One-time events with limited spots — book early to secure your place.
-          </p>
-        </div>
+    <>
+      <div id="list">
+        <BookingSurface maxWidth="xl" padding="default">
+          <SectionHeading eyebrow="Upcoming" title="Scheduled workshops" />
 
-        {/* Direct payment only — no credits for workshops */}
+          <div className="mb-8">
+            <LocationFilter
+              locations={TENANT_LOCATIONS}
+              selected={selectedLocation}
+              onChange={setSelectedLocation}
+            />
+          </div>
+
+          {filteredWorkshops.length === 0 ? (
+            <div className="text-center py-20">
+              <p className="text-muted">
+                {selectedLocation === "all"
+                  ? "No upcoming workshops at the moment. Check back soon."
+                  : "No workshops scheduled at this location. Try another studio."}
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredWorkshops.map((workshop) => (
+                <WorkshopCard key={workshop.id} workshop={workshop} />
+              ))}
+            </div>
+          )}
+        </BookingSurface>
       </div>
-
-      {WORKSHOPS.length === 0 ? (
-        <div className="text-center py-20">
-          <p className="text-muted">No upcoming workshops at the moment. Check back soon.</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {WORKSHOPS.map((session, i) => (
-            <motion.div
-              key={session.id}
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.08, duration: 0.4 }}
-            >
-              <WorkshopCard session={session} />
-            </motion.div>
-          ))}
-        </div>
-      )}
-    </div>
+    </>
   );
 }

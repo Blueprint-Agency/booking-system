@@ -3,9 +3,13 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn, formatTime, getTenantLocations, getLocationName } from "@/lib/utils";
 import { LocationFilter } from "@/components/location-filter";
 import { MOCK_USER } from "@/data/mock-user";
+import { CtaBanner } from "@/components/marketing/cta-banner";
+import { BookingSurface } from "@/components/booking/booking-surface";
+import { SectionHeading } from "@/components/booking/section-heading";
 import type { Session, Instructor } from "@/types";
 import sessionsData from "@/data/sessions.json";
 import instructorsData from "@/data/instructors.json";
@@ -70,99 +74,104 @@ function ClassCard({ session, showLocation }: { session: Session; showLocation: 
   return (
     <>
       <div className={cn(
-        "h-full py-1.5 flex flex-col gap-2",
+        "rounded-2xl border border-ink/10 bg-paper p-4 hover:shadow-hover hover:-translate-y-0.5 transition-all flex flex-col gap-2",
         isFull && "opacity-60"
       )}>
-        {/* Content — grows to fill cell height */}
-        <div className="flex-1 flex flex-col gap-2">
-          {/* Tag + duration row */}
-          <div className="flex items-center justify-between gap-1">
-            <span className="text-[10px] font-mono uppercase tracking-wider text-accent-deep bg-accent-glow/30 px-1.5 py-0.5 rounded-full border border-accent/20 leading-none">
-              {session.category}
-            </span>
-            <span className="text-[11px] text-muted font-mono">{session.duration}m</span>
-          </div>
-
-          {/* Time */}
-          <span className={cn(
-            "text-[15px] font-semibold tracking-tight",
-            isFull ? "text-muted" : "text-ink"
-          )}>
-            {formatTime(session.time)}
+        {/* Tag + duration row */}
+        <div className="flex items-center justify-between gap-1">
+          <span className="text-[10px] font-mono uppercase tracking-wider text-accent-deep bg-cyan/15 px-1.5 py-0.5 rounded-full border border-accent/20 leading-none">
+            {session.category}
           </span>
+          <span className="text-[11px] text-muted font-mono">{session.duration}m</span>
+        </div>
 
-          {/* Class name */}
-          <h4 className={cn(
-            "font-serif text-[15px] leading-snug",
-            isFull ? "text-muted" : "text-ink"
-          )}>
-            {session.name}
-          </h4>
+        {/* Time */}
+        <span className={cn(
+          "text-[15px] font-semibold tracking-tight",
+          isFull ? "text-muted" : "text-ink"
+        )}>
+          {formatTime(session.time)}
+        </span>
 
-          {/* Instructor */}
+        {/* Class name */}
+        <h4 className={cn(
+          "font-serif text-[15px] leading-snug",
+          isFull ? "text-muted" : "text-ink"
+        )}>
+          {session.name}
+        </h4>
+
+        {/* Instructor */}
+        <div className="flex items-center gap-2">
+          <div className="h-8 w-8 rounded-full bg-warm shrink-0" />
           <p className="text-xs text-muted">{getInstructorName(session.instructorId)}</p>
+        </div>
 
-          {/* Dynamic credit text */}
-          {!isFull && (
-            <p className="text-[11px] text-muted/80 leading-snug">
-              <span className="text-sage font-medium">1 credit</span>
-              {" · "}
-              {MOCK_USER.classPackageUnlimited
-                ? <span className="text-sage">unlimited credits</span>
-                : userHasCredits
-                  ? <span>{USER_CREDITS} left</span>
-                  : <span className="text-error">no credits</span>
-              }
-            </p>
-          )}
-
-          {/* Location badge */}
+        {/* Duration + location chips */}
+        <div className="flex flex-wrap gap-1.5">
+          <span className="text-[10px] font-mono text-muted/70 bg-warm px-1.5 py-0.5 rounded border border-border">
+            {session.duration} min
+          </span>
           {showLocation && locationName && (
-            <span className="inline-flex items-center gap-1 text-[10px] font-mono text-muted/70 bg-warm px-1.5 py-0.5 rounded border border-border w-fit">
+            <span className="inline-flex items-center gap-1 text-[10px] font-mono text-muted/70 bg-warm px-1.5 py-0.5 rounded border border-border">
               <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
                 <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
               </svg>
               {locationName}
             </span>
           )}
-
-          {/* Description — truncated with hover popover */}
-          {session.description && (
-            <div className="relative group/desc">
-              <p className="text-[11px] text-muted/70 leading-relaxed line-clamp-2 cursor-help">{session.description}</p>
-              <div className="absolute left-0 bottom-full mb-1.5 w-64 p-3 bg-ink text-white text-[11px] leading-relaxed rounded-lg shadow-lg opacity-0 invisible group-hover/desc:opacity-100 group-hover/desc:visible transition-all duration-200 z-30 pointer-events-none">
-                {session.description}
-                <div className="absolute left-4 top-full w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-ink" />
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* CTA — always pinned to bottom */}
+        {/* Dynamic credit text */}
+        {!isFull && (
+          <p className="text-[11px] text-muted/80 leading-snug">
+            <span className="text-sage font-medium">1 credit</span>
+            {" · "}
+            {MOCK_USER.classPackageUnlimited
+              ? <span className="text-sage">unlimited credits</span>
+              : userHasCredits
+                ? <span>{USER_CREDITS} left</span>
+                : <span className="text-error">no credits</span>
+            }
+          </p>
+        )}
+
+        {/* Description — truncated with hover popover */}
+        {session.description && (
+          <div className="relative group/desc">
+            <p className="text-[11px] text-muted/70 leading-relaxed line-clamp-2 cursor-help">{session.description}</p>
+            <div className="absolute left-0 bottom-full mb-1.5 w-64 p-3 bg-ink text-white text-[11px] leading-relaxed rounded-lg shadow-lg opacity-0 invisible group-hover/desc:opacity-100 group-hover/desc:visible transition-all duration-200 z-30 pointer-events-none">
+              {session.description}
+              <div className="absolute left-4 top-full w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-ink" />
+            </div>
+          </div>
+        )}
+
+        {/* CTA — pinned to bottom */}
         {isFull ? (
           session.waitlistEnabled ? (
             <Link
               href={`/booking/confirmation?type=class&session=${session.id}`}
-              className="w-full text-center text-xs py-2 bg-warning-bg text-warning border border-warning/30 rounded-lg hover:bg-warning/10 transition-colors"
+              className="w-full text-center text-xs py-2 bg-warning/15 text-warning border border-warning/30 rounded-lg hover:bg-warning/10 transition-colors mt-auto"
             >
               Join Waitlist
             </Link>
           ) : (
-            <div className="w-full text-center text-xs py-2 text-muted bg-warm rounded-lg border border-border">
+            <div className="w-full text-center text-xs py-2 text-muted bg-warm rounded-lg border border-border mt-auto">
               Full
             </div>
           )
         ) : canBook ? (
           <Link
             href={`/booking/confirmation?type=class&session=${session.id}`}
-            className="w-full text-center text-xs py-2 bg-accent text-white rounded-lg hover:bg-accent-deep transition-colors font-medium"
+            className="w-full text-center text-xs py-2 bg-accent text-white rounded-lg hover:bg-accent-deep transition-colors font-medium mt-auto"
           >
             Book
           </Link>
         ) : (
           <button
             onClick={() => setShowDialog(true)}
-            className="w-full text-xs py-2 bg-warm text-muted/70 rounded-lg border border-border hover:bg-border/40 transition-colors cursor-pointer"
+            className="w-full text-xs py-2 bg-warm text-muted/70 rounded-lg border border-border hover:bg-border/40 transition-colors cursor-pointer mt-auto"
           >
             Book
           </button>
@@ -184,7 +193,7 @@ function ClassCard({ session, showLocation }: { session: Session; showLocation: 
               className="bg-card rounded-xl p-6 max-w-sm w-full mx-4 shadow-modal"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="w-12 h-12 rounded-full bg-warning-bg flex items-center justify-center mx-auto mb-4">
+              <div className="w-12 h-12 rounded-full bg-warning/15 flex items-center justify-center mx-auto mb-4">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-warning">
                   <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
                   <line x1="12" y1="9" x2="12" y2="13" />
@@ -219,7 +228,7 @@ function ClassCard({ session, showLocation }: { session: Session; showLocation: 
 
 function EmptyDay() {
   return (
-    <div className="flex-1 flex items-start justify-center pt-6">
+    <div className="flex items-start justify-center pt-6">
       <p className="text-[11px] text-muted/40 font-mono">—</p>
     </div>
   );
@@ -253,239 +262,140 @@ export default function ClassesPage() {
     ? `${monday.getDate()}–${sunday.getDate()} ${startMonth} ${weekYear}`
     : `${monday.getDate()} ${startMonth} – ${sunday.getDate()} ${endMonth} ${weekYear}`;
 
-  // Mobile: default-expand today if in view, else first day
-  const defaultExpanded = todayIndex !== -1 ? todayIndex : 0;
-  const [expandedDay, setExpandedDay] = useState<number | null>(defaultExpanded);
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-8">
-        <div>
-          <h1 className="font-serif text-3xl text-ink">Classes</h1>
-          <p className="text-sm text-muted mt-0.5">Book group yoga classes using your credits.</p>
-        </div>
+    <>
+      {/* 2. Booking Surface — weekly calendar */}
+      <div id="schedule">
+      <BookingSurface maxWidth="xl" padding="default">
+        <SectionHeading
+          eyebrow="Schedule"
+          title="Weekly view"
+          description="Switch weeks with the arrows below."
+        />
 
         {/* Credit balance badge */}
-        {userHasCredits ? (
-          <Link href="/account/packages" className="group self-start">
-            <div className="px-4 py-2.5 bg-sage-light border border-sage/20 rounded-xl text-sm group-hover:border-sage/40 transition-colors">
-              <div className="flex items-center gap-2.5">
-                <span className="w-2 h-2 rounded-full bg-sage inline-block" />
-                <span className="text-sage font-semibold">{USER_CREDITS} credits</span>
-                <span className="text-muted text-xs">· {USER_PACKAGE}</span>
-              </div>
-              <div className="flex items-center gap-2 mt-1.5">
-                <div className="flex-1 h-1 rounded-full bg-sage/20 overflow-hidden">
-                  <div className="h-full rounded-full bg-sage" style={{ width: `${(MOCK_USER.classCredits / MOCK_USER.classPackageTotal) * 100}%` }} />
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+          <div className="w-full">
+            <LocationFilter
+              locations={TENANT_LOCATIONS}
+              selected={selectedLocation}
+              onChange={setSelectedLocation}
+            />
+          </div>
+          {userHasCredits ? (
+            <Link href="/account/packages" className="group self-start sm:self-auto shrink-0">
+              <div className="px-4 py-2.5 bg-sage/10 border border-sage/20 rounded-xl text-sm group-hover:border-sage/40 transition-colors">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-2 h-2 rounded-full bg-sage inline-block" />
+                  <span className="text-sage font-semibold">{USER_CREDITS} credits</span>
+                  <span className="text-muted text-xs">· {USER_PACKAGE}</span>
                 </div>
-                <span className="text-[10px] text-muted">expires {new Date(MOCK_USER.classPackageExpiry).toLocaleDateString("en-SG", { day: "numeric", month: "short" })}</span>
+                <div className="flex items-center gap-2 mt-1.5">
+                  <div className="flex-1 h-1 rounded-full bg-sage/20 overflow-hidden">
+                    <div className="h-full rounded-full bg-sage" style={{ width: `${(MOCK_USER.classCredits / MOCK_USER.classPackageTotal) * 100}%` }} />
+                  </div>
+                  <span className="text-[10px] text-muted">expires {new Date(MOCK_USER.classPackageExpiry).toLocaleDateString("en-SG", { day: "numeric", month: "short" })}</span>
+                </div>
               </div>
-            </div>
-          </Link>
-        ) : (
-          <Link
-            href="/packages"
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-accent text-white text-sm font-medium rounded-xl hover:bg-accent-deep transition-colors self-start"
-          >
-            Buy a Package
-          </Link>
-        )}
-      </div>
-
-      {/* Location filter */}
-      <div className="mb-6">
-        <LocationFilter
-          locations={TENANT_LOCATIONS}
-          selected={selectedLocation}
-          onChange={setSelectedLocation}
-        />
-      </div>
-
-      {/* Week navigation */}
-      <div className="flex items-center gap-3 mb-6">
-        <button
-          onClick={() => setWeekOffset((o) => o - 1)}
-          className="flex items-center justify-center w-9 h-9 text-muted border border-border rounded-lg hover:text-ink hover:bg-warm transition-colors flex-shrink-0"
-          aria-label="Previous week"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="15 18 9 12 15 6" />
-          </svg>
-        </button>
-
-        <div className="flex-1 flex items-center justify-center gap-2">
-          <span className="text-sm font-medium text-ink">{monthLabel}</span>
-          {!weekContainsToday && (
-            <button
-              onClick={() => setWeekOffset(0)}
-              className="text-[11px] font-mono text-accent border border-accent/30 px-2 py-0.5 rounded-full hover:bg-accent-glow/20 transition-colors"
+            </Link>
+          ) : (
+            <Link
+              href="/packages"
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-accent text-white text-sm font-medium rounded-xl hover:bg-accent-deep transition-colors self-start sm:self-auto shrink-0"
             >
-              Today
-            </button>
+              Buy a Package
+            </Link>
           )}
         </div>
 
-        <button
-          onClick={() => setWeekOffset((o) => o + 1)}
-          className="flex items-center justify-center w-9 h-9 text-muted border border-border rounded-lg hover:text-ink hover:bg-warm transition-colors flex-shrink-0"
-          aria-label="Next week"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="9 18 15 12 9 6" />
-          </svg>
-        </button>
-      </div>
+        {/* Week navigation bar */}
+        <div className="flex items-center gap-3 border-b border-ink/10 pb-4 mb-6">
+          <button
+            onClick={() => setWeekOffset((o) => o - 1)}
+            className="flex items-center justify-center w-9 h-9 text-muted border border-border rounded-lg hover:text-ink hover:bg-warm transition-colors flex-shrink-0"
+            aria-label="Previous week"
+          >
+            <ChevronLeft size={16} />
+          </button>
 
-      {/* ── Desktop: calendar grid ─────────────────────── */}
-      <div className="hidden lg:block border border-border rounded-xl overflow-hidden">
-        {/* Header row */}
-        <div className="grid grid-cols-7 border-b border-border bg-warm">
-          {weekDays.map((day, di) => {
-            const isToday = toDateStr(day) === TODAY_STR;
-            const showMonth = di === 0 || day.getDate() === 1;
-            return (
-              <div
-                key={di}
-                className={cn(
-                  "text-center py-3 px-2 border-r last:border-r-0 border-border",
-                  isToday && "bg-accent"
-                )}
+          <div className="flex-1 flex items-center justify-center gap-2">
+            <span className="font-medium text-ink">{monthLabel}</span>
+            {!weekContainsToday && (
+              <button
+                onClick={() => setWeekOffset(0)}
+                className="text-[11px] font-mono text-accent border border-accent/30 px-2 py-0.5 rounded-full hover:bg-accent/10 transition-colors"
               >
-                <p className={cn(
-                  "text-[10px] font-mono uppercase tracking-widest",
-                  isToday ? "text-white/70" : "text-muted"
+                Today
+              </button>
+            )}
+          </div>
+
+          <button
+            onClick={() => setWeekOffset((o) => o + 1)}
+            className="flex items-center justify-center w-9 h-9 text-muted border border-border rounded-lg hover:text-ink hover:bg-warm transition-colors flex-shrink-0"
+            aria-label="Next week"
+          >
+            <ChevronRight size={16} />
+          </button>
+        </div>
+
+        {/* Day columns grid */}
+        <div className="grid grid-cols-1 md:grid-cols-7 gap-4">
+          {weekDays.map((day, di) => {
+            const sessions = getSessionsForDay(day, filteredSessions);
+            const isToday = toDateStr(day) === TODAY_STR;
+            return (
+              <div key={di} className="flex flex-col gap-3">
+                {/* Day label */}
+                <div className={cn(
+                  "flex items-center gap-2 md:flex-col md:items-center md:gap-0",
                 )}>
-                  {DAY_LABELS[di]}
-                </p>
-                <p className={cn(
-                  "text-lg font-semibold leading-none mt-1",
-                  isToday ? "text-white" : "text-ink"
-                )}>
-                  {day.getDate()}
-                </p>
-                <p className={cn(
-                  "text-[10px] font-mono mt-1",
-                  isToday ? "text-white/60" : "text-muted/60"
-                )}>
-                  {showMonth ? MONTH_NAMES[day.getMonth()] : ""}
-                </p>
+                  <p className={cn(
+                    "text-[10px] font-mono uppercase tracking-widest",
+                    isToday ? "text-accent" : "text-muted"
+                  )}>
+                    {DAY_LABELS[di]}
+                  </p>
+                  <div className={cn(
+                    "flex items-center justify-center w-8 h-8 rounded-full text-sm font-semibold",
+                    isToday ? "bg-accent text-white" : "text-ink"
+                  )}>
+                    {day.getDate()}
+                  </div>
+                  <p className={cn(
+                    "text-[10px] font-mono md:mt-0.5",
+                    isToday ? "text-accent/70" : "text-muted/60"
+                  )}>
+                    {MONTH_NAMES[day.getMonth()]}
+                  </p>
+                </div>
+
+                {/* Class cards */}
+                <div className="flex flex-col gap-2">
+                  {sessions.length === 0 ? (
+                    <EmptyDay />
+                  ) : (
+                    sessions.map((session) => (
+                      <ClassCard key={session.id} session={session} showLocation={showLocationBadge} />
+                    ))
+                  )}
+                </div>
               </div>
             );
           })}
         </div>
 
-        {/* Session rows — one row per slot so columns align */}
-        {(() => {
-          const allSessions = weekDays.map((d) => getSessionsForDay(d, filteredSessions));
-          const maxSlots = Math.max(...allSessions.map((s) => s.length), 1);
-          return Array.from({ length: maxSlots }, (_, rowIdx) => (
-            <div key={rowIdx} className="grid grid-cols-7 border-t border-border bg-card">
-              {weekDays.map((day, di) => {
-                const sessions = allSessions[di];
-                const session = sessions[rowIdx];
-                const isToday = toDateStr(day) === TODAY_STR;
-                return (
-                  <div
-                    key={di}
-                    className={cn(
-                      "border-r last:border-r-0 border-border p-3",
-                      isToday && "bg-accent/[0.03]"
-                    )}
-                  >
-                    {session ? (
-                      <ClassCard session={session} showLocation={showLocationBadge} />
-                    ) : (
-                      <div className="h-full" />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ));
-        })()}
+      </BookingSurface>
       </div>
 
-      {/* ── Mobile: accordion per day ─────────────────── */}
-      <div className="lg:hidden space-y-1.5">
-        {weekDays.map((day, di) => {
-          const sessions = getSessionsForDay(day, filteredSessions);
-          const isToday = toDateStr(day) === TODAY_STR;
-          const isOpen = expandedDay === di;
-          const sessionCount = sessions.length;
-
-          return (
-            <div key={di} className={cn(
-              "border rounded-xl overflow-hidden",
-              isToday ? "border-accent/30" : "border-border"
-            )}>
-              <button
-                onClick={() => setExpandedDay(isOpen ? null : di)}
-                className={cn(
-                  "w-full flex items-center justify-between px-4 py-3.5 transition-colors",
-                  isToday ? "bg-accent/5 hover:bg-accent/8" : "bg-card hover:bg-warm"
-                )}
-              >
-                <div className="flex items-center gap-3">
-                  {/* Date circle */}
-                  <div className={cn(
-                    "w-9 h-9 rounded-full flex flex-col items-center justify-center flex-shrink-0",
-                    isToday ? "bg-accent text-white" : "bg-warm text-ink"
-                  )}>
-                    <span className="text-[9px] font-mono uppercase leading-none opacity-70">{DAY_LABELS[di]}</span>
-                    <span className="text-sm font-semibold leading-tight">{day.getDate()}</span>
-                  </div>
-
-                  <div className="flex flex-col items-start">
-                    <span className={cn(
-                      "text-sm font-medium leading-tight",
-                      isToday ? "text-accent-deep" : "text-ink"
-                    )}>
-                      {DAY_LABELS_FULL[di]}
-                      {isToday && <span className="ml-1.5 text-[10px] font-mono text-accent bg-accent-glow/40 px-1.5 py-0.5 rounded-full">today</span>}
-                    </span>
-                    <span className="text-xs text-muted">
-                      {sessionCount === 0 ? "No classes" : `${sessionCount} class${sessionCount !== 1 ? "es" : ""}`}
-                    </span>
-                  </div>
-                </div>
-
-                <svg
-                  width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-                  strokeLinecap="round" strokeLinejoin="round"
-                  className={cn("text-muted transition-transform duration-200 flex-shrink-0", isOpen && "rotate-180")}
-                >
-                  <polyline points="6 9 12 15 18 9" />
-                </svg>
-              </button>
-
-              <AnimatePresence>
-                {isOpen && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: "auto", opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.22, ease: "easeInOut" }}
-                    className="overflow-hidden"
-                  >
-                    <div className="p-3 space-y-3 bg-warm border-t border-border">
-                      {sessions.length === 0 ? (
-                        <p className="text-sm text-muted text-center py-6">No classes scheduled</p>
-                      ) : (
-                        sessions.map((s) => (
-                          <div key={s.id} className="bg-card border border-border rounded-lg p-3.5">
-                            <ClassCard session={s} showLocation={showLocationBadge} />
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          );
-        })}
-      </div>
-    </div>
+      {/* 3. Closing CTA */}
+      <CtaBanner
+        imageKey="cta-community"
+        headline="Can't find a time that works?"
+        subheadline="Private 1:1 sessions are available 7 days a week."
+        primaryCta={{ href: "/private-sessions", label: "Book 1:1" }}
+      />
+    </>
   );
 }
