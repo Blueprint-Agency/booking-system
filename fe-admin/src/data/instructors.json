@@ -1,66 +1,7 @@
 [
-  {
-    "id": "ins-anika",
-    "tenantId": "yoga-sadhana",
-    "name": "Anika Shah",
-    "bio": "500-hour RYT, 10+ years teaching Vinyasa and Yin.",
-    "photo": "/brand/instructors/anika.jpg",
-    "specialties": ["Vinyasa", "Yin", "Pranayama"],
-    "availability": [
-      { "dayOfWeek": 1, "startTime": "07:00", "endTime": "12:00" },
-      { "dayOfWeek": 3, "startTime": "17:00", "endTime": "21:00" },
-      { "dayOfWeek": 6, "startTime": "08:00", "endTime": "12:00" }
-    ]
-  },
-  {
-    "id": "ins-raj",
-    "tenantId": "yoga-sadhana",
-    "name": "Raj Iyer",
-    "bio": "Ashtanga practitioner from Mysore lineage. Teaches disciplined, structured flows.",
-    "photo": "/brand/instructors/raj.jpg",
-    "specialties": ["Ashtanga", "Mysore"],
-    "availability": [
-      { "dayOfWeek": 2, "startTime": "06:30", "endTime": "10:00" },
-      { "dayOfWeek": 4, "startTime": "06:30", "endTime": "10:00" },
-      { "dayOfWeek": 5, "startTime": "18:00", "endTime": "21:00" }
-    ]
-  },
-  {
-    "id": "ins-meera",
-    "tenantId": "yoga-sadhana",
-    "name": "Meera Kapoor",
-    "bio": "Hatha and restorative specialist. Focus on alignment and breathwork.",
-    "photo": "/brand/instructors/meera.jpg",
-    "specialties": ["Hatha", "Restorative"],
-    "availability": [
-      { "dayOfWeek": 1, "startTime": "17:00", "endTime": "21:00" },
-      { "dayOfWeek": 3, "startTime": "09:00", "endTime": "13:00" },
-      { "dayOfWeek": 6, "startTime": "09:00", "endTime": "13:00" }
-    ]
-  },
-  {
-    "id": "ins-devan",
-    "tenantId": "yoga-sadhana",
-    "name": "Devan Pillai",
-    "bio": "Power yoga and core-strength. Former athlete, high-energy flows.",
-    "photo": "/brand/instructors/devan.jpg",
-    "specialties": ["Power", "Core"],
-    "availability": [
-      { "dayOfWeek": 2, "startTime": "17:00", "endTime": "21:00" },
-      { "dayOfWeek": 4, "startTime": "17:00", "endTime": "21:00" },
-      { "dayOfWeek": 0, "startTime": "08:00", "endTime": "12:00" }
-    ]
-  },
-  {
-    "id": "ins-lalita",
-    "tenantId": "yoga-sadhana",
-    "name": "Lalita Chen",
-    "bio": "Prenatal and gentle yoga. Trauma-informed teaching.",
-    "photo": "/brand/instructors/lalita.jpg",
-    "specialties": ["Prenatal", "Gentle", "Yin"],
-    "availability": [
-      { "dayOfWeek": 1, "startTime": "10:00", "endTime": "13:00" },
-      { "dayOfWeek": 5, "startTime": "10:00", "endTime": "13:00" }
-    ]
-  }
+  { "id": "inst-1", "tenantId": "studio", "name": "Priya Singh", "email": "priya@yogasadhana.sg", "phone": "+65 9222 0001", "bio": "Senior yoga teacher with 15 years of traditional Hatha training.", "avatarUrl": "", "available": true, "locationIds": ["loc-1", "loc-2"], "payRateCents": 8000, "payModel": "perAttendee", "availabilityTemplateId": "at-1", "compensation": { "basePerSession": 5000, "perClientCommission": 500, "revenueCommissionPercent": 0, "extraHourRate": 4000, "workshopRate": 20000 } },
+  { "id": "inst-2", "tenantId": "studio", "name": "Marcus Tan", "email": "marcus@yogasadhana.sg", "phone": "+65 9222 0002", "bio": "Vinyasa flow specialist.", "avatarUrl": "", "available": true, "locationIds": ["loc-1"], "payRateCents": 7000, "payModel": "flat", "availabilityTemplateId": "at-2", "compensation": { "basePerSession": 7000, "perClientCommission": 0, "revenueCommissionPercent": 0, "extraHourRate": 5000, "workshopRate": 18000 } },
+  { "id": "inst-3", "tenantId": "studio", "name": "Jia Ling", "email": "jia@yogasadhana.sg", "phone": "+65 9222 0003", "bio": "Yin and restorative yoga.", "avatarUrl": "", "available": true, "locationIds": ["loc-2"], "payRateCents": 6500, "payModel": "hourly", "availabilityTemplateId": "at-3", "compensation": { "basePerSession": 6500, "perClientCommission": 0, "revenueCommissionPercent": 10, "extraHourRate": 4500, "workshopRate": 15000 } },
+  { "id": "inst-4", "tenantId": "studio", "name": "Ravi Kumar", "email": "ravi@yogasadhana.sg", "phone": "+65 9222 0004", "bio": "Ashtanga and advanced pranayama.", "avatarUrl": "", "available": true, "locationIds": ["loc-1", "loc-2"], "payRateCents": 9000, "payModel": "perAttendee", "availabilityTemplateId": "at-4", "compensation": { "basePerSession": 6000, "perClientCommission": 600, "revenueCommissionPercent": 0, "extraHourRate": 5000, "workshopRate": 22000 } },
+  { "id": "inst-5", "tenantId": "studio", "name": "Siti Ahmad", "email": "siti@yogasadhana.sg", "phone": "+65 9222 0005", "bio": "Prenatal yoga and meditation.", "avatarUrl": "", "available": false, "locationIds": ["loc-2"], "payRateCents": 7500, "payModel": "flat", "availabilityTemplateId": "at-5", "compensation": { "basePerSession": 7500, "perClientCommission": 0, "revenueCommissionPercent": 0, "extraHourRate": 4500, "workshopRate": 17000 } }
 ]

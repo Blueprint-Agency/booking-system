@@ -1,39 +1,31 @@
 "use client";
+import Link from "next/link";
+import { Search } from "lucide-react";
+import { Input, StatusBadge } from "@/components/ui";
+import { useAdminState } from "@/lib/admin-state";
+import { RoleSwitcherMenu } from "@/components/auth/role-switcher-menu";
+import type { AdminRole } from "@/types";
 
-import { useRouter } from "next/navigation";
-import { LogOut } from "lucide-react";
-import { useCurrentAdmin, signOutAdmin } from "@/lib/mock-auth";
-import { Button } from "@/components/ui/button";
-import { initials } from "@/lib/utils";
-
-export function AdminTopbar() {
-  const admin = useCurrentAdmin();
-  const router = useRouter();
-
-  if (!admin) return null;
+export function AdminTopBar({ variant }: { variant: AdminRole }) {
+  const studio = useAdminState((s) => s.studio);
 
   return (
-    <header className="sticky top-0 z-20 flex items-center justify-between bg-paper/80 backdrop-blur border-b border-border px-6 py-3">
-      <div className="text-sm text-muted">
-        Signed in as <span className="text-ink font-medium">{admin.firstName} {admin.lastName}</span>
-      </div>
+    <header className="flex h-14 items-center justify-between border-b border-border bg-card px-6">
       <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2">
-          <span className="h-8 w-8 rounded-full bg-accent text-paper flex items-center justify-center text-xs font-bold">
-            {initials(admin.firstName, admin.lastName)}
-          </span>
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => {
-            signOutAdmin();
-            router.push("/login");
-          }}
+        <Link
+          href="/"
+          className="flex items-center gap-2 text-sm font-medium text-ink hover:text-accent"
         >
-          <LogOut className="h-4 w-4" />
-          Sign out
-        </Button>
+          {studio.name}
+        </Link>
+        <StatusBadge status={variant} />
+      </div>
+      <div className="flex items-center gap-4">
+        <div className="relative hidden md:block">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
+          <Input placeholder="Search (Phase F)" disabled className="h-9 w-64 pl-9" />
+        </div>
+        <RoleSwitcherMenu />
       </div>
     </header>
   );

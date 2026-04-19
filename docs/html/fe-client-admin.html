@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>fe-admin — Feature Breakdown · Yoga Sadhana</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #1a1a2e; --paper: #faf9f6; --warm: #f5f0e8; --warm-deep: #ede5d6;
+      --accent: #c4956a; --accent-deep: #a67548; --accent-glow: #e8c9a8;
+      --sage: #7a8f72; --sage-light: #e8ede6; --muted: #8b8b8b;
+      --border: #e2ddd5; --card: #ffffff;
+      --shadow-soft: 0 2px 20px rgba(26,26,46,0.06);
+      --radius: 14px; --radius-sm: 8px;
+    }
+    *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+    html { scroll-behavior: smooth; }
+    body { font-family:'Outfit', sans-serif; background: var(--paper); color: var(--ink); line-height: 1.7; font-size: 16px; -webkit-font-smoothing: antialiased; }
+    header.page { background: linear-gradient(180deg, var(--warm) 0%, var(--paper) 100%); border-bottom: 1px solid var(--border); padding: 56px 24px 40px; }
+    .header-inner { max-width: 1180px; margin: 0 auto; }
+    .eyebrow { font-family:'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--accent-deep); margin-bottom: 12px; }
+    h1.page-title { font-family:'DM Serif Display', serif; font-size: 44px; font-weight: 400; color: var(--ink); line-height: 1.15; margin-bottom: 14px; }
+    .page-sub { font-size: 16px; color: var(--muted); max-width: 720px; }
+    .meta-strip { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border); font-family:'JetBrains Mono', monospace; font-size: 12px; color: var(--muted); }
+    .meta-strip strong { color: var(--ink); font-weight: 500; }
+    .layout { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: 260px 1fr; gap: 56px; padding: 48px 24px 80px; }
+    aside.toc { position: sticky; top: 24px; align-self: start; max-height: calc(100vh - 48px); overflow-y: auto; padding-right: 8px; }
+    .toc-title { font-family:'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+    .toc a { display: block; text-decoration: none; color: var(--muted); padding: 5px 0 5px 10px; font-size: 13.5px; line-height: 1.5; border-left: 2px solid transparent; transition: color 0.15s ease, border-color 0.15s ease; }
+    .toc a:hover { color: var(--accent-deep); border-left-color: var(--accent-glow); }
+    .toc a.toc-l1 { font-weight: 600; color: var(--ink); margin-top: 14px; }
+    .toc a.toc-l1:first-child { margin-top: 0; }
+    .toc a.toc-l2 { font-weight: 500; color: var(--ink); padding-left: 14px; }
+    .toc a.toc-l3 { padding-left: 24px; font-size: 12.5px; }
+    main.content { min-width: 0; max-width: 820px; }
+    .content h1, .content h2, .content h3 { font-family:'DM Serif Display', serif; font-weight: 400; color: var(--ink); line-height: 1.25; scroll-margin-top: 24px; }
+    .content h1 { font-size: 36px; margin: 56px 0 18px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+    .content h1:first-child { margin-top: 0; }
+    .content h2 { font-size: 28px; margin: 48px 0 14px; }
+    .content h3 { font-size: 21px; margin: 32px 0 10px; }
+    .content h4 { font-family:'Outfit', sans-serif; font-weight: 600; font-size: 13px; letter-spacing: 1.5px; text-transform: uppercase; margin: 22px 0 8px; color: var(--accent-deep); }
+    .content h5, .content h6 { font-family:'Outfit', sans-serif; font-weight: 600; font-size: 14px; margin: 18px 0 6px; }
+    .content p { margin: 0 0 16px; color: #2a2a3a; }
+    .content strong { font-weight: 600; color: var(--ink); }
+    .content em { font-style: italic; color: #3a3a4a; }
+    .content a { color: var(--accent-deep); text-decoration: none; border-bottom: 1px dotted var(--accent); }
+    .content a:hover { color: var(--accent); border-bottom-style: solid; }
+    .content ul, .content ol { margin: 0 0 18px 22px; }
+    .content li { margin: 4px 0; }
+    .content li::marker { color: var(--accent); }
+    .content hr { border: none; border-top: 1px solid var(--border); margin: 48px 0; }
+    .content code { font-family:'JetBrains Mono', monospace; font-size: 12.5px; padding: 2px 7px; border-radius: 4px; background: var(--warm); color: var(--accent-deep); border: 1px solid var(--warm-deep); }
+    .content pre { background: var(--ink); color: #d8d4cc; padding: 18px 22px; border-radius: var(--radius-sm); overflow-x: auto; margin: 0 0 20px; font-size: 13px; line-height: 1.6; }
+    .content pre code { background: transparent; color: inherit; border: none; padding: 0; font-size: inherit; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--card); margin: 0 0 22px; box-shadow: var(--shadow-soft); }
+    .content table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+    .content th, .content td { padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: top; line-height: 1.55; }
+    .content thead th { background: var(--warm); color: var(--ink); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.7px; border-bottom: 1px solid var(--warm-deep); }
+    .content tbody tr:last-child td { border-bottom: none; }
+    .content tbody tr:hover { background: rgba(245,240,232,0.4); }
+    .content td code { font-size: 11.5px; }
+    .back-top { position: fixed; right: 24px; bottom: 24px; width: 44px; height: 44px; background: var(--ink); color: var(--paper); border-radius: 50%; display: flex; align-items: center; justify-content: center; text-decoration: none; font-size: 18px; box-shadow: var(--shadow-soft); opacity: 0.85; transition: opacity 0.2s ease, transform 0.2s ease; }
+    .back-top:hover { opacity: 1; transform: translateY(-2px); }
+    footer.page { border-top: 1px solid var(--border); padding: 32px 24px; text-align: center; font-size: 13px; color: var(--muted); background: var(--warm); }
+    footer.page strong { color: var(--ink); font-weight: 600; }
+    @media (max-width: 960px) {
+      .layout { grid-template-columns: 1fr; gap: 24px; }
+      aside.toc { position: static; max-height: none; padding-right: 0; }
+      .toc a { padding: 6px 0 6px 10px; }
+      h1.page-title { font-size: 32px; }
+      .content h1 { font-size: 28px; }
+      .content h2 { font-size: 22px; }
+      .content h3 { font-size: 18px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="page">
+    <div class="header-inner">
+      <div class="eyebrow">fe-admin · feature breakdown</div>
+      <h1 class="page-title">Yoga Sadhana — Admin Portal Mockup</h1>
+      <p class="page-sub">Surfaces, journeys, and feature scope for the staff-side clickable mockup. Companion to <code>fe-client-features.md</code>; derived from <code>prd.md</code>.</p>
+      <div class="meta-strip">
+        <span>Phase: <strong>Frontend mockup (no backend)</strong></span>
+        <span>Roles: <strong>Super-admin · Studio admin · Instructor</strong></span>
+        <span>Locations: <strong>Breadtalk IHQ · Outram Park</strong></span>
+      </div>
+    </div>
+  </header>
+  <div class="layout">
+    <aside class="toc">
+      <div class="toc-title">On this page</div>
+      <a class="toc-l1" href="#fe-admin-feature-breakdown">fe-admin — Feature Breakdown</a>
+<a class="toc-l2" href="#0-cross-cutting-concepts">0. Cross-cutting concepts</a>
+<a class="toc-l3" href="#01-three-tier-role-model">0.1 Three-tier role model</a>
+<a class="toc-l3" href="#02-two-locations">0.2 Two locations</a>
+<a class="toc-l3" href="#03-inbox-pattern-refund-cancellation-private-session">0.3 Inbox pattern (refund / cancellation / private-session)</a>
+<a class="toc-l3" href="#04-audit-log">0.4 Audit log</a>
+<a class="toc-l3" href="#05-cancellation-policy-single-editable-record">0.5 Cancellation policy (single editable record)</a>
+<a class="toc-l3" href="#06-notifications-email-only-in-v1">0.6 Notifications — email-only in v1</a>
+<a class="toc-l3" href="#07-out-of-app-instructor-pay">0.7 Out-of-app instructor pay</a>
+<a class="toc-l3" href="#08-manual-grant-mutex-resolution">0.8 Manual-grant mutex resolution</a>
+<a class="toc-l3" href="#09-impersonation">0.9 Impersonation</a>
+<a class="toc-l2" href="#1-information-architecture">1. Information architecture</a>
+<a class="toc-l3" href="#11-studio-admin-admin">1.1 Studio admin — `/admin/*`</a>
+<a class="toc-l3" href="#12-instructor-portal-admin-scoped-views">1.2 Instructor portal — `/admin/*` (scoped views)</a>
+<a class="toc-l3" href="#13-super-admin-super">1.3 Super-admin — `/super/*`</a>
+<a class="toc-l2" href="#2-studio-admin-surfaces">2. Studio admin surfaces</a>
+<a class="toc-l3" href="#21-dashboard-admin">2.1 Dashboard `/admin`</a>
+<a class="toc-l3" href="#22-today-admintoday">2.2 Today `/admin/today`</a>
+<a class="toc-l3" href="#23-schedule-adminschedule">2.3 Schedule `/admin/schedule`</a>
+<a class="toc-l3" href="#24-class-templates-adminclasses">2.4 Class templates `/admin/classes`</a>
+<a class="toc-l3" href="#25-workshops-adminworkshops">2.5 Workshops `/admin/workshops`</a>
+<a class="toc-l3" href="#26-packages-catalog-adminpackages">2.6 Packages catalog `/admin/packages`</a>
+<a class="toc-l3" href="#27-manual-grants-modal-adminclientsidgrant">2.7 Manual grants (modal `/admin/clients/[id]/grant`)</a>
+<a class="toc-l3" href="#28-clients-adminclients">2.8 Clients `/admin/clients`</a>
+<a class="toc-l3" href="#29-instructors-admininstructors">2.9 Instructors `/admin/instructors`</a>
+<a class="toc-l3" href="#210-refund-inbox-adminrefunds">2.10 Refund inbox `/admin/refunds`</a>
+<a class="toc-l3" href="#211-cancellation-inbox-admincancellations">2.11 Cancellation inbox `/admin/cancellations`</a>
+<a class="toc-l3" href="#212-private-session-inbox-adminprivateinbox">2.12 Private-session inbox `/admin/private/inbox`</a>
+<a class="toc-l3" href="#213-check-in-admincheck-in">2.13 Check-in `/admin/check-in`</a>
+<a class="toc-l3" href="#214-invoices-admininvoices">2.14 Invoices `/admin/invoices`</a>
+<a class="toc-l3" href="#215-promos-referrals-adminpromos-adminreferrals">2.15 Promos &amp; referrals `/admin/promos`, `/admin/referrals`</a>
+<a class="toc-l3" href="#216-marketing-site-cms-adminmarketing">2.16 Marketing / Site CMS `/admin/marketing`</a>
+<a class="toc-l3" href="#217-notifications-adminnotifications">2.17 Notifications `/admin/notifications`</a>
+<a class="toc-l3" href="#218-waivers-adminwaivers">2.18 Waivers `/admin/waivers`</a>
+<a class="toc-l3" href="#219-audit-log-adminaudit">2.19 Audit log `/admin/audit`</a>
+<a class="toc-l3" href="#220-reports-adminreports">2.20 Reports `/admin/reports`</a>
+<a class="toc-l3" href="#221-settings-adminsettings">2.21 Settings `/admin/settings`</a>
+<a class="toc-l2" href="#3-instructor-portal-surfaces">3. Instructor portal surfaces</a>
+<a class="toc-l3" href="#31-today-admintoday">3.1 Today `/admin/today`</a>
+<a class="toc-l3" href="#32-schedule-adminschedule">3.2 Schedule `/admin/schedule`</a>
+<a class="toc-l3" href="#33-roster-adminsessionsidroster">3.3 Roster `/admin/sessions/[id]/roster`</a>
+<a class="toc-l3" href="#34-availability-adminavailability">3.4 Availability `/admin/availability`</a>
+<a class="toc-l3" href="#35-private-session-inbox-adminprivateinbox">3.5 Private-session inbox `/admin/private/inbox`</a>
+<a class="toc-l3" href="#36-profile-adminprofile">3.6 Profile `/admin/profile`</a>
+<a class="toc-l3" href="#37-teaching-log-adminteaching-log">3.7 Teaching log `/admin/teaching-log`</a>
+<a class="toc-l3" href="#38-class-ratings-adminratings">3.8 Class ratings `/admin/ratings`</a>
+<a class="toc-l2" href="#4-super-admin-surfaces">4. Super-admin surfaces</a>
+<a class="toc-l3" href="#41-system-health-superhealth">4.1 System health `/super/health`</a>
+<a class="toc-l3" href="#42-feature-flags-superflags">4.2 Feature flags `/super/flags`</a>
+<a class="toc-l3" href="#43-notification-factory-templates-supertemplates">4.3 Notification factory templates `/super/templates`</a>
+<a class="toc-l3" href="#44-studio-admin-accounts-superadmins">4.4 Studio-admin accounts `/super/admins`</a>
+<a class="toc-l3" href="#45-audit-superaudit">4.5 Audit `/super/audit`</a>
+<a class="toc-l3" href="#46-impersonate-superimpersonate">4.6 Impersonate `/super/impersonate`</a>
+<a class="toc-l3" href="#47-bulk-waiver-reset-superwaiversreset">4.7 Bulk waiver reset `/super/waivers/reset`</a>
+<a class="toc-l3" href="#48-reports-read-only-superreports">4.8 Reports (read-only) `/super/reports`</a>
+<a class="toc-l2" href="#5-end-to-end-user-journeys">5. End-to-end user journeys</a>
+<a class="toc-l3" href="#51-front-desk-shift-studio-admin">5.1 Front-desk shift (studio admin)</a>
+<a class="toc-l3" href="#52-weekly-schedule-build-studio-admin">5.2 Weekly schedule build (studio admin)</a>
+<a class="toc-l3" href="#53-monthly-close-studio-admin">5.3 Monthly close (studio admin)</a>
+<a class="toc-l3" href="#54-instructor-day">5.4 Instructor day</a>
+<a class="toc-l3" href="#55-super-admin-routine">5.5 Super-admin routine</a>
+<a class="toc-l3" href="#56-bulk-waiver-reset-super-admin">5.6 Bulk waiver reset (super-admin)</a>
+<a class="toc-l2" href="#6-ux-principles">6. UX principles</a>
+<a class="toc-l2" href="#7-demo-data-shape">7. Demo data shape</a>
+<a class="toc-l2" href="#8-out-of-scope-v2">8. Out of scope (v2+)</a>
+    </aside>
+    <main class="content">
+      <h1 id="fe-admin-feature-breakdown">fe-admin — Feature Breakdown</h1>
+<p>Companion to <code>fe-client-features.md</code>. This document defines the <strong>admin-side</strong> clickable mockup for the Yoga Sadhana product: what surfaces exist, what each one does, what UX it presents, and which journeys cut across them.</p>
+<p>Source of truth references:</p>
+<ul>
+<li>Product scope, role model, business rules: <code>docs/md/prd.md</code></li>
+<li>Client-side product surfaces this admin app operates on: <code>docs/md/fe-client-features.md</code></li>
+</ul>
+<p>The admin app is a <strong>clickable Next.js + Tailwind + shadcn/ui mockup</strong> with no backend. All data is seed JSON. Three role surfaces are demoed in the same app behind a role switcher: <strong>Super-admin</strong>, <strong>Studio admin</strong>, <strong>Instructor</strong>.</p>
+<hr>
+<h2 id="0-cross-cutting-concepts">0. Cross-cutting concepts</h2>
+<p>These appear on every surface. Keep them consistent — never re-implement them per page.</p>
+<h3 id="01-three-tier-role-model">0.1 Three-tier role model</h3>
+<div class="table-wrap"><table><thead><tr><th style="text-align:left">Role</th><th style="text-align:left">Default home</th><th style="text-align:left">Authority</th></tr></thead><tbody><tr><td style="text-align:left"><strong>Super-admin</strong></td><td style="text-align:left"><code>/super/health</code></td><td style="text-align:left">Platform/system ops + impersonation. Never touches business data directly — impersonates a studio admin to act.</td></tr><tr><td style="text-align:left"><strong>Studio admin</strong></td><td style="text-align:left"><code>/admin</code></td><td style="text-align:left">Full business authority within Yoga Sadhana — schedule, packages, member profiles, refund inbox, settings, reports, notification templates. Single tier; no sub-roles.</td></tr><tr><td style="text-align:left"><strong>Instructor</strong></td><td style="text-align:left"><code>/admin/today</code></td><td style="text-align:left">Row-level scope: own classes, own roster (no member profiles), own private-session inbox, own availability, own profile, own teaching log + own ratings.</td></tr></tbody></table></div>
+<p>Demo prop: a <strong>role switcher</strong> in the top bar (visible only when the mockup is in dev mode) flips between seeded super-admin / studio admin / instructor identities so all three surfaces are walkable in one session.</p>
+<h3 id="02-two-locations">0.2 Two locations</h3>
+<p>Breadtalk IHQ (Tai Seng) + Outram Park. Every list with a physical-presence dimension carries a <strong>location filter chip — <code>All / Breadtalk / Outram</code></strong>. Per-user "default location" is a UI preference only, not a permission boundary. Cross-location packages are an explicit exception: credits and sessions are usable at either site.</p>
+<p>Instructors do not see a location chip — their scope is implicit via assigned classes.</p>
+<h3 id="03-inbox-pattern-refund-cancellation-private-session">0.3 Inbox pattern (refund / cancellation / private-session)</h3>
+<p>Three out-of-app flows where the system owns the <strong>request inbox</strong> but a human resolves outside the app (typically WhatsApp + PayNow / bank transfer / cash):</p>
+<ol>
+<li><strong>Refund requests</strong> — member submits → admin notified → admin acts in WhatsApp → admin marks <strong>Resolved / Declined</strong> with notes. <strong>No "Refund" button</strong> that calls a payment provider.</li>
+<li><strong>Membership cancellation / pause</strong> — "Contact Sales Team" CTA on the client side → admin inbox → handled in WhatsApp → admin marks <strong>Resolved</strong>.</li>
+<li><strong>Private-session requests</strong> — see §5.</li>
+</ol>
+<p>Every inbox surface uses the same shape: queue + state machine + admin notes + audit row. <strong>Never</strong> an in-app financial action.</p>
+<h3 id="04-audit-log">0.4 Audit log</h3>
+<p>Every credit adjustment, session adjustment, refund-inbox state change, schedule cancellation, waiver reset, and impersonation event writes a row. Audit rows surface as a <strong>timeline</strong> on the relevant client / invoice / session / class detail page. Append-only — no edits, no deletes.</p>
+<p>Required fields: <code>actor_id</code>, <code>actor_role</code>, <code>impersonated_by</code> (nullable), <code>action</code>, <code>target_id</code>, <code>reason</code> (free-text where mandatory), <code>timestamp</code>.</p>
+<h3 id="05-cancellation-policy-single-editable-record">0.5 Cancellation policy (single editable record)</h3>
+<p>Editable in <strong>Settings → Policy</strong>. Determines per-booking-type behavior:</p>
+<div class="table-wrap"><table><thead><tr><th style="text-align:left">Booking type</th><th style="text-align:left">Inside window</th><th style="text-align:left">Outside window</th></tr></thead><tbody><tr><td style="text-align:left">Class</td><td style="text-align:left">Credit returned</td><td style="text-align:left">Credit forfeited / fee</td></tr><tr><td style="text-align:left">Workshop</td><td style="text-align:left">Refund initiated (out-of-app)</td><td style="text-align:left">Policy penalty</td></tr><tr><td style="text-align:left">Private (unconfirmed)</td><td style="text-align:left">Free</td><td style="text-align:left">Free</td></tr><tr><td style="text-align:left">Private (confirmed)</td><td style="text-align:left">Session returned</td><td style="text-align:left">Session forfeited / fee</td></tr></tbody></table></div>
+<p>Reschedule = cancel + rebook, re-evaluated against policy. Default windows: 12h class, 12h private.</p>
+<h3 id="06-notifications-email-only-in-v1">0.6 Notifications — email-only in v1</h3>
+<p>The admin <strong>Notifications</strong> surface collapses the per-event channel matrix to a single <strong>Email</strong> column. No WhatsApp / SMS / push columns. Admin inboxes (refund, cancellation, private-session) are dashboard views in fe-admin and are independent of outbound channel scope.</p>
+<h3 id="07-out-of-app-instructor-pay">0.7 Out-of-app instructor pay</h3>
+<p>System tracks classes scheduled / completed (Teaching log). Admin computes pay externally → disburses externally. <strong>No</strong> in-app pay rate field on instructor profile beyond a metadata note, <strong>no</strong> statement page, <strong>no</strong> payout report.</p>
+<h3 id="08-manual-grant-mutex-resolution">0.8 Manual-grant mutex resolution</h3>
+<p>When admin issues a package or raw credit/session count to a client, the action requires a <strong>mandatory reason</strong>. If the client already has an overlapping active package, the resolution rule (extend vs replace vs stack) is presented inline with a default + override.</p>
+<h3 id="09-impersonation">0.9 Impersonation</h3>
+<p>Super-admin → "Impersonate this studio admin" enters a <strong>session-scoped impersonation</strong> with a persistent banner ("You are acting as Maya — Exit impersonation"). Every state-changing action during impersonation records both the studio admin (acting identity) and the super-admin (originator).</p>
+<hr>
+<h2 id="1-information-architecture">1. Information architecture</h2>
+<p>Sidebar layout, persistent on desktop, collapsible drawer on mobile. Top-level nav reflects role.</p>
+<h3 id="11-studio-admin-admin">1.1 Studio admin — <code>/admin/*</code></h3>
+<div class="table-wrap"><table><thead><tr><th style="text-align:left">Route</th><th style="text-align:left">Surface</th><th style="text-align:left">Purpose</th></tr></thead><tbody><tr><td style="text-align:left"><code>/admin</code></td><td style="text-align:left"><strong>Dashboard</strong></td><td style="text-align:left">Today's classes + needs-attention feed</td></tr><tr><td style="text-align:left"><code>/admin/today</code></td><td style="text-align:left"><strong>Today</strong></td><td style="text-align:left">Live "next class up" — roster, check-in, walk-ins</td></tr><tr><td style="text-align:left"><code>/admin/schedule</code></td><td style="text-align:left"><strong>Schedule</strong></td><td style="text-align:left">Weekly/monthly calendar; create / edit / cancel instance</td></tr><tr><td style="text-align:left"><code>/admin/schedule/[id]</code></td><td style="text-align:left">Session detail</td><td style="text-align:left">Roster + per-instance actions</td></tr><tr><td style="text-align:left"><code>/admin/classes</code></td><td style="text-align:left">Class templates</td><td style="text-align:left">Recurring class types + bulk-generate</td></tr><tr><td style="text-align:left"><code>/admin/classes/[id]</code></td><td style="text-align:left">Template editor</td><td style="text-align:left">Recurrence builder</td></tr><tr><td style="text-align:left"><code>/admin/workshops</code></td><td style="text-align:left">Workshops</td><td style="text-align:left">List + CRUD + tier pricing + roster</td></tr><tr><td style="text-align:left"><code>/admin/workshops/[id]</code></td><td style="text-align:left">Workshop detail</td><td style="text-align:left">Editor + roster + waitlist</td></tr><tr><td style="text-align:left"><code>/admin/packages</code></td><td style="text-align:left">Packages catalog</td><td style="text-align:left">Bundles / Unlimited / Private VIP CRUD</td></tr><tr><td style="text-align:left"><code>/admin/packages/[id]</code></td><td style="text-align:left">Product editor</td><td style="text-align:left">Validity + price + scope</td></tr><tr><td style="text-align:left"><code>/admin/clients</code></td><td style="text-align:left">Clients list</td><td style="text-align:left">Search + filter + waiver state</td></tr><tr><td style="text-align:left"><code>/admin/clients/[id]</code></td><td style="text-align:left">Client profile</td><td style="text-align:left">Profile, membership, balance, history, invoices, audit, notes</td></tr><tr><td style="text-align:left"><code>/admin/clients/[id]/grant</code></td><td style="text-align:left">Manual grant</td><td style="text-align:left">Modal route — package or raw credits</td></tr><tr><td style="text-align:left"><code>/admin/instructors</code></td><td style="text-align:left">Instructors list</td><td style="text-align:left"></td></tr><tr><td style="text-align:left"><code>/admin/instructors/[id]</code></td><td style="text-align:left">Instructor profile</td><td style="text-align:left">Bio, availability, teaching log, ratings</td></tr><tr><td style="text-align:left"><code>/admin/private/inbox</code></td><td style="text-align:left">Private-session inbox</td><td style="text-align:left">All-instructors view; SLA chips; takeover</td></tr><tr><td style="text-align:left"><code>/admin/private/[id]</code></td><td style="text-align:left">Request detail</td><td style="text-align:left">Approve / decline</td></tr><tr><td style="text-align:left"><code>/admin/refunds</code></td><td style="text-align:left">Refund inbox</td><td style="text-align:left">Open / resolved / declined</td></tr><tr><td style="text-align:left"><code>/admin/cancellations</code></td><td style="text-align:left">Cancellation inbox</td><td style="text-align:left">Membership pause/cancel requests</td></tr><tr><td style="text-align:left"><code>/admin/check-in</code></td><td style="text-align:left">Check-in</td><td style="text-align:left">QR scan + manual booking-ID + walk-in</td></tr><tr><td style="text-align:left"><code>/admin/invoices</code></td><td style="text-align:left">Invoices list</td><td style="text-align:left">Stripe mirror, refund actions</td></tr><tr><td style="text-align:left"><code>/admin/invoices/[id]</code></td><td style="text-align:left">Invoice detail</td><td style="text-align:left">Resend, void, mark refunded</td></tr><tr><td style="text-align:left"><code>/admin/promos</code></td><td style="text-align:left">Promo / referral codes</td><td style="text-align:left">Codes + reward config</td></tr><tr><td style="text-align:left"><code>/admin/referrals</code></td><td style="text-align:left">Referral attribution</td><td style="text-align:left">Graph + payout audit</td></tr><tr><td style="text-align:left"><code>/admin/marketing</code></td><td style="text-align:left">Marketing / Site CMS</td><td style="text-align:left">Hero, locations, features, testimonials, CTA</td></tr><tr><td style="text-align:left"><code>/admin/notifications</code></td><td style="text-align:left">Email templates</td><td style="text-align:left">Per-event editor (override factory)</td></tr><tr><td style="text-align:left"><code>/admin/waivers</code></td><td style="text-align:left">Waivers</td><td style="text-align:left">Signed list + version</td></tr><tr><td style="text-align:left"><code>/admin/audit</code></td><td style="text-align:left">Audit log</td><td style="text-align:left">Filterable activity stream</td></tr><tr><td style="text-align:left"><code>/admin/reports</code></td><td style="text-align:left">Reports</td><td style="text-align:left">Attendance, revenue, membership, teaching log, ratings, inbox throughput, referral attribution</td></tr><tr><td style="text-align:left"><code>/admin/settings</code></td><td style="text-align:left">Settings</td><td style="text-align:left">Profile, locations, policy, hours, admin users, branding</td></tr></tbody></table></div>
+<h3 id="12-instructor-portal-admin-scoped-views">1.2 Instructor portal — <code>/admin/*</code> (scoped views)</h3>
+<p>Instructors share the URL prefix but every list/detail is row-level scoped to <code>instructor_id = self</code>. No location chip.</p>
+<div class="table-wrap"><table><thead><tr><th style="text-align:left">Route</th><th style="text-align:left">Surface</th></tr></thead><tbody><tr><td style="text-align:left"><code>/admin/today</code></td><td style="text-align:left"><strong>Today</strong> — own next-class roster + check-in</td></tr><tr><td style="text-align:left"><code>/admin/schedule</code></td><td style="text-align:left">Own assigned classes (read-only on instances)</td></tr><tr><td style="text-align:left"><code>/admin/sessions/[id]/roster</code></td><td style="text-align:left">Roster (name + check-in state only — no membership / invoice / credit info)</td></tr><tr><td style="text-align:left"><code>/admin/availability</code></td><td style="text-align:left">Editable working-hours blocks + per-day overrides</td></tr><tr><td style="text-align:left"><code>/admin/private/inbox</code></td><td style="text-align:left">Own pending requests; approve / decline</td></tr><tr><td style="text-align:left"><code>/admin/profile</code></td><td style="text-align:left">Editable bio, photo, per-session rate (admin override applies)</td></tr><tr><td style="text-align:left"><code>/admin/teaching-log</code></td><td style="text-align:left">Own classes by state</td></tr><tr><td style="text-align:left"><code>/admin/ratings</code></td><td style="text-align:left">Aggregate per own class</td></tr></tbody></table></div>
+<h3 id="13-super-admin-super">1.3 Super-admin — <code>/super/*</code></h3>
+<div class="table-wrap"><table><thead><tr><th style="text-align:left">Route</th><th style="text-align:left">Surface</th></tr></thead><tbody><tr><td style="text-align:left"><code>/super/health</code></td><td style="text-align:left">System health (service status, error rates, recent deploys, queue depths)</td></tr><tr><td style="text-align:left"><code>/super/flags</code></td><td style="text-align:left">Feature flags</td></tr><tr><td style="text-align:left"><code>/super/templates</code></td><td style="text-align:left">Notification factory templates + variable token catalog</td></tr><tr><td style="text-align:left"><code>/super/admins</code></td><td style="text-align:left">Studio-admin accounts (peer-add, force-logout, password reset, MFA enrollment)</td></tr><tr><td style="text-align:left"><code>/super/audit</code></td><td style="text-align:left">Read-only mirror of studio audit + super-admin own actions</td></tr><tr><td style="text-align:left"><code>/super/impersonate</code></td><td style="text-align:left">Pick a studio admin → enter impersonation</td></tr><tr><td style="text-align:left"><code>/super/waivers/reset</code></td><td style="text-align:left">Bulk waiver reset (legal change)</td></tr><tr><td style="text-align:left"><code>/super/reports</code></td><td style="text-align:left">Read-only mirror of v1 report set (no PII CSV unless impersonating)</td></tr></tbody></table></div>
+<hr>
+<h2 id="2-studio-admin-surfaces">2. Studio admin surfaces</h2>
+<h3 id="21-dashboard-admin">2.1 Dashboard <code>/admin</code></h3>
+<p><strong>Business logic</strong></p>
+<ul>
+<li>Two cards above the fold:</li>
+<ul>
+<li><strong>Today's classes</strong> — next 4 hours of scheduled classes, capacity vs booked, instructor, location.</li>
+<li><strong>Needs attention</strong> — counts and chips for: private-session requests within 6h of SLA, refund-inbox open count, cancellation-inbox open count, lapsing memberships (next 7 days), expired waivers awaiting next booking.</li>
+</ul>
+<li>Below: small KPI strip (today bookings, today walk-ins, today no-shows, today revenue) + a "Recent activity" tail (last 10 audit rows).</li>
+<li>Per-location chip filters Today's classes only — needs-attention feed is global.</li>
+</ul>
+<p><strong>User journey (front-desk shift)</strong></p>
+<ol>
+<li>Land on <code>/admin</code>. Glance at <strong>Today's classes</strong> + <strong>Needs attention</strong>.</li>
+<li>Click <strong>Refund inbox: 3 open</strong> chip → triage (§2.10).</li>
+<li>Click <strong>Today</strong> → check in arrivals (§2.2).</li>
+</ol>
+<p><strong>Why it exists</strong> The single screen a front-desk admin should land on at the start of a shift. Nothing on this page requires drilling — it's the orientation surface.</p>
+<h3 id="22-today-admintoday">2.2 Today <code>/admin/today</code></h3>
+<p><strong>Business logic</strong></p>
+<ul>
+<li>"Next class up" view: shows the upcoming class in the studio (location-filterable), its roster, capacity, and a <strong>Check-in</strong> column per booking.</li>
+<li>Three add-actions: <strong>Scan QR</strong>, <strong>Enter booking ID</strong>, <strong>Add walk-in</strong>.</li>
+<li>Walk-in flow: searches existing clients by name / phone / email → if found, adds to roster (charges via manual-grant flow if no entitlement); if not found, opens a quick-add new client form.</li>
+<li>Per-row state: <code>Booked</code> / <code>Checked in</code> / <code>No-show</code> (auto-set 10 min after class start). Manual override allowed with audit row.</li>
+</ul>
+<p><strong>User journey</strong></p>
+<ol>
+<li>Open <code>/admin/today</code> 5 min before class.</li>
+<li>Confirm instructor on site.</li>
+<li>Scan QR codes from arriving clients → roster row flips to <strong>Checked in</strong>.</li>
+<li>Walk-in arrives → tap <strong>Add walk-in</strong> → search → add → if no credits, manual-grant modal (mandatory reason).</li>
+</ol>
+<p><strong>Why it exists</strong> Mirrors the surface instructors use for their own classes. Studio admin sees <em>all</em> classes; instructor sees own only.</p>
+<h3 id="23-schedule-adminschedule">2.3 Schedule <code>/admin/schedule</code></h3>
+<p><strong>Business logic</strong></p>
+<ul>
+<li>Weekly calendar default; month toggle. Filter chips: <strong>Location</strong>, <strong>Instructor</strong>, <strong>Level</strong>.</li>
+<li>Click a slot → session detail (<code>/admin/schedule/[id]</code>): roster, capacity override, waitlist toggle, <strong>Cancel instance</strong> (auto-returns credits + fires <code>class-cancelled.email</code> to all booked clients).</li>
+<li>Empty slots show <strong>+ Add class</strong> quick-create (template-backed).</li>
+<li><strong>Bulk-generate from template</strong> (top-right) lays out the next 4–8 weeks of recurring classes; surfaces instructor-availability conflicts inline; resolve by reassign / reduce capacity / cancel single instance.</li>
+</ul>
+<p><strong>User journey (weekly build)</strong></p>
+<ol>
+<li>Open <code>/admin/schedule</code> → weekly view → <strong>Bulk-generate</strong>.</li>
+<li>System lays out instances; conflict drawer shows 3 conflicts.</li>
+<li>Resolve each → save → schedule write.</li>
+</ol>
+<p><strong>Why it exists</strong> The scheduling backbone. Every booking, roster, check-in, and report rolls up from here.</p>
+<h3 id="24-class-templates-adminclasses">2.4 Class templates <code>/admin/classes</code></h3>
+<p><strong>Business logic</strong></p>
+<ul>
+<li>List of recurring class types (e.g., "Vinyasa 60min"): title, description, duration, default capacity, default instructor, location.</li>
+<li>Editor: recurrence builder (days of week, start time, weeks valid), default capacity, level, type (Vinyasa / Yin / Hatha / Restorative / Pranayama), description, image.</li>
+</ul>
+<p><strong>User journey</strong></p>
+<ol>
+<li>New class type → <code>/admin/classes/new</code> → fill template → save.</li>
+<li>Use <strong>Bulk-generate from template</strong> on Schedule (§2.3) to materialize instances.</li>
+</ol>
+<h3 id="25-workshops-adminworkshops">2.5 Workshops <code>/admin/workshops</code></h3>
+<p><strong>Business logic</strong></p>
+<ul>
+<li>One-off paid events. CRUD: title, description, date/time, location, capacity, <strong>tier prices</strong> (early-bird / standard / member rate), waitlist toggle.</li>
+<li>Roster tab: attendees, payment status, <strong>Move attendees between dates</strong> action (used when admin reschedules a workshop).</li>
+<li>Refund-on-cancel: cancelling a workshop instance triggers <code>workshop-cancelled.email</code> and surfaces a refund row in the refund inbox per attendee (admin acts out-of-app).</li>
+</ul>
+<p><strong>Why it exists</strong> Workshops sit outside the credit system — they need their own pricing model + per-event roster and a refund-eligible commerce flow.</p>
+<h3 id="26-packages-catalog-adminpackages">2.6 Packages catalog <code>/admin/packages</code></h3>
+<p><strong>Business logic</strong></p>
+<ul>
+<li>Three tabs: <strong>Bundles</strong> (credit packs), <strong>Unlimited</strong> (memberships), <strong>Private VIP</strong> (1-on-1 / 2-on-1 packs, family-shareable).</li>
+<li>Product editor: price, credit/session count, validity days, <strong>location scope</strong> (cross-location-only in v1 — no per-location lock UI), archive toggle.</li>
+<li>"Archived" packages remain valid for clients who already own them; just removed from the public catalog.</li>
+</ul>
+<p><strong>User journey</strong></p>
+<ol>
+<li>Quarterly price change → open Bundle editor → bump price → save.</li>
+<li>New seasonal pack → <strong>+ New product</strong> → fill → publish → appears on <code>/packages</code> client side.</li>
+</ol>
+<h3 id="27-manual-grants-modal-adminclientsidgrant">2.7 Manual grants (modal <code>/admin/clients/[id]/grant</code>)</h3>
+<p><strong>Business logic</strong></p>
+<ul>
+<li>Two paths: <strong>Issue a package</strong> (picks from catalog, sets validity from now) or <strong>Issue raw credits/sessions</strong> (count + validity days).</li>
+<li>Mandatory <strong>reason</strong> field (free-text). Audit row written.</li>
+<li>If client has an overlapping active package: mutex resolver inline (extend vs replace vs stack). Default per package type + admin override.</li>
+<li>Used for: walk-ins without entitlement, comp credits for incidents, rebooking after refund.</li>
+</ul>
+<h3 id="28-clients-adminclients">2.8 Clients <code>/admin/clients</code></h3>
+<p><strong>Business logic</strong></p>
+<ul>
+<li>List: search by name / email / phone; filter by location, membership state (active / lapsing / expired / never), waiver state (signed / lapsed / expired), referral graph (referrer / referee).</li>
+<li>Detail (<code>/admin/clients/[id]</code>): tabbed.</li>
+<ul>
+<li><strong>Profile</strong> — name, contact, location preference, registration date, waiver state.</li>
+<li><strong>Membership</strong> — current package(s), credit balance per package, expiry, membership state. Manual-adjust controls. <strong>Pause / cancel / extend / contact</strong> actions (cancel/pause are inbox-driven; extend = manual grant).</li>
+<li><strong>Bookings</strong> — full history across classes, workshops, privates with per-row status (booked / attended / no-show / cancelled).</li>
+<li><strong>Invoices</strong> — purchase history; resend, void, mark refunded.</li>
+<li><strong>Notes</strong> — freeform admin notes.</li>
+<li><strong>Audit</strong> — append-only timeline of state-changing actions on this client.</li>
+<li><strong>Referral graph</strong> — referrer + referee tree.</li>
+<li><strong>Account</strong> — force-logout, password reset, suspend, <strong>Re-request waiver</strong> (bumps version for this user only).</li>
+</ul>
+</ul>
+<p><strong>User journey (refund triage)</strong></p>
+<ol>
+<li>Refund inbox row → click client name → opens client profile → Invoices tab → review original purchase.</li>
+<li>Drop back to refund inbox → mark Resolved with notes ("PayNow ref ABC").</li>
+</ol>
+<p><strong>Why it exists</strong> The single profile that unifies everything a front-desk admin needs to know about a member when triaging a request.</p>
+<h3 id="29-instructors-admininstructors">2.9 Instructors <code>/admin/instructors</code></h3>
+<p><strong>Business logic</strong></p>
+<ul>
+<li>List + detail. Detail shows: bio, photo, per-session rate (metadata only — pay is out-of-app), assigned locations.</li>
+<li>Tabs:</li>
+<ul>
+<li><strong>Availability</strong> — admin can edit any instructor's working-hours blocks and block-offs (vacation, sick).</li>
+<li><strong>Teaching log</strong> — read-only; classes scheduled / completed / cancelled per period. Used for monthly external pay calc (§4.3).</li>
+<li><strong>Ratings</strong> — aggregate per class; no peer comparison surfaced anywhere.</li>
+<li><strong>Account</strong> — create / archive instructor account; set rate metadata.</li>
+</ul>
+</ul>
+<h3 id="210-refund-inbox-adminrefunds">2.10 Refund inbox <code>/admin/refunds</code></h3>
+<p><strong>Business logic</strong></p>
+<ul>
+<li>Three queues: <strong>Open</strong> / <strong>Resolved</strong> / <strong>Declined</strong>. New rows arrive when a client submits via <code>/account/invoices</code> "Request refund".</li>
+<li>Row: client, invoice, amount, reason, submitted-at, age (chip turns warning at 24h).</li>
+<li>Detail drawer: full invoice + booking context + WhatsApp deep-link to client phone (prefilled message). <strong>Mark Resolved</strong> (mandatory notes field — typically PayNow reference) or <strong>Mark Declined</strong> (mandatory reason).</li>
+<li>No payment-provider call. Audit row written per state change.</li>
+</ul>
+<p><strong>User journey</strong></p>
+<ol>
+<li>Open inbox → triage <strong>Open</strong> queue oldest-first.</li>
+<li>Click row → review context → tap WhatsApp deep-link → handle in WhatsApp → return → mark Resolved with PayNow ref in notes.</li>
+</ol>
+<h3 id="211-cancellation-inbox-admincancellations">2.11 Cancellation inbox <code>/admin/cancellations</code></h3>
+<p><strong>Business logic</strong></p>
+<ul>
+<li>Same shape as refund inbox. New rows arrive when a client taps <strong>Contact Sales Team</strong> on <code>/account</code> membership card.</li>
+<li>States: <strong>Open</strong> / <strong>Resolved</strong>. No "Decline" — everything resolves (admin handles cancel/pause/retain in WhatsApp; resolution notes record outcome).</li>
+</ul>
+<h3 id="212-private-session-inbox-adminprivateinbox">2.12 Private-session inbox <code>/admin/private/inbox</code></h3>
+<p><strong>Business logic</strong></p>
+<ul>
+<li>All-instructors view, <strong>read-only by default</strong>. Studio admin can <strong>take over</strong> any request (records "on behalf of" in audit + notification).</li>
+<li>SLA chips per row: green (&lt; 6h since submit), amber (6–12h), red (&gt; 12h, escalation triggered).</li>
+<li>Detail (<code>/admin/private/[id]</code>): client, requested slot, requested location, message, instructor (if assigned). Actions: Approve (optional note) / Decline (mandatory reason) / Take over.</li>
+<li>On approve: booking confirmed, 1 session deducted from client, calendar event created on instructor's schedule, client gets <code>private-confirmed.email</code>.</li>
+</ul>
+<p><strong>User journey (escalation)</strong></p>
+<ol>
+<li>Dashboard surfaces "Private inbox: 2 escalated".</li>
+<li>Click → red-chip rows.</li>
+<li>WhatsApp instructor → confirm availability → return → <strong>Take over</strong> → Approve.</li>
+</ol>
+<h3 id="213-check-in-admincheck-in">2.13 Check-in <code>/admin/check-in</code></h3>
+<p><strong>Business logic</strong></p>
+<ul>
+<li>Standalone surface (also embedded inside Today). Persistent <strong>scan area</strong> (simulated camera in mockup) + <strong>Manual entry</strong> (booking ID) + <strong>Walk-in</strong> quick-add.</li>
+<li>Live session selector at top — defaults to the currently-active class.</li>
+<li>Audit row written per check-in action.</li>
+</ul>
+<h3 id="214-invoices-admininvoices">2.14 Invoices <code>/admin/invoices</code></h3>
+<p><strong>Business logic</strong></p>
+<ul>
+<li>List: id, client, item, issued, total, GST, status. Filter by date range, client, item type.</li>
+<li>Detail: full line items, <strong>Resend</strong>, <strong>Void</strong>, <strong>Mark refunded</strong> (state-only — actual money out-of-app), <strong>Edit item description</strong> (for support clarity).</li>
+</ul>
+<h3 id="215-promos-referrals-adminpromos-adminreferrals">2.15 Promos &amp; referrals <code>/admin/promos</code>, <code>/admin/referrals</code></h3>
+<p><strong>Business logic</strong></p>
+<ul>
+<li><strong>Promos</strong>: code, discount type (% / flat), validity, applicable products, usage cap, per-user cap. Blacklist abusive codes.</li>
+<li><strong>Referrals</strong>: referrer / referee graph, attribution status (<code>Registered</code> / <code>Converted</code>), reward audit (S$20 credit issuance per conversion). Reward amount editable. Manual mark-conversion override.</li>
+</ul>
+<h3 id="216-marketing-site-cms-adminmarketing">2.16 Marketing / Site CMS <code>/admin/marketing</code></h3>
+<p><strong>Business logic</strong></p>
+<ul>
+<li>Editor for the public marketing surface (home page on the client side):</li>
+<ul>
+<li>Hero (eyebrow, headline, rotating words, subhead, CTAs).</li>
+<li>Locations (per-location: address, photo, hours).</li>
+<li>Feature tiles (6 slots: title, copy, icon).</li>
+<li>FeatureDeepDive blocks (image + bullets + CTA).</li>
+<li>Testimonial.</li>
+<li>CTA banner.</li>
+</ul>
+<li>Versioned with <strong>CMS history</strong> (revert to prior). Saved as the live marketing data the client app reads.</li>
+</ul>
+<p><strong>Why it exists</strong> Yoga Sadhana staff change copy and imagery seasonally without a code deploy.</p>
+<h3 id="217-notifications-adminnotifications">2.17 Notifications <code>/admin/notifications</code></h3>
+<p><strong>Business logic</strong></p>
+<ul>
+<li>Per-event template editor. Single <strong>Email</strong> column in v1 (no WhatsApp / SMS / push).</li>
+<li>Variable token catalog (e.g., <code>{{client.firstName}}</code>, <code>{{class.startAt}}</code>).</li>
+<li>Each event: factory template (super-admin owned) + studio override. Studio admin edits override.</li>
+<li><strong>Resend</strong> action on a sent notification (support recovery).</li>
+</ul>
+<p>Event catalog (v1, all email): <code>register-verify-phone</code>, <code>register-verify-email</code>, <code>forgot-password</code>, <code>waiver-required</code>, <code>waiver-expired</code>, <code>booking-confirmed</code>, <code>booking-cancelled</code> (in/out of window), <code>class-cancelled</code>, <code>workshop-confirmed</code>, <code>private-request-received</code>, <code>private-request-approved</code>, <code>private-request-declined</code>, <code>private-request-expired</code>, <code>package-purchased</code>, <code>package-lapsing-soon</code>, <code>package-expired</code>, <code>referral-earned</code>, <code>refund-request-received</code>.</p>
+<h3 id="218-waivers-adminwaivers">2.18 Waivers <code>/admin/waivers</code></h3>
+<p><strong>Business logic</strong></p>
+<ul>
+<li>List: every client + waiver state (signed / lapsed / expired) + signed version.</li>
+<li>Per-client <strong>Reset waiver</strong> (forces re-sign on next booking; mandatory reason).</li>
+<li>Bulk reset is super-admin only (legal-change path).</li>
+</ul>
+<h3 id="219-audit-log-adminaudit">2.19 Audit log <code>/admin/audit</code></h3>
+<p><strong>Business logic</strong></p>
+<ul>
+<li>Read-only stream. Filters: actor, role, target type, action, date range.</li>
+<li>Each row: actor, role, impersonated_by (if any), action, target, reason, timestamp.</li>
+<li>24-month retention in-app; archived after.</li>
+</ul>
+<h3 id="220-reports-adminreports">2.20 Reports <code>/admin/reports</code></h3>
+<p><strong>Business logic</strong></p>
+<ul>
+<li>Tabbed: <strong>Attendance</strong>, <strong>Revenue</strong>, <strong>Membership</strong>, <strong>Teaching log</strong>, <strong>Class ratings</strong>, <strong>Inbox throughput</strong>, <strong>Referral attribution</strong>.</li>
+<li>Standard filter set across all: date-range presets (7d / 30d / 90d / current month / last month / custom), location (All / Breadtalk / Outram), <strong>Export to CSV</strong>.</li>
+</ul>
+<div class="table-wrap"><table><thead><tr><th style="text-align:left">Report</th><th style="text-align:left">Detail</th></tr></thead><tbody><tr><td style="text-align:left">Attendance</td><td style="text-align:left">Class fill rate, no-show rate, by class type / location / time-of-day / instructor. Trend over period.</td></tr><tr><td style="text-align:left">Revenue</td><td style="text-align:left">Package sales by type / location / period; payment method mix; outstanding balances; workshop ticket revenue (separate line).</td></tr><tr><td style="text-align:left">Membership</td><td style="text-align:left">Active / expired / lapsing-soon clients; bundle vs unlimited mix; signed vs lapsed waivers; churn signals (no booking 30/60/90d).</td></tr><tr><td style="text-align:left">Teaching log</td><td style="text-align:left">Classes scheduled / completed / cancelled per instructor per period. Powers external pay.</td></tr><tr><td style="text-align:left">Class ratings</td><td style="text-align:left">Avg rating per class, per instructor (post-class survey).</td></tr><tr><td style="text-align:left">Inbox throughput</td><td style="text-align:left">Refund / cancellation / private-session counts and time-to-resolution by state.</td></tr><tr><td style="text-align:left">Referral attribution</td><td style="text-align:left">Referrer → referee → first-purchase conversion rate.</td></tr></tbody></table></div>
+<h3 id="221-settings-adminsettings">2.21 Settings <code>/admin/settings</code></h3>
+<p><strong>Business logic</strong></p>
+<ul>
+<li>Sub-pages:</li>
+<ul>
+<li><strong>Studio profile</strong> — name, logo, brand colours, footer copy.</li>
+<li><strong>Locations</strong> — per-location: address, photo, hours, contact, room/capacity defaults.</li>
+<li><strong>Policy</strong> — single editable record: cancellation windows per booking type (§0.5), no-show fee, late-cancel fee, repeated-cancellation rule copy.</li>
+<li><strong>Hours</strong> — studio operating hours per location (informs Schedule slot validation).</li>
+<li><strong>Admin users</strong> — list + peer-add other studio admins; force-logout; password reset.</li>
+<li><strong>Waiver</strong> — current legal text; version bump.</li>
+<li><strong>Branding</strong> — receipt branding, email-template header/footer.</li>
+</ul>
+</ul>
+<hr>
+<h2 id="3-instructor-portal-surfaces">3. Instructor portal surfaces</h2>
+<p>Instructor sees a <strong>subset</strong> of the admin app, scoped to <code>instructor_id = self</code>. No location chip. No financial surfaces. No settings. No notification editor.</p>
+<h3 id="31-today-admintoday">3.1 Today <code>/admin/today</code></h3>
+<p>Live next-class roster + check-in for own classes. Same UI as studio admin's Today; data is row-filtered.</p>
+<h3 id="32-schedule-adminschedule">3.2 Schedule <code>/admin/schedule</code></h3>
+<p>Calendar of own assigned classes. Read-only on instances (cannot edit capacity, cancel, reassign — escalates to studio admin).</p>
+<h3 id="33-roster-adminsessionsidroster">3.3 Roster <code>/admin/sessions/[id]/roster</code></h3>
+<p>Per-class roster: client first name + check-in state. <strong>No</strong> membership / invoice / credit info — privacy boundary.</p>
+<h3 id="34-availability-adminavailability">3.4 Availability <code>/admin/availability</code></h3>
+<p><strong>Business logic</strong></p>
+<ul>
+<li>Editable working-hours blocks per day, per location. Save → constrains slots clients can request a private with this instructor on <code>/private-sessions</code>.</li>
+<li>Per-day overrides for vacations / sick days.</li>
+<li>Default to studio operating hours from Settings.</li>
+</ul>
+<p><strong>User journey (weekly availability update)</strong></p>
+<ol>
+<li>Open Availability → set / edit blocks for the week ahead.</li>
+<li>Add per-day overrides for next vacation.</li>
+<li>Save → client <code>/private-sessions</code> slot picker reflects within the next render.</li>
+</ol>
+<h3 id="35-private-session-inbox-adminprivateinbox">3.5 Private-session inbox <code>/admin/private/inbox</code></h3>
+<p>Own pending requests only. Same shape as §2.12 minus the "take over" action (instructor sees only own; studio admin sees all + can take over).</p>
+<p><strong>Business logic</strong></p>
+<ul>
+<li>Approve (optional note) → booking confirmed, 1 session deducted from client.</li>
+<li>Decline (mandatory reason) → client gets <code>private-request-declined.email</code> with reason.</li>
+<li>If no action within SLA: at SLA – 6h, system pings studio admin (escalation). At SLA expiry → request <code>expired</code>, client notified to re-submit.</li>
+</ul>
+<h3 id="36-profile-adminprofile">3.6 Profile <code>/admin/profile</code></h3>
+<p>Editable bio, photo, per-session rate (subject to admin override per §0.7 — rate edits flag for admin review).</p>
+<h3 id="37-teaching-log-adminteaching-log">3.7 Teaching log <code>/admin/teaching-log</code></h3>
+<p>History of own classes by state (scheduled / completed / cancelled). Read-only. Informs external pay calc on the studio admin side (§4.3).</p>
+<h3 id="38-class-ratings-adminratings">3.8 Class ratings <code>/admin/ratings</code></h3>
+<p>Aggregate per own class; no peer comparison; no per-client rating drill-through (anonymized).</p>
+<hr>
+<h2 id="4-super-admin-surfaces">4. Super-admin surfaces</h2>
+<p>Super-admin <strong>never sees</strong> a Refund button, credit-adjust, schedule editor, package editor, or any business action surface in their own context. To act, they impersonate a studio admin.</p>
+<h3 id="41-system-health-superhealth">4.1 System health <code>/super/health</code></h3>
+<p>Service status, error rates, recent deploys, queue depths (notifications pending, audit ingestion).</p>
+<h3 id="42-feature-flags-superflags">4.2 Feature flags <code>/super/flags</code></h3>
+<p>Platform-level toggles (e.g., enable WhatsApp-channel preview, enable v2 reports). Audit row per flip.</p>
+<h3 id="43-notification-factory-templates-supertemplates">4.3 Notification factory templates <code>/super/templates</code></h3>
+<p>Edit the <strong>canonical</strong> email template library + variable token catalog. Studio admins inherit + override (§2.17). Super-admin cannot edit a studio override.</p>
+<h3 id="44-studio-admin-accounts-superadmins">4.4 Studio-admin accounts <code>/super/admins</code></h3>
+<p>Create, peer-add, force-logout, password reset, MFA enrollment.</p>
+<h3 id="45-audit-superaudit">4.5 Audit <code>/super/audit</code></h3>
+<p>Read-only mirror of studio audit log + super-admin own action log + impersonation events. Cannot edit.</p>
+<h3 id="46-impersonate-superimpersonate">4.6 Impersonate <code>/super/impersonate</code></h3>
+<p>Pick a studio admin → enter their session with persistent banner (§0.9). Used to action a refund / credit grant / schedule edit on their behalf when supporting them.</p>
+<h3 id="47-bulk-waiver-reset-superwaiversreset">4.7 Bulk waiver reset <code>/super/waivers/reset</code></h3>
+<p>Single-action mass waiver reset with mandatory reason. Used when waiver legal text changes. Single audit row at platform level + per-client trigger row.</p>
+<h3 id="48-reports-read-only-superreports">4.8 Reports (read-only) <code>/super/reports</code></h3>
+<p>Read-only mirror of v1 report set for diagnostics. CSV export of PII is gated — must impersonate to export rows containing client identifiers.</p>
+<hr>
+<h2 id="5-end-to-end-user-journeys">5. End-to-end user journeys</h2>
+<h3 id="51-front-desk-shift-studio-admin">5.1 Front-desk shift (studio admin)</h3>
+<ol>
+<li>Lands on <code>/admin</code>. Glances at Today's classes + Needs attention feed.</li>
+<li>Opens <strong>Today</strong> → confirms instructor present → scans QR codes as clients arrive → marks any walk-ins (manual-grant if needed).</li>
+<li>Returns to dashboard → triages <strong>Refund inbox</strong> new rows: opens each, reviews invoice + booking context, replies on WhatsApp, marks <strong>Resolved</strong> with PayNow ref or <strong>Declined</strong> with notes.</li>
+<li>Same flow for <strong>Cancellation inbox</strong>.</li>
+<li>Triages <strong>Private-session inbox</strong> escalations (red SLA chip): WhatsApps instructor → confirms availability → takes over → approves on behalf of instructor.</li>
+</ol>
+<h3 id="52-weekly-schedule-build-studio-admin">5.2 Weekly schedule build (studio admin)</h3>
+<ol>
+<li>Opens <strong>Schedule</strong> → weekly view → <strong>Bulk-generate from template</strong> for next 4–8 weeks.</li>
+<li>Reviews instructor-availability conflict drawer.</li>
+<li>Resolves: reassign / reduce capacity / cancel single instance.</li>
+<li>Saves → bulk schedule write.</li>
+</ol>
+<h3 id="53-monthly-close-studio-admin">5.3 Monthly close (studio admin)</h3>
+<ol>
+<li>Opens <strong>Reports</strong> → <strong>Revenue</strong> → last calendar month → CSV export.</li>
+<li>Same for <strong>Attendance</strong>, <strong>Membership</strong>, <strong>Teaching log</strong>.</li>
+<li>Computes instructor pay externally from Teaching log → disburses externally.</li>
+<li>Reviews <strong>Audit log</strong> for the month: sanity-checks credit grants, refund decisions, schedule cancellations.</li>
+</ol>
+<h3 id="54-instructor-day">5.4 Instructor day</h3>
+<ol>
+<li>Lands <code>/admin/today</code> → sees own next class roster.</li>
+<li>Checks in arrivals (own classes only).</li>
+<li>Opens <strong>Private-session inbox</strong> → approves / declines pending requests.</li>
+<li>Opens <strong>Availability</strong> → updates next week's blocks.</li>
+</ol>
+<h3 id="55-super-admin-routine">5.5 Super-admin routine</h3>
+<ol>
+<li>Lands <code>/super/health</code> → checks service status, queue depths.</li>
+<li>Toggles a feature flag → audit row recorded.</li>
+<li>Studio admin pings for support on a stuck refund → super-admin <strong>Impersonate</strong> → resolves in studio admin context → exits impersonation.</li>
+</ol>
+<h3 id="56-bulk-waiver-reset-super-admin">5.6 Bulk waiver reset (super-admin)</h3>
+<ol>
+<li>Legal flags new waiver text.</li>
+<li>Super-admin <strong>Impersonates</strong> a studio admin → updates waiver text in Settings → bumps version → exits impersonation.</li>
+<li>Super-admin → <strong>Bulk waiver reset</strong> → mandatory reason → confirms.</li>
+<li>All clients flagged for re-sign on next booking. Single platform-level audit row + per-client trigger rows.</li>
+</ol>
+<hr>
+<h2 id="6-ux-principles">6. UX principles</h2>
+<ul>
+<li><strong>Single design language.</strong> Cream / terracotta / sage palette; DM Serif Display headings, Outfit body, JetBrains Mono for codes/IDs. No one-off visual motifs per surface.</li>
+<li><strong>Inbox-shape consistency.</strong> Refund / cancellation / private-session inboxes share row anatomy, state chips, detail-drawer pattern, action vocabulary. Pick up one, pick up all.</li>
+<li><strong>Audit timeline anywhere there's history.</strong> Client profile, invoice detail, session detail, instructor profile — same timeline component.</li>
+<li><strong>Mandatory-reason fields are the discipline.</strong> Every destructive or financial state change forces a free-text reason. The audit row is only as useful as the reason.</li>
+<li><strong>Location chip on every list with a physical-presence dimension</strong> — never silent inclusion of the other location.</li>
+<li><strong>No sub-roles, no per-page permission.</strong> Studio admin = flat. Instructor = row-level scope, full stop. The mockup must reflect that — no greyed-out actions for "permission" reasons within a role.</li>
+<li><strong>Out-of-app flows look like inboxes, not buttons.</strong> No "Refund" button anywhere. No "Cancel membership" button anywhere. No "Pay instructor" button anywhere.</li>
+</ul>
+<hr>
+<h2 id="7-demo-data-shape">7. Demo data shape</h2>
+<p>Seed JSON in the admin app (mockup-only). One file per entity. Cross-referenced by id.</p>
+<p><code>tenants.json</code> (single record), <code>locations.json</code>, <code>admin-users.json</code>, <code>clients.json</code>, <code>instructors.json</code>, <code>session-templates.json</code>, <code>sessions.json</code> (instances), <code>bookings.json</code>, <code>walk-ins.json</code>, <code>client-packages.json</code>, <code>products.json</code>, <code>promos.json</code>, <code>invoices.json</code>, <code>availability-templates.json</code>, <code>availability-blockoffs.json</code>, <code>private-requests.json</code>, <code>referral-codes.json</code>, <code>referral-events.json</code>, <code>audit-log.json</code>, <code>notification-templates.json</code>, <code>broadcasts.json</code>, <code>announcements.json</code>, <code>marketing-cms.json</code>, <code>cms-history.json</code>, <code>feature-flags.json</code>, <code>super-tenants.json</code> (n=1).</p>
+<p>Default seed populates: 2 locations, 4 instructors, 30 clients, 6 class templates, 4 weeks of generated instances (~120 sessions), 3 active workshops, 5 packages, 8 invoices, 3 open refund rows, 2 open cancellation rows, 4 pending private requests (1 escalated), an audit log of ~50 entries.</p>
+<hr>
+<h2 id="8-out-of-scope-v2">8. Out of scope (v2+)</h2>
+<p>Named explicitly so they are not inferred as v1 commitments:</p>
+<ul>
+<li>WhatsApp / SMS / web push channels for outbound notifications.</li>
+<li>WhatsApp Business API templates and approval flow.</li>
+<li>In-app refund processing. Refunds stay out-of-app <strong>permanently</strong>.</li>
+<li>In-app membership cancellation. Cancellation stays out-of-app <strong>permanently</strong>.</li>
+<li>Auto-renewing memberships.</li>
+<li>Native mobile app; mobile-optimized check-in app.</li>
+<li>Marketing funnel analytics (page views → registration → first purchase).</li>
+<li>Cohort retention analysis.</li>
+<li>Custom date-range builder, saved reports, scheduled report email.</li>
+<li>Heatmap / capacity-planning suggestions.</li>
+<li>Mandarin / Tamil localization. English only in v1.</li>
+<li>Per-location-locked studio admin sub-role.</li>
+<li>Approval ladder / dual-signoff for refunds.</li>
+<li>Tenant entity, slug routing, plan/billing layer, "For Business" surface — none of these exist in this single-studio product.</li>
+<li>Real authentication (seeded admin session in mockup), real Stripe integration, real QR scanning, real email sending, cross-app state sync with the client portal.</li>
+</ul>
+    </main>
+  </div>
+  <a href="#" class="back-top" title="Back to top">↑</a>
+  <footer class="page">
+    <strong>Yoga Sadhana</strong> · fe-admin spec · Source: <code>docs/md/fe-client-admin.md</code>
+  </footer>
+</body>
+</html>

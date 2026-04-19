@@ -1,0 +1,5 @@
+[
+  { "id": "ann-1", "tenantId": "studio", "message": "Studio closed May 1 for Labour Day.", "active": true, "startsAt": "2026-04-20T00:00:00Z", "endsAt": "2026-05-01T23:59:59Z" },
+  { "id": "ann-2", "tenantId": "studio", "message": "Chinese New Year schedule changes.", "active": false, "startsAt": "2026-02-05T00:00:00Z", "endsAt": "2026-02-12T23:59:59Z" },
+  { "id": "ann-3", "tenantId": "studio", "message": "Holiday hours for Christmas.", "active": false, "startsAt": "2025-12-22T00:00:00Z", "endsAt": "2025-12-28T23:59:59Z" }
+]

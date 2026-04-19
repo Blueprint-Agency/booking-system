@@ -1,0 +1,5 @@
+[
+  { "id": "brd-1", "tenantId": "studio", "templateSlug": null, "subject": "Weekly schedule — Apr 13 onwards", "body": "New workshop added. Book your spot early.", "audience": { "kind": "all" }, "status": "sent", "sentAt": "2026-04-13T08:00:00Z" },
+  { "id": "brd-2", "tenantId": "studio", "templateSlug": null, "subject": "VIP preview: Weekend Yin Intensive", "body": "Doors open to VIP first. Early bird pricing.", "audience": { "kind": "tag", "value": "vip" }, "status": "sent", "sentAt": "2026-03-29T14:00:00Z" },
+  { "id": "brd-3", "tenantId": "studio", "templateSlug": "renewal", "subject": "May schedule highlights", "body": "See what's coming up next month.", "audience": { "kind": "all" }, "status": "scheduled", "scheduledAt": "2026-05-01T08:00:00Z" }
+]

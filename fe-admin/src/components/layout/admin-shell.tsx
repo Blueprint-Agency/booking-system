@@ -1,17 +1,26 @@
-import { AdminSidebar } from "./admin-sidebar";
-import { AdminTopbar } from "./admin-topbar";
-import { AuthGuard } from "./auth-guard";
+"use client";
+import type { AdminRole } from "@/types";
+import { AdminNav } from "./admin-nav";
+import { AdminTopBar } from "./admin-topbar";
+import { ImpersonateBanner } from "./impersonate-banner";
 
-export function AdminShell({ children }: { children: React.ReactNode }) {
+export function AdminShell({
+  variant,
+  children,
+}: {
+  variant: AdminRole;
+  children: React.ReactNode;
+}) {
   return (
-    <AuthGuard>
-      <div className="min-h-screen flex bg-paper">
-        <AdminSidebar />
-        <div className="flex-1 min-w-0 flex flex-col">
-          <AdminTopbar />
-          <main className="flex-1 px-6 py-8 max-w-[1400px] w-full mx-auto">{children}</main>
+    <div className="flex min-h-screen flex-col bg-paper">
+      <ImpersonateBanner />
+      <div className="flex flex-1">
+        <AdminNav variant={variant} />
+        <div className="flex min-w-0 flex-1 flex-col">
+          <AdminTopBar variant={variant} />
+          <main className="flex-1 overflow-auto px-8 py-6">{children}</main>
         </div>
       </div>
-    </AuthGuard>
+    </div>
   );
 }

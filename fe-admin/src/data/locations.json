@@ -1,24 +1,38 @@
 [
   {
-    "id": "loc-breadtalk",
-    "tenantId": "yoga-sadhana",
-    "name": "Yoga Sadhana @ Breadtalk IHQ",
-    "shortName": "Breadtalk IHQ",
-    "address": "30 Tai Seng Street #05-01, Breadtalk IHQ, Singapore 534013",
-    "area": "Paya Lebar",
-    "mapUrl": "https://maps.google.com/?q=Breadtalk+IHQ+Singapore",
-    "rooms": 2,
-    "amenities": ["Shower", "Mats provided", "Lockers"]
+    "id": "loc-1",
+    "tenantId": "studio",
+    "name": "Breadtalk IHQ",
+    "shortName": "Breadtalk",
+    "address": "30 Tai Seng St, Singapore 534013",
+    "area": "Tai Seng",
+    "phone": "+65 6100 1111",
+    "operatingHours": [
+      { "day": 0, "open": "07:00", "close": "20:00" },
+      { "day": 1, "open": "07:00", "close": "21:00" },
+      { "day": 2, "open": "07:00", "close": "21:00" },
+      { "day": 3, "open": "07:00", "close": "21:00" },
+      { "day": 4, "open": "07:00", "close": "21:00" },
+      { "day": 5, "open": "07:00", "close": "21:00" },
+      { "day": 6, "open": "08:00", "close": "18:00" }
+    ]
   },
   {
-    "id": "loc-outram",
-    "tenantId": "yoga-sadhana",
-    "name": "Yoga Sadhana @ Outram Park",
-    "shortName": "Outram Park",
-    "address": "10 Eu Tong Sen Street #05-12, The Central, Singapore 059817",
+    "id": "loc-2",
+    "tenantId": "studio",
+    "name": "Outram Park",
+    "shortName": "Outram",
+    "address": "10 Outram Rd, Singapore 169070",
     "area": "Outram",
-    "mapUrl": "https://maps.google.com/?q=The+Central+Outram+Singapore",
-    "rooms": 1,
-    "amenities": ["Shower", "Mats provided"]
+    "phone": "+65 6100 2222",
+    "operatingHours": [
+      { "day": 0, "open": "08:00", "close": "19:00" },
+      { "day": 1, "open": "07:00", "close": "21:00" },
+      { "day": 2, "open": "07:00", "close": "21:00" },
+      { "day": 3, "open": "07:00", "close": "21:00" },
+      { "day": 4, "open": "07:00", "close": "21:00" },
+      { "day": 5, "open": "07:00", "close": "21:00" },
+      { "day": 6, "open": "08:00", "close": "18:00" }
+    ]
   }
 ]

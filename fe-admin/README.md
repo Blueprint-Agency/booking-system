@@ -1,33 +1,36 @@
-# Yoga Sadhana Admin Portal (mockup)
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-Clickable frontend-only admin portal for Yoga Sadhana staff. Sibling app to `../fe/`.
+## Getting Started
 
-## Development
+First, run the development server:
 
 ```bash
-npm install
-npm run dev         # → http://localhost:3100
+npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
 ```
 
-## Seeded admins
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-Log in with any of the seeded emails (any password works):
+You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
-- `priya@yogasadhana.sg`
-- `arjun@yogasadhana.sg`
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-Reset the local mock state from the browser console:
+## Learn More
 
-```js
-localStorage.removeItem("admin-mock-state:v1");
-location.reload();
-```
+To learn more about Next.js, take a look at the following resources:
 
-## Phase map
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
 
-- **Phase 1 (shipped):** shell, login, dashboard, UI primitives, seed data, all remaining routes as `ComingSoon` placeholders.
-- **Phase 2:** schedule, bookings, check-in, private-session requests.
-- **Phase 3:** clients, catalog, instructors, locations.
-- **Phase 4:** invoices, reports, notifications, waivers, referrals, settings.
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-See `../docs/md/prd-admin.md` for the product spec and `../docs/md/plans/` for phase plans.
+## Deploy on Vercel
+
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.

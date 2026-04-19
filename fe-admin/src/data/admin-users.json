@@ -1,16 +1,47 @@
 [
   {
-    "id": "admin-1",
-    "email": "priya@yogasadhana.sg",
-    "firstName": "Priya",
-    "lastName": "Menon",
-    "createdAt": "2024-06-01T00:00:00.000Z"
+    "id": "adm-anya",
+    "name": "Anya Krishnan",
+    "email": "anya@yogasadhana.sg",
+    "role": "super",
+    "tenantId": "studio",
+    "locationIds": [],
+    "active": true
   },
   {
-    "id": "admin-2",
-    "email": "arjun@yogasadhana.sg",
-    "firstName": "Arjun",
-    "lastName": "Rao",
-    "createdAt": "2024-07-10T00:00:00.000Z"
+    "id": "adm-maya",
+    "name": "Maya Lim",
+    "email": "maya@yogasadhana.sg",
+    "role": "admin",
+    "tenantId": "studio",
+    "locationIds": ["loc-1", "loc-2"],
+    "active": true
+  },
+  {
+    "id": "adm-priya",
+    "name": "Priya Singh",
+    "email": "priya@yogasadhana.sg",
+    "role": "instructor",
+    "tenantId": "studio",
+    "locationIds": ["loc-1", "loc-2"],
+    "active": true
+  },
+  {
+    "id": "adm-marcus",
+    "name": "Marcus Tan",
+    "email": "marcus@yogasadhana.sg",
+    "role": "instructor",
+    "tenantId": "studio",
+    "locationIds": ["loc-1"],
+    "active": true
+  },
+  {
+    "id": "adm-jia",
+    "name": "Jia Ling",
+    "email": "jia@yogasadhana.sg",
+    "role": "instructor",
+    "tenantId": "studio",
+    "locationIds": ["loc-2"],
+    "active": true
   }
 ]

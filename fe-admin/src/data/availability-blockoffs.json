@@ -1,0 +1,7 @@
+[
+  { "id": "bo-1", "instructorId": "inst-1", "startAt": "2026-05-01T00:00:00Z", "endAt": "2026-05-03T23:59:59Z", "reason": "Personal leave" },
+  { "id": "bo-2", "instructorId": "inst-2", "startAt": "2026-04-28T00:00:00Z", "endAt": "2026-04-28T23:59:59Z", "reason": "Dental appointment" },
+  { "id": "bo-3", "instructorId": "inst-3", "startAt": "2026-04-25T06:00:00Z", "endAt": "2026-04-25T12:00:00Z", "reason": "Teacher training" },
+  { "id": "bo-4", "instructorId": "inst-4", "startAt": "2026-05-10T00:00:00Z", "endAt": "2026-05-17T23:59:59Z", "reason": "Retreat India" },
+  { "id": "bo-5", "instructorId": "inst-5", "startAt": "2026-04-22T00:00:00Z", "endAt": "2026-04-30T23:59:59Z", "reason": "Maternity" }
+]

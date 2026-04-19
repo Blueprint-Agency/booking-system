@@ -79,20 +79,6 @@
   }
 }
 
-/* Photography treatment — neutral tonal bias (no warm sepia bleed into brand palette) */
-.photo-warm {
-  filter: saturate(1.02) contrast(1.02);
-}
-
-/* Hero overlay — apply on a child of a relative parent containing an image */
-.photo-overlay::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: var(--color-overlay);
-  pointer-events: none;
-}
-
 @keyframes fadeUp {
   from {
     opacity: 0;
@@ -117,9 +103,10 @@
   animation: fadeIn 0.3s ease-out both;
 }
 
-.stagger-1 { animation-delay: 0.06s; }
-.stagger-2 { animation-delay: 0.12s; }
-.stagger-3 { animation-delay: 0.18s; }
-.stagger-4 { animation-delay: 0.24s; }
-.stagger-5 { animation-delay: 0.30s; }
-.stagger-6 { animation-delay: 0.36s; }
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
