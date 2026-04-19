@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { SlaChip } from "@/components/ui/sla-chip";
 import { EmptyState } from "@/components/ui/empty-state";
 import { slaTier } from "@/lib/sla";
+import { sessionDetailHref } from "@/lib/session-routes";
 import { formatCurrency, formatTime, getLocationName } from "@/lib/utils";
 import instructorsData from "@/data/instructors.json";
 import clientsData from "@/data/clients.json";
@@ -77,7 +78,7 @@ export default function DashboardPage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <h2 className="text-base font-semibold text-ink">Today's classes</h2>
-              <Link href="/schedule" className="text-xs font-medium text-accent-deep hover:underline">
+              <Link href="/classes/schedule" className="text-xs font-medium text-accent-deep hover:underline">
                 Full schedule →
               </Link>
             </div>
@@ -104,7 +105,7 @@ export default function DashboardPage() {
                           {s.bookedCount}/{s.capacity}
                         </Badge>
                         <Link
-                          href={`/schedule/${s.id}`}
+                          href={sessionDetailHref(s)}
                           className="text-xs font-medium text-accent-deep hover:underline"
                         >
                           Roster
@@ -122,7 +123,7 @@ export default function DashboardPage() {
           <CardHeader>
             <div className="flex items-center justify-between">
               <h2 className="text-base font-semibold text-ink">Private requests</h2>
-              <Link href="/requests" className="text-xs font-medium text-accent-deep hover:underline">
+              <Link href="/private-sessions/requests" className="text-xs font-medium text-accent-deep hover:underline">
                 Inbox →
               </Link>
             </div>

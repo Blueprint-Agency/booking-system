@@ -1,7 +1,7 @@
 "use client";
 
 import { use, useState } from "react";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
@@ -11,7 +11,8 @@ import { Card } from "@/components/ui/card";
 import { RosterTable } from "@/components/session/roster-table";
 import { ManualBookModal } from "@/components/session/manual-book-modal";
 import { CancelSessionModal } from "@/components/schedule/cancel-session-modal";
-import { useAdminState, swapSessionInstructor } from "@/lib/mock-state";
+import { useAdminState } from "@/lib/mock-state";
+import { sessionDetailHref } from "@/lib/session-routes";
 import clientsData from "@/data/clients.json";
 import instructorsData from "@/data/instructors.json";
 import locationsData from "@/data/locations.json";
@@ -19,7 +20,7 @@ import clientPackagesData from "@/data/client-packages.json";
 import productsData from "@/data/products.json";
 import type { Client, ClientPackage, Instructor, Location, Product } from "@/types";
 
-export default function SessionDetailPage({
+export default function WorkshopDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
@@ -31,6 +32,7 @@ export default function SessionDetailPage({
   const [cancelOpen, setCancelOpen] = useState(false);
 
   if (!session) return notFound();
+  if (session.type !== "workshop") redirect(sessionDetailHref(session));
 
   const clients = clientsData as Client[];
   const instructors = instructorsData as Instructor[];
@@ -45,10 +47,13 @@ export default function SessionDetailPage({
   const statusTone: "sage" | "neutral" | "error" =
     session.status === "cancelled" ? "error" : session.status === "completed" ? "neutral" : "sage";
 
+  const soldPct = session.capacity > 0 ? Math.round((session.bookedCount / session.capacity) * 100) : 0;
+  const revenue = session.price * session.bookedCount;
+
   return (
     <div className="space-y-6">
-      <Link href="/schedule" className="inline-flex items-center gap-1 text-sm text-ink/60 hover:text-ink">
-        <ArrowLeft className="h-4 w-4" /> Back to schedule
+      <Link href="/workshops" className="inline-flex items-center gap-1 text-sm text-ink/60 hover:text-ink">
+        <ArrowLeft className="h-4 w-4" /> Back to workshops
       </Link>
 
       <PageHeader
@@ -60,7 +65,7 @@ export default function SessionDetailPage({
               Manual book
             </Button>
             <Button variant="danger" onClick={() => setCancelOpen(true)} disabled={session.status === "cancelled"}>
-              Cancel session
+              Cancel workshop
             </Button>
           </div>
         }
@@ -74,28 +79,20 @@ export default function SessionDetailPage({
           </div>
         </Card>
         <Card className="px-5 py-4">
-          <div className="text-xs uppercase tracking-wide text-ink/50">Attendance</div>
+          <div className="text-xs uppercase tracking-wide text-ink/50">Sold</div>
           <div className="mt-1 font-mono text-lg text-ink">
             {session.bookedCount}/{session.capacity}
           </div>
+          <div className="text-xs text-ink/50">{soldPct}% filled</div>
+        </Card>
+        <Card className="px-5 py-4">
+          <div className="text-xs uppercase tracking-wide text-ink/50">Revenue</div>
+          <div className="mt-1 font-mono text-lg text-ink">S${revenue}</div>
+          <div className="text-xs text-ink/50">@ S${session.price}/ticket</div>
         </Card>
         <Card className="px-5 py-4">
           <div className="text-xs uppercase tracking-wide text-ink/50">Instructor</div>
           <div className="mt-1 text-sm font-medium text-ink">{instructor?.name ?? "—"}</div>
-          <select
-            className="mt-2 w-full rounded-md border border-ink/10 bg-white px-2 py-1 text-xs"
-            value={session.instructorId}
-            onChange={(e) => swapSessionInstructor(session.id, e.target.value)}
-            disabled={session.status === "cancelled"}
-          >
-            {instructors.map((i) => (
-              <option key={i.id} value={i.id}>{i.name}</option>
-            ))}
-          </select>
-        </Card>
-        <Card className="px-5 py-4">
-          <div className="text-xs uppercase tracking-wide text-ink/50">Waitlist</div>
-          <div className="mt-1 font-mono text-lg text-ink">{session.waitlistCount}</div>
         </Card>
       </div>
 

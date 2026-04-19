@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Session, Instructor } from "@/types";
 import { cn } from "@/lib/utils";
+import { sessionDetailHref } from "@/lib/session-routes";
 
 export function SessionChip({
   session,
@@ -15,7 +16,7 @@ export function SessionChip({
   const cancelled = session.status === "cancelled";
   return (
     <Link
-      href={`/schedule/${session.id}`}
+      href={sessionDetailHref(session)}
       className={cn(
         "group block rounded-lg border border-ink/10 bg-white px-2 py-1.5 text-xs transition-colors hover:border-accent/40 hover:bg-accent/[0.03]",
         cancelled && "opacity-50 line-through",

@@ -40,7 +40,7 @@ export default function RequestDetailPage({
 
   return (
     <div className="space-y-6">
-      <Link href="/requests" className="inline-flex items-center gap-1 text-sm text-ink/60 hover:text-ink">
+      <Link href="/private-sessions/requests" className="inline-flex items-center gap-1 text-sm text-ink/60 hover:text-ink">
         <ArrowLeft className="h-4 w-4" /> Back to inbox
       </Link>
       <PageHeader

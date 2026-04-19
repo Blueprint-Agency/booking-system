@@ -18,8 +18,8 @@ export function ScheduleToolbar({
   onAnchorChange: (d: Date) => void;
   onViewChange: (v: CalendarView) => void;
   onToday: () => void;
-  onCreateClass: () => void;
-  onAddWorkshop: () => void;
+  onCreateClass?: () => void;
+  onAddWorkshop?: () => void;
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -60,8 +60,12 @@ export function ScheduleToolbar({
             </button>
           ))}
         </div>
-        <Button variant="secondary" size="sm" onClick={onAddWorkshop}>Add workshop</Button>
-        <Button variant="primary" size="sm" onClick={onCreateClass}>Create class</Button>
+        {onAddWorkshop && (
+          <Button variant="secondary" size="sm" onClick={onAddWorkshop}>Add workshop</Button>
+        )}
+        {onCreateClass && (
+          <Button variant="primary" size="sm" onClick={onCreateClass}>Create class</Button>
+        )}
       </div>
     </div>
   );

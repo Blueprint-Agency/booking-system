@@ -1,11 +1,13 @@
 # Admin Portal — Product Requirements Document
 
 **Product:** Yoga Sadhana Admin Portal
-**Version:** 1.0
+**Version:** 2.0 (pillar realignment)
 **Date:** April 20, 2026
 **Status:** Draft
 **Audience:** Product Manager / Engineering Team
 **Author:** TBD
+
+> **v2.0 change:** Admin IA is realigned to the three client-facing pillars — **Classes**, **Workshops**, **Private Sessions** — to mirror `fe-client/`. Generic surfaces (`/schedule`, `/bookings`, `/catalog/*`, `/requests`) are dissolved into pillar-scoped sub-pages. Cross-cutting pages (Clients, Instructors, Locations, Invoices, Reports, Check-in, Settings) are unchanged in role but regrouped in the sidebar.
 
 ---
 
@@ -81,33 +83,64 @@ Mirrors `fe/` exactly. Tailwind v4 (`@import "tailwindcss"` + `@theme` tokens in
 
 ## 4. Information Architecture
 
-Sidebar layout, persistent on desktop, collapsible drawer on mobile.
+Sidebar layout, persistent on desktop, collapsible drawer on mobile. Top of the sidebar shows the three client-facing pillars (Classes / Workshops / Private Sessions); each pillar page uses a tab row for its sub-views. Everything else is cross-cutting.
+
+### 4.1 Pillar map (mirror of `fe-client`)
+
+| fe-client surface | Admin pillar | Admin entry route |
+|---|---|---|
+| `/classes`, `/account/classes` | **Classes** | `/classes` |
+| `/workshops`, `/account/workshops` | **Workshops** | `/workshops` |
+| `/private-sessions`, `/account/private-sessions` | **Private Sessions** | `/private-sessions` |
+
+Session-type filter is the canonical join: `Session.type === "regular"` → Classes; `"workshop" \| "event"` → Workshops; `"private"` → Private Sessions. Product-type filter for catalog sub-pages: `creditType === "class"` → Classes packages; `type === "workshop"` → Workshops catalog; `type === "private-pack"` → Private Sessions packs.
+
+### 4.2 Routes
 
 | Route | Page | Notes |
 |---|---|---|
 | `/login` | Admin sign-in | Pre-auth |
-| `/` | Dashboard | Today's view |
-| `/schedule` | Schedule calendar | Week/month toggle |
-| `/schedule/[id]` | Session detail | Roster + actions |
-| `/bookings` | Bookings list | Flat, filterable |
-| `/check-in` | Check-in | QR scan + manual |
-| `/requests` | Private session requests | Inbox with SLA |
-| `/requests/[id]` | Request detail | Approve/decline |
-| `/clients` | Clients list | Search + filter |
-| `/clients/[id]` | Client profile | Bookings, packages, credits, notes, waiver |
-| `/catalog/packages` | Packages CRUD | Credit bundles, memberships, private packs |
-| `/catalog/workshops` | Workshops CRUD | |
-| `/catalog/classes` | Class templates | Types (Vinyasa, Yin, etc.) |
-| `/instructors` | Instructors list | |
-| `/instructors/[id]` | Instructor profile | Bio, availability |
-| `/locations` | Locations CRUD | |
-| `/invoices` | Invoices list | Stripe mirror, refund actions |
-| `/invoices/[id]` | Invoice detail | |
-| `/reports` | Reports dashboard | Attendance, revenue, sell-through |
-| `/notifications` | Email templates | Per-event editor |
-| `/waivers` | Waiver tracking | Signed list + version |
-| `/referrals` | Referral tracking | Referrer + referee lists |
-| `/settings` | Studio settings | Profile, policy, admin users |
+| `/` | Dashboard | Today's view across all pillars |
+| **Core pillars** | | |
+| `/classes` | Classes home | Redirects to `/classes/schedule` |
+| `/classes/schedule` | Class schedule | Week/month calendar, regular sessions only |
+| `/classes/schedule/[id]` | Class session detail | Roster + actions |
+| `/classes/templates` | Class templates | Vinyasa, Yin, Hatha, etc. (recurring seed) |
+| `/classes/packages` | Class packages | Drop-in, packs, memberships (creditType=class) |
+| `/workshops` | Workshops list | Upcoming + past, status filter |
+| `/workshops/[id]` | Workshop detail | Roster, ticket-tier sales, cancel |
+| `/workshops/catalog` | Workshop catalog | Template workshop products (tiered pricing) |
+| `/private-sessions` | Private Sessions home | Redirects to `/private-sessions/requests` |
+| `/private-sessions/requests` | Requests inbox | SLA-sorted, grouped by status |
+| `/private-sessions/requests/[id]` | Request detail | Approve/decline |
+| `/private-sessions/upcoming` | Approved sessions | Calendar/list of approved PT sessions |
+| `/private-sessions/packs` | PT packs catalog | type=private-pack products |
+| **Operate** | | |
+| `/check-in` | Check-in | QR scan + manual, cross-pillar |
+| **Manage** | | |
+| `/clients` · `/clients/[id]` | Clients | List + profile |
+| `/instructors` · `/instructors/[id]` | Instructors | List + profile |
+| `/locations` | Locations | CRUD |
+| **Finance** | | |
+| `/invoices` · `/invoices/[id]` | Invoices | Stripe mirror, refunds |
+| `/reports` | Reports | Attendance, revenue, sell-through, no-show — with a pillar filter |
+| **Settings** | | |
+| `/settings` | Studio settings | Tabbed: Studio · Admin Users · Notifications · Waivers · Referrals |
+
+### 4.3 Deprecated routes (dissolved in v2.0)
+
+| Old route | Replacement |
+|---|---|
+| `/schedule` | `/classes/schedule` |
+| `/schedule/[id]` | `/classes/schedule/[id]` (or `/workshops/[id]`, `/private-sessions/requests/[id]` depending on `session.type`) |
+| `/bookings` | Deleted — bookings are only viewed inside a pillar's session roster; cross-pillar reporting moves to `/reports` |
+| `/catalog/classes` | `/classes/templates` |
+| `/catalog/packages` | Split: `/classes/packages` (class credit) and `/private-sessions/packs` (pt credit) |
+| `/catalog/workshops` | `/workshops/catalog` |
+| `/requests` · `/requests/[id]` | `/private-sessions/requests` · `/private-sessions/requests/[id]` |
+| `/notifications` | `/settings` → Notifications tab |
+| `/waivers` | `/settings` → Waivers tab |
+| `/referrals` | `/settings` → Referrals tab |
 
 ---
 
@@ -147,32 +180,66 @@ Sidebar layout, persistent on desktop, collapsible drawer on mobile.
 - Revenue snapshot for today, this week, this month.
 - Quick links to Check-in and Requests.
 
-### 6.3 Schedule
+### 6.3 Classes pillar (`/classes/*`)
 
-- **Views:** week (default), month.
-- **Create recurring class:** pick template (class type, instructor, location, day/time, capacity); generates instances forward for 12 weeks.
-- **One-off override:** cancel a single instance or swap instructor for that date.
-- **Add workshop:** one-off session with price + capacity.
-- **Cancel session:** marks session cancelled, writes `session-cancellations.json` row, auto-refunds credits to all booked clients (adjustment logged in `credit-adjustments.json` with reason "session cancelled").
+Operates the recurring group-class life cycle.
 
-### 6.4 Session Detail
+**`/classes/schedule` — schedule calendar**
+- Views: week (default), month. Shows only `Session.type === "regular"`.
+- Create recurring class from a template; generates instances forward 12 weeks.
+- One-off override: cancel a single instance or swap instructor for that date.
+- Cancel session: writes `session-cancellations.json`, auto-refunds credits.
 
-- Roster table: client, package used, credit cost, status (booked / checked-in / no-show / cancelled).
-- Actions: manual book (pick from client list), cancel booking, mark no-show, note.
+**`/classes/schedule/[id]` — class session detail**
+- Roster table: client, package used, credit cost, booking status, check-in status.
+- Actions: manual book, cancel booking, mark no-show, add note.
 
-### 6.5 Check-in
+**`/classes/templates` — class templates**
+- CRUD for class types (Vinyasa, Yin, Hatha, etc.) with default duration, capacity, credit cost.
 
-- Mocked camera view with a "Simulate scan" button cycling through today's valid booking codes.
+**`/classes/packages` — class packages catalog**
+- CRUD for `creditType === "class"` products: drop-in, packs, memberships. Active/archived toggle.
+
+### 6.4 Workshops pillar (`/workshops/*`)
+
+Operates discrete paid events. Each workshop is both a session and a sellable product (tiered ticketing lives on the session).
+
+**`/workshops` — list**
+- Filters: upcoming/past, date range, location, status.
+- Columns: date, title, instructor, location, sold/capacity, revenue.
+
+**`/workshops/[id]` — detail**
+- Roster + check-in status.
+- Ticket-tier panel: show each `workshopPackage` tier, sold-per-tier.
+- Cancel workshop with refund flow.
+
+**`/workshops/catalog` — workshop templates**
+- CRUD for reusable workshop blueprints (title, default tiers, default capacity).
+
+### 6.5 Private Sessions pillar (`/private-sessions/*`)
+
+Operates the request-approval-session cycle for 1-on-1 / 2-on-1 PT.
+
+**`/private-sessions/requests` — inbox**
+- Sorted by SLA deadline, grouped by status (pending / approved / declined).
+- SLA chip: green >6h, amber 2–6h, red <2h or overdue.
+
+**`/private-sessions/requests/[id]` — request detail**
+- **Accept:** admin picks final time from client's proposed slots; writes `Session` row with `type="private"`; notification log row added.
+- **Decline:** reason required.
+
+**`/private-sessions/upcoming` — approved sessions**
+- List/calendar of `Session.type === "private"` with status=scheduled. Row click opens session detail (reuses roster component).
+
+**`/private-sessions/packs` — PT packs catalog**
+- CRUD for `type === "private-pack"` products (1-on-1, 2-on-1, VIP family-shareable). `creditType === "pt"`.
+
+### 6.6 Check-in
+
+- Cross-pillar. Mocked camera view with a "Simulate scan" button cycling through today's valid booking codes.
 - Manual booking-ID input as fallback.
-- On successful match: green confirmation, client name, class, updates booking status to `checked-in`.
+- On successful match: green confirmation, client name, session, updates booking `checkInStatus`.
 - Recent check-ins list (last 20).
-
-### 6.6 Private Session Requests
-
-- Inbox sorted by SLA deadline, grouped by status (pending / approved / declined).
-- **SLA chip:** green >6h remaining, amber 2–6h, red <2h or overdue.
-- **Accept:** admin picks final time from client's proposed slots; status → approved; notification is mocked (row added to a local notification log; no cross-app delivery).
-- **Decline:** reason required; status → declined.
 
 ### 6.7 Clients
 
@@ -180,11 +247,13 @@ Sidebar layout, persistent on desktop, collapsible drawer on mobile.
 - Profile: upcoming + past bookings, active packages with credit balances and expiry, membership status, waiver status + version, referral stats, free-form notes.
 - **Adjust credits:** modal with delta (+/-), reason (required), confirm. Writes `credit-adjustments.json` row. Visible on profile timeline.
 
-### 6.8 Catalog
+### 6.8 Catalog (distributed across pillars)
 
-- **Packages:** CRUD for credit bundles, unlimited memberships, private-session packs. Fields per PRD phase 1 product schema. Active/archived toggle.
-- **Workshops:** CRUD for one-off paid events.
-- **Class templates:** CRUD for class types (Vinyasa, Yin, Hatha, etc.) with default duration, capacity, credit cost.
+Catalog surfaces live inside each pillar, not as a separate top-level section:
+- Class templates → see §6.3 `/classes/templates`
+- Class-credit packages, memberships, drop-in → see §6.3 `/classes/packages`
+- Workshop templates → see §6.4 `/workshops/catalog`
+- PT packs → see §6.5 `/private-sessions/packs`
 
 ### 6.9 Instructors
 
@@ -210,27 +279,15 @@ Sidebar layout, persistent on desktop, collapsible drawer on mobile.
 - **No-show rate:** overall and per instructor.
 - All charts render from seeded data; export buttons are placeholders.
 
-### 6.13 Notifications
+### 6.13 Settings (`/settings`)
 
-- Template list: one row per event key (booking-confirmed, booking-cancelled, package-purchased, package-expiring-30d/15d/7d/1d/12h/2h, request-received, request-approved, request-declined, waiver-resign, workshop-reminder).
-- Editor: subject + body, mustache-style placeholders (`{{client.firstName}}`, `{{session.date}}`, etc.).
-- Live preview pane rendering with sample data.
+Single page with tabbed sections. No separate top-level routes.
 
-### 6.14 Waivers
-
-- List of clients with waiver status (signed / outdated / unsigned), version, signed-at.
-- **Force re-sign on policy change:** admin bumps waiver version; all prior signatures marked outdated. Clients prompted to re-sign on next login (mocked).
-
-### 6.15 Referrals
-
-- **Referrers view:** client, code, referrals sent, converted, reward earned.
-- **Referees view:** client, referrer, first purchase, reward credited.
-
-### 6.16 Settings
-
-- Studio profile (name, contact, hours).
-- Policy text (cancellation window, no-show rules) — consumed by client portal in future integration.
-- Admin users CRUD.
+- **Studio:** profile (name, contact, hours), policy text (cancellation window, no-show rules).
+- **Admin Users:** CRUD.
+- **Notifications:** per-event email templates. One row per key (booking-confirmed, booking-cancelled, package-purchased, package-expiring-30d/15d/7d/1d/12h/2h, request-received, request-approved, request-declined, waiver-resign, workshop-reminder). Editor with subject + mustache body + live preview.
+- **Waivers:** client waiver status (signed/outdated/unsigned), version bump triggers force-resign on next client login.
+- **Referrals:** referrers view (code, sent, converted, reward) + referees view (referrer, first purchase, reward credited).
 
 ---
 

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function Page() {
-  redirect("/settings/studio");
+  redirect("/classes/schedule");
 }

@@ -5,18 +5,14 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   CalendarDays,
-  ClipboardList,
+  GraduationCap,
+  UserCog,
   QrCode,
-  Inbox,
   Users,
-  Package as PackageIcon,
   Users2,
   MapPin,
   Receipt,
   BarChart3,
-  Mail,
-  FileSignature,
-  Gift,
   Settings as SettingsIcon,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -27,20 +23,24 @@ type NavGroup = { heading: string; items: NavItem[] };
 
 const GROUPS: NavGroup[] = [
   {
+    heading: "Core",
+    items: [
+      { href: "/classes", label: "Classes", icon: CalendarDays },
+      { href: "/workshops", label: "Workshops", icon: GraduationCap },
+      { href: "/private-sessions", label: "Private Sessions", icon: UserCog },
+    ],
+  },
+  {
     heading: "Operate",
     items: [
       { href: "/", label: "Dashboard", icon: LayoutDashboard },
-      { href: "/schedule", label: "Schedule", icon: CalendarDays },
-      { href: "/bookings", label: "Bookings", icon: ClipboardList },
       { href: "/check-in", label: "Check-in", icon: QrCode },
-      { href: "/requests", label: "Requests", icon: Inbox },
     ],
   },
   {
     heading: "Manage",
     items: [
       { href: "/clients", label: "Clients", icon: Users },
-      { href: "/catalog/packages", label: "Catalog", icon: PackageIcon },
       { href: "/instructors", label: "Instructors", icon: Users2 },
       { href: "/locations", label: "Locations", icon: MapPin },
     ],
@@ -53,11 +53,8 @@ const GROUPS: NavGroup[] = [
     ],
   },
   {
-    heading: "Governance",
+    heading: "System",
     items: [
-      { href: "/notifications", label: "Notifications", icon: Mail },
-      { href: "/waivers", label: "Waivers", icon: FileSignature },
-      { href: "/referrals", label: "Referrals", icon: Gift },
       { href: "/settings", label: "Settings", icon: SettingsIcon },
     ],
   },

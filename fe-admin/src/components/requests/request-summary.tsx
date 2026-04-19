@@ -16,7 +16,7 @@ export function RequestSummary({
   const inst = instructors.find((i) => i.id === (request.preferredInstructorId ?? ""));
   return (
     <Link
-      href={`/requests/${request.id}`}
+      href={`/private-sessions/requests/${request.id}`}
       className="flex items-center justify-between rounded-xl border border-ink/10 bg-white px-4 py-3 text-sm transition-colors hover:border-accent/30"
     >
       <div>

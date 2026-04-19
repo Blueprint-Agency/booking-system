@@ -2,6 +2,7 @@ import { format, isSameMonth } from "date-fns";
 import type { Session, Instructor } from "@/types";
 import { isSameCalendarDay, monthRange, sessionsOn } from "@/lib/schedule";
 import { cn } from "@/lib/utils";
+import { sessionDetailHref } from "@/lib/session-routes";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -61,7 +62,7 @@ export function MonthView({
                   return (
                     <a
                       key={s.id}
-                      href={`/schedule/${s.id}`}
+                      href={sessionDetailHref(s)}
                       className="truncate rounded-md bg-white px-1.5 py-1 text-[11px] text-ink hover:bg-accent/5"
                       title={`${s.name} · ${inst?.name ?? "—"}`}
                     >
