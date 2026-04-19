@@ -30,7 +30,7 @@ export default function ClientsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Clients"
-        description={`${state.clients.length} total \u00b7 ${filtered.length} shown`}
+        description={`${state.clients.length} total · ${filtered.length} shown`}
       />
       <ClientFilters value={filters} onChange={setFilters} />
       <div className="overflow-hidden rounded-xl border border-ink/10 bg-white">

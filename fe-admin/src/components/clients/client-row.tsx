@@ -33,7 +33,7 @@ export function ClientRow({
       <td className="px-4 py-3 text-sm font-mono text-ink/70">{totalCredits}</td>
       <td className="px-4 py-3">
         {client.waiverSigned ? (
-          <Badge tone="sage">signed v{client.waiverVersion ?? "\u2013"}</Badge>
+          <Badge tone="sage">signed v{client.waiverVersion ?? "–"}</Badge>
         ) : (
           <Badge tone="warning">unsigned</Badge>
         )}
