@@ -1,6 +1,5 @@
 import { ClientNav } from "@/components/layout/client-nav";
 import { SiteFooter } from "@/components/layout/site-footer";
-import { RoleSwitcher } from "@/components/layout/role-switcher";
 import { ScrollToTop } from "@/components/layout/scroll-to-top";
 
 export default function ClientLayout({
@@ -14,7 +13,6 @@ export default function ClientLayout({
       <ClientNav />
       <main className="flex-1">{children}</main>
       <SiteFooter />
-      <RoleSwitcher />
     </div>
   );
 }

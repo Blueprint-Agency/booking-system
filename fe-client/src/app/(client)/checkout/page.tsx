@@ -273,7 +273,7 @@ function CheckoutContent() {
 
           <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-10 mt-10">
             {/* Left column — step fields */}
-            <div>
+            <div className="lg:order-1 order-2">
               {step === 1 && (
                 <div className="space-y-5">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -484,7 +484,7 @@ function CheckoutContent() {
             </div>
 
             {/* Right column — sticky order summary */}
-            <div className="sticky top-24 self-start rounded-2xl border border-ink/10 bg-paper p-6">
+            <div className="order-1 lg:order-2 lg:sticky lg:top-24 self-start rounded-2xl border border-ink/10 bg-paper p-6">
               <p className="text-xs uppercase tracking-wider text-muted mb-4">Order summary</p>
 
               <div className="flex gap-3 items-start py-3 border-b border-ink/5 last:border-0">

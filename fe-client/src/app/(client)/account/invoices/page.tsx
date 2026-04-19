@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { FileX } from "lucide-react";
 import { formatDate, formatCurrency, cn } from "@/lib/utils";
 import { SectionHeading } from "@/components/booking/section-heading";
+import { AccountMobileNav } from "@/components/account/account-mobile-nav";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useMockState } from "@/lib/mock-state";
 
@@ -49,6 +50,7 @@ export default function InvoicesPage() {
         title="Payment records"
         description="Download receipts for your tax records."
       />
+      <AccountMobileNav />
 
       {invoices.length > 0 && (
         <div className="mb-4 flex flex-wrap items-center gap-3">

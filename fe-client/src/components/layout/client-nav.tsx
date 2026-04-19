@@ -223,48 +223,35 @@ export function ClientNav() {
             ))}
             {isAuth ? (
               <>
-                <div className="mx-1 mt-3 mb-2">
-                  <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-warm border border-ink/10">
-                    <div className="w-9 h-9 rounded-full bg-accent/15 flex items-center justify-center text-[12px] font-bold text-accent-deep shrink-0">
-                      {userInitials}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[13px] font-semibold text-ink truncate leading-tight">
-                        {state.user?.firstName} {state.user?.lastName}
-                      </p>
-                      <p className="text-[11px] text-muted truncate leading-tight mt-0.5">{state.user?.email}</p>
-                    </div>
+                <Link
+                  href="/account"
+                  onClick={() => setMobileOpen(false)}
+                  className={cn(
+                    "px-3 py-2.5 text-sm font-semibold rounded-md transition-colors",
+                    isActive("/account")
+                      ? "text-accent-deep bg-accent/10"
+                      : "text-muted hover:text-ink hover:bg-warm"
+                  )}
+                >
+                  My Account
+                </Link>
+                <div className="grid grid-cols-2 gap-3 mx-1 mt-4 mb-2">
+                  <div className="rounded-xl bg-sage/10 border border-sage/20 px-4 py-3.5">
+                    <span className="text-2xl font-extrabold text-sage leading-none block">
+                      {unlimited ? "∞" : classCredits}
+                    </span>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-sage/80 mt-2">
+                      Class credits
+                    </p>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 mt-2">
-                    <div className="rounded-xl bg-sage/10 border border-sage/20 px-3 py-2.5">
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-lg font-extrabold text-sage leading-none">
-                          {unlimited ? "∞" : classCredits}
-                        </span>
-                      </div>
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-sage/80 mt-1">
-                        Class credits
-                      </p>
-                    </div>
-                    <div className="rounded-xl bg-accent/10 border border-accent/20 px-3 py-2.5">
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-lg font-extrabold text-accent-deep leading-none">
-                          {sessionCredits}
-                        </span>
-                      </div>
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-accent-deep/80 mt-1">
-                        PT sessions
-                      </p>
-                    </div>
+                  <div className="rounded-xl bg-accent/10 border border-accent/20 px-4 py-3.5">
+                    <span className="text-2xl font-extrabold text-accent-deep leading-none block">
+                      {sessionCredits}
+                    </span>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-accent-deep/80 mt-2">
+                      PT sessions
+                    </p>
                   </div>
-                  <Link
-                    href="/account"
-                    onClick={() => setMobileOpen(false)}
-                    className="mt-2 flex items-center justify-between px-3 py-2.5 rounded-xl bg-ink text-paper text-[13px] font-semibold hover:bg-ink/90 transition-colors"
-                  >
-                    View account
-                    <span aria-hidden>→</span>
-                  </Link>
                 </div>
                 <div className="border-t border-border my-2" />
                 <button

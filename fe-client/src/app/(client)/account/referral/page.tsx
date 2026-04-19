@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Users, UserCheck, Coins, Share2, BookOpen, Gift } from "lucide-react";
 import { SectionHeading } from "@/components/booking/section-heading";
+import { AccountMobileNav } from "@/components/account/account-mobile-nav";
 
 const REFERRAL_CODE = "YS0001";
 const REFERRAL_LINK = `https://yogasadhana.sg/join?ref=${REFERRAL_CODE}`;
@@ -31,6 +32,7 @@ export default function ReferralPage() {
   return (
     <div>
       <SectionHeading eyebrow="Referral" title="Invite friends, earn credits" />
+      <AccountMobileNav />
 
       {/* Link card */}
       <div className="rounded-3xl bg-accent/10 border border-accent/30 p-6 sm:p-8">

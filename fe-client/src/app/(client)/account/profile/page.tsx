@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { SectionHeading } from "@/components/booking/section-heading";
+import { AccountMobileNav } from "@/components/account/account-mobile-nav";
 
 export default function ProfilePage() {
   const [firstName, setFirstName] = useState("Sarah");
@@ -44,6 +45,7 @@ export default function ProfilePage() {
         title="Account details"
         description="Keep your info current so we can reach you."
       />
+      <AccountMobileNav />
 
       <form onSubmit={handleSave} className="mt-8">
         <div className="space-y-6">

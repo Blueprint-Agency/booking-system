@@ -5,6 +5,7 @@ import { CalendarX, X, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { QrBadge } from "@/components/account/qr-badge";
 import { formatDate, formatTime, cn } from "@/lib/utils";
 import { SectionHeading } from "@/components/booking/section-heading";
+import { AccountMobileNav } from "@/components/account/account-mobile-nav";
 import { EmptyState } from "@/components/ui/empty-state";
 import { CLASS_CANCELLATION_POLICY, CLASS_CANCELLATION_HOURS } from "@/data/policy";
 import type { Session, Instructor } from "@/types";
@@ -188,6 +189,7 @@ export function BookingsPage({
   return (
     <div>
       <SectionHeading eyebrow={eyebrow} title={title} />
+      <AccountMobileNav />
 
       {!hasAny ? (
         <EmptyState
