@@ -1,0 +1,24 @@
+[
+  {
+    "id": "loc-breadtalk",
+    "tenantId": "yoga-sadhana",
+    "name": "Yoga Sadhana @ Breadtalk IHQ",
+    "shortName": "Breadtalk IHQ",
+    "address": "30 Tai Seng Street #05-01, Breadtalk IHQ, Singapore 534013",
+    "area": "Paya Lebar",
+    "mapUrl": "https://maps.google.com/?q=Breadtalk+IHQ+Singapore",
+    "rooms": 2,
+    "amenities": ["Shower", "Mats provided", "Lockers"]
+  },
+  {
+    "id": "loc-outram",
+    "tenantId": "yoga-sadhana",
+    "name": "Yoga Sadhana @ Outram Park",
+    "shortName": "Outram Park",
+    "address": "10 Eu Tong Sen Street #05-12, The Central, Singapore 059817",
+    "area": "Outram",
+    "mapUrl": "https://maps.google.com/?q=The+Central+Outram+Singapore",
+    "rooms": 1,
+    "amenities": ["Shower", "Mats provided"]
+  }
+]

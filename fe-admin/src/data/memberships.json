@@ -1,0 +1,4 @@
+[
+  { "id": "mem-001", "clientId": "cli-004", "productId": "mem-3m", "startsAt": "2026-03-01T00:00:00.000Z", "endsAt": "2026-05-31T23:59:59.000Z", "status": "active" },
+  { "id": "mem-002", "clientId": "cli-009", "productId": "mem-1m", "startsAt": "2026-04-01T00:00:00.000Z", "endsAt": "2026-04-30T23:59:59.000Z", "status": "active" }
+]

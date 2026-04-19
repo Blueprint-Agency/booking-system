@@ -1,0 +1,77 @@
+[
+  {
+    "id": "req-001",
+    "clientId": "cli-009",
+    "preferredInstructorId": "ins-anika",
+    "proposedSlots": [
+      { "date": "2026-04-22", "time": "10:00" },
+      { "date": "2026-04-23", "time": "10:00" },
+      { "date": "2026-04-24", "time": "16:00" }
+    ],
+    "notes": "Working on hip mobility; recovering from a minor hamstring strain.",
+    "submittedAt": "2026-04-20T06:00:00.000Z",
+    "deadlineAt": "2026-04-20T18:00:00.000Z",
+    "status": "pending"
+  },
+  {
+    "id": "req-002",
+    "clientId": "cli-004",
+    "preferredInstructorId": "ins-raj",
+    "proposedSlots": [
+      { "date": "2026-04-21", "time": "07:00" },
+      { "date": "2026-04-22", "time": "07:00" }
+    ],
+    "notes": "Prep for a retreat in May — want a primary series refresher.",
+    "submittedAt": "2026-04-19T23:00:00.000Z",
+    "deadlineAt": "2026-04-20T11:00:00.000Z",
+    "status": "pending"
+  },
+  {
+    "id": "req-003",
+    "clientId": "cli-001",
+    "preferredInstructorId": null,
+    "proposedSlots": [
+      { "date": "2026-04-25", "time": "14:00" },
+      { "date": "2026-04-26", "time": "15:00" }
+    ],
+    "notes": "Birthday gift session with my partner. 2-on-1 if possible.",
+    "submittedAt": "2026-04-20T04:30:00.000Z",
+    "deadlineAt": "2026-04-20T16:30:00.000Z",
+    "status": "pending"
+  },
+  {
+    "id": "req-004",
+    "clientId": "cli-010",
+    "preferredInstructorId": "ins-meera",
+    "proposedSlots": [
+      { "date": "2026-04-19", "time": "14:00" }
+    ],
+    "notes": "One-off alignment session.",
+    "submittedAt": "2026-04-18T14:00:00.000Z",
+    "deadlineAt": "2026-04-19T02:00:00.000Z",
+    "status": "approved",
+    "resolution": {
+      "resolvedAt": "2026-04-18T18:00:00.000Z",
+      "resolvedBy": "admin-1",
+      "scheduledDate": "2026-04-19",
+      "scheduledTime": "14:00"
+    }
+  },
+  {
+    "id": "req-005",
+    "clientId": "cli-008",
+    "preferredInstructorId": "ins-devan",
+    "proposedSlots": [
+      { "date": "2026-04-16", "time": "18:00" }
+    ],
+    "notes": "Need a core-strength session after injury clearance.",
+    "submittedAt": "2026-04-15T09:00:00.000Z",
+    "deadlineAt": "2026-04-15T21:00:00.000Z",
+    "status": "declined",
+    "resolution": {
+      "resolvedAt": "2026-04-15T14:00:00.000Z",
+      "resolvedBy": "admin-2",
+      "declineReason": "Instructor unavailable for proposed slot; client declined rescheduling."
+    }
+  }
+]

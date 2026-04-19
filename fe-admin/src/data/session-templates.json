@@ -1,0 +1,9 @@
+[
+  { "id": "tpl-vin-mon-am", "tenantId": "yoga-sadhana", "locationId": "loc-breadtalk", "name": "Morning Vinyasa", "category": "Vinyasa", "level": "all", "instructorId": "ins-anika", "dayOfWeek": 1, "time": "07:30", "duration": 60, "capacity": 20, "creditCost": 1, "active": true },
+  { "id": "tpl-ash-tue-am", "tenantId": "yoga-sadhana", "locationId": "loc-breadtalk", "name": "Ashtanga Primary", "category": "Ashtanga", "level": "intermediate", "instructorId": "ins-raj", "dayOfWeek": 2, "time": "06:45", "duration": 75, "capacity": 15, "creditCost": 1, "active": true },
+  { "id": "tpl-yin-wed-pm", "tenantId": "yoga-sadhana", "locationId": "loc-outram", "name": "Yin & Restore", "category": "Yin", "level": "all", "instructorId": "ins-meera", "dayOfWeek": 3, "time": "19:00", "duration": 60, "capacity": 18, "creditCost": 1, "active": true },
+  { "id": "tpl-pwr-thu-pm", "tenantId": "yoga-sadhana", "locationId": "loc-breadtalk", "name": "Power Flow", "category": "Power", "level": "intermediate", "instructorId": "ins-devan", "dayOfWeek": 4, "time": "18:30", "duration": 60, "capacity": 20, "creditCost": 1, "active": true },
+  { "id": "tpl-hat-fri-am", "tenantId": "yoga-sadhana", "locationId": "loc-outram", "name": "Hatha Basics", "category": "Hatha", "level": "beginner", "instructorId": "ins-meera", "dayOfWeek": 5, "time": "09:30", "duration": 60, "capacity": 18, "creditCost": 1, "active": true },
+  { "id": "tpl-vin-sat-am", "tenantId": "yoga-sadhana", "locationId": "loc-breadtalk", "name": "Saturday Vinyasa", "category": "Vinyasa", "level": "all", "instructorId": "ins-anika", "dayOfWeek": 6, "time": "08:30", "duration": 75, "capacity": 22, "creditCost": 1, "active": true },
+  { "id": "tpl-gtl-sun-am", "tenantId": "yoga-sadhana", "locationId": "loc-outram", "name": "Gentle Sunday", "category": "Gentle", "level": "all", "instructorId": "ins-lalita", "dayOfWeek": 0, "time": "09:00", "duration": 60, "capacity": 15, "creditCost": 1, "active": true }
+]

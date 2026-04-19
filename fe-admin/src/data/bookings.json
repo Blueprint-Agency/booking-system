@@ -1,0 +1,54 @@
+[
+  { "id": "bk-001", "clientId": "cli-001", "sessionId": "ses-20260420-vin-am",  "status": "confirmed", "checkInStatus": "pending",  "packageId": "cp-001", "rating": null, "createdAt": "2026-04-19T08:10:00.000Z" },
+  { "id": "bk-002", "clientId": "cli-002", "sessionId": "ses-20260420-vin-am",  "status": "confirmed", "checkInStatus": "pending",  "packageId": "cp-002", "rating": null, "createdAt": "2026-04-19T09:00:00.000Z" },
+  { "id": "bk-003", "clientId": "cli-004", "sessionId": "ses-20260420-vin-am",  "status": "confirmed", "checkInStatus": "pending",  "packageId": null,     "rating": null, "createdAt": "2026-04-19T10:15:00.000Z" },
+  { "id": "bk-004", "clientId": "cli-008", "sessionId": "ses-20260420-vin-am",  "status": "confirmed", "checkInStatus": "pending",  "packageId": "cp-007", "rating": null, "createdAt": "2026-04-19T11:20:00.000Z" },
+  { "id": "bk-005", "clientId": "cli-012", "sessionId": "ses-20260420-vin-am",  "status": "confirmed", "checkInStatus": "pending",  "packageId": "cp-010", "rating": null, "createdAt": "2026-04-19T12:35:00.000Z" },
+  { "id": "bk-006", "clientId": "cli-001", "sessionId": "ses-20260420-pwr-lch", "status": "confirmed", "checkInStatus": "pending",  "packageId": "cp-001", "rating": null, "createdAt": "2026-04-19T14:00:00.000Z" },
+  { "id": "bk-007", "clientId": "cli-009", "sessionId": "ses-20260420-pwr-lch", "status": "confirmed", "checkInStatus": "pending",  "packageId": null,     "rating": null, "createdAt": "2026-04-19T15:20:00.000Z" },
+  { "id": "bk-008", "clientId": "cli-002", "sessionId": "ses-20260420-yin-pm",  "status": "confirmed", "checkInStatus": "pending",  "packageId": "cp-002", "rating": null, "createdAt": "2026-04-19T16:00:00.000Z" },
+  { "id": "bk-009", "clientId": "cli-003", "sessionId": "ses-20260420-yin-pm",  "status": "confirmed", "checkInStatus": "pending",  "packageId": "cp-003", "rating": null, "createdAt": "2026-04-19T17:45:00.000Z" },
+  { "id": "bk-010", "clientId": "cli-010", "sessionId": "ses-20260420-yin-pm",  "status": "confirmed", "checkInStatus": "pending",  "packageId": "cp-009", "rating": null, "createdAt": "2026-04-19T18:30:00.000Z" },
+
+  { "id": "bk-011", "clientId": "cli-001", "sessionId": "ses-20260421-ash-am",  "status": "confirmed", "checkInStatus": "pending",  "packageId": "cp-001", "rating": null, "createdAt": "2026-04-18T08:00:00.000Z" },
+  { "id": "bk-012", "clientId": "cli-004", "sessionId": "ses-20260421-ash-am",  "status": "confirmed", "checkInStatus": "pending",  "packageId": null,     "rating": null, "createdAt": "2026-04-18T09:00:00.000Z" },
+  { "id": "bk-013", "clientId": "cli-009", "sessionId": "ses-20260421-ash-am",  "status": "confirmed", "checkInStatus": "pending",  "packageId": null,     "rating": null, "createdAt": "2026-04-18T10:00:00.000Z" },
+
+  { "id": "bk-014", "clientId": "cli-001", "sessionId": "ses-20260422-yin-pm",  "status": "confirmed", "checkInStatus": "pending",  "packageId": "cp-001", "rating": null, "createdAt": "2026-04-17T08:00:00.000Z" },
+  { "id": "bk-015", "clientId": "cli-005", "sessionId": "ses-20260422-yin-pm",  "status": "confirmed", "checkInStatus": "pending",  "packageId": null,     "rating": null, "createdAt": "2026-04-17T09:00:00.000Z" },
+  { "id": "bk-016", "clientId": "cli-012", "sessionId": "ses-20260422-yin-pm",  "status": "confirmed", "checkInStatus": "pending",  "packageId": "cp-010", "rating": null, "createdAt": "2026-04-17T10:00:00.000Z" },
+
+  { "id": "bk-017", "clientId": "cli-002", "sessionId": "ses-20260423-pwr-pm",  "status": "confirmed", "checkInStatus": "pending",  "packageId": "cp-002", "rating": null, "createdAt": "2026-04-17T11:00:00.000Z" },
+  { "id": "bk-018", "clientId": "cli-008", "sessionId": "ses-20260423-pwr-pm",  "status": "confirmed", "checkInStatus": "pending",  "packageId": "cp-007", "rating": null, "createdAt": "2026-04-17T12:00:00.000Z" },
+
+  { "id": "bk-019", "clientId": "cli-006", "sessionId": "ses-20260424-hat-am",  "status": "confirmed", "checkInStatus": "pending",  "packageId": "cp-006", "rating": null, "createdAt": "2026-04-19T13:00:00.000Z" },
+
+  { "id": "bk-020", "clientId": "cli-001", "sessionId": "ses-20260425-vin-am",  "status": "confirmed", "checkInStatus": "pending",  "packageId": "cp-001", "rating": null, "createdAt": "2026-04-15T08:00:00.000Z" },
+  { "id": "bk-021", "clientId": "cli-012", "sessionId": "ses-20260425-vin-am",  "status": "confirmed", "checkInStatus": "pending",  "packageId": "cp-010", "rating": null, "createdAt": "2026-04-15T09:00:00.000Z" },
+
+  { "id": "bk-022", "clientId": "cli-001", "sessionId": "ses-20260425-ws-breath","status": "confirmed","checkInStatus": "pending",  "packageId": null,     "rating": null, "createdAt": "2026-04-10T10:00:00.000Z" },
+  { "id": "bk-023", "clientId": "cli-003", "sessionId": "ses-20260425-ws-breath","status": "confirmed","checkInStatus": "pending",  "packageId": null,     "rating": null, "createdAt": "2026-04-11T11:00:00.000Z" },
+  { "id": "bk-024", "clientId": "cli-006", "sessionId": "ses-20260425-ws-breath","status": "confirmed","checkInStatus": "pending",  "packageId": null,     "rating": null, "createdAt": "2026-04-12T12:00:00.000Z" },
+
+  { "id": "bk-025", "clientId": "cli-001", "sessionId": "ses-20260413-vin-am",  "status": "confirmed", "checkInStatus": "attended", "packageId": "cp-001", "rating": 5,    "createdAt": "2026-04-12T08:00:00.000Z" },
+  { "id": "bk-026", "clientId": "cli-002", "sessionId": "ses-20260413-vin-am",  "status": "confirmed", "checkInStatus": "attended", "packageId": "cp-002", "rating": 4,    "createdAt": "2026-04-12T09:00:00.000Z" },
+  { "id": "bk-027", "clientId": "cli-004", "sessionId": "ses-20260413-vin-am",  "status": "confirmed", "checkInStatus": "no-show",  "packageId": null,     "rating": null, "createdAt": "2026-04-12T10:00:00.000Z" },
+
+  { "id": "bk-028", "clientId": "cli-009", "sessionId": "ses-20260414-ash-am",  "status": "confirmed", "checkInStatus": "attended", "packageId": null,     "rating": 5,    "createdAt": "2026-04-13T08:00:00.000Z" },
+  { "id": "bk-029", "clientId": "cli-004", "sessionId": "ses-20260414-ash-am",  "status": "confirmed", "checkInStatus": "attended", "packageId": null,     "rating": 4,    "createdAt": "2026-04-13T09:00:00.000Z" },
+
+  { "id": "bk-030", "clientId": "cli-002", "sessionId": "ses-20260415-yin-pm",  "status": "confirmed", "checkInStatus": "attended", "packageId": "cp-002", "rating": 5,    "createdAt": "2026-04-14T10:00:00.000Z" },
+  { "id": "bk-031", "clientId": "cli-005", "sessionId": "ses-20260415-yin-pm",  "status": "confirmed", "checkInStatus": "attended", "packageId": null,     "rating": 3,    "createdAt": "2026-04-14T11:00:00.000Z" },
+  { "id": "bk-032", "clientId": "cli-008", "sessionId": "ses-20260415-yin-pm",  "status": "confirmed", "checkInStatus": "attended", "packageId": "cp-007", "rating": 5,    "createdAt": "2026-04-14T12:00:00.000Z" },
+
+  { "id": "bk-033", "clientId": "cli-001", "sessionId": "ses-20260416-pwr-pm",  "status": "confirmed", "checkInStatus": "attended", "packageId": "cp-001", "rating": 5,    "createdAt": "2026-04-15T10:00:00.000Z" },
+  { "id": "bk-034", "clientId": "cli-012", "sessionId": "ses-20260416-pwr-pm",  "status": "confirmed", "checkInStatus": "attended", "packageId": "cp-010", "rating": 5,    "createdAt": "2026-04-15T11:00:00.000Z" },
+
+  { "id": "bk-035", "clientId": "cli-003", "sessionId": "ses-20260417-hat-am",  "status": "confirmed", "checkInStatus": "attended", "packageId": "cp-003", "rating": 4,    "createdAt": "2026-04-16T10:00:00.000Z" },
+  { "id": "bk-036", "clientId": "cli-010", "sessionId": "ses-20260417-hat-am",  "status": "confirmed", "checkInStatus": "attended", "packageId": "cp-009", "rating": 4,    "createdAt": "2026-04-16T11:00:00.000Z" },
+
+  { "id": "bk-037", "clientId": "cli-001", "sessionId": "ses-20260418-vin-am",  "status": "confirmed", "checkInStatus": "attended", "packageId": "cp-001", "rating": 5,    "createdAt": "2026-04-17T10:00:00.000Z" },
+  { "id": "bk-038", "clientId": "cli-004", "sessionId": "ses-20260418-vin-am",  "status": "confirmed", "checkInStatus": "attended", "packageId": null,     "rating": 5,    "createdAt": "2026-04-17T11:00:00.000Z" },
+  { "id": "bk-039", "clientId": "cli-011", "sessionId": "ses-20260419-gtl-am",  "status": "confirmed", "checkInStatus": "attended", "packageId": null,     "rating": 4,    "createdAt": "2026-04-18T10:00:00.000Z" },
+  { "id": "bk-040", "clientId": "cli-007", "sessionId": "ses-20260419-gtl-am",  "status": "cancelled", "checkInStatus": "pending",  "packageId": null,     "rating": null, "createdAt": "2026-04-18T11:00:00.000Z" }
+]

@@ -1,0 +1,16 @@
+[
+  {
+    "id": "admin-1",
+    "email": "priya@yogasadhana.sg",
+    "firstName": "Priya",
+    "lastName": "Menon",
+    "createdAt": "2024-06-01T00:00:00.000Z"
+  },
+  {
+    "id": "admin-2",
+    "email": "arjun@yogasadhana.sg",
+    "firstName": "Arjun",
+    "lastName": "Rao",
+    "createdAt": "2024-07-10T00:00:00.000Z"
+  }
+]

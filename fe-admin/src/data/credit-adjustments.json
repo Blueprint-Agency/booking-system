@@ -1,0 +1,4 @@
+[
+  { "id": "adj-001", "clientId": "cli-004", "packageId": "cp-004", "delta": 2,  "reason": "Make-good for class cancellation on 2026-03-15 (instructor sick).", "adminId": "admin-1", "createdAt": "2026-03-16T09:00:00.000Z" },
+  { "id": "adj-002", "clientId": "cli-007", "packageId": null,     "delta": -1, "reason": "Correction: booking created by staff for wrong client.",            "adminId": "admin-2", "createdAt": "2026-03-28T14:00:00.000Z" }
+]

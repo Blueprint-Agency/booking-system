@@ -1,0 +1,66 @@
+[
+  {
+    "id": "ins-anika",
+    "tenantId": "yoga-sadhana",
+    "name": "Anika Shah",
+    "bio": "500-hour RYT, 10+ years teaching Vinyasa and Yin.",
+    "photo": "/brand/instructors/anika.jpg",
+    "specialties": ["Vinyasa", "Yin", "Pranayama"],
+    "availability": [
+      { "dayOfWeek": 1, "startTime": "07:00", "endTime": "12:00" },
+      { "dayOfWeek": 3, "startTime": "17:00", "endTime": "21:00" },
+      { "dayOfWeek": 6, "startTime": "08:00", "endTime": "12:00" }
+    ]
+  },
+  {
+    "id": "ins-raj",
+    "tenantId": "yoga-sadhana",
+    "name": "Raj Iyer",
+    "bio": "Ashtanga practitioner from Mysore lineage. Teaches disciplined, structured flows.",
+    "photo": "/brand/instructors/raj.jpg",
+    "specialties": ["Ashtanga", "Mysore"],
+    "availability": [
+      { "dayOfWeek": 2, "startTime": "06:30", "endTime": "10:00" },
+      { "dayOfWeek": 4, "startTime": "06:30", "endTime": "10:00" },
+      { "dayOfWeek": 5, "startTime": "18:00", "endTime": "21:00" }
+    ]
+  },
+  {
+    "id": "ins-meera",
+    "tenantId": "yoga-sadhana",
+    "name": "Meera Kapoor",
+    "bio": "Hatha and restorative specialist. Focus on alignment and breathwork.",
+    "photo": "/brand/instructors/meera.jpg",
+    "specialties": ["Hatha", "Restorative"],
+    "availability": [
+      { "dayOfWeek": 1, "startTime": "17:00", "endTime": "21:00" },
+      { "dayOfWeek": 3, "startTime": "09:00", "endTime": "13:00" },
+      { "dayOfWeek": 6, "startTime": "09:00", "endTime": "13:00" }
+    ]
+  },
+  {
+    "id": "ins-devan",
+    "tenantId": "yoga-sadhana",
+    "name": "Devan Pillai",
+    "bio": "Power yoga and core-strength. Former athlete, high-energy flows.",
+    "photo": "/brand/instructors/devan.jpg",
+    "specialties": ["Power", "Core"],
+    "availability": [
+      { "dayOfWeek": 2, "startTime": "17:00", "endTime": "21:00" },
+      { "dayOfWeek": 4, "startTime": "17:00", "endTime": "21:00" },
+      { "dayOfWeek": 0, "startTime": "08:00", "endTime": "12:00" }
+    ]
+  },
+  {
+    "id": "ins-lalita",
+    "tenantId": "yoga-sadhana",
+    "name": "Lalita Chen",
+    "bio": "Prenatal and gentle yoga. Trauma-informed teaching.",
+    "photo": "/brand/instructors/lalita.jpg",
+    "specialties": ["Prenatal", "Gentle", "Yin"],
+    "availability": [
+      { "dayOfWeek": 1, "startTime": "10:00", "endTime": "13:00" },
+      { "dayOfWeek": 5, "startTime": "10:00", "endTime": "13:00" }
+    ]
+  }
+]

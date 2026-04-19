@@ -1,0 +1,12 @@
+[
+  { "clientId": "cli-001", "version": "v1", "signedAt": "2025-06-14T08:22:00.000Z", "status": "current" },
+  { "clientId": "cli-002", "version": "v1", "signedAt": "2025-09-02T12:05:00.000Z", "status": "current" },
+  { "clientId": "cli-004", "version": "v1", "signedAt": "2024-11-05T10:00:00.000Z", "status": "current" },
+  { "clientId": "cli-005", "version": "v1", "signedAt": "2025-12-20T14:30:00.000Z", "status": "current" },
+  { "clientId": "cli-006", "version": "v1", "signedAt": "2026-01-12T09:45:00.000Z", "status": "current" },
+  { "clientId": "cli-007", "version": "v1", "signedAt": "2025-03-08T11:20:00.000Z", "status": "current" },
+  { "clientId": "cli-008", "version": "v1", "signedAt": "2025-08-22T13:00:00.000Z", "status": "current" },
+  { "clientId": "cli-009", "version": "v1", "signedAt": "2024-08-03T08:15:00.000Z", "status": "current" },
+  { "clientId": "cli-010", "version": "v1", "signedAt": "2025-11-30T16:40:00.000Z", "status": "current" },
+  { "clientId": "cli-012", "version": "v1", "signedAt": "2025-02-14T09:00:00.000Z", "status": "current" }
+]
