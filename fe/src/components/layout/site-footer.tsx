@@ -2,8 +2,16 @@ import Link from "next/link";
 import { Mail, MessageCircle } from "lucide-react";
 
 const STUDIO_LOCATIONS = [
-  { name: "Breadtalk IHQ (Tai Seng)", address: "30 Tai Seng Street, Singapore" },
-  { name: "Outram Park", address: "10 Outram Park, Singapore" },
+  {
+    name: "Breadtalk IHQ (Tai Seng)",
+    address: "30 Tai Seng St, #08-04 BreadTalk IHQ, Singapore 534013",
+    mapsHref: "https://maps.app.goo.gl/sGWsxE5t5JZk2dYL8",
+  },
+  {
+    name: "Outram Park (Chinatown)",
+    address: "6 Bukit Pasoh Rd, #02-01, Singapore 089820",
+    mapsHref: "https://maps.app.goo.gl/zHiQ95j2geE7CJfy9",
+  },
 ];
 
 const LEGAL_LINKS = [
@@ -21,9 +29,9 @@ const QUICK_LINKS = [
 
 export function SiteFooter() {
   return (
-    <footer className="bg-ink text-paper mt-24">
-      <div className="max-w-[1280px] mx-auto px-6 sm:px-8 py-16">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12">
+    <footer className="bg-ink text-paper">
+      <div className="max-w-[1280px] mx-auto px-6 sm:px-8 py-12 md:py-16">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 md:gap-12">
           {/* Brand */}
           <div>
             <Link href="/" className="flex items-center gap-2.5 mb-4">
@@ -47,8 +55,19 @@ export function SiteFooter() {
             <ul className="space-y-3">
               {STUDIO_LOCATIONS.map((loc) => (
                 <li key={loc.name} className="text-sm leading-relaxed">
-                  <p className="font-semibold text-paper">{loc.name}</p>
-                  <p className="text-paper/60">{loc.address}</p>
+                  <a
+                    href={loc.mapsHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block group"
+                  >
+                    <p className="font-semibold text-paper group-hover:text-accent transition-colors">
+                      {loc.name}
+                    </p>
+                    <p className="text-paper/60 group-hover:text-paper/80 transition-colors">
+                      {loc.address}
+                    </p>
+                  </a>
                 </li>
               ))}
             </ul>
@@ -81,7 +100,9 @@ export function SiteFooter() {
             <ul className="space-y-3">
               <li>
                 <a
-                  href="https://wa.me/6591234567"
+                  href="https://api.whatsapp.com/send/?phone=6582067247&text=Interested+in+%2410+trial&type=phone_number&app_absent=0"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 text-sm text-paper/70 hover:text-paper transition-colors"
                 >
                   <MessageCircle className="w-4 h-4" strokeWidth={1.5} />
@@ -90,17 +111,21 @@ export function SiteFooter() {
               </li>
               <li>
                 <a
-                  href="mailto:hello@yogasadhana.sg"
+                  href="mailto:yogasadhana.sg@gmail.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 text-sm text-paper/70 hover:text-paper transition-colors"
                 >
                   <Mail className="w-4 h-4" strokeWidth={1.5} />
-                  hello@yogasadhana.sg
+                  yogasadhana.sg@gmail.com
                 </a>
               </li>
             </ul>
             <div className="flex items-center gap-3 mt-5">
               <a
-                href="https://instagram.com/yogasadhana"
+                href="https://www.instagram.com/yogasadhana.sg/"
+                target="_blank"
+                rel="noopener noreferrer"
                 aria-label="Instagram"
                 className="w-11 h-11 rounded-md bg-paper/5 hover:bg-paper/10 flex items-center justify-center transition-colors"
               >
@@ -109,7 +134,9 @@ export function SiteFooter() {
                 </svg>
               </a>
               <a
-                href="https://facebook.com/yogasadhana"
+                href="https://classpass.com/studios/yoga-sadhana--outram-park-singapore"
+                target="_blank"
+                rel="noopener noreferrer"
                 aria-label="Facebook"
                 className="w-11 h-11 rounded-md bg-paper/5 hover:bg-paper/10 flex items-center justify-center transition-colors"
               >
@@ -122,7 +149,7 @@ export function SiteFooter() {
         </div>
 
         {/* Bottom bar */}
-        <div className="mt-16 pt-8 border-t border-paper/10 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div className="mt-10 md:mt-16 pt-8 border-t border-paper/10 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <p className="text-xs text-paper/50">
             © {new Date().getFullYear()} Yoga Sadhana. All rights reserved.
           </p>

@@ -2,6 +2,7 @@
 
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { purchasePackage, signIn, isLoggedIn, useMockState, getPurchaseBlock, issueInvoice, recordBooking } from "@/lib/mock-state";
 import { Lock, ShoppingCart, Tag, Check } from "lucide-react";
 import { cn, formatCurrency, formatDate, formatTime } from "@/lib/utils";
 import type { Session, Instructor } from "@/types";
@@ -29,7 +30,6 @@ const PACKAGE_CATALOGUE: PackageItem[] = [
   { id: "b-30",     name: "Bundle of 30",               subtitle: "30 credits · valid 365 days",   price: 750 },
   { id: "b-50",     name: "Bundle of 50",               subtitle: "50 credits · valid 365 days",   price: 1100 },
   { id: "b-100",    name: "Bundle of 100",              subtitle: "100 credits · valid 365 days",  price: 2000 },
-  { id: "b-travel", name: "Travel Package",             subtitle: "5 credits · valid 30 days",     price: 60 },
   { id: "u-3",      name: "3-Month Unlimited",          subtitle: "Unlimited classes · 3 months",  price: 600 },
   { id: "u-6",      name: "6-Month Unlimited",          subtitle: "Unlimited classes · 6 months",  price: 1000 },
   { id: "u-12",     name: "12-Month Unlimited",         subtitle: "Unlimited classes · 12 months", price: 1700 },
@@ -145,6 +145,8 @@ function CheckoutContent() {
   }
 
   const hasCart = !!orderName;
+  const mockState = useMockState();
+  const purchaseBlock = packageId ? getPurchaseBlock(mockState, packageId) : { blocked: false };
   const discount = referralApplied ? Math.min(referralApplied.amount, total) : 0;
   const subtotal = total;
   const discounted = Math.max(subtotal - discount, 0);
@@ -177,8 +179,44 @@ function CheckoutContent() {
     );
   }
 
+  if (purchaseBlock.blocked) {
+    return (
+      <BookingSurface maxWidth="lg" padding="default">
+        <EmptyState
+          icon={ShoppingCart}
+          title="This package can't be purchased right now"
+          description={purchaseBlock.reason ?? ""}
+          cta={{ href: "/packages", label: "Back to packages" }}
+        />
+      </BookingSurface>
+    );
+  }
+
   function handlePay() {
     setLoading(true);
+    if (!isLoggedIn()) signIn(email);
+    if (packageId) {
+      purchasePackage(packageId);
+      issueInvoice({
+        itemName: orderName,
+        itemKind: "package",
+        subtotal: discounted,
+        referenceId: packageId,
+      });
+    } else if (type === "workshop" && sessionId) {
+      issueInvoice({
+        itemName: orderName,
+        itemKind: "workshop",
+        subtotal: discounted,
+        referenceId: sessionId,
+      });
+      recordBooking({
+        id: `YS-BOOKING-${sessionId.toUpperCase()}`,
+        sessionId,
+        type: "workshop",
+        bookedAt: new Date().toISOString(),
+      });
+    }
     setTimeout(() => router.push(confirmUrl), 1500);
   }
 
@@ -189,6 +227,41 @@ function CheckoutContent() {
 
   function handleBack() {
     if (step > 1) setStep((s) => (s - 1) as Step);
+  }
+
+  if (!mockState.user) {
+    const next = typeof window !== "undefined"
+      ? window.location.pathname + window.location.search
+      : "/checkout";
+    const loginHref = `/login?next=${encodeURIComponent(next)}`;
+    const registerHref = `/register?next=${encodeURIComponent(next)}`;
+    return (
+      <BookingSurface maxWidth="md" padding="default">
+        <div className="max-w-md mx-auto text-center py-12">
+          <div className="w-14 h-14 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-5">
+            <Lock className="w-6 h-6 text-accent-deep" />
+          </div>
+          <h1 className="text-2xl font-serif text-ink mb-2">Please log in to continue</h1>
+          <p className="text-sm text-muted mb-6 leading-relaxed">
+            You need an account before you can purchase a package or book a session. Log in, or create one in under a minute.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-2.5 justify-center">
+            <a
+              href={loginHref}
+              className="flex-1 inline-flex items-center justify-center px-5 py-2.5 text-sm font-bold text-inverse bg-accent rounded-md hover:bg-accent-deep transition-colors"
+            >
+              Log in
+            </a>
+            <a
+              href={registerHref}
+              className="flex-1 inline-flex items-center justify-center px-5 py-2.5 text-sm font-bold text-ink border border-ink/15 rounded-md hover:bg-warm transition-colors"
+            >
+              Sign up
+            </a>
+          </div>
+        </div>
+      </BookingSurface>
+    );
   }
 
   return (

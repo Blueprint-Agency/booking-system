@@ -2,8 +2,11 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AuthSplitShell } from "@/components/auth/auth-split-shell";
+import { GoogleLogo } from "@/components/auth/google-logo";
 import { cn } from "@/lib/utils";
+import { signUp } from "@/lib/mock-state";
 
 const inputClass =
   "rounded-xl border border-ink/10 bg-paper px-4 py-3 text-sm w-full focus:border-accent focus:outline-none";
@@ -14,19 +17,28 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const PHONE_REGEX = /^\+?[0-9\s\-]{8,}$/;
 
 export default function RegisterPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const next = searchParams.get("next") || "/";
+  const completeAuth = () => {
+    signUp({
+      firstName: firstName.trim() || "Member",
+      lastName: lastName.trim() || "",
+      email: email.trim() || "member@example.com",
+      phone: phone.trim() || undefined,
+      gender: gender || undefined,
+    });
+    router.push(next);
+  };
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
-  const [birthday, setBirthday] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [gender, setGender] = useState("");
   const [agreed, setAgreed] = useState(false);
-  const [otp, setOtp] = useState("");
 
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpVerified, setOtpVerified] = useState(false);
   const [emailVerified, setEmailVerified] = useState(false);
 
   const emailValid = EMAIL_REGEX.test(email);
@@ -40,7 +52,6 @@ export default function RegisterPage() {
     emailValid &&
     emailVerified &&
     phoneValid &&
-    otpVerified &&
     passwordValid &&
     passwordsMatch &&
     gender.length > 0 &&
@@ -56,9 +67,29 @@ export default function RegisterPage() {
       </h1>
       <p className="text-sm text-muted mt-2">Two locations. One practice.</p>
 
+      <div className="mt-8 grid grid-cols-1 gap-3">
+        <button
+          type="button"
+          onClick={completeAuth}
+          className="flex items-center justify-center gap-3 rounded-full border border-ink/10 py-3 text-sm font-medium hover:border-accent"
+        >
+          <GoogleLogo />
+          Sign up with Google
+        </button>
+      </div>
+
+      <div className="my-6 flex items-center gap-3 text-xs text-muted">
+        <div className="h-px flex-1 bg-ink/10" />
+        or sign up with email
+        <div className="h-px flex-1 bg-ink/10" />
+      </div>
+
       <form
-        onSubmit={(e) => e.preventDefault()}
-        className="mt-10 space-y-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          completeAuth();
+        }}
+        className="space-y-4"
         noValidate
       >
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -130,72 +161,18 @@ export default function RegisterPage() {
           <label htmlFor="phone" className={labelClass}>
             Phone number
           </label>
-          <div className="flex gap-2">
-            <input
-              id="phone"
-              type="tel"
-              required
-              value={phone}
-              onChange={(e) => {
-                setPhone(e.target.value);
-                if (otpVerified) setOtpVerified(false);
-                if (otpSent) setOtpSent(false);
-              }}
-              placeholder="+65 9123 4567"
-              className={cn(inputClass, "flex-1")}
-            />
-            <button
-              type="button"
-              disabled={!phoneValid}
-              onClick={() => {
-                setOtpSent(true);
-                setOtpVerified(false);
-              }}
-              className="shrink-0 rounded-xl bg-ink text-paper px-4 py-3 text-xs font-medium hover:bg-ink/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {otpSent ? "Resend" : "Send OTP"}
-            </button>
-          </div>
+          <input
+            id="phone"
+            type="tel"
+            required
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="+65 9123 4567"
+            className={inputClass}
+          />
           {phone.length > 0 && !phoneValid && (
             <p className="mt-1.5 text-xs text-red-600">Enter a valid phone number.</p>
           )}
-          {otpSent && !otpVerified && (
-            <div className="mt-2 flex gap-2">
-              <input
-                type="text"
-                inputMode="numeric"
-                value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
-                placeholder="Enter 6-digit OTP"
-                maxLength={6}
-                className={cn(inputClass, "flex-1")}
-              />
-              <button
-                type="button"
-                disabled={otp.length !== 6}
-                onClick={() => setOtpVerified(true)}
-                className="shrink-0 rounded-xl border border-ink/10 px-4 py-3 text-xs font-medium text-ink hover:bg-ink/5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                Verify
-              </button>
-            </div>
-          )}
-          {otpVerified && (
-            <p className="mt-1.5 text-xs text-accent-deep">Phone verified.</p>
-          )}
-        </div>
-
-        <div>
-          <label htmlFor="birthday" className={labelClass}>
-            Date of birth
-          </label>
-          <input
-            id="birthday"
-            type="date"
-            value={birthday}
-            onChange={(e) => setBirthday(e.target.value)}
-            className={inputClass}
-          />
         </div>
 
         <div>
@@ -290,7 +267,6 @@ export default function RegisterPage() {
 
         <button
           type="submit"
-          disabled={!canSubmit}
           className="w-full rounded-full bg-ink text-paper py-3 text-sm font-medium hover:bg-ink/90 mt-6 disabled:opacity-40 disabled:cursor-not-allowed"
         >
           Create account
@@ -299,7 +275,7 @@ export default function RegisterPage() {
 
       <p className="text-sm text-muted text-center mt-8">
         Already have an account?{" "}
-        <Link href="/login" className="text-accent-deep font-medium">
+        <Link href={`/login?next=${encodeURIComponent(next)}`} className="text-accent-deep font-medium">
           Sign in
         </Link>
       </p>

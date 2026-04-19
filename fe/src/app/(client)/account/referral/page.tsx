@@ -4,11 +4,10 @@ import { useState } from "react";
 import { Users, UserCheck, Coins, Share2, BookOpen, Gift } from "lucide-react";
 import { SectionHeading } from "@/components/booking/section-heading";
 
-// Mock referral data for cli-1
-const REFERRAL_CODE = "YS8472";
+const REFERRAL_CODE = "YS0001";
 const REFERRAL_LINK = `https://yogasadhana.sg/join?ref=${REFERRAL_CODE}`;
-const FRIENDS_INVITED = 4;
-const FRIENDS_JOINED = 2;
+const FRIENDS_INVITED = 0;
+const FRIENDS_JOINED = 0;
 const CREDITS_EARNED = FRIENDS_JOINED * 20;
 
 export default function ReferralPage() {
@@ -34,12 +33,12 @@ export default function ReferralPage() {
       <SectionHeading eyebrow="Referral" title="Invite friends, earn credits" />
 
       {/* Link card */}
-      <div className="rounded-3xl bg-accent/10 border border-accent/30 p-8">
-        <div className="flex items-center gap-3">
+      <div className="rounded-3xl bg-accent/10 border border-accent/30 p-6 sm:p-8">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
           <input
             readOnly
             value={REFERRAL_LINK}
-            className="flex-1 rounded-xl border border-ink/10 bg-paper px-4 py-3 text-sm font-mono text-ink/80"
+            className="flex-1 min-w-0 rounded-xl border border-ink/10 bg-paper px-4 py-3 text-sm font-mono text-ink/80"
           />
           <button
             onClick={handleCopy}
@@ -67,20 +66,20 @@ export default function ReferralPage() {
       </div>
 
       {/* Earnings tracker */}
-      <div className="grid grid-cols-3 gap-4 mt-6">
-        <div className="rounded-2xl bg-paper border border-ink/10 p-6">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
+        <div className="rounded-2xl bg-paper border border-ink/10 p-5 sm:p-6">
           <Users className="w-5 h-5 text-accent-deep" strokeWidth={1.8} />
-          <p className="text-3xl font-extrabold mt-3 text-ink">{FRIENDS_INVITED}</p>
+          <p className="text-2xl sm:text-3xl font-extrabold mt-3 text-ink">{FRIENDS_INVITED}</p>
           <p className="text-xs uppercase tracking-wider text-muted mt-2">Friends invited</p>
         </div>
-        <div className="rounded-2xl bg-paper border border-ink/10 p-6">
+        <div className="rounded-2xl bg-paper border border-ink/10 p-5 sm:p-6">
           <UserCheck className="w-5 h-5 text-accent-deep" strokeWidth={1.8} />
-          <p className="text-3xl font-extrabold mt-3 text-ink">{FRIENDS_JOINED}</p>
+          <p className="text-2xl sm:text-3xl font-extrabold mt-3 text-ink">{FRIENDS_JOINED}</p>
           <p className="text-xs uppercase tracking-wider text-muted mt-2">Friends joined</p>
         </div>
-        <div className="rounded-2xl bg-paper border border-ink/10 p-6">
+        <div className="rounded-2xl bg-paper border border-ink/10 p-5 sm:p-6">
           <Coins className="w-5 h-5 text-accent-deep" strokeWidth={1.8} />
-          <p className="text-3xl font-extrabold mt-3 text-ink">S${CREDITS_EARNED}</p>
+          <p className="text-2xl sm:text-3xl font-extrabold mt-3 text-ink">S${CREDITS_EARNED}</p>
           <p className="text-xs uppercase tracking-wider text-muted mt-2">Credits earned</p>
         </div>
       </div>

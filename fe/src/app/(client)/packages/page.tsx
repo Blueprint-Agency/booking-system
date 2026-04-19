@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { GatedLink } from "@/components/auth/auth-gate";
 import { cn } from "@/lib/utils";
-import { CtaBanner } from "@/components/marketing/cta-banner";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { SectionHeading } from "@/components/booking/section-heading";
+import { useMockState, hasActiveBundle, hasActiveUnlimited } from "@/lib/mock-state";
 
 // ── Inline data (no products.json — data lives here) ──────────────────────────
 
@@ -31,8 +32,6 @@ type PrivateItem = {
   id: string;
   name: string;
   sessions: number;
-  credits?: number;
-  creditRate?: number;
   price: number;
   type: "1on1" | "2on1";
 };
@@ -44,7 +43,6 @@ const BUNDLES: BundleItem[] = [
   { id: "b-30",     name: "Bundle of 30",   credits: "30 credits",  price: 750,  tag: "365 days" },
   { id: "b-50",     name: "Bundle of 50",   credits: "50 credits",  price: 1100, tag: "365 days" },
   { id: "b-100",    name: "Bundle of 100",  credits: "100 credits", price: 2000, tag: "365 days" },
-  { id: "b-travel", name: "Travel Package", credits: "5 credits",   price: 60,   tag: "30 days",  pending: true },
 ];
 
 const UNLIMITED: UnlimitedItem[] = [
@@ -54,12 +52,12 @@ const UNLIMITED: UnlimitedItem[] = [
 ];
 
 const PRIVATE_1ON1: PrivateItem[] = [
-  { id: "p1-10",  name: "VIP 10",  sessions: 10,  credits: 20,  creditRate: 80, price: 1600,  type: "1on1" },
-  { id: "p1-20",  name: "VIP 20",  sessions: 20,  credits: 40,  creditRate: 75, price: 3000,  type: "1on1" },
-  { id: "p1-30",  name: "VIP 30",  sessions: 30,  credits: 60,  creditRate: 70, price: 4200,  type: "1on1" },
-  { id: "p1-40",  name: "VIP 40",  sessions: 40,  credits: 80,  creditRate: 65, price: 5200,  type: "1on1" },
-  { id: "p1-50",  name: "VIP 50",  sessions: 50,  credits: 100, creditRate: 60, price: 6000,  type: "1on1" },
-  { id: "p1-100", name: "VIP 100", sessions: 100, credits: 200, creditRate: 55, price: 11000, type: "1on1" },
+  { id: "p1-10",  name: "VIP 10 Sessions",  sessions: 10,  price: 1600,  type: "1on1" },
+  { id: "p1-20",  name: "VIP 20 Sessions",  sessions: 20,  price: 3000,  type: "1on1" },
+  { id: "p1-30",  name: "VIP 30 Sessions",  sessions: 30,  price: 4200,  type: "1on1" },
+  { id: "p1-40",  name: "VIP 40 Sessions",  sessions: 40,  price: 5200,  type: "1on1" },
+  { id: "p1-50",  name: "VIP 50 Sessions",  sessions: 50,  price: 6000,  type: "1on1" },
+  { id: "p1-100", name: "VIP 100 Sessions", sessions: 100, price: 11000, type: "1on1" },
 ];
 
 const PRIVATE_2ON1: PrivateItem[] = [
@@ -84,7 +82,28 @@ const MAIN_TABS: { key: MainTab; label: string }[] = [
 
 export default function PackagesPage() {
   const [activeTab, setActiveTab] = useState<MainTab>("classCredits");
+
+  useEffect(() => {
+    function fromHash(): MainTab | null {
+      const h = typeof window !== "undefined" ? window.location.hash.replace(/^#/, "").toLowerCase() : "";
+      if (h === "pt1on1" || h === "private" || h === "1on1" || h === "1-on-1") return "pt1on1";
+      if (h === "pt2on1" || h === "2on1" || h === "2-on-1") return "pt2on1";
+      if (h === "classcredits" || h === "classes" || h === "credits") return "classCredits";
+      return null;
+    }
+    const initial = fromHash();
+    if (initial) setActiveTab(initial);
+    const onHash = () => {
+      const next = fromHash();
+      if (next) setActiveTab(next);
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
   const [classSubTab, setClassSubTab] = useState<ClassSubTab>("bundle");
+  const state = useMockState();
+  const hasUnlimited = hasActiveUnlimited(state);
+  const hasBundle = hasActiveBundle(state);
 
   return (
     <>
@@ -96,46 +115,76 @@ export default function PackagesPage() {
           />
 
           {/* ── Main tab strip ──────────────────────────────────── */}
-          <div className="flex justify-center gap-2 mb-10">
-            {MAIN_TABS.map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
-                className={cn(
-                  "rounded-full px-6 py-2.5 text-sm font-medium transition-colors",
-                  activeTab === tab.key
-                    ? "bg-ink text-paper"
-                    : "bg-transparent text-muted hover:text-ink border border-ink/10"
-                )}
-              >
-                {tab.label}
-              </button>
-            ))}
+          <div className="flex justify-center mb-6">
+            <div
+              role="tablist"
+              aria-label="Package family"
+              className="inline-flex items-center gap-1 p-1 rounded-full bg-warm border border-ink/10"
+            >
+              {MAIN_TABS.map((tab) => {
+                const isActive = activeTab === tab.key;
+                return (
+                  <button
+                    key={tab.key}
+                    role="tab"
+                    aria-selected={isActive}
+                    onClick={() => setActiveTab(tab.key)}
+                    className={cn(
+                      "relative rounded-full px-3.5 sm:px-5 py-2 text-xs sm:text-sm font-medium whitespace-nowrap transition-all duration-200",
+                      isActive
+                        ? "bg-ink text-paper shadow-sm"
+                        : "text-muted hover:text-ink"
+                    )}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* ── Class Credits tab ───────────────────────────────── */}
           {activeTab === "classCredits" && (
             <div className="space-y-8">
               {/* Sub-toggle: Bundle / Unlimited */}
-              <div className="flex justify-center gap-2">
-                {(["bundle", "unlimited"] as ClassSubTab[]).map((sub) => (
-                  <button
-                    key={sub}
-                    onClick={() => setClassSubTab(sub)}
-                    className={cn(
-                      "rounded-full px-6 py-2.5 text-sm font-medium transition-colors",
-                      classSubTab === sub
-                        ? "bg-ink text-paper"
-                        : "bg-transparent text-muted hover:text-ink border border-ink/10"
-                    )}
-                  >
-                    {sub === "bundle" ? "Credit Bundles" : "Unlimited Access"}
-                  </button>
-                ))}
+              <div
+                role="tablist"
+                aria-label="Class credit type"
+                className="flex justify-center gap-8"
+              >
+                {(["bundle", "unlimited"] as ClassSubTab[]).map((sub) => {
+                  const isActive = classSubTab === sub;
+                  return (
+                    <button
+                      key={sub}
+                      role="tab"
+                      aria-selected={isActive}
+                      onClick={() => setClassSubTab(sub)}
+                      className={cn(
+                        "relative pb-3 text-sm font-medium transition-colors",
+                        isActive ? "text-ink" : "text-muted hover:text-ink"
+                      )}
+                    >
+                      {sub === "bundle" ? "Credit Bundles" : "Unlimited Access"}
+                      <span
+                        className={cn(
+                          "absolute left-0 right-0 -bottom-px h-0.5 rounded-full transition-all",
+                          isActive ? "bg-ink" : "bg-transparent"
+                        )}
+                      />
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Bundle cards */}
               {classSubTab === "bundle" && (
+                <>
+                {hasUnlimited && (
+                  <div className="rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3 text-center">
+                    You have an active Unlimited pass. Credit Bundles can't be purchased while Unlimited is active.
+                  </div>
+                )}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {BUNDLES.map((item) => (
                     <div
@@ -170,21 +219,41 @@ export default function PackagesPage() {
                         <span className="mt-6 w-full text-center rounded-full bg-ink/10 text-muted px-5 py-3 text-sm font-medium">
                           Coming soon
                         </span>
+                      ) : hasUnlimited ? (
+                        <span
+                          title="Unlimited pass already active"
+                          className="mt-6 w-full text-center rounded-full bg-ink/10 text-muted px-5 py-3 text-sm font-medium cursor-not-allowed"
+                        >
+                          Unavailable
+                        </span>
                       ) : (
-                        <Link
+                        <GatedLink
                           href={`/checkout?package=${item.id}`}
+                          context="buy a package"
                           className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
                         >
                           Purchase
-                        </Link>
+                        </GatedLink>
                       )}
                     </div>
                   ))}
                 </div>
+                </>
               )}
 
               {/* Unlimited cards */}
               {classSubTab === "unlimited" && (
+                <>
+                {hasBundle && !hasUnlimited && (
+                  <div className="rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3 text-center">
+                    You still have an active Credit Bundle. Unlimited can't be purchased while a bundle has credits remaining.
+                  </div>
+                )}
+                {hasUnlimited && (
+                  <div className="rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3 text-center">
+                    You already have an active Unlimited pass. You can purchase a new one after it expires.
+                  </div>
+                )}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {UNLIMITED.map((item) => (
                     <div
@@ -210,15 +279,26 @@ export default function PackagesPage() {
                         <li>No class limit per week</li>
                         <li>Valid across both locations</li>
                       </ul>
-                      <Link
-                        href={`/checkout?package=${item.id}`}
-                        className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
-                      >
-                        Purchase
-                      </Link>
+                      {hasBundle || hasUnlimited ? (
+                        <span
+                          title={hasUnlimited ? "Unlimited pass already active" : "Credit Bundle still active"}
+                          className="mt-6 w-full text-center rounded-full bg-ink/10 text-muted px-5 py-3 text-sm font-medium cursor-not-allowed"
+                        >
+                          {hasUnlimited ? "Already active" : "Unavailable"}
+                        </span>
+                      ) : (
+                        <GatedLink
+                          href={`/checkout?package=${item.id}`}
+                          context="buy a package"
+                          className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
+                        >
+                          Purchase
+                        </GatedLink>
+                      )}
                     </div>
                   ))}
                 </div>
+                </>
               )}
             </div>
           )}
@@ -227,7 +307,7 @@ export default function PackagesPage() {
           {activeTab === "pt1on1" && (
             <div className="space-y-4">
               <p className="text-sm text-muted text-center max-w-xl mx-auto">
-                Fully dedicated time with one of our instructors, tailored entirely to your goals. PT credits are separate from group class credits — 1 PT credit = 30 mins.
+                Fully dedicated time with one of our instructors, tailored entirely to your goals. Private packages are measured in sessions (not credits) — 1 session = 30 mins.
               </p>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
                 {PRIVATE_1ON1.map((item) => (
@@ -236,22 +316,22 @@ export default function PackagesPage() {
                     className="rounded-2xl bg-paper border border-ink/10 p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all"
                   >
                     <div>
-                      <p className="text-4xl font-extrabold text-ink">{item.credits}</p>
+                      <p className="text-4xl font-extrabold text-ink">{item.sessions}</p>
                       <p className="text-base font-medium text-ink mt-0.5">{item.name}</p>
                     </div>
                     <p className="text-2xl font-bold mt-4">S${item.price.toLocaleString()}</p>
                     <ul className="text-sm text-muted space-y-2 mt-6 flex-1">
                       <li>{item.sessions} personal training sessions</li>
-                      <li>1 PT credit = 30 mins</li>
-                      {item.creditRate && <li>S${item.creditRate}/credit</li>}
+                      <li>S${Math.round(item.price / item.sessions)}/session</li>
                       <li>Valid across both locations</li>
                     </ul>
-                    <Link
+                    <GatedLink
                       href={`/checkout?package=${item.id}`}
+                      context="buy a package"
                       className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
                     >
                       Purchase
-                    </Link>
+                    </GatedLink>
                   </div>
                 ))}
               </div>
@@ -281,12 +361,13 @@ export default function PackagesPage() {
                       <li>Dedicated instructor throughout</li>
                       <li>Valid across both locations</li>
                     </ul>
-                    <Link
+                    <GatedLink
                       href={`/checkout?package=${item.id}`}
+                      context="buy a package"
                       className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
                     >
                       Purchase
-                    </Link>
+                    </GatedLink>
                   </div>
                 ))}
               </div>
@@ -295,12 +376,6 @@ export default function PackagesPage() {
         </BookingSurface>
       </div>
 
-      <CtaBanner
-        imageKey="cta-community"
-        headline="Not sure which package fits?"
-        subheadline="Book a free intro call and we'll help you pick."
-        primaryCta={{ href: "/private-sessions", label: "Talk to us" }}
-      />
     </>
   );
 }

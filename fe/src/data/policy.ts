@@ -14,6 +14,6 @@ export const CLASS_CANCELLATION_POLICY = {
 
 export const PRIVATE_SESSION_CANCELLATION_POLICY = {
   window: `${PRIVATE_SESSION_CANCELLATION_HOURS} hours`,
-  rescheduleNote: `Reschedule or cancel more than ${PRIVATE_SESSION_CANCELLATION_HOURS} hours in advance at no charge. Cancellations within ${PRIVATE_SESSION_CANCELLATION_HOURS} hours forfeit the session credit.`,
+  rescheduleNote: `Reschedule or cancel more than ${PRIVATE_SESSION_CANCELLATION_HOURS} hours in advance at no charge. Cancellations within ${PRIVATE_SESSION_CANCELLATION_HOURS} hours forfeit the session.`,
   sla: `${PRIVATE_SESSION_CANCELLATION_HOURS} hours`,
 } as const;

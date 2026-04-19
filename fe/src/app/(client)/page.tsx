@@ -1,5 +1,5 @@
 import { Hero } from "@/components/marketing/hero";
-import { TrustedBy } from "@/components/marketing/trusted-by";
+import { Locations } from "@/components/marketing/locations";
 import { FeatureGrid } from "@/components/marketing/feature-grid";
 import { FeatureDeepDive } from "@/components/marketing/feature-deep-dive";
 import { ShowcaseGrid } from "@/components/marketing/showcase-grid";
@@ -13,20 +13,14 @@ export default function HomePage() {
         variant="full"
         imageKey="hero-yoga-01"
         eyebrow="Tai Seng & Outram Park, Singapore"
-        headline="Find your practice in {rotating}"
-        rotatingWords={["yoga", "pilates", "meditation", "private training"]}
-        subheadline="A boutique studio with traditional group classes, specialised workshops, and one-on-one sessions across two Singapore locations."
+        headline="Find Your Yoga {rotating}"
+        rotatingWords={["Classes", "Workshops", "Private Sessions", "Packages"]}
+        subheadline="Yoga Sadhana is a boutique yoga studio offering traditional group classes, specialised workshops, and one-on-one sessions across two Singapore locations."
         primaryCta={{ href: "/classes", label: "Browse classes" }}
         secondaryCta={{ href: "/packages", label: "View packages" }}
       />
 
-      <TrustedBy
-        label="Two studios, one practice"
-        logos={[
-          { name: "Breadtalk IHQ" },
-          { name: "Outram Park" },
-        ]}
-      />
+      <Locations />
 
       <FeatureGrid
         eyebrow="Everything you need"
@@ -86,14 +80,13 @@ export default function HomePage() {
       />
 
       <ShowcaseGrid
-        columns={4}
+        columns={3}
         eyebrow="What we offer"
         headline="Find what fits your week."
         items={[
-          { imageKey: "cat-yoga",       imageAlt: "Yoga group class",     label: "Yoga",       description: "Traditional group classes for every level.", href: "/classes" },
-          { imageKey: "cat-pilates",    imageAlt: "Pilates reformer",     label: "Pilates",    description: "Reformer and mat practice.",                  href: "/classes" },
-          { imageKey: "cat-meditation", imageAlt: "Meditation cushion",   label: "Meditation", description: "Guided stillness and breath work.",           href: "/classes" },
-          { imageKey: "cat-workshop",   imageAlt: "Workshop in progress", label: "Workshops",  description: "Limited-spot deep-dives.",                    href: "/workshops" },
+          { imageKey: "cat-yoga",       imageAlt: "Group yoga class",       label: "Classes",          description: "Traditional group classes for every level.", href: "/classes" },
+          { imageKey: "cat-workshop",   imageAlt: "Workshop in progress",   label: "Workshops",        description: "Limited-spot deep-dives.",                    href: "/workshops" },
+          { imageKey: "cat-meditation", imageAlt: "One-on-one instruction", label: "Private sessions", description: "1-on-1 or 2-on-1 with certified teachers.",   href: "/private-sessions" },
         ]}
       />
 

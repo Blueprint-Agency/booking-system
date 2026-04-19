@@ -3,15 +3,13 @@
 import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Clock, Droplets, Shirt, Check, Info } from "lucide-react";
-import { QRCodeSVG } from "qrcode.react";
+import { Clock, Droplets, Shirt, Check, Info, ArrowLeft, CheckCircle2 } from "lucide-react";
 import { formatDate, formatTime, getLocation } from "@/lib/utils";
 import type { Session, Instructor } from "@/types";
 import sessionsData from "@/data/sessions.json";
 import instructorsData from "@/data/instructors.json";
-import { MOCK_USER } from "@/data/mock-user";
+import { recordBooking, hasActiveUnlimited, useMockState, isExpired, markAttended, type MockPackage } from "@/lib/mock-state";
 import { CLASS_CANCELLATION_POLICY } from "@/data/policy";
-import { CtaBanner } from "@/components/marketing/cta-banner";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { SectionHeading } from "@/components/booking/section-heading";
 
@@ -26,7 +24,6 @@ const PACKAGE_DISPLAY: Record<string, { name: string; subtitle: string }> = {
   "b-30":     { name: "Bundle of 30",               subtitle: "30 credits · valid 365 days" },
   "b-50":     { name: "Bundle of 50",               subtitle: "50 credits · valid 365 days" },
   "b-100":    { name: "Bundle of 100",              subtitle: "100 credits · valid 365 days" },
-  "b-travel": { name: "Travel Package",             subtitle: "5 credits · valid 30 days" },
   "u-3":      { name: "3-Month Unlimited",          subtitle: "Unlimited classes · 3 months" },
   "u-6":      { name: "6-Month Unlimited",          subtitle: "Unlimited classes · 6 months" },
   "u-12":     { name: "12-Month Unlimited",         subtitle: "Unlimited classes · 12 months" },
@@ -73,11 +70,24 @@ function ClassConfirmation({
 }) {
   const router = useRouter();
   const [confirmed, setConfirmed] = useState(false);
+  const [showDialog, setShowDialog] = useState(false);
   const location = getLocation(session.locationId);
-  const hasMultiplePackages = MOCK_USER.classPackages.length > 1;
-  const [selectedPackageId, setSelectedPackageId] = useState(
-    MOCK_USER.classPackages[0]?.id ?? ""
+  const state = useMockState();
+
+  const activeClassPackages: MockPackage[] = state.packages.filter(
+    (p) =>
+      (p.kind === "class-credit" || p.kind === "class-unlimited") &&
+      !isExpired(p) &&
+      (p.kind === "class-unlimited" || p.credits > 0)
   );
+  const hasMultiplePackages = activeClassPackages.length > 1;
+  const [selectedPackageId, setSelectedPackageId] = useState<string>(
+    activeClassPackages[0]?.id ?? ""
+  );
+  const selectedPkg =
+    activeClassPackages.find((p) => p.id === selectedPackageId) ??
+    activeClassPackages[0];
+  const isUnlimitedSelected = selectedPkg?.kind === "class-unlimited";
 
   function handleReserve() {
     if (typeof window !== "undefined" && sessionStorage.getItem("waiverSigned") !== "true") {
@@ -85,11 +95,20 @@ function ClassConfirmation({
       router.push(`/waiver?returnTo=${encodeURIComponent(returnTo)}`);
       return;
     }
-    setConfirmed(true);
+    recordBooking(
+      {
+        id: bookingRef,
+        sessionId: session.id,
+        type: "class",
+        bookedAt: new Date().toISOString(),
+      },
+      {
+        decrementCredits: !isUnlimitedSelected && !hasActiveUnlimited(state),
+        fromPackageId: selectedPkg?.id,
+      }
+    );
+    setShowDialog(true);
   }
-  const selectedPkg =
-    MOCK_USER.classPackages.find((p) => p.id === selectedPackageId) ??
-    MOCK_USER.classPackages[0];
 
   if (confirmed) {
     return (
@@ -103,7 +122,7 @@ function ClassConfirmation({
   }
 
   return (
-    <div className="max-w-xl mx-auto px-4 sm:px-6 py-10 sm:py-14">
+    <>
       <BookingSurface maxWidth="md" padding="loose">
         <SectionHeading
           eyebrow="Review & reserve"
@@ -129,15 +148,19 @@ function ClassConfirmation({
           )}
         </div>
 
-        {/* Package selection (if multiple packages) */}
+        {/* Package selection (if multiple active packages) */}
         {hasMultiplePackages && (
           <div className="mt-8 rounded-2xl border border-border bg-card p-5">
-            <p className="text-sm font-semibold text-ink mb-3">
+            <p className="text-sm font-semibold text-ink mb-1">
               Deduct credit from
             </p>
+            <p className="text-xs text-muted mb-3">
+              Choose which package to use for this booking
+            </p>
             <div className="space-y-2">
-              {MOCK_USER.classPackages.map((pkg) => {
+              {activeClassPackages.map((pkg) => {
                 const selected = selectedPackageId === pkg.id;
+                const isUnlimited = pkg.kind === "class-unlimited";
                 return (
                   <label
                     key={pkg.id}
@@ -158,9 +181,9 @@ function ClassConfirmation({
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-ink">{pkg.name}</p>
                       <p className="text-xs text-muted mt-0.5">
-                        {pkg.unlimited
+                        {isUnlimited
                           ? "Unlimited credits"
-                          : `${pkg.creditsRemaining} of ${pkg.creditsTotal} credits remaining`}
+                          : `${pkg.credits} of ${pkg.totalCredits} credits remaining`}
                         {" · expires "}
                         {new Date(pkg.expiresAt).toLocaleDateString("en-SG", {
                           day: "numeric",
@@ -181,16 +204,16 @@ function ClassConfirmation({
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
               <p className="text-sm font-semibold text-ink">
-                {selectedPkg?.unlimited
+                {isUnlimitedSelected
                   ? "Unlimited classes — no credit deducted"
                   : "1 credit will be used"}
               </p>
               <p className="text-xs text-muted mt-0.5">
                 {selectedPkg
-                  ? selectedPkg.unlimited
+                  ? isUnlimitedSelected
                     ? `${selectedPkg.name} · unlimited bookings until ${new Date(selectedPkg.expiresAt).toLocaleDateString("en-SG", { day: "numeric", month: "short", year: "numeric" })}`
-                    : `${selectedPkg.name} · ${selectedPkg.creditsRemaining - 1} credits remaining after booking`
-                  : `${MOCK_USER.classPackageName} · ${MOCK_USER.classCredits - 1} credits remaining after booking`}
+                    : `${selectedPkg.name} · ${Math.max(selectedPkg.credits - 1, 0)} credits remaining after booking`
+                  : "No active package — please purchase credits first"}
               </p>
             </div>
             <div className="w-10 h-10 shrink-0 rounded-full bg-sage/20 flex items-center justify-center">
@@ -235,7 +258,29 @@ function ClassConfirmation({
           </Link>
         </div>
       </BookingSurface>
-    </div>
+
+      {showDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4">
+          <div className="bg-paper rounded-2xl p-8 max-w-md w-full shadow-modal text-center">
+            <div className="w-16 h-16 rounded-full bg-sage/15 flex items-center justify-center mx-auto mb-5">
+              <Check size={30} className="text-sage" strokeWidth={2.5} />
+            </div>
+            <h1 className="font-serif text-2xl text-ink leading-snug">
+              Your booking is confirmed! Please arrive 15 minutes before class
+            </h1>
+            <button
+              onClick={() => {
+                setShowDialog(false);
+                setConfirmed(true);
+              }}
+              className="mt-8 w-full rounded-full bg-accent text-white py-3 text-sm font-semibold hover:bg-accent-deep transition-colors"
+            >
+              I will attend on time
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -245,14 +290,23 @@ function SessionSuccess({
   instructor,
   bookingRef,
   arrivalLocationName,
+  bookingType = "class",
 }: {
   session: Session;
   instructor: Instructor | undefined;
   bookingRef: string;
   arrivalLocationName?: string;
+  bookingType?: "class" | "workshop" | "private";
 }) {
+  const router = useRouter();
+  const state = useMockState();
   const location = getLocation(session.locationId);
   const studioName = arrivalLocationName ?? location?.name;
+  const attended = state.attendedBookings.includes(bookingRef);
+  const bookingsHref =
+    bookingType === "workshop" ? "/account/workshops" :
+    bookingType === "private" ? "/account/private-sessions" :
+    "/account/classes";
 
   return (
     <>
@@ -283,31 +337,32 @@ function SessionSuccess({
             )}
           </div>
 
-          {/* QR block */}
-          <div className="h-48 w-48 mx-auto mt-8 rounded-2xl border border-ink/10 bg-paper p-4 flex items-center justify-center">
-            <QRCodeSVG
-              value={bookingRef}
-              size={152}
-              level="M"
-              bgColor="#faf8f3"
-              fgColor="#0d1a3e"
-            />
-          </div>
-          <p className="text-xs uppercase tracking-wider text-muted mt-4 text-center">
-            Scan at the studio
-          </p>
-
           {/* Action row */}
-          <div className="mt-10 flex gap-3 justify-center">
-            <button className="rounded-full border border-ink/10 px-5 py-3 text-sm font-medium hover:border-accent transition-colors">
-              Add to calendar
+          <div className="mt-10 flex flex-wrap gap-3 justify-center">
+            <button
+              onClick={() => router.back()}
+              className="inline-flex items-center gap-2 rounded-full border border-ink/10 px-5 py-3 text-sm font-medium hover:border-accent transition-colors"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back
             </button>
             <Link
-              href="/account"
-              className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 transition-colors"
+              href={bookingsHref}
+              className="inline-flex items-center gap-2 rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 transition-colors"
             >
-              View in account
+              Show my bookings
             </Link>
+            <button
+              onClick={() => {
+                markAttended(bookingRef);
+                router.back();
+              }}
+              disabled={attended}
+              className="inline-flex items-center gap-2 rounded-full border border-ink/10 px-5 py-3 text-sm font-medium hover:border-accent transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              Attended (Demo Only)
+            </button>
           </div>
         </BookingSurface>
       </div>
@@ -347,13 +402,6 @@ function SessionSuccess({
         </div>
       </section>
 
-      {/* 4. Closing CTA */}
-      <CtaBanner
-        imageKey="cta-community"
-        headline="Keep your momentum"
-        subheadline="Book your next class while you're here."
-        primaryCta={{ href: "/classes", label: "Browse classes" }}
-      />
     </>
   );
 }
@@ -365,6 +413,16 @@ function PackageSuccess({ packageId }: { packageId: string }) {
       name: "Package",
       subtitle: "Credits added to your account",
     };
+
+  const isPrivatePackage = packageId.startsWith("p1-") || packageId.startsWith("p2-");
+  const ctaHref = isPrivatePackage ? "/private-sessions" : "/classes";
+  const ctaLabel = isPrivatePackage
+    ? "Start Booking Private Sessions"
+    : "Start Booking Classes";
+  const bannerLabel = isPrivatePackage ? "Browse private sessions" : "Browse classes";
+  const bannerSub = isPrivatePackage
+    ? "Schedule your next 1-on-1 while you're here."
+    : "Book your next class while you're here.";
 
   return (
     <>
@@ -384,28 +442,21 @@ function PackageSuccess({ packageId }: { packageId: string }) {
 
           <div className="mt-10 flex gap-3 justify-center">
             <Link
-              href="/classes"
+              href={ctaHref}
               className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 transition-colors"
             >
-              Start booking classes
+              {ctaLabel}
             </Link>
             <Link
-              href="/account/packages"
+              href="/account"
               className="rounded-full border border-ink/10 px-5 py-3 text-sm font-medium hover:border-accent transition-colors"
             >
-              View my packages
+              View my account
             </Link>
           </div>
         </BookingSurface>
       </div>
 
-      {/* Closing CTA */}
-      <CtaBanner
-        imageKey="cta-community"
-        headline="Keep your momentum"
-        subheadline="Book your next class while you're here."
-        primaryCta={{ href: "/classes", label: "Browse classes" }}
-      />
     </>
   );
 }
@@ -416,19 +467,30 @@ function ConfirmationContent() {
   const type = searchParams.get("type");
   const sessionId = searchParams.get("session");
   const packageId = searchParams.get("package");
+  const alreadyConfirmed = searchParams.get("confirmed") === "1";
 
   // Generate a booking reference for QR from URL params or a stable mock
   const bookingRef = sessionId
     ? `YS-BOOKING-${sessionId.toUpperCase()}`
     : "YS-BOOKING-MOCK";
 
-  // Class booking: review step → success
+  // Class booking: review step → success (or skip to success when already booked)
   if (type === "class" && sessionId) {
     const session = allSessions.find((s) => s.id === sessionId);
     const instructor = allInstructors.find(
       (i) => i.id === session?.instructorId
     );
     if (session) {
+      if (alreadyConfirmed) {
+        return (
+          <SessionSuccess
+            session={session}
+            instructor={instructor}
+            bookingRef={bookingRef}
+            bookingType="class"
+          />
+        );
+      }
       return (
         <ClassConfirmation
           session={session}
@@ -451,6 +513,25 @@ function ConfirmationContent() {
           session={session}
           instructor={instructor}
           bookingRef={bookingRef}
+          bookingType="workshop"
+        />
+      );
+    }
+  }
+
+  // Private session
+  if (type === "private" && sessionId) {
+    const session = allSessions.find((s) => s.id === sessionId);
+    const instructor = allInstructors.find(
+      (i) => i.id === session?.instructorId
+    );
+    if (session) {
+      return (
+        <SessionSuccess
+          session={session}
+          instructor={instructor}
+          bookingRef={bookingRef}
+          bookingType="private"
         />
       );
     }

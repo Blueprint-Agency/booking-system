@@ -18,7 +18,7 @@ function resolveIcon(name: string): LucideIconType {
 
 function getGridCols(count: number): string {
   if (count === 4) return "grid-cols-2 sm:grid-cols-2 lg:grid-cols-4";
-  if (count === 6) return "grid-cols-2 sm:grid-cols-3 lg:grid-cols-6";
+  if (count === 6) return "grid-cols-2 sm:grid-cols-3 lg:grid-cols-3";
   if (count === 8) return "grid-cols-2 sm:grid-cols-4 lg:grid-cols-4";
   return "grid-cols-2 sm:grid-cols-3 lg:grid-cols-3";
 }

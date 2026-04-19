@@ -1,27 +1,31 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { Crown, Ticket, CalendarCheck, Send, CalendarX, QrCode, X } from "lucide-react";
+import {
+  Ticket,
+  UserRound,
+  CalendarX,
+  Package,
+} from "lucide-react";
 import { formatDate, formatTime } from "@/lib/utils";
 import { SectionHeading } from "@/components/booking/section-heading";
 import { EmptyState } from "@/components/ui/empty-state";
-import { CLASS_CANCELLATION_POLICY, CLASS_CANCELLATION_HOURS } from "@/data/policy";
-import type { Booking, Session, Instructor, ClientPackage, Membership } from "@/types";
-import bookingsData from "@/data/bookings.json";
+import { QrBadge } from "@/components/account/qr-badge";
+import type { Session, Instructor } from "@/types";
 import sessionsData from "@/data/sessions.json";
 import instructorsData from "@/data/instructors.json";
-import packagesData from "@/data/client-packages.json";
-import membershipsData from "@/data/memberships.json";
-import { MOCK_USER } from "@/data/mock-user";
+import {
+  useMockState,
+  getActiveClassCredits,
+  hasActiveUnlimited,
+  isExpired,
+  type MockBooking,
+  type MockPackage,
+} from "@/lib/mock-state";
 
-const CLIENT_ID = "cli-1";
-
-const bookings = bookingsData as Booking[];
 const sessions = sessionsData as Session[];
 const instructors = instructorsData as Instructor[];
-const packages = packagesData as ClientPackage[];
-const memberships = membershipsData as Membership[];
 
 function getSession(id: string) {
   return sessions.find((s) => s.id === id);
@@ -30,61 +34,103 @@ function getInstructor(id: string) {
   return instructors.find((i) => i.id === id);
 }
 
+type NextUpItem = {
+  booking: MockBooking;
+  name: string;
+  instructorName?: string;
+  date: string;
+  time: string;
+  startMs: number;
+  detailHref: string;
+};
+
+const PAGE_SIZE = 5;
+
+function getBookingStart(b: MockBooking): { name: string; instructorName?: string; date: string; time: string; startMs: number; endMs: number } | null {
+  if (b.meta) {
+    const d = new Date(b.meta.startsAt);
+    if (isNaN(d.getTime())) return null;
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return {
+      name: b.meta.name,
+      instructorName: b.meta.instructorName,
+      date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+      time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+      startMs: d.getTime(),
+      endMs: d.getTime() + (b.meta.duration ?? 60) * 60 * 1000,
+    };
+  }
+  const s = getSession(b.sessionId);
+  if (!s) return null;
+  const inst = getInstructor(s.instructorId);
+  const startMs = new Date(`${s.date}T${s.time}:00`).getTime();
+  return {
+    name: s.name,
+    instructorName: inst?.name,
+    date: s.date,
+    time: s.time,
+    startMs,
+    endMs: startMs + (s.duration ?? 60) * 60 * 1000,
+  };
+}
+
+const TYPE_META: Record<MockBooking["type"], { label: string; href: string; tone: string }> = {
+  class:     { label: "Class",           href: "/account/classes",          tone: "bg-accent/15 text-accent-deep" },
+  workshop:  { label: "Workshop",        href: "/account/workshops",        tone: "bg-sage/15 text-sage" },
+  private:   { label: "Private session", href: "/account/private-sessions", tone: "bg-warm text-ink" },
+};
+
 export default function AccountOverview() {
-  const [cancelled, setCancelled] = useState<string[]>([]);
-  const [cancelTarget, setCancelTarget] = useState<Booking | null>(null);
+  const state = useMockState();
+  const firstName = state.user?.firstName || "there";
+  const [nextUpVisible, setNextUpVisible] = useState(PAGE_SIZE);
 
-  const firstName = MOCK_USER.name.split(" ")[0];
+  const upcomingBookings = useMemo<NextUpItem[]>(() => {
+    const now = Date.now();
+    const items: NextUpItem[] = [];
+    for (const b of state.bookings) {
+      if (state.cancelledBookings.includes(b.id)) continue;
+      if (state.attendedBookings.includes(b.id)) continue;
+      if (b.type === "private" && !state.confirmedPrivateBookings.includes(b.id)) continue;
+      const d = getBookingStart(b);
+      if (!d) continue;
+      const isFuture = d.endMs >= now || new Date(b.bookedAt).getTime() >= d.endMs;
+      if (!isFuture) continue;
+      items.push({
+        booking: b,
+        name: d.name,
+        instructorName: d.instructorName,
+        date: d.date,
+        time: d.time,
+        startMs: d.startMs,
+        detailHref: TYPE_META[b.type].href,
+      });
+    }
+    return items.sort((a, b) => a.startMs - b.startMs);
+  }, [state.bookings, state.cancelledBookings, state.attendedBookings, state.confirmedPrivateBookings]);
 
-  function hoursUntil(session: Session | undefined) {
-    if (!session) return Infinity;
-    const start = new Date(`${session.date}T${session.time}:00`);
-    return (start.getTime() - Date.now()) / (1000 * 60 * 60);
-  }
-
-  function confirmCancel() {
-    if (cancelTarget) setCancelled((prev) => [...prev, cancelTarget.id]);
-    setCancelTarget(null);
-  }
-
-  // Upcoming confirmed bookings
-  const upcomingBookings = bookings
-    .filter((b) => {
-      if (b.clientId !== CLIENT_ID) return false;
-      if (b.status !== "confirmed") return false;
-      if (cancelled.includes(b.id)) return false;
-      const session = getSession(b.sessionId);
-      if (!session) return false;
-      return new Date(session.date) >= new Date("2026-03-29");
-    })
-    .sort((a, b) => {
-      const sa = getSession(a.sessionId);
-      const sb = getSession(b.sessionId);
-      if (!sa || !sb) return 0;
-      return new Date(sa.date).getTime() - new Date(sb.date).getTime();
-    })
-    .slice(0, 3);
-
-  const activePackages = packages.filter(
-    (p) => p.clientId === CLIENT_ID && p.status === "active"
-  );
-  const totalRemaining = activePackages.reduce(
-    (sum, p) => sum + p.sessionsRemaining,
-    0
+  const unlimited = hasActiveUnlimited(state);
+  const classCredits = unlimited ? -1 : getActiveClassCredits(state);
+  const unlimitedPkg = state.packages.find(
+    (p) => p.kind === "class-unlimited" && !isExpired(p),
   );
 
-  const membership = memberships.find((m) => m.clientId === CLIENT_ID);
+  const ptSessionsRemaining = state.packages
+    .filter((p) => (p.kind === "pt1on1" || p.kind === "pt2on1") && !isExpired(p))
+    .reduce((sum, p) => sum + p.credits, 0);
 
-  // Stats
-  const classesAttendedYtd = bookings.filter((b) => {
-    if (b.clientId !== CLIENT_ID) return false;
-    if (b.status !== "confirmed") return false;
-    const session = getSession(b.sessionId);
-    if (!session) return false;
-    const d = new Date(session.date);
-    return d < new Date("2026-03-29") && d.getFullYear() === 2026;
-  }).length;
-  const referralsSent = 3;
+  const classPackages = state.packages.filter(
+    (p) =>
+      !isExpired(p) &&
+      ((p.kind === "class-credit" && p.credits > 0) ||
+        p.kind === "class-unlimited"),
+  );
+  const ptPackages = state.packages.filter(
+    (p) =>
+      !isExpired(p) &&
+      (p.kind === "pt1on1" || p.kind === "pt2on1") &&
+      p.credits > 0,
+  );
 
   return (
     <div>
@@ -93,207 +139,163 @@ export default function AccountOverview() {
         title="Here's your practice"
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Upcoming bookings card */}
+      {/* Credit totals */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="rounded-2xl bg-paper border border-ink/10 p-6">
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-muted mb-4">
-            Next up
-          </h3>
-          {upcomingBookings.length === 0 ? (
-            <EmptyState
-              icon={CalendarX}
-              title="No upcoming bookings"
-              description="Browse classes to book your next session."
-              cta={{ href: "/classes", label: "Browse classes" }}
-            />
-          ) : (
-            <div>
-              {upcomingBookings.map((booking) => {
-                const session = getSession(booking.sessionId);
-                if (!session) return null;
-                const instructor = getInstructor(session.instructorId);
-                return (
-                  <div
-                    key={booking.id}
-                    className="py-3 border-b border-ink/5 last:border-0"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-medium text-ink truncate">
-                            {session.name}
-                          </p>
-                          {booking.promotedFromWaitlist && (
-                            <span className="inline-flex items-center rounded-full bg-accent/15 text-accent-deep px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider">
-                              Promoted from waitlist
-                            </span>
-                          )}
-                        </div>
-                        {instructor && (
-                          <p className="text-sm text-muted">
-                            with {instructor.name}
-                          </p>
-                        )}
-                      </div>
-                      <div className="text-right shrink-0 ml-4">
-                        <p className="text-sm text-ink">
-                          {formatDate(session.date)}
-                        </p>
-                        <p className="text-sm text-muted">
-                          {formatTime(session.time)}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="mt-2 flex items-center gap-3">
-                      <Link
-                        href={`/booking/confirmation?type=class&session=${session.id}`}
-                        className="inline-flex items-center gap-1 min-h-[32px] text-xs font-medium text-accent-deep hover:text-accent transition-colors"
-                      >
-                        <QrCode className="w-3.5 h-3.5" />
-                        Show QR
-                      </Link>
-                      <button
-                        onClick={() => setCancelTarget(booking)}
-                        className="inline-flex items-center gap-1 min-h-[32px] text-xs font-medium text-muted hover:text-error transition-colors"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+          <Ticket className="w-5 h-5 text-accent-deep mb-3" />
+          <p className="text-3xl font-extrabold text-ink">
+            {unlimited ? "Unlimited" : classCredits}
+          </p>
+          <p className="text-xs uppercase tracking-wider text-muted mt-1">
+            Class credits
+          </p>
+          {unlimited && unlimitedPkg && (
+            <p className="text-xs text-muted mt-1">
+              Valid until {formatDate(unlimitedPkg.expiresAt)}
+            </p>
           )}
-          <div className="mt-4">
-            <Link
-              href="/account/history"
-              className="text-sm font-medium text-accent-deep hover:text-accent transition-colors"
-            >
-              View all
-            </Link>
-          </div>
         </div>
+        <div className="rounded-2xl bg-paper border border-ink/10 p-6">
+          <UserRound className="w-5 h-5 text-accent-deep mb-3" />
+          <p className="text-3xl font-extrabold text-ink">{ptSessionsRemaining}</p>
+          <p className="text-xs uppercase tracking-wider text-muted mt-1">
+            PT sessions
+          </p>
+        </div>
+      </div>
 
-        {/* Active membership card */}
-        <div className="rounded-2xl bg-paper border border-ink/10 p-6 flex flex-col">
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-muted mb-4">
-            Membership
-          </h3>
-          <div className="flex-1">
-            {membership ? (
-              <>
-                <div className="flex items-center gap-3 mb-2">
-                  <Crown className="w-6 h-6 text-accent-deep" />
-                  <span className="text-xl font-bold text-ink">Unlimited</span>
-                </div>
-                <p className="text-sm text-muted">
-                  Renews {formatDate(membership.nextBillingDate)}
-                </p>
-              </>
-            ) : (
-              <>
-                <div className="flex items-center gap-3 mb-2">
-                  <Crown className="w-6 h-6 text-muted" />
-                  <span className="text-xl font-bold text-ink">No membership</span>
-                </div>
-                <p className="text-sm text-muted">
-                  Explore unlimited plans to save on every class.
-                </p>
-              </>
+      {/* Next up */}
+      <div className="mt-6 rounded-2xl bg-paper border border-ink/10 p-6">
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-muted mb-4">
+          Next up
+        </h3>
+        {upcomingBookings.length === 0 ? (
+          <EmptyState
+            icon={CalendarX}
+            title="No upcoming bookings"
+            description="Browse classes to book your next session."
+            cta={{ href: "/classes", label: "Browse classes" }}
+          />
+        ) : (
+          <div>
+            {upcomingBookings.slice(0, nextUpVisible).map((item) => {
+              const meta = TYPE_META[item.booking.type];
+              return (
+                <Link
+                  key={item.booking.id}
+                  href={item.detailHref}
+                  className="flex items-center justify-between gap-4 py-3 border-b border-ink/5 last:border-0 hover:opacity-80 transition-opacity"
+                >
+                  <div className="min-w-0">
+                    <span className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${meta.tone}`}>
+                      {meta.label}
+                    </span>
+                    <p className="font-medium text-ink truncate mt-1">{item.name}</p>
+                    {item.instructorName && (
+                      <p className="text-sm text-muted mt-0.5">with {item.instructorName}</p>
+                    )}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-sm text-ink">{formatDate(item.date)}</p>
+                    <p className="text-sm text-muted">{formatTime(item.time)}</p>
+                  </div>
+                  <QrBadge
+                    value={`teeko:booking:${item.booking.id}`}
+                    label={item.name}
+                    subLabel={`${formatDate(item.date)} · ${formatTime(item.time)}`}
+                  />
+                </Link>
+              );
+            })}
+            {upcomingBookings.length > nextUpVisible && (
+              <div className="mt-4 flex justify-center">
+                <button
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setNextUpVisible((v) => v + PAGE_SIZE);
+                  }}
+                  className="rounded-full border border-ink/10 px-5 py-2 text-sm font-medium hover:border-accent transition-colors"
+                >
+                  Load more
+                </button>
+              </div>
             )}
           </div>
-          <div className="mt-4">
-            <Link
-              href="/account/membership"
-              className="inline-flex items-center gap-2 px-5 py-2.5 bg-accent text-white text-sm font-medium rounded-md hover:bg-accent-deep transition-colors"
-            >
-              Manage membership
-            </Link>
-          </div>
-        </div>
+        )}
       </div>
 
-      {/* Stats row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
-        <Link
-          href="/account/packages"
-          className="rounded-2xl bg-paper border border-ink/10 p-6 hover:border-ink/20 transition-colors"
-        >
-          <Ticket className="w-5 h-5 text-accent-deep mb-3" />
-          <p className="text-3xl font-extrabold text-ink">{totalRemaining}</p>
-          <p className="text-xs uppercase tracking-wider text-muted mt-1">
-            Credits remaining
-          </p>
-        </Link>
+      {/* Packages — Class */}
+      <div className="mt-8">
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3">
+          Class packages
+        </h3>
+        {classPackages.length === 0 ? (
+          <EmptyState
+            icon={Package}
+            title="No active class packages"
+            description="Purchase a bundle or unlimited pass to start booking classes."
+            cta={{ href: "/packages", label: "Browse packages" }}
+          />
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {classPackages.map((p) => (
+              <PackageCard key={p.id} pkg={p} unitLabel="credits" />
+            ))}
+          </div>
+        )}
+      </div>
 
-        <div className="rounded-2xl bg-paper border border-ink/10 p-6">
-          <CalendarCheck className="w-5 h-5 text-accent-deep mb-3" />
-          <p className="text-3xl font-extrabold text-ink">{classesAttendedYtd}</p>
-          <p className="text-xs uppercase tracking-wider text-muted mt-1">
-            Classes attended YTD
+      {/* Packages — PT */}
+      <div className="mt-8">
+        <h3 className="text-sm font-semibold uppercase tracking-wider text-muted mb-3">
+          PT packages
+        </h3>
+        {ptPackages.length === 0 ? (
+          <EmptyState
+            icon={Package}
+            title="No active PT packages"
+            description="Purchase a 1-on-1 or 2-on-1 package to book private sessions."
+            cta={{ href: "/packages", label: "Browse packages" }}
+          />
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {ptPackages.map((p) => (
+              <PackageCard key={p.id} pkg={p} unitLabel="sessions" />
+            ))}
+          </div>
+        )}
+      </div>
+
+    </div>
+  );
+}
+
+function PackageCard({
+  pkg,
+  unitLabel,
+}: {
+  pkg: MockPackage;
+  unitLabel: string;
+}) {
+  const isUnlimited = pkg.kind === "class-unlimited";
+  return (
+    <div className="rounded-2xl bg-paper border border-ink/10 p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="font-medium text-ink truncate">{pkg.name}</p>
+          <p className="text-xs text-muted mt-1">
+            Expires {formatDate(pkg.expiresAt)}
           </p>
         </div>
-
-        <div className="rounded-2xl bg-paper border border-ink/10 p-6">
-          <Send className="w-5 h-5 text-accent-deep mb-3" />
-          <p className="text-3xl font-extrabold text-ink">{referralsSent}</p>
-          <p className="text-xs uppercase tracking-wider text-muted mt-1">
-            Referrals sent
+        <div className="text-right shrink-0">
+          <p className="text-2xl font-extrabold text-ink">
+            {isUnlimited ? "∞" : pkg.credits}
+          </p>
+          <p className="text-[10px] uppercase tracking-wider text-muted">
+            {isUnlimited ? "Unlimited" : `of ${pkg.totalCredits} ${unitLabel}`}
           </p>
         </div>
       </div>
-
-      {/* Cancel confirmation dialog */}
-      {cancelTarget && (() => {
-        const session = getSession(cancelTarget.sessionId);
-        const hours = hoursUntil(session);
-        const willRefund = hours > CLASS_CANCELLATION_HOURS;
-        return (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4"
-            onClick={() => setCancelTarget(null)}
-          >
-            <div
-              className="w-full max-w-md rounded-2xl bg-paper border border-ink/10 p-6 shadow-hover"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <h3 className="text-lg font-bold text-ink">Cancel this booking?</h3>
-              {session && (
-                <p className="mt-1 text-sm text-muted">
-                  {session.name} · {formatDate(session.date)} · {formatTime(session.time)}
-                </p>
-              )}
-              <div className={`mt-4 rounded-xl border p-3 text-sm ${
-                willRefund
-                  ? "border-sage/25 bg-sage/10 text-ink"
-                  : "border-error/25 bg-error/10 text-ink"
-              }`}>
-                {willRefund
-                  ? `More than ${CLASS_CANCELLATION_POLICY.window} before class — your credit will be refunded.`
-                  : `Within ${CLASS_CANCELLATION_POLICY.window} of class — the credit will be forfeited.`}
-              </div>
-              <p className="mt-3 text-xs text-muted">
-                {CLASS_CANCELLATION_POLICY.repeat}
-              </p>
-              <div className="mt-6 flex gap-3">
-                <button
-                  onClick={() => setCancelTarget(null)}
-                  className="flex-1 min-h-[44px] rounded-full border border-ink/10 px-4 text-sm font-medium hover:border-accent transition-colors"
-                >
-                  Keep booking
-                </button>
-                <button
-                  onClick={confirmCancel}
-                  className="flex-1 min-h-[44px] rounded-full bg-error px-4 text-sm font-medium text-paper hover:bg-error/90 transition-colors"
-                >
-                  Confirm cancellation
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
     </div>
   );
 }

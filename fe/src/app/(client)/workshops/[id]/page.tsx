@@ -3,10 +3,10 @@
 import { useParams } from "next/navigation";
 import Image from "next/image";
 import { Calendar, MapPin, CalendarX } from "lucide-react";
-import { CtaBanner } from "@/components/marketing/cta-banner";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { SectionHeading } from "@/components/booking/section-heading";
 import { EmptyState } from "@/components/ui/empty-state";
+import { GatedLink } from "@/components/auth/auth-gate";
 import { formatDate } from "@/lib/utils";
 import type { Session, Instructor, Location } from "@/types";
 import sessionsData from "@/data/sessions.json";
@@ -108,12 +108,13 @@ export default function WorkshopDetailPage() {
               <p className="text-xs uppercase tracking-wider text-muted mt-1">
                 {seatsLeft > 0 ? `${seatsLeft} seat${seatsLeft === 1 ? "" : "s"} left` : "Fully booked"}
               </p>
-              <a
+              <GatedLink
                 href={`/checkout?session=${session.id}&type=workshop`}
+                context="book a workshop"
                 className="block rounded-full bg-ink text-paper w-full py-3 text-sm font-medium mt-4 hover:bg-ink/90 transition-colors text-center"
               >
                 Purchase Now
-              </a>
+              </GatedLink>
               <p className="text-xs text-muted mt-3 text-center">
                 You will be redirected to checkout
               </p>
@@ -122,12 +123,6 @@ export default function WorkshopDetailPage() {
         </BookingSurface>
       </div>
 
-      <CtaBanner
-        imageKey="cta-community"
-        headline="Browse more workshops"
-        subheadline="New intensives added monthly."
-        primaryCta={{ href: "/workshops", label: "See all" }}
-      />
     </>
   );
 }

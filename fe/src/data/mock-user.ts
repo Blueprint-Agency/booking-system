@@ -12,27 +12,24 @@ export type UserPackage = {
 
 export const MOCK_USER = {
   id: "client-1",
-  name: "Sarah Koh",
-  initials: "SK",
+  name: "Guest",
+  initials: "G",
 
   // ── Class credits (aggregate) ───────────────
-  classCredits: 8,
-  classPackageName: "Bundle of 10",
-  classPackageTotal: 10,
-  classPackageExpiry: "2026-06-15",
+  classCredits: 0,
+  classPackageName: "" as string | "",
+  classPackageTotal: 0,
+  classPackageExpiry: "" as string | "",
   classPackageUnlimited: false,
 
   // ── Multiple class packages ─────────────────
-  classPackages: [
-    { id: "cp-1", name: "Bundle of 10", creditsRemaining: 5, creditsTotal: 10, expiresAt: "2026-06-15", unlimited: false },
-    { id: "cp-2", name: "Bundle of 20", creditsRemaining: 3, creditsTotal: 20, expiresAt: "2026-08-10", unlimited: false },
-  ] as UserPackage[],
+  classPackages: [] as UserPackage[],
 
   // ── PT credits (1-on-1) ──────────────────────
-  pt1on1Credits: 6,
-  pt1on1PackageName: "VIP 10 (1-on-1)",
-  pt1on1PackageTotal: 20,
-  pt1on1PackageExpiry: "2026-09-01",
+  pt1on1Credits: 0,
+  pt1on1PackageName: null as string | null,
+  pt1on1PackageTotal: 0,
+  pt1on1PackageExpiry: null as string | null,
 
   // ── PT credits (2-on-1) ──────────────────────
   pt2on1Credits: 0,

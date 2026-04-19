@@ -6,11 +6,13 @@ import { useParams } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { UserX } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state";
+import { useAuthGate } from "@/components/auth/auth-gate";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { SectionHeading } from "@/components/booking/section-heading";
 import { getLocation } from "@/lib/utils";
 import { MOCK_USER } from "@/data/mock-user";
 import { PRIVATE_SESSION_CANCELLATION_POLICY } from "@/data/policy";
+import { recordBooking, decrementPrivateCredit } from "@/lib/mock-state";
 import type { Instructor, Location } from "@/types";
 import instructorsData from "@/data/instructors.json";
 import locationsData from "@/data/locations.json";
@@ -20,11 +22,11 @@ const typedLocations = locationsData as Location[];
 
 // Mock time slots for the detail page
 const MOCK_SLOTS = [
-  { id: "slot-1", time: "Mon 21 Apr · 9:00 AM", duration: 60, price: 120 },
-  { id: "slot-2", time: "Mon 21 Apr · 11:00 AM", duration: 60, price: 120 },
-  { id: "slot-3", time: "Tue 22 Apr · 7:00 AM", duration: 60, price: 120 },
-  { id: "slot-4", time: "Tue 22 Apr · 5:00 PM", duration: 60, price: 120 },
-  { id: "slot-5", time: "Wed 23 Apr · 9:00 AM", duration: 60, price: 120 },
+  { id: "slot-1", time: "Mon 21 Apr · 9:00 AM",  startsAt: "2026-04-21T09:00:00", duration: 60, price: 120 },
+  { id: "slot-2", time: "Mon 21 Apr · 11:00 AM", startsAt: "2026-04-21T11:00:00", duration: 60, price: 120 },
+  { id: "slot-3", time: "Tue 22 Apr · 7:00 AM",  startsAt: "2026-04-22T07:00:00", duration: 60, price: 120 },
+  { id: "slot-4", time: "Tue 22 Apr · 5:00 PM",  startsAt: "2026-04-22T17:00:00", duration: 60, price: 120 },
+  { id: "slot-5", time: "Wed 23 Apr · 9:00 AM",  startsAt: "2026-04-23T09:00:00", duration: 60, price: 120 },
 ];
 
 export default function PrivateSessionDetailPage() {
@@ -63,14 +65,39 @@ export default function PrivateSessionDetailPage() {
 
   const chosen = MOCK_SLOTS.find((s) => s.id === selectedSlot);
 
+  const { requireAuth, gate } = useAuthGate("book a private session");
+
   // Continue handler — mirrors original request flow
   const handleContinue = () => {
-    if (!selectedSlot) return;
-    setSubmitted(true);
+    if (!selectedSlot || !instructor) return;
+    const slot = MOCK_SLOTS.find((s) => s.id === selectedSlot);
+    if (!slot) return;
+    const selectedLocation = typedLocations.find((l) => l.id === preferredLocation);
+    const proceed = () => {
+      recordBooking({
+        id: `pvt-${Date.now()}`,
+        sessionId: `private:${instructor.id}:${slot.id}`,
+        type: "private",
+        bookedAt: new Date().toISOString(),
+        meta: {
+          name: `Private session with ${instructor.name}`,
+          instructorId: instructor.id,
+          instructorName: instructor.name,
+          locationId: selectedLocation?.id,
+          locationName: selectedLocation?.name,
+          startsAt: slot.startsAt,
+          duration: slot.duration,
+        },
+      });
+      decrementPrivateCredit();
+      setSubmitted(true);
+    };
+    requireAuth(typeof window !== "undefined" ? window.location.pathname : "/", proceed);
   };
 
   return (
     <>
+      {gate}
       {/* Booking surface */}
       <div id="slots">
         <BookingSurface maxWidth="lg" padding="default">
@@ -121,7 +148,7 @@ export default function PrivateSessionDetailPage() {
                     "Personalised sequence tailored to your goals",
                     "Post-session notes & home practice suggestions",
                     "Flexible location — studio or online",
-                    "Deducted from your PT credit balance",
+                    "Deducted from your private session balance",
                   ].map((item) => (
                     <li key={item} className="flex items-start gap-2">
                       <span className="mt-0.5 text-accent-deep shrink-0">✓</span>
@@ -139,8 +166,8 @@ export default function PrivateSessionDetailPage() {
                 />
                 <p className="text-sm text-muted -mt-4 leading-relaxed">
                   Reschedule or cancel up to {PRIVATE_SESSION_CANCELLATION_POLICY.window} before your session at no
-                  charge. Cancellations within {PRIVATE_SESSION_CANCELLATION_POLICY.window} forfeit the session
-                  credit. No-shows are non-refundable. To reschedule, visit My
+                  charge. Cancellations within {PRIVATE_SESSION_CANCELLATION_POLICY.window} forfeit the session.
+                  No-shows are non-refundable. To reschedule, visit My
                   Bookings or contact the studio directly.
                 </p>
               </div>
@@ -153,22 +180,28 @@ export default function PrivateSessionDetailPage() {
               </p>
 
               {/* Slot list */}
-              <div className="space-y-2">
-                {MOCK_SLOTS.map((slot) => (
-                  <button
-                    key={slot.id}
-                    onClick={() => setSelectedSlot(slot.id)}
-                    className={`rounded-xl border px-4 py-3 text-sm flex items-center justify-between transition-colors w-full text-left ${
-                      selectedSlot === slot.id
-                        ? "border-accent bg-accent/5"
-                        : "border-ink/10 hover:border-accent"
-                    }`}
-                  >
-                    <span className="font-medium text-ink">{slot.time}</span>
-                    <span className="text-muted">{slot.duration} min</span>
-                  </button>
-                ))}
-              </div>
+              {instructor.available ? (
+                <div className="space-y-2">
+                  {MOCK_SLOTS.map((slot) => (
+                    <button
+                      key={slot.id}
+                      onClick={() => setSelectedSlot(slot.id)}
+                      className={`rounded-xl border px-4 py-3 text-sm flex items-center justify-between transition-colors w-full text-left ${
+                        selectedSlot === slot.id
+                          ? "border-accent bg-accent/5"
+                          : "border-ink/10 hover:border-accent"
+                      }`}
+                    >
+                      <span className="font-medium text-ink">{slot.time}</span>
+                      <span className="text-muted">{slot.duration} min</span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-muted leading-relaxed">
+                  This instructor has paused private sessions. Browse other instructors to find an open slot.
+                </p>
+              )}
 
               {/* Price + CTA */}
               <div className="mt-6 pt-6 border-t border-ink/10">
@@ -178,13 +211,24 @@ export default function PrivateSessionDetailPage() {
                     / session
                   </span>
                 </p>
-                <button
-                  onClick={handleContinue}
-                  disabled={!selectedSlot}
-                  className="rounded-full bg-ink text-paper w-full py-3 text-sm font-medium mt-4 hover:bg-ink/90 disabled:opacity-50 transition-colors"
-                >
-                  Continue to checkout
-                </button>
+                {instructor.available ? (
+                  <button
+                    onClick={handleContinue}
+                    disabled={!selectedSlot}
+                    className="rounded-full bg-ink text-paper w-full py-3 text-sm font-medium mt-4 hover:bg-ink/90 disabled:opacity-50 transition-colors"
+                  >
+                    Schedule Private Class
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled
+                    aria-disabled="true"
+                    className="rounded-full bg-ink/10 text-muted w-full py-3 text-sm font-medium mt-4 cursor-not-allowed"
+                  >
+                    Not Available
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -251,23 +295,23 @@ export default function PrivateSessionDetailPage() {
                 <div className="bg-cyan/10 border border-accent/20 rounded-lg p-3 mb-5 text-left">
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-muted">
-                      Your 1-on-1 PT credits
+                      Your 1-on-1 sessions
                     </span>
                     <span className="text-xs font-semibold text-accent-deep">
-                      {MOCK_USER.pt1on1Credits} credits
+                      {MOCK_USER.pt1on1Credits} sessions
                     </span>
                   </div>
                   <p className="text-[10px] text-muted mt-1">
-                    Credits will be deducted once the session is confirmed.
+                    One session will be deducted once confirmed.
                   </p>
                 </div>
               )}
 
               <Link
-                href="/account"
+                href="/account/private-sessions"
                 className="block w-full py-3 text-sm font-semibold text-white bg-accent rounded-lg hover:bg-accent-deep transition-colors"
               >
-                Got it
+                View my bookings
               </Link>
             </motion.div>
           </div>

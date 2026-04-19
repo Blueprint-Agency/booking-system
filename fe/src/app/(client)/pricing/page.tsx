@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { CtaBanner } from "@/components/marketing/cta-banner";
 import products from "@/data/products.json";
 import { formatCurrency, cn } from "@/lib/utils";
 import { CLASS_CANCELLATION_POLICY } from "@/data/policy";
@@ -147,12 +146,6 @@ export default function PricingPage() {
         </div>
       </section>
 
-      <CtaBanner
-        imageKey="cta-community"
-        headline="Your first class is one tap away."
-        primaryCta={{ href: "/classes", label: "Browse this week" }}
-        secondaryCta={{ href: "/login", label: "Sign in" }}
-      />
     </div>
   );
 }

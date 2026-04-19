@@ -8,9 +8,9 @@ type BookingSurfaceProps = {
 };
 
 const paddingMap = {
-  tight: "p-6 md:p-8",
-  default: "p-8 md:p-12",
-  loose: "p-10 md:p-16",
+  tight: "p-5 md:p-6",
+  default: "p-6 md:p-8",
+  loose: "p-8 md:p-12",
 };
 
 const widthMap = {
@@ -27,7 +27,7 @@ export function BookingSurface({
   maxWidth = "xl",
 }: BookingSurfaceProps) {
   return (
-    <section className="bg-warm py-16 md:py-24">
+    <section className="bg-warm py-8 md:py-12 px-4 sm:px-6 md:px-8">
       <div
         className={cn(
           "mx-auto w-full rounded-3xl bg-card shadow-soft border border-ink/5",

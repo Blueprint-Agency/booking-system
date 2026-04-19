@@ -35,10 +35,9 @@ function WaiverContent() {
   const searchParams = useSearchParams();
   const returnTo = searchParams.get("returnTo");
   const [acknowledged, setAcknowledged] = useState(false);
-  const [fullName, setFullName] = useState("");
   const [signed, setSigned] = useState(false);
 
-  const canSign = acknowledged && fullName.trim().length > 0;
+  const canSign = acknowledged;
 
   function handleSign() {
     if (!canSign) return;
@@ -107,16 +106,6 @@ function WaiverContent() {
               </span>
             </label>
 
-            <div className="flex gap-3 mt-4">
-              <input
-                type="text"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                placeholder="Type your full name"
-                className="flex-1 rounded-xl border border-ink/10 bg-paper px-4 py-3 text-sm font-mono focus:border-accent focus:outline-none"
-              />
-            </div>
-
             <button
               type="button"
               onClick={handleSign}
@@ -153,10 +142,6 @@ function WaiverContent() {
             </h2>
             <p className="mt-2 text-sm text-muted">
               {signedDateStr} at {signedTimeStr}
-            </p>
-            <p className="mt-1 text-sm text-muted">
-              Signed by:{" "}
-              <span className="font-mono text-ink">{fullName}</span>
             </p>
 
             <Link

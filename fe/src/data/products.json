@@ -92,7 +92,7 @@
     "sessionCount": 20,
     "expiryDays": 365,
     "sessionsPerMonth": null,
-    "description": "10 private sessions (20 PT credits). 1 credit = 30 mins.",
+    "description": "10 private sessions. 1 session = 30 mins.",
     "active": true
   },
   {
@@ -104,7 +104,7 @@
     "sessionCount": 40,
     "expiryDays": 365,
     "sessionsPerMonth": null,
-    "description": "20 private sessions (40 PT credits). 1 credit = 30 mins.",
+    "description": "20 private sessions. 1 session = 30 mins.",
     "active": true
   },
   {
@@ -116,7 +116,7 @@
     "sessionCount": 60,
     "expiryDays": 365,
     "sessionsPerMonth": null,
-    "description": "30 private sessions (60 PT credits). 1 credit = 30 mins.",
+    "description": "30 private sessions. 1 session = 30 mins.",
     "active": true
   }
 ]

@@ -1,11 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { MOCK_USER } from "@/data/mock-user";
+import { useMockState, signOut, getActiveClassCredits, getActiveSessionCredits, hasActiveUnlimited } from "@/lib/mock-state";
 
 const NAV_LINKS = [
   { href: "/classes", label: "Classes" },
@@ -18,7 +17,14 @@ export function ClientNav() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const isAuth = true; // Mock: always authenticated for prototype
+  const state = useMockState();
+  const isAuth = !!state.user;
+  const classCredits = getActiveClassCredits(state);
+  const sessionCredits = getActiveSessionCredits(state);
+  const unlimited = hasActiveUnlimited(state);
+  const userInitials = state.user
+    ? (state.user.firstName.charAt(0) + (state.user.lastName?.charAt(0) ?? "")).toUpperCase() || "U"
+    : "";
   const isHome = pathname === "/";
 
   useEffect(() => {
@@ -51,13 +57,11 @@ export function ClientNav() {
         <div className="flex items-center justify-between h-[72px]">
           {/* Logo — official Yoga Sadhana wordmark */}
           <Link href="/" className="flex items-center shrink-0" aria-label="Yoga Sadhana home">
-            <Image
-              src="/brand/logo.png"
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="https://i0.wp.com/yogasadhana.sg/wp-content/uploads/2025/02/Yoga_Sadhana_header_logo_circle.png?w=294&ssl=1"
               alt="Yoga Sadhana"
-              width={170}
-              height={47}
-              priority
-              className="h-10 w-auto"
+              className="h-12 w-auto"
             />
           </Link>
 
@@ -87,7 +91,7 @@ export function ClientNav() {
                     : "text-muted hover:text-ink hover:bg-warm"
                 )}
               >
-                My Bookings
+                My Account
               </Link>
             )}
           </nav>
@@ -98,99 +102,86 @@ export function ClientNav() {
               <div className="relative group">
                 <button className="flex items-center gap-2.5" aria-label="Account menu">
                   <Link
-                    href="/account/packages"
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-md bg-sage/10 border border-sage/20 hover:border-sage/40 transition-colors"
+                    href="/account"
+                    className="flex items-center gap-2 px-3 py-2 rounded-md bg-warm border border-ink/10 hover:border-ink/20 transition-colors"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <span className="w-1.5 h-1.5 rounded-full bg-sage" />
-                    <span className="text-[12px] font-bold text-sage">{MOCK_USER.classCredits}</span>
-                    <span className="text-[10px] font-medium text-muted">credits</span>
+                    <span className="flex items-center gap-1.5" title="Class credits">
+                      <span className="w-1.5 h-1.5 rounded-full bg-sage" />
+                      <span className="text-[12px] font-bold text-sage">
+                        {unlimited ? "∞" : classCredits}
+                      </span>
+                      <span className="text-[10px] font-medium text-muted">class credits</span>
+                    </span>
+                    <span className="w-px h-3 bg-ink/15" />
+                    <span className="flex items-center gap-1.5" title="PT sessions">
+                      <span className="w-1.5 h-1.5 rounded-full bg-accent" />
+                      <span className="text-[12px] font-bold text-accent-deep">
+                        {sessionCredits}
+                      </span>
+                      <span className="text-[10px] font-medium text-muted">PT sessions</span>
+                    </span>
                   </Link>
                   <div className="w-9 h-9 rounded-full bg-accent/15 flex items-center justify-center text-[12px] font-bold text-accent-deep group-hover:bg-accent group-hover:text-inverse transition-colors duration-200">
-                    {MOCK_USER.initials}
+                    {userInitials}
                   </div>
                 </button>
-                <div className="absolute right-0 top-full mt-2 w-60 bg-card border border-border rounded-md shadow-hover opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 py-1">
-                  <div className="px-4 py-3 border-b border-border">
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-[12px] font-semibold text-ink">Class Credits</span>
-                      <span className="text-[12px] font-bold text-sage">{MOCK_USER.classCredits} left</span>
+                <div className="absolute right-0 top-full mt-2 w-72 bg-card border border-border rounded-lg shadow-hover opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50 overflow-hidden">
+                  <div className="px-4 pt-4 pb-3 flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-accent/15 flex items-center justify-center text-[13px] font-bold text-accent-deep shrink-0">
+                      {userInitials}
                     </div>
-                    <div className="w-full h-1.5 rounded-full bg-warm overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-sage transition-all"
-                        style={{ width: `${(MOCK_USER.classCredits / MOCK_USER.classPackageTotal) * 100}%` }}
-                      />
+                    <div className="min-w-0">
+                      <p className="text-[13px] font-semibold text-ink truncate leading-tight">
+                        {state.user?.firstName} {state.user?.lastName}
+                      </p>
+                      <p className="text-[11px] text-muted truncate leading-tight mt-0.5">{state.user?.email}</p>
                     </div>
-                    <p className="text-[10px] text-muted mt-1">
-                      {MOCK_USER.classPackageName} · expires{" "}
-                      {new Date(MOCK_USER.classPackageExpiry).toLocaleDateString("en-SG", { day: "numeric", month: "short" })}
-                    </p>
-                    {MOCK_USER.pt1on1Credits > 0 && (
-                      <>
-                        <div className="flex items-center justify-between mt-3 mb-1.5">
-                          <span className="text-[12px] font-semibold text-ink">PT Credits (1-on-1)</span>
-                          <span className="text-[12px] font-bold text-accent-deep">{MOCK_USER.pt1on1Credits} left</span>
-                        </div>
-                        <div className="w-full h-1.5 rounded-full bg-warm overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-accent transition-all"
-                            style={{ width: `${(MOCK_USER.pt1on1Credits / MOCK_USER.pt1on1PackageTotal) * 100}%` }}
-                          />
-                        </div>
-                        <p className="text-[10px] text-muted mt-1">
-                          {MOCK_USER.pt1on1PackageName} · expires{" "}
-                          {new Date(MOCK_USER.pt1on1PackageExpiry).toLocaleDateString("en-SG", { day: "numeric", month: "short" })}
-                        </p>
-                      </>
-                    )}
-                    {MOCK_USER.pt2on1Credits > 0 && MOCK_USER.pt2on1PackageName && MOCK_USER.pt2on1PackageExpiry && (
-                      <>
-                        <div className="flex items-center justify-between mt-3 mb-1.5">
-                          <span className="text-[12px] font-semibold text-ink">PT Credits (2-on-1)</span>
-                          <span className="text-[12px] font-bold text-warning">{MOCK_USER.pt2on1Credits} left</span>
-                        </div>
-                        <div className="w-full h-1.5 rounded-full bg-warm overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-warning transition-all"
-                            style={{ width: `${(MOCK_USER.pt2on1Credits / MOCK_USER.pt2on1PackageTotal) * 100}%` }}
-                          />
-                        </div>
-                        <p className="text-[10px] text-muted mt-1">
-                          {MOCK_USER.pt2on1PackageName} · expires{" "}
-                          {new Date(MOCK_USER.pt2on1PackageExpiry).toLocaleDateString("en-SG", { day: "numeric", month: "short" })}
-                        </p>
-                      </>
-                    )}
                   </div>
-                  <Link href="/account" className="block px-4 py-2 text-[13px] font-medium text-muted hover:text-ink hover:bg-warm transition-colors">
-                    My Bookings
-                  </Link>
-                  <Link href="/account/packages" className="block px-4 py-2 text-[13px] font-medium text-muted hover:text-ink hover:bg-warm transition-colors">
-                    My Packages
-                  </Link>
-                  <Link href="/account/qr" className="block px-4 py-2 text-[13px] font-medium text-muted hover:text-ink hover:bg-warm transition-colors">
-                    My QR Code
-                  </Link>
-                  <Link href="/account/profile" className="block px-4 py-2 text-[13px] font-medium text-muted hover:text-ink hover:bg-warm transition-colors">
-                    Profile
-                  </Link>
-                  <div className="border-t border-border my-1" />
-                  <Link href="/login" className="block px-4 py-2 text-[13px] font-medium text-error hover:bg-error/10 transition-colors">
-                    Log out
-                  </Link>
+
+                  <div className="border-t border-border py-1">
+                    <Link href="/account" className="flex items-center gap-2.5 px-4 py-2 text-[13px] font-medium text-muted hover:text-ink hover:bg-warm transition-colors">
+                      <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="14" height="13" rx="2"/><path d="M7 8h6M7 11h6M7 14h4"/></svg>
+                      Overview
+                    </Link>
+                    <Link href="/account/classes" className="flex items-center gap-2.5 px-4 py-2 text-[13px] font-medium text-muted hover:text-ink hover:bg-warm transition-colors">
+                      <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="14" height="13" rx="2"/><path d="M3 8h14M7 3v3M13 3v3"/></svg>
+                      Classes
+                    </Link>
+                    <Link href="/account/private-sessions" className="flex items-center gap-2.5 px-4 py-2 text-[13px] font-medium text-muted hover:text-ink hover:bg-warm transition-colors">
+                      <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="10" cy="7" r="3.2"/><path d="M3.5 17c1.2-3.2 3.8-5 6.5-5s5.3 1.8 6.5 5"/></svg>
+                      Private Sessions
+                    </Link>
+                    <Link href="/account/workshops" className="flex items-center gap-2.5 px-4 py-2 text-[13px] font-medium text-muted hover:text-ink hover:bg-warm transition-colors">
+                      <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M10 4L3 8l7 4 7-4-7-4z"/><path d="M6 10v3.5c1 1 2.5 1.5 4 1.5s3-0.5 4-1.5V10M17 8v4"/></svg>
+                      My Workshops
+                    </Link>
+                    <Link href="/account/profile" className="flex items-center gap-2.5 px-4 py-2 text-[13px] font-medium text-muted hover:text-ink hover:bg-warm transition-colors">
+                      <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="10" cy="7" r="3.2"/><path d="M3.5 17c1.2-3.2 3.8-5 6.5-5s5.3 1.8 6.5 5"/></svg>
+                      Profile
+                    </Link>
+                  </div>
+                  <div className="border-t border-border">
+                    <button
+                      onClick={() => signOut()}
+                      className="flex items-center gap-2.5 w-full text-left px-4 py-2.5 text-[13px] font-medium text-error hover:bg-error/10 transition-colors"
+                    >
+                      <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 15l4-5-4-5M16 10H7M8 4H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3"/></svg>
+                      Log out
+                    </button>
+                  </div>
                 </div>
               </div>
             ) : (
               <>
                 <Link href="/login" className="px-4 py-2 text-sm font-semibold text-ink hover:text-accent-deep transition-colors">
-                  Sign in
+                  Log in
                 </Link>
                 <Link
-                  href="/classes"
+                  href="/register"
                   className="px-5 py-2.5 text-sm font-bold text-inverse bg-accent rounded-md hover:bg-accent-deep transition-colors duration-200"
                 >
-                  Book a class
+                  Sign up
                 </Link>
               </>
             )}
@@ -232,59 +223,74 @@ export function ClientNav() {
             ))}
             {isAuth ? (
               <>
-                <div className="mx-3 my-2 p-3 rounded-md bg-sage/10 border border-sage/20">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="w-1.5 h-1.5 rounded-full bg-sage" />
-                      <span className="text-[12px] font-bold text-sage">{MOCK_USER.classCredits} class credits</span>
+                <div className="mx-1 mt-3 mb-2">
+                  <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-warm border border-ink/10">
+                    <div className="w-9 h-9 rounded-full bg-accent/15 flex items-center justify-center text-[12px] font-bold text-accent-deep shrink-0">
+                      {userInitials}
                     </div>
-                    <span className="text-[10px] text-muted">{MOCK_USER.classPackageName}</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[13px] font-semibold text-ink truncate leading-tight">
+                        {state.user?.firstName} {state.user?.lastName}
+                      </p>
+                      <p className="text-[11px] text-muted truncate leading-tight mt-0.5">{state.user?.email}</p>
+                    </div>
                   </div>
-                  {MOCK_USER.pt1on1Credits > 0 && (
-                    <div className="flex items-center justify-between mt-1.5">
-                      <div className="flex items-center gap-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-accent-deep" />
-                        <span className="text-[12px] font-bold text-accent-deep">{MOCK_USER.pt1on1Credits} PT (1-on-1)</span>
+                  <div className="grid grid-cols-2 gap-2 mt-2">
+                    <div className="rounded-xl bg-sage/10 border border-sage/20 px-3 py-2.5">
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-lg font-extrabold text-sage leading-none">
+                          {unlimited ? "∞" : classCredits}
+                        </span>
                       </div>
-                      <span className="text-[10px] text-muted">{MOCK_USER.pt1on1PackageName}</span>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-sage/80 mt-1">
+                        Class credits
+                      </p>
                     </div>
-                  )}
-                  {MOCK_USER.pt2on1Credits > 0 && MOCK_USER.pt2on1PackageName && (
-                    <div className="flex items-center justify-between mt-1.5">
-                      <div className="flex items-center gap-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-warning" />
-                        <span className="text-[12px] font-bold text-warning">{MOCK_USER.pt2on1Credits} PT (2-on-1)</span>
+                    <div className="rounded-xl bg-accent/10 border border-accent/20 px-3 py-2.5">
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-lg font-extrabold text-accent-deep leading-none">
+                          {sessionCredits}
+                        </span>
                       </div>
-                      <span className="text-[10px] text-muted">{MOCK_USER.pt2on1PackageName}</span>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-accent-deep/80 mt-1">
+                        PT sessions
+                      </p>
                     </div>
-                  )}
-                  <Link href="/account/packages" onClick={() => setMobileOpen(false)} className="block text-[11px] text-accent font-semibold mt-2 hover:text-accent-deep transition-colors">
-                    View all packages →
+                  </div>
+                  <Link
+                    href="/account"
+                    onClick={() => setMobileOpen(false)}
+                    className="mt-2 flex items-center justify-between px-3 py-2.5 rounded-xl bg-ink text-paper text-[13px] font-semibold hover:bg-ink/90 transition-colors"
+                  >
+                    View account
+                    <span aria-hidden>→</span>
                   </Link>
                 </div>
                 <div className="border-t border-border my-2" />
-                <Link
-                  href="/account"
-                  onClick={() => setMobileOpen(false)}
-                  className={cn(
-                    "px-3 py-2.5 text-sm font-semibold rounded-md transition-colors",
-                    isActive("/account") ? "text-accent-deep bg-accent/10" : "text-muted hover:text-ink hover:bg-warm"
-                  )}
+                <button
+                  onClick={() => { signOut(); setMobileOpen(false); }}
+                  className="text-left px-3 py-2.5 text-sm font-semibold rounded-md text-error hover:bg-error/10 transition-colors"
                 >
-                  My Account
-                </Link>
-                <Link href="/login" onClick={() => setMobileOpen(false)} className="px-3 py-2.5 text-sm font-semibold rounded-md text-error hover:bg-error/10 transition-colors">
                   Log out
-                </Link>
+                </button>
               </>
             ) : (
-              <Link
-                href="/login"
-                onClick={() => setMobileOpen(false)}
-                className="px-3 py-2.5 text-sm font-bold rounded-md bg-accent text-inverse hover:bg-accent-deep transition-colors"
-              >
-                Sign in
-              </Link>
+              <div className="flex flex-col gap-2">
+                <Link
+                  href="/login"
+                  onClick={() => setMobileOpen(false)}
+                  className="px-3 py-2.5 text-sm font-semibold rounded-md border border-ink/10 text-ink text-center hover:bg-warm transition-colors"
+                >
+                  Log in
+                </Link>
+                <Link
+                  href="/register"
+                  onClick={() => setMobileOpen(false)}
+                  className="px-3 py-2.5 text-sm font-bold rounded-md bg-accent text-inverse text-center hover:bg-accent-deep transition-colors"
+                >
+                  Sign up
+                </Link>
+              </div>
             )}
           </nav>
         </div>
