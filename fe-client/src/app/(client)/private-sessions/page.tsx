@@ -208,22 +208,27 @@ export default function PrivateSessionsPage() {
           <SectionHeading eyebrow="Private sessions" title="Find a time that works" />
 
           {/* How private sessions work */}
-          <div className="mb-10 rounded-2xl border border-border bg-warm p-6 flex gap-4">
-            <Info size={18} className="text-accent shrink-0 mt-0.5" />
-            <div className="space-y-1.5">
-              <p className="text-sm font-semibold text-ink">How private sessions work</p>
-              <ul className="text-xs text-muted leading-relaxed space-y-1 list-disc pl-4">
+          <details className="group mb-6 md:mb-10 rounded-2xl border border-border bg-warm">
+            <summary className="flex items-center justify-between gap-3 px-4 py-3 md:px-5 md:py-4 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+              <span className="flex items-center gap-2">
+                <Info size={16} className="text-accent shrink-0" />
+                <span className="text-sm font-semibold text-ink">How private sessions work</span>
+              </span>
+              <ChevronDown size={14} className="text-muted transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="px-4 pb-4 md:px-5 md:pb-5">
+              <ul className="text-xs text-muted leading-relaxed space-y-1 list-disc pl-6">
                 <li>Browse available slots by instructor, location, or date.</li>
                 <li>Submit a request — no upfront payment needed.</li>
                 <li>We confirm within <span className="font-medium text-ink">12 hours</span>.</li>
                 <li>Private packages are counted in sessions (1 session = 30 mins).</li>
               </ul>
             </div>
-          </div>
+          </details>
 
           {/* Filters */}
-          <div className="rounded-2xl border border-ink/10 bg-paper p-6 sm:p-7">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+          <div className="rounded-2xl border border-ink/10 bg-paper p-4 sm:p-6 md:p-7">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-5">
               <div>
                 <label className="text-xs uppercase tracking-wider text-muted mb-1.5 block">
                   Instructor
@@ -260,45 +265,46 @@ export default function PrivateSessionsPage() {
                 </select>
               </div>
 
-              <div>
-                <label className="text-xs uppercase tracking-wider text-muted mb-1.5 block">
-                  From
-                </label>
-                <input
-                  type="date"
-                  value={fromDate}
-                  min={today}
-                  onChange={(e) => {
-                    const newFrom = e.target.value;
-                    setFromDate(newFrom);
-                    const newMax = addDays(newFrom, MAX_RANGE_DAYS - 1);
-                    if (toDate > newMax || toDate < newFrom) setToDate(newMax);
-                  }}
-                  className="w-full rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent cursor-pointer"
-                />
-              </div>
+              <div className="col-span-1 md:col-span-2 lg:col-span-2 grid grid-cols-2 gap-3 md:gap-5">
+                <div>
+                  <label className="text-xs uppercase tracking-wider text-muted mb-1.5 block">
+                    From
+                  </label>
+                  <input
+                    type="date"
+                    value={fromDate}
+                    min={today}
+                    onChange={(e) => {
+                      const newFrom = e.target.value;
+                      setFromDate(newFrom);
+                      const newMax = addDays(newFrom, MAX_RANGE_DAYS - 1);
+                      if (toDate > newMax || toDate < newFrom) setToDate(newMax);
+                    }}
+                    className="w-full rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent cursor-pointer"
+                  />
+                </div>
 
-              <div>
-                <label className="text-xs uppercase tracking-wider text-muted mb-1.5 block">
-                  To
-                </label>
-                <input
-                  type="date"
-                  value={toDate}
-                  min={fromDate}
-                  max={maxToDate}
-                  onChange={(e) => setToDate(e.target.value)}
-                  className="w-full rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent cursor-pointer"
-                />
-                <p className="text-[10px] text-muted/80 mt-1">Max 2-week range</p>
+                <div>
+                  <label className="text-xs uppercase tracking-wider text-muted mb-1.5 block">
+                    To
+                  </label>
+                  <input
+                    type="date"
+                    value={toDate}
+                    min={fromDate}
+                    max={maxToDate}
+                    onChange={(e) => setToDate(e.target.value)}
+                    className="w-full rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent cursor-pointer"
+                  />
+                </div>
               </div>
             </div>
 
-            <div className="mt-7 flex justify-center">
+            <div className="mt-5 md:mt-7 flex justify-center">
               <button
                 type="button"
                 onClick={handleFind}
-                className="rounded-full bg-ink text-paper px-6 py-2.5 text-sm font-medium hover:bg-ink/90 transition-colors"
+                className="w-full md:w-auto rounded-full bg-ink text-paper px-6 py-2.5 text-sm font-medium hover:bg-ink/90 transition-colors"
               >
                 Find availability
               </button>
