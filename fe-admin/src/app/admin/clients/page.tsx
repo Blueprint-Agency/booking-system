@@ -106,52 +106,92 @@ export default function ClientsPage() {
       </div>
 
       <div className="rounded-xl border border-border bg-card shadow-soft">
-        <table className="w-full">
-          <thead className="bg-paper">
-            <tr className="text-left text-xs uppercase tracking-wider text-muted">
-              <th className="px-5 py-3 font-medium">Client</th>
-              <th className="px-5 py-3 font-medium">Joined</th>
-              <th className="px-5 py-3 font-medium">Packages</th>
-              <th className="px-5 py-3 font-medium">Upcoming</th>
-              <th className="px-5 py-3 font-medium">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {filtered.map((c) => {
-              const stat = stats.find((s) => s.clientId === c.id);
-              return (
-                <tr key={c.id} className="hover:bg-paper">
-                  <td className="px-5 py-3">
-                    <Link
-                      href={`/admin/clients/${c.id}`}
-                      className="flex items-center gap-3"
-                    >
-                      <Avatar name={c.name} size={32} />
-                      <div>
-                        <div className="font-medium text-ink">{c.name}</div>
-                        <div className="text-xs text-muted">{c.email}</div>
-                      </div>
-                    </Link>
-                  </td>
-                  <td className="px-5 py-3 text-sm text-muted">{formatDate(c.joinedAt)}</td>
-                  <td className="px-5 py-3 text-sm font-mono text-ink">
-                    {stat?.activePkgs ?? 0}
-                  </td>
-                  <td className="px-5 py-3 text-sm font-mono text-ink">
-                    {stat?.upcoming ?? 0}
-                  </td>
-                  <td className="px-5 py-3">
-                    {c.status === "active" ? (
-                      <Badge tone="sage">Active</Badge>
-                    ) : (
-                      <Badge tone="error">Suspended</Badge>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        {/* Mobile cards */}
+        <ul className="divide-y divide-border sm:hidden">
+          {filtered.map((c) => {
+            const stat = stats.find((s) => s.clientId === c.id);
+            return (
+              <li key={c.id}>
+                <Link
+                  href={`/admin/clients/${c.id}`}
+                  className="flex items-start gap-3 p-4 hover:bg-paper"
+                >
+                  <Avatar name={c.name} size={36} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate font-medium text-ink">{c.name}</span>
+                      {c.status === "active" ? (
+                        <Badge tone="sage">Active</Badge>
+                      ) : (
+                        <Badge tone="error">Suspended</Badge>
+                      )}
+                    </div>
+                    <div className="truncate text-xs text-muted">{c.email}</div>
+                    <div className="mt-2 flex items-center gap-4 text-[11px] font-mono text-muted">
+                      <span>
+                        <span className="text-ink">{stat?.activePkgs ?? 0}</span> packages
+                      </span>
+                      <span>
+                        <span className="text-ink">{stat?.upcoming ?? 0}</span> upcoming
+                      </span>
+                      <span className="ml-auto">{formatDate(c.joinedAt)}</span>
+                    </div>
+                  </div>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+
+        {/* Desktop table */}
+        <div className="hidden overflow-x-auto sm:block">
+          <table className="w-full">
+            <thead className="bg-paper">
+              <tr className="text-left text-xs uppercase tracking-wider text-muted">
+                <th className="px-5 py-3 font-medium">Client</th>
+                <th className="px-5 py-3 font-medium">Joined</th>
+                <th className="px-5 py-3 font-medium">Packages</th>
+                <th className="px-5 py-3 font-medium">Upcoming</th>
+                <th className="px-5 py-3 font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {filtered.map((c) => {
+                const stat = stats.find((s) => s.clientId === c.id);
+                return (
+                  <tr key={c.id} className="hover:bg-paper">
+                    <td className="px-5 py-3">
+                      <Link
+                        href={`/admin/clients/${c.id}`}
+                        className="flex items-center gap-3"
+                      >
+                        <Avatar name={c.name} size={32} />
+                        <div>
+                          <div className="font-medium text-ink">{c.name}</div>
+                          <div className="text-xs text-muted">{c.email}</div>
+                        </div>
+                      </Link>
+                    </td>
+                    <td className="px-5 py-3 text-sm text-muted">{formatDate(c.joinedAt)}</td>
+                    <td className="px-5 py-3 text-sm font-mono text-ink">
+                      {stat?.activePkgs ?? 0}
+                    </td>
+                    <td className="px-5 py-3 text-sm font-mono text-ink">
+                      {stat?.upcoming ?? 0}
+                    </td>
+                    <td className="px-5 py-3">
+                      {c.status === "active" ? (
+                        <Badge tone="sage">Active</Badge>
+                      ) : (
+                        <Badge tone="error">Suspended</Badge>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
         {filtered.length === 0 && (
           <div className="py-12 text-center text-sm text-muted">No clients match.</div>
         )}
