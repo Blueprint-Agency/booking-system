@@ -44,14 +44,6 @@ app.get('/', c =>
   c.json({
     name: 'yoga-sadhana-be',
     status: 'running',
-    docs: 'see docs/md/backend-architecture.md',
-    endpoints: {
-      health: '/health',
-      public: '/api/v1/public/*',
-      client: '/api/v1/me/*',
-      portal: '/api/v1/portal/{admin,instructor}/*',
-      webhooks: '/api/v1/webhooks/*',
-    },
   }),
 )
 

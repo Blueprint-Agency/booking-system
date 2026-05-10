@@ -7,5 +7,5 @@ const PORT = Number(process.env.PORT ?? 4000)
 
 serve({ fetch: app.fetch, port: PORT }, () => {
   console.log(JSON.stringify({ name: 'yoga-sadhana-be', status: 'running' }))
-  registerJobs().catch(err => console.error('[jobs] failed to register:', err))
+  registerJobs().catch(() => {})
 })
