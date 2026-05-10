@@ -25,12 +25,14 @@ const ALL_YOGA_SESSIONS = typedSessions.filter(
   (s) => s.tenantId === "tenant-1" && s.type === "regular"
 );
 
-
-const BASE_DATE = new Date(2026, 3, 7);
-const TODAY_STR = "2026-04-03";
+const TODAY = new Date(2026, 4, 9); // mock "today" matching app data era
+const TODAY_STR = toDateStr(TODAY);
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-const DATES_WINDOW = 15; // number of dates shown in strip
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+const SESSION_DATE_SET = new Set(ALL_YOGA_SESSIONS.map((s) => s.date));
 
 function toDateStr(d: Date): string {
   const y = d.getFullYear();
@@ -39,10 +41,10 @@ function toDateStr(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-function addDays(base: Date, n: number): Date {
-  const d = new Date(base);
-  d.setDate(d.getDate() + n);
-  return d;
+function getMonthGrid(year: number, month: number): Date[] {
+  const firstDay = new Date(year, month, 1);
+  const startOffset = firstDay.getDay(); // 0=Sun … 6=Sat
+  return Array.from({ length: 42 }, (_, i) => new Date(year, month, 1 - startOffset + i));
 }
 
 function getInstructorName(id: string): string {
@@ -353,18 +355,20 @@ function FilterSelect({ value, onChange, options, placeholder }: FilterSelectPro
 }
 
 export default function ClassesPage() {
-  const [dateOffset, setDateOffset] = useState(0); // scroll offset in days for the strip
-  const [selectedDate, setSelectedDate] = useState<string>(toDateStr(BASE_DATE));
+  const [calMonth, setCalMonth] = useState({
+    year: TODAY.getFullYear(),
+    month: TODAY.getMonth(),
+  });
+  const [selectedDate, setSelectedDate] = useState<string>(TODAY_STR);
   const [selectedLocation, setSelectedLocation] = useState<string>("");
   const [instructor, setInstructor] = useState("");
   const [level, setLevel] = useState("");
 
   const showLocationBadge = !selectedLocation;
 
-  const dateStripStart = addDays(BASE_DATE, dateOffset);
-  const stripDates = useMemo(
-    () => Array.from({ length: DATES_WINDOW }, (_, i) => addDays(dateStripStart, i)),
-    [dateStripStart]
+  const calDays = useMemo(
+    () => getMonthGrid(calMonth.year, calMonth.month),
+    [calMonth]
   );
 
   const instructorsForTenant = useMemo(() => {
@@ -383,8 +387,32 @@ export default function ClassesPage() {
     }).sort((a, b) => a.time.localeCompare(b.time));
   }, [selectedDate, selectedLocation, instructor, level]);
 
-  const selDate = new Date(selectedDate + "T00:00:00");
-  const monthLabel = `${MONTH_NAMES[selDate.getMonth()]} ${selDate.getFullYear()}`;
+  const monthLabel = `${MONTH_NAMES[calMonth.month]} ${calMonth.year}`;
+
+  const selDateObj = new Date(selectedDate + "T00:00:00");
+  const selectedDateLabel = selDateObj.toLocaleDateString("en-SG", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+
+  function goToPrevMonth() {
+    setCalMonth(({ year, month }) =>
+      month === 0 ? { year: year - 1, month: 11 } : { year, month: month - 1 }
+    );
+  }
+
+  function goToNextMonth() {
+    setCalMonth(({ year, month }) =>
+      month === 11 ? { year: year + 1, month: 0 } : { year, month: month + 1 }
+    );
+  }
+
+  function goToToday() {
+    setCalMonth({ year: TODAY.getFullYear(), month: TODAY.getMonth() });
+    setSelectedDate(TODAY_STR);
+  }
 
   return (
     <>
@@ -396,58 +424,109 @@ export default function ClassesPage() {
             description="Pick a day, filter the schedule, and reserve your spot."
           />
 
-          {/* Month label + date strip */}
-          <div className="flex items-center justify-between mb-3">
-            <span className="font-serif text-lg text-ink">{monthLabel}</span>
-          </div>
+          {/* Calendar */}
+          <div className="rounded-2xl border border-ink/10 bg-paper overflow-hidden mb-6">
 
-          <div className="flex items-center gap-2 mb-6">
-            <button
-              onClick={() => setDateOffset((o) => o - DATES_WINDOW)}
-              className="flex items-center justify-center w-9 h-9 text-muted border border-border rounded-lg hover:text-ink hover:bg-warm transition-colors flex-shrink-0"
-              aria-label="Previous dates"
-            >
-              <ChevronLeft size={16} />
-            </button>
+            {/* Calendar header */}
+            <div className="flex items-center px-4 py-3 border-b border-ink/10">
+              <button
+                onClick={goToToday}
+                className="text-xs font-medium px-3 py-1.5 rounded-full border border-ink/15 text-ink hover:bg-warm transition-colors"
+              >
+                Today
+              </button>
+              <div className="flex-1 flex items-center justify-center gap-2">
+                <button
+                  onClick={goToPrevMonth}
+                  className="flex items-center justify-center w-7 h-7 rounded-full hover:bg-warm text-muted hover:text-ink transition-colors"
+                  aria-label="Previous month"
+                >
+                  <ChevronLeft size={15} />
+                </button>
+                <span className="font-serif text-base text-ink w-40 text-center select-none">
+                  {monthLabel}
+                </span>
+                <button
+                  onClick={goToNextMonth}
+                  className="flex items-center justify-center w-7 h-7 rounded-full hover:bg-warm text-muted hover:text-ink transition-colors"
+                  aria-label="Next month"
+                >
+                  <ChevronRight size={15} />
+                </button>
+              </div>
+              {/* Spacer balances the Today button */}
+              <div className="w-[60px]" />
+            </div>
 
-            <div className="flex-1 flex gap-2 overflow-x-auto no-scrollbar">
-              {stripDates.map((d) => {
+            {/* Day-of-week header */}
+            <div className="grid grid-cols-7 border-b border-ink/10">
+              {DAY_LABELS.map((d) => (
+                <div
+                  key={d}
+                  className="py-2 text-center text-[10px] font-mono uppercase tracking-wider text-muted"
+                >
+                  {d}
+                </div>
+              ))}
+            </div>
+
+            {/* Date grid — 6 rows × 7 cols */}
+            <div className="grid grid-cols-7">
+              {calDays.map((d, i) => {
                 const ds = toDateStr(d);
-                const active = ds === selectedDate;
+                const isCurrentMonth = d.getMonth() === calMonth.month;
+                const isSelected = ds === selectedDate;
                 const isToday = ds === TODAY_STR;
+                const hasClasses = SESSION_DATE_SET.has(ds) && isCurrentMonth;
+                const isLastCol = (i + 1) % 7 === 0;
+                const isLastRow = i >= 35;
+
                 return (
                   <button
-                    key={ds}
-                    onClick={() => setSelectedDate(ds)}
+                    key={i}
+                    onClick={() => {
+                      if (isCurrentMonth) setSelectedDate(ds);
+                    }}
+                    disabled={!isCurrentMonth}
                     className={cn(
-                      "shrink-0 flex flex-col items-center justify-center w-[56px] py-2.5 rounded-xl border transition-colors",
-                      active
-                        ? "bg-ink text-paper border-ink"
-                        : "border-ink/10 text-ink hover:border-accent hover:bg-warm"
+                      "relative flex flex-col items-center justify-start pt-2 pb-2 min-h-[56px] md:min-h-[68px] transition-colors",
+                      !isLastCol && "border-r border-ink/5",
+                      !isLastRow && "border-b border-ink/5",
+                      isCurrentMonth && !isSelected
+                        ? "hover:bg-warm cursor-pointer"
+                        : "cursor-default"
                     )}
                   >
                     <span
                       className={cn(
-                        "text-[10px] font-mono uppercase tracking-widest",
-                        active ? "text-paper/70" : isToday ? "text-accent" : "text-muted"
+                        "w-7 h-7 flex items-center justify-center rounded-full text-sm leading-none transition-colors",
+                        isSelected
+                          ? "bg-ink text-paper font-semibold"
+                          : isToday
+                          ? "ring-2 ring-accent text-accent font-semibold"
+                          : isCurrentMonth
+                          ? "text-ink"
+                          : "text-muted/25"
                       )}
                     >
-                      {DAY_LABELS[d.getDay()]}
+                      {d.getDate()}
                     </span>
-                    <span className="text-lg font-semibold leading-tight mt-0.5">{d.getDate()}</span>
+                    {hasClasses && (
+                      <span
+                        className={cn(
+                          "mt-1 w-1.5 h-1.5 rounded-full",
+                          isSelected ? "bg-paper" : "bg-accent"
+                        )}
+                      />
+                    )}
                   </button>
                 );
               })}
             </div>
-
-            <button
-              onClick={() => setDateOffset((o) => o + DATES_WINDOW)}
-              className="flex items-center justify-center w-9 h-9 text-muted border border-border rounded-lg hover:text-ink hover:bg-warm transition-colors flex-shrink-0"
-              aria-label="Next dates"
-            >
-              <ChevronRight size={16} />
-            </button>
           </div>
+
+          {/* Selected date label */}
+          <p className="font-serif text-base text-ink mb-4">{selectedDateLabel}</p>
 
           {/* Filters */}
           <div className="flex flex-wrap gap-2 mb-6">
@@ -479,7 +558,7 @@ export default function ClassesPage() {
           <div className="flex flex-col gap-3">
             {sessionsForDay.length === 0 ? (
               <div className="text-center py-16 text-sm text-muted">
-                No classes match your filters for this day.
+                No classes scheduled for this day.
               </div>
             ) : (
               sessionsForDay.map((s) => (
@@ -489,7 +568,6 @@ export default function ClassesPage() {
           </div>
         </BookingSurface>
       </div>
-
     </>
   );
 }

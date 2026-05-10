@@ -1,450 +1,342 @@
-// Core domain types — mirror fe-client with admin extensions.
+// Domain types — mirrors docs/md/admin-restructure.md and docs/md/backend-architecture.md.
+// All schema names match the backend doc §4 so wiring later is mechanical.
 
-export interface Tenant {
-  id: string;
-  slug: string;
-  name: string;
-  industry: string;
-  description: string;
-  shortDescription: string;
-  location: string;
-  logoEmoji: string;
-  logoUrl: string;
-  coverUrl: string;
-  coverGradient: string;
-  status: "active" | "incomplete" | "suspended";
-  plan: "starter" | "growth" | "professional";
-}
+// --- Building Blocks (§1-§3) ---
 
 export interface Location {
   id: string;
-  tenantId: string;
   name: string;
-  shortName: string;
   address: string;
-  area: string;
-  mapUrl?: string;
-  phone?: string;
-  operatingHours?: { day: number; open: string; close: string; closed?: boolean }[];
+  gmapsUrl: string;
+  phone: string;
+  archivedAt: string | null;
 }
 
-export interface Session {
+export interface ClassType {
   id: string;
-  tenantId: string;
-  locationId: string | null;
   name: string;
-  category: string;
-  level: "beginner" | "intermediate" | "advanced" | "all";
-  type: "regular" | "workshop" | "event";
-  instructorId: string;
-  capacity: number;
-  bookedCount: number;
-  waitlistCount: number;
-  date: string;
-  time: string;
-  duration: number;
-  price: number;
-  status: "scheduled" | "cancelled" | "completed";
-  recurrence: string | null;
-  waitlistEnabled: boolean;
-  waitlistMaxSize: number | null;
-  lateCutoffMinutes: number | null;
-  packageEligible: boolean;
-  description: string;
-  workshopPackages?: {
-    name: string;
-    description: string;
-    price: number;
-  }[];
-  workshopTiers?: WorkshopTier[];
-  workshopHeroImage?: string;
-  workshopFeatured?: boolean;
-  workshopPublished?: boolean;
-  cancelledAt?: string;
-  cancelReason?: string;
+  archivedAt: string | null;
 }
 
-export interface WorkshopTier {
-  id: string;
-  label: string;
-  priceCents: number;
-  cutoffDate: string | null;
-  active: boolean;
-}
-
-export interface Client {
-  id: string;
-  tenantId: string;
+export interface Instructor {
+  id: string; // matches staff_users.id where role=instructor
   name: string;
   email: string;
   phone: string;
-  registeredAt: string;
-  activityStatus: "active" | "inactive";
-  noShowCount: number;
-  totalSessions: number;
-  tags: string[];
-  waiverSigned: boolean;
-  waiverSignedAt: string | null;
-  waiverVersion: string | null;
-  lastVisit: string | null;
-  internalNote: string | null;
-  primaryLocationId: string | null;
+  bio: string;
+  photoUrl: string | null;
+  eligibleClassTypeIds: string[];
+  archivedAt: string | null;
 }
 
-export interface Booking {
-  id: string;
-  tenantId: string;
-  clientId: string;
-  sessionId: string;
-  status: "confirmed" | "cancelled" | "waitlisted";
-  checkInStatus: "pending" | "attended" | "late" | "no-show";
-  packageId: string | null;
-  rating: number | null;
-  createdAt: string;
-  cancelledAt?: string;
-  cancelReason?: string;
-  refunded?: boolean;
-  promotedFromWaitlist?: boolean;
-  source?: "client" | "walk-in" | "admin";
-  checkedInAt?: string;
+// --- Policy (§4, §6 booking config) ---
+
+export interface GlobalPolicy {
+  cancelCapCount: number;
+  cancelCapCycleDays: number;
+  classWindowHours: number;
+  ptWindowHours: number;
+  updatedAt: string;
 }
 
-export interface Product {
+export interface PtBookingConfig {
+  bookInAdvanceDays: number;
+}
+
+// --- Packages (§5, §6) ---
+
+export type ClassPackageKind = "credit_bundle" | "unlimited";
+
+export interface ClassPackage {
   id: string;
-  tenantId: string;
   name: string;
-  type: "drop-in" | "package" | "membership" | "vip" | "bundle";
-  category?: string;
-  creditType: "class" | "pt1on1" | "pt2on1";
-  priceCents: number;
-  sessionCount: number | null;
-  expiryDays: number | null;
-  sessionsPerMonth: number | null;
-  description: string;
-  active: boolean;
-  priceByInstructorId?: Record<string, number>;
-  /** If true, package credits can be redeemed at any location. Default true. */
-  crossLocation?: boolean;
+  kind: ClassPackageKind;
+  credits: number | null;       // credit_bundle only
+  validityDays: number | null;  // credit_bundle only
+  durationDays: number | null;  // unlimited only
+  priceSgd: number;
+  status: "active" | "archived";
+}
+
+export type PtSessionType = "1on1" | "2on1";
+
+export interface PtPackage {
+  id: string;
+  name: string;
+  sessionType: PtSessionType;
+  numSessions: number;
+  priceSgd: number;
+  status: "active" | "archived";
 }
 
 export interface ClientPackage {
   id: string;
   clientId: string;
-  productId: string;
-  sessionsRemaining: number;
-  sessionsTotal: number;
-  purchasedAt: string;
+  kind: "credit_bundle" | "unlimited" | "pt";
+  sourcePackageId: string;
+  packageName: string;          // denormalised for display
+  creditsOrSessionsRemaining: number | null;
+  creditsOrSessionsTotal: number | null;
   expiresAt: string | null;
-  status: "active" | "expired" | "paused" | "cancelled";
+  purchasedAt: string;
+  amountPaidSgd: number;
 }
 
-export interface Invoice {
+// --- Schedule (§7, §8, §10) ---
+
+export type Lifecycle = "active" | "cancelled";
+export type EventState = "scheduled" | "ongoing" | "completed" | "cancelled";
+
+export interface ClassInstance {
   id: string;
-  tenantId: string;
-  clientId: string;
-  invoiceNumber: string;
-  issuedAt: string;
-  amountCents: number;
-  status: "paid" | "pending" | "failed" | "refunded";
-  paymentMethod: string;
-  items: {
-    id: string;
-    description: string;
-    quantity: number;
-    unitPriceCents: number;
-    amountCents: number;
-    refunded?: boolean;
-  }[];
-}
-
-export interface Instructor {
-  id: string;
-  tenantId: string;
-  name: string;
-  email: string;
-  phone: string;
-  bio: string;
-  avatarUrl: string;
-  available: boolean;
-  locationIds: string[];
-  payRateCents: number;
-  payModel: "flat" | "perAttendee" | "hourly";
-  availabilityTemplateId: string | null;
-  compensation?: {
-    basePerSession: number;
-    perClientCommission: number;
-    revenueCommissionPercent: number;
-    extraHourRate: number;
-    workshopRate: number;
-  };
-}
-
-export interface Membership {
-  id: string;
-  tenantId: string;
-  clientId: string;
-  productId: string;
-  status: "active" | "cancelled" | "past_due" | "paused";
-  nextBillingDate: string;
-  sessionsUsedThisMonth: number;
-  sessionsPerMonth: number | null;
-  startedAt: string;
-  pausedUntil?: string;
-}
-
-// --- admin-only extensions ---
-
-export type AdminRole = "admin" | "instructor" | "super";
-
-export interface AdminUser {
-  id: string;
-  name: string;
-  email: string;
-  role: AdminRole;
-  tenantId: string;
-  locationIds: string[];
-  active: boolean;
-  avatarUrl?: string;
-}
-
-export type AuditAction =
-  | "client.create" | "client.update" | "client.merge" | "client.softDelete"
-  | "credit.grant" | "credit.adjust" | "package.extend" | "package.refund"
-  | "membership.pause" | "membership.cancel" | "membership.changePlan" | "invoice.refund"
-  | "session.create" | "session.update" | "session.cancel"
-  | "booking.cancelAdmin"
-  | "private.accept" | "private.decline" | "private.proposeAlt"
-  | "product.create" | "product.update" | "product.archive"
-  | "promo.create" | "promo.disable"
-  | "referral.approve" | "referral.deny"
-  | "policy.edit" | "cms.publish" | "broadcast.send"
-  | "tenant.create" | "tenant.update" | "tenant.suspend" | "featureFlag.set"
-  | "refund.resolve" | "refund.decline" | "cancellation.resolve"
-  | "waiver.reset" | "impersonation.start" | "impersonation.stop";
-
-export interface AuditEntry {
-  id: string;
-  ts: string;
-  actorId: string;
-  actorRole: AdminRole;
-  tenantId: string;
-  impersonatingTenantId?: string;
-  action: AuditAction;
-  entityType: string;
-  entityId: string;
-  before: unknown;
-  after: unknown;
-  note: string | null;
-}
-
-export interface AvailabilityTemplate {
-  id: string;
+  classTypeId: string;
   instructorId: string;
-  weekly: boolean[][];
-}
-
-export interface AvailabilityBlockoff {
-  id: string;
-  instructorId: string;
-  startAt: string;
-  endAt: string;
-  reason: string | null;
-}
-
-export interface PrivateRequest {
-  id: string;
-  tenantId: string;
-  clientId: string;
-  instructorId: string;
-  productId: string;
-  requestedAt: string;
-  requestedSlotIso: string;
-  slaDueAt: string;
-  status: "pending" | "accepted" | "declined" | "alt_proposed";
-  proposedSlotIso?: string;
-  responseNote?: string;
-}
-
-export interface ReferralCode {
-  code: string;
-  tenantId: string;
-  ownerClientId: string;
-  discountCents: number;
-  usageCap: number;
-  usedCount: number;
-  status: "active" | "disabled";
-  createdAt: string;
-}
-
-export interface ReferralEvent {
-  id: string;
-  code: string;
-  tenantId: string;
-  referrerClientId: string;
-  refereeClientId: string;
-  status: "pending" | "joined" | "credited" | "denied";
-  createdAt: string;
-}
-
-export interface Promo {
-  id: string;
-  tenantId: string;
-  code: string;
-  discountType: "amount" | "percent";
-  discountValue: number;
+  locationId: string;
   startsAt: string;
   endsAt: string;
-  usageCap: number;
-  usedCount: number;
-  perUserCap: number;
-  productIds: string[];
-  active: boolean;
+  capacity: number;
+  creditCost: number;
+  lifecycle: Lifecycle;
+  cancelledAt: string | null;
+  cancelledByStaffId: string | null;
 }
 
-export interface NotificationTemplate {
-  slug: string;
-  tenantId: string;
-  subject: string;
-  body: string;
-  channel: "email" | "sms";
-}
-
-export interface Broadcast {
+export interface Workshop {
   id: string;
-  tenantId: string;
-  templateSlug: string | null;
-  subject: string;
-  body: string;
-  audience: { kind: "all" | "tag" | "ids"; value?: string | string[] };
-  status: "draft" | "scheduled" | "sent";
-  scheduledAt?: string;
-  sentAt?: string;
-}
-
-export interface Announcement {
-  id: string;
-  tenantId: string;
-  message: string;
-  active: boolean;
+  name: string;
+  classTypeId: string;
+  coverUrl: string | null;
+  additionalImages: string[];
+  descriptionHtml: string;
+  locationId: string;
   startsAt: string;
   endsAt: string;
+  instructorIds: string[];
+  lifecycle: Lifecycle;
+  cancelledAt: string | null;
+  cancelledByStaffId: string | null;
 }
 
-export interface CmsBlock {
+export interface WorkshopTier {
   id: string;
-  tenantId: string;
-  kind:
-    | "heroRotatingWords"
-    | "featureGrid"
-    | "showcaseGrid"
-    | "testimonials"
-    | "ctaBanner"
-    | "featureDeepDive";
-  payload: unknown;
-  publishedAt: string | null;
-}
-
-export interface CmsHistory {
-  id: string;
-  blockId: string;
-  ts: string;
-  payload: unknown;
-  actorId: string;
-}
-
-export interface SuperTenantView {
-  tenantId: string;
+  workshopId: string;
   name: string;
-  plan: string;
-  status: "active" | "suspended" | "trial";
-  mrrCents: number;
-  activeClients: number;
-  activeInstructors: number;
-  lastLoginAt: string;
-}
-
-export interface SaasPlan {
-  id: string;
-  name: string;
-  priceCents: number;
-  seatLimit: number;
-  features: string[];
-}
-
-export interface TenantBillingInvoice {
-  id: string;
-  tenantId: string;
-  issuedAt: string;
-  amountCents: number;
-  status: "paid" | "failed" | "pending";
-}
-
-export interface FeatureFlag {
-  key: string;
-  tenantId: string | "*";
-  enabled: boolean;
-}
-
-export interface WalkIn {
-  id: string;
-  tenantId: string;
-  sessionId: string;
-  name: string;
-  phone: string;
-  createdAt: string;
-  clientIdCreated?: string;
-}
-
-export interface SessionTemplate {
-  id: string;
-  tenantId: string;
-  name: string;
-  category: string;
-  level: "beginner" | "intermediate" | "advanced" | "all";
-  duration: number;
-  defaultPriceCents: number;
-  defaultInstructorId: string | null;
-  locationIds: string[];
-  recurrence: string | null;
-  time: string;
-  packageEligible: boolean;
-  creditType?: "class" | "pt1on1" | "pt2on1";
   description: string;
-  active: boolean;
+  regularPriceSgd: number;
+  earlyBirdPriceSgd: number | null;
+  earlyBirdQuota: number | null;
+  earlyBirdCutoffAt: string | null;
+  capacity: number;
+  ord: number;
 }
 
-export interface PolicyState {
-  classCancelHours: number;
-  privateCancelHours: number;
-  privateSlaHours: number;
-  lastMinuteThreshold: number;
+export type PtSessionStatus = "pending" | "confirmed" | "declined" | "cancelled";
+
+export interface PtSession {
+  id: string;
+  instructorId: string;
+  locationId: string | null;
+  startsAt: string;
+  endsAt: string;
+  sessionType: PtSessionType;
+  status: PtSessionStatus;
+  declineNote: string | null;
+  clientIds: string[];
+  message: string | null;       // request message at submit time
+  createdAt: string;
 }
 
-export type InboxStatus = "open" | "resolved" | "declined";
+// --- Availability (§8) ---
 
-export interface RefundRequest {
+export interface AvailabilityRecurring {
+  id: string;
+  instructorId: string;
+  weekday: number;       // 0 = Sunday
+  startTime: string;     // "HH:mm"
+  endTime: string;
+}
+
+export interface AvailabilityOneOff {
+  id: string;
+  instructorId: string;
+  startsAt: string;
+  endsAt: string;
+}
+
+// --- Bookings (§10, §12) ---
+
+export type BookingKind = "class" | "workshop" | "pt";
+export type BookingState = "confirmed" | "cancelled" | "no_show";
+export type CheckInState = "pending" | "attended" | "no_show" | "n_a";
+export type RefundOutcome =
+  | "credit_returned"
+  | "session_returned"
+  | "stripe_refunded"
+  | "forfeited"
+  | "n_a";
+
+export interface Booking {
   id: string;
   clientId: string;
-  invoiceId?: string | null;
-  bookingId?: string | null;
-  amountCents: number;
-  reason: string;
-  channel: "whatsapp" | "email" | "in-person";
-  status: InboxStatus;
-  openedAt: string;
-  resolvedAt?: string | null;
-  resolutionNote?: string | null;
+  kind: BookingKind;
+  classId: string | null;
+  workshopId: string | null;
+  workshopTierId: string | null;
+  ptSessionId: string | null;
+  clientPackageId: string | null;
+  state: BookingState;
+  creditsOrSessionsUsed: number | null;
+  refundOutcome: RefundOutcome;
+  checkInState: CheckInState;
+  qrToken: string;
+  code: string;
+  bookedAt: string;
+  cancelledAt: string | null;
 }
 
-export interface CancellationRequest {
+// --- Ratings (§14) ---
+
+export interface Rating {
+  id: string;
+  bookingId: string;
+  clientId: string;
+  kind: "class" | "workshop";
+  classId: string | null;
+  workshopId: string | null;
+  instructorId: string;
+  stars: number;
+  comment: string | null;
+  ratedAt: string;
+}
+
+// --- Cancellations (drives §4 cap) ---
+
+export interface CancellationRecord {
+  id: string;
+  bookingId: string;
+  clientId: string;
+  kind: "class" | "pt";
+  source: "client" | "admin";
+  cancelledAt: string;
+  wasWithinWindow: boolean;
+  wasWithinCap: boolean;
+  refundFired: boolean;
+}
+
+// --- Manual adjustments (§16d) ---
+
+export interface ManualAdjustment {
   id: string;
   clientId: string;
-  bookingId?: string | null;
-  membershipId?: string | null;
+  clientPackageId: string;
+  delta: number;
   reason: string;
-  channel: "whatsapp" | "email" | "in-person";
-  status: Exclude<InboxStatus, "declined">;
-  openedAt: string;
-  resolvedAt?: string | null;
-  resolutionNote?: string | null;
+  actedByStaffId: string;
+  createdAt: string;
+}
+
+// --- Identity (§15, §16) ---
+
+export type StaffRole = "superadmin" | "admin" | "instructor";
+export type StaffStatus = "pending" | "active" | "archived";
+
+export interface StaffUser {
+  id: string;
+  name: string;
+  email: string;
+  role: StaffRole;
+  status: StaffStatus;
+  archivedAt: string | null;
+  archivedByStaffId: string | null;
+  invitedAt: string | null;
+  acceptedAt: string | null;
+  createdAt: string;
+}
+
+export interface StaffInvitation {
+  id: string;
+  email: string;
+  role: "admin" | "instructor";
+  expiresAt: string;
+  status: "pending" | "accepted" | "revoked" | "expired";
+  invitedByStaffId: string;
+  createdAt: string;
+}
+
+export type ClientStatus = "active" | "suspended";
+
+export interface Client {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  status: ClientStatus;
+  joinedAt: string;
+  suspendedAt: string | null;
+  referredByClientId: string | null;
+  waiverSignedAt: string;
+}
+
+// --- Inbox (§13) ---
+
+export type InboxType =
+  | "client_cancellation"
+  | "admin_cancel_class_pt"
+  | "admin_cancel_workshop"
+  | "pt_request";
+
+export interface InboxItem {
+  id: string;
+  type: InboxType;
+  payload: Record<string, unknown>;
+  readAt: string | null;
+  sourcePtSessionId: string | null;
+  actionTaken: "approved" | "declined" | null;
+  actionAt: string | null;
+  createdAt: string;
+}
+
+// --- Notifications (§17) ---
+
+export type EmailTemplateSlug =
+  | "welcome"
+  | "password_reset"
+  | "class_booking_confirmed"
+  | "pt_request_submitted"
+  | "pt_session_approved"
+  | "pt_session_declined"
+  | "workshop_purchase_confirmed"
+  | "class_cancelled_credit_returned"
+  | "class_cancelled_forfeited"
+  | "pt_cancelled_session_returned"
+  | "pt_cancelled_forfeited"
+  | "admin_cancel_class"
+  | "admin_cancel_pt"
+  | "admin_cancel_workshop"
+  | "rating_prompt_class"
+  | "rating_prompt_workshop"
+  | "package_purchase_confirmed"
+  | "credit_expiry_reminder"
+  | "instructor_invite"
+  | "admin_invite"
+  | "checkin_nag";
+
+export interface EmailTemplate {
+  slug: EmailTemplateSlug;
+  category: string;
+  label: string;
+  description: string;
+  trigger: string;
+  recipient: string;
+  variables: string[];
+  subject: string;
+  bodyHtml: string;
+  updatedAt: string;
+}
+
+// --- Waiver (§18) ---
+
+export interface Waiver {
+  bodyHtml: string;
+  updatedAt: string;
 }

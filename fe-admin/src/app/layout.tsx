@@ -7,8 +7,8 @@ const sans = Manrope({ subsets: ["latin"], variable: "--font-sans" });
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
 
 export const metadata: Metadata = {
-  title: "Teeko Admin",
-  description: "Back-of-house for Teeko booking",
+  title: "Yoga Sadhana — Admin",
+  description: "Studio operations console for Yoga Sadhana.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

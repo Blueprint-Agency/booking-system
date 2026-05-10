@@ -1,6 +1,0 @@
-[
-  { "slug": "welcome", "tenantId": "studio", "subject": "Welcome to Yoga Sadhana, {{firstName}}!", "body": "Hi {{firstName}},\n\nWe're glad to have you. Book your first class at {{bookingUrl}}.\n\nNamaste,\nYoga Sadhana", "channel": "email" },
-  { "slug": "cancellation", "tenantId": "studio", "subject": "Your class has been cancelled", "body": "Hi {{firstName}},\n\nUnfortunately, {{sessionName}} on {{date}} has been cancelled. {{refundStatus}}.\n\nYoga Sadhana", "channel": "email" },
-  { "slug": "renewal", "tenantId": "studio", "subject": "Your membership renews in 3 days", "body": "Hi {{firstName}},\n\nYour {{productName}} will renew on {{renewDate}} for {{amount}}.\n\nManage your membership: {{manageUrl}}", "channel": "email" },
-  { "slug": "referral", "tenantId": "studio", "subject": "You've earned a referral credit!", "body": "Hi {{firstName}},\n\n{{refereeName}} joined using your code. You've been credited ${{amount}} toward your next pack.\n\nThanks for spreading the practice.", "channel": "email" }
-]

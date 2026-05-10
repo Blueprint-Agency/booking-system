@@ -4,7 +4,6 @@ import { Suspense, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AuthSplitShell } from "@/components/auth/auth-split-shell";
-import { GoogleLogo } from "@/components/auth/google-logo";
 import { signIn } from "@/lib/mock-state";
 
 function LoginForm() {
@@ -95,23 +94,6 @@ function LoginForm() {
           Sign in
         </button>
       </form>
-
-      <div className="my-8 flex items-center gap-3 text-xs text-muted">
-        <div className="h-px flex-1 bg-ink/10" />
-        or continue with
-        <div className="h-px flex-1 bg-ink/10" />
-      </div>
-
-      <div className="grid grid-cols-1 gap-3">
-        <button
-          type="button"
-          onClick={completeAuth}
-          className="flex items-center justify-center gap-3 rounded-full border border-ink/10 py-3 text-sm font-medium hover:border-accent"
-        >
-          <GoogleLogo />
-          Continue with Google
-        </button>
-      </div>
 
       <p className="text-sm text-muted text-center mt-8">
         Don&apos;t have an account?{" "}

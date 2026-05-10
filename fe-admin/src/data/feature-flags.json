@@ -1,7 +1,0 @@
-[
-  { "key": "referrals", "tenantId": "studio", "enabled": true },
-  { "key": "referrals", "tenantId": "tnt-pilates", "enabled": false },
-  { "key": "smsReminders", "tenantId": "*", "enabled": false },
-  { "key": "walkInQR", "tenantId": "studio", "enabled": true },
-  { "key": "advancedReports", "tenantId": "*", "enabled": false }
-]

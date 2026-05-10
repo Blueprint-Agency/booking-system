@@ -1,8 +1,0 @@
-[
-  { "id": "pr-1", "tenantId": "studio", "clientId": "cli-1", "instructorId": "inst-4", "productId": "prd-7", "requestedAt": "2026-04-22T08:00:00Z", "requestedSlotIso": "2026-04-25T09:00:00Z", "slaDueAt": "2026-04-22T20:00:00Z", "status": "pending" },
-  { "id": "pr-2", "tenantId": "studio", "clientId": "cli-4", "instructorId": "inst-1", "productId": "prd-7", "requestedAt": "2026-04-22T10:00:00Z", "requestedSlotIso": "2026-04-26T14:00:00Z", "slaDueAt": "2026-04-22T22:00:00Z", "status": "pending" },
-  { "id": "pr-3", "tenantId": "studio", "clientId": "cli-11", "instructorId": "inst-4", "productId": "prd-7", "requestedAt": "2026-04-21T08:00:00Z", "requestedSlotIso": "2026-04-24T09:00:00Z", "slaDueAt": "2026-04-21T20:00:00Z", "status": "pending" },
-  { "id": "pr-4", "tenantId": "studio", "clientId": "cli-17", "instructorId": "inst-2", "productId": "prd-7", "requestedAt": "2026-04-19T10:00:00Z", "requestedSlotIso": "2026-04-23T16:00:00Z", "slaDueAt": "2026-04-19T22:00:00Z", "status": "accepted", "responseNote": "Confirmed" },
-  { "id": "pr-5", "tenantId": "studio", "clientId": "cli-8", "instructorId": "inst-3", "productId": "prd-7", "requestedAt": "2026-04-18T10:00:00Z", "requestedSlotIso": "2026-04-22T17:00:00Z", "slaDueAt": "2026-04-18T22:00:00Z", "status": "accepted", "responseNote": "Confirmed" },
-  { "id": "pr-6", "tenantId": "studio", "clientId": "cli-20", "instructorId": "inst-1", "productId": "prd-7", "requestedAt": "2026-04-17T10:00:00Z", "requestedSlotIso": "2026-04-22T18:00:00Z", "slaDueAt": "2026-04-17T22:00:00Z", "status": "alt_proposed", "proposedSlotIso": "2026-04-22T19:00:00Z", "responseNote": "18:00 unavailable; 19:00 works" }
-]

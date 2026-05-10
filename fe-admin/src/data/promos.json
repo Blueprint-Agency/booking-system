@@ -1,6 +1,0 @@
-[
-  { "id": "prm-1", "tenantId": "studio", "code": "DIWALI30", "discountType": "amount", "discountValue": 3000, "startsAt": "2026-04-15T00:00:00Z", "endsAt": "2026-05-15T23:59:59Z", "usageCap": 50, "usedCount": 12, "perUserCap": 1, "productIds": ["prd-3", "prd-4"], "active": true },
-  { "id": "prm-2", "tenantId": "studio", "code": "WELCOME10", "discountType": "percent", "discountValue": 10, "startsAt": "2026-01-01T00:00:00Z", "endsAt": "2026-12-31T23:59:59Z", "usageCap": 1000, "usedCount": 88, "perUserCap": 1, "productIds": [], "active": true },
-  { "id": "prm-3", "tenantId": "studio", "code": "VESAK25", "discountType": "percent", "discountValue": 25, "startsAt": "2026-05-01T00:00:00Z", "endsAt": "2026-05-07T23:59:59Z", "usageCap": 100, "usedCount": 0, "perUserCap": 1, "productIds": [], "active": true },
-  { "id": "prm-4", "tenantId": "studio", "code": "NEWYEAR24", "discountType": "amount", "discountValue": 2000, "startsAt": "2025-12-20T00:00:00Z", "endsAt": "2026-01-10T23:59:59Z", "usageCap": 200, "usedCount": 147, "perUserCap": 1, "productIds": [], "active": false }
-]

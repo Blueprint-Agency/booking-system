@@ -1,31 +1,34 @@
 import { format, formatDistanceToNow, parseISO } from "date-fns";
 
-/** Money in state is integer cents. Display formats as SGD with no decimals. */
-export function formatCurrency(cents: number): string {
+export function formatSgd(amount: number): string {
   return new Intl.NumberFormat("en-SG", {
     style: "currency",
     currency: "SGD",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(cents / 100);
+    minimumFractionDigits: amount % 1 === 0 ? 0 : 2,
+  }).format(amount);
 }
 
-/** Formats an ISO date string (UTC) to "Mon, Apr 22". */
-export function formatDate(iso: string): string {
-  return format(parseISO(iso), "EEE, MMM d");
+export function formatDate(iso: string, fmt = "EEE d MMM"): string {
+  return format(parseISO(iso), fmt);
 }
 
-/** Formats an ISO datetime to "7:00 AM". */
 export function formatTime(iso: string): string {
-  return format(parseISO(iso), "h:mm a");
+  return format(parseISO(iso), "h:mma").toLowerCase();
 }
 
-/** Combined date + time: "Mon, Apr 22 · 7:00 AM". */
 export function formatDateTime(iso: string): string {
-  return format(parseISO(iso), "EEE, MMM d · h:mm a");
+  return format(parseISO(iso), "EEE d MMM, h:mma").replace(/(AM|PM)/, (m) => m.toLowerCase());
 }
 
-/** "3 hours ago", "in 2 days". */
 export function formatRelative(iso: string): string {
   return formatDistanceToNow(parseISO(iso), { addSuffix: true });
+}
+
+export function formatDuration(startsAt: string, endsAt: string): string {
+  const ms = parseISO(endsAt).getTime() - parseISO(startsAt).getTime();
+  const minutes = Math.round(ms / 60000);
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rem = minutes % 60;
+  return rem === 0 ? `${hours}h` : `${hours}h ${rem}m`;
 }

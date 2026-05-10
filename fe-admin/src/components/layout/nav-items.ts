@@ -1,85 +1,67 @@
 import type { LucideIcon } from "lucide-react";
 import {
-  LayoutDashboard,
-  Users,
-  CalendarDays,
-  BookOpen,
-  Sparkles,
-  UserCog,
-  Package,
-  Receipt,
-  Bell,
-  Settings,
-  ScrollText,
-  QrCode,
-  Gift,
-  Heart,
-  Flag,
-  Activity,
-  User,
-  Clock,
-  RotateCcw,
-  XCircle,
-  ShieldCheck,
+  MapPin,
+  Tag,
+  Users2,
   Shield,
-  UserCheck,
-  Star,
+  Layers,
+  Heart,
+  CalendarDays,
+  Clock,
+  QrCode,
+  Inbox,
+  Users,
+  Mail,
+  FileText,
+  UserCog,
 } from "lucide-react";
-import type { AdminState } from "@/lib/admin-state";
 
 export interface NavItem {
   label: string;
   href: string;
   icon: LucideIcon;
-  badgeSelector?: (s: AdminState) => number | undefined;
-  section?: string;
+  group: NavGroup;
+  badgeKey?: "inboxUnread";
 }
 
-const pendingPrivate = (s: AdminState) =>
-  s.privateRequests.filter((r) => r.status === "pending").length || undefined;
+export type NavGroup =
+  | "Building Blocks"
+  | "Policy"
+  | "Packages"
+  | "Schedule"
+  | "Operations"
+  | "Clients & Content"
+  | "Admin";
 
-const pendingRefunds = (s: AdminState) =>
-  s.refundRequests.filter((r) => r.status === "open").length || undefined;
+export const NAV_ITEMS: NavItem[] = [
+  { group: "Building Blocks", label: "Locations", href: "/admin/locations", icon: MapPin },
+  { group: "Building Blocks", label: "Class Types", href: "/admin/class-types", icon: Tag },
+  { group: "Building Blocks", label: "Instructors", href: "/admin/instructors", icon: Users2 },
 
-const pendingCancellations = (s: AdminState) =>
-  s.cancellationRequests.filter((r) => r.status === "open").length || undefined;
+  { group: "Policy", label: "Global Policy", href: "/admin/policy", icon: Shield },
 
-export const NAV_ITEMS_ADMIN: NavItem[] = [
-  { label: "Dashboard", href: "/admin/dashboard", icon: LayoutDashboard },
-  { section: "People", label: "Clients", href: "/admin/clients", icon: Users },
-  { label: "Instructors", href: "/admin/instructors", icon: UserCog },
-  { label: "Bookings", href: "/admin/bookings", icon: BookOpen },
-  { label: "Check-in", href: "/admin/check-in", icon: QrCode },
-  { section: "Schedule", label: "Schedule", href: "/admin/schedule", icon: CalendarDays },
-  { label: "Classes", href: "/admin/classes", icon: BookOpen },
-  { label: "Workshops", href: "/admin/workshops", icon: Sparkles },
-  { label: "Private sessions", href: "/admin/private/inbox", icon: Heart, badgeSelector: pendingPrivate },
-  { section: "Inboxes", label: "Refunds", href: "/admin/refunds", icon: RotateCcw, badgeSelector: pendingRefunds },
-  { label: "Cancellations", href: "/admin/cancellations", icon: XCircle, badgeSelector: pendingCancellations },
-  { section: "Catalogue", label: "Packages", href: "/admin/packages", icon: Package },
-  { label: "Invoices", href: "/admin/invoices", icon: Receipt },
-  { label: "Referrals", href: "/admin/referrals", icon: Gift },
-  { section: "System", label: "Notifications", href: "/admin/notifications", icon: Bell },
-  { label: "Settings", href: "/admin/settings/policy", icon: Settings },
-  { label: "Audit", href: "/admin/audit", icon: ScrollText },
+  { group: "Packages", label: "Classes", href: "/admin/classes", icon: Layers },
+  { group: "Packages", label: "Private Sessions", href: "/admin/private-sessions", icon: Heart },
+
+  { group: "Schedule", label: "Schedule", href: "/admin/schedule", icon: CalendarDays },
+  { group: "Schedule", label: "Availability", href: "/admin/availability", icon: Clock },
+
+  { group: "Operations", label: "Check-in", href: "/admin/check-in", icon: QrCode },
+  { group: "Operations", label: "Inbox", href: "/admin/inbox", icon: Inbox, badgeKey: "inboxUnread" },
+
+  { group: "Clients & Content", label: "Clients", href: "/admin/clients", icon: Users },
+  { group: "Clients & Content", label: "Notifications", href: "/admin/notifications", icon: Mail },
+  { group: "Clients & Content", label: "Waiver", href: "/admin/waiver", icon: FileText },
+
+  { group: "Admin", label: "Staff", href: "/admin/staff", icon: UserCog },
 ];
 
-export const NAV_ITEMS_INSTRUCTOR: NavItem[] = [
-  { label: "Today", href: "/instructor", icon: LayoutDashboard },
-  { label: "My schedule", href: "/instructor/schedule", icon: CalendarDays },
-  { label: "My availability", href: "/instructor/availability", icon: Clock },
-  { label: "Teaching log", href: "/instructor/teaching-log", icon: ScrollText },
-  { label: "Ratings", href: "/instructor/ratings", icon: Star },
-  { label: "My profile", href: "/instructor/profile", icon: User },
-];
-
-export const NAV_ITEMS_SUPER: NavItem[] = [
-  { label: "Overview", href: "/superadmin", icon: LayoutDashboard },
-  { label: "Health", href: "/superadmin/health", icon: Activity },
-  { label: "Flags", href: "/superadmin/flags", icon: Flag },
-  { label: "Templates", href: "/superadmin/templates", icon: ScrollText },
-  { label: "Admins", href: "/superadmin/admins", icon: UserCog },
-  { label: "Audit", href: "/superadmin/audit", icon: Shield },
-  { label: "Impersonate", href: "/superadmin/impersonate", icon: UserCheck },
-  { label: "Waivers reset", href: "/superadmin/waivers/reset", icon: ShieldCheck },
+export const NAV_GROUP_ORDER: NavGroup[] = [
+  "Building Blocks",
+  "Policy",
+  "Packages",
+  "Schedule",
+  "Operations",
+  "Clients & Content",
+  "Admin",
 ];

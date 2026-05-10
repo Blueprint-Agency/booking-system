@@ -67,7 +67,10 @@
       "Bash(where python:*)",
       "Bash(where python3:*)",
       "Bash(py --version)",
-      "Bash(find /c/Users/chris/Desktop/blueprint/teeko/booking-system/fe/src -name \"*.tsx\" -type f -exec grep -h \"class=\\\\|className=\" {} \\\\;)"
+      "Bash(find /c/Users/chris/Desktop/blueprint/teeko/booking-system/fe/src -name \"*.tsx\" -type f -exec grep -h \"class=\\\\|className=\" {} \\\\;)",
+      "mcp__plugin_playwright_playwright__browser_navigate",
+      "mcp__plugin_playwright_playwright__browser_take_screenshot",
+      "mcp__plugin_playwright_playwright__browser_click"
     ]
   }
 }
