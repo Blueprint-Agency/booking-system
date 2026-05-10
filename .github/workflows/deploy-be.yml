@@ -5,7 +5,6 @@ on:
     branches: [main]
     paths:
       - 'be/**'
-      - '.github/workflows/deploy-be.yml'
   workflow_dispatch:
 
 jobs:
@@ -67,7 +66,8 @@ jobs:
             cd /root/stacks/booking-system
             docker compose up -d --remove-orphans
 
-            # Wait for backend container to be running, then run DB migrations.
+            # Wait for backend container to be running, then run DB migrations + seed.
+            # Both must be idempotent — they run on every deploy.
             for i in $(seq 1 30); do
               if [ "$(docker inspect -f '{{.State.Running}}' booking-be 2>/dev/null)" = "true" ]; then
                 break
@@ -75,6 +75,6 @@ jobs:
               sleep 2
             done
 
-            docker compose exec -T booking-be sh -c "npm run db:migrate"
+            docker compose exec -T booking-be sh -c "npm run db:migrate && npm run db:seed"
 
             docker image prune -f
