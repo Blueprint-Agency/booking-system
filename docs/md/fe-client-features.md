@@ -1,8 +1,8 @@
 # fe-client — Feature Breakdown
 
-A reference for the **business logic** and **user journey** behind every client-facing feature in `fe-client/`. Written for an agent that will plan the admin-side counterpart in `fe-admin/`. Where state on the client is read-only, the admin app is where it's *written* — every "Where admin comes in" callout flags the data the admin must manage.
+A reference for the **business logic** and **user journey** behind every client-facing feature in `fe-client/`. Written for an agent that will plan the admin-side counterpart in `fe-portal/`. Where state on the client is read-only, the admin app is where it's *written* — every "Where admin comes in" callout flags the data the admin must manage.
 
-**Scope.** This is a dedicated 2-app suite for **Yoga Sadhana** only — `fe-client` (member-facing booking app) and `fe-admin` (staff-facing back office). It is **not** a multi-tenant SaaS; there are no other studios on this platform, no tenant switcher, no slug routing, no plan/billing layer for the studio. Studio-specific data (locations, branding, copy, policies, products) is owned and edited in `fe-admin`, but it lives as a single set of values — there is no "per-tenant" surface anywhere.
+**Scope.** This is a dedicated 2-app suite for **Yoga Sadhana** only — `fe-client` (member-facing booking app) and `fe-portal` (staff-facing back office). It is **not** a multi-tenant SaaS; there are no other studios on this platform, no tenant switcher, no slug routing, no plan/billing layer for the studio. Studio-specific data (locations, branding, copy, policies, products) is owned and edited in `fe-portal`, but it lives as a single set of values — there is no "per-tenant" surface anywhere.
 
 Yoga Sadhana operates 2 studios in Singapore: **Breadtalk IHQ** (Tai Seng) and **Outram Park**.
 
@@ -115,7 +115,7 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
 4. Google sign-in button is present (treated as same identity as email when emails match).
 
 **Where admin comes in**
-- Admin needs an "impersonate user" path (already done in `fe-admin`).
+- Admin needs an "impersonate user" path (already done in `fe-portal`).
 - Admin needs to disable login (suspend account).
 
 ### 1.4 Forgot / Reset Password `/forgot-password`, `/reset-password`
@@ -341,7 +341,7 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
    - On **reject** (or counter-offer of alt time) → user is notified and routed back to re-pick a slot or cancel.
 
 **Where admin comes in**
-- **Inbox** of pending private-session requests (already present in fe-admin under `/private/inbox`).
+- **Inbox** of pending private-session requests (already present in fe-portal under `/private/inbox`).
 - Admin confirms/rejects, optionally proposing alt times.
 - On confirmation: deducts 1 session from the user's VIP package, generates a per-session QR, schedules instructor block.
 - Admin manages instructor `available` flag and per-instructor pricing.
@@ -517,15 +517,15 @@ The account section is a sticky sidebar (desktop) / tab bar (mobile). All sub-pa
 
 **Where admin comes in**
 - Footer copy is editable from admin.
-- Logo, favicon, and brand colours live under Settings → Branding in fe-admin.
+- Logo, favicon, and brand colours live under Settings → Branding in fe-portal.
 
 ---
 
 ## 10. Admin-side surface map (derived)
 
-For every fe-client feature above, admin must own at least the **write side** of the corresponding state. The mapping below should drive the next agent's plan for `fe-admin` gaps:
+For every fe-client feature above, admin must own at least the **write side** of the corresponding state. The mapping below should drive the next agent's plan for `fe-portal` gaps:
 
-| Client surface | Admin counterpart (fe-admin) |
+| Client surface | Admin counterpart (fe-portal) |
 |---|---|
 | Register / verify | Users list, user detail (verify, suspend, impersonate) |
 | Classes browse | Session templates, schedule generator, single-instance overrides, capacity, waitlist toggles |
@@ -543,7 +543,7 @@ For every fe-client feature above, admin must own at least the **write side** of
 | Notifications & messages | Template library, channel routing, per-event toggles, send audit log |
 | Cross-cutting | Reports, feature flags |
 
-Anything in the right column without strong representation in `fe-admin` today is a candidate for the next planning pass.
+Anything in the right column without strong representation in `fe-portal` today is a candidate for the next planning pass.
 
 ---
 

@@ -1,23 +1,103 @@
-import { pgTable, uuid, text, timestamp, pgEnum } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, timestamp, integer, boolean, index, uniqueIndex, check } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
+import { clients, staffUsers } from './identity'
+import { classes, workshops, workshopTiers, ptSessions } from './schedule'
+import { clientPackages } from './packages'
+import {
+  bookingKindEnum,
+  bookingStateEnum,
+  refundOutcomeEnum,
+  checkinStateEnum,
+  cancellationKindEnum,
+  cancellationSourceEnum,
+  checkinMethodEnum,
+} from '../enums'
 
-export const bookingTypeEnum = pgEnum('booking_type', ['class', 'workshop', 'private'])
-export const bookingStatusEnum = pgEnum('booking_status', [
-  'pending', 'confirmed', 'expired', 'cancelled', 'attended', 'late', 'no_show',
-])
+export const bookings = pgTable(
+  'bookings',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id, { onDelete: 'restrict' }),
+    kind: bookingKindEnum('kind').notNull(),
+    classId: uuid('class_id').references(() => classes.id, { onDelete: 'restrict' }),
+    workshopId: uuid('workshop_id').references(() => workshops.id, { onDelete: 'restrict' }),
+    workshopTierId: uuid('workshop_tier_id').references(() => workshopTiers.id, { onDelete: 'restrict' }),
+    ptSessionId: uuid('pt_session_id').references(() => ptSessions.id, { onDelete: 'restrict' }),
+    clientPackageId: uuid('client_package_id').references(() => clientPackages.id, {
+      onDelete: 'restrict',
+    }),
+    state: bookingStateEnum('state').notNull().default('confirmed'),
+    creditsOrSessionsUsed: integer('credits_or_sessions_used'),
+    refundOutcome: refundOutcomeEnum('refund_outcome').notNull().default('n_a'),
+    checkInState: checkinStateEnum('check_in_state').notNull().default('pending'),
+    qrToken: text('qr_token').notNull(),
+    code: text('code').notNull(),
+    stripePaymentIntentId: text('stripe_payment_intent_id'),
+    bookedAt: timestamp('booked_at', { withTimezone: true }).notNull().defaultNow(),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+  },
+  table => ({
+    clientBookedIdx: index('bookings_client_booked_idx').on(table.clientId, table.bookedAt),
+    classStateIdx: index('bookings_class_state_idx').on(table.classId, table.state),
+    tierStateIdx: index('bookings_tier_state_idx').on(table.workshopTierId, table.state),
+    ptSessionIdx: index('bookings_pt_session_idx').on(table.ptSessionId),
+    qrTokenUnique: uniqueIndex('bookings_qr_token_unique').on(table.qrToken),
+    codeUnique: uniqueIndex('bookings_code_unique').on(table.code),
+    checkInStateIdx: index('bookings_check_in_state_idx').on(table.checkInState),
+    stripeIntentUnique: uniqueIndex('bookings_stripe_intent_unique').on(table.stripePaymentIntentId),
+    kindFkClass: check(
+      'bookings_kind_class_fk',
+      sql`${table.kind} <> 'class' OR (${table.classId} IS NOT NULL AND ${table.workshopId} IS NULL AND ${table.ptSessionId} IS NULL)`,
+    ),
+    kindFkWorkshop: check(
+      'bookings_kind_workshop_fk',
+      sql`${table.kind} <> 'workshop' OR (${table.workshopId} IS NOT NULL AND ${table.workshopTierId} IS NOT NULL AND ${table.classId} IS NULL AND ${table.ptSessionId} IS NULL)`,
+    ),
+    kindFkPt: check(
+      'bookings_kind_pt_fk',
+      sql`${table.kind} <> 'pt' OR (${table.ptSessionId} IS NOT NULL AND ${table.classId} IS NULL AND ${table.workshopId} IS NULL)`,
+    ),
+  }),
+)
 
-export const bookings = pgTable('bookings', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  clientId: uuid('client_id').notNull(),
-  bookingType: bookingTypeEnum('booking_type').notNull(),
-  classInstanceId: uuid('class_instance_id'),
-  workshopId: uuid('workshop_id'),
-  privateRequestId: uuid('private_request_id'),
-  status: bookingStatusEnum('status').notNull(),
-  clientPackageId: uuid('client_package_id'),
-  qrCodeUrl: text('qr_code_url'),
-  qrToken: text('qr_token').unique(),
-  cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
-  cancelReason: text('cancel_reason'),
-  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
-})
+export const cancellations = pgTable(
+  'cancellations',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    bookingId: uuid('booking_id')
+      .notNull()
+      .references(() => bookings.id, { onDelete: 'restrict' }),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id, { onDelete: 'restrict' }),
+    kind: cancellationKindEnum('kind').notNull(),
+    source: cancellationSourceEnum('source').notNull(),
+    wasWithinWindow: boolean('was_within_window').notNull(),
+    wasWithinCap: boolean('was_within_cap').notNull(),
+    refundFired: boolean('refund_fired').notNull(),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }).notNull(),
+  },
+  table => ({
+    clientCancelledIdx: index('cancellations_client_cancelled_idx').on(table.clientId, table.cancelledAt),
+  }),
+)
+
+export const checkIns = pgTable(
+  'check_ins',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    bookingId: uuid('booking_id')
+      .notNull()
+      .references(() => bookings.id, { onDelete: 'restrict' }),
+    checkedInAt: timestamp('checked_in_at', { withTimezone: true }).notNull().defaultNow(),
+    checkedInByStaffId: uuid('checked_in_by_staff_id')
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: 'restrict' }),
+    method: checkinMethodEnum('method').notNull(),
+  },
+  table => ({
+    bookingUnique: uniqueIndex('check_ins_booking_unique').on(table.bookingId),
+  }),
+)
