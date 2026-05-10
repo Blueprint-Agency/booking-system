@@ -1,0 +1,80 @@
+name: BE Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'be/**'
+      - '.github/workflows/deploy-be.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    if: github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push BE image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./be
+          push: true
+          tags: |
+            blueprintagency/booking-be:latest
+            blueprintagency/booking-be:${{ github.sha }}
+
+      - name: Deploy to VPS3
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ vars.VPS3_HOST }}
+          username: deploy
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            mkdir -p /root/stacks/booking-system
+            # Backend env. DATABASE_URL is assembled from the same DB_* secrets that
+            # configure the Postgres container — single source of truth.
+            # db-booking is only reachable inside booking-network, never exposed.
+            {
+              echo "NODE_ENV=production"
+              echo "PORT=${{ vars.PORT }}"
+              echo "TZ=Asia/Kuala_Lumpur"
+              echo "DATABASE_URL=postgres://${{ secrets.DB_USER }}:${{ secrets.DB_PASSWORD }}@db-booking:5432/${{ secrets.DB_NAME }}"
+              echo "CLERK_SECRET_KEY=${{ secrets.CLERK_SECRET_KEY }}"
+              echo "CLERK_WEBHOOK_SECRET=${{ secrets.CLERK_WEBHOOK_SECRET }}"
+              echo "STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }}"
+              echo "STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}"
+            } > /root/stacks/booking-system/.env.booking-be
+            chmod 600 /root/stacks/booking-system/.env.booking-be
+            # Postgres creds — same source as DATABASE_URL above
+            {
+              echo "POSTGRES_USER=${{ secrets.DB_USER }}"
+              echo "POSTGRES_PASSWORD=${{ secrets.DB_PASSWORD }}"
+              echo "POSTGRES_DB=${{ secrets.DB_NAME }}"
+            } > /root/stacks/booking-system/.env.booking-db
+            chmod 600 /root/stacks/booking-system/.env.booking-db
+
+            docker pull blueprintagency/booking-be:latest
+            cd /root/stacks/booking-system
+            docker compose up -d --remove-orphans
+
+            # Wait for backend container to be running, then run DB migrations.
+            for i in $(seq 1 30); do
+              if [ "$(docker inspect -f '{{.State.Running}}' booking-be 2>/dev/null)" = "true" ]; then
+                break
+              fi
+              sleep 2
+            done
+
+            docker compose exec -T booking-be sh -c "npm run db:migrate"
+
+            docker image prune -f
