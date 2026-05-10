@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { Save, Info } from "lucide-react";
-import { Button, Input, Label, PageHeader, Badge } from "@/components/ui";
+import { Button, Input, Label, PageHeader } from "@/components/ui";
 import { globalPolicy as seedPolicy } from "@/data";
 import { formatRelative } from "@/lib/formatters";
 import type { GlobalPolicy } from "@/types";
@@ -104,46 +104,6 @@ export default function PolicyPage() {
                 }
               />
             </div>
-          </div>
-        </section>
-
-        <section className="rounded-xl border border-border bg-card p-6 shadow-soft">
-          <header className="mb-4">
-            <h2 className="text-base font-semibold text-ink">Refund matrix</h2>
-            <p className="mt-0.5 text-xs text-muted">Read-only — derived from the values above.</p>
-          </header>
-          <div className="overflow-hidden rounded-lg border border-border">
-            <table className="w-full text-sm">
-              <thead className="bg-paper">
-                <tr className="text-xs uppercase tracking-wider text-muted">
-                  <th className="px-3 py-2 text-left font-medium">Within cap</th>
-                  <th className="px-3 py-2 text-left font-medium">Within window</th>
-                  <th className="px-3 py-2 text-left font-medium">Result</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                <tr>
-                  <td className="px-3 py-2"><Badge tone="sage">Yes</Badge></td>
-                  <td className="px-3 py-2"><Badge tone="sage">Yes</Badge></td>
-                  <td className="px-3 py-2 font-medium text-ink">Full credit / session refund</td>
-                </tr>
-                <tr>
-                  <td className="px-3 py-2"><Badge tone="sage">Yes</Badge></td>
-                  <td className="px-3 py-2"><Badge tone="error">No</Badge></td>
-                  <td className="px-3 py-2 text-muted">Forfeit</td>
-                </tr>
-                <tr>
-                  <td className="px-3 py-2"><Badge tone="error">No</Badge></td>
-                  <td className="px-3 py-2"><Badge tone="sage">Yes</Badge></td>
-                  <td className="px-3 py-2 text-muted">Forfeit (cap blocks the refund)</td>
-                </tr>
-                <tr>
-                  <td className="px-3 py-2"><Badge tone="error">No</Badge></td>
-                  <td className="px-3 py-2"><Badge tone="error">No</Badge></td>
-                  <td className="px-3 py-2 text-muted">Forfeit</td>
-                </tr>
-              </tbody>
-            </table>
           </div>
         </section>
 
