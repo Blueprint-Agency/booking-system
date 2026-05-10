@@ -16,6 +16,7 @@ import { QrBadge } from "@/components/account/qr-badge";
 import type { Session, Instructor } from "@/types";
 import sessionsData from "@/data/sessions.json";
 import instructorsData from "@/data/instructors.json";
+import { useUser } from "@clerk/nextjs";
 import {
   useMockState,
   getActiveClassCredits,
@@ -82,8 +83,9 @@ const TYPE_META: Record<MockBooking["type"], { label: string; href: string; tone
 };
 
 export default function AccountOverview() {
+  const { user } = useUser();
   const state = useMockState();
-  const firstName = state.user?.firstName || "there";
+  const firstName = user?.firstName || "there";
   const [nextUpVisible, setNextUpVisible] = useState(PAGE_SIZE);
 
   const upcomingBookings = useMemo<NextUpItem[]>(() => {

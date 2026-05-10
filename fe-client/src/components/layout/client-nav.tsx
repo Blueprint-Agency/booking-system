@@ -4,7 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { useMockState, signOut, getActiveClassCredits, getActiveSessionCredits, hasActiveUnlimited } from "@/lib/mock-state";
+import { useUser, useClerk } from "@clerk/nextjs";
+import { useMockState, getActiveClassCredits, getActiveSessionCredits, hasActiveUnlimited } from "@/lib/mock-state";
 
 const NAV_LINKS = [
   { href: "/classes", label: "Classes" },
@@ -17,13 +18,18 @@ export function ClientNav() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const { user, isSignedIn } = useUser();
+  const { signOut } = useClerk();
   const state = useMockState();
-  const isAuth = !!state.user;
+  const isAuth = !!isSignedIn;
   const classCredits = getActiveClassCredits(state);
   const sessionCredits = getActiveSessionCredits(state);
   const unlimited = hasActiveUnlimited(state);
-  const userInitials = state.user
-    ? (state.user.firstName.charAt(0) + (state.user.lastName?.charAt(0) ?? "")).toUpperCase() || "U"
+  const firstName = user?.firstName ?? "";
+  const lastName = user?.lastName ?? "";
+  const email = user?.primaryEmailAddress?.emailAddress ?? "";
+  const userInitials = isAuth
+    ? (firstName.charAt(0) + lastName.charAt(0)).toUpperCase() || "U"
     : "";
   const isHome = pathname === "/";
 
@@ -133,9 +139,9 @@ export function ClientNav() {
                     </div>
                     <div className="min-w-0">
                       <p className="text-[13px] font-semibold text-ink truncate leading-tight">
-                        {state.user?.firstName} {state.user?.lastName}
+                        {firstName} {lastName}
                       </p>
-                      <p className="text-[11px] text-muted truncate leading-tight mt-0.5">{state.user?.email}</p>
+                      <p className="text-[11px] text-muted truncate leading-tight mt-0.5">{email}</p>
                     </div>
                   </div>
 
@@ -163,7 +169,7 @@ export function ClientNav() {
                   </div>
                   <div className="border-t border-border">
                     <button
-                      onClick={() => signOut()}
+                      onClick={() => signOut({ redirectUrl: "/" })}
                       className="flex items-center gap-2.5 w-full text-left px-4 py-2.5 text-[13px] font-medium text-error hover:bg-error/10 transition-colors"
                     >
                       <svg className="w-4 h-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M12 15l4-5-4-5M16 10H7M8 4H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h3"/></svg>
@@ -255,7 +261,7 @@ export function ClientNav() {
                 </div>
                 <div className="border-t border-border my-2" />
                 <button
-                  onClick={() => { signOut(); setMobileOpen(false); }}
+                  onClick={() => { signOut({ redirectUrl: "/" }); setMobileOpen(false); }}
                   className="text-left px-3 py-2.5 text-sm font-semibold rounded-md text-error hover:bg-error/10 transition-colors"
                 >
                   Log out

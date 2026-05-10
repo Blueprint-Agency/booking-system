@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useCallback, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { useMockState } from "@/lib/mock-state";
+import { useUser } from "@clerk/nextjs";
 
 type AuthGateContext = "buy a package" | "book a class" | "book a workshop" | "book a private session" | "continue";
 
@@ -102,12 +102,12 @@ function LoginRequiredModal({
 }
 
 export function useAuthGate(context: AuthGateContext = "continue") {
-  const state = useMockState();
+  const { isSignedIn } = useUser();
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
   const [pendingHref, setPendingHref] = useState<string>("/");
 
-  const isAuthed = !!state.user;
+  const isAuthed = !!isSignedIn;
 
   const requireAuth = useCallback(
     (href: string, onProceed?: () => void) => {
@@ -144,9 +144,10 @@ type GatedLinkProps = {
 };
 
 export function GatedLink({ href, context, className, children, onAuthedClick }: GatedLinkProps) {
+  const { isSignedIn } = useUser();
   const { isAuthed, requireAuth, gate } = useAuthGate(context);
 
-  if (isAuthed) {
+  if (isSignedIn) {
     return (
       <>
         <Link href={href} className={className} onClick={onAuthedClick}>
