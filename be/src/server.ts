@@ -1,10 +1,11 @@
 import 'dotenv/config'
+import { serve } from '@hono/node-server'
 import app from './app'
 import { registerJobs } from './jobs'
 
-const PORT = process.env.PORT ?? 3001
+const PORT = Number(process.env.PORT ?? 4000)
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`)
-  registerJobs()
+serve({ fetch: app.fetch, port: PORT }, info => {
+  console.log(`Server running on port ${info.port}`)
+  registerJobs().catch(err => console.error('[jobs] failed to register:', err))
 })
