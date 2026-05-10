@@ -13,9 +13,9 @@
 A **dedicated 2-app product for Yoga Sadhana**, a yoga studio in Singapore with 2 physical locations (Breadtalk IHQ Tai Seng + Outram Park). It replaces their previous Reserv subscription.
 
 - **fe-client** — member-facing booking app: browse classes/workshops/private sessions, buy packages, manage bookings, QR check-in, referrals.
-- **fe-admin** — staff back-office: schedule + roster + member ops + content + reports + system ops.
+- **fe-portal** — staff back-office: schedule + roster + member ops + content + reports + system ops.
 
-This is **not a multi-tenant SaaS**. There is no tenant entity, no slug routing, no plan/billing layer, no "For Business" pitch surface. Yoga Sadhana is hardcoded throughout. Any prior tenants/billing/plans surface from the H-series fe-admin commits is legacy and gets removed in this rebuild.
+This is **not a multi-tenant SaaS**. There is no tenant entity, no slug routing, no plan/billing layer, no "For Business" pitch surface. Yoga Sadhana is hardcoded throughout. Any prior tenants/billing/plans surface from the H-series fe-portal commits is legacy and gets removed in this rebuild.
 
 ### 1.2 v1 in-scope
 
@@ -422,7 +422,7 @@ Super-admin does not see (without impersonating): a "Refund" button, a credit-ad
 
 WhatsApp, SMS, web push are deferred. The per-event channel matrix in admin collapses to a single column ("Email"). Don't ship the WhatsApp/SMS/push columns.
 
-Admin-side **inbox surfaces** (refund / cancellation / private-session) are dashboard views in fe-admin and not "channels" — these remain regardless of outbound channel scope.
+Admin-side **inbox surfaces** (refund / cancellation / private-session) are dashboard views in fe-portal and not "channels" — these remain regardless of outbound channel scope.
 
 ### 7.2 Event catalog (v1)
 

@@ -1,6 +1,16 @@
 # Backend Architecture — Yoga Sadhana
 
-Companion to `admin-restructure.md` (admin) and `fe-client-features.md` (client). The single backend serves **both** `fe-admin` and `fe-client` over `/api/admin/*` and `/api/client/*` route groups. `admin-restructure.md` is the source of truth for behaviour; this doc is the structural mapping into Node + Postgres.
+The structural spine for the Yoga Sadhana backend (`/be`). Stack, folder structure, database schema, external integrations, jobs, and shared cross-cutting infrastructure live here. Per-audience surface (routes, endpoints, business flows) lives in two sister docs:
+
+- **`be-portal.md`** — staff backend (admin + instructor scopes), maps `admin-restructure.md` behaviour onto routes/services.
+- **`be-client.md`** — client backend (`/me/*` and public reads), maps `fe-client-features.md` behaviour onto routes/services.
+
+The single backend serves **both** `fe-portal` and `fe-client`. `fe-portal` is the staff app (admin + instructor views) using one Clerk staff app; `fe-client` is the client app using a separate Clerk app. URL prefixes:
+
+- `/api/v1/public/*` — unauthenticated reads (catalog, marketing, referral resolve)
+- `/api/v1/me/*` — client Clerk app (see `be-client.md`)
+- `/api/v1/portal/admin/*` and `/api/v1/portal/instructor/*` — staff Clerk app (see `be-portal.md`)
+- `/api/v1/webhooks/*` — Clerk + Stripe signed webhooks
 
 ---
 
@@ -14,13 +24,17 @@ Companion to `admin-restructure.md` (admin) and `fe-client-features.md` (client)
 | Validation | **Zod** |
 | Auth | **Clerk** — two applications: client app + staff app (per §15b session isolation) |
 | File storage | **Cloudflare R2** (S3-compatible via `@aws-sdk/client-s3` + presigned uploads) |
-| Background jobs | **BullMQ** (Redis-backed; separate worker process) |
-| Email | **Resend** (transactional, 21 templates per §17) |
+| Background jobs | **`node-cron`** for non-critical periodic jobs (reminders, expiry sweeps); **BullMQ** (Redis-backed) added when the durable refund flow lands. Until then, no Redis dependency. |
+| Email | **SMTP via Nodemailer** (transactional, 22 templates per §17). Provider-agnostic — host/port/credentials via env vars (e.g. AWS SES SMTP, Gmail relay, Mailgun SMTP, self-hosted Postfix). |
 | Payments | **Stripe** (Payment Intents + Refund API; no Subscriptions in v1) |
 
 ---
 
 ## 2. Folder Structure
+
+The layout splits **routes by audience** (single-owner folders → minimal merge collisions between the two devs working in parallel) and **services by feature** (one source of domain rules → admin force-cancel and client self-cancel hit the same `services/bookings/cancel.ts`, so policy can't drift between flows).
+
+Top-level audience split is **portal vs client vs public vs webhooks**. `portal/` groups admin + instructor since they share the staff Clerk app and a single `staff_users` identity (role differentiates at middleware). `client/` is the separate client Clerk app.
 
 ```
 be/
@@ -29,7 +43,7 @@ be/
 ├── drizzle.config.ts
 ├── .env.example
 └── src/
-    ├── index.ts                       # HTTP server entry
+    ├── server.ts                      # Node entry — boots Hono app + cron schedulers
     ├── app.ts                         # Hono instance + global middleware + route mounting
     ├── env.ts                         # Zod-validated env vars (loaded once)
     │
@@ -48,141 +62,127 @@ be/
     │   │   ├── bookings.ts            # bookings, cancellations, check_ins
     │   │   ├── ratings.ts             # ratings
     │   │   ├── ledger.ts              # manual_adjustments, audit_log, stripe_payments
-    │   │   ├── content.ts             # email_templates, email_log, waiver, waiver_signatures
+    │   │   ├── content.ts             # email_templates, email_log, waiver, waiver_signatures, marketing_content
     │   │   ├── inbox.ts               # inbox_items
+    │   │   ├── ops.ts                 # feature_flags
     │   │   └── relations.ts           # All Drizzle `relations()` declarations
     │   ├── seed/
     │   │   ├── run.ts                 # Orchestrator (idempotent)
     │   │   ├── superadmin.ts          # Bootstrap initial superadmin from SUPERADMIN_EMAIL env
-    │   │   ├── email-templates.ts     # Seed 21 default templates per §17b
+    │   │   ├── email-templates.ts     # Seed 22 default templates per §17b
     │   │   ├── waiver.ts              # Seed placeholder waiver body per §18a
+    │   │   ├── marketing.ts           # Seed marketing_content singleton with placeholder copy
     │   │   └── policy.ts              # Seed defaults: global_policy, pt_booking_config
     │   └── migrations/                # drizzle-kit-generated SQL
     │
-    ├── modules/                       # Feature modules — see §3 for shape
-    │   ├── locations/
-    │   │   ├── routes.admin.ts        # /api/admin/locations — CRUD + archive/restore
-    │   │   ├── service.ts
-    │   │   ├── schemas.ts
-    │   │   └── types.ts
-    │   ├── class-types/
-    │   │   ├── routes.admin.ts
-    │   │   ├── service.ts
-    │   │   ├── schemas.ts
-    │   │   └── types.ts
-    │   ├── instructors/
-    │   │   ├── routes.admin.ts        # /api/admin/instructors — CRUD + archive/restore + invite
-    │   │   ├── routes.client.ts       # /api/client/instructors — browse + detail (for PT picker)
-    │   │   ├── service.ts
-    │   │   ├── schemas.ts
-    │   │   └── types.ts
-    │   ├── policy/
-    │   │   ├── routes.admin.ts        # /api/admin/policy — read + update (singletons)
-    │   │   ├── service.ts
-    │   │   ├── schemas.ts
-    │   │   └── types.ts
-    │   ├── class-packages/
-    │   │   ├── routes.admin.ts        # CRUD on catalogue (§5)
-    │   │   ├── routes.client.ts       # Read-only browse + initiate Stripe purchase
-    │   │   ├── service.ts
-    │   │   ├── schemas.ts
-    │   │   └── types.ts
-    │   ├── pt-packages/
-    │   │   ├── routes.admin.ts        # CRUD (§6)
-    │   │   ├── routes.client.ts       # Browse + buy
-    │   │   ├── service.ts
-    │   │   ├── schemas.ts
-    │   │   └── types.ts
-    │   ├── schedule/                  # Class instances + workshop instances (§7)
-    │   │   ├── routes.admin.ts        # Class CRUD, workshop CRUD, admin-cancel
-    │   │   ├── routes.client.ts       # Read-only timetable + filters (§7a)
-    │   │   ├── routes.instructor.ts   # Own schedule view (next phase, stub now)
-    │   │   ├── service.ts
-    │   │   ├── workshops.service.ts   # Workshop-specific (tiers, images, capacity)
-    │   │   ├── classes.service.ts     # Class-instance-specific
-    │   │   ├── schemas.ts
-    │   │   └── types.ts
-    │   ├── pt-sessions/                # PT request flow (§9)
-    │   │   ├── routes.admin.ts        # Approve / decline / cancel
-    │   │   ├── routes.client.ts       # Submit request + view own + cancel
-    │   │   ├── routes.instructor.ts   # Approve / decline (own only)
-    │   │   ├── service.ts
-    │   │   ├── schemas.ts
-    │   │   └── types.ts
-    │   ├── availability/               # §8
-    │   │   ├── routes.admin.ts        # CRUD on behalf of instructors
-    │   │   ├── routes.client.ts       # Read free slots for selected instructor
-    │   │   ├── routes.instructor.ts   # Own availability (next phase)
-    │   │   ├── service.ts
-    │   │   ├── schemas.ts
-    │   │   └── types.ts
-    │   ├── bookings/                   # Class & workshop client booking
-    │   │   ├── routes.admin.ts        # Read rosters
-    │   │   ├── routes.client.ts       # Book class, buy workshop, cancel own, view own
-    │   │   ├── service.ts             # Calls lib/policy.ts for cap+window evaluation
-    │   │   ├── cancel.service.ts      # Cancel flow (client + admin paths)
-    │   │   ├── schemas.ts
-    │   │   └── types.ts
-    │   ├── check-in/                   # §11
-    │   │   ├── routes.admin.ts        # /api/admin/check-in (generic page) + per-session
-    │   │   ├── routes.instructor.ts   # Same surface, scoped to own
-    │   │   ├── service.ts
-    │   │   ├── schemas.ts
-    │   │   └── types.ts
-    │   ├── ratings/                    # §14
-    │   │   ├── routes.admin.ts        # Read all (full attribution)
-    │   │   ├── routes.client.ts       # Submit + edit own + read attended
-    │   │   ├── routes.instructor.ts   # Read own (anonymised in service.ts)
-    │   │   ├── service.ts             # Includes view-scoping anonymisation
-    │   │   ├── schemas.ts
-    │   │   └── types.ts
-    │   ├── clients/                    # §16
-    │   │   ├── routes.admin.ts        # List, profile, status toggle, adjustments
-    │   │   ├── routes.self.ts         # /api/client/me — own profile, packages, history
-    │   │   ├── service.ts
-    │   │   ├── adjustments.service.ts # Manual credit/session adjust (§16d)
-    │   │   ├── schemas.ts
-    │   │   └── types.ts
-    │   ├── staff/                      # §15
-    │   │   ├── routes.admin.ts        # List, invite, revoke, archive, resend invite
-    │   │   ├── service.ts
-    │   │   ├── invitations.service.ts # Token issue + Clerk invitation API call
-    │   │   ├── schemas.ts
-    │   │   └── types.ts
-    │   ├── inbox/                      # §13
-    │   │   ├── routes.admin.ts        # /api/admin/inbox — list, mark read, approve/decline PT
-    │   │   ├── routes.instructor.ts   # PT requests for own sessions
-    │   │   ├── service.ts
-    │   │   ├── schemas.ts
-    │   │   └── types.ts
-    │   ├── notifications/              # §17 — template management + send orchestration
-    │   │   ├── routes.admin.ts        # Template CRUD
-    │   │   ├── service.ts
-    │   │   ├── send.ts                # `enqueueEmail(slug, recipient, vars)` — used by all modules
+    ├── routes/                        # Audience-split — single-owner folders
+    │   ├── portal/                    # Staff Clerk app (admin + instructor share `staff_users`)
+    │   │   ├── index.ts               # Mounts /admin and /instructor under shared staff auth
+    │   │   ├── admin/                 # Owned by fe-portal dev — gated by require-role('admin'|'superadmin')
+    │   │   │   ├── index.ts           # Mounts all admin routers
+    │   │   │   ├── locations.ts
+    │   │   │   ├── class-types.ts
+    │   │   │   ├── instructors.ts     # CRUD + archive/restore + invite
+    │   │   │   ├── policy.ts          # read + update singletons
+    │   │   │   ├── class-packages.ts  # CRUD (§5)
+    │   │   │   ├── pt-packages.ts     # CRUD (§6)
+    │   │   │   ├── schedule.ts        # class + workshop create/edit + admin-cancel (§7)
+    │   │   │   ├── availability.ts    # set on behalf of instructors (§8)
+    │   │   │   ├── pt-sessions.ts     # approve / decline / cancel
+    │   │   │   ├── bookings.ts        # admin cancel + roster
+    │   │   │   ├── check-in.ts        # generic page + per-session (§11)
+    │   │   │   ├── inbox.ts           # list, mark read, approve/decline PT (§13)
+    │   │   │   ├── ratings.ts         # read all (full attribution, §14)
+    │   │   │   ├── clients.ts         # list, profile, status toggle, adjustments (§16)
+    │   │   │   ├── staff.ts           # list, invite, revoke, archive, resend invite (§15)
+    │   │   │   ├── notifications.ts   # email template editor (§17)
+    │   │   │   ├── waiver.ts          # edit waiver text + signed count (§18)
+    │   │   │   ├── marketing.ts       # edit hero / pricing / footer copy
+    │   │   │   └── feature-flags.ts   # toggle ops flags
+    │   │   └── instructor/            # gated by require-role('instructor'|'admin'|'superadmin')
+    │   │       ├── index.ts
+    │   │       ├── schedule.ts        # own schedule view
+    │   │       ├── roster.ts          # own session rosters
+    │   │       ├── check-in.ts        # own (QR + code + manual)
+    │   │       ├── pt-requests.ts     # PT requests for own sessions
+    │   │       ├── availability.ts    # own (next phase — admin sets in v1)
+    │   │       ├── profile.ts         # own bio / photo
+    │   │       └── ratings.ts         # own (anonymised in service)
+    │   │
+    │   ├── client/                    # Owned by fe-client dev — client Clerk app + require-active
+    │   │   ├── index.ts               # Mounts all client routers under /api/v1/me
+    │   │   ├── me.ts                  # profile, dashboard (§16, fe-client /account)
+    │   │   ├── catalog.ts             # browse classes, workshops, packages, instructor availability for PT picker
+    │   │   ├── bookings.ts            # book + cancel + view own + QR
+    │   │   ├── pt-sessions.ts         # submit request + view own + cancel
+    │   │   ├── purchases.ts           # initiate Stripe checkout (package or workshop)
+    │   │   ├── invoices.ts            # list, filter, receipt link
+    │   │   ├── ratings.ts             # submit + edit own + read attended
+    │   │   ├── waiver.ts              # read for sign + sign endpoint
+    │   │   └── referral.ts            # own referral code + conversion stats
+    │   │
+    │   ├── public/                    # Unauthenticated reads — no Clerk required
+    │   │   ├── index.ts
+    │   │   ├── catalog.ts             # locations, classes, workshops, packages (browse)
+    │   │   ├── marketing.ts           # hero / testimonials / pricing blurb / footer
+    │   │   └── referral.ts            # GET /referral/by-code/:code — resolve at register
+    │   │
+    │   └── webhooks/                  # Public endpoints with vendor signature verification
+    │       ├── index.ts
+    │       ├── clerk.ts               # user.created/updated → upsert clients or staff_users
+    │       └── stripe.ts              # payment_intent.succeeded → grant; charge.refunded → mark
+    │                                  # (no SMTP bounce webhook — failures captured via Nodemailer rejection in email_log)
+    │
+    ├── services/                      # Per-feature — jointly owned, single source of domain rules
+    │   ├── bookings/
+    │   │   ├── book.ts                # Class book (capacity + credit deduct in tx)
+    │   │   ├── cancel.ts              # Cancel flow (client + admin paths) — calls services/policy
+    │   │   ├── refund-outcome.ts      # Decide credit_returned | session_returned | stripe_refunded | forfeited
+    │   │   └── qr.ts                  # `generateBookingCodes()` → { qrToken, code }
+    │   ├── workshops/
+    │   │   ├── publish.ts             # Validate tiers + images + instructors on create/update
+    │   │   └── refund-fanout.ts       # Workshop admin-cancel → enqueue stripe-refund per booking
+    │   ├── pt-sessions/
+    │   │   ├── request.ts             # Submit + insert inbox_item
+    │   │   ├── approve.ts             # Confirm + book + email
+    │   │   └── cancel.ts
+    │   ├── packages/
+    │   │   ├── purchase.ts            # On Stripe success: insert client_packages row
+    │   │   ├── adjust.ts              # Manual credit/session adjust (§16d) — writes manual_adjustments
+    │   │   └── expire.ts              # Cron: mark expired, send reminder
+    │   ├── billing/
+    │   │   ├── webhook-handler.ts     # Stripe webhook → grants
+    │   │   └── refunds.ts             # Stripe Refund API wrapper (queue handler when BullMQ lands)
+    │   ├── notifications/
+    │   │   ├── send.ts                # `enqueueEmail(slug, recipient, vars)` — used by all services
     │   │   ├── render.ts              # Variable substitution + sanitisation
-    │   │   ├── variables.ts           # Allowed variables per template slug (validation source)
-    │   │   ├── schemas.ts
-    │   │   └── types.ts
-    │   ├── waiver/                     # §18
-    │   │   ├── routes.admin.ts        # Edit waiver text + signed count
-    │   │   ├── routes.client.ts       # Read for registration sign
-    │   │   ├── service.ts
-    │   │   ├── schemas.ts
-    │   │   └── types.ts
-    │   └── billing/                    # Stripe orchestration
-    │       ├── routes.client.ts       # Create payment intent (package or workshop)
-    │       ├── service.ts             # Stripe SDK wrappers
-    │       ├── grants.ts              # On payment success: grant package row or workshop booking
-    │       ├── refunds.ts             # Workshop admin-cancel: fan out refunds
-    │       ├── schemas.ts
-    │       └── types.ts
+    │   │   └── variables.ts           # Allowed variables per template slug (validation source)
+    │   ├── policy/
+    │   │   ├── evaluate-cancellation.ts # `evaluateCancellation(client, kind, sessionStartsAt, now)` (§4)
+    │   │   └── event-state.ts         # `computeEventState({ starts_at, ends_at, lifecycle, now })`
+    │   ├── auth/
+    │   │   ├── invitations.ts         # Token issue + Clerk invitation API call
+    │   │   └── webhook-sync.ts        # Clerk user.* → upsert clients or staff_users
+    │   ├── clients/
+    │   │   ├── profile.ts             # GET/PATCH self profile
+    │   │   ├── dashboard.ts           # Next-up + balances aggregation
+    │   │   └── admin-views.ts         # List + detail aggregations for admin clients page
+    │   ├── inbox.ts                   # Insert / mark read / resolve action
+    │   ├── ratings.ts                 # Submit + edit + view-scoping anonymisation
+    │   ├── waiver.ts                  # Read singleton + sign
+    │   ├── marketing.ts               # Read + update marketing_content
+    │   ├── referrals.ts               # Code generate + conversion grant via manual_adjustments
+    │   └── feature-flags.ts           # Read (cached) + toggle
     │
     ├── middleware/
     │   ├── clerk-client.ts            # Verify client Clerk JWT → load `clients` row → ctx.client
     │   ├── clerk-staff.ts             # Verify staff Clerk JWT → load `staff_users` row → ctx.staff
     │   ├── require-role.ts            # Factory: `requireRole('admin' | 'superadmin' | 'instructor')`
     │   ├── require-active.ts          # Block suspended clients / archived staff
+    │   ├── impersonate.ts             # Superadmin acts-as admin (sets ctx.actingAs + audit)
     │   ├── audit.ts                   # Auto-write audit_log on mutating staff requests
+    │   ├── validate.ts                # `@hono/zod-validator` wrapper conventions
+    │   ├── rate-limit.ts              # Hono rate-limiter (public + authenticated tiers)
     │   ├── error.ts                   # AppError → HTTP mapping
     │   └── request-id.ts              # Trace ID per request
     │
@@ -190,30 +190,22 @@ be/
     │   ├── clerk.ts                   # Two Clerk SDK instances (client + staff app keys)
     │   ├── stripe.ts                  # Stripe SDK + signed webhook verification
     │   ├── r2.ts                      # S3 client + presigned URL helpers
-    │   ├── resend.ts                  # Resend client + send wrapper
-    │   ├── policy.ts                  # `evaluateCancellation(client, kind, sessionStartsAt, now)` (§4)
-    │   ├── codes.ts                   # `generateBookingCodes()` → { qrToken, code: 'YS-A4F2K9' }
+    │   ├── mailer.ts                  # Nodemailer SMTP transport (host/port/auth from env) + send wrapper
     │   ├── time.ts                    # SGT (`Asia/Singapore`) conversions
-    │   ├── event-state.ts             # `computeEventState({ starts_at, ends_at, lifecycle, now })`
-    │   │                              #   → 'scheduled' | 'ongoing' | 'completed' | 'cancelled'
     │   ├── richtext.ts                # Sanitise/render rich text bodies (waiver, workshop description, email)
-    │   └── capacity.ts                # `getBookedCount(classId | workshopTierId)` query helpers
+    │   ├── capacity.ts                # `getBookedCount(classId | workshopTierId)` query helpers
+    │   └── feature-flags-cache.ts     # In-memory cache populated at boot + on toggle
     │
     ├── jobs/
-    │   ├── queues.ts                  # BullMQ queue instances + connection
-    │   ├── worker.ts                  # Worker process entry (separate from HTTP)
+    │   ├── cron.ts                    # `node-cron` registrations — daily 03:00 SGT
     │   ├── handlers/
-    │   │   ├── send-email.ts          # Render via notifications/render.ts → Resend → log
     │   │   ├── checkin-nag.ts         # Daily — sessions ended 24h ago with `pending` check-in
-    │   │   ├── credit-expiry.ts       # Daily — client_packages expiring in 7 days
-    │   │   └── stripe-refund.ts       # Per-booking refund on workshop admin-cancel (§7a)
-    │   └── schedulers/
-    │       └── daily.ts               # Cron entry (e.g. 03:00 SGT) → enqueue daily handlers
-    │
-    ├── webhooks/
-    │   ├── clerk.ts                   # user.created → upsert; user.updated → sync; session.revoked
-    │   ├── stripe.ts                  # payment_intent.succeeded → grant; charge.refunded → mark
-    │   └── resend.ts                  # bounce / complaint logging (optional)
+    │   │   ├── credit-expiry.ts       # Daily — client_packages expiring in ~7 days
+    │   │   └── send-email.ts          # Render via services/notifications/render → SMTP transport (lib/mailer.ts) → log
+    │   └── queue/                     # ADDED WHEN BullMQ lands for refund durability
+    │       ├── queues.ts              # BullMQ queue instances + Redis connection
+    │       ├── worker.ts              # Worker process entry (separate from HTTP)
+    │       └── stripe-refund.ts       # Per-booking refund on workshop admin-cancel (§7a)
     │
     └── shared/
         ├── errors.ts                  # AppError, NotFoundError, ConflictError, ForbiddenError
@@ -221,56 +213,44 @@ be/
         └── types.ts                   # Shared TS types (Hono context augmentation)
 ```
 
-**Run topology:** two long-lived Node processes — HTTP (`src/index.ts`) and BullMQ worker (`src/jobs/worker.ts`). Both import the same Drizzle client and `lib/`. No shared in-memory state.
+**Run topology (v1):** single long-lived Node process (`src/server.ts`) running Hono HTTP + `node-cron` schedulers in-process. **When BullMQ is added** (for durable Stripe refund retries), introduce a second process — `src/jobs/queue/worker.ts` — sharing the same Drizzle client and `services/`. No shared in-memory state between processes.
+
+**Hard rule:** no business logic in `routes/*`. Route handlers do `auth → zod parse → call service → format response`. Every domain rule (cap evaluation, refund decision, credit return, event-state computation) lives in `services/*`. This is what makes the audience split safe — admin force-cancel and client self-cancel both call `services/bookings/cancel.ts`, so policy can't drift between them.
 
 ---
 
-## 3. Module Shape & Routing
+## 3. Routing & Mounting
 
-Every feature module follows the same shape:
-
-```
-modules/<feature>/
-├── routes.admin.ts        # Mounted under /api/admin/<feature>
-├── routes.client.ts       # Mounted under /api/client/<feature>  (where applicable)
-├── routes.instructor.ts   # Mounted under /api/admin/<feature> with require-role('instructor')
-├── service.ts             # Business logic — only layer that touches `db`
-├── schemas.ts             # Zod request + response schemas
-└── types.ts               # Inferred Drizzle types + DTOs
-```
-
-### Top-level mount
+The top-level mount lives in `be/src/app.ts`:
 
 ```ts
-// app.ts
-app.route('/api/client',   clientApi)   // requires clerk-client + require-active
-app.route('/api/admin',    adminApi)    // requires clerk-staff + require-role('admin'|'superadmin'|'instructor')
-app.route('/api/webhooks', webhookApi)  // public, signed
-app.route('/api/public',   publicApi)   // truly public (invite token validation, etc.)
+const app = new Hono();
+
+app.use('*', requestId, errorBoundary);
+app.use('/api/v1/public/*', rateLimitPublic);
+app.use('/api/v1/me/*',     rateLimitAuthed);
+app.use('/api/v1/portal/*', rateLimitAuthed);
+
+app.route('/api/v1/public',   publicRoutes);
+app.route('/api/v1/me',       clientRoutes);        // see be-client.md
+app.route('/api/v1/portal',   portalRoutes);        // see be-portal.md
+app.route('/api/v1/webhooks', webhookRoutes);
 ```
 
-### Who hits which routes
+The `portal/*` prefix mirrors the staff Clerk app boundary: one auth gate for both admin and instructor; role-specific gates added per sub-router. Cross-app tokens (client JWT presented to `/portal`, staff JWT to `/me`) are rejected at the `clerkStaffAuth` / `clerkClientAuth` middleware.
 
-| Module | `/api/client` | `/api/admin` (admin/superadmin) | `/api/admin` (instructor scope) |
-|---|---|---|---|
-| locations | — | CRUD | — |
-| class-types | — | CRUD | — |
-| instructors | browse + PT picker | CRUD + invite + archive | — |
-| policy | — | read + update | — |
-| class-packages | browse + buy | CRUD | — |
-| pt-packages | browse + buy | CRUD | — |
-| schedule | timetable + class detail | class & workshop CRUD + admin-cancel | own schedule view |
-| pt-sessions | submit + view own + cancel | approve/decline + cancel | approve/decline (own) + cancel (own) |
-| availability | read free slots | CRUD on behalf of instructor | own availability (next phase) |
-| bookings | book + cancel + view own | rosters | rosters (own) |
-| check-in | — | QR + code + manual | QR + code + manual (own) |
-| ratings | submit + edit own + read attended | read all (with attribution) | read own (anonymised) |
-| clients | `/me` profile | list + profile + status + adjustments | — |
-| staff | — | list + invite + archive | — |
-| inbox | — | full | PT requests for own sessions |
-| notifications | — | template CRUD | — |
-| waiver | read for sign | edit + signed count | — |
-| billing | initiate Stripe checkout | — | — |
+**Hard rule for every route file:** `auth → zod parse → call service → format response`. Business logic lives in `services/<feature>/*`, not in route files. This is what lets admin and client share the same domain rules without drift.
+
+Per-audience endpoint enumeration, mount internals, middleware stacks, and business flows are documented in:
+
+- **`be-portal.md`** — staff Clerk auth (admin + instructor), endpoint tables per route file, portal-driven flows (staff invitations, schedule create, admin cancel + refund fanout, manual adjustments, PT approval, inbox, etc.).
+- **`be-client.md`** — client Clerk auth + verification gate, public reads, client endpoints, client-driven flows (registration, booking, self-cancel, purchases, referral conversion, ratings).
+
+### File ownership
+
+- `routes/portal/admin/*`, `routes/portal/instructor/*` — fe-portal dev (single-owner; minimal merge collisions)
+- `routes/client/*` — fe-client dev (single-owner)
+- `routes/public/*`, `routes/webhooks/*`, `services/*`, `db/schema/*`, `middleware/*`, `lib/*` — joint, PR-reviewed by both devs
 
 ---
 
@@ -289,13 +269,18 @@ All tables use `id uuid primary key default gen_random_uuid()` unless noted. Tim
 | email | text | unique, not null |
 | name | text | not null |
 | phone | text | not null |
+| gender | enum `client_gender` | nullable — values: `female`, `male`, `non_binary`, `prefer_not_to_say`. Optional at registration. |
+| dob | date | nullable — optional at registration; client may add later via `/account/profile`. |
 | status | enum `client_status` | not null, default `'active'` — values: `active`, `suspended` |
 | suspended_at | timestamptz | nullable |
 | referred_by_client_id | uuid | FK → clients.id, nullable, on delete set null (self-FK) |
+| referral_credit_granted_at | timestamptz | nullable — set when we have credited this client's referrer; gates idempotency (see §7 Referral conversion crediting) |
 | joined_at | timestamptz | not null, default now() |
 | created_at, updated_at | timestamptz | not null, default now() |
 
 **Indexes:** `(clerk_user_id) unique`, `(email) unique`, `(status)`, `(referred_by_client_id)`, `(lower(name))` for case-insensitive search.
+
+**Phone/email verification state — not stored.** Pre-booking verification (`half-verified → fully verified` per `fe-client-features.md`) is enforced by reading `phone_verified` / `email_verified` claims from the Clerk session token at request time. We do not duplicate verification state on `clients`.
 
 #### `staff_users`
 
@@ -415,7 +400,7 @@ id, name, session_type enum (`1on1`, `2on1`), num_sessions int, price_sgd, statu
 
 ### 4e. Schedule
 
-**Lifecycle vs. event state.** Per §11, event state (`scheduled` → `ongoing` → `completed`) is time-derived. Admin-cancel is the only persisted state change. We therefore store only `lifecycle` (`active` / `cancelled`) on each schedule entity and **compute** event state at read time via `lib/event-state.ts`. This guarantees the timetable reflects reality immediately rather than waiting for a cron.
+**Lifecycle vs. event state.** Per §11, event state (`scheduled` → `ongoing` → `completed`) is time-derived. Admin-cancel is the only persisted state change. We therefore store only `lifecycle` (`active` / `cancelled`) on each schedule entity and **compute** event state at read time via `services/policy/event-state.ts`. This guarantees the timetable reflects reality immediately rather than waiting for a cron.
 
 ```
 lifecycle = 'cancelled'                        → 'cancelled'
@@ -542,7 +527,7 @@ id, instructor_id (FK), starts_at, ends_at.
 | refund_outcome | enum `refund_outcome` | `credit_returned`, `session_returned`, `stripe_refunded`, `forfeited`, `n_a` |
 | check_in_state | enum `checkin_state` | `pending`, `attended`, `no_show`, `n_a` (workshops) |
 | qr_token | text | unique, not null — encoded into QR |
-| code | text | unique, not null — `YS-A4F2K9`, case-insensitive lookup via stored uppercase + index |
+| code | text | unique, not null — `YS-` + 6 Crockford-base32 chars (e.g. `YS-A4F2K9`); see §7 Per-booking codes for alphabet + lookup rules |
 | stripe_payment_intent_id | text | unique, nullable — for workshops |
 | booked_at | timestamptz | not null |
 | cancelled_at | timestamptz | nullable |
@@ -616,17 +601,19 @@ UI surfacing is next phase (§19) but the table is populated this phase.
 
 #### `stripe_payments`
 
-id, payment_intent_id (text unique), amount_sgd, kind enum (`workshop`, `class_package`, `pt_package`), client_id (FK), booking_id (FK, nullable), client_package_id (FK, nullable), status enum (`pending`, `succeeded`, `refunded`, `failed`), refunded_at (nullable), created_at.
+id, payment_intent_id (text unique), amount_sgd, kind enum (`workshop`, `class_package`, `pt_package`), client_id (FK), booking_id (FK, nullable), client_package_id (FK, nullable), status enum (`pending`, `succeeded`, `refunded`, `failed`), receipt_url (text, nullable — Stripe-hosted receipt; populated by `payment_intent.succeeded` webhook handler from `latest_charge.receipt_url`), refunded_at (nullable), created_at.
 
 **Indexes:** `(payment_intent_id) unique`, `(client_id, created_at desc)`.
+
+The fe-client `/account/invoices` "Download" link points directly to `receipt_url`; no PDF generation needed.
 
 ### 4j. Content
 
 #### `email_templates` (§17)
 
-id, slug (text unique — e.g. `class_booking_confirmed`, 21 seeded values), subject (text), body_html (text), updated_at, updated_by_staff_id (FK).
+id, slug (text unique — e.g. `class_booking_confirmed`, 22 seeded values), subject (text), body_html (text), updated_at, updated_by_staff_id (FK).
 
-**Slug list (21):**
+**Slug list (22):**
 ```
 welcome
 password_reset
@@ -649,11 +636,12 @@ credit_expiry_reminder
 instructor_invite
 admin_invite
 checkin_nag
+referral_credited
 ```
 
 #### `email_log`
 
-id, template_slug (text), recipient_email (text), recipient_user_id (uuid, nullable), recipient_user_kind enum (`client`, `staff`), subject_rendered (text), body_rendered (text), status enum (`queued`, `sent`, `failed`), resend_id (text, nullable), error (text, nullable), queued_at, sent_at.
+id, template_slug (text), recipient_email (text), recipient_user_id (uuid, nullable), recipient_user_kind enum (`client`, `staff`), subject_rendered (text), body_rendered (text), status enum (`queued`, `sent`, `failed`), smtp_message_id (text, nullable — RFC 5322 `Message-ID` header returned by Nodemailer), smtp_response (text, nullable — last line of SMTP server response), error (text, nullable), queued_at, sent_at.
 
 **Indexes:** `(recipient_user_id, queued_at desc)`, `(status)`, `(template_slug, queued_at desc)`.
 
@@ -665,7 +653,41 @@ id, body_html (text), updated_at, updated_by_staff_id (FK).
 
 id, client_id (FK, **unique** — one signature per client), signed_at.
 
-### 4k. Inbox (§13)
+#### `marketing_content` (singleton)
+
+Drives admin-editable copy on the fe-client public pages (`/`, `/pricing`).
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid | PK |
+| hero_heading | text | not null |
+| hero_subheading | text | not null |
+| pricing_blurb | text | nullable |
+| testimonials | jsonb | array of `{ quote, author, location }` — validated by Zod at write |
+| footer_text | text | nullable |
+| updated_at | timestamptz | not null |
+| updated_by_staff_id | uuid | FK → staff_users.id |
+
+**Singleton:** enforced via a `CHECK (id = '00000000-0000-0000-0000-000000000001')` sentinel like `global_policy`. Read by `GET /api/v1/public/marketing` (no auth, cacheable). Edited at `PATCH /api/v1/portal/admin/marketing`.
+
+### 4k. Operations
+
+#### `feature_flags`
+
+Lets us dark-launch deferred features (e.g. waitlist, promo codes) and toggle non-critical surfaces without redeploying.
+
+| Column | Type | Notes |
+|---|---|---|
+| key | text | PK — e.g. `waitlist_enabled`, `promo_codes_enabled` |
+| enabled | boolean | not null, default `false` |
+| updated_at | timestamptz | not null, default now() |
+| updated_by_staff_id | uuid | FK → staff_users.id |
+
+**Read pattern:** `lib/feature-flags-cache.ts` loads all rows at boot into an in-memory map; admin toggle (`PATCH /api/v1/portal/admin/feature-flags/:key`) updates DB + invalidates cache (process-local — multi-instance deploys would need a pub/sub trigger, deferred).
+
+**Subsumed tables (drop during reshape).** The existing `/be` scaffolding had `cancellation_requests` and `refund_requests` tables modelling an admin-approval workflow. These are not used in v1 — the spec's automated cancellation flow + `inbox_items` (for any actionable cases) cover the same surface area without introducing an admin-resolution queue. Drop both tables when reshaping the schema.
+
+### 4l. Inbox (§13)
 
 #### `inbox_items`
 
@@ -690,17 +712,28 @@ id, client_id (FK, **unique** — one signature per client), signed_at.
 
 ---
 
-## 5. Background Jobs (BullMQ)
+## 5. Background Jobs
+
+**v1 strategy:** `node-cron` for non-critical periodic jobs (in-process, no Redis dependency). The durable BullMQ queue is added when the Stripe refund flow goes live, since refund retries need durability across process restarts. Until then, refund automation runs synchronously inside the cancel-workshop request handler with explicit error logging.
+
+### `node-cron` schedulers (in-process)
+
+| Job | Schedule | Handler |
+|---|---|---|
+| `email` send | Triggered (not scheduled) — invoked by any service via `services/notifications/send.ts:enqueueEmail()`, executed inline against the SMTP transport | Render template + variables → `lib/mailer.ts` (Nodemailer) → write `email_log`. In v1 this is synchronous (no queue); failures are logged and surfaced in `email_log.status='failed'` with `error` populated from the Nodemailer rejection |
+| `checkin-nag` | Daily 03:00 SGT (`node-cron`) | Find sessions where `ends_at` between now-25h and now-23h AND any booking has `check_in_state='pending'` → send `checkin_nag` email to assigned instructor (cc admin), one per session |
+| `credit-expiry` | Daily 03:00 SGT (`node-cron`) | Find `client_packages` where `expires_at` between now+6.5d and now+7.5d → send `credit_expiry_reminder` email |
+| Workshop admin-cancel refunds | Triggered (not scheduled) by admin route | For each booking in workshop: call Stripe Refund API → on success, update booking `state='cancelled'`, `refund_outcome='stripe_refunded'`; emit one inbox item for the workshop. **v1: synchronous.** **Future: BullMQ with idempotency key = booking_id.** |
+
+### BullMQ (added when refund durability is required)
 
 | Queue | Trigger | Handler |
 |---|---|---|
-| `email` | Any module via `notifications/send.ts:enqueueEmail()` | Render template + variables → Resend → write `email_log` |
-| `checkin-nag` | Daily cron 03:00 SGT | Find sessions where `ends_at` between now-25h and now-23h AND any booking has `check_in_state='pending'` → enqueue `email` to assigned instructor (cc admin), one per session |
-| `credit-expiry` | Daily cron 03:00 SGT | Find `client_packages` where `expires_at` between now+6.5d and now+7.5d → enqueue `email` (`credit_expiry_reminder`) |
+| `stripe-refund` | Workshop admin-cancel route enqueues one job per booking | Worker calls Stripe Refund API; idempotency key = booking_id. Replaces the synchronous v1 path. |
 | `stripe-refund` | Workshop admin-cancel route | For each booking in workshop: call Stripe Refund API → on success, update booking `state='cancelled'`, `refund_outcome='stripe_refunded'`; emit inbox item once for the workshop |
 
-**No `flip-event-state` job.** Event state is computed at read time by `lib/event-state.ts`.
-**No `cycle-reset` job.** Cancellation cap is computed dynamically in `lib/policy.ts` from `cancellations` table filtered by `cancelled_at >= now() - cycle_days`.
+**No `flip-event-state` job.** Event state is computed at read time by `services/policy/event-state.ts`.
+**No `cycle-reset` job.** Cancellation cap is computed dynamically in `services/policy/evaluate-cancellation.ts` from `cancellations` table filtered by `cancelled_at >= now() - cycle_days`.
 
 Idempotency keys on `stripe-refund` jobs (booking_id) prevent double refund on retry.
 
@@ -711,12 +744,13 @@ Idempotency keys on `stripe-refund` jobs (booking_id) prevent double refund on r
 ### 6a. Clerk
 
 - **Two applications.** Separate publishable + secret keys, separate JWT issuers, separate user pools — enforces §15b "staff and client spaces are independent."
-- **Middleware split.** `/api/client/*` uses `clerk-client.ts`; `/api/admin/*` uses `clerk-staff.ts`. Each verifies its own JWT issuer; cross-app tokens are rejected.
+- **Middleware split.** `/api/v1/me/*` uses `clerk-client.ts`; `/api/v1/portal/*` uses `clerk-staff.ts`. Each verifies its own JWT issuer; cross-app tokens are rejected.
 - **Identity glue.** Our DB stores `clerk_user_id` on `clients` and `staff_users`. Clerk owns auth state (password, sessions, MFA); we own profile + role + relationships.
 - **`user.created` webhook** upserts the `clients` (or `staff_users`) row on first sign-in. For staff, it pairs with a pending `staff_invitations` row by email.
 - **Profile edits** flow through Clerk (name, password). `user.updated` webhook syncs name/email back to our row.
 - **Force-logout on archive** (§15c) — admin-archive route calls Clerk's `revokeAllSessions(userId)` API.
 - **Staff invitations.** We own the `staff_invitations` row (token, role, audit). Clerk's invitation API handles email + accept-link UX. On accept, the webhook fires and we link `clerk_user_id` to the matching `staff_users.id`.
+- **Pre-booking verification gate.** `fe-client-features.md` requires `phone_verified` AND `email_verified` before any booking action. Read these directly from the Clerk session token claims on the request — no `clients` columns. The `/me/bookings/*` route handlers reject with `403 verification_required` when either claim is false; fe-client surfaces the appropriate verify CTA.
 
 ### 6b. Stripe
 
@@ -726,6 +760,7 @@ Idempotency keys on `stripe-refund` jobs (booking_id) prevent double refund on r
   - kind=`workshop` → insert `bookings` row (workshop_id + workshop_tier_id + state=`confirmed`)
   - Always insert `stripe_payments` row with `status='succeeded'`
 - **Workshop admin-cancel** (§7a) → enqueue one `stripe-refund` job per booking in workshop. Worker calls Stripe Refund API. `charge.refunded` webhook closes the loop.
+- **Free workshops** (`workshop_tiers.regular_price_sgd = 0`) skip Stripe entirely. Booking flow inserts a `bookings` row with `kind='workshop'`, `state='confirmed'`, `stripe_payment_intent_id = null`, and **no** `stripe_payments` row is created. The receipt UI on fe-client suppresses the Download link when `receipt_url` is null.
 - **Idempotency.** Stripe's event IDs are deduplicated against `stripe_payments.payment_intent_id` (and a separate `stripe_webhook_events` table for raw event de-dupe — minor, can add later).
 
 ### 6c. Cloudflare R2
@@ -734,13 +769,17 @@ Idempotency keys on `stripe-refund` jobs (booking_id) prevent double refund on r
 - **Buckets:** `yoga-sadhana-public` (workshop covers, instructor photos — served via R2 public URL); `yoga-sadhana-private` (reserved, unused in v1).
 - **Upload flow:** backend issues presigned PUT URL with content-type and 5 MB cap → fe uploads directly → fe POSTs the returned key back to backend, backend stores in `instructors.photo_r2_key` / `workshops.cover_r2_key` / `workshop_images.r2_key`.
 
-### 6d. Resend
+### 6d. SMTP (Nodemailer)
 
-- Single sending domain. Server-side rendering via `notifications/render.ts`:
+- **Transport.** `lib/mailer.ts` constructs a single Nodemailer SMTP transport at boot from env vars: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_SECURE` (boolean — true for 465, false for 587 STARTTLS), `SMTP_FROM` (RFC 5322 from address, e.g. `Yoga Sadhana <hello@yogasadhana.sg>`). The same transport is reused across all sends.
+- **Provider-agnostic.** Any SMTP provider works (AWS SES SMTP endpoint, Gmail relay, Mailgun SMTP, Sendgrid SMTP, self-hosted Postfix). Switching providers is an env var change, no code change.
+- **Server-side rendering** via `services/notifications/render.ts`:
   - Parse template body for `{{variable}}` tokens
-  - Validate against `notifications/variables.ts` allow-list per slug (this is what powers the §17c amber flag in fe — same source of truth)
+  - Validate against `services/notifications/variables.ts` allow-list per slug (this is what powers the §17c amber flag in fe — same source of truth)
   - Substitute values; sanitise (XSS safe — rich text from admin trusted, but variables themselves escaped)
-- One `email_log` row per recipient per send.
+- **Logging.** One `email_log` row per recipient per send. On send success, store Nodemailer's `info.messageId` in `smtp_message_id` and the last line of `info.response` in `smtp_response`. On rejection, store the error in `error` and set `status='failed'`.
+- **No bounce webhook.** SMTP itself has no callback channel for asynchronous bounces (bounces arrive as DSN emails to the configured `Return-Path`). v1 does not parse DSNs. If the chosen provider exposes its own bounce API (e.g. AWS SES `SendingNotifications` SNS topic), add it as a separate webhook later — out of scope for v1.
+- **Testing.** Local dev uses `SMTP_HOST=localhost` + `mailpit` or `mailhog` running on port 1025; staging uses the production provider with a sandboxed sender domain.
 
 ---
 
@@ -748,7 +787,7 @@ Idempotency keys on `stripe-refund` jobs (booking_id) prevent double refund on r
 
 ### Cancellation evaluation (§4)
 
-`lib/policy.ts:evaluateCancellation()` — pure function:
+`services/policy/evaluate-cancellation.ts` — pure function:
 
 ```
 input:  { clientId, kind: 'class' | 'pt', sessionStartsAt, now }
@@ -759,21 +798,23 @@ output: { allowed: true,            // always true per §4
           reason: 'within_window_within_cap' | 'over_cap' | 'late' | 'late_and_over_cap' }
 ```
 
-Used by `bookings/cancel.service.ts` (client path). Admin path bypasses this — always full refund.
+Used by `services/bookings/cancel.ts` (client path). Admin path bypasses this — always full refund.
 
 ### Audit middleware
 
-Mounted on `/api/admin/*` with method in `(POST, PUT, PATCH, DELETE)`. Captures `(actor_staff_id, action_inferred_from_route, target_table, target_id, payload)` and inserts into `audit_log` after the route handler succeeds. Service layer can also write directly for cron / webhook events (`actor_type='system'`).
+Mounted on `/api/v1/portal/*` with method in `(POST, PUT, PATCH, DELETE)`. Captures `(actor_staff_id, action_inferred_from_route, target_table, target_id, payload)` and inserts into `audit_log` after the route handler succeeds. Services can also write directly for cron / webhook events (`actor_type='system'`).
 
 ### Event state (§11)
 
-`lib/event-state.ts` — pure function over `(starts_at, ends_at, lifecycle, now)`. Called by every read endpoint that returns schedule entities. The fe never persists this; backend never stores this.
+`services/policy/event-state.ts` — pure function over `(starts_at, ends_at, lifecycle, now)`. Called by every read endpoint that returns schedule entities. The fe never persists this; backend never stores this.
 
 ### Per-booking codes (§11)
 
-On booking creation, `lib/codes.ts:generateBookingCodes()` returns:
-- `qr_token` — 32-byte URL-safe random; encoded into QR, not human-readable
-- `code` — 6-char alphanumeric, prefixed `YS-`, uniqueness enforced via DB unique index. Stored uppercase; lookup is case-insensitive by uppercasing input.
+On booking creation, `services/bookings/qr.ts:generateBookingCodes()` returns:
+- `qr_token` — 32-byte URL-safe random; encoded into QR, not human-readable.
+- `code` — `YS-` + **6 Crockford base32** characters (alphabet: `0123456789ABCDEFGHJKMNPQRSTVWXYZ`, omitting `I`, `L`, `O`, `U` to prevent visual ambiguity). Uniqueness enforced via DB unique index. Stored uppercase; lookup uppercases input and treats `0`↔`O` and `1`↔`I/L` as the same char (defensive against manual entry typos).
+
+Example: `YS-A4F2K9`. Collision probability over 10⁶ bookings on a 32⁶ ≈ 10⁹ space is ~5e-4; uniqueness retry loop handles the rare collision.
 
 Both index into `bookings` directly — no "wrong session" possible.
 
@@ -786,6 +827,25 @@ Both index into `bookings` directly — no "wrong session" possible.
 
 All timestamps stored UTC. `lib/time.ts` exposes SGT (`Asia/Singapore`) helpers for: cycle anchors, day-boundary edge cases (e.g. "7 days before expiry" calculated in SGT), schedule cron timing.
 
+### Referral conversion crediting
+
+Per `fe-client-features.md`: when a referee makes their **first paid** booking (workshop) or package purchase, the referrer earns a S$20 credit. Implementation uses existing primitives plus a single dedupe column.
+
+**Schema add (small):** `clients.referral_credit_granted_at timestamptz nullable` — non-null means we have already credited the referrer for this referee.
+
+**Flow (`services/referrals.ts:onRefereeFirstPayment(refereeClientId)`)**, called from `services/billing/webhook-handler.ts` inside the same transaction as the package grant or workshop booking insert:
+
+1. Load referee row. Skip if `referred_by_client_id IS NULL` (no referrer) or `referral_credit_granted_at IS NOT NULL` (already credited).
+2. Pick the referrer's most recent active `client_packages` row (`kind in ('credit_bundle','unlimited')`, `expires_at > now()`). If none exists, insert a 90-day "referral credit" `client_packages` row with `kind='credit_bundle'`, `credits = 20 / standard_credit_value_sgd`, `amount_paid_sgd = 0`, `stripe_payment_intent_id = NULL`.
+3. Insert `manual_adjustments` row: `client_id = referrer`, `client_package_id = chosen`, `delta = credits granted`, `reason = 'referral_conversion'`, `acted_by_staff_id = NULL`.
+4. Update referee: `UPDATE clients SET referral_credit_granted_at = now() WHERE id = referee`.
+5. Write `audit_log` row: `actor_type='system'`, `action='referral.converted'`, target = referrer's `clients.id`.
+6. Send referrer an email (template slug `referral_credited` — add to the seeded list in §17b alongside the existing 21).
+
+**Idempotency:** the `referral_credit_granted_at` UPDATE in step 4 is inside the webhook transaction. On retry, step 1 short-circuits because the column is now non-null. No double-grant possible.
+
+The "first paid" gate is implicit: the referee's first successful Stripe payment is the only event that runs this code, since steps 1–6 are guarded by `referral_credit_granted_at IS NULL`.
+
 ### Migrations
 
 `drizzle-kit generate` → SQL committed to `db/migrations/` → `drizzle-kit migrate` on deploy. Schema-additive only by default. Destructive changes (drops, type narrowing) require explicit data-migration scripts checked in alongside.
@@ -794,7 +854,7 @@ All timestamps stored UTC. `lib/time.ts` exposes SGT (`Asia/Singapore`) helpers 
 
 Run idempotently on fresh deployment:
 - **superadmin.ts** — reads `SUPERADMIN_EMAIL` env, creates `staff_users` row with role=`superadmin`, status=`pending` (real activation via Clerk first-login)
-- **email-templates.ts** — inserts the 21 templates with default subject + body
+- **email-templates.ts** — inserts the 22 templates with default subject + body
 - **waiver.ts** — inserts the singleton waiver row with placeholder body
 - **policy.ts** — inserts singleton `global_policy` and `pt_booking_config` with sensible defaults
 
@@ -803,17 +863,24 @@ Run idempotently on fresh deployment:
 ## 8. Phase Boundaries
 
 **This phase (in scope):**
-- All schema in §4
-- All modules in §2 except `reports/`, `referrals/`, `instructor-portal/`, `dashboard/`, `audit-ui/`
-- All cron handlers in §5
-- `audit_log` table populated; admin-facing read views deferred
+- All schema in §4 (including amendments: `clients.gender`/`dob`, `marketing_content`, `stripe_payments.receipt_url`, `feature_flags`).
+- All routes in §2: `routes/portal/admin/*`, `routes/portal/instructor/*` (read-only views), `routes/client/*`, `routes/public/*`, `routes/webhooks/*`.
+- All cron handlers in §5 (run via `node-cron`).
+- Referral chain populated AND reward-grant logic wired (see §7 Referral conversion crediting). Was previously deferred; now in scope because it reuses existing primitives.
+- `audit_log` table populated; admin-facing read views deferred.
 
 **Next phase (per `admin-restructure.md` §19):**
-- Reports module — read-only aggregate queries over existing tables
-- Referrals module — `clients.referred_by_client_id` already populated; reward-grant logic deferred
-- Audit log surfacing UI — table populated this phase; read endpoints + admin views deferred
-- Instructor portal — same data, different scoping (`routes.instructor.ts` files added incrementally)
-- Dashboard — read-only metric aggregates
+- Reports module — read-only aggregate queries over existing tables.
+- Audit log surfacing UI — table populated this phase; read endpoints + admin views deferred.
+- Instructor self-service availability — admin sets availability for instructors in v1 (`routes/portal/instructor/availability.ts` is read-only this phase).
+- Dashboard — read-only metric aggregates.
+- BullMQ + Redis for durable Stripe refund retries — `node-cron` handles non-critical jobs in v1; the refund queue lands when refund automation is fully wired.
+
+**Out of scope for v1 (gated by `feature_flags` if needed):**
+- **Promo codes at checkout.** The fe-client checkout mockup includes a promo input (`SADHANA20`, `FRIEND10`); `fe-client-features.md` does not specify them. Treat the input as non-functional in v1. If kept later: add `promo_codes (code unique, kind=fixed_sgd|percent, amount, valid_from, valid_to, max_uses, used_count, status)` and a `promo_redemptions` ledger.
+- **Class waitlist.** `fe-client-features.md` §Booking Rules mentions "Full → Join Waitlist" with seat-available email + time-bound claim CTA. v1 UI shows "Full" with no waitlist CTA. If kept later: add `waitlist_entries (client_id, class_id|workshop_tier_id, joined_at, offered_at, offer_expires_at, status=waiting|offered|claimed|expired|cancelled)`.
+- **WhatsApp / SMS / push notifications.** Email-only in v1.
+- **Multi-tenant SaaS surface.** This backend serves Yoga Sadhana exclusively; no tenant scoping.
 
 ---
 

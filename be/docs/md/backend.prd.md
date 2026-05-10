@@ -10,7 +10,7 @@
 
 ### 1.1 Purpose
 
-This document defines the backend architecture, API contract, data schema, and service boundaries for the Yoga Sadhana booking system. It is the implementation spec for the Node.js REST API that serves both `fe-client` and `fe-admin`.
+This document defines the backend architecture, API contract, data schema, and service boundaries for the Yoga Sadhana booking system. It is the implementation spec for the Node.js REST API that serves both `fe-client` and `fe-portal` (the staff app — admin + instructor views).
 
 ### 1.2 Tech Stack
 
@@ -688,7 +688,7 @@ All jobs log to a simple `job_runs` table (`job_name`, `started_at`, `finished_a
 - Rate limiting: 100 req/min per IP on public routes, 300 req/min per authenticated user.
 - Input validation: `zod` schemas on all request bodies and query params.
 - No raw SQL queries — all queries through Drizzle ORM.
-- CORS: allow-list to fe-client and fe-admin origins only.
+- CORS: allow-list to fe-client and fe-portal origins only.
 - Stripe and Clerk webhook endpoints: signature-verified, excluded from auth middleware.
 
 ---
