@@ -36,10 +36,12 @@ export default function ClientsPage() {
         }
         if (b.kind === "workshop" && b.workshopId) {
           const w = workshops.find((x) => x.id === b.workshopId);
-          if (!w) return false;
+          if (!w || w.days.length === 0) return false;
+          const first = w.days[0];
+          const last = w.days[w.days.length - 1];
           return computeEventState({
-            startsAt: w.startsAt,
-            endsAt: w.endsAt,
+            startsAt: `${first.date}T${first.startTime}:00.000Z`,
+            endsAt: `${last.date}T${last.endTime}:00.000Z`,
             lifecycle: w.lifecycle,
           }) === "scheduled";
         }

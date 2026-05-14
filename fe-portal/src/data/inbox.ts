@@ -2,42 +2,6 @@ import type { InboxItem } from "@/types";
 
 export const inboxItems: InboxItem[] = [
   {
-    id: "ibx-1",
-    type: "pt_request",
-    payload: {
-      clientId: "cli-3",
-      clientName: "Hui Min Chua",
-      instructorId: "ins-amelia",
-      instructorName: "Amelia Tan",
-      requestedStartsAt: "2026-05-14T08:00:00.000Z",
-      requestedEndsAt: "2026-05-14T09:00:00.000Z",
-      message: "Pre-natal week 28 check-in. Hoping to focus on lower back and hips.",
-    },
-    readAt: null,
-    sourcePtSessionId: "pts-2",
-    actionTaken: null,
-    actionAt: null,
-    createdAt: "2026-05-09T16:30:00.000Z",
-  },
-  {
-    id: "ibx-2",
-    type: "pt_request",
-    payload: {
-      clientId: "cli-2",
-      clientName: "Daniel Tan",
-      instructorId: "ins-priya",
-      instructorName: "Priya Raman",
-      requestedStartsAt: "2026-05-15T05:00:00.000Z",
-      requestedEndsAt: "2026-05-15T06:00:00.000Z",
-      message: "We're a couple looking to start a regular practice together.",
-    },
-    readAt: null,
-    sourcePtSessionId: "pts-3",
-    actionTaken: null,
-    actionAt: null,
-    createdAt: "2026-05-09T20:15:00.000Z",
-  },
-  {
     id: "ibx-3",
     type: "client_cancellation",
     payload: {

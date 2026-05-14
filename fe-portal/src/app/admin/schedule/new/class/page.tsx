@@ -5,6 +5,10 @@ import { useState, useMemo } from "react";
 import { ArrowLeft, Save } from "lucide-react";
 import { Button, Input, Label, PageHeader } from "@/components/ui";
 import { classTypes, instructors, locations } from "@/data";
+import { CapacityFields } from "@/components/schedule/capacity-fields";
+import type { Capacity, ClassTypeDifficulty } from "@/types";
+
+const DIFFICULTIES: ClassTypeDifficulty[] = ["general", "beginner", "intermediate", "advanced"];
 
 export default function NewClassPage() {
   const router = useRouter();
@@ -14,8 +18,13 @@ export default function NewClassPage() {
   const [date, setDate] = useState("");
   const [time, setTime] = useState("");
   const [duration, setDuration] = useState("75");
-  const [capacity, setCapacity] = useState("18");
+  const [capacity, setCapacity] = useState<Capacity>({
+    waitlist: 0,
+    onlineBooking: 18,
+    buffer: 2,
+  });
   const [creditCost, setCreditCost] = useState("1");
+  const [difficulty, setDifficulty] = useState<ClassTypeDifficulty>("general");
 
   const eligibleInstructors = useMemo(
     () =>
@@ -27,6 +36,7 @@ export default function NewClassPage() {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    void difficulty;
     alert(
       `Class instance created (mock).\n\nThe class is now visible on the timetable and occupies the instructor's availability slot.`
     );
@@ -93,6 +103,28 @@ export default function NewClassPage() {
                   .map((l) => ({ val: l.id, label: l.name }))}
               />
             </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label>Difficulty</Label>
+              <div className="flex flex-wrap gap-2">
+                {DIFFICULTIES.map((d) => (
+                  <button
+                    type="button"
+                    key={d}
+                    onClick={() => setDifficulty(d)}
+                    className={`rounded-full border px-3 py-1 text-xs transition ${
+                      difficulty === d
+                        ? "border-accent bg-accent/10 text-ink"
+                        : "border-border bg-card text-muted hover:border-accent/40"
+                    }`}
+                  >
+                    {d[0].toUpperCase() + d.slice(1)}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-muted">
+                Set per-instance — the same class type can run at different levels.
+              </p>
+            </div>
           </div>
         </section>
 
@@ -124,18 +156,8 @@ export default function NewClassPage() {
 
         <section className="rounded-xl border border-border bg-card p-5 shadow-soft">
           <h2 className="mb-4 text-sm font-semibold text-ink">Capacity & price</h2>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="cap">Capacity (max pax)</Label>
-              <Input
-                id="cap"
-                required
-                type="number"
-                min={1}
-                value={capacity}
-                onChange={(e) => setCapacity(e.target.value)}
-              />
-            </div>
+          <div className="space-y-4">
+            <CapacityFields value={capacity} onChange={setCapacity} />
             <div className="space-y-1.5">
               <Label htmlFor="credit">Credit cost</Label>
               <Input

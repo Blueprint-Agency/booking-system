@@ -1,65 +1,103 @@
 import type { ClassPackage, PtPackage } from "@/types";
 
+// Demo CNY promo on the 20-class pack: active from 3 days ago through 14 days out.
+const cnyStart = new Date(Date.now() - 3 * 86400_000).toISOString();
+const cnyEnd = new Date(Date.now() + 14 * 86400_000).toISOString();
+
 export const classPackages: ClassPackage[] = [
+  {
+    id: "cp-trial",
+    name: "Trial Pass",
+    description: "Drop in for your first yoga class — see if we're the right fit.",
+    kind: "trial",
+    credits: 1,
+    validityDays: 30,
+    durationDays: null,
+    priceSgd: 20,
+    status: "active",
+    promotions: [],
+  },
   {
     id: "cp-5",
     name: "5-Class Pack",
+    description: "Five drop-in credits, redeemable across both studios.",
     kind: "credit_bundle",
     credits: 5,
     validityDays: 60,
     durationDays: null,
     priceSgd: 150,
     status: "active",
+    promotions: [],
   },
   {
     id: "cp-10",
     name: "10-Class Pack",
+    description: "Ten credits for regular weekly practice.",
     kind: "credit_bundle",
     credits: 10,
     validityDays: 90,
     durationDays: null,
     priceSgd: 280,
     status: "active",
+    promotions: [],
   },
   {
     id: "cp-20",
     name: "20-Class Pack",
+    description: "Best value bundle for committed practitioners.",
     kind: "credit_bundle",
     credits: 20,
     validityDays: 180,
     durationDays: null,
     priceSgd: 520,
     status: "active",
+    promotions: [
+      {
+        id: "promo-cny-cp20",
+        label: "CNY Promo",
+        mode: "percent",
+        percent: 25,
+        priceSgd: null,
+        startsAt: cnyStart,
+        endsAt: cnyEnd,
+      },
+    ],
   },
   {
     id: "cp-monthly",
     name: "Monthly Unlimited",
+    description: "Unlimited classes for 30 days.",
     kind: "unlimited",
     credits: null,
     validityDays: null,
     durationDays: 30,
     priceSgd: 280,
     status: "active",
+    promotions: [],
   },
   {
     id: "cp-quarterly",
     name: "Quarterly Unlimited",
+    description: "Unlimited classes for 90 days.",
     kind: "unlimited",
     credits: null,
     validityDays: null,
     durationDays: 90,
     priceSgd: 760,
     status: "active",
+    promotions: [],
   },
   {
-    id: "cp-trial",
-    name: "Trial 3-Class Pack",
+    id: "cp-trial-archived",
+    name: "Trial 3-Class Pack (legacy)",
+    description: "",
     kind: "credit_bundle",
     credits: 3,
     validityDays: 14,
     durationDays: null,
     priceSgd: 60,
     status: "archived",
+    promotions: [],
   },
 ];
 
@@ -71,6 +109,7 @@ export const ptPackages: PtPackage[] = [
     numSessions: 5,
     priceSgd: 750,
     status: "active",
+    promotions: [],
   },
   {
     id: "pt-10-1on1",
@@ -79,6 +118,7 @@ export const ptPackages: PtPackage[] = [
     numSessions: 10,
     priceSgd: 1400,
     status: "active",
+    promotions: [],
   },
   {
     id: "pt-5-2on1",
@@ -87,6 +127,7 @@ export const ptPackages: PtPackage[] = [
     numSessions: 5,
     priceSgd: 1100,
     status: "active",
+    promotions: [],
   },
   {
     id: "pt-single",
@@ -95,5 +136,6 @@ export const ptPackages: PtPackage[] = [
     numSessions: 1,
     priceSgd: 180,
     status: "active",
+    promotions: [],
   },
 ];

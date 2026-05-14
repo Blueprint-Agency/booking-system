@@ -1,5 +1,12 @@
 import type { StaffUser, StaffInvitation } from "@/types";
 
+/**
+ * Default "current logged-in" staff for the mockup. In production this comes
+ * from Clerk. Stored under `ys.devCurrentStaffId` once the user switches via
+ * the DevRoleSwitcher.
+ */
+export const defaultStaffId = "stf-super";
+
 export const staffUsers: StaffUser[] = [
   {
     id: "stf-super",
@@ -7,6 +14,7 @@ export const staffUsers: StaffUser[] = [
     email: "ravi@yogasadhana.sg",
     role: "superadmin",
     status: "active",
+    grantedLocationIds: [],
     archivedAt: null,
     archivedByStaffId: null,
     invitedAt: null,
@@ -19,6 +27,7 @@ export const staffUsers: StaffUser[] = [
     email: "lakshmi@yogasadhana.sg",
     role: "admin",
     status: "active",
+    grantedLocationIds: ["loc-breadtalk"],
     archivedAt: null,
     archivedByStaffId: null,
     invitedAt: "2025-05-10T09:00:00.000Z",
@@ -31,6 +40,7 @@ export const staffUsers: StaffUser[] = [
     email: "weiming@yogasadhana.sg",
     role: "admin",
     status: "active",
+    grantedLocationIds: ["loc-outram"],
     archivedAt: null,
     archivedByStaffId: null,
     invitedAt: "2025-09-22T10:00:00.000Z",
@@ -43,6 +53,7 @@ export const staffUsers: StaffUser[] = [
     email: "priya@yogasadhana.sg",
     role: "instructor",
     status: "active",
+    grantedLocationIds: [],
     archivedAt: null,
     archivedByStaffId: null,
     invitedAt: "2025-04-15T08:00:00.000Z",
@@ -55,6 +66,7 @@ export const staffUsers: StaffUser[] = [
     email: "amelia@yogasadhana.sg",
     role: "instructor",
     status: "active",
+    grantedLocationIds: [],
     archivedAt: null,
     archivedByStaffId: null,
     invitedAt: "2025-04-15T08:00:00.000Z",
@@ -67,6 +79,7 @@ export const staffUsers: StaffUser[] = [
     email: "mei@yogasadhana.sg",
     role: "instructor",
     status: "active",
+    grantedLocationIds: [],
     archivedAt: null,
     archivedByStaffId: null,
     invitedAt: "2025-06-02T10:00:00.000Z",
@@ -79,6 +92,7 @@ export const staffUsers: StaffUser[] = [
     email: "jay@yogasadhana.sg",
     role: "instructor",
     status: "active",
+    grantedLocationIds: [],
     archivedAt: null,
     archivedByStaffId: null,
     invitedAt: "2025-08-01T09:00:00.000Z",
@@ -91,6 +105,7 @@ export const staffUsers: StaffUser[] = [
     email: "daniel.ong@yogasadhana.sg",
     role: "instructor",
     status: "archived",
+    grantedLocationIds: [],
     archivedAt: "2026-02-14T11:30:00.000Z",
     archivedByStaffId: "stf-super",
     invitedAt: "2025-07-10T09:00:00.000Z",

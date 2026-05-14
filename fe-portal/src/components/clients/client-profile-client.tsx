@@ -1,9 +1,12 @@
 "use client";
 import Link from "next/link";
 import { useState } from "react";
-import { ShieldOff, ShieldCheck, Plus, Mail, Phone, FileCheck } from "lucide-react";
+import { ShieldOff, ShieldCheck, MoreVertical, Mail, Phone, FileCheck } from "lucide-react";
 import { Avatar, Badge, Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
-import { formatDate, formatDateTime, formatRelative, formatSgd } from "@/lib/formatters";
+import { formatDate, formatDateTime, formatRelative } from "@/lib/formatters";
+import { PackageExpiryDialog } from "./package-expiry-dialog";
+import { PackageSetBalanceDialog } from "./package-set-balance-dialog";
+import { useWorkspace } from "@/lib/workspace-context";
 import type { Booking, Client, ClientPackage, ManualAdjustment } from "@/types";
 
 type BookingRow = { booking: Booking; label: string; dateIso: string };
@@ -33,10 +36,15 @@ export function ClientProfileClient({
   referredBy: Client | null;
   theyReferred: Client[];
 }) {
+  const { role } = useWorkspace();
+  const readOnly = role !== "superadmin";
   const [client, setClient] = useState(initialClient);
   const [packages, setPackages] = useState(initialPackages);
   const [adjustments, setAdjustments] = useState(initialAdjustments);
-  const [adjustDialog, setAdjustDialog] = useState(false);
+  const [adjustFor, setAdjustFor] = useState<ClientPackage | null>(null);
+  const [expiryFor, setExpiryFor] = useState<ClientPackage | null>(null);
+  const [balanceFor, setBalanceFor] = useState<ClientPackage | null>(null);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [statusDialog, setStatusDialog] = useState(false);
 
   const isSuspended = client.status === "suspended";
@@ -46,8 +54,6 @@ export function ClientProfileClient({
   const pastBookings = myBookings.filter(
     (b) => !(b.booking.state === "confirmed" && new Date(b.dateIso) >= new Date("2026-05-10"))
   );
-
-  const adjustablePackages = packages.filter((p) => p.kind !== "unlimited");
 
   function toggleStatus() {
     const next = isSuspended ? "active" : "suspended";
@@ -82,11 +88,60 @@ export function ClientProfileClient({
       createdAt: new Date().toISOString(),
     };
     setAdjustments((prev) => [newAdj, ...prev]);
-    setAdjustDialog(false);
+    setAdjustFor(null);
+  }
+
+  function applySetBalance(packageId: string, newBalance: number, reason: string) {
+    const pkg = packages.find((p) => p.id === packageId);
+    if (!pkg) return;
+    const current = pkg.creditsOrSessionsRemaining ?? 0;
+    const delta = newBalance - current;
+    setPackages((prev) =>
+      prev.map((p) =>
+        p.id === packageId ? { ...p, creditsOrSessionsRemaining: newBalance } : p
+      )
+    );
+    const adj: ManualAdjustment = {
+      id: `adj-${Date.now().toString(36)}`,
+      clientId: client.id,
+      clientPackageId: packageId,
+      delta,
+      reason: `Set ${newBalance}: ${reason}`,
+      actedByStaffId: "stf-admin-1",
+      createdAt: new Date().toISOString(),
+    };
+    setAdjustments((prev) => [adj, ...prev]);
+    setBalanceFor(null);
+  }
+
+  function applyExpiryChange(packageId: string, newExpiresAt: string | null, reason: string) {
+    const pkg = packages.find((p) => p.id === packageId);
+    if (!pkg) return;
+    const prevExp = pkg.expiresAt ? formatDate(pkg.expiresAt) : "no expiry";
+    const nextExp = newExpiresAt ? formatDate(newExpiresAt) : "no expiry";
+    setPackages((prev) =>
+      prev.map((p) => (p.id === packageId ? { ...p, expiresAt: newExpiresAt } : p))
+    );
+    const adj: ManualAdjustment = {
+      id: `adj-${Date.now().toString(36)}`,
+      clientId: client.id,
+      clientPackageId: packageId,
+      delta: 0,
+      reason: `Expiry changed from ${prevExp} to ${nextExp}: ${reason}`,
+      actedByStaffId: "stf-admin-1",
+      createdAt: new Date().toISOString(),
+    };
+    setAdjustments((prev) => [adj, ...prev]);
+    setExpiryFor(null);
   }
 
   return (
     <div className="space-y-6">
+      {readOnly && (
+        <div className="rounded-lg border border-border bg-paper/60 px-3 py-2 text-xs text-muted">
+          Read-only view — only superadmin can modify client packages and credits.
+        </div>
+      )}
       <header className="flex items-start gap-4 border-b border-border pb-6">
         <Avatar name={client.name} size={64} />
         <div className="flex-1">
@@ -116,9 +171,11 @@ export function ClientProfileClient({
             </span>
           </div>
         </div>
-        <Button variant="secondary" onClick={() => setStatusDialog(true)}>
-          {isSuspended ? "Reactivate" : "Suspend"}
-        </Button>
+        {!readOnly && (
+          <Button variant="secondary" onClick={() => setStatusDialog(true)}>
+            {isSuspended ? "Reactivate" : "Suspend"}
+          </Button>
+        )}
       </header>
 
       <div className="grid gap-3 sm:grid-cols-4">
@@ -135,11 +192,6 @@ export function ClientProfileClient({
       <section>
         <header className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-ink">Active packages</h2>
-          {adjustablePackages.length > 0 && (
-            <Button size="sm" variant="secondary" onClick={() => setAdjustDialog(true)}>
-              <Plus className="h-3.5 w-3.5" /> Manual adjustment
-            </Button>
-          )}
         </header>
         {packages.length === 0 ? (
           <div className="rounded-xl border border-border bg-card px-5 py-10 text-center text-sm text-muted shadow-soft">
@@ -147,61 +199,130 @@ export function ClientProfileClient({
           </div>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
-            {packages.map((p) => (
-              <div
-                key={p.id}
-                className="rounded-xl border border-border bg-card p-4 shadow-soft"
-              >
-                <div className="mb-1 flex items-center gap-2">
-                  <span className="font-medium text-ink">{p.packageName}</span>
-                  <Badge
-                    tone={
-                      p.kind === "credit_bundle"
-                        ? "accent"
-                        : p.kind === "unlimited"
-                        ? "warning"
-                        : "cyan"
-                    }
-                  >
-                    {p.kind === "credit_bundle"
-                      ? "Credit"
-                      : p.kind === "unlimited"
-                      ? "Unlimited"
-                      : "PT"}
-                  </Badge>
-                </div>
-                {p.creditsOrSessionsRemaining !== null && p.creditsOrSessionsTotal !== null ? (
-                  <div className="font-mono text-sm text-ink">
-                    {p.creditsOrSessionsRemaining} / {p.creditsOrSessionsTotal}{" "}
-                    {p.kind === "pt" ? "sessions" : "credits"}
+            {packages.map((p) => {
+              const kindTone =
+                p.kind === "credit_bundle"
+                  ? "accent"
+                  : p.kind === "unlimited"
+                  ? "warning"
+                  : p.kind === "trial"
+                  ? "sage"
+                  : "cyan";
+              const kindLabel =
+                p.kind === "credit_bundle"
+                  ? "Credit"
+                  : p.kind === "unlimited"
+                  ? "Unlimited"
+                  : p.kind === "trial"
+                  ? "Trial"
+                  : "PT";
+              const canEditExpiry =
+                p.kind === "credit_bundle" || p.kind === "unlimited" || p.kind === "trial";
+              const canSetBalance = p.kind === "credit_bundle" || p.kind === "trial";
+              const canAdjustDelta = p.kind !== "unlimited";
+              return (
+                <div
+                  key={p.id}
+                  className="relative rounded-xl border border-border bg-card p-4 shadow-soft"
+                >
+                  <div className="mb-1 flex items-center gap-2">
+                    <span className="font-medium text-ink">{p.packageName}</span>
+                    <Badge tone={kindTone}>{kindLabel}</Badge>
+                    <div className="flex-1" />
+                    {!readOnly && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setOpenMenuId((id) => (id === p.id ? null : p.id))
+                        }
+                        className="rounded p-1 text-muted hover:bg-paper hover:text-ink"
+                        aria-label="Package actions"
+                      >
+                        <MoreVertical className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
-                ) : (
-                  <div className="font-mono text-sm text-ink">Unlimited</div>
-                )}
-                <div className="text-xs text-muted">
-                  {p.expiresAt
-                    ? `Valid until ${formatDate(p.expiresAt)}`
-                    : "No expiry"}
+                  {!readOnly && openMenuId === p.id && (
+                    <div className="absolute right-2 top-10 z-20 w-52 rounded-md border border-border bg-card p-1 shadow-soft">
+                      {canSetBalance && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setBalanceFor(p);
+                            setOpenMenuId(null);
+                          }}
+                          className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-paper"
+                        >
+                          Set credit balance
+                        </button>
+                      )}
+                      {canEditExpiry && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setExpiryFor(p);
+                            setOpenMenuId(null);
+                          }}
+                          className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-paper"
+                        >
+                          Edit expiry
+                        </button>
+                      )}
+                      {canAdjustDelta && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAdjustFor(p);
+                            setOpenMenuId(null);
+                          }}
+                          className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-paper"
+                        >
+                          Manual adjustment
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {p.creditsOrSessionsRemaining !== null &&
+                  p.creditsOrSessionsTotal !== null ? (
+                    <div className="font-mono text-sm text-ink">
+                      {p.creditsOrSessionsRemaining} / {p.creditsOrSessionsTotal}{" "}
+                      {p.kind === "pt" ? "sessions" : "credits"}
+                    </div>
+                  ) : (
+                    <div className="font-mono text-sm text-ink">Unlimited</div>
+                  )}
+                  <div className="text-xs text-muted">
+                    {p.expiresAt ? `Valid until ${formatDate(p.expiresAt)}` : "No expiry"}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
 
       {adjustments.length > 0 && (
         <section>
-          <h2 className="mb-3 text-sm font-semibold text-ink">Manual adjustments</h2>
+          <h2 className="mb-3 text-sm font-semibold text-ink">Package adjustments</h2>
           <div className="rounded-xl border border-border bg-card shadow-soft">
             <ul className="divide-y divide-border">
               {adjustments.map((a) => {
                 const pkg = packages.find((p) => p.id === a.clientPackageId);
+                const isExpiry = a.reason.startsWith("Expiry");
+                const isSet = a.reason.startsWith("Set ");
+                const badge = isExpiry ? (
+                  <Badge tone="neutral">Expiry</Badge>
+                ) : isSet ? (
+                  <Badge tone="accent">Set</Badge>
+                ) : (
+                  <Badge tone={a.delta > 0 ? "sage" : "error"}>
+                    {a.delta > 0 ? "+" : ""}
+                    {a.delta}
+                  </Badge>
+                );
                 return (
                   <li key={a.id} className="flex items-start gap-3 px-5 py-3">
-                    <Badge tone={a.delta > 0 ? "sage" : "error"}>
-                      {a.delta > 0 ? "+" : ""}
-                      {a.delta}
-                    </Badge>
+                    {badge}
                     <div className="min-w-0 flex-1">
                       <div className="text-sm text-ink">{pkg?.packageName ?? "Package"}</div>
                       <div className="text-xs text-muted">{a.reason}</div>
@@ -269,15 +390,31 @@ export function ClientProfileClient({
         </section>
       )}
 
-      {adjustDialog && (
+      {!readOnly && adjustFor && (
         <AdjustmentDialog
-          packages={adjustablePackages}
-          onSubmit={applyAdjustment}
-          onClose={() => setAdjustDialog(false)}
+          pkg={adjustFor}
+          onSubmit={(delta, reason) => applyAdjustment(adjustFor.id, delta, reason)}
+          onClose={() => setAdjustFor(null)}
         />
       )}
 
-      {statusDialog && (
+      {!readOnly && expiryFor && (
+        <PackageExpiryDialog
+          pkg={expiryFor}
+          onSave={(newExp, reason) => applyExpiryChange(expiryFor.id, newExp, reason)}
+          onClose={() => setExpiryFor(null)}
+        />
+      )}
+
+      {!readOnly && balanceFor && (
+        <PackageSetBalanceDialog
+          pkg={balanceFor}
+          onSave={(newBal, reason) => applySetBalance(balanceFor.id, newBal, reason)}
+          onClose={() => setBalanceFor(null)}
+        />
+      )}
+
+      {!readOnly && statusDialog && (
         <Dialog
           open
           onOpenChange={(o) => !o && setStatusDialog(false)}
@@ -351,15 +488,14 @@ function BookingTable({ title, rows }: { title: string; rows: BookingRow[] }) {
 }
 
 function AdjustmentDialog({
-  packages,
+  pkg,
   onSubmit,
   onClose,
 }: {
-  packages: ClientPackage[];
-  onSubmit: (packageId: string, delta: number, reason: string) => void;
+  pkg: ClientPackage;
+  onSubmit: (delta: number, reason: string) => void;
   onClose: () => void;
 }) {
-  const [packageId, setPackageId] = useState(packages[0]?.id ?? "");
   const [delta, setDelta] = useState("");
   const [reason, setReason] = useState("");
 
@@ -367,7 +503,7 @@ function AdjustmentDialog({
     <Dialog
       open
       onOpenChange={(o) => !o && onClose()}
-      title="Manual credit / session adjustment"
+      title={`Manual adjustment — ${pkg.packageName}`}
       description="Use a signed integer (e.g. +3 or −1). Audit-logged with your name."
     >
       <form
@@ -375,27 +511,13 @@ function AdjustmentDialog({
         onSubmit={(e) => {
           e.preventDefault();
           const n = Number(delta);
-          if (!packageId || !n || !reason.trim()) return;
-          onSubmit(packageId, n, reason.trim());
+          if (!n || !reason.trim()) return;
+          onSubmit(n, reason.trim());
         }}
       >
-        <div className="space-y-1.5">
-          <Label>Package</Label>
-          <select
-            required
-            value={packageId}
-            onChange={(e) => setPackageId(e.target.value)}
-            className="flex h-10 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            {packages.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.packageName} ({p.creditsOrSessionsRemaining} remaining)
-              </option>
-            ))}
-          </select>
-          <p className="text-[11px] text-muted">
-            Unlimited passes are not adjustable by count.
-          </p>
+        <div className="text-sm text-muted">
+          Current balance:{" "}
+          <strong className="text-ink">{pkg.creditsOrSessionsRemaining ?? 0}</strong>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="delta">Adjustment</Label>

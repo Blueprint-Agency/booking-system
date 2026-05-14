@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Filter as FilterIcon,
+  ChevronDown,
 } from "lucide-react";
 import {
   addDays,
@@ -29,8 +30,10 @@ import {
   instructorName,
   locationName,
 } from "@/lib/schedule-helpers";
-import { locations, instructors as allInstructors } from "@/data";
+import { instructors as allInstructors, workshops, ptRequests } from "@/data";
 import { formatTime } from "@/lib/formatters";
+import { PtRequestPickerDialog } from "@/components/schedule/pt-request-picker-dialog";
+import { useWorkspace } from "@/lib/workspace-context";
 
 type View = "day" | "week" | "month";
 type FilterType = "all" | "class" | "workshop" | "pt";
@@ -43,12 +46,16 @@ const HOUR_HEIGHT = 56;
 const TOTAL_HEIGHT = (HOUR_END - HOUR_START) * HOUR_HEIGHT;
 
 export default function SchedulePage() {
+  const { activeLocationId } = useWorkspace();
   const [view, setView] = useState<View>("week");
   const [cursor, setCursor] = useState<Date>(TODAY);
   const [type, setType] = useState<FilterType>("all");
-  const [locationId, setLocationId] = useState<string>("all");
   const [instructorId, setInstructorId] = useState<string>("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [workshopMenuOpen, setWorkshopMenuOpen] = useState(false);
+  const [ptPickerOpen, setPtPickerOpen] = useState(false);
+  const pendingPtCount = ptRequests.filter((r) => r.status === "pending").length;
+  const activeWorkshops = workshops.filter((w) => w.lifecycle === "active");
 
   const allEntries = useMemo(() => buildScheduleEntries(), []);
 
@@ -56,7 +63,7 @@ export default function SchedulePage() {
     () =>
       allEntries.filter((e) => {
         if (type !== "all" && e.kind !== type) return false;
-        if (locationId !== "all" && e.locationId !== locationId) return false;
+        if (activeLocationId && e.locationId !== activeLocationId) return false;
         if (
           instructorId !== "all" &&
           !e.instructorIds.includes(instructorId)
@@ -64,7 +71,7 @@ export default function SchedulePage() {
           return false;
         return true;
       }),
-    [allEntries, type, locationId, instructorId]
+    [allEntries, type, activeLocationId, instructorId]
   );
 
   const range = useMemo(() => getRange(view, cursor), [view, cursor]);
@@ -84,8 +91,7 @@ export default function SchedulePage() {
         ? `${format(range.start, "d MMM")} – ${format(addDays(range.end, -1), "d MMM yyyy")}`
         : format(cursor, "MMMM yyyy");
 
-  const filtersActive =
-    type !== "all" || locationId !== "all" || instructorId !== "all";
+  const filtersActive = type !== "all" || instructorId !== "all";
 
   const navigate = (dir: -1 | 0 | 1) => {
     if (dir === 0) return setCursor(TODAY);
@@ -106,11 +112,58 @@ export default function SchedulePage() {
                 <Plus className="h-4 w-4" /> Class
               </Button>
             </Link>
-            <Link href="/admin/schedule/new/workshop">
-              <Button size="sm">
-                <Plus className="h-4 w-4" /> Workshop
+            <div className="relative">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setWorkshopMenuOpen((o) => !o)}
+              >
+                Workshop <ChevronDown className="h-3.5 w-3.5" />
               </Button>
-            </Link>
+              {workshopMenuOpen && (
+                <div className="absolute right-0 z-30 mt-2 w-72 rounded-lg border border-border bg-card p-2 shadow-soft">
+                  {activeWorkshops.length === 0 && (
+                    <div className="px-3 py-2 text-xs text-muted">
+                      No workshops configured.
+                    </div>
+                  )}
+                  {activeWorkshops.map((w) => (
+                    <Link
+                      key={w.id}
+                      href={`/admin/packages/workshops/${w.id}/edit`}
+                      onClick={() => setWorkshopMenuOpen(false)}
+                      className="block rounded px-3 py-2 text-sm hover:bg-paper"
+                    >
+                      {w.name}
+                    </Link>
+                  ))}
+                  <div className="mt-1 border-t border-border pt-1">
+                    <Link
+                      href="/admin/packages/workshops/new"
+                      onClick={() => setWorkshopMenuOpen(false)}
+                      className="inline-flex w-full items-center gap-1 rounded px-3 py-2 text-sm text-accent hover:bg-paper"
+                    >
+                      <Plus className="h-3.5 w-3.5" /> New workshop
+                    </Link>
+                    <Link
+                      href="/admin/packages/workshops"
+                      onClick={() => setWorkshopMenuOpen(false)}
+                      className="block rounded px-3 py-2 text-xs text-muted hover:bg-paper"
+                    >
+                      Manage workshops →
+                    </Link>
+                  </div>
+                </div>
+              )}
+            </div>
+            <Button size="sm" onClick={() => setPtPickerOpen(true)}>
+              <Plus className="h-4 w-4" /> PT Session
+              {pendingPtCount > 0 && (
+                <span className="ml-1 rounded-full bg-white/20 px-1.5 text-[10px] font-bold">
+                  {pendingPtCount}
+                </span>
+              )}
+            </Button>
           </>
         }
       />
@@ -165,7 +218,7 @@ export default function SchedulePage() {
               Filters
               {filtersActive && (
                 <span className="rounded-full bg-accent px-1.5 text-[10px] font-bold text-white">
-                  {[type !== "all", locationId !== "all", instructorId !== "all"].filter(Boolean).length}
+                  {[type !== "all", instructorId !== "all"].filter(Boolean).length}
                 </span>
               )}
             </button>
@@ -187,15 +240,6 @@ export default function SchedulePage() {
               onChange={(v) => setType(v as FilterType)}
             />
             <FilterPill
-              label="Location"
-              value={locationId}
-              options={[
-                { val: "all", label: "All" },
-                ...locations.map((l) => ({ val: l.id, label: l.name })),
-              ]}
-              onChange={setLocationId}
-            />
-            <FilterPill
               label="Instructor"
               value={instructorId}
               options={[
@@ -211,7 +255,6 @@ export default function SchedulePage() {
                 type="button"
                 onClick={() => {
                   setType("all");
-                  setLocationId("all");
                   setInstructorId("all");
                 }}
                 className="ml-auto text-xs font-medium text-muted hover:text-ink"
@@ -237,6 +280,16 @@ export default function SchedulePage() {
       </div>
 
       <Legend />
+
+      {ptPickerOpen && (
+        <PtRequestPickerDialog
+          onClose={() => setPtPickerOpen(false)}
+          onScheduled={() => {
+            setPtPickerOpen(false);
+            alert("PT session scheduled (mock).");
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -430,7 +483,7 @@ function MonthView({ monthStart, entries }: { monthStart: Date; entries: Entry[]
                 {visible.map((e) => (
                   <li key={`${e.kind}-${e.id}`}>
                     <Link
-                      href={`/admin/schedule/${e.kind}/${e.id}`}
+                      href={`/admin/schedule/${e.kind}/${e.kind === "workshop" ? e.raw.id : e.id}`}
                       className={cn(
                         "block truncate rounded-sm border-l-2 px-1.5 py-0.5 text-[11px] font-medium transition-colors hover:opacity-80",
                         kindClasses(e)
@@ -646,10 +699,15 @@ function EventBlock({
       : `${entry.instructorIds.map(instructorName).join(" & ")} · ${locationName(entry.locationId)}`;
 
   const compact = height < 44;
+  const linkId = entry.kind === "workshop" ? entry.raw.id : entry.id;
+  const dayChip =
+    entry.kind === "workshop" && entry.dayCount > 1
+      ? `Day ${entry.dayIndex}/${entry.dayCount}`
+      : null;
 
   return (
     <Link
-      href={`/admin/schedule/${entry.kind}/${entry.id}`}
+      href={`/admin/schedule/${entry.kind}/${linkId}`}
       style={{
         top,
         height,
@@ -669,7 +727,14 @@ function EventBlock({
           <span className="opacity-60">–{formatTime(entry.endsAt)}</span>
         )}
       </div>
-      <div className="truncate font-semibold">{entry.label}</div>
+      <div className="flex items-center gap-1.5">
+        <span className="truncate font-semibold">{entry.label}</span>
+        {dayChip && (
+          <span className="shrink-0 rounded-sm bg-current/20 px-1 text-[9px] font-bold uppercase opacity-90">
+            {dayChip}
+          </span>
+        )}
+      </div>
       {!compact && !dense && (
         <div className="mt-0.5 truncate opacity-80">{subtitle}</div>
       )}

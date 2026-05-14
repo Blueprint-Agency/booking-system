@@ -12,19 +12,23 @@ import {
 } from "@/data";
 import { computeEventState } from "@/lib/event-state";
 import { formatDate, formatTime } from "@/lib/formatters";
+import { useWorkspace } from "@/lib/workspace-context";
 import type { Booking } from "@/types";
 
 const NOW = new Date("2026-05-10T03:00:00.000Z"); // 11am SGT — same window as today's classes
 
 export default function CheckInPage() {
+  const { activeLocationId, activeLocation } = useWorkspace();
   const [bookings, setBookings] = useState<Booking[]>(seedBookings);
   const [code, setCode] = useState("");
   const [lastResult, setLastResult] = useState<{ ok: boolean; msg: string } | null>(null);
 
   // Build all "in window" sessions: ongoing or starting in next 90 min
   const activeSessions = useMemo(() => {
+    if (!activeLocationId) return [];
     const ninetyMinAhead = new Date(NOW.getTime() + 90 * 60 * 1000);
     const cls = classInstances
+      .filter((c) => c.locationId === activeLocationId)
       .map((c) => ({
         kind: "class" as const,
         id: c.id,
@@ -45,7 +49,7 @@ export default function CheckInPage() {
           (c.eventState === "scheduled" && new Date(c.startsAt) <= ninetyMinAhead)
       );
     const pt = ptSessions
-      .filter((s) => s.status === "confirmed")
+      .filter((s) => s.lifecycle === "active" && s.locationId === activeLocationId)
       .map((s) => ({
         kind: "pt" as const,
         id: s.id,
@@ -68,7 +72,7 @@ export default function CheckInPage() {
     return [...cls, ...pt].sort(
       (a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()
     );
-  }, []);
+  }, [activeLocationId]);
 
   const [selectedKey, setSelectedKey] = useState<string>(
     activeSessions[0] ? `${activeSessions[0].kind}-${activeSessions[0].id}` : ""
@@ -117,6 +121,12 @@ export default function CheckInPage() {
         title="Check-in"
         description="Front-desk daily driver. Scan QR codes or type the booking code (YS-XXXXXX). Both resolve client + session in one lookup."
       />
+
+      {activeLocation && (
+        <div className="mb-4 text-xs text-muted">
+          Checking in at <span className="font-medium text-ink">{activeLocation.name}</span>
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-3">
         <section className="space-y-3 lg:col-span-2">

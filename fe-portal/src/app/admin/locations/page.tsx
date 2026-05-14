@@ -4,9 +4,11 @@ import { Plus, Archive, RotateCcw, MapPin, Phone, ExternalLink } from "lucide-re
 import { Button, PageHeader, Badge, EmptyState } from "@/components/ui";
 import { locations as seedLocations } from "@/data";
 import { LocationFormDialog } from "@/components/locations/location-form-dialog";
+import { useWorkspace } from "@/lib/workspace-context";
 import type { Location } from "@/types";
 
 export default function LocationsPage() {
+  const { role } = useWorkspace();
   const [locations, setLocations] = useState<Location[]>(seedLocations);
   const [editing, setEditing] = useState<Location | null>(null);
   const [creating, setCreating] = useState(false);
@@ -27,6 +29,23 @@ export default function LocationsPage() {
       prev.map((l) =>
         l.id === id ? { ...l, archivedAt: l.archivedAt ? null : new Date().toISOString() } : l
       )
+    );
+  }
+
+  if (role !== "superadmin") {
+    return (
+      <div className="mx-auto max-w-5xl">
+        <PageHeader
+          title="Locations"
+          description="Studio addresses surfaced in the schedule, session detail pages, and on the client app."
+        />
+        <div className="rounded-xl border border-border bg-card px-6 py-12 text-center shadow-soft">
+          <h2 className="text-sm font-semibold text-ink">Superadmin only</h2>
+          <p className="mt-1 text-xs text-muted">
+            Only superadmins can manage studio locations.
+          </p>
+        </div>
+      </div>
     );
   }
 

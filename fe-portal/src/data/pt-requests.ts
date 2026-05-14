@@ -1,0 +1,53 @@
+import type { PtRequest } from "@/types";
+
+export const ptRequests: PtRequest[] = [
+  {
+    id: "req-1",
+    clientId: "cli-1",
+    preferredInstructorId: "ins-priya",
+    sessionType: "1on1",
+    durationMinutes: 60,
+    preferredSlots: [
+      { date: "2026-05-22", startTime: "09:00" },
+      { date: "2026-05-23", startTime: "10:00" },
+    ],
+    clientNote: "Working on shoulder mobility, prefer morning slots.",
+    status: "pending",
+    ptSessionId: null,
+    declineNote: null,
+    decidedByStaffId: null,
+    decidedAt: null,
+    createdAt: new Date(Date.now() - 2 * 86400_000).toISOString(),
+  },
+  {
+    id: "req-2",
+    clientId: "cli-2",
+    preferredInstructorId: null,
+    sessionType: "2on1",
+    durationMinutes: 90,
+    preferredSlots: [{ date: "2026-05-25", startTime: "18:00" }],
+    clientNote: "",
+    status: "pending",
+    ptSessionId: null,
+    declineNote: null,
+    decidedByStaffId: null,
+    decidedAt: null,
+    createdAt: new Date(Date.now() - 1 * 86400_000).toISOString(),
+  },
+  {
+    id: "req-3",
+    clientId: "cli-3",
+    preferredInstructorId: "ins-amelia",
+    sessionType: "1on1",
+    durationMinutes: 60,
+    preferredSlots: [{ date: "2026-05-18", startTime: "07:00" }],
+    clientNote: "Recovering from a knee niggle.",
+    status: "declined",
+    ptSessionId: null,
+    declineNote:
+      "Instructor on leave that week — please re-submit with another date.",
+    decidedByStaffId: "stf-admin-1",
+    decidedAt: new Date(Date.now() - 12 * 3600_000).toISOString(),
+    createdAt: new Date(Date.now() - 5 * 86400_000).toISOString(),
+  },
+];

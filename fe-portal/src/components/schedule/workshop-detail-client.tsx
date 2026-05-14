@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { Star, X } from "lucide-react";
 import { Avatar, Badge, Button, Dialog, DialogFooter } from "@/components/ui";
 import { formatSgd, formatDateTime } from "@/lib/formatters";
+import { maxCapacity } from "@/lib/capacity";
 import type { Booking, Client, Rating, Workshop, WorkshopTier } from "@/types";
 
 type Row = { booking: Booking; client: Client; tier?: WorkshopTier };
@@ -26,7 +27,12 @@ export function WorkshopDetailClient({
 
   function tierStats(tier: WorkshopTier) {
     const booked = confirmed.filter((r) => r.booking.workshopTierId === tier.id).length;
-    return { booked, capacity: tier.capacity, soldOut: booked >= tier.capacity };
+    const dayCaps = tier.dayIds
+      .map((did) => workshop.days.find((d) => d.id === did))
+      .filter((d): d is NonNullable<typeof d> => Boolean(d))
+      .map((d) => maxCapacity(d.capacity));
+    const capacity = dayCaps.length > 0 ? Math.min(...dayCaps) : 0;
+    return { booked, capacity, soldOut: capacity > 0 && booked >= capacity };
   }
 
   function handleCancel() {
@@ -39,7 +45,7 @@ export function WorkshopDetailClient({
 
   const totalRefund = confirmed.reduce((s, r) => {
     if (!r.tier) return s;
-    return s + r.tier.regularPriceSgd;
+    return s + r.tier.priceSgd;
   }, 0);
 
   const isCancellable = workshop.lifecycle === "active";
@@ -64,7 +70,7 @@ export function WorkshopDetailClient({
                   <div className="font-medium text-ink">{t.name}</div>
                   <div className="text-xs text-muted">{t.description}</div>
                   <div className="mt-1 flex flex-wrap gap-1.5 text-xs">
-                    <span className="font-mono text-ink">{formatSgd(t.regularPriceSgd)}</span>
+                    <span className="font-mono text-ink">{formatSgd(t.priceSgd)}</span>
                     {t.earlyBirdPriceSgd && (
                       <span className="text-muted">
                         early bird {formatSgd(t.earlyBirdPriceSgd)}

@@ -1,7 +1,8 @@
 "use client";
 import { useState } from "react";
 import { Dialog, DialogFooter, Button, Input, Label } from "@/components/ui";
-import type { PtPackage, PtSessionType } from "@/types";
+import { PromotionsEditor } from "./promotions-editor";
+import type { PtPackage, PtSessionType, Promotion } from "@/types";
 
 export function PtPackageDialog({
   pkg,
@@ -16,6 +17,7 @@ export function PtPackageDialog({
   const [sessionType, setSessionType] = useState<PtSessionType>(pkg?.sessionType ?? "1on1");
   const [numSessions, setNumSessions] = useState<string>(pkg?.numSessions.toString() ?? "");
   const [priceSgd, setPriceSgd] = useState<string>(pkg?.priceSgd.toString() ?? "");
+  const [promotions, setPromotions] = useState<Promotion[]>(pkg?.promotions ?? []);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -26,6 +28,7 @@ export function PtPackageDialog({
       numSessions: Number(numSessions),
       priceSgd: Number(priceSgd),
       status: pkg?.status ?? "active",
+      promotions,
     });
   }
 
@@ -92,6 +95,12 @@ export function PtPackageDialog({
             />
           </div>
         </div>
+
+        <PromotionsEditor
+          basePriceSgd={Number(priceSgd) || 0}
+          value={promotions}
+          onChange={setPromotions}
+        />
 
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={onClose}>

@@ -1,7 +1,6 @@
 import {
   classInstances,
   workshops,
-  workshopTiers,
   ptSessions,
   bookings,
   classTypes,
@@ -10,9 +9,11 @@ import {
   clients,
 } from "@/data";
 import { computeEventState } from "./event-state";
+import { maxCapacity } from "./capacity";
 import type {
   ClassInstance,
   Workshop,
+  WorkshopDay,
   WorkshopTier,
   PtSession,
   EventState,
@@ -47,6 +48,9 @@ export type ScheduleEntry =
       eventState: EventState;
       raw: Workshop;
       tiers: WorkshopTier[];
+      day: WorkshopDay;
+      dayIndex: number;
+      dayCount: number;
     }
   | {
       kind: "pt";
@@ -86,6 +90,14 @@ function workshopBookedCount(workshopId: string): number {
   return bookings.filter((b) => b.workshopId === workshopId && b.state === "confirmed").length;
 }
 
+function dayStartIso(date: string, time: string): string {
+  return `${date}T${time}:00.000Z`;
+}
+
+function dayEndIso(date: string, time: string): string {
+  return `${date}T${time}:00.000Z`;
+}
+
 export function buildScheduleEntries(): ScheduleEntry[] {
   const entries: ScheduleEntry[] = [];
 
@@ -99,7 +111,7 @@ export function buildScheduleEntries(): ScheduleEntry[] {
       locationId: c.locationId,
       startsAt: c.startsAt,
       endsAt: c.endsAt,
-      capacity: c.capacity,
+      capacity: maxCapacity(c.capacity),
       bookedCount: classBookedCount(c.id),
       eventState: computeEventState({
         startsAt: c.startsAt,
@@ -111,31 +123,32 @@ export function buildScheduleEntries(): ScheduleEntry[] {
   }
 
   for (const w of workshops) {
-    const tiers = workshopTiers.filter((t) => t.workshopId === w.id);
-    const totalCap = tiers.reduce((s, t) => s + t.capacity, 0);
-    entries.push({
-      kind: "workshop",
-      id: w.id,
-      label: workshopLabel(w),
-      classTypeId: w.classTypeId,
-      instructorIds: w.instructorIds,
-      locationId: w.locationId,
-      startsAt: w.startsAt,
-      endsAt: w.endsAt,
-      capacity: totalCap,
-      bookedCount: workshopBookedCount(w.id),
-      eventState: computeEventState({
-        startsAt: w.startsAt,
-        endsAt: w.endsAt,
-        lifecycle: w.lifecycle,
-      }),
-      raw: w,
-      tiers,
+    w.days.forEach((day, idx) => {
+      const startsAt = dayStartIso(day.date, day.startTime);
+      const endsAt = dayEndIso(day.date, day.endTime);
+      entries.push({
+        kind: "workshop",
+        id: `${w.id}__${day.id}`,
+        label: workshopLabel(w),
+        classTypeId: w.classTypeId,
+        instructorIds: w.instructorIds,
+        locationId: w.locationId,
+        startsAt,
+        endsAt,
+        capacity: maxCapacity(day.capacity),
+        bookedCount: workshopBookedCount(w.id),
+        eventState: computeEventState({ startsAt, endsAt, lifecycle: w.lifecycle }),
+        raw: w,
+        tiers: w.tiers,
+        day,
+        dayIndex: idx + 1,
+        dayCount: w.days.length,
+      });
     });
   }
 
   for (const s of ptSessions) {
-    if (s.status !== "confirmed") continue;
+    if (s.lifecycle !== "active") continue;
     entries.push({
       kind: "pt",
       id: s.id,
@@ -145,7 +158,7 @@ export function buildScheduleEntries(): ScheduleEntry[] {
       locationId: s.locationId,
       startsAt: s.startsAt,
       endsAt: s.endsAt,
-      capacity: s.sessionType === "2on1" ? 2 : 1,
+      capacity: maxCapacity(s.capacity),
       bookedCount: s.clientIds.length,
       eventState: computeEventState({
         startsAt: s.startsAt,

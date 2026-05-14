@@ -38,8 +38,9 @@ export default async function ClientProfilePage({
         }
       } else if (b.workshopId) {
         const w = workshops.find((x) => x.id === b.workshopId);
-        if (w) {
-          dateIso = w.startsAt;
+        if (w && w.days.length > 0) {
+          const first = w.days[0];
+          dateIso = `${first.date}T${first.startTime}:00.000Z`;
           label = w.name;
         }
       } else if (b.ptSessionId) {

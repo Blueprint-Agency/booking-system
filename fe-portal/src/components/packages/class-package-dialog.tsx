@@ -1,7 +1,14 @@
 "use client";
 import { useState } from "react";
 import { Dialog, DialogFooter, Button, Input, Label } from "@/components/ui";
-import type { ClassPackage, ClassPackageKind } from "@/types";
+import { PromotionsEditor } from "./promotions-editor";
+import type { ClassPackage, ClassPackageKind, Promotion } from "@/types";
+
+const KIND_LABELS: Record<ClassPackageKind, string> = {
+  credit_bundle: "Credit bundle",
+  unlimited: "Unlimited",
+  trial: "Trial pass",
+};
 
 export function ClassPackageDialog({
   pkg,
@@ -13,23 +20,34 @@ export function ClassPackageDialog({
   onClose: () => void;
 }) {
   const [name, setName] = useState(pkg?.name ?? "");
+  const [description, setDescription] = useState(pkg?.description ?? "");
   const [kind, setKind] = useState<ClassPackageKind>(pkg?.kind ?? "credit_bundle");
   const [credits, setCredits] = useState<string>(pkg?.credits?.toString() ?? "");
   const [validityDays, setValidityDays] = useState<string>(pkg?.validityDays?.toString() ?? "");
   const [durationDays, setDurationDays] = useState<string>(pkg?.durationDays?.toString() ?? "");
   const [priceSgd, setPriceSgd] = useState<string>(pkg?.priceSgd.toString() ?? "");
+  const [promotions, setPromotions] = useState<Promotion[]>(pkg?.promotions ?? []);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     onSave({
       id: pkg?.id ?? `cp-${Date.now().toString(36)}`,
       name: name.trim(),
+      description: description.trim(),
       kind,
-      credits: kind === "credit_bundle" ? Number(credits) : null,
-      validityDays: kind === "credit_bundle" ? Number(validityDays) : null,
+      credits: kind === "credit_bundle" || kind === "trial" ? Number(credits) : null,
+      validityDays:
+        kind === "credit_bundle"
+          ? Number(validityDays)
+          : kind === "trial"
+          ? validityDays
+            ? Number(validityDays)
+            : null
+          : null,
       durationDays: kind === "unlimited" ? Number(durationDays) : null,
       priceSgd: Number(priceSgd),
       status: pkg?.status ?? "active",
+      promotions,
     });
   }
 
@@ -43,7 +61,7 @@ export function ClassPackageDialog({
         <div className="space-y-1.5">
           <Label>Type</Label>
           <div className="flex gap-2">
-            {(["credit_bundle", "unlimited"] as const).map((k) => (
+            {(["credit_bundle", "unlimited", "trial"] as const).map((k) => (
               <button
                 key={k}
                 type="button"
@@ -54,7 +72,7 @@ export function ClassPackageDialog({
                     : "border-border bg-paper text-muted hover:bg-warm hover:text-ink"
                 }`}
               >
-                {k === "credit_bundle" ? "Credit bundle" : "Unlimited"}
+                {KIND_LABELS[k]}
               </button>
             ))}
           </div>
@@ -67,11 +85,33 @@ export function ClassPackageDialog({
             required
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder={kind === "credit_bundle" ? "e.g. 5-Class Pack" : "e.g. Monthly Unlimited"}
+            placeholder={
+              kind === "credit_bundle"
+                ? "e.g. 5-Class Pack"
+                : kind === "unlimited"
+                ? "e.g. Monthly Unlimited"
+                : "e.g. Trial Pass"
+            }
           />
         </div>
 
-        {kind === "credit_bundle" ? (
+        <div className="space-y-1.5">
+          <Label htmlFor="pkg-desc">
+            Description {kind === "trial" ? "" : "(optional)"}
+          </Label>
+          <textarea
+            id="pkg-desc"
+            required={kind === "trial"}
+            rows={2}
+            maxLength={280}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Short marketing blurb shown to clients."
+            className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
+          />
+        </div>
+
+        {kind === "credit_bundle" && (
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="pkg-credits">Credits</Label>
@@ -96,7 +136,9 @@ export function ClassPackageDialog({
               />
             </div>
           </div>
-        ) : (
+        )}
+
+        {kind === "unlimited" && (
           <div className="space-y-1.5">
             <Label htmlFor="pkg-duration">Duration (days)</Label>
             <Input
@@ -107,6 +149,34 @@ export function ClassPackageDialog({
               value={durationDays}
               onChange={(e) => setDurationDays(e.target.value)}
             />
+          </div>
+        )}
+
+        {kind === "trial" && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="pkg-trial-quota">Class quota</Label>
+              <Input
+                id="pkg-trial-quota"
+                required
+                type="number"
+                min={1}
+                value={credits}
+                onChange={(e) => setCredits(e.target.value)}
+                placeholder="Usually 1"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="pkg-trial-validity">Validity (days, optional)</Label>
+              <Input
+                id="pkg-trial-validity"
+                type="number"
+                min={1}
+                value={validityDays}
+                onChange={(e) => setValidityDays(e.target.value)}
+                placeholder="e.g. 30"
+              />
+            </div>
           </div>
         )}
 
@@ -122,6 +192,12 @@ export function ClassPackageDialog({
             onChange={(e) => setPriceSgd(e.target.value)}
           />
         </div>
+
+        <PromotionsEditor
+          basePriceSgd={Number(priceSgd) || 0}
+          value={promotions}
+          onChange={setPromotions}
+        />
 
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={onClose}>

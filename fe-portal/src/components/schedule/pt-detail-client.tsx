@@ -32,19 +32,10 @@ export function PtDetailClient({
     router.push("/admin/schedule");
   }
 
-  const isCancellable = ptSession.status === "confirmed";
+  const isCancellable = ptSession.lifecycle === "active";
 
   return (
     <div className="space-y-6">
-      {ptSession.message && (
-        <section className="rounded-xl border border-border bg-card p-5 shadow-soft">
-          <h3 className="mb-1 text-xs font-semibold uppercase tracking-wider text-muted">
-            Client request message
-          </h3>
-          <p className="text-sm text-ink">{ptSession.message}</p>
-        </section>
-      )}
-
       <section className="rounded-xl border border-border bg-card shadow-soft">
         <header className="flex items-center justify-between border-b border-border px-5 py-3">
           <h2 className="text-sm font-semibold text-ink">

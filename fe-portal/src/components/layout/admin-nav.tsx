@@ -5,20 +5,17 @@ import { useEffect, useState } from "react";
 import { Menu, X } from "lucide-react";
 import { createPortal } from "react-dom";
 import { NAV_ITEMS, NAV_GROUP_ORDER, type NavItem, type NavGroup } from "./nav-items";
-import { inboxItems } from "@/data";
+import { inboxItems, ptRequests } from "@/data";
 import { cn } from "@/lib/utils";
-
-const groupedItems: Record<NavGroup, NavItem[]> = NAV_GROUP_ORDER.reduce(
-  (acc, group) => {
-    acc[group] = NAV_ITEMS.filter((i) => i.group === group);
-    return acc;
-  },
-  {} as Record<NavGroup, NavItem[]>
-);
+import { useWorkspace } from "@/lib/workspace-context";
 
 function getBadge(key: NavItem["badgeKey"]): number | undefined {
   if (key === "inboxUnread") {
     const n = inboxItems.filter((i) => i.readAt === null).length;
+    return n > 0 ? n : undefined;
+  }
+  if (key === "ptRequestsPending") {
+    const n = ptRequests.filter((r) => r.status === "pending").length;
     return n > 0 ? n : undefined;
   }
   return undefined;
@@ -39,15 +36,32 @@ function NavBrand() {
 }
 
 function NavContent({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
+  const { role } = useWorkspace();
+  const visibleItems = NAV_ITEMS.filter((item) => {
+    if (item.scope === "both") return true;
+    if (role === "superadmin") return true; // superadmin sees everything
+    return item.scope === "workspace"; // admin sees workspace + both
+  });
+  const groupedItems: Record<NavGroup, NavItem[]> = NAV_GROUP_ORDER.reduce(
+    (acc, group) => {
+      acc[group] = visibleItems.filter((i) => i.group === group);
+      return acc;
+    },
+    {} as Record<NavGroup, NavItem[]>
+  );
+
   return (
     <div className="px-2 pt-2 pb-6">
-      {NAV_GROUP_ORDER.map((group) => (
+      {NAV_GROUP_ORDER.map((group) => {
+        const items = groupedItems[group];
+        if (items.length === 0) return null; // hide empty groups for admin
+        return (
         <div key={group} className="mb-3">
           <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">
             {group}
           </div>
           <ul className="space-y-0.5">
-            {groupedItems[group].map((item) => {
+            {items.map((item) => {
               const isActive =
                 pathname === item.href || pathname.startsWith(item.href + "/");
               const badge = getBadge(item.badgeKey);
@@ -78,7 +92,8 @@ function NavContent({ pathname, onNavigate }: { pathname: string; onNavigate?: (
             })}
           </ul>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

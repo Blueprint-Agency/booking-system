@@ -4,16 +4,10 @@ export { instructors } from "./instructors";
 export { globalPolicy, ptBookingConfig } from "./policy";
 export { classPackages, ptPackages } from "./packages";
 export { clients, clientPackages, manualAdjustments } from "./clients";
-export { staffUsers, staffInvitations } from "./staff";
-export {
-  classInstances,
-  workshops,
-  workshopTiers,
-  ptSessions,
-  availabilityRecurring,
-  availabilityOneOff,
-} from "./schedule";
+export { staffUsers, staffInvitations, defaultStaffId } from "./staff";
+export { classInstances, workshops, ptSessions } from "./schedule";
 export { bookings, cancellations, ratings } from "./bookings";
 export { inboxItems } from "./inbox";
+export { ptRequests } from "./pt-requests";
 export { emailTemplates } from "./email-templates";
 export { waiver } from "./waiver";

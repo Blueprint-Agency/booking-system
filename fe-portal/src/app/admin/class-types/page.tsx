@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Plus, Archive, RotateCcw, Pencil } from "lucide-react";
 import {
   Button,
@@ -53,16 +53,11 @@ export default function ClassTypesPage() {
       {classTypes.length === 0 ? (
         <EmptyState title="No class types yet" description="Add your first class type to start scheduling." />
       ) : (
-        <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card shadow-soft">
-          {active.map((ct) => (
-            <ClassTypeRow
-              key={ct.id}
-              ct={ct}
-              onEdit={() => setDialog({ kind: "edit", ct })}
-              onArchive={() => toggleArchive(ct.id)}
-            />
-          ))}
-        </ul>
+        <Tree
+          all={active}
+          onEdit={(ct) => setDialog({ kind: "edit", ct })}
+          onArchive={(id) => toggleArchive(id)}
+        />
       )}
 
       {archived.length > 0 && (
@@ -70,22 +65,19 @@ export default function ClassTypesPage() {
           <h2 className="mb-3 mt-10 text-xs font-semibold uppercase tracking-wider text-muted">
             Archived
           </h2>
-          <ul className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card opacity-70 shadow-soft">
-            {archived.map((ct) => (
-              <ClassTypeRow
-                key={ct.id}
-                ct={ct}
-                onEdit={() => setDialog({ kind: "edit", ct })}
-                onArchive={() => toggleArchive(ct.id)}
-              />
-            ))}
-          </ul>
+          <Tree
+            all={archived}
+            onEdit={(ct) => setDialog({ kind: "edit", ct })}
+            onArchive={(id) => toggleArchive(id)}
+            dimmed
+          />
         </>
       )}
 
       {dialog && (
         <ClassTypeDialog
           ct={dialog.kind === "edit" ? dialog.ct : null}
+          all={classTypes}
           onSave={handleSave}
           onClose={() => setDialog(null)}
         />
@@ -94,23 +86,74 @@ export default function ClassTypesPage() {
   );
 }
 
+function Tree({
+  all,
+  onEdit,
+  onArchive,
+  dimmed,
+}: {
+  all: ClassType[];
+  onEdit: (ct: ClassType) => void;
+  onArchive: (id: string) => void;
+  dimmed?: boolean;
+}) {
+  const topLevel = all.filter((c) => c.parentId === null);
+  const childrenOf = (pid: string) => all.filter((c) => c.parentId === pid);
+  return (
+    <ul
+      className={`divide-y divide-border overflow-hidden rounded-xl border border-border bg-card shadow-soft ${
+        dimmed ? "opacity-70" : ""
+      }`}
+    >
+      {topLevel.map((ct) => (
+        <Fragment key={ct.id}>
+          <ClassTypeRow ct={ct} onEdit={() => onEdit(ct)} onArchive={() => onArchive(ct.id)} />
+          {childrenOf(ct.id).map((child) => (
+            <ClassTypeRow
+              key={child.id}
+              ct={child}
+              onEdit={() => onEdit(child)}
+              onArchive={() => onArchive(child.id)}
+              indent
+            />
+          ))}
+        </Fragment>
+      ))}
+    </ul>
+  );
+}
+
 function ClassTypeRow({
   ct,
   onEdit,
   onArchive,
+  indent,
 }: {
   ct: ClassType;
   onEdit: () => void;
   onArchive: () => void;
+  indent?: boolean;
 }) {
   const isArchived = !!ct.archivedAt;
   return (
-    <li className="flex items-center justify-between gap-3 px-4 py-3">
-      <div className="flex items-center gap-3 min-w-0">
+    <li
+      className={`flex items-center justify-between gap-3 py-3 ${
+        indent ? "pl-10 pr-4 border-l-2 border-border ml-4" : "px-4"
+      }`}
+    >
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
         <span className="text-sm font-medium text-ink">{ct.name}</span>
         {isArchived && <Badge tone="neutral">Archived</Badge>}
+        {ct.description && (
+          <span
+            className="hidden truncate text-xs text-muted sm:inline-block sm:max-w-[40ch]"
+            title={ct.description}
+          >
+            {ct.description}
+          </span>
+        )}
       </div>
-      <div className="flex gap-1">
+      <div className="flex shrink-0 gap-1">
         {!isArchived && (
           <Button size="sm" variant="ghost" onClick={onEdit}>
             <Pencil className="h-3.5 w-3.5" /> Edit
@@ -134,20 +177,31 @@ function ClassTypeRow({
 
 function ClassTypeDialog({
   ct,
+  all,
   onSave,
   onClose,
 }: {
   ct: ClassType | null;
+  all: ClassType[];
   onSave: (ct: ClassType) => void;
   onClose: () => void;
 }) {
   const [name, setName] = useState(ct?.name ?? "");
+  const [description, setDescription] = useState(ct?.description ?? "");
+  const [parentId, setParentId] = useState<string | null>(ct?.parentId ?? null);
+
+  const parentOptions = useMemo(
+    () => all.filter((c) => !c.archivedAt && c.parentId === null && c.id !== ct?.id),
+    [all, ct?.id]
+  );
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     onSave({
       id: ct?.id ?? `ct-${Date.now().toString(36)}`,
       name: name.trim(),
+      description: description.trim(),
+      parentId,
       archivedAt: ct?.archivedAt ?? null,
     });
   }
@@ -170,6 +224,37 @@ function ClassTypeDialog({
             placeholder="e.g. Vinyasa Flow, Aerial Yoga"
           />
         </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="ct-desc">Description (optional)</Label>
+          <textarea
+            id="ct-desc"
+            rows={3}
+            maxLength={200}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Short description shown to clients."
+            className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
+          />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="ct-parent">Parent (optional)</Label>
+          <select
+            id="ct-parent"
+            value={parentId ?? ""}
+            onChange={(e) => setParentId(e.target.value || null)}
+            className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
+          >
+            <option value="">Top-level (no parent)</option>
+            {parentOptions.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancel

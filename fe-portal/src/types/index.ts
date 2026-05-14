@@ -12,9 +12,17 @@ export interface Location {
   archivedAt: string | null;
 }
 
+export type ClassTypeDifficulty =
+  | "general"
+  | "beginner"
+  | "intermediate"
+  | "advanced";
+
 export interface ClassType {
   id: string;
   name: string;
+  description: string;
+  parentId: string | null;
   archivedAt: string | null;
 }
 
@@ -27,6 +35,14 @@ export interface Instructor {
   photoUrl: string | null;
   eligibleClassTypeIds: string[];
   archivedAt: string | null;
+}
+
+// --- Capacity (cross-cutting) ---
+
+export interface Capacity {
+  waitlist: number;
+  onlineBooking: number;
+  buffer: number;
 }
 
 // --- Policy (§4, §6 booking config) ---
@@ -43,19 +59,35 @@ export interface PtBookingConfig {
   bookInAdvanceDays: number;
 }
 
+// --- Promotions (cross-cutting on packages) ---
+
+export type PromotionMode = "percent" | "price";
+
+export interface Promotion {
+  id: string;
+  label: string;
+  mode: PromotionMode;
+  percent: number | null;
+  priceSgd: number | null;
+  startsAt: string;
+  endsAt: string;
+}
+
 // --- Packages (§5, §6) ---
 
-export type ClassPackageKind = "credit_bundle" | "unlimited";
+export type ClassPackageKind = "credit_bundle" | "unlimited" | "trial";
 
 export interface ClassPackage {
   id: string;
   name: string;
+  description: string;
   kind: ClassPackageKind;
-  credits: number | null;       // credit_bundle only
-  validityDays: number | null;  // credit_bundle only
+  credits: number | null;       // credit_bundle + trial
+  validityDays: number | null;  // credit_bundle + trial (optional for trial; null = no expiry)
   durationDays: number | null;  // unlimited only
   priceSgd: number;
   status: "active" | "archived";
+  promotions: Promotion[];
 }
 
 export type PtSessionType = "1on1" | "2on1";
@@ -67,12 +99,13 @@ export interface PtPackage {
   numSessions: number;
   priceSgd: number;
   status: "active" | "archived";
+  promotions: Promotion[];
 }
 
 export interface ClientPackage {
   id: string;
   clientId: string;
-  kind: "credit_bundle" | "unlimited" | "pt";
+  kind: "credit_bundle" | "unlimited" | "trial" | "pt";
   sourcePackageId: string;
   packageName: string;          // denormalised for display
   creditsOrSessionsRemaining: number | null;
@@ -94,27 +127,21 @@ export interface ClassInstance {
   locationId: string;
   startsAt: string;
   endsAt: string;
-  capacity: number;
+  capacity: Capacity;
   creditCost: number;
+  difficulty: ClassTypeDifficulty;
   lifecycle: Lifecycle;
   cancelledAt: string | null;
   cancelledByStaffId: string | null;
 }
 
-export interface Workshop {
+export interface WorkshopDay {
   id: string;
-  name: string;
-  classTypeId: string;
-  coverUrl: string | null;
-  additionalImages: string[];
-  descriptionHtml: string;
-  locationId: string;
-  startsAt: string;
-  endsAt: string;
-  instructorIds: string[];
-  lifecycle: Lifecycle;
-  cancelledAt: string | null;
-  cancelledByStaffId: string | null;
+  date: string;        // YYYY-MM-DD
+  startTime: string;   // HH:mm
+  endTime: string;     // HH:mm
+  capacity: Capacity;
+  basePriceSgd: number;
 }
 
 export interface WorkshopTier {
@@ -122,15 +149,27 @@ export interface WorkshopTier {
   workshopId: string;
   name: string;
   description: string;
-  regularPriceSgd: number;
+  dayIds: string[];
+  priceSgd: number;
   earlyBirdPriceSgd: number | null;
-  earlyBirdQuota: number | null;
   earlyBirdCutoffAt: string | null;
-  capacity: number;
-  ord: number;
 }
 
-export type PtSessionStatus = "pending" | "confirmed" | "declined" | "cancelled";
+export interface Workshop {
+  id: string;
+  name: string;
+  classTypeId: string;
+  locationId: string;
+  instructorIds: string[];
+  coverUrl: string | null;
+  additionalImages: string[];
+  descriptionHtml: string;
+  days: WorkshopDay[];
+  tiers: WorkshopTier[];
+  lifecycle: Lifecycle;
+  cancelledAt: string | null;
+  cancelledByStaffId: string | null;
+}
 
 export interface PtSession {
   id: string;
@@ -139,28 +178,36 @@ export interface PtSession {
   startsAt: string;
   endsAt: string;
   sessionType: PtSessionType;
-  status: PtSessionStatus;
-  declineNote: string | null;
+  capacity: Capacity;
   clientIds: string[];
-  message: string | null;       // request message at submit time
+  lifecycle: Lifecycle;
+  cancelledAt: string | null;
+  cancelledByStaffId: string | null;
+}
+
+// --- PT Requests (§8 — replaces availability) ---
+
+export type PtRequestStatus = "pending" | "scheduled" | "declined" | "cancelled";
+
+export interface PtRequestSlot {
+  date: string;      // YYYY-MM-DD
+  startTime: string; // HH:mm
+}
+
+export interface PtRequest {
+  id: string;
+  clientId: string;
+  preferredInstructorId: string | null;
+  sessionType: PtSessionType;
+  durationMinutes: number;
+  preferredSlots: PtRequestSlot[];
+  clientNote: string;
+  status: PtRequestStatus;
+  ptSessionId: string | null;
+  declineNote: string | null;
+  decidedByStaffId: string | null;
+  decidedAt: string | null;
   createdAt: string;
-}
-
-// --- Availability (§8) ---
-
-export interface AvailabilityRecurring {
-  id: string;
-  instructorId: string;
-  weekday: number;       // 0 = Sunday
-  startTime: string;     // "HH:mm"
-  endTime: string;
-}
-
-export interface AvailabilityOneOff {
-  id: string;
-  instructorId: string;
-  startsAt: string;
-  endsAt: string;
 }
 
 // --- Bookings (§10, §12) ---
@@ -246,6 +293,13 @@ export interface StaffUser {
   email: string;
   role: StaffRole;
   status: StaffStatus;
+  /**
+   * Locations the user can access.
+   * Empty for superadmin (their grants are implicit — all active locations).
+   * Explicit list for admin.
+   * Unused for instructor role.
+   */
+  grantedLocationIds: string[];
   archivedAt: string | null;
   archivedByStaffId: string | null;
   invitedAt: string | null;
@@ -282,8 +336,7 @@ export interface Client {
 export type InboxType =
   | "client_cancellation"
   | "admin_cancel_class_pt"
-  | "admin_cancel_workshop"
-  | "pt_request";
+  | "admin_cancel_workshop";
 
 export interface InboxItem {
   id: string;

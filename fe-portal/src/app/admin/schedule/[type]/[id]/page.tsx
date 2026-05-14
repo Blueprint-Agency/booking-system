@@ -5,7 +5,6 @@ import { Badge } from "@/components/ui";
 import {
   classInstances,
   workshops,
-  workshopTiers,
   ptSessions,
   bookings,
   clients,
@@ -13,7 +12,9 @@ import {
 } from "@/data";
 import { computeEventState } from "@/lib/event-state";
 import { instructorName, locationName, classTypeName } from "@/lib/schedule-helpers";
+import { maxCapacity } from "@/lib/capacity";
 import { formatDate, formatTime, formatDuration, formatSgd } from "@/lib/formatters";
+import type { Capacity } from "@/types";
 import { ClassDetailClient } from "@/components/schedule/class-detail-client";
 import { WorkshopDetailClient } from "@/components/schedule/workshop-detail-client";
 import { PtDetailClient } from "@/components/schedule/pt-detail-client";
@@ -49,7 +50,9 @@ export default async function SessionDetailPage({
           locationName(cls.locationId),
           instructorName(cls.instructorId),
           `${cls.creditCost} credit${cls.creditCost === 1 ? "" : "s"}`,
+          cls.difficulty[0].toUpperCase() + cls.difficulty.slice(1),
         ]}
+        capacity={cls.capacity}
       >
         <ClassDetailClient classInstance={cls} roster={roster} ratings={myRatings} />
       </DetailShell>
@@ -58,13 +61,17 @@ export default async function SessionDetailPage({
 
   if (type === "workshop") {
     const w = workshops.find((x) => x.id === id);
-    if (!w) notFound();
+    if (!w || w.days.length === 0) notFound();
+    const first = w.days[0];
+    const last = w.days[w.days.length - 1];
+    const startsAt = `${first.date}T${first.startTime}:00.000Z`;
+    const endsAt = `${last.date}T${last.endTime}:00.000Z`;
     const eventState = computeEventState({
-      startsAt: w.startsAt,
-      endsAt: w.endsAt,
+      startsAt,
+      endsAt,
       lifecycle: w.lifecycle,
     });
-    const tiers = workshopTiers.filter((t) => t.workshopId === w.id);
+    const tiers = w.tiers;
     const roster = bookings
       .filter((b) => b.workshopId === w.id)
       .map((b) => ({
@@ -73,14 +80,17 @@ export default async function SessionDetailPage({
         tier: tiers.find((t) => t.id === b.workshopTierId),
       }));
     const myRatings = ratings.filter((r) => r.workshopId === w.id);
+    const dateMeta =
+      w.days.length === 1 ? formatDate(startsAt) : `${formatDate(startsAt)} – ${formatDate(endsAt)}`;
     return (
       <DetailShell
         backHref="/admin/schedule"
         kindBadge={<Badge tone="warning">Workshop</Badge>}
         eventState={eventState}
         title={w.name}
+        editHref={`/admin/packages/workshops/${w.id}/edit`}
         meta={[
-          formatDate(w.startsAt) + " – " + formatDate(w.endsAt),
+          dateMeta,
           locationName(w.locationId),
           w.instructorIds.map(instructorName).join(" & "),
         ]}
@@ -113,6 +123,7 @@ export default async function SessionDetailPage({
           locationName(s.locationId),
           instructorName(s.instructorId),
         ]}
+        capacity={s.capacity}
       >
         <PtDetailClient ptSession={s} roster={roster} />
       </DetailShell>
@@ -128,6 +139,8 @@ function DetailShell({
   eventState,
   title,
   meta,
+  editHref,
+  capacity,
   children,
 }: {
   backHref: string;
@@ -135,6 +148,8 @@ function DetailShell({
   eventState: ReturnType<typeof computeEventState>;
   title: string;
   meta: string[];
+  editHref?: string;
+  capacity?: Capacity;
   children: React.ReactNode;
 }) {
   const stateBadge =
@@ -159,9 +174,36 @@ function DetailShell({
         <div className="mb-2 flex items-center gap-2">
           {kindBadge}
           {stateBadge}
+          {editHref && (
+            <Link
+              href={editHref}
+              className="ml-auto rounded-md border border-border bg-card px-3 py-1 text-xs text-muted hover:border-accent/40 hover:text-ink"
+            >
+              Edit content
+            </Link>
+          )}
         </div>
         <h1 className="text-2xl font-semibold text-ink">{title}</h1>
         <p className="mt-1 text-sm text-muted">{meta.filter(Boolean).join(" · ")}</p>
+        {capacity && (
+          <div className="mt-4 inline-flex flex-wrap items-center gap-4 rounded-lg border border-border bg-paper px-4 py-2 text-xs">
+            <span className="font-semibold uppercase tracking-wider text-muted">
+              Capacity breakdown
+            </span>
+            <span>
+              Waitlist <strong className="text-ink">{capacity.waitlist}</strong>
+            </span>
+            <span>
+              Online <strong className="text-ink">{capacity.onlineBooking}</strong>
+            </span>
+            <span>
+              Buffer <strong className="text-ink">{capacity.buffer}</strong>
+            </span>
+            <span className="text-muted">
+              Max <strong className="text-ink">{maxCapacity(capacity)}</strong>
+            </span>
+          </div>
+        )}
       </header>
       {children}
     </div>
