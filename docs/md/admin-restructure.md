@@ -1,31 +1,66 @@
 # Admin Restructure — Design Decisions
 
-## Overview — Sidebar Nav Structure
+## Overview — Roles, Workspaces, Sidebar Nav
+
+### Role model (two staff roles)
+
+Staff identity is `superadmin` or `admin`. The `instructor` role is reserved in the schema but deferred — there is no instructor sidebar or instructor session in v1.
+
+| Role | Authority |
+|---|---|
+| **Superadmin** | Global catalog + policy owner. Creates locations, edits class types, configures all packages (Classes + Private Sessions) and their promotions, edits Global Policy, manages Staff/Notifications/Waiver. Full read/write across every workspace. |
+| **Admin** | Operations staff scoped to one or more granted workspaces via `staff_users.granted_location_ids: string[]`. Sees only their granted locations' Schedule / Workshops / Check-in / Inbox. **Read-only** on Clients. Cannot reach Class Types, Packages (Classes + Private Sessions), Global Policy, Notifications, Waiver, Staff, or Locations. |
+
+- Superadmin grants are **implicit** — an empty `granted_location_ids` means "all active locations".
+- See §15 for invitation + archive rules.
+
+### Workspace boundary (global vs workspace-scoped)
+
+Locations are workspaces. Surfaces are partitioned as follows:
+
+| Tier | Surfaces |
+|---|---|
+| **Global (superadmin-only)** | Locations CRUD, Class Types, Packages → Classes, Packages → Private Sessions, Promotions (nested in packages), Global Policy, Notifications, Waiver, Staff |
+| **Workspace-scoped** | Schedule, Workshops (housed under "Packages" in nav but each tied to a `location_id`), Check-in, Inbox |
+| **Workspace-agnostic** | PT Requests (no `location_id` until scheduled — see §9) |
+| **Cross-workspace (global, read-only for admin)** | Clients — cross-location credits mean a client record spans workspaces; admin sees all clients but cannot mutate (no kebab actions, no expiry edits, no set-balance, no manual adjustments, no suspend/reactivate) |
+
+### Workspace switcher (topbar)
+
+- The admin shell topbar carries a `<WorkspaceSwitcher />` dropdown listing the user's accessible locations. The sidebar **no longer has a "Locations" entry** — moved into this dropdown's "Manage locations" modal (superadmin only).
+- The active location is global state, persisted in localStorage under `ys.activeLocationId`. All workspace-scoped pages read it directly — there are **no per-page LocationFilterChips** on Schedule + Workshops and **no CheckinLocationPill** on Check-in.
+- Dropdown contents:
+  - List of accessible locations (current marked).
+  - Superadmin extras: "+ Add location" and "Manage locations" (modal CRUD reusing `LocationFormDialog`).
+  - Admin footer hint: "Contact your superadmin to request more workspace access."
+- `LocationGate` (cold start guard) is role-aware:
+  - Superadmin with zero active locations → "Add your first location" CTA card.
+  - Admin with zero accessible locations → "No workspace access — contact your superadmin" empty state.
+  - Otherwise pass-through.
+
+### Sidebar structure
 
 **Building Blocks** (set up first — prereqs for everything else):
-1. Locations
-2. Class Types
-3. Instructors
+1. Class Types  *(locations moved to topbar switcher)*
 
 **Policy:**
 4. Global Policy — cancellation cap (applies to all clients across all session types)
 
 **Packages + Policies** (configure before creating scheduled sessions):
-5. Classes — credit bundle & unlimited packages + cancellation tiers
-6. Private Sessions — PT packages + cancellation tiers
-   (Workshops have no config page — creation and policy set per workshop at scheduling time)
+5. Classes — Trial Pass, credit bundles, unlimited memberships (+ promotions)
+6. Private Sessions — PT packages (+ promotions)
+7. Workshops — workspace-scoped multi-day workshop editor (housed under Packages)
 
 **Schedule:**
-7. Schedule
-   - **Timetable** — unified calendar view of all sessions (classes + workshops + confirmed PT)
+8. Schedule
+   - **Timetable** — unified calendar view of all sessions (classes + workshops + confirmed PT) scoped to the active workspace
    - **Create Schedule** — two creation flows:
-     - Class instance (class type, instructor, location, date/time, duration, capacity, credit cost)
-     - Workshop (name, class type, images, description, dates, tiers, instructor, location, cancellation policy)
-   - Private Sessions excluded from Create Schedule — client-driven via instructor availability system
+     - Class instance (class type, instructor, date/time, duration, capacity, credit cost, difficulty)
+     - PT session (via PT Request triage — see §9)
+   - **"+ Workshop"** is a dropdown of existing workshops (one tile per `WorkshopDay`); workshop *creation* is no longer in the scheduler.
 
 **Operations:**
-8. Instructor Availability
-9. Private Session Booking Flow
+9. PT Requests (replaces Instructor Availability — see §8/§9)
 10. Session Detail Pages (class / workshop / PT)
 11. Check-in
 12. Cancellation & Refund Mechanics
@@ -45,7 +80,7 @@
 - 17. Notifications (email template management)
 - 18. Waivers
 
-**Next phase (see §19):**
+**Next phase (see §20):**
 - Dashboard
 - Reports
 - Audit log
@@ -57,9 +92,11 @@
 
 ---
 
-## 1. Locations
+## 1. Locations (Workspaces)
 
-**Sidebar position:** Top-level building block item.
+**Surface:** Topbar `<WorkspaceSwitcher />` dropdown → "Manage locations" modal. **Superadmin-only.** There is no sidebar entry for Locations.
+
+Locations are the workspace boundary — every scoped surface (Schedule, Workshops, Check-in, Inbox) reads `ys.activeLocationId` from localStorage and renders only data tied to it.
 
 **Fields per location:**
 - Name
@@ -67,10 +104,10 @@
 - Google Maps link
 - Phone number
 
-**Page behaviour:**
-- Starts empty on first load — admin keys in their own locations.
-- Empty state with "Add location" CTA.
-- List view: active locations as cards, archived locations shown at the bottom with an "Archived" badge + Restore button.
+**Modal behaviour:**
+- List active locations as cards; archived locations at the bottom with an "Archived" badge + Restore button.
+- "+ Add location" opens the shared `LocationFormDialog`.
+- Cold start (zero active locations): superadmin sees the "Add your first location" CTA card via `LocationGate`; admin sees "No workspace access — contact your superadmin".
 
 **Deletion rules:**
 - **Hard delete** — only if zero linked data exists across all tables (location has never been used).
@@ -81,17 +118,21 @@
 
 ## 2. Class Types
 
-**Sidebar position:** Top-level building block item.
+**Sidebar position:** Top-level building block item. **Superadmin-only** (global catalog).
 
 **Purpose:** Shared catalogue of session types (e.g. Chair Yoga, Vinyasa Flow, Aerial Yoga). Used as a dropdown when creating a class/workshop/PT session, and as a multi-select on instructor profiles to indicate teaching eligibility.
 
 **Fields per class type:**
-- Name
+- `name`
+- `description` — short blurb shown to clients on `/classes` and workshop cards.
+- `parent_id: string | null` — single-level hierarchy. A class type may have a parent, but a child cannot itself become a parent (depth capped at 1). Rendered as a tree on the catalog page.
+
+**Difficulty has moved off class types.** It is now set per-instance on `class_instances.difficulty: "general" | "beginner" | "intermediate" | "advanced"` during scheduling — the same class type can run at different levels depending on the scheduled session.
 
 **Deletion rules:**
 - **Hard delete** — only if zero linked data (class type has never been used).
 - **Soft delete (archive)** — if past data exists but no upcoming or ongoing sessions reference it.
-- **Blocked** — if any upcoming or ongoing session uses this class type.
+- **Blocked** — if any upcoming or ongoing session uses this class type. Parents are also blocked while any child still has linked data.
 - Archived class types appear at bottom of list with Restore option.
 
 ---
@@ -160,42 +201,78 @@ Single source of truth for client-initiated class and PT cancellation. Workshops
 
 ## 5. Classes (Config Page — Packages Only)
 
-**Purpose:** Pre-requisite config. Admin sets up class packages here before any class sessions can be created on the Schedule. No scheduling happens here.
+**Purpose:** Pre-requisite config. Admin sets up class packages here before any class sessions can be created on the Schedule. No scheduling happens here. **Superadmin-only.**
 
 **Cancellation policy lives in §4 Global Policy — not configured here.**
 
-**Credit Bundle package fields:**
-- Name (e.g. "5-class pack")
-- Number of credits
-- Price (SGD)
-- Validity period (days from purchase date)
-- Active / Archived toggle
+`ClassPackageKind = "credit_bundle" | "unlimited" | "trial"`. Page lists Trial Pass first, then credit bundles, then unlimited memberships.
 
-**Unlimited package fields:**
-- Name (e.g. "Monthly Unlimited")
-- Duration (e.g. 1 month, 3 months)
-- Price (SGD)
+### 5a. Trial Pass (one-per-client, quota-based)
+
+A standalone, quota-based pack that any client may purchase **once only** — enforced at purchase time. A warning header above the section explains the one-per-client rule.
+
+**Trial Pass fields:**
+- `name` (e.g. "First-timer Trial")
+- `description` — short copy shown on the client packages page
+- `price_sgd`
+- `credits` — count of trial classes included
+- `validity_days: number | null` — optional; `null` means no expiry
 - Active / Archived toggle
+- `promotions: Promotion[]` (see §5d)
+
+### 5b. Credit Bundle package fields
+- `name` (e.g. "5-class pack")
+- `credits` — number of credits
+- `price_sgd`
+- `validity_days` — days from purchase date
+- Active / Archived toggle
+- `promotions: Promotion[]` (see §5d)
+
+### 5c. Unlimited package fields
+- `name` (e.g. "Monthly Unlimited")
+- `duration_days` (e.g. 30, 90, 180)
+- `price_sgd`
+- Active / Archived toggle
+- `promotions: Promotion[]` (see §5d)
+
+### 5d. Promotions (shared shape across Classes + Private Sessions)
+
+`class_packages` and `pt_packages` each carry `promotions: Promotion[]`. Promotions are nested in the package editor — there is no separate Promotions page. Quick-add via "+ Add promotion" in the package dialog.
+
+**Promotion shape:**
+- `id`
+- `label` — admin-facing name (e.g. "May Day 25% off")
+- `starts_at`, `ends_at`
+- `mode: "percent" | "price"`
+- `percent: number | null` — used when `mode = "percent"`; quick-pick buttons offer 10 / 25 / 50, but any 0–100 value is allowed.
+- `price_sgd: number | null` — used when `mode = "price"`; explicit special-price override.
+
+**Resolution: best-price-wins.** At purchase time the system evaluates every promotion whose `[starts_at, ends_at]` window contains `now` and applies the one yielding the lowest effective price. Deterministic tie-break on lowest `id` alphabetically. Multiple promotions may stack as candidates — only one wins per purchase.
+
+**Surfacing:**
+- Active and future promotions render as pills on the `/admin/classes` package cards.
+- The Trial Pass section may also carry promotions, evaluated identically.
 
 ---
 
 ## 6. Private Sessions (Config Page — Packages Only)
 
-**Purpose:** Pre-requisite config. Admin sets up PT packages here before any private sessions can be created. No scheduling happens here.
+**Purpose:** Pre-requisite config. Admin sets up PT packages here before any private sessions can be created. No scheduling happens here. **Superadmin-only.**
 
 **Cancellation policy lives in §4 Global Policy — not configured here.**
 
 **PT Package fields:**
-- Name (e.g. "5-session 1-on-1 pack")
-- Session type (1-on-1 or 2-on-1 — dropdown)
-- Number of sessions
-- Price (SGD)
+- `name` (e.g. "5-session 1-on-1 pack")
+- `session_type` — `1on1` or `2on1` (dropdown)
+- `sessions` — number of sessions
+- `price_sgd`
 - Active / Archived toggle
+- `promotions: Promotion[]` — same shape and best-price-wins resolution as §5d.
 
 No validity period on PT packages.
 
 **Booking config:**
-- Book in advance (days) — how many days ahead a client can book a private session
+- `book_in_advance_days` — how many days ahead a client can submit a PT request.
 
 ---
 
@@ -203,19 +280,18 @@ No validity period on PT packages.
 
 ### 7a. Timetable
 
-- Google Calendar-style unified view of all classes, workshops, and confirmed private sessions.
+- Google Calendar-style unified view of all classes, workshops, and confirmed private sessions **scoped to the active workspace** (`ys.activeLocationId`). Switching workspace via the topbar re-renders the calendar.
 - Admin navigates by day / week / month.
 
-**Filters:**
-- Location — All / Breadtalk IHQ / Outram Park
+**Filters (no Location filter — workspace is global now):**
 - Instructor — dropdown of all instructors
 - Type — All / Class / Workshop / Private Session
 - Date — date picker to jump to a specific date
 
 **What influences the timetable:**
-- Admin creates a class instance → immediately appears on the Schedule timetable AND occupies that slot on the assigned instructor's availability timetable.
-- Admin creates a workshop → immediately appears on the Schedule timetable AND occupies the assigned instructor(s)' availability timetable for the duration.
-- Admin or instructor approves a PT session request → confirmed session appears on the Schedule timetable AND occupies that slot on the instructor's availability timetable.
+- Admin creates a class instance → immediately appears on the Schedule timetable AND occupies that slot on the assigned instructor's calendar.
+- Admin creates a workshop in `/admin/packages/workshops` → each `WorkshopDay` auto-renders on the Schedule timetable as one tile with a `Day N/M` chip. Workshops are no longer created from the scheduler.
+- Admin (or assigned instructor in a later phase) schedules a PT session from a PT Request (§9) → confirmed session appears on the Schedule timetable AND occupies that slot on the instructor's calendar.
 
 **Admin-initiated cancellation:**
 When admin cancels a class, workshop, or PT session from the Schedule, all booked clients automatically receive a full refund — regardless of cap, window, or any other rule. No exceptions.
@@ -229,76 +305,104 @@ In all three cases, an Inbox notification is generated (see §13).
 ### 7b. Create Schedule — Class Instance
 
 Fields:
-- Class type (from shared Class Types catalogue)
-- Instructor (dropdown filtered by eligible class types)
-- Location
+- `class_type_id` (from shared Class Types catalogue)
+- `instructor_id` (dropdown filtered by eligible class types)
+- `location_id` — defaults to active workspace; not user-selectable.
 - Date and time
 - Duration
-- Capacity (max pax)
+- `difficulty: "general" | "beginner" | "intermediate" | "advanced"` — per-instance (moved off class type, see §2).
+- **Capacity** — structured, see §7d below.
 - Credit cost (set manually per class instance — varies by class type but entered at scheduling time)
 
-### 7c. Create Schedule — Workshop
+### 7c. Workshops on the Schedule
 
-Fields:
-- Name
-- Class type (from shared Class Types catalogue)
-- Cover image
-- Additional image(s)
-- Description (rich text editor — supports headings, bullet points, emphasis)
-- Start date and time
-- End date and time
-- Instructor(s) (multi-select)
-- Location
+Workshop creation is no longer in the scheduler — see §7e.
 
-**Pricing — Tiers only** (no flat price). Each tier has:
-- Tier name (e.g. "2 Days", "1 Day")
-- Description
-- Regular price (SGD)
-- Early bird price (SGD) — optional
-- Early bird ends: quota (first N sign-ups) and/or cutoff date — whichever hits first
-- Capacity (seats for this tier)
+- The scheduler's **"+ Workshop"** button opens a dropdown of existing workshops scoped to the active workspace.
+- Selecting a workshop **does not create anything** — its `WorkshopDay` tiles already render on the timetable automatically (one tile per day, `Day N/M` chip).
+- Cancelling a workshop still happens from the Schedule detail page (cancellation rules unchanged — full automatic Stripe refund to all attendees per §7a).
 
-**Capacity & waitlist:**
-- Capacity is per tier.
-- Once a tier hits capacity it is marked sold out — no waitlist in v1.
+### 7d. Structured capacity (`<CapacityFields />`)
 
-**Cancellation Policy:**
-- Workshops are **non-refundable and non-cancellable by clients.** Once purchased, persistent.
-- Only admin can cancel a workshop. Admin cancellation = full automatic Stripe money refund to all attendees (see §7a).
-- No per-workshop policy config — there are no client-side cancellation rules to set.
+`Capacity` is no longer a scalar. Applied to `ClassInstance.capacity`, `WorkshopDay.capacity`, and `PtSession.capacity`:
+
+| Field | Meaning |
+|---|---|
+| `waitlist` | Overflow queue size once `online_booking + buffer` is full |
+| `online_booking` | Bookable seats via the client app |
+| `buffer` | Reserved for staff / walk-ins; not exposed to clients |
+| `max_capacity` (derived) | `waitlist + online_booking + buffer` |
+
+A shared `<CapacityFields />` block appears on every scheduling form. Detail pages render a **Capacity breakdown** strip showing the three slices side-by-side.
+
+### 7e. Workshops are configured under Packages (not Schedule)
+
+Workshops live at `/admin/packages/workshops` — workspace-scoped (each workshop is tied to a `location_id`, so admins see only their workspace's workshops). See §19 for the full spec.
 
 ---
 
-## 8. Instructor Availability
+## 8. Instructor Availability — REMOVED
 
-**Who sets it:** Admin sets availability on behalf of instructors (instructor self-service TBD for later).
+This surface has been **removed entirely.** There is no `/admin/availability` page and instructors do not publish availability slots.
 
-**Two types of availability input:**
-- **Recurring weekly slots** — e.g. every Tuesday 8–10am
-- **Custom one-off slots** — specific dates and times
-
-**Timetable view:**
-- Google Calendar-style view (consistent with fe-client pattern).
-- Shows availability slots overlaid with assigned classes, workshops, and confirmed private sessions.
-- Colour coding (TBD at design stage): available / class / workshop / private session / blocked.
-- Admin navigates by week or month.
-- When a class or workshop is assigned to an instructor via Schedule → Create Schedule, it automatically occupies that slot — remaining free slots are bookable for private sessions.
+It is replaced by the **PT Request** flow (§9): clients submit a request with their preferred slots, and admin schedules a session from the request via `ScheduleFromRequestDialog`. The instructor's calendar is implicit — the system simply checks for instructor conflicts at the moment of scheduling.
 
 ---
 
-## 9. Private Session Booking Flow
+## 9. PT Requests (Private Session Booking Flow)
 
-1. Client picks an instructor.
-2. Client sees that instructor's available slots (derived from instructor availability minus already-assigned sessions).
-3. Client submits a request for a specific slot.
-4. Slot is held as **pending**.
-5. Admin or instructor reviews the request in the **Private Sessions inbox** and approves or declines.
-6. On approval: session confirmed, slot marked booked, client notified.
-7. On decline: slot released, client notified.
+The Availability system is gone (§8). PT sessions now exist only as the resolution of a client-submitted **PT Request**.
 
-**Credit deduction for PT sessions:** Fixed at 1 PT session per booking — no config needed.
+**Invariant:** in v1, **no `PtSession` can exist without a matching `PtRequest`.**
 
-**Inbox details:** see §13.
+### 9a. Data shape — `PtRequest`
+
+| Field | Notes |
+|---|---|
+| `id` | |
+| `client_id` | |
+| `preferred_instructor_id: string \| null` | Optional — client may have no preference |
+| `session_type` | `1on1` or `2on1` |
+| `duration_minutes` | Set by client |
+| `preferred_slots: PtRequestSlot[]` | Array of `{ date, start_time }` — client supplies multiple options |
+| `client_note` | Optional |
+| `status` | `pending` / `scheduled` / `declined` / `cancelled` |
+| `pt_session_id` | Set when scheduled |
+| `decline_note` | Required on decline (min 5 chars) |
+| `decided_by_staff_id`, `decided_at` | Audit |
+| `created_at` | |
+
+### 9b. Workspace-agnostic
+
+PT Requests have **no `location_id`** until they are scheduled — at scheduling time the resulting `PtSession.location_id` is assigned. The `/admin/pt-requests` page shows a hint banner explaining this; admins from any workspace see all pending requests in a single shared queue.
+
+### 9c. Triage UI (`/admin/pt-requests`)
+
+- Filter chips: `pending` / `scheduled` / `declined` / `all`. Pending count badge appears on the sidebar item.
+- Row click opens a **detail drawer** with the full request, the preferred slots, and the client's note.
+- **Decline** requires a note (min 5 chars). Logged to `decline_note`, fires the "PT session declined" email (§17, template #6).
+- **Schedule** opens `ScheduleFromRequestDialog`:
+  - Pre-filled from the first preferred slot.
+  - Quick-pick chips for the remaining preferred slots — clicking one updates the date/time fields.
+  - `<CapacityFields />` defaults from session type (`1on1` → `online_booking: 1, buffer: 0, waitlist: 0`; `2on1` → `online_booking: 2`).
+  - Instructor defaults to `preferred_instructor_id` if present.
+
+### 9d. Two converging entry points
+
+Both paths share `ScheduleFromRequestDialog`:
+
+1. **From PT Requests** → row drawer → "Schedule" button.
+2. **From Schedule** → "+ PT Session" button → picker dialog listing pending requests → same dialog.
+
+The scheduler can no longer create a PT session ad-hoc — it must always originate from a request, preserving the invariant.
+
+### 9e. Outcomes
+
+- **Schedule** → `PtRequest.status = "scheduled"`, `pt_session_id` set, client notified (template #5).
+- **Decline** → `PtRequest.status = "declined"`, `decline_note` saved, client notified (template #6).
+- **Cancel** (client-initiated before triage) → `PtRequest.status = "cancelled"`.
+
+Credit deduction is unchanged: 1 PT session per booking, deducted on schedule (not on submit).
 
 ---
 
@@ -404,23 +508,23 @@ Consolidated reference for all cancellation paths.
 
 ## 13. Inbox
 
-Single unified inbox at `/admin/inbox`. Filter tabs by notification type. One sidebar item with total unread count.
+Single workspace-scoped inbox at `/admin/inbox`. Filter tabs by notification type. One sidebar item with total unread count for the active workspace.
+
+PT request triage **does not live here** — it has its own dedicated page (`/admin/pt-requests`, §9). The Inbox is now purely a notification feed.
 
 **Notification types:**
 
 | # | Type | Trigger | Shape | Actionable? |
 |---|---|---|---|---|
 | 1 | **Client cancellation** | Client cancels a class or PT | Feed-style row: client, session, time-of-cancel, refund result (credit returned / forfeited) | No — read/unread only |
-| 2 | **Admin/instructor cancellation — class/PT** | Admin or instructor cancels a class or PT instance | Feed-style row: actor, session, time-of-cancel, count of clients refunded | No — read/unread only |
-| 3 | **Admin/instructor cancellation — workshop** | Admin cancels a workshop | Feed-style row: actor, workshop, time-of-cancel, total SGD refunded, count of attendees refunded | No — read/unread only |
-| 4 | **PT request** | Client submits a private session request (per §9) | Actionable row: client, instructor, requested slot, message | **Yes** — Approve / Decline |
+| 2 | **Admin cancellation — class/PT** | Admin cancels a class or PT instance | Feed-style row: actor, session, time-of-cancel, count of clients refunded | No — read/unread only |
+| 3 | **Admin cancellation — workshop** | Admin cancels a workshop | Feed-style row: actor, workshop, time-of-cancel, total SGD refunded, count of attendees refunded | No — read/unread only |
 
 **Shape conventions:**
-- Informational rows (1, 2, 3): mark read individually or bulk; no other actions on the row. If admin wants to drill into a client pattern, they navigate to the client profile from the row.
-- Actionable rows (4): Approve / Decline buttons inline; required note on Decline.
+- Informational rows (1–3): mark read individually or bulk; no other actions on the row. To drill into a client pattern, admin navigates to the client profile from the row.
 - Filter chips: All / Unread / By type / Date range.
 
-**Unread count** surfaces as a chip on the dashboard and on the sidebar Inbox item.
+**Unread count** surfaces as a chip on the dashboard and on the sidebar Inbox item, scoped to the active workspace.
 
 ---
 
@@ -470,32 +574,28 @@ Single unified inbox at `/admin/inbox`. Filter tabs by notification type. One si
 
 ### 15a. Role model
 
-Three role types in the system:
+Two staff role types in the system. (The `instructor` role is reserved in the schema for a later phase and is not invitable in v1.)
 
 | Role | How created | Authority |
 |---|---|---|
-| **Superadmin** | Seeded into fresh deployment — not invitable via UI | Identical to admin + exclusive: can archive/remove other admin accounts |
-| **Admin** | Invited by any admin or superadmin | Full daily-ops authority across all surfaces |
-| **Instructor** | Invited by any admin; profile created first in §3 | Scoped to own sessions only |
+| **Superadmin** | Seeded into fresh deployment — not invitable via UI | Global catalog + policy owner across all workspaces. Can manage Locations, Class Types, all Packages + Promotions, Global Policy, Notifications, Waiver, Staff. Implicit access to every active location. Can archive other staff accounts. |
+| **Admin** | Invited by superadmin (or another admin) | Operations staff scoped to one or more workspaces via `staff_users.granted_location_ids: string[]`. Sees only granted-location Schedule / Workshops / Check-in / Inbox. **Read-only on Clients.** Cannot reach Class Types, Packages, Global Policy, Notifications, Waiver, Staff, or Locations. |
 
-- Roles are **mutually exclusive** — one email = one account = one role. An instructor who also does front-desk work uses two separate email accounts.
-- Admins and superadmin are functionally identical except for the admin-archival power.
-- The superadmin label is a deployment artifact — there is no ongoing UI distinction between superadmin and admin sessions.
+- Roles are **mutually exclusive** — one email = one staff account = one role.
+- Superadmin grants are implicit: an empty `granted_location_ids` array means "all active locations".
+- Admin's accessible-locations list is reflected in the topbar `<WorkspaceSwitcher />` (see Overview).
+- The superadmin label is a deployment artifact — there is no ongoing visual distinction in chrome beyond the surfaces a superadmin can reach.
 
 ### 15b. Invitation rules
 
 **Who can invite whom:**
-- Any admin (including superadmin) can invite admins and instructors.
-- Instructors cannot invite anyone.
-
-**Instructor invitation flow:**
-- Admin creates an instructor profile (§3 fields: name, photo, bio, phone, email, eligible class types).
-- On save, the system **automatically fires an invite email** to the instructor's email address. No separate "send invite" toggle.
-- The instructor's profile is immediately usable for scheduling whether or not the invite has been accepted — profile existence and login access are independent.
+- Superadmin can invite admins (and other superadmins).
+- Admins can invite other admins, but only scoped to a subset of their own granted locations.
+- Instructor profiles (§3) are catalog records — they are not invited into the staff app in v1.
 
 **Admin invitation flow:**
-- Admin enters the invitee's email address and role (Admin).
-- System sends a magic-link invite email. Invitee clicks link → sets password → lands on `/admin` (dashboard).
+- Inviter enters the invitee's email, role (Admin), and `granted_location_ids` (must be a subset of the inviter's own grants unless inviter is superadmin).
+- System sends a magic-link invite email. Invitee clicks link → sets password → lands on `/admin` (dashboard, with their first accessible location selected in the topbar switcher).
 
 **Invite token:**
 - Expires after **7 days** (hardcoded).
@@ -503,27 +603,22 @@ Three role types in the system:
 - Resend generates a fresh 7-day token.
 - Admin can revoke a pending invite at any time.
 
-**Post-acceptance defaults:**
-- Admin → lands on `/admin` (dashboard)
-- Instructor → lands on `/admin/today`
+**Post-acceptance default:** Admin (and superadmin) → lands on `/admin` (dashboard).
 
 **Email uniqueness:**
-- Emails are unique within the **staff space** (admin + instructor). One email cannot hold both an admin and an instructor account.
+- Emails are unique within the **staff space.** One email = one staff account.
 - Staff and client spaces are **independent** — the same email can exist as a client in the client app and as a staff member in the admin app. They are treated as separate identities with separate sessions. No cross-login.
 
 ### 15c. Archive & removal rules
 
-**Admin accounts:**
-- **Hard delete: never.** Admin records are never permanently deleted — audit log integrity depends on actor identity surviving.
-- **Archive (soft delete):** the only removal path. On archive: active sessions force-logged-out immediately; pending invites the admin sent remain valid.
-- **Only superadmin can archive another admin.** Admins cannot archive each other.
-- **No self-archive** — an admin cannot archive their own account.
-- **No minimum-admin guardrail** — all admins (including superadmin) can be archived, potentially leaving the system admin-less. Recovery requires deployment-level re-seeding.
+**Staff accounts (admin + superadmin):**
+- **Hard delete: never.** Staff records are never permanently deleted — audit log integrity depends on actor identity surviving.
+- **Archive (soft delete):** the only removal path. On archive: active sessions force-logged-out immediately; pending invites the staff member sent remain valid.
+- **Only superadmin can archive another staff account.** Admins cannot archive each other.
+- **No self-archive** — a staff member cannot archive their own account.
+- **No minimum-staff guardrail** — all staff (including superadmin) can be archived, potentially leaving the system staff-less. Recovery requires deployment-level re-seeding.
 
-**Instructor accounts:**
-- Same archive/deletion rules as §3 (hard delete only if zero linked data; archive if past sessions exist; blocked if upcoming/ongoing sessions).
-- On archive: active sessions force-logged-out.
-- Any admin can archive an instructor (subject to §3 blocking rules).
+**Granted-location revocation** is a softer alternative: superadmin may shrink an admin's `granted_location_ids` without archiving them. Effective on next page load.
 
 ---
 
@@ -577,20 +672,28 @@ Admin can toggle status from the client profile. No reason note required (intern
 
 No hard delete — client records are never permanently removed (preserves booking history, check-in records, refund audit trail).
 
-### 16d. Manual Credit / Session Adjustments
+### 16d. Manual Package Adjustments
 
-Admin can directly modify a client's credit or PT session balance from the client profile.
+**Superadmin-only.** Admin sees the read-only banner on every client profile and cannot trigger any of the kebab actions below.
+
+Three actions on a client's active-package kebab, all written into the same immutable `manual_adjustments` audit ledger:
+
+| Action | Available on | Ledger row |
+|---|---|---|
+| **Adjust balance** (`+N` / `−N`) | `credit_bundle`, PT pack | `delta: signed integer`, `reason: "+N: <reason>"` or `"−N: <reason>"` |
+| **Set credit balance** | `credit_bundle`, `trial` | `delta: target − current` (computed), `reason: "Set <N>: <reason>"` |
+| **Edit expiry** | `credit_bundle`, `unlimited`, `trial` | `delta: 0`, `reason: "Expiry changed from <X> to <Y>: <reason>"` |
 
 **Fields:**
-- Package — dropdown of the client's active packages (credit bundle or PT pack; unlimited passes are not adjustable by count).
-- Adjustment — signed integer (e.g. `+3` or `−1`).
-- Reason — free-text, required. No structured types.
+- Package — dropdown of the client's active packages.
+- Adjustment / target / new expiry — depends on action.
+- Reason — free-text, required.
 
 **Rules:**
-- Balance cannot go below zero — adjustment is blocked if it would result in a negative balance.
-- Each adjustment is recorded in an immutable audit log entry: timestamp, acting admin, package, delta, reason.
-- No cap on how many adjustments can be made. No approval workflow.
-- Adjustments do not affect cancellation cap counter (§4) — they are an admin override, not a client action.
+- Balance cannot go below zero — adjustment / set-balance is blocked if it would result in a negative balance.
+- Every action is recorded with timestamp, acting superadmin, package, delta, reason — immutable.
+- The audit list (renamed **"Package adjustments"**) discriminates row type by `reason.startsWith(...)` and renders tone-coded badges: `Expiry` / `Set N` / `+N` / `−N`.
+- Adjustments do not affect cancellation cap counter (§4) — they are a superadmin override, not a client action.
 
 ---
 
@@ -705,7 +808,61 @@ Single studio-wide liability waiver. One page at `/admin/waivers`.
 
 ---
 
-## 19. Next Phase — Deferred Items
+## 19. Workshops (multi-day, under Packages)
+
+Workshops are configured at `/admin/packages/workshops` — **workspace-scoped** (each workshop carries a `location_id`, so admins see only their workspace's workshops). They no longer have a creation surface in the scheduler (see §7c).
+
+### 19a. Data shape
+
+**`Workshop`:**
+- `id`, `name`, `class_type_id`, `location_id`
+- `instructor_ids: string[]`
+- `cover_url`, `additional_images: string[]`
+- `description_html`
+- `days: WorkshopDay[]`
+- `tiers: WorkshopTier[]`
+- `lifecycle` — draft / published / archived
+
+**`WorkshopDay`:**
+- `id`, `date`, `start_time`, `end_time`
+- `capacity` — structured (`waitlist + online_booking + buffer`, per §7d)
+- `base_price_sgd`
+
+**`WorkshopTier`:**
+- `id`, `workshop_id`
+- `name`, `description`
+- `day_ids: string[]` — which `WorkshopDay`s this tier grants access to (subset or all)
+- `price_sgd`
+- `early_bird_price_sgd: number | null`
+- `early_bird_cutoff_at: string | null`
+
+### 19b. Three-stage editor
+
+1. **Basics** — name, description, class type, location, instructors, cover + additional images.
+2. **Days** — date entry (range mode or individual dates) with per-day `start_time`, `end_time`, `base_price_sgd`, and `<CapacityFields />`.
+3. **Tiers** — at least one tier required. Each tier picks which `day_ids` it covers, a name, regular price, and optional early-bird price + cutoff.
+
+### 19c. Derived tier capacity
+
+Tier capacity is **derived**, never stored:
+
+```
+tier.max_capacity = min(day.max_capacity for day in tier.day_ids)
+```
+
+A tier can never sell more than the smallest constituent day's room. This handles "Full event" tiers (limited by the tightest day) and partial-coverage tiers (e.g. Day 1 only) uniformly.
+
+### 19d. Schedule rendering
+
+In the scheduler, each `WorkshopDay` auto-renders as one tile with a `Day N/M` chip — there is no separate "workshop instance" record. The scheduler's "+ Workshop" button is a *picker* of existing workshops, not a creation flow.
+
+### 19e. Cancellation
+
+Unchanged from prior spec: workshops are non-refundable and non-cancellable by clients. Only admin can cancel a workshop (full automatic Stripe refund to all attendees per §7a).
+
+---
+
+## 20. Next Phase — Deferred Items
 
 The following sections are out of scope for this phase and will be defined in the next design cycle.
 
