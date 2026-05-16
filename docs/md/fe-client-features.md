@@ -24,7 +24,8 @@ These show up in many features. Understanding them up front makes the rest read 
 
 - **Sessions** = a separate currency for **private training only**.
 - Held by VIP packages (1-on-1 / 2-on-1).
-- 1 session is deducted **only after a private-session request is confirmed by the studio**, never on submission.
+- 1 session is deducted **only after a PT request is scheduled by the studio**, never on submission.
+- PT bookings are **request-driven** — clients submit preferred slots, the studio triages and schedules. There is no public instructor-availability calendar in v1.
 
 ### 0.3 Locations
 
@@ -257,13 +258,15 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
 ### 4.1 Browse `/workshops`
 
 **Business logic**
-- Workshops are one-off events with finite capacity and a single date (or a date range).
-- Each workshop has one or more **package tiers** (e.g., Early bird / Standard / VIP+1 friend) stored on `workshopPackages[]`.
+- Workshops are one or multi-day events with finite capacity. Each workshop has:
+  - A list of **days** (`WorkshopDay[]`) — each day has its own date, time window, capacity, and base price.
+  - A list of **tiers** (`WorkshopTier[]`) — each tier names a name (e.g. "Full Event", "Day 1 only"), an explicit set of `day_ids` it grants access to, a regular price, and optional early-bird price + cutoff.
+- **Tier capacity is derived** as the *minimum capacity across the days it covers* — a tier can never sell more than the smallest constituent day's room. The server is the authority; the card surfaces the resulting "X of N spots left" per tier.
 - Workshops are **paid directly** — credits cannot be used. The card carries a clarification note: *"Direct payment only — credits cannot be used."*
 - Status: upcoming / fully enrolled / ended.
-- Free workshops (`price === 0`) use **"Register"** copy and skip checkout entirely — go directly to a confirmation success page.
-- Optional **waitlist** per workshop (`waitlistEnabled` flag).
-- **Level badge** is colour-coded: beginner (sage) / intermediate (warning) / advanced (error) / all-levels (accent).
+- Free workshops (price 0) use **"Register"** copy and skip checkout entirely — go directly to a confirmation success page.
+- Optional **waitlist** per `WorkshopDay` (capacity now decomposed into `waitlist + online_booking + buffer` — see admin spec).
+- Promotions on workshops follow the same best-price-wins resolution as packages (§6.1).
 
 **User journey**
 1. List rendered as **expandable accordion cards**. Card header shows title, instructor, level badge (colour-coded), date, **"X of N spots left"** counter, *"From S$X"* on the collapsed view.
@@ -288,63 +291,61 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
 ### 4.2 Workshop detail `/workshops/[id]`
 
 **Business logic**
-- Acts as the pre-purchase confirmation page. Shows workshop details, the selected package tier (changeable), terms note ("Direct payment only — credits cannot be used").
-- Honors `?package=N` from the list page to preselect a tier.
-- Submit → `/checkout` with workshop+tier in cart.
+- Acts as the pre-purchase confirmation page. Shows workshop details, the day schedule (one row per `WorkshopDay`), all available tiers (each with the `day_ids` it covers rendered as date chips), and the terms note ("Direct payment only — credits cannot be used").
+- Honors `?tier=...` from the list page to preselect a tier.
+- The selected tier renders its effective price (regular or early-bird, plus any active promotion via best-price-wins) and the derived seats-left count (`min` of constituent days' availability).
+- Submit → `/checkout` with workshop + tier in cart.
 
 **User journey**
-- Review preselected tier → optionally change to a different tier → "Purchase" → `/checkout`.
+- Review preselected tier → optionally change to a different tier (e.g. drop from "Full event" to "Day 1 only") → "Purchase" → `/checkout`.
 - Free workshops skip checkout: tap "Register" → success page with QR + add-to-calendar.
 
 **Where admin comes in**
-- Admin creates/edits workshops, sets capacity, package tiers, waitlist toggle, level, photo, instructor, location, refund policy override.
-- Admin sees rosters and can manually add/remove attendees.
+- Admin (superadmin) creates / edits workshops at `/admin/packages/workshops` via the three-stage editor (Basics → Days → Tiers). Workspace-scoped — each workshop is pinned to one `location_id`.
+- Admin sets per-day capacity (`waitlist + online_booking + buffer`), base price, and time window. Tier capacity is derived, never edited directly.
+- Admin sees rosters per day and can manually add / remove attendees.
 
 ---
 
 ## 5. Private sessions (1-on-1 / 2-on-1)
 
-### 5.1 Instructor grid `/private-sessions`
+### 5.1 Landing `/private-sessions`
 
 **Business logic**
-- Lists instructors who offer private sessions.
-- Each instructor has: photo, name, specialties, bio, locations they serve, an `available` flag, and (optionally) declared time slots.
-- Booking is **request-based**, not instant.
-- Page also exposes the user's **PT credit balance cards** (1-on-1 sessions remaining, 2-on-1 sessions remaining), so they know what they can spend before requesting.
+- Lists instructors who offer private sessions for browse / context only — there is no per-instructor "available slot" calendar in v1. Booking is **request-driven**: the client submits preferred slots, the studio triages.
+- Each instructor card shows: photo, name, specialties, bio, locations they serve.
+- Page exposes the user's **PT credit balance cards** (1-on-1 sessions remaining, 2-on-1 sessions remaining) so they know what they can spend before requesting.
+- The primary CTA on this page is **"Request a Private Session"** — opens the PT request form (§5.2). Tapping an instructor card pre-fills `preferred_instructor_id` on that form.
 
 **Layout**
 - Top of page: PT balance cards (one per format, with expiry dates) and a "Buy more" CTA → `/packages`.
-- **Step-1 form** (above the grid): instructor (any/specific), location, preferred date. Selections pre-fill the detail page via query params (`?instructor=...&location=...&date=...`).
-- 2-column grid (1 col mobile) of instructor cards.
+- Primary CTA: "Request a Private Session".
+- 2-column grid (1 col mobile) of instructor cards (informational; click pre-fills the request form).
 
-**Button states (per card)**
-| State | Button |
-|---|---|
-| `available: true` | "Schedule Private Class" |
-| `available: false` | "Not Available" (disabled, grey) |
-
-### 5.2 Instructor detail / request `/private-sessions/[id]`
+### 5.2 Submit PT request `/private-sessions/request`
 
 **Business logic**
-- Shows full instructor profile and a request form, pre-filled from the step-1 form on the list page if present.
-- User picks: format (1-on-1 / 2-on-1), location (limited to instructor's serving locations), preferred date + **time slot** (chooser shows the instructor's declared availability for that date).
-- Submitting creates a `pending` private-session request — **no session deducted yet, no payment taken**.
-- Studio responds within 12 hours: confirm → 1 session deducted from the matching format's VIP pack; reject → request closed.
-- If user has no VIP-session entitlement for the selected format, the page surfaces a nudge to `/packages` first; user can still submit (entitlement is resolved/charged at confirmation time, per Yoga Sadhana's chosen workflow in admin).
+- Single request form. Fields:
+  - **Format** — 1-on-1 or 2-on-1.
+  - **Duration** — minutes.
+  - **Preferred instructor** — optional (defaults to "Any" unless pre-filled from §5.1).
+  - **Preferred slots** — one or more `{ date, start_time }` rows. The client may add multiple options to maximise the chance the studio can schedule one of them. Min 1.
+  - **Note** — optional free-text for the studio.
+- Submitting creates a `PtRequest` with `status = "pending"` — **no session deducted, no payment taken, no `location_id` set yet** (location is assigned by the studio at scheduling time).
+- If the user has no VIP-session entitlement for the selected format, the page surfaces a nudge to `/packages` first; submission is still allowed (entitlement is resolved/charged when the studio schedules the request).
 
 **User journey**
-1. Browse instructor grid → click "Schedule Private Class" (or use step-1 form to pre-select).
-2. Detail page with bio + request form (format / location / date / time slot).
+1. From `/private-sessions`, tap "Request a Private Session" (or pick an instructor card to pre-fill).
+2. Fill the form: format, duration, optional instructor, one or more preferred slots, optional note.
 3. Submit → confirmation page: *"Your request is pending. We will update you within 12 hours."*
-4. Studio confirms or rejects (action happens in admin's `/private/inbox`).
-   - On **confirm** → user receives notification (email + in-app), booking flips to `confirmed`, 1 session deducted, per-booking QR generated, item appears in `/account/private-sessions` (Confirmed tab).
-   - On **reject** (or counter-offer of alt time) → user is notified and routed back to re-pick a slot or cancel.
+4. Studio triages the request in `/admin/pt-requests`:
+   - On **scheduled** → user receives notification (email + in-app), `PtRequest.status = "scheduled"`, a `PtSession` is created with the studio-assigned slot and location, 1 session deducted, per-booking QR generated, item appears in `/account/private-sessions` (Confirmed tab).
+   - On **declined** → user is notified with the studio's decline note and can submit a new request with different slots.
 
 **Where admin comes in**
-- **Inbox** of pending private-session requests (already present in fe-portal under `/private/inbox`).
-- Admin confirms/rejects, optionally proposing alt times.
-- On confirmation: deducts 1 session from the user's VIP package, generates a per-session QR, schedules instructor block.
-- Admin manages instructor `available` flag and per-instructor pricing.
+- **`/admin/pt-requests`** triage page (replaces the prior inbox-based flow). Admin schedules or declines. Decline requires a note. Scheduling opens `ScheduleFromRequestDialog` pre-filled from the first preferred slot, with quick-pick chips for the other preferred slots.
+- The system enforces the invariant: **no `PtSession` exists without a backing `PtRequest`** in v1.
+- Instructor profile pages on the staff side manage bio, photo, and eligible class types (no `available` flag, no availability slots — the surface was removed).
 
 ---
 
@@ -353,23 +354,31 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
 ### 6.1 Packages `/packages`
 
 **Business logic**
-- Three-section catalogue:
-  1. **Credit Bundles** — N credits, validity in days, fixed SGD price. Examples: One-time Pass (1 credit / 1 day / S$40), Bundle of 10 (S$300 / 90d), Bundle of 20 (S$550 / 180d), Bundle of 30/50/100.
-  2. **Unlimited** — duration-based (1 / 3 / 6 months) at a fixed price; lets the holder book unlimited group classes.
-  3. **VIP Private Sessions** — 1-on-1 or 2-on-1 packs with a session count.
-- A user holding a Bundle cannot purchase Unlimited (and vice versa) until the existing one expires or is exhausted. UI flags this and blocks purchase with copy.
-- Sections 1+2 are toggleable (Credits | Unlimited) since they're mutually exclusive; VIP sits as an independent third section.
+- Four-section catalogue:
+  1. **Trial Pass** — quota-based intro pack (e.g. 3 trial classes / 30 days / S$30). **One purchase per client, ever** — enforced server-side at purchase time. A previously-purchased trial (active or expired) blocks further trial purchases and the section renders a "You've already used your Trial Pass" disabled state.
+  2. **Credit Bundles** — N credits, validity in days, fixed SGD price. Examples: Bundle of 10 (S$300 / 90d), Bundle of 20 (S$550 / 180d), Bundle of 30/50/100.
+  3. **Unlimited** — duration-based (1 / 3 / 6 months) at a fixed price; lets the holder book unlimited group classes.
+  4. **VIP Private Sessions** — 1-on-1 or 2-on-1 packs with a session count.
+- A user holding a Bundle cannot purchase Unlimited (and vice versa) until the existing one expires or is exhausted. UI flags this and blocks purchase with copy. Trial Pass and VIP are independent and can co-exist with any other holding.
+- Trial sits at the top of the page above the Credits / Unlimited toggle. VIP sits as an independent fourth section.
+
+**Promotions (best-price-wins)**
+- Any package may carry one or more **promotions** configured in admin (percent off or explicit special price, with start/end windows).
+- At purchase time the system evaluates every promotion whose window contains `now` and applies the one yielding the lowest effective price (deterministic tie-break on lowest promotion id).
+- The card surface shows: original price (struck through if a promo is active) + effective price + promo pill (label, e.g. "May Day -25%"). Tooltip lists all active promos for transparency.
 
 **User journey**
-1. User reviews tiers. **Highlight badge** marks the recommended bundle (e.g., "Best value" on Bundle of 20). Each card shows credit count, validity in days, price, and any "pending purchase" indicator if the user has an in-flight order for that tier.
-2. Click **Buy Now** on a card → routed to a confirmation step (`/checkout/confirmation` or inline review) showing package name, credits/sessions, validity, price, and any conflict warning ("You already have an active Unlimited — purchasing a Bundle is not allowed until it expires").
+1. User reviews tiers. **Highlight badge** marks the recommended bundle (e.g., "Best value" on Bundle of 20). Each card shows credit count / session count, validity in days, price (with best-promo applied if any), and any "pending purchase" indicator.
+2. Click **Buy Now** on a card → routed to a confirmation step (`/checkout/confirmation` or inline review) showing package name, credits/sessions, validity, original + effective price + applied promo label, and any conflict warning (e.g. "Trial Pass already used" or "You already have an active Unlimited").
 3. Click **Confirm Purchase** → `/checkout`.
 4. On success → `/booking/confirmation` (success variant) and entitlement appears in `/account` (My Packages section, grouped per studio).
 
 **Where admin comes in**
-- Admin manages the **Products catalogue** — bundle definitions, unlimited durations, VIP packs, pricing, validity, highlight flags, archive/un-archive.
+- Admin manages the **Products catalogue** — trial pass, bundle definitions, unlimited durations, VIP packs, pricing, validity, highlight flags, archive/un-archive.
+- Admin (superadmin) configures **promotions** nested inside each package (percent or special-price, with windows).
+- The server enforces the **one-trial-per-client** rule at the purchase endpoint.
 - Admin needs reporting on package sales (revenue mix, conversion).
-- Admin can grant/issue a package manually (e.g., promo, refund replacement).
+- Admin (superadmin) can grant/issue a package manually (e.g., promo, refund replacement) and can edit expiry / set balance on a client's active packages via the kebab menu.
 
 ---
 
@@ -531,8 +540,8 @@ For every fe-client feature above, admin must own at least the **write side** of
 | Classes browse | Session templates, schedule generator, single-instance overrides, capacity, waitlist toggles |
 | Booking confirmation | Cancellation policy editor; booking audit log |
 | Workshops browse / detail | Workshop CRUD + tiers + waitlist + roster |
-| Private sessions request | Private-session inbox (`/private/inbox`); instructor availability + pricing |
-| Packages | Products catalogue (bundles, unlimited, VIP); manual grants |
+| Private sessions request | PT request triage (`/admin/pt-requests`); `ScheduleFromRequestDialog` for converting to a `PtSession` (no public availability calendar) |
+| Packages | Products catalogue — Trial Pass, bundles, unlimited, VIP — with nested promotions (best-price-wins); manual grants + expiry edits + set-balance via client kebab |
 | Checkout | Transactions, refunds, payment provider settings, tax/GST |
 | Account dashboard | Membership ops on user profile (extend / pause / cancel / contact) |
 | Account profile | User detail editor (incl. waiver re-request) |
@@ -591,7 +600,10 @@ These are the in-app and channel touchpoints triggered by booking and payment ev
 
 - **Credits vs sessions are different currencies** — never let admin tooling accidentally let a private-session pack pay for a group class, or vice versa.
 - **Bundle and Unlimited are mutually exclusive at the user level** — admin issuance flow must enforce this.
-- **Private-session deduction happens on confirmation, not on request** — admin inbox actions are the trigger.
+- **Trial Pass is one-per-client, ever** — server-enforced at purchase. A previous trial (active or expired) blocks new purchases.
+- **PT bookings are request-driven** — clients submit preferred slots, the studio schedules. No public instructor availability calendar in v1. Session deduction happens when the studio schedules, not on submit. Invariant: no `PtSession` exists without a backing `PtRequest`.
+- **Workshop tier capacity is derived** — `min(day capacity for day in tier.day_ids)`. Never store or trust a tier-level capacity number on the client; ask the server.
+- **Promotions use best-price-wins** — when multiple promotions are active on a package or workshop, the lowest effective price wins (deterministic tie-break on lowest id).
 - **Workshops never use credits** — admin should not even render a credit-source selector in their tooling.
 - **Per-booking QR, not per-user QR** — front-desk app and any admin scan tooling must read the booking-level token.
 - **"Contact Sales Team" replaces "Cancel Membership"** — cancellation is a high-touch flow handled out-of-app via WhatsApp; the admin side needs a queue for these inbound conversations.
