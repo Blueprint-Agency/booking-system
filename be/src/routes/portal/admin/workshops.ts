@@ -5,6 +5,12 @@ import * as publish from '../../../services/workshops/publish'
 import * as daysSvc from '../../../services/workshops/days'
 import * as tiersSvc from '../../../services/workshops/tiers'
 import * as cancelSvc from '../../../services/workshops/cancel'
+import {
+  listManagedPromotionsFor,
+  replacePromotionsForParent,
+  serializePromotion,
+  type PromotionWriteInput,
+} from '../../../services/packages/promotions'
 
 // ---------------------------------------------------------------------------
 // Validation schemas
@@ -82,6 +88,32 @@ const tierUpdateSchema = z.object({
 
 const listQuery = z.object({ lifecycle: lifecycleEnum.optional() })
 
+const promotionInputSchema = z.object({
+  id: z.string().uuid().nullish(),
+  label: z.string().min(1).max(160),
+  kind: z.enum(['percent', 'special_price']),
+  percent_off: z.number().int().min(1).max(99).nullish(),
+  special_price_sgd: priceField.nullish(),
+  starts_at: isoDate,
+  ends_at: isoDate,
+})
+
+const replacePromotionsSchema = z.object({
+  promotions: z.array(promotionInputSchema),
+})
+
+function toPromotionWriteInput(p: z.infer<typeof promotionInputSchema>): PromotionWriteInput {
+  return {
+    id: p.id ?? null,
+    label: p.label,
+    kind: p.kind,
+    percentOff: p.percent_off ?? null,
+    specialPriceSgd: p.special_price_sgd ?? null,
+    startsAt: new Date(p.starts_at),
+    endsAt: new Date(p.ends_at),
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Serializers
 // ---------------------------------------------------------------------------
@@ -145,12 +177,14 @@ const app = new Hono()
   .get('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const detail = await publish.getWorkshopDetail(id)
+    const promosMap = await listManagedPromotionsFor('workshop', [id])
     return c.json({
       ...workshopRow(detail.workshop),
       days: detail.days.map(dayRow),
       tiers: detail.tiers.map(t => tierRow(t as tiersSvc.TierWithDays)),
       images: detail.images.map(im => ({ id: im.id, r2_key: im.r2Key, ord: im.ord })),
       instructor_ids: detail.instructorIds,
+      promotions: (promosMap[id] ?? []).map(serializePromotion),
     })
   })
   .post('/', zValidator('json', createBasicsSchema), async c => {
@@ -297,6 +331,31 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'workshop_tiers', id: tier_id })
     return c.json({ deleted: true })
   })
+
+  // ---- workshop promotions (applied to all tiers of the workshop) ----
+  .get('/:id/promotions', zValidator('param', idParam), async c => {
+    const { id } = c.req.valid('param')
+    const map = await listManagedPromotionsFor('workshop', [id])
+    return c.json({ promotions: (map[id] ?? []).map(serializePromotion) })
+  })
+  .put(
+    '/:id/promotions',
+    zValidator('param', idParam),
+    zValidator('json', replacePromotionsSchema),
+    async c => {
+      const { id } = c.req.valid('param')
+      const body = c.req.valid('json')
+      const staffId = c.get('staffUserId')
+      const rows = await replacePromotionsForParent(
+        'workshop',
+        id,
+        body.promotions.map(toPromotionWriteInput),
+        staffId,
+      )
+      c.set('auditTarget' as any, { table: 'promotions', id })
+      return c.json({ promotions: rows.map(serializePromotion) })
+    },
+  )
 
   // ---- roster (v0 stubs — no bookings yet) ----
   .get('/:id/roster', zValidator('param', idParam), async c => {

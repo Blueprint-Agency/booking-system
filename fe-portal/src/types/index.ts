@@ -164,6 +164,8 @@ export interface Workshop {
   descriptionHtml: string;
   days: WorkshopDay[];
   tiers: WorkshopTier[];
+  /** Promotions scoped to this workshop (parent_type='workshop'). Applied uniformly across all tiers. */
+  promotions: Promotion[];
   lifecycle: Lifecycle;
   cancelledAt: string | null;
   cancelledByStaffId: string | null;

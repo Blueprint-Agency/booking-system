@@ -8,6 +8,11 @@ import { formatSgd } from "@/lib/formatters";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import type { PtPackage, PtSessionType } from "@/types";
+import {
+  promotionFromApi,
+  promotionToApiPayload,
+  type ApiPromotion,
+} from "@/lib/promotions";
 
 interface ApiPtPackage {
   id: string;
@@ -17,6 +22,7 @@ interface ApiPtPackage {
   price_sgd: string;
   status: "active" | "archived";
   archived_at: string | null;
+  promotions?: ApiPromotion[];
 }
 
 function fromApi(r: ApiPtPackage): PtPackage {
@@ -27,7 +33,7 @@ function fromApi(r: ApiPtPackage): PtPackage {
     numSessions: r.num_sessions,
     priceSgd: Number(r.price_sgd),
     status: r.status,
-    promotions: [],
+    promotions: (r.promotions ?? []).map(promotionFromApi),
   };
 }
 
@@ -76,11 +82,13 @@ export default function PrivateSessionsPage() {
     if (!api) return;
     const isEdit = packages.some((p) => p.id === pkg.id);
     try {
+      const promosPayload = pkg.promotions.map(promotionToApiPayload);
       if (isEdit) {
         await api.patch(`/portal/admin/pt-packages/${pkg.id}`, {
           name: pkg.name,
           num_sessions: pkg.numSessions,
           price_sgd: String(pkg.priceSgd),
+          promotions: promosPayload,
         });
       } else {
         await api.post("/portal/admin/pt-packages", {
@@ -88,6 +96,7 @@ export default function PrivateSessionsPage() {
           session_type: pkg.sessionType,
           num_sessions: pkg.numSessions,
           price_sgd: String(pkg.priceSgd),
+          promotions: promosPayload,
         });
       }
       setDialog(null);

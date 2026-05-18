@@ -18,8 +18,8 @@ import {
 
 // ── Tab definitions ────────────────────────────────────────────────────────────
 
-type MainTab = "classCredits" | "trial" | "pt1on1" | "pt2on1";
-type ClassSubTab = "bundle" | "unlimited";
+type MainTab = "classCredits" | "pt1on1" | "pt2on1";
+type ClassSubTab = "bundle" | "unlimited" | "trial";
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
@@ -34,24 +34,31 @@ export default function PackagesPage() {
   >(null);
 
   useEffect(() => {
-    function fromHash(): MainTab | null {
+    function fromHash(): { main: MainTab | null; sub: ClassSubTab | null } {
       const h =
         typeof window !== "undefined"
           ? window.location.hash.replace(/^#/, "").toLowerCase()
           : "";
-      if (h === "trial" || h === "trial-pass") return "trial";
+      if (h === "trial" || h === "trial-pass")
+        return { main: "classCredits", sub: "trial" };
+      if (h === "unlimited") return { main: "classCredits", sub: "unlimited" };
+      if (h === "bundle" || h === "bundles")
+        return { main: "classCredits", sub: "bundle" };
       if (h === "pt1on1" || h === "private" || h === "1on1" || h === "1-on-1")
-        return "pt1on1";
-      if (h === "pt2on1" || h === "2on1" || h === "2-on-1") return "pt2on1";
+        return { main: "pt1on1", sub: null };
+      if (h === "pt2on1" || h === "2on1" || h === "2-on-1")
+        return { main: "pt2on1", sub: null };
       if (h === "classcredits" || h === "classes" || h === "credits")
-        return "classCredits";
-      return null;
+        return { main: "classCredits", sub: null };
+      return { main: null, sub: null };
     }
     const initial = fromHash();
-    if (initial) setActiveTab(initial);
+    if (initial.main) setActiveTab(initial.main);
+    if (initial.sub) setClassSubTab(initial.sub);
     const onHash = () => {
       const next = fromHash();
-      if (next) setActiveTab(next);
+      if (next.main) setActiveTab(next.main);
+      if (next.sub) setClassSubTab(next.sub);
     };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
@@ -85,11 +92,6 @@ export default function PackagesPage() {
 
   const MAIN_TABS: { key: MainTab; label: string; hidden?: boolean }[] = [
     { key: "classCredits", label: "Class Credits" },
-    {
-      key: "trial",
-      label: "Trial Pass",
-      hidden: trials.length === 0,
-    },
     { key: "pt1on1", label: "PT 1-on-1" },
     { key: "pt2on1", label: "PT 2-on-1" },
   ];
@@ -138,7 +140,7 @@ export default function PackagesPage() {
         <BookingSurface maxWidth="xl" padding="default">
           <SectionHeading
             eyebrow="Choose your track"
-            title={trials.length > 0 ? "Bundle, unlimited, trial or PT" : "Three package families"}
+            title={trials.length > 0 ? "Class credits, trial or PT" : "Class credits or PT"}
           />
 
           {loading && (
@@ -189,21 +191,15 @@ export default function PackagesPage() {
                 <ClassCreditsSection
                   bundles={bundles}
                   unlimited={unlimited}
+                  trials={trials}
                   subTab={classSubTab}
                   setSubTab={setClassSubTab}
                   hasUnlimited={hasUnlimited}
                   hasBundle={hasBundle}
-                />
-              )}
-
-              {/* ── Trial Pass tab ──────────────────────────────────── */}
-              {activeTab === "trial" && (
-                <TrialSection
-                  trials={trials}
                   trialUsed={trialUsed}
-                  claimingId={claimingTrialId}
-                  banner={trialMessage}
-                  onClaim={claimTrial}
+                  claimingTrialId={claimingTrialId}
+                  trialBanner={trialMessage}
+                  onClaimTrial={claimTrial}
                 />
               )}
 
@@ -232,44 +228,62 @@ const SHARED_BLURBS = {
 function ClassCreditsSection({
   bundles,
   unlimited,
+  trials,
   subTab,
   setSubTab,
   hasUnlimited,
   hasBundle,
+  trialUsed,
+  claimingTrialId,
+  trialBanner,
+  onClaimTrial,
 }: {
   bundles: ApiClassPackage[];
   unlimited: ApiClassPackage[];
+  trials: ApiClassPackage[];
   subTab: ClassSubTab;
   setSubTab: (s: ClassSubTab) => void;
   hasUnlimited: boolean;
   hasBundle: boolean;
+  trialUsed: boolean;
+  claimingTrialId: string | null;
+  trialBanner: { kind: "ok" | "err"; text: string } | null;
+  onClaimTrial: (pkg: ApiClassPackage) => void | Promise<void>;
 }) {
+  const subTabs: { key: ClassSubTab; label: string; hidden?: boolean }[] = [
+    { key: "bundle", label: "Credit Bundles" },
+    { key: "unlimited", label: "Unlimited Access" },
+    { key: "trial", label: "Trial Pass", hidden: trials.length === 0 },
+  ];
+
   return (
     <div className="space-y-8">
       <div role="tablist" aria-label="Class credit type" className="flex justify-center gap-8">
-        {(["bundle", "unlimited"] as ClassSubTab[]).map((sub) => {
-          const isActive = subTab === sub;
-          return (
-            <button
-              key={sub}
-              role="tab"
-              aria-selected={isActive}
-              onClick={() => setSubTab(sub)}
-              className={cn(
-                "relative pb-3 text-sm font-medium transition-colors",
-                isActive ? "text-ink" : "text-muted hover:text-ink",
-              )}
-            >
-              {sub === "bundle" ? "Credit Bundles" : "Unlimited Access"}
-              <span
+        {subTabs
+          .filter((t) => !t.hidden)
+          .map((tab) => {
+            const isActive = subTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => setSubTab(tab.key)}
                 className={cn(
-                  "absolute left-0 right-0 -bottom-px h-0.5 rounded-full transition-all",
-                  isActive ? "bg-ink" : "bg-transparent",
+                  "relative pb-3 text-sm font-medium transition-colors",
+                  isActive ? "text-ink" : "text-muted hover:text-ink",
                 )}
-              />
-            </button>
-          );
-        })}
+              >
+                {tab.label}
+                <span
+                  className={cn(
+                    "absolute left-0 right-0 -bottom-px h-0.5 rounded-full transition-all",
+                    isActive ? "bg-ink" : "bg-transparent",
+                  )}
+                />
+              </button>
+            );
+          })}
       </div>
 
       {subTab === "bundle" && (
@@ -325,6 +339,16 @@ function ClassCreditsSection({
             </div>
           )}
         </>
+      )}
+
+      {subTab === "trial" && (
+        <TrialSection
+          trials={trials}
+          trialUsed={trialUsed}
+          claimingId={claimingTrialId}
+          banner={trialBanner}
+          onClaim={onClaimTrial}
+        />
       )}
     </div>
   );

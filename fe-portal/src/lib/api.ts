@@ -24,7 +24,7 @@ export class ApiError extends Error {
 }
 
 interface RequestOptions {
-  method?: "GET" | "POST" | "PATCH" | "DELETE";
+  method?: "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
   body?: unknown;
   query?: Record<string, string | number | boolean | undefined | null>;
   signal?: AbortSignal;
@@ -91,6 +91,8 @@ export function makeApi(getToken: TokenGetter) {
       apiFetch<T>(path, getToken, { method: "POST", body }),
     patch: <T>(path: string, body?: unknown) =>
       apiFetch<T>(path, getToken, { method: "PATCH", body }),
+    put: <T>(path: string, body?: unknown) =>
+      apiFetch<T>(path, getToken, { method: "PUT", body }),
     del: <T>(path: string) =>
       apiFetch<T>(path, getToken, { method: "DELETE" }),
   };

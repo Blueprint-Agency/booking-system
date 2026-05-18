@@ -6,9 +6,15 @@ import { toast } from "sonner";
 import { Button, Input, Label, PageHeader, Badge } from "@/components/ui";
 import { WorkshopDaysEditor } from "./workshop-days-editor";
 import { WorkshopTiersEditor } from "./workshop-tiers-editor";
+import { PromotionsEditor } from "@/components/packages/promotions-editor";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError, type Api } from "@/lib/api";
-import type { Workshop, WorkshopDay, WorkshopTier } from "@/types";
+import {
+  promotionFromApi,
+  promotionToApiPayload,
+  type ApiPromotion,
+} from "@/lib/promotions";
+import type { Workshop, WorkshopDay, WorkshopTier, Promotion } from "@/types";
 
 type Mode = "range" | "individual";
 
@@ -47,6 +53,7 @@ interface ApiWorkshopDetail {
     day_ids: string[];
   }>;
   instructor_ids: string[];
+  promotions?: ApiPromotion[];
 }
 
 function inferMode(days: WorkshopDay[]): Mode {
@@ -130,6 +137,7 @@ function fromApiWorkshop(d: ApiWorkshopDetail): Workshop {
           tier.early_bird_price_sgd != null ? Number(tier.early_bird_price_sgd) : null,
         earlyBirdCutoffAt: tier.early_bird_cutoff_at,
       })),
+    promotions: (d.promotions ?? []).map(promotionFromApi),
     lifecycle: d.lifecycle,
     cancelledAt: null,
     cancelledByStaffId: null,
@@ -203,6 +211,7 @@ export function WorkshopEditor({
   const [descriptionHtml, setDescriptionHtml] = useState(initial?.descriptionHtml ?? "");
   const [days, setDays] = useState<WorkshopDay[]>(initial?.days ?? []);
   const [tiers, setTiers] = useState<WorkshopTier[]>(initial?.tiers ?? []);
+  const [promotions, setPromotions] = useState<Promotion[]>(initial?.promotions ?? []);
   const [mode, setMode] = useState<Mode>(initial ? inferMode(initial.days) : "range");
   const [rangeStart, setRangeStart] = useState(initial?.days[0]?.date ?? "");
   const [rangeEnd, setRangeEnd] = useState(
@@ -276,7 +285,10 @@ export function WorkshopEditor({
           description_html: descriptionHtml || null,
           instructor_ids: instructorIds,
         });
-        toast.success("Workshop basics updated. (Editing days/tiers ships in v1.)");
+        await api.put(`/portal/admin/workshops/${initial.id}/promotions`, {
+          promotions: promotions.map(promotionToApiPayload),
+        });
+        toast.success("Workshop saved. (Editing days/tiers ships in v1.)");
         onSave(initial.id);
       } else {
         const id = await createWorkshopWithChildren(api, {
@@ -288,6 +300,11 @@ export function WorkshopEditor({
           days: [...days].sort((a, b) => a.date.localeCompare(b.date)),
           tiers,
         });
+        if (promotions.length) {
+          await api.put(`/portal/admin/workshops/${id}/promotions`, {
+            promotions: promotions.map(promotionToApiPayload),
+          });
+        }
         toast.success("Workshop created.");
         onSave(id);
       }
@@ -501,6 +518,18 @@ export function WorkshopEditor({
             onChange={setTiers}
           />
         )}
+      </Section>
+
+      <Section title="Promotions" step="4">
+        <p className="text-xs text-muted">
+          Promotions apply uniformly across every pricing tier. The highest tier price
+          previews the effective price.
+        </p>
+        <PromotionsEditor
+          basePriceSgd={Math.max(0, ...tiers.map((t) => t.priceSgd))}
+          value={promotions}
+          onChange={setPromotions}
+        />
       </Section>
 
       {error && (

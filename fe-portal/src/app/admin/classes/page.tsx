@@ -7,7 +7,12 @@ import { ClassPackageDialog } from "@/components/packages/class-package-dialog";
 import { formatSgd } from "@/lib/formatters";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
-import type { ClassPackage, ClassPackageKind } from "@/types";
+import type { ClassPackage, ClassPackageKind, Promotion } from "@/types";
+import {
+  promotionFromApi,
+  promotionToApiPayload,
+  type ApiPromotion,
+} from "@/lib/promotions";
 
 interface ApiClassPackage {
   id: string;
@@ -20,6 +25,7 @@ interface ApiClassPackage {
   price_sgd: string;
   status: "active" | "archived";
   archived_at: string | null;
+  promotions?: ApiPromotion[];
 }
 
 function fromApi(r: ApiClassPackage): ClassPackage {
@@ -33,7 +39,7 @@ function fromApi(r: ApiClassPackage): ClassPackage {
     durationDays: r.duration_days,
     priceSgd: Number(r.price_sgd),
     status: r.status,
-    promotions: [],
+    promotions: (r.promotions ?? []).map(promotionFromApi),
   };
 }
 
@@ -79,6 +85,7 @@ export default function ClassPackagesPage() {
       validity_days: pkg.validityDays ?? null,
       duration_days: pkg.durationDays ?? null,
       price_sgd: String(pkg.priceSgd),
+      promotions: pkg.promotions.map(promotionToApiPayload),
     };
     try {
       if (isEdit) {
