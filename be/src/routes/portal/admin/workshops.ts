@@ -48,7 +48,10 @@ const dayCreateSchema = z.object({
   ord: z.number().int().min(1),
   starts_at: isoDate,
   ends_at: isoDate,
-  base_price_sgd: priceField,
+  // Per-day base_price_sgd is retained at the DB level but is no longer
+  // surfaced in the admin UI — pricing lives on workshop_tiers. Default to 0
+  // so the column's NOT NULL constraint stays satisfied.
+  base_price_sgd: priceField.optional(),
   capacity_online: z.number().int().min(0),
   capacity_waitlist: z.number().int().min(0).optional(),
   capacity_buffer: z.number().int().min(0).optional(),
@@ -202,7 +205,7 @@ const app = new Hono()
       ord: body.ord,
       startsAt: new Date(body.starts_at),
       endsAt: new Date(body.ends_at),
-      basePriceSgd: body.base_price_sgd,
+      basePriceSgd: body.base_price_sgd ?? '0.00',
       capacityOnline: body.capacity_online,
       capacityWaitlist: body.capacity_waitlist,
       capacityBuffer: body.capacity_buffer,

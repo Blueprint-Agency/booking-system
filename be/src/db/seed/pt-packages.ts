@@ -2,6 +2,16 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import { sql } from 'drizzle-orm'
 import * as schema from '../schema'
 
+/**
+ * PT (private-training) package catalogue — mirrors the fe-client
+ * PACKAGE_CATALOGUE (`fe-client/src/lib/mock-state.ts`) VIP 1-on-1 and
+ * VIP 2-on-1 tiers. `numSessions` reflects user-facing session count
+ * (matches the "·N" suffix in the package name); each booking decrements
+ * one session.
+ *
+ * Idempotent on name. To start clean, TRUNCATE pt_packages CASCADE before
+ * reseeding.
+ */
 export async function seedPtPackages(db: PostgresJsDatabase<typeof schema>) {
   const rows: Array<{
     name: string
@@ -9,10 +19,18 @@ export async function seedPtPackages(db: PostgresJsDatabase<typeof schema>) {
     numSessions: number
     priceSgd: string
   }> = [
-    { name: '5-Session 1-on-1',  sessionType: '1on1', numSessions: 5,  priceSgd: '450.00' },
-    { name: '10-Session 1-on-1', sessionType: '1on1', numSessions: 10, priceSgd: '850.00' },
-    { name: '5-Session 2-on-1',  sessionType: '2on1', numSessions: 5,  priceSgd: '300.00' },
-    { name: '10-Session 2-on-1', sessionType: '2on1', numSessions: 10, priceSgd: '560.00' },
+    // --- VIP 1-on-1 ---
+    { name: 'VIP 1-on-1 · 10',  sessionType: '1on1', numSessions: 10,  priceSgd: '1600.00' },
+    { name: 'VIP 1-on-1 · 20',  sessionType: '1on1', numSessions: 20,  priceSgd: '3000.00' },
+    { name: 'VIP 1-on-1 · 30',  sessionType: '1on1', numSessions: 30,  priceSgd: '4200.00' },
+    { name: 'VIP 1-on-1 · 40',  sessionType: '1on1', numSessions: 40,  priceSgd: '5200.00' },
+    { name: 'VIP 1-on-1 · 50',  sessionType: '1on1', numSessions: 50,  priceSgd: '6000.00' },
+    { name: 'VIP 1-on-1 · 100', sessionType: '1on1', numSessions: 100, priceSgd: '11000.00' },
+    // --- VIP 2-on-1 ---
+    { name: 'VIP 2-on-1 · 10',  sessionType: '2on1', numSessions: 10,  priceSgd: '2000.00' },
+    { name: 'VIP 2-on-1 · 20',  sessionType: '2on1', numSessions: 20,  priceSgd: '3600.00' },
+    { name: 'VIP 2-on-1 · 30',  sessionType: '2on1', numSessions: 30,  priceSgd: '4800.00' },
+    { name: 'VIP 2-on-1 · 50',  sessionType: '2on1', numSessions: 50,  priceSgd: '7500.00' },
   ]
 
   for (const r of rows) {

@@ -17,7 +17,6 @@ function newDay(date: string): WorkshopDay {
     startTime: "09:00",
     endTime: "12:00",
     capacity: defaultCapacity(),
-    basePriceSgd: 100,
   };
 }
 
@@ -133,7 +132,7 @@ export function WorkshopDaysEditor({
                 <Trash2 className="h-3.5 w-3.5" />
               </button>
             </div>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
               <div className="space-y-1">
                 <Label className="text-xs">Date</Label>
                 <Input
@@ -157,17 +156,6 @@ export function WorkshopDaysEditor({
                   type="time"
                   value={d.endTime}
                   onChange={(e) => updateDay(d.id, { endTime: e.target.value })}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Base price (SGD)</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  value={d.basePriceSgd}
-                  onChange={(e) =>
-                    updateDay(d.id, { basePriceSgd: Math.max(0, Number(e.target.value) || 0) })
-                  }
                 />
               </div>
             </div>

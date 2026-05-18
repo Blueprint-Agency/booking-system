@@ -140,7 +140,6 @@ export interface WorkshopDay {
   startTime: string;   // HH:mm
   endTime: string;     // HH:mm
   capacity: Capacity;
-  basePriceSgd: number;
 }
 
 export interface WorkshopTier {

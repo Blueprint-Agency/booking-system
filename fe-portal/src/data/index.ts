@@ -2,7 +2,6 @@ export { locations } from "./locations";
 export { classTypes } from "./class-types";
 export { instructors } from "./instructors";
 export { globalPolicy, ptBookingConfig } from "./policy";
-export { classPackages, ptPackages } from "./packages";
 export { clients, clientPackages, manualAdjustments } from "./clients";
 export { staffUsers, staffInvitations, defaultStaffId } from "./staff";
 export { classInstances, workshops, ptSessions } from "./schedule";

@@ -3,8 +3,11 @@ import { sql } from 'drizzle-orm'
 import * as schema from '../schema'
 
 /**
- * Idempotent on name. Includes a Trial Pass row per spec.
- * Kind-specific column constraints enforced by DB CHECK.
+ * Class-package catalogue — mirrors the fe-client PACKAGE_CATALOGUE
+ * (`fe-client/src/lib/mock-state.ts`) for the bundle + unlimited tiers.
+ *
+ * Idempotent on name. Re-running is safe; rows already in the DB are skipped.
+ * To start clean, TRUNCATE class_packages CASCADE before reseeding.
  */
 export async function seedClassPackages(db: PostgresJsDatabase<typeof schema>) {
   const rows: Array<{
@@ -16,12 +19,17 @@ export async function seedClassPackages(db: PostgresJsDatabase<typeof schema>) {
     priceSgd: string
     description: string | null
   }> = [
-    { name: '5-Class Pack',     kind: 'credit_bundle', credits: 5,  validityDays: 60,  durationDays: null, priceSgd: '120.00', description: null },
-    { name: '10-Class Pack',    kind: 'credit_bundle', credits: 10, validityDays: 90,  durationDays: null, priceSgd: '220.00', description: null },
-    { name: '20-Class Pack',    kind: 'credit_bundle', credits: 20, validityDays: 180, durationDays: null, priceSgd: '400.00', description: null },
-    { name: '1-Month Unlimited', kind: 'unlimited',    credits: null, validityDays: null, durationDays: 30,  priceSgd: '180.00', description: null },
-    { name: '3-Month Unlimited', kind: 'unlimited',    credits: null, validityDays: null, durationDays: 90,  priceSgd: '480.00', description: null },
-    { name: 'Trial Pass',        kind: 'trial',        credits: 3,    validityDays: 30,   durationDays: null, priceSgd: '30.00',  description: 'First-timer trial' },
+    // --- Credit bundles ---
+    { name: 'One-time Pass',      kind: 'credit_bundle', credits: 1,    validityDays: 1,    durationDays: null, priceSgd: '40.00',   description: null },
+    { name: 'Bundle of 10',       kind: 'credit_bundle', credits: 10,   validityDays: 90,   durationDays: null, priceSgd: '300.00',  description: null },
+    { name: 'Bundle of 20',       kind: 'credit_bundle', credits: 20,   validityDays: 180,  durationDays: null, priceSgd: '550.00',  description: null },
+    { name: 'Bundle of 30',       kind: 'credit_bundle', credits: 30,   validityDays: 365,  durationDays: null, priceSgd: '750.00',  description: null },
+    { name: 'Bundle of 50',       kind: 'credit_bundle', credits: 50,   validityDays: 365,  durationDays: null, priceSgd: '1100.00', description: null },
+    { name: 'Bundle of 100',      kind: 'credit_bundle', credits: 100,  validityDays: 365,  durationDays: null, priceSgd: '2000.00', description: null },
+    // --- Unlimited memberships ---
+    { name: '3-Month Unlimited',  kind: 'unlimited',     credits: null, validityDays: null, durationDays: 90,   priceSgd: '600.00',  description: null },
+    { name: '6-Month Unlimited',  kind: 'unlimited',     credits: null, validityDays: null, durationDays: 180,  priceSgd: '1000.00', description: null },
+    { name: '12-Month Unlimited', kind: 'unlimited',     credits: null, validityDays: null, durationDays: 365,  priceSgd: '1700.00', description: null },
   ]
 
   for (const r of rows) {

@@ -31,7 +31,6 @@ interface ApiWorkshopDetail {
     ord: number;
     starts_at: string;
     ends_at: string;
-    base_price_sgd: string;
     capacity_online: number;
     capacity_waitlist: number;
     capacity_buffer: number;
@@ -67,7 +66,6 @@ function dayToApi(d: WorkshopDay, ord: number) {
     ord,
     starts_at: new Date(`${d.date}T${d.startTime}:00`).toISOString(),
     ends_at: new Date(`${d.date}T${d.endTime}:00`).toISOString(),
-    base_price_sgd: String(d.basePriceSgd),
     capacity_online: d.capacity.onlineBooking,
     capacity_waitlist: d.capacity.waitlist,
     capacity_buffer: d.capacity.buffer,
@@ -111,7 +109,6 @@ function fromApiWorkshop(d: ApiWorkshopDetail): Workshop {
           date: start.toISOString().slice(0, 10),
           startTime: start.toISOString().slice(11, 16),
           endTime: end.toISOString().slice(11, 16),
-          basePriceSgd: Number(day.base_price_sgd),
           capacity: {
             waitlist: day.capacity_waitlist,
             onlineBooking: day.capacity_online,
@@ -429,8 +426,7 @@ export function WorkshopEditor({
           <ul className="space-y-1 text-sm text-ink">
             {days.map((d) => (
               <li key={d.id} className="rounded-md border border-border bg-paper px-3 py-2">
-                {d.date} · {d.startTime}–{d.endTime} · S${d.basePriceSgd} ·{" "}
-                cap {d.capacity.onlineBooking}
+                {d.date} · {d.startTime}–{d.endTime} · cap {d.capacity.onlineBooking}
               </li>
             ))}
             {days.length === 0 && (
