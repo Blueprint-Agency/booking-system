@@ -36,6 +36,7 @@ interface StaffApiRow {
   invited_at: string | null;
   accepted_at: string | null;
   archived_at: string | null;
+  is_seeded_superadmin: boolean;
 }
 
 interface InvitationApiRow {
@@ -66,6 +67,8 @@ export default function StaffPage() {
   const [inviteDialog, setInviteDialog] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<InvitationApiRow | null>(null);
   const [busyInviteId, setBusyInviteId] = useState<string | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<StaffApiRow | null>(null);
+  const [archiveBusy, setArchiveBusy] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!api) return;
@@ -88,6 +91,36 @@ export default function StaffPage() {
   }, [refresh]);
 
   const isSuperadmin = currentStaff?.role === "superadmin";
+  const isSeededSuperadmin = currentStaff?.isSeededSuperadmin === true;
+
+  function canArchiveTarget(target: StaffApiRow): boolean {
+    if (!isSuperadmin) return false;
+    if (target.status === "archived") return false;
+    if (target.id === currentStaff?.id) return false;
+    if (target.is_seeded_superadmin) return false;
+    if (target.role === "superadmin" && !isSeededSuperadmin) return false;
+    return true;
+  }
+
+  async function handleArchive(target: StaffApiRow) {
+    if (!api) return;
+    setArchiveBusy(true);
+    try {
+      await api.post(`/portal/admin/staff/${target.id}/archive`);
+      toast.success(`${target.name} has been archived.`);
+      setArchiveTarget(null);
+      await refresh();
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const body = err.body as { error?: string; details?: { message?: string } } | null;
+        toast.error(body?.details?.message ?? `Archive failed (HTTP ${err.status}).`);
+      } else {
+        toast.error("Archive failed.");
+      }
+    } finally {
+      setArchiveBusy(false);
+    }
+  }
   const active = staff.filter(s => s.status !== "archived");
   const archived = staff.filter(s => s.status === "archived");
   const pendingInvites = invites.filter(i => i.status === "pending");
@@ -253,6 +286,8 @@ export default function StaffPage() {
                       key={s.id}
                       staff={s}
                       isSelf={s.id === currentStaff?.id}
+                      canArchive={canArchiveTarget(s)}
+                      onArchive={() => setArchiveTarget(s)}
                     />
                   ))}
                 </ul>
@@ -272,6 +307,8 @@ export default function StaffPage() {
                       key={s.id}
                       staff={s}
                       isSelf={s.id === currentStaff?.id}
+                      canArchive={canArchiveTarget(s)}
+                      onArchive={() => setArchiveTarget(s)}
                     />
                   ))}
                 </ul>
@@ -289,6 +326,36 @@ export default function StaffPage() {
           onSubmit={handleInvite}
           onClose={() => setInviteDialog(false)}
         />
+      )}
+
+      {archiveTarget && (
+        <Dialog
+          open
+          onOpenChange={o => !o && !archiveBusy && setArchiveTarget(null)}
+          title="Archive staff?"
+          description={
+            archiveTarget.role === "superadmin"
+              ? `This will archive superadmin ${archiveTarget.name} (${archiveTarget.email}) and immediately sign them out. They will lose all portal access. Their audit trail is preserved — this cannot be hard-deleted.`
+              : `This will archive ${archiveTarget.name} (${archiveTarget.email}) and immediately sign them out. Their audit trail is preserved — this cannot be hard-deleted.`
+          }
+        >
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setArchiveTarget(null)}
+              disabled={archiveBusy}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              disabled={archiveBusy}
+              onClick={() => handleArchive(archiveTarget)}
+            >
+              {archiveBusy ? "Archiving…" : "Archive"}
+            </Button>
+          </DialogFooter>
+        </Dialog>
       )}
 
       {revokeTarget && (
@@ -318,7 +385,17 @@ export default function StaffPage() {
 
 // ---------------- Staff row ----------------
 
-function StaffRow({ staff, isSelf }: { staff: StaffApiRow; isSelf: boolean }) {
+function StaffRow({
+  staff,
+  isSelf,
+  canArchive,
+  onArchive,
+}: {
+  staff: StaffApiRow;
+  isSelf: boolean;
+  canArchive?: boolean;
+  onArchive?: () => void;
+}) {
   const isArchived = staff.status === "archived";
   const isPending = staff.status === "pending";
 
@@ -332,6 +409,9 @@ function StaffRow({ staff, isSelf }: { staff: StaffApiRow; isSelf: boolean }) {
             <Badge tone="warning">
               <ShieldCheck className="mr-0.5 h-3 w-3" /> Superadmin
             </Badge>
+          )}
+          {staff.is_seeded_superadmin && (
+            <Badge tone="neutral">Main</Badge>
           )}
           {staff.role === "admin" && (
             <Badge tone="accent">
@@ -353,9 +433,8 @@ function StaffRow({ staff, isSelf }: { staff: StaffApiRow; isSelf: boolean }) {
           ? `Invited ${formatRelative(staff.invited_at)}`
           : "—"}
       </div>
-      {/* Archive action will be wired when the backend archive route lands. */}
-      {!isArchived && !isSelf && staff.role !== "superadmin" && (
-        <Button size="sm" variant="ghost" disabled title="Archive — not yet implemented">
+      {canArchive && onArchive && (
+        <Button size="sm" variant="ghost" onClick={onArchive}>
           <Archive className="h-3.5 w-3.5" /> Archive
         </Button>
       )}

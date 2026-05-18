@@ -21,6 +21,7 @@ interface AuthMePayload {
   name: string;
   role: StaffRole;
   status: "pending" | "active" | "archived";
+  is_seeded_superadmin: boolean;
   granted_location_ids: string[];
   locations: Array<{ id: string; name: string; address: string | null }>;
 }
@@ -114,6 +115,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         email: me.email,
         role: me.role,
         status: me.status,
+        isSeededSuperadmin: me.is_seeded_superadmin === true,
         grantedLocationIds: me.granted_location_ids,
         archivedAt: null,
         archivedByStaffId: null,

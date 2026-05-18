@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { inArray } from 'drizzle-orm'
 import { db } from '../../db'
 import { locations } from '../../db/schema/catalog'
+import { isSeededSuperadminEmail } from '../../services/auth/staff-archive'
 
 /**
  * GET /api/v1/portal/auth/me
@@ -30,6 +31,8 @@ const app = new Hono().get('/me', async c => {
     name: row.name,
     role: row.role,
     status: row.status,
+    is_seeded_superadmin:
+      row.role === 'superadmin' && isSeededSuperadminEmail(row.email),
     granted_location_ids: granted,
     locations: activeLocations
       .filter(l => l.archivedAt === null)

@@ -298,6 +298,13 @@ export interface StaffUser {
    * Unused for instructor role.
    */
   grantedLocationIds: string[];
+  /**
+   * True when this row is the "main" superadmin — the staff_users row whose
+   * email matches the backend's SUPERADMIN_EMAIL env. This row cannot be
+   * archived from the app, and is the only one allowed to archive other
+   * superadmins.
+   */
+  isSeededSuperadmin: boolean;
   archivedAt: string | null;
   archivedByStaffId: string | null;
   invitedAt: string | null;

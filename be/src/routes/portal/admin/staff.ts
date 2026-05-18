@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { requireRole } from '../../../middleware/require-role'
 import * as svc from '../../../services/auth/invitations'
+import { archiveStaff, isSeededSuperadminEmail } from '../../../services/auth/staff-archive'
 
 const inviteSchema = z.object({
   email: z.string().email().max(254),
@@ -23,6 +24,8 @@ function serializeStaff(row: svc.StaffUserRow) {
     invited_at: row.invitedAt,
     accepted_at: row.acceptedAt,
     archived_at: row.archivedAt,
+    is_seeded_superadmin:
+      row.role === 'superadmin' && isSeededSuperadminEmail(row.email),
   }
 }
 
@@ -78,8 +81,12 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'staff_invitations', id })
     return c.json(serializeInvitation({ ...inv, invitedByStaffName: null }))
   })
-  .post('/:id/archive', zValidator('param', idParam), c =>
-    c.json({ todo: 'archive staff (superadmin only) + Clerk session revoke' }, 501),
-  )
+  .post('/:id/archive', zValidator('param', idParam), async c => {
+    const { id } = c.req.valid('param')
+    const actor = c.get('staffUserId')
+    const row = await archiveStaff({ targetStaffId: id, actorStaffId: actor })
+    c.set('auditTarget' as any, { table: 'staff_users', id })
+    return c.json(serializeStaff(row))
+  })
 
 export default app
