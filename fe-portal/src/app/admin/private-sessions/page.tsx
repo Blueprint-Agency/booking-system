@@ -1,36 +1,150 @@
 "use client";
-import { useState } from "react";
-import { Plus, Pencil, Archive, RotateCcw, Save } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Plus, Pencil, Archive, Save, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { Button, PageHeader, Badge, EmptyState, Input, Label } from "@/components/ui";
-import { ptPackages as seedPackages, ptBookingConfig as seedConfig } from "@/data";
 import { PtPackageDialog } from "@/components/packages/pt-package-dialog";
 import { formatSgd } from "@/lib/formatters";
-import type { PtPackage, PtBookingConfig } from "@/types";
+import { useWorkspace } from "@/lib/workspace-context";
+import { ApiError } from "@/lib/api";
+import type { PtPackage, PtSessionType } from "@/types";
+
+interface ApiPtPackage {
+  id: string;
+  name: string;
+  session_type: PtSessionType;
+  num_sessions: number;
+  price_sgd: string;
+  status: "active" | "archived";
+  archived_at: string | null;
+}
+
+function fromApi(r: ApiPtPackage): PtPackage {
+  return {
+    id: r.id,
+    name: r.name,
+    sessionType: r.session_type,
+    numSessions: r.num_sessions,
+    priceSgd: Number(r.price_sgd),
+    status: r.status,
+    promotions: [],
+  };
+}
 
 export default function PrivateSessionsPage() {
-  const [packages, setPackages] = useState<PtPackage[]>(seedPackages);
-  const [config, setConfig] = useState<PtBookingConfig>(seedConfig);
-  const [draftAdvance, setDraftAdvance] = useState<number>(seedConfig.bookInAdvanceDays);
+  const { api } = useWorkspace();
+  const [packages, setPackages] = useState<PtPackage[]>([]);
+  const [advance, setAdvance] = useState<number>(30);
+  const [draftAdvance, setDraftAdvance] = useState<number>(30);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [savingConfig, setSavingConfig] = useState(false);
   const [dialog, setDialog] = useState<
     { kind: "create" } | { kind: "edit"; pkg: PtPackage } | null
   >(null);
 
-  const configDirty = draftAdvance !== config.bookInAdvanceDays;
+  const load = useCallback(async () => {
+    if (!api) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const [pkgs, policy] = await Promise.all([
+        api.get<{ pt_packages: ApiPtPackage[] }>("/portal/admin/pt-packages"),
+        api.get<{
+          pt_booking_config: { book_in_advance_days: number };
+        }>("/portal/admin/policy"),
+      ]);
+      setPackages(pkgs.pt_packages.map(fromApi));
+      setAdvance(policy.pt_booking_config.book_in_advance_days);
+      setDraftAdvance(policy.pt_booking_config.book_in_advance_days);
+    } catch (err) {
+      setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
+    } finally {
+      setLoading(false);
+    }
+  }, [api]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const configDirty = draftAdvance !== advance;
   const active = packages.filter((p) => p.status === "active");
   const archived = packages.filter((p) => p.status === "archived");
 
-  function handleSave(pkg: PtPackage) {
-    setPackages((prev) =>
-      prev.some((p) => p.id === pkg.id) ? prev.map((p) => (p.id === pkg.id ? pkg : p)) : [...prev, pkg]
-    );
-    setDialog(null);
+  async function handleSavePackage(pkg: PtPackage) {
+    if (!api) return;
+    const isEdit = packages.some((p) => p.id === pkg.id);
+    try {
+      if (isEdit) {
+        await api.patch(`/portal/admin/pt-packages/${pkg.id}`, {
+          name: pkg.name,
+          num_sessions: pkg.numSessions,
+          price_sgd: String(pkg.priceSgd),
+        });
+      } else {
+        await api.post("/portal/admin/pt-packages", {
+          name: pkg.name,
+          session_type: pkg.sessionType,
+          num_sessions: pkg.numSessions,
+          price_sgd: String(pkg.priceSgd),
+        });
+      }
+      setDialog(null);
+      await load();
+      toast.success("PT package saved.");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? `Save failed (HTTP ${err.status}).` : "Save failed.");
+    }
   }
 
-  function toggleArchive(id: string) {
-    setPackages((prev) =>
-      prev.map((p) =>
-        p.id === id ? { ...p, status: p.status === "active" ? "archived" : "active" } : p
-      )
+  async function archive(pkg: PtPackage) {
+    if (!api) return;
+    if (pkg.status === "archived") {
+      toast.info("Restore is a v1 feature.");
+      return;
+    }
+    try {
+      await api.patch(`/portal/admin/pt-packages/${pkg.id}`, { status: "archived" });
+      await load();
+      toast.success("PT package archived.");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? `Archive failed (HTTP ${err.status}).` : "Archive failed.");
+    }
+  }
+
+  async function handleSaveConfig(e: React.FormEvent) {
+    e.preventDefault();
+    if (!api) return;
+    setSavingConfig(true);
+    try {
+      await api.patch("/portal/admin/policy/pt", {
+        book_in_advance_days: draftAdvance,
+      });
+      setAdvance(draftAdvance);
+      toast.success("Booking config saved.");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? `Save failed (HTTP ${err.status}).` : "Save failed.");
+    } finally {
+      setSavingConfig(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex h-64 items-center justify-center gap-2 text-sm text-muted">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="mx-auto max-w-3xl rounded-xl border border-error/30 bg-error/5 p-6 text-center">
+        <p className="text-sm text-error">Failed to load: {error}</p>
+        <Button size="sm" variant="ghost" onClick={load} className="mt-2">
+          Retry
+        </Button>
+      </div>
     );
   }
 
@@ -50,11 +164,7 @@ export default function PrivateSessionsPage() {
         <h2 className="mb-3 text-sm font-semibold text-ink">Booking config</h2>
         <form
           className="rounded-xl border border-border bg-card p-5 shadow-soft"
-          onSubmit={(e) => {
-            e.preventDefault();
-            setConfig({ bookInAdvanceDays: draftAdvance });
-            alert("Booking config updated (mock).");
-          }}
+          onSubmit={handleSaveConfig}
         >
           <div className="flex flex-wrap items-end gap-4">
             <div className="space-y-1.5">
@@ -63,6 +173,7 @@ export default function PrivateSessionsPage() {
                 id="advance"
                 type="number"
                 min={1}
+                max={365}
                 value={draftAdvance}
                 onChange={(e) => setDraftAdvance(Number(e.target.value))}
                 className="w-32"
@@ -71,8 +182,16 @@ export default function PrivateSessionsPage() {
             <div className="flex-1 text-xs text-muted">
               Maximum number of days ahead a client can submit a private session request.
             </div>
-            <Button type="submit" disabled={!configDirty}>
-              <Save className="h-4 w-4" /> Save
+            <Button type="submit" disabled={!configDirty || savingConfig}>
+              {savingConfig ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Saving…
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4" /> Save
+                </>
+              )}
             </Button>
           </div>
         </form>
@@ -88,14 +207,14 @@ export default function PrivateSessionsPage() {
               title="Active"
               packages={active}
               onEdit={(pkg) => setDialog({ kind: "edit", pkg })}
-              onArchive={(id) => toggleArchive(id)}
+              onArchive={archive}
             />
             {archived.length > 0 && (
               <PackageGroup
                 title="Archived"
                 packages={archived}
                 onEdit={(pkg) => setDialog({ kind: "edit", pkg })}
-                onArchive={(id) => toggleArchive(id)}
+                onArchive={archive}
                 archived
               />
             )}
@@ -106,7 +225,7 @@ export default function PrivateSessionsPage() {
       {dialog && (
         <PtPackageDialog
           pkg={dialog.kind === "edit" ? dialog.pkg : null}
-          onSave={handleSave}
+          onSave={handleSavePackage}
           onClose={() => setDialog(null)}
         />
       )}
@@ -124,7 +243,7 @@ function PackageGroup({
   title: string;
   packages: PtPackage[];
   onEdit: (pkg: PtPackage) => void;
-  onArchive: (id: string) => void;
+  onArchive: (pkg: PtPackage) => void;
   archived?: boolean;
 }) {
   if (packages.length === 0) return null;
@@ -157,17 +276,11 @@ function PackageGroup({
               <Button size="sm" variant="ghost" onClick={() => onEdit(pkg)}>
                 <Pencil className="h-3.5 w-3.5" /> Edit
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => onArchive(pkg.id)}>
-                {pkg.status === "archived" ? (
-                  <>
-                    <RotateCcw className="h-3.5 w-3.5" /> Restore
-                  </>
-                ) : (
-                  <>
-                    <Archive className="h-3.5 w-3.5" /> Archive
-                  </>
-                )}
-              </Button>
+              {pkg.status === "active" && (
+                <Button size="sm" variant="ghost" onClick={() => onArchive(pkg)}>
+                  <Archive className="h-3.5 w-3.5" /> Archive
+                </Button>
+              )}
             </div>
           </div>
         ))}

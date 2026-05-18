@@ -1,35 +1,62 @@
 "use client";
 import { useState } from "react";
 import { Plus, Archive, RotateCcw, MapPin, Phone, ExternalLink } from "lucide-react";
+import { toast } from "sonner";
 import { Button, PageHeader, Badge, EmptyState } from "@/components/ui";
-import { locations as seedLocations } from "@/data";
 import { LocationFormDialog } from "@/components/locations/location-form-dialog";
 import { useWorkspace } from "@/lib/workspace-context";
+import { ApiError } from "@/lib/api";
 import type { Location } from "@/types";
 
 export default function LocationsPage() {
-  const { role } = useWorkspace();
-  const [locations, setLocations] = useState<Location[]>(seedLocations);
+  const {
+    role,
+    locations,
+    addLocation,
+    updateLocation,
+    archiveLocation,
+    restoreLocation,
+  } = useWorkspace();
   const [editing, setEditing] = useState<Location | null>(null);
   const [creating, setCreating] = useState(false);
 
   const active = locations.filter((l) => !l.archivedAt);
   const archived = locations.filter((l) => l.archivedAt);
 
-  function handleSave(loc: Location) {
-    setLocations((prev) =>
-      prev.some((l) => l.id === loc.id) ? prev.map((l) => (l.id === loc.id ? loc : l)) : [...prev, loc]
-    );
-    setEditing(null);
-    setCreating(false);
+  async function handleSave(loc: Location) {
+    try {
+      if (locations.some((l) => l.id === loc.id)) {
+        await updateLocation(loc);
+        toast.success("Location updated.");
+      } else {
+        await addLocation(loc);
+        toast.success("Location created.");
+      }
+      setEditing(null);
+      setCreating(false);
+    } catch (err) {
+      const msg =
+        err instanceof ApiError ? `Save failed (HTTP ${err.status}).` : "Save failed.";
+      toast.error(msg);
+    }
   }
 
-  function toggleArchive(id: string) {
-    setLocations((prev) =>
-      prev.map((l) =>
-        l.id === id ? { ...l, archivedAt: l.archivedAt ? null : new Date().toISOString() } : l
-      )
-    );
+  async function toggleArchive(loc: Location) {
+    try {
+      if (loc.archivedAt) {
+        await restoreLocation(loc.id);
+        toast.success("Location restored.");
+      } else {
+        await archiveLocation(loc.id);
+        toast.success("Location archived.");
+      }
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        toast.error("Cannot archive: location is referenced by active sessions.");
+      } else {
+        toast.error("Archive failed.");
+      }
+    }
   }
 
   if (role !== "superadmin") {
@@ -78,7 +105,7 @@ export default function LocationsPage() {
               key={loc.id}
               location={loc}
               onEdit={() => setEditing(loc)}
-              onArchive={() => toggleArchive(loc.id)}
+              onArchive={() => toggleArchive(loc)}
             />
           ))}
         </div>
@@ -95,7 +122,7 @@ export default function LocationsPage() {
                 key={loc.id}
                 location={loc}
                 onEdit={() => setEditing(loc)}
-                onArchive={() => toggleArchive(loc.id)}
+                onArchive={() => toggleArchive(loc)}
               />
             ))}
           </div>
@@ -161,25 +188,31 @@ function LocationCard({
         </div>
       </div>
       <ul className="space-y-1.5 text-sm text-muted">
-        <li className="flex items-start gap-2">
-          <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span>{location.address}</span>
-        </li>
-        <li className="flex items-center gap-2">
-          <Phone className="h-3.5 w-3.5 shrink-0" />
-          <span className="font-mono text-xs">{location.phone}</span>
-        </li>
-        <li className="flex items-center gap-2">
-          <ExternalLink className="h-3.5 w-3.5 shrink-0" />
-          <a
-            href={location.gmapsUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="truncate text-xs text-accent hover:underline"
-          >
-            View on Google Maps
-          </a>
-        </li>
+        {location.address && (
+          <li className="flex items-start gap-2">
+            <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>{location.address}</span>
+          </li>
+        )}
+        {location.phone && (
+          <li className="flex items-center gap-2">
+            <Phone className="h-3.5 w-3.5 shrink-0" />
+            <span className="font-mono text-xs">{location.phone}</span>
+          </li>
+        )}
+        {location.gmapsUrl && (
+          <li className="flex items-center gap-2">
+            <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+            <a
+              href={location.gmapsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="truncate text-xs text-accent hover:underline"
+            >
+              View on Google Maps
+            </a>
+          </li>
+        )}
       </ul>
     </div>
   );

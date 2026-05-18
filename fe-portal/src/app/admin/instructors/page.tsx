@@ -1,15 +1,83 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
-import { Plus, Mail, Phone } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Plus, Mail, Phone, Loader2 } from "lucide-react";
 import { Button, PageHeader, Badge, EmptyState, Avatar } from "@/components/ui";
-import { instructors as seedInstructors, classTypes } from "@/data";
-import type { Instructor } from "@/types";
+import { useWorkspace } from "@/lib/workspace-context";
+import { ApiError } from "@/lib/api";
+import type { Instructor, ClassType } from "@/types";
+
+interface ApiInstructor {
+  id: string;
+  email: string;
+  name: string;
+  status: "pending" | "active" | "archived";
+  archived_at: string | null;
+  invited_at: string | null;
+  accepted_at: string | null;
+  bio: string | null;
+  phone: string | null;
+  photo_r2_key: string | null;
+  class_type_ids: string[];
+}
+
+interface ApiClassType {
+  id: string;
+  name: string;
+  archived_at: string | null;
+}
+
+function instructorFromApi(r: ApiInstructor): Instructor {
+  return {
+    id: r.id,
+    name: r.name,
+    email: r.email,
+    phone: r.phone ?? "",
+    bio: r.bio ?? "",
+    photoUrl: null,
+    eligibleClassTypeIds: r.class_type_ids,
+    archivedAt: r.archived_at,
+  };
+}
 
 export default function InstructorsPage() {
-  const [instructors] = useState<Instructor[]>(seedInstructors);
-  const ctMap = new Map(classTypes.map((c) => [c.id, c.name]));
+  const { api } = useWorkspace();
+  const [instructors, setInstructors] = useState<Instructor[]>([]);
+  const [classTypes, setClassTypes] = useState<ClassType[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
+  const load = useCallback(async () => {
+    if (!api) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const [ins, ct] = await Promise.all([
+        api.get<{ instructors: ApiInstructor[] }>("/portal/admin/instructors"),
+        api.get<{ class_types: ApiClassType[] }>("/portal/admin/class-types"),
+      ]);
+      setInstructors(ins.instructors.map(instructorFromApi));
+      setClassTypes(
+        ct.class_types.map((c) => ({
+          id: c.id,
+          name: c.name,
+          description: "",
+          parentId: null,
+          archivedAt: c.archived_at,
+        })),
+      );
+    } catch (err) {
+      setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
+    } finally {
+      setLoading(false);
+    }
+  }, [api]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const ctMap = new Map(classTypes.map((c) => [c.id, c.name]));
   const active = instructors.filter((i) => !i.archivedAt);
   const archived = instructors.filter((i) => i.archivedAt);
 
@@ -17,7 +85,7 @@ export default function InstructorsPage() {
     <div className="mx-auto max-w-5xl">
       <PageHeader
         title="Instructors"
-        description="Saving an instructor sends an automatic invite email — they can teach immediately whether or not the invite is accepted."
+        description="Saving an instructor creates a staff record. In v0 the Clerk invitation email is not yet auto-sent — that lands in v1."
         actions={
           <Link href="/admin/instructors/new">
             <Button>
@@ -27,8 +95,20 @@ export default function InstructorsPage() {
         }
       />
 
-      {active.length === 0 ? (
-        <EmptyState title="No instructors yet" description="Add your first instructor to begin scheduling classes." />
+      {loading ? (
+        <SkeletonGrid />
+      ) : error ? (
+        <div className="rounded-xl border border-error/30 bg-error/5 px-4 py-6 text-center">
+          <p className="text-sm text-error">Failed to load: {error}</p>
+          <Button size="sm" variant="ghost" onClick={load} className="mt-2">
+            <Loader2 className="h-3.5 w-3.5" /> Retry
+          </Button>
+        </div>
+      ) : active.length === 0 ? (
+        <EmptyState
+          title="No instructors yet"
+          description="Add your first instructor to begin scheduling classes."
+        />
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
           {active.map((ins) => (
@@ -49,6 +129,25 @@ export default function InstructorsPage() {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+function SkeletonGrid() {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div key={i} className="rounded-xl border border-border bg-card p-5 shadow-soft">
+          <div className="mb-3 flex items-start gap-3">
+            <div className="h-12 w-12 animate-pulse rounded-full bg-paper" />
+            <div className="flex-1 space-y-2">
+              <div className="h-4 w-32 animate-pulse rounded bg-paper" />
+              <div className="h-3 w-48 animate-pulse rounded bg-paper" />
+            </div>
+          </div>
+          <div className="h-3 w-full animate-pulse rounded bg-paper" />
+        </div>
+      ))}
     </div>
   );
 }
@@ -87,9 +186,11 @@ function InstructorCard({
         <div className="flex items-center gap-1.5">
           <Mail className="h-3 w-3" /> {instructor.email}
         </div>
-        <div className="flex items-center gap-1.5 font-mono">
-          <Phone className="h-3 w-3" /> {instructor.phone}
-        </div>
+        {instructor.phone && (
+          <div className="flex items-center gap-1.5 font-mono">
+            <Phone className="h-3 w-3" /> {instructor.phone}
+          </div>
+        )}
       </div>
     </Link>
   );

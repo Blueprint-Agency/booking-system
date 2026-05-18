@@ -8,134 +8,257 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import {
-  locations as seedLocations,
-  staffUsers as seedStaff,
-  defaultStaffId,
-} from "@/data";
+import { useRouter } from "next/navigation";
+import { useAuth, useClerk } from "@clerk/nextjs";
+import { ApiError, makeApi, type Api } from "@/lib/api";
 import type { Location, StaffRole, StaffUser } from "@/types";
 
-const STORAGE_KEY_STAFF = "ys.devCurrentStaffId";
 const STORAGE_KEY_LOC = "ys.activeLocationId";
 
-interface WorkspaceContextValue {
-  currentStaff: StaffUser;
+interface AuthMePayload {
+  id: string;
+  email: string;
+  name: string;
   role: StaffRole;
-  locations: Location[];
+  status: "pending" | "active" | "archived";
+  granted_location_ids: string[];
+  locations: Array<{ id: string; name: string; address: string | null }>;
+}
+
+interface LocationApiRow {
+  id: string;
+  name: string;
+  address: string | null;
+  gmaps_url: string | null;
+  phone: string | null;
+  archived_at: string | null;
+}
+
+function locationFromApi(row: LocationApiRow): Location {
+  return {
+    id: row.id,
+    name: row.name,
+    address: row.address ?? "",
+    gmapsUrl: row.gmaps_url ?? "",
+    phone: row.phone ?? "",
+    archivedAt: row.archived_at,
+  };
+}
+
+interface WorkspaceContextValue {
+  loading: boolean;
+  currentStaff: StaffUser | null;
+  role: StaffRole | null;
+  locations: Location[]; // all locations (incl archived) for superadmin views
   accessibleLocations: Location[];
   activeLocation: Location | null;
   activeLocationId: string | null;
   setActiveLocationId: (id: string) => void;
-  addLocation: (loc: Location) => void;
-  updateLocation: (loc: Location) => void;
-  archiveLocation: (id: string) => void;
-  restoreLocation: (id: string) => void;
+  // Location CRUD passthroughs — call backend then refresh.
+  addLocation: (loc: Location) => Promise<void> | void;
+  updateLocation: (loc: Location) => Promise<void> | void;
+  archiveLocation: (id: string) => Promise<void> | void;
+  restoreLocation: (id: string) => Promise<void> | void;
+  // Kept for compat with DevRoleSwitcher (now a no-op — real auth via Clerk).
   switchStaff: (id: string) => void;
   updateStaffGrants: (ids: string[]) => void;
-  allStaff: StaffUser[];
+  allStaff: StaffUser[]; // unused in prod; kept for DevRoleSwitcher compat
+  api: Api | null;
+  refresh: () => Promise<void>;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
-  const [staffList, setStaffList] = useState<StaffUser[]>(seedStaff);
-  const [currentStaffId, setCurrentStaffId] = useState<string>(defaultStaffId);
-  const [locations, setLocations] = useState<Location[]>(seedLocations);
-  const [activeLocationId, setActiveLocationIdState] = useState<string | null>(
-    null
-  );
-  const [hydrated, setHydrated] = useState(false);
+  const { isLoaded, isSignedIn, getToken } = useAuth();
+  const { signOut } = useClerk();
+  const router = useRouter();
 
-  // Hydrate from localStorage once on mount
+  const [loading, setLoading] = useState(true);
+  const [currentStaff, setCurrentStaff] = useState<StaffUser | null>(null);
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [activeLocationId, setActiveLocationIdState] = useState<string | null>(
+    null,
+  );
+
+  // Bound API instance — stable for the provider's lifetime.
+  const api = useMemo<Api | null>(() => {
+    if (!isLoaded || !isSignedIn) return null;
+    return makeApi(() => getToken());
+  }, [isLoaded, isSignedIn, getToken]);
+
+  // Hydrate activeLocationId from localStorage on mount (workspace selection
+  // persists across reloads — it's a fe-only concern).
   useEffect(() => {
-    const savedStaff = window.localStorage.getItem(STORAGE_KEY_STAFF);
-    if (savedStaff && seedStaff.some((s) => s.id === savedStaff)) {
-      setCurrentStaffId(savedStaff);
-    }
-    const savedLoc = window.localStorage.getItem(STORAGE_KEY_LOC);
-    if (savedLoc) setActiveLocationIdState(savedLoc);
-    setHydrated(true);
+    if (typeof window === "undefined") return;
+    const saved = window.localStorage.getItem(STORAGE_KEY_LOC);
+    if (saved) setActiveLocationIdState(saved);
   }, []);
 
-  const currentStaff = useMemo(
-    () => staffList.find((s) => s.id === currentStaffId) ?? staffList[0],
-    [staffList, currentStaffId]
-  );
+  const loadMe = useCallback(async () => {
+    if (!api) return;
+    setLoading(true);
+    try {
+      const me = await api.get<AuthMePayload>("/portal/auth/me");
+      const accessible = me.locations.map(l => ({
+        id: l.id,
+        name: l.name,
+        address: l.address ?? "",
+        gmapsUrl: "",
+        phone: "",
+        archivedAt: null as string | null,
+      }));
+      setCurrentStaff({
+        id: me.id,
+        name: me.name,
+        email: me.email,
+        role: me.role,
+        status: me.status,
+        grantedLocationIds: me.granted_location_ids,
+        archivedAt: null,
+        archivedByStaffId: null,
+        invitedAt: null,
+        acceptedAt: null,
+        createdAt: "",
+      });
+      setLocations(accessible);
+    } catch (err) {
+      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+        // Clerk session exists but no staff_users row, or staff archived.
+        await signOut(() => router.push("/login"));
+        return;
+      }
+      // Network or unexpected — leave staff null so UI shows error/empty
+      // state. Re-thrown errors here would crash the whole admin app.
+      // eslint-disable-next-line no-console
+      console.error("Failed to load /portal/auth/me", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [api, router, signOut]);
+
+  // Once Clerk + API are ready, fetch /auth/me.
+  useEffect(() => {
+    if (!isLoaded) return;
+    if (!isSignedIn) {
+      setLoading(false);
+      setCurrentStaff(null);
+      setLocations([]);
+      return;
+    }
+    void loadMe();
+  }, [isLoaded, isSignedIn, loadMe]);
+
+  // For superadmin, additionally fetch ALL locations (incl. archived) so the
+  // Locations page + manage dialog can render archived rows.
+  const refreshAllLocations = useCallback(async () => {
+    if (!api || !currentStaff || currentStaff.role !== "superadmin") return;
+    try {
+      const data = await api.get<{ locations: LocationApiRow[] }>(
+        "/portal/admin/locations",
+        { include_archived: "true" },
+      );
+      setLocations(data.locations.map(locationFromApi));
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("Failed to load all locations", err);
+    }
+  }, [api, currentStaff]);
+
+  useEffect(() => {
+    void refreshAllLocations();
+  }, [refreshAllLocations]);
 
   const accessibleLocations = useMemo(() => {
-    const active = locations.filter((l) => !l.archivedAt);
+    const active = locations.filter(l => !l.archivedAt);
+    if (!currentStaff) return [];
     if (currentStaff.role === "superadmin") return active;
-    return active.filter((l) =>
-      currentStaff.grantedLocationIds.includes(l.id)
-    );
+    return active.filter(l => currentStaff.grantedLocationIds.includes(l.id));
   }, [locations, currentStaff]);
 
-  // Auto-select first accessible location once hydrated, if none chosen or stale.
+  // Keep activeLocationId valid as accessible locations change.
   useEffect(() => {
-    if (!hydrated) return;
-    const validId =
-      activeLocationId &&
-      accessibleLocations.some((l) => l.id === activeLocationId);
-    if (!validId) {
+    if (loading) return;
+    const valid =
+      activeLocationId && accessibleLocations.some(l => l.id === activeLocationId);
+    if (!valid) {
       const next = accessibleLocations[0]?.id ?? null;
       setActiveLocationIdState(next);
-      if (next) window.localStorage.setItem(STORAGE_KEY_LOC, next);
-      else window.localStorage.removeItem(STORAGE_KEY_LOC);
+      if (typeof window !== "undefined") {
+        if (next) window.localStorage.setItem(STORAGE_KEY_LOC, next);
+        else window.localStorage.removeItem(STORAGE_KEY_LOC);
+      }
     }
-  }, [hydrated, accessibleLocations, activeLocationId]);
+  }, [loading, accessibleLocations, activeLocationId]);
 
   const setActiveLocationId = useCallback((id: string) => {
     setActiveLocationIdState(id);
-    window.localStorage.setItem(STORAGE_KEY_LOC, id);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(STORAGE_KEY_LOC, id);
+    }
   }, []);
 
-  const addLocation = useCallback((loc: Location) => {
-    setLocations((prev) => [...prev, loc]);
-  }, []);
-
-  const updateLocation = useCallback((loc: Location) => {
-    setLocations((prev) => prev.map((l) => (l.id === loc.id ? loc : l)));
-  }, []);
-
-  const archiveLocation = useCallback((id: string) => {
-    setLocations((prev) =>
-      prev.map((l) =>
-        l.id === id ? { ...l, archivedAt: new Date().toISOString() } : l
-      )
-    );
-  }, []);
-
-  const restoreLocation = useCallback((id: string) => {
-    setLocations((prev) =>
-      prev.map((l) => (l.id === id ? { ...l, archivedAt: null } : l))
-    );
-  }, []);
-
-  const switchStaff = useCallback((id: string) => {
-    setCurrentStaffId(id);
-    window.localStorage.setItem(STORAGE_KEY_STAFF, id);
-  }, []);
-
-  const updateStaffGrants = useCallback(
-    (ids: string[]) => {
-      setStaffList((prev) =>
-        prev.map((s) =>
-          s.id === currentStaffId ? { ...s, grantedLocationIds: ids } : s
-        )
-      );
+  // Mutations — round-trip via API, then refresh state from server.
+  const addLocation = useCallback(
+    async (loc: Location) => {
+      if (!api) return;
+      await api.post("/portal/admin/locations", {
+        name: loc.name,
+        address: loc.address || null,
+        gmaps_url: loc.gmapsUrl || null,
+        phone: loc.phone || null,
+      });
+      await refreshAllLocations();
     },
-    [currentStaffId]
+    [api, refreshAllLocations],
   );
 
+  const updateLocation = useCallback(
+    async (loc: Location) => {
+      if (!api) return;
+      await api.patch(`/portal/admin/locations/${loc.id}`, {
+        name: loc.name,
+        address: loc.address || null,
+        gmaps_url: loc.gmapsUrl || null,
+        phone: loc.phone || null,
+      });
+      await refreshAllLocations();
+    },
+    [api, refreshAllLocations],
+  );
+
+  const archiveLocation = useCallback(
+    async (id: string) => {
+      if (!api) return;
+      await api.post(`/portal/admin/locations/${id}/archive`);
+      await refreshAllLocations();
+    },
+    [api, refreshAllLocations],
+  );
+
+  const restoreLocation = useCallback(
+    async (id: string) => {
+      if (!api) return;
+      await api.post(`/portal/admin/locations/${id}/unarchive`);
+      await refreshAllLocations();
+    },
+    [api, refreshAllLocations],
+  );
+
+  // Compat no-ops (real auth lives in Clerk; the DevRoleSwitcher was a v0
+  // affordance only).
+  const switchStaff = useCallback(() => {}, []);
+  const updateStaffGrants = useCallback(() => {}, []);
+
   const activeLocation = useMemo(
-    () =>
-      accessibleLocations.find((l) => l.id === activeLocationId) ?? null,
-    [accessibleLocations, activeLocationId]
+    () => accessibleLocations.find(l => l.id === activeLocationId) ?? null,
+    [accessibleLocations, activeLocationId],
   );
 
   const value: WorkspaceContextValue = {
+    loading,
     currentStaff,
-    role: currentStaff.role,
+    role: currentStaff?.role ?? null,
     locations,
     accessibleLocations,
     activeLocation,
@@ -147,7 +270,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     restoreLocation,
     switchStaff,
     updateStaffGrants,
-    allStaff: staffList,
+    allStaff: currentStaff ? [currentStaff] : [],
+    api,
+    refresh: loadMe,
   };
 
   return (

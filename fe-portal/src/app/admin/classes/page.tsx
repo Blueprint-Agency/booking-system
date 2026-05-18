@@ -1,35 +1,112 @@
 "use client";
-import { useState } from "react";
-import { Plus, Pencil, Archive, RotateCcw, AlertTriangle } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Plus, Pencil, Archive, AlertTriangle, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { Button, PageHeader, Badge, EmptyState } from "@/components/ui";
-import { classPackages as seedPackages } from "@/data";
 import { ClassPackageDialog } from "@/components/packages/class-package-dialog";
 import { formatSgd } from "@/lib/formatters";
-import { getActivePromotion } from "@/lib/promotions";
-import type { ClassPackage } from "@/types";
+import { useWorkspace } from "@/lib/workspace-context";
+import { ApiError } from "@/lib/api";
+import type { ClassPackage, ClassPackageKind } from "@/types";
+
+interface ApiClassPackage {
+  id: string;
+  name: string;
+  description: string | null;
+  kind: ClassPackageKind;
+  credits: number | null;
+  validity_days: number | null;
+  duration_days: number | null;
+  price_sgd: string;
+  status: "active" | "archived";
+  archived_at: string | null;
+}
+
+function fromApi(r: ApiClassPackage): ClassPackage {
+  return {
+    id: r.id,
+    name: r.name,
+    description: r.description ?? "",
+    kind: r.kind,
+    credits: r.credits,
+    validityDays: r.validity_days,
+    durationDays: r.duration_days,
+    priceSgd: Number(r.price_sgd),
+    status: r.status,
+    promotions: [],
+  };
+}
 
 export default function ClassPackagesPage() {
-  const [packages, setPackages] = useState<ClassPackage[]>(seedPackages);
+  const { api } = useWorkspace();
+  const [packages, setPackages] = useState<ClassPackage[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] =
     useState<{ kind: "create" } | { kind: "edit"; pkg: ClassPackage } | null>(null);
+
+  const load = useCallback(async () => {
+    if (!api) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await api.get<{ class_packages: ApiClassPackage[] }>(
+        "/portal/admin/class-packages",
+      );
+      setPackages(data.class_packages.map(fromApi));
+    } catch (err) {
+      setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
+    } finally {
+      setLoading(false);
+    }
+  }, [api]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const active = packages.filter((p) => p.status === "active");
   const archived = packages.filter((p) => p.status === "archived");
   const activeTrials = active.filter((p) => p.kind === "trial");
 
-  function handleSave(pkg: ClassPackage) {
-    setPackages((prev) =>
-      prev.some((p) => p.id === pkg.id) ? prev.map((p) => (p.id === pkg.id ? pkg : p)) : [...prev, pkg]
-    );
-    setDialog(null);
+  async function handleSave(pkg: ClassPackage) {
+    if (!api) return;
+    const isEdit = packages.some((p) => p.id === pkg.id);
+    const payload = {
+      name: pkg.name,
+      description: pkg.description || null,
+      credits: pkg.credits ?? null,
+      validity_days: pkg.validityDays ?? null,
+      duration_days: pkg.durationDays ?? null,
+      price_sgd: String(pkg.priceSgd),
+    };
+    try {
+      if (isEdit) {
+        await api.patch(`/portal/admin/class-packages/${pkg.id}`, payload);
+      } else {
+        await api.post("/portal/admin/class-packages", { ...payload, kind: pkg.kind });
+      }
+      setDialog(null);
+      await load();
+      toast.success("Package saved.");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? `Save failed (HTTP ${err.status}).` : "Save failed.");
+    }
   }
 
-  function toggleArchive(id: string) {
-    setPackages((prev) =>
-      prev.map((p) =>
-        p.id === id ? { ...p, status: p.status === "active" ? "archived" : "active" } : p
-      )
-    );
+  async function archive(pkg: ClassPackage) {
+    if (!api) return;
+    if (pkg.status === "archived") {
+      toast.info("Restore is a v1 feature.");
+      return;
+    }
+    try {
+      await api.post(`/portal/admin/class-packages/${pkg.id}/archive`);
+      await load();
+      toast.success("Package archived.");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? `Archive failed (HTTP ${err.status}).` : "Archive failed.");
+    }
   }
 
   return (
@@ -44,8 +121,27 @@ export default function ClassPackagesPage() {
         }
       />
 
-      {packages.length === 0 ? (
-        <EmptyState title="No packages yet" description="Add your first package." />
+      {loading ? (
+        <div className="flex h-32 items-center justify-center gap-2 text-sm text-muted">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading packages…
+        </div>
+      ) : error ? (
+        <div className="rounded-xl border border-error/30 bg-error/5 p-6 text-center">
+          <p className="text-sm text-error">Failed to load: {error}</p>
+          <Button size="sm" variant="ghost" onClick={load} className="mt-2">
+            Retry
+          </Button>
+        </div>
+      ) : packages.length === 0 ? (
+        <EmptyState
+          title="No packages yet"
+          description="Start with a Trial Pass, then add credit bundles."
+          cta={
+            <Button onClick={() => setDialog({ kind: "create" })}>
+              <Plus className="h-4 w-4" /> Add package
+            </Button>
+          }
+        />
       ) : (
         <div className="space-y-6">
           <PackageGroup
@@ -53,7 +149,7 @@ export default function ClassPackagesPage() {
             description="A one-time-only introductory pass. Each client can purchase at most one."
             packages={active.filter((p) => p.kind === "trial")}
             onEdit={(pkg) => setDialog({ kind: "edit", pkg })}
-            onArchive={(id) => toggleArchive(id)}
+            onArchive={archive}
             warning={
               activeTrials.length > 1
                 ? "Multiple active trial passes — clients will see the first."
@@ -65,14 +161,14 @@ export default function ClassPackagesPage() {
             description="Fixed number of credits valid for a period."
             packages={active.filter((p) => p.kind === "credit_bundle")}
             onEdit={(pkg) => setDialog({ kind: "edit", pkg })}
-            onArchive={(id) => toggleArchive(id)}
+            onArchive={archive}
           />
           <PackageGroup
             title="Unlimited"
             description="Time-based passes — unlimited classes for a duration."
             packages={active.filter((p) => p.kind === "unlimited")}
             onEdit={(pkg) => setDialog({ kind: "edit", pkg })}
-            onArchive={(id) => toggleArchive(id)}
+            onArchive={archive}
           />
           {archived.length > 0 && (
             <PackageGroup
@@ -80,7 +176,7 @@ export default function ClassPackagesPage() {
               description={null}
               packages={archived}
               onEdit={(pkg) => setDialog({ kind: "edit", pkg })}
-              onArchive={(id) => toggleArchive(id)}
+              onArchive={archive}
               archived
             />
           )}
@@ -111,7 +207,7 @@ function PackageGroup({
   description: string | null;
   packages: ClassPackage[];
   onEdit: (pkg: ClassPackage) => void;
-  onArchive: (id: string) => void;
+  onArchive: (pkg: ClassPackage) => void;
   archived?: boolean;
   warning?: string | null;
 }) {
@@ -134,7 +230,7 @@ function PackageGroup({
             pkg={pkg}
             archived={archived}
             onEdit={() => onEdit(pkg)}
-            onArchive={() => onArchive(pkg.id)}
+            onArchive={() => onArchive(pkg)}
           />
         ))}
       </div>
@@ -153,10 +249,6 @@ function PackageCard({
   onEdit: () => void;
   onArchive: () => void;
 }) {
-  const promo = getActivePromotion(pkg);
-  const future =
-    !promo &&
-    pkg.promotions.find((p) => new Date(p.startsAt) > new Date());
   const subtitle =
     pkg.kind === "credit_bundle"
       ? `${pkg.credits} credits · ${pkg.validityDays}-day validity`
@@ -178,22 +270,7 @@ function PackageCard({
           <h3 className="truncate text-base font-semibold text-ink">{pkg.name}</h3>
           <p className="text-xs text-muted">{subtitle}</p>
         </div>
-        <div className="flex flex-col items-end gap-1">
-          {archived && <Badge tone="neutral">Archived</Badge>}
-          {promo && (
-            <span className="rounded-full bg-sage/15 px-2 py-0.5 text-[10px] uppercase text-sage">
-              Promo ·{" "}
-              {promo.mode === "percent"
-                ? `-${promo.percent}%`
-                : `S$${promo.priceSgd}`}
-            </span>
-          )}
-          {!promo && future && (
-            <span className="rounded-full bg-paper px-2 py-0.5 text-[10px] uppercase text-muted">
-              Promo · starts {new Date(future.startsAt).toLocaleDateString()}
-            </span>
-          )}
-        </div>
+        {archived && <Badge tone="neutral">Archived</Badge>}
       </div>
       {pkg.description && (
         <p className="mb-3 line-clamp-2 text-xs text-muted">{pkg.description}</p>
@@ -205,17 +282,11 @@ function PackageCard({
         <Button size="sm" variant="ghost" onClick={onEdit}>
           <Pencil className="h-3.5 w-3.5" /> Edit
         </Button>
-        <Button size="sm" variant="ghost" onClick={onArchive}>
-          {pkg.status === "archived" ? (
-            <>
-              <RotateCcw className="h-3.5 w-3.5" /> Restore
-            </>
-          ) : (
-            <>
-              <Archive className="h-3.5 w-3.5" /> Archive
-            </>
-          )}
-        </Button>
+        {pkg.status === "active" && (
+          <Button size="sm" variant="ghost" onClick={onArchive}>
+            <Archive className="h-3.5 w-3.5" /> Archive
+          </Button>
+        )}
       </div>
     </div>
   );

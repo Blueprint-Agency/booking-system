@@ -2,9 +2,11 @@
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowLeft, Mail, Archive, RotateCcw } from "lucide-react";
+import { ArrowLeft, Mail, Archive, RotateCcw, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { Button, Input, Label, Avatar, Badge, PageHeader } from "@/components/ui";
-import { classTypes } from "@/data";
+import { useWorkspace } from "@/lib/workspace-context";
+import { ApiError } from "@/lib/api";
 import type { Instructor } from "@/types";
 
 export function InstructorForm({
@@ -15,43 +17,61 @@ export function InstructorForm({
   isNew?: boolean;
 }) {
   const router = useRouter();
+  const { api } = useWorkspace();
   const [name, setName] = useState(initial?.name ?? "");
   const [email, setEmail] = useState(initial?.email ?? "");
   const [phone, setPhone] = useState(initial?.phone ?? "");
   const [bio, setBio] = useState(initial?.bio ?? "");
-  const [eligible, setEligible] = useState<string[]>(initial?.eligibleClassTypeIds ?? []);
+  const [saving, setSaving] = useState(false);
   const isArchived = !!initial?.archivedAt;
 
-  function toggleType(id: string) {
-    setEligible((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  }
-
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (isNew) {
-      // Mock: in production, save + auto-fire instructor invite (§15b)
-      alert(
-        `Instructor profile saved (mock).\n\nAuto-fired instructor invite email to ${email}.`
-      );
-    } else {
-      alert("Instructor updated (mock).");
+    if (!api) return;
+    setSaving(true);
+    try {
+      if (isNew) {
+        await api.post("/portal/admin/instructors", {
+          email: email.trim(),
+          name: name.trim(),
+          bio: bio.trim() || null,
+          phone: phone.trim() || null,
+        });
+        toast.success("Instructor created. (Invite email sending lands in v1.)");
+      } else if (initial) {
+        await api.patch(`/portal/admin/instructors/${initial.id}`, {
+          name: name.trim(),
+          bio: bio.trim() || null,
+          phone: phone.trim() || null,
+        });
+        toast.success("Instructor updated.");
+      }
+      router.push("/admin/instructors");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? `Save failed (HTTP ${err.status}).` : "Save failed.");
+    } finally {
+      setSaving(false);
     }
-    router.push("/admin/instructors");
   }
 
-  function handleArchive() {
-    if (!initial) return;
-    alert(
-      isArchived
-        ? "Instructor restored (mock)."
-        : "Instructor archived (mock). Active sessions force-logged-out."
-    );
-    router.push("/admin/instructors");
+  async function handleArchive() {
+    if (!initial || !api) return;
+    if (isArchived) {
+      toast.info("Restore is a v1 feature.");
+      return;
+    }
+    try {
+      await api.post(`/portal/admin/instructors/${initial.id}/archive`);
+      toast.success("Instructor archived.");
+      router.push("/admin/instructors");
+    } catch (err) {
+      toast.error(err instanceof ApiError ? `Archive failed (HTTP ${err.status}).` : "Archive failed.");
+    }
   }
 
   function handleResendInvite() {
-    if (!initial) return;
-    alert(`Invite email re-sent to ${initial.email} (mock).`);
+    // Per v0 scope: leave the affordance, wire to a no-op + informational toast.
+    toast.info("Resend invite is a v1 feature.");
   }
 
   return (
@@ -66,8 +86,8 @@ export function InstructorForm({
         title={isNew ? "New instructor" : initial?.name ?? "Instructor"}
         description={
           isNew
-            ? "Saving the profile auto-sends an invite email. The instructor can be assigned to classes immediately, even before accepting."
-            : "All fields are editable. Email changes do not re-issue the original invite."
+            ? "Saving creates the staff record. In v0 the invitation email is not yet auto-sent — that ships in v1."
+            : "All fields are editable. Email is immutable after invite."
         }
         actions={
           !isNew && initial ? (
@@ -97,7 +117,7 @@ export function InstructorForm({
             <div className="flex flex-col items-center gap-3">
               <Avatar name={name || "?"} size={96} />
               <Button type="button" variant="secondary" size="sm" disabled>
-                Upload photo (mock)
+                Upload photo (v1)
               </Button>
             </div>
             {!isNew && initial && (
@@ -107,10 +127,6 @@ export function InstructorForm({
                   <Badge tone={isArchived ? "neutral" : "sage"}>
                     {isArchived ? "Archived" : "Active"}
                   </Badge>
-                </div>
-                <div>
-                  Invite:{" "}
-                  <Badge tone="sage">Accepted</Badge>
                 </div>
               </div>
             )}
@@ -135,6 +151,7 @@ export function InstructorForm({
                   id="ins-email"
                   type="email"
                   required
+                  disabled={!isNew}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                 />
@@ -161,43 +178,23 @@ export function InstructorForm({
             </div>
           </div>
 
-          <div className="rounded-xl border border-border bg-card p-5 shadow-soft">
-            <div className="mb-3">
-              <h3 className="text-sm font-semibold text-ink">Eligible class types</h3>
-              <p className="mt-0.5 text-xs text-muted">
-                Determines which class types this instructor can be assigned to.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {classTypes
-                .filter((c) => !c.archivedAt)
-                .map((c) => {
-                  const on = eligible.includes(c.id);
-                  return (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() => toggleType(c.id)}
-                      className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-                        on
-                          ? "bg-accent text-white"
-                          : "bg-paper text-muted hover:bg-warm hover:text-ink"
-                      }`}
-                    >
-                      {c.name}
-                    </button>
-                  );
-                })}
-            </div>
-          </div>
-
           <div className="flex justify-end gap-2">
             <Link href="/admin/instructors">
               <Button type="button" variant="ghost">
                 Cancel
               </Button>
             </Link>
-            <Button type="submit">{isNew ? "Save & send invite" : "Save changes"}</Button>
+            <Button type="submit" disabled={saving}>
+              {saving ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Saving…
+                </>
+              ) : isNew ? (
+                "Save instructor"
+              ) : (
+                "Save changes"
+              )}
+            </Button>
           </div>
         </div>
       </form>

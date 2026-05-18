@@ -1,6 +1,12 @@
-import { SignIn } from "@clerk/nextjs";
+"use client";
+import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
+import { SignUp } from "@clerk/nextjs";
 
-export default function LoginPage() {
+function SignupInner() {
+  const params = useSearchParams();
+  const inviteEmail = params?.get("invite_email") ?? undefined;
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-paper px-4 py-8 sm:px-6">
       <div className="w-full max-w-md">
@@ -16,10 +22,18 @@ export default function LoginPage() {
           </div>
         </div>
 
+        {inviteEmail && (
+          <p className="mb-4 rounded-lg border border-border bg-card px-3 py-2 text-center text-xs text-muted">
+            Setting up the admin account for{" "}
+            <span className="font-medium text-ink">{inviteEmail}</span>
+          </p>
+        )}
+
         <div className="flex justify-center">
-          <SignIn
+          <SignUp
             routing="hash"
-            signUpUrl="/signup"
+            signInUrl="/login"
+            initialValues={inviteEmail ? { emailAddress: inviteEmail } : undefined}
             appearance={{
               elements: {
                 rootBox: "w-full",
@@ -30,5 +44,14 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function SignupPage() {
+  // useSearchParams requires Suspense in app router builds.
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-paper" />}>
+      <SignupInner />
+    </Suspense>
   );
 }
