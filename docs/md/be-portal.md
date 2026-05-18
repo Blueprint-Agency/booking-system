@@ -29,6 +29,25 @@ const portalRoutes = new Hono()
 
 `auditMiddleware` writes one `audit_log` row per successful mutating request (`POST | PUT | PATCH | DELETE`). Idempotent reads do not audit.
 
+### Workspace scoping & role gates
+
+Per `admin-restructure.md` Overview + §15a, admin surfaces partition into three buckets:
+
+| Bucket | Surfaces | Gate |
+|---|---|---|
+| **Global (superadmin-only)** | Locations, Class Types, Class Packages, PT Packages, Promotions, Global Policy, Notifications, Waiver, Staff | `requireRole('superadmin')` on the entire router |
+| **Workspace-scoped** | Schedule, Workshops, Check-in, Inbox | `requireRole('admin', 'superadmin')` **+ `requireWorkspaceScope`** middleware (below). Reads filter by `granted_location_ids`; writes reject if the target `location_id` is not in the set. |
+| **Workspace-agnostic** | PT Requests, Clients (read-only for admin), Ratings | `requireRole('admin', 'superadmin')`. No location filter. |
+
+```ts
+// middleware/require-workspace-scope.ts
+// For workspace-scoped writes: assert the target location_id is in ctx.staff.granted_location_ids.
+// For reads: inject a WHERE filter on the resolved location_id, treating empty granted_location_ids
+//           as "all active locations" (superadmin / implicit grant).
+```
+
+Superadmin always passes the workspace gate regardless of `granted_location_ids` (empty array = all locations is the explicit semantics; superadmin's row is seeded with `'{}'`).
+
 ---
 
 ## 2. Admin endpoints — `routes/portal/admin/*`
@@ -65,44 +84,89 @@ Same CRUD shape as locations. Archive is blocked if any non-archived `instructor
 | PATCH | `/policy/global` | `{ cancel_cap_count, cancel_cap_cycle_days, class_window_hours, pt_window_hours }` | Update singleton row |
 | PATCH | `/policy/pt` | `{ book_in_advance_days }` | Update singleton row |
 
-### `class-packages.ts`
+### `class-packages.ts` (superadmin-only)
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/class-packages` | List with `?status` |
-| POST | `/class-packages` | Insert `class_packages` row. CHECK constraint enforces kind-specific column requirements (credits + validity_days for `credit_bundle`; duration_days for `unlimited`). |
-| PATCH | `/class-packages/:id` | Edit only fields that don't affect already-purchased entitlements (name, status). Price changes apply to **future** purchases only — existing `client_packages` rows are immutable. |
+| GET | `/class-packages` | List with `?status`, `?kind=credit_bundle\|unlimited\|trial`. Default sort: trial first, then credit_bundle, then unlimited (matches fe-client `/packages` ordering). |
+| POST | `/class-packages` | Insert `class_packages` row. CHECK constraint enforces kind-specific column requirements (credits + validity_days for `credit_bundle`; duration_days for `unlimited`; credits + nullable validity_days for `trial`). |
+| PATCH | `/class-packages/:id` | Edit name, description, status. Price changes apply to **future** purchases only — existing `client_packages` rows are immutable. |
 | POST | `/class-packages/:id/archive` | Soft delete; existing client_packages remain valid until `expires_at`. |
 
-### `pt-packages.ts`
-Same shape as class-packages, with PT-specific fields.
+**Trial Pass semantics.** `kind='trial'` is just another row — there is no separate route. The one-per-client gate lives at purchase time (`be-client.md` §4e), enforced by the `client_packages(client_id) WHERE kind='trial'` unique partial index. Admin **may** publish multiple active Trial Pass definitions (e.g. for A/B testing), but a single client can hold at most one across all of them.
 
-### `schedule.ts`
+### `pt-packages.ts` (superadmin-only)
+Same shape as class-packages, with PT-specific fields. Adds `description` column edits.
+
+### `promotions.ts` (superadmin-only — `admin-restructure.md` §5d, §19, `fe-client-features.md` §6.1)
+
+Promotions are nested under their parent (class package, PT package, or workshop). There is no top-level Promotions page in the admin nav — the editor lives inside the package/workshop dialog. The API mirrors that shape.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/class-packages/:id/promotions` | List promotions on this class package (any status) |
+| POST | `/class-packages/:id/promotions` | `{ label, kind: 'percent'\|'special_price', percent_off?, special_price_sgd?, starts_at, ends_at }`. CHECK enforces kind-specific column presence. |
+| PATCH | `/class-packages/:id/promotions/:promotion_id` | Edit any field. **No retroactive effect** — already-purchased `client_packages.applied_promotion_id` rows are frozen. |
+| POST | `/class-packages/:id/promotions/:promotion_id/archive` | Manual disable independent of time window |
+| GET / POST / PATCH / DELETE | `/pt-packages/:id/promotions[/:promotion_id]` | Same shape on PT packages |
+| GET / POST / PATCH / DELETE | `/workshops/:id/promotions[/:promotion_id]` | Same shape on workshops |
+
+**Best-price-wins is server-side at purchase.** Admin does not pick "the active" promotion — every windowed `status='active'` row is a candidate. See `services/promotions/resolve.ts:bestPriceFor(parent_type, parent_id)`.
+
+**Validation warnings (non-blocking).** When a promotion's effective price is higher than the parent's regular price, the API returns `200` with a `warnings: ['promotion_higher_than_regular']` field so the fe surfaces it but allows the write — best-price-wins simply ignores the row at purchase.
+
+### `schedule.ts` (workspace-scoped)
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/schedule` | Unified timetable: union of `classes`, `workshops`, confirmed `pt_sessions`. Filter by `?location_id`, `?instructor_id`, `?class_type_id`, `?from`, `?to`. Each row carries `event_state` computed at read time (`scheduled / ongoing / completed / cancelled`) per `services/policy/event-state.ts`. |
-| POST | `/schedule/classes` | Create class instance |
+| GET | `/schedule` | Unified timetable: union of `classes`, `workshop_days` (one tile per day with `Day N/M` chip per `admin-restructure.md` §7c), confirmed `pt_sessions`. **Filtered by `granted_location_ids`** at the middleware. Query filters: `?instructor_id`, `?class_type_id`, `?from`, `?to`, `?type=class\|workshop\|pt`. Each row carries `event_state` computed at read time per `services/policy/event-state.ts`. |
+| POST | `/schedule/classes` | Create class instance. Body includes `capacity_online`, `capacity_waitlist`, `capacity_buffer` (the structured capacity per `admin-restructure.md` §7d). `location_id` must be in `granted_location_ids`. |
 | PATCH | `/schedule/classes/:id` | Edit (rejects if any confirmed bookings AND material change, e.g. moving start time more than 15 min) |
 | POST | `/schedule/classes/:id/cancel` | Admin cancellation — see §3b |
-| POST | `/schedule/workshops` | Create workshop with tiers + images + instructors |
-| PATCH | `/schedule/workshops/:id` | Edit (similar conservatism on bookings present) |
-| POST | `/schedule/workshops/:id/cancel` | Admin cancellation + refund fanout — see §3b |
+| POST | `/schedule/workshops/:id/cancel` | Admin cancellation of an entire workshop (all days, all tiers) + Stripe refund fanout to attendees — see §3b. **No** workshop create/edit here; those live in `workshops.ts`. |
+| GET | `/schedule/workshops/picker` | Lists workshops in the active workspace that have at least one future `workshop_day`. Powers the "+ Workshop" picker in the scheduler per `admin-restructure.md` §7c — selecting from this list **does not create anything**; it just navigates to the workshop's days. |
 
-### `availability.ts`
+### `workshops.ts` (workspace-scoped — `admin-restructure.md` §19, `fe-client-features.md` §4.1)
+
+Workshops are configured under Packages (not Schedule). Three-stage editor: **Basics → Days → Tiers**. Workshop's `location_id` is fixed at creation; admin sees only their workspace's workshops.
+
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/instructors/:id/availability` | Returns recurring + one-off rows |
-| POST | `/instructors/:id/availability/recurring` | Insert weekly slot |
-| DELETE | `/instructors/:id/availability/recurring/:slotId` | Delete |
-| POST | `/instructors/:id/availability/oneoff` | Insert one-off slot |
-| DELETE | `/instructors/:id/availability/oneoff/:slotId` | Delete |
+| GET | `/workshops` | List workshops in the active workspace (filtered by `granted_location_ids`). `?status=active\|cancelled`, `?has_future_days=true`. |
+| GET | `/workshops/:id` | Detail with `days[]`, `tiers[]`, `tier_days{}`, `images[]`, `instructors[]`, `promotions[]`. |
+| POST | `/workshops` | **Basics stage** — `{ name, description_html, class_type_id, location_id, instructor_ids[], cover_r2_key?, images[]? }`. Returns the workshop id; days + tiers added in follow-up calls. `location_id` must be in `granted_location_ids`. |
+| PATCH | `/workshops/:id` | Edit basics. `location_id` is **immutable** once `workshop_days` exist (changing workspace mid-flight is unsafe). |
+| POST | `/workshops/:id/cancel` | Same as `schedule.ts:POST /schedule/workshops/:id/cancel` — exposed here too so the cancel action is reachable from the workshops surface. |
+| **Days** | | |
+| POST | `/workshops/:id/days` | `{ ord, starts_at, ends_at, base_price_sgd, capacity_online, capacity_waitlist, capacity_buffer }`. CHECK enforces `sum > 0`. |
+| PATCH | `/workshops/:id/days/:day_id` | Edit. Capacity reductions reject if `count(confirmed bookings via tier→day join) > new capacity_online`. |
+| DELETE | `/workshops/:id/days/:day_id` | Reject if any confirmed booking covers this day (via any tier in `workshop_tier_days`). |
+| **Tiers** | | |
+| POST | `/workshops/:id/tiers` | `{ name, description?, regular_price_sgd, early_bird_price_sgd?, early_bird_quota?, early_bird_cutoff_at?, day_ids[], ord }`. Inserts `workshop_tiers` + `workshop_tier_days` junction rows in one tx. **No `capacity` field** — derived. |
+| PATCH | `/workshops/:id/tiers/:tier_id` | Edit. Changing `day_ids` requires rewriting the `workshop_tier_days` rows; rejected if confirmed bookings exist on the tier AND a covered day is being removed. |
+| DELETE | `/workshops/:id/tiers/:tier_id` | Reject if any confirmed booking references this tier. |
+| **Roster (per day for check-in / attendance)** | | |
+| GET | `/workshops/:id/roster` | All confirmed bookings on the workshop (across tiers). Returns each booking with the `day_ids[]` it grants access to (joined via `workshop_tier_days`). |
+| GET | `/workshops/:id/days/:day_id/roster` | Bookings whose tier covers this specific day. Used by the workshop check-in screen even though workshops are not check-in tracked in v1 — admin still needs the per-day attendee list. |
 
-### `pt-sessions.ts`
+### `pt-requests.ts` (workspace-**agnostic** — `admin-restructure.md` §9)
+
+Replaces the old "approve PT session" flow. PT requests are the actionable entity; PT sessions only come into being on schedule. The admin queue is shared across workspaces (no `granted_location_ids` filter) because PT requests have no `location_id` until scheduled.
+
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/pt-sessions` | List with filters; default `?status=pending` |
-| POST | `/pt-sessions/:id/approve` | Confirm + book — see §3c |
-| POST | `/pt-sessions/:id/decline` | Decline with `decline_note` (required) |
-| POST | `/pt-sessions/:id/cancel` | Admin cancel a confirmed session — refunds session count to all clients in `pt_session_clients` |
+| GET | `/pt-requests` | Triage queue. Default `?status=pending`, ordered `created_at desc`. Filters: `?status`, `?preferred_instructor_id`, `?client_id`, `?session_type`, `?from`, `?to`. |
+| GET | `/pt-requests/:id` | Detail incl. client profile snapshot, co-client (if 2-on-1), instructor preference, message, expiry. |
+| POST | `/pt-requests/:id/schedule` | Convert request → `pt_sessions` row. Body: `{ instructor_id, location_id, starts_at, ends_at, capacity_online?, capacity_waitlist?, capacity_buffer? }`. Calls `services/pt-sessions/schedule.ts:scheduleFromRequest()` — see §3c. `location_id` must be in the acting admin's `granted_location_ids` (the scheduling step lands the session in a workspace; the request itself isn't workspace-bound). |
+| POST | `/pt-requests/:id/decline` | `{ decline_note }` (required). Sets `pt_requests.status='declined'`, `resolved_at`, `resolved_by_staff_id`. Emails the client (`pt_session_declined` template — request entity, same template). |
+| POST | `/pt-requests/:id/cancel` | Admin cancels a pending request on the client's behalf (e.g. client called the studio). Sets `status='cancelled'`. |
+
+### `pt-sessions.ts` (admin cancel of confirmed sessions only)
+
+PT request approval moved to `pt-requests.ts`. This file only handles cancellation of already-scheduled sessions.
+
+| Method | Path | Effect |
+|---|---|---|
+| GET | `/pt-sessions` | List confirmed `pt_sessions` filtered by `granted_location_ids` (location is set at scheduling time). |
+| POST | `/pt-sessions/:id/cancel` | Admin cancel a confirmed session — refunds session count to all clients in `pt_session_clients` (per `services/bookings/cancel.ts` admin path, §3b). |
 
 ### `bookings.ts`
 | Method | Path | Effect |
@@ -119,14 +183,15 @@ Same shape as class-packages, with PT-specific fields.
 | POST | `/check-in/scan` | `{ qr_token | code, session_id }` — verify token/code matches a booking on this session, insert `check_ins` row, update `bookings.check_in_state='attended'` |
 | POST | `/check-in/manual` | `{ booking_id }` — admin manual tick |
 
-### `inbox.ts`
+### `inbox.ts` (workspace-scoped)
+
+Per `admin-restructure.md` §13, the Inbox is now a **read-only notification feed**. PT request triage moved to its dedicated page (`pt-requests.ts` above). Inbox items are filtered by `granted_location_ids` — admins see notifications for cancellations on their workspace's sessions only.
+
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/inbox` | List with `?type`, `?read`. Default sort created_at desc |
-| GET | `/inbox/unread-count` | For badge |
+| GET | `/inbox` | List with `?type`, `?read`. Default sort created_at desc. Workspace-filtered. |
+| GET | `/inbox/unread-count` | For badge. Workspace-filtered. |
 | POST | `/inbox/:id/mark-read` | Set `read_at`, `read_by_staff_id` |
-| POST | `/inbox/:id/approve` | Only valid when `type='pt_request'` — calls `services/pt-sessions/approve.ts` (§3c) |
-| POST | `/inbox/:id/decline` | Only valid when `type='pt_request'` — sets PT session `status='declined'` with note |
 
 ### `ratings.ts`
 | Method | Path | Effect |
@@ -135,22 +200,27 @@ Same shape as class-packages, with PT-specific fields.
 | GET | `/ratings/instructor/:id/aggregate` | Average + count by month for instructor profile |
 
 ### `clients.ts`
-| Method | Path | Effect |
-|---|---|---|
-| GET | `/clients` | List with search, status filter |
-| GET | `/clients/:id` | Profile incl. packages, booking history, cancellation count, attendance, referrals, waiver |
-| POST | `/clients/:id/suspend` | Set `status='suspended'`, `suspended_at`. Calls Clerk `revokeAllSessions`. |
-| POST | `/clients/:id/unsuspend` | Reverse |
-| POST | `/clients/:id/credits/adjust` | `{ client_package_id, delta, reason }` — manual credit adjust. See §3d. |
-| POST | `/clients/:id/sessions/adjust` | Same shape, for PT session balance |
-| POST | `/clients/:id/packages/issue` | Admin grants a complimentary package. Inserts `client_packages` row with `amount_paid_sgd=0`, `stripe_payment_intent_id=NULL`. |
 
-### `staff.ts`
+Per `admin-restructure.md` §15a, **admin role is read-only on Clients**. Mutating endpoints below require `requireRole('superadmin')`; reads are open to both.
+
+| Method | Path | Role | Effect |
+|---|---|---|---|
+| GET | `/clients` | admin+superadmin | List with search, status filter |
+| GET | `/clients/:id` | admin+superadmin | Profile incl. packages (including any trial pass + active promotion frozen at purchase), booking history, cancellation count, attendance, referrals, waiver. Admin views are workspace-agnostic — Clients is global. |
+| POST | `/clients/:id/suspend` | superadmin | Set `status='suspended'`, `suspended_at`. Calls Clerk `revokeAllSessions`. |
+| POST | `/clients/:id/unsuspend` | superadmin | Reverse |
+| POST | `/clients/:id/credits/adjust` | superadmin | `{ client_package_id, delta, reason }` — manual credit adjust. Valid for `kind in ('credit_bundle', 'unlimited', 'trial')`. See §3d. |
+| POST | `/clients/:id/sessions/adjust` | superadmin | Same shape, for PT session balance (`kind='pt'`) |
+| POST | `/clients/:id/packages/:client_package_id/expiry` | superadmin | `{ expires_at, reason }` — edit expiry on `client_packages` (per `admin-restructure.md` §16 "Edit expiry" action, applies to `credit_bundle`, `unlimited`, `trial`). Writes a `manual_adjustments` row with `delta=0` and the reason note. |
+| POST | `/clients/:id/packages/issue` | superadmin | Admin grants a complimentary package (any kind). Inserts `client_packages` row with `amount_paid_sgd=0`, `stripe_payment_intent_id=NULL`. **Trial issue is gated by the `(client_id) WHERE kind='trial'` unique partial index** — returns `409 trial_already_used` if the client already holds a trial. |
+
+### `staff.ts` (superadmin-only)
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/staff` | List staff_users + open invitations |
-| POST | `/staff/invite` | `{ email, role: 'admin' \| 'instructor' }` — see §3a |
+| GET | `/staff` | List staff_users + open invitations. Each row exposes `granted_location_ids` (resolved to `locations` rows in the response). |
+| POST | `/staff/invite` | `{ email, role: 'admin', granted_location_ids: uuid[] }`. **Role restricted to `admin` in v1** — instructor invitations land via `POST /instructors` (which auto-fires an internally-typed invitation). Inviter's `granted_location_ids` must cover the requested set (superadmin always passes). See §3a. |
 | POST | `/staff/invitations/:id/revoke` | Set `status='revoked'`. Re-invite requires fresh row. |
+| PATCH | `/staff/:id/grants` | `{ granted_location_ids: uuid[] }` — superadmin shrinks/expands an admin's workspace grants without archiving (`admin-restructure.md` §15b "softer alternative"). Effective on next page load (no session revoke). |
 | POST | `/staff/:id/archive` | Soft delete + Clerk session revoke. Superadmin cannot be archived. |
 
 ### `notifications.ts`
@@ -237,28 +307,41 @@ tx commit
 
 The Stripe webhook `charge.refunded` arrives separately and updates `stripe_payments.status='refunded'`, `refunded_at`. If a refund call fails, the booking is still marked cancelled but `refund_outcome` stays as the optimistic `'stripe_refunded'` until reconciliation — admin sees the discrepancy via the failed `email` log + a future reports view.
 
-### 3c. PT session approval
+### 3c. PT session scheduling (from a PT Request)
 
-Triggered from: `POST /pt-sessions/:id/approve` OR `POST /inbox/:id/approve` (when item is a `pt_request`).
+Triggered from `POST /pt-requests/:id/schedule` (admin or instructor).
 
 ```
-services/pt-sessions/approve.ts:approve({ pt_session_id, location_id, actor_staff_id })
+services/pt-sessions/schedule.ts:scheduleFromRequest({
+  pt_request_id, instructor_id, location_id, starts_at, ends_at, actor_staff_id,
+  capacity_online?, capacity_waitlist?, capacity_buffer?
+})
   ↓
-1. SELECT pt_sessions FOR UPDATE WHERE id=X AND status='pending'
-2. Check instructor availability (recurring + one-off) covers [starts_at, ends_at]
-   AND no other confirmed pt_session OR active class for this instructor overlaps
-   → if conflict: 409 conflict
-3. Update pt_sessions: status='confirmed', confirmed_at, confirmed_by_staff_id, location_id
-4. Decrement client_packages.credits_or_sessions_remaining for each client in pt_session_clients
-   (one PT package row per client; transaction fails if any client has zero remaining → 409 insufficient_pt_sessions)
-5. Insert bookings row(s): kind='pt', pt_session_id=X, state='confirmed', credits_or_sessions_used=1
-   per client in pt_session_clients (one booking per client)
-6. Generate qr_token + code per booking via services/bookings/qr.ts
-7. Mark inbox row (if any) action_taken='approved', action_at, action_by_staff_id
-8. enqueueEmail('pt_session_approved', client.email, { instructor_name, starts_at, location, qr_url })
+tx start
+1. SELECT pt_requests FOR UPDATE WHERE id=X AND status='pending'
+   → else 409 request_not_pending
+2. Conflict check: no class, workshop_day, or confirmed pt_session for instructor_id overlaps [starts_at, ends_at]
+   → if conflict: 409 instructor_conflict
+3. Workspace check: location_id ∈ actor's granted_location_ids (superadmin bypasses)
+4. Decrement client_packages.credits_or_sessions_remaining for each client in the request
+   (requesting client + co_client if 2-on-1); 409 insufficient_pt_sessions on any zero balance
+5. Insert pt_sessions row: pt_request_id=X, instructor_id, location_id, starts_at, ends_at,
+   session_type (copied from request), capacity_online (default 1 for 1on1, 2 for 2on1),
+   lifecycle='active', scheduled_at=now(), scheduled_by_staff_id=actor_staff_id
+6. Insert pt_session_clients rows: requesting client + co_client (if 2on1)
+7. Insert bookings row(s): kind='pt', pt_session_id=new id, state='confirmed',
+   credits_or_sessions_used=1 per client; generate qr_token + code
+8. Update pt_requests: status='scheduled', scheduled_pt_session_id=new id,
+   resolved_at=now(), resolved_by_staff_id=actor_staff_id
+9. enqueueEmail('pt_session_approved', client.email, { instructor_name, starts_at, location, qr_url })
+tx commit
 ```
 
-Decline path is simpler: set `status='declined'`, `decline_note`, and email `pt_session_declined`. Clients have to re-request.
+Decline path: `POST /pt-requests/:id/decline` sets `pt_requests.status='declined'`, `decline_note`, `resolved_at`, `resolved_by_staff_id`, and emails `pt_session_declined`. Clients have to re-submit.
+
+Expiry path (`pt-request-expiry` cron): pending requests past `expires_at` move to `status='expired'`, and the client receives the new `pt_request_expired` email.
+
+**Invariant:** `pt_sessions.pt_request_id` is `NOT NULL UNIQUE`. There is no path that creates a `pt_sessions` row without going through this service.
 
 ### 3d. Manual credit / session adjustments
 
@@ -307,16 +390,13 @@ Scoped to the authenticated instructor. The middleware loads `staff_users` then 
 ### `pt-requests.ts`
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/pt-requests` | Pending PT requests where `instructor_id = ctx.instructor_id` |
-| POST | `/pt-requests/:id/approve` | Calls §3c approve flow — service guards ownership |
-| POST | `/pt-requests/:id/decline` | Service guards ownership |
+| GET | `/pt-requests` | Pending PT requests where `preferred_instructor_id = ctx.instructor_id` OR `preferred_instructor_id IS NULL`. Workspace-agnostic. |
+| POST | `/pt-requests/:id/schedule` | Same shape as the admin route — `services/pt-sessions/schedule.ts:scheduleFromRequest()` checks the instructor is the acting one (or unspecified). |
+| POST | `/pt-requests/:id/decline` | Service guards: instructor may only decline requests where they are preferred or unspecified. |
 
-### `availability.ts` (read-only in v1)
-| Method | Path | Effect |
-|---|---|---|
-| GET | `/availability` | Own recurring + one-off slots |
+### ~~`availability.ts`~~ — REMOVED
 
-Edit endpoints deferred per `admin-restructure.md` §19 — admin sets availability for instructors in v1.
+Per `admin-restructure.md` §8, the Availability system is gone. Conflict checks happen at PT session scheduling time against `classes`, `workshop_days`, and confirmed `pt_sessions` for the instructor — no stored availability calendar.
 
 ### `profile.ts`
 | Method | Path | Effect |

@@ -44,11 +44,28 @@ Unauthenticated. Cache-friendly (HTTP `Cache-Control: public, max-age=60` where 
 | Method | Path | Effect |
 |---|---|---|
 | GET | `/locations` | List active locations |
-| GET | `/classes` | List `classes` rows where `lifecycle='active'` AND `starts_at >= now()`. Filters: `?location_id`, `?class_type_id`, `?from`, `?to`, `?instructor_id`. Includes `event_state` computed at read. |
-| GET | `/classes/:id` | Detail incl. instructor mini-profile, location, capacity, current booked count |
-| GET | `/workshops` | List with same filter shape |
-| GET | `/workshops/:id` | Detail incl. tiers (with computed availability per tier), images (presigned R2 URLs), instructors, description |
-| GET | `/packages` | List active class_packages + pt_packages (browse before login) |
+| GET | `/classes` | List `classes` rows where `lifecycle='active'` AND `starts_at >= now()`. Filters: `?location_id`, `?class_type_id`, `?from`, `?to`, `?instructor_id`. Includes `event_state` and structured capacity (`capacity_online`, current booked count) computed at read. |
+| GET | `/classes/:id` | Detail incl. instructor mini-profile, location, structured capacity, booked count |
+| GET | `/workshops` | List multi-day workshops. Each row carries: `days[]` (one per `workshop_days` with starts_at, ends_at, derived `seats_left = capacity_online - booked_via_tier`), `tiers[]` (with **derived** `seats_left = min(seats_left for day in tier.day_ids)`), and resolved promotion fields (see below). |
+| GET | `/workshops/:id` | Detail incl. tiers (each with derived seats-left + effective price), `tier_days{}` (which tier covers which days), images (presigned R2 URLs), instructors, description. |
+| GET | `/packages` | List active class_packages + pt_packages. Each row carries resolved promotion fields. **Trial Pass first, then credit bundles, then unlimited, then PT** (matches fe-client `/packages` ordering per `fe-client-features.md` §6.1). |
+
+**Promotion resolution shape** — every package and every workshop tier in `/packages`, `/workshops`, `/classes` responses includes:
+
+```jsonc
+{
+  "regular_price_sgd": "49.00",
+  "effective_price_sgd": "39.00",
+  "applied_promotion": {
+    "id": "...",
+    "label": "Launch promo",
+    "kind": "special_price"
+  },
+  "available_promotions": [ /* all currently-windowed active promotions for context, may exceed 1 */ ]
+}
+```
+
+Resolution is server-side via `services/promotions/resolve.ts:bestPriceFor(parent_type, parent_id)` — best-price-wins, deterministic tie-break on lowest `sort_id` (`fe-client-features.md` §6.1). The client never recomputes prices.
 
 ### `marketing.ts`
 | Method | Path | Effect |
@@ -72,12 +89,13 @@ All endpoints prefixed with `/api/v1/me`.
 | GET | `/` | Own profile: `{ name, email, phone, gender, dob, joined_at, status, waiver_signed, verification_status }`. `verification_status` is read from Clerk claims, not DB. |
 | PATCH | `/` | Update `name`, `phone`, `gender`, `dob`. Email + password edits flow through Clerk directly (fe-client links to Clerk-hosted account page). |
 | GET | `/dashboard` | Aggregated home payload: next-up booking, package balances (credits + sessions remaining + days to expiry), referral conversions count. One round-trip for the `/account` landing page. |
-| GET | `/packages` | List `client_packages` for this client with each linked source (class_packages or pt_packages) |
+| GET | `/packages` | List `client_packages` for this client with each linked source (class_packages or pt_packages) and the `applied_promotion` frozen at purchase (if any). |
+| GET | `/packages/eligibility` | `{ trial_used: bool, holds_active_bundle: bool, holds_active_unlimited: bool }` — drives fe-client `/packages` gating per `fe-client-features.md` §6.1. `trial_used` is `true` if any `client_packages WHERE client_id=me AND kind='trial'` exists (active or expired). `holds_active_bundle` / `holds_active_unlimited` derive the "Bundle excludes Unlimited and vice versa" rule. Cheap query — call on every `/packages` page load. |
 
 ### `catalog.ts` (authenticated browse)
 Same shape as `routes/public/catalog.ts` but adds:
 - `?include_my_bookings=true` — joins to indicate which sessions the client already booked.
-- `GET /instructors/:id/availability` — slot enumeration for the PT request picker. Returns recurring + one-off availability minus conflicts (existing classes/workshops/confirmed PT) for the next `pt_booking_config.book_in_advance_days` days.
+- `GET /instructors` — list of bookable instructors (powers the `/private-sessions` browse page per `fe-client-features.md` §5.1). Each row includes class-type eligibility for filter chips. **No stored availability calendar** — the PT Request form (§4d below) lets clients submit any preferred slot; admin schedules and resolves conflicts at approve time.
 
 ### `bookings.ts` (verification gate applies)
 | Method | Path | Effect |
@@ -90,18 +108,29 @@ Same shape as `routes/public/catalog.ts` but adds:
 | POST | `/bookings/workshop` | `{ workshop_id, workshop_tier_id }` — initiates Stripe checkout; see §4b |
 | DELETE | `/bookings/:id` | Self-cancel — see §4c |
 
-### `pt-sessions.ts` (verification gate applies)
+### `pt-requests.ts` (verification gate applies)
+
+Per `admin-restructure.md` §9 and `fe-client-features.md` §5.2, the client-facing entity is the **PT Request** — clients submit a request with their preferred slot; admin schedules a `pt_sessions` row from it.
+
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/pt-sessions` | List own PT sessions (any status) |
-| POST | `/pt-sessions/request` | `{ instructor_id, starts_at, ends_at, session_type, message?, client_package_id, co_client_ids?: string[] }` — see §4d |
-| DELETE | `/pt-sessions/:id` | Cancel — only valid when `status='pending'` (pre-confirm) OR within window per §4c logic. After confirm, follows the confirmed-cancellation path. |
+| GET | `/pt-requests` | List own PT requests (any status). Each row carries linked `scheduled_pt_session_id` (if scheduled) plus an inlined booking for `/me/bookings` cross-display. |
+| GET | `/pt-requests/:id` | Detail |
+| POST | `/pt-requests` | `{ preferred_instructor_id?, preferred_starts_at, preferred_ends_at, session_type: '1on1'\|'2on1', co_client_email?, message? }`. See §4d. PT session count is **not** decremented at submission — only at admin schedule time per `fe-client-features.md` §5.2. `co_client_email` resolves to a `client_id` server-side; 422 if not found. |
+| DELETE | `/pt-requests/:id` | Cancel own pending request — sets `pt_requests.status='cancelled'`. Only valid when `status='pending'`. Confirmed sessions are cancelled via `DELETE /bookings/:id` instead (which follows the §4c path and refunds the session count). |
+
+### `pt-sessions.ts` (read-only — verification gate applies)
+| Method | Path | Effect |
+|---|---|---|
+| GET | `/pt-sessions` | List own confirmed/cancelled PT sessions. Submission moved to `pt-requests.ts`. |
+| GET | `/pt-sessions/:id` | Detail |
 
 ### `purchases.ts` (verification gate applies)
 | Method | Path | Effect |
 |---|---|---|
-| POST | `/checkout/package` | `{ package_kind: 'class' \| 'pt', package_id }` — creates Stripe Payment Intent, returns `client_secret`. See §4e. |
-| POST | `/checkout/workshop` | `{ workshop_id, workshop_tier_id }` — same. Free workshops bypass Stripe entirely; see §4b. |
+| POST | `/checkout/package` | `{ package_kind: 'class' \| 'pt', package_id }` — creates Stripe Payment Intent, returns `client_secret`. **Server resolves the best-price-wins promotion and the intent amount is derived from `effective_price_sgd`** — client-supplied price is never trusted. For `class_packages.kind='trial'`: pre-check the `(client_id) WHERE kind='trial'` partial unique index — 409 `trial_already_used` if the client already holds one. The intent metadata carries `applied_promotion_id` so the webhook can freeze it onto `client_packages`. See §4e. |
+| POST | `/checkout/workshop` | `{ workshop_id, workshop_tier_id }` — same. Server resolves the workshop's best-price-wins promotion plus tier-level early-bird (early_bird wins over regular, then promotion further reduces if applicable — see §4b for the ordering). Free workshops (effective_price = 0) **bypass Stripe entirely** and route through `/workshops/:id/register` semantics inline. |
+| POST | `/workshops/:id/register` | `{ workshop_tier_id }` — explicit free-workshop registration endpoint. Returns 409 if the resolved effective price is non-zero (client must use `/checkout/workshop`). Inserts a `bookings` row with `kind='workshop'`, `state='confirmed'`, `stripe_payment_intent_id=NULL` directly. Convenience: idempotent on `(client_id, workshop_tier_id)` — re-call returns the existing booking instead of erroring. |
 
 ### `invoices.ts`
 | Method | Path | Effect |
@@ -169,22 +198,34 @@ Returns { booking_id, qr_token, code }
 ```
 services/billing/create-intent.ts:workshopIntent({ client_id, workshop_id, workshop_tier_id })
   ↓
-1. SELECT workshop_tier FOR UPDATE
-   - workshops.lifecycle='active', starts_at > now()
-   - effective_price = early_bird_price_sgd if all of (early_bird_quota set,
-     count of confirmed bookings on this tier < early_bird_quota,
-     now() < early_bird_cutoff_at) else regular_price_sgd
-2. If effective_price = 0: skip Stripe, jump to free-path below
-3. Capacity check: count confirmed bookings WHERE workshop_tier_id=X < tier.capacity
-4. Stripe.paymentIntents.create({
+1. SELECT workshop_tiers FOR UPDATE; JOIN workshop_tier_days → workshop_days
+   - workshops.lifecycle='active'; AT LEAST ONE covered workshop_day has starts_at > now()
+2. Price resolution (in order):
+   a. base = regular_price_sgd
+   b. early_bird applies if (early_bird_quota set
+        AND count(confirmed bookings on tier) < early_bird_quota
+        AND now() < early_bird_cutoff_at): base = early_bird_price_sgd
+   c. promotion = services/promotions/resolve.ts:bestPriceFor('workshop', workshop_id)
+      — applies on top of base, best-price-wins; deterministic tie-break on lowest sort_id
+   d. effective_price = min(base, promotion_effective_price) if promotion exists else base
+3. If effective_price = 0: skip Stripe, jump to free-path below
+4. Capacity check — derived tier capacity = min(day.capacity_online for day in tier.day_ids).
+   tier_seats_left = capacity - count(confirmed bookings on tier).
+   If tier_seats_left <= 0: 409 tier_full
+   (Also rejects if any single covered day is already at capacity_online via the per-day join —
+    tier capacity is min(), but a same-day overlap with another tier could still saturate.)
+5. Stripe.paymentIntents.create({
      amount: effective_price * 100,
      currency: 'sgd',
-     metadata: { kind: 'workshop', client_id, workshop_id, workshop_tier_id }
+     metadata: { kind: 'workshop', client_id, workshop_id, workshop_tier_id,
+                 applied_promotion_id: promotion?.id ?? null }
    })
-5. Insert stripe_payments row: status='pending', kind='workshop', client_id, payment_intent_id
+6. Insert stripe_payments row: status='pending', kind='workshop', client_id, payment_intent_id
    (booking_id stays null until success — created in webhook)
-6. Return { client_secret }
+7. Return { client_secret, effective_price_sgd, applied_promotion }
 ```
+
+The webhook (on `payment_intent.succeeded`) inserts the `bookings` row with `applied_promotion_id` copied from the intent metadata — freezing the promotion onto the booking so retroactive promotion edits don't rewrite history.
 
 The webhook (`services/billing/webhook-handler.ts` on `payment_intent.succeeded`):
 
@@ -253,29 +294,33 @@ tx commit
 
 The cap evaluation (step 4) is the load-bearing call. It reads `cancellations WHERE client_id=me AND source='client' AND cancelled_at >= now() - cycle_days` and counts. The admin path (`be-portal.md` §3b) bypasses this — admins always get full refund and admin cancellations are excluded from cap by the `source='admin'` filter.
 
-### 4d. PT session request
+### 4d. PT Request submission
 
-`POST /me/pt-sessions/request`:
+`POST /me/pt-requests`:
 
 ```
-services/pt-sessions/request.ts:request({ client_id, instructor_id, starts_at, ends_at, session_type, message?, client_package_id, co_client_ids? })
+services/pt-sessions/request.ts:submitRequest({
+  client_id, preferred_instructor_id?, preferred_starts_at, preferred_ends_at,
+  session_type, message?, co_client_email?
+})
   ↓
 tx start
-1. Validate: now() + pt_booking_config.book_in_advance_days * 1d >= starts_at >= now()
-2. Validate session_type: '1on1' → co_client_ids must be empty/null; '2on1' → exactly one co_client_id, both must have valid PT package
-3. SELECT client_packages FOR UPDATE WHERE id=client_package_id (and per co-client) — kind='pt', balance >= 1
-   (Decrement happens at approve time, NOT request time — but we soft-check here)
-4. Conflict check: instructor recurring + one-off availability covers the slot AND no other pending/confirmed pt_session OR active class for the instructor overlaps
-   → if no availability: 422 instructor_unavailable
-   → if conflict: 409 slot_conflict
-5. Insert pt_sessions row: status='pending', instructor_id, starts_at, ends_at, session_type, location_id=NULL
-6. Insert pt_session_clients rows: requesting client + co_client_ids
-7. Insert inbox_items row: type='pt_request', source_pt_session_id, payload denormalised
-8. enqueueEmail('pt_request_submitted', client.email, { instructor_name, starts_at })
+1. Validate: now() <= preferred_starts_at <= now() + pt_booking_config.book_in_advance_days * 1d
+2. Validate session_type: '1on1' → co_client_email NULL; '2on1' → co_client_email required + must resolve to a client_id
+3. Soft-check both clients hold an active client_packages row with kind='pt' and remaining >= 1
+   (Decrement happens at admin schedule time, NOT request time — per fe-client-features.md §5.2.
+    Soft-check just avoids submitting requests that can never be scheduled.)
+   → if no PT package: 422 no_pt_package
+4. Insert pt_requests row: status='pending', preferred_instructor_id, preferred_starts_at,
+   preferred_ends_at, session_type, co_client_id (resolved), message,
+   expires_at = now() + pt_request_ttl (see §4f of admin-restructure.md / spine §5)
+5. enqueueEmail('pt_request_submitted', client.email, { instructor_name?, preferred_starts_at })
 tx commit
 ```
 
-The session moves to `confirmed` only when admin or instructor approves (see `be-portal.md` §3c).
+The request becomes a `pt_sessions` row only when admin or instructor schedules it (see `be-portal.md` §3c). Pending requests past `expires_at` are swept by the hourly `pt-request-expiry` cron — see spine §5.
+
+**No Inbox row inserted.** Per `admin-restructure.md` §13, PT requests are not Inbox items; admin sees them on the dedicated `/admin/pt-requests` page.
 
 ### 4e. Package purchase flow
 
@@ -285,14 +330,27 @@ The session moves to `confirmed` only when admin or instructor approves (see `be
 services/billing/create-intent.ts:packageIntent({ client_id, package_kind, package_id })
   ↓
 1. Load class_packages or pt_packages, validate status='active'
-2. Stripe.paymentIntents.create({
-     amount: package.price_sgd * 100,
+2. Eligibility gates (mirror /me/packages/eligibility):
+   - class_packages.kind='trial' → reject 409 trial_already_used if client_packages row with kind='trial'
+     exists for this client (active OR expired). Defence-in-depth: the partial unique index will also catch.
+   - class_packages.kind='credit_bundle' → reject 409 conflicting_active_package if client holds active 'unlimited'
+   - class_packages.kind='unlimited' → reject 409 conflicting_active_package if client holds active 'credit_bundle'
+   (trial + bundle/unlimited can coexist; PT is independent of all three)
+3. Promotion resolution:
+   promotion = services/promotions/resolve.ts:bestPriceFor(
+     package_kind === 'class' ? 'class_package' : 'pt_package', package_id
+   )
+   effective_price = min(package.price_sgd, promotion_effective_price) if promotion else package.price_sgd
+4. If effective_price = 0 AND package_kind='class' AND kind='trial':
+   skip Stripe, insert client_packages row directly (free Trial Pass), enqueue confirmation email
+5. Stripe.paymentIntents.create({
+     amount: effective_price * 100,
      currency: 'sgd',
      metadata: { kind: package_kind === 'class' ? 'class_package' : 'pt_package',
-                 client_id, package_id }
+                 client_id, package_id, applied_promotion_id: promotion?.id ?? null }
    })
-3. Insert stripe_payments: status='pending', kind, client_id, payment_intent_id
-4. Return { client_secret }
+6. Insert stripe_payments: status='pending', kind, client_id, payment_intent_id
+7. Return { client_secret, effective_price_sgd, applied_promotion }
 ```
 
 Webhook on success (`services/billing/webhook-handler.ts`):
@@ -301,15 +359,24 @@ Webhook on success (`services/billing/webhook-handler.ts`):
 tx start
 1. SELECT stripe_payments FOR UPDATE WHERE payment_intent_id=X
    - If status='succeeded': retry, no-op
-2. Insert client_packages: kind matches source package's intent (credit_bundle | unlimited | pt),
+2. Insert client_packages: kind matches source package's kind (credit_bundle | unlimited | trial | pt),
    source_class_package_id or source_pt_package_id,
-   credits_or_sessions_remaining = (credit_bundle ? credits : pt ? num_sessions : NULL),
-   expires_at = (credit_bundle ? now + validity_days : unlimited ? now + duration_days : NULL),
+   applied_promotion_id = intent.metadata.applied_promotion_id (frozen — promotion edits won't rewrite),
+   credits_or_sessions_remaining = (credit_bundle | trial ? credits : pt ? num_sessions : NULL),
+   expires_at = (credit_bundle ? now + validity_days
+                : trial ? (validity_days IS NULL ? NULL : now + validity_days)
+                : unlimited ? now + duration_days
+                : NULL),
    purchased_at = now(),
    amount_paid_sgd = stripe_payments.amount_sgd,
    stripe_payment_intent_id = X
+   (Trial unique partial index catches any race — if a concurrent purchase already inserted a trial
+    for this client, this INSERT raises 23505 and the webhook handler logs it then no-ops.)
 3. Update stripe_payments: status='succeeded', client_package_id, receipt_url
-4. enqueueEmail('package_purchase_confirmed', client.email, { package_name, credits_or_sessions, expires_at, receipt_url })
+4. enqueueEmail — branches on package kind:
+   - kind='trial' → 'trial_pass_purchase_confirmed' (friendlier intro copy)
+   - kind in (credit_bundle, unlimited, pt) → 'package_purchase_confirmed'
+   Both receive { package_name, credits_or_sessions, expires_at, receipt_url, applied_promotion_label? }
 5. Referral conversion check (same as workshop §4b)
 tx commit
 ```
