@@ -1,23 +1,43 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useMemo } from "react";
-import { ArrowLeft, Save } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { ArrowLeft, Loader2, Save } from "lucide-react";
 import { Button, Input, Label, PageHeader } from "@/components/ui";
-import { classTypes, instructors, locations } from "@/data";
 import { CapacityFields } from "@/components/schedule/capacity-fields";
+import { useWorkspace } from "@/lib/workspace-context";
+import { ApiError } from "@/lib/api";
 import type { Capacity, ClassTypeDifficulty } from "@/types";
 
 const DIFFICULTIES: ClassTypeDifficulty[] = ["general", "beginner", "intermediate", "advanced"];
 
+interface ApiClassType {
+  id: string;
+  name: string;
+  archived_at: string | null;
+}
+
+interface ApiInstructor {
+  id: string;
+  name: string;
+  status: "pending" | "active" | "archived";
+  archived_at: string | null;
+}
+
 export default function NewClassPage() {
   const router = useRouter();
+  const { api, accessibleLocations, activeLocationId } = useWorkspace();
+
+  const [classTypes, setClassTypes] = useState<ApiClassType[]>([]);
+  const [instructors, setInstructors] = useState<ApiInstructor[]>([]);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+
   const [classTypeId, setClassTypeId] = useState("");
   const [instructorId, setInstructorId] = useState("");
-  const [locationId, setLocationId] = useState("");
+  const [locationId, setLocationId] = useState(activeLocationId ?? "");
   const [date, setDate] = useState("");
-  const [time, setTime] = useState("");
-  const [duration, setDuration] = useState("75");
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
   const [capacity, setCapacity] = useState<Capacity>({
     waitlist: 0,
     onlineBooking: 18,
@@ -25,19 +45,83 @@ export default function NewClassPage() {
   });
   const [creditCost, setCreditCost] = useState("1");
   const [difficulty, setDifficulty] = useState<ClassTypeDifficulty>("general");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const eligibleInstructors = useMemo(
-    () => instructors.filter((i) => !i.archivedAt),
-    []
+  useEffect(() => {
+    if (!api) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [ct, ins] = await Promise.all([
+          api.get<{ class_types: ApiClassType[] }>("/portal/admin/class-types"),
+          api.get<{ instructors: ApiInstructor[] }>("/portal/admin/instructors"),
+        ]);
+        if (cancelled) return;
+        setClassTypes(ct.class_types);
+        setInstructors(ins.instructors);
+      } catch (err) {
+        if (cancelled) return;
+        setCatalogError(
+          err instanceof ApiError ? `HTTP ${err.status}` : "Network error",
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [api]);
+
+  useEffect(() => {
+    if (activeLocationId && !locationId) setLocationId(activeLocationId);
+  }, [activeLocationId, locationId]);
+
+  const activeClassTypes = useMemo(
+    () => classTypes.filter((c) => !c.archived_at),
+    [classTypes],
+  );
+  const activeLocations = useMemo(
+    () => accessibleLocations.filter((l) => !l.archivedAt),
+    [accessibleLocations],
   );
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!api) return;
+    if (!classTypeId || !instructorId || !locationId) return;
+    if (!date || !startTime || !endTime) return;
     void difficulty;
-    alert(
-      `Class instance created (mock).\n\nThe class is now visible on the timetable and occupies the instructor's availability slot.`
-    );
-    router.push("/admin/schedule");
+
+    const startsAt = new Date(`${date}T${startTime}:00`);
+    const endsAt = new Date(`${date}T${endTime}:00`);
+    if (endsAt <= startsAt) {
+      setSubmitError("End time must be after start time.");
+      return;
+    }
+
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      await api.post("/portal/admin/schedule/classes", {
+        class_type_id: classTypeId,
+        instructor_id: instructorId,
+        location_id: locationId,
+        starts_at: startsAt.toISOString(),
+        ends_at: endsAt.toISOString(),
+        capacity_online: capacity.onlineBooking,
+        capacity_waitlist: capacity.waitlist,
+        capacity_buffer: capacity.buffer,
+        credit_cost: Number(creditCost),
+      });
+      router.push("/admin/schedule");
+    } catch (err) {
+      setSubmitError(
+        err instanceof ApiError
+          ? `Failed to create class (HTTP ${err.status})`
+          : "Network error",
+      );
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -53,6 +137,12 @@ export default function NewClassPage() {
         description="Single class instance. The class will appear on the timetable and occupy the instructor's availability slot."
       />
 
+      {catalogError && (
+        <div className="mb-4 rounded-lg border border-error/30 bg-error/5 p-3 text-xs text-error">
+          Failed to load catalog: {catalogError}
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="space-y-6">
         <section className="rounded-xl border border-border bg-card p-5 shadow-soft">
           <h2 className="mb-4 text-sm font-semibold text-ink">Class details</h2>
@@ -62,14 +152,9 @@ export default function NewClassPage() {
               <SelectField
                 id="ct"
                 value={classTypeId}
-                onChange={(v) => {
-                  setClassTypeId(v);
-                  setInstructorId("");
-                }}
+                onChange={setClassTypeId}
                 placeholder="Select…"
-                options={classTypes
-                  .filter((c) => !c.archivedAt)
-                  .map((c) => ({ val: c.id, label: c.name }))}
+                options={activeClassTypes.map((c) => ({ val: c.id, label: c.name }))}
               />
             </div>
             <div className="space-y-1.5">
@@ -78,15 +163,9 @@ export default function NewClassPage() {
                 id="ins"
                 value={instructorId}
                 onChange={setInstructorId}
-                placeholder={classTypeId ? "Select…" : "Pick a class type first"}
-                disabled={!classTypeId}
-                options={eligibleInstructors.map((i) => ({ val: i.id, label: i.name }))}
+                placeholder="Select…"
+                options={instructors.map((i) => ({ val: i.id, label: i.name }))}
               />
-              {classTypeId && (
-                <p className="text-xs text-muted">
-                  {eligibleInstructors.length} eligible
-                </p>
-              )}
             </div>
             <div className="space-y-1.5 sm:col-span-2">
               <Label htmlFor="loc">Location</Label>
@@ -95,9 +174,7 @@ export default function NewClassPage() {
                 value={locationId}
                 onChange={setLocationId}
                 placeholder="Select…"
-                options={locations
-                  .filter((l) => !l.archivedAt)
-                  .map((l) => ({ val: l.id, label: l.name }))}
+                options={activeLocations.map((l) => ({ val: l.id, label: l.name }))}
               />
             </div>
             <div className="space-y-1.5 sm:col-span-2">
@@ -130,22 +207,32 @@ export default function NewClassPage() {
           <div className="grid gap-4 sm:grid-cols-3">
             <div className="space-y-1.5">
               <Label htmlFor="d">Date</Label>
-              <Input id="d" required type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+              <Input
+                id="d"
+                required
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+              />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="t">Start time</Label>
-              <Input id="t" required type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+              <Input
+                id="t"
+                required
+                type="time"
+                value={startTime}
+                onChange={(e) => setStartTime(e.target.value)}
+              />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="dur">Duration (min)</Label>
+              <Label htmlFor="end">End time</Label>
               <Input
-                id="dur"
+                id="end"
                 required
-                type="number"
-                min={15}
-                step={5}
-                value={duration}
-                onChange={(e) => setDuration(e.target.value)}
+                type="time"
+                value={endTime}
+                onChange={(e) => setEndTime(e.target.value)}
               />
             </div>
           </div>
@@ -171,14 +258,25 @@ export default function NewClassPage() {
           </div>
         </section>
 
+        {submitError && (
+          <div className="rounded-lg border border-error/30 bg-error/5 p-3 text-xs text-error">
+            {submitError}
+          </div>
+        )}
+
         <div className="flex justify-end gap-2">
           <Link href="/admin/schedule">
             <Button type="button" variant="ghost">
               Cancel
             </Button>
           </Link>
-          <Button type="submit">
-            <Save className="h-4 w-4" /> Create class
+          <Button type="submit" disabled={submitting}>
+            {submitting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+            Create class
           </Button>
         </div>
       </form>

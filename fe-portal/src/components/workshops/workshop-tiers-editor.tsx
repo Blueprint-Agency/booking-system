@@ -134,7 +134,8 @@ export function WorkshopTiersEditor({
                 <Input
                   type="number"
                   min={0}
-                  value={t.priceSgd}
+                  placeholder="e.g. 180"
+                  value={t.priceSgd === 0 ? "" : t.priceSgd}
                   onChange={(e) =>
                     update(t.id, { priceSgd: Math.max(0, Number(e.target.value) || 0) })
                   }

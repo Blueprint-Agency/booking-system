@@ -384,25 +384,52 @@ export function WorkshopEditor({
           </div>
         </div>
         <div className="space-y-1.5">
-          <Label>Instructors</Label>
-          <div className="flex flex-wrap gap-2">
+          <Label htmlFor="ws-instructor">Instructors</Label>
+          <select
+            id="ws-instructor"
+            value=""
+            onChange={(e) => {
+              const id = e.target.value;
+              if (id && !instructorIds.includes(id)) {
+                setInstructorIds((prev) => [...prev, id]);
+              }
+            }}
+            className="flex h-10 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          >
+            <option value="">
+              {instructorIds.length === 0 ? "Select instructor…" : "Add another instructor…"}
+            </option>
             {catalog.instructors
-              .filter((i) => !i.archived_at)
+              .filter((i) => !instructorIds.includes(i.id))
               .map((i) => (
-                <button
-                  key={i.id}
-                  type="button"
-                  onClick={() => toggleInstructor(i.id)}
-                  className={`rounded-full border px-3 py-1 text-xs ${
-                    instructorIds.includes(i.id)
-                      ? "border-accent bg-accent/10 text-ink"
-                      : "border-border bg-card text-muted"
-                  }`}
-                >
+                <option key={i.id} value={i.id}>
                   {i.name}
-                </button>
+                </option>
               ))}
-          </div>
+          </select>
+          {instructorIds.length > 0 && (
+            <div className="flex flex-wrap gap-2 pt-1">
+              {instructorIds.map((id) => {
+                const ins = catalog.instructors.find((i) => i.id === id);
+                return (
+                  <span
+                    key={id}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 px-2.5 py-1 text-xs text-ink"
+                  >
+                    {ins?.name ?? "Unknown"}
+                    <button
+                      type="button"
+                      onClick={() => toggleInstructor(id)}
+                      className="text-muted hover:text-ink"
+                      aria-label={`Remove ${ins?.name ?? "instructor"}`}
+                    >
+                      ×
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+          )}
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="ws-desc">Description (HTML)</Label>

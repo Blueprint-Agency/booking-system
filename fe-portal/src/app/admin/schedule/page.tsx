@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Plus,
@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Filter as FilterIcon,
   ChevronDown,
+  Loader2,
 } from "lucide-react";
 import {
   addDays,
@@ -25,19 +26,32 @@ import {
 } from "date-fns";
 import { Button, PageHeader } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import {
-  buildScheduleEntries,
-  instructorName,
-  locationName,
-} from "@/lib/schedule-helpers";
-import { instructors as allInstructors, workshops, ptRequests } from "@/data";
 import { formatTime } from "@/lib/formatters";
 import { PtRequestPickerDialog } from "@/components/schedule/pt-request-picker-dialog";
 import { useWorkspace } from "@/lib/workspace-context";
+import { useSchedule, type ScheduleEntry } from "@/lib/use-schedule";
 
 type View = "day" | "week" | "month";
 type FilterType = "all" | "class" | "workshop" | "pt";
-type Entry = ReturnType<typeof buildScheduleEntries>[number];
+type Entry = ScheduleEntry;
+type Resolver = {
+  instructorName: (id: string) => string;
+  locationName: (id: string | null) => string;
+};
+
+interface ApiInstructor {
+  id: string;
+  name: string;
+  status: "pending" | "active" | "archived";
+  archived_at: string | null;
+}
+
+interface ApiWorkshop {
+  id: string;
+  name: string;
+  location_id: string;
+  lifecycle: "active" | "cancelled";
+}
 
 const TODAY = new Date("2026-05-10");
 const HOUR_START = 7;
@@ -46,7 +60,7 @@ const HOUR_HEIGHT = 56;
 const TOTAL_HEIGHT = (HOUR_END - HOUR_START) * HOUR_HEIGHT;
 
 export default function SchedulePage() {
-  const { activeLocationId } = useWorkspace();
+  const { api, activeLocationId, accessibleLocations } = useWorkspace();
   const [view, setView] = useState<View>("week");
   const [cursor, setCursor] = useState<Date>(TODAY);
   const [type, setType] = useState<FilterType>("all");
@@ -54,16 +68,77 @@ export default function SchedulePage() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [workshopMenuOpen, setWorkshopMenuOpen] = useState(false);
   const [ptPickerOpen, setPtPickerOpen] = useState(false);
-  const pendingPtCount = ptRequests.filter((r) => r.status === "pending").length;
-  const activeWorkshops = workshops.filter((w) => w.lifecycle === "active");
 
-  const allEntries = useMemo(() => buildScheduleEntries(), []);
+  const [instructorsList, setInstructorsList] = useState<ApiInstructor[]>([]);
+  const [workshopsList, setWorkshopsList] = useState<ApiWorkshop[]>([]);
+
+  useEffect(() => {
+    if (!api) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [ins, wsh] = await Promise.all([
+          api.get<{ instructors: ApiInstructor[] }>("/portal/admin/instructors"),
+          api.get<{ workshops: ApiWorkshop[] }>("/portal/admin/workshops"),
+        ]);
+        if (cancelled) return;
+        setInstructorsList(ins.instructors);
+        setWorkshopsList(wsh.workshops);
+      } catch {
+        // Names degrade to "Unknown" / dropdowns stay empty if the catalog fetch fails.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [api]);
+
+  const instructorById = useMemo(
+    () => new Map(instructorsList.map((i) => [i.id, i.name])),
+    [instructorsList],
+  );
+  const locationById = useMemo(
+    () => new Map(accessibleLocations.map((l) => [l.id, l.name])),
+    [accessibleLocations],
+  );
+  const resolver = useMemo<Resolver>(
+    () => ({
+      instructorName: (id) => instructorById.get(id) ?? "Unknown",
+      locationName: (id) => (id ? (locationById.get(id) ?? "Unknown") : "—"),
+    }),
+    [instructorById, locationById],
+  );
+
+  const filterInstructors = useMemo(
+    () =>
+      instructorsList.filter(
+        (i) => i.status === "active" && !i.archived_at,
+      ),
+    [instructorsList],
+  );
+
+  const activeWorkshops = useMemo(
+    () =>
+      workshopsList.filter(
+        (w) =>
+          w.lifecycle === "active" &&
+          (!activeLocationId || w.location_id === activeLocationId),
+      ),
+    [workshopsList, activeLocationId],
+  );
+
+  const range = useMemo(() => getRange(view, cursor), [view, cursor]);
+
+  const { entries: allEntries, loading, error } = useSchedule({
+    from: range.start.toISOString(),
+    to: range.end.toISOString(),
+    locationId: activeLocationId ?? undefined,
+  });
 
   const entries = useMemo(
     () =>
       allEntries.filter((e) => {
         if (type !== "all" && e.kind !== type) return false;
-        if (activeLocationId && e.locationId !== activeLocationId) return false;
         if (
           instructorId !== "all" &&
           !e.instructorIds.includes(instructorId)
@@ -71,10 +146,9 @@ export default function SchedulePage() {
           return false;
         return true;
       }),
-    [allEntries, type, activeLocationId, instructorId]
+    [allEntries, type, instructorId]
   );
 
-  const range = useMemo(() => getRange(view, cursor), [view, cursor]);
   const visibleEntries = useMemo(
     () =>
       entries.filter((e) => {
@@ -158,11 +232,6 @@ export default function SchedulePage() {
             </div>
             <Button size="sm" onClick={() => setPtPickerOpen(true)}>
               <Plus className="h-4 w-4" /> PT Session
-              {pendingPtCount > 0 && (
-                <span className="ml-1 rounded-full bg-white/20 px-1.5 text-[10px] font-bold">
-                  {pendingPtCount}
-                </span>
-              )}
             </Button>
           </>
         }
@@ -244,9 +313,7 @@ export default function SchedulePage() {
               value={instructorId}
               options={[
                 { val: "all", label: "All" },
-                ...allInstructors
-                  .filter((i) => !i.archivedAt)
-                  .map((i) => ({ val: i.id, label: i.name })),
+                ...filterInstructors.map((i) => ({ val: i.id, label: i.name })),
               ]}
               onChange={setInstructorId}
             />
@@ -266,15 +333,32 @@ export default function SchedulePage() {
         )}
 
         {/* Calendar surface */}
-        <div className="overflow-x-auto">
-          {view === "day" && (
-            <DayView day={cursor} entries={visibleEntries} />
+        <div className="relative overflow-x-auto">
+          {error && (
+            <div className="border-b border-error/30 bg-error/5 px-4 py-2 text-xs text-error">
+              Failed to load schedule: {error}
+            </div>
           )}
-          {view === "week" && (
-            <WeekView weekStart={range.start} entries={visibleEntries} />
-          )}
-          {view === "month" && (
-            <MonthView monthStart={startOfMonth(cursor)} entries={visibleEntries} />
+          {loading && allEntries.length === 0 ? (
+            <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading schedule…
+            </div>
+          ) : (
+            <>
+              {view === "day" && (
+                <DayView day={cursor} entries={visibleEntries} resolver={resolver} />
+              )}
+              {view === "week" && (
+                <WeekView
+                  weekStart={range.start}
+                  entries={visibleEntries}
+                  resolver={resolver}
+                />
+              )}
+              {view === "month" && (
+                <MonthView monthStart={startOfMonth(cursor)} entries={visibleEntries} />
+              )}
+            </>
           )}
         </div>
       </div>
@@ -377,7 +461,15 @@ function FilterPill({
 
 /* ---------- Day view ---------- */
 
-function DayView({ day, entries }: { day: Date; entries: Entry[] }) {
+function DayView({
+  day,
+  entries,
+  resolver,
+}: {
+  day: Date;
+  entries: Entry[];
+  resolver: Resolver;
+}) {
   const dayEntries = entries.filter((e) => isSameDay(parseISO(e.startsAt), day));
   return (
     <div className="flex">
@@ -387,7 +479,7 @@ function DayView({ day, entries }: { day: Date; entries: Entry[] }) {
         <div className="relative" style={{ height: TOTAL_HEIGHT }}>
           <HourLines />
           <NowIndicator day={day} />
-          <EventLayer entries={dayEntries} dense={false} />
+          <EventLayer entries={dayEntries} dense={false} resolver={resolver} />
         </div>
       </div>
     </div>
@@ -396,7 +488,15 @@ function DayView({ day, entries }: { day: Date; entries: Entry[] }) {
 
 /* ---------- Week view ---------- */
 
-function WeekView({ weekStart, entries }: { weekStart: Date; entries: Entry[] }) {
+function WeekView({
+  weekStart,
+  entries,
+  resolver,
+}: {
+  weekStart: Date;
+  entries: Entry[];
+  resolver: Resolver;
+}) {
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   return (
     <div className="flex min-w-[760px]">
@@ -415,7 +515,7 @@ function WeekView({ weekStart, entries }: { weekStart: Date; entries: Entry[] })
               <div className="relative" style={{ height: TOTAL_HEIGHT }}>
                 <HourLines />
                 <NowIndicator day={day} />
-                <EventLayer entries={dayEntries} dense />
+                <EventLayer entries={dayEntries} dense resolver={resolver} />
               </div>
             </div>
           );
@@ -605,7 +705,15 @@ function NowIndicator({ day }: { day: Date }) {
 
 /* ---------- Event positioning ---------- */
 
-function EventLayer({ entries, dense }: { entries: Entry[]; dense: boolean }) {
+function EventLayer({
+  entries,
+  dense,
+  resolver,
+}: {
+  entries: Entry[];
+  dense: boolean;
+  resolver: Resolver;
+}) {
   const positioned = layoutEvents(entries);
   return (
     <div className="absolute inset-0">
@@ -618,6 +726,7 @@ function EventLayer({ entries, dense }: { entries: Entry[]; dense: boolean }) {
           left={left}
           width={width}
           dense={dense}
+          resolver={resolver}
         />
       ))}
     </div>
@@ -685,6 +794,7 @@ function EventBlock({
   left,
   width,
   dense,
+  resolver,
 }: {
   entry: Entry;
   top: number;
@@ -692,11 +802,12 @@ function EventBlock({
   left: number;
   width: number;
   dense: boolean;
+  resolver: Resolver;
 }) {
   const subtitle =
     entry.kind === "pt"
-      ? entry.instructorIds.map(instructorName).join(" & ")
-      : `${entry.instructorIds.map(instructorName).join(" & ")} · ${locationName(entry.locationId)}`;
+      ? entry.instructorIds.map(resolver.instructorName).join(" & ")
+      : `${entry.instructorIds.map(resolver.instructorName).join(" & ")} · ${resolver.locationName(entry.locationId)}`;
 
   const compact = height < 44;
   const linkId = entry.kind === "workshop" ? entry.raw.id : entry.id;
