@@ -7,6 +7,8 @@ import {
   serializePromotion,
 } from '../../services/packages/promotions'
 import { getClientEntitlements } from '../../services/packages/entitlements'
+import * as workshopsSvc from '../../services/workshops/catalog'
+import { listMyWorkshopBookings } from '../../services/workshops/my-bookings'
 
 function serializeClassPackage(
   r: classSvc.ClassPackageRow,
@@ -48,8 +50,20 @@ function serializePtPackage(
 
 const app = new Hono()
   .get('/classes', c => c.json({ todo: 'classes browse with auth (include_my_bookings)' }, 501))
-  .get('/workshops', c => c.json({ todo: 'workshops browse' }, 501))
-  .get('/workshops/:id', c => c.json({ todo: 'workshop detail' }, 501))
+  .get('/workshops', async c => {
+    const cards = await workshopsSvc.listActiveWorkshopCards()
+    return c.json({ workshops: cards })
+  })
+  .get('/workshops/:id', async c => {
+    const id = c.req.param('id')
+    const detail = await workshopsSvc.getWorkshopDetailPayload(id)
+    return c.json(detail)
+  })
+  .get('/workshop-bookings', async c => {
+    const clientId = c.get('clientId')
+    const rows = await listMyWorkshopBookings(clientId)
+    return c.json({ workshop_bookings: rows })
+  })
   .get('/class-packages', async c => {
     const clientId = c.get('clientId')
     const rows = await classSvc.listClassPackages({ status: 'active' })
