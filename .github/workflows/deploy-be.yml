@@ -45,12 +45,12 @@ jobs:
             # db-booking is only reachable inside booking-network, never exposed.
             #
             # Required GitHub repo settings:
-            #   vars:    PORT, VPS3_HOST, DOCKERHUB_USERNAME, PORTAL_ORIGIN, SUPERADMIN_EMAIL
+            #   vars:    PORT, VPS3_HOST, DOCKERHUB_USERNAME, PORTAL_ORIGIN, CLIENT_ORIGIN, SUPERADMIN_EMAIL
             #   secrets: DB_USER, DB_PASSWORD, DB_NAME, DOCKERHUB_TOKEN, SSH_PRIVATE_KEY,
             #            CLERK_STAFF_PUBLISHABLE_KEY, CLERK_STAFF_SECRET_KEY, CLERK_STAFF_WEBHOOK_SECRET,
+            #            CLERK_CLIENT_PUBLISHABLE_KEY, CLERK_CLIENT_SECRET_KEY, CLERK_CLIENT_WEBHOOK_SECRET,
             #            SMTP_USER, SMTP_PASSWORD,
             #            (deferred — set when next slice lands)
-            #            CLERK_CLIENT_PUBLISHABLE_KEY, CLERK_CLIENT_SECRET_KEY, CLERK_CLIENT_WEBHOOK_SECRET,
             #            STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
             #            R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, R2_PUBLIC_URL
             {
@@ -62,11 +62,13 @@ jobs:
               echo "SUPERADMIN_EMAIL=${{ vars.SUPERADMIN_EMAIL }}"
               # Portal origin — used for CORS + the sign-up URL in invitation emails
               echo "PORTAL_ORIGIN=${{ vars.PORTAL_ORIGIN }}"
+              # Client origin — adds fe-client to the CORS allowlist
+              echo "CLIENT_ORIGIN=${{ vars.CLIENT_ORIGIN }}"
               # Clerk — staff app (admin + instructor)
               echo "CLERK_STAFF_PUBLISHABLE_KEY=${{ secrets.CLERK_STAFF_PUBLISHABLE_KEY }}"
               echo "CLERK_STAFF_SECRET_KEY=${{ secrets.CLERK_STAFF_SECRET_KEY }}"
               echo "CLERK_STAFF_WEBHOOK_SECRET=${{ secrets.CLERK_STAFF_WEBHOOK_SECRET }}"
-              # Clerk — client app (deferred; set when client slice lands)
+              # Clerk — client app (fe-client; separate Clerk application from staff)
               echo "CLERK_CLIENT_PUBLISHABLE_KEY=${{ secrets.CLERK_CLIENT_PUBLISHABLE_KEY }}"
               echo "CLERK_CLIENT_SECRET_KEY=${{ secrets.CLERK_CLIENT_SECRET_KEY }}"
               echo "CLERK_CLIENT_WEBHOOK_SECRET=${{ secrets.CLERK_CLIENT_WEBHOOK_SECRET }}"
