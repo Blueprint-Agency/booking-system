@@ -19,12 +19,16 @@ app.use('*', requestId)
 app.use('*', errorBoundary)
 app.use('*', secureHeaders())
 
-// CORS — only fe-portal origin for this slice. Credentials required because Clerk
-// uses cookies on the auth handshake; the frontend then carries the bearer JWT.
+// CORS — allow both fe-portal and (when configured) fe-client origins.
+// Credentials required because Clerk uses cookies on the auth handshake; the
+// frontend then carries the bearer JWT.
+const allowedOrigins = [env.PORTAL_ORIGIN, env.CLIENT_ORIGIN].filter(
+  (o): o is string => Boolean(o),
+)
 app.use(
   '*',
   cors({
-    origin: env.PORTAL_ORIGIN,
+    origin: origin => (allowedOrigins.includes(origin) ? origin : null),
     credentials: true,
     allowMethods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Authorization', 'Content-Type', 'X-Impersonate-Staff-Id', 'X-Request-Id'],

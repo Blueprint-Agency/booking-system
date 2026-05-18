@@ -26,6 +26,10 @@ const schema = z.object({
   CLERK_STAFF_AUTHORIZED_PARTIES: z.string().optional(),
 
   PORTAL_ORIGIN: z.string().url('PORTAL_ORIGIN must be a full URL like http://localhost:3001'),
+  CLIENT_ORIGIN: z
+    .string()
+    .url('CLIENT_ORIGIN must be a full URL like http://localhost:3000')
+    .optional(),
 
   // Optional / deferred — accept anything (or empty string)
   CLERK_CLIENT_PUBLISHABLE_KEY: z.string().optional(),

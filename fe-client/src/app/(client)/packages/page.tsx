@@ -1,94 +1,50 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useState } from "react";
-import { GatedLink } from "@/components/auth/auth-gate";
+import { useEffect, useMemo, useState } from "react";
+import { Loader2 } from "lucide-react";
+import { useUser } from "@clerk/nextjs";
+import { GatedLink, useAuthGate } from "@/components/auth/auth-gate";
 import { cn } from "@/lib/utils";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { SectionHeading } from "@/components/booking/section-heading";
-import { useMockState, hasActiveBundle, hasActiveUnlimited } from "@/lib/mock-state";
-
-// ── Inline data (no products.json — data lives here) ──────────────────────────
-
-type BundleItem = {
-  id: string;
-  name: string;
-  credits: string;
-  price: number;
-  tag: string;
-  highlight?: boolean;
-  pending?: boolean;
-};
-
-type UnlimitedItem = {
-  id: string;
-  name: string;
-  duration: string;
-  price: number;
-  highlight?: boolean;
-};
-
-type PrivateItem = {
-  id: string;
-  name: string;
-  sessions: number;
-  price: number;
-  type: "1on1" | "2on1";
-};
-
-const BUNDLES: BundleItem[] = [
-  { id: "b-otp",    name: "One-time Pass",  credits: "1 credit",    price: 40,   tag: "1 day" },
-  { id: "b-10",     name: "Bundle of 10",   credits: "10 credits",  price: 300,  tag: "90 days" },
-  { id: "b-20",     name: "Bundle of 20",   credits: "20 credits",  price: 550,  tag: "180 days", highlight: true },
-  { id: "b-30",     name: "Bundle of 30",   credits: "30 credits",  price: 750,  tag: "365 days" },
-  { id: "b-50",     name: "Bundle of 50",   credits: "50 credits",  price: 1100, tag: "365 days" },
-  { id: "b-100",    name: "Bundle of 100",  credits: "100 credits", price: 2000, tag: "365 days" },
-];
-
-const UNLIMITED: UnlimitedItem[] = [
-  { id: "u-3",  name: "3-Month Unlimited",  duration: "3 months",  price: 600 },
-  { id: "u-6",  name: "6-Month Unlimited",  duration: "6 months",  price: 1000, highlight: true },
-  { id: "u-12", name: "12-Month Unlimited", duration: "12 months", price: 1700 },
-];
-
-const PRIVATE_1ON1: PrivateItem[] = [
-  { id: "p1-10",  name: "VIP 10 Sessions",  sessions: 10,  price: 1600,  type: "1on1" },
-  { id: "p1-20",  name: "VIP 20 Sessions",  sessions: 20,  price: 3000,  type: "1on1" },
-  { id: "p1-30",  name: "VIP 30 Sessions",  sessions: 30,  price: 4200,  type: "1on1" },
-  { id: "p1-40",  name: "VIP 40 Sessions",  sessions: 40,  price: 5200,  type: "1on1" },
-  { id: "p1-50",  name: "VIP 50 Sessions",  sessions: 50,  price: 6000,  type: "1on1" },
-  { id: "p1-100", name: "VIP 100 Sessions", sessions: 100, price: 11000, type: "1on1" },
-];
-
-const PRIVATE_2ON1: PrivateItem[] = [
-  { id: "p2-10", name: "VIP 10 Sessions", sessions: 10, price: 2000, type: "2on1" },
-  { id: "p2-20", name: "VIP 20 Sessions", sessions: 20, price: 3600, type: "2on1" },
-  { id: "p2-30", name: "VIP 30 Sessions", sessions: 30, price: 4800, type: "2on1" },
-  { id: "p2-50", name: "VIP 50 Sessions", sessions: 50, price: 7500, type: "2on1" },
-];
+import { useApi } from "@/lib/api";
+import {
+  ApiClassPackage,
+  ApiPtPackage,
+  formatSgd,
+  hasDiscount,
+  usePackagesCatalog,
+} from "@/lib/packages";
 
 // ── Tab definitions ────────────────────────────────────────────────────────────
 
-type MainTab = "classCredits" | "pt1on1" | "pt2on1";
+type MainTab = "classCredits" | "trial" | "pt1on1" | "pt2on1";
 type ClassSubTab = "bundle" | "unlimited";
-
-const MAIN_TABS: { key: MainTab; label: string }[] = [
-  { key: "classCredits", label: "Class Credits" },
-  { key: "pt1on1",       label: "PT 1-on-1" },
-  { key: "pt2on1",       label: "PT 2-on-1" },
-];
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function PackagesPage() {
+  const { data, loading, error, refresh } = usePackagesCatalog();
+  const api = useApi();
   const [activeTab, setActiveTab] = useState<MainTab>("classCredits");
+  const [classSubTab, setClassSubTab] = useState<ClassSubTab>("bundle");
+  const [claimingTrialId, setClaimingTrialId] = useState<string | null>(null);
+  const [trialMessage, setTrialMessage] = useState<
+    { kind: "ok" | "err"; text: string } | null
+  >(null);
 
   useEffect(() => {
     function fromHash(): MainTab | null {
-      const h = typeof window !== "undefined" ? window.location.hash.replace(/^#/, "").toLowerCase() : "";
-      if (h === "pt1on1" || h === "private" || h === "1on1" || h === "1-on-1") return "pt1on1";
+      const h =
+        typeof window !== "undefined"
+          ? window.location.hash.replace(/^#/, "").toLowerCase()
+          : "";
+      if (h === "trial" || h === "trial-pass") return "trial";
+      if (h === "pt1on1" || h === "private" || h === "1on1" || h === "1-on-1")
+        return "pt1on1";
       if (h === "pt2on1" || h === "2on1" || h === "2-on-1") return "pt2on1";
-      if (h === "classcredits" || h === "classes" || h === "credits") return "classCredits";
+      if (h === "classcredits" || h === "classes" || h === "credits")
+        return "classCredits";
       return null;
     }
     const initial = fromHash();
@@ -100,282 +56,588 @@ export default function PackagesPage() {
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
-  const [classSubTab, setClassSubTab] = useState<ClassSubTab>("bundle");
-  const state = useMockState();
-  const hasUnlimited = hasActiveUnlimited(state);
-  const hasBundle = hasActiveBundle(state);
+
+  const bundles = useMemo(
+    () => (data?.classPackages ?? []).filter((p) => p.kind === "credit_bundle"),
+    [data],
+  );
+  const unlimited = useMemo(
+    () => (data?.classPackages ?? []).filter((p) => p.kind === "unlimited"),
+    [data],
+  );
+  const trials = useMemo(
+    () => (data?.classPackages ?? []).filter((p) => p.kind === "trial"),
+    [data],
+  );
+  const pt1on1 = useMemo(
+    () => (data?.ptPackages ?? []).filter((p) => p.session_type === "1on1"),
+    [data],
+  );
+  const pt2on1 = useMemo(
+    () => (data?.ptPackages ?? []).filter((p) => p.session_type === "2on1"),
+    [data],
+  );
+
+  const ent = data?.entitlements ?? null;
+  const hasUnlimited = ent?.has_active_unlimited ?? false;
+  const hasBundle = ent?.has_active_bundle_credits ?? false;
+  const trialUsed = ent?.trial_used ?? false;
+
+  const MAIN_TABS: { key: MainTab; label: string; hidden?: boolean }[] = [
+    { key: "classCredits", label: "Class Credits" },
+    {
+      key: "trial",
+      label: "Trial Pass",
+      hidden: trials.length === 0,
+    },
+    { key: "pt1on1", label: "PT 1-on-1" },
+    { key: "pt2on1", label: "PT 2-on-1" },
+  ];
+
+  async function claimTrial(pkg: ApiClassPackage) {
+    setClaimingTrialId(pkg.id);
+    setTrialMessage(null);
+    try {
+      await api.post("/me/checkout/package", {
+        package_kind: "class",
+        package_id: pkg.id,
+      });
+      setTrialMessage({
+        kind: "ok",
+        text: "Trial pass claimed — head to Classes to book.",
+      });
+      await refresh();
+    } catch (err) {
+      const body =
+        err && typeof err === "object" && "body" in err
+          ? (err as { body: unknown }).body
+          : null;
+      const code =
+        body && typeof body === "object" && "error" in body
+          ? String((body as { error: unknown }).error)
+          : "";
+      if (code === "trial_already_used") {
+        setTrialMessage({
+          kind: "err",
+          text: "You've already used your trial pass.",
+        });
+      } else {
+        setTrialMessage({
+          kind: "err",
+          text: "Couldn't claim trial pass. Please try again.",
+        });
+      }
+    } finally {
+      setClaimingTrialId(null);
+    }
+  }
 
   return (
     <>
-<div id="packages">
+      <div id="packages">
         <BookingSurface maxWidth="xl" padding="default">
           <SectionHeading
             eyebrow="Choose your track"
-            title="Three package families"
+            title={trials.length > 0 ? "Bundle, unlimited, trial or PT" : "Three package families"}
           />
 
-          {/* ── Main tab strip ──────────────────────────────────── */}
-          <div className="flex justify-center mb-6">
-            <div
-              role="tablist"
-              aria-label="Package family"
-              className="inline-flex items-center gap-1 p-1 rounded-full bg-warm border border-ink/10"
-            >
-              {MAIN_TABS.map((tab) => {
-                const isActive = activeTab === tab.key;
-                return (
-                  <button
-                    key={tab.key}
-                    role="tab"
-                    aria-selected={isActive}
-                    onClick={() => setActiveTab(tab.key)}
-                    className={cn(
-                      "relative rounded-full px-3.5 sm:px-5 py-2 text-xs sm:text-sm font-medium whitespace-nowrap transition-all duration-200",
-                      isActive
-                        ? "bg-ink text-paper shadow-sm"
-                        : "text-muted hover:text-ink"
-                    )}
-                  >
-                    {tab.label}
-                  </button>
-                );
-              })}
+          {loading && (
+            <div className="flex items-center justify-center py-16 text-muted text-sm">
+              <Loader2 className="h-4 w-4 animate-spin mr-2" /> Loading packages…
             </div>
-          </div>
+          )}
 
-          {/* ── Class Credits tab ───────────────────────────────── */}
-          {activeTab === "classCredits" && (
-            <div className="space-y-8">
-              {/* Sub-toggle: Bundle / Unlimited */}
-              <div
-                role="tablist"
-                aria-label="Class credit type"
-                className="flex justify-center gap-8"
-              >
-                {(["bundle", "unlimited"] as ClassSubTab[]).map((sub) => {
-                  const isActive = classSubTab === sub;
-                  return (
-                    <button
-                      key={sub}
-                      role="tab"
-                      aria-selected={isActive}
-                      onClick={() => setClassSubTab(sub)}
-                      className={cn(
-                        "relative pb-3 text-sm font-medium transition-colors",
-                        isActive ? "text-ink" : "text-muted hover:text-ink"
-                      )}
-                    >
-                      {sub === "bundle" ? "Credit Bundles" : "Unlimited Access"}
-                      <span
+          {!loading && error && (
+            <div className="mx-auto max-w-md rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3 text-center">
+              We couldn't load packages right now. Please refresh in a moment.
+            </div>
+          )}
+
+          {!loading && !error && data && (
+            <>
+              {/* ── Main tab strip ──────────────────────────────────── */}
+              <div className="flex justify-center mb-6">
+                <div
+                  role="tablist"
+                  aria-label="Package family"
+                  className="inline-flex items-center gap-1 p-1 rounded-full bg-warm border border-ink/10"
+                >
+                  {MAIN_TABS.filter((t) => !t.hidden).map((tab) => {
+                    const isActive = activeTab === tab.key;
+                    return (
+                      <button
+                        key={tab.key}
+                        role="tab"
+                        aria-selected={isActive}
+                        onClick={() => setActiveTab(tab.key)}
                         className={cn(
-                          "absolute left-0 right-0 -bottom-px h-0.5 rounded-full transition-all",
-                          isActive ? "bg-ink" : "bg-transparent"
+                          "relative rounded-full px-3.5 sm:px-5 py-2 text-xs sm:text-sm font-medium whitespace-nowrap transition-all duration-200",
+                          isActive
+                            ? "bg-ink text-paper shadow-sm"
+                            : "text-muted hover:text-ink",
                         )}
-                      />
-                    </button>
-                  );
-                })}
+                      >
+                        {tab.label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
-              {/* Bundle cards */}
-              {classSubTab === "bundle" && (
-                <>
-                {hasUnlimited && (
-                  <div className="rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3 text-center">
-                    You have an active Unlimited pass. Credit Bundles can't be purchased while Unlimited is active.
-                  </div>
-                )}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {BUNDLES.map((item) => (
-                    <div
-                      key={item.id}
-                      className={cn(
-                        "relative rounded-2xl bg-paper border border-ink/10 p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all",
-                        item.highlight && "border-accent",
-                        item.pending && "opacity-75"
-                      )}
-                    >
-                      {item.highlight && (
-                        <span className="absolute -top-2.5 left-4 text-[10px] font-mono uppercase tracking-wider bg-accent text-white px-2.5 py-0.5 rounded-full">
-                          Most popular
-                        </span>
-                      )}
-                      {item.pending && (
-                        <span className="absolute -top-2.5 right-4 text-[10px] font-mono uppercase tracking-wider bg-warning/15 text-warning border border-warning/20 px-2.5 py-0.5 rounded-full">
-                          Coming soon
-                        </span>
-                      )}
-                      <div>
-                        <p className="text-4xl font-extrabold text-ink">{item.credits}</p>
-                        <p className="text-base font-medium text-ink mt-0.5">{item.name}</p>
-                      </div>
-                      <p className="text-2xl font-bold mt-4">S${item.price.toLocaleString()}</p>
-                      <ul className="text-sm text-muted space-y-2 mt-6 flex-1">
-                        <li>Valid for {item.tag}</li>
-                        <li>Use at both studio locations</li>
-                        <li>1 credit = 1 class attendance</li>
-                      </ul>
-                      {item.pending ? (
-                        <span className="mt-6 w-full text-center rounded-full bg-ink/10 text-muted px-5 py-3 text-sm font-medium">
-                          Coming soon
-                        </span>
-                      ) : hasUnlimited ? (
-                        <span
-                          title="Unlimited pass already active"
-                          className="mt-6 w-full text-center rounded-full bg-ink/10 text-muted px-5 py-3 text-sm font-medium cursor-not-allowed"
-                        >
-                          Unavailable
-                        </span>
-                      ) : (
-                        <GatedLink
-                          href={`/checkout?package=${item.id}`}
-                          context="buy a package"
-                          className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
-                        >
-                          Purchase
-                        </GatedLink>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                </>
+              {/* ── Class Credits tab ───────────────────────────────── */}
+              {activeTab === "classCredits" && (
+                <ClassCreditsSection
+                  bundles={bundles}
+                  unlimited={unlimited}
+                  subTab={classSubTab}
+                  setSubTab={setClassSubTab}
+                  hasUnlimited={hasUnlimited}
+                  hasBundle={hasBundle}
+                />
               )}
 
-              {/* Unlimited cards */}
-              {classSubTab === "unlimited" && (
-                <>
-                {hasBundle && !hasUnlimited && (
-                  <div className="rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3 text-center">
-                    You still have an active Credit Bundle. Unlimited can't be purchased while a bundle has credits remaining.
-                  </div>
-                )}
-                {hasUnlimited && (
-                  <div className="rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3 text-center">
-                    You already have an active Unlimited pass. You can purchase a new one after it expires.
-                  </div>
-                )}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {UNLIMITED.map((item) => (
-                    <div
-                      key={item.id}
-                      className={cn(
-                        "relative rounded-2xl bg-paper border border-ink/10 p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all",
-                        item.highlight && "border-accent"
-                      )}
-                    >
-                      {item.highlight && (
-                        <span className="absolute -top-2.5 left-4 text-[10px] font-mono uppercase tracking-wider bg-accent text-white px-2.5 py-0.5 rounded-full">
-                          Best value
-                        </span>
-                      )}
-                      <div>
-                        <p className="text-4xl font-extrabold text-ink">{item.duration}</p>
-                        <p className="text-base font-medium text-ink mt-0.5">{item.name}</p>
-                      </div>
-                      <p className="text-2xl font-bold mt-4">S${item.price.toLocaleString()}</p>
-                      <ul className="text-sm text-muted space-y-2 mt-6 flex-1">
-                        <li>Unlimited classes for {item.duration}</li>
-                        <li>All group classes included</li>
-                        <li>No class limit per week</li>
-                        <li>Valid across both locations</li>
-                      </ul>
-                      {hasBundle || hasUnlimited ? (
-                        <span
-                          title={hasUnlimited ? "Unlimited pass already active" : "Credit Bundle still active"}
-                          className="mt-6 w-full text-center rounded-full bg-ink/10 text-muted px-5 py-3 text-sm font-medium cursor-not-allowed"
-                        >
-                          {hasUnlimited ? "Already active" : "Unavailable"}
-                        </span>
-                      ) : (
-                        <GatedLink
-                          href={`/checkout?package=${item.id}`}
-                          context="buy a package"
-                          className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
-                        >
-                          Purchase
-                        </GatedLink>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                </>
+              {/* ── Trial Pass tab ──────────────────────────────────── */}
+              {activeTab === "trial" && (
+                <TrialSection
+                  trials={trials}
+                  trialUsed={trialUsed}
+                  claimingId={claimingTrialId}
+                  banner={trialMessage}
+                  onClaim={claimTrial}
+                />
               )}
-            </div>
-          )}
 
-          {/* ── PT 1-on-1 tab ───────────────────────────────────── */}
-          {activeTab === "pt1on1" && (
-            <div className="space-y-4">
-              <p className="text-sm text-muted text-center max-w-xl mx-auto">
-                Fully dedicated time with one of our instructors, tailored entirely to your goals. Private packages are measured in sessions (not credits) — 1 session = 30 mins.
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
-                {PRIVATE_1ON1.map((item) => (
-                  <div
-                    key={item.id}
-                    className="rounded-2xl bg-paper border border-ink/10 p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all"
-                  >
-                    <div>
-                      <p className="text-4xl font-extrabold text-ink">{item.sessions}</p>
-                      <p className="text-base font-medium text-ink mt-0.5">{item.name}</p>
-                    </div>
-                    <p className="text-2xl font-bold mt-4">S${item.price.toLocaleString()}</p>
-                    <ul className="text-sm text-muted space-y-2 mt-6 flex-1">
-                      <li>{item.sessions} personal training sessions</li>
-                      <li>S${Math.round(item.price / item.sessions)}/session</li>
-                      <li>Valid across both locations</li>
-                    </ul>
-                    <GatedLink
-                      href={`/checkout?package=${item.id}`}
-                      context="buy a package"
-                      className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
-                    >
-                      Purchase
-                    </GatedLink>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+              {/* ── PT 1-on-1 tab ───────────────────────────────────── */}
+              {activeTab === "pt1on1" && <PtSection items={pt1on1} blurb={SHARED_BLURBS.pt1on1} />}
 
-          {/* ── PT 2-on-1 tab ───────────────────────────────────── */}
-          {activeTab === "pt2on1" && (
-            <div className="space-y-4">
-              <p className="text-sm text-muted text-center max-w-xl mx-auto">
-                Train with a partner. Shared cost, shared motivation, same dedicated instructor. Split the price between two people.
-              </p>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
-                {PRIVATE_2ON1.map((item) => (
-                  <div
-                    key={item.id}
-                    className="rounded-2xl bg-paper border border-ink/10 p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all"
-                  >
-                    <div>
-                      <p className="text-4xl font-extrabold text-ink">{item.sessions}</p>
-                      <p className="text-base font-medium text-ink mt-0.5">{item.name}</p>
-                    </div>
-                    <p className="text-2xl font-bold mt-4">S${item.price.toLocaleString()}</p>
-                    <ul className="text-sm text-muted space-y-2 mt-6 flex-1">
-                      <li>{item.sessions} semi-private sessions</li>
-                      <li>Train with one partner</li>
-                      <li>Dedicated instructor throughout</li>
-                      <li>Valid across both locations</li>
-                    </ul>
-                    <GatedLink
-                      href={`/checkout?package=${item.id}`}
-                      context="buy a package"
-                      className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
-                    >
-                      Purchase
-                    </GatedLink>
-                  </div>
-                ))}
-              </div>
-            </div>
+              {/* ── PT 2-on-1 tab ───────────────────────────────────── */}
+              {activeTab === "pt2on1" && <PtSection items={pt2on1} blurb={SHARED_BLURBS.pt2on1} />}
+            </>
           )}
         </BookingSurface>
       </div>
-
     </>
+  );
+}
+
+// ── Sections ──────────────────────────────────────────────────────────────────
+
+const SHARED_BLURBS = {
+  pt1on1:
+    "Fully dedicated time with one of our instructors, tailored entirely to your goals. Private packages are measured in sessions (not credits) — 1 session = 30 mins.",
+  pt2on1:
+    "Train with a partner. Shared cost, shared motivation, same dedicated instructor. Split the price between two people.",
+};
+
+function ClassCreditsSection({
+  bundles,
+  unlimited,
+  subTab,
+  setSubTab,
+  hasUnlimited,
+  hasBundle,
+}: {
+  bundles: ApiClassPackage[];
+  unlimited: ApiClassPackage[];
+  subTab: ClassSubTab;
+  setSubTab: (s: ClassSubTab) => void;
+  hasUnlimited: boolean;
+  hasBundle: boolean;
+}) {
+  return (
+    <div className="space-y-8">
+      <div role="tablist" aria-label="Class credit type" className="flex justify-center gap-8">
+        {(["bundle", "unlimited"] as ClassSubTab[]).map((sub) => {
+          const isActive = subTab === sub;
+          return (
+            <button
+              key={sub}
+              role="tab"
+              aria-selected={isActive}
+              onClick={() => setSubTab(sub)}
+              className={cn(
+                "relative pb-3 text-sm font-medium transition-colors",
+                isActive ? "text-ink" : "text-muted hover:text-ink",
+              )}
+            >
+              {sub === "bundle" ? "Credit Bundles" : "Unlimited Access"}
+              <span
+                className={cn(
+                  "absolute left-0 right-0 -bottom-px h-0.5 rounded-full transition-all",
+                  isActive ? "bg-ink" : "bg-transparent",
+                )}
+              />
+            </button>
+          );
+        })}
+      </div>
+
+      {subTab === "bundle" && (
+        <>
+          {hasUnlimited && (
+            <div className="rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3 text-center">
+              You have an active Unlimited pass. Credit Bundles can't be purchased while Unlimited is active.
+            </div>
+          )}
+          {bundles.length === 0 ? (
+            <EmptyCatalog kind="bundle" />
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {bundles.map((p) => (
+                <BundleCard
+                  key={p.id}
+                  pkg={p}
+                  disabled={hasUnlimited}
+                  disabledReason={hasUnlimited ? "Unlimited pass already active" : undefined}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {subTab === "unlimited" && (
+        <>
+          {hasBundle && !hasUnlimited && (
+            <div className="rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3 text-center">
+              You still have an active Credit Bundle. Unlimited can't be purchased while a bundle has credits remaining.
+            </div>
+          )}
+          {hasUnlimited && (
+            <div className="rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3 text-center">
+              You already have an active Unlimited pass. You can purchase a new one after it expires.
+            </div>
+          )}
+          {unlimited.length === 0 ? (
+            <EmptyCatalog kind="unlimited" />
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {unlimited.map((p) => (
+                <UnlimitedCard
+                  key={p.id}
+                  pkg={p}
+                  disabled={hasBundle || hasUnlimited}
+                  disabledReason={
+                    hasUnlimited ? "Unlimited pass already active" : "Credit Bundle still active"
+                  }
+                />
+              ))}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function TrialSection({
+  trials,
+  trialUsed,
+  claimingId,
+  banner,
+  onClaim,
+}: {
+  trials: ApiClassPackage[];
+  trialUsed: boolean;
+  claimingId: string | null;
+  banner: { kind: "ok" | "err"; text: string } | null;
+  onClaim: (pkg: ApiClassPackage) => void | Promise<void>;
+}) {
+  if (trials.length === 0) {
+    return <EmptyCatalog kind="trial" />;
+  }
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted text-center max-w-xl mx-auto">
+        First time? Try us once — one credit, no commitment. Limited to one per
+        student, ever.
+      </p>
+      {banner && (
+        <div
+          className={cn(
+            "rounded-xl border text-ink text-sm px-4 py-3 text-center max-w-xl mx-auto",
+            banner.kind === "ok"
+              ? "border-sage/40 bg-sage/10"
+              : "border-warning/30 bg-warning/10",
+          )}
+        >
+          {banner.text}
+        </div>
+      )}
+      {trialUsed && !banner && (
+        <div className="rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3 text-center max-w-xl mx-auto">
+          You've already used your trial pass. Browse our bundles or unlimited
+          options to continue practising.
+        </div>
+      )}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+        {trials.map((p) => (
+          <TrialCard
+            key={p.id}
+            pkg={p}
+            disabled={trialUsed}
+            isClaiming={claimingId === p.id}
+            onClaim={() => onClaim(p)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PtSection({ items, blurb }: { items: ApiPtPackage[]; blurb: string }) {
+  if (items.length === 0) {
+    return <EmptyCatalog kind="pt" />;
+  }
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted text-center max-w-xl mx-auto">{blurb}</p>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+        {items.map((p) => (
+          <PtCard key={p.id} pkg={p} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function EmptyCatalog({ kind }: { kind: "bundle" | "unlimited" | "trial" | "pt" }) {
+  const copy = {
+    bundle: "No credit bundles are available right now.",
+    unlimited: "No unlimited passes are available right now.",
+    trial: "No trial pass is currently offered.",
+    pt: "No PT packages are available right now.",
+  } as const;
+  return (
+    <div className="mx-auto max-w-md text-center py-8 text-muted text-sm">
+      {copy[kind]}
+    </div>
+  );
+}
+
+// ── Cards ─────────────────────────────────────────────────────────────────────
+
+function PromoTag({ pkg }: { pkg: ApiClassPackage | ApiPtPackage }) {
+  if (!hasDiscount(pkg)) return null;
+  return (
+    <span className="absolute -top-2.5 right-4 text-[10px] font-mono uppercase tracking-wider bg-accent/15 text-accent-deep border border-accent/30 px-2.5 py-0.5 rounded-full">
+      Promo
+    </span>
+  );
+}
+
+function PriceBlock({ pkg }: { pkg: ApiClassPackage | ApiPtPackage }) {
+  const discounted = hasDiscount(pkg);
+  return (
+    <div className="flex items-baseline gap-2 mt-4">
+      <p className="text-2xl font-bold">{formatSgd(pkg.effective_price_sgd)}</p>
+      {discounted && (
+        <span className="text-sm text-muted line-through">{formatSgd(pkg.price_sgd)}</span>
+      )}
+    </div>
+  );
+}
+
+function BundleCard({
+  pkg,
+  disabled,
+  disabledReason,
+}: {
+  pkg: ApiClassPackage;
+  disabled: boolean;
+  disabledReason?: string;
+}) {
+  const credits = pkg.credits ?? 0;
+  const validity =
+    pkg.validity_days != null ? `${pkg.validity_days} days` : "no expiry";
+  return (
+    <div className="relative rounded-2xl bg-paper border border-ink/10 p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all">
+      <PromoTag pkg={pkg} />
+      <div>
+        <p className="text-4xl font-extrabold text-ink">
+          {credits} {credits === 1 ? "credit" : "credits"}
+        </p>
+        <p className="text-base font-medium text-ink mt-0.5">{pkg.name}</p>
+      </div>
+      <PriceBlock pkg={pkg} />
+      <ul className="text-sm text-muted space-y-2 mt-6 flex-1">
+        <li>Valid for {validity}</li>
+        <li>Use at both studio locations</li>
+        <li>1 credit = 1 class attendance</li>
+      </ul>
+      {disabled ? (
+        <span
+          title={disabledReason}
+          className="mt-6 w-full text-center rounded-full bg-ink/10 text-muted px-5 py-3 text-sm font-medium cursor-not-allowed"
+        >
+          Unavailable
+        </span>
+      ) : (
+        <GatedLink
+          href={`/checkout?package=${pkg.id}&kind=class`}
+          context="buy a package"
+          className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
+        >
+          Purchase
+        </GatedLink>
+      )}
+    </div>
+  );
+}
+
+function UnlimitedCard({
+  pkg,
+  disabled,
+  disabledReason,
+}: {
+  pkg: ApiClassPackage;
+  disabled: boolean;
+  disabledReason?: string;
+}) {
+  const months =
+    pkg.duration_days != null
+      ? `${Math.round(pkg.duration_days / 30)} months`
+      : "unlimited";
+  return (
+    <div className="relative rounded-2xl bg-paper border border-ink/10 p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all">
+      <PromoTag pkg={pkg} />
+      <div>
+        <p className="text-4xl font-extrabold text-ink">{months}</p>
+        <p className="text-base font-medium text-ink mt-0.5">{pkg.name}</p>
+      </div>
+      <PriceBlock pkg={pkg} />
+      <ul className="text-sm text-muted space-y-2 mt-6 flex-1">
+        <li>Unlimited classes for {months}</li>
+        <li>All group classes included</li>
+        <li>No class limit per week</li>
+        <li>Valid across both locations</li>
+      </ul>
+      {disabled ? (
+        <span
+          title={disabledReason}
+          className="mt-6 w-full text-center rounded-full bg-ink/10 text-muted px-5 py-3 text-sm font-medium cursor-not-allowed"
+        >
+          Unavailable
+        </span>
+      ) : (
+        <GatedLink
+          href={`/checkout?package=${pkg.id}&kind=class`}
+          context="buy a package"
+          className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
+        >
+          Purchase
+        </GatedLink>
+      )}
+    </div>
+  );
+}
+
+function TrialCard({
+  pkg,
+  disabled,
+  isClaiming,
+  onClaim,
+}: {
+  pkg: ApiClassPackage;
+  disabled: boolean;
+  isClaiming: boolean;
+  onClaim: () => void;
+}) {
+  const { isSignedIn } = useUser();
+  const { requireAuth, gate } = useAuthGate("buy a package");
+  const credits = pkg.credits ?? 1;
+  const isFree = Number(pkg.effective_price_sgd) === 0;
+  const validity =
+    pkg.validity_days != null ? `${pkg.validity_days} days` : "redeem anytime";
+
+  const ctaClass = cn(
+    "rounded-full bg-accent text-white px-5 py-3 text-sm font-medium hover:bg-accent/90 mt-6 w-full text-center transition-colors inline-flex items-center justify-center gap-2",
+    isClaiming && "opacity-70 cursor-wait",
+  );
+
+  return (
+    <div className="relative rounded-2xl bg-paper border border-accent/40 p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all">
+      <span className="absolute -top-2.5 left-4 text-[10px] font-mono uppercase tracking-wider bg-accent text-white px-2.5 py-0.5 rounded-full">
+        Trial
+      </span>
+      <div>
+        <p className="text-4xl font-extrabold text-ink">
+          {credits} {credits === 1 ? "credit" : "credits"}
+        </p>
+        <p className="text-base font-medium text-ink mt-0.5">{pkg.name}</p>
+      </div>
+      <PriceBlock pkg={pkg} />
+      <ul className="text-sm text-muted space-y-2 mt-6 flex-1">
+        <li>One-time only per student</li>
+        <li>Valid for {validity}</li>
+        <li>Any group class, any location</li>
+      </ul>
+      {disabled ? (
+        <span
+          title="Trial already used"
+          className="mt-6 w-full text-center rounded-full bg-ink/10 text-muted px-5 py-3 text-sm font-medium cursor-not-allowed"
+        >
+          Already used
+        </span>
+      ) : isFree ? (
+        <>
+          <button
+            type="button"
+            disabled={isClaiming}
+            onClick={() => {
+              if (!isSignedIn) {
+                requireAuth("/packages#trial");
+                return;
+              }
+              if (!isClaiming) onClaim();
+            }}
+            className={ctaClass}
+          >
+            {isClaiming && <Loader2 className="h-4 w-4 animate-spin" />}
+            {isClaiming ? "Claiming…" : "Claim trial"}
+          </button>
+          {gate}
+        </>
+      ) : (
+        <GatedLink
+          href={`/checkout?package=${pkg.id}&kind=class`}
+          context="buy a package"
+          className="rounded-full bg-accent text-white px-5 py-3 text-sm font-medium hover:bg-accent/90 mt-6 w-full text-center transition-colors"
+        >
+          Get trial
+        </GatedLink>
+      )}
+    </div>
+  );
+}
+
+function PtCard({ pkg }: { pkg: ApiPtPackage }) {
+  const perSession = Math.round(Number(pkg.effective_price_sgd) / pkg.num_sessions);
+  const partnerLine =
+    pkg.session_type === "2on1"
+      ? "Train with one partner"
+      : `${pkg.num_sessions} personal training sessions`;
+  return (
+    <div className="relative rounded-2xl bg-paper border border-ink/10 p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all">
+      <PromoTag pkg={pkg} />
+      <div>
+        <p className="text-4xl font-extrabold text-ink">{pkg.num_sessions}</p>
+        <p className="text-base font-medium text-ink mt-0.5">{pkg.name}</p>
+      </div>
+      <PriceBlock pkg={pkg} />
+      <ul className="text-sm text-muted space-y-2 mt-6 flex-1">
+        <li>{partnerLine}</li>
+        <li>{formatSgd(perSession)}/session</li>
+        <li>Dedicated instructor throughout</li>
+        <li>Valid across both locations</li>
+      </ul>
+      <GatedLink
+        href={`/checkout?package=${pkg.id}&kind=pt`}
+        context="buy a package"
+        className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
+      >
+        Purchase
+      </GatedLink>
+    </div>
   );
 }
