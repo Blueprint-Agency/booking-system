@@ -17,16 +17,21 @@ export const locations = pgTable(
   }),
 )
 
-export const classTypes = pgTable(
+export const classTypes: any = pgTable(
   'class_types',
   {
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     name: text('name').notNull(),
+    description: text('description'),
+    // Single-level hierarchy. Depth capped at 1 — enforced in service layer:
+    // a child (parent_id IS NOT NULL) cannot itself become a parent.
+    parentId: uuid('parent_id').references((): any => classTypes.id, { onDelete: 'restrict' }),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
   },
   table => ({
     archivedIdx: index('class_types_archived_idx').on(table.archivedAt),
     nameIdx: index('class_types_name_lower_idx').on(sql`lower(${table.name})`),
+    parentIdx: index('class_types_parent_idx').on(table.parentId),
   }),
 )
 

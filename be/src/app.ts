@@ -3,6 +3,7 @@ import { cors } from 'hono/cors'
 import { secureHeaders } from 'hono/secure-headers'
 import { rateLimiter } from 'hono-rate-limiter'
 import { sql } from 'drizzle-orm'
+import { env } from './env'
 import { db } from './db'
 import { errorBoundary } from './middleware/error'
 import { requestId } from './middleware/request-id'
@@ -17,11 +18,16 @@ const app = new Hono()
 app.use('*', requestId)
 app.use('*', errorBoundary)
 app.use('*', secureHeaders())
+
+// CORS — only fe-portal origin for this slice. Credentials required because Clerk
+// uses cookies on the auth handshake; the frontend then carries the bearer JWT.
 app.use(
   '*',
   cors({
-    origin: process.env.ALLOWED_ORIGINS?.split(',') ?? [],
+    origin: env.PORTAL_ORIGIN,
     credentials: true,
+    allowMethods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+    allowHeaders: ['Authorization', 'Content-Type', 'X-Impersonate-Staff-Id', 'X-Request-Id'],
   }),
 )
 
@@ -33,7 +39,8 @@ const publicLimiter = rateLimiter({
 const authedLimiter = rateLimiter({
   windowMs: 60_000,
   limit: 300,
-  keyGenerator: c => c.get('clientId') ?? c.get('staffUserId') ?? c.req.header('x-forwarded-for') ?? 'global',
+  keyGenerator: c =>
+    c.get('clientId') ?? c.get('staffUserId') ?? c.req.header('x-forwarded-for') ?? 'global',
 })
 
 app.use('/api/v1/public/*', publicLimiter)
@@ -46,6 +53,9 @@ app.get('/', c =>
     status: 'running',
   }),
 )
+
+// Smoke-test endpoint per spec — Phase E verification step.
+app.get('/api/v1/healthz', c => c.json({ ok: true }))
 
 app.get('/health', async c => {
   try {

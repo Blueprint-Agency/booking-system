@@ -1,7 +1,7 @@
 import { pgTable, uuid, text, timestamp, jsonb, index, uniqueIndex, check } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { clients, staffUsers } from './identity'
-import { emailRecipientKindEnum, emailStatusEnum } from '../enums'
+import { emailRecipientKindEnum, emailLogStatusEnum } from '../enums'
 
 export const emailTemplates = pgTable('email_templates', {
   id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
@@ -24,7 +24,7 @@ export const emailLog = pgTable(
     recipientUserKind: emailRecipientKindEnum('recipient_user_kind').notNull(),
     subjectRendered: text('subject_rendered').notNull(),
     bodyRendered: text('body_rendered').notNull(),
-    status: emailStatusEnum('status').notNull().default('queued'),
+    status: emailLogStatusEnum('status').notNull().default('queued'),
     smtpMessageId: text('smtp_message_id'),
     smtpResponse: text('smtp_response'),
     error: text('error'),

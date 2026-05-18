@@ -1,5 +1,5 @@
 {
-  "id": "d91f7c7f-f7f4-4537-87f9-ed23af2ea170",
+  "id": "52080fd6-2e0d-4fd0-a123-ac02db4bb6a0",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -207,6 +207,13 @@
           "primaryKey": false,
           "notNull": true
         },
+        "granted_location_ids": {
+          "name": "granted_location_ids",
+          "type": "uuid[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::uuid[]"
+        },
         "token": {
           "name": "token",
           "type": "text",
@@ -383,6 +390,13 @@
           "notNull": true,
           "default": "'pending'"
         },
+        "granted_location_ids": {
+          "name": "granted_location_ids",
+          "type": "uuid[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::uuid[]"
+        },
         "archived_at": {
           "name": "archived_at",
           "type": "timestamp with time zone",
@@ -442,6 +456,21 @@
           "isUnique": false,
           "concurrently": false,
           "method": "btree",
+          "with": {}
+        },
+        "staff_users_granted_locations_gin_idx": {
+          "name": "staff_users_granted_locations_gin_idx",
+          "columns": [
+            {
+              "expression": "granted_location_ids",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
           "with": {}
         }
       },
@@ -872,6 +901,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "kind": {
           "name": "kind",
           "type": "class_package_kind",
@@ -948,7 +983,7 @@
       "checkConstraints": {
         "class_packages_kind_fields": {
           "name": "class_packages_kind_fields",
-          "value": "(\"class_packages\".\"kind\" = 'credit_bundle' AND \"class_packages\".\"credits\" IS NOT NULL AND \"class_packages\".\"validity_days\" IS NOT NULL)\n       OR (\"class_packages\".\"kind\" = 'unlimited' AND \"class_packages\".\"duration_days\" IS NOT NULL)"
+          "value": "\n        (\"class_packages\".\"kind\" = 'credit_bundle'\n          AND \"class_packages\".\"credits\" IS NOT NULL\n          AND \"class_packages\".\"validity_days\" IS NOT NULL\n          AND \"class_packages\".\"duration_days\" IS NULL)\n        OR\n        (\"class_packages\".\"kind\" = 'unlimited'\n          AND \"class_packages\".\"credits\" IS NULL\n          AND \"class_packages\".\"validity_days\" IS NULL\n          AND \"class_packages\".\"duration_days\" IS NOT NULL)\n        OR\n        (\"class_packages\".\"kind\" = 'trial'\n          AND \"class_packages\".\"credits\" IS NOT NULL\n          AND \"class_packages\".\"duration_days\" IS NULL)\n      "
         }
       },
       "isRLSEnabled": false
@@ -985,6 +1020,12 @@
         },
         "source_pt_package_id": {
           "name": "source_pt_package_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "applied_promotion_id": {
+          "name": "applied_promotion_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
@@ -1075,6 +1116,23 @@
             }
           ],
           "isUnique": true,
+          "where": "\"client_packages\".\"stripe_payment_intent_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "client_packages_trial_unique_per_client": {
+          "name": "client_packages_trial_unique_per_client",
+          "columns": [
+            {
+              "expression": "client_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"client_packages\".\"kind\" = 'trial'",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -1119,6 +1177,19 @@
           ],
           "onDelete": "restrict",
           "onUpdate": "no action"
+        },
+        "client_packages_applied_promotion_id_promotions_id_fk": {
+          "name": "client_packages_applied_promotion_id_promotions_id_fk",
+          "tableFrom": "client_packages",
+          "tableTo": "promotions",
+          "columnsFrom": [
+            "applied_promotion_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1128,6 +1199,188 @@
         "client_packages_non_negative_balance": {
           "name": "client_packages_non_negative_balance",
           "value": "\"client_packages\".\"credits_or_sessions_remaining\" IS NULL OR \"client_packages\".\"credits_or_sessions_remaining\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.promotions": {
+      "name": "promotions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "parent_type": {
+          "name": "parent_type",
+          "type": "promotion_parent",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "parent_id": {
+          "name": "parent_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "kind": {
+          "name": "kind",
+          "type": "promotion_kind",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "percent_off": {
+          "name": "percent_off",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "special_price_sgd": {
+          "name": "special_price_sgd",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "starts_at": {
+          "name": "starts_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ends_at": {
+          "name": "ends_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "promotion_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "sort_id": {
+          "name": "sort_id",
+          "type": "bigserial",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by_staff_id": {
+          "name": "created_by_staff_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "promotions_parent_lookup_idx": {
+          "name": "promotions_parent_lookup_idx",
+          "columns": [
+            {
+              "expression": "parent_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "parent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "starts_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "ends_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "promotions_sort_idx": {
+          "name": "promotions_sort_idx",
+          "columns": [
+            {
+              "expression": "sort_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "promotions_created_by_staff_id_staff_users_id_fk": {
+          "name": "promotions_created_by_staff_id_staff_users_id_fk",
+          "tableFrom": "promotions",
+          "tableTo": "staff_users",
+          "columnsFrom": [
+            "created_by_staff_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "promotions_ends_after_starts": {
+          "name": "promotions_ends_after_starts",
+          "value": "\"promotions\".\"ends_at\" > \"promotions\".\"starts_at\""
+        },
+        "promotions_kind_fields": {
+          "name": "promotions_kind_fields",
+          "value": "\n        (\"promotions\".\"kind\" = 'percent'\n          AND \"promotions\".\"percent_off\" IS NOT NULL\n          AND \"promotions\".\"percent_off\" BETWEEN 1 AND 99\n          AND \"promotions\".\"special_price_sgd\" IS NULL)\n        OR\n        (\"promotions\".\"kind\" = 'special_price'\n          AND \"promotions\".\"special_price_sgd\" IS NOT NULL\n          AND \"promotions\".\"percent_off\" IS NULL)\n      "
         }
       },
       "isRLSEnabled": false
@@ -1148,6 +1401,12 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "session_type": {
           "name": "session_type",
@@ -1232,11 +1491,25 @@
           "primaryKey": false,
           "notNull": true
         },
-        "capacity": {
-          "name": "capacity",
+        "capacity_online": {
+          "name": "capacity_online",
           "type": "integer",
           "primaryKey": false,
           "notNull": true
+        },
+        "capacity_waitlist": {
+          "name": "capacity_waitlist",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "capacity_buffer": {
+          "name": "capacity_buffer",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "credit_cost": {
           "name": "credit_cost",
@@ -1448,13 +1721,271 @@
           "name": "classes_ends_after_starts",
           "value": "\"classes\".\"ends_at\" > \"classes\".\"starts_at\""
         },
-        "classes_capacity_positive": {
-          "name": "classes_capacity_positive",
-          "value": "\"classes\".\"capacity\" > 0"
+        "classes_capacity_online_non_negative": {
+          "name": "classes_capacity_online_non_negative",
+          "value": "\"classes\".\"capacity_online\" >= 0"
+        },
+        "classes_capacity_waitlist_non_negative": {
+          "name": "classes_capacity_waitlist_non_negative",
+          "value": "\"classes\".\"capacity_waitlist\" >= 0"
+        },
+        "classes_capacity_buffer_non_negative": {
+          "name": "classes_capacity_buffer_non_negative",
+          "value": "\"classes\".\"capacity_buffer\" >= 0"
+        },
+        "classes_capacity_sum_positive": {
+          "name": "classes_capacity_sum_positive",
+          "value": "\"classes\".\"capacity_online\" + \"classes\".\"capacity_waitlist\" + \"classes\".\"capacity_buffer\" > 0"
         },
         "classes_credit_non_negative": {
           "name": "classes_credit_non_negative",
           "value": "\"classes\".\"credit_cost\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.pt_requests": {
+      "name": "pt_requests",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "client_id": {
+          "name": "client_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "preferred_instructor_id": {
+          "name": "preferred_instructor_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "preferred_starts_at": {
+          "name": "preferred_starts_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "preferred_ends_at": {
+          "name": "preferred_ends_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "session_type": {
+          "name": "session_type",
+          "type": "pt_session_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "co_client_id": {
+          "name": "co_client_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "message": {
+          "name": "message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "pt_request_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "decline_note": {
+          "name": "decline_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scheduled_pt_session_id": {
+          "name": "scheduled_pt_session_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolved_at": {
+          "name": "resolved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolved_by_staff_id": {
+          "name": "resolved_by_staff_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "pt_requests_status_created_idx": {
+          "name": "pt_requests_status_created_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "pt_requests_client_status_idx": {
+          "name": "pt_requests_client_status_idx",
+          "columns": [
+            {
+              "expression": "client_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "pt_requests_preferred_instructor_status_idx": {
+          "name": "pt_requests_preferred_instructor_status_idx",
+          "columns": [
+            {
+              "expression": "preferred_instructor_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "pt_requests_expires_at_pending_idx": {
+          "name": "pt_requests_expires_at_pending_idx",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "status = 'pending'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "pt_requests_client_id_clients_id_fk": {
+          "name": "pt_requests_client_id_clients_id_fk",
+          "tableFrom": "pt_requests",
+          "tableTo": "clients",
+          "columnsFrom": [
+            "client_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "pt_requests_preferred_instructor_id_instructors_staff_user_id_fk": {
+          "name": "pt_requests_preferred_instructor_id_instructors_staff_user_id_fk",
+          "tableFrom": "pt_requests",
+          "tableTo": "instructors",
+          "columnsFrom": [
+            "preferred_instructor_id"
+          ],
+          "columnsTo": [
+            "staff_user_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "pt_requests_co_client_id_clients_id_fk": {
+          "name": "pt_requests_co_client_id_clients_id_fk",
+          "tableFrom": "pt_requests",
+          "tableTo": "clients",
+          "columnsFrom": [
+            "co_client_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "pt_requests_resolved_by_staff_id_staff_users_id_fk": {
+          "name": "pt_requests_resolved_by_staff_id_staff_users_id_fk",
+          "tableFrom": "pt_requests",
+          "tableTo": "staff_users",
+          "columnsFrom": [
+            "resolved_by_staff_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "pt_requests_preferred_ends_after_starts": {
+          "name": "pt_requests_preferred_ends_after_starts",
+          "value": "\"pt_requests\".\"preferred_ends_at\" > \"pt_requests\".\"preferred_starts_at\""
         }
       },
       "isRLSEnabled": false
@@ -1530,6 +2061,12 @@
           "notNull": true,
           "default": "gen_random_uuid()"
         },
+        "pt_request_id": {
+          "name": "pt_request_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
         "instructor_id": {
           "name": "instructor_id",
           "type": "uuid",
@@ -1540,7 +2077,7 @@
           "name": "location_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": false
+          "notNull": true
         },
         "starts_at": {
           "name": "starts_at",
@@ -1561,43 +2098,33 @@
           "primaryKey": false,
           "notNull": true
         },
-        "status": {
-          "name": "status",
-          "type": "pt_session_status",
+        "capacity_online": {
+          "name": "capacity_online",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "capacity_waitlist": {
+          "name": "capacity_waitlist",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "capacity_buffer": {
+          "name": "capacity_buffer",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "lifecycle": {
+          "name": "lifecycle",
+          "type": "lifecycle",
           "typeSchema": "public",
           "primaryKey": false,
           "notNull": true,
-          "default": "'pending'"
-        },
-        "decline_note": {
-          "name": "decline_note",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "confirmed_at": {
-          "name": "confirmed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "confirmed_by_staff_id": {
-          "name": "confirmed_by_staff_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "declined_at": {
-          "name": "declined_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "declined_by_staff_id": {
-          "name": "declined_by_staff_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
+          "default": "'active'"
         },
         "cancelled_at": {
           "name": "cancelled_at",
@@ -1610,6 +2137,18 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
+        },
+        "scheduled_at": {
+          "name": "scheduled_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scheduled_by_staff_id": {
+          "name": "scheduled_by_staff_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
         },
         "created_at": {
           "name": "created_at",
@@ -1641,11 +2180,11 @@
           "method": "btree",
           "with": {}
         },
-        "pt_sessions_status_starts_idx": {
-          "name": "pt_sessions_status_starts_idx",
+        "pt_sessions_lifecycle_starts_idx": {
+          "name": "pt_sessions_lifecycle_starts_idx",
           "columns": [
             {
-              "expression": "status",
+              "expression": "lifecycle",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -1658,6 +2197,21 @@
             }
           ],
           "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "pt_sessions_pt_request_unique": {
+          "name": "pt_sessions_pt_request_unique",
+          "columns": [
+            {
+              "expression": "pt_request_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -1690,38 +2244,38 @@
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
-        "pt_sessions_confirmed_by_staff_id_staff_users_id_fk": {
-          "name": "pt_sessions_confirmed_by_staff_id_staff_users_id_fk",
-          "tableFrom": "pt_sessions",
-          "tableTo": "staff_users",
-          "columnsFrom": [
-            "confirmed_by_staff_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "pt_sessions_declined_by_staff_id_staff_users_id_fk": {
-          "name": "pt_sessions_declined_by_staff_id_staff_users_id_fk",
-          "tableFrom": "pt_sessions",
-          "tableTo": "staff_users",
-          "columnsFrom": [
-            "declined_by_staff_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
         "pt_sessions_cancelled_by_staff_id_staff_users_id_fk": {
           "name": "pt_sessions_cancelled_by_staff_id_staff_users_id_fk",
           "tableFrom": "pt_sessions",
           "tableTo": "staff_users",
           "columnsFrom": [
             "cancelled_by_staff_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "pt_sessions_scheduled_by_staff_id_staff_users_id_fk": {
+          "name": "pt_sessions_scheduled_by_staff_id_staff_users_id_fk",
+          "tableFrom": "pt_sessions",
+          "tableTo": "staff_users",
+          "columnsFrom": [
+            "scheduled_by_staff_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "pt_sessions_pt_request_fk": {
+          "name": "pt_sessions_pt_request_fk",
+          "tableFrom": "pt_sessions",
+          "tableTo": "pt_requests",
+          "columnsFrom": [
+            "pt_request_id"
           ],
           "columnsTo": [
             "id"
@@ -1737,6 +2291,164 @@
         "pt_sessions_ends_after_starts": {
           "name": "pt_sessions_ends_after_starts",
           "value": "\"pt_sessions\".\"ends_at\" > \"pt_sessions\".\"starts_at\""
+        },
+        "pt_sessions_capacity_online_non_negative": {
+          "name": "pt_sessions_capacity_online_non_negative",
+          "value": "\"pt_sessions\".\"capacity_online\" >= 0"
+        },
+        "pt_sessions_capacity_waitlist_non_negative": {
+          "name": "pt_sessions_capacity_waitlist_non_negative",
+          "value": "\"pt_sessions\".\"capacity_waitlist\" >= 0"
+        },
+        "pt_sessions_capacity_buffer_non_negative": {
+          "name": "pt_sessions_capacity_buffer_non_negative",
+          "value": "\"pt_sessions\".\"capacity_buffer\" >= 0"
+        },
+        "pt_sessions_capacity_sum_positive": {
+          "name": "pt_sessions_capacity_sum_positive",
+          "value": "\"pt_sessions\".\"capacity_online\" + \"pt_sessions\".\"capacity_waitlist\" + \"pt_sessions\".\"capacity_buffer\" > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.workshop_days": {
+      "name": "workshop_days",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "workshop_id": {
+          "name": "workshop_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ord": {
+          "name": "ord",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "starts_at": {
+          "name": "starts_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ends_at": {
+          "name": "ends_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "base_price_sgd": {
+          "name": "base_price_sgd",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "capacity_online": {
+          "name": "capacity_online",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "capacity_waitlist": {
+          "name": "capacity_waitlist",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "capacity_buffer": {
+          "name": "capacity_buffer",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        }
+      },
+      "indexes": {
+        "workshop_days_workshop_ord_unique": {
+          "name": "workshop_days_workshop_ord_unique",
+          "columns": [
+            {
+              "expression": "workshop_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "ord",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "workshop_days_starts_at_idx": {
+          "name": "workshop_days_starts_at_idx",
+          "columns": [
+            {
+              "expression": "starts_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "workshop_days_workshop_id_workshops_id_fk": {
+          "name": "workshop_days_workshop_id_workshops_id_fk",
+          "tableFrom": "workshop_days",
+          "tableTo": "workshops",
+          "columnsFrom": [
+            "workshop_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "workshop_days_ends_after_starts": {
+          "name": "workshop_days_ends_after_starts",
+          "value": "\"workshop_days\".\"ends_at\" > \"workshop_days\".\"starts_at\""
+        },
+        "workshop_days_capacity_online_non_negative": {
+          "name": "workshop_days_capacity_online_non_negative",
+          "value": "\"workshop_days\".\"capacity_online\" >= 0"
+        },
+        "workshop_days_capacity_waitlist_non_negative": {
+          "name": "workshop_days_capacity_waitlist_non_negative",
+          "value": "\"workshop_days\".\"capacity_waitlist\" >= 0"
+        },
+        "workshop_days_capacity_buffer_non_negative": {
+          "name": "workshop_days_capacity_buffer_non_negative",
+          "value": "\"workshop_days\".\"capacity_buffer\" >= 0"
+        },
+        "workshop_days_capacity_sum_positive": {
+          "name": "workshop_days_capacity_sum_positive",
+          "value": "\"workshop_days\".\"capacity_online\" + \"workshop_days\".\"capacity_waitlist\" + \"workshop_days\".\"capacity_buffer\" > 0"
         }
       },
       "isRLSEnabled": false
@@ -1875,6 +2587,82 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.workshop_tier_days": {
+      "name": "workshop_tier_days",
+      "schema": "",
+      "columns": {
+        "workshop_tier_id": {
+          "name": "workshop_tier_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "workshop_day_id": {
+          "name": "workshop_day_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "workshop_tier_days_day_idx": {
+          "name": "workshop_tier_days_day_idx",
+          "columns": [
+            {
+              "expression": "workshop_day_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "workshop_tier_days_workshop_tier_id_workshop_tiers_id_fk": {
+          "name": "workshop_tier_days_workshop_tier_id_workshop_tiers_id_fk",
+          "tableFrom": "workshop_tier_days",
+          "tableTo": "workshop_tiers",
+          "columnsFrom": [
+            "workshop_tier_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "workshop_tier_days_workshop_day_id_workshop_days_id_fk": {
+          "name": "workshop_tier_days_workshop_day_id_workshop_days_id_fk",
+          "tableFrom": "workshop_tier_days",
+          "tableTo": "workshop_days",
+          "columnsFrom": [
+            "workshop_day_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "workshop_tier_days_workshop_tier_id_workshop_day_id_pk": {
+          "name": "workshop_tier_days_workshop_tier_id_workshop_day_id_pk",
+          "columns": [
+            "workshop_tier_id",
+            "workshop_day_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.workshop_tiers": {
       "name": "workshop_tiers",
       "schema": "",
@@ -1906,13 +2694,13 @@
         },
         "regular_price_sgd": {
           "name": "regular_price_sgd",
-          "type": "text",
+          "type": "numeric(10, 2)",
           "primaryKey": false,
           "notNull": true
         },
         "early_bird_price_sgd": {
           "name": "early_bird_price_sgd",
-          "type": "text",
+          "type": "numeric(10, 2)",
           "primaryKey": false,
           "notNull": false
         },
@@ -1927,12 +2715,6 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
-        },
-        "capacity": {
-          "name": "capacity",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
         },
         "ord": {
           "name": "ord",
@@ -1982,12 +2764,7 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "workshop_tiers_capacity_positive": {
-          "name": "workshop_tiers_capacity_positive",
-          "value": "\"workshop_tiers\".\"capacity\" > 0"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.workshops": {
@@ -2031,18 +2808,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "starts_at": {
-          "name": "starts_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "ends_at": {
-          "name": "ends_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
         "lifecycle": {
           "name": "lifecycle",
           "type": "lifecycle",
@@ -2078,11 +2843,17 @@
         }
       },
       "indexes": {
-        "workshops_starts_at_idx": {
-          "name": "workshops_starts_at_idx",
+        "workshops_location_lifecycle_idx": {
+          "name": "workshops_location_lifecycle_idx",
           "columns": [
             {
-              "expression": "starts_at",
+              "expression": "location_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "lifecycle",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -2093,17 +2864,11 @@
           "method": "btree",
           "with": {}
         },
-        "workshops_lifecycle_starts_idx": {
-          "name": "workshops_lifecycle_starts_idx",
+        "workshops_lifecycle_idx": {
+          "name": "workshops_lifecycle_idx",
           "columns": [
             {
               "expression": "lifecycle",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "starts_at",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -2172,180 +2937,7 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "workshops_ends_after_starts": {
-          "name": "workshops_ends_after_starts",
-          "value": "\"workshops\".\"ends_at\" > \"workshops\".\"starts_at\""
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.instructor_availability_oneoff": {
-      "name": "instructor_availability_oneoff",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "instructor_id": {
-          "name": "instructor_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "starts_at": {
-          "name": "starts_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "ends_at": {
-          "name": "ends_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "avail_oneoff_instructor_starts_idx": {
-          "name": "avail_oneoff_instructor_starts_idx",
-          "columns": [
-            {
-              "expression": "instructor_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "starts_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "instructor_availability_oneoff_instructor_id_instructors_staff_user_id_fk": {
-          "name": "instructor_availability_oneoff_instructor_id_instructors_staff_user_id_fk",
-          "tableFrom": "instructor_availability_oneoff",
-          "tableTo": "instructors",
-          "columnsFrom": [
-            "instructor_id"
-          ],
-          "columnsTo": [
-            "staff_user_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "avail_oneoff_ends_after_starts": {
-          "name": "avail_oneoff_ends_after_starts",
-          "value": "\"instructor_availability_oneoff\".\"ends_at\" > \"instructor_availability_oneoff\".\"starts_at\""
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.instructor_availability_recurring": {
-      "name": "instructor_availability_recurring",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "instructor_id": {
-          "name": "instructor_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "weekday": {
-          "name": "weekday",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "start_time": {
-          "name": "start_time",
-          "type": "time",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "end_time": {
-          "name": "end_time",
-          "type": "time",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "avail_recurring_instructor_weekday_idx": {
-          "name": "avail_recurring_instructor_weekday_idx",
-          "columns": [
-            {
-              "expression": "instructor_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "weekday",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "instructor_availability_recurring_instructor_id_instructors_staff_user_id_fk": {
-          "name": "instructor_availability_recurring_instructor_id_instructors_staff_user_id_fk",
-          "tableFrom": "instructor_availability_recurring",
-          "tableTo": "instructors",
-          "columnsFrom": [
-            "instructor_id"
-          ],
-          "columnsTo": [
-            "staff_user_id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "avail_weekday_range": {
-          "name": "avail_weekday_range",
-          "value": "\"instructor_availability_recurring\".\"weekday\" BETWEEN 0 AND 6"
-        },
-        "avail_time_order": {
-          "name": "avail_time_order",
-          "value": "\"instructor_availability_recurring\".\"end_time\" > \"instructor_availability_recurring\".\"start_time\""
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.bookings": {
@@ -2398,6 +2990,12 @@
         },
         "client_package_id": {
           "name": "client_package_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "applied_promotion_id": {
+          "name": "applied_promotion_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
@@ -2599,6 +3197,7 @@
             }
           ],
           "isUnique": true,
+          "where": "\"bookings\".\"stripe_payment_intent_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -2676,6 +3275,19 @@
           "tableTo": "client_packages",
           "columnsFrom": [
             "client_package_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "bookings_applied_promotion_id_promotions_id_fk": {
+          "name": "bookings_applied_promotion_id_promotions_id_fk",
+          "tableFrom": "bookings",
+          "tableTo": "promotions",
+          "columnsFrom": [
+            "applied_promotion_id"
           ],
           "columnsTo": [
             "id"
@@ -3612,7 +4224,7 @@
         },
         "status": {
           "name": "status",
-          "type": "email_status",
+          "type": "email_log_status",
           "typeSchema": "public",
           "primaryKey": false,
           "notNull": true,
@@ -4016,12 +4628,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "source_pt_session_id": {
-          "name": "source_pt_session_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "read_at": {
           "name": "read_at",
           "type": "timestamp with time zone",
@@ -4030,25 +4636,6 @@
         },
         "read_by_staff_id": {
           "name": "read_by_staff_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "action_taken": {
-          "name": "action_taken",
-          "type": "inbox_action",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "action_at": {
-          "name": "action_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "action_by_staff_id": {
-          "name": "action_by_staff_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
@@ -4088,56 +4675,15 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "inbox_items_pt_session_idx": {
-          "name": "inbox_items_pt_session_idx",
-          "columns": [
-            {
-              "expression": "source_pt_session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
-        "inbox_items_source_pt_session_id_pt_sessions_id_fk": {
-          "name": "inbox_items_source_pt_session_id_pt_sessions_id_fk",
-          "tableFrom": "inbox_items",
-          "tableTo": "pt_sessions",
-          "columnsFrom": [
-            "source_pt_session_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
         "inbox_items_read_by_staff_id_staff_users_id_fk": {
           "name": "inbox_items_read_by_staff_id_staff_users_id_fk",
           "tableFrom": "inbox_items",
           "tableTo": "staff_users",
           "columnsFrom": [
             "read_by_staff_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "inbox_items_action_by_staff_id_staff_users_id_fk": {
-          "name": "inbox_items_action_by_staff_id_staff_users_id_fk",
-          "tableFrom": "inbox_items",
-          "tableTo": "staff_users",
-          "columnsFrom": [
-            "action_by_staff_id"
           ],
           "columnsTo": [
             "id"
@@ -4273,7 +4819,8 @@
       "schema": "public",
       "values": [
         "credit_bundle",
-        "unlimited"
+        "unlimited",
+        "trial"
       ]
     },
     "public.client_gender": {
@@ -4292,6 +4839,7 @@
       "values": [
         "credit_bundle",
         "unlimited",
+        "trial",
         "pt"
       ]
     },
@@ -4303,6 +4851,15 @@
         "suspended"
       ]
     },
+    "public.email_log_status": {
+      "name": "email_log_status",
+      "schema": "public",
+      "values": [
+        "queued",
+        "sent",
+        "failed"
+      ]
+    },
     "public.email_recipient_kind": {
       "name": "email_recipient_kind",
       "schema": "public",
@@ -4311,31 +4868,13 @@
         "staff"
       ]
     },
-    "public.email_status": {
-      "name": "email_status",
-      "schema": "public",
-      "values": [
-        "queued",
-        "sent",
-        "failed"
-      ]
-    },
-    "public.inbox_action": {
-      "name": "inbox_action",
-      "schema": "public",
-      "values": [
-        "approved",
-        "declined"
-      ]
-    },
     "public.inbox_item_type": {
       "name": "inbox_item_type",
       "schema": "public",
       "values": [
         "client_cancellation",
         "admin_cancel_class_pt",
-        "admin_cancel_workshop",
-        "pt_request"
+        "admin_cancel_workshop"
       ]
     },
     "public.invitation_status": {
@@ -4364,14 +4903,40 @@
         "archived"
       ]
     },
-    "public.pt_session_status": {
-      "name": "pt_session_status",
+    "public.promotion_kind": {
+      "name": "promotion_kind",
+      "schema": "public",
+      "values": [
+        "percent",
+        "special_price"
+      ]
+    },
+    "public.promotion_parent": {
+      "name": "promotion_parent",
+      "schema": "public",
+      "values": [
+        "class_package",
+        "pt_package",
+        "workshop"
+      ]
+    },
+    "public.promotion_status": {
+      "name": "promotion_status",
+      "schema": "public",
+      "values": [
+        "active",
+        "archived"
+      ]
+    },
+    "public.pt_request_status": {
+      "name": "pt_request_status",
       "schema": "public",
       "values": [
         "pending",
-        "confirmed",
+        "scheduled",
         "declined",
-        "cancelled"
+        "cancelled",
+        "expired"
       ]
     },
     "public.pt_session_type": {
