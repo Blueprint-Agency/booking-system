@@ -15,7 +15,6 @@ interface ApiInstructor {
   bio: string | null;
   phone: string | null;
   photo_r2_key: string | null;
-  class_type_ids: string[];
 }
 
 export default function InstructorDetailPage({
@@ -42,7 +41,6 @@ export default function InstructorDetailPage({
         phone: r.phone ?? "",
         bio: r.bio ?? "",
         photoUrl: null,
-        eligibleClassTypeIds: r.class_type_ids,
         archivedAt: r.archived_at,
       });
     } catch (err) {

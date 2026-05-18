@@ -33,7 +33,6 @@ export interface Instructor {
   phone: string;
   bio: string;
   photoUrl: string | null;
-  eligibleClassTypeIds: string[];
   archivedAt: string | null;
 }
 

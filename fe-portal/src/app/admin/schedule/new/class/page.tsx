@@ -27,11 +27,8 @@ export default function NewClassPage() {
   const [difficulty, setDifficulty] = useState<ClassTypeDifficulty>("general");
 
   const eligibleInstructors = useMemo(
-    () =>
-      instructors.filter(
-        (i) => !i.archivedAt && (!classTypeId || i.eligibleClassTypeIds.includes(classTypeId))
-      ),
-    [classTypeId]
+    () => instructors.filter((i) => !i.archivedAt),
+    []
   );
 
   function handleSubmit(e: React.FormEvent) {

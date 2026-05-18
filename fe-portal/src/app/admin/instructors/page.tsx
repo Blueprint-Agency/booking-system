@@ -5,7 +5,7 @@ import { Plus, Mail, Phone, Loader2 } from "lucide-react";
 import { Button, PageHeader, Badge, EmptyState, Avatar } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
-import type { Instructor, ClassType } from "@/types";
+import type { Instructor } from "@/types";
 
 interface ApiInstructor {
   id: string;
@@ -18,13 +18,6 @@ interface ApiInstructor {
   bio: string | null;
   phone: string | null;
   photo_r2_key: string | null;
-  class_type_ids: string[];
-}
-
-interface ApiClassType {
-  id: string;
-  name: string;
-  archived_at: string | null;
 }
 
 function instructorFromApi(r: ApiInstructor): Instructor {
@@ -35,7 +28,6 @@ function instructorFromApi(r: ApiInstructor): Instructor {
     phone: r.phone ?? "",
     bio: r.bio ?? "",
     photoUrl: null,
-    eligibleClassTypeIds: r.class_type_ids,
     archivedAt: r.archived_at,
   };
 }
@@ -43,7 +35,6 @@ function instructorFromApi(r: ApiInstructor): Instructor {
 export default function InstructorsPage() {
   const { api } = useWorkspace();
   const [instructors, setInstructors] = useState<Instructor[]>([]);
-  const [classTypes, setClassTypes] = useState<ClassType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -52,20 +43,10 @@ export default function InstructorsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [ins, ct] = await Promise.all([
-        api.get<{ instructors: ApiInstructor[] }>("/portal/admin/instructors"),
-        api.get<{ class_types: ApiClassType[] }>("/portal/admin/class-types"),
-      ]);
-      setInstructors(ins.instructors.map(instructorFromApi));
-      setClassTypes(
-        ct.class_types.map((c) => ({
-          id: c.id,
-          name: c.name,
-          description: "",
-          parentId: null,
-          archivedAt: c.archived_at,
-        })),
+      const ins = await api.get<{ instructors: ApiInstructor[] }>(
+        "/portal/admin/instructors",
       );
+      setInstructors(ins.instructors.map(instructorFromApi));
     } catch (err) {
       setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
     } finally {
@@ -77,7 +58,6 @@ export default function InstructorsPage() {
     void load();
   }, [load]);
 
-  const ctMap = new Map(classTypes.map((c) => [c.id, c.name]));
   const active = instructors.filter((i) => !i.archivedAt);
   const archived = instructors.filter((i) => i.archivedAt);
 
@@ -112,7 +92,7 @@ export default function InstructorsPage() {
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
           {active.map((ins) => (
-            <InstructorCard key={ins.id} instructor={ins} ctMap={ctMap} />
+            <InstructorCard key={ins.id} instructor={ins} />
           ))}
         </div>
       )}
@@ -124,7 +104,7 @@ export default function InstructorsPage() {
           </h2>
           <div className="grid gap-3 sm:grid-cols-2">
             {archived.map((ins) => (
-              <InstructorCard key={ins.id} instructor={ins} ctMap={ctMap} />
+              <InstructorCard key={ins.id} instructor={ins} />
             ))}
           </div>
         </>
@@ -152,13 +132,7 @@ function SkeletonGrid() {
   );
 }
 
-function InstructorCard({
-  instructor,
-  ctMap,
-}: {
-  instructor: Instructor;
-  ctMap: Map<string, string>;
-}) {
+function InstructorCard({ instructor }: { instructor: Instructor }) {
   const isArchived = !!instructor.archivedAt;
   return (
     <Link
@@ -175,13 +149,6 @@ function InstructorCard({
         </div>
       </div>
       <p className="mb-3 line-clamp-2 text-sm text-muted">{instructor.bio}</p>
-      <div className="mb-3 flex flex-wrap gap-1.5">
-        {instructor.eligibleClassTypeIds.map((id) => (
-          <Badge key={id} tone="cyan">
-            {ctMap.get(id) ?? id}
-          </Badge>
-        ))}
-      </div>
       <div className="flex flex-col gap-1 text-xs text-muted">
         <div className="flex items-center gap-1.5">
           <Mail className="h-3 w-3" /> {instructor.email}
