@@ -1,9 +1,80 @@
 /**
- * Stripe webhook entry. Routes payment_intent.succeeded and charge.refunded events.
- * On payment_intent.succeeded: grant package OR insert workshop booking, set
- * stripe_payments status + receipt_url, trigger referral conversion check.
- * On charge.refunded: mark stripe_payments status='refunded', refunded_at.
+ * Stripe webhook entry. Routes checkout.session.completed and charge.refunded events.
+ *
+ * checkout.session.completed:
+ *   - insert stripe_payments row (pending → succeeded)
+ *   - grant client_package (class or pt) OR insert workshop booking
+ *   - trigger referral conversion check if applicable
+ *
+ * charge.refunded:
+ *   - mark stripe_payments.status='refunded', refunded_at
  */
-export async function handleStripeEvent(_event: { type: string; data: { object: any } }): Promise<void> {
-  throw new Error('not implemented')
+import Stripe from 'stripe'
+import { db } from '../../db'
+import { stripePayments } from '../../db/schema/ledger'
+import { eq } from 'drizzle-orm'
+import { grantPackage } from '../packages/purchase'
+
+export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object as Stripe.Checkout.Session
+    const meta = session.metadata ?? {}
+    const kind = meta.kind as string | undefined
+    const paymentIntentId = typeof session.payment_intent === 'string'
+      ? session.payment_intent
+      : session.id  // fallback to checkout session ID if PI not yet resolved
+
+    if (kind === 'class_package' || kind === 'pt_package') {
+      const packageId = meta.package_id
+      const clientId = meta.client_id
+      if (!packageId || !clientId) return
+
+      const amountSgd = meta.amount_sgd ?? String(((session.amount_total ?? 0) / 100).toFixed(2))
+
+      // Idempotency — skip if we already processed this payment intent
+      const [existing] = await db.select({ status: stripePayments.status })
+        .from(stripePayments)
+        .where(eq(stripePayments.paymentIntentId, paymentIntentId))
+        .limit(1)
+      if (existing?.status === 'succeeded') return
+
+      // Insert the stripe_payments row (we now have the confirmed PaymentIntent ID)
+      if (!existing) {
+        await db.insert(stripePayments).values({
+          paymentIntentId,
+          amountSgd,
+          kind: kind === 'class_package' ? 'class_package' : 'pt_package',
+          clientId,
+          status: 'pending',
+        }).onConflictDoNothing()
+      }
+
+      await grantPackage({
+        clientId,
+        paymentIntentId,
+        amountSgd,
+        packageKind: kind === 'class_package' ? 'class' : 'pt',
+        packageId,
+      })
+      return
+    }
+
+    if (kind === 'workshop') {
+      // TODO: insert workshop booking + send confirmation email
+      // Requires schedule schema to be fully implemented
+      return
+    }
+  }
+
+  if (event.type === 'charge.refunded') {
+    const charge = event.data.object as Stripe.Charge
+    const paymentIntentId = typeof charge.payment_intent === 'string'
+      ? charge.payment_intent
+      : null
+    if (!paymentIntentId) return
+
+    await db.update(stripePayments)
+      .set({ status: 'refunded', refundedAt: new Date() })
+      .where(eq(stripePayments.paymentIntentId, paymentIntentId))
+  }
 }

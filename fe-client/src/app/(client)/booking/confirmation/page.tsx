@@ -1,8 +1,10 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useState, useEffect } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
+import { useAuth } from "@clerk/nextjs";
+import { getApiBaseUrl } from "@/lib/api-url";
 import { Clock, Droplets, Shirt, Check, Info, ArrowLeft, CheckCircle2 } from "lucide-react";
 import { formatDate, formatTime, getLocation } from "@/lib/utils";
 import type { Session, Instructor } from "@/types";
@@ -406,57 +408,90 @@ function SessionSuccess({
   );
 }
 
-// ── Package post-payment success (preserved) ──────────────────────────────────
-function PackageSuccess({ packageId }: { packageId: string }) {
-  const pkg =
-    PACKAGE_DISPLAY[packageId] ?? {
-      name: "Package",
-      subtitle: "Credits added to your account",
-    };
+// ── Package post-payment success ──────────────────────────────────────────────
+function PackageSuccess({
+  packageId,
+  packageKind,
+  stripeSessionId,
+}: {
+  packageId: string;
+  packageKind: "class" | "pt";
+  stripeSessionId: string | null;
+}) {
+  const { getToken } = useAuth();
+  const [synced, setSynced] = useState(false);
 
-  const isPrivatePackage = packageId.startsWith("p1-") || packageId.startsWith("p2-");
+  // Sync the Stripe session server-side so credits are granted immediately
+  // without waiting for the webhook (handles local dev where no CLI listener runs).
+  useEffect(() => {
+    if (!stripeSessionId) { setSynced(true); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        await fetch(`${getApiBaseUrl()}/me/checkout/sync-session`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ session_id: stripeSessionId }),
+        });
+      } catch { /* non-fatal */ }
+      if (!cancelled) setSynced(true);
+    })();
+    return () => { cancelled = true; };
+  }, [stripeSessionId, getToken]);
+
+  const legacy = PACKAGE_DISPLAY[packageId];
+  const name = legacy?.name ?? "Package";
+  const subtitle = legacy?.subtitle ?? "Credits have been added to your account";
+  const isPrivatePackage = packageKind === "pt";
   const ctaHref = isPrivatePackage ? "/private-sessions" : "/classes";
-  const ctaLabel = isPrivatePackage
-    ? "Start Booking Private Sessions"
-    : "Start Booking Classes";
-  const bannerLabel = isPrivatePackage ? "Browse private sessions" : "Browse classes";
-  const bannerSub = isPrivatePackage
-    ? "Schedule your next 1-on-1 while you're here."
-    : "Book your next class while you're here.";
+  const ctaLabel = isPrivatePackage ? "Start Booking Private Sessions" : "Start Booking Classes";
 
   return (
     <>
-      {/* Summary */}
       <div id="summary">
         <BookingSurface maxWidth="md" padding="loose">
-          <SectionHeading
-            eyebrow="Your purchase"
-            title="Package details"
-            align="center"
-          />
-
-          <div className="text-center">
-            <p className="text-2xl font-bold text-ink">{pkg.name}</p>
-            <p className="text-lg text-muted mt-2">{pkg.subtitle}</p>
+          <div className="text-center mb-6">
+            <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-4">
+              {synced
+                ? <Check className="w-8 h-8 text-accent" />
+                : <svg className="w-8 h-8 text-accent animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+              }
+            </div>
+            <p className="text-sm uppercase tracking-wider text-muted mb-1">Payment successful</p>
+            <h1 className="font-serif text-3xl text-ink">
+              {synced ? "You're all set!" : "Activating your package…"}
+            </h1>
           </div>
 
-          <div className="mt-10 flex gap-3 justify-center">
-            <Link
-              href={ctaHref}
-              className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 transition-colors"
-            >
-              {ctaLabel}
-            </Link>
-            <Link
-              href="/account"
-              className="rounded-full border border-ink/10 px-5 py-3 text-sm font-medium hover:border-accent transition-colors"
-            >
-              View my account
-            </Link>
-          </div>
+          {synced && (
+            <>
+              <SectionHeading eyebrow="Your purchase" title="Package details" align="center" />
+              <div className="text-center">
+                <p className="text-2xl font-bold text-ink">{name}</p>
+                <p className="text-lg text-muted mt-2">{subtitle}</p>
+              </div>
+              <div className="mt-10 flex gap-3 justify-center">
+                <Link
+                  href={ctaHref}
+                  className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 transition-colors"
+                >
+                  {ctaLabel}
+                </Link>
+                <Link
+                  href="/account"
+                  className="rounded-full border border-ink/10 px-5 py-3 text-sm font-medium hover:border-accent transition-colors"
+                >
+                  View my account
+                </Link>
+              </div>
+            </>
+          )}
         </BookingSurface>
       </div>
-
     </>
   );
 }
@@ -465,8 +500,12 @@ function PackageSuccess({ packageId }: { packageId: string }) {
 function ConfirmationContent() {
   const searchParams = useSearchParams();
   const type = searchParams.get("type");
+  // `session` = class/workshop booking ID; `session_id` = Stripe Checkout Session ID
   const sessionId = searchParams.get("session");
-  const packageId = searchParams.get("package");
+  const stripeSessionId = searchParams.get("session_id"); // cs_test_...
+  // Legacy slug-based param (mock links) OR real UUID-based param from Stripe success_url
+  const packageId = searchParams.get("package_id") ?? searchParams.get("package");
+  const packageKind = (searchParams.get("package_kind") ?? "class") as "class" | "pt";
   const alreadyConfirmed = searchParams.get("confirmed") === "1";
 
   // Generate a booking reference for QR from URL params or a stable mock
@@ -537,9 +576,10 @@ function ConfirmationContent() {
     }
   }
 
-  // Package post-payment success
+  // Package post-payment success — triggered by Stripe success_url redirect
+  // params: type=package, package_id=<uuid>, package_kind=class|pt, session_id=cs_...
   if (type === "package" && packageId) {
-    return <PackageSuccess packageId={packageId} />;
+    return <PackageSuccess packageId={packageId} packageKind={packageKind} stripeSessionId={stripeSessionId} />;
   }
 
   // Fallback: use first available session as mock

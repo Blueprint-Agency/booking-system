@@ -12,6 +12,16 @@ import clientRoutes from './routes/client'
 import portalRoutes from './routes/portal'
 import webhookRoutes from './routes/webhooks'
 
+function allowedOrigins(): string[] {
+  if (process.env.ALLOWED_ORIGINS) {
+    return process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
+  }
+  return [
+    process.env.CLIENT_URL ?? 'http://localhost:3000',
+    process.env.PORTAL_ORIGIN ?? 'http://localhost:3001',
+  ]
+}
+
 const app = new Hono()
 
 app.use('*', requestId)
@@ -20,7 +30,7 @@ app.use('*', secureHeaders())
 app.use(
   '*',
   cors({
-    origin: process.env.ALLOWED_ORIGINS?.split(',') ?? [],
+    origin: allowedOrigins(),
     credentials: true,
   }),
 )

@@ -19,12 +19,10 @@ import instructorsData from "@/data/instructors.json";
 import { useUser } from "@clerk/nextjs";
 import {
   useMockState,
-  getActiveClassCredits,
-  hasActiveUnlimited,
   isExpired,
   type MockBooking,
-  type MockPackage,
 } from "@/lib/mock-state";
+import { useClientPackages, type LivePackage } from "@/lib/use-client-packages";
 
 const sessions = sessionsData as Session[];
 const instructors = instructorsData as Instructor[];
@@ -85,6 +83,7 @@ const TYPE_META: Record<MockBooking["type"], { label: string; href: string; tone
 export default function AccountOverview() {
   const { user } = useUser();
   const state = useMockState();
+  const { classCredits, isUnlimited: unlimited, unlimitedExpiresAt, ptSessions: ptSessionsRemaining, packages: livePackages, loading: pkgLoading } = useClientPackages();
   const firstName = user?.firstName || "there";
   const [nextUpVisible, setNextUpVisible] = useState(PAGE_SIZE);
 
@@ -112,28 +111,8 @@ export default function AccountOverview() {
     return items.sort((a, b) => a.startMs - b.startMs);
   }, [state.bookings, state.cancelledBookings, state.attendedBookings, state.confirmedPrivateBookings]);
 
-  const unlimited = hasActiveUnlimited(state);
-  const classCredits = unlimited ? -1 : getActiveClassCredits(state);
-  const unlimitedPkg = state.packages.find(
-    (p) => p.kind === "class-unlimited" && !isExpired(p),
-  );
-
-  const ptSessionsRemaining = state.packages
-    .filter((p) => (p.kind === "pt1on1" || p.kind === "pt2on1") && !isExpired(p))
-    .reduce((sum, p) => sum + p.credits, 0);
-
-  const classPackages = state.packages.filter(
-    (p) =>
-      !isExpired(p) &&
-      ((p.kind === "class-credit" && p.credits > 0) ||
-        p.kind === "class-unlimited"),
-  );
-  const ptPackages = state.packages.filter(
-    (p) =>
-      !isExpired(p) &&
-      (p.kind === "pt1on1" || p.kind === "pt2on1") &&
-      p.credits > 0,
-  );
+  const classPackages = livePackages.filter(p => p.kind === "credit_bundle" || p.kind === "unlimited");
+  const ptPackages = livePackages.filter(p => p.kind === "pt");
 
   return (
     <div>
@@ -148,20 +127,22 @@ export default function AccountOverview() {
         <div className="rounded-2xl bg-paper border border-ink/10 p-6">
           <Ticket className="w-5 h-5 text-accent-deep mb-3" />
           <p className="text-3xl font-extrabold text-ink">
-            {unlimited ? "Unlimited" : classCredits}
+            {pkgLoading ? "—" : unlimited ? "Unlimited" : classCredits}
           </p>
           <p className="text-xs uppercase tracking-wider text-muted mt-1">
             Class credits
           </p>
-          {unlimited && unlimitedPkg && (
+          {unlimited && unlimitedExpiresAt && (
             <p className="text-xs text-muted mt-1">
-              Valid until {formatDate(unlimitedPkg.expiresAt)}
+              Valid until {formatDate(unlimitedExpiresAt)}
             </p>
           )}
         </div>
         <div className="rounded-2xl bg-paper border border-ink/10 p-6">
           <UserRound className="w-5 h-5 text-accent-deep mb-3" />
-          <p className="text-3xl font-extrabold text-ink">{ptSessionsRemaining}</p>
+          <p className="text-3xl font-extrabold text-ink">
+            {pkgLoading ? "—" : ptSessionsRemaining}
+          </p>
           <p className="text-xs uppercase tracking-wider text-muted mt-1">
             PT sessions
           </p>
@@ -278,25 +259,25 @@ function PackageCard({
   pkg,
   unitLabel,
 }: {
-  pkg: MockPackage;
+  pkg: LivePackage;
   unitLabel: string;
 }) {
-  const isUnlimited = pkg.kind === "class-unlimited";
+  const isUnlimited = pkg.kind === "unlimited";
   return (
     <div className="rounded-2xl bg-paper border border-ink/10 p-5">
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="font-medium text-ink truncate">{pkg.name}</p>
           <p className="text-xs text-muted mt-1">
-            Expires {formatDate(pkg.expiresAt)}
+            {pkg.expiresAt ? `Expires ${formatDate(pkg.expiresAt)}` : "No expiry"}
           </p>
         </div>
         <div className="text-right shrink-0">
           <p className="text-2xl font-extrabold text-ink">
-            {isUnlimited ? "∞" : pkg.credits}
+            {isUnlimited ? "∞" : pkg.creditsOrSessionsRemaining}
           </p>
           <p className="text-[10px] uppercase tracking-wider text-muted">
-            {isUnlimited ? "Unlimited" : `of ${pkg.totalCredits} ${unitLabel}`}
+            {isUnlimited ? "Unlimited" : unitLabel}
           </p>
         </div>
       </div>

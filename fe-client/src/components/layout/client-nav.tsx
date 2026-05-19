@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useState, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useUser, useClerk } from "@clerk/nextjs";
-import { useMockState, getActiveClassCredits, getActiveSessionCredits, hasActiveUnlimited } from "@/lib/mock-state";
+import { useClientPackages } from "@/lib/use-client-packages";
 
 const NAV_LINKS = [
   { href: "/classes", label: "Classes" },
@@ -20,11 +20,8 @@ export function ClientNav() {
   const [scrolled, setScrolled] = useState(false);
   const { user, isSignedIn } = useUser();
   const { signOut } = useClerk();
-  const state = useMockState();
   const isAuth = !!isSignedIn;
-  const classCredits = getActiveClassCredits(state);
-  const sessionCredits = getActiveSessionCredits(state);
-  const unlimited = hasActiveUnlimited(state);
+  const { classCredits, ptSessions: sessionCredits, isUnlimited: unlimited } = useClientPackages();
   const firstName = user?.firstName ?? "";
   const lastName = user?.lastName ?? "";
   const email = user?.primaryEmailAddress?.emailAddress ?? "";

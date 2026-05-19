@@ -38,67 +38,84 @@ async function seed() {
 
   console.log('Seeding class packages...')
   await db.insert(schema.classPackages).values([
+    // Credit bundles
     {
-      name: '5-Class Pack',
+      name: 'One-time Pass',
       kind: 'credit_bundle',
-      credits: 5,
-      validityDays: 60,
-      priceSgd: '120.00',
+      credits: 1,
+      validityDays: 1,
+      priceSgd: '40.00',
     },
     {
-      name: '10-Class Pack',
+      name: 'Bundle of 10',
       kind: 'credit_bundle',
       credits: 10,
       validityDays: 90,
-      priceSgd: '220.00',
+      priceSgd: '300.00',
     },
     {
-      name: '20-Class Pack',
+      name: 'Bundle of 20',
       kind: 'credit_bundle',
       credits: 20,
       validityDays: 180,
-      priceSgd: '400.00',
+      priceSgd: '550.00',
     },
     {
-      name: '1-Month Unlimited',
-      kind: 'unlimited',
-      durationDays: 30,
-      priceSgd: '180.00',
+      name: 'Bundle of 30',
+      kind: 'credit_bundle',
+      credits: 30,
+      validityDays: 365,
+      priceSgd: '750.00',
     },
+    {
+      name: 'Bundle of 50',
+      kind: 'credit_bundle',
+      credits: 50,
+      validityDays: 365,
+      priceSgd: '1100.00',
+    },
+    {
+      name: 'Bundle of 100',
+      kind: 'credit_bundle',
+      credits: 100,
+      validityDays: 365,
+      priceSgd: '2000.00',
+    },
+    // Unlimited passes
     {
       name: '3-Month Unlimited',
       kind: 'unlimited',
       durationDays: 90,
-      priceSgd: '480.00',
+      priceSgd: '600.00',
+    },
+    {
+      name: '6-Month Unlimited',
+      kind: 'unlimited',
+      durationDays: 180,
+      priceSgd: '1000.00',
+    },
+    {
+      name: '12-Month Unlimited',
+      kind: 'unlimited',
+      durationDays: 365,
+      priceSgd: '1700.00',
     },
   ]).onConflictDoNothing()
 
   console.log('Seeding PT packages...')
   await db.insert(schema.ptPackages).values([
-    {
-      name: '5-Session 1-on-1',
-      sessionType: '1on1',
-      numSessions: 5,
-      priceSgd: '450.00',
-    },
-    {
-      name: '10-Session 1-on-1',
-      sessionType: '1on1',
-      numSessions: 10,
-      priceSgd: '850.00',
-    },
-    {
-      name: '5-Session 2-on-1',
-      sessionType: '2on1',
-      numSessions: 5,
-      priceSgd: '300.00',
-    },
-    {
-      name: '10-Session 2-on-1',
-      sessionType: '2on1',
-      numSessions: 10,
-      priceSgd: '560.00',
-    },
+    // 1-on-1
+    { name: 'VIP 10 Sessions 1-on-1', sessionType: '1on1', numSessions: 10,  priceSgd: '1600.00' },
+    { name: 'VIP 20 Sessions 1-on-1', sessionType: '1on1', numSessions: 20,  priceSgd: '3000.00' },
+    { name: 'VIP 30 Sessions 1-on-1', sessionType: '1on1', numSessions: 30,  priceSgd: '4200.00' },
+    { name: 'VIP 40 Sessions 1-on-1', sessionType: '1on1', numSessions: 40,  priceSgd: '5200.00' },
+    { name: 'VIP 50 Sessions 1-on-1', sessionType: '1on1', numSessions: 50,  priceSgd: '6000.00' },
+    { name: 'VIP 100 Sessions 1-on-1', sessionType: '1on1', numSessions: 100, priceSgd: '11000.00' },
+    // 2-on-1
+    { name: 'VIP 10 Sessions 2-on-1', sessionType: '2on1', numSessions: 10, priceSgd: '2000.00' },
+    { name: 'VIP 20 Sessions 2-on-1', sessionType: '2on1', numSessions: 20, priceSgd: '3600.00' },
+    { name: 'VIP 30 Sessions 2-on-1', sessionType: '2on1', numSessions: 30, priceSgd: '4800.00' },
+    { name: 'VIP 50 Sessions 2-on-1', sessionType: '2on1', numSessions: 50, priceSgd: '7500.00' },
   ]).onConflictDoNothing()
 
   console.log('Seeding global policy...')

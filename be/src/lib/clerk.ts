@@ -5,7 +5,7 @@ import { createClerkClient } from '@clerk/backend'
  * separate JWT issuers, separate user pools. Cross-app tokens are rejected.
  */
 export const clerkClientApp = createClerkClient({
-  secretKey: process.env.CLERK_CLIENT_SECRET_KEY!,
+  secretKey: process.env.CLERK_SECRET_KEY!,
 })
 
 export const clerkStaffApp = createClerkClient({
