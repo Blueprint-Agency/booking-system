@@ -70,6 +70,14 @@ const app = new Hono()
     const detail = await workshopsSvc.getWorkshopDetailPayload(id)
     return c.json(detail)
   })
+  .get('/instructors', async c => {
+    const instructors = await classCatalog.listActiveInstructors()
+    return c.json({ instructors })
+  })
+  .get('/instructors/:id/availability', async c => {
+    const slots = await classCatalog.listInstructorAvailability(c.req.param('id'))
+    return c.json({ slots })
+  })
   .get('/packages', async c => {
     const [classRows, ptRows] = await Promise.all([
       classSvc.listClassPackages({ status: 'active' }),

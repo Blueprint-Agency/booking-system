@@ -1,12 +1,18 @@
 import { z } from 'zod'
 import { and, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm'
 import { db } from '../../db'
+import { env } from '../../env'
 import { bookings } from '../../db/schema/bookings'
 import { classes, ptSessionClients, ptSessions } from '../../db/schema/schedule'
 import { classTypes, instructors, locations, rooms } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
 import { ptBookingConfig } from '../../db/schema/policy'
 import { NotFoundError } from '../../shared/errors'
+
+function r2Url(key: string | null | undefined): string | null {
+  if (!key || !env.R2_PUBLIC_URL) return null
+  return `${env.R2_PUBLIC_URL.replace(/\/$/, '')}/${key.replace(/^\//, '')}`
+}
 
 export interface LocationLite {
   id: string
@@ -256,12 +262,43 @@ export async function listActiveLocations(): Promise<
   }))
 }
 
+export interface InstructorLite {
+  id: string
+  name: string
+  bio: string | null
+  avatar_url: string | null
+}
+
+export async function listActiveInstructors(): Promise<InstructorLite[]> {
+  const rows = await db
+    .select({
+      staffUserId: instructors.staffUserId,
+      bio: instructors.bio,
+      photoR2Key: instructors.photoR2Key,
+      name: staffUsers.name,
+      status: staffUsers.status,
+      archivedAt: staffUsers.archivedAt,
+    })
+    .from(instructors)
+    .innerJoin(staffUsers, eq(instructors.staffUserId, staffUsers.id))
+    .where(and(isNull(staffUsers.archivedAt), eq(staffUsers.status, 'active')))
+    .orderBy(staffUsers.name)
+
+  return rows.map(r => ({
+    id: r.staffUserId,
+    name: r.name || 'Instructor',
+    bio: r.bio,
+    avatar_url: r2Url(r.photoR2Key),
+  }))
+}
+
 export interface PtSlotPayload {
   id: string
   starts_at: string
   ends_at: string
   session_type: '1on1' | '2on1'
   spots_left: number
+  location: { id: string; name: string } | null
 }
 
 async function getBookInAdvanceDays(): Promise<number> {
@@ -284,8 +321,11 @@ export async function listInstructorAvailability(instructorId: string): Promise<
       endsAt: ptSessions.endsAt,
       sessionType: ptSessions.sessionType,
       capacityOnline: ptSessions.capacityOnline,
+      locationId: locations.id,
+      locationName: locations.name,
     })
     .from(ptSessions)
+    .leftJoin(locations, eq(ptSessions.locationId, locations.id))
     .where(
       and(
         eq(ptSessions.instructorId, instructorId),
@@ -313,5 +353,6 @@ export async function listInstructorAvailability(instructorId: string): Promise<
     ends_at: r.endsAt.toISOString(),
     session_type: r.sessionType as '1on1' | '2on1',
     spots_left: Math.max(0, r.capacityOnline - (bookedBySession.get(r.id) ?? 0)),
+    location: r.locationId && r.locationName ? { id: r.locationId, name: r.locationName } : null,
   }))
 }
