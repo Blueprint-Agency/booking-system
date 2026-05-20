@@ -1,7 +1,7 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { db } from '../../db'
 import { staffUsers } from '../../db/schema/identity'
-import { classTypes, locations, instructors } from '../../db/schema/catalog'
+import { locations, instructors } from '../../db/schema/catalog'
 import {
   workshops,
   workshopInstructors,
@@ -16,22 +16,12 @@ export type WorkshopRow = typeof workshops.$inferSelect
 
 export interface CreateWorkshopInput {
   name: string
-  classTypeId: string
   locationId: string
   descriptionHtml?: string | null
   coverR2Key?: string | null
   instructorIds?: string[]
   imageR2Keys?: string[]
   createdByStaffId: string
-}
-
-async function ensureClassType(id: string) {
-  const [r] = await db
-    .select({ id: classTypes.id })
-    .from(classTypes)
-    .where(and(eq(classTypes.id, id), isNull(classTypes.archivedAt)))
-    .limit(1)
-  if (!r) throw new BadRequestError('invalid_class_type_id')
 }
 
 async function ensureLocation(id: string) {
@@ -58,7 +48,6 @@ async function ensureInstructors(ids: string[]) {
 }
 
 export async function createWorkshop(input: CreateWorkshopInput): Promise<WorkshopRow> {
-  await ensureClassType(input.classTypeId)
   await ensureLocation(input.locationId)
   await ensureInstructors(input.instructorIds ?? [])
 
@@ -67,7 +56,6 @@ export async function createWorkshop(input: CreateWorkshopInput): Promise<Worksh
       .insert(workshops)
       .values({
         name: input.name,
-        classTypeId: input.classTypeId,
         locationId: input.locationId,
         descriptionHtml: input.descriptionHtml ?? null,
         coverR2Key: input.coverR2Key ?? null,
@@ -96,7 +84,6 @@ export async function createWorkshop(input: CreateWorkshopInput): Promise<Worksh
 
 export interface UpdateWorkshopInput {
   name?: string
-  classTypeId?: string
   locationId?: string
   descriptionHtml?: string | null
   coverR2Key?: string | null
@@ -115,14 +102,12 @@ export async function updateWorkshop(id: string, patch: UpdateWorkshopInput): Pr
   if (existing.lifecycle === 'cancelled') {
     throw new BadRequestError('workshop_cancelled')
   }
-  if (patch.classTypeId !== undefined) await ensureClassType(patch.classTypeId)
   if (patch.locationId !== undefined) await ensureLocation(patch.locationId)
   if (patch.instructorIds !== undefined) await ensureInstructors(patch.instructorIds)
 
   await db.transaction(async tx => {
     const set: Partial<typeof workshops.$inferInsert> = {}
     if (patch.name !== undefined) set.name = patch.name
-    if (patch.classTypeId !== undefined) set.classTypeId = patch.classTypeId
     if (patch.locationId !== undefined) set.locationId = patch.locationId
     if (patch.descriptionHtml !== undefined) set.descriptionHtml = patch.descriptionHtml
     if (patch.coverR2Key !== undefined) set.coverR2Key = patch.coverR2Key

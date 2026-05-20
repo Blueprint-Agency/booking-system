@@ -9,7 +9,7 @@ import {
   workshopImages,
   workshopInstructors,
 } from '../../db/schema/schedule'
-import { locations, classTypes, instructors } from '../../db/schema/catalog'
+import { locations, instructors } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
 import {
   bestPrice,
@@ -37,11 +37,6 @@ interface LocationLite {
   id: string
   name: string
   address: string | null
-}
-
-interface ClassTypeLite {
-  id: string
-  name: string
 }
 
 interface DayPayload {
@@ -74,7 +69,6 @@ interface WorkshopCardPayload {
   name: string
   description_html: string | null
   lifecycle: string
-  class_type: ClassTypeLite | null
   location: LocationLite | null
   cover_url: string | null
   starts_at: Date | null
@@ -98,7 +92,6 @@ async function loadCommon(workshopIds: string[]) {
       daysByWorkshop: new Map<string, DayPayload[]>(),
       tiersByWorkshop: new Map<string, TierPayload[]>(),
       locationById: new Map<string, LocationLite>(),
-      classTypeById: new Map<string, ClassTypeLite>(),
     }
   }
 
@@ -175,7 +168,6 @@ async function buildCard(
   days: DayPayload[],
   tiers: TierPayload[],
   loc: LocationLite | null,
-  ct: ClassTypeLite | null,
 ): Promise<WorkshopCardPayload> {
   const startsAt = days.length ? days[0]!.starts_at : null
   const endsAt = days.length ? days[days.length - 1]!.ends_at : null
@@ -193,7 +185,6 @@ async function buildCard(
     name: w.name,
     description_html: w.descriptionHtml ?? null,
     lifecycle: w.lifecycle,
-    class_type: ct,
     location: loc,
     cover_url: r2Url(w.coverR2Key),
     starts_at: startsAt,
@@ -212,15 +203,12 @@ export async function listActiveWorkshopCards(): Promise<WorkshopCardPayload[]> 
   const workshopIds = ws.map(w => w.id)
   const { daysByWorkshop, tiersByWorkshop } = await loadCommon(workshopIds)
 
-  // Resolve location + class_type for all in one round-trip each.
+  // Resolve location for all in one round-trip.
   const locIds = Array.from(new Set(ws.map(w => w.locationId)))
-  const ctIds = Array.from(new Set(ws.map(w => w.classTypeId)))
   const locRows = await db.select().from(locations).where(inArray(locations.id, locIds))
-  const ctRows = await db.select().from(classTypes).where(inArray(classTypes.id, ctIds))
   const locById = new Map(
     locRows.map(l => [l.id, { id: l.id, name: l.name, address: l.address }]),
   )
-  const ctById = new Map(ctRows.map(c => [c.id, { id: c.id, name: c.name }]))
 
   const cards: WorkshopCardPayload[] = []
   for (const w of ws) {
@@ -230,7 +218,6 @@ export async function listActiveWorkshopCards(): Promise<WorkshopCardPayload[]> 
         daysByWorkshop.get(w.id) ?? [],
         tiersByWorkshop.get(w.id) ?? [],
         locById.get(w.locationId) ?? null,
-        ctById.get(w.classTypeId) ?? null,
       ),
     )
   }
@@ -252,11 +239,6 @@ export async function getWorkshopDetailPayload(id: string): Promise<WorkshopDeta
   const tiers = tiersByWorkshop.get(w.id) ?? []
 
   const [locRow] = await db.select().from(locations).where(eq(locations.id, w.locationId)).limit(1)
-  const [ctRow] = await db
-    .select()
-    .from(classTypes)
-    .where(eq(classTypes.id, w.classTypeId))
-    .limit(1)
 
   const imageRows = await db
     .select()
@@ -295,7 +277,6 @@ export async function getWorkshopDetailPayload(id: string): Promise<WorkshopDeta
     days,
     tiers,
     locRow ? { id: locRow.id, name: locRow.name, address: locRow.address } : null,
-    ctRow ? { id: ctRow.id, name: ctRow.name } : null,
   )
 
   return {

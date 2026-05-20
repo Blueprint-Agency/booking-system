@@ -92,7 +92,7 @@ export default function WorkshopDetailPage() {
             {/* Left column */}
             <div>
               <SectionHeading
-                eyebrow={workshop.class_type?.name ?? "Workshop"}
+                eyebrow="Workshop"
                 title={workshop.name}
               />
 

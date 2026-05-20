@@ -32,7 +32,6 @@ const isoDate = z.string().datetime({ offset: true })
 
 const createBasicsSchema = z.object({
   name: z.string().min(1).max(200),
-  class_type_id: z.string().uuid(),
   location_id: z.string().uuid(),
   description_html: z.string().max(20000).nullish(),
   cover_r2_key: z.string().max(500).nullish(),
@@ -42,7 +41,6 @@ const createBasicsSchema = z.object({
 
 const updateBasicsSchema = z.object({
   name: z.string().min(1).max(200).optional(),
-  class_type_id: z.string().uuid().optional(),
   location_id: z.string().uuid().optional(),
   description_html: z.string().max(20000).nullish().optional(),
   cover_r2_key: z.string().max(500).nullish().optional(),
@@ -52,6 +50,7 @@ const updateBasicsSchema = z.object({
 
 const dayCreateSchema = z.object({
   ord: z.number().int().min(1),
+  room_id: z.string().uuid(),
   starts_at: isoDate,
   ends_at: isoDate,
   // Per-day base_price_sgd is retained at the DB level but is no longer
@@ -122,7 +121,6 @@ function workshopRow(w: publish.WorkshopRow) {
   return {
     id: w.id,
     name: w.name,
-    class_type_id: w.classTypeId,
     location_id: w.locationId,
     cover_r2_key: w.coverR2Key,
     description_html: w.descriptionHtml,
@@ -139,6 +137,7 @@ function dayRow(d: daysSvc.WorkshopDayRow) {
     id: d.id,
     workshop_id: d.workshopId,
     ord: d.ord,
+    room_id: d.roomId,
     starts_at: d.startsAt,
     ends_at: d.endsAt,
     base_price_sgd: d.basePriceSgd,
@@ -192,7 +191,6 @@ const app = new Hono()
     const staffId = c.get('staffUserId')
     const row = await publish.createWorkshop({
       name: body.name,
-      classTypeId: body.class_type_id,
       locationId: body.location_id,
       descriptionHtml: body.description_html ?? null,
       coverR2Key: body.cover_r2_key ?? null,
@@ -208,7 +206,6 @@ const app = new Hono()
     const body = c.req.valid('json')
     const row = await publish.updateWorkshop(id, {
       ...(body.name !== undefined ? { name: body.name } : {}),
-      ...(body.class_type_id !== undefined ? { classTypeId: body.class_type_id } : {}),
       ...(body.location_id !== undefined ? { locationId: body.location_id } : {}),
       ...(body.description_html !== undefined ? { descriptionHtml: body.description_html ?? null } : {}),
       ...(body.cover_r2_key !== undefined ? { coverR2Key: body.cover_r2_key ?? null } : {}),
@@ -237,6 +234,7 @@ const app = new Hono()
     const body = c.req.valid('json')
     const row = await daysSvc.createDay(id, {
       ord: body.ord,
+      roomId: body.room_id,
       startsAt: new Date(body.starts_at),
       endsAt: new Date(body.ends_at),
       basePriceSgd: body.base_price_sgd ?? '0.00',
@@ -256,6 +254,7 @@ const app = new Hono()
       const body = c.req.valid('json')
       const row = await daysSvc.updateDay(id, day_id, {
         ...(body.ord !== undefined ? { ord: body.ord } : {}),
+        ...(body.room_id !== undefined ? { roomId: body.room_id } : {}),
         ...(body.starts_at !== undefined ? { startsAt: new Date(body.starts_at) } : {}),
         ...(body.ends_at !== undefined ? { endsAt: new Date(body.ends_at) } : {}),
         ...(body.base_price_sgd !== undefined ? { basePriceSgd: body.base_price_sgd } : {}),

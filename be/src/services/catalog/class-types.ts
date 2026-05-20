@@ -1,7 +1,7 @@
 import { and, eq, gt, inArray, isNull } from 'drizzle-orm'
 import { db } from '../../db'
 import { classTypes } from '../../db/schema/catalog'
-import { classes, workshops } from '../../db/schema/schedule'
+import { classes } from '../../db/schema/schedule'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 
 export type ClassTypeRow = typeof classTypes.$inferSelect
@@ -96,23 +96,17 @@ async function gatherLinkedDataBlockers(rootId: string) {
       ),
     )
 
-  const activeWorkshops = await db
-    .select({ id: workshops.id, classTypeId: workshops.classTypeId })
-    .from(workshops)
-    .where(and(inArray(workshops.classTypeId, idsToCheck), eq(workshops.lifecycle, 'active')))
-
-  return { futureClasses, activeWorkshops, idsChecked: idsToCheck }
+  return { futureClasses, idsChecked: idsToCheck }
 }
 
 export async function archiveClassType(id: string): Promise<ClassTypeRow> {
   await getClassType(id)
-  const { futureClasses, activeWorkshops, idsChecked } = await gatherLinkedDataBlockers(id)
-  if (futureClasses.length || activeWorkshops.length) {
+  const { futureClasses, idsChecked } = await gatherLinkedDataBlockers(id)
+  if (futureClasses.length) {
     throw new ConflictError('class_type_in_use', {
       // Per spec §3: "Parents are also blocked while any child still has linked data."
       checked_class_type_ids: idsChecked,
       class_ids: futureClasses.map(r => r.id),
-      workshop_ids: activeWorkshops.map(r => r.id),
     })
   }
   const [row] = await db

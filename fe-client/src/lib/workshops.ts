@@ -64,7 +64,6 @@ export interface ApiWorkshopCard {
   name: string;
   description_html: string | null;
   lifecycle: "active" | "cancelled";
-  class_type: ApiClassTypeLite | null;
   location: ApiLocationLite | null;
   cover_url: string | null;
   starts_at: string | null;

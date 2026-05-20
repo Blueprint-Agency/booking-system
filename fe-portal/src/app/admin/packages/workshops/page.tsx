@@ -9,20 +9,15 @@ import { ApiError } from "@/lib/api";
 interface ApiWorkshop {
   id: string;
   name: string;
-  class_type_id: string;
   location_id: string;
   lifecycle: "active" | "cancelled";
 }
 
-interface ApiClassType {
-  id: string;
-  name: string;
-}
-
 export default function WorkshopsListPage() {
-  const { api, activeLocationId, locations } = useWorkspace();
+  // Workshops are a shared package surface (like Class/PT packages) — NOT scoped to
+  // the header workspace switcher. We list every workshop across all locations.
+  const { api, locations } = useWorkspace();
   const [workshops, setWorkshops] = useState<ApiWorkshop[]>([]);
-  const [classTypes, setClassTypes] = useState<ApiClassType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,12 +26,8 @@ export default function WorkshopsListPage() {
     setLoading(true);
     setError(null);
     try {
-      const [ws, ct] = await Promise.all([
-        api.get<{ workshops: ApiWorkshop[] }>("/portal/admin/workshops"),
-        api.get<{ class_types: ApiClassType[] }>("/portal/admin/class-types"),
-      ]);
+      const ws = await api.get<{ workshops: ApiWorkshop[] }>("/portal/admin/workshops");
       setWorkshops(ws.workshops);
-      setClassTypes(ct.class_types);
     } catch (err) {
       setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
     } finally {
@@ -48,11 +39,8 @@ export default function WorkshopsListPage() {
     void load();
   }, [load]);
 
-  const filtered = workshops.filter(
-    (w) => !activeLocationId || w.location_id === activeLocationId,
-  );
-  const active = filtered.filter((w) => w.lifecycle === "active");
-  const cancelled = filtered.filter((w) => w.lifecycle === "cancelled");
+  const active = workshops.filter((w) => w.lifecycle === "active");
+  const cancelled = workshops.filter((w) => w.lifecycle === "cancelled");
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -79,7 +67,7 @@ export default function WorkshopsListPage() {
             Retry
           </Button>
         </div>
-      ) : filtered.length === 0 ? (
+      ) : workshops.length === 0 ? (
         <EmptyState
           title="No workshops yet"
           description="Create one to see it appear on the schedule."
@@ -97,7 +85,6 @@ export default function WorkshopsListPage() {
             <Section
               title="Active"
               workshops={active}
-              classTypes={classTypes}
               locations={locations.map((l) => ({ id: l.id, name: l.name }))}
             />
           )}
@@ -110,7 +97,6 @@ export default function WorkshopsListPage() {
                 <Section
                   title=""
                   workshops={cancelled}
-                  classTypes={classTypes}
                   locations={locations.map((l) => ({ id: l.id, name: l.name }))}
                 />
               </div>
@@ -125,12 +111,10 @@ export default function WorkshopsListPage() {
 function Section({
   title,
   workshops,
-  classTypes,
   locations,
 }: {
   title: string;
   workshops: ApiWorkshop[];
-  classTypes: ApiClassType[];
   locations: Array<{ id: string; name: string }>;
 }) {
   return (
@@ -149,9 +133,6 @@ function Section({
                 {w.name}
               </Link>
               <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
-                <Badge tone="accent">
-                  {classTypes.find((c) => c.id === w.class_type_id)?.name ?? "—"}
-                </Badge>
                 <span className="inline-flex items-center gap-1">
                   <MapPin className="h-3 w-3" />
                   {locations.find((l) => l.id === w.location_id)?.name ?? "—"}

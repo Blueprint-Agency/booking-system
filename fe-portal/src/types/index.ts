@@ -134,11 +134,20 @@ export interface ClassInstance {
   cancelledByStaffId: string | null;
 }
 
+export interface Room {
+  id: string;
+  locationId: string;
+  name: string;
+  capacity: number;
+  archivedAt: string | null;
+}
+
 export interface WorkshopDay {
   id: string;
   date: string;        // YYYY-MM-DD
   startTime: string;   // HH:mm
   endTime: string;     // HH:mm
+  roomId: string;      // physical room this day runs in (required when scheduling)
   capacity: Capacity;
 }
 
@@ -156,7 +165,6 @@ export interface WorkshopTier {
 export interface Workshop {
   id: string;
   name: string;
-  classTypeId: string;
   locationId: string;
   instructorIds: string[];
   coverUrl: string | null;
@@ -239,21 +247,6 @@ export interface Booking {
   code: string;
   bookedAt: string;
   cancelledAt: string | null;
-}
-
-// --- Ratings (§14) ---
-
-export interface Rating {
-  id: string;
-  bookingId: string;
-  clientId: string;
-  kind: "class" | "workshop";
-  classId: string | null;
-  workshopId: string | null;
-  instructorId: string;
-  stars: number;
-  comment: string | null;
-  ratedAt: string;
 }
 
 // --- Cancellations (drives §4 cap) ---
@@ -373,8 +366,6 @@ export type EmailTemplateSlug =
   | "admin_cancel_class"
   | "admin_cancel_pt"
   | "admin_cancel_workshop"
-  | "rating_prompt_class"
-  | "rating_prompt_workshop"
   | "package_purchase_confirmed"
   | "credit_expiry_reminder"
   | "instructor_invite"

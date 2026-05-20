@@ -10,6 +10,7 @@ import { PromotionsEditor } from "@/components/packages/promotions-editor";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError, type Api } from "@/lib/api";
 import {
+  hasPromotionOverlap,
   promotionFromApi,
   promotionToApiPayload,
   type ApiPromotion,
@@ -19,15 +20,14 @@ import type { Workshop, WorkshopDay, WorkshopTier, Promotion } from "@/types";
 type Mode = "range" | "individual";
 
 interface ApiCatalog {
-  classTypes: Array<{ id: string; name: string }>;
   locations: Array<{ id: string; name: string }>;
   instructors: Array<{ id: string; name: string; archived_at: string | null }>;
+  rooms: Array<{ id: string; name: string; location_id: string; archived_at: string | null }>;
 }
 
 interface ApiWorkshopDetail {
   id: string;
   name: string;
-  class_type_id: string;
   location_id: string;
   description_html: string | null;
   cover_r2_key: string | null;
@@ -35,6 +35,7 @@ interface ApiWorkshopDetail {
   days: Array<{
     id: string;
     ord: number;
+    room_id: string | null;
     starts_at: string;
     ends_at: string;
     capacity_online: number;
@@ -71,6 +72,7 @@ function inferMode(days: WorkshopDay[]): Mode {
 function dayToApi(d: WorkshopDay, ord: number) {
   return {
     ord,
+    room_id: d.roomId,
     starts_at: new Date(`${d.date}T${d.startTime}:00`).toISOString(),
     ends_at: new Date(`${d.date}T${d.endTime}:00`).toISOString(),
     capacity_online: d.capacity.onlineBooking,
@@ -99,7 +101,6 @@ function fromApiWorkshop(d: ApiWorkshopDetail): Workshop {
   return {
     id: d.id,
     name: d.name,
-    classTypeId: d.class_type_id,
     locationId: d.location_id,
     instructorIds: d.instructor_ids,
     coverUrl: null,
@@ -116,6 +117,7 @@ function fromApiWorkshop(d: ApiWorkshopDetail): Workshop {
           date: start.toISOString().slice(0, 10),
           startTime: start.toISOString().slice(11, 16),
           endTime: end.toISOString().slice(11, 16),
+          roomId: day.room_id ?? "",
           capacity: {
             waitlist: day.capacity_waitlist,
             onlineBooking: day.capacity_online,
@@ -148,7 +150,6 @@ async function createWorkshopWithChildren(
   api: Api,
   args: {
     name: string;
-    classTypeId: string;
     locationId: string;
     descriptionHtml: string;
     instructorIds: string[];
@@ -159,7 +160,6 @@ async function createWorkshopWithChildren(
   // 1. POST basics
   const basics = await api.post<{ id: string }>("/portal/admin/workshops", {
     name: args.name,
-    class_type_id: args.classTypeId,
     location_id: args.locationId,
     description_html: args.descriptionHtml || null,
     instructor_ids: args.instructorIds,
@@ -199,13 +199,12 @@ export function WorkshopEditor({
 }) {
   const { api } = useWorkspace();
   const [catalog, setCatalog] = useState<ApiCatalog>({
-    classTypes: [],
     locations: [],
     instructors: [],
+    rooms: [],
   });
 
   const [name, setName] = useState(initial?.name ?? "");
-  const [classTypeId, setClassTypeId] = useState(initial?.classTypeId ?? "");
   const [locationId, setLocationId] = useState(initial?.locationId ?? "");
   const [instructorIds, setInstructorIds] = useState<string[]>(initial?.instructorIds ?? []);
   const [descriptionHtml, setDescriptionHtml] = useState(initial?.descriptionHtml ?? "");
@@ -225,28 +224,27 @@ export function WorkshopEditor({
   const loadCatalog = useCallback(async () => {
     if (!api) return;
     try {
-      const [ct, loc, ins] = await Promise.all([
-        api.get<{ class_types: Array<{ id: string; name: string }> }>(
-          "/portal/admin/class-types",
-        ),
+      const [loc, ins, rm] = await Promise.all([
         api.get<{
           locations: Array<{ id: string; name: string; archived_at: string | null }>;
         }>("/portal/admin/locations"),
         api.get<{
           instructors: Array<{ id: string; name: string; archived_at: string | null }>;
         }>("/portal/admin/instructors"),
+        api.get<{
+          rooms: Array<{ id: string; name: string; location_id: string; archived_at: string | null }>;
+        }>("/portal/admin/rooms"),
       ]);
       setCatalog({
-        classTypes: ct.class_types,
         locations: loc.locations.filter((l) => !l.archived_at),
         instructors: ins.instructors,
+        rooms: rm.rooms.filter((r) => !r.archived_at),
       });
-      if (!classTypeId && ct.class_types[0]) setClassTypeId(ct.class_types[0].id);
       if (!locationId && loc.locations[0]) setLocationId(loc.locations[0].id);
     } catch {
       // surfaced via the form's general error display when save fails
     }
-  }, [api, classTypeId, locationId]);
+  }, [api, locationId]);
 
   useEffect(() => {
     void loadCatalog();
@@ -261,9 +259,10 @@ export function WorkshopEditor({
   async function handleSave() {
     if (!api) return;
     if (!name.trim()) return setError("Name is required.");
-    if (!classTypeId) return setError("Class type is required.");
     if (!locationId) return setError("Location is required.");
     if (!isEdit && days.length === 0) return setError("Add at least one day.");
+    if (!isEdit && days.some((d) => !d.roomId))
+      return setError("Every day needs a room.");
     if (!isEdit && tiers.length === 0) return setError("Add at least one pricing tier.");
     for (const t of tiers) {
       if (!t.name.trim()) return setError("Every tier needs a name.");
@@ -271,6 +270,9 @@ export function WorkshopEditor({
       if (t.earlyBirdPriceSgd !== null && t.earlyBirdPriceSgd >= t.priceSgd) {
         return setError(`Tier "${t.name}": early-bird price must be lower than tier price.`);
       }
+    }
+    if (hasPromotionOverlap(promotions)) {
+      return setError("Promotions overlap in time — each day can have at most one active promotion.");
     }
     setError(null);
     setSaving(true);
@@ -280,7 +282,6 @@ export function WorkshopEditor({
         // flows that are scope for v1.
         await api.patch(`/portal/admin/workshops/${initial.id}`, {
           name: name.trim(),
-          class_type_id: classTypeId,
           location_id: locationId,
           description_html: descriptionHtml || null,
           instructor_ids: instructorIds,
@@ -293,7 +294,6 @@ export function WorkshopEditor({
       } else {
         const id = await createWorkshopWithChildren(api, {
           name: name.trim(),
-          classTypeId,
           locationId,
           descriptionHtml,
           instructorIds,
@@ -309,7 +309,15 @@ export function WorkshopEditor({
         onSave(id);
       }
     } catch (err) {
-      const msg = err instanceof ApiError ? `Save failed (HTTP ${err.status}).` : "Save failed.";
+      let msg = err instanceof ApiError ? `Save failed (HTTP ${err.status}).` : "Save failed.";
+      if (err instanceof ApiError) {
+        const body = err.body as { error?: string } | null;
+        if (body?.error === "room_clash") {
+          msg = "A room is already booked for an overlapping time on one of these days. Pick another room or time.";
+        } else if (body?.error === "room_location_mismatch") {
+          msg = "A selected room belongs to a different location.";
+        }
+      }
       setError(msg);
       toast.error(msg);
     } finally {
@@ -366,39 +374,21 @@ export function WorkshopEditor({
             placeholder="e.g. Weekend Aerial Intensive"
           />
         </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="ws-classtype">Class type</Label>
-            <select
-              id="ws-classtype"
-              value={classTypeId}
-              onChange={(e) => setClassTypeId(e.target.value)}
-              className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
-            >
-              <option value="">— select —</option>
-              {catalog.classTypes.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="ws-location">Location</Label>
-            <select
-              id="ws-location"
-              value={locationId}
-              onChange={(e) => setLocationId(e.target.value)}
-              className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
-            >
-              <option value="">— select —</option>
-              {catalog.locations.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name}
-                </option>
-              ))}
-            </select>
-          </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="ws-location">Location</Label>
+          <select
+            id="ws-location"
+            value={locationId}
+            onChange={(e) => setLocationId(e.target.value)}
+            className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
+          >
+            <option value="">— select —</option>
+            {catalog.locations.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
+              </option>
+            ))}
+          </select>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="ws-instructor">Instructors</Label>
@@ -489,6 +479,10 @@ export function WorkshopEditor({
             }}
             days={days}
             onChange={setDays}
+            rooms={catalog.rooms
+              .filter((r) => r.location_id === locationId)
+              .map((r) => ({ id: r.id, name: r.name }))}
+            locationChosen={!!locationId}
           />
         )}
       </Section>

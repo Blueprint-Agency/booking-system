@@ -38,7 +38,7 @@ export type ScheduleEntry =
       kind: "workshop";
       id: string;
       label: string;
-      classTypeId: string;
+      classTypeId: null;
       instructorIds: string[];
       locationId: string;
       startsAt: string;
@@ -130,7 +130,7 @@ export function buildScheduleEntries(): ScheduleEntry[] {
         kind: "workshop",
         id: `${w.id}__${day.id}`,
         label: workshopLabel(w),
-        classTypeId: w.classTypeId,
+        classTypeId: null,
         instructorIds: w.instructorIds,
         locationId: w.locationId,
         startsAt,

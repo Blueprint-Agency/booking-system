@@ -23,6 +23,7 @@ export interface ScheduleEntryRow {
   classTypeId: string | null
   instructorIds: string[]
   locationId: string | null
+  roomId: string | null
   startsAt: string
   endsAt: string
   capacity: number
@@ -49,7 +50,8 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
   const now = new Date()
   const out: ScheduleEntryRow[] = []
   const wantClass = !opts.type || opts.type === 'class'
-  const wantWorkshop = !opts.type || opts.type === 'workshop'
+  // Workshops no longer carry a class type, so a class-type filter excludes them entirely.
+  const wantWorkshop = (!opts.type || opts.type === 'workshop') && !opts.classTypeId
   const wantPt = !opts.type || opts.type === 'pt'
 
   // ---- classes ----------------------------------------------------------------
@@ -68,6 +70,7 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
         className: classTypes.name,
         instructorId: classes.instructorId,
         locationId: classes.locationId,
+        roomId: classes.roomId,
         startsAt: classes.startsAt,
         endsAt: classes.endsAt,
         capacityOnline: classes.capacityOnline,
@@ -99,6 +102,7 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
         classTypeId: r.classTypeId,
         instructorIds: [r.instructorId],
         locationId: r.locationId,
+        roomId: r.roomId,
         startsAt: r.startsAt.toISOString(),
         endsAt: r.endsAt.toISOString(),
         capacity: r.capacityOnline + r.capacityWaitlist + r.capacityBuffer,
@@ -120,7 +124,6 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
     const conds = []
     if (opts.from) conds.push(gte(workshopDays.endsAt, opts.from))
     if (opts.to) conds.push(lt(workshopDays.startsAt, opts.to))
-    if (opts.classTypeId) conds.push(eq(workshops.classTypeId, opts.classTypeId))
     if (opts.locationId) conds.push(eq(workshops.locationId, opts.locationId))
 
     const rows = await db
@@ -128,13 +131,13 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
         dayId: workshopDays.id,
         workshopId: workshopDays.workshopId,
         ord: workshopDays.ord,
+        roomId: workshopDays.roomId,
         startsAt: workshopDays.startsAt,
         endsAt: workshopDays.endsAt,
         capacityOnline: workshopDays.capacityOnline,
         capacityWaitlist: workshopDays.capacityWaitlist,
         capacityBuffer: workshopDays.capacityBuffer,
         wsName: workshops.name,
-        wsClassTypeId: workshops.classTypeId,
         wsLocationId: workshops.locationId,
         wsLifecycle: workshops.lifecycle,
       })
@@ -193,9 +196,10 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
         id: r.dayId,
         workshopId: r.workshopId,
         label: r.wsName,
-        classTypeId: r.wsClassTypeId,
+        classTypeId: null,
         instructorIds: ids,
         locationId: r.wsLocationId,
+        roomId: r.roomId,
         startsAt: r.startsAt.toISOString(),
         endsAt: r.endsAt.toISOString(),
         capacity: r.capacityOnline + r.capacityWaitlist + r.capacityBuffer,
@@ -225,6 +229,7 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
         id: ptSessions.id,
         instructorId: ptSessions.instructorId,
         locationId: ptSessions.locationId,
+        roomId: ptSessions.roomId,
         startsAt: ptSessions.startsAt,
         endsAt: ptSessions.endsAt,
         capacityOnline: ptSessions.capacityOnline,
@@ -263,6 +268,7 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
         classTypeId: null,
         instructorIds: [r.instructorId],
         locationId: r.locationId,
+        roomId: r.roomId,
         startsAt: r.startsAt.toISOString(),
         endsAt: r.endsAt.toISOString(),
         capacity: r.capacityOnline + r.capacityWaitlist + r.capacityBuffer,
