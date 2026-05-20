@@ -1,6 +1,6 @@
 import { and, eq, sql } from 'drizzle-orm'
 import { db } from '../../db'
-import { staffUsers, staffInvitations } from '../../db/schema/identity'
+import { staffUsers, staffInvitations, clients } from '../../db/schema/identity'
 
 /**
  * Clerk user.* webhook → link to pre-seeded staff_users row.
@@ -10,16 +10,28 @@ import { staffUsers, staffInvitations } from '../../db/schema/identity'
  * rogue Clerk signup creates a Clerk user with no staff row; the middleware
  * rejects them at 403.
  *
- * The client app branch is deferred to the next slice.
+ * The CLIENT app branch (below) is the opposite: members are allowed to
+ * self-register, so a client-app `user.created` upserts a `clients` row.
  */
 
 interface ClerkWebhookUser {
   id: string
   primary_email_address_id?: string | null
   email_addresses?: Array<{ id: string; email_address: string }>
+  primary_phone_number_id?: string | null
+  phone_numbers?: Array<{ id: string; phone_number: string }>
   first_name?: string | null
   last_name?: string | null
   username?: string | null
+}
+
+function primaryPhone(user: ClerkWebhookUser): string | null {
+  const list = user.phone_numbers ?? []
+  if (user.primary_phone_number_id) {
+    const hit = list.find(p => p.id === user.primary_phone_number_id)
+    if (hit) return hit.phone_number
+  }
+  return list[0]?.phone_number ?? null
 }
 
 function primaryEmail(user: ClerkWebhookUser): string | null {
@@ -116,10 +128,88 @@ export async function handleClerkStaffEvent(event: {
   return { kind: 'noop' }
 }
 
+// ---------------------------------------------------------------------------
+// Client app sync — members self-register, so user.created upserts a clients row.
+// Admin-created clients already have a row (we set clerk_user_id at createUser
+// time), so their webhook lands as `idempotent`/`updated` rather than `created`.
+// ---------------------------------------------------------------------------
+
+export type ClientSyncOutcome =
+  | { kind: 'created'; clientId: string }
+  | { kind: 'updated'; clientId: string }
+  | { kind: 'idempotent'; clientId: string }
+  | { kind: 'email_conflict' }
+  | { kind: 'noop' }
+
+export async function syncClientFromClerk(clerkUser: ClerkWebhookUser): Promise<ClientSyncOutcome> {
+  const email = primaryEmail(clerkUser)
+  if (!email) return { kind: 'noop' }
+  const normalized = email.trim().toLowerCase()
+  if (!normalized) return { kind: 'noop' }
+
+  // Already linked by clerk_user_id → keep name/phone in sync, otherwise no-op.
+  const [byClerk] = await db
+    .select()
+    .from(clients)
+    .where(eq(clients.clerkUserId, clerkUser.id))
+    .limit(1)
+  if (byClerk) {
+    const name = displayName(clerkUser)
+    const phone = primaryPhone(clerkUser)
+    const set: Partial<typeof clients.$inferInsert> = {}
+    if (name && name !== byClerk.name) set.name = name
+    if (phone && phone !== byClerk.phone) set.phone = phone
+    if (Object.keys(set).length) {
+      set.updatedAt = new Date()
+      await db.update(clients).set(set).where(eq(clients.id, byClerk.id))
+      return { kind: 'updated', clientId: byClerk.id }
+    }
+    return { kind: 'idempotent', clientId: byClerk.id }
+  }
+
+  // A row with this email but a different clerk_user_id should never happen
+  // (email is unique + we set clerk_user_id at admin-create time). Guard anyway.
+  const [byEmail] = await db
+    .select({ id: clients.id })
+    .from(clients)
+    .where(sql`lower(${clients.email}) = ${normalized}`)
+    .limit(1)
+  if (byEmail) {
+    console.warn(
+      `[clerk-webhook] clients.id=${byEmail.id} email=${normalized} exists with a different clerk_user_id; incoming sub=${clerkUser.id}`,
+    )
+    return { kind: 'email_conflict' }
+  }
+
+  // Self-registration: create the client row from the Clerk profile.
+  const [row] = await db
+    .insert(clients)
+    .values({
+      clerkUserId: clerkUser.id,
+      email: normalized,
+      name: displayName(clerkUser) ?? normalized.split('@')[0]!,
+      phone: primaryPhone(clerkUser) ?? '',
+      status: 'active',
+    })
+    .returning({ id: clients.id })
+  return { kind: 'created', clientId: row!.id }
+}
+
+export async function handleClerkClientEvent(event: {
+  type: string
+  data: ClerkWebhookUser
+}): Promise<ClientSyncOutcome> {
+  if (event.type === 'user.created' || event.type === 'user.updated') {
+    return syncClientFromClerk(event.data)
+  }
+  return { kind: 'noop' }
+}
+
 // Backwards-compat alias for previous stub signature.
 export async function handleClerkEvent(event: any, _app: 'client' | 'staff'): Promise<void> {
   if (_app === 'staff') {
     await handleClerkStaffEvent(event)
+  } else {
+    await handleClerkClientEvent(event)
   }
-  // client branch is deferred to the next slice.
 }

@@ -51,6 +51,8 @@ export interface ClientPackageWithSource {
   sourcePackageId: string | null
   packageName: string
   creditsOrSessionsRemaining: number | null
+  /** Original allotment from the source package (credits / num_sessions); null for unlimited. */
+  creditsOrSessionsTotal: number | null
   expiresAt: Date | null
   purchasedAt: Date
   amountPaidSgd: string
@@ -84,6 +86,8 @@ export async function listClientPackages(
       amountPaidSgd: clientPackages.amountPaidSgd,
       classPackageName: classPackages.name,
       ptPackageName: ptPackages.name,
+      classPackageCredits: classPackages.credits,
+      ptPackageSessions: ptPackages.numSessions,
     })
     .from(clientPackages)
     .leftJoin(classPackages, eq(classPackages.id, clientPackages.sourceClassPackageId))
@@ -96,6 +100,7 @@ export async function listClientPackages(
     sourcePackageId: r.sourceClassPackageId ?? r.sourcePtPackageId,
     packageName: r.classPackageName ?? r.ptPackageName ?? 'Package',
     creditsOrSessionsRemaining: r.creditsOrSessionsRemaining,
+    creditsOrSessionsTotal: r.classPackageCredits ?? r.ptPackageSessions ?? null,
     expiresAt: r.expiresAt,
     purchasedAt: r.purchasedAt,
     amountPaidSgd: r.amountPaidSgd,

@@ -19,12 +19,11 @@ export type TemplateSlug =
   | 'admin_cancel_class'
   | 'admin_cancel_pt'
   | 'admin_cancel_workshop'
-  | 'rating_prompt_class'
-  | 'rating_prompt_workshop'
   | 'package_purchase_confirmed'
   | 'credit_expiry_reminder'
   | 'instructor_invite'
   | 'admin_invite'
+  | 'client_invite'
   | 'checkin_nag'
   | 'referral_credited'
 
