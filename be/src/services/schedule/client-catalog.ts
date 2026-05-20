@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import { and, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { bookings } from '../../db/schema/bookings'
@@ -39,6 +40,25 @@ export interface ClassListFilters {
   locationId?: string
   instructorId?: string
   classTypeId?: string
+}
+
+export const classFiltersSchema = z.object({
+  location_id: z.string().uuid().optional(),
+  instructor_id: z.string().uuid().optional(),
+  class_type_id: z.string().uuid().optional(),
+  from: z.string().datetime().optional(),
+  to: z.string().datetime().optional(),
+})
+
+export function parseClassFilters(raw: Record<string, string>): ClassListFilters {
+  const q = classFiltersSchema.parse(raw)
+  return {
+    locationId: q.location_id,
+    instructorId: q.instructor_id,
+    classTypeId: q.class_type_id,
+    from: q.from ? new Date(q.from) : undefined,
+    to: q.to ? new Date(q.to) : undefined,
+  }
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000

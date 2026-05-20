@@ -1,5 +1,4 @@
 import { Hono } from 'hono'
-import { z } from 'zod'
 import * as classCatalog from '../../services/schedule/client-catalog'
 import * as classSvc from '../../services/packages/class-packages'
 import * as ptSvc from '../../services/packages/pt-packages'
@@ -9,25 +8,6 @@ import {
   serializePromotion,
 } from '../../services/packages/promotions'
 import * as workshopsSvc from '../../services/workshops/catalog'
-
-const classesQuery = z.object({
-  location_id: z.string().uuid().optional(),
-  instructor_id: z.string().uuid().optional(),
-  class_type_id: z.string().uuid().optional(),
-  from: z.string().datetime().optional(),
-  to: z.string().datetime().optional(),
-})
-
-function parseClassFilters(raw: Record<string, string>): classCatalog.ClassListFilters {
-  const q = classesQuery.parse(raw)
-  return {
-    locationId: q.location_id,
-    instructorId: q.instructor_id,
-    classTypeId: q.class_type_id,
-    from: q.from ? new Date(q.from) : undefined,
-    to: q.to ? new Date(q.to) : undefined,
-  }
-}
 
 function serializeClassPackage(
   r: classSvc.ClassPackageRow,
@@ -73,7 +53,7 @@ const app = new Hono()
     return c.json({ locations })
   })
   .get('/classes', async c => {
-    const filters = parseClassFilters(c.req.query())
+    const filters = classCatalog.parseClassFilters(c.req.query())
     const classes = await classCatalog.listClassCards(filters)
     return c.json({ classes })
   })
