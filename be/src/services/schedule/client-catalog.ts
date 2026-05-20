@@ -1,7 +1,7 @@
 import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { bookings } from '../../db/schema/bookings'
-import { classes, ptSessions } from '../../db/schema/schedule'
+import { classes, ptSessionClients, ptSessions } from '../../db/schema/schedule'
 import { classTypes, instructors, locations, rooms } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
 import { ptBookingConfig } from '../../db/schema/policy'
@@ -276,11 +276,22 @@ export async function listInstructorAvailability(instructorId: string): Promise<
     )
     .orderBy(ptSessions.startsAt)
 
+  const ids = rows.map(r => r.id)
+  const bookedBySession = new Map<string, number>()
+  if (ids.length) {
+    const counts = await db
+      .select({ ptSessionId: ptSessionClients.ptSessionId, cnt: sql<number>`count(*)::int` })
+      .from(ptSessionClients)
+      .where(inArray(ptSessionClients.ptSessionId, ids))
+      .groupBy(ptSessionClients.ptSessionId)
+    for (const c of counts) bookedBySession.set(c.ptSessionId, Number(c.cnt))
+  }
+
   return rows.map(r => ({
     id: r.id,
     starts_at: r.startsAt.toISOString(),
     ends_at: r.endsAt.toISOString(),
     session_type: r.sessionType as '1on1' | '2on1',
-    spots_left: r.capacityOnline,
+    spots_left: Math.max(0, r.capacityOnline - (bookedBySession.get(r.id) ?? 0)),
   }))
 }
