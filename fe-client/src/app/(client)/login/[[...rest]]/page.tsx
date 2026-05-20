@@ -25,10 +25,11 @@ function LoginContent() {
             card: "shadow-none p-0 bg-transparent",
             headerTitle: "hidden",
             headerSubtitle: "hidden",
-            socialButtonsBlockButton:
-              "rounded-full border border-ink/10 py-3 text-sm font-medium hover:border-accent transition-colors w-full",
-            dividerLine: "bg-ink/10",
-            dividerText: "text-muted text-xs",
+            // Email + password only — hide social (Google) sign-in + its divider.
+            // NOTE: the authoritative disable is the Clerk client-app dashboard
+            // (User & Authentication → Social Connections → turn off Google).
+            socialButtons: "hidden",
+            dividerRow: "hidden",
             formFieldInput:
               "rounded-xl border border-ink/10 bg-paper px-4 py-3 text-sm w-full focus:border-accent focus:outline-none",
             formFieldLabel:
