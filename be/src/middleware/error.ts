@@ -1,5 +1,6 @@
 import type { MiddlewareHandler } from 'hono'
 import { HTTPException } from 'hono/http-exception'
+import { ZodError } from 'zod'
 
 export class AppError extends HTTPException {
   constructor(
@@ -20,6 +21,9 @@ export const errorBoundary: MiddlewareHandler = async (c, next) => {
     }
     if (err instanceof HTTPException) {
       return c.json({ error: err.message }, err.status)
+    }
+    if (err instanceof ZodError) {
+      return c.json({ error: 'invalid_request', issues: err.issues }, 400)
     }
     console.error('[unhandled]', err)
     return c.json({ error: 'internal_error' }, 500)
