@@ -95,22 +95,20 @@ export function useClass(id: string | undefined): {
   loading: boolean;
   error: ApiError | Error | null;
 } {
-  const { isLoaded, isSignedIn } = useUser();
-  const api = useApi();
   const [data, setData] = useState<ApiClassDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | Error | null>(null);
 
   useEffect(() => {
-    if (!isLoaded || !id) return;
+    if (!id) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
     (async () => {
       try {
-        const res = isSignedIn
-          ? await api.get<ApiClassDetail>(`/me/classes/${id}`)
-          : await publicApi.get<ApiClassDetail>(`/public/classes/${id}`);
+        // Class detail carries no per-user fields, so the public endpoint serves
+        // signed-in and signed-out users alike (`/me/classes/:id` is not implemented).
+        const res = await publicApi.get<ApiClassDetail>(`/public/classes/${id}`);
         if (!cancelled) setData(res);
       } catch (err) {
         if (!cancelled) setError(err as Error);
@@ -121,7 +119,7 @@ export function useClass(id: string | undefined): {
     return () => {
       cancelled = true;
     };
-  }, [id, isLoaded, isSignedIn, api]);
+  }, [id]);
 
   return { data, loading, error };
 }
