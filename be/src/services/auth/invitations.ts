@@ -44,7 +44,7 @@ function emailLocalPart(email: string): string {
   return at > 0 ? email.slice(0, at) : email
 }
 
-function buildSignUpUrl(email: string): string {
+export function buildSignUpUrl(email: string): string {
   return `${env.PORTAL_ORIGIN.replace(/\/+$/, '')}/signup?invite_email=${encodeURIComponent(email)}`
 }
 

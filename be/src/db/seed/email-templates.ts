@@ -67,6 +67,58 @@ const ADMIN_INVITE_BODY = `<!DOCTYPE html>
   </body>
 </html>`
 
+/**
+ * Branded HTML for the instructor invitation email. References:
+ *   - `{{name}}` — instructor name (provided at create time)
+ *   - `{{invite_url}}` — portal sign-up URL ({{sign_up_url}} is the same value)
+ *   - `{{invitee_email}}` — the account email
+ */
+const INSTRUCTOR_INVITE_BODY = `<!DOCTYPE html>
+<html>
+  <body style="margin:0;padding:0;background:#f7f5f2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#1f1d1b;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f5f2;padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid #e9e4dd;border-radius:14px;padding:32px 36px;">
+            <tr>
+              <td style="padding-bottom:20px;">
+                <div style="display:inline-block;vertical-align:middle;width:36px;height:36px;background:#c97a4a;border-radius:8px;color:#ffffff;font-weight:700;font-size:14px;line-height:36px;text-align:center;">YS</div>
+                <span style="display:inline-block;vertical-align:middle;margin-left:10px;font-size:15px;font-weight:600;letter-spacing:-0.01em;">Yoga Sadhana</span>
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <h1 style="margin:0 0 16px;font-size:22px;font-weight:600;letter-spacing:-0.01em;">You're invited to teach at Yoga Sadhana</h1>
+                <p style="margin:0 0 14px;font-size:15px;line-height:1.55;color:#4a4742;">Hi {{name}},</p>
+                <p style="margin:0 0 14px;font-size:15px;line-height:1.55;color:#4a4742;">
+                  The Yoga Sadhana team has added you as an instructor. Click the button
+                  below to set up your account and access the portal, where you'll see your
+                  teaching schedule and class rosters.
+                </p>
+                <p style="margin:24px 0;">
+                  <a href="{{invite_url}}" style="display:inline-block;background:#c97a4a;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 22px;border-radius:9px;">
+                    Set up your account
+                  </a>
+                </p>
+                <p style="margin:0 0 14px;font-size:13px;line-height:1.55;color:#7a7670;">
+                  Your account email is <strong>{{invitee_email}}</strong>. If the button doesn't work, paste this URL into your browser:
+                </p>
+                <p style="margin:0 0 24px;font-size:12px;line-height:1.55;color:#7a7670;word-break:break-all;">
+                  {{invite_url}}
+                </p>
+                <hr style="border:0;border-top:1px solid #e9e4dd;margin:24px 0;" />
+                <p style="margin:0;font-size:12px;line-height:1.5;color:#9b9590;">
+                  If you weren't expecting this invitation, you can safely ignore this email.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`
+
 const CLIENT_INVITE_BODY = `<!DOCTYPE html>
 <html>
   <body style="margin:0;padding:0;background:#f7f5f2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#1f1d1b;">
@@ -137,7 +189,11 @@ const TEMPLATES: Array<{ slug: string; subject: string; bodyHtml?: string }> = [
   { slug: 'admin_cancel_workshop',              subject: 'A workshop was cancelled by the studio' },
   { slug: 'package_purchase_confirmed',         subject: 'Your package purchase is confirmed' },
   { slug: 'credit_expiry_reminder',             subject: 'Your credits are expiring soon' },
-  { slug: 'instructor_invite',                  subject: "You've been invited as an instructor" },
+  {
+    slug: 'instructor_invite',
+    subject: "You've been invited as an instructor",
+    bodyHtml: INSTRUCTOR_INVITE_BODY,
+  },
   {
     slug: 'admin_invite',
     subject: "You've been invited to Yoga Sadhana — Admin Portal",

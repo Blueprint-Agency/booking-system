@@ -4,6 +4,8 @@ import { staffUsers } from '../../db/schema/identity'
 import { instructors } from '../../db/schema/catalog'
 import { classes, ptSessions, workshops, workshopInstructors } from '../../db/schema/schedule'
 import { ConflictError, NotFoundError, BadRequestError } from '../../shared/errors'
+import { sendTemplatedEmail } from '../notifications/send'
+import { buildSignUpUrl } from '../auth/invitations'
 
 export type StaffRow = typeof staffUsers.$inferSelect
 export type InstructorProfile = typeof instructors.$inferSelect
@@ -84,12 +86,14 @@ export interface CreateInstructorInput {
 }
 
 /**
- * Create an instructor. v0 does NOT call Clerk — we only insert the DB rows.
- *  - staff_users (role=instructor, status=pending, clerk_user_id=NULL)
+ * Create an instructor + send the branded invite email.
+ *  - staff_users (role=instructor, status=pending, invited_at=now, clerk_user_id=NULL)
  *  - instructors (profile)
  *
- * Clerk invitation wiring lands in a later slice. The pending staff_users row
- * will link up when the matching email signs into Clerk and the webhook fires.
+ * Like the admin-invite flow, we do NOT pre-create a Clerk user. The pending
+ * staff_users row links up when the invited email signs into the staff Clerk
+ * app and the `user.created` webhook fires (matched by email). The invite email
+ * carries a `PORTAL_ORIGIN/signup?invite_email=…` link.
  *
  * Class-type eligibility (instructor_class_types) is no longer modelled in the
  * UI — instructors are assignable to any class type at scheduling time.
@@ -98,7 +102,7 @@ export async function createInstructor(input: CreateInstructorInput): Promise<In
   const email = input.email.trim().toLowerCase()
   if (!email) throw new BadRequestError('email_required')
 
-  return db.transaction(async tx => {
+  const view = await db.transaction(async tx => {
     // Reject if email already exists across staff_users (case-insensitive).
     const existing = await tx
       .select({ id: staffUsers.id })
@@ -115,6 +119,7 @@ export async function createInstructor(input: CreateInstructorInput): Promise<In
         role: 'instructor',
         status: 'pending',
         clerkUserId: null,
+        invitedAt: new Date(),
       })
       .returning()
 
@@ -138,6 +143,21 @@ export async function createInstructor(input: CreateInstructorInput): Promise<In
       photoR2Key: input.photoR2Key ?? null,
     }
   })
+
+  // Email is best-effort and runs OUTSIDE the transaction so a transient SMTP
+  // failure doesn't roll back the instructor record. Failures land in `email_log`.
+  await sendTemplatedEmail({
+    slug: 'instructor_invite',
+    recipient: { email, userId: view.id, userKind: 'staff' },
+    variables: {
+      name: view.name,
+      invite_url: buildSignUpUrl(email),
+      invitee_email: email,
+      sign_up_url: buildSignUpUrl(email),
+    },
+  })
+
+  return view
 }
 
 export interface UpdateInstructorInput {
