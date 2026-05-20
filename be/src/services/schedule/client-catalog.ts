@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm'
+import { and, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { bookings } from '../../db/schema/bookings'
 import { classes, ptSessionClients, ptSessions } from '../../db/schema/schedule'
@@ -104,11 +104,11 @@ export async function listClassCards(filters: ClassListFilters): Promise<ClassCa
   const roomIds = Array.from(new Set(rows.map(r => r.roomId).filter((v): v is string => !!v)))
   const roomById = new Map<string, { id: string; name: string }>()
   if (roomIds.length) {
-    const rrows = await db
+    const roomRows = await db
       .select({ id: rooms.id, name: rooms.name })
       .from(rooms)
       .where(inArray(rooms.id, roomIds))
-    for (const r of rrows) roomById.set(r.id, { id: r.id, name: r.name })
+    for (const r of roomRows) roomById.set(r.id, { id: r.id, name: r.name })
   }
 
   const booked = await bookedCountByClass(rows.map(r => r.id))
@@ -164,12 +164,12 @@ export async function getClassDetail(id: string): Promise<ClassDetailPayload> {
 
   let room: { id: string; name: string } | null = null
   if (r.roomId) {
-    const [rr] = await db
+    const [roomRow] = await db
       .select({ id: rooms.id, name: rooms.name })
       .from(rooms)
       .where(eq(rooms.id, r.roomId))
       .limit(1)
-    room = rr ?? null
+    room = roomRow ?? null
   }
 
   const booked = (await bookedCountByClass([r.id])).get(r.id) ?? 0
@@ -225,7 +225,7 @@ export async function listActiveLocations(): Promise<
       phone: locations.phone,
     })
     .from(locations)
-    .where(sql`${locations.archivedAt} is null`)
+    .where(isNull(locations.archivedAt))
     .orderBy(locations.name)
   return rows.map(r => ({
     id: r.id,
