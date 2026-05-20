@@ -448,15 +448,14 @@ The account section is a sticky sidebar (desktop) / tab bar (mobile). All sub-pa
 **Business logic**
 - Tabs: **Upcoming** / **Past**.
 - Upcoming row: class title, instructor, date/time, location, QR action, cancel/reschedule actions (gated by cancellation policy).
-- Past row: status badge (Attended / Late / Cancelled / No-Show) + 1–5 star **rating dropdown** if status is `Attended`.
+- Past row: status badge (Attended / Late / Cancelled / No-Show).
 
 **User journey**
 - Default tab is Upcoming; user reviews, taps QR for the session, or cancels.
-- Past tab is an audit + rating affordance.
+- Past tab is an audit.
 
 **Where admin comes in**
 - Admin sees this same data per user, plus can override attendance status (mark attended retroactively, void no-show fee).
-- Ratings flow into instructor performance reports.
 
 ### 8.4 My Workshops `/account/workshops`
 
@@ -545,7 +544,7 @@ For every fe-client feature above, admin must own at least the **write side** of
 | Checkout | Transactions, refunds, payment provider settings, tax/GST |
 | Account dashboard | Membership ops on user profile (extend / pause / cancel / contact) |
 | Account profile | User detail editor (incl. waiver re-request) |
-| My Classes / Workshops / Private Sessions | Per-user booking history; attendance overrides; rating data feeds reports |
+| My Classes / Workshops / Private Sessions | Per-user booking history; attendance overrides |
 | Invoices | Invoices list; resend, void, refund, branding |
 | Referral | Referral graph, attribution audit, reward config |
 | Layout / branding | Studio settings: branding, locations, marketing copy, footer |

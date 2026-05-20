@@ -353,16 +353,6 @@ updated_by      uuid FK → users.id
 updated_at      timestamptz
 ```
 
-#### `class_ratings`
-```
-id              uuid PK
-booking_id      uuid FK → bookings.id UNIQUE NOT NULL
-client_id       uuid FK → clients.user_id NOT NULL
-class_instance_id uuid FK → class_instances.id NOT NULL
-rating          smallint NOT NULL CHECK (rating BETWEEN 1 AND 5)
-created_at      timestamptz
-```
-
 #### `marketing_content`
 ```
 id              uuid PK DEFAULT gen_random_uuid()  -- single row
@@ -418,7 +408,6 @@ Base path: `/api/v1`
 | POST | `/me/private-requests` | Submit private session request |
 | GET | `/me/private-requests` | Own private session request history |
 | GET | `/me/referral` | Own referral code + attribution list |
-| POST | `/ratings/:bookingId` | Submit post-class rating |
 
 ### 4.4 Instructor (`role: instructor`)
 
@@ -435,7 +424,6 @@ Base path: `/api/v1`
 | GET | `/instructor/profile` | Own profile |
 | PATCH | `/instructor/profile` | Update own bio, photo, rate |
 | GET | `/instructor/teaching-log` | Own teaching log |
-| GET | `/instructor/ratings` | Own class ratings aggregate |
 
 ### 4.5 Studio Admin (`role: studio_admin`)
 
@@ -489,7 +477,7 @@ Base path: `/api/v1`
 | Method | Path | Description |
 |---|---|---|
 | GET | `/admin/instructors` | List instructors |
-| GET | `/admin/instructors/:id` | Instructor detail + teaching log + ratings |
+| GET | `/admin/instructors/:id` | Instructor detail + teaching log |
 | POST | `/admin/instructors` | Create instructor account |
 | PATCH | `/admin/instructors/:id` | Update instructor (rate override, etc.) |
 | DELETE | `/admin/instructors/:id` | Archive instructor |
@@ -516,7 +504,6 @@ Base path: `/api/v1`
 | GET | `/admin/reports/revenue` | Revenue report |
 | GET | `/admin/reports/membership` | Membership report |
 | GET | `/admin/reports/teaching-log` | Teaching log (all instructors) |
-| GET | `/admin/reports/ratings` | Class ratings report |
 | GET | `/admin/reports/inbox-throughput` | Inbox throughput report |
 | GET | `/admin/reports/referrals` | Referral attribution report |
 

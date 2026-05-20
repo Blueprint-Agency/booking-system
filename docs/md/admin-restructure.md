@@ -12,7 +12,7 @@ Staff identity is `superadmin` or `admin`. The `instructor` role is reserved in 
 | **Admin** | Operations staff scoped to one or more granted workspaces via `staff_users.granted_location_ids: string[]`. Sees only their granted locations' Schedule / Workshops / Check-in / Inbox. **Read-only** on Clients. Cannot reach Class Types, Packages (Classes + Private Sessions), Global Policy, Notifications, Waiver, Staff, or Locations. |
 
 - Superadmin grants are **implicit** — an empty `granted_location_ids` means "all active locations".
-- See §15 for invitation + archive rules.
+- See §14 for invitation + archive rules.
 
 ### Workspace boundary (global vs workspace-scoped)
 
@@ -20,15 +20,17 @@ Locations are workspaces. Surfaces are partitioned as follows:
 
 | Tier | Surfaces |
 |---|---|
-| **Global (superadmin-only)** | Locations CRUD, Class Types, Packages → Classes, Packages → Private Sessions, Promotions (nested in packages), Global Policy, Notifications, Waiver, Staff |
-| **Workspace-scoped** | Schedule, Workshops (housed under "Packages" in nav but each tied to a `location_id`), Check-in, Inbox |
+| **Global (superadmin-only)** | Locations CRUD, Class Types, Rooms, Packages → Classes, Packages → Workshops, Packages → Private Sessions, Promotions (nested in packages), Global Policy, Notifications, Waiver, Staff |
+| **Workspace-scoped** | Schedule, Check-in, Inbox |
 | **Workspace-agnostic** | PT Requests (no `location_id` until scheduled — see §9) |
 | **Cross-workspace (global, read-only for admin)** | Clients — cross-location credits mean a client record spans workspaces; admin sees all clients but cannot mutate (no kebab actions, no expiry edits, no set-balance, no manual adjustments, no suspend/reactivate) |
+
+> **Workshops are a global package surface.** Like Classes and Private Sessions, Packages → Workshops is **not** filtered by the topbar workspace switcher — it lists every workshop across all locations. Each workshop still carries a `location_id` chosen in the editor (its days' rooms come from that location); the surface is simply not workspace-scoped.
 
 ### Workspace switcher (topbar)
 
 - The admin shell topbar carries a `<WorkspaceSwitcher />` dropdown listing the user's accessible locations. The sidebar **no longer has a "Locations" entry** — moved into this dropdown's "Manage locations" modal (superadmin only).
-- The active location is global state, persisted in localStorage under `ys.activeLocationId`. All workspace-scoped pages read it directly — there are **no per-page LocationFilterChips** on Schedule + Workshops and **no CheckinLocationPill** on Check-in.
+- The active location is global state, persisted in localStorage under `ys.activeLocationId`. All workspace-scoped pages (Schedule, Rooms, Check-in, Inbox) read it directly — there are **no per-page LocationFilterChips** and **no CheckinLocationPill**. (Workshops is **not** workspace-scoped — see the Workshops note above.)
 - Dropdown contents:
   - List of accessible locations (current marked).
   - Superadmin extras: "+ Add location" and "Manage locations" (modal CRUD reusing `LocationFormDialog`).
@@ -40,8 +42,19 @@ Locations are workspaces. Surfaces are partitioned as follows:
 
 ### Sidebar structure
 
+**Visual layout** (top to bottom):
+
+- **Settings**: Class Types, Global Policy, Notifications, Waiver (location-independent building blocks + config).
+- **Packages**: Classes, Workshops, Private Sessions (global, shared across locations).
+- **People**: Clients, Staff (members + staff accounts). **Instructors are merged into Staff** — the Staff page has **Admin** and **Instructors** tabs. "+ Invite staff" (Admin tab) invites admin/superadmin; "+ Add instructor" (Instructors tab) routes to the instructor creation flow (which still captures bio, photo, and eligible class types). Instructor rows link to their detail page. There is no separate "Instructors" sidebar item.
+- **Workspace zone** (bottom, separated by a divider, under a header showing the active location's name): **Schedule, Rooms, Check-in, Inbox, PT Requests**. Schedule/Rooms/Check-in/Inbox are filtered by `activeLocationId`; flipping the switcher reloads them. **PT Requests is grouped here for navigation but remains workspace-agnostic** — a single shared triage queue (no `location_id` until scheduled), so it is not filtered by the switcher.
+
+`NavItem.workspaceScoped` marks the workspace-zone items; it is distinct from `NavItem.scope`, which only governs role visibility (admin vs superadmin). The build-order below is the recommended *setup* sequence, not the visual order.
+
 **Building Blocks** (set up first — prereqs for everything else):
 1. Class Types  *(locations moved to topbar switcher)*
+2. Instructors
+3. Rooms — physical spaces per location (name + capacity). Required when scheduling a class, workshop day, or PT session; the scheduler blocks two sessions sharing a room at overlapping times.
 
 **Policy:**
 4. Global Policy — cancellation cap (applies to all clients across all session types)
@@ -49,7 +62,7 @@ Locations are workspaces. Surfaces are partitioned as follows:
 **Packages + Policies** (configure before creating scheduled sessions):
 5. Classes — Trial Pass, credit bundles, unlimited memberships (+ promotions)
 6. Private Sessions — PT packages (+ promotions)
-7. Workshops — workspace-scoped multi-day workshop editor (housed under Packages)
+7. Workshops — multi-day workshop editor (housed under Packages; global/shared, not workspace-scoped — each workshop still picks its own location)
 
 **Schedule:**
 8. Schedule
@@ -65,22 +78,20 @@ Locations are workspaces. Surfaces are partitioned as follows:
 11. Check-in
 12. Cancellation & Refund Mechanics
 13. Inbox
-14. Rating & Completion
-15. Roles & Invitations
+14. Roles & Invitations
 
 **Clients & Content:**
-16. Clients
-17. Notifications (Email Templates)
-18. Waivers
+15. Clients
+16. Notifications (Email Templates)
+17. Waivers
 
 **Completed this phase:**
-- 14. Rating & Completion
-- 15. Roles & Invitations
-- 16. Clients (list, profile, credit balance, history, manual adjustments)
-- 17. Notifications (email template management)
-- 18. Waivers
+- 14. Roles & Invitations
+- 15. Clients (list, profile, credit balance, history, manual adjustments)
+- 16. Notifications (email template management)
+- 17. Waivers
 
-**Next phase (see §20):**
+**Next phase (see §19):**
 - Dashboard
 - Reports
 - Audit log
@@ -161,6 +172,24 @@ No location assignment in v1. No pay rate in app (handled externally).
 - **Hard delete** — only if zero linked data exists across all tables (instructor has never been assigned to any session).
 - **Soft delete (archive)** — if past data exists but no upcoming or ongoing sessions. Archived instructors appear at bottom of list with Restore option.
 - **Blocked** — if the instructor has any upcoming or ongoing classes, workshops, or private sessions.
+
+---
+
+## 3b. Rooms
+
+**Sidebar position:** Top-level building block item (under "Building Blocks", beside Instructors). Location-scoped, so workspace-aware.
+
+**Fields:** name, capacity (whole number ≥ 1). A room belongs to exactly one location and cannot be moved between locations after creation.
+
+**Where it's used:** Every scheduled session — a class, a workshop day, or a PT session — is assigned a room. The room dropdown in each scheduling form is filtered to the chosen location's rooms.
+
+**Clash validation:** The scheduler hard-blocks creating or rescheduling a session into a room that already has another **active** session at an overlapping time, checked across classes, workshop days, and PT sessions together (a physical room hosts one thing at a time). The error names the conflicting session(s).
+
+**Capacity is reference metadata** — it does not cap a session's online/waitlist/buffer booking capacity.
+
+**Deletion rules:**
+- **Archive** — allowed when no upcoming active session references the room. Archived rooms appear at the bottom with a Restore option.
+- **Blocked** — if any upcoming active class, workshop day, or PT session uses the room.
 
 ---
 
@@ -337,7 +366,7 @@ A shared `<CapacityFields />` block appears on every scheduling form. Detail pag
 
 ### 7e. Workshops are configured under Packages (not Schedule)
 
-Workshops live at `/admin/packages/workshops` — workspace-scoped (each workshop is tied to a `location_id`, so admins see only their workspace's workshops). See §19 for the full spec.
+Workshops live at `/admin/packages/workshops` — workspace-scoped (each workshop is tied to a `location_id`, so admins see only their workspace's workshops). See §18 for the full spec.
 
 ---
 
@@ -380,7 +409,7 @@ PT Requests have **no `location_id`** until they are scheduled — at scheduling
 
 - Filter chips: `pending` / `scheduled` / `declined` / `all`. Pending count badge appears on the sidebar item.
 - Row click opens a **detail drawer** with the full request, the preferred slots, and the client's note.
-- **Decline** requires a note (min 5 chars). Logged to `decline_note`, fires the "PT session declined" email (§17, template #6).
+- **Decline** requires a note (min 5 chars). Logged to `decline_note`, fires the "PT session declined" email (§16, template #6).
 - **Schedule** opens `ScheduleFromRequestDialog`:
   - Pre-filled from the first preferred slot.
   - Quick-pick chips for the remaining preferred slots — clicking one updates the date/time fields.
@@ -528,51 +557,9 @@ PT request triage **does not live here** — it has its own dedicated page (`/ad
 
 ---
 
-## 14. Rating & Completion
+## 14. Roles & Invitations
 
-**What is rated:** the **class instance** (or workshop instance). One rating per attended booking, attached to that specific session.
-
-- **Instructor rating** is derived — reports aggregate across all sessions an instructor taught. No standalone "rate the instructor" action.
-
-**Eligibility:**
-- Only clients whose roster row is marked `attended` can rate.
-- One rating per attended booking. Editable until X (TBD — likely until rating window closes, e.g. 7 days post-class).
-
-**Scope by session type:**
-- **Class** — rateable
-- **Workshop** — rateable
-- **PT** — not rateable in v1 (1-on-1 dynamics make ratings awkward)
-
-**Scale:** 1–5 stars + optional free-text comment.
-
-**Required or optional:** Optional. Client app shows a one-time post-class prompt; if dismissed, no follow-up.
-
-**Surfacing — admin views (full visibility):**
-- **Per session detail page** — aggregate rating + every individual rating/comment for that specific instance, with client attribution.
-- **Per instructor profile** — rolling average across all that instructor's sessions, with trend over time.
-- **Reports** — aggregate dashboard across instructors / class types / locations.
-
-**Surfacing — instructor view (own only):**
-- Instructor sees ratings/comments only for sessions they personally taught.
-- Aggregate score per session + per their own profile + individual comments.
-- Comments are anonymized to the instructor (no client name attached) to avoid interpersonal friction.
-
-**Surfacing — client view (attended sessions only):**
-- Client can view full ratings (aggregate + all comments) for sessions they personally attended.
-- Other clients' comments are anonymized to the viewing client.
-- Their own past rating is visible and editable within the rating window (e.g. 7 days post-class).
-- Ratings are **not displayed publicly** on instructor cards, class listings, or any pre-booking surface — only post-attendance.
-
-**Privacy rule of thumb:**
-- Admin: sees everything with attribution.
-- Instructor: sees own sessions, comments anonymized.
-- Client: sees attended sessions, others' comments anonymized.
-
----
-
-## 15. Roles & Invitations
-
-### 15a. Role model
+### 14a. Role model
 
 Two staff role types in the system. (The `instructor` role is reserved in the schema for a later phase and is not invitable in v1.)
 
@@ -586,7 +573,7 @@ Two staff role types in the system. (The `instructor` role is reserved in the sc
 - Admin's accessible-locations list is reflected in the topbar `<WorkspaceSwitcher />` (see Overview).
 - The superadmin label is a deployment artifact — there is no ongoing visual distinction in chrome beyond the surfaces a superadmin can reach.
 
-### 15b. Invitation rules
+### 14b. Invitation rules
 
 **Who can invite whom:**
 - Superadmin can invite admins (and other superadmins).
@@ -609,7 +596,7 @@ Two staff role types in the system. (The `instructor` role is reserved in the sc
 - Emails are unique within the **staff space.** One email = one staff account.
 - Staff and client spaces are **independent** — the same email can exist as a client in the client app and as a staff member in the admin app. They are treated as separate identities with separate sessions. No cross-login.
 
-### 15c. Archive & removal rules
+### 14c. Archive & removal rules
 
 **Staff accounts (admin + superadmin):**
 - **Hard delete: never.** Staff records are never permanently deleted — audit log integrity depends on actor identity surviving.
@@ -622,21 +609,21 @@ Two staff role types in the system. (The `instructor` role is reserved in the sc
 
 ---
 
-## 16. Clients
+## 15. Clients
 
-### 16a. Client List (`/admin/clients`)
+### 15a. Client List (`/admin/clients`)
 
 - Searchable by name or email.
 - Filterable by status (Active / Suspended).
 - Each row shows: name, email, join date, active package count, upcoming booking count, status chip.
 - "Add client" is not present — clients self-register via the client app. This list is read-only at the list level.
 
-### 16b. Client Profile (`/admin/clients/[id]`)
+### 15b. Client Profile (`/admin/clients/[id]`)
 
 **Personal details (read-only):**
 - Name, email, phone — sourced from registration; not editable by admin in v1.
 - Join date, referral source (who referred them, if any).
-- Waiver signed date (read-only — see §18).
+- Waiver signed date (read-only — see §17).
 
 **Active packages:**
 - Credit bundles: package name, credits remaining, total credits, expiry date.
@@ -661,7 +648,7 @@ Two staff role types in the system. (The `instructor` role is reserved in the sc
 - Referred by: name + link to referrer's profile (if applicable).
 - Referred: list of clients this person has referred.
 
-### 16c. Account Status
+### 15c. Account Status
 
 Two states: **Active** and **Suspended**.
 
@@ -672,7 +659,7 @@ Admin can toggle status from the client profile. No reason note required (intern
 
 No hard delete — client records are never permanently removed (preserves booking history, check-in records, refund audit trail).
 
-### 16d. Manual Package Adjustments
+### 15d. Manual Package Adjustments
 
 **Superadmin-only.** Admin sees the read-only banner on every client profile and cannot trigger any of the kebab actions below.
 
@@ -697,9 +684,9 @@ Three actions on a client's active-package kebab, all written into the same immu
 
 ---
 
-## 17. Notifications (Email Templates)
+## 16. Notifications (Email Templates)
 
-### 17a. Overview
+### 16a. Overview
 
 - Every trigger event always fires its email — no per-template enable/disable toggle.
 - Each template ships with seeded default content (subject + body). Admin can customise; the seed is the fallback for a fresh deployment.
@@ -707,7 +694,7 @@ Three actions on a client's active-package kebab, all written into the same immu
 - Body uses a **rich text editor** (headings, bold, italic, bullet points, links).
 - Variables use `{{variable_name}}` syntax. The editor **detects variables inline** — known variables are highlighted; unknown variables are flagged in amber. A reference panel alongside the editor lists all valid variables for that specific template.
 
-### 17b. Template List
+### 16b. Template List
 
 **Auth**
 
@@ -743,29 +730,22 @@ Three actions on a client's active-package kebab, all written into the same immu
 | 13 | PT cancelled by admin | Admin/instructor cancels PT session (§7a) | Client | `{{client_name}}`, `{{instructor_name}}`, `{{date}}`, `{{sessions_returned}}` |
 | 14 | Workshop cancelled by admin | Admin cancels a workshop (§7a) | All attendees | `{{client_name}}`, `{{workshop_name}}`, `{{amount_refunded}}` |
 
-**Post-session**
-
-| # | Template | Trigger | Recipient | Key variables |
-|---|---|---|---|---|
-| 15 | Rating prompt — class | Check-in state flips to `completed` (§11) | Attended clients only | `{{client_name}}`, `{{class_name}}`, `{{instructor_name}}`, `{{date}}`, `{{rating_link}}` |
-| 16 | Rating prompt — workshop | Workshop event state flips to `completed` | All attendees | `{{client_name}}`, `{{workshop_name}}`, `{{instructor_name}}`, `{{date}}`, `{{rating_link}}` |
-
 **Packages**
 
 | # | Template | Trigger | Recipient | Key variables |
 |---|---|---|---|---|
-| 17 | Package purchase confirmed | Client purchases any package | Client | `{{client_name}}`, `{{package_name}}`, `{{amount_paid}}`, `{{credits_or_sessions}}`, `{{expiry_date}}` |
-| 18 | Credit expiry reminder | 7 days before credit bundle expiry (hardcoded) | Client | `{{client_name}}`, `{{package_name}}`, `{{credits_remaining}}`, `{{expiry_date}}`, `{{days_until_expiry}}` |
+| 15 | Package purchase confirmed | Client purchases any package | Client | `{{client_name}}`, `{{package_name}}`, `{{amount_paid}}`, `{{credits_or_sessions}}`, `{{expiry_date}}` |
+| 16 | Credit expiry reminder | 7 days before credit bundle expiry (hardcoded) | Client | `{{client_name}}`, `{{package_name}}`, `{{credits_remaining}}`, `{{expiry_date}}`, `{{days_until_expiry}}` |
 
 **Staff**
 
 | # | Template | Trigger | Recipient | Key variables |
 |---|---|---|---|---|
-| 19 | Instructor invite | Admin creates instructor profile (§15b) | New instructor | `{{instructor_name}}`, `{{studio_name}}`, `{{invite_link}}`, `{{expiry_days}}` |
-| 20 | Admin invite | Admin sends admin invite (§15b) | Invitee | `{{studio_name}}`, `{{invite_link}}`, `{{expiry_days}}` |
-| 21 | Check-in nag | Check-in still `pending` 24h after event end (§11) | Assigned instructor (cc admin) | `{{instructor_name}}`, `{{session_name}}`, `{{date}}`, `{{pending_count}}`, `{{checkin_link}}` |
+| 17 | Instructor invite | Admin creates instructor profile (§14b) | New instructor | `{{instructor_name}}`, `{{studio_name}}`, `{{invite_link}}`, `{{expiry_days}}` |
+| 18 | Admin invite | Admin sends admin invite (§14b) | Invitee | `{{studio_name}}`, `{{invite_link}}`, `{{expiry_days}}` |
+| 19 | Check-in nag | Check-in still `pending` 24h after event end (§11) | Assigned instructor (cc admin) | `{{instructor_name}}`, `{{session_name}}`, `{{date}}`, `{{pending_count}}`, `{{checkin_link}}` |
 
-### 17c. Template Editor
+### 16c. Template Editor
 
 **Fields:**
 - **Subject** — plain text input; supports variables.
@@ -784,35 +764,35 @@ Three actions on a client's active-package kebab, all written into the same immu
 
 ---
 
-## 18. Waivers
+## 17. Waivers
 
 Single studio-wide liability waiver. One page at `/admin/waivers`.
 
-### 18a. Waiver Text
+### 17a. Waiver Text
 
 - Admin edits the waiver body via a **rich text editor** (headings, bold, italic, bullet points, links).
 - Ships with seeded placeholder text for a fresh deployment.
 - Save replaces the current waiver body — no versioning, no rollback in v1.
 - Updating the text does **not** require existing signed clients to re-sign. Their original acceptance timestamp stands.
 
-### 18b. Client Signing
+### 17b. Client Signing
 
 - Waiver is presented during **registration** — client must tick an acceptance checkbox to complete account creation. Hard block: no account without acceptance.
 - Acceptance timestamp is recorded per client at the moment of sign-up.
 - No manual "mark as signed" action for admin — signing is self-service only.
 
-### 18c. Admin Visibility
+### 17c. Admin Visibility
 
-- **Client profile (§16b):** shows "Waiver signed — [date]" as a read-only field.
+- **Client profile (§15b):** shows "Waiver signed — [date]" as a read-only field.
 - **`/admin/waivers` page:** shows total signed count alongside the editor. No per-client list on this page — individual signed dates live on each client profile.
 
 ---
 
-## 19. Workshops (multi-day, under Packages)
+## 18. Workshops (multi-day, under Packages)
 
 Workshops are configured at `/admin/packages/workshops` — **workspace-scoped** (each workshop carries a `location_id`, so admins see only their workspace's workshops). They no longer have a creation surface in the scheduler (see §7c).
 
-### 19a. Data shape
+### 18a. Data shape
 
 **`Workshop`:**
 - `id`, `name`, `class_type_id`, `location_id`
@@ -836,13 +816,13 @@ Workshops are configured at `/admin/packages/workshops` — **workspace-scoped**
 - `early_bird_price_sgd: number | null`
 - `early_bird_cutoff_at: string | null`
 
-### 19b. Three-stage editor
+### 18b. Three-stage editor
 
 1. **Basics** — name, description, class type, location, instructors, cover + additional images.
 2. **Days** — date entry (range mode or individual dates) with per-day `start_time`, `end_time`, `base_price_sgd`, and `<CapacityFields />`.
 3. **Tiers** — at least one tier required. Each tier picks which `day_ids` it covers, a name, regular price, and optional early-bird price + cutoff.
 
-### 19c. Derived tier capacity
+### 18c. Derived tier capacity
 
 Tier capacity is **derived**, never stored:
 
@@ -852,26 +832,26 @@ tier.max_capacity = min(day.max_capacity for day in tier.day_ids)
 
 A tier can never sell more than the smallest constituent day's room. This handles "Full event" tiers (limited by the tightest day) and partial-coverage tiers (e.g. Day 1 only) uniformly.
 
-### 19d. Schedule rendering
+### 18d. Schedule rendering
 
 In the scheduler, each `WorkshopDay` auto-renders as one tile with a `Day N/M` chip — there is no separate "workshop instance" record. The scheduler's "+ Workshop" button is a *picker* of existing workshops, not a creation flow.
 
-### 19e. Cancellation
+### 18e. Cancellation
 
 Unchanged from prior spec: workshops are non-refundable and non-cancellable by clients. Only admin can cancel a workshop (full automatic Stripe refund to all attendees per §7a).
 
 ---
 
-## 20. Next Phase — Deferred Items
+## 19. Next Phase — Deferred Items
 
 The following sections are out of scope for this phase and will be defined in the next design cycle.
 
 | Section | Description |
 |---|---|
 | **Dashboard** | Admin landing page — key metrics (bookings, revenue, attendance), unread inbox count, pending check-in alerts, upcoming sessions snapshot. |
-| **Reports** | Aggregate analytics across instructors, class types, and locations — revenue, attendance rates, package sales, cancellation rates, rating trends. |
+| **Reports** | Aggregate analytics across instructors, class types, and locations — revenue, attendance rates, package sales, cancellation rates. |
 | **Audit log** | Immutable system-wide log of all admin actions — credit adjustments, cancellations, invites, status changes, role changes. Referenced throughout this doc as the record-keeping layer. |
 | **Referrals** | Referral program mechanics — reward type, trigger (registration vs. first purchase), admin-configurable reward amount, referral link or code generation. |
-| **Instructor portal** | Instructor-scoped admin view — own upcoming schedule, teaching log, ratings (own sessions only, comments anonymised), self-service profile edit. |
+| **Instructor portal** | Instructor-scoped admin view — own upcoming schedule, teaching log, self-service profile edit. |
 
 ---

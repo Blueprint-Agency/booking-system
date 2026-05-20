@@ -61,7 +61,6 @@ be/
     │   │   │                          #   pt_requests, pt_sessions, pt_session_clients
     │   │   ├── # availability.ts      # REMOVED in v1 — see §4f (replaced by pt_requests)
     │   │   ├── bookings.ts            # bookings, cancellations, check_ins
-    │   │   ├── ratings.ts             # ratings
     │   │   ├── ledger.ts              # manual_adjustments, audit_log, stripe_payments
     │   │   ├── content.ts             # email_templates, email_log, waiver, waiver_signatures, marketing_content
     │   │   ├── inbox.ts               # inbox_items
@@ -95,7 +94,6 @@ be/
     │   │   │   ├── bookings.ts        # admin cancel + roster
     │   │   │   ├── check-in.ts        # generic page + per-session (§11)
     │   │   │   ├── inbox.ts           # list, mark read, approve/decline PT (§13)
-    │   │   │   ├── ratings.ts         # read all (full attribution, §14)
     │   │   │   ├── clients.ts         # list, profile, status toggle, adjustments (§16)
     │   │   │   ├── staff.ts           # list, invite, revoke, archive, resend invite (§15)
     │   │   │   ├── notifications.ts   # email template editor (§17)
@@ -109,8 +107,7 @@ be/
     │   │       ├── check-in.ts        # own (QR + code + manual)
     │   │       ├── pt-requests.ts     # PT requests for own sessions
     │   │       │  # availability.ts   # REMOVED — Availability system gone (§4f)
-    │   │       ├── profile.ts         # own bio / photo
-    │   │       └── ratings.ts         # own (anonymised in service)
+    │   │       └── profile.ts         # own bio / photo
     │   │
     │   ├── client/                    # Owned by fe-client dev — client Clerk app + require-active
     │   │   ├── index.ts               # Mounts all client routers under /api/v1/me
@@ -120,7 +117,6 @@ be/
     │   │   ├── pt-sessions.ts         # submit request + view own + cancel
     │   │   ├── purchases.ts           # initiate Stripe checkout (package or workshop)
     │   │   ├── invoices.ts            # list, filter, receipt link
-    │   │   ├── ratings.ts             # submit + edit own + read attended
     │   │   ├── waiver.ts              # read for sign + sign endpoint
     │   │   └── referral.ts            # own referral code + conversion stats
     │   │
@@ -176,7 +172,6 @@ be/
     │   │   ├── dashboard.ts           # Next-up + balances aggregation
     │   │   └── admin-views.ts         # List + detail aggregations for admin clients page
     │   ├── inbox.ts                   # Insert / mark read / resolve action
-    │   ├── ratings.ts                 # Submit + edit + view-scoping anonymisation
     │   ├── waiver.ts                  # Read singleton + sign
     │   ├── marketing.ts               # Read + update marketing_content
     │   ├── referrals.ts               # Code generate + conversion grant via manual_adjustments
@@ -252,7 +247,7 @@ The `portal/*` prefix mirrors the staff Clerk app boundary: one auth gate for bo
 Per-audience endpoint enumeration, mount internals, middleware stacks, and business flows are documented in:
 
 - **`be-portal.md`** — staff Clerk auth (admin + instructor), endpoint tables per route file, portal-driven flows (staff invitations, schedule create, admin cancel + refund fanout, manual adjustments, PT approval, inbox, etc.).
-- **`be-client.md`** — client Clerk auth + verification gate, public reads, client endpoints, client-driven flows (registration, booking, self-cancel, purchases, referral conversion, ratings).
+- **`be-client.md`** — client Clerk auth + verification gate, public reads, client endpoints, client-driven flows (registration, booking, self-cancel, purchases, referral conversion).
 
 ### File ownership
 
@@ -335,6 +330,15 @@ All tables use `id uuid primary key default gen_random_uuid()` unless noted. Tim
 
 id, name (text, not null), address (text), gmaps_url (text), phone (text), archived_at (nullable).
 **Indexes:** `(archived_at)`.
+
+#### `rooms` — physical spaces, location-scoped
+
+id, location_id (uuid, FK → locations.id, on delete restrict, not null), name (text, not null), capacity (integer, not null, CHECK `> 0` — reference metadata only; does **not** cap a session's booking capacity), archived_at (nullable).
+**Indexes:** `(location_id, archived_at)`, unique `(location_id, lower(name))` so a location can't have two rooms with the same name.
+
+Every scheduled `classes` / `workshop_days` / `pt_sessions` row carries a `room_id` (nullable in DB so legacy rows survive; **required at the app layer** for new creates/reschedules). The scheduler hard-blocks two **active** sessions sharing a room at overlapping times, across all three tables (see `services/schedule/room-conflicts.ts`).
+
+**Archive blocking:** blocked if any active future `classes` / `workshop_days` / `pt_sessions` reference the room. Returns `409 room_in_use` with the offending ids.
 
 #### `class_types`
 
@@ -674,24 +678,6 @@ Workshop bookings cover **the tier**, not individual days. Per-day attendance / 
 id, booking_id (FK), checked_in_at, checked_in_by_staff_id (FK), method enum (`qr`, `code`, `manual`).
 **Indexes:** `(booking_id) unique` — at most one check-in per booking.
 
-### 4h. Ratings (§14)
-
-| Column | Type | Notes |
-|---|---|---|
-| id | uuid | PK |
-| booking_id | uuid | FK → bookings.id, unique — one rating per attended booking |
-| client_id | uuid | FK |
-| kind | enum | `class`, `workshop` (PT not rateable in v1) |
-| class_id, workshop_id | uuid | nullable — exactly one set per kind |
-| instructor_id | uuid | FK — denormalised for instructor profile aggregates |
-| stars | int | CHECK 1 ≤ stars ≤ 5 |
-| comment | text | nullable |
-| rated_at | timestamptz | not null |
-| edited_at | timestamptz | nullable |
-| edit_window_closes_at | timestamptz | not null — rated_at + 7 days |
-
-**Indexes:** `(class_id) where kind='class'`, `(workshop_id) where kind='workshop'`, `(instructor_id, rated_at desc)`.
-
 ### 4i. Ledger
 
 #### `manual_adjustments` (§16d)
@@ -740,8 +726,6 @@ pt_cancelled_forfeited
 admin_cancel_class
 admin_cancel_pt
 admin_cancel_workshop
-rating_prompt_class
-rating_prompt_workshop
 package_purchase_confirmed             # also fires for trial pass purchases — copy must read for both
 credit_expiry_reminder                 # also fires for trial pass expiry — template renderer branches on package kind to avoid "credits expiring" copy for trial
 instructor_invite

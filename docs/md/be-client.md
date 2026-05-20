@@ -101,7 +101,7 @@ Same shape as `routes/public/catalog.ts` but adds:
 | Method | Path | Effect |
 |---|---|---|
 | GET | `/bookings/upcoming` | `bookings WHERE client_id=me AND state='confirmed' AND session.starts_at >= now()`, joined to session detail |
-| GET | `/bookings/past` | Same but `starts_at < now()`, includes `check_in_state` and rating-eligible flag |
+| GET | `/bookings/past` | Same but `starts_at < now()`, includes `check_in_state` |
 | GET | `/bookings/:id` | Detail incl. QR URL + code |
 | GET | `/bookings/:id/qr` | Returns the QR image (PNG bytes) — no signed URL needed since the token is the auth |
 | POST | `/bookings/class` | `{ class_id, client_package_id }` — see §4a class booking flow |
@@ -137,14 +137,6 @@ Per `admin-restructure.md` §9 and `fe-client-features.md` §5.2, the client-fac
 |---|---|---|
 | GET | `/invoices` | List `stripe_payments` for this client. Filters: `?kind`, `?year`. Each row exposes `receipt_url` for the fe-client Download button. |
 | GET | `/invoices/:id` | Single payment detail |
-
-### `ratings.ts`
-| Method | Path | Effect |
-|---|---|---|
-| GET | `/ratings/eligible` | Bookings where `state='confirmed'` AND `check_in_state='attended'` AND no `ratings` row yet AND session ended within rating window |
-| GET | `/ratings/mine` | Own past ratings (incl. those past edit window — read-only there) |
-| POST | `/ratings/:bookingId` | `{ stars, comment? }` — insert rating. Service validates: booking belongs to me, attended, no existing rating, kind in {class, workshop} (PT not rateable). Sets `edit_window_closes_at = rated_at + 7 days`. |
-| PATCH | `/ratings/:bookingId` | `{ stars, comment? }` — only valid when `now() < edit_window_closes_at` |
 
 ### `waiver.ts`
 | Method | Path | Effect |

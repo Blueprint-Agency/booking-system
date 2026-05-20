@@ -35,9 +35,9 @@ Per `admin-restructure.md` Overview + §15a, admin surfaces partition into three
 
 | Bucket | Surfaces | Gate |
 |---|---|---|
-| **Global (superadmin-only)** | Locations, Class Types, Class Packages, PT Packages, Promotions, Global Policy, Notifications, Waiver, Staff | `requireRole('superadmin')` on the entire router |
-| **Workspace-scoped** | Schedule, Workshops, Check-in, Inbox | `requireRole('admin', 'superadmin')` **+ `requireWorkspaceScope`** middleware (below). Reads filter by `granted_location_ids`; writes reject if the target `location_id` is not in the set. |
-| **Workspace-agnostic** | PT Requests, Clients (read-only for admin), Ratings | `requireRole('admin', 'superadmin')`. No location filter. |
+| **Global (superadmin-only)** | Locations, Rooms, Class Types, Class Packages, Workshops, PT Packages, Promotions, Global Policy, Notifications, Waiver, Staff | `requireRole('superadmin')` on the entire router |
+| **Workspace-scoped** | Schedule, Check-in, Inbox | `requireRole('admin', 'superadmin')` **+ `requireWorkspaceScope`** middleware (below). Reads filter by `granted_location_ids`; writes reject if the target `location_id` is not in the set. |
+| **Workspace-agnostic** | PT Requests, Clients (read-only for admin) | `requireRole('admin', 'superadmin')`. No location filter. |
 
 ```ts
 // middleware/require-workspace-scope.ts
@@ -64,6 +64,19 @@ All endpoints are prefixed with `/api/v1/portal/admin`. Verbs and bodies are sum
 | POST | `/locations/:id/archive` | — | Set `archived_at = now()`. **Blocks** if any `classes` / `workshops` / `pt_sessions` reference this location AND have `lifecycle='active'` AND `ends_at > now()`. Returns `409 location_in_use` with the offending session list. |
 | POST | `/locations/:id/unarchive` | — | Clear `archived_at` |
 
+### `rooms.ts`
+Physical spaces, location-scoped. Building block under "Building Blocks" in fe-portal.
+| Method | Path | Body / params | Effect |
+|---|---|---|---|
+| GET | `/rooms` | `?location_id=&include_archived=true` | List `rooms` (optionally filtered to one location) |
+| GET | `/rooms/:id` | — | Detail |
+| POST | `/rooms` | `{ location_id, name, capacity }` | Insert. `capacity` must be ≥ 1. |
+| PATCH | `/rooms/:id` | `{ name?, capacity? }` | Update (location is immutable) |
+| POST | `/rooms/:id/archive` | — | Set `archived_at`. **Blocks** with `409 room_in_use` if any active future `classes` / `workshop_days` / `pt_sessions` reference it. |
+| POST | `/rooms/:id/unarchive` | — | Clear `archived_at` |
+
+**Scheduling integration.** `room_id` is now a **required** field on the create/reschedule paths for classes (`schedule.ts → POST /schedule/classes`), workshop days (`workshops.ts → POST/PATCH /workshops/:id/days`), and PT sessions (`pt-sessions approve`). The service layer validates the room belongs to the session's location (`400 room_location_mismatch` / `400 room_archived` / `404 room_not_found`) and that it is clash-free — two active sessions can't share a room at overlapping times, checked across all three tables. A clash returns `409 room_clash` with `{ conflicts: [{ kind, id, starts_at, ends_at }] }`.
+
 ### `class-types.ts`
 Same CRUD shape as locations. Archive is blocked if any non-archived `instructor_class_types` references the type, or any active future `classes` / `workshops` reference it.
 
@@ -71,7 +84,7 @@ Same CRUD shape as locations. Archive is blocked if any non-archived `instructor
 | Method | Path | Effect |
 |---|---|---|
 | GET | `/instructors` | List with `?status=pending|active|archived`, joins `staff_users` |
-| GET | `/instructors/:id` | Detail incl. `instructor_class_types` eligibility, photo presigned URL, recent ratings aggregate |
+| GET | `/instructors/:id` | Detail incl. `instructor_class_types` eligibility, photo presigned URL |
 | POST | `/instructors` | Create `staff_users` row (role=`instructor`, status=`pending`) + `instructors` row + `instructor_class_types` rows + auto-fires staff invitation (see §3a) |
 | PATCH | `/instructors/:id` | Update bio, phone override, eligible class types. Photo upload via presigned R2 PUT URL flow (see `backend-architecture.md` §6c). |
 | POST | `/instructors/:id/archive` | Set `staff_users.archived_at`, call Clerk `revokeAllSessions(clerk_user_id)`. Blocks on active future sessions where this instructor is assigned. |
@@ -192,12 +205,6 @@ Per `admin-restructure.md` §13, the Inbox is now a **read-only notification fee
 | GET | `/inbox` | List with `?type`, `?read`. Default sort created_at desc. Workspace-filtered. |
 | GET | `/inbox/unread-count` | For badge. Workspace-filtered. |
 | POST | `/inbox/:id/mark-read` | Set `read_at`, `read_by_staff_id` |
-
-### `ratings.ts`
-| Method | Path | Effect |
-|---|---|---|
-| GET | `/ratings` | All ratings with full attribution (client name, instructor name, session label). Filter by `?instructor_id`, `?class_id`, `?workshop_id`, `?from`, `?to` |
-| GET | `/ratings/instructor/:id/aggregate` | Average + count by month for instructor profile |
 
 ### `clients.ts`
 
@@ -403,12 +410,6 @@ Per `admin-restructure.md` §8, the Availability system is gone. Conflict checks
 |---|---|---|
 | GET | `/profile` | Own `instructors` row + name from `staff_users` |
 | PATCH | `/profile` | Update bio, phone override, photo (R2 presigned upload). Eligible class types not editable — that's an admin operation. |
-
-### `ratings.ts`
-| Method | Path | Effect |
-|---|---|---|
-| GET | `/ratings` | Own ratings, **anonymized** — service strips `client_id`, `comment` returned as-is, no client-name attribution. |
-| GET | `/ratings/aggregate` | Average + count by month |
 
 ---
 

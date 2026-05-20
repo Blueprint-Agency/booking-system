@@ -24,7 +24,7 @@ This is **not a multi-tenant SaaS**. There is no tenant entity, no slug routing,
 - Schedule + roster + check-in + private-session inbox + member ops on admin side
 - Refund-request inbox, cancellation/membership-pause inbox (admin acts out-of-app)
 - Email-only outbound notifications, with admin-editable templates
-- v1 report set: attendance, revenue, membership, teaching log, ratings, inbox throughput, referral attribution
+- v1 report set: attendance, revenue, membership, teaching log, inbox throughput, referral attribution
 - Audit trail across credit adjustments, refunds, session cancellations, waiver resets, impersonation
 - Two-location data model (cross-location packages, per-page location filter)
 
@@ -62,7 +62,7 @@ Anywhere the PRD specifies an "inbox" surface, this is the underlying pattern: a
 |---|---|---|---|
 | **Super-admin** | Teeko dev team / founder (platform operators) | `/super/health` | Platform/system ops + impersonation. **Does not touch business data directly** — when they need to act on a member or invoice, they impersonate a studio admin. |
 | **Studio admin** | Yoga Sadhana staff (founder, manager, front-desk) | `/admin` | Full business authority within Yoga Sadhana — schedule, packages, member profiles, refund inbox, settings, reports, notification templates. Single tier; no sub-roles in v1. |
-| **Instructor** | Yoga Sadhana instructors | `/admin/today` | Row-level scope: own classes, own roster (no member profiles), own private-session inbox, own availability, own profile, own teaching log + own ratings. **Never sees other instructors or aggregates.** |
+| **Instructor** | Yoga Sadhana instructors | `/admin/today` | Row-level scope: own classes, own roster (no member profiles), own private-session inbox, own availability, own profile, own teaching log. **Never sees other instructors or aggregates.** |
 
 ### 2.2 Permission matrix
 
@@ -89,7 +89,7 @@ Anywhere the PRD specifies an "inbox" surface, this is the underlying pattern: a
 | Manage instructor accounts (create / archive / set rate metadata) | ✗ | ✓ | ✗ |
 | Manage studio admin accounts (peer-add) | ✓ | ✓ | ✗ |
 | View revenue / attendance / membership reports | ✓ read-only | ✓ | ✗ |
-| View own teaching log + own class ratings | ✓ read-only | ✓ all instructors | ✓ own only |
+| View own teaching log | ✓ read-only | ✓ all instructors | ✓ own only |
 | Edit notification templates (factory / override) | ✓ factory only | ✓ override only | ✗ |
 | Resend a notification (support recovery) | via impersonation | ✓ | ✗ |
 | Toggle feature flags / view system health | ✓ | ✗ | ✗ |
@@ -109,8 +109,8 @@ Anywhere the PRD specifies an "inbox" surface, this is the underlying pattern: a
 **Row-level scope** applies only to Instructor:
 
 - Sees only rows where `instructor_id = self`
-- This applies to: class instances, rosters, private-session requests, teaching log, ratings, availability, profile.
-- Never sees: other instructors' rosters, member profiles, invoices, credits, revenue, peer ratings.
+- This applies to: class instances, rosters, private-session requests, teaching log, availability, profile.
+- Never sees: other instructors' rosters, member profiles, invoices, credits, revenue.
 
 **Hard rule:** every entity that has a physical-presence dimension carries `location_id`. Per-page filters must not silently include other locations. Cross-location packages are an explicit exception — credits and sessions are usable at either site.
 
@@ -275,7 +275,7 @@ Listed as **surface name → 1-line purpose → role visibility**. UX detail in 
 | **Packages catalog** | CRUD on Bundles / Unlimited / Private VIP; validity window editor; price editor; archive. | Studio admin |
 | **Manual grants** | Issue a package (or raw credit/session count) to a client; mandatory reason; mutex resolution per §3.6. | Studio admin |
 | **Clients** | List + detail. Detail shows: profile, membership state, balance, booking history, invoices, audit timeline, waiver state, manual-adjust controls, force-logout, password reset, referral graph view. | Studio admin |
-| **Instructors** | List + detail. Create / archive / set per-session rate (override). View teaching log + ratings for any instructor. | Studio admin |
+| **Instructors** | List + detail. Create / archive / set per-session rate (override). View teaching log for any instructor. | Studio admin |
 | **Private-session inbox** | All-instructors view, read-only by default; SLA chips; can take over any request (records "on behalf of"). | Studio admin |
 | **Refund-request inbox** | Open / resolved / declined queue; admin notes; out-of-app pattern (§1.4). | Studio admin |
 | **Membership-cancellation inbox** | Same shape as refund inbox; out-of-app. | Studio admin |
@@ -296,7 +296,6 @@ Listed as **surface name → 1-line purpose → role visibility**. UX detail in 
 | **Private-session inbox** | Own pending requests; approve (optional note) / decline (mandatory reason). | Instructor (own) |
 | **Profile** | Editable bio, photo, per-session rate (subject to admin override). | Instructor (own) |
 | **Teaching log** | History of own classes by state (scheduled / completed / cancelled); informs external pay. | Instructor (own) |
-| **Class ratings** | Aggregate rating per own class; no peer comparison. | Instructor (own) |
 
 Instructors do not see: any client profile beyond roster row, any other instructor, any aggregate report, any financial surface, any settings page, any notification editor.
 
@@ -370,7 +369,6 @@ Super-admin does not see (without impersonating): a "Refund" button, a credit-ad
 
 1. Class instance state flips to `completed` automatically after end time.
 2. Teaching log row created.
-3. Class-rating prompt fires to attended clients via `class-rated.email` (if enabled). Rating appears in instructor's **Class ratings** view (own only) with no peer comparison.
 
 #### 6.2.4 Weekly availability update
 
@@ -476,7 +474,6 @@ Admin-side **inbox surfaces** (refund / cancellation / private-session) are dash
 | **Revenue** | Package sales by type / location / period; payment method mix; outstanding balances; workshop ticket revenue (separate line). |
 | **Membership** | Active / expired / lapsing-soon clients; bundle vs unlimited mix; signed-waiver vs lapsed-waiver counts; churn signals (no booking in 30/60/90d). |
 | **Teaching log** | Classes scheduled / completed / cancelled per instructor per period. Powers external pay calc. |
-| **Class ratings** | Avg rating per class, per instructor (post-class survey). |
 | **Inbox throughput** | Refund / cancellation / private-session request counts and time-to-resolution by state. |
 | **Referral attribution** | Who referred whom, referral → first-purchase conversion rate. |
 
@@ -494,7 +491,6 @@ Admin-side **inbox surfaces** (refund / cancellation / private-session) are dash
 | Revenue | ✓ full | ✗ | ✓ read-only |
 | Membership | ✓ full | ✗ | ✓ read-only |
 | Teaching log | ✓ all instructors | ✓ own only | ✓ read-only |
-| Class ratings | ✓ all | ✓ own only, no peer comparison | ✓ read-only |
 | Inbox throughput | ✓ full | ✗ | ✓ read-only |
 | Referral attribution | ✓ full | ✗ | ✓ read-only |
 
