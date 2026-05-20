@@ -33,11 +33,13 @@ function ClassRow({
   cls,
   showLocation,
   canBook,
+  canBookLoaded,
   isSignedIn,
 }: {
   cls: ApiClassCard;
   showLocation: boolean;
   canBook: boolean;
+  canBookLoaded: boolean;
   isSignedIn: boolean;
 }) {
   const router = useRouter();
@@ -53,7 +55,7 @@ function ClassRow({
       router.push(`/login?next=${encodeURIComponent("/classes")}`);
       return;
     }
-    if (!canBook) {
+    if (canBookLoaded && !canBook) {
       setShowNoPackage(true);
       return;
     }
@@ -80,7 +82,7 @@ function ClassRow({
           </span>
         </div>
         <span className="inline-flex items-center rounded-full bg-sage/15 text-accent-deep px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider">
-          {cls.class_type.name}
+          Yoga
         </span>
       </div>
 
@@ -97,7 +99,7 @@ function ClassRow({
       {/* Desktop: Tag + class name + instructor */}
       <div className="hidden md:flex md:flex-col">
         <span className="inline-flex items-center self-start rounded-full bg-sage/15 text-accent-deep px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider mb-1">
-          {cls.class_type.name}
+          Yoga
         </span>
         <h4 className={cn("font-serif text-[15px] leading-snug", isFull ? "text-muted" : "text-ink")}>
           {cls.class_type.name}
@@ -272,7 +274,7 @@ export default function ClassesPage() {
   });
   const { data: locations } = useLocations();
   const { isSignedIn } = useUser();
-  const { canBook } = useCanBookClass();
+  const { canBook, loaded: canBookLoaded } = useCanBookClass();
 
   const all = useMemo(() => classes ?? [], [classes]);
 
@@ -446,6 +448,7 @@ export default function ClassesPage() {
                 cls={c}
                 showLocation={showLocationBadge}
                 canBook={canBook}
+                canBookLoaded={canBookLoaded}
                 isSignedIn={!!isSignedIn}
               />
             ))
