@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Plus, Pencil, Archive, Save, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { Button, PageHeader, Badge, EmptyState, Input, Label } from "@/components/ui";
+import { Button, PageHeader, Badge, EmptyState, Input, Label, Tabs, TabsList, TabsTrigger } from "@/components/ui";
 import { PtPackageDialog } from "@/components/packages/pt-package-dialog";
 import { formatSgd } from "@/lib/formatters";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -48,6 +48,7 @@ export default function PrivateSessionsPage() {
   const [dialog, setDialog] = useState<
     { kind: "create" } | { kind: "edit"; pkg: PtPackage } | null
   >(null);
+  const [view, setView] = useState<"active" | "archived">("active");
 
   const load = useCallback(async () => {
     if (!api) return;
@@ -211,22 +212,40 @@ export default function PrivateSessionsPage() {
         {packages.length === 0 ? (
           <EmptyState title="No PT packages yet" description="Add your first private session package." />
         ) : (
-          <div className="space-y-6">
-            <PackageGroup
-              title="Active"
-              packages={active}
-              onEdit={(pkg) => setDialog({ kind: "edit", pkg })}
-              onArchive={archive}
-            />
-            {archived.length > 0 && (
-              <PackageGroup
-                title="Archived"
-                packages={archived}
-                onEdit={(pkg) => setDialog({ kind: "edit", pkg })}
-                onArchive={archive}
-                archived
-              />
+          <div>
+            {active.length + archived.length > 0 && (
+              <Tabs value={view} onValueChange={(v) => setView(v as "active" | "archived")} className="mb-6">
+                <TabsList>
+                  <TabsTrigger value="active">Active ({active.length})</TabsTrigger>
+                  <TabsTrigger value="archived">Archived ({archived.length})</TabsTrigger>
+                </TabsList>
+              </Tabs>
             )}
+            {view === "active" && (
+              <div className="space-y-6">
+                <PackageGroup
+                  title="Active"
+                  packages={active}
+                  onEdit={(pkg) => setDialog({ kind: "edit", pkg })}
+                  onArchive={archive}
+                />
+              </div>
+            )}
+            {view === "archived" &&
+              (archived.length === 0 ? (
+                <EmptyState
+                  title="No archived PT packages"
+                  description="Archived PT packages will appear here."
+                />
+              ) : (
+                <PackageGroup
+                  title="Archived"
+                  packages={archived}
+                  onEdit={(pkg) => setDialog({ kind: "edit", pkg })}
+                  onArchive={archive}
+                  archived
+                />
+              ))}
           </div>
         )}
       </section>

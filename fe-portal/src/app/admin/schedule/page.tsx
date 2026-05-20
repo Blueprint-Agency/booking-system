@@ -53,7 +53,7 @@ interface ApiWorkshop {
   lifecycle: "active" | "cancelled";
 }
 
-const TODAY = new Date("2026-05-10");
+const TODAY = new Date();
 const HOUR_START = 7;
 const HOUR_END = 22;
 const HOUR_HEIGHT = 56;
@@ -574,7 +574,7 @@ function MonthView({ monthStart, entries }: { monthStart: Date; entries: Entry[]
                   {format(day, "d")}
                 </span>
                 {dayEntries.length > 0 && (
-                  <span className="text-[10px] font-mono text-muted">
+                  <span className="rounded-full bg-paper px-1.5 text-[10px] font-semibold tabular-nums text-muted">
                     {dayEntries.length}
                   </span>
                 )}
@@ -585,14 +585,14 @@ function MonthView({ monthStart, entries }: { monthStart: Date; entries: Entry[]
                     <Link
                       href={`/admin/schedule/${e.kind}/${e.kind === "workshop" ? e.raw.id : e.id}`}
                       className={cn(
-                        "block truncate rounded-sm border-l-2 px-1.5 py-0.5 text-[11px] font-medium transition-colors hover:opacity-80",
+                        "flex items-center gap-1 truncate rounded-md border-l-[3px] px-1.5 py-1 text-[11px] font-medium ring-1 ring-inset ring-current/10 transition-all hover:-translate-y-px hover:shadow-sm",
                         kindClasses(e)
                       )}
                       title={`${formatTime(e.startsAt)} · ${e.label}`}
                     >
-                      <span className="font-mono text-[10px] opacity-80">
+                      <span className="shrink-0 text-[10px] font-semibold tabular-nums opacity-80">
                         {formatTime(e.startsAt).replace("m", "")}
-                      </span>{" "}
+                      </span>
                       <span className="truncate">{e.label}</span>
                     </Link>
                   </li>
@@ -626,7 +626,7 @@ function TimeGutter() {
             style={{ height: HOUR_HEIGHT }}
           >
             {idx > 0 && (
-              <span className="absolute -top-2 right-2 font-mono text-[10px] text-muted">
+              <span className="absolute -top-2 right-2 text-[10px] font-medium tabular-nums text-muted">
                 {formatHour(h)}
               </span>
             )}
@@ -826,33 +826,33 @@ function EventBlock({
         width: `calc(${width}% - 4px)`,
       }}
       className={cn(
-        "absolute flex flex-col overflow-hidden rounded-md border-l-2 px-2 py-1 text-[11px] leading-tight shadow-soft transition-all hover:shadow-hover hover:z-10",
+        "absolute flex flex-col overflow-hidden rounded-lg border-l-[3px] px-2.5 py-1.5 leading-tight ring-1 ring-inset ring-current/10 shadow-sm transition-all duration-150 hover:z-10 hover:-translate-y-px hover:shadow-hover",
         kindClasses(entry),
         entry.eventState === "cancelled" && "opacity-60 line-through"
       )}
       title={`${formatTime(entry.startsAt)}–${formatTime(entry.endsAt)} · ${entry.label}`}
     >
-      <div className="flex items-center gap-1 font-mono text-[10px] opacity-80">
+      <div className="flex items-center gap-1 text-[10px] font-semibold tabular-nums opacity-80">
         <span>{formatTime(entry.startsAt)}</span>
         {!compact && (
-          <span className="opacity-60">–{formatTime(entry.endsAt)}</span>
+          <span className="font-normal opacity-60">– {formatTime(entry.endsAt)}</span>
         )}
       </div>
       <div className="flex items-center gap-1.5">
-        <span className="truncate font-semibold">{entry.label}</span>
+        <span className="truncate text-[11px] font-semibold tracking-tight">{entry.label}</span>
         {dayChip && (
-          <span className="shrink-0 rounded-sm bg-current/20 px-1 text-[9px] font-bold uppercase opacity-90">
+          <span className="shrink-0 rounded bg-current/15 px-1 py-px text-[9px] font-bold uppercase tracking-wide">
             {dayChip}
           </span>
         )}
       </div>
       {!compact && !dense && (
-        <div className="mt-0.5 truncate opacity-80">{subtitle}</div>
+        <div className="mt-0.5 truncate text-[10px] opacity-75">{subtitle}</div>
       )}
       {!compact && (
-        <div className="mt-auto flex items-center justify-between font-mono text-[10px] opacity-70">
-          <span className="uppercase tracking-wider">{entry.kind}</span>
-          <span>
+        <div className="mt-auto flex items-center justify-between pt-0.5 text-[10px] opacity-70">
+          <span className="font-semibold uppercase tracking-[0.08em]">{entry.kind}</span>
+          <span className="tabular-nums font-medium">
             {entry.bookedCount}/{entry.capacity}
           </span>
         </div>

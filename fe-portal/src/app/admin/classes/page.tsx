@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Plus, Pencil, Archive, AlertTriangle, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { Button, PageHeader, Badge, EmptyState } from "@/components/ui";
+import { Button, PageHeader, Badge, EmptyState, Tabs, TabsList, TabsTrigger } from "@/components/ui";
 import { ClassPackageDialog } from "@/components/packages/class-package-dialog";
 import { formatSgd } from "@/lib/formatters";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -50,6 +50,7 @@ export default function ClassPackagesPage() {
   const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] =
     useState<{ kind: "create" } | { kind: "edit"; pkg: ClassPackage } | null>(null);
+  const [view, setView] = useState<"active" | "archived">("active");
 
   const load = useCallback(async () => {
     if (!api) return;
@@ -150,43 +151,61 @@ export default function ClassPackagesPage() {
           }
         />
       ) : (
-        <div className="space-y-6">
-          <PackageGroup
-            title="Trial Pass"
-            description="A one-time-only introductory pass. Each client can purchase at most one."
-            packages={active.filter((p) => p.kind === "trial")}
-            onEdit={(pkg) => setDialog({ kind: "edit", pkg })}
-            onArchive={archive}
-            warning={
-              activeTrials.length > 1
-                ? "Multiple active trial passes — clients will see the first."
-                : null
-            }
-          />
-          <PackageGroup
-            title="Credit bundles"
-            description="Fixed number of credits valid for a period."
-            packages={active.filter((p) => p.kind === "credit_bundle")}
-            onEdit={(pkg) => setDialog({ kind: "edit", pkg })}
-            onArchive={archive}
-          />
-          <PackageGroup
-            title="Unlimited"
-            description="Time-based passes — unlimited classes for a duration."
-            packages={active.filter((p) => p.kind === "unlimited")}
-            onEdit={(pkg) => setDialog({ kind: "edit", pkg })}
-            onArchive={archive}
-          />
-          {archived.length > 0 && (
-            <PackageGroup
-              title="Archived"
-              description={null}
-              packages={archived}
-              onEdit={(pkg) => setDialog({ kind: "edit", pkg })}
-              onArchive={archive}
-              archived
-            />
+        <div>
+          {active.length + archived.length > 0 && (
+            <Tabs value={view} onValueChange={(v) => setView(v as "active" | "archived")} className="mb-6">
+              <TabsList>
+                <TabsTrigger value="active">Active ({active.length})</TabsTrigger>
+                <TabsTrigger value="archived">Archived ({archived.length})</TabsTrigger>
+              </TabsList>
+            </Tabs>
           )}
+          {view === "active" && (
+            <div className="space-y-6">
+              <PackageGroup
+                title="Trial Pass"
+                description="A one-time-only introductory pass. Each client can purchase at most one."
+                packages={active.filter((p) => p.kind === "trial")}
+                onEdit={(pkg) => setDialog({ kind: "edit", pkg })}
+                onArchive={archive}
+                warning={
+                  activeTrials.length > 1
+                    ? "Multiple active trial passes — clients will see the first."
+                    : null
+                }
+              />
+              <PackageGroup
+                title="Credit bundles"
+                description="Fixed number of credits valid for a period."
+                packages={active.filter((p) => p.kind === "credit_bundle")}
+                onEdit={(pkg) => setDialog({ kind: "edit", pkg })}
+                onArchive={archive}
+              />
+              <PackageGroup
+                title="Unlimited"
+                description="Time-based passes — unlimited classes for a duration."
+                packages={active.filter((p) => p.kind === "unlimited")}
+                onEdit={(pkg) => setDialog({ kind: "edit", pkg })}
+                onArchive={archive}
+              />
+            </div>
+          )}
+          {view === "archived" &&
+            (archived.length === 0 ? (
+              <EmptyState
+                title="No archived packages"
+                description="Archived packages will appear here."
+              />
+            ) : (
+              <PackageGroup
+                title="Archived"
+                description={null}
+                packages={archived}
+                onEdit={(pkg) => setDialog({ kind: "edit", pkg })}
+                onArchive={archive}
+                archived
+              />
+            ))}
         </div>
       )}
 

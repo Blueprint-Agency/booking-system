@@ -12,6 +12,32 @@ export function effectivePrice(base: number, promo: Promotion): number {
   return base;
 }
 
+/**
+ * Returns the set of promotion ids whose date range overlaps at least one other
+ * promotion. Ranges are inclusive on both ends (`endsAt` is stored as 23:59:59),
+ * so two promos conflict when `a.startsAt <= b.endsAt && b.startsAt <= a.endsAt`.
+ * A package may carry many promos over time, but no two may be active on the same
+ * day — otherwise the effective price for that day is ambiguous.
+ */
+export function overlappingPromotionIds(promotions: Promotion[]): Set<string> {
+  const conflicts = new Set<string>();
+  for (let i = 0; i < promotions.length; i++) {
+    for (let j = i + 1; j < promotions.length; j++) {
+      const a = promotions[i];
+      const b = promotions[j];
+      if (a.startsAt <= b.endsAt && b.startsAt <= a.endsAt) {
+        conflicts.add(a.id);
+        conflicts.add(b.id);
+      }
+    }
+  }
+  return conflicts;
+}
+
+export function hasPromotionOverlap(promotions: Promotion[]): boolean {
+  return overlappingPromotionIds(promotions).size > 0;
+}
+
 export function getActivePromotion(pkg: Priced, now: Date = new Date()): Promotion | null {
   const nowIso = now.toISOString();
   const active = pkg.promotions.filter((p) => p.startsAt <= nowIso && nowIso <= p.endsAt);

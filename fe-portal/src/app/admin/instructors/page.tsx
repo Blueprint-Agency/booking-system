@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Plus, Mail, Phone, Loader2 } from "lucide-react";
-import { Button, PageHeader, Badge, EmptyState, Avatar } from "@/components/ui";
+import { Button, PageHeader, Badge, EmptyState, Avatar, Tabs, TabsList, TabsTrigger } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import type { Instructor } from "@/types";
@@ -37,6 +37,7 @@ export default function InstructorsPage() {
   const [instructors, setInstructors] = useState<Instructor[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [view, setView] = useState<"active" | "archived">("active");
 
   const load = useCallback(async () => {
     if (!api) return;
@@ -75,6 +76,15 @@ export default function InstructorsPage() {
         }
       />
 
+      {!loading && !error && active.length + archived.length > 0 && (
+        <Tabs value={view} onValueChange={(v) => setView(v as "active" | "archived")} className="mb-6">
+          <TabsList>
+            <TabsTrigger value="active">Active ({active.length})</TabsTrigger>
+            <TabsTrigger value="archived">Archived ({archived.length})</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      )}
+
       {loading ? (
         <SkeletonGrid />
       ) : error ? (
@@ -84,30 +94,35 @@ export default function InstructorsPage() {
             <Loader2 className="h-3.5 w-3.5" /> Retry
           </Button>
         </div>
-      ) : active.length === 0 ? (
+      ) : active.length === 0 && archived.length === 0 ? (
         <EmptyState
           title="No instructors yet"
           description="Add your first instructor to begin scheduling classes."
         />
-      ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {active.map((ins) => (
-            <InstructorCard key={ins.id} instructor={ins} />
-          ))}
-        </div>
-      )}
-
-      {archived.length > 0 && (
-        <>
-          <h2 className="mb-3 mt-10 text-xs font-semibold uppercase tracking-wider text-muted">
-            Archived
-          </h2>
+      ) : view === "active" ? (
+        active.length === 0 ? (
+          <EmptyState
+            title="No instructors yet"
+            description="Add your first instructor to begin scheduling classes."
+          />
+        ) : (
           <div className="grid gap-3 sm:grid-cols-2">
-            {archived.map((ins) => (
+            {active.map((ins) => (
               <InstructorCard key={ins.id} instructor={ins} />
             ))}
           </div>
-        </>
+        )
+      ) : archived.length === 0 ? (
+        <EmptyState
+          title="No archived instructors"
+          description="Archived instructors will appear here."
+        />
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {archived.map((ins) => (
+            <InstructorCard key={ins.id} instructor={ins} />
+          ))}
+        </div>
       )}
     </div>
   );

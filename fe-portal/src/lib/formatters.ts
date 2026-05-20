@@ -24,6 +24,11 @@ export function formatRelative(iso: string): string {
   return formatDistanceToNow(parseISO(iso), { addSuffix: true });
 }
 
+/** Today's local date as `yyyy-MM-dd`, for use as the `min` of a date input. */
+export function todayIso(): string {
+  return format(new Date(), "yyyy-MM-dd");
+}
+
 export function formatDuration(startsAt: string, endsAt: string): string {
   const ms = parseISO(endsAt).getTime() - parseISO(startsAt).getTime();
   const minutes = Math.round(ms / 60000);

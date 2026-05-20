@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Menu, X } from "lucide-react";
+import { Menu, X, MapPin, Settings, ChevronDown } from "lucide-react";
 import { createPortal } from "react-dom";
 import { NAV_ITEMS, NAV_GROUP_ORDER, type NavItem, type NavGroup } from "./nav-items";
 import { inboxItems, ptRequests } from "@/data";
@@ -25,73 +25,216 @@ function NavBrand() {
   return (
     <Link
       href="/admin/schedule"
-      className="flex items-center gap-2 px-5 pt-5 pb-2 text-sm font-semibold tracking-wide text-ink hover:text-accent"
+      className="group flex items-center gap-2.5 px-4 py-4 text-sm font-semibold tracking-tight text-ink"
     >
-      <span className="grid h-7 w-7 place-items-center rounded-md bg-accent text-[11px] font-bold text-white">
+      <span className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-accent to-accent-deep text-[11px] font-bold text-white shadow-sm transition-transform group-hover:scale-105">
         YS
       </span>
-      Yoga Sadhana
+      <span className="group-hover:text-accent">Yoga Sadhana</span>
     </Link>
   );
 }
 
+function NavLinkList({
+  items,
+  pathname,
+  onNavigate,
+  onAccent,
+  staggered,
+}: {
+  items: NavItem[];
+  pathname: string;
+  onNavigate?: () => void;
+  /** Rendered on an accent-tinted surface (the location band) — tweak hover/active for contrast. */
+  onAccent?: boolean;
+  /** Cascade each row in with a slide (used in the keyed location zone on workspace switch). */
+  staggered?: boolean;
+}) {
+  return (
+    <ul className="space-y-0.5">
+      {items.map((item, idx) => {
+        const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+        const badge = getBadge(item.badgeKey);
+        return (
+          <li
+            key={item.href}
+            className={staggered ? "animate-slide-in-left" : undefined}
+            style={staggered ? { animationDelay: `${idx * 45}ms` } : undefined}
+          >
+            <Link
+              href={item.href}
+              onClick={onNavigate}
+              aria-current={isActive ? "page" : undefined}
+              className={cn(
+                "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-150",
+                isActive
+                  ? "bg-accent/10 font-medium text-accent"
+                  : onAccent
+                  ? "text-ink/75 hover:bg-accent/[0.08] hover:text-ink"
+                  : "text-ink/90 hover:bg-warm/70 hover:text-ink"
+              )}
+            >
+              {isActive && (
+                <span
+                  aria-hidden="true"
+                  className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-accent"
+                />
+              )}
+              <item.icon
+                className={cn(
+                  "h-[18px] w-[18px] shrink-0 transition-colors",
+                  isActive ? "text-accent" : "text-muted group-hover:text-ink"
+                )}
+              />
+              <span className="flex-1 truncate">{item.label}</span>
+              {badge !== undefined && (
+                <span
+                  className={cn(
+                    "inline-flex min-w-[20px] justify-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums",
+                    isActive ? "bg-accent/15 text-accent" : "bg-warning/20 text-warning"
+                  )}
+                >
+                  {badge}
+                </span>
+              )}
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function CollapsibleNavGroup({
+  label,
+  items,
+  pathname,
+  onNavigate,
+}: {
+  label: string;
+  items: NavItem[];
+  pathname: string;
+  onNavigate?: () => void;
+}) {
+  const hasActiveChild = items.some(
+    (i) => pathname === i.href || pathname.startsWith(i.href + "/")
+  );
+  const [open, setOpen] = useState(hasActiveChild);
+  // Auto-open when navigating into one of its children.
+  useEffect(() => {
+    if (hasActiveChild) setOpen(true);
+  }, [hasActiveChild]);
+
+  return (
+    <div className="mb-5">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className={cn(
+          "group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-150",
+          hasActiveChild ? "font-medium text-ink" : "text-ink/90 hover:bg-warm/70 hover:text-ink"
+        )}
+      >
+        <Settings
+          className={cn(
+            "h-[18px] w-[18px] shrink-0 transition-colors",
+            hasActiveChild ? "text-accent" : "text-muted group-hover:text-ink"
+          )}
+        />
+        <span className="flex-1 text-left font-medium">{label}</span>
+        <ChevronDown
+          className={cn(
+            "h-4 w-4 shrink-0 text-muted transition-transform duration-200",
+            open ? "" : "-rotate-90"
+          )}
+        />
+      </button>
+      {open && (
+        <div className="ml-[18px] mt-0.5 border-l border-border/70 pl-2">
+          <NavLinkList items={items} pathname={pathname} onNavigate={onNavigate} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function NavContent({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
-  const { role } = useWorkspace();
+  const { role, activeLocationId, accessibleLocations } = useWorkspace();
   const visibleItems = NAV_ITEMS.filter((item) => {
     if (item.scope === "both") return true;
     if (role === "superadmin") return true; // superadmin sees everything
     return item.scope === "workspace"; // admin sees workspace + both
   });
+
+  // Workspace zone: switcher-controlled surfaces, rendered first under the active location name.
+  const workspaceItems = visibleItems.filter((i) => i.workspaceScoped);
+  const activeLocationName =
+    accessibleLocations.find((l) => l.id === activeLocationId)?.name ?? "Workspace";
+
+  // Everything else, grouped by functional group.
   const groupedItems: Record<NavGroup, NavItem[]> = NAV_GROUP_ORDER.reduce(
     (acc, group) => {
-      acc[group] = visibleItems.filter((i) => i.group === group);
+      acc[group] = visibleItems.filter((i) => !i.workspaceScoped && i.group === group);
       return acc;
     },
     {} as Record<NavGroup, NavItem[]>
   );
 
   return (
-    <div className="px-2 pt-2 pb-6">
+    <div className="px-2.5 pt-1 pb-6">
+      {workspaceItems.length > 0 && (
+        <div className="mb-5 -mx-2.5 overflow-hidden border-b border-border px-2.5 pb-2.5">
+          {/* Keyed on the active location so the content slides in on each workspace switch. */}
+          <div key={activeLocationId ?? "none"} className="animate-slide-in-left">
+            <div className="mb-1 flex items-center gap-2.5 px-2 pt-0.5 pb-1.5">
+              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-paper text-muted ring-1 ring-inset ring-border">
+                <MapPin className="h-[18px] w-[18px]" />
+              </span>
+              <div className="min-w-0">
+                <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-muted">
+                  This location
+                </div>
+                <div
+                  className="truncate text-[13px] font-semibold leading-tight text-ink"
+                  title={activeLocationName}
+                >
+                  {activeLocationName}
+                </div>
+              </div>
+            </div>
+            <NavLinkList
+              items={workspaceItems}
+              pathname={pathname}
+              onNavigate={onNavigate}
+              staggered
+            />
+          </div>
+        </div>
+      )}
+
       {NAV_GROUP_ORDER.map((group) => {
         const items = groupedItems[group];
         if (items.length === 0) return null; // hide empty groups for admin
+        // Settings is a single collapsible disclosure that nests all its items.
+        if (group === "Settings") {
+          return (
+            <CollapsibleNavGroup
+              key={group}
+              label="Settings"
+              items={items}
+              pathname={pathname}
+              onNavigate={onNavigate}
+            />
+          );
+        }
         return (
-        <div key={group} className="mb-3">
-          <div className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted">
-            {group}
+          <div key={group} className="mb-5">
+            <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-muted/70">
+              {group}
+            </div>
+            <NavLinkList items={items} pathname={pathname} onNavigate={onNavigate} />
           </div>
-          <ul className="space-y-0.5">
-            {items.map((item) => {
-              const isActive =
-                pathname === item.href || pathname.startsWith(item.href + "/");
-              const badge = getBadge(item.badgeKey);
-              return (
-                <li key={item.href}>
-                  <Link
-                    href={item.href}
-                    onClick={onNavigate}
-                    className={cn(
-                      "group flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
-                      isActive
-                        ? "bg-accent/10 font-medium text-accent"
-                        : "text-ink hover:bg-paper"
-                    )}
-                  >
-                    <item.icon
-                      className={cn("h-4 w-4 shrink-0", isActive ? "text-accent" : "text-muted")}
-                    />
-                    <span className="flex-1">{item.label}</span>
-                    {badge !== undefined && (
-                      <span className="inline-flex min-w-[20px] justify-center rounded-full bg-warning/20 px-1.5 py-0.5 text-[11px] font-semibold text-warning">
-                        {badge}
-                      </span>
-                    )}
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
         );
       })}
     </div>

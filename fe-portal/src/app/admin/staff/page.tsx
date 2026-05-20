@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import {
   Plus,
@@ -8,6 +9,7 @@ import {
   X,
   Shield,
   ShieldCheck,
+  ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -16,9 +18,13 @@ import {
   Button,
   Dialog,
   DialogFooter,
+  EmptyState,
   Input,
   Label,
   PageHeader,
+  Tabs,
+  TabsList,
+  TabsTrigger,
 } from "@/components/ui";
 import { ApiError } from "@/lib/api";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -59,10 +65,14 @@ interface StaffListResponse {
 
 // ---------------- Page ----------------
 
+type StaffTab = "admin" | "instructors";
+
 export default function StaffPage() {
   const { api, currentStaff, locations } = useWorkspace();
   const [staff, setStaff] = useState<StaffApiRow[]>([]);
   const [invites, setInvites] = useState<InvitationApiRow[]>([]);
+  const [tab, setTab] = useState<StaffTab>("admin");
+  const [view, setView] = useState<"active" | "archived">("active");
   const [loading, setLoading] = useState(true);
   const [inviteDialog, setInviteDialog] = useState(false);
   const [revokeTarget, setRevokeTarget] = useState<InvitationApiRow | null>(null);
@@ -121,9 +131,21 @@ export default function StaffPage() {
       setArchiveBusy(false);
     }
   }
-  const active = staff.filter(s => s.status !== "archived");
-  const archived = staff.filter(s => s.status === "archived");
-  const pendingInvites = invites.filter(i => i.status === "pending");
+  const roleInTab = (role: StaffApiRow["role"], t: StaffTab) =>
+    t === "instructors" ? role === "instructor" : role === "admin" || role === "superadmin";
+
+  const tabStaff = staff.filter(s => roleInTab(s.role, tab));
+  const active = tabStaff.filter(s => s.status !== "archived");
+  const archived = tabStaff.filter(s => s.status === "archived");
+  const pendingInvites = invites.filter(i => i.status === "pending" && roleInTab(i.role, tab));
+
+  // Active counts per tab for the tab labels.
+  const adminCount = staff.filter(
+    s => s.status !== "archived" && roleInTab(s.role, "admin"),
+  ).length;
+  const instructorCount = staff.filter(
+    s => s.status !== "archived" && roleInTab(s.role, "instructors"),
+  ).length;
 
   async function handleInvite(
     email: string,
@@ -202,12 +224,41 @@ export default function StaffPage() {
         description="Admins and instructors. Roles are mutually exclusive — one email holds one staff account. Archived accounts can never be hard-deleted (audit log integrity)."
         actions={
           isSuperadmin ? (
-            <Button onClick={() => setInviteDialog(true)}>
-              <Plus className="h-4 w-4" /> Invite staff
-            </Button>
+            tab === "admin" ? (
+              <Button onClick={() => setInviteDialog(true)}>
+                <Plus className="h-4 w-4" /> Invite staff
+              </Button>
+            ) : (
+              <Link href="/admin/instructors/new">
+                <Button>
+                  <Plus className="h-4 w-4" /> Add instructor
+                </Button>
+              </Link>
+            )
           ) : null
         }
       />
+
+      <div className="mb-6 flex gap-1 border-b border-border">
+        <TabButton
+          active={tab === "admin"}
+          onClick={() => {
+            setTab("admin");
+            setView("active");
+          }}
+        >
+          Admin <TabCount n={adminCount} active={tab === "admin"} />
+        </TabButton>
+        <TabButton
+          active={tab === "instructors"}
+          onClick={() => {
+            setTab("instructors");
+            setView("active");
+          }}
+        >
+          Instructors <TabCount n={instructorCount} active={tab === "instructors"} />
+        </TabButton>
+      </div>
 
       {loading ? (
         <div className="rounded-xl border border-border bg-card px-5 py-12 text-center text-sm text-muted">
@@ -215,8 +266,23 @@ export default function StaffPage() {
         </div>
       ) : (
         <>
-          {pendingInvites.length > 0 && (
-            <section className="mb-8">
+          {active.length + archived.length > 0 && (
+            <Tabs
+              value={view}
+              onValueChange={v => setView(v as "active" | "archived")}
+              className="mb-6"
+            >
+              <TabsList>
+                <TabsTrigger value="active">Active ({active.length})</TabsTrigger>
+                <TabsTrigger value="archived">Archived ({archived.length})</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          )}
+
+          {view === "active" ? (
+            <>
+              {pendingInvites.length > 0 && (
+                <section className="mb-8">
               <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">
                 Pending invitations
               </h2>
@@ -272,11 +338,13 @@ export default function StaffPage() {
 
           <section>
             <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">
-              Staff
+              {tab === "instructors" ? "Instructors" : "Admins"}
             </h2>
             {active.length === 0 ? (
               <div className="rounded-xl border border-border bg-card px-5 py-12 text-center text-sm text-muted">
-                No active staff yet.
+                {tab === "instructors"
+                  ? "No active instructors yet."
+                  : "No active admins yet."}
               </div>
             ) : (
               <div className="rounded-xl border border-border bg-card shadow-soft">
@@ -288,15 +356,21 @@ export default function StaffPage() {
                       isSelf={s.id === currentStaff?.id}
                       canArchive={canArchiveTarget(s)}
                       onArchive={() => setArchiveTarget(s)}
+                      detailHref={tab === "instructors" ? `/admin/instructors/${s.id}` : undefined}
                     />
                   ))}
                 </ul>
               </div>
             )}
-          </section>
-
-          {archived.length > 0 && (
-            <section className="mt-8">
+              </section>
+            </>
+          ) : archived.length === 0 ? (
+            <EmptyState
+              title="No archived staff"
+              description="Archived staff will appear here."
+            />
+          ) : (
+            <section>
               <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">
                 Archived
               </h2>
@@ -309,6 +383,7 @@ export default function StaffPage() {
                       isSelf={s.id === currentStaff?.id}
                       canArchive={canArchiveTarget(s)}
                       onArchive={() => setArchiveTarget(s)}
+                      detailHref={tab === "instructors" ? `/admin/instructors/${s.id}` : undefined}
                     />
                   ))}
                 </ul>
@@ -390,17 +465,19 @@ function StaffRow({
   isSelf,
   canArchive,
   onArchive,
+  detailHref,
 }: {
   staff: StaffApiRow;
   isSelf: boolean;
   canArchive?: boolean;
   onArchive?: () => void;
+  detailHref?: string;
 }) {
   const isArchived = staff.status === "archived";
   const isPending = staff.status === "pending";
 
-  return (
-    <li className="flex items-center gap-4 px-5 py-3">
+  const identity = (
+    <>
       <Avatar name={staff.name} size={36} />
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
@@ -424,21 +501,79 @@ function StaffRow({
         </div>
         <div className="text-xs text-muted">{staff.email}</div>
       </div>
-      <div className="text-xs text-muted">
-        {isArchived
-          ? `Archived ${staff.archived_at ? formatDate(staff.archived_at) : ""}`
-          : staff.accepted_at
-          ? `Joined ${formatDate(staff.accepted_at)}`
-          : staff.invited_at
-          ? `Invited ${formatRelative(staff.invited_at)}`
-          : "—"}
-      </div>
+    </>
+  );
+
+  const meta = (
+    <div className="text-xs text-muted">
+      {isArchived
+        ? `Archived ${staff.archived_at ? formatDate(staff.archived_at) : ""}`
+        : staff.accepted_at
+        ? `Joined ${formatDate(staff.accepted_at)}`
+        : staff.invited_at
+        ? `Invited ${formatRelative(staff.invited_at)}`
+        : "—"}
+    </div>
+  );
+
+  return (
+    <li className="flex items-center gap-4 px-5 py-3">
+      {detailHref ? (
+        <Link
+          href={detailHref}
+          className="flex min-w-0 flex-1 items-center gap-4 rounded-md transition-opacity hover:opacity-80"
+        >
+          {identity}
+        </Link>
+      ) : (
+        identity
+      )}
+      {meta}
+      {detailHref && <ChevronRight className="h-4 w-4 shrink-0 text-muted" />}
       {canArchive && onArchive && (
         <Button size="sm" variant="ghost" onClick={onArchive}>
           <Archive className="h-3.5 w-3.5" /> Archive
         </Button>
       )}
     </li>
+  );
+}
+
+// ---------------- Tabs ----------------
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`-mb-px inline-flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+        active
+          ? "border-accent text-ink"
+          : "border-transparent text-muted hover:text-ink"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function TabCount({ n, active }: { n: number; active: boolean }) {
+  return (
+    <span
+      className={`inline-flex min-w-[20px] justify-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold ${
+        active ? "bg-accent/15 text-accent" : "bg-paper text-muted"
+      }`}
+    >
+      {n}
+    </span>
   );
 }
 

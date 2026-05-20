@@ -12,6 +12,9 @@ import {
   Input,
   Label,
   Textarea,
+  Tabs,
+  TabsList,
+  TabsTrigger,
 } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
@@ -43,6 +46,7 @@ export default function ClassTypesPage() {
   const [dialog, setDialog] = useState<{ kind: "create" } | { kind: "edit"; ct: ClassType } | null>(
     null,
   );
+  const [view, setView] = useState<"active" | "archived">("active");
 
   const reload = useCallback(async () => {
     if (!api) return;
@@ -151,32 +155,36 @@ export default function ClassTypesPage() {
         }
       />
 
+      {!loading && !error && active.length + archived.length > 0 && (
+        <Tabs value={view} onValueChange={(v) => setView(v as "active" | "archived")} className="mb-6">
+          <TabsList>
+            <TabsTrigger value="active">Active ({active.length})</TabsTrigger>
+            <TabsTrigger value="archived">Archived ({archived.length})</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      )}
+
       {loading ? (
         <SkeletonList />
       ) : error ? (
         <ErrorBlock message={error} onRetry={reload} />
       ) : classTypes.length === 0 ? (
         <EmptyState title="No class types yet" description="Add your first class type to start scheduling." />
-      ) : (
+      ) : view === "active" ? (
         <Tree
           all={active}
           onEdit={(ct) => setDialog({ kind: "edit", ct })}
           onArchive={(ct) => toggleArchive(ct)}
         />
-      )}
-
-      {archived.length > 0 && (
-        <>
-          <h2 className="mb-3 mt-10 text-xs font-semibold uppercase tracking-wider text-muted">
-            Archived
-          </h2>
-          <Tree
-            all={archived}
-            onEdit={(ct) => setDialog({ kind: "edit", ct })}
-            onArchive={(ct) => toggleArchive(ct)}
-            dimmed
-          />
-        </>
+      ) : archived.length === 0 ? (
+        <EmptyState title="No archived class types" description="Archived class types will appear here." />
+      ) : (
+        <Tree
+          all={archived}
+          onEdit={(ct) => setDialog({ kind: "edit", ct })}
+          onArchive={(ct) => toggleArchive(ct)}
+          dimmed
+        />
       )}
 
       {dialog && (

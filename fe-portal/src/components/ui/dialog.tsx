@@ -41,7 +41,7 @@ export function Dialog({ open, onOpenChange, title, description, children, class
         role="dialog"
         aria-modal="true"
         className={cn(
-          "relative w-full max-w-lg rounded-xl bg-card shadow-modal animate-fade-up",
+          "relative flex max-h-[calc(100vh-2rem)] w-full max-w-lg flex-col rounded-xl bg-card shadow-modal animate-fade-up",
           className
         )}
       >
@@ -59,7 +59,7 @@ export function Dialog({ open, onOpenChange, title, description, children, class
             {description && <p className="mt-1 text-sm text-muted">{description}</p>}
           </div>
         )}
-        <div className="px-6 pb-6 pt-4">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 pt-4">{children}</div>
       </div>
     </div>,
     document.body

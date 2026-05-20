@@ -75,14 +75,7 @@ export default function InstructorDetailPage({
   return (
     <div className="mx-auto max-w-3xl">
       <InstructorForm initial={instructor} />
-      <div className="mt-6 grid gap-3 sm:grid-cols-3">
-        <div className="rounded-xl border border-border bg-card p-4 shadow-soft">
-          <div className="text-xs font-medium uppercase tracking-wide text-muted">
-            Avg rating
-          </div>
-          <div className="mt-1 font-mono text-lg font-semibold text-ink">—</div>
-          <div className="text-xs text-muted">Bookings & ratings ship in a later slice</div>
-        </div>
+      <div className="mt-6 grid gap-3 sm:grid-cols-2">
         <div className="rounded-xl border border-border bg-card p-4 shadow-soft">
           <div className="text-xs font-medium uppercase tracking-wide text-muted">
             Upcoming classes

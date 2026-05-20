@@ -198,33 +198,6 @@ export const emailTemplates: EmailTemplate[] = [
       "<p>Hi {{client_name}},</p><p>We've had to cancel {{workshop_name}}. A full refund of SGD {{amount_refunded}} has been issued to your original payment method.</p>",
     updatedAt,
   },
-  // --- Post-session ---
-  {
-    slug: "rating_prompt_class",
-    category: "Post-session",
-    label: "Rating prompt — class",
-    description: "Sent to attended clients when check-in is finalised.",
-    trigger: "Check-in state flips to `completed` (§11)",
-    recipient: "Attended clients only",
-    variables: ["client_name", "class_name", "instructor_name", "date", "rating_link"],
-    subject: "How was {{class_name}}?",
-    bodyHtml:
-      "<p>Hi {{client_name}},</p><p>Thanks for attending {{class_name}} with {{instructor_name}} on {{date}}. We'd love a quick rating.</p><p><a href=\"{{rating_link}}\">Leave a rating</a></p>",
-    updatedAt,
-  },
-  {
-    slug: "rating_prompt_workshop",
-    category: "Post-session",
-    label: "Rating prompt — workshop",
-    description: "Sent to all attendees once a workshop completes.",
-    trigger: "Workshop event state flips to `completed`",
-    recipient: "All attendees",
-    variables: ["client_name", "workshop_name", "instructor_name", "date", "rating_link"],
-    subject: "How was {{workshop_name}}?",
-    bodyHtml:
-      "<p>Hi {{client_name}},</p><p>Thanks for joining {{workshop_name}} with {{instructor_name}} on {{date}}. We'd love your feedback.</p><p><a href=\"{{rating_link}}\">Leave a rating</a></p>",
-    updatedAt,
-  },
   // --- Packages ---
   {
     slug: "package_purchase_confirmed",

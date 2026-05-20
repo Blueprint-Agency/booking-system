@@ -1,7 +1,8 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
-import { instructors, locations } from "@/data";
+import { todayIso } from "@/lib/formatters";
+import { instructors, locations, rooms } from "@/data";
 import { CapacityFields } from "@/components/schedule/capacity-fields";
 import type { Capacity, PtRequest } from "@/types";
 
@@ -11,6 +12,7 @@ export type SchedulePayload = {
   durationMinutes: number;
   instructorId: string;
   locationId: string;
+  roomId: string;
   capacity: Capacity;
 };
 
@@ -33,6 +35,17 @@ export function ScheduleFromRequestDialog({
     request.preferredInstructorId ?? activeInstructors[0]?.id ?? ""
   );
   const [locationId, setLocationId] = useState(activeLocations[0]?.id ?? "");
+  const roomsForLocation = useMemo(
+    () => rooms.filter((r) => !r.archivedAt && r.locationId === locationId),
+    [locationId],
+  );
+  const [roomId, setRoomId] = useState(roomsForLocation[0]?.id ?? "");
+  // Keep the selected room valid as the location changes.
+  useEffect(() => {
+    if (!roomsForLocation.some((r) => r.id === roomId)) {
+      setRoomId(roomsForLocation[0]?.id ?? "");
+    }
+  }, [roomsForLocation, roomId]);
   const [capacity, setCapacity] = useState<Capacity>(
     request.sessionType === "1on1"
       ? { waitlist: 0, onlineBooking: 1, buffer: 0 }
@@ -51,6 +64,7 @@ export function ScheduleFromRequestDialog({
             durationMinutes: duration,
             instructorId,
             locationId,
+            roomId,
             capacity,
           });
         }}
@@ -76,7 +90,12 @@ export function ScheduleFromRequestDialog({
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <Label>Date</Label>
-            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <Input
+              type="date"
+              min={todayIso()}
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+            />
           </div>
           <div className="space-y-1.5">
             <Label>Start time</Label>
@@ -126,6 +145,21 @@ export function ScheduleFromRequestDialog({
               {activeLocations.map((l) => (
                 <option key={l.id} value={l.id}>
                   {l.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Room</Label>
+            <select
+              value={roomId}
+              onChange={(e) => setRoomId(e.target.value)}
+              className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
+            >
+              <option value="">Select room…</option>
+              {roomsForLocation.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
                 </option>
               ))}
             </select>

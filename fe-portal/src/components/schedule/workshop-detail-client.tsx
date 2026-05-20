@@ -1,11 +1,11 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Star, X } from "lucide-react";
+import { X } from "lucide-react";
 import { Avatar, Badge, Button, Dialog, DialogFooter } from "@/components/ui";
-import { formatSgd, formatDateTime } from "@/lib/formatters";
+import { formatSgd } from "@/lib/formatters";
 import { maxCapacity } from "@/lib/capacity";
-import type { Booking, Client, Rating, Workshop, WorkshopTier } from "@/types";
+import type { Booking, Client, Workshop, WorkshopTier } from "@/types";
 
 type Row = { booking: Booking; client: Client; tier?: WorkshopTier };
 
@@ -13,12 +13,10 @@ export function WorkshopDetailClient({
   workshop,
   tiers,
   roster,
-  ratings,
 }: {
   workshop: Workshop;
   tiers: WorkshopTier[];
   roster: Row[];
-  ratings: Rating[];
 }) {
   const router = useRouter();
   const [confirm, setConfirm] = useState(false);
@@ -119,33 +117,6 @@ export function WorkshopDetailClient({
           </ul>
         )}
       </section>
-
-      {ratings.length > 0 && (
-        <section className="rounded-xl border border-border bg-card shadow-soft">
-          <header className="border-b border-border px-5 py-3">
-            <h2 className="text-sm font-semibold text-ink">Ratings & comments</h2>
-          </header>
-          <ul className="divide-y divide-border">
-            {ratings.map((r) => {
-              const c = roster.find((x) => x.client.id === r.clientId)?.client;
-              return (
-                <li key={r.id} className="px-5 py-3">
-                  <div className="mb-1 flex items-center gap-2">
-                    <span className="font-medium text-ink">{c?.name ?? "Unknown"}</span>
-                    <span className="flex items-center gap-0.5 text-warning">
-                      {Array.from({ length: r.stars }).map((_, i) => (
-                        <Star key={i} className="h-3.5 w-3.5 fill-current" />
-                      ))}
-                    </span>
-                    <span className="text-xs text-muted">{formatDateTime(r.ratedAt)}</span>
-                  </div>
-                  {r.comment && <p className="text-sm text-muted">{r.comment}</p>}
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
 
       <Dialog
         open={confirm}

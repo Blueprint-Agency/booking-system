@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { Plus, Archive, RotateCcw, MapPin, Phone, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
-import { Button, PageHeader, Badge, EmptyState } from "@/components/ui";
+import { Button, PageHeader, Badge, EmptyState, Tabs, TabsList, TabsTrigger } from "@/components/ui";
 import { LocationFormDialog } from "@/components/locations/location-form-dialog";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
@@ -19,6 +19,7 @@ export default function LocationsPage() {
   } = useWorkspace();
   const [editing, setEditing] = useState<Location | null>(null);
   const [creating, setCreating] = useState(false);
+  const [view, setView] = useState<"active" | "archived">("active");
 
   const active = locations.filter((l) => !l.archivedAt);
   const archived = locations.filter((l) => l.archivedAt);
@@ -88,6 +89,15 @@ export default function LocationsPage() {
         }
       />
 
+      {active.length + archived.length > 0 && (
+        <Tabs value={view} onValueChange={(v) => setView(v as "active" | "archived")} className="mb-6">
+          <TabsList>
+            <TabsTrigger value="active">Active ({active.length})</TabsTrigger>
+            <TabsTrigger value="archived">Archived ({archived.length})</TabsTrigger>
+          </TabsList>
+        </Tabs>
+      )}
+
       {active.length === 0 && archived.length === 0 ? (
         <EmptyState
           title="No locations yet"
@@ -98,7 +108,7 @@ export default function LocationsPage() {
             </Button>
           }
         />
-      ) : (
+      ) : view === "active" ? (
         <div className="grid gap-3 sm:grid-cols-2">
           {active.map((loc) => (
             <LocationCard
@@ -109,23 +119,21 @@ export default function LocationsPage() {
             />
           ))}
         </div>
-      )}
-
-      {archived.length > 0 && (
-        <div className="mt-10">
-          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted">
-            Archived
-          </h2>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {archived.map((loc) => (
-              <LocationCard
-                key={loc.id}
-                location={loc}
-                onEdit={() => setEditing(loc)}
-                onArchive={() => toggleArchive(loc)}
-              />
-            ))}
-          </div>
+      ) : archived.length === 0 ? (
+        <EmptyState
+          title="No archived locations"
+          description="Archived locations will appear here."
+        />
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {archived.map((loc) => (
+            <LocationCard
+              key={loc.id}
+              location={loc}
+              onEdit={() => setEditing(loc)}
+              onArchive={() => toggleArchive(loc)}
+            />
+          ))}
         </div>
       )}
 
