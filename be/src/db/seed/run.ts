@@ -5,6 +5,7 @@ import * as schema from '../schema'
 
 import { seedSuperadmin } from './superadmin'
 import { seedLocations } from './locations'
+import { seedRooms } from './rooms'
 import { seedClassTypes } from './class-types'
 import { seedClassPackages } from './class-packages'
 import { seedPtPackages } from './pt-packages'
@@ -25,6 +26,8 @@ async function main() {
     await seedSuperadmin(db)
     console.log('[seed] locations…')
     await seedLocations(db)
+    console.log('[seed] rooms…')
+    await seedRooms(db)
     console.log('[seed] class types…')
     await seedClassTypes(db)
     console.log('[seed] class packages…')

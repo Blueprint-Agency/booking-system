@@ -44,9 +44,6 @@ export const cancellationKindEnum = pgEnum('cancellation_kind', ['class', 'pt'])
 export const cancellationSourceEnum = pgEnum('cancellation_source', ['client', 'admin'])
 export const checkinMethodEnum = pgEnum('checkin_method', ['qr', 'code', 'manual'])
 
-// Ratings
-export const ratingKindEnum = pgEnum('rating_kind', ['class', 'workshop'])
-
 // Ledger
 export const auditActorTypeEnum = pgEnum('audit_actor_type', ['staff', 'system'])
 export const stripePaymentKindEnum = pgEnum('stripe_payment_kind', ['workshop', 'class_package', 'pt_package'])

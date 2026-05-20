@@ -1,4 +1,14 @@
-import { pgTable, uuid, text, timestamp, index, primaryKey } from 'drizzle-orm/pg-core'
+import {
+  pgTable,
+  uuid,
+  text,
+  timestamp,
+  integer,
+  index,
+  uniqueIndex,
+  primaryKey,
+  check,
+} from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { staffUsers } from './identity'
 
@@ -14,6 +24,36 @@ export const locations = pgTable(
   },
   table => ({
     archivedIdx: index('locations_archived_idx').on(table.archivedAt),
+  }),
+)
+
+// ============================================================================
+// rooms — physical spaces, location-scoped. Required when scheduling a class,
+// workshop day, or PT session. A room hosts one session at a time (clash check
+// lives in services/schedule/room-conflicts.ts).
+// ============================================================================
+
+export const rooms = pgTable(
+  'rooms',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    locationId: uuid('location_id')
+      .notNull()
+      .references(() => locations.id, { onDelete: 'restrict' }),
+    name: text('name').notNull(),
+    capacity: integer('capacity').notNull(),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+  },
+  table => ({
+    locationArchivedIdx: index('rooms_location_archived_idx').on(
+      table.locationId,
+      table.archivedAt,
+    ),
+    locationNameLowerUnique: uniqueIndex('rooms_location_name_lower_unique').on(
+      table.locationId,
+      sql`lower(${table.name})`,
+    ),
+    capacityPositive: check('rooms_capacity_positive', sql`${table.capacity} > 0`),
   }),
 )
 

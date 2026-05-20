@@ -13,7 +13,7 @@ import {
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { staffUsers, clients } from './identity'
-import { instructors, classTypes, locations } from './catalog'
+import { instructors, classTypes, locations, rooms } from './catalog'
 import { lifecycleEnum, ptSessionTypeEnum, ptRequestStatusEnum } from '../enums'
 
 // ============================================================================
@@ -33,6 +33,9 @@ export const classes = pgTable(
     locationId: uuid('location_id')
       .notNull()
       .references(() => locations.id, { onDelete: 'restrict' }),
+    // Nullable in DB (existing rows have none); required at the app layer for new
+    // creates/reschedules. FK restrict so an in-use room can't be deleted.
+    roomId: uuid('room_id').references(() => rooms.id, { onDelete: 'restrict' }),
     startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
     endsAt: timestamp('ends_at', { withTimezone: true }).notNull(),
     // Decomposed capacity per admin-restructure.md §7d. max_capacity is derived (never stored).
@@ -54,6 +57,7 @@ export const classes = pgTable(
     startsAtIdx: index('classes_starts_at_idx').on(table.startsAt),
     instructorStartsIdx: index('classes_instructor_starts_idx').on(table.instructorId, table.startsAt),
     locationStartsIdx: index('classes_location_starts_idx').on(table.locationId, table.startsAt),
+    roomStartsIdx: index('classes_room_starts_idx').on(table.roomId, table.startsAt),
     classTypeIdx: index('classes_class_type_idx').on(table.classTypeId),
     lifecycleStartsIdx: index('classes_lifecycle_starts_idx').on(table.lifecycle, table.startsAt),
     endsAfterStarts: check('classes_ends_after_starts', sql`${table.endsAt} > ${table.startsAt}`),
@@ -87,9 +91,6 @@ export const workshops = pgTable(
   {
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     name: text('name').notNull(),
-    classTypeId: uuid('class_type_id')
-      .notNull()
-      .references(() => classTypes.id, { onDelete: 'restrict' }),
     coverR2Key: text('cover_r2_key'),
     descriptionHtml: text('description_html'),
     locationId: uuid('location_id')
@@ -127,6 +128,8 @@ export const workshopDays = pgTable(
       .notNull()
       .references(() => workshops.id, { onDelete: 'cascade' }),
     ord: integer('ord').notNull(), // 1-based day index within the workshop
+    // Room must belong to the parent workshop's location. Nullable in DB; required at app layer.
+    roomId: uuid('room_id').references(() => rooms.id, { onDelete: 'restrict' }),
     startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
     endsAt: timestamp('ends_at', { withTimezone: true }).notNull(),
     // Informational per-day reference price; actual purchase price comes from the tier.
@@ -141,6 +144,7 @@ export const workshopDays = pgTable(
       table.ord,
     ),
     startsAtIdx: index('workshop_days_starts_at_idx').on(table.startsAt),
+    roomStartsIdx: index('workshop_days_room_starts_idx').on(table.roomId, table.startsAt),
     endsAfterStarts: check(
       'workshop_days_ends_after_starts',
       sql`${table.endsAt} > ${table.startsAt}`,
@@ -329,6 +333,8 @@ export const ptSessions = pgTable(
     locationId: uuid('location_id')
       .notNull()
       .references(() => locations.id, { onDelete: 'restrict' }),
+    // Nullable in DB; required at app layer when scheduling. Must belong to location_id.
+    roomId: uuid('room_id').references(() => rooms.id, { onDelete: 'restrict' }),
     startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
     endsAt: timestamp('ends_at', { withTimezone: true }).notNull(),
     sessionType: ptSessionTypeEnum('session_type').notNull(),
@@ -355,6 +361,7 @@ export const ptSessions = pgTable(
       table.lifecycle,
       table.startsAt,
     ),
+    roomStartsIdx: index('pt_sessions_room_starts_idx').on(table.roomId, table.startsAt),
     ptRequestUnique: uniqueIndex('pt_sessions_pt_request_unique').on(table.ptRequestId),
     // Circular FK back to pt_requests.id (resolved post-table-declaration).
     ptRequestFk: foreignKey({
