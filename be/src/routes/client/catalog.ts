@@ -1,4 +1,6 @@
 import { Hono } from 'hono'
+import { z } from 'zod'
+import * as classCatalog from '../../services/schedule/client-catalog'
 import * as classSvc from '../../services/packages/class-packages'
 import * as ptSvc from '../../services/packages/pt-packages'
 import {
@@ -9,6 +11,14 @@ import {
 import { getClientEntitlements } from '../../services/packages/entitlements'
 import * as workshopsSvc from '../../services/workshops/catalog'
 import { listMyWorkshopBookings } from '../../services/workshops/my-bookings'
+
+const meClassesQuery = z.object({
+  location_id: z.string().uuid().optional(),
+  instructor_id: z.string().uuid().optional(),
+  class_type_id: z.string().uuid().optional(),
+  from: z.string().datetime().optional(),
+  to: z.string().datetime().optional(),
+})
 
 function serializeClassPackage(
   r: classSvc.ClassPackageRow,
@@ -49,7 +59,24 @@ function serializePtPackage(
 }
 
 const app = new Hono()
-  .get('/classes', c => c.json({ todo: 'classes browse with auth (include_my_bookings)' }, 501))
+  .get('/classes', async c => {
+    const clientId = c.get('clientId')
+    const q = meClassesQuery.parse(c.req.query())
+    const cards = await classCatalog.listClassCards({
+      locationId: q.location_id,
+      instructorId: q.instructor_id,
+      classTypeId: q.class_type_id,
+      from: q.from ? new Date(q.from) : undefined,
+      to: q.to ? new Date(q.to) : undefined,
+    })
+    const bookedIds = await classCatalog.myBookedClassIds(
+      clientId,
+      cards.map(card => card.id),
+    )
+    return c.json({
+      classes: cards.map(card => ({ ...card, is_booked: bookedIds.has(card.id) })),
+    })
+  })
   .get('/workshops', async c => {
     const cards = await workshopsSvc.listActiveWorkshopCards()
     return c.json({ workshops: cards })
@@ -97,8 +124,9 @@ const app = new Hono()
       }),
     })
   })
-  .get('/instructors/:id/availability', c =>
-    c.json({ todo: 'instructor availability slot enumeration for PT picker' }, 501),
-  )
+  .get('/instructors/:id/availability', async c => {
+    const slots = await classCatalog.listInstructorAvailability(c.req.param('id'))
+    return c.json({ slots })
+  })
 
 export default app
