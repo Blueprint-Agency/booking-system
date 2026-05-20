@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { requireRole } from '../../../middleware/require-role'
 
 import locations from './locations'
+import rooms from './rooms'
 import classTypes from './class-types'
 import instructors from './instructors'
 import policy from './policy'
@@ -14,7 +15,6 @@ import ptSessions from './pt-sessions'
 import bookings from './bookings'
 import checkIn from './check-in'
 import inbox from './inbox'
-import ratings from './ratings'
 import clients from './clients'
 import staff from './staff'
 import notifications from './notifications'
@@ -33,6 +33,7 @@ import featureFlags from './feature-flags'
 const app = new Hono()
   .use('*', requireRole('superadmin'))
   .route('/locations', locations)
+  .route('/rooms', rooms)
   .route('/class-types', classTypes)
   .route('/instructors', instructors)
   .route('/policy', policy)
@@ -45,7 +46,6 @@ const app = new Hono()
   .route('/bookings', bookings)
   .route('/check-in', checkIn)
   .route('/inbox', inbox)
-  .route('/ratings', ratings)
   .route('/clients', clients)
   .route('/staff', staff)
   .route('/notifications', notifications)

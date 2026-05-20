@@ -1,10 +1,12 @@
 import { db } from '../../db'
 import { classes } from '../../db/schema'
+import { assertRoomAvailable, assertRoomInLocation } from './room-conflicts'
 
 export interface CreateClassInput {
   classTypeId: string
   instructorId: string
   locationId: string
+  roomId: string
   startsAt: Date
   endsAt: Date
   capacityOnline: number
@@ -17,12 +19,15 @@ export interface CreateClassInput {
 export type ClassRow = typeof classes.$inferSelect
 
 export async function createClass(input: CreateClassInput): Promise<ClassRow> {
+  await assertRoomInLocation(input.roomId, input.locationId)
+  await assertRoomAvailable(input.roomId, input.startsAt, input.endsAt)
   const rows = await db
     .insert(classes)
     .values({
       classTypeId: input.classTypeId,
       instructorId: input.instructorId,
       locationId: input.locationId,
+      roomId: input.roomId,
       startsAt: input.startsAt,
       endsAt: input.endsAt,
       capacityOnline: input.capacityOnline,

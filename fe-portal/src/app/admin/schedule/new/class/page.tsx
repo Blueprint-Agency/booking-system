@@ -6,6 +6,7 @@ import { ArrowLeft, Loader2, Save } from "lucide-react";
 import { Button, Input, Label, PageHeader } from "@/components/ui";
 import { CapacityFields } from "@/components/schedule/capacity-fields";
 import { useWorkspace } from "@/lib/workspace-context";
+import { todayIso } from "@/lib/formatters";
 import { ApiError } from "@/lib/api";
 import type { Capacity, ClassTypeDifficulty } from "@/types";
 
@@ -24,17 +25,26 @@ interface ApiInstructor {
   archived_at: string | null;
 }
 
+interface ApiRoom {
+  id: string;
+  location_id: string;
+  name: string;
+  archived_at: string | null;
+}
+
 export default function NewClassPage() {
   const router = useRouter();
   const { api, accessibleLocations, activeLocationId } = useWorkspace();
 
   const [classTypes, setClassTypes] = useState<ApiClassType[]>([]);
   const [instructors, setInstructors] = useState<ApiInstructor[]>([]);
+  const [rooms, setRooms] = useState<ApiRoom[]>([]);
   const [catalogError, setCatalogError] = useState<string | null>(null);
 
   const [classTypeId, setClassTypeId] = useState("");
   const [instructorId, setInstructorId] = useState("");
   const [locationId, setLocationId] = useState(activeLocationId ?? "");
+  const [roomId, setRoomId] = useState("");
   const [date, setDate] = useState("");
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
@@ -53,13 +63,15 @@ export default function NewClassPage() {
     let cancelled = false;
     void (async () => {
       try {
-        const [ct, ins] = await Promise.all([
+        const [ct, ins, rm] = await Promise.all([
           api.get<{ class_types: ApiClassType[] }>("/portal/admin/class-types"),
           api.get<{ instructors: ApiInstructor[] }>("/portal/admin/instructors"),
+          api.get<{ rooms: ApiRoom[] }>("/portal/admin/rooms"),
         ]);
         if (cancelled) return;
         setClassTypes(ct.class_types);
         setInstructors(ins.instructors);
+        setRooms(rm.rooms);
       } catch (err) {
         if (cancelled) return;
         setCatalogError(
@@ -84,11 +96,20 @@ export default function NewClassPage() {
     () => accessibleLocations.filter((l) => !l.archivedAt),
     [accessibleLocations],
   );
+  const roomsForLocation = useMemo(
+    () => rooms.filter((r) => !r.archived_at && r.location_id === locationId),
+    [rooms, locationId],
+  );
+
+  // Clear the selected room if it no longer belongs to the chosen location.
+  useEffect(() => {
+    if (roomId && !roomsForLocation.some((r) => r.id === roomId)) setRoomId("");
+  }, [roomId, roomsForLocation]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!api) return;
-    if (!classTypeId || !instructorId || !locationId) return;
+    if (!classTypeId || !instructorId || !locationId || !roomId) return;
     if (!date || !startTime || !endTime) return;
     void difficulty;
 
@@ -106,6 +127,7 @@ export default function NewClassPage() {
         class_type_id: classTypeId,
         instructor_id: instructorId,
         location_id: locationId,
+        room_id: roomId,
         starts_at: startsAt.toISOString(),
         ends_at: endsAt.toISOString(),
         capacity_online: capacity.onlineBooking,
@@ -115,11 +137,27 @@ export default function NewClassPage() {
       });
       router.push("/admin/schedule");
     } catch (err) {
-      setSubmitError(
-        err instanceof ApiError
-          ? `Failed to create class (HTTP ${err.status})`
-          : "Network error",
-      );
+      if (err instanceof ApiError && err.status === 409) {
+        const body = err.body as { error?: string } | null;
+        setSubmitError(
+          body?.error === "room_clash"
+            ? "That room is already booked for an overlapping time. Pick another room or time."
+            : `Failed to create class (HTTP ${err.status})`,
+        );
+      } else if (err instanceof ApiError && err.status === 400) {
+        const body = err.body as { error?: string } | null;
+        setSubmitError(
+          body?.error === "room_location_mismatch"
+            ? "That room belongs to a different location."
+            : `Failed to create class (HTTP ${err.status})`,
+        );
+      } else {
+        setSubmitError(
+          err instanceof ApiError
+            ? `Failed to create class (HTTP ${err.status})`
+            : "Network error",
+        );
+      }
       setSubmitting(false);
     }
   }
@@ -167,7 +205,7 @@ export default function NewClassPage() {
                 options={instructors.map((i) => ({ val: i.id, label: i.name }))}
               />
             </div>
-            <div className="space-y-1.5 sm:col-span-2">
+            <div className="space-y-1.5">
               <Label htmlFor="loc">Location</Label>
               <SelectField
                 id="loc"
@@ -175,6 +213,17 @@ export default function NewClassPage() {
                 onChange={setLocationId}
                 placeholder="Select…"
                 options={activeLocations.map((l) => ({ val: l.id, label: l.name }))}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="room">Room</Label>
+              <SelectField
+                id="room"
+                value={roomId}
+                onChange={setRoomId}
+                disabled={!locationId}
+                placeholder={locationId ? "Select…" : "Pick a location first"}
+                options={roomsForLocation.map((r) => ({ val: r.id, label: r.name }))}
               />
             </div>
             <div className="space-y-1.5 sm:col-span-2">
@@ -211,6 +260,7 @@ export default function NewClassPage() {
                 id="d"
                 required
                 type="date"
+                min={todayIso()}
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
               />

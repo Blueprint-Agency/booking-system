@@ -8,11 +8,13 @@ import {
 } from '../../db/schema/schedule'
 import { bookings } from '../../db/schema/bookings'
 import { ConflictError, NotFoundError, BadRequestError } from '../../shared/errors'
+import { assertRoomAvailable, assertRoomInLocation } from '../schedule/room-conflicts'
 
 export type WorkshopDayRow = typeof workshopDays.$inferSelect
 
 export interface CreateDayInput {
   ord: number
+  roomId: string
   startsAt: Date
   endsAt: Date
   basePriceSgd: string
@@ -37,13 +39,16 @@ export async function listDays(workshopId: string): Promise<WorkshopDayRow[]> {
 }
 
 export async function createDay(workshopId: string, input: CreateDayInput): Promise<WorkshopDayRow> {
-  await ensureWorkshop(workshopId)
+  const w = await ensureWorkshop(workshopId)
   if (input.endsAt <= input.startsAt) throw new BadRequestError('ends_at_must_be_after_starts_at')
+  await assertRoomInLocation(input.roomId, w.locationId)
+  await assertRoomAvailable(input.roomId, input.startsAt, input.endsAt)
   const [row] = await db
     .insert(workshopDays)
     .values({
       workshopId,
       ord: input.ord,
+      roomId: input.roomId,
       startsAt: input.startsAt,
       endsAt: input.endsAt,
       basePriceSgd: input.basePriceSgd,
@@ -68,14 +73,27 @@ export async function updateDay(
     .limit(1)
   if (!existing) throw new NotFoundError('workshop_day_not_found')
 
-  if (patch.startsAt && patch.endsAt && patch.endsAt <= patch.startsAt) {
+  const w = await ensureWorkshop(workshopId)
+  const nextStarts = patch.startsAt ?? existing.startsAt
+  const nextEnds = patch.endsAt ?? existing.endsAt
+  if (nextEnds <= nextStarts) {
     throw new BadRequestError('ends_at_must_be_after_starts_at')
+  }
+
+  // Re-run room validation when the room, start, or end changes.
+  const nextRoomId = patch.roomId ?? existing.roomId
+  const roomChanged = patch.roomId !== undefined && patch.roomId !== existing.roomId
+  const timeChanged = patch.startsAt !== undefined || patch.endsAt !== undefined
+  if (nextRoomId && (roomChanged || timeChanged)) {
+    await assertRoomInLocation(nextRoomId, w.locationId)
+    await assertRoomAvailable(nextRoomId, nextStarts, nextEnds, { excludeWorkshopDayId: dayId })
   }
 
   const [row] = await db
     .update(workshopDays)
     .set({
       ...(patch.ord !== undefined ? { ord: patch.ord } : {}),
+      ...(patch.roomId !== undefined ? { roomId: patch.roomId } : {}),
       ...(patch.startsAt !== undefined ? { startsAt: patch.startsAt } : {}),
       ...(patch.endsAt !== undefined ? { endsAt: patch.endsAt } : {}),
       ...(patch.basePriceSgd !== undefined ? { basePriceSgd: patch.basePriceSgd } : {}),

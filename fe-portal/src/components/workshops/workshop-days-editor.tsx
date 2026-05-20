@@ -2,9 +2,15 @@
 import { Plus, Trash2 } from "lucide-react";
 import { Button, Input, Label } from "@/components/ui";
 import { CapacityFields } from "@/components/schedule/capacity-fields";
+import { todayIso } from "@/lib/formatters";
 import type { Capacity, WorkshopDay } from "@/types";
 
 type Mode = "range" | "individual";
+
+export interface RoomOption {
+  id: string;
+  name: string;
+}
 
 function defaultCapacity(): Capacity {
   return { waitlist: 0, onlineBooking: 12, buffer: 0 };
@@ -16,6 +22,7 @@ function newDay(date: string): WorkshopDay {
     date,
     startTime: "09:00",
     endTime: "12:00",
+    roomId: "",
     capacity: defaultCapacity(),
   };
 }
@@ -39,6 +46,8 @@ export function WorkshopDaysEditor({
   onRangeChange,
   days,
   onChange,
+  rooms,
+  locationChosen,
 }: {
   mode: Mode;
   onModeChange: (m: Mode) => void;
@@ -47,6 +56,8 @@ export function WorkshopDaysEditor({
   onRangeChange: (start: string, end: string) => void;
   days: WorkshopDay[];
   onChange: (days: WorkshopDay[]) => void;
+  rooms: RoomOption[];
+  locationChosen: boolean;
 }) {
   function regenerateFromRange(start: string, end: string) {
     onRangeChange(start, end);
@@ -101,14 +112,21 @@ export function WorkshopDaysEditor({
             <Label className="text-xs">Start date</Label>
             <Input
               type="date"
+              min={todayIso()}
               value={rangeStart}
-              onChange={(e) => regenerateFromRange(e.target.value, rangeEnd)}
+              onChange={(e) => {
+                const start = e.target.value;
+                // Keep end on/after start.
+                const end = rangeEnd && rangeEnd < start ? start : rangeEnd;
+                regenerateFromRange(start, end);
+              }}
             />
           </div>
           <div className="space-y-1">
             <Label className="text-xs">End date</Label>
             <Input
               type="date"
+              min={rangeStart || todayIso()}
               value={rangeEnd}
               onChange={(e) => regenerateFromRange(rangeStart, e.target.value)}
             />
@@ -137,6 +155,7 @@ export function WorkshopDaysEditor({
                 <Label className="text-xs">Date</Label>
                 <Input
                   type="date"
+                  min={todayIso()}
                   value={d.date}
                   disabled={mode === "range"}
                   onChange={(e) => updateDay(d.id, { date: e.target.value })}
@@ -157,6 +176,35 @@ export function WorkshopDaysEditor({
                   value={d.endTime}
                   onChange={(e) => updateDay(d.id, { endTime: e.target.value })}
                 />
+              </div>
+              <div className="space-y-1 md:col-span-3">
+                <Label className="text-xs">
+                  Room <span className="text-error">*</span>
+                </Label>
+                <select
+                  value={d.roomId}
+                  required
+                  disabled={!locationChosen}
+                  onChange={(e) => updateDay(d.id, { roomId: e.target.value })}
+                  aria-invalid={locationChosen && !d.roomId}
+                  className={`flex h-10 w-full rounded-lg border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50 ${
+                    locationChosen && !d.roomId ? "border-error" : "border-border"
+                  }`}
+                >
+                  <option value="">
+                    {locationChosen ? "Select room…" : "Pick a location first"}
+                  </option>
+                  {rooms.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+                {locationChosen && rooms.length === 0 && (
+                  <p className="text-xs text-error">
+                    No rooms at this location yet — add one under Building Blocks → Rooms.
+                  </p>
+                )}
               </div>
             </div>
             <CapacityFields
