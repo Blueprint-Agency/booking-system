@@ -3,6 +3,8 @@ import { verifyToken } from '@clerk/backend'
 import { db } from '../db'
 import { clients } from '../db/schema/identity'
 import { eq } from 'drizzle-orm'
+import { getClerkClientApp } from '../lib/clerk'
+import { syncClientFromClerk } from '../services/auth/webhook-sync'
 
 export interface ClerkClientClaims {
   sub: string
@@ -41,7 +43,40 @@ export const clerkClientAuth: MiddlewareHandler = async (c, next) => {
     phone_verified: payload.phone_verified,
   }
 
-  const [row] = await db.select().from(clients).where(eq(clients.clerkUserId, payload.sub)).limit(1)
+  let [row] = await db.select().from(clients).where(eq(clients.clerkUserId, payload.sub)).limit(1)
+
+  // Auto-provision fallback: the Clerk client `user.created` webhook is the
+  // primary path that inserts a clients row, but in prod it may be unconfigured
+  // or simply lag the user's first authenticated request (webhooks are async).
+  // Members are allowed to self-register, so — mirroring the staff middleware —
+  // we fetch the Clerk profile and upsert the row on demand rather than 404.
+  if (!row) {
+    try {
+      const clerkUser = await getClerkClientApp().users.getUser(payload.sub)
+      const sync = await syncClientFromClerk({
+        id: clerkUser.id,
+        primary_email_address_id: clerkUser.primaryEmailAddressId,
+        email_addresses: clerkUser.emailAddresses.map(e => ({
+          id: e.id,
+          email_address: e.emailAddress,
+        })),
+        primary_phone_number_id: clerkUser.primaryPhoneNumberId,
+        phone_numbers: clerkUser.phoneNumbers.map(p => ({
+          id: p.id,
+          phone_number: p.phoneNumber,
+        })),
+        first_name: clerkUser.firstName,
+        last_name: clerkUser.lastName,
+        username: clerkUser.username,
+      })
+      if (sync.kind === 'created' || sync.kind === 'updated' || sync.kind === 'idempotent') {
+        ;[row] = await db.select().from(clients).where(eq(clients.id, sync.clientId)).limit(1)
+      }
+    } catch (err) {
+      console.warn('[clerk-client] auto-provision fallback failed:', err)
+    }
+  }
+
   if (!row) return c.json({ error: 'client_not_found' }, 404)
 
   c.set('clerkClaims', claims)
