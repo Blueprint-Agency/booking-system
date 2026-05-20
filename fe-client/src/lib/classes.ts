@@ -210,3 +210,91 @@ export function formatClassTime(iso: string): string {
 export function durationMinutes(startIso: string, endIso: string): number {
   return Math.round((new Date(endIso).getTime() - new Date(startIso).getTime()) / 60000);
 }
+
+export interface ApiInstructor {
+  id: string;
+  name: string;
+  bio: string | null;
+  avatar_url: string | null;
+}
+
+export function useInstructors(): { data: ApiInstructor[] | null; loading: boolean } {
+  const [data, setData] = useState<ApiInstructor[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await publicApi.get<{ instructors: ApiInstructor[] }>("/public/instructors");
+        if (!cancelled) setData(res.instructors);
+      } catch {
+        if (!cancelled) setData([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return { data, loading };
+}
+
+export interface ApiPtSlot {
+  id: string;
+  instructor_id: string;
+  starts_at: string;
+  ends_at: string;
+  session_type: "1on1" | "2on1";
+  spots_left: number;
+  location: { id: string; name: string } | null;
+}
+
+/** Fetches availability for each instructor id (in parallel) and merges, tagging each slot with its instructor_id. */
+export function usePtAvailability(instructorIds: string[]): {
+  data: ApiPtSlot[] | null;
+  loading: boolean;
+} {
+  const { isLoaded, isSignedIn } = useUser();
+  const api = useApi();
+  const [data, setData] = useState<ApiPtSlot[] | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const key = instructorIds.join(",");
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    if (instructorIds.length === 0) {
+      setData([]);
+      setLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    const client = isSignedIn ? api : publicApi;
+    const base = isSignedIn ? "/me" : "/public";
+    (async () => {
+      try {
+        const results = await Promise.all(
+          instructorIds.map((id) =>
+            client
+              .get<{ slots: Omit<ApiPtSlot, "instructor_id">[] }>(`${base}/instructors/${id}/availability`)
+              .then((r) => r.slots.map((s) => ({ ...s, instructor_id: id })))
+              .catch(() => [] as ApiPtSlot[]),
+          ),
+        );
+        if (!cancelled) setData(results.flat());
+      } catch {
+        if (!cancelled) setData([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoaded, isSignedIn, api, key]);
+
+  return { data, loading };
+}
