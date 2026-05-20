@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as timetable from '../../../services/schedule/timetable'
 import * as classesSvc from '../../../services/schedule/classes'
+import { getClassDetail, getPtSessionDetail } from '../../../services/schedule/detail'
 
 const isoDate = z
   .string()
@@ -22,6 +23,7 @@ const createClassSchema = z
     class_type_id: z.string().uuid(),
     instructor_id: z.string().uuid(),
     location_id: z.string().uuid(),
+    room_id: z.string().uuid(),
     starts_at: isoDate,
     ends_at: isoDate,
     capacity_online: z.number().int().min(0),
@@ -47,6 +49,7 @@ function entryRow(e: timetable.ScheduleEntryRow) {
     class_type_id: e.classTypeId,
     instructor_ids: e.instructorIds,
     location_id: e.locationId,
+    room_id: e.roomId,
     starts_at: e.startsAt,
     ends_at: e.endsAt,
     capacity: e.capacity,
@@ -63,6 +66,7 @@ function classRow(c: classesSvc.ClassRow) {
     class_type_id: c.classTypeId,
     instructor_id: c.instructorId,
     location_id: c.locationId,
+    room_id: c.roomId,
     starts_at: c.startsAt.toISOString(),
     ends_at: c.endsAt.toISOString(),
     capacity_online: c.capacityOnline,
@@ -86,6 +90,42 @@ const app = new Hono()
     })
     return c.json({ entries: entries.map(entryRow) })
   })
+  .get('/classes/:id', zValidator('param', z.object({ id: z.string().uuid() })), async c => {
+    const { id } = c.req.valid('param')
+    const d = await getClassDetail(id)
+    return c.json({
+      id: d.id,
+      lifecycle: d.lifecycle,
+      starts_at: d.startsAt.toISOString(),
+      ends_at: d.endsAt.toISOString(),
+      class_type: d.classType,
+      instructor: d.instructor,
+      location: d.location,
+      room: d.room,
+      capacity_online: d.capacityOnline,
+      capacity_waitlist: d.capacityWaitlist,
+      capacity_buffer: d.capacityBuffer,
+      credit_cost: d.creditCost,
+      booked_count: d.bookedCount,
+    })
+  })
+  .get('/pt/:id', zValidator('param', z.object({ id: z.string().uuid() })), async c => {
+    const { id } = c.req.valid('param')
+    const d = await getPtSessionDetail(id)
+    return c.json({
+      id: d.id,
+      lifecycle: d.lifecycle,
+      starts_at: d.startsAt.toISOString(),
+      ends_at: d.endsAt.toISOString(),
+      session_type: d.sessionType,
+      instructor: d.instructor,
+      location: d.location,
+      capacity_online: d.capacityOnline,
+      capacity_waitlist: d.capacityWaitlist,
+      capacity_buffer: d.capacityBuffer,
+      clients: d.clients,
+    })
+  })
   .post('/classes', zValidator('json', createClassSchema), async c => {
     const body = c.req.valid('json')
     const staffId = c.get('staffUserId')
@@ -93,6 +133,7 @@ const app = new Hono()
       classTypeId: body.class_type_id,
       instructorId: body.instructor_id,
       locationId: body.location_id,
+      roomId: body.room_id,
       startsAt: new Date(body.starts_at),
       endsAt: new Date(body.ends_at),
       capacityOnline: body.capacity_online,

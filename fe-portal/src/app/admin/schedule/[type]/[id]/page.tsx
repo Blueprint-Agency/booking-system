@@ -1,5 +1,5 @@
 "use client";
-import { use, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui";
@@ -9,12 +9,12 @@ import { computeEventState } from "@/lib/event-state";
 import { formatDate, formatTime, formatSgd } from "@/lib/formatters";
 import type { EventState } from "@/types";
 
-interface ApiInstructor {
+interface NamedRef {
   id: string;
   name: string;
 }
 
-interface ApiClassType {
+interface ApiInstructor {
   id: string;
   name: string;
 }
@@ -44,13 +44,42 @@ interface ApiWorkshopTier {
 interface ApiWorkshopDetail {
   id: string;
   name: string;
-  class_type_id: string;
   location_id: string;
   description_html: string | null;
   lifecycle: "active" | "cancelled";
   days: ApiWorkshopDay[];
   tiers: ApiWorkshopTier[];
   instructor_ids: string[];
+}
+
+interface ApiClassDetail {
+  id: string;
+  lifecycle: "active" | "cancelled";
+  starts_at: string;
+  ends_at: string;
+  class_type: NamedRef | null;
+  instructor: NamedRef | null;
+  location: NamedRef | null;
+  room: NamedRef | null;
+  capacity_online: number;
+  capacity_waitlist: number;
+  capacity_buffer: number;
+  credit_cost: number;
+  booked_count: number;
+}
+
+interface ApiPtDetail {
+  id: string;
+  lifecycle: "active" | "cancelled";
+  starts_at: string;
+  ends_at: string;
+  session_type: "1on1" | "2on1";
+  instructor: NamedRef | null;
+  location: NamedRef | null;
+  capacity_online: number;
+  capacity_waitlist: number;
+  capacity_buffer: number;
+  clients: NamedRef[];
 }
 
 export default function SessionDetailPage({
@@ -61,21 +90,148 @@ export default function SessionDetailPage({
   const { type, id } = use(params);
 
   if (type === "workshop") return <WorkshopDetail id={id} />;
-  if (type === "class" || type === "pt")
-    return (
-      <PlaceholderDetail
-        kind={type === "class" ? "Class" : "Private session"}
-        message={`Detail view for ${type === "class" ? "classes" : "private sessions"} is not yet wired to the backend.`}
-      />
-    );
-  return <PlaceholderDetail kind="Unknown" message="Unknown session type." />;
+  if (type === "class") return <ClassDetail id={id} />;
+  if (type === "pt") return <PtDetail id={id} />;
+  return <ErrorDetail kind="Unknown" message="Unknown session type." />;
 }
+
+/* ------------------------------- Class ------------------------------- */
+
+function ClassDetail({ id }: { id: string }) {
+  const { api } = useWorkspace();
+  const [data, setData] = useState<ApiClassDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!api) return;
+    setLoading(true);
+    setError(null);
+    try {
+      setData(await api.get<ApiClassDetail>(`/portal/admin/schedule/classes/${id}`));
+    } catch (err) {
+      setError(detailError(err, "Class not found."));
+    } finally {
+      setLoading(false);
+    }
+  }, [api, id]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (loading) return <LoadingDetail label="class" />;
+  if (error || !data) return <ErrorDetail kind="Class" message={error ?? "Class not found."} />;
+
+  const state = computeEventState({
+    startsAt: data.starts_at,
+    endsAt: data.ends_at,
+    lifecycle: data.lifecycle,
+  });
+  const capacity = data.capacity_online + data.capacity_waitlist + data.capacity_buffer;
+  const meta = [
+    formatDate(data.starts_at),
+    `${formatTime(data.starts_at)} – ${formatTime(data.ends_at)}`,
+    data.instructor?.name,
+    data.location?.name,
+    data.room?.name,
+  ].filter((x): x is string => Boolean(x));
+
+  return (
+    <DetailFrame>
+      <DetailHeader
+        badge={<Badge tone="cyan">Class</Badge>}
+        state={state}
+        title={data.class_type?.name ?? "Class"}
+        meta={meta}
+      />
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Stat label="Booked" value={`${data.booked_count} / ${capacity}`} />
+        <Stat label="Credit cost" value={`${data.credit_cost} credit${data.credit_cost === 1 ? "" : "s"}`} />
+        <Stat label="Capacity split" value={`${data.capacity_online} / ${data.capacity_waitlist} / ${data.capacity_buffer}`} sub="online / waitlist / buffer" />
+      </div>
+    </DetailFrame>
+  );
+}
+
+/* ------------------------------- PT session ------------------------------- */
+
+function PtDetail({ id }: { id: string }) {
+  const { api } = useWorkspace();
+  const [data, setData] = useState<ApiPtDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!api) return;
+    setLoading(true);
+    setError(null);
+    try {
+      setData(await api.get<ApiPtDetail>(`/portal/admin/schedule/pt/${id}`));
+    } catch (err) {
+      setError(detailError(err, "Private session not found."));
+    } finally {
+      setLoading(false);
+    }
+  }, [api, id]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (loading) return <LoadingDetail label="private session" />;
+  if (error || !data)
+    return <ErrorDetail kind="Private session" message={error ?? "Private session not found."} />;
+
+  const state = computeEventState({
+    startsAt: data.starts_at,
+    endsAt: data.ends_at,
+    lifecycle: data.lifecycle,
+  });
+  const typeLabel = data.session_type === "2on1" ? "2-on-1" : "1-on-1";
+  const meta = [
+    formatDate(data.starts_at),
+    `${formatTime(data.starts_at)} – ${formatTime(data.ends_at)}`,
+    data.instructor?.name,
+    data.location?.name,
+  ].filter((x): x is string => Boolean(x));
+
+  return (
+    <DetailFrame>
+      <DetailHeader
+        badge={<Badge tone="accent">Private session</Badge>}
+        state={state}
+        title={`Private session · ${typeLabel}`}
+        meta={meta}
+      />
+      <section className="rounded-xl border border-border bg-card p-5 shadow-soft">
+        <h2 className="mb-3 text-sm font-semibold text-ink">
+          Clients ({data.clients.length})
+        </h2>
+        {data.clients.length === 0 ? (
+          <p className="text-sm text-muted">No clients assigned.</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {data.clients.map((cl) => (
+              <li key={cl.id} className="py-2 text-sm text-ink">
+                <Link href={`/admin/clients/${cl.id}`} className="hover:text-accent">
+                  {cl.name}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </DetailFrame>
+  );
+}
+
+/* ------------------------------- Workshop ------------------------------- */
 
 function WorkshopDetail({ id }: { id: string }) {
   const { api, accessibleLocations } = useWorkspace();
   const [data, setData] = useState<ApiWorkshopDetail | null>(null);
   const [instructors, setInstructors] = useState<ApiInstructor[]>([]);
-  const [classTypes, setClassTypes] = useState<ApiClassType[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -86,24 +242,16 @@ function WorkshopDetail({ id }: { id: string }) {
     setError(null);
     void (async () => {
       try {
-        const [w, ins, ct] = await Promise.all([
+        const [w, ins] = await Promise.all([
           api.get<ApiWorkshopDetail>(`/portal/admin/workshops/${id}`),
           api.get<{ instructors: ApiInstructor[] }>("/portal/admin/instructors"),
-          api.get<{ class_types: ApiClassType[] }>("/portal/admin/class-types"),
         ]);
         if (cancelled) return;
         setData(w);
         setInstructors(ins.instructors);
-        setClassTypes(ct.class_types);
       } catch (err) {
         if (cancelled) return;
-        setError(
-          err instanceof ApiError
-            ? err.status === 404
-              ? "Workshop not found."
-              : `HTTP ${err.status}`
-            : "Network error",
-        );
+        setError(detailError(err, "Workshop not found."));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -113,25 +261,8 @@ function WorkshopDetail({ id }: { id: string }) {
     };
   }, [api, id]);
 
-  if (loading) {
-    return (
-      <DetailFrame>
-        <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading workshop…
-        </div>
-      </DetailFrame>
-    );
-  }
-
-  if (error || !data) {
-    return (
-      <DetailFrame>
-        <div className="rounded-xl border border-error/30 bg-error/5 p-6 text-center">
-          <p className="text-sm text-error">{error ?? "Workshop not found."}</p>
-        </div>
-      </DetailFrame>
-    );
-  }
+  if (loading) return <LoadingDetail label="workshop" />;
+  if (error || !data) return <ErrorDetail kind="Workshop" message={error ?? "Workshop not found."} />;
 
   const sortedDays = [...data.days].sort((a, b) => a.ord - b.ord);
   const sortedTiers = [...data.tiers].sort((a, b) => a.ord - b.ord);
@@ -146,9 +277,7 @@ function WorkshopDetail({ id }: { id: string }) {
     : data.lifecycle === "cancelled"
       ? "cancelled"
       : "scheduled";
-  const locName =
-    accessibleLocations.find((l) => l.id === data.location_id)?.name ?? "—";
-  const ctName = classTypes.find((c) => c.id === data.class_type_id)?.name ?? "—";
+  const locName = accessibleLocations.find((l) => l.id === data.location_id)?.name ?? "—";
   const instructorNames = data.instructor_ids
     .map((iid) => instructors.find((i) => i.id === iid)?.name ?? "Unknown")
     .join(" & ");
@@ -160,22 +289,20 @@ function WorkshopDetail({ id }: { id: string }) {
 
   return (
     <DetailFrame>
-      <header className="mb-6 border-b border-border pb-6">
-        <div className="mb-2 flex items-center gap-2">
-          <Badge tone="warning">Workshop</Badge>
-          <StateBadge state={eventState} />
+      <DetailHeader
+        badge={<Badge tone="warning">Workshop</Badge>}
+        state={eventState}
+        title={data.name}
+        meta={[dateMeta, locName, instructorNames].filter(Boolean)}
+        action={
           <Link
             href={`/admin/packages/workshops/${data.id}/edit`}
-            className="ml-auto rounded-md border border-border bg-card px-3 py-1 text-xs text-muted hover:border-accent/40 hover:text-ink"
+            className="rounded-md border border-border bg-card px-3 py-1 text-xs text-muted hover:border-accent/40 hover:text-ink"
           >
             Edit content
           </Link>
-        </div>
-        <h1 className="text-2xl font-semibold text-ink">{data.name}</h1>
-        <p className="mt-1 text-sm text-muted">
-          {[dateMeta, ctName, locName, instructorNames].filter(Boolean).join(" · ")}
-        </p>
-      </header>
+        }
+      />
 
       <section className="mb-6 rounded-xl border border-border bg-card p-5 shadow-soft">
         <h2 className="mb-3 text-sm font-semibold text-ink">Days</h2>
@@ -216,14 +343,11 @@ function WorkshopDetail({ id }: { id: string }) {
                     {formatSgd(Number(t.regular_price_sgd))}
                   </div>
                 </div>
-                {t.description && (
-                  <p className="mt-1 text-xs text-muted">{t.description}</p>
-                )}
+                {t.description && <p className="mt-1 text-xs text-muted">{t.description}</p>}
                 {t.early_bird_price_sgd && (
                   <p className="mt-1 text-xs text-muted">
                     Early bird {formatSgd(Number(t.early_bird_price_sgd))}
-                    {t.early_bird_cutoff_at &&
-                      ` until ${formatDate(t.early_bird_cutoff_at)}`}
+                    {t.early_bird_cutoff_at && ` until ${formatDate(t.early_bird_cutoff_at)}`}
                     {t.early_bird_quota !== null && ` · quota ${t.early_bird_quota}`}
                   </p>
                 )}
@@ -239,16 +363,69 @@ function WorkshopDetail({ id }: { id: string }) {
   );
 }
 
-function PlaceholderDetail({ kind, message }: { kind: string; message: string }) {
+/* ------------------------------- Shared ------------------------------- */
+
+function detailError(err: unknown, notFoundMsg: string): string {
+  if (err instanceof ApiError) return err.status === 404 ? notFoundMsg : `HTTP ${err.status}`;
+  return "Network error";
+}
+
+function DetailHeader({
+  badge,
+  state,
+  title,
+  meta,
+  action,
+}: {
+  badge: React.ReactNode;
+  state: EventState;
+  title: string;
+  meta: string[];
+  action?: React.ReactNode;
+}) {
+  return (
+    <header className="mb-6 border-b border-border pb-6">
+      <div className="mb-2 flex items-center gap-2">
+        {badge}
+        <StateBadge state={state} />
+        {action && <div className="ml-auto">{action}</div>}
+      </div>
+      <h1 className="text-2xl font-semibold text-ink">{title}</h1>
+      {meta.length > 0 && <p className="mt-1 text-sm text-muted">{meta.join(" · ")}</p>}
+    </header>
+  );
+}
+
+function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="rounded-xl border border-border bg-card p-4 shadow-soft">
+      <div className="text-xs font-medium uppercase tracking-wide text-muted">{label}</div>
+      <div className="mt-1 font-mono text-lg font-semibold text-ink">{value}</div>
+      {sub && <div className="text-xs text-muted">{sub}</div>}
+    </div>
+  );
+}
+
+function LoadingDetail({ label }: { label: string }) {
+  return (
+    <DetailFrame>
+      <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading {label}…
+      </div>
+    </DetailFrame>
+  );
+}
+
+function ErrorDetail({ kind, message }: { kind: string; message: string }) {
   return (
     <DetailFrame>
       <header className="mb-6 border-b border-border pb-6">
         <div className="mb-2 flex items-center gap-2">
           <Badge tone="neutral">{kind}</Badge>
         </div>
-        <h1 className="text-2xl font-semibold text-ink">Detail view coming soon</h1>
+        <h1 className="text-2xl font-semibold text-ink">Couldn’t load detail</h1>
       </header>
-      <div className="rounded-xl border border-border bg-paper p-6 text-center text-sm text-muted">
+      <div className="rounded-xl border border-error/30 bg-error/5 p-6 text-center text-sm text-error">
         {message}
       </div>
     </DetailFrame>
