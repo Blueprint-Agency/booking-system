@@ -31,7 +31,13 @@ app.use(
     origin: origin => (allowedOrigins.includes(origin) ? origin : null),
     credentials: true,
     allowMethods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-    allowHeaders: ['Authorization', 'Content-Type', 'X-Impersonate-Staff-Id', 'X-Request-Id'],
+    allowHeaders: [
+      'Authorization',
+      'Content-Type',
+      'X-Impersonate-Staff-Id',
+      'X-Impersonation-Grant',
+      'X-Request-Id',
+    ],
   }),
 )
 
