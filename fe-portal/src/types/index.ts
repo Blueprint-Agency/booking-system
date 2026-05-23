@@ -166,6 +166,9 @@ export interface Workshop {
   id: string;
   name: string;
   locationId: string;
+  mainInstructorId: string;
+  supportingInstructorIds: string[];
+  /** Back-compat: `[main, ...supporting]`. Read-only mirror of the two fields above. */
   instructorIds: string[];
   coverUrl: string | null;
   additionalImages: string[];

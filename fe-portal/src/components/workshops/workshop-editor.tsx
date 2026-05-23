@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Save, Ban, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button, Input, Label, PageHeader, Badge } from "@/components/ui";
@@ -53,6 +53,9 @@ interface ApiWorkshopDetail {
     ord: number;
     day_ids: string[];
   }>;
+  main_instructor_id: string | null;
+  supporting_instructor_ids: string[];
+  /** Back-compat: `[main, ...supporting]`. */
   instructor_ids: string[];
   promotions?: ApiPromotion[];
 }
@@ -98,11 +101,19 @@ function tierToApi(t: WorkshopTier, ord: number, idMap: Map<string, string>) {
 }
 
 function fromApiWorkshop(d: ApiWorkshopDetail): Workshop {
+  const mainInstructorId = d.main_instructor_id ?? d.instructor_ids[0] ?? "";
+  const supportingInstructorIds =
+    d.supporting_instructor_ids ??
+    d.instructor_ids.filter((id) => id !== mainInstructorId);
   return {
     id: d.id,
     name: d.name,
     locationId: d.location_id,
-    instructorIds: d.instructor_ids,
+    mainInstructorId,
+    supportingInstructorIds,
+    instructorIds: mainInstructorId
+      ? [mainInstructorId, ...supportingInstructorIds]
+      : supportingInstructorIds,
     coverUrl: null,
     additionalImages: [],
     descriptionHtml: d.description_html ?? "",
@@ -152,7 +163,8 @@ async function createWorkshopWithChildren(
     name: string;
     locationId: string;
     descriptionHtml: string;
-    instructorIds: string[];
+    mainInstructorId: string;
+    supportingInstructorIds: string[];
     days: WorkshopDay[];
     tiers: WorkshopTier[];
   },
@@ -162,7 +174,8 @@ async function createWorkshopWithChildren(
     name: args.name,
     location_id: args.locationId,
     description_html: args.descriptionHtml || null,
-    instructor_ids: args.instructorIds,
+    main_instructor_id: args.mainInstructorId,
+    supporting_instructor_ids: args.supportingInstructorIds,
     image_r2_keys: [],
   });
 
@@ -206,7 +219,12 @@ export function WorkshopEditor({
 
   const [name, setName] = useState(initial?.name ?? "");
   const [locationId, setLocationId] = useState(initial?.locationId ?? "");
-  const [instructorIds, setInstructorIds] = useState<string[]>(initial?.instructorIds ?? []);
+  const [mainInstructorId, setMainInstructorId] = useState<string>(
+    initial?.mainInstructorId ?? "",
+  );
+  const [supportingInstructorIds, setSupportingInstructorIds] = useState<string[]>(
+    initial?.supportingInstructorIds ?? [],
+  );
   const [descriptionHtml, setDescriptionHtml] = useState(initial?.descriptionHtml ?? "");
   const [days, setDays] = useState<WorkshopDay[]>(initial?.days ?? []);
   const [tiers, setTiers] = useState<WorkshopTier[]>(initial?.tiers ?? []);
@@ -250,16 +268,33 @@ export function WorkshopEditor({
     void loadCatalog();
   }, [loadCatalog]);
 
-  function toggleInstructor(iid: string) {
-    setInstructorIds((prev) =>
-      prev.includes(iid) ? prev.filter((x) => x !== iid) : [...prev, iid],
-    );
+  const activeInstructors = useMemo(
+    () => catalog.instructors.filter((i) => !i.archived_at),
+    [catalog.instructors],
+  );
+  const availableForSupporting = useMemo(
+    () =>
+      activeInstructors.filter(
+        (i) => i.id !== mainInstructorId && !supportingInstructorIds.includes(i.id),
+      ),
+    [activeInstructors, mainInstructorId, supportingInstructorIds],
+  );
+
+  // If the chosen main overlaps a supporting one, drop the dup.
+  useEffect(() => {
+    if (!mainInstructorId) return;
+    setSupportingInstructorIds((prev) => prev.filter((id) => id !== mainInstructorId));
+  }, [mainInstructorId]);
+
+  function removeSupporting(iid: string) {
+    setSupportingInstructorIds((prev) => prev.filter((x) => x !== iid));
   }
 
   async function handleSave() {
     if (!api) return;
     if (!name.trim()) return setError("Name is required.");
     if (!locationId) return setError("Location is required.");
+    if (!mainInstructorId) return setError("Main instructor is required.");
     if (!isEdit && days.length === 0) return setError("Add at least one day.");
     if (!isEdit && days.some((d) => !d.roomId))
       return setError("Every day needs a room.");
@@ -284,7 +319,8 @@ export function WorkshopEditor({
           name: name.trim(),
           location_id: locationId,
           description_html: descriptionHtml || null,
-          instructor_ids: instructorIds,
+          main_instructor_id: mainInstructorId,
+          supporting_instructor_ids: supportingInstructorIds,
         });
         await api.put(`/portal/admin/workshops/${initial.id}/promotions`, {
           promotions: promotions.map(promotionToApiPayload),
@@ -296,7 +332,8 @@ export function WorkshopEditor({
           name: name.trim(),
           locationId,
           descriptionHtml,
-          instructorIds,
+          mainInstructorId,
+          supportingInstructorIds,
           days: [...days].sort((a, b) => a.date.localeCompare(b.date)),
           tiers,
         });
@@ -391,52 +428,70 @@ export function WorkshopEditor({
           </select>
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="ws-instructor">Instructors</Label>
+          <Label htmlFor="ws-main-instructor">Main instructor</Label>
           <select
-            id="ws-instructor"
-            value=""
-            onChange={(e) => {
-              const id = e.target.value;
-              if (id && !instructorIds.includes(id)) {
-                setInstructorIds((prev) => [...prev, id]);
-              }
-            }}
+            id="ws-main-instructor"
+            value={mainInstructorId}
+            onChange={(e) => setMainInstructorId(e.target.value)}
             className="flex h-10 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           >
-            <option value="">
-              {instructorIds.length === 0 ? "Select instructor…" : "Add another instructor…"}
-            </option>
-            {catalog.instructors
-              .filter((i) => !instructorIds.includes(i.id))
-              .map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.name}
-                </option>
-              ))}
+            <option value="">— select —</option>
+            {activeInstructors.map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.name}
+              </option>
+            ))}
           </select>
-          {instructorIds.length > 0 && (
-            <div className="flex flex-wrap gap-2 pt-1">
-              {instructorIds.map((id) => {
-                const ins = catalog.instructors.find((i) => i.id === id);
-                return (
-                  <span
-                    key={id}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 px-2.5 py-1 text-xs text-ink"
+        </div>
+        <div className="space-y-1.5">
+          <Label>Supporting instructors</Label>
+          <div className="flex flex-wrap items-center gap-2">
+            {supportingInstructorIds.map((sid) => {
+              const ins = catalog.instructors.find((i) => i.id === sid);
+              return (
+                <span
+                  key={sid}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 px-2.5 py-1 text-xs text-ink"
+                >
+                  {ins?.name ?? "Unknown"}
+                  <button
+                    type="button"
+                    onClick={() => removeSupporting(sid)}
+                    className="text-muted hover:text-ink"
+                    aria-label={`Remove ${ins?.name ?? "instructor"}`}
                   >
-                    {ins?.name ?? "Unknown"}
-                    <button
-                      type="button"
-                      onClick={() => toggleInstructor(id)}
-                      className="text-muted hover:text-ink"
-                      aria-label={`Remove ${ins?.name ?? "instructor"}`}
-                    >
-                      ×
-                    </button>
-                  </span>
-                );
-              })}
-            </div>
-          )}
+                    ×
+                  </button>
+                </span>
+              );
+            })}
+            {availableForSupporting.length > 0 && (
+              <select
+                value=""
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v) setSupportingInstructorIds((prev) => [...prev, v]);
+                }}
+                className="flex h-9 rounded-lg border border-border bg-card px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                <option value="">
+                  {supportingInstructorIds.length === 0
+                    ? "+ Add supporting instructor"
+                    : "+ Add another"}
+                </option>
+                {availableForSupporting.map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            {supportingInstructorIds.length === 0 && availableForSupporting.length === 0 && (
+              <span className="text-xs text-muted">
+                No additional instructors available.
+              </span>
+            )}
+          </div>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="ws-desc">Description (HTML)</Label>

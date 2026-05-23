@@ -175,6 +175,8 @@ export const workshops: Workshop[] = [
     descriptionHtml:
       "<p>Two days of dedicated practice with senior teacher Ravi Kumar. Mornings cover the full primary series; afternoons explore pranayama and inversions.</p><p>Suitable for intermediate and above. Bring your own mat and a small towel.</p>",
     locationId: "loc-breadtalk",
+    mainInstructorId: "ins-ravi",
+    supportingInstructorIds: ["ins-priya"],
     instructorIds: ["ins-ravi", "ins-priya"],
     days: [
       { id: "wd-1-sat", date: "2026-05-23", startTime: "09:00", endTime: "17:00", roomId: "room-bt-a", capacity: cap(24, 1) },
@@ -215,6 +217,8 @@ export const workshops: Workshop[] = [
     descriptionHtml:
       "<p>An evening of long-held yin postures paired with crystal singing bowls and Tibetan chimes. Mei Lin guides the asana; sound therapist Naomi Khoo takes the second hour.</p>",
     locationId: "loc-outram",
+    mainInstructorId: "ins-mei",
+    supportingInstructorIds: [],
     instructorIds: ["ins-mei"],
     days: [
       { id: "wd-2-day", date: "2026-06-07", startTime: "19:00", endTime: "21:30", roomId: "room-op-hall", capacity: cap(20) },
@@ -244,6 +248,8 @@ export const workshops: Workshop[] = [
     descriptionHtml:
       "<p>Three consecutive Saturdays building from foundational hammock work to full inversions and short choreographies. Open to intermediate practitioners.</p>",
     locationId: "loc-breadtalk",
+    mainInstructorId: "ins-jay",
+    supportingInstructorIds: [],
     instructorIds: ["ins-jay"],
     days: [
       { id: "wd-3-day1", date: "2026-06-13", startTime: "14:00", endTime: "17:00", roomId: "room-bt-a", capacity: cap(12, 1, 2) },
