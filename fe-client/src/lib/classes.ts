@@ -13,7 +13,12 @@ export interface ApiClassLocation {
 export interface ApiClassCard {
   id: string;
   class_type: { id: string; name: string };
+  /** Main instructor — kept for back-compat alongside `main_instructor_id`. */
   instructor: { id: string; name: string };
+  main_instructor_id: string;
+  supporting_instructor_ids: string[];
+  /** Back-compat — [main, ...supporting]. */
+  instructor_ids: string[];
   location: ApiClassLocation | null;
   room: { id: string; name: string } | null;
   starts_at: string;
@@ -31,6 +36,8 @@ export interface ApiClassDetail extends ApiClassCard {
   location:
     | { id: string; name: string; address: string | null; gmaps_url: string | null }
     | null;
+  /** Hydrated supporting instructor names (detail endpoint only). */
+  supporting_instructors: { id: string; name: string }[];
 }
 
 export interface ApiLocationFull {
