@@ -181,3 +181,25 @@ export const clientPackages = pgTable(
     ),
   }),
 )
+
+// ---------- corporate_packages (admin-only catalogue, NOT visible to fe-client) ----------
+
+export const corporatePackages = pgTable(
+  'corporate_packages',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    name: text('name').notNull(),
+    description: text('description'),
+    priceSgd: numeric('price_sgd', { precision: 10, scale: 2 }).notNull(),
+    status: packageStatusEnum('status').notNull().default('active'),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdByStaffId: uuid('created_by_staff_id')
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: 'restrict' }),
+  },
+  table => ({
+    statusIdx: index('corporate_packages_status_idx').on(table.status),
+    pricePositive: check('corporate_packages_price_positive', sql`${table.priceSgd} >= 0`),
+  }),
+)
