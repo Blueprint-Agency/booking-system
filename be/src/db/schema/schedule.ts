@@ -84,6 +84,26 @@ export const classes = pgTable(
 )
 
 // ============================================================================
+// class_supporting_instructors (§4.3) — 0..N per class. Main lives on classes.main_instructor_id.
+// ============================================================================
+
+export const classSupportingInstructors = pgTable(
+  'class_supporting_instructors',
+  {
+    classId: uuid('class_id')
+      .notNull()
+      .references(() => classes.id, { onDelete: 'cascade' }),
+    instructorId: uuid('instructor_id')
+      .notNull()
+      .references(() => instructors.staffUserId, { onDelete: 'restrict' }),
+  },
+  table => ({
+    pk: primaryKey({ columns: [table.classId, table.instructorId] }),
+    instructorIdx: index('class_supporting_instructors_instructor_idx').on(table.instructorId),
+  }),
+)
+
+// ============================================================================
 // workshops (§4e / §7e / §19) — multi-day, starts_at/ends_at moved to workshop_days
 // ============================================================================
 
