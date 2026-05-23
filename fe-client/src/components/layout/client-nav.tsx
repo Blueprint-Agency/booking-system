@@ -14,7 +14,7 @@ const NAV_LINKS = [
   { href: "/packages", label: "Packages" },
 ];
 
-export function ClientNav() {
+export function ClientNav({ impersonating = false }: { impersonating?: boolean } = {}) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -50,7 +50,8 @@ export function ClientNav() {
   return (
     <header
       className={cn(
-        "sticky top-0 z-50 transition-all duration-300",
+        "sticky z-50 transition-all duration-300",
+        impersonating ? "top-10" : "top-0",
         isTransparent
           ? "bg-transparent"
           : "bg-paper/95 backdrop-blur-sm border-b border-border"

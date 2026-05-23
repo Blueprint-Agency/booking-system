@@ -16,12 +16,12 @@ export async function ImpersonationBanner() {
   if (!active) return null;
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-50 flex h-10 items-center justify-center gap-3 bg-red-600 text-sm text-white shadow">
+    <div className="fixed top-0 left-0 right-0 z-[60] flex h-10 items-center justify-center gap-3 bg-amber-500 text-sm font-medium text-amber-950 shadow-sm">
       <span>You are impersonating a client.</span>
       <form action="/stop-impersonating" method="post">
         <button
           type="submit"
-          className="rounded border border-white/40 px-2 py-0.5 text-xs font-medium hover:bg-white/10"
+          className="rounded border border-amber-900/40 px-2 py-0.5 text-xs font-semibold text-amber-950 hover:bg-amber-900/10"
         >
           Stop impersonating
         </button>

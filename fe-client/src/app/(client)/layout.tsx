@@ -18,7 +18,7 @@ export default async function ClientLayout({
       <ImpersonationBanner />
       <div className={`min-h-screen bg-paper flex flex-col ${impersonating ? "pt-10" : ""}`}>
         <ScrollToTop />
-        <ClientNav />
+        <ClientNav impersonating={impersonating} />
         <main className="flex-1">{children}</main>
         <SiteFooter />
       </div>
