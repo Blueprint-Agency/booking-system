@@ -1,8 +1,8 @@
 "use client";
-import { use, useCallback, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Loader2 } from "lucide-react";
-import { Badge } from "@/components/ui";
+import { ArrowLeft, Loader2, Save } from "lucide-react";
+import { Badge, Button, Label } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { computeEventState } from "@/lib/event-state";
@@ -59,6 +59,10 @@ interface ApiClassDetail {
   ends_at: string;
   class_type: NamedRef | null;
   instructor: NamedRef | null;
+  main_instructor_id: string | null;
+  supporting_instructor_ids: string[];
+  supporting_instructors: NamedRef[];
+  instructor_ids: string[];
   location: NamedRef | null;
   room: NamedRef | null;
   capacity_online: number;
@@ -100,6 +104,7 @@ export default function SessionDetailPage({
 function ClassDetail({ id }: { id: string }) {
   const { api } = useWorkspace();
   const [data, setData] = useState<ApiClassDetail | null>(null);
+  const [instructors, setInstructors] = useState<ApiInstructor[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -108,7 +113,14 @@ function ClassDetail({ id }: { id: string }) {
     setLoading(true);
     setError(null);
     try {
-      setData(await api.get<ApiClassDetail>(`/portal/admin/schedule/classes/${id}`));
+      const [d, ins] = await Promise.all([
+        api.get<ApiClassDetail>(`/portal/admin/schedule/classes/${id}`),
+        api.get<{ instructors: Array<ApiInstructor & { archived_at?: string | null }> }>(
+          "/portal/admin/instructors",
+        ),
+      ]);
+      setData(d);
+      setInstructors(ins.instructors.filter((i) => !i.archived_at));
     } catch (err) {
       setError(detailError(err, "Class not found."));
     } finally {
@@ -150,7 +162,179 @@ function ClassDetail({ id }: { id: string }) {
         <Stat label="Credit cost" value={`${data.credit_cost} credit${data.credit_cost === 1 ? "" : "s"}`} />
         <Stat label="Capacity split" value={`${data.capacity_online} / ${data.capacity_waitlist} / ${data.capacity_buffer}`} sub="online / waitlist / buffer" />
       </div>
+      <ClassInstructorEditor
+        classId={data.id}
+        instructors={instructors}
+        initialMainId={data.main_instructor_id ?? ""}
+        initialSupportingIds={data.supporting_instructor_ids ?? []}
+        disabled={data.lifecycle === "cancelled"}
+        onSaved={load}
+      />
     </DetailFrame>
+  );
+}
+
+function ClassInstructorEditor({
+  classId,
+  instructors,
+  initialMainId,
+  initialSupportingIds,
+  disabled,
+  onSaved,
+}: {
+  classId: string;
+  instructors: ApiInstructor[];
+  initialMainId: string;
+  initialSupportingIds: string[];
+  disabled: boolean;
+  onSaved: () => void | Promise<void>;
+}) {
+  const { api } = useWorkspace();
+  const [mainInstructorId, setMainInstructorId] = useState(initialMainId);
+  const [supportingInstructorIds, setSupportingInstructorIds] =
+    useState<string[]>(initialSupportingIds);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  // Re-sync if parent reloads.
+  useEffect(() => setMainInstructorId(initialMainId), [initialMainId]);
+  useEffect(
+    () => setSupportingInstructorIds(initialSupportingIds),
+    [initialSupportingIds],
+  );
+
+  // Drop any supporting that overlaps the main.
+  useEffect(() => {
+    if (!mainInstructorId) return;
+    setSupportingInstructorIds((prev) => prev.filter((sid) => sid !== mainInstructorId));
+  }, [mainInstructorId]);
+
+  const availableForSupporting = useMemo(
+    () =>
+      instructors.filter(
+        (i) => i.id !== mainInstructorId && !supportingInstructorIds.includes(i.id),
+      ),
+    [instructors, mainInstructorId, supportingInstructorIds],
+  );
+
+  const dirty =
+    mainInstructorId !== initialMainId ||
+    supportingInstructorIds.length !== initialSupportingIds.length ||
+    supportingInstructorIds.some((s, i) => s !== initialSupportingIds[i]);
+
+  async function handleSave() {
+    if (!api || !mainInstructorId) return;
+    setSaving(true);
+    setErr(null);
+    try {
+      await api.patch(`/portal/admin/schedule/classes/${classId}`, {
+        main_instructor_id: mainInstructorId,
+        supporting_instructor_ids: supportingInstructorIds,
+      });
+      await onSaved();
+    } catch (e) {
+      setErr(e instanceof ApiError ? `Save failed (HTTP ${e.status}).` : "Save failed.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="mt-6 rounded-xl border border-border bg-card p-5 shadow-soft">
+      <h2 className="mb-3 text-sm font-semibold text-ink">Instructors</h2>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label htmlFor="cls-main-ins">Main instructor</Label>
+          <select
+            id="cls-main-ins"
+            value={mainInstructorId}
+            disabled={disabled || saving}
+            onChange={(e) => setMainInstructorId(e.target.value)}
+            className="flex h-10 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+          >
+            <option value="">Select…</option>
+            {instructors.map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Supporting instructors</Label>
+          <div className="flex flex-wrap items-center gap-2">
+            {supportingInstructorIds.map((sid) => {
+              const name = instructors.find((i) => i.id === sid)?.name ?? "Unknown";
+              return (
+                <span
+                  key={sid}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 px-2.5 py-1 text-xs text-ink"
+                >
+                  {name}
+                  <button
+                    type="button"
+                    disabled={disabled || saving}
+                    onClick={() =>
+                      setSupportingInstructorIds((prev) =>
+                        prev.filter((x) => x !== sid),
+                      )
+                    }
+                    className="text-muted hover:text-ink disabled:opacity-50"
+                    aria-label={`Remove ${name}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              );
+            })}
+            {!disabled && availableForSupporting.length > 0 && (
+              <select
+                value=""
+                disabled={saving}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v) setSupportingInstructorIds((prev) => [...prev, v]);
+                }}
+                className="flex h-9 rounded-lg border border-border bg-card px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+              >
+                <option value="">
+                  {supportingInstructorIds.length === 0
+                    ? "+ Add supporting instructor"
+                    : "+ Add another"}
+                </option>
+                {availableForSupporting.map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            {supportingInstructorIds.length === 0 && availableForSupporting.length === 0 && (
+              <span className="text-xs text-muted">No additional instructors available.</span>
+            )}
+          </div>
+        </div>
+      </div>
+      {err && (
+        <p className="mt-3 rounded-md border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
+          {err}
+        </p>
+      )}
+      <div className="mt-4 flex justify-end">
+        <Button
+          size="sm"
+          onClick={handleSave}
+          disabled={disabled || saving || !dirty || !mainInstructorId}
+        >
+          {saving ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Save className="h-4 w-4" />
+          )}
+          Save instructors
+        </Button>
+      </div>
+    </section>
   );
 }
 
