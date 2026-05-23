@@ -84,6 +84,17 @@ export default function WorkshopDetailPage() {
     ? tierEffectivePrice(selectedTier)
     : null;
 
+  // Split instructors into main vs supporting using `main_instructor_id`.
+  // BE returns `instructors` ordered [main, ...supporting]; fall back to that
+  // order when `main_instructor_id` is null (e.g. unpublished workshops).
+  const mainInstructor =
+    workshop.instructors.find((i) => i.id === workshop.main_instructor_id) ??
+    workshop.instructors[0] ??
+    null;
+  const supportingInstructors = workshop.instructors.filter(
+    (i) => i.id !== mainInstructor?.id,
+  );
+
   return (
     <>
       <div id="purchase">
@@ -116,31 +127,69 @@ export default function WorkshopDetailPage() {
               )}
 
               {/* Instructors */}
-              {workshop.instructors.length > 0 && (
+              {mainInstructor && (
                 <div className="border-t border-ink/10 pt-8 mt-10 space-y-6">
-                  {workshop.instructors.map((instructor) => (
-                    <div key={instructor.id} className="flex gap-4 items-start">
+                  {/* Main instructor — prominent */}
+                  <div className="flex gap-4 items-start">
+                    {mainInstructor.avatar_url ? (
+                      <div className="relative h-14 w-14 shrink-0 rounded-full overflow-hidden">
+                        <Image
+                          src={mainInstructor.avatar_url}
+                          alt={mainInstructor.name}
+                          fill
+                          className="object-cover"
+                          sizes="56px"
+                        />
+                      </div>
+                    ) : (
+                      <div className="h-14 w-14 shrink-0 rounded-full bg-ink/10 flex items-center justify-center text-ink font-bold text-lg">
+                        {mainInstructor.name.charAt(0)}
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-sm font-semibold text-ink">
+                        {mainInstructor.name}
+                      </p>
+                      {supportingInstructors.length > 0 && (
+                        <p className="text-xs text-muted mt-0.5 truncate">
+                          with{" "}
+                          {supportingInstructors
+                            .map((i) => i.name)
+                            .join(" & ")}
+                        </p>
+                      )}
+                      {mainInstructor.bio && (
+                        <p className="text-sm text-ink/70 mt-2 leading-relaxed">
+                          {mainInstructor.bio}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Supporting instructors — quieter, smaller avatars */}
+                  {supportingInstructors.map((instructor) => (
+                    <div key={instructor.id} className="flex gap-4 items-start pl-4">
                       {instructor.avatar_url ? (
-                        <div className="relative h-14 w-14 shrink-0 rounded-full overflow-hidden">
+                        <div className="relative h-10 w-10 shrink-0 rounded-full overflow-hidden">
                           <Image
                             src={instructor.avatar_url}
                             alt={instructor.name}
                             fill
                             className="object-cover"
-                            sizes="56px"
+                            sizes="40px"
                           />
                         </div>
                       ) : (
-                        <div className="h-14 w-14 shrink-0 rounded-full bg-ink/10 flex items-center justify-center text-ink font-bold text-lg">
+                        <div className="h-10 w-10 shrink-0 rounded-full bg-ink/10 flex items-center justify-center text-ink font-semibold text-sm">
                           {instructor.name.charAt(0)}
                         </div>
                       )}
                       <div>
-                        <p className="text-sm font-semibold text-ink">
+                        <p className="text-xs font-semibold text-ink">
                           {instructor.name}
                         </p>
                         {instructor.bio && (
-                          <p className="text-sm text-ink/70 mt-1 leading-relaxed">
+                          <p className="text-xs text-ink/70 mt-1 leading-relaxed">
                             {instructor.bio}
                           </p>
                         )}

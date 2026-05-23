@@ -72,12 +72,18 @@ export interface ApiWorkshopCard {
   has_discount: boolean;
   days_count: number;
   tiers_count: number;
+  /** ID of the workshop's main instructor (nullable until published). */
+  main_instructor_id: string | null;
+  supporting_instructor_ids: string[];
+  /** Back-compat — [main, ...supporting]. */
+  instructor_ids: string[];
 }
 
 export interface ApiWorkshopDetail extends ApiWorkshopCard {
   images: { id: string; url: string | null; ord: number }[];
   days: ApiWorkshopDay[];
   tiers: ApiWorkshopTier[];
+  /** Hydrated instructor records ordered [main, ...supporting]. */
   instructors: ApiInstructorLite[];
 }
 
