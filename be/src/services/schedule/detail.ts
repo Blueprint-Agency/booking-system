@@ -2,6 +2,7 @@ import { and, eq, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import {
   classes,
+  classSupportingInstructors,
   ptSessions,
   ptSessionClients,
   classTypes,
@@ -25,6 +26,9 @@ export interface ClassDetail {
   endsAt: Date
   classType: NamedRef | null
   instructor: NamedRef | null
+  mainInstructorId: string
+  supportingInstructorIds: string[]
+  supportingInstructors: NamedRef[]
   location: NamedRef | null
   room: NamedRef | null
   capacityOnline: number
@@ -68,6 +72,16 @@ export async function getClassDetail(id: string): Promise<ClassDetail> {
     .from(bookings)
     .where(and(eq(bookings.classId, id), eq(bookings.state, 'confirmed')))
 
+  const supportingRows = await db
+    .select({ instructorId: classSupportingInstructors.instructorId, name: staffUsers.name })
+    .from(classSupportingInstructors)
+    .leftJoin(staffUsers, eq(staffUsers.id, classSupportingInstructors.instructorId))
+    .where(eq(classSupportingInstructors.classId, id))
+  const supportingInstructors = supportingRows
+    .map(r => ({ id: r.instructorId, name: r.name ?? 'Instructor' }))
+    .sort((a, b) => a.id.localeCompare(b.id))
+  const supportingInstructorIds = supportingInstructors.map(s => s.id)
+
   return {
     id: row.id,
     lifecycle: row.lifecycle as ClassDetail['lifecycle'],
@@ -75,6 +89,9 @@ export async function getClassDetail(id: string): Promise<ClassDetail> {
     endsAt: row.endsAt,
     classType: row.classTypeName ? { id: row.classTypeId, name: row.classTypeName } : null,
     instructor: row.instructorName ? { id: row.instructorId, name: row.instructorName } : null,
+    mainInstructorId: row.instructorId,
+    supportingInstructorIds,
+    supportingInstructors,
     location: row.locationName ? { id: row.locationId, name: row.locationName } : null,
     room: row.roomId && row.roomName ? { id: row.roomId, name: row.roomName } : null,
     capacityOnline: row.capacityOnline,

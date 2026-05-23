@@ -3,6 +3,7 @@ import { db } from '../../db'
 import {
   bookings,
   classes,
+  classSupportingInstructors,
   classTypes,
   clients,
   ptSessionClients,
@@ -21,6 +22,11 @@ export interface ScheduleEntryRow {
   workshopId: string | null
   label: string
   classTypeId: string | null
+  /** Main instructor for the entry (null for PT entries where role does not apply). */
+  mainInstructorId: string | null
+  /** Supporting instructors (sorted). Empty if none. */
+  supportingInstructorIds: string[]
+  /** Back-compat — [main, ...supporting] for classes/workshops; [instructor] for PT. */
   instructorIds: string[]
   locationId: string | null
   roomId: string | null
@@ -59,7 +65,15 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
     const conds = []
     if (opts.from) conds.push(gte(classes.endsAt, opts.from))
     if (opts.to) conds.push(lt(classes.startsAt, opts.to))
-    if (opts.instructorId) conds.push(eq(classes.mainInstructorId, opts.instructorId))
+    if (opts.instructorId) {
+      // Match instructor as either main OR supporting.
+      conds.push(
+        sql`(${classes.mainInstructorId} = ${opts.instructorId} OR ${classes.id} IN (
+          SELECT ${classSupportingInstructors.classId} FROM ${classSupportingInstructors}
+          WHERE ${classSupportingInstructors.instructorId} = ${opts.instructorId}
+        ))`,
+      )
+    }
     if (opts.classTypeId) conds.push(eq(classes.classTypeId, opts.classTypeId))
     if (opts.locationId) conds.push(eq(classes.locationId, opts.locationId))
 
@@ -93,14 +107,34 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
     const bookedByClass = new Map<string, number>()
     for (const c of counts) if (c.classId) bookedByClass.set(c.classId, Number(c.cnt))
 
+    const supportingByClass = new Map<string, string[]>()
+    if (ids.length) {
+      const supportingRows = await db
+        .select({
+          classId: classSupportingInstructors.classId,
+          instructorId: classSupportingInstructors.instructorId,
+        })
+        .from(classSupportingInstructors)
+        .where(inArray(classSupportingInstructors.classId, ids))
+      for (const r of supportingRows) {
+        const list = supportingByClass.get(r.classId) ?? []
+        list.push(r.instructorId)
+        supportingByClass.set(r.classId, list)
+      }
+      for (const list of supportingByClass.values()) list.sort()
+    }
+
     for (const r of rows) {
+      const supporting = supportingByClass.get(r.id) ?? []
       out.push({
         kind: 'class',
         id: r.id,
         workshopId: null,
         label: r.className,
         classTypeId: r.classTypeId,
-        instructorIds: [r.instructorId],
+        mainInstructorId: r.instructorId,
+        supportingInstructorIds: supporting,
+        instructorIds: [r.instructorId, ...supporting],
         locationId: r.locationId,
         roomId: r.roomId,
         startsAt: r.startsAt.toISOString(),
@@ -165,16 +199,23 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
           .select({
             workshopId: workshopInstructors.workshopId,
             instructorId: workshopInstructors.instructorId,
+            role: workshopInstructors.role,
           })
           .from(workshopInstructors)
           .where(inArray(workshopInstructors.workshopId, workshopIds))
       : []
-    const instructorsByWorkshop = new Map<string, string[]>()
+    const mainByWorkshop = new Map<string, string>()
+    const supportingByWorkshop = new Map<string, string[]>()
     for (const r of instructorRows) {
-      const list = instructorsByWorkshop.get(r.workshopId) ?? []
-      list.push(r.instructorId)
-      instructorsByWorkshop.set(r.workshopId, list)
+      if (r.role === 'main') {
+        mainByWorkshop.set(r.workshopId, r.instructorId)
+      } else {
+        const list = supportingByWorkshop.get(r.workshopId) ?? []
+        list.push(r.instructorId)
+        supportingByWorkshop.set(r.workshopId, list)
+      }
     }
+    for (const list of supportingByWorkshop.values()) list.sort()
 
     const wsBookings = workshopIds.length
       ? await db
@@ -189,7 +230,9 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
     for (const r of wsBookings) if (r.workshopId) bookedByWorkshop.set(r.workshopId, Number(r.cnt))
 
     for (const r of rows) {
-      const ids = instructorsByWorkshop.get(r.workshopId) ?? []
+      const main = mainByWorkshop.get(r.workshopId) ?? null
+      const supporting = supportingByWorkshop.get(r.workshopId) ?? []
+      const ids = main ? [main, ...supporting] : [...supporting]
       if (opts.instructorId && !ids.includes(opts.instructorId)) continue
       out.push({
         kind: 'workshop',
@@ -197,6 +240,8 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
         workshopId: r.workshopId,
         label: r.wsName,
         classTypeId: null,
+        mainInstructorId: main,
+        supportingInstructorIds: supporting,
         instructorIds: ids,
         locationId: r.wsLocationId,
         roomId: r.roomId,
@@ -266,6 +311,8 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
         workshopId: null,
         label: `Private · ${names.join(' + ') || 'Unknown'}`,
         classTypeId: null,
+        mainInstructorId: null,
+        supportingInstructorIds: [],
         instructorIds: [r.instructorId],
         locationId: r.locationId,
         roomId: r.roomId,

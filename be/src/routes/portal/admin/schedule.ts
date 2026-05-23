@@ -21,7 +21,8 @@ const listQuery = z.object({
 const createClassSchema = z
   .object({
     class_type_id: z.string().uuid(),
-    instructor_id: z.string().uuid(),
+    main_instructor_id: z.string().uuid(),
+    supporting_instructor_ids: z.array(z.string().uuid()).default([]),
     location_id: z.string().uuid(),
     room_id: z.string().uuid(),
     starts_at: isoDate,
@@ -40,6 +41,20 @@ const createClassSchema = z
     path: ['ends_at'],
   })
 
+const updateClassSchema = z.object({
+  class_type_id: z.string().uuid().optional(),
+  main_instructor_id: z.string().uuid().optional(),
+  supporting_instructor_ids: z.array(z.string().uuid()).optional(),
+  location_id: z.string().uuid().optional(),
+  room_id: z.string().uuid().optional(),
+  starts_at: isoDate.optional(),
+  ends_at: isoDate.optional(),
+  capacity_online: z.number().int().min(0).optional(),
+  capacity_waitlist: z.number().int().min(0).optional(),
+  capacity_buffer: z.number().int().min(0).optional(),
+  credit_cost: z.number().int().min(0).optional(),
+})
+
 function entryRow(e: timetable.ScheduleEntryRow) {
   return {
     kind: e.kind,
@@ -47,6 +62,8 @@ function entryRow(e: timetable.ScheduleEntryRow) {
     workshop_id: e.workshopId,
     label: e.label,
     class_type_id: e.classTypeId,
+    main_instructor_id: e.mainInstructorId,
+    supporting_instructor_ids: e.supportingInstructorIds,
     instructor_ids: e.instructorIds,
     location_id: e.locationId,
     room_id: e.roomId,
@@ -60,11 +77,14 @@ function entryRow(e: timetable.ScheduleEntryRow) {
   }
 }
 
-function classRow(c: classesSvc.ClassRow) {
+async function classRow(c: classesSvc.ClassRow) {
+  const supportingInstructorIds = await classesSvc.listSupportingInstructorIds(c.id)
   return {
     id: c.id,
     class_type_id: c.classTypeId,
-    instructor_id: c.mainInstructorId,
+    main_instructor_id: c.mainInstructorId,
+    supporting_instructor_ids: supportingInstructorIds,
+    instructor_ids: [c.mainInstructorId, ...supportingInstructorIds],
     location_id: c.locationId,
     room_id: c.roomId,
     starts_at: c.startsAt.toISOString(),
@@ -100,6 +120,10 @@ const app = new Hono()
       ends_at: d.endsAt.toISOString(),
       class_type: d.classType,
       instructor: d.instructor,
+      main_instructor_id: d.mainInstructorId,
+      supporting_instructor_ids: d.supportingInstructorIds,
+      supporting_instructors: d.supportingInstructors,
+      instructor_ids: [d.mainInstructorId, ...d.supportingInstructorIds],
       location: d.location,
       room: d.room,
       capacity_online: d.capacityOnline,
@@ -131,7 +155,8 @@ const app = new Hono()
     const staffId = c.get('staffUserId')
     const row = await classesSvc.createClass({
       classTypeId: body.class_type_id,
-      instructorId: body.instructor_id,
+      mainInstructorId: body.main_instructor_id,
+      supportingInstructorIds: body.supporting_instructor_ids,
       locationId: body.location_id,
       roomId: body.room_id,
       startsAt: new Date(body.starts_at),
@@ -143,10 +168,37 @@ const app = new Hono()
       createdByStaffId: staffId,
     })
     c.set('auditTarget' as any, { table: 'classes', id: row.id })
-    return c.json(classRow(row), 201)
+    return c.json(await classRow(row), 201)
   })
-  .patch('/classes/:id', c =>
-    c.json({ todo: 'edit class — reject if material change with bookings' }, 501),
+  .patch(
+    '/classes/:id',
+    zValidator('param', z.object({ id: z.string().uuid() })),
+    zValidator('json', updateClassSchema),
+    async c => {
+      const { id } = c.req.valid('param')
+      const body = c.req.valid('json')
+      const row = await classesSvc.updateClass(id, {
+        ...(body.class_type_id !== undefined ? { classTypeId: body.class_type_id } : {}),
+        ...(body.main_instructor_id !== undefined
+          ? { mainInstructorId: body.main_instructor_id }
+          : {}),
+        ...(body.supporting_instructor_ids !== undefined
+          ? { supportingInstructorIds: body.supporting_instructor_ids }
+          : {}),
+        ...(body.location_id !== undefined ? { locationId: body.location_id } : {}),
+        ...(body.room_id !== undefined ? { roomId: body.room_id } : {}),
+        ...(body.starts_at !== undefined ? { startsAt: new Date(body.starts_at) } : {}),
+        ...(body.ends_at !== undefined ? { endsAt: new Date(body.ends_at) } : {}),
+        ...(body.capacity_online !== undefined ? { capacityOnline: body.capacity_online } : {}),
+        ...(body.capacity_waitlist !== undefined
+          ? { capacityWaitlist: body.capacity_waitlist }
+          : {}),
+        ...(body.capacity_buffer !== undefined ? { capacityBuffer: body.capacity_buffer } : {}),
+        ...(body.credit_cost !== undefined ? { creditCost: body.credit_cost } : {}),
+      })
+      c.set('auditTarget' as any, { table: 'classes', id })
+      return c.json(await classRow(row))
+    },
   )
   .post('/classes/:id/cancel', c => c.json({ todo: 'admin-cancel class' }, 501))
   .post('/workshops/:id/cancel', c =>
