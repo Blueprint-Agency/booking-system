@@ -84,6 +84,10 @@ interface WorkshopDetailPayload extends WorkshopCardPayload {
   days: DayPayload[]
   tiers: TierPayload[]
   instructors: InstructorLite[]
+  main_instructor_id: string | null
+  supporting_instructor_ids: string[]
+  /** Back-compat — [main, ...supporting]. */
+  instructor_ids: string[]
 }
 
 async function loadCommon(workshopIds: string[]) {
@@ -247,10 +251,19 @@ export async function getWorkshopDetailPayload(id: string): Promise<WorkshopDeta
     .orderBy(workshopImages.ord)
 
   const instructorIdsRows = await db
-    .select({ id: workshopInstructors.instructorId })
+    .select({ id: workshopInstructors.instructorId, role: workshopInstructors.role })
     .from(workshopInstructors)
     .where(eq(workshopInstructors.workshopId, w.id))
-  const instructorIds = instructorIdsRows.map(r => r.id)
+  let mainInstructorId: string | null = null
+  const supportingInstructorIds: string[] = []
+  for (const r of instructorIdsRows) {
+    if (r.role === 'main') mainInstructorId = r.id
+    else supportingInstructorIds.push(r.id)
+  }
+  supportingInstructorIds.sort()
+  const instructorIds = mainInstructorId
+    ? [mainInstructorId, ...supportingInstructorIds]
+    : [...supportingInstructorIds]
 
   let instructorPayload: InstructorLite[] = []
   if (instructorIds.length) {
@@ -264,12 +277,17 @@ export async function getWorkshopDetailPayload(id: string): Promise<WorkshopDeta
       .from(instructors)
       .innerJoin(staffUsers, eq(staffUsers.id, instructors.staffUserId))
       .where(inArray(instructors.staffUserId, instructorIds))
-    instructorPayload = rows.map(r => ({
-      id: r.id,
-      name: r.name || 'Instructor',
-      bio: r.bio,
-      avatar_url: r2Url(r.photoR2Key),
-    }))
+    const byId = new Map(rows.map(r => [r.id, r]))
+    // Preserve [main, ...supporting] ordering.
+    instructorPayload = instructorIds
+      .map(id => byId.get(id))
+      .filter((r): r is NonNullable<typeof r> => !!r)
+      .map(r => ({
+        id: r.id,
+        name: r.name || 'Instructor',
+        bio: r.bio,
+        avatar_url: r2Url(r.photoR2Key),
+      }))
   }
 
   const card = await buildCard(
@@ -285,5 +303,8 @@ export async function getWorkshopDetailPayload(id: string): Promise<WorkshopDeta
     days,
     tiers,
     instructors: instructorPayload,
+    main_instructor_id: mainInstructorId,
+    supporting_instructor_ids: supportingInstructorIds,
+    instructor_ids: instructorIds,
   }
 }

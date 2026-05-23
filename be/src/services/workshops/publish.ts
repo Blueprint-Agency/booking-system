@@ -19,9 +19,21 @@ export interface CreateWorkshopInput {
   locationId: string
   descriptionHtml?: string | null
   coverR2Key?: string | null
-  instructorIds?: string[]
+  mainInstructorId: string
+  supportingInstructorIds?: string[]
   imageR2Keys?: string[]
   createdByStaffId: string
+}
+
+function normalizeSupporting(
+  mainInstructorId: string,
+  supportingInstructorIds: string[] | undefined,
+): string[] {
+  const supports = Array.from(new Set(supportingInstructorIds ?? []))
+  if (supports.includes(mainInstructorId)) {
+    throw new BadRequestError('main_instructor_cannot_be_supporting')
+  }
+  return supports
 }
 
 async function ensureLocation(id: string) {
@@ -48,8 +60,12 @@ async function ensureInstructors(ids: string[]) {
 }
 
 export async function createWorkshop(input: CreateWorkshopInput): Promise<WorkshopRow> {
+  if (!input.mainInstructorId) {
+    throw new BadRequestError('main_instructor_id_required')
+  }
   await ensureLocation(input.locationId)
-  await ensureInstructors(input.instructorIds ?? [])
+  const supports = normalizeSupporting(input.mainInstructorId, input.supportingInstructorIds)
+  await ensureInstructors([input.mainInstructorId, ...supports])
 
   return db.transaction(async tx => {
     const [row] = await tx
@@ -64,17 +80,15 @@ export async function createWorkshop(input: CreateWorkshopInput): Promise<Worksh
       })
       .returning()
 
-    if (input.instructorIds?.length) {
-      await tx
-        .insert(workshopInstructors)
-        .values(
-          input.instructorIds.map((instructorId, i) => ({
-            workshopId: row!.id,
-            instructorId,
-            role: i === 0 ? ('main' as const) : ('supporting' as const),
-          })),
-        )
-    }
+    await tx.insert(workshopInstructors).values([
+      { workshopId: row!.id, instructorId: input.mainInstructorId, role: 'main' as const },
+      ...supports.map(instructorId => ({
+        workshopId: row!.id,
+        instructorId,
+        role: 'supporting' as const,
+      })),
+    ])
+
     if (input.imageR2Keys?.length) {
       await tx.insert(workshopImages).values(
         input.imageR2Keys.map((r2Key, i) => ({
@@ -93,7 +107,8 @@ export interface UpdateWorkshopInput {
   locationId?: string
   descriptionHtml?: string | null
   coverR2Key?: string | null
-  instructorIds?: string[]
+  mainInstructorId?: string
+  supportingInstructorIds?: string[]
   imageR2Keys?: string[]
 }
 
@@ -109,7 +124,45 @@ export async function updateWorkshop(id: string, patch: UpdateWorkshopInput): Pr
     throw new BadRequestError('workshop_cancelled')
   }
   if (patch.locationId !== undefined) await ensureLocation(patch.locationId)
-  if (patch.instructorIds !== undefined) await ensureInstructors(patch.instructorIds)
+
+  // Resolve the instructor roster shape we're going to write, if any touch was requested.
+  const touchingInstructors =
+    patch.mainInstructorId !== undefined || patch.supportingInstructorIds !== undefined
+
+  let resolvedMainId: string | null = null
+  let resolvedSupports: string[] = []
+  if (touchingInstructors) {
+    if (patch.mainInstructorId !== undefined) {
+      resolvedMainId = patch.mainInstructorId
+    } else {
+      // Re-use existing main when only supporting list is being patched.
+      const [currentMain] = await db
+        .select({ id: workshopInstructors.instructorId })
+        .from(workshopInstructors)
+        .where(and(eq(workshopInstructors.workshopId, id), eq(workshopInstructors.role, 'main')))
+        .limit(1)
+      if (!currentMain) throw new BadRequestError('workshop_has_no_main_instructor')
+      resolvedMainId = currentMain.id
+    }
+    if (!resolvedMainId) throw new BadRequestError('main_instructor_id_required')
+
+    const supportsInput =
+      patch.supportingInstructorIds !== undefined
+        ? patch.supportingInstructorIds
+        : (
+            await db
+              .select({ id: workshopInstructors.instructorId })
+              .from(workshopInstructors)
+              .where(
+                and(
+                  eq(workshopInstructors.workshopId, id),
+                  eq(workshopInstructors.role, 'supporting'),
+                ),
+              )
+          ).map(r => r.id)
+    resolvedSupports = normalizeSupporting(resolvedMainId, supportsInput)
+    await ensureInstructors([resolvedMainId, ...resolvedSupports])
+  }
 
   await db.transaction(async tx => {
     const set: Partial<typeof workshops.$inferInsert> = {}
@@ -121,19 +174,16 @@ export async function updateWorkshop(id: string, patch: UpdateWorkshopInput): Pr
       await tx.update(workshops).set(set).where(eq(workshops.id, id))
     }
 
-    if (patch.instructorIds !== undefined) {
+    if (touchingInstructors && resolvedMainId) {
       await tx.delete(workshopInstructors).where(eq(workshopInstructors.workshopId, id))
-      if (patch.instructorIds.length) {
-        await tx
-          .insert(workshopInstructors)
-          .values(
-            patch.instructorIds.map((instructorId, i) => ({
-              workshopId: id,
-              instructorId,
-              role: i === 0 ? ('main' as const) : ('supporting' as const),
-            })),
-          )
-      }
+      await tx.insert(workshopInstructors).values([
+        { workshopId: id, instructorId: resolvedMainId, role: 'main' as const },
+        ...resolvedSupports.map(instructorId => ({
+          workshopId: id,
+          instructorId,
+          role: 'supporting' as const,
+        })),
+      ])
     }
 
     if (patch.imageR2Keys !== undefined) {
@@ -160,11 +210,40 @@ export async function listWorkshops(opts: { lifecycle?: 'active' | 'cancelled' }
   return db.select().from(workshops)
 }
 
+export async function listInstructorsByWorkshop(
+  workshopIds: string[],
+): Promise<Map<string, { mainInstructorId: string | null; supportingInstructorIds: string[] }>> {
+  const map = new Map<string, { mainInstructorId: string | null; supportingInstructorIds: string[] }>()
+  if (!workshopIds.length) return map
+  const rows = await db
+    .select({
+      workshopId: workshopInstructors.workshopId,
+      instructorId: workshopInstructors.instructorId,
+      role: workshopInstructors.role,
+    })
+    .from(workshopInstructors)
+    .where(inArray(workshopInstructors.workshopId, workshopIds))
+  for (const r of rows) {
+    let entry = map.get(r.workshopId)
+    if (!entry) {
+      entry = { mainInstructorId: null, supportingInstructorIds: [] }
+      map.set(r.workshopId, entry)
+    }
+    if (r.role === 'main') entry.mainInstructorId = r.instructorId
+    else entry.supportingInstructorIds.push(r.instructorId)
+  }
+  for (const entry of map.values()) entry.supportingInstructorIds.sort()
+  return map
+}
+
 export interface WorkshopDetailView {
   workshop: WorkshopRow
   days: Array<typeof workshopDays.$inferSelect>
   tiers: Array<typeof workshopTiers.$inferSelect & { dayIds: string[] }>
   images: Array<typeof workshopImages.$inferSelect>
+  mainInstructorId: string | null
+  supportingInstructorIds: string[]
+  /** Back-compat — [main, ...supporting]. */
   instructorIds: string[]
 }
 
@@ -202,23 +281,35 @@ export async function getWorkshopDetail(id: string): Promise<WorkshopDetailView>
     .orderBy(workshopImages.ord)
 
   const instructorRows = await db
-    .select({ id: workshopInstructors.instructorId })
+    .select({ id: workshopInstructors.instructorId, role: workshopInstructors.role })
     .from(workshopInstructors)
     .where(eq(workshopInstructors.workshopId, id))
+
+  let mainInstructorId: string | null = null
+  const supportingInstructorIds: string[] = []
+  for (const r of instructorRows) {
+    if (r.role === 'main') mainInstructorId = r.id
+    else supportingInstructorIds.push(r.id)
+  }
+  supportingInstructorIds.sort()
 
   return {
     workshop,
     days,
     tiers: tiers.map(t => ({ ...t, dayIds: byTier.get(t.id) ?? [] })),
     images,
-    instructorIds: instructorRows.map(r => r.id),
+    mainInstructorId,
+    supportingInstructorIds,
+    instructorIds: mainInstructorId
+      ? [mainInstructorId, ...supportingInstructorIds]
+      : [...supportingInstructorIds],
   }
 }
 
 // Backwards-compat — the old stub signature took capacity-based tiers; v0 splits
 // creation into POST workshop basics + nested POST /days + POST /tiers.
 // publishWorkshop is left as a thin wrapper that just creates the basics.
-export interface PublishWorkshopInput extends CreateWorkshopInput {}
+export type PublishWorkshopInput = CreateWorkshopInput
 export async function publishWorkshop(input: PublishWorkshopInput): Promise<{ workshopId: string }> {
   const row = await createWorkshop(input)
   return { workshopId: row.id }
