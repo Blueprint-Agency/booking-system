@@ -198,7 +198,7 @@ export async function archiveInstructor(id: string): Promise<InstructorView> {
     .select({ id: classes.id })
     .from(classes)
     .where(
-      and(eq(classes.instructorId, id), eq(classes.lifecycle, 'active'), gt(classes.endsAt, now)),
+      and(eq(classes.mainInstructorId, id), eq(classes.lifecycle, 'active'), gt(classes.endsAt, now)),
     )
 
   const futurePtSessions = await db

@@ -59,7 +59,7 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
     const conds = []
     if (opts.from) conds.push(gte(classes.endsAt, opts.from))
     if (opts.to) conds.push(lt(classes.startsAt, opts.to))
-    if (opts.instructorId) conds.push(eq(classes.instructorId, opts.instructorId))
+    if (opts.instructorId) conds.push(eq(classes.mainInstructorId, opts.instructorId))
     if (opts.classTypeId) conds.push(eq(classes.classTypeId, opts.classTypeId))
     if (opts.locationId) conds.push(eq(classes.locationId, opts.locationId))
 
@@ -68,7 +68,7 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
         id: classes.id,
         classTypeId: classes.classTypeId,
         className: classTypes.name,
-        instructorId: classes.instructorId,
+        instructorId: classes.mainInstructorId,
         locationId: classes.locationId,
         roomId: classes.roomId,
         startsAt: classes.startsAt,

@@ -99,7 +99,7 @@ export async function listClassCards(filters: ClassListFilters): Promise<ClassCa
     lt(classes.startsAt, to),
   ]
   if (filters.locationId) conds.push(eq(classes.locationId, filters.locationId))
-  if (filters.instructorId) conds.push(eq(classes.instructorId, filters.instructorId))
+  if (filters.instructorId) conds.push(eq(classes.mainInstructorId, filters.instructorId))
   if (filters.classTypeId) conds.push(eq(classes.classTypeId, filters.classTypeId))
 
   const rows = await db
@@ -107,7 +107,7 @@ export async function listClassCards(filters: ClassListFilters): Promise<ClassCa
       id: classes.id,
       classTypeId: classes.classTypeId,
       className: classTypes.name,
-      instructorId: classes.instructorId,
+      instructorId: classes.mainInstructorId,
       instructorName: staffUsers.name,
       locationId: classes.locationId,
       locationName: locations.name,
@@ -121,7 +121,7 @@ export async function listClassCards(filters: ClassListFilters): Promise<ClassCa
     })
     .from(classes)
     .innerJoin(classTypes, eq(classes.classTypeId, classTypes.id))
-    .innerJoin(instructors, eq(classes.instructorId, instructors.staffUserId))
+    .innerJoin(instructors, eq(classes.mainInstructorId, instructors.staffUserId))
     .innerJoin(staffUsers, eq(instructors.staffUserId, staffUsers.id))
     .innerJoin(locations, eq(classes.locationId, locations.id))
     .where(and(...conds))
@@ -165,7 +165,7 @@ export async function getClassDetail(id: string): Promise<ClassDetailPayload> {
       classTypeId: classes.classTypeId,
       className: classTypes.name,
       classDescription: classTypes.description,
-      instructorId: classes.instructorId,
+      instructorId: classes.mainInstructorId,
       instructorName: staffUsers.name,
       locationId: classes.locationId,
       locationName: locations.name,
@@ -180,7 +180,7 @@ export async function getClassDetail(id: string): Promise<ClassDetailPayload> {
     })
     .from(classes)
     .innerJoin(classTypes, eq(classes.classTypeId, classTypes.id))
-    .innerJoin(instructors, eq(classes.instructorId, instructors.staffUserId))
+    .innerJoin(instructors, eq(classes.mainInstructorId, instructors.staffUserId))
     .innerJoin(staffUsers, eq(instructors.staffUserId, staffUsers.id))
     .innerJoin(locations, eq(classes.locationId, locations.id))
     .where(eq(classes.id, id))

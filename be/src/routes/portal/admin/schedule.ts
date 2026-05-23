@@ -64,7 +64,7 @@ function classRow(c: classesSvc.ClassRow) {
   return {
     id: c.id,
     class_type_id: c.classTypeId,
-    instructor_id: c.instructorId,
+    instructor_id: c.mainInstructorId,
     location_id: c.locationId,
     room_id: c.roomId,
     starts_at: c.startsAt.toISOString(),

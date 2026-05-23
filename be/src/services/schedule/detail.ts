@@ -47,7 +47,7 @@ export async function getClassDetail(id: string): Promise<ClassDetail> {
       creditCost: classes.creditCost,
       classTypeId: classes.classTypeId,
       classTypeName: classTypes.name,
-      instructorId: classes.instructorId,
+      instructorId: classes.mainInstructorId,
       instructorName: staffUsers.name,
       locationId: classes.locationId,
       locationName: locations.name,
@@ -56,7 +56,7 @@ export async function getClassDetail(id: string): Promise<ClassDetail> {
     })
     .from(classes)
     .leftJoin(classTypes, eq(classTypes.id, classes.classTypeId))
-    .leftJoin(staffUsers, eq(staffUsers.id, classes.instructorId))
+    .leftJoin(staffUsers, eq(staffUsers.id, classes.mainInstructorId))
     .leftJoin(locations, eq(locations.id, classes.locationId))
     .leftJoin(rooms, eq(rooms.id, classes.roomId))
     .where(eq(classes.id, id))

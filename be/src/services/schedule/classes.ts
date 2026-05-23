@@ -25,7 +25,7 @@ export async function createClass(input: CreateClassInput): Promise<ClassRow> {
     .insert(classes)
     .values({
       classTypeId: input.classTypeId,
-      instructorId: input.instructorId,
+      mainInstructorId: input.instructorId,
       locationId: input.locationId,
       roomId: input.roomId,
       startsAt: input.startsAt,

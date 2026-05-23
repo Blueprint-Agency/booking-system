@@ -28,7 +28,7 @@ export const classes = pgTable(
     classTypeId: uuid('class_type_id')
       .notNull()
       .references(() => classTypes.id, { onDelete: 'restrict' }),
-    instructorId: uuid('instructor_id')
+    mainInstructorId: uuid('main_instructor_id')
       .notNull()
       .references(() => instructors.staffUserId, { onDelete: 'restrict' }),
     locationId: uuid('location_id')
@@ -56,7 +56,7 @@ export const classes = pgTable(
   },
   table => ({
     startsAtIdx: index('classes_starts_at_idx').on(table.startsAt),
-    instructorStartsIdx: index('classes_instructor_starts_idx').on(table.instructorId, table.startsAt),
+    mainInstructorStartsIdx: index('classes_main_instructor_starts_idx').on(table.mainInstructorId, table.startsAt),
     locationStartsIdx: index('classes_location_starts_idx').on(table.locationId, table.startsAt),
     roomStartsIdx: index('classes_room_starts_idx').on(table.roomId, table.startsAt),
     classTypeIdx: index('classes_class_type_idx').on(table.classTypeId),
