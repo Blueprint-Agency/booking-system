@@ -6,6 +6,9 @@ import {
   classSupportingInstructors,
   classTypes,
   clients,
+  corporatePackages,
+  corporateSessionSupportingInstructors,
+  corporateSessions,
   ptSessionClients,
   ptSessions,
   workshopDays,
@@ -14,13 +17,15 @@ import {
 } from '../../db/schema'
 import { computeEventState, type EventState } from '../policy/event-state'
 
-export type ScheduleKind = 'class' | 'workshop' | 'pt'
+export type ScheduleKind = 'class' | 'workshop' | 'pt' | 'corporate'
 
 export interface ScheduleEntryRow {
   kind: ScheduleKind
   id: string
   workshopId: string | null
   label: string
+  /** Optional second-line context (e.g. client name for corporate entries). */
+  subtitle?: string | null
   classTypeId: string | null
   /** Main instructor for the entry (null for PT entries where role does not apply). */
   mainInstructorId: string | null
@@ -32,8 +37,10 @@ export interface ScheduleEntryRow {
   roomId: string | null
   startsAt: string
   endsAt: string
-  capacity: number
-  bookedCount: number
+  /** Null for corporate sessions (no capacity model). */
+  capacity: number | null
+  /** Null for corporate sessions (no attendee roster). */
+  bookedCount: number | null
   eventState: EventState
   dayIndex: number | null
   dayCount: number | null
@@ -59,6 +66,8 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
   // Workshops no longer carry a class type, so a class-type filter excludes them entirely.
   const wantWorkshop = (!opts.type || opts.type === 'workshop') && !opts.classTypeId
   const wantPt = !opts.type || opts.type === 'pt'
+  // Corporate sessions have no class type either.
+  const wantCorporate = (!opts.type || opts.type === 'corporate') && !opts.classTypeId
 
   // ---- classes ----------------------------------------------------------------
   if (wantClass) {
@@ -320,6 +329,90 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
         endsAt: r.endsAt.toISOString(),
         capacity: r.capacityOnline + r.capacityWaitlist + r.capacityBuffer,
         bookedCount: names.length,
+        eventState: computeEventState({
+          startsAt: r.startsAt,
+          endsAt: r.endsAt,
+          lifecycle: r.lifecycle,
+          now,
+        }),
+        dayIndex: null,
+        dayCount: null,
+      })
+    }
+  }
+
+  // ---- corporate sessions ----------------------------------------------------
+  if (wantCorporate) {
+    const conds = []
+    if (opts.from) conds.push(gte(corporateSessions.endsAt, opts.from))
+    if (opts.to) conds.push(lt(corporateSessions.startsAt, opts.to))
+    if (opts.locationId) conds.push(eq(corporateSessions.locationId, opts.locationId))
+    if (opts.instructorId) {
+      // Match instructor as either main OR supporting.
+      conds.push(
+        sql`(${corporateSessions.mainInstructorId} = ${opts.instructorId} OR ${corporateSessions.id} IN (
+          SELECT ${corporateSessionSupportingInstructors.corporateSessionId} FROM ${corporateSessionSupportingInstructors}
+          WHERE ${corporateSessionSupportingInstructors.instructorId} = ${opts.instructorId}
+        ))`,
+      )
+    }
+
+    const rows = await db
+      .select({
+        id: corporateSessions.id,
+        corporatePackageId: corporateSessions.corporatePackageId,
+        packageName: corporatePackages.name,
+        clientName: corporateSessions.clientName,
+        mainInstructorId: corporateSessions.mainInstructorId,
+        locationId: corporateSessions.locationId,
+        roomId: corporateSessions.roomId,
+        startsAt: corporateSessions.startsAt,
+        endsAt: corporateSessions.endsAt,
+        lifecycle: corporateSessions.lifecycle,
+      })
+      .from(corporateSessions)
+      .innerJoin(
+        corporatePackages,
+        eq(corporatePackages.id, corporateSessions.corporatePackageId),
+      )
+      .where(conds.length ? and(...conds) : undefined)
+
+    const ids = rows.map(r => r.id)
+    const supportingBySession = new Map<string, string[]>()
+    if (ids.length) {
+      const supportingRows = await db
+        .select({
+          corporateSessionId: corporateSessionSupportingInstructors.corporateSessionId,
+          instructorId: corporateSessionSupportingInstructors.instructorId,
+        })
+        .from(corporateSessionSupportingInstructors)
+        .where(inArray(corporateSessionSupportingInstructors.corporateSessionId, ids))
+      for (const r of supportingRows) {
+        const list = supportingBySession.get(r.corporateSessionId) ?? []
+        list.push(r.instructorId)
+        supportingBySession.set(r.corporateSessionId, list)
+      }
+      for (const list of supportingBySession.values()) list.sort()
+    }
+
+    for (const r of rows) {
+      const supporting = supportingBySession.get(r.id) ?? []
+      out.push({
+        kind: 'corporate',
+        id: r.id,
+        workshopId: null,
+        label: r.packageName,
+        subtitle: r.clientName,
+        classTypeId: null,
+        mainInstructorId: r.mainInstructorId,
+        supportingInstructorIds: supporting,
+        instructorIds: [r.mainInstructorId, ...supporting],
+        locationId: r.locationId,
+        roomId: r.roomId,
+        startsAt: r.startsAt.toISOString(),
+        endsAt: r.endsAt.toISOString(),
+        capacity: null,
+        bookedCount: null,
         eventState: computeEventState({
           startsAt: r.startsAt,
           endsAt: r.endsAt,

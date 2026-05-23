@@ -12,7 +12,7 @@ const isoDate = z
 const listQuery = z.object({
   from: isoDate.optional(),
   to: isoDate.optional(),
-  type: z.enum(['class', 'workshop', 'pt']).optional(),
+  type: z.enum(['class', 'workshop', 'pt', 'corporate']).optional(),
   instructor_id: z.string().uuid().optional(),
   class_type_id: z.string().uuid().optional(),
   location_id: z.string().uuid().optional(),
@@ -61,6 +61,7 @@ function entryRow(e: timetable.ScheduleEntryRow) {
     id: e.id,
     workshop_id: e.workshopId,
     label: e.label,
+    subtitle: e.subtitle ?? null,
     class_type_id: e.classTypeId,
     main_instructor_id: e.mainInstructorId,
     supporting_instructor_ids: e.supportingInstructorIds,
