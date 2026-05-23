@@ -58,7 +58,9 @@ jobs:
               echo "PORT=${{ vars.PORT }}"
               echo "TZ=Asia/Kuala_Lumpur"
               echo "DATABASE_URL=postgres://${{ secrets.DB_USER }}:${{ secrets.DB_PASSWORD }}@db-booking:5432/${{ secrets.DB_NAME }}"
-              # Superadmin bootstrap — seeded into staff_users on first deploy
+              # Superadmin bootstrap — passwordless. Seed creates the Clerk user
+              # with this email and links the staff_users row; operator picks
+              # their own password via Clerk's "Forgot password" on first sign-in.
               echo "SUPERADMIN_EMAIL=${{ vars.SUPERADMIN_EMAIL }}"
               # Portal origin — used for CORS + the sign-up URL in invitation emails
               echo "PORTAL_ORIGIN=${{ vars.PORTAL_ORIGIN }}"

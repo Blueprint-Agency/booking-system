@@ -4,7 +4,7 @@ import { z } from 'zod'
 /**
  * Zod-validated env loader. Required vars cover:
  *   - DB connection
- *   - Superadmin bootstrap email
+ *   - Superadmin bootstrap email (passwordless — see seed/superadmin.ts)
  *   - Clerk staff app (publishable + secret + webhook signing secret)
  *   - CORS origin for fe-portal
  *   - SMTP (staff invitations + outbound transactional email)
