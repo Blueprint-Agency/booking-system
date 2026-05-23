@@ -14,6 +14,7 @@ import {
 import { sql } from 'drizzle-orm'
 import { staffUsers, clients } from './identity'
 import { instructors, classTypes, locations, rooms } from './catalog'
+import { corporatePackages } from './packages'
 import { lifecycleEnum, ptSessionTypeEnum, ptRequestStatusEnum } from '../enums'
 
 // ============================================================================
@@ -424,5 +425,61 @@ export const ptSessionClients = pgTable(
   },
   table => ({
     pk: primaryKey({ columns: [table.ptSessionId, table.clientId] }),
+  }),
+)
+
+// ============================================================================
+// corporate_sessions (NEW — portal-only, NOT visible to fe-client)
+// Pure room/instructor block; no attendee roster; no credit cost; no capacity.
+// ============================================================================
+
+export const corporateSessions = pgTable(
+  'corporate_sessions',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    corporatePackageId: uuid('corporate_package_id')
+      .notNull()
+      .references(() => corporatePackages.id, { onDelete: 'restrict' }),
+    clientName: text('client_name').notNull(),
+    mainInstructorId: uuid('main_instructor_id')
+      .notNull()
+      .references(() => instructors.staffUserId, { onDelete: 'restrict' }),
+    locationId: uuid('location_id')
+      .notNull()
+      .references(() => locations.id, { onDelete: 'restrict' }),
+    roomId: uuid('room_id')
+      .notNull()
+      .references(() => rooms.id, { onDelete: 'restrict' }),
+    startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
+    endsAt: timestamp('ends_at', { withTimezone: true }).notNull(),
+    lifecycle: lifecycleEnum('lifecycle').notNull().default('active'),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    cancelledByStaffId: uuid('cancelled_by_staff_id').references(() => staffUsers.id, {
+      onDelete: 'restrict',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdByStaffId: uuid('created_by_staff_id')
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: 'restrict' }),
+  },
+  table => ({
+    startsAtIdx: index('corporate_sessions_starts_at_idx').on(table.startsAt),
+    instructorStartsIdx: index('corporate_sessions_instructor_starts_idx').on(
+      table.mainInstructorId,
+      table.startsAt,
+    ),
+    locationStartsIdx: index('corporate_sessions_location_starts_idx').on(
+      table.locationId,
+      table.startsAt,
+    ),
+    roomStartsIdx: index('corporate_sessions_room_starts_idx').on(table.roomId, table.startsAt),
+    lifecycleStartsIdx: index('corporate_sessions_lifecycle_starts_idx').on(
+      table.lifecycle,
+      table.startsAt,
+    ),
+    endsAfterStarts: check(
+      'corporate_sessions_ends_after_starts',
+      sql`${table.endsAt} > ${table.startsAt}`,
+    ),
   }),
 )
