@@ -53,6 +53,13 @@ interface ApiWorkshop {
   lifecycle: "active" | "cancelled";
 }
 
+interface ApiCorporatePackage {
+  id: string;
+  name: string;
+  price_sgd: string;
+  status: "active" | "archived";
+}
+
 const TODAY = new Date();
 const HOUR_START = 7;
 const HOUR_END = 22;
@@ -67,23 +74,32 @@ export default function SchedulePage() {
   const [instructorId, setInstructorId] = useState<string>("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [workshopMenuOpen, setWorkshopMenuOpen] = useState(false);
+  const [corporateMenuOpen, setCorporateMenuOpen] = useState(false);
   const [ptPickerOpen, setPtPickerOpen] = useState(false);
 
   const [instructorsList, setInstructorsList] = useState<ApiInstructor[]>([]);
   const [workshopsList, setWorkshopsList] = useState<ApiWorkshop[]>([]);
+  const [corporatePackagesList, setCorporatePackagesList] = useState<
+    ApiCorporatePackage[]
+  >([]);
 
   useEffect(() => {
     if (!api) return;
     let cancelled = false;
     void (async () => {
       try {
-        const [ins, wsh] = await Promise.all([
+        const [ins, wsh, cps] = await Promise.all([
           api.get<{ instructors: ApiInstructor[] }>("/portal/admin/instructors"),
           api.get<{ workshops: ApiWorkshop[] }>("/portal/admin/workshops"),
+          api.get<{ corporatePackages: ApiCorporatePackage[] }>(
+            "/portal/admin/corporate-packages",
+            { status: "active" },
+          ),
         ]);
         if (cancelled) return;
         setInstructorsList(ins.instructors);
         setWorkshopsList(wsh.workshops);
+        setCorporatePackagesList(cps.corporatePackages);
       } catch {
         // Names degrade to "Unknown" / dropdowns stay empty if the catalog fetch fails.
       }
@@ -225,6 +241,50 @@ export default function SchedulePage() {
                       className="block rounded px-3 py-2 text-xs text-muted hover:bg-paper"
                     >
                       Manage workshops →
+                    </Link>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="relative">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setCorporateMenuOpen((o) => !o)}
+              >
+                Corporate <ChevronDown className="h-3.5 w-3.5" />
+              </Button>
+              {corporateMenuOpen && (
+                <div className="absolute right-0 z-30 mt-2 w-72 rounded-lg border border-border bg-card p-2 shadow-soft">
+                  {corporatePackagesList.length === 0 && (
+                    <div className="px-3 py-2 text-xs text-muted">
+                      No corporate packages configured.
+                    </div>
+                  )}
+                  {corporatePackagesList.map((p) => (
+                    <Link
+                      key={p.id}
+                      href={`/admin/schedule/new/corporate?packageId=${p.id}`}
+                      onClick={() => setCorporateMenuOpen(false)}
+                      className="block rounded px-3 py-2 text-sm hover:bg-paper"
+                    >
+                      {p.name}
+                    </Link>
+                  ))}
+                  <div className="mt-1 border-t border-border pt-1">
+                    <Link
+                      href="/admin/packages/corporate/new"
+                      onClick={() => setCorporateMenuOpen(false)}
+                      className="inline-flex w-full items-center gap-1 rounded px-3 py-2 text-sm text-accent hover:bg-paper"
+                    >
+                      <Plus className="h-3.5 w-3.5" /> New corporate package
+                    </Link>
+                    <Link
+                      href="/admin/packages/corporate"
+                      onClick={() => setCorporateMenuOpen(false)}
+                      className="block rounded px-3 py-2 text-xs text-muted hover:bg-paper"
+                    >
+                      Manage corporate packages →
                     </Link>
                   </div>
                 </div>
