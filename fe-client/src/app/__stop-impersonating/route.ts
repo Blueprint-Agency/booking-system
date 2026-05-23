@@ -27,6 +27,14 @@ export async function POST() {
   const jar = await cookies();
   jar.set("__imp_grant", "", { maxAge: 0, path: "/" });
 
+  // Server-side session revoke alone doesn't update the browser's view of
+  // Clerk's cookies — a sibling tab on /account would keep acting as the
+  // impersonated client until the SDK's next round-trip. Explicitly clear
+  // Clerk's client cookies so impersonation ends immediately in any other
+  // open tab on the next page load.
+  jar.set("__session", "", { maxAge: 0, path: "/" });
+  jar.set("__client_uat", "", { maxAge: 0, path: "/" });
+
   const html = `<!doctype html><html><body><script>
     try { window.close(); } catch (e) {}
     setTimeout(function () { location.replace('about:blank'); }, 50);
