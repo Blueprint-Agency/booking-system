@@ -24,6 +24,7 @@ import notifications from './notifications'
 import waiver from './waiver'
 import marketing from './marketing'
 import featureFlags from './feature-flags'
+import impersonate from './impersonate'
 
 /**
  * Role gating for the portal /admin subtree.
@@ -94,6 +95,7 @@ const app = new Hono()
   .route('/check-in', checkIn)
   .route('/inbox', inbox)
   .route('/clients', clients)
+  .route('/', impersonate)
   .route('/staff', staff)
   .route('/notifications', notifications)
   .route('/waiver', waiver)

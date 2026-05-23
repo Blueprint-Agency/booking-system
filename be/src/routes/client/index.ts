@@ -1,5 +1,7 @@
 import { Hono } from 'hono'
 import { clerkClientAuth, requireActiveClient } from '../../middleware/clerk-client'
+import { clientImpersonation } from '../../middleware/client-impersonation'
+import { audit } from '../../middleware/audit'
 
 import me from './me'
 import catalog from './catalog'
@@ -12,6 +14,7 @@ import referral from './referral'
 
 const app = new Hono()
   .use('*', clerkClientAuth, requireActiveClient)
+  .use('*', clientImpersonation, audit)
   .route('/', me)
   .route('/', catalog)
   .route('/bookings', bookings)
