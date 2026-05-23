@@ -20,6 +20,9 @@ export default function EditWorkshopPage() {
     setLoading(true);
     setError(null);
     try {
+      // BE now returns `main_instructor_id` + `supporting_instructor_ids` on the
+      // workshop detail; `fromApiWorkshop` maps them onto the editor's Workshop
+      // shape so the main/supporting pickers init correctly.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const d = (await api.get(`/portal/admin/workshops/${id}`)) as any;
       setWorkshop(fromApiWorkshop(d));
