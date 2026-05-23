@@ -3,7 +3,12 @@ import { and, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { env } from '../../env'
 import { bookings } from '../../db/schema/bookings'
-import { classes, ptSessionClients, ptSessions } from '../../db/schema/schedule'
+import {
+  classes,
+  classSupportingInstructors,
+  ptSessionClients,
+  ptSessions,
+} from '../../db/schema/schedule'
 import { classTypes, instructors, locations, rooms } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
 import { ptBookingConfig } from '../../db/schema/policy'
@@ -24,6 +29,10 @@ export interface ClassCardPayload {
   id: string
   class_type: { id: string; name: string }
   instructor: { id: string; name: string }
+  main_instructor_id: string
+  supporting_instructor_ids: string[]
+  /** Back-compat — [main, ...supporting]. */
+  instructor_ids: string[]
   location: LocationLite | null
   room: { id: string; name: string } | null
   starts_at: string
@@ -38,6 +47,7 @@ export interface ClassCardPayload {
 export interface ClassDetailPayload extends ClassCardPayload {
   class_type: { id: string; name: string; description: string | null }
   location: { id: string; name: string; address: string | null; gmaps_url: string | null } | null
+  supporting_instructors: { id: string; name: string }[]
 }
 
 export interface ClassListFilters {
@@ -138,13 +148,18 @@ export async function listClassCards(filters: ClassListFilters): Promise<ClassCa
   }
 
   const booked = await bookedCountByClass(rows.map(r => r.id))
+  const supportingByClass = await loadSupportingByClass(rows.map(r => r.id))
 
   return rows.map(r => {
     const bookedCount = booked.get(r.id) ?? 0
+    const supporting = supportingByClass.get(r.id) ?? []
     return {
       id: r.id,
       class_type: { id: r.classTypeId, name: r.className },
       instructor: { id: r.instructorId, name: r.instructorName || 'Instructor' },
+      main_instructor_id: r.instructorId,
+      supporting_instructor_ids: supporting,
+      instructor_ids: [r.instructorId, ...supporting],
       location: { id: r.locationId, name: r.locationName, address: r.locationAddress },
       room: r.roomId ? roomById.get(r.roomId) ?? null : null,
       starts_at: r.startsAt.toISOString(),
@@ -156,6 +171,25 @@ export async function listClassCards(filters: ClassListFilters): Promise<ClassCa
       lifecycle: r.lifecycle,
     }
   })
+}
+
+async function loadSupportingByClass(classIds: string[]): Promise<Map<string, string[]>> {
+  const map = new Map<string, string[]>()
+  if (!classIds.length) return map
+  const rows = await db
+    .select({
+      classId: classSupportingInstructors.classId,
+      instructorId: classSupportingInstructors.instructorId,
+    })
+    .from(classSupportingInstructors)
+    .where(inArray(classSupportingInstructors.classId, classIds))
+  for (const r of rows) {
+    const list = map.get(r.classId) ?? []
+    list.push(r.instructorId)
+    map.set(r.classId, list)
+  }
+  for (const list of map.values()) list.sort()
+  return map
 }
 
 export async function getClassDetail(id: string): Promise<ClassDetailPayload> {
@@ -200,10 +234,27 @@ export async function getClassDetail(id: string): Promise<ClassDetailPayload> {
 
   const booked = (await bookedCountByClass([r.id])).get(r.id) ?? 0
 
+  const supportingRows = await db
+    .select({
+      instructorId: classSupportingInstructors.instructorId,
+      name: staffUsers.name,
+    })
+    .from(classSupportingInstructors)
+    .leftJoin(staffUsers, eq(staffUsers.id, classSupportingInstructors.instructorId))
+    .where(eq(classSupportingInstructors.classId, r.id))
+  const supporting = supportingRows
+    .map(s => ({ id: s.instructorId, name: s.name ?? 'Instructor' }))
+    .sort((a, b) => a.id.localeCompare(b.id))
+  const supportingIds = supporting.map(s => s.id)
+
   return {
     id: r.id,
     class_type: { id: r.classTypeId, name: r.className, description: r.classDescription },
     instructor: { id: r.instructorId, name: r.instructorName || 'Instructor' },
+    main_instructor_id: r.instructorId,
+    supporting_instructor_ids: supportingIds,
+    supporting_instructors: supporting,
+    instructor_ids: [r.instructorId, ...supportingIds],
     location: {
       id: r.locationId,
       name: r.locationName,

@@ -77,6 +77,10 @@ interface WorkshopCardPayload {
   has_discount: boolean
   days_count: number
   tiers_count: number
+  main_instructor_id: string | null
+  supporting_instructor_ids: string[]
+  /** Back-compat — [main, ...supporting]. */
+  instructor_ids: string[]
 }
 
 interface WorkshopDetailPayload extends WorkshopCardPayload {
@@ -172,6 +176,10 @@ async function buildCard(
   days: DayPayload[],
   tiers: TierPayload[],
   loc: LocationLite | null,
+  instructorInfo: { mainInstructorId: string | null; supportingInstructorIds: string[] } = {
+    mainInstructorId: null,
+    supportingInstructorIds: [],
+  },
 ): Promise<WorkshopCardPayload> {
   const startsAt = days.length ? days[0]!.starts_at : null
   const endsAt = days.length ? days[days.length - 1]!.ends_at : null
@@ -184,6 +192,9 @@ async function buildCard(
     if (min === null || tierMin < min) min = tierMin
     if (Number(t.effective_price_sgd) < Number(t.regular_price_sgd)) hasDiscount = true
   }
+  const instructor_ids = instructorInfo.mainInstructorId
+    ? [instructorInfo.mainInstructorId, ...instructorInfo.supportingInstructorIds]
+    : [...instructorInfo.supportingInstructorIds]
   return {
     id: w.id,
     name: w.name,
@@ -197,7 +208,36 @@ async function buildCard(
     has_discount: hasDiscount,
     days_count: days.length,
     tiers_count: tiers.length,
+    main_instructor_id: instructorInfo.mainInstructorId,
+    supporting_instructor_ids: instructorInfo.supportingInstructorIds,
+    instructor_ids,
   }
+}
+
+async function loadInstructorRolesByWorkshop(
+  workshopIds: string[],
+): Promise<Map<string, { mainInstructorId: string | null; supportingInstructorIds: string[] }>> {
+  const map = new Map<string, { mainInstructorId: string | null; supportingInstructorIds: string[] }>()
+  if (!workshopIds.length) return map
+  const rows = await db
+    .select({
+      workshopId: workshopInstructors.workshopId,
+      instructorId: workshopInstructors.instructorId,
+      role: workshopInstructors.role,
+    })
+    .from(workshopInstructors)
+    .where(inArray(workshopInstructors.workshopId, workshopIds))
+  for (const r of rows) {
+    let entry = map.get(r.workshopId)
+    if (!entry) {
+      entry = { mainInstructorId: null, supportingInstructorIds: [] }
+      map.set(r.workshopId, entry)
+    }
+    if (r.role === 'main') entry.mainInstructorId = r.instructorId
+    else entry.supportingInstructorIds.push(r.instructorId)
+  }
+  for (const entry of map.values()) entry.supportingInstructorIds.sort()
+  return map
 }
 
 export async function listActiveWorkshopCards(): Promise<WorkshopCardPayload[]> {
@@ -206,6 +246,7 @@ export async function listActiveWorkshopCards(): Promise<WorkshopCardPayload[]> 
 
   const workshopIds = ws.map(w => w.id)
   const { daysByWorkshop, tiersByWorkshop } = await loadCommon(workshopIds)
+  const instructorMap = await loadInstructorRolesByWorkshop(workshopIds)
 
   // Resolve location for all in one round-trip.
   const locIds = Array.from(new Set(ws.map(w => w.locationId)))
@@ -222,6 +263,7 @@ export async function listActiveWorkshopCards(): Promise<WorkshopCardPayload[]> 
         daysByWorkshop.get(w.id) ?? [],
         tiersByWorkshop.get(w.id) ?? [],
         locById.get(w.locationId) ?? null,
+        instructorMap.get(w.id),
       ),
     )
   }
@@ -295,6 +337,7 @@ export async function getWorkshopDetailPayload(id: string): Promise<WorkshopDeta
     days,
     tiers,
     locRow ? { id: locRow.id, name: locRow.name, address: locRow.address } : null,
+    { mainInstructorId, supportingInstructorIds },
   )
 
   return {
