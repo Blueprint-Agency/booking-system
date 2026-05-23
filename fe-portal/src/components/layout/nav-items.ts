@@ -5,6 +5,7 @@ import {
   Shield,
   Layers,
   Heart,
+  Briefcase,
   Sparkles,
   CalendarDays,
   QrCode,
@@ -51,6 +52,7 @@ export const NAV_ITEMS: NavItem[] = [
   { group: "Packages", label: "Classes", href: "/admin/classes", icon: Layers, scope: "global" },
   { group: "Packages", label: "Workshops", href: "/admin/packages/workshops", icon: Sparkles, scope: "global" },
   { group: "Packages", label: "Private Sessions", href: "/admin/private-sessions", icon: Heart, scope: "global" },
+  { group: "Packages", label: "Corporate", href: "/admin/packages/corporate", icon: Briefcase, scope: "global" },
 
   // --- People (members + staff accounts) ---
   // Instructors are managed under Staff → Instructors tab (merged), not a separate item.
