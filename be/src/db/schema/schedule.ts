@@ -503,3 +503,23 @@ export const corporateSessions = pgTable(
     ),
   }),
 )
+
+// ============================================================================
+// corporate_session_supporting_instructors (§4.3) — 0..N per session.
+// ============================================================================
+
+export const corporateSessionSupportingInstructors = pgTable(
+  'corporate_session_supporting_instructors',
+  {
+    corporateSessionId: uuid('corporate_session_id')
+      .notNull()
+      .references(() => corporateSessions.id, { onDelete: 'cascade' }),
+    instructorId: uuid('instructor_id')
+      .notNull()
+      .references(() => instructors.staffUserId, { onDelete: 'restrict' }),
+  },
+  table => ({
+    pk: primaryKey({ columns: [table.corporateSessionId, table.instructorId] }),
+    instructorIdx: index('corporate_session_supporting_instructors_instructor_idx').on(table.instructorId),
+  }),
+)
