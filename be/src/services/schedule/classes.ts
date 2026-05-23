@@ -1,10 +1,12 @@
+import { eq } from 'drizzle-orm'
 import { db } from '../../db'
-import { classes } from '../../db/schema'
+import { classes, classSupportingInstructors } from '../../db/schema'
 import { assertRoomAvailable, assertRoomInLocation } from './room-conflicts'
 
 export interface CreateClassInput {
   classTypeId: string
-  instructorId: string
+  mainInstructorId: string
+  supportingInstructorIds?: string[]
   locationId: string
   roomId: string
   startsAt: Date
@@ -18,26 +20,136 @@ export interface CreateClassInput {
 
 export type ClassRow = typeof classes.$inferSelect
 
+function normalizeSupporting(
+  mainInstructorId: string,
+  supportingInstructorIds: string[] | undefined,
+): string[] {
+  const supports = Array.from(new Set(supportingInstructorIds ?? []))
+  if (supports.includes(mainInstructorId)) {
+    throw new Error('main instructor cannot also appear in supportingInstructorIds')
+  }
+  return supports
+}
+
 export async function createClass(input: CreateClassInput): Promise<ClassRow> {
   await assertRoomInLocation(input.roomId, input.locationId)
   await assertRoomAvailable(input.roomId, input.startsAt, input.endsAt)
+  const supports = normalizeSupporting(input.mainInstructorId, input.supportingInstructorIds)
+
+  return db.transaction(async tx => {
+    const rows = await tx
+      .insert(classes)
+      .values({
+        classTypeId: input.classTypeId,
+        mainInstructorId: input.mainInstructorId,
+        locationId: input.locationId,
+        roomId: input.roomId,
+        startsAt: input.startsAt,
+        endsAt: input.endsAt,
+        capacityOnline: input.capacityOnline,
+        capacityWaitlist: input.capacityWaitlist,
+        capacityBuffer: input.capacityBuffer,
+        creditCost: input.creditCost,
+        createdByStaffId: input.createdByStaffId,
+      })
+      .returning()
+    const row = rows[0]
+    if (!row) throw new Error('insert returned no rows')
+
+    if (supports.length > 0) {
+      await tx.insert(classSupportingInstructors).values(
+        supports.map(instructorId => ({ classId: row.id, instructorId })),
+      )
+    }
+    return row
+  })
+}
+
+export interface UpdateClassInput {
+  classTypeId?: string
+  mainInstructorId?: string
+  supportingInstructorIds?: string[]
+  locationId?: string
+  roomId?: string
+  startsAt?: Date
+  endsAt?: Date
+  capacityOnline?: number
+  capacityWaitlist?: number
+  capacityBuffer?: number
+  creditCost?: number
+}
+
+export async function updateClass(id: string, patch: UpdateClassInput): Promise<ClassRow> {
+  const [existing] = await db.select().from(classes).where(eq(classes.id, id)).limit(1)
+  if (!existing) throw new Error('class_not_found')
+
+  const newRoomId = patch.roomId ?? existing.roomId
+  const newLocationId = patch.locationId ?? existing.locationId
+  const newStartsAt = patch.startsAt ?? existing.startsAt
+  const newEndsAt = patch.endsAt ?? existing.endsAt
+
+  if (
+    patch.roomId !== undefined ||
+    patch.locationId !== undefined ||
+    patch.startsAt !== undefined ||
+    patch.endsAt !== undefined
+  ) {
+    if (newRoomId) {
+      await assertRoomInLocation(newRoomId, newLocationId)
+      await assertRoomAvailable(newRoomId, newStartsAt, newEndsAt, { excludeClassId: id })
+    }
+  }
+
+  let supports: string[] | undefined
+  if (patch.supportingInstructorIds !== undefined) {
+    const mainForCheck = patch.mainInstructorId ?? existing.mainInstructorId
+    supports = normalizeSupporting(mainForCheck, patch.supportingInstructorIds)
+  } else if (patch.mainInstructorId !== undefined) {
+    // If main changes but supporting list is not provided, ensure new main isn't in existing supporting set.
+    const existingSupports = await listSupportingInstructorIds(id)
+    if (existingSupports.includes(patch.mainInstructorId)) {
+      throw new Error('main instructor cannot also appear in supportingInstructorIds')
+    }
+  }
+
+  return db.transaction(async tx => {
+    const set: Partial<typeof classes.$inferInsert> = {}
+    if (patch.classTypeId !== undefined) set.classTypeId = patch.classTypeId
+    if (patch.mainInstructorId !== undefined) set.mainInstructorId = patch.mainInstructorId
+    if (patch.locationId !== undefined) set.locationId = patch.locationId
+    if (patch.roomId !== undefined) set.roomId = patch.roomId
+    if (patch.startsAt !== undefined) set.startsAt = patch.startsAt
+    if (patch.endsAt !== undefined) set.endsAt = patch.endsAt
+    if (patch.capacityOnline !== undefined) set.capacityOnline = patch.capacityOnline
+    if (patch.capacityWaitlist !== undefined) set.capacityWaitlist = patch.capacityWaitlist
+    if (patch.capacityBuffer !== undefined) set.capacityBuffer = patch.capacityBuffer
+    if (patch.creditCost !== undefined) set.creditCost = patch.creditCost
+
+    let row = existing
+    if (Object.keys(set).length) {
+      const rows = await tx.update(classes).set(set).where(eq(classes.id, id)).returning()
+      if (!rows[0]) throw new Error('update returned no rows')
+      row = rows[0]
+    }
+
+    if (supports !== undefined) {
+      await tx
+        .delete(classSupportingInstructors)
+        .where(eq(classSupportingInstructors.classId, id))
+      if (supports.length > 0) {
+        await tx.insert(classSupportingInstructors).values(
+          supports.map(instructorId => ({ classId: id, instructorId })),
+        )
+      }
+    }
+    return row
+  })
+}
+
+export async function listSupportingInstructorIds(classId: string): Promise<string[]> {
   const rows = await db
-    .insert(classes)
-    .values({
-      classTypeId: input.classTypeId,
-      mainInstructorId: input.instructorId,
-      locationId: input.locationId,
-      roomId: input.roomId,
-      startsAt: input.startsAt,
-      endsAt: input.endsAt,
-      capacityOnline: input.capacityOnline,
-      capacityWaitlist: input.capacityWaitlist,
-      capacityBuffer: input.capacityBuffer,
-      creditCost: input.creditCost,
-      createdByStaffId: input.createdByStaffId,
-    })
-    .returning()
-  const row = rows[0]
-  if (!row) throw new Error('insert returned no rows')
-  return row
+    .select({ instructorId: classSupportingInstructors.instructorId })
+    .from(classSupportingInstructors)
+    .where(eq(classSupportingInstructors.classId, classId))
+  return rows.map(r => r.instructorId).sort()
 }
