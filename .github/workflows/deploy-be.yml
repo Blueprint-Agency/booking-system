@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'be/**'
+      - '.github/workflows/deploy-be.yml'
   workflow_dispatch:
 
 jobs:
@@ -39,6 +40,7 @@ jobs:
           username: deploy
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            set -euo pipefail
             mkdir -p /root/stacks/booking-system
             # Backend env. DATABASE_URL is assembled from the same DB_* secrets that
             # configure the Postgres container — single source of truth.
