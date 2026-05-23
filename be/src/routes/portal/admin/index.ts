@@ -13,6 +13,7 @@ import workshops from './workshops'
 import schedule from './schedule'
 import availability from './availability'
 import ptSessions from './pt-sessions'
+import corporateSessions from './corporate-sessions'
 import bookings from './bookings'
 import checkIn from './check-in'
 import inbox from './inbox'
@@ -45,6 +46,7 @@ const app = new Hono()
   .route('/schedule', schedule)
   .route('/', availability)
   .route('/pt-sessions', ptSessions)
+  .route('/corporate-sessions', corporateSessions)
   .route('/bookings', bookings)
   .route('/check-in', checkIn)
   .route('/inbox', inbox)
