@@ -24,7 +24,7 @@ export async function GET(req: Request) {
   // its fetch wrapper see it on the next request.
   const jar = await cookies();
   jar.set("__imp_grant", grant, {
-    httpOnly: true,
+    httpOnly: false, // must be readable by client JS to add to fetch headers
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     path: "/",

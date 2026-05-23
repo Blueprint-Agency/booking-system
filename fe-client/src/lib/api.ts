@@ -16,6 +16,12 @@ import { useMemo } from "react";
 const BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
+function readImpGrant(): string | null {
+  if (typeof document === "undefined") return null;
+  const m = document.cookie.match(/(?:^|;\s*)__imp_grant=([^;]+)/);
+  return m ? decodeURIComponent(m[1]!) : null;
+}
+
 export type TokenGetter = () => Promise<string | null>;
 
 export class ApiError extends Error {
@@ -58,6 +64,9 @@ export async function apiFetch<T = unknown>(
   const headers: Record<string, string> = { Accept: "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
   if (opts.body !== undefined) headers["Content-Type"] = "application/json";
+
+  const impGrant = readImpGrant();
+  if (impGrant) headers["x-impersonation-grant"] = impGrant;
 
   const res = await fetch(buildUrl(path, opts.query), {
     method: opts.method ?? "GET",
