@@ -4,20 +4,24 @@ import { ApiError } from "@/lib/api";
 import { useWorkspace } from "@/lib/workspace-context";
 import type { EventState } from "@/types";
 
-export type ScheduleKind = "class" | "workshop" | "pt";
+export type ScheduleKind = "class" | "workshop" | "pt" | "corporate";
 
 export interface ApiScheduleEntry {
   kind: ScheduleKind;
   id: string;
   workshop_id: string | null;
   label: string;
+  subtitle: string | null;
   class_type_id: string | null;
+  main_instructor_id: string | null;
+  supporting_instructor_ids: string[];
   instructor_ids: string[];
   location_id: string | null;
+  room_id: string | null;
   starts_at: string;
   ends_at: string;
-  capacity: number;
-  booked_count: number;
+  capacity: number | null;
+  booked_count: number | null;
   event_state: EventState;
   day_index: number | null;
   day_count: number | null;
@@ -73,6 +77,24 @@ export type ScheduleEntry =
       bookedCount: number;
       eventState: EventState;
       raw: { id: string };
+    }
+  | {
+      kind: "corporate";
+      id: string;
+      label: string;
+      subtitle: string;
+      classTypeId: null;
+      mainInstructorId: string;
+      supportingInstructorIds: string[];
+      instructorIds: string[];
+      locationId: string;
+      roomId: string | null;
+      startsAt: string;
+      endsAt: string;
+      capacity: null;
+      bookedCount: null;
+      eventState: EventState;
+      raw: { id: string };
     };
 
 export interface ScheduleFilters {
@@ -95,8 +117,8 @@ function fromApi(e: ApiScheduleEntry): ScheduleEntry {
       locationId: e.location_id ?? "",
       startsAt: e.starts_at,
       endsAt: e.ends_at,
-      capacity: e.capacity,
-      bookedCount: e.booked_count,
+      capacity: e.capacity ?? 0,
+      bookedCount: e.booked_count ?? 0,
       eventState: e.event_state,
       raw: { id: e.id },
     };
@@ -111,12 +133,32 @@ function fromApi(e: ApiScheduleEntry): ScheduleEntry {
       locationId: e.location_id ?? "",
       startsAt: e.starts_at,
       endsAt: e.ends_at,
-      capacity: e.capacity,
-      bookedCount: e.booked_count,
+      capacity: e.capacity ?? 0,
+      bookedCount: e.booked_count ?? 0,
       eventState: e.event_state,
       raw: { id: e.workshop_id ?? e.id },
       dayIndex: e.day_index ?? 1,
       dayCount: e.day_count ?? 1,
+    };
+  }
+  if (e.kind === "corporate") {
+    return {
+      kind: "corporate",
+      id: e.id,
+      label: e.label,
+      subtitle: e.subtitle ?? "",
+      classTypeId: null,
+      mainInstructorId: e.main_instructor_id ?? "",
+      supportingInstructorIds: e.supporting_instructor_ids ?? [],
+      instructorIds: e.instructor_ids,
+      locationId: e.location_id ?? "",
+      roomId: e.room_id,
+      startsAt: e.starts_at,
+      endsAt: e.ends_at,
+      capacity: null,
+      bookedCount: null,
+      eventState: e.event_state,
+      raw: { id: e.id },
     };
   }
   return {
@@ -128,8 +170,8 @@ function fromApi(e: ApiScheduleEntry): ScheduleEntry {
     locationId: e.location_id,
     startsAt: e.starts_at,
     endsAt: e.ends_at,
-    capacity: e.capacity,
-    bookedCount: e.booked_count,
+    capacity: e.capacity ?? 0,
+    bookedCount: e.booked_count ?? 0,
     eventState: e.event_state,
     raw: { id: e.id },
   };

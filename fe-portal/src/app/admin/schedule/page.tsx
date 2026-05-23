@@ -32,7 +32,7 @@ import { useWorkspace } from "@/lib/workspace-context";
 import { useSchedule, type ScheduleEntry } from "@/lib/use-schedule";
 
 type View = "day" | "week" | "month";
-type FilterType = "all" | "class" | "workshop" | "pt";
+type FilterType = "all" | "class" | "workshop" | "pt" | "corporate";
 type Entry = ScheduleEntry;
 type Resolver = {
   instructorName: (id: string) => string;
@@ -365,6 +365,7 @@ export default function SchedulePage() {
                 { val: "class", label: "Class" },
                 { val: "workshop", label: "Workshop" },
                 { val: "pt", label: "Private" },
+                { val: "corporate", label: "Corporate" },
               ]}
               onChange={(v) => setType(v as FilterType)}
             />
@@ -867,7 +868,9 @@ function EventBlock({
   const subtitle =
     entry.kind === "pt"
       ? entry.instructorIds.map(resolver.instructorName).join(" & ")
-      : `${entry.instructorIds.map(resolver.instructorName).join(" & ")} · ${resolver.locationName(entry.locationId)}`;
+      : entry.kind === "corporate"
+        ? `${entry.subtitle} · ${resolver.locationName(entry.locationId)}`
+        : `${entry.instructorIds.map(resolver.instructorName).join(" & ")} · ${resolver.locationName(entry.locationId)}`;
 
   const compact = height < 44;
   const linkId = entry.kind === "workshop" ? entry.raw.id : entry.id;
@@ -875,6 +878,10 @@ function EventBlock({
     entry.kind === "workshop" && entry.dayCount > 1
       ? `Day ${entry.dayIndex}/${entry.dayCount}`
       : null;
+  const tooltipInstructor =
+    entry.kind === "corporate" && entry.mainInstructorId
+      ? ` · ${resolver.instructorName(entry.mainInstructorId)}`
+      : "";
 
   return (
     <Link
@@ -890,7 +897,7 @@ function EventBlock({
         kindClasses(entry),
         entry.eventState === "cancelled" && "opacity-60 line-through"
       )}
-      title={`${formatTime(entry.startsAt)}–${formatTime(entry.endsAt)} · ${entry.label}`}
+      title={`${formatTime(entry.startsAt)}–${formatTime(entry.endsAt)} · ${entry.label}${tooltipInstructor}`}
     >
       <div className="flex items-center gap-1 text-[10px] font-semibold tabular-nums opacity-80">
         <span>{formatTime(entry.startsAt)}</span>
@@ -912,9 +919,11 @@ function EventBlock({
       {!compact && (
         <div className="mt-auto flex items-center justify-between pt-0.5 text-[10px] opacity-70">
           <span className="font-semibold uppercase tracking-[0.08em]">{entry.kind}</span>
-          <span className="tabular-nums font-medium">
-            {entry.bookedCount}/{entry.capacity}
-          </span>
+          {entry.capacity !== null && entry.bookedCount !== null && (
+            <span className="tabular-nums font-medium">
+              {entry.bookedCount}/{entry.capacity}
+            </span>
+          )}
         </div>
       )}
     </Link>
@@ -932,6 +941,8 @@ function kindClasses(entry: Entry): string {
       return "bg-warning/15 border-warning text-warning hover:bg-warning/25";
     case "pt":
       return "bg-accent/10 border-accent text-accent hover:bg-accent/20";
+    case "corporate":
+      return "bg-muted/10 border-muted text-muted hover:bg-muted/20";
   }
 }
 
@@ -949,6 +960,7 @@ function Legend() {
     { kind: "class", label: "Class" },
     { kind: "workshop", label: "Workshop" },
     { kind: "pt", label: "Private session" },
+    { kind: "corporate", label: "Corporate" },
   ];
   return (
     <div className="mt-4 flex flex-wrap items-center gap-4 text-xs text-muted">
@@ -959,7 +971,8 @@ function Legend() {
               "inline-block h-3 w-3 rounded-sm border-l-2",
               i.kind === "class" && "bg-cyan/15 border-cyan-deep",
               i.kind === "workshop" && "bg-warning/15 border-warning",
-              i.kind === "pt" && "bg-accent/10 border-accent"
+              i.kind === "pt" && "bg-accent/10 border-accent",
+              i.kind === "corporate" && "bg-muted/10 border-muted"
             )}
           />
           {i.label}
