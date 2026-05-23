@@ -23,6 +23,9 @@ const schema = z.object({
   CLERK_STAFF_PUBLISHABLE_KEY: z.string().min(1, 'CLERK_STAFF_PUBLISHABLE_KEY is required'),
   CLERK_STAFF_SECRET_KEY: z.string().min(1, 'CLERK_STAFF_SECRET_KEY is required'),
   CLERK_STAFF_WEBHOOK_SECRET: z.string().min(1, 'CLERK_STAFF_WEBHOOK_SECRET is required'),
+  IMPERSONATION_SECRET: z
+    .string()
+    .min(32, 'IMPERSONATION_SECRET must be at least 32 chars (used to sign HS256 grant JWTs)'),
   CLERK_STAFF_AUTHORIZED_PARTIES: z.string().optional(),
 
   PORTAL_ORIGIN: z.string().url('PORTAL_ORIGIN must be a full URL like http://localhost:3001'),
