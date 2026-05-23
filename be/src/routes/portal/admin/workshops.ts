@@ -35,7 +35,8 @@ const createBasicsSchema = z.object({
   location_id: z.string().uuid(),
   description_html: z.string().max(20000).nullish(),
   cover_r2_key: z.string().max(500).nullish(),
-  instructor_ids: z.array(z.string().uuid()).default([]),
+  main_instructor_id: z.string().uuid(),
+  supporting_instructor_ids: z.array(z.string().uuid()).default([]),
   image_r2_keys: z.array(z.string().max(500)).default([]),
 })
 
@@ -44,7 +45,8 @@ const updateBasicsSchema = z.object({
   location_id: z.string().uuid().optional(),
   description_html: z.string().max(20000).nullish().optional(),
   cover_r2_key: z.string().max(500).nullish().optional(),
-  instructor_ids: z.array(z.string().uuid()).optional(),
+  main_instructor_id: z.string().uuid().optional(),
+  supporting_instructor_ids: z.array(z.string().uuid()).optional(),
   image_r2_keys: z.array(z.string().max(500)).optional(),
 })
 
@@ -171,7 +173,21 @@ const app = new Hono()
   .get('/', zValidator('query', listQuery), async c => {
     const q = c.req.valid('query')
     const rows = await publish.listWorkshops({ lifecycle: q.lifecycle })
-    return c.json({ workshops: rows.map(workshopRow) })
+    const instructorMap = await publish.listInstructorsByWorkshop(rows.map(r => r.id))
+    return c.json({
+      workshops: rows.map(r => {
+        const m = instructorMap.get(r.id) ?? { mainInstructorId: null, supportingInstructorIds: [] }
+        const instructor_ids = m.mainInstructorId
+          ? [m.mainInstructorId, ...m.supportingInstructorIds]
+          : [...m.supportingInstructorIds]
+        return {
+          ...workshopRow(r),
+          main_instructor_id: m.mainInstructorId,
+          supporting_instructor_ids: m.supportingInstructorIds,
+          instructor_ids,
+        }
+      }),
+    })
   })
   .get('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
@@ -182,6 +198,8 @@ const app = new Hono()
       days: detail.days.map(dayRow),
       tiers: detail.tiers.map(t => tierRow(t as tiersSvc.TierWithDays)),
       images: detail.images.map(im => ({ id: im.id, r2_key: im.r2Key, ord: im.ord })),
+      main_instructor_id: detail.mainInstructorId,
+      supporting_instructor_ids: detail.supportingInstructorIds,
       instructor_ids: detail.instructorIds,
       promotions: (promosMap[id] ?? []).map(serializePromotion),
     })
@@ -194,7 +212,8 @@ const app = new Hono()
       locationId: body.location_id,
       descriptionHtml: body.description_html ?? null,
       coverR2Key: body.cover_r2_key ?? null,
-      instructorIds: body.instructor_ids,
+      mainInstructorId: body.main_instructor_id,
+      supportingInstructorIds: body.supporting_instructor_ids,
       imageR2Keys: body.image_r2_keys,
       createdByStaffId: staffId,
     })
@@ -209,7 +228,12 @@ const app = new Hono()
       ...(body.location_id !== undefined ? { locationId: body.location_id } : {}),
       ...(body.description_html !== undefined ? { descriptionHtml: body.description_html ?? null } : {}),
       ...(body.cover_r2_key !== undefined ? { coverR2Key: body.cover_r2_key ?? null } : {}),
-      ...(body.instructor_ids !== undefined ? { instructorIds: body.instructor_ids } : {}),
+      ...(body.main_instructor_id !== undefined
+        ? { mainInstructorId: body.main_instructor_id }
+        : {}),
+      ...(body.supporting_instructor_ids !== undefined
+        ? { supportingInstructorIds: body.supporting_instructor_ids }
+        : {}),
       ...(body.image_r2_keys !== undefined ? { imageR2Keys: body.image_r2_keys } : {}),
     })
     c.set('auditTarget' as any, { table: 'workshops', id })
