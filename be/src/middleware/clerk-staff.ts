@@ -16,6 +16,7 @@ declare module 'hono' {
     staffRow: typeof staffUsers.$inferSelect
     actingAs?: string
     impersonatedBy?: string
+    impersonatedClientId?: string
   }
 }
 
