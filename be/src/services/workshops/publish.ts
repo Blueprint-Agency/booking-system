@@ -67,7 +67,13 @@ export async function createWorkshop(input: CreateWorkshopInput): Promise<Worksh
     if (input.instructorIds?.length) {
       await tx
         .insert(workshopInstructors)
-        .values(input.instructorIds.map(instructorId => ({ workshopId: row!.id, instructorId })))
+        .values(
+          input.instructorIds.map((instructorId, i) => ({
+            workshopId: row!.id,
+            instructorId,
+            role: i === 0 ? ('main' as const) : ('supporting' as const),
+          })),
+        )
     }
     if (input.imageR2Keys?.length) {
       await tx.insert(workshopImages).values(
@@ -120,7 +126,13 @@ export async function updateWorkshop(id: string, patch: UpdateWorkshopInput): Pr
       if (patch.instructorIds.length) {
         await tx
           .insert(workshopInstructors)
-          .values(patch.instructorIds.map(instructorId => ({ workshopId: id, instructorId })))
+          .values(
+            patch.instructorIds.map((instructorId, i) => ({
+              workshopId: id,
+              instructorId,
+              role: i === 0 ? ('main' as const) : ('supporting' as const),
+            })),
+          )
       }
     }
 

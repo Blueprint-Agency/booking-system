@@ -15,7 +15,7 @@ import { sql } from 'drizzle-orm'
 import { staffUsers, clients } from './identity'
 import { instructors, classTypes, locations, rooms } from './catalog'
 import { corporatePackages } from './packages'
-import { lifecycleEnum, ptSessionTypeEnum, ptRequestStatusEnum } from '../enums'
+import { lifecycleEnum, ptSessionTypeEnum, ptRequestStatusEnum, workshopInstructorRoleEnum } from '../enums'
 
 // ============================================================================
 // classes (§4e / §7b) — capacity decomposed into online/waitlist/buffer
@@ -221,9 +221,14 @@ export const workshopInstructors = pgTable(
     instructorId: uuid('instructor_id')
       .notNull()
       .references(() => instructors.staffUserId, { onDelete: 'cascade' }),
+    role: workshopInstructorRoleEnum('role').notNull(),
   },
   table => ({
     pk: primaryKey({ columns: [table.workshopId, table.instructorId] }),
+    mainUnique: uniqueIndex('workshop_instructors_main_unique')
+      .on(table.workshopId)
+      .where(sql`role = 'main'`),
+    workshopRoleIdx: index('workshop_instructors_workshop_role_idx').on(table.workshopId, table.role),
   }),
 )
 
