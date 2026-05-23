@@ -1,8 +1,23 @@
 import { Hono } from 'hono'
+import { zValidator } from '@hono/zod-validator'
+import { z } from 'zod'
+import { eq } from 'drizzle-orm'
+import { db } from '../../db'
+import { clients } from '../../db/schema/identity'
 import {
   getClientEntitlements,
   listClientPackages,
 } from '../../services/packages/entitlements'
+
+function serializeProfile(row: typeof clients.$inferSelect) {
+  return {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    phone: row.phone,
+    joined_at: row.joinedAt,
+  }
+}
 
 function serializeClientPackage(r: Awaited<ReturnType<typeof listClientPackages>>[number]) {
   return {
@@ -17,9 +32,36 @@ function serializeClientPackage(r: Awaited<ReturnType<typeof listClientPackages>
   }
 }
 
+// Editable BE-owned profile fields. Email lives on Clerk (read-only here);
+// password/2FA are managed via Clerk's hosted UserProfile UI, not this API.
+const patchSchema = z
+  .object({
+    name: z.string().min(1).max(160).optional(),
+    phone: z.string().min(1).max(40).optional(),
+  })
+  .refine(b => b.name !== undefined || b.phone !== undefined, {
+    message: 'at least one of name/phone is required',
+  })
+
 const app = new Hono()
-  .get('/', c => c.json({ todo: 'own profile' }, 501))
-  .patch('/', c => c.json({ todo: 'update name/phone/gender/dob' }, 501))
+  .get('/', c => {
+    // clientRow is attached by clerkClientAuth — middleware already loaded it.
+    return c.json(serializeProfile(c.get('clientRow')))
+  })
+  .patch('/', zValidator('json', patchSchema), async c => {
+    const clientId = c.get('clientId')
+    const body = c.req.valid('json')
+    const [updated] = await db
+      .update(clients)
+      .set({
+        ...(body.name !== undefined ? { name: body.name.trim() } : {}),
+        ...(body.phone !== undefined ? { phone: body.phone.trim() } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(clients.id, clientId))
+      .returning()
+    return c.json(serializeProfile(updated!))
+  })
   .get('/dashboard', c => c.json({ todo: 'next-up + balances' }, 501))
   .get('/packages', async c => {
     const clientId = c.get('clientId')
