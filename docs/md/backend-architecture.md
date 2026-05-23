@@ -55,12 +55,12 @@ be/
     │   │   ├── identity.ts            # clients, staff_users, staff_invitations
     │   │   ├── catalog.ts             # locations, class_types, instructors, instructor_class_types
     │   │   ├── policy.ts              # global_policy, pt_booking_config (singletons)
-    │   │   ├── packages.ts            # class_packages, pt_packages, client_packages
-    │   │   ├── schedule.ts            # classes, workshops, workshop_tiers, workshop_images,
-    │   │   │                          #   workshop_instructors, pt_sessions, pt_session_clients
-    │   │   ├── availability.ts        # instructor_availability_recurring, _oneoff
+    │   │   ├── packages.ts            # class_packages, pt_packages, client_packages, promotions
+    │   │   ├── schedule.ts            # classes, workshops, workshop_days, workshop_tiers,
+    │   │   │                          #   workshop_tier_days, workshop_images, workshop_instructors,
+    │   │   │                          #   pt_requests, pt_sessions, pt_session_clients
+    │   │   ├── # availability.ts      # REMOVED in v1 — see §4f (replaced by pt_requests)
     │   │   ├── bookings.ts            # bookings, cancellations, check_ins
-    │   │   ├── ratings.ts             # ratings
     │   │   ├── ledger.ts              # manual_adjustments, audit_log, stripe_payments
     │   │   ├── content.ts             # email_templates, email_log, waiver, waiver_signatures, marketing_content
     │   │   ├── inbox.ts               # inbox_items
@@ -84,15 +84,16 @@ be/
     │   │   │   ├── class-types.ts
     │   │   │   ├── instructors.ts     # CRUD + archive/restore + invite
     │   │   │   ├── policy.ts          # read + update singletons
-    │   │   │   ├── class-packages.ts  # CRUD (§5)
+    │   │   │   ├── class-packages.ts  # CRUD incl. Trial Pass (§5)
     │   │   │   ├── pt-packages.ts     # CRUD (§6)
-    │   │   │   ├── schedule.ts        # class + workshop create/edit + admin-cancel (§7)
-    │   │   │   ├── availability.ts    # set on behalf of instructors (§8)
-    │   │   │   ├── pt-sessions.ts     # approve / decline / cancel
+    │   │   │   ├── promotions.ts      # CRUD nested under class_packages / pt_packages / workshops (§5d, §19)
+    │   │   │   ├── workshops.ts       # workshops CRUD + days + tiers + tier_day junction (§19)
+    │   │   │   ├── schedule.ts        # class create/edit/admin-cancel + workshop admin-cancel (§7)
+    │   │   │   ├── pt-requests.ts     # PT Request triage queue — approve/decline/schedule (§9)
+    │   │   │   ├── pt-sessions.ts     # admin cancel of confirmed PT sessions
     │   │   │   ├── bookings.ts        # admin cancel + roster
     │   │   │   ├── check-in.ts        # generic page + per-session (§11)
     │   │   │   ├── inbox.ts           # list, mark read, approve/decline PT (§13)
-    │   │   │   ├── ratings.ts         # read all (full attribution, §14)
     │   │   │   ├── clients.ts         # list, profile, status toggle, adjustments (§16)
     │   │   │   ├── staff.ts           # list, invite, revoke, archive, resend invite (§15)
     │   │   │   ├── notifications.ts   # email template editor (§17)
@@ -105,9 +106,8 @@ be/
     │   │       ├── roster.ts          # own session rosters
     │   │       ├── check-in.ts        # own (QR + code + manual)
     │   │       ├── pt-requests.ts     # PT requests for own sessions
-    │   │       ├── availability.ts    # own (next phase — admin sets in v1)
-    │   │       ├── profile.ts         # own bio / photo
-    │   │       └── ratings.ts         # own (anonymised in service)
+    │   │       │  # availability.ts   # REMOVED — Availability system gone (§4f)
+    │   │       └── profile.ts         # own bio / photo
     │   │
     │   ├── client/                    # Owned by fe-client dev — client Clerk app + require-active
     │   │   ├── index.ts               # Mounts all client routers under /api/v1/me
@@ -117,7 +117,6 @@ be/
     │   │   ├── pt-sessions.ts         # submit request + view own + cancel
     │   │   ├── purchases.ts           # initiate Stripe checkout (package or workshop)
     │   │   ├── invoices.ts            # list, filter, receipt link
-    │   │   ├── ratings.ts             # submit + edit own + read attended
     │   │   ├── waiver.ts              # read for sign + sign endpoint
     │   │   └── referral.ts            # own referral code + conversion stats
     │   │
@@ -140,12 +139,17 @@ be/
     │   │   ├── refund-outcome.ts      # Decide credit_returned | session_returned | stripe_refunded | forfeited
     │   │   └── qr.ts                  # `generateBookingCodes()` → { qrToken, code }
     │   ├── workshops/
-    │   │   ├── publish.ts             # Validate tiers + images + instructors on create/update
+    │   │   ├── publish.ts             # Validate basics + days + tiers + tier_days + images on save (§19)
+    │   │   ├── days.ts                # Day CRUD + per-day capacity-vs-booked validation
+    │   │   ├── tiers.ts               # Tier CRUD + workshop_tier_days junction rewrites
     │   │   └── refund-fanout.ts       # Workshop admin-cancel → enqueue stripe-refund per booking
     │   ├── pt-sessions/
-    │   │   ├── request.ts             # Submit + insert inbox_item
-    │   │   ├── approve.ts             # Confirm + book + email
-    │   │   └── cancel.ts
+    │   │   ├── request.ts             # Client submits pt_requests row (no inbox insert in v1)
+    │   │   ├── schedule.ts            # scheduleFromRequest — converts pt_requests → pt_sessions + bookings
+    │   │   ├── decline.ts             # Decline / expire / cancel a pt_requests row
+    │   │   └── cancel.ts              # Cancel a confirmed pt_sessions row
+    │   ├── promotions/
+    │   │   └── resolve.ts             # bestPriceFor(parent_type, parent_id) — best-price-wins resolver
     │   ├── packages/
     │   │   ├── purchase.ts            # On Stripe success: insert client_packages row
     │   │   ├── adjust.ts              # Manual credit/session adjust (§16d) — writes manual_adjustments
@@ -168,7 +172,6 @@ be/
     │   │   ├── dashboard.ts           # Next-up + balances aggregation
     │   │   └── admin-views.ts         # List + detail aggregations for admin clients page
     │   ├── inbox.ts                   # Insert / mark read / resolve action
-    │   ├── ratings.ts                 # Submit + edit + view-scoping anonymisation
     │   ├── waiver.ts                  # Read singleton + sign
     │   ├── marketing.ts               # Read + update marketing_content
     │   ├── referrals.ts               # Code generate + conversion grant via manual_adjustments
@@ -244,7 +247,7 @@ The `portal/*` prefix mirrors the staff Clerk app boundary: one auth gate for bo
 Per-audience endpoint enumeration, mount internals, middleware stacks, and business flows are documented in:
 
 - **`be-portal.md`** — staff Clerk auth (admin + instructor), endpoint tables per route file, portal-driven flows (staff invitations, schedule create, admin cancel + refund fanout, manual adjustments, PT approval, inbox, etc.).
-- **`be-client.md`** — client Clerk auth + verification gate, public reads, client endpoints, client-driven flows (registration, booking, self-cancel, purchases, referral conversion, ratings).
+- **`be-client.md`** — client Clerk auth + verification gate, public reads, client endpoints, client-driven flows (registration, booking, self-cancel, purchases, referral conversion).
 
 ### File ownership
 
@@ -292,14 +295,17 @@ All tables use `id uuid primary key default gen_random_uuid()` unless noted. Tim
 | name | text | not null |
 | role | enum `staff_role` | not null — `superadmin`, `admin`, `instructor` |
 | status | enum `staff_status` | not null, default `'pending'` — `pending`, `active`, `archived` |
+| granted_location_ids | uuid[] | not null, default `'{}'` — workspace grants per `admin-restructure.md` §15a. Empty array means "all active locations" (superadmin / implicit grant). Each entry FKs `locations.id` at app layer (Postgres arrays can't enforce FK). Instructor role ignores this column. |
 | archived_at | timestamptz | nullable |
 | archived_by_staff_id | uuid | FK → staff_users.id, nullable |
 | invited_at, accepted_at | timestamptz | nullable |
 | created_at, updated_at | timestamptz | not null, default now() |
 
-**Indexes:** `(clerk_user_id) unique`, `(email) unique`, `(role, status)`.
+**Indexes:** `(clerk_user_id) unique`, `(email) unique`, `(role, status)`, GIN index on `granted_location_ids` for membership filters on workspace-scoped reads.
 
 **Hard delete: never** (per §15c). Archive only. Email uniqueness enforces "one email = one staff account."
+
+**Workspace semantics.** `locations.id` doubles as the workspace identifier referenced here. All workspace-scoped portal reads (Schedule, Workshops, Check-in, Inbox) filter by `granted_location_ids` membership — see `be-portal.md` §1 for the middleware contract.
 
 #### `staff_invitations`
 
@@ -307,7 +313,8 @@ All tables use `id uuid primary key default gen_random_uuid()` unless noted. Tim
 |---|---|---|
 | id | uuid | PK |
 | email | text | not null |
-| role | enum `staff_role` | not null — `admin` or `instructor` (not `superadmin`) |
+| role | enum `staff_role` | not null — **`admin` only in v1**. Superadmin is seeded, not invitable (§15a). Instructor is reserved but not invitable in v1 — instructors are created indirectly via the `POST /instructors` route which auto-fires an admin-typed invitation under the hood. App layer rejects `role='instructor'` at the invite endpoint until self-service instructor invitations land. |
+| granted_location_ids | uuid[] | not null, default `'{}'` — copied onto the resulting `staff_users` row on accept. Empty array = inherits inviter's grants on accept (if inviter is superadmin, that's all locations). |
 | token | text | unique, not null — opaque random string |
 | expires_at | timestamptz | not null — issuance + 7 days (§15b) |
 | status | enum `invitation_status` | not null, default `'pending'` — `pending`, `accepted`, `revoked`, `expired` |
@@ -324,10 +331,21 @@ All tables use `id uuid primary key default gen_random_uuid()` unless noted. Tim
 id, name (text, not null), address (text), gmaps_url (text), phone (text), archived_at (nullable).
 **Indexes:** `(archived_at)`.
 
+#### `rooms` — physical spaces, location-scoped
+
+id, location_id (uuid, FK → locations.id, on delete restrict, not null), name (text, not null), capacity (integer, not null, CHECK `> 0` — reference metadata only; does **not** cap a session's booking capacity), archived_at (nullable).
+**Indexes:** `(location_id, archived_at)`, unique `(location_id, lower(name))` so a location can't have two rooms with the same name.
+
+Every scheduled `classes` / `workshop_days` / `pt_sessions` row carries a `room_id` (nullable in DB so legacy rows survive; **required at the app layer** for new creates/reschedules). The scheduler hard-blocks two **active** sessions sharing a room at overlapping times, across all three tables (see `services/schedule/room-conflicts.ts`).
+
+**Archive blocking:** blocked if any active future `classes` / `workshop_days` / `pt_sessions` reference the room. Returns `409 room_in_use` with the offending ids.
+
 #### `class_types`
 
-id, name (text, not null), archived_at (nullable).
-**Indexes:** `(archived_at)`, `(lower(name))` for search.
+id, name (text, not null), description (text, nullable — short blurb shown to clients on `/classes` and workshop cards per `admin-restructure.md` §3), parent_id (uuid, FK → class_types.id, on delete restrict, nullable — single-level hierarchy with depth capped at 1; enforced at service layer: a row whose `parent_id IS NOT NULL` cannot itself be referenced as a parent), archived_at (nullable).
+**Indexes:** `(archived_at)`, `(lower(name))` for search, `(parent_id)` for child lookup.
+
+**Archive blocking** (per `admin-restructure.md` §3): blocked if any `instructor_class_types` references the type, or any active future `classes`/`workshops` reference it. For parents, also blocked while any child still has linked data — service walks children + checks each.
 
 #### `instructors` — 1:1 extension of staff_users where role=instructor
 
@@ -366,20 +384,53 @@ book_in_advance_days int, updated_at, updated_by_staff_id (FK).
 |---|---|---|
 | id | uuid | PK |
 | name | text | not null |
-| kind | enum `class_package_kind` | `credit_bundle`, `unlimited` |
-| credits | int | nullable — required when kind=`credit_bundle` (CHECK constraint) |
-| validity_days | int | nullable — required when kind=`credit_bundle` |
+| description | text | nullable — short blurb rendered on the package card |
+| kind | enum `class_package_kind` | `credit_bundle`, `unlimited`, `trial` |
+| credits | int | nullable — required when kind in (`credit_bundle`, `trial`) |
+| validity_days | int | nullable — optional when kind=`trial` (null = no expiry), required when kind=`credit_bundle` |
 | duration_days | int | nullable — required when kind=`unlimited` |
 | price_sgd | numeric(10, 2) | not null |
 | status | enum `package_status` | `active`, `archived` |
 | archived_at | timestamptz | nullable |
 
-**Indexes:** `(status, kind)`.
-**CHECK:** kind-specific column requirements (Postgres CHECK constraint, kept simple).
+**Indexes:** `(status, kind)`. Partial unique index `(kind) WHERE kind='trial' AND status='active'` is **not** applied — multiple active Trial Pass definitions are allowed at the catalogue level; the one-per-client gate is enforced on `client_packages`, not here.
+
+**CHECK:** kind-specific column requirements (Postgres CHECK constraint):
+- `credit_bundle` → credits NOT NULL, validity_days NOT NULL, duration_days NULL
+- `unlimited` → credits NULL, validity_days NULL, duration_days NOT NULL
+- `trial` → credits NOT NULL, duration_days NULL (validity_days nullable)
 
 #### `pt_packages` (§6)
 
-id, name, session_type enum (`1on1`, `2on1`), num_sessions int, price_sgd, status, archived_at.
+id, name, description (text, nullable), session_type enum (`1on1`, `2on1`), num_sessions int, price_sgd, status, archived_at.
+
+#### `promotions` (`fe-client-features.md` §6.1, `admin-restructure.md` §5d, §19)
+
+Polymorphic — a promotion belongs to exactly one parent (`class_package`, `pt_package`, or `workshop`). Best-price-wins is resolved at purchase time across all currently-windowed promotions on the parent; the winning row is frozen onto the resulting `client_packages.applied_promotion_id` / `bookings.applied_promotion_id`.
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid | PK |
+| parent_type | enum `promotion_parent` | `class_package`, `pt_package`, `workshop` |
+| parent_id | uuid | id of the parent row (FK enforced at app layer because the target table varies — `class_packages.id`, `pt_packages.id`, or `workshops.id`) |
+| label | text | not null — short tag rendered on the package/workshop card (e.g. "Launch promo", "Member discount") |
+| kind | enum `promotion_kind` | `percent` (e.g. 20% off), `special_price` (absolute SGD that overrides regular price) |
+| percent_off | int | nullable — 1..99, required when kind=`percent` |
+| special_price_sgd | numeric(10, 2) | nullable — required when kind=`special_price` |
+| starts_at | timestamptz | not null |
+| ends_at | timestamptz | not null, CHECK ends_at > starts_at |
+| status | enum `promotion_status` | not null, default `'active'` — `active`, `archived` (manual disable independent of the time window) |
+| sort_id | bigserial | tie-break for best-price-wins when two promotions yield identical effective prices — lowest `sort_id` wins (deterministic, per `fe-client-features.md` §6.1) |
+| created_at, updated_at | timestamptz | not null |
+| created_by_staff_id | uuid | FK → staff_users.id |
+
+**Indexes:** `(parent_type, parent_id, status, starts_at, ends_at)` for the in-window lookup at purchase time, `(sort_id)` for the tie-break.
+
+**CHECK:** kind-specific column presence (`percent` → percent_off NOT NULL; `special_price` → special_price_sgd NOT NULL).
+
+**No price-vs-regular validation at write.** Admin may publish a promotion whose effective price is higher than the parent's regular — best-price-wins will simply ignore it at purchase. UI surfaces a warning but the DB does not reject.
+
+**No `feature_flags.promo_codes_enabled` gate.** Promotions are launch-day functionality; the prior "deferred behind flag" note is dropped — see §4k.
 
 #### `client_packages` (per-client purchased instances — the actual entitlement ledger)
 
@@ -387,16 +438,17 @@ id, name, session_type enum (`1on1`, `2on1`), num_sessions int, price_sgd, statu
 |---|---|---|
 | id | uuid | PK |
 | client_id | uuid | FK → clients.id |
-| kind | enum `client_package_kind` | `credit_bundle`, `unlimited`, `pt` |
-| source_class_package_id | uuid | FK → class_packages.id, nullable (set when kind in {credit_bundle, unlimited}) |
+| kind | enum `client_package_kind` | `credit_bundle`, `unlimited`, `trial`, `pt` |
+| source_class_package_id | uuid | FK → class_packages.id, nullable (set when kind in {credit_bundle, unlimited, trial}) |
 | source_pt_package_id | uuid | FK → pt_packages.id, nullable (set when kind=`pt`) |
+| applied_promotion_id | uuid | FK → promotions.id, nullable — set when a promotion resolved at purchase (best-price-wins, §4d Promotions). Frozen at purchase so a later change to the promotion row doesn't rewrite history. |
 | credits_or_sessions_remaining | int | nullable — null when kind=`unlimited` |
-| expires_at | timestamptz | nullable — set for credit_bundle + unlimited; null for pt |
+| expires_at | timestamptz | nullable — set for credit_bundle + unlimited + trial (when validity_days set); null for pt and trial-without-expiry |
 | purchased_at | timestamptz | not null |
-| amount_paid_sgd | numeric(10, 2) | not null |
-| stripe_payment_intent_id | text | unique, not null |
+| amount_paid_sgd | numeric(10, 2) | not null — effective price actually charged (may be 0 for admin-issued grants) |
+| stripe_payment_intent_id | text | unique, **nullable** — null for admin-issued grants (§16 manual issue) and free trial passes priced at 0 SGD |
 
-**Indexes:** `(client_id, kind)`, `(client_id, expires_at)` for upcoming-expiry sweep, `(stripe_payment_intent_id) unique`.
+**Indexes:** `(client_id, kind)`, `(client_id, expires_at)` for upcoming-expiry sweep, `(stripe_payment_intent_id) unique where not null`, and a **unique partial index `(client_id) WHERE kind='trial'`** — enforces the one-trial-per-client-ever invariant from `fe-client-features.md` §6.1. A previously-purchased trial (active OR expired) blocks any further trial purchase via this constraint; the purchase service catches the unique-violation and returns `409 trial_already_used`.
 
 ### 4e. Schedule
 
@@ -419,7 +471,9 @@ lifecycle = 'active' AND now > ends_at         → 'completed'
 | location_id | uuid | FK → locations.id |
 | starts_at | timestamptz | not null |
 | ends_at | timestamptz | not null, CHECK ends_at > starts_at |
-| capacity | int | not null, CHECK > 0 |
+| capacity_online | int | not null, CHECK ≥ 0 — slots a client can self-book |
+| capacity_waitlist | int | not null, default 0, CHECK ≥ 0 — waitlist slots offered when `capacity_online` is exhausted (deferred feature, see §8) |
+| capacity_buffer | int | not null, default 0, CHECK ≥ 0 — reserve held back from self-booking (admin manual add / walk-in) |
 | credit_cost | int | not null, CHECK ≥ 0 |
 | lifecycle | enum `lifecycle` | not null, default `'active'` — `active`, `cancelled` |
 | cancelled_at | timestamptz | nullable |
@@ -427,9 +481,13 @@ lifecycle = 'active' AND now > ends_at         → 'completed'
 | created_at | timestamptz | not null |
 | created_by_staff_id | uuid | FK → staff_users.id |
 
+**Derived:** `max_capacity = capacity_online + capacity_waitlist + capacity_buffer` (per `admin-restructure.md` §7d). Computed at read time, never stored. CHECK that at least one of the three is > 0.
+
 **Indexes:** `(starts_at)` for timetable range queries, `(instructor_id, starts_at)`, `(location_id, starts_at)`, `(class_type_id)`, `(lifecycle, starts_at)`.
 
-#### `workshops` (§7c)
+#### `workshops` (§7e, §19 — multi-day)
+
+A workshop is the parent record. Day-level scheduling lives in `workshop_days`; pricing lives in `workshop_tiers`; a tier covers a subset of days via `workshop_tier_days`. Tier capacity is **derived**, never stored — it equals `min(day.capacity_online)` across the days the tier covers (`admin-restructure.md` §19c, `fe-client-features.md` §4.1).
 
 | Column | Type | Notes |
 |---|---|---|
@@ -438,75 +496,127 @@ lifecycle = 'active' AND now > ends_at         → 'completed'
 | class_type_id | uuid | FK → class_types.id |
 | cover_r2_key | text | nullable |
 | description_html | text | rich text, sanitised on write |
-| location_id | uuid | FK → locations.id |
-| starts_at | timestamptz | not null |
-| ends_at | timestamptz | not null, CHECK > starts_at |
+| location_id | uuid | FK → locations.id, not null — workshops are workspace-scoped per `admin-restructure.md` §7e |
 | lifecycle | enum `lifecycle` | not null, default `'active'` |
 | cancelled_at, cancelled_by_staff_id | | nullable |
 | created_at, created_by_staff_id | | not null |
 
-**Indexes:** `(starts_at)`, `(lifecycle, starts_at)`.
+No `starts_at` / `ends_at` on `workshops` directly — those are inferred from `workshop_days` (min/max). Removed from the parent so admin can add/remove days post-create without rewriting the parent envelope.
 
-#### `workshop_images` — additional images per §7c
+**Indexes:** `(location_id, lifecycle)`, `(lifecycle)`.
 
-id, workshop_id (FK, on delete cascade), r2_key, ord (int).
+#### `workshop_days` (NEW — `admin-restructure.md` §19, `fe-client-features.md` §4.1)
 
-#### `workshop_instructors` (M:N — §7c "Instructor(s) (multi-select)")
-
-workshop_id, instructor_id, **PK** pair, both FKs, on delete cascade.
-
-#### `workshop_tiers` (§7c)
+One row per workshop session-day. The Schedule view auto-renders one tile per `workshop_days` row with a `Day N/M` chip per `admin-restructure.md` §7c. Capacity is decomposed identically to `classes`.
 
 | Column | Type | Notes |
 |---|---|---|
 | id | uuid | PK |
-| workshop_id | uuid | FK, on delete cascade |
-| name | text | not null |
-| description | text | |
+| workshop_id | uuid | FK → workshops.id, on delete cascade |
+| ord | int | not null — 1-based day index within the workshop |
+| starts_at | timestamptz | not null |
+| ends_at | timestamptz | not null, CHECK ends_at > starts_at |
+| base_price_sgd | numeric(10, 2) | not null — informational reference for per-day pricing; actual purchase price comes from the selected tier |
+| capacity_online | int | not null, CHECK ≥ 0 |
+| capacity_waitlist | int | not null, default 0, CHECK ≥ 0 |
+| capacity_buffer | int | not null, default 0, CHECK ≥ 0 |
+
+**Indexes:** `(workshop_id, ord) unique`, `(starts_at)` for timetable range queries.
+
+**CHECK:** `capacity_online + capacity_waitlist + capacity_buffer > 0`.
+
+#### `workshop_images`
+
+id, workshop_id (FK, on delete cascade), r2_key, ord (int).
+
+#### `workshop_instructors` (M:N)
+
+workshop_id, instructor_id, **PK** pair, both FKs, on delete cascade.
+
+#### `workshop_tiers` (§19)
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid | PK |
+| workshop_id | uuid | FK → workshops.id, on delete cascade |
+| name | text | not null — e.g. "Full Event", "Day 1 only" |
+| description | text | nullable |
 | regular_price_sgd | numeric(10, 2) | not null |
 | early_bird_price_sgd | numeric(10, 2) | nullable |
 | early_bird_quota | int | nullable |
 | early_bird_cutoff_at | timestamptz | nullable |
-| capacity | int | not null, CHECK > 0 |
-| ord | int | not null — for display order |
+| ord | int | not null — display order |
+
+**No `capacity` column** — tier capacity is derived at read time as `min(workshop_days.capacity_online)` across the tier's covered days (`workshop_tier_days` junction). See `lib/capacity.ts:getTierAvailability(tier_id)`.
 
 **Indexes:** `(workshop_id, ord)`.
 
-#### `pt_sessions` (one row per request, §9)
+#### `workshop_tier_days` (NEW junction — `admin-restructure.md` §19)
+
+Which days each tier grants access to. A "Full Event" tier covers all `workshop_days`; a "Day 1 only" tier covers just the first.
+
+| Column | Type | Notes |
+|---|---|---|
+| workshop_tier_id | uuid | FK → workshop_tiers.id, on delete cascade |
+| workshop_day_id | uuid | FK → workshop_days.id, on delete cascade |
+| **PK** (workshop_tier_id, workshop_day_id) | | |
+
+**Indexes:** `(workshop_day_id)` for reverse lookup (capacity recompute on day edit).
+
+#### `pt_requests` (NEW — `admin-restructure.md` §9, `fe-client-features.md` §5.2)
+
+Client-submitted intent to schedule a private session. Has no `location_id` (assigned only at scheduling). The system invariant is: **no `pt_sessions` row may exist without a matching `pt_requests` row** (FK `pt_sessions.pt_request_id`).
 
 | Column | Type | Notes |
 |---|---|---|
 | id | uuid | PK |
-| instructor_id | uuid | FK → instructors.staff_user_id |
-| location_id | uuid | FK → locations.id, nullable until confirmed |
-| starts_at, ends_at | timestamptz | not null, CHECK ends_at > starts_at |
+| client_id | uuid | FK → clients.id — the submitting client |
+| preferred_instructor_id | uuid | FK → instructors.staff_user_id, nullable — "no preference" allowed |
+| preferred_starts_at | timestamptz | not null |
+| preferred_ends_at | timestamptz | not null, CHECK > preferred_starts_at |
 | session_type | enum `pt_session_type` | `1on1`, `2on1` |
-| status | enum `pt_session_status` | `pending`, `confirmed`, `declined`, `cancelled` |
-| decline_note | text | nullable, required when status=`declined` (app layer) |
-| confirmed_at, confirmed_by_staff_id | | nullable |
-| declined_at, declined_by_staff_id | | nullable |
-| cancelled_at, cancelled_by_staff_id | | nullable |
+| co_client_id | uuid | FK → clients.id, nullable — set when session_type=`2on1` |
+| message | text | nullable — free-form note from client |
+| status | enum `pt_request_status` | not null, default `'pending'` — `pending`, `scheduled`, `declined`, `cancelled`, `expired` |
+| decline_note | text | nullable, required at app layer when status=`declined` |
+| expires_at | timestamptz | not null — `created_at + ttl` from `pt_booking_config` (sweep job, §5) |
+| scheduled_pt_session_id | uuid | FK → pt_sessions.id, nullable — set when status=`scheduled` |
+| resolved_at, resolved_by_staff_id | | nullable — set on scheduled / declined / cancelled / expired |
 | created_at | timestamptz | not null |
 
-Lifecycle here is conflated with status because PT requests have a richer state machine (pending/declined are not just "scheduled" or "cancelled"). Event state computation is gated on `status='confirmed'`.
+**Indexes:** `(status, created_at desc)` — drives the `/admin/pt-requests` triage queue; `(client_id, status)` for client's own list; `(preferred_instructor_id, status)`; `(expires_at) WHERE status='pending'` for the expiry sweep.
 
-**Indexes:** `(instructor_id, starts_at)`, `(status, starts_at)`.
+**Workspace scope.** PT requests are workspace-agnostic per `admin-restructure.md` Overview — every admin sees the same triage queue regardless of `granted_location_ids`.
+
+#### `pt_sessions` (created when a PT request is scheduled by admin/instructor)
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid | PK |
+| pt_request_id | uuid | FK → pt_requests.id, **not null, unique** — every session traces back to a request |
+| instructor_id | uuid | FK → instructors.staff_user_id, not null |
+| location_id | uuid | FK → locations.id, not null — assigned at scheduling time |
+| starts_at, ends_at | timestamptz | not null, CHECK ends_at > starts_at — may differ from request's `preferred_*` after admin negotiation |
+| session_type | enum `pt_session_type` | `1on1`, `2on1` — copied from request |
+| capacity_online | int | not null, CHECK ≥ 0 — defaults from `session_type` (`1on1` → 1, `2on1` → 2) per `admin-restructure.md` §9 |
+| capacity_waitlist | int | not null, default 0, CHECK ≥ 0 |
+| capacity_buffer | int | not null, default 0, CHECK ≥ 0 |
+| lifecycle | enum `lifecycle` | not null, default `'active'` — `active`, `cancelled`. PT sessions inherit the time-derived event state pattern (§4e header) since the request/decline/expire states are owned by `pt_requests`. |
+| cancelled_at, cancelled_by_staff_id | | nullable |
+| scheduled_at, scheduled_by_staff_id | | not null — who converted the request into a session |
+| created_at | timestamptz | not null |
+
+**Indexes:** `(instructor_id, starts_at)`, `(lifecycle, starts_at)`, `(pt_request_id) unique`.
 
 #### `pt_session_clients` (M:N — supports 2-on-1)
 
 pt_session_id, client_id, **PK** pair, FKs, on delete cascade.
 
-### 4f. Availability (§8)
+### 4f. Availability — REMOVED in v1
 
-#### `instructor_availability_recurring`
+Per `admin-restructure.md` §8: the Availability system has been removed. PT scheduling now flows from client-submitted `pt_requests` (§4e), and the scheduling service simply checks for instructor conflicts against existing `classes`, `workshops` (via `workshop_days`), and confirmed `pt_sessions` at the moment of admin approval — no stored availability calendar.
 
-id, instructor_id (FK), weekday (int 0–6), start_time (`time`), end_time (`time`).
-**Indexes:** `(instructor_id, weekday)`.
-
-#### `instructor_availability_oneoff`
-
-id, instructor_id (FK), starts_at, ends_at.
-**Indexes:** `(instructor_id, starts_at)`.
+The previously-specified `instructor_availability_recurring` and `instructor_availability_oneoff` tables are **dropped** during the reshape. The `routes/portal/admin/availability.ts` and `routes/portal/instructor/availability.ts` route files are removed; the `services/availability/*` folder is removed; conflict-checking lives in `services/pt-sessions/schedule.ts:checkInstructorConflict(instructor_id, starts_at, ends_at)`.
 
 ### 4g. Bookings, Cancellations, Check-ins
 
@@ -522,6 +632,7 @@ id, instructor_id (FK), starts_at, ends_at.
 | workshop_tier_id | uuid | FK → workshop_tiers.id, nullable — set when kind=`workshop` |
 | pt_session_id | uuid | FK → pt_sessions.id, nullable — set when kind=`pt` |
 | client_package_id | uuid | FK → client_packages.id, nullable — null for workshops (paid via Stripe directly) |
+| applied_promotion_id | uuid | FK → promotions.id, nullable — frozen at purchase when a workshop promotion resolved; null for class/PT bookings (where the promotion already froze onto the `client_packages` row used to book) |
 | state | enum `booking_state` | `confirmed`, `cancelled`, `no_show` |
 | credits_or_sessions_used | int | nullable — null for workshops + unlimited |
 | refund_outcome | enum `refund_outcome` | `credit_returned`, `session_returned`, `stripe_refunded`, `forfeited`, `n_a` |
@@ -532,6 +643,8 @@ id, instructor_id (FK), starts_at, ends_at.
 | booked_at | timestamptz | not null |
 | cancelled_at | timestamptz | nullable |
 
+Workshop bookings cover **the tier**, not individual days. Per-day attendance / waitlist offerings are derived: the tier's `workshop_tier_days` rows enumerate which days the booking grants access to. Per-day capacity counts are computed by joining `bookings → workshop_tier_days` and counting confirmed rows whose tier covers that day. See `lib/capacity.ts:getWorkshopDayBookedCount(workshop_day_id)`.
+
 **CHECK constraints (kind-specific FK presence):**
 - kind=`class` → class_id NOT NULL, workshop_id NULL, pt_session_id NULL
 - kind=`workshop` → workshop_id NOT NULL, workshop_tier_id NOT NULL, class_id NULL, pt_session_id NULL
@@ -540,7 +653,7 @@ id, instructor_id (FK), starts_at, ends_at.
 **Indexes:**
 - `(client_id, booked_at desc)` for "view own bookings"
 - `(class_id, state)` for class roster + capacity count
-- `(workshop_tier_id, state)` for tier capacity count
+- `(workshop_tier_id, state)` for tier capacity count + per-day count via join
 - `(pt_session_id)` unique partial where kind=`pt` (one booking per PT session for 1-on-1; for 2-on-1 multiple bookings tied via pt_session_clients)
 - `(qr_token) unique`, `(code) unique`
 - `(check_in_state)` for "pending check-in" surfacing (§11)
@@ -564,24 +677,6 @@ id, instructor_id (FK), starts_at, ends_at.
 
 id, booking_id (FK), checked_in_at, checked_in_by_staff_id (FK), method enum (`qr`, `code`, `manual`).
 **Indexes:** `(booking_id) unique` — at most one check-in per booking.
-
-### 4h. Ratings (§14)
-
-| Column | Type | Notes |
-|---|---|---|
-| id | uuid | PK |
-| booking_id | uuid | FK → bookings.id, unique — one rating per attended booking |
-| client_id | uuid | FK |
-| kind | enum | `class`, `workshop` (PT not rateable in v1) |
-| class_id, workshop_id | uuid | nullable — exactly one set per kind |
-| instructor_id | uuid | FK — denormalised for instructor profile aggregates |
-| stars | int | CHECK 1 ≤ stars ≤ 5 |
-| comment | text | nullable |
-| rated_at | timestamptz | not null |
-| edited_at | timestamptz | nullable |
-| edit_window_closes_at | timestamptz | not null — rated_at + 7 days |
-
-**Indexes:** `(class_id) where kind='class'`, `(workshop_id) where kind='workshop'`, `(instructor_id, rated_at desc)`.
 
 ### 4i. Ledger
 
@@ -611,9 +706,9 @@ The fe-client `/account/invoices` "Download" link points directly to `receipt_ur
 
 #### `email_templates` (§17)
 
-id, slug (text unique — e.g. `class_booking_confirmed`, 22 seeded values), subject (text), body_html (text), updated_at, updated_by_staff_id (FK).
+id, slug (text unique — 25 seeded values), subject (text), body_html (text), updated_at, updated_by_staff_id (FK).
 
-**Slug list (22):**
+**Slug list (25):**
 ```
 welcome
 password_reset
@@ -621,7 +716,9 @@ class_booking_confirmed
 pt_request_submitted
 pt_session_approved
 pt_session_declined
+pt_request_expired                     # NEW — sweep job (§5) marks pending requests past expires_at
 workshop_purchase_confirmed
+workshop_waitlist_promoted             # NEW — fired when cancellation frees a seat and waitlist promotes (deferred behaviour, slug seeded now)
 class_cancelled_credit_returned
 class_cancelled_forfeited
 pt_cancelled_session_returned
@@ -629,14 +726,13 @@ pt_cancelled_forfeited
 admin_cancel_class
 admin_cancel_pt
 admin_cancel_workshop
-rating_prompt_class
-rating_prompt_workshop
-package_purchase_confirmed
-credit_expiry_reminder
+package_purchase_confirmed             # also fires for trial pass purchases — copy must read for both
+credit_expiry_reminder                 # also fires for trial pass expiry — template renderer branches on package kind to avoid "credits expiring" copy for trial
 instructor_invite
 admin_invite
 checkin_nag
 referral_credited
+trial_pass_purchase_confirmed          # NEW — distinct from package_purchase_confirmed; trial copy is friendlier ("welcome to your first 3 classes")
 ```
 
 #### `email_log`
@@ -674,14 +770,16 @@ Drives admin-editable copy on the fe-client public pages (`/`, `/pricing`).
 
 #### `feature_flags`
 
-Lets us dark-launch deferred features (e.g. waitlist, promo codes) and toggle non-critical surfaces without redeploying.
+Lets us dark-launch deferred features (e.g. waitlist) and toggle non-critical surfaces without redeploying.
 
 | Column | Type | Notes |
 |---|---|---|
-| key | text | PK — e.g. `waitlist_enabled`, `promo_codes_enabled` |
+| key | text | PK — e.g. `waitlist_enabled` |
 | enabled | boolean | not null, default `false` |
 | updated_at | timestamptz | not null, default now() |
 | updated_by_staff_id | uuid | FK → staff_users.id |
+
+The prior `promo_codes_enabled` flag is **removed**. Promotions (per `fe-client-features.md` §6.1, `admin-restructure.md` §5d, §19) are launch-day functionality modelled directly in the `promotions` table (§4d). The fe-client checkout's typed-code input remains non-functional in v1 — see §8 for the deferred typed-promo-code surface (separate feature from the curated promotions table).
 
 **Read pattern:** `lib/feature-flags-cache.ts` loads all rows at boot into an in-memory map; admin toggle (`PATCH /api/v1/portal/admin/feature-flags/:key`) updates DB + invalidates cache (process-local — multi-instance deploys would need a pub/sub trigger, deferred).
 
@@ -694,21 +792,19 @@ Lets us dark-launch deferred features (e.g. waitlist, promo codes) and toggle no
 | Column | Type | Notes |
 |---|---|---|
 | id | uuid | PK |
-| type | enum | `client_cancellation`, `admin_cancel_class_pt`, `admin_cancel_workshop`, `pt_request` |
+| type | enum | `client_cancellation`, `admin_cancel_class_pt`, `admin_cancel_workshop` |
 | payload | jsonb | denormalised display data — keys vary by type, validated by Zod at insert time |
-| source_pt_session_id | uuid | FK, nullable — set for type=`pt_request` (the actionable row) |
 | read_at, read_by_staff_id | | nullable |
-| action_taken | enum | `approved`, `declined`, nullable — set on PT request resolution |
-| action_at, action_by_staff_id | | nullable |
 | created_at | timestamptz | not null |
 
-**Indexes:** `(type, read_at, created_at desc)` for filter + unread count, `(source_pt_session_id) where type='pt_request'`.
+**Indexes:** `(type, read_at, created_at desc)` for filter + unread count.
+
+**PT requests are no longer Inbox items.** Per `admin-restructure.md` §13, PT request triage moved to its own dedicated page (`/admin/pt-requests`) backed by the `pt_requests` table (§4e). The Inbox is now purely a read-only notification feed — the `action_taken` / `action_at` / `action_by_staff_id` / `source_pt_session_id` columns were dropped along with the `pt_request` type value.
 
 **Payload schemas (Zod, validated at write):**
 - `client_cancellation` → `{ client_id, client_name, session_kind, session_id, session_label, cancelled_at, refund_result }`
 - `admin_cancel_class_pt` → `{ actor_staff_id, actor_name, session_kind, session_id, session_label, cancelled_at, clients_refunded }`
 - `admin_cancel_workshop` → `{ actor_staff_id, actor_name, workshop_id, workshop_name, cancelled_at, total_refunded_sgd, attendees_refunded }`
-- `pt_request` → `{ client_id, client_name, instructor_id, instructor_name, requested_starts_at, requested_ends_at, message }`
 
 ---
 
@@ -722,8 +818,11 @@ Lets us dark-launch deferred features (e.g. waitlist, promo codes) and toggle no
 |---|---|---|
 | `email` send | Triggered (not scheduled) — invoked by any service via `services/notifications/send.ts:enqueueEmail()`, executed inline against the SMTP transport | Render template + variables → `lib/mailer.ts` (Nodemailer) → write `email_log`. In v1 this is synchronous (no queue); failures are logged and surfaced in `email_log.status='failed'` with `error` populated from the Nodemailer rejection |
 | `checkin-nag` | Daily 03:00 SGT (`node-cron`) | Find sessions where `ends_at` between now-25h and now-23h AND any booking has `check_in_state='pending'` → send `checkin_nag` email to assigned instructor (cc admin), one per session |
-| `credit-expiry` | Daily 03:00 SGT (`node-cron`) | Find `client_packages` where `expires_at` between now+6.5d and now+7.5d → send `credit_expiry_reminder` email |
+| `credit-expiry` | Daily 03:00 SGT (`node-cron`) | Find `client_packages` where `expires_at` between now+6.5d and now+7.5d → send `credit_expiry_reminder` email. Renderer branches on `kind` — `trial` rows get trial-pass-specific copy (no "credits expiring" language). |
+| `pt-request-expiry` | Hourly (`node-cron`) | Find `pt_requests WHERE status='pending' AND expires_at < now()` → update `status='expired'`, set `resolved_at=now()`, `resolved_by_staff_id=NULL`, then `enqueueEmail('pt_request_expired', client.email, …)`. Stale requests must not linger in the admin queue. |
+| `promotion-status` | Not a cron — **query-time derivation**. A `promotions` row is "active right now" iff `status='active' AND now() BETWEEN starts_at AND ends_at`. Computed in `services/promotions/resolve.ts:bestPriceFor(parent_type, parent_id)`. No background sweep needed; the windowed predicate is cheap given the `(parent_type, parent_id, status, starts_at, ends_at)` index. | — |
 | Workshop admin-cancel refunds | Triggered (not scheduled) by admin route | For each booking in workshop: call Stripe Refund API → on success, update booking `state='cancelled'`, `refund_outcome='stripe_refunded'`; emit one inbox item for the workshop. **v1: synchronous.** **Future: BullMQ with idempotency key = booking_id.** |
+| Workshop waitlist promote | **Deferred — not in v1.** Slug `workshop_waitlist_promoted` is seeded so the template editor surfaces it. When waitlist behaviour lands, this becomes a triggered handler on booking-cancel that picks the oldest waitlist row for each affected day and offers it. | — |
 
 ### BullMQ (added when refund durability is required)
 
@@ -863,21 +962,25 @@ Run idempotently on fresh deployment:
 ## 8. Phase Boundaries
 
 **This phase (in scope):**
-- All schema in §4 (including amendments: `clients.gender`/`dob`, `marketing_content`, `stripe_payments.receipt_url`, `feature_flags`).
+- All schema in §4 (including amendments: `clients.gender`/`dob`, `marketing_content`, `stripe_payments.receipt_url`, `feature_flags`, **`staff_users.granted_location_ids`**, **`promotions`**, **`workshop_days`** + **`workshop_tier_days`**, **`pt_requests`** split out from `pt_sessions`, **`class_packages.kind='trial'`** + one-trial-per-client partial unique index, decomposed capacity on `classes` / `workshop_days` / `pt_sessions`).
 - All routes in §2: `routes/portal/admin/*`, `routes/portal/instructor/*` (read-only views), `routes/client/*`, `routes/public/*`, `routes/webhooks/*`.
-- All cron handlers in §5 (run via `node-cron`).
-- Referral chain populated AND reward-grant logic wired (see §7 Referral conversion crediting). Was previously deferred; now in scope because it reuses existing primitives.
+- All cron handlers in §5 (run via `node-cron`), including the new **`pt-request-expiry`** hourly sweep.
+- Referral chain populated AND reward-grant logic wired (see §7 Referral conversion crediting).
+- **Curated promotions** (admin-published, best-price-wins resolved at purchase) — see §4d `promotions`. Typed promo codes remain deferred (out of scope below).
+- **Trial Pass** as a first-class `class_packages.kind` with server-enforced one-per-client.
+- **Multi-day workshops** with derived tier capacity and per-day waitlist scaffolding (waitlist *promotion* behaviour itself remains deferred).
+- **Workspace scoping** — `granted_location_ids` filter on all workspace-scoped portal reads.
 - `audit_log` table populated; admin-facing read views deferred.
 
 **Next phase (per `admin-restructure.md` §19):**
 - Reports module — read-only aggregate queries over existing tables.
 - Audit log surfacing UI — table populated this phase; read endpoints + admin views deferred.
-- Instructor self-service availability — admin sets availability for instructors in v1 (`routes/portal/instructor/availability.ts` is read-only this phase).
+- ~~Instructor self-service availability~~ — Availability system removed entirely in v1 (§4f); PT scheduling is conflict-checked at admin-approve time. If a stored availability calendar is reintroduced later, it lands as a new feature, not a reactivation.
 - Dashboard — read-only metric aggregates.
 - BullMQ + Redis for durable Stripe refund retries — `node-cron` handles non-critical jobs in v1; the refund queue lands when refund automation is fully wired.
 
 **Out of scope for v1 (gated by `feature_flags` if needed):**
-- **Promo codes at checkout.** The fe-client checkout mockup includes a promo input (`SADHANA20`, `FRIEND10`); `fe-client-features.md` does not specify them. Treat the input as non-functional in v1. If kept later: add `promo_codes (code unique, kind=fixed_sgd|percent, amount, valid_from, valid_to, max_uses, used_count, status)` and a `promo_redemptions` ledger.
+- **Typed promo codes at checkout.** v1 ships **curated promotions** (admin-published per package/workshop, auto-applied best-price-wins) via the `promotions` table (§4d) — these are launch-day functionality. What remains deferred is the **typed promo-code** surface in the fe-client checkout (`SADHANA20`, `FRIEND10` style codes that a client types). Treat the input as non-functional in v1. If kept later: add `promo_codes (code unique, kind=fixed_sgd|percent, amount, valid_from, valid_to, max_uses, used_count, status)` and a `promo_redemptions` ledger; resolution would compose with the curated `promotions` table (best-of-both or stacked — TBD).
 - **Class waitlist.** `fe-client-features.md` §Booking Rules mentions "Full → Join Waitlist" with seat-available email + time-bound claim CTA. v1 UI shows "Full" with no waitlist CTA. If kept later: add `waitlist_entries (client_id, class_id|workshop_tier_id, joined_at, offered_at, offer_expires_at, status=waiting|offered|claimed|expired|cancelled)`.
 - **WhatsApp / SMS / push notifications.** Email-only in v1.
 - **Multi-tenant SaaS surface.** This backend serves Yoga Sadhana exclusively; no tenant scoping.

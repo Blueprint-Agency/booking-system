@@ -7,7 +7,6 @@ import bookings from './bookings'
 import ptSessions from './pt-sessions'
 import purchases from './purchases'
 import invoices from './invoices'
-import ratings from './ratings'
 import waiver from './waiver'
 import referral from './referral'
 
@@ -19,7 +18,6 @@ const app = new Hono()
   .route('/pt-sessions', ptSessions)
   .route('/', purchases)
   .route('/invoices', invoices)
-  .route('/ratings', ratings)
   .route('/waiver', waiver)
   .route('/referral', referral)
 

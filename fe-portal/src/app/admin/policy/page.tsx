@@ -1,24 +1,144 @@
 "use client";
-import { useState } from "react";
-import { Save, Info } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Save, Info, Loader2 } from "lucide-react";
+import { toast } from "sonner";
 import { Button, Input, Label, PageHeader } from "@/components/ui";
-import { globalPolicy as seedPolicy } from "@/data";
-import { formatRelative } from "@/lib/formatters";
-import type { GlobalPolicy } from "@/types";
+import { useWorkspace } from "@/lib/workspace-context";
+import { ApiError } from "@/lib/api";
+
+interface PolicyState {
+  cancelCapCount: number;
+  cancelCapCycleDays: number;
+  classWindowHours: number;
+  ptWindowHours: number;
+  bookInAdvanceDays: number;
+  updatedAt: string | null;
+}
+
+interface ApiPolicy {
+  global_policy: {
+    cancel_cap_count: number;
+    cancel_cap_cycle_days: number;
+    class_window_hours: number;
+    pt_window_hours: number;
+    updated_at: string | null;
+  };
+  pt_booking_config: {
+    book_in_advance_days: number;
+    updated_at: string | null;
+  };
+}
+
+function emptyPolicy(): PolicyState {
+  return {
+    cancelCapCount: 0,
+    cancelCapCycleDays: 0,
+    classWindowHours: 0,
+    ptWindowHours: 0,
+    bookInAdvanceDays: 0,
+    updatedAt: null,
+  };
+}
+
+function diffGlobal(saved: PolicyState, draft: PolicyState) {
+  const out: Record<string, number> = {};
+  if (saved.cancelCapCount !== draft.cancelCapCount)
+    out.cancel_cap_count = draft.cancelCapCount;
+  if (saved.cancelCapCycleDays !== draft.cancelCapCycleDays)
+    out.cancel_cap_cycle_days = draft.cancelCapCycleDays;
+  if (saved.classWindowHours !== draft.classWindowHours)
+    out.class_window_hours = draft.classWindowHours;
+  if (saved.ptWindowHours !== draft.ptWindowHours)
+    out.pt_window_hours = draft.ptWindowHours;
+  return out;
+}
 
 export default function PolicyPage() {
-  const [policy, setPolicy] = useState<GlobalPolicy>(seedPolicy);
-  const [draft, setDraft] = useState<GlobalPolicy>(seedPolicy);
+  const { api } = useWorkspace();
+  const [policy, setPolicy] = useState<PolicyState>(emptyPolicy);
+  const [draft, setDraft] = useState<PolicyState>(emptyPolicy);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!api) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const r = await api.get<ApiPolicy>("/portal/admin/policy");
+      const next: PolicyState = {
+        cancelCapCount: r.global_policy.cancel_cap_count,
+        cancelCapCycleDays: r.global_policy.cancel_cap_cycle_days,
+        classWindowHours: r.global_policy.class_window_hours,
+        ptWindowHours: r.global_policy.pt_window_hours,
+        bookInAdvanceDays: r.pt_booking_config.book_in_advance_days,
+        updatedAt: r.global_policy.updated_at,
+      };
+      setPolicy(next);
+      setDraft(next);
+    } catch (err) {
+      setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
+    } finally {
+      setLoading(false);
+    }
+  }, [api]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
   const dirty =
     draft.cancelCapCount !== policy.cancelCapCount ||
     draft.cancelCapCycleDays !== policy.cancelCapCycleDays ||
     draft.classWindowHours !== policy.classWindowHours ||
-    draft.ptWindowHours !== policy.ptWindowHours;
+    draft.ptWindowHours !== policy.ptWindowHours ||
+    draft.bookInAdvanceDays !== policy.bookInAdvanceDays;
 
-  function handleSave(e: React.FormEvent) {
+  async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    setPolicy({ ...draft, updatedAt: new Date().toISOString() });
-    alert("Policy updated (mock).");
+    if (!api) return;
+    setSaving(true);
+    try {
+      const globalDelta = diffGlobal(policy, draft);
+      const ops: Array<Promise<unknown>> = [];
+      if (Object.keys(globalDelta).length > 0) {
+        ops.push(api.patch("/portal/admin/policy/global", globalDelta));
+      }
+      if (draft.bookInAdvanceDays !== policy.bookInAdvanceDays) {
+        ops.push(
+          api.patch("/portal/admin/policy/pt", {
+            book_in_advance_days: draft.bookInAdvanceDays,
+          }),
+        );
+      }
+      await Promise.all(ops);
+      toast.success("Policy saved.");
+      await load();
+    } catch (err) {
+      toast.error(err instanceof ApiError ? `Save failed (HTTP ${err.status}).` : "Save failed.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex h-64 items-center justify-center gap-2 text-sm text-muted">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading policy…
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="mx-auto max-w-3xl rounded-xl border border-error/30 bg-error/5 p-6 text-center">
+        <p className="text-sm text-error">Failed to load: {error}</p>
+        <Button size="sm" variant="ghost" onClick={load} className="mt-2">
+          Retry
+        </Button>
+      </div>
+    );
   }
 
   return (
@@ -107,21 +227,53 @@ export default function PolicyPage() {
           </div>
         </section>
 
+        <section className="rounded-xl border border-border bg-card p-6 shadow-soft">
+          <header className="mb-4">
+            <h2 className="text-base font-semibold text-ink">PT booking horizon</h2>
+            <p className="mt-0.5 text-xs text-muted">
+              How far in advance clients can request a Private Training session.
+            </p>
+          </header>
+          <div className="space-y-1.5 max-w-xs">
+            <Label htmlFor="pt-horizon">Book in advance (days)</Label>
+            <Input
+              id="pt-horizon"
+              type="number"
+              min={1}
+              max={365}
+              value={draft.bookInAdvanceDays}
+              onChange={(e) =>
+                setDraft({ ...draft, bookInAdvanceDays: Number(e.target.value) })
+              }
+            />
+          </div>
+        </section>
+
         <div className="flex items-center justify-between">
           <span className="text-xs text-muted">
-            Last updated {formatRelative(policy.updatedAt)}
+            {policy.updatedAt
+              ? `Last updated ${new Date(policy.updatedAt).toLocaleString()}`
+              : "Not yet saved."}
           </span>
           <div className="flex gap-2">
             <Button
               type="button"
               variant="ghost"
-              disabled={!dirty}
+              disabled={!dirty || saving}
               onClick={() => setDraft(policy)}
             >
               Reset
             </Button>
-            <Button type="submit" disabled={!dirty}>
-              <Save className="h-4 w-4" /> Save policy
+            <Button type="submit" disabled={!dirty || saving}>
+              {saving ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" /> Saving…
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4" /> Save policy
+                </>
+              )}
             </Button>
           </div>
         </div>

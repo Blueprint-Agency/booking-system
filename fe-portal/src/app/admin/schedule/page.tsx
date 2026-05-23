@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Plus,
@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Filter as FilterIcon,
   ChevronDown,
+  Loader2,
 } from "lucide-react";
 import {
   addDays,
@@ -25,45 +26,135 @@ import {
 } from "date-fns";
 import { Button, PageHeader } from "@/components/ui";
 import { cn } from "@/lib/utils";
-import {
-  buildScheduleEntries,
-  instructorName,
-  locationName,
-} from "@/lib/schedule-helpers";
-import { instructors as allInstructors, workshops, ptRequests } from "@/data";
 import { formatTime } from "@/lib/formatters";
 import { PtRequestPickerDialog } from "@/components/schedule/pt-request-picker-dialog";
 import { useWorkspace } from "@/lib/workspace-context";
+import { useSchedule, type ScheduleEntry } from "@/lib/use-schedule";
 
 type View = "day" | "week" | "month";
-type FilterType = "all" | "class" | "workshop" | "pt";
-type Entry = ReturnType<typeof buildScheduleEntries>[number];
+type FilterType = "all" | "class" | "workshop" | "pt" | "corporate";
+type Entry = ScheduleEntry;
+type Resolver = {
+  instructorName: (id: string) => string;
+  locationName: (id: string | null) => string;
+};
 
-const TODAY = new Date("2026-05-10");
+interface ApiInstructor {
+  id: string;
+  name: string;
+  status: "pending" | "active" | "archived";
+  archived_at: string | null;
+}
+
+interface ApiWorkshop {
+  id: string;
+  name: string;
+  location_id: string;
+  lifecycle: "active" | "cancelled";
+}
+
+interface ApiCorporatePackage {
+  id: string;
+  name: string;
+  price_sgd: string;
+  status: "active" | "archived";
+}
+
+const TODAY = new Date();
 const HOUR_START = 7;
 const HOUR_END = 22;
 const HOUR_HEIGHT = 56;
 const TOTAL_HEIGHT = (HOUR_END - HOUR_START) * HOUR_HEIGHT;
 
 export default function SchedulePage() {
-  const { activeLocationId } = useWorkspace();
+  const { api, activeLocationId, accessibleLocations } = useWorkspace();
   const [view, setView] = useState<View>("week");
   const [cursor, setCursor] = useState<Date>(TODAY);
   const [type, setType] = useState<FilterType>("all");
   const [instructorId, setInstructorId] = useState<string>("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [workshopMenuOpen, setWorkshopMenuOpen] = useState(false);
+  const [corporateMenuOpen, setCorporateMenuOpen] = useState(false);
   const [ptPickerOpen, setPtPickerOpen] = useState(false);
-  const pendingPtCount = ptRequests.filter((r) => r.status === "pending").length;
-  const activeWorkshops = workshops.filter((w) => w.lifecycle === "active");
 
-  const allEntries = useMemo(() => buildScheduleEntries(), []);
+  const [instructorsList, setInstructorsList] = useState<ApiInstructor[]>([]);
+  const [workshopsList, setWorkshopsList] = useState<ApiWorkshop[]>([]);
+  const [corporatePackagesList, setCorporatePackagesList] = useState<
+    ApiCorporatePackage[]
+  >([]);
+
+  useEffect(() => {
+    if (!api) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [ins, wsh, cps] = await Promise.all([
+          api.get<{ instructors: ApiInstructor[] }>("/portal/admin/instructors"),
+          api.get<{ workshops: ApiWorkshop[] }>("/portal/admin/workshops"),
+          api.get<{ corporatePackages: ApiCorporatePackage[] }>(
+            "/portal/admin/corporate-packages",
+            { status: "active" },
+          ),
+        ]);
+        if (cancelled) return;
+        setInstructorsList(ins.instructors);
+        setWorkshopsList(wsh.workshops);
+        setCorporatePackagesList(cps.corporatePackages);
+      } catch {
+        // Names degrade to "Unknown" / dropdowns stay empty if the catalog fetch fails.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [api]);
+
+  const instructorById = useMemo(
+    () => new Map(instructorsList.map((i) => [i.id, i.name])),
+    [instructorsList],
+  );
+  const locationById = useMemo(
+    () => new Map(accessibleLocations.map((l) => [l.id, l.name])),
+    [accessibleLocations],
+  );
+  const resolver = useMemo<Resolver>(
+    () => ({
+      instructorName: (id) => instructorById.get(id) ?? "Unknown",
+      locationName: (id) => (id ? (locationById.get(id) ?? "Unknown") : "—"),
+    }),
+    [instructorById, locationById],
+  );
+
+  const filterInstructors = useMemo(
+    () =>
+      instructorsList.filter(
+        (i) => i.status === "active" && !i.archived_at,
+      ),
+    [instructorsList],
+  );
+
+  const activeWorkshops = useMemo(
+    () =>
+      workshopsList.filter(
+        (w) =>
+          w.lifecycle === "active" &&
+          (!activeLocationId || w.location_id === activeLocationId),
+      ),
+    [workshopsList, activeLocationId],
+  );
+
+  const range = useMemo(() => getRange(view, cursor), [view, cursor]);
+
+  const { entries: allEntries, loading, error } = useSchedule({
+    from: range.start.toISOString(),
+    to: range.end.toISOString(),
+    locationId: activeLocationId ?? undefined,
+  });
 
   const entries = useMemo(
     () =>
       allEntries.filter((e) => {
         if (type !== "all" && e.kind !== type) return false;
-        if (activeLocationId && e.locationId !== activeLocationId) return false;
         if (
           instructorId !== "all" &&
           !e.instructorIds.includes(instructorId)
@@ -71,10 +162,9 @@ export default function SchedulePage() {
           return false;
         return true;
       }),
-    [allEntries, type, activeLocationId, instructorId]
+    [allEntries, type, instructorId]
   );
 
-  const range = useMemo(() => getRange(view, cursor), [view, cursor]);
   const visibleEntries = useMemo(
     () =>
       entries.filter((e) => {
@@ -156,13 +246,52 @@ export default function SchedulePage() {
                 </div>
               )}
             </div>
+            <div className="relative">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setCorporateMenuOpen((o) => !o)}
+              >
+                Corporate <ChevronDown className="h-3.5 w-3.5" />
+              </Button>
+              {corporateMenuOpen && (
+                <div className="absolute right-0 z-30 mt-2 w-72 rounded-lg border border-border bg-card p-2 shadow-soft">
+                  {corporatePackagesList.length === 0 && (
+                    <div className="px-3 py-2 text-xs text-muted">
+                      No corporate packages configured.
+                    </div>
+                  )}
+                  {corporatePackagesList.map((p) => (
+                    <Link
+                      key={p.id}
+                      href={`/admin/schedule/new/corporate?packageId=${p.id}`}
+                      onClick={() => setCorporateMenuOpen(false)}
+                      className="block rounded px-3 py-2 text-sm hover:bg-paper"
+                    >
+                      {p.name}
+                    </Link>
+                  ))}
+                  <div className="mt-1 border-t border-border pt-1">
+                    <Link
+                      href="/admin/packages/corporate/new"
+                      onClick={() => setCorporateMenuOpen(false)}
+                      className="inline-flex w-full items-center gap-1 rounded px-3 py-2 text-sm text-accent hover:bg-paper"
+                    >
+                      <Plus className="h-3.5 w-3.5" /> New corporate package
+                    </Link>
+                    <Link
+                      href="/admin/packages/corporate"
+                      onClick={() => setCorporateMenuOpen(false)}
+                      className="block rounded px-3 py-2 text-xs text-muted hover:bg-paper"
+                    >
+                      Manage corporate packages →
+                    </Link>
+                  </div>
+                </div>
+              )}
+            </div>
             <Button size="sm" onClick={() => setPtPickerOpen(true)}>
               <Plus className="h-4 w-4" /> PT Session
-              {pendingPtCount > 0 && (
-                <span className="ml-1 rounded-full bg-white/20 px-1.5 text-[10px] font-bold">
-                  {pendingPtCount}
-                </span>
-              )}
             </Button>
           </>
         }
@@ -236,6 +365,7 @@ export default function SchedulePage() {
                 { val: "class", label: "Class" },
                 { val: "workshop", label: "Workshop" },
                 { val: "pt", label: "Private" },
+                { val: "corporate", label: "Corporate" },
               ]}
               onChange={(v) => setType(v as FilterType)}
             />
@@ -244,9 +374,7 @@ export default function SchedulePage() {
               value={instructorId}
               options={[
                 { val: "all", label: "All" },
-                ...allInstructors
-                  .filter((i) => !i.archivedAt)
-                  .map((i) => ({ val: i.id, label: i.name })),
+                ...filterInstructors.map((i) => ({ val: i.id, label: i.name })),
               ]}
               onChange={setInstructorId}
             />
@@ -266,15 +394,32 @@ export default function SchedulePage() {
         )}
 
         {/* Calendar surface */}
-        <div className="overflow-x-auto">
-          {view === "day" && (
-            <DayView day={cursor} entries={visibleEntries} />
+        <div className="relative overflow-x-auto">
+          {error && (
+            <div className="border-b border-error/30 bg-error/5 px-4 py-2 text-xs text-error">
+              Failed to load schedule: {error}
+            </div>
           )}
-          {view === "week" && (
-            <WeekView weekStart={range.start} entries={visibleEntries} />
-          )}
-          {view === "month" && (
-            <MonthView monthStart={startOfMonth(cursor)} entries={visibleEntries} />
+          {loading && allEntries.length === 0 ? (
+            <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading schedule…
+            </div>
+          ) : (
+            <>
+              {view === "day" && (
+                <DayView day={cursor} entries={visibleEntries} resolver={resolver} />
+              )}
+              {view === "week" && (
+                <WeekView
+                  weekStart={range.start}
+                  entries={visibleEntries}
+                  resolver={resolver}
+                />
+              )}
+              {view === "month" && (
+                <MonthView monthStart={startOfMonth(cursor)} entries={visibleEntries} />
+              )}
+            </>
           )}
         </div>
       </div>
@@ -377,7 +522,15 @@ function FilterPill({
 
 /* ---------- Day view ---------- */
 
-function DayView({ day, entries }: { day: Date; entries: Entry[] }) {
+function DayView({
+  day,
+  entries,
+  resolver,
+}: {
+  day: Date;
+  entries: Entry[];
+  resolver: Resolver;
+}) {
   const dayEntries = entries.filter((e) => isSameDay(parseISO(e.startsAt), day));
   return (
     <div className="flex">
@@ -387,7 +540,7 @@ function DayView({ day, entries }: { day: Date; entries: Entry[] }) {
         <div className="relative" style={{ height: TOTAL_HEIGHT }}>
           <HourLines />
           <NowIndicator day={day} />
-          <EventLayer entries={dayEntries} dense={false} />
+          <EventLayer entries={dayEntries} dense={false} resolver={resolver} />
         </div>
       </div>
     </div>
@@ -396,7 +549,15 @@ function DayView({ day, entries }: { day: Date; entries: Entry[] }) {
 
 /* ---------- Week view ---------- */
 
-function WeekView({ weekStart, entries }: { weekStart: Date; entries: Entry[] }) {
+function WeekView({
+  weekStart,
+  entries,
+  resolver,
+}: {
+  weekStart: Date;
+  entries: Entry[];
+  resolver: Resolver;
+}) {
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   return (
     <div className="flex min-w-[760px]">
@@ -415,7 +576,7 @@ function WeekView({ weekStart, entries }: { weekStart: Date; entries: Entry[] })
               <div className="relative" style={{ height: TOTAL_HEIGHT }}>
                 <HourLines />
                 <NowIndicator day={day} />
-                <EventLayer entries={dayEntries} dense />
+                <EventLayer entries={dayEntries} dense resolver={resolver} />
               </div>
             </div>
           );
@@ -474,7 +635,7 @@ function MonthView({ monthStart, entries }: { monthStart: Date; entries: Entry[]
                   {format(day, "d")}
                 </span>
                 {dayEntries.length > 0 && (
-                  <span className="text-[10px] font-mono text-muted">
+                  <span className="rounded-full bg-paper px-1.5 text-[10px] font-semibold tabular-nums text-muted">
                     {dayEntries.length}
                   </span>
                 )}
@@ -485,14 +646,14 @@ function MonthView({ monthStart, entries }: { monthStart: Date; entries: Entry[]
                     <Link
                       href={`/admin/schedule/${e.kind}/${e.kind === "workshop" ? e.raw.id : e.id}`}
                       className={cn(
-                        "block truncate rounded-sm border-l-2 px-1.5 py-0.5 text-[11px] font-medium transition-colors hover:opacity-80",
+                        "flex items-center gap-1 truncate rounded-md border-l-[3px] px-1.5 py-1 text-[11px] font-medium ring-1 ring-inset ring-current/10 transition-all hover:-translate-y-px hover:shadow-sm",
                         kindClasses(e)
                       )}
                       title={`${formatTime(e.startsAt)} · ${e.label}`}
                     >
-                      <span className="font-mono text-[10px] opacity-80">
+                      <span className="shrink-0 text-[10px] font-semibold tabular-nums opacity-80">
                         {formatTime(e.startsAt).replace("m", "")}
-                      </span>{" "}
+                      </span>
                       <span className="truncate">{e.label}</span>
                     </Link>
                   </li>
@@ -526,7 +687,7 @@ function TimeGutter() {
             style={{ height: HOUR_HEIGHT }}
           >
             {idx > 0 && (
-              <span className="absolute -top-2 right-2 font-mono text-[10px] text-muted">
+              <span className="absolute -top-2 right-2 text-[10px] font-medium tabular-nums text-muted">
                 {formatHour(h)}
               </span>
             )}
@@ -605,7 +766,15 @@ function NowIndicator({ day }: { day: Date }) {
 
 /* ---------- Event positioning ---------- */
 
-function EventLayer({ entries, dense }: { entries: Entry[]; dense: boolean }) {
+function EventLayer({
+  entries,
+  dense,
+  resolver,
+}: {
+  entries: Entry[];
+  dense: boolean;
+  resolver: Resolver;
+}) {
   const positioned = layoutEvents(entries);
   return (
     <div className="absolute inset-0">
@@ -618,6 +787,7 @@ function EventLayer({ entries, dense }: { entries: Entry[]; dense: boolean }) {
           left={left}
           width={width}
           dense={dense}
+          resolver={resolver}
         />
       ))}
     </div>
@@ -685,6 +855,7 @@ function EventBlock({
   left,
   width,
   dense,
+  resolver,
 }: {
   entry: Entry;
   top: number;
@@ -692,11 +863,14 @@ function EventBlock({
   left: number;
   width: number;
   dense: boolean;
+  resolver: Resolver;
 }) {
   const subtitle =
     entry.kind === "pt"
-      ? entry.instructorIds.map(instructorName).join(" & ")
-      : `${entry.instructorIds.map(instructorName).join(" & ")} · ${locationName(entry.locationId)}`;
+      ? entry.instructorIds.map(resolver.instructorName).join(" & ")
+      : entry.kind === "corporate"
+        ? `${entry.subtitle} · ${resolver.locationName(entry.locationId)}`
+        : `${entry.instructorIds.map(resolver.instructorName).join(" & ")} · ${resolver.locationName(entry.locationId)}`;
 
   const compact = height < 44;
   const linkId = entry.kind === "workshop" ? entry.raw.id : entry.id;
@@ -704,6 +878,10 @@ function EventBlock({
     entry.kind === "workshop" && entry.dayCount > 1
       ? `Day ${entry.dayIndex}/${entry.dayCount}`
       : null;
+  const tooltipInstructor =
+    entry.kind === "corporate" && entry.mainInstructorId
+      ? ` · ${resolver.instructorName(entry.mainInstructorId)}`
+      : "";
 
   return (
     <Link
@@ -715,35 +893,37 @@ function EventBlock({
         width: `calc(${width}% - 4px)`,
       }}
       className={cn(
-        "absolute flex flex-col overflow-hidden rounded-md border-l-2 px-2 py-1 text-[11px] leading-tight shadow-soft transition-all hover:shadow-hover hover:z-10",
+        "absolute flex flex-col overflow-hidden rounded-lg border-l-[3px] px-2.5 py-1.5 leading-tight ring-1 ring-inset ring-current/10 shadow-sm transition-all duration-150 hover:z-10 hover:-translate-y-px hover:shadow-hover",
         kindClasses(entry),
         entry.eventState === "cancelled" && "opacity-60 line-through"
       )}
-      title={`${formatTime(entry.startsAt)}–${formatTime(entry.endsAt)} · ${entry.label}`}
+      title={`${formatTime(entry.startsAt)}–${formatTime(entry.endsAt)} · ${entry.label}${tooltipInstructor}`}
     >
-      <div className="flex items-center gap-1 font-mono text-[10px] opacity-80">
+      <div className="flex items-center gap-1 text-[10px] font-semibold tabular-nums opacity-80">
         <span>{formatTime(entry.startsAt)}</span>
         {!compact && (
-          <span className="opacity-60">–{formatTime(entry.endsAt)}</span>
+          <span className="font-normal opacity-60">– {formatTime(entry.endsAt)}</span>
         )}
       </div>
       <div className="flex items-center gap-1.5">
-        <span className="truncate font-semibold">{entry.label}</span>
+        <span className="truncate text-[11px] font-semibold tracking-tight">{entry.label}</span>
         {dayChip && (
-          <span className="shrink-0 rounded-sm bg-current/20 px-1 text-[9px] font-bold uppercase opacity-90">
+          <span className="shrink-0 rounded bg-current/15 px-1 py-px text-[9px] font-bold uppercase tracking-wide">
             {dayChip}
           </span>
         )}
       </div>
       {!compact && !dense && (
-        <div className="mt-0.5 truncate opacity-80">{subtitle}</div>
+        <div className="mt-0.5 truncate text-[10px] opacity-75">{subtitle}</div>
       )}
       {!compact && (
-        <div className="mt-auto flex items-center justify-between font-mono text-[10px] opacity-70">
-          <span className="uppercase tracking-wider">{entry.kind}</span>
-          <span>
-            {entry.bookedCount}/{entry.capacity}
-          </span>
+        <div className="mt-auto flex items-center justify-between pt-0.5 text-[10px] opacity-70">
+          <span className="font-semibold uppercase tracking-[0.08em]">{entry.kind}</span>
+          {entry.capacity !== null && entry.bookedCount !== null && (
+            <span className="tabular-nums font-medium">
+              {entry.bookedCount}/{entry.capacity}
+            </span>
+          )}
         </div>
       )}
     </Link>
@@ -761,6 +941,8 @@ function kindClasses(entry: Entry): string {
       return "bg-warning/15 border-warning text-warning hover:bg-warning/25";
     case "pt":
       return "bg-accent/10 border-accent text-accent hover:bg-accent/20";
+    case "corporate":
+      return "bg-muted/10 border-muted text-muted hover:bg-muted/20";
   }
 }
 
@@ -778,6 +960,7 @@ function Legend() {
     { kind: "class", label: "Class" },
     { kind: "workshop", label: "Workshop" },
     { kind: "pt", label: "Private session" },
+    { kind: "corporate", label: "Corporate" },
   ];
   return (
     <div className="mt-4 flex flex-wrap items-center gap-4 text-xs text-muted">
@@ -788,7 +971,8 @@ function Legend() {
               "inline-block h-3 w-3 rounded-sm border-l-2",
               i.kind === "class" && "bg-cyan/15 border-cyan-deep",
               i.kind === "workshop" && "bg-warning/15 border-warning",
-              i.kind === "pt" && "bg-accent/10 border-accent"
+              i.kind === "pt" && "bg-accent/10 border-accent",
+              i.kind === "corporate" && "bg-muted/10 border-muted"
             )}
           />
           {i.label}

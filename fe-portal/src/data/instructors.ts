@@ -8,7 +8,6 @@ export const instructors: Instructor[] = [
     phone: "+65 9123 4567",
     bio: "RYT-500 with 12 years of teaching experience. Specialises in Vinyasa and Aerial. Studied under Sri Krishnamacharya lineage in Mysore.",
     photoUrl: null,
-    eligibleClassTypeIds: ["ct-vinyasa", "ct-aerial", "ct-hatha"],
     archivedAt: null,
   },
   {
@@ -18,7 +17,6 @@ export const instructors: Instructor[] = [
     phone: "+65 9876 5432",
     bio: "Prenatal-certified instructor with a background in physiotherapy. Brings a therapeutic, body-aware approach to every class.",
     photoUrl: null,
-    eligibleClassTypeIds: ["ct-prenatal", "ct-yin", "ct-hatha"],
     archivedAt: null,
   },
   {
@@ -28,7 +26,6 @@ export const instructors: Instructor[] = [
     phone: "+65 8765 4321",
     bio: "Founder. Teaches the more intensive Vinyasa flows and leads the Sunday morning workshop series.",
     photoUrl: null,
-    eligibleClassTypeIds: ["ct-vinyasa", "ct-hatha"],
     archivedAt: null,
   },
   {
@@ -38,7 +35,6 @@ export const instructors: Instructor[] = [
     phone: "+65 9234 5678",
     bio: "Yin and restorative yoga specialist. Trained in Traditional Chinese Medicine; weaves meridian theory into her classes.",
     photoUrl: null,
-    eligibleClassTypeIds: ["ct-yin", "ct-chair", "ct-hatha"],
     archivedAt: null,
   },
   {
@@ -48,7 +44,6 @@ export const instructors: Instructor[] = [
     phone: "+65 8345 6789",
     bio: "Aerial and acro-yoga instructor. Former dancer; brings playfulness and precision to inversions and flying poses.",
     photoUrl: null,
-    eligibleClassTypeIds: ["ct-aerial", "ct-vinyasa"],
     archivedAt: null,
   },
 ];

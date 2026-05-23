@@ -70,8 +70,8 @@ export function ManageLocationsDialog({ onClose }: { onClose: () => void }) {
         <LocationFormDialog
           location={null}
           onClose={() => setCreating(false)}
-          onSave={(loc) => {
-            addLocation(loc);
+          onSave={async (loc) => {
+            await addLocation(loc);
             setCreating(false);
           }}
         />
@@ -80,8 +80,8 @@ export function ManageLocationsDialog({ onClose }: { onClose: () => void }) {
         <LocationFormDialog
           location={editing}
           onClose={() => setEditing(null)}
-          onSave={(loc) => {
-            updateLocation(loc);
+          onSave={async (loc) => {
+            await updateLocation(loc);
             setEditing(null);
           }}
         />

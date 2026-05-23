@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'be/**'
+      - '.github/workflows/deploy-be.yml'
   workflow_dispatch:
 
 jobs:
@@ -39,19 +40,55 @@ jobs:
           username: deploy
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            set -euo pipefail
             mkdir -p /root/stacks/booking-system
             # Backend env. DATABASE_URL is assembled from the same DB_* secrets that
             # configure the Postgres container — single source of truth.
             # db-booking is only reachable inside booking-network, never exposed.
+            #
+            # Required GitHub repo settings:
+            #   vars:    PORT, VPS3_HOST, DOCKERHUB_USERNAME, PORTAL_ORIGIN, CLIENT_ORIGIN, SUPERADMIN_EMAIL
+            #   secrets: DB_USER, DB_PASSWORD, DB_NAME, DOCKERHUB_TOKEN, SSH_PRIVATE_KEY,
+            #            CLERK_STAFF_PUBLISHABLE_KEY, CLERK_STAFF_SECRET_KEY, CLERK_STAFF_WEBHOOK_SECRET,
+            #            CLERK_CLIENT_PUBLISHABLE_KEY, CLERK_CLIENT_SECRET_KEY, CLERK_CLIENT_WEBHOOK_SECRET,
+            #            SMTP_USER, SMTP_PASSWORD,
+            #            (deferred — set when next slice lands)
+            #            STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
+            #            R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, R2_PUBLIC_URL
             {
               echo "NODE_ENV=production"
               echo "PORT=${{ vars.PORT }}"
               echo "TZ=Asia/Kuala_Lumpur"
               echo "DATABASE_URL=postgres://${{ secrets.DB_USER }}:${{ secrets.DB_PASSWORD }}@db-booking:5432/${{ secrets.DB_NAME }}"
-              echo "CLERK_SECRET_KEY=${{ secrets.CLERK_SECRET_KEY }}"
-              echo "CLERK_WEBHOOK_SECRET=${{ secrets.CLERK_WEBHOOK_SECRET }}"
+              # Superadmin bootstrap — passwordless. Seed creates the Clerk user
+              # with this email and links the staff_users row; operator picks
+              # their own password via Clerk's "Forgot password" on first sign-in.
+              echo "SUPERADMIN_EMAIL=${{ vars.SUPERADMIN_EMAIL }}"
+              # Portal origin — used for CORS + the sign-up URL in invitation emails
+              echo "PORTAL_ORIGIN=${{ vars.PORTAL_ORIGIN }}"
+              # Client origin — adds fe-client to the CORS allowlist
+              echo "CLIENT_ORIGIN=${{ vars.CLIENT_ORIGIN }}"
+              # Clerk — staff app (admin + instructor)
+              echo "CLERK_STAFF_PUBLISHABLE_KEY=${{ secrets.CLERK_STAFF_PUBLISHABLE_KEY }}"
+              echo "CLERK_STAFF_SECRET_KEY=${{ secrets.CLERK_STAFF_SECRET_KEY }}"
+              echo "CLERK_STAFF_WEBHOOK_SECRET=${{ secrets.CLERK_STAFF_WEBHOOK_SECRET }}"
+              # Clerk — client app (fe-client; separate Clerk application from staff)
+              echo "CLERK_CLIENT_PUBLISHABLE_KEY=${{ secrets.CLERK_CLIENT_PUBLISHABLE_KEY }}"
+              echo "CLERK_CLIENT_SECRET_KEY=${{ secrets.CLERK_CLIENT_SECRET_KEY }}"
+              echo "CLERK_CLIENT_WEBHOOK_SECRET=${{ secrets.CLERK_CLIENT_WEBHOOK_SECRET }}"
+              # SMTP — only credentials are env. Host/port/secure/from are hardcoded
+              # in be/src/lib/mailer.ts (Gmail SMTP for the life of the project).
+              echo "SMTP_USER=${{ secrets.SMTP_USER }}"
+              echo "SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}"
+              # Stripe (deferred — set when payments slice lands)
               echo "STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }}"
               echo "STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}"
+              # R2 (deferred — set when photo uploads slice lands)
+              echo "R2_ACCOUNT_ID=${{ secrets.R2_ACCOUNT_ID }}"
+              echo "R2_ACCESS_KEY_ID=${{ secrets.R2_ACCESS_KEY_ID }}"
+              echo "R2_SECRET_ACCESS_KEY=${{ secrets.R2_SECRET_ACCESS_KEY }}"
+              echo "R2_BUCKET_NAME=${{ secrets.R2_BUCKET_NAME }}"
+              echo "R2_PUBLIC_URL=${{ secrets.R2_PUBLIC_URL }}"
             } > /root/stacks/booking-system/.env.booking-be
             chmod 600 /root/stacks/booking-system/.env.booking-be
             # Postgres creds — same source as DATABASE_URL above

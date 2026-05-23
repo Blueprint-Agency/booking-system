@@ -1,45 +1,46 @@
 "use client";
 import Link from "next/link";
-import { Plus, MapPin } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { Plus, MapPin, Loader2 } from "lucide-react";
 import { Button, PageHeader, Badge, EmptyState } from "@/components/ui";
-import { workshops as seedWorkshops, locations, classTypes } from "@/data";
 import { useWorkspace } from "@/lib/workspace-context";
-import type { Workshop } from "@/types";
+import { ApiError } from "@/lib/api";
 
-function statusOf(w: Workshop): "upcoming" | "in_progress" | "past" | "cancelled" {
-  if (w.lifecycle === "cancelled") return "cancelled";
-  const today = new Date().toISOString().slice(0, 10);
-  const first = w.days[0]?.date ?? today;
-  const last = w.days[w.days.length - 1]?.date ?? today;
-  if (last < today) return "past";
-  if (first <= today && today <= last) return "in_progress";
-  return "upcoming";
-}
-
-function dateRangeLabel(w: Workshop): string {
-  if (w.days.length === 0) return "No dates";
-  if (w.days.length === 1)
-    return new Date(w.days[0].date + "T00:00:00").toLocaleDateString(undefined, {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
-  return w.days
-    .map((d) =>
-      new Date(d.date + "T00:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short" })
-    )
-    .join(" · ");
+interface ApiWorkshop {
+  id: string;
+  name: string;
+  location_id: string;
+  lifecycle: "active" | "cancelled";
 }
 
 export default function WorkshopsListPage() {
-  const { activeLocationId } = useWorkspace();
-  const filtered = seedWorkshops.filter(
-    (w) => !activeLocationId || w.locationId === activeLocationId
-  );
-  const upcoming = filtered.filter((w) => statusOf(w) === "upcoming");
-  const inProgress = filtered.filter((w) => statusOf(w) === "in_progress");
-  const past = filtered.filter((w) => statusOf(w) === "past");
-  const cancelled = filtered.filter((w) => statusOf(w) === "cancelled");
+  // Workshops are a shared package surface (like Class/PT packages) — NOT scoped to
+  // the header workspace switcher. We list every workshop across all locations.
+  const { api, locations } = useWorkspace();
+  const [workshops, setWorkshops] = useState<ApiWorkshop[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!api) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const ws = await api.get<{ workshops: ApiWorkshop[] }>("/portal/admin/workshops");
+      setWorkshops(ws.workshops);
+    } catch (err) {
+      setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
+    } finally {
+      setLoading(false);
+    }
+  }, [api]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const active = workshops.filter((w) => w.lifecycle === "active");
+  const cancelled = workshops.filter((w) => w.lifecycle === "cancelled");
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -55,7 +56,18 @@ export default function WorkshopsListPage() {
         }
       />
 
-      {filtered.length === 0 && (
+      {loading ? (
+        <div className="flex h-32 items-center justify-center gap-2 text-sm text-muted">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading workshops…
+        </div>
+      ) : error ? (
+        <div className="rounded-xl border border-error/30 bg-error/5 p-6 text-center">
+          <p className="text-sm text-error">Failed to load: {error}</p>
+          <Button size="sm" variant="ghost" onClick={load} className="mt-2">
+            Retry
+          </Button>
+        </div>
+      ) : workshops.length === 0 ? (
         <EmptyState
           title="No workshops yet"
           description="Create one to see it appear on the schedule."
@@ -67,35 +79,44 @@ export default function WorkshopsListPage() {
             </Link>
           }
         />
-      )}
-
-      {inProgress.length > 0 && <Section title="In progress" workshops={inProgress} />}
-      {upcoming.length > 0 && <Section title="Upcoming" workshops={upcoming} />}
-      {past.length > 0 && (
-        <details className="rounded-xl border border-border bg-card p-3">
-          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-muted">
-            Past ({past.length})
-          </summary>
-          <div className="mt-3">
-            <Section title="" workshops={past} />
-          </div>
-        </details>
-      )}
-      {cancelled.length > 0 && (
-        <details className="rounded-xl border border-border bg-card p-3">
-          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-muted">
-            Cancelled ({cancelled.length})
-          </summary>
-          <div className="mt-3">
-            <Section title="" workshops={cancelled} />
-          </div>
-        </details>
+      ) : (
+        <>
+          {active.length > 0 && (
+            <Section
+              title="Active"
+              workshops={active}
+              locations={locations.map((l) => ({ id: l.id, name: l.name }))}
+            />
+          )}
+          {cancelled.length > 0 && (
+            <details className="rounded-xl border border-border bg-card p-3">
+              <summary className="cursor-pointer text-xs font-semibold uppercase tracking-wider text-muted">
+                Cancelled ({cancelled.length})
+              </summary>
+              <div className="mt-3">
+                <Section
+                  title=""
+                  workshops={cancelled}
+                  locations={locations.map((l) => ({ id: l.id, name: l.name }))}
+                />
+              </div>
+            </details>
+          )}
+        </>
       )}
     </div>
   );
 }
 
-function Section({ title, workshops }: { title: string; workshops: Workshop[] }) {
+function Section({
+  title,
+  workshops,
+  locations,
+}: {
+  title: string;
+  workshops: ApiWorkshop[];
+  locations: Array<{ id: string; name: string }>;
+}) {
   return (
     <div className="space-y-2">
       {title && (
@@ -112,23 +133,11 @@ function Section({ title, workshops }: { title: string; workshops: Workshop[] })
                 {w.name}
               </Link>
               <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
-                <Badge tone="accent">
-                  {classTypes.find((c) => c.id === w.classTypeId)?.name ?? "—"}
-                </Badge>
                 <span className="inline-flex items-center gap-1">
                   <MapPin className="h-3 w-3" />
-                  {locations.find((l) => l.id === w.locationId)?.name ?? "—"}
+                  {locations.find((l) => l.id === w.location_id)?.name ?? "—"}
                 </span>
-                <span>·</span>
-                <span>{dateRangeLabel(w)}</span>
-                <span>·</span>
-                <span>
-                  {w.days.length} day{w.days.length === 1 ? "" : "s"}
-                </span>
-                <span>·</span>
-                <span>
-                  {w.tiers.length} tier{w.tiers.length === 1 ? "" : "s"}
-                </span>
+                {w.lifecycle === "cancelled" && <Badge tone="neutral">Cancelled</Badge>}
               </div>
             </div>
             <Link href={`/admin/packages/workshops/${w.id}/edit`}>

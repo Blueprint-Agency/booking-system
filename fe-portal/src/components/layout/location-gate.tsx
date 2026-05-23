@@ -10,6 +10,7 @@ export function LocationGate({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
 
   if (accessibleLocations.length > 0) return <>{children}</>;
+  if (!role) return null;
 
   if (role === "superadmin") {
     return (
@@ -26,9 +27,8 @@ export function LocationGate({ children }: { children: React.ReactNode }) {
             <LocationFormDialog
               location={null}
               onClose={() => setOpen(false)}
-              onSave={(loc) => {
-                addLocation(loc);
-                setActiveLocationId(loc.id);
+              onSave={async (loc) => {
+                await addLocation(loc);
                 setOpen(false);
               }}
             />

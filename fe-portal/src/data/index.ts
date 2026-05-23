@@ -1,12 +1,12 @@
 export { locations } from "./locations";
+export { rooms } from "./rooms";
 export { classTypes } from "./class-types";
 export { instructors } from "./instructors";
 export { globalPolicy, ptBookingConfig } from "./policy";
-export { classPackages, ptPackages } from "./packages";
 export { clients, clientPackages, manualAdjustments } from "./clients";
 export { staffUsers, staffInvitations, defaultStaffId } from "./staff";
 export { classInstances, workshops, ptSessions } from "./schedule";
-export { bookings, cancellations, ratings } from "./bookings";
+export { bookings, cancellations } from "./bookings";
 export { inboxItems } from "./inbox";
 export { ptRequests } from "./pt-requests";
 export { emailTemplates } from "./email-templates";

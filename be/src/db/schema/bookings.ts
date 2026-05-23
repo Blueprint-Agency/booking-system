@@ -2,7 +2,7 @@ import { pgTable, uuid, text, timestamp, integer, boolean, index, uniqueIndex, c
 import { sql } from 'drizzle-orm'
 import { clients, staffUsers } from './identity'
 import { classes, workshops, workshopTiers, ptSessions } from './schedule'
-import { clientPackages } from './packages'
+import { clientPackages, promotions } from './packages'
 import {
   bookingKindEnum,
   bookingStateEnum,
@@ -28,6 +28,11 @@ export const bookings = pgTable(
     clientPackageId: uuid('client_package_id').references(() => clientPackages.id, {
       onDelete: 'restrict',
     }),
+    // Frozen at purchase when a workshop promotion resolved. Null for class/PT bookings
+    // (where the promotion already froze onto the client_packages row used to book).
+    appliedPromotionId: uuid('applied_promotion_id').references(() => promotions.id, {
+      onDelete: 'restrict',
+    }),
     state: bookingStateEnum('state').notNull().default('confirmed'),
     creditsOrSessionsUsed: integer('credits_or_sessions_used'),
     refundOutcome: refundOutcomeEnum('refund_outcome').notNull().default('n_a'),
@@ -46,7 +51,10 @@ export const bookings = pgTable(
     qrTokenUnique: uniqueIndex('bookings_qr_token_unique').on(table.qrToken),
     codeUnique: uniqueIndex('bookings_code_unique').on(table.code),
     checkInStateIdx: index('bookings_check_in_state_idx').on(table.checkInState),
-    stripeIntentUnique: uniqueIndex('bookings_stripe_intent_unique').on(table.stripePaymentIntentId),
+    // Partial unique — stripe_payment_intent_id is nullable for non-workshop bookings.
+    stripeIntentUnique: uniqueIndex('bookings_stripe_intent_unique')
+      .on(table.stripePaymentIntentId)
+      .where(sql`${table.stripePaymentIntentId} IS NOT NULL`),
     kindFkClass: check(
       'bookings_kind_class_fk',
       sql`${table.kind} <> 'class' OR (${table.classId} IS NOT NULL AND ${table.workshopId} IS NULL AND ${table.ptSessionId} IS NULL)`,

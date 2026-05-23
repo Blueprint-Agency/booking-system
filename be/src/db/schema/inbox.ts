@@ -1,23 +1,20 @@
 import { pgTable, uuid, jsonb, timestamp, index } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { staffUsers } from './identity'
-import { ptSessions } from './schedule'
-import { inboxItemTypeEnum, inboxActionEnum } from '../enums'
+import { inboxItemTypeEnum } from '../enums'
 
+// §4l — Inbox is purely a read-only notification feed.
+// `source_pt_session_id`, `action_taken`, `action_at`, `action_by_staff_id` columns were
+// dropped along with the `pt_request` type value. PT triage now lives on /admin/pt-requests
+// backed by the `pt_requests` table (§4e).
 export const inboxItems = pgTable(
   'inbox_items',
   {
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     type: inboxItemTypeEnum('type').notNull(),
     payload: jsonb('payload').notNull(),
-    sourcePtSessionId: uuid('source_pt_session_id').references(() => ptSessions.id, {
-      onDelete: 'restrict',
-    }),
     readAt: timestamp('read_at', { withTimezone: true }),
-    readByStaffId: uuid('read_by_staff_id').references(() => staffUsers.id, { onDelete: 'restrict' }),
-    actionTaken: inboxActionEnum('action_taken'),
-    actionAt: timestamp('action_at', { withTimezone: true }),
-    actionByStaffId: uuid('action_by_staff_id').references(() => staffUsers.id, {
+    readByStaffId: uuid('read_by_staff_id').references(() => staffUsers.id, {
       onDelete: 'restrict',
     }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -28,6 +25,5 @@ export const inboxItems = pgTable(
       table.readAt,
       table.createdAt,
     ),
-    ptSessionIdx: index('inbox_items_pt_session_idx').on(table.sourcePtSessionId),
   }),
 )

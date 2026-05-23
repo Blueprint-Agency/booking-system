@@ -1,4 +1,13 @@
-import { pgTable, uuid, text, timestamp, date, index, uniqueIndex, foreignKey } from 'drizzle-orm/pg-core'
+import {
+  pgTable,
+  uuid,
+  text,
+  timestamp,
+  date,
+  index,
+  uniqueIndex,
+  foreignKey,
+} from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import {
   clientStatusEnum,
@@ -47,6 +56,13 @@ export const staffUsers = pgTable(
     name: text('name').notNull(),
     role: staffRoleEnum('role').notNull(),
     status: staffStatusEnum('status').notNull().default('pending'),
+    // Workspace grants per admin-restructure.md §15a. Empty array = "all active locations"
+    // (superadmin / implicit grant). Each entry FKs locations.id at the app layer because
+    // Postgres arrays cannot enforce FK. Instructor role ignores this column.
+    grantedLocationIds: uuid('granted_location_ids')
+      .array()
+      .notNull()
+      .default(sql`'{}'::uuid[]`),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
     archivedByStaffId: uuid('archived_by_staff_id'),
     invitedAt: timestamp('invited_at', { withTimezone: true }),
@@ -56,6 +72,9 @@ export const staffUsers = pgTable(
   },
   table => ({
     roleStatusIdx: index('staff_role_status_idx').on(table.role, table.status),
+    // GIN on the uuid[] column for workspace membership filters (§4a indexes).
+    grantedLocationsGinIdx: index('staff_users_granted_locations_gin_idx')
+      .using('gin', table.grantedLocationIds),
     archiverFk: foreignKey({
       columns: [table.archivedByStaffId],
       foreignColumns: [table.id],
@@ -69,7 +88,15 @@ export const staffInvitations = pgTable(
   {
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     email: text('email').notNull(),
+    // Role is enforced at the app layer to `admin` only in v1 — superadmin is seeded and
+    // instructors are created indirectly via the /instructors route (§4a / §15a).
     role: staffRoleEnum('role').notNull(),
+    // Copied onto resulting staff_users row on accept (§4a). Empty array = inherit inviter's
+    // grants on accept (if inviter is superadmin → all locations).
+    grantedLocationIds: uuid('granted_location_ids')
+      .array()
+      .notNull()
+      .default(sql`'{}'::uuid[]`),
     token: text('token').notNull().unique(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     status: invitationStatusEnum('status').notNull().default('pending'),

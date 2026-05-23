@@ -9,7 +9,7 @@ export function LocationFormDialog({
   onClose,
 }: {
   location: Location | null;
-  onSave: (loc: Location) => void;
+  onSave: (loc: Location) => void | Promise<void>;
   onClose: () => void;
 }) {
   const [name, setName] = useState(location?.name ?? "");

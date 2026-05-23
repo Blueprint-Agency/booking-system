@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
+import { todayIso } from "@/lib/formatters";
 import type { ClientPackage } from "@/types";
 
 export function PackageExpiryDialog({
@@ -33,6 +34,7 @@ export function PackageExpiryDialog({
           <Input
             id="exp-date"
             type="date"
+            min={todayIso()}
             value={date}
             onChange={(e) => setDate(e.target.value)}
           />

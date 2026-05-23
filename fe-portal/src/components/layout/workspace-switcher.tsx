@@ -103,9 +103,8 @@ export function WorkspaceSwitcher() {
         <LocationFormDialog
           location={null}
           onClose={() => setShowCreate(false)}
-          onSave={(loc) => {
-            addLocation(loc);
-            setActiveLocationId(loc.id);
+          onSave={async (loc) => {
+            await addLocation(loc);
             setShowCreate(false);
           }}
         />

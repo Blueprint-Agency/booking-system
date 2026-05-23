@@ -33,7 +33,6 @@ export interface Instructor {
   phone: string;
   bio: string;
   photoUrl: string | null;
-  eligibleClassTypeIds: string[];
   archivedAt: string | null;
 }
 
@@ -135,13 +134,21 @@ export interface ClassInstance {
   cancelledByStaffId: string | null;
 }
 
+export interface Room {
+  id: string;
+  locationId: string;
+  name: string;
+  capacity: number;
+  archivedAt: string | null;
+}
+
 export interface WorkshopDay {
   id: string;
   date: string;        // YYYY-MM-DD
   startTime: string;   // HH:mm
   endTime: string;     // HH:mm
+  roomId: string;      // physical room this day runs in (required when scheduling)
   capacity: Capacity;
-  basePriceSgd: number;
 }
 
 export interface WorkshopTier {
@@ -158,14 +165,18 @@ export interface WorkshopTier {
 export interface Workshop {
   id: string;
   name: string;
-  classTypeId: string;
   locationId: string;
+  mainInstructorId: string;
+  supportingInstructorIds: string[];
+  /** Back-compat: `[main, ...supporting]`. Read-only mirror of the two fields above. */
   instructorIds: string[];
   coverUrl: string | null;
   additionalImages: string[];
   descriptionHtml: string;
   days: WorkshopDay[];
   tiers: WorkshopTier[];
+  /** Promotions scoped to this workshop (parent_type='workshop'). Applied uniformly across all tiers. */
+  promotions: Promotion[];
   lifecycle: Lifecycle;
   cancelledAt: string | null;
   cancelledByStaffId: string | null;
@@ -241,21 +252,6 @@ export interface Booking {
   cancelledAt: string | null;
 }
 
-// --- Ratings (§14) ---
-
-export interface Rating {
-  id: string;
-  bookingId: string;
-  clientId: string;
-  kind: "class" | "workshop";
-  classId: string | null;
-  workshopId: string | null;
-  instructorId: string;
-  stars: number;
-  comment: string | null;
-  ratedAt: string;
-}
-
 // --- Cancellations (drives §4 cap) ---
 
 export interface CancellationRecord {
@@ -300,6 +296,13 @@ export interface StaffUser {
    * Unused for instructor role.
    */
   grantedLocationIds: string[];
+  /**
+   * True when this row is the "main" superadmin — the staff_users row whose
+   * email matches the backend's SUPERADMIN_EMAIL env. This row cannot be
+   * archived from the app, and is the only one allowed to archive other
+   * superadmins.
+   */
+  isSeededSuperadmin: boolean;
   archivedAt: string | null;
   archivedByStaffId: string | null;
   invitedAt: string | null;
@@ -366,8 +369,6 @@ export type EmailTemplateSlug =
   | "admin_cancel_class"
   | "admin_cancel_pt"
   | "admin_cancel_workshop"
-  | "rating_prompt_class"
-  | "rating_prompt_workshop"
   | "package_purchase_confirmed"
   | "credit_expiry_reminder"
   | "instructor_invite"

@@ -170,16 +170,17 @@ export const workshops: Workshop[] = [
   {
     id: "wsp-1",
     name: "Ashtanga Immersion Weekend",
-    classTypeId: "ct-vinyasa",
     coverUrl: null,
     additionalImages: [],
     descriptionHtml:
       "<p>Two days of dedicated practice with senior teacher Ravi Kumar. Mornings cover the full primary series; afternoons explore pranayama and inversions.</p><p>Suitable for intermediate and above. Bring your own mat and a small towel.</p>",
     locationId: "loc-breadtalk",
+    mainInstructorId: "ins-ravi",
+    supportingInstructorIds: ["ins-priya"],
     instructorIds: ["ins-ravi", "ins-priya"],
     days: [
-      { id: "wd-1-sat", date: "2026-05-23", startTime: "09:00", endTime: "17:00", capacity: cap(24, 1), basePriceSgd: 220 },
-      { id: "wd-1-sun", date: "2026-05-24", startTime: "09:00", endTime: "17:00", capacity: cap(24, 1), basePriceSgd: 220 },
+      { id: "wd-1-sat", date: "2026-05-23", startTime: "09:00", endTime: "17:00", roomId: "room-bt-a", capacity: cap(24, 1) },
+      { id: "wd-1-sun", date: "2026-05-24", startTime: "09:00", endTime: "17:00", roomId: "room-bt-a", capacity: cap(24, 1) },
     ],
     tiers: [
       {
@@ -203,6 +204,7 @@ export const workshops: Workshop[] = [
         earlyBirdCutoffAt: "2026-05-12T16:00:00.000Z",
       },
     ],
+    promotions: [],
     lifecycle: "active",
     cancelledAt: null,
     cancelledByStaffId: null,
@@ -210,15 +212,16 @@ export const workshops: Workshop[] = [
   {
     id: "wsp-2",
     name: "Yin & Sound Healing",
-    classTypeId: "ct-yin",
     coverUrl: null,
     additionalImages: [],
     descriptionHtml:
       "<p>An evening of long-held yin postures paired with crystal singing bowls and Tibetan chimes. Mei Lin guides the asana; sound therapist Naomi Khoo takes the second hour.</p>",
     locationId: "loc-outram",
+    mainInstructorId: "ins-mei",
+    supportingInstructorIds: [],
     instructorIds: ["ins-mei"],
     days: [
-      { id: "wd-2-day", date: "2026-06-07", startTime: "19:00", endTime: "21:30", capacity: cap(20), basePriceSgd: 80 },
+      { id: "wd-2-day", date: "2026-06-07", startTime: "19:00", endTime: "21:30", roomId: "room-op-hall", capacity: cap(20) },
     ],
     tiers: [
       {
@@ -232,6 +235,7 @@ export const workshops: Workshop[] = [
         earlyBirdCutoffAt: null,
       },
     ],
+    promotions: [],
     lifecycle: "active",
     cancelledAt: null,
     cancelledByStaffId: null,
@@ -239,17 +243,18 @@ export const workshops: Workshop[] = [
   {
     id: "wsp-3",
     name: "Weekend Aerial Intensive",
-    classTypeId: "ct-aerial",
     coverUrl: null,
     additionalImages: [],
     descriptionHtml:
       "<p>Three consecutive Saturdays building from foundational hammock work to full inversions and short choreographies. Open to intermediate practitioners.</p>",
     locationId: "loc-breadtalk",
+    mainInstructorId: "ins-jay",
+    supportingInstructorIds: [],
     instructorIds: ["ins-jay"],
     days: [
-      { id: "wd-3-day1", date: "2026-06-13", startTime: "14:00", endTime: "17:00", capacity: cap(12, 1, 2), basePriceSgd: 120 },
-      { id: "wd-3-day2", date: "2026-06-20", startTime: "14:00", endTime: "17:00", capacity: cap(12, 1, 2), basePriceSgd: 120 },
-      { id: "wd-3-day3", date: "2026-06-27", startTime: "14:00", endTime: "17:00", capacity: cap(12, 1, 2), basePriceSgd: 120 },
+      { id: "wd-3-day1", date: "2026-06-13", startTime: "14:00", endTime: "17:00", roomId: "room-bt-a", capacity: cap(12, 1, 2) },
+      { id: "wd-3-day2", date: "2026-06-20", startTime: "14:00", endTime: "17:00", roomId: "room-bt-a", capacity: cap(12, 1, 2) },
+      { id: "wd-3-day3", date: "2026-06-27", startTime: "14:00", endTime: "17:00", roomId: "room-bt-a", capacity: cap(12, 1, 2) },
     ],
     tiers: [
       { id: "wtier-3-d1", workshopId: "wsp-3", name: "Day 1 Pass", description: "Single-day pass for Day 1.", dayIds: ["wd-3-day1"], priceSgd: 120, earlyBirdPriceSgd: null, earlyBirdCutoffAt: null },
@@ -266,6 +271,7 @@ export const workshops: Workshop[] = [
         earlyBirdCutoffAt: "2026-05-30T16:00:00.000Z",
       },
     ],
+    promotions: [],
     lifecycle: "active",
     cancelledAt: null,
     cancelledByStaffId: null,

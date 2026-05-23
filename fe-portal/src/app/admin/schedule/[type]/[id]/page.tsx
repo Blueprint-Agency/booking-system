@@ -1,211 +1,1100 @@
-import { notFound } from "next/navigation";
+"use client";
+import { use, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
-import { Badge } from "@/components/ui";
-import {
-  classInstances,
-  workshops,
-  ptSessions,
-  bookings,
-  clients,
-  ratings,
-} from "@/data";
+import { ArrowLeft, Ban, Loader2, Save } from "lucide-react";
+import { Badge, Button, Input, Label } from "@/components/ui";
+import { useWorkspace } from "@/lib/workspace-context";
+import { ApiError } from "@/lib/api";
 import { computeEventState } from "@/lib/event-state";
-import { instructorName, locationName, classTypeName } from "@/lib/schedule-helpers";
-import { maxCapacity } from "@/lib/capacity";
-import { formatDate, formatTime, formatDuration, formatSgd } from "@/lib/formatters";
-import type { Capacity } from "@/types";
-import { ClassDetailClient } from "@/components/schedule/class-detail-client";
-import { WorkshopDetailClient } from "@/components/schedule/workshop-detail-client";
-import { PtDetailClient } from "@/components/schedule/pt-detail-client";
+import { formatDate, formatTime, formatSgd } from "@/lib/formatters";
+import { corporateErrorMessage } from "@/lib/corporate-errors";
+import type { EventState } from "@/types";
 
-export default async function SessionDetailPage({
+interface NamedRef {
+  id: string;
+  name: string;
+}
+
+interface ApiInstructor {
+  id: string;
+  name: string;
+}
+
+interface ApiWorkshopDay {
+  id: string;
+  ord: number;
+  starts_at: string;
+  ends_at: string;
+  capacity_online: number;
+  capacity_waitlist: number;
+  capacity_buffer: number;
+}
+
+interface ApiWorkshopTier {
+  id: string;
+  name: string;
+  description: string | null;
+  regular_price_sgd: string;
+  early_bird_price_sgd: string | null;
+  early_bird_quota: number | null;
+  early_bird_cutoff_at: string | null;
+  ord: number;
+  day_ids: string[];
+}
+
+interface ApiWorkshopDetail {
+  id: string;
+  name: string;
+  location_id: string;
+  description_html: string | null;
+  lifecycle: "active" | "cancelled";
+  days: ApiWorkshopDay[];
+  tiers: ApiWorkshopTier[];
+  instructor_ids: string[];
+}
+
+interface ApiClassDetail {
+  id: string;
+  lifecycle: "active" | "cancelled";
+  starts_at: string;
+  ends_at: string;
+  class_type: NamedRef | null;
+  instructor: NamedRef | null;
+  main_instructor_id: string | null;
+  supporting_instructor_ids: string[];
+  supporting_instructors: NamedRef[];
+  instructor_ids: string[];
+  location: NamedRef | null;
+  room: NamedRef | null;
+  capacity_online: number;
+  capacity_waitlist: number;
+  capacity_buffer: number;
+  credit_cost: number;
+  booked_count: number;
+}
+
+interface ApiPtDetail {
+  id: string;
+  lifecycle: "active" | "cancelled";
+  starts_at: string;
+  ends_at: string;
+  session_type: "1on1" | "2on1";
+  instructor: NamedRef | null;
+  location: NamedRef | null;
+  capacity_online: number;
+  capacity_waitlist: number;
+  capacity_buffer: number;
+  clients: NamedRef[];
+}
+
+export default function SessionDetailPage({
   params,
 }: {
   params: Promise<{ type: string; id: string }>;
 }) {
-  const { type, id } = await params;
+  const { type, id } = use(params);
 
-  if (type === "class") {
-    const cls = classInstances.find((c) => c.id === id);
-    if (!cls) notFound();
-    const eventState = computeEventState({
-      startsAt: cls.startsAt,
-      endsAt: cls.endsAt,
-      lifecycle: cls.lifecycle,
-    });
-    const roster = bookings
-      .filter((b) => b.classId === cls.id)
-      .map((b) => ({ booking: b, client: clients.find((c) => c.id === b.clientId)! }));
-    const myRatings = ratings.filter((r) => r.classId === cls.id);
-    return (
-      <DetailShell
-        backHref="/admin/schedule"
-        kindBadge={<Badge tone="cyan">Class</Badge>}
-        eventState={eventState}
-        title={classTypeName(cls.classTypeId)}
-        meta={[
-          formatDate(cls.startsAt) + ", " + formatTime(cls.startsAt),
-          formatDuration(cls.startsAt, cls.endsAt),
-          locationName(cls.locationId),
-          instructorName(cls.instructorId),
-          `${cls.creditCost} credit${cls.creditCost === 1 ? "" : "s"}`,
-          cls.difficulty[0].toUpperCase() + cls.difficulty.slice(1),
-        ]}
-        capacity={cls.capacity}
-      >
-        <ClassDetailClient classInstance={cls} roster={roster} ratings={myRatings} />
-      </DetailShell>
-    );
-  }
-
-  if (type === "workshop") {
-    const w = workshops.find((x) => x.id === id);
-    if (!w || w.days.length === 0) notFound();
-    const first = w.days[0];
-    const last = w.days[w.days.length - 1];
-    const startsAt = `${first.date}T${first.startTime}:00.000Z`;
-    const endsAt = `${last.date}T${last.endTime}:00.000Z`;
-    const eventState = computeEventState({
-      startsAt,
-      endsAt,
-      lifecycle: w.lifecycle,
-    });
-    const tiers = w.tiers;
-    const roster = bookings
-      .filter((b) => b.workshopId === w.id)
-      .map((b) => ({
-        booking: b,
-        client: clients.find((c) => c.id === b.clientId)!,
-        tier: tiers.find((t) => t.id === b.workshopTierId),
-      }));
-    const myRatings = ratings.filter((r) => r.workshopId === w.id);
-    const dateMeta =
-      w.days.length === 1 ? formatDate(startsAt) : `${formatDate(startsAt)} – ${formatDate(endsAt)}`;
-    return (
-      <DetailShell
-        backHref="/admin/schedule"
-        kindBadge={<Badge tone="warning">Workshop</Badge>}
-        eventState={eventState}
-        title={w.name}
-        editHref={`/admin/packages/workshops/${w.id}/edit`}
-        meta={[
-          dateMeta,
-          locationName(w.locationId),
-          w.instructorIds.map(instructorName).join(" & "),
-        ]}
-      >
-        <WorkshopDetailClient workshop={w} tiers={tiers} roster={roster} ratings={myRatings} />
-      </DetailShell>
-    );
-  }
-
-  if (type === "pt") {
-    const s = ptSessions.find((x) => x.id === id);
-    if (!s) notFound();
-    const eventState = computeEventState({
-      startsAt: s.startsAt,
-      endsAt: s.endsAt,
-      lifecycle: "active",
-    });
-    const roster = bookings
-      .filter((b) => b.ptSessionId === s.id)
-      .map((b) => ({ booking: b, client: clients.find((c) => c.id === b.clientId)! }));
-    return (
-      <DetailShell
-        backHref="/admin/schedule"
-        kindBadge={<Badge tone="accent">Private</Badge>}
-        eventState={eventState}
-        title={`${s.sessionType === "1on1" ? "1-on-1" : "2-on-1"} private session`}
-        meta={[
-          formatDate(s.startsAt) + ", " + formatTime(s.startsAt),
-          formatDuration(s.startsAt, s.endsAt),
-          locationName(s.locationId),
-          instructorName(s.instructorId),
-        ]}
-        capacity={s.capacity}
-      >
-        <PtDetailClient ptSession={s} roster={roster} />
-      </DetailShell>
-    );
-  }
-
-  notFound();
+  if (type === "workshop") return <WorkshopDetail id={id} />;
+  if (type === "class") return <ClassDetail id={id} />;
+  if (type === "pt") return <PtDetail id={id} />;
+  if (type === "corporate") return <CorporateDetail id={id} />;
+  return <ErrorDetail kind="Unknown" message="Unknown session type." />;
 }
 
-function DetailShell({
-  backHref,
-  kindBadge,
-  eventState,
+/* ------------------------------- Class ------------------------------- */
+
+function ClassDetail({ id }: { id: string }) {
+  const { api } = useWorkspace();
+  const [data, setData] = useState<ApiClassDetail | null>(null);
+  const [instructors, setInstructors] = useState<ApiInstructor[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!api) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const [d, ins] = await Promise.all([
+        api.get<ApiClassDetail>(`/portal/admin/schedule/classes/${id}`),
+        api.get<{ instructors: Array<ApiInstructor & { archived_at?: string | null }> }>(
+          "/portal/admin/instructors",
+        ),
+      ]);
+      setData(d);
+      setInstructors(ins.instructors.filter((i) => !i.archived_at));
+    } catch (err) {
+      setError(detailError(err, "Class not found."));
+    } finally {
+      setLoading(false);
+    }
+  }, [api, id]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (loading) return <LoadingDetail label="class" />;
+  if (error || !data) return <ErrorDetail kind="Class" message={error ?? "Class not found."} />;
+
+  const state = computeEventState({
+    startsAt: data.starts_at,
+    endsAt: data.ends_at,
+    lifecycle: data.lifecycle,
+  });
+  const capacity = data.capacity_online + data.capacity_waitlist + data.capacity_buffer;
+  const meta = [
+    formatDate(data.starts_at),
+    `${formatTime(data.starts_at)} – ${formatTime(data.ends_at)}`,
+    data.instructor?.name,
+    data.location?.name,
+    data.room?.name,
+  ].filter((x): x is string => Boolean(x));
+
+  return (
+    <DetailFrame>
+      <DetailHeader
+        badge={<Badge tone="cyan">Class</Badge>}
+        state={state}
+        title={data.class_type?.name ?? "Class"}
+        meta={meta}
+      />
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Stat label="Booked" value={`${data.booked_count} / ${capacity}`} />
+        <Stat label="Credit cost" value={`${data.credit_cost} credit${data.credit_cost === 1 ? "" : "s"}`} />
+        <Stat label="Capacity split" value={`${data.capacity_online} / ${data.capacity_waitlist} / ${data.capacity_buffer}`} sub="online / waitlist / buffer" />
+      </div>
+      <ClassInstructorEditor
+        classId={data.id}
+        instructors={instructors}
+        initialMainId={data.main_instructor_id ?? ""}
+        initialSupportingIds={data.supporting_instructor_ids ?? []}
+        disabled={data.lifecycle === "cancelled"}
+        onSaved={load}
+      />
+    </DetailFrame>
+  );
+}
+
+function ClassInstructorEditor({
+  classId,
+  instructors,
+  initialMainId,
+  initialSupportingIds,
+  disabled,
+  onSaved,
+}: {
+  classId: string;
+  instructors: ApiInstructor[];
+  initialMainId: string;
+  initialSupportingIds: string[];
+  disabled: boolean;
+  onSaved: () => void | Promise<void>;
+}) {
+  const { api } = useWorkspace();
+  const [mainInstructorId, setMainInstructorId] = useState(initialMainId);
+  const [supportingInstructorIds, setSupportingInstructorIds] =
+    useState<string[]>(initialSupportingIds);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  // Re-sync if parent reloads.
+  useEffect(() => setMainInstructorId(initialMainId), [initialMainId]);
+  useEffect(
+    () => setSupportingInstructorIds(initialSupportingIds),
+    [initialSupportingIds],
+  );
+
+  // Drop any supporting that overlaps the main.
+  useEffect(() => {
+    if (!mainInstructorId) return;
+    setSupportingInstructorIds((prev) => prev.filter((sid) => sid !== mainInstructorId));
+  }, [mainInstructorId]);
+
+  const availableForSupporting = useMemo(
+    () =>
+      instructors.filter(
+        (i) => i.id !== mainInstructorId && !supportingInstructorIds.includes(i.id),
+      ),
+    [instructors, mainInstructorId, supportingInstructorIds],
+  );
+
+  const dirty =
+    mainInstructorId !== initialMainId ||
+    supportingInstructorIds.length !== initialSupportingIds.length ||
+    supportingInstructorIds.some((s, i) => s !== initialSupportingIds[i]);
+
+  async function handleSave() {
+    if (!api || !mainInstructorId) return;
+    setSaving(true);
+    setErr(null);
+    try {
+      await api.patch(`/portal/admin/schedule/classes/${classId}`, {
+        main_instructor_id: mainInstructorId,
+        supporting_instructor_ids: supportingInstructorIds,
+      });
+      await onSaved();
+    } catch (e) {
+      setErr(e instanceof ApiError ? `Save failed (HTTP ${e.status}).` : "Save failed.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="mt-6 rounded-xl border border-border bg-card p-5 shadow-soft">
+      <h2 className="mb-3 text-sm font-semibold text-ink">Instructors</h2>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label htmlFor="cls-main-ins">Main instructor</Label>
+          <select
+            id="cls-main-ins"
+            value={mainInstructorId}
+            disabled={disabled || saving}
+            onChange={(e) => setMainInstructorId(e.target.value)}
+            className="flex h-10 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+          >
+            <option value="">Select…</option>
+            {instructors.map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Supporting instructors</Label>
+          <div className="flex flex-wrap items-center gap-2">
+            {supportingInstructorIds.map((sid) => {
+              const name = instructors.find((i) => i.id === sid)?.name ?? "Unknown";
+              return (
+                <span
+                  key={sid}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 px-2.5 py-1 text-xs text-ink"
+                >
+                  {name}
+                  <button
+                    type="button"
+                    disabled={disabled || saving}
+                    onClick={() =>
+                      setSupportingInstructorIds((prev) =>
+                        prev.filter((x) => x !== sid),
+                      )
+                    }
+                    className="text-muted hover:text-ink disabled:opacity-50"
+                    aria-label={`Remove ${name}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              );
+            })}
+            {!disabled && availableForSupporting.length > 0 && (
+              <select
+                value=""
+                disabled={saving}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v) setSupportingInstructorIds((prev) => [...prev, v]);
+                }}
+                className="flex h-9 rounded-lg border border-border bg-card px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+              >
+                <option value="">
+                  {supportingInstructorIds.length === 0
+                    ? "+ Add supporting instructor"
+                    : "+ Add another"}
+                </option>
+                {availableForSupporting.map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            {supportingInstructorIds.length === 0 && availableForSupporting.length === 0 && (
+              <span className="text-xs text-muted">No additional instructors available.</span>
+            )}
+          </div>
+        </div>
+      </div>
+      {err && (
+        <p className="mt-3 rounded-md border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
+          {err}
+        </p>
+      )}
+      <div className="mt-4 flex justify-end">
+        <Button
+          size="sm"
+          onClick={handleSave}
+          disabled={disabled || saving || !dirty || !mainInstructorId}
+        >
+          {saving ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Save className="h-4 w-4" />
+          )}
+          Save instructors
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------- PT session ------------------------------- */
+
+function PtDetail({ id }: { id: string }) {
+  const { api } = useWorkspace();
+  const [data, setData] = useState<ApiPtDetail | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!api) return;
+    setLoading(true);
+    setError(null);
+    try {
+      setData(await api.get<ApiPtDetail>(`/portal/admin/schedule/pt/${id}`));
+    } catch (err) {
+      setError(detailError(err, "Private session not found."));
+    } finally {
+      setLoading(false);
+    }
+  }, [api, id]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (loading) return <LoadingDetail label="private session" />;
+  if (error || !data)
+    return <ErrorDetail kind="Private session" message={error ?? "Private session not found."} />;
+
+  const state = computeEventState({
+    startsAt: data.starts_at,
+    endsAt: data.ends_at,
+    lifecycle: data.lifecycle,
+  });
+  const typeLabel = data.session_type === "2on1" ? "2-on-1" : "1-on-1";
+  const meta = [
+    formatDate(data.starts_at),
+    `${formatTime(data.starts_at)} – ${formatTime(data.ends_at)}`,
+    data.instructor?.name,
+    data.location?.name,
+  ].filter((x): x is string => Boolean(x));
+
+  return (
+    <DetailFrame>
+      <DetailHeader
+        badge={<Badge tone="accent">Private session</Badge>}
+        state={state}
+        title={`Private session · ${typeLabel}`}
+        meta={meta}
+      />
+      <section className="rounded-xl border border-border bg-card p-5 shadow-soft">
+        <h2 className="mb-3 text-sm font-semibold text-ink">
+          Clients ({data.clients.length})
+        </h2>
+        {data.clients.length === 0 ? (
+          <p className="text-sm text-muted">No clients assigned.</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {data.clients.map((cl) => (
+              <li key={cl.id} className="py-2 text-sm text-ink">
+                <Link href={`/admin/clients/${cl.id}`} className="hover:text-accent">
+                  {cl.name}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </DetailFrame>
+  );
+}
+
+/* ------------------------------- Workshop ------------------------------- */
+
+function WorkshopDetail({ id }: { id: string }) {
+  const { api, accessibleLocations } = useWorkspace();
+  const [data, setData] = useState<ApiWorkshopDetail | null>(null);
+  const [instructors, setInstructors] = useState<ApiInstructor[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!api) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    void (async () => {
+      try {
+        const [w, ins] = await Promise.all([
+          api.get<ApiWorkshopDetail>(`/portal/admin/workshops/${id}`),
+          api.get<{ instructors: ApiInstructor[] }>("/portal/admin/instructors"),
+        ]);
+        if (cancelled) return;
+        setData(w);
+        setInstructors(ins.instructors);
+      } catch (err) {
+        if (cancelled) return;
+        setError(detailError(err, "Workshop not found."));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [api, id]);
+
+  if (loading) return <LoadingDetail label="workshop" />;
+  if (error || !data) return <ErrorDetail kind="Workshop" message={error ?? "Workshop not found."} />;
+
+  const sortedDays = [...data.days].sort((a, b) => a.ord - b.ord);
+  const sortedTiers = [...data.tiers].sort((a, b) => a.ord - b.ord);
+  const first = sortedDays[0];
+  const last = sortedDays[sortedDays.length - 1];
+  const eventState: EventState = first
+    ? computeEventState({
+        startsAt: first.starts_at,
+        endsAt: last!.ends_at,
+        lifecycle: data.lifecycle,
+      })
+    : data.lifecycle === "cancelled"
+      ? "cancelled"
+      : "scheduled";
+  const locName = accessibleLocations.find((l) => l.id === data.location_id)?.name ?? "—";
+  const instructorNames = data.instructor_ids
+    .map((iid) => instructors.find((i) => i.id === iid)?.name ?? "Unknown")
+    .join(" & ");
+  const dateMeta = first
+    ? sortedDays.length === 1
+      ? formatDate(first.starts_at)
+      : `${formatDate(first.starts_at)} – ${formatDate(last!.ends_at)}`
+    : "No days scheduled";
+
+  return (
+    <DetailFrame>
+      <DetailHeader
+        badge={<Badge tone="warning">Workshop</Badge>}
+        state={eventState}
+        title={data.name}
+        meta={[dateMeta, locName, instructorNames].filter(Boolean)}
+        action={
+          <Link
+            href={`/admin/packages/workshops/${data.id}/edit`}
+            className="rounded-md border border-border bg-card px-3 py-1 text-xs text-muted hover:border-accent/40 hover:text-ink"
+          >
+            Edit content
+          </Link>
+        }
+      />
+
+      <section className="mb-6 rounded-xl border border-border bg-card p-5 shadow-soft">
+        <h2 className="mb-3 text-sm font-semibold text-ink">Days</h2>
+        {sortedDays.length === 0 ? (
+          <p className="text-sm text-muted">No days scheduled.</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {sortedDays.map((d) => (
+              <li key={d.id} className="flex items-center justify-between py-2 text-sm">
+                <div>
+                  <div className="font-medium text-ink">
+                    Day {d.ord} — {formatDate(d.starts_at)}
+                  </div>
+                  <div className="text-xs text-muted">
+                    {formatTime(d.starts_at)} – {formatTime(d.ends_at)}
+                  </div>
+                </div>
+                <div className="text-xs text-muted">
+                  Capacity {d.capacity_online + d.capacity_waitlist + d.capacity_buffer}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="rounded-xl border border-border bg-card p-5 shadow-soft">
+        <h2 className="mb-3 text-sm font-semibold text-ink">Pricing tiers</h2>
+        {sortedTiers.length === 0 ? (
+          <p className="text-sm text-muted">No tiers configured.</p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {sortedTiers.map((t) => (
+              <li key={t.id} className="py-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <div className="font-medium text-ink">{t.name}</div>
+                  <div className="font-mono text-ink">
+                    {formatSgd(Number(t.regular_price_sgd))}
+                  </div>
+                </div>
+                {t.description && <p className="mt-1 text-xs text-muted">{t.description}</p>}
+                {t.early_bird_price_sgd && (
+                  <p className="mt-1 text-xs text-muted">
+                    Early bird {formatSgd(Number(t.early_bird_price_sgd))}
+                    {t.early_bird_cutoff_at && ` until ${formatDate(t.early_bird_cutoff_at)}`}
+                    {t.early_bird_quota !== null && ` · quota ${t.early_bird_quota}`}
+                  </p>
+                )}
+                <p className="mt-1 text-xs text-muted">
+                  Grants access to {t.day_ids.length} day{t.day_ids.length === 1 ? "" : "s"}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </DetailFrame>
+  );
+}
+
+/* ------------------------------- Corporate ------------------------------- */
+
+interface ApiCorporateSession {
+  id: string;
+  corporate_package_id: string;
+  client_name: string;
+  main_instructor_id: string;
+  supporting_instructor_ids: string[];
+  location_id: string;
+  room_id: string;
+  starts_at: string;
+  ends_at: string;
+  lifecycle: "active" | "cancelled";
+  cancelled_at: string | null;
+}
+
+interface ApiCorporatePackageBrief {
+  id: string;
+  name: string;
+  status: "active" | "archived";
+}
+
+interface ApiRoom {
+  id: string;
+  location_id: string;
+  name: string;
+  archived_at: string | null;
+}
+
+function CorporateDetail({ id }: { id: string }) {
+  const { api, accessibleLocations } = useWorkspace();
+  const [data, setData] = useState<ApiCorporateSession | null>(null);
+  const [pkg, setPkg] = useState<ApiCorporatePackageBrief | null>(null);
+  const [instructors, setInstructors] = useState<ApiInstructor[]>([]);
+  const [rooms, setRooms] = useState<ApiRoom[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!api) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const [d, ins, rm] = await Promise.all([
+        api.get<{ corporate_session: ApiCorporateSession }>(
+          `/portal/admin/corporate-sessions/${id}`,
+        ),
+        api.get<{ instructors: Array<ApiInstructor & { archived_at?: string | null }> }>(
+          "/portal/admin/instructors",
+        ),
+        api.get<{ rooms: ApiRoom[] }>("/portal/admin/rooms"),
+      ]);
+      setData(d.corporate_session);
+      setInstructors(ins.instructors.filter((i) => !i.archived_at));
+      setRooms(rm.rooms);
+      try {
+        const p = await api.get<{
+          corporatePackage: ApiCorporatePackageBrief;
+        }>(
+          `/portal/admin/corporate-packages/${d.corporate_session.corporate_package_id}`,
+        );
+        setPkg(p.corporatePackage);
+      } catch {
+        setPkg(null);
+      }
+    } catch (err) {
+      setError(detailError(err, "Corporate session not found."));
+    } finally {
+      setLoading(false);
+    }
+  }, [api, id]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (loading) return <LoadingDetail label="corporate session" />;
+  if (error || !data)
+    return (
+      <ErrorDetail kind="Corporate session" message={error ?? "Corporate session not found."} />
+    );
+
+  const state = computeEventState({
+    startsAt: data.starts_at,
+    endsAt: data.ends_at,
+    lifecycle: data.lifecycle,
+  });
+  const mainName =
+    instructors.find((i) => i.id === data.main_instructor_id)?.name ?? "Unknown";
+  const locationName =
+    accessibleLocations.find((l) => l.id === data.location_id)?.name ?? "—";
+  const roomName = rooms.find((r) => r.id === data.room_id)?.name ?? "—";
+  const meta = [
+    formatDate(data.starts_at),
+    `${formatTime(data.starts_at)} – ${formatTime(data.ends_at)}`,
+    mainName,
+    locationName,
+    roomName,
+  ].filter((x): x is string => Boolean(x));
+
+  return (
+    <DetailFrame>
+      <DetailHeader
+        badge={<Badge tone="neutral">Corporate</Badge>}
+        state={state}
+        title={pkg?.name ?? "Corporate session"}
+        meta={meta}
+        action={
+          pkg && (
+            <Link
+              href={`/admin/packages/corporate/${pkg.id}/edit`}
+              className="rounded-md border border-border bg-card px-3 py-1 text-xs text-muted hover:border-accent/40 hover:text-ink"
+            >
+              View package
+            </Link>
+          )
+        }
+      />
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Stat label="Client" value={data.client_name} />
+        <Stat
+          label="Supporting instructors"
+          value={
+            data.supporting_instructor_ids.length === 0
+              ? "—"
+              : String(data.supporting_instructor_ids.length)
+          }
+          sub={
+            data.supporting_instructor_ids.length > 0
+              ? data.supporting_instructor_ids
+                  .map((sid) => instructors.find((i) => i.id === sid)?.name ?? "Unknown")
+                  .join(", ")
+              : undefined
+          }
+        />
+        <Stat label="Room" value={roomName} sub={locationName} />
+      </div>
+      <CorporateEditor
+        session={data}
+        instructors={instructors}
+        rooms={rooms}
+        onSaved={load}
+      />
+    </DetailFrame>
+  );
+}
+
+function CorporateEditor({
+  session,
+  instructors,
+  rooms,
+  onSaved,
+}: {
+  session: ApiCorporateSession;
+  instructors: ApiInstructor[];
+  rooms: ApiRoom[];
+  onSaved: () => void | Promise<void>;
+}) {
+  const { api, accessibleLocations } = useWorkspace();
+  const cancelled = session.lifecycle === "cancelled";
+
+  const initialDate = session.starts_at.slice(0, 10);
+  const initialStart = toHHMM(session.starts_at);
+  const initialEnd = toHHMM(session.ends_at);
+
+  const [clientName, setClientName] = useState(session.client_name);
+  const [mainInstructorId, setMainInstructorId] = useState(session.main_instructor_id);
+  const [supportingInstructorIds, setSupportingInstructorIds] = useState<string[]>(
+    session.supporting_instructor_ids,
+  );
+  const [locationId, setLocationId] = useState(session.location_id);
+  const [roomId, setRoomId] = useState(session.room_id);
+  const [date, setDate] = useState(initialDate);
+  const [startTime, setStartTime] = useState(initialStart);
+  const [endTime, setEndTime] = useState(initialEnd);
+  const [saving, setSaving] = useState(false);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    setClientName(session.client_name);
+    setMainInstructorId(session.main_instructor_id);
+    setSupportingInstructorIds(session.supporting_instructor_ids);
+    setLocationId(session.location_id);
+    setRoomId(session.room_id);
+    setDate(session.starts_at.slice(0, 10));
+    setStartTime(toHHMM(session.starts_at));
+    setEndTime(toHHMM(session.ends_at));
+  }, [session]);
+
+  useEffect(() => {
+    if (!mainInstructorId) return;
+    setSupportingInstructorIds((prev) => prev.filter((sid) => sid !== mainInstructorId));
+  }, [mainInstructorId]);
+
+  const activeLocations = useMemo(
+    () => accessibleLocations.filter((l) => !l.archivedAt),
+    [accessibleLocations],
+  );
+  const roomsForLocation = useMemo(
+    () => rooms.filter((r) => !r.archived_at && r.location_id === locationId),
+    [rooms, locationId],
+  );
+  const availableForSupporting = useMemo(
+    () =>
+      instructors.filter(
+        (i) => i.id !== mainInstructorId && !supportingInstructorIds.includes(i.id),
+      ),
+    [instructors, mainInstructorId, supportingInstructorIds],
+  );
+
+  useEffect(() => {
+    if (roomId && !roomsForLocation.some((r) => r.id === roomId)) setRoomId("");
+  }, [roomId, roomsForLocation]);
+
+  async function handleSave() {
+    if (!api) return;
+    if (!clientName.trim() || !mainInstructorId || !locationId || !roomId) return;
+    if (!date || !startTime || !endTime) return;
+    const startsAt = new Date(`${date}T${startTime}:00`);
+    const endsAt = new Date(`${date}T${endTime}:00`);
+    if (endsAt <= startsAt) {
+      setErr("End time must be after start time.");
+      return;
+    }
+    setSaving(true);
+    setErr(null);
+    try {
+      await api.patch(`/portal/admin/corporate-sessions/${session.id}`, {
+        client_name: clientName.trim(),
+        main_instructor_id: mainInstructorId,
+        supporting_instructor_ids: supportingInstructorIds,
+        location_id: locationId,
+        room_id: roomId,
+        starts_at: startsAt.toISOString(),
+        ends_at: endsAt.toISOString(),
+      });
+      await onSaved();
+    } catch (e) {
+      setErr(corporateErrorMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleCancel() {
+    if (!api) return;
+    if (!confirm("Cancel this corporate session?")) return;
+    setCancelBusy(true);
+    setErr(null);
+    try {
+      await api.post(`/portal/admin/corporate-sessions/${session.id}/cancel`);
+      await onSaved();
+    } catch (e) {
+      setErr(corporateErrorMessage(e));
+    } finally {
+      setCancelBusy(false);
+    }
+  }
+
+  return (
+    <section className="mt-6 rounded-xl border border-border bg-card p-5 shadow-soft">
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-ink">Session</h2>
+        {!cancelled && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={handleCancel}
+            disabled={cancelBusy || saving}
+            className="text-error hover:text-error"
+          >
+            {cancelBusy ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Ban className="h-4 w-4" />
+            )}
+            Cancel session
+          </Button>
+        )}
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-1.5 sm:col-span-2">
+          <Label htmlFor="cor-client">Client name</Label>
+          <Input
+            id="cor-client"
+            value={clientName}
+            disabled={cancelled || saving}
+            onChange={(e) => setClientName(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="cor-main">Main instructor</Label>
+          <select
+            id="cor-main"
+            value={mainInstructorId}
+            disabled={cancelled || saving}
+            onChange={(e) => setMainInstructorId(e.target.value)}
+            className="flex h-10 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+          >
+            <option value="">Select…</option>
+            {instructors.map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Supporting instructors</Label>
+          <div className="flex flex-wrap items-center gap-2">
+            {supportingInstructorIds.map((sid) => {
+              const name = instructors.find((i) => i.id === sid)?.name ?? "Unknown";
+              return (
+                <span
+                  key={sid}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 px-2.5 py-1 text-xs text-ink"
+                >
+                  {name}
+                  <button
+                    type="button"
+                    disabled={cancelled || saving}
+                    onClick={() =>
+                      setSupportingInstructorIds((prev) =>
+                        prev.filter((x) => x !== sid),
+                      )
+                    }
+                    className="text-muted hover:text-ink disabled:opacity-50"
+                    aria-label={`Remove ${name}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              );
+            })}
+            {!cancelled && availableForSupporting.length > 0 && (
+              <select
+                value=""
+                disabled={saving}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v) setSupportingInstructorIds((prev) => [...prev, v]);
+                }}
+                className="flex h-9 rounded-lg border border-border bg-card px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+              >
+                <option value="">
+                  {supportingInstructorIds.length === 0
+                    ? "+ Add supporting instructor"
+                    : "+ Add another"}
+                </option>
+                {availableForSupporting.map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            {supportingInstructorIds.length === 0 && availableForSupporting.length === 0 && (
+              <span className="text-xs text-muted">No additional instructors available.</span>
+            )}
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="cor-loc">Location</Label>
+          <select
+            id="cor-loc"
+            value={locationId}
+            disabled={cancelled || saving}
+            onChange={(e) => setLocationId(e.target.value)}
+            className="flex h-10 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+          >
+            <option value="">Select…</option>
+            {activeLocations.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="cor-room">Room</Label>
+          <select
+            id="cor-room"
+            value={roomId}
+            disabled={cancelled || saving || !locationId}
+            onChange={(e) => setRoomId(e.target.value)}
+            className="flex h-10 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+          >
+            <option value="">{locationId ? "Select…" : "Pick a location first"}</option>
+            {roomsForLocation.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="cor-d">Date</Label>
+          <Input
+            id="cor-d"
+            type="date"
+            value={date}
+            disabled={cancelled || saving}
+            onChange={(e) => setDate(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="cor-s">Start time</Label>
+          <Input
+            id="cor-s"
+            type="time"
+            value={startTime}
+            disabled={cancelled || saving}
+            onChange={(e) => setStartTime(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="cor-e">End time</Label>
+          <Input
+            id="cor-e"
+            type="time"
+            value={endTime}
+            disabled={cancelled || saving}
+            onChange={(e) => setEndTime(e.target.value)}
+          />
+        </div>
+      </div>
+      {err && (
+        <p className="mt-3 rounded-md border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
+          {err}
+        </p>
+      )}
+      {!cancelled && (
+        <div className="mt-4 flex justify-end">
+          <Button
+            size="sm"
+            onClick={handleSave}
+            disabled={saving || !mainInstructorId || !locationId || !roomId}
+          >
+            {saving ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+            Save changes
+          </Button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function toHHMM(iso: string): string {
+  const d = new Date(iso);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
+/* ------------------------------- Shared ------------------------------- */
+
+function detailError(err: unknown, notFoundMsg: string): string {
+  if (err instanceof ApiError) return err.status === 404 ? notFoundMsg : `HTTP ${err.status}`;
+  return "Network error";
+}
+
+function DetailHeader({
+  badge,
+  state,
   title,
   meta,
-  editHref,
-  capacity,
-  children,
+  action,
 }: {
-  backHref: string;
-  kindBadge: React.ReactNode;
-  eventState: ReturnType<typeof computeEventState>;
+  badge: React.ReactNode;
+  state: EventState;
   title: string;
   meta: string[];
-  editHref?: string;
-  capacity?: Capacity;
-  children: React.ReactNode;
+  action?: React.ReactNode;
 }) {
-  const stateBadge =
-    eventState === "scheduled" ? (
-      <Badge tone="accent">Scheduled</Badge>
-    ) : eventState === "ongoing" ? (
-      <Badge tone="warning">Ongoing</Badge>
-    ) : eventState === "completed" ? (
-      <Badge tone="sage">Completed</Badge>
-    ) : (
-      <Badge tone="error">Cancelled</Badge>
-    );
+  return (
+    <header className="mb-6 border-b border-border pb-6">
+      <div className="mb-2 flex items-center gap-2">
+        {badge}
+        <StateBadge state={state} />
+        {action && <div className="ml-auto">{action}</div>}
+      </div>
+      <h1 className="text-2xl font-semibold text-ink">{title}</h1>
+      {meta.length > 0 && <p className="mt-1 text-sm text-muted">{meta.join(" · ")}</p>}
+    </header>
+  );
+}
+
+function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="rounded-xl border border-border bg-card p-4 shadow-soft">
+      <div className="text-xs font-medium uppercase tracking-wide text-muted">{label}</div>
+      <div className="mt-1 font-mono text-lg font-semibold text-ink">{value}</div>
+      {sub && <div className="text-xs text-muted">{sub}</div>}
+    </div>
+  );
+}
+
+function LoadingDetail({ label }: { label: string }) {
+  return (
+    <DetailFrame>
+      <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading {label}…
+      </div>
+    </DetailFrame>
+  );
+}
+
+function ErrorDetail({ kind, message }: { kind: string; message: string }) {
+  return (
+    <DetailFrame>
+      <header className="mb-6 border-b border-border pb-6">
+        <div className="mb-2 flex items-center gap-2">
+          <Badge tone="neutral">{kind}</Badge>
+        </div>
+        <h1 className="text-2xl font-semibold text-ink">Couldn’t load detail</h1>
+      </header>
+      <div className="rounded-xl border border-error/30 bg-error/5 p-6 text-center text-sm text-error">
+        {message}
+      </div>
+    </DetailFrame>
+  );
+}
+
+function DetailFrame({ children }: { children: React.ReactNode }) {
   return (
     <div className="mx-auto max-w-5xl">
       <Link
-        href={backHref}
+        href="/admin/schedule"
         className="mb-2 inline-flex items-center gap-1 text-sm text-muted hover:text-ink"
       >
         <ArrowLeft className="h-3.5 w-3.5" /> Back to Schedule
       </Link>
-      <header className="mb-6 border-b border-border pb-6">
-        <div className="mb-2 flex items-center gap-2">
-          {kindBadge}
-          {stateBadge}
-          {editHref && (
-            <Link
-              href={editHref}
-              className="ml-auto rounded-md border border-border bg-card px-3 py-1 text-xs text-muted hover:border-accent/40 hover:text-ink"
-            >
-              Edit content
-            </Link>
-          )}
-        </div>
-        <h1 className="text-2xl font-semibold text-ink">{title}</h1>
-        <p className="mt-1 text-sm text-muted">{meta.filter(Boolean).join(" · ")}</p>
-        {capacity && (
-          <div className="mt-4 inline-flex flex-wrap items-center gap-4 rounded-lg border border-border bg-paper px-4 py-2 text-xs">
-            <span className="font-semibold uppercase tracking-wider text-muted">
-              Capacity breakdown
-            </span>
-            <span>
-              Waitlist <strong className="text-ink">{capacity.waitlist}</strong>
-            </span>
-            <span>
-              Online <strong className="text-ink">{capacity.onlineBooking}</strong>
-            </span>
-            <span>
-              Buffer <strong className="text-ink">{capacity.buffer}</strong>
-            </span>
-            <span className="text-muted">
-              Max <strong className="text-ink">{maxCapacity(capacity)}</strong>
-            </span>
-          </div>
-        )}
-      </header>
       {children}
     </div>
   );
+}
+
+function StateBadge({ state }: { state: EventState }) {
+  if (state === "scheduled") return <Badge tone="accent">Scheduled</Badge>;
+  if (state === "ongoing") return <Badge tone="warning">Ongoing</Badge>;
+  if (state === "completed") return <Badge tone="sage">Completed</Badge>;
+  return <Badge tone="error">Cancelled</Badge>;
 }

@@ -8,14 +8,29 @@ export const staffStatusEnum = pgEnum('staff_status', ['pending', 'active', 'arc
 export const invitationStatusEnum = pgEnum('invitation_status', ['pending', 'accepted', 'revoked', 'expired'])
 
 // Packages
-export const classPackageKindEnum = pgEnum('class_package_kind', ['credit_bundle', 'unlimited'])
+export const classPackageKindEnum = pgEnum('class_package_kind', ['credit_bundle', 'unlimited', 'trial'])
 export const ptSessionTypeEnum = pgEnum('pt_session_type', ['1on1', '2on1'])
 export const packageStatusEnum = pgEnum('package_status', ['active', 'archived'])
-export const clientPackageKindEnum = pgEnum('client_package_kind', ['credit_bundle', 'unlimited', 'pt'])
+export const clientPackageKindEnum = pgEnum('client_package_kind', ['credit_bundle', 'unlimited', 'trial', 'pt'])
+
+// Promotions (§4d)
+export const promotionParentEnum = pgEnum('promotion_parent', ['class_package', 'pt_package', 'workshop'])
+export const promotionKindEnum = pgEnum('promotion_kind', ['percent', 'special_price'])
+export const promotionStatusEnum = pgEnum('promotion_status', ['active', 'archived'])
 
 // Schedule
 export const lifecycleEnum = pgEnum('lifecycle', ['active', 'cancelled'])
-export const ptSessionStatusEnum = pgEnum('pt_session_status', ['pending', 'confirmed', 'declined', 'cancelled'])
+// Workshop / class / corporate session instructor role (§4.3)
+export const workshopInstructorRoleEnum = pgEnum('workshop_instructor_role', ['main', 'supporting'])
+export type WorkshopInstructorRole = (typeof workshopInstructorRoleEnum.enumValues)[number]
+// `pt_session_status` enum is REMOVED — PT request states now live on pt_requests via pt_request_status.
+export const ptRequestStatusEnum = pgEnum('pt_request_status', [
+  'pending',
+  'scheduled',
+  'declined',
+  'cancelled',
+  'expired',
+])
 
 // Bookings
 export const bookingKindEnum = pgEnum('booking_kind', ['class', 'workshop', 'pt'])
@@ -32,9 +47,6 @@ export const cancellationKindEnum = pgEnum('cancellation_kind', ['class', 'pt'])
 export const cancellationSourceEnum = pgEnum('cancellation_source', ['client', 'admin'])
 export const checkinMethodEnum = pgEnum('checkin_method', ['qr', 'code', 'manual'])
 
-// Ratings
-export const ratingKindEnum = pgEnum('rating_kind', ['class', 'workshop'])
-
 // Ledger
 export const auditActorTypeEnum = pgEnum('audit_actor_type', ['staff', 'system'])
 export const stripePaymentKindEnum = pgEnum('stripe_payment_kind', ['workshop', 'class_package', 'pt_package'])
@@ -42,13 +54,28 @@ export const stripePaymentStatusEnum = pgEnum('stripe_payment_status', ['pending
 
 // Content
 export const emailRecipientKindEnum = pgEnum('email_recipient_kind', ['client', 'staff'])
-export const emailStatusEnum = pgEnum('email_status', ['queued', 'sent', 'failed'])
+// Spec §4j uses `email_log` with a `status` column. The pgEnum is named `email_log_status` per
+// backend-architecture.md §4 enum list; the existing migration named the pg enum `email_status`
+// — we rename here to track the spec. The column reference is updated in `content.ts`.
+export const emailLogStatusEnum = pgEnum('email_log_status', ['queued', 'sent', 'failed'])
 
-// Inbox
+// Inbox — `pt_request` value REMOVED per §4l. PT triage moved to `/admin/pt-requests`.
 export const inboxItemTypeEnum = pgEnum('inbox_item_type', [
   'client_cancellation',
   'admin_cancel_class_pt',
   'admin_cancel_workshop',
-  'pt_request',
 ])
-export const inboxActionEnum = pgEnum('inbox_action', ['approved', 'declined'])
+// `inbox_action` enum is no longer used — action_taken/action_at/action_by_staff_id columns
+// were removed from inbox_items per §4l. Enum left undeclared (drop in migration SQL).
+
+// TS type aliases (handy for service layer)
+export type StaffRole = (typeof staffRoleEnum.enumValues)[number]
+export type StaffStatus = (typeof staffStatusEnum.enumValues)[number]
+export type ClientPackageKind = (typeof clientPackageKindEnum.enumValues)[number]
+export type ClassPackageKind = (typeof classPackageKindEnum.enumValues)[number]
+export type PromotionParent = (typeof promotionParentEnum.enumValues)[number]
+export type PromotionKind = (typeof promotionKindEnum.enumValues)[number]
+export type PtRequestStatus = (typeof ptRequestStatusEnum.enumValues)[number]
+export type BookingKind = (typeof bookingKindEnum.enumValues)[number]
+export type BookingState = (typeof bookingStateEnum.enumValues)[number]
+export type Lifecycle = (typeof lifecycleEnum.enumValues)[number]

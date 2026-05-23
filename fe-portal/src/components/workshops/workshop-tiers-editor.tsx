@@ -59,10 +59,6 @@ export function WorkshopTiersEditor({
         <p className="text-xs text-muted">No tiers yet. Add at least one.</p>
       )}
       {tiers.map((t) => {
-        const sumBase = t.dayIds.reduce(
-          (s, did) => s + (days.find((d) => d.id === did)?.basePriceSgd ?? 0),
-          0
-        );
         const ebInvalid =
           t.earlyBirdPriceSgd !== null && t.earlyBirdPriceSgd >= t.priceSgd;
         return (
@@ -138,14 +134,12 @@ export function WorkshopTiersEditor({
                 <Input
                   type="number"
                   min={0}
-                  value={t.priceSgd}
+                  placeholder="e.g. 180"
+                  value={t.priceSgd === 0 ? "" : t.priceSgd}
                   onChange={(e) =>
                     update(t.id, { priceSgd: Math.max(0, Number(e.target.value) || 0) })
                   }
                 />
-                <p className="text-[11px] text-muted">
-                  Sum of selected day base prices: S${sumBase}
-                </p>
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Early-bird price (optional)</Label>

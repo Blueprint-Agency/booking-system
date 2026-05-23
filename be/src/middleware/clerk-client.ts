@@ -3,7 +3,8 @@ import { verifyToken } from '@clerk/backend'
 import { db } from '../db'
 import { clients } from '../db/schema/identity'
 import { eq } from 'drizzle-orm'
-import { clerkStaffApp } from '../lib/clerk'
+import { getClerkClientApp } from '../lib/clerk'
+import { syncClientFromClerk } from '../services/auth/webhook-sync'
 
 export interface ClerkClientClaims {
   sub: string
@@ -17,6 +18,47 @@ declare module 'hono' {
     clientId: string
     clientRow: typeof clients.$inferSelect
   }
+}
+
+type ClientSyncOutcome = Awaited<ReturnType<typeof syncClientFromClerk>>
+
+const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? v : null)
+
+/**
+ * Provision from the verified session-token claims alone — no Clerk API call.
+ * Returns null when the token has no email claim, signalling the caller to fall
+ * back to the Backend API. Clerk claim keys follow the OIDC-style shortcodes the
+ * client app's session token already uses (email / email_verified / …).
+ */
+async function provisionFromClaims(payload: any): Promise<ClientSyncOutcome | null> {
+  const email = str(payload.email)
+  if (!email) return null
+  const phone = str(payload.phone_number)
+  return syncClientFromClerk({
+    id: payload.sub,
+    primary_email_address_id: 'token',
+    email_addresses: [{ id: 'token', email_address: email }],
+    primary_phone_number_id: phone ? 'token' : null,
+    phone_numbers: phone ? [{ id: 'token', phone_number: phone }] : [],
+    first_name: str(payload.first_name) ?? str(payload.given_name),
+    last_name: str(payload.last_name) ?? str(payload.family_name),
+    username: str(payload.username),
+  })
+}
+
+/** Fallback: fetch the full Clerk profile and provision from it. */
+async function provisionFromClerkApi(sub: string): Promise<ClientSyncOutcome> {
+  const clerkUser = await getClerkClientApp().users.getUser(sub)
+  return syncClientFromClerk({
+    id: clerkUser.id,
+    primary_email_address_id: clerkUser.primaryEmailAddressId,
+    email_addresses: clerkUser.emailAddresses.map(e => ({ id: e.id, email_address: e.emailAddress })),
+    primary_phone_number_id: clerkUser.primaryPhoneNumberId,
+    phone_numbers: clerkUser.phoneNumbers.map(p => ({ id: p.id, phone_number: p.phoneNumber })),
+    first_name: clerkUser.firstName,
+    last_name: clerkUser.lastName,
+    username: clerkUser.username,
+  })
 }
 
 export const clerkClientAuth: MiddlewareHandler = async (c, next) => {
@@ -45,41 +87,29 @@ export const clerkClientAuth: MiddlewareHandler = async (c, next) => {
 
   let [row] = await db.select().from(clients).where(eq(clients.clerkUserId, payload.sub)).limit(1)
 
-  // Auto-create clients row on first authenticated request (lazy registration).
-  // This covers dev testing and the case where the Clerk webhook fires before
-  // the full handleClerkEvent is implemented.
+  // Auto-provision: a self-registered member's clients row is normally inserted
+  // by the Clerk `user.created` webhook, but in prod that webhook may be
+  // unconfigured, lag the user's first authenticated request (webhooks are
+  // async), or only fire later — leaving every /me/* request to 404 until then.
+  // Members may self-register, so we provision the row here on first authed hit.
+  //
+  // We prefer the *verified token's own claims* (the client session token is
+  // customised with email/verification claims — see backend-architecture.md),
+  // which needs no Clerk API round-trip. We only call the Clerk Backend API as a
+  // fallback when the token doesn't carry the email. Both paths funnel through
+  // syncClientFromClerk so the insert + email-conflict guard stay in one place.
   if (!row) {
-    let name = 'Member'
-    let email = `${payload.sub}@unknown.local`
-    let phone = ''
-
     try {
-      // fe-client shares the staff Clerk app for now — use clerkStaffApp.
-      // When a dedicated client Clerk app exists, switch to clerkClientApp.
-      const clerkUser = await clerkStaffApp.users.getUser(payload.sub)
-      name = [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(' ') || 'Member'
-      email = clerkUser.emailAddresses[0]?.emailAddress ?? email
-      phone = clerkUser.phoneNumbers[0]?.phoneNumber ?? ''
-    } catch {
-      // Clerk lookup failed — proceed with fallback values
-    }
-
-    const [inserted] = await db.insert(clients).values({
-      clerkUserId: payload.sub,
-      name,
-      email,
-      phone,
-    }).onConflictDoNothing().returning()
-
-    if (!inserted) {
-      // Race condition: another request inserted first — re-fetch
-      const [refetched] = await db.select().from(clients).where(eq(clients.clerkUserId, payload.sub)).limit(1)
-      if (!refetched) return c.json({ error: 'client_not_found' }, 404)
-      row = refetched
-    } else {
-      row = inserted
+      const sync = (await provisionFromClaims(payload)) ?? (await provisionFromClerkApi(payload.sub))
+      if (sync && (sync.kind === 'created' || sync.kind === 'updated' || sync.kind === 'idempotent')) {
+        ;[row] = await db.select().from(clients).where(eq(clients.id, sync.clientId)).limit(1)
+      }
+    } catch (err) {
+      console.warn('[clerk-client] auto-provision failed:', err)
     }
   }
+
+  if (!row) return c.json({ error: 'client_not_found' }, 404)
 
   c.set('clerkClaims', claims)
   c.set('clientId', row.id)

@@ -1,6 +1,8 @@
 "use client";
-import { Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, Plus, Trash2 } from "lucide-react";
 import { Button, Label } from "@/components/ui";
+import { todayIso } from "@/lib/formatters";
+import { overlappingPromotionIds } from "@/lib/promotions";
 import type { Promotion, PromotionMode } from "@/types";
 
 const QUICK_PERCENTS = [10, 25, 50];
@@ -44,14 +46,30 @@ export function PromotionsEditor({
     return basePriceSgd;
   }
 
+  const conflicts = overlappingPromotionIds(value);
+
   return (
     <div className="space-y-3">
       <div className="text-xs font-semibold uppercase tracking-wider text-muted">Promotions</div>
       {value.length === 0 && (
         <div className="text-xs text-muted">No promotions.</div>
       )}
+      {conflicts.size > 0 && (
+        <div className="flex items-start gap-2 rounded-md border border-error/30 bg-error/10 px-3 py-2 text-xs text-error">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>
+            Two or more promotions overlap in time. Each day can have at most one active
+            promotion — adjust the highlighted date ranges so they don&apos;t overlap.
+          </span>
+        </div>
+      )}
       {value.map((p) => (
-        <div key={p.id} className="space-y-3 rounded-lg border border-border bg-paper p-3">
+        <div
+          key={p.id}
+          className={`space-y-3 rounded-lg border bg-paper p-3 ${
+            conflicts.has(p.id) ? "border-error/60" : "border-border"
+          }`}
+        >
           <div className="flex gap-2">
             <input
               value={p.label}
@@ -133,8 +151,15 @@ export function PromotionsEditor({
               <Label className="text-xs">Starts</Label>
               <input
                 type="date"
+                min={todayIso()}
                 value={p.startsAt.slice(0, 10)}
-                onChange={(e) => update(p.id, { startsAt: `${e.target.value}T00:00:00.000Z` })}
+                onChange={(e) => {
+                  const start = e.target.value;
+                  const patch: Partial<Promotion> = { startsAt: `${start}T00:00:00.000Z` };
+                  // Keep end on/after start.
+                  if (p.endsAt.slice(0, 10) < start) patch.endsAt = `${start}T23:59:59.000Z`;
+                  update(p.id, patch);
+                }}
                 className="w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
               />
             </div>
@@ -142,6 +167,7 @@ export function PromotionsEditor({
               <Label className="text-xs">Ends</Label>
               <input
                 type="date"
+                min={p.startsAt.slice(0, 10) || todayIso()}
                 value={p.endsAt.slice(0, 10)}
                 onChange={(e) => update(p.id, { endsAt: `${e.target.value}T23:59:59.000Z` })}
                 className="w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"

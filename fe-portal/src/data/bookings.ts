@@ -1,4 +1,4 @@
-import type { Booking, CancellationRecord, Rating } from "@/types";
+import type { Booking, CancellationRecord } from "@/types";
 
 // Mix of past attended/completed/no-show, upcoming confirmed, plus a cancelled example.
 // Codes match §11 format: YS-XXXXXX, case-insensitive.
@@ -313,32 +313,5 @@ export const cancellations: CancellationRecord[] = [
     wasWithinWindow: false,
     wasWithinCap: true,
     refundFired: false,
-  },
-];
-
-export const ratings: Rating[] = [
-  {
-    id: "rat-1",
-    bookingId: "bkg-1",
-    clientId: "cli-1",
-    kind: "class",
-    classId: "cls-1",
-    workshopId: null,
-    instructorId: "ins-priya",
-    stars: 5,
-    comment: "Priya's cueing is so precise. Best vinyasa class I've been to in a while.",
-    ratedAt: "2026-05-09T04:00:00.000Z",
-  },
-  {
-    id: "rat-2",
-    bookingId: "bkg-2",
-    clientId: "cli-2",
-    kind: "class",
-    classId: "cls-1",
-    workshopId: null,
-    instructorId: "ins-priya",
-    stars: 4,
-    comment: "Good flow, would have liked a bit more time in pigeon.",
-    ratedAt: "2026-05-09T08:30:00.000Z",
   },
 ];

@@ -20,12 +20,11 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   admin_cancel_class: ['client_name', 'class_name', 'date', 'credits_returned'],
   admin_cancel_pt: ['client_name', 'instructor_name', 'starts_at'],
   admin_cancel_workshop: ['client_name', 'workshop_name', 'refund_sgd'],
-  rating_prompt_class: ['client_name', 'class_name', 'rate_url'],
-  rating_prompt_workshop: ['client_name', 'workshop_name', 'rate_url'],
   package_purchase_confirmed: ['client_name', 'package_name', 'credits_or_sessions', 'expires_at', 'receipt_url'],
   credit_expiry_reminder: ['client_name', 'package_name', 'expires_at', 'credits_remaining'],
   instructor_invite: ['name', 'invite_url', 'expires_at'],
   admin_invite: ['name', 'invite_url', 'expires_at'],
+  client_invite: ['name', 'invitee_email', 'login_url'],
   checkin_nag: ['instructor_name', 'session_label', 'pending_count'],
   referral_credited: ['referrer_name', 'referee_name', 'credits_granted'],
 }

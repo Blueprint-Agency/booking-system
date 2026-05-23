@@ -7,7 +7,6 @@ import checkIn from './check-in'
 import ptRequests from './pt-requests'
 import availability from './availability'
 import profile from './profile'
-import ratings from './ratings'
 
 const app = new Hono()
   .use('*', requireRole('instructor', 'admin', 'superadmin'))
@@ -17,6 +16,5 @@ const app = new Hono()
   .route('/pt-requests', ptRequests)
   .route('/availability', availability)
   .route('/profile', profile)
-  .route('/ratings', ratings)
 
 export default app

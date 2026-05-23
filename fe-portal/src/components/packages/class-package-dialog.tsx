@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { Dialog, DialogFooter, Button, Input, Label } from "@/components/ui";
 import { PromotionsEditor } from "./promotions-editor";
+import { hasPromotionOverlap } from "@/lib/promotions";
 import type { ClassPackage, ClassPackageKind, Promotion } from "@/types";
 
 const KIND_LABELS: Record<ClassPackageKind, string> = {
@@ -27,9 +28,11 @@ export function ClassPackageDialog({
   const [durationDays, setDurationDays] = useState<string>(pkg?.durationDays?.toString() ?? "");
   const [priceSgd, setPriceSgd] = useState<string>(pkg?.priceSgd.toString() ?? "");
   const [promotions, setPromotions] = useState<Promotion[]>(pkg?.promotions ?? []);
+  const promosOverlap = hasPromotionOverlap(promotions);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (promosOverlap) return;
     onSave({
       id: pkg?.id ?? `cp-${Date.now().toString(36)}`,
       name: name.trim(),
@@ -203,7 +206,9 @@ export function ClassPackageDialog({
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit">{pkg ? "Save" : "Create"}</Button>
+          <Button type="submit" disabled={promosOverlap}>
+            {pkg ? "Save" : "Create"}
+          </Button>
         </DialogFooter>
       </form>
     </Dialog>

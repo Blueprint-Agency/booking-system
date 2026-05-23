@@ -1,4 +1,14 @@
-import { pgTable, uuid, text, timestamp, index, primaryKey } from 'drizzle-orm/pg-core'
+import {
+  pgTable,
+  uuid,
+  text,
+  timestamp,
+  integer,
+  index,
+  uniqueIndex,
+  primaryKey,
+  check,
+} from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { staffUsers } from './identity'
 
@@ -17,16 +27,51 @@ export const locations = pgTable(
   }),
 )
 
-export const classTypes = pgTable(
+// ============================================================================
+// rooms — physical spaces, location-scoped. Required when scheduling a class,
+// workshop day, or PT session. A room hosts one session at a time (clash check
+// lives in services/schedule/room-conflicts.ts).
+// ============================================================================
+
+export const rooms = pgTable(
+  'rooms',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    locationId: uuid('location_id')
+      .notNull()
+      .references(() => locations.id, { onDelete: 'restrict' }),
+    name: text('name').notNull(),
+    capacity: integer('capacity').notNull(),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+  },
+  table => ({
+    locationArchivedIdx: index('rooms_location_archived_idx').on(
+      table.locationId,
+      table.archivedAt,
+    ),
+    locationNameLowerUnique: uniqueIndex('rooms_location_name_lower_unique').on(
+      table.locationId,
+      sql`lower(${table.name})`,
+    ),
+    capacityPositive: check('rooms_capacity_positive', sql`${table.capacity} > 0`),
+  }),
+)
+
+export const classTypes: any = pgTable(
   'class_types',
   {
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     name: text('name').notNull(),
+    description: text('description'),
+    // Single-level hierarchy. Depth capped at 1 — enforced in service layer:
+    // a child (parent_id IS NOT NULL) cannot itself become a parent.
+    parentId: uuid('parent_id').references((): any => classTypes.id, { onDelete: 'restrict' }),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
   },
   table => ({
     archivedIdx: index('class_types_archived_idx').on(table.archivedAt),
     nameIdx: index('class_types_name_lower_idx').on(sql`lower(${table.name})`),
+    parentIdx: index('class_types_parent_idx').on(table.parentId),
   }),
 )
 

@@ -2,20 +2,17 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Avatar, Badge, Button, Dialog, DialogFooter } from "@/components/ui";
-import type { Booking, ClassInstance, Client, Rating } from "@/types";
-import { Star, X, QrCode, KeyRound } from "lucide-react";
-import { formatDateTime } from "@/lib/formatters";
+import type { Booking, ClassInstance, Client } from "@/types";
+import { X, QrCode, KeyRound } from "lucide-react";
 
 type Row = { booking: Booking; client: Client };
 
 export function ClassDetailClient({
   classInstance,
   roster: initialRoster,
-  ratings,
 }: {
   classInstance: ClassInstance;
   roster: Row[];
-  ratings: Rating[];
 }) {
   const router = useRouter();
   const [roster, setRoster] = useState<Row[]>(initialRoster);
@@ -49,15 +46,6 @@ export function ClassDetailClient({
         <Stat
           label="Check-in state"
           value={checkInState === "completed" ? "Completed" : `Pending — ${pendingCount} left`}
-        />
-        <Stat
-          label="Avg rating"
-          value={
-            ratings.length > 0
-              ? `${(ratings.reduce((s, r) => s + r.stars, 0) / ratings.length).toFixed(1)} / 5`
-              : "—"
-          }
-          sub={`${ratings.length} rating${ratings.length === 1 ? "" : "s"}`}
         />
       </div>
 
@@ -109,34 +97,6 @@ export function ClassDetailClient({
           </div>
         )}
       </section>
-
-      {ratings.length > 0 && (
-        <section className="rounded-xl border border-border bg-card shadow-soft">
-          <header className="border-b border-border px-5 py-3">
-            <h2 className="text-sm font-semibold text-ink">Ratings & comments</h2>
-            <p className="text-xs text-muted">Admin sees full attribution.</p>
-          </header>
-          <ul className="divide-y divide-border">
-            {ratings.map((r) => {
-              const c = roster.find((x) => x.client.id === r.clientId)?.client;
-              return (
-                <li key={r.id} className="px-5 py-3">
-                  <div className="mb-1 flex items-center gap-2">
-                    <span className="font-medium text-ink">{c?.name ?? "Unknown"}</span>
-                    <span className="flex items-center gap-0.5 text-warning">
-                      {Array.from({ length: r.stars }).map((_, i) => (
-                        <Star key={i} className="h-3.5 w-3.5 fill-current" />
-                      ))}
-                    </span>
-                    <span className="text-xs text-muted">{formatDateTime(r.ratedAt)}</span>
-                  </div>
-                  {r.comment && <p className="text-sm text-muted">{r.comment}</p>}
-                </li>
-              );
-            })}
-          </ul>
-        </section>
-      )}
 
       <Dialog
         open={confirmCancel}

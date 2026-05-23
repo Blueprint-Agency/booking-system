@@ -1,5 +1,5 @@
 import { renderTemplate } from './render'
-import { mailer, MAIL_FROM } from '../../lib/mailer'
+import { sendMail } from '../../lib/mailer'
 import { db } from '../../db'
 import { emailTemplates, emailLog } from '../../db/schema/content'
 import { eq } from 'drizzle-orm'
@@ -19,22 +19,37 @@ export type TemplateSlug =
   | 'admin_cancel_class'
   | 'admin_cancel_pt'
   | 'admin_cancel_workshop'
-  | 'rating_prompt_class'
-  | 'rating_prompt_workshop'
   | 'package_purchase_confirmed'
   | 'credit_expiry_reminder'
   | 'instructor_invite'
   | 'admin_invite'
+  | 'client_invite'
   | 'checkin_nag'
   | 'referral_credited'
 
+export interface TemplateRecipient {
+  email: string
+  /** staff_users.id or clients.id — nullable when we don't yet have a row. */
+  userId?: string | null
+  userKind: 'client' | 'staff'
+}
+
 export interface SendInput {
   slug: TemplateSlug
-  recipient: { email: string; userId?: string; userKind: 'client' | 'staff' }
+  recipient: TemplateRecipient
   variables: Record<string, string>
 }
 
-export async function enqueueEmail({ slug, recipient, variables }: SendInput): Promise<void> {
+/**
+ * Look up a template by slug, render `{{var}}` substitutions, send via SMTP,
+ * write one `email_log` row. SMTP failures LOG (status='failed') but do not
+ * throw — emails are best-effort in v1; we don't want to roll back business
+ * actions (e.g. an invitation) because of a transient SMTP hiccup.
+ *
+ * Throws only when the template row is missing (programming error).
+ */
+export async function sendTemplatedEmail(input: SendInput): Promise<void> {
+  const { slug, recipient, variables } = input
   const [tpl] = await db.select().from(emailTemplates).where(eq(emailTemplates.slug, slug)).limit(1)
   if (!tpl) throw new Error(`unknown_template:${slug}`)
 
@@ -56,26 +71,28 @@ export async function enqueueEmail({ slug, recipient, variables }: SendInput): P
   if (!logRow) throw new Error('email_log_insert_failed')
 
   try {
-    const info = await mailer.sendMail({
-      from: MAIL_FROM,
-      to: recipient.email,
-      subject,
-      html: body,
-    })
+    const result = await sendMail({ to: recipient.email, subject, html: body })
     await db
       .update(emailLog)
       .set({
         status: 'sent',
-        smtpMessageId: info.messageId,
-        smtpResponse: typeof info.response === 'string' ? info.response.split('\n').pop() : null,
+        smtpMessageId: result.messageId,
+        smtpResponse: result.response,
         sentAt: new Date(),
       })
       .where(eq(emailLog.id, logRow.id))
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error(`[email] send failed for template=${slug} to=${recipient.email}:`, msg)
     await db
       .update(emailLog)
-      .set({ status: 'failed', error: err instanceof Error ? err.message : String(err) })
+      .set({ status: 'failed', error: msg })
       .where(eq(emailLog.id, logRow.id))
-    throw err
+    // Swallow — v1 emails are best-effort; failures show in email_log.
   }
+}
+
+/** Back-compat shim. Older callers (none in v0 yet) used the throwing variant. */
+export async function enqueueEmail(input: SendInput): Promise<void> {
+  await sendTemplatedEmail(input)
 }

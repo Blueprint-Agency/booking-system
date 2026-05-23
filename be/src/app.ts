@@ -3,6 +3,7 @@ import { cors } from 'hono/cors'
 import { secureHeaders } from 'hono/secure-headers'
 import { rateLimiter } from 'hono-rate-limiter'
 import { sql } from 'drizzle-orm'
+import { env } from './env'
 import { db } from './db'
 import { errorBoundary } from './middleware/error'
 import { requestId } from './middleware/request-id'
@@ -12,26 +13,25 @@ import clientRoutes from './routes/client'
 import portalRoutes from './routes/portal'
 import webhookRoutes from './routes/webhooks'
 
-function allowedOrigins(): string[] {
-  if (process.env.ALLOWED_ORIGINS) {
-    return process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
-  }
-  return [
-    process.env.CLIENT_URL ?? 'http://localhost:3000',
-    process.env.PORTAL_ORIGIN ?? 'http://localhost:3001',
-  ]
-}
-
 const app = new Hono()
 
 app.use('*', requestId)
 app.use('*', errorBoundary)
 app.use('*', secureHeaders())
+
+// CORS — allow both fe-portal and (when configured) fe-client origins.
+// Credentials required because Clerk uses cookies on the auth handshake; the
+// frontend then carries the bearer JWT.
+const allowedOrigins = [env.PORTAL_ORIGIN, env.CLIENT_ORIGIN].filter(
+  (o): o is string => Boolean(o),
+)
 app.use(
   '*',
   cors({
-    origin: allowedOrigins(),
+    origin: origin => (allowedOrigins.includes(origin) ? origin : null),
     credentials: true,
+    allowMethods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+    allowHeaders: ['Authorization', 'Content-Type', 'X-Impersonate-Staff-Id', 'X-Request-Id'],
   }),
 )
 
@@ -43,7 +43,8 @@ const publicLimiter = rateLimiter({
 const authedLimiter = rateLimiter({
   windowMs: 60_000,
   limit: 300,
-  keyGenerator: c => c.get('clientId') ?? c.get('staffUserId') ?? c.req.header('x-forwarded-for') ?? 'global',
+  keyGenerator: c =>
+    c.get('clientId') ?? c.get('staffUserId') ?? c.req.header('x-forwarded-for') ?? 'global',
 })
 
 app.use('/api/v1/public/*', publicLimiter)
@@ -56,6 +57,9 @@ app.get('/', c =>
     status: 'running',
   }),
 )
+
+// Smoke-test endpoint per spec — Phase E verification step.
+app.get('/api/v1/healthz', c => c.json({ ok: true }))
 
 app.get('/health', async c => {
   try {
