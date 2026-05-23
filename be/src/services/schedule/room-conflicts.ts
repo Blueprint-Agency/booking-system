@@ -1,11 +1,17 @@
 import { and, eq, gt, lt, ne } from 'drizzle-orm'
 import { db } from '../../db'
 import { rooms } from '../../db/schema/catalog'
-import { classes, workshopDays, workshops, ptSessions } from '../../db/schema/schedule'
+import {
+  classes,
+  corporateSessions,
+  workshopDays,
+  workshops,
+  ptSessions,
+} from '../../db/schema/schedule'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 
 export interface RoomConflict {
-  kind: 'class' | 'workshop_day' | 'pt_session'
+  kind: 'class' | 'workshop_day' | 'pt_session' | 'corporate_session'
   id: string
   starts_at: string
   ends_at: string
@@ -43,6 +49,7 @@ export async function assertRoomAvailable(
     excludeClassId?: string
     excludeWorkshopDayId?: string
     excludePtSessionId?: string
+    excludeCorporateSessionId?: string
   } = {},
 ): Promise<void> {
   const conflicts: RoomConflict[] = []
@@ -105,6 +112,33 @@ export async function assertRoomAvailable(
   for (const h of ptHits) {
     conflicts.push({
       kind: 'pt_session',
+      id: h.id,
+      starts_at: h.startsAt.toISOString(),
+      ends_at: h.endsAt.toISOString(),
+    })
+  }
+
+  // ---- corporate sessions ----
+  const corpConds = [
+    eq(corporateSessions.roomId, roomId),
+    eq(corporateSessions.lifecycle, 'active'),
+    lt(corporateSessions.startsAt, endsAt),
+    gt(corporateSessions.endsAt, startsAt),
+  ]
+  if (exclude.excludeCorporateSessionId) {
+    corpConds.push(ne(corporateSessions.id, exclude.excludeCorporateSessionId))
+  }
+  const corpHits = await db
+    .select({
+      id: corporateSessions.id,
+      startsAt: corporateSessions.startsAt,
+      endsAt: corporateSessions.endsAt,
+    })
+    .from(corporateSessions)
+    .where(and(...corpConds))
+  for (const h of corpHits) {
+    conflicts.push({
+      kind: 'corporate_session',
       id: h.id,
       starts_at: h.startsAt.toISOString(),
       ends_at: h.endsAt.toISOString(),
