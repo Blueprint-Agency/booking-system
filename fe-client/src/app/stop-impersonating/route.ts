@@ -1,4 +1,4 @@
-// fe-client/src/app/__stop-impersonating/route.ts
+// fe-client/src/app/stop-impersonating/route.ts
 import { auth } from "@clerk/nextjs/server";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";

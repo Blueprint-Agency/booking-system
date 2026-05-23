@@ -49,7 +49,7 @@ export async function mintClientImpersonation(
     superadminStaffId: input.superadminStaffId,
   })
 
-  const url = new URL('/__impersonate', base)
+  const url = new URL('/impersonate', base)
   url.searchParams.set('ticket', ticketRes.token)
   url.searchParams.set('grant', grant)
 

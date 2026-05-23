@@ -1,4 +1,4 @@
-// fe-client/src/app/__impersonate/route.ts
+// fe-client/src/app/impersonate/route.ts
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 

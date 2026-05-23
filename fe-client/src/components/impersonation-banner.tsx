@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 /**
  * Server component banner. Renders nothing when the impersonation cookie is
  * absent. When present, pins a red bar to the top of the viewport with a
- * "Stop impersonating" action that posts to /__stop-impersonating.
+ * "Stop impersonating" action that posts to /stop-impersonating.
  *
  * The cookie itself is httpOnly (and opaque to us — we only check presence).
  * The actual client name surfaces from the page-level header data that's
@@ -18,7 +18,7 @@ export async function ImpersonationBanner() {
   return (
     <div className="fixed top-0 left-0 right-0 z-50 flex h-10 items-center justify-center gap-3 bg-red-600 text-sm text-white shadow">
       <span>You are impersonating a client.</span>
-      <form action="/__stop-impersonating" method="post">
+      <form action="/stop-impersonating" method="post">
         <button
           type="submit"
           className="rounded border border-white/40 px-2 py-0.5 text-xs font-medium hover:bg-white/10"
