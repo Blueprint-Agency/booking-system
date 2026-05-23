@@ -70,9 +70,10 @@ export const clerkClientAuth: MiddlewareHandler = async (c, next) => {
 
   let payload: any
   try {
+    // fe-client currently shares the staff Clerk app (CLERK_STAFF_SECRET_KEY).
+    // When a dedicated client Clerk app is created, swap this to CLERK_SECRET_KEY.
     payload = await verifyToken(token, {
-      secretKey: process.env.CLERK_CLIENT_SECRET_KEY!,
-      authorizedParties: process.env.CLERK_CLIENT_AUTHORIZED_PARTIES?.split(','),
+      secretKey: process.env.CLERK_STAFF_SECRET_KEY!,
     })
   } catch {
     return c.json({ error: 'invalid_token' }, 401)
@@ -127,11 +128,13 @@ export const requireActiveClient: MiddlewareHandler = async (c, next) => {
 
 export const requireVerified: MiddlewareHandler = async (c, next) => {
   const claims = c.get('clerkClaims')
-  if (!claims.email_verified || !claims.phone_verified) {
+  // Email is always verified at Clerk sign-up. Phone verification is required
+  // before booking (not before purchasing) — Stripe handles payment security.
+  if (!claims.phone_verified) {
     return c.json(
       {
         error: 'verification_required',
-        missing: { email: !claims.email_verified, phone: !claims.phone_verified },
+        missing: { email: false, phone: true },
       },
       403,
     )

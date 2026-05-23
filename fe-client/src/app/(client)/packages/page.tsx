@@ -21,7 +21,7 @@ import {
 type MainTab = "classCredits" | "pt1on1" | "pt2on1";
 type ClassSubTab = "bundle" | "unlimited" | "trial";
 
-// ── Page ──────────────────────────────────────────────────────────────────────
+// ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function PackagesPage() {
   const { data, loading, error, refresh } = usePackagesCatalog();

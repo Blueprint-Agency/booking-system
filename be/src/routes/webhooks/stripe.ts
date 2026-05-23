@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { stripe } from '../../lib/stripe'
+import { handleStripeEvent } from '../../services/billing/webhook-handler'
 
 const app = new Hono().post('/stripe', async c => {
   const secret = process.env.STRIPE_WEBHOOK_SECRET
@@ -11,15 +12,16 @@ const app = new Hono().post('/stripe', async c => {
   let event: any
   try {
     event = stripe.webhooks.constructEvent(body, sig, secret)
-  } catch (err) {
+  } catch {
     return c.json({ error: 'invalid_webhook_signature' }, 400)
   }
 
-  // TODO: services/billing/webhook-handler.ts
-  // payment_intent.succeeded — grant client_packages or insert workshop booking;
-  //   set stripe_payments.status='succeeded', receipt_url; trigger referral conversion check
-  // charge.refunded — set stripe_payments.status='refunded', refunded_at
-  void event
+  try {
+    await handleStripeEvent(event)
+  } catch (err) {
+    console.error('[stripe-webhook] handler error', err)
+    return c.json({ error: 'handler_failed' }, 500)
+  }
 
   return c.json({ received: true })
 })
