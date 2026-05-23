@@ -1,12 +1,13 @@
 "use client";
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Loader2, Save } from "lucide-react";
-import { Badge, Button, Label } from "@/components/ui";
+import { ArrowLeft, Ban, Loader2, Save } from "lucide-react";
+import { Badge, Button, Input, Label } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { computeEventState } from "@/lib/event-state";
 import { formatDate, formatTime, formatSgd } from "@/lib/formatters";
+import { corporateErrorMessage } from "@/lib/corporate-errors";
 import type { EventState } from "@/types";
 
 interface NamedRef {
@@ -96,6 +97,7 @@ export default function SessionDetailPage({
   if (type === "workshop") return <WorkshopDetail id={id} />;
   if (type === "class") return <ClassDetail id={id} />;
   if (type === "pt") return <PtDetail id={id} />;
+  if (type === "corporate") return <CorporateDetail id={id} />;
   return <ErrorDetail kind="Unknown" message="Unknown session type." />;
 }
 
@@ -545,6 +547,466 @@ function WorkshopDetail({ id }: { id: string }) {
       </section>
     </DetailFrame>
   );
+}
+
+/* ------------------------------- Corporate ------------------------------- */
+
+interface ApiCorporateSession {
+  id: string;
+  corporate_package_id: string;
+  client_name: string;
+  main_instructor_id: string;
+  supporting_instructor_ids: string[];
+  location_id: string;
+  room_id: string;
+  starts_at: string;
+  ends_at: string;
+  lifecycle: "active" | "cancelled";
+  cancelled_at: string | null;
+}
+
+interface ApiCorporatePackageBrief {
+  id: string;
+  name: string;
+  status: "active" | "archived";
+}
+
+interface ApiRoom {
+  id: string;
+  location_id: string;
+  name: string;
+  archived_at: string | null;
+}
+
+function CorporateDetail({ id }: { id: string }) {
+  const { api, accessibleLocations } = useWorkspace();
+  const [data, setData] = useState<ApiCorporateSession | null>(null);
+  const [pkg, setPkg] = useState<ApiCorporatePackageBrief | null>(null);
+  const [instructors, setInstructors] = useState<ApiInstructor[]>([]);
+  const [rooms, setRooms] = useState<ApiRoom[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!api) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const [d, ins, rm] = await Promise.all([
+        api.get<{ corporate_session: ApiCorporateSession }>(
+          `/portal/admin/corporate-sessions/${id}`,
+        ),
+        api.get<{ instructors: Array<ApiInstructor & { archived_at?: string | null }> }>(
+          "/portal/admin/instructors",
+        ),
+        api.get<{ rooms: ApiRoom[] }>("/portal/admin/rooms"),
+      ]);
+      setData(d.corporate_session);
+      setInstructors(ins.instructors.filter((i) => !i.archived_at));
+      setRooms(rm.rooms);
+      try {
+        const p = await api.get<{
+          corporatePackage: ApiCorporatePackageBrief;
+        }>(
+          `/portal/admin/corporate-packages/${d.corporate_session.corporate_package_id}`,
+        );
+        setPkg(p.corporatePackage);
+      } catch {
+        setPkg(null);
+      }
+    } catch (err) {
+      setError(detailError(err, "Corporate session not found."));
+    } finally {
+      setLoading(false);
+    }
+  }, [api, id]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  if (loading) return <LoadingDetail label="corporate session" />;
+  if (error || !data)
+    return (
+      <ErrorDetail kind="Corporate session" message={error ?? "Corporate session not found."} />
+    );
+
+  const state = computeEventState({
+    startsAt: data.starts_at,
+    endsAt: data.ends_at,
+    lifecycle: data.lifecycle,
+  });
+  const mainName =
+    instructors.find((i) => i.id === data.main_instructor_id)?.name ?? "Unknown";
+  const locationName =
+    accessibleLocations.find((l) => l.id === data.location_id)?.name ?? "—";
+  const roomName = rooms.find((r) => r.id === data.room_id)?.name ?? "—";
+  const meta = [
+    formatDate(data.starts_at),
+    `${formatTime(data.starts_at)} – ${formatTime(data.ends_at)}`,
+    mainName,
+    locationName,
+    roomName,
+  ].filter((x): x is string => Boolean(x));
+
+  return (
+    <DetailFrame>
+      <DetailHeader
+        badge={<Badge tone="neutral">Corporate</Badge>}
+        state={state}
+        title={pkg?.name ?? "Corporate session"}
+        meta={meta}
+        action={
+          pkg && (
+            <Link
+              href={`/admin/packages/corporate/${pkg.id}/edit`}
+              className="rounded-md border border-border bg-card px-3 py-1 text-xs text-muted hover:border-accent/40 hover:text-ink"
+            >
+              View package
+            </Link>
+          )
+        }
+      />
+      <div className="grid gap-3 sm:grid-cols-3">
+        <Stat label="Client" value={data.client_name} />
+        <Stat
+          label="Supporting instructors"
+          value={
+            data.supporting_instructor_ids.length === 0
+              ? "—"
+              : String(data.supporting_instructor_ids.length)
+          }
+          sub={
+            data.supporting_instructor_ids.length > 0
+              ? data.supporting_instructor_ids
+                  .map((sid) => instructors.find((i) => i.id === sid)?.name ?? "Unknown")
+                  .join(", ")
+              : undefined
+          }
+        />
+        <Stat label="Room" value={roomName} sub={locationName} />
+      </div>
+      <CorporateEditor
+        session={data}
+        instructors={instructors}
+        rooms={rooms}
+        onSaved={load}
+      />
+    </DetailFrame>
+  );
+}
+
+function CorporateEditor({
+  session,
+  instructors,
+  rooms,
+  onSaved,
+}: {
+  session: ApiCorporateSession;
+  instructors: ApiInstructor[];
+  rooms: ApiRoom[];
+  onSaved: () => void | Promise<void>;
+}) {
+  const { api, accessibleLocations } = useWorkspace();
+  const cancelled = session.lifecycle === "cancelled";
+
+  const initialDate = session.starts_at.slice(0, 10);
+  const initialStart = toHHMM(session.starts_at);
+  const initialEnd = toHHMM(session.ends_at);
+
+  const [clientName, setClientName] = useState(session.client_name);
+  const [mainInstructorId, setMainInstructorId] = useState(session.main_instructor_id);
+  const [supportingInstructorIds, setSupportingInstructorIds] = useState<string[]>(
+    session.supporting_instructor_ids,
+  );
+  const [locationId, setLocationId] = useState(session.location_id);
+  const [roomId, setRoomId] = useState(session.room_id);
+  const [date, setDate] = useState(initialDate);
+  const [startTime, setStartTime] = useState(initialStart);
+  const [endTime, setEndTime] = useState(initialEnd);
+  const [saving, setSaving] = useState(false);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    setClientName(session.client_name);
+    setMainInstructorId(session.main_instructor_id);
+    setSupportingInstructorIds(session.supporting_instructor_ids);
+    setLocationId(session.location_id);
+    setRoomId(session.room_id);
+    setDate(session.starts_at.slice(0, 10));
+    setStartTime(toHHMM(session.starts_at));
+    setEndTime(toHHMM(session.ends_at));
+  }, [session]);
+
+  useEffect(() => {
+    if (!mainInstructorId) return;
+    setSupportingInstructorIds((prev) => prev.filter((sid) => sid !== mainInstructorId));
+  }, [mainInstructorId]);
+
+  const activeLocations = useMemo(
+    () => accessibleLocations.filter((l) => !l.archivedAt),
+    [accessibleLocations],
+  );
+  const roomsForLocation = useMemo(
+    () => rooms.filter((r) => !r.archived_at && r.location_id === locationId),
+    [rooms, locationId],
+  );
+  const availableForSupporting = useMemo(
+    () =>
+      instructors.filter(
+        (i) => i.id !== mainInstructorId && !supportingInstructorIds.includes(i.id),
+      ),
+    [instructors, mainInstructorId, supportingInstructorIds],
+  );
+
+  useEffect(() => {
+    if (roomId && !roomsForLocation.some((r) => r.id === roomId)) setRoomId("");
+  }, [roomId, roomsForLocation]);
+
+  async function handleSave() {
+    if (!api) return;
+    if (!clientName.trim() || !mainInstructorId || !locationId || !roomId) return;
+    if (!date || !startTime || !endTime) return;
+    const startsAt = new Date(`${date}T${startTime}:00`);
+    const endsAt = new Date(`${date}T${endTime}:00`);
+    if (endsAt <= startsAt) {
+      setErr("End time must be after start time.");
+      return;
+    }
+    setSaving(true);
+    setErr(null);
+    try {
+      await api.patch(`/portal/admin/corporate-sessions/${session.id}`, {
+        client_name: clientName.trim(),
+        main_instructor_id: mainInstructorId,
+        supporting_instructor_ids: supportingInstructorIds,
+        location_id: locationId,
+        room_id: roomId,
+        starts_at: startsAt.toISOString(),
+        ends_at: endsAt.toISOString(),
+      });
+      await onSaved();
+    } catch (e) {
+      setErr(corporateErrorMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleCancel() {
+    if (!api) return;
+    if (!confirm("Cancel this corporate session?")) return;
+    setCancelBusy(true);
+    setErr(null);
+    try {
+      await api.post(`/portal/admin/corporate-sessions/${session.id}/cancel`);
+      await onSaved();
+    } catch (e) {
+      setErr(corporateErrorMessage(e));
+    } finally {
+      setCancelBusy(false);
+    }
+  }
+
+  return (
+    <section className="mt-6 rounded-xl border border-border bg-card p-5 shadow-soft">
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-ink">Session</h2>
+        {!cancelled && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={handleCancel}
+            disabled={cancelBusy || saving}
+            className="text-error hover:text-error"
+          >
+            {cancelBusy ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Ban className="h-4 w-4" />
+            )}
+            Cancel session
+          </Button>
+        )}
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-1.5 sm:col-span-2">
+          <Label htmlFor="cor-client">Client name</Label>
+          <Input
+            id="cor-client"
+            value={clientName}
+            disabled={cancelled || saving}
+            onChange={(e) => setClientName(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="cor-main">Main instructor</Label>
+          <select
+            id="cor-main"
+            value={mainInstructorId}
+            disabled={cancelled || saving}
+            onChange={(e) => setMainInstructorId(e.target.value)}
+            className="flex h-10 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+          >
+            <option value="">Select…</option>
+            {instructors.map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Supporting instructors</Label>
+          <div className="flex flex-wrap items-center gap-2">
+            {supportingInstructorIds.map((sid) => {
+              const name = instructors.find((i) => i.id === sid)?.name ?? "Unknown";
+              return (
+                <span
+                  key={sid}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 px-2.5 py-1 text-xs text-ink"
+                >
+                  {name}
+                  <button
+                    type="button"
+                    disabled={cancelled || saving}
+                    onClick={() =>
+                      setSupportingInstructorIds((prev) =>
+                        prev.filter((x) => x !== sid),
+                      )
+                    }
+                    className="text-muted hover:text-ink disabled:opacity-50"
+                    aria-label={`Remove ${name}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              );
+            })}
+            {!cancelled && availableForSupporting.length > 0 && (
+              <select
+                value=""
+                disabled={saving}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v) setSupportingInstructorIds((prev) => [...prev, v]);
+                }}
+                className="flex h-9 rounded-lg border border-border bg-card px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+              >
+                <option value="">
+                  {supportingInstructorIds.length === 0
+                    ? "+ Add supporting instructor"
+                    : "+ Add another"}
+                </option>
+                {availableForSupporting.map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            {supportingInstructorIds.length === 0 && availableForSupporting.length === 0 && (
+              <span className="text-xs text-muted">No additional instructors available.</span>
+            )}
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="cor-loc">Location</Label>
+          <select
+            id="cor-loc"
+            value={locationId}
+            disabled={cancelled || saving}
+            onChange={(e) => setLocationId(e.target.value)}
+            className="flex h-10 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+          >
+            <option value="">Select…</option>
+            {activeLocations.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="cor-room">Room</Label>
+          <select
+            id="cor-room"
+            value={roomId}
+            disabled={cancelled || saving || !locationId}
+            onChange={(e) => setRoomId(e.target.value)}
+            className="flex h-10 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+          >
+            <option value="">{locationId ? "Select…" : "Pick a location first"}</option>
+            {roomsForLocation.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="cor-d">Date</Label>
+          <Input
+            id="cor-d"
+            type="date"
+            value={date}
+            disabled={cancelled || saving}
+            onChange={(e) => setDate(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="cor-s">Start time</Label>
+          <Input
+            id="cor-s"
+            type="time"
+            value={startTime}
+            disabled={cancelled || saving}
+            onChange={(e) => setStartTime(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="cor-e">End time</Label>
+          <Input
+            id="cor-e"
+            type="time"
+            value={endTime}
+            disabled={cancelled || saving}
+            onChange={(e) => setEndTime(e.target.value)}
+          />
+        </div>
+      </div>
+      {err && (
+        <p className="mt-3 rounded-md border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
+          {err}
+        </p>
+      )}
+      {!cancelled && (
+        <div className="mt-4 flex justify-end">
+          <Button
+            size="sm"
+            onClick={handleSave}
+            disabled={saving || !mainInstructorId || !locationId || !roomId}
+          >
+            {saving ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+            Save changes
+          </Button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function toHHMM(iso: string): string {
+  const d = new Date(iso);
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
 }
 
 /* ------------------------------- Shared ------------------------------- */
