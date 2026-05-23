@@ -42,7 +42,8 @@ export default function NewClassPage() {
   const [catalogError, setCatalogError] = useState<string | null>(null);
 
   const [classTypeId, setClassTypeId] = useState("");
-  const [instructorId, setInstructorId] = useState("");
+  const [mainInstructorId, setMainInstructorId] = useState("");
+  const [supportingInstructorIds, setSupportingInstructorIds] = useState<string[]>([]);
   const [locationId, setLocationId] = useState(activeLocationId ?? "");
   const [roomId, setRoomId] = useState("");
   const [date, setDate] = useState("");
@@ -100,6 +101,23 @@ export default function NewClassPage() {
     () => rooms.filter((r) => !r.archived_at && r.location_id === locationId),
     [rooms, locationId],
   );
+  const activeInstructors = useMemo(
+    () => instructors.filter((i) => !i.archived_at),
+    [instructors],
+  );
+  const availableForSupporting = useMemo(
+    () =>
+      activeInstructors.filter(
+        (i) => i.id !== mainInstructorId && !supportingInstructorIds.includes(i.id),
+      ),
+    [activeInstructors, mainInstructorId, supportingInstructorIds],
+  );
+
+  // If the main instructor changes and overlaps a supporting one, drop the dup.
+  useEffect(() => {
+    if (!mainInstructorId) return;
+    setSupportingInstructorIds((prev) => prev.filter((id) => id !== mainInstructorId));
+  }, [mainInstructorId]);
 
   // Clear the selected room if it no longer belongs to the chosen location.
   useEffect(() => {
@@ -109,7 +127,7 @@ export default function NewClassPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!api) return;
-    if (!classTypeId || !instructorId || !locationId || !roomId) return;
+    if (!classTypeId || !mainInstructorId || !locationId || !roomId) return;
     if (!date || !startTime || !endTime) return;
     void difficulty;
 
@@ -125,7 +143,8 @@ export default function NewClassPage() {
     try {
       await api.post("/portal/admin/schedule/classes", {
         class_type_id: classTypeId,
-        instructor_id: instructorId,
+        main_instructor_id: mainInstructorId,
+        supporting_instructor_ids: supportingInstructorIds,
         location_id: locationId,
         room_id: roomId,
         starts_at: startsAt.toISOString(),
@@ -196,14 +215,74 @@ export default function NewClassPage() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="ins">Instructor</Label>
+              <Label htmlFor="ins">Main instructor</Label>
               <SelectField
                 id="ins"
-                value={instructorId}
-                onChange={setInstructorId}
+                value={mainInstructorId}
+                onChange={setMainInstructorId}
                 placeholder="Select…"
-                options={instructors.map((i) => ({ val: i.id, label: i.name }))}
+                options={activeInstructors.map((i) => ({ val: i.id, label: i.name }))}
               />
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label>Supporting instructors</Label>
+              <div className="flex flex-wrap items-center gap-2">
+                {supportingInstructorIds.map((sid) => {
+                  const name =
+                    activeInstructors.find((i) => i.id === sid)?.name ?? "Unknown";
+                  return (
+                    <span
+                      key={sid}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 px-2.5 py-1 text-xs text-ink"
+                    >
+                      {name}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSupportingInstructorIds((prev) =>
+                            prev.filter((x) => x !== sid),
+                          )
+                        }
+                        className="text-muted hover:text-ink"
+                        aria-label={`Remove ${name}`}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  );
+                })}
+                {availableForSupporting.length > 0 && (
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (v) setSupportingInstructorIds((prev) => [...prev, v]);
+                    }}
+                    className="flex h-9 rounded-lg border border-border bg-card px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                  >
+                    <option value="">
+                      {supportingInstructorIds.length === 0
+                        ? "+ Add supporting instructor"
+                        : "+ Add another"}
+                    </option>
+                    {availableForSupporting.map((i) => (
+                      <option key={i.id} value={i.id}>
+                        {i.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                {supportingInstructorIds.length === 0 &&
+                  availableForSupporting.length === 0 && (
+                    <span className="text-xs text-muted">
+                      No additional instructors available.
+                    </span>
+                  )}
+              </div>
+              <p className="text-xs text-muted">
+                Optional — supporting instructors appear on the schedule but don&apos;t
+                count toward solo capacity rules.
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="loc">Location</Label>
