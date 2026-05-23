@@ -20,6 +20,9 @@ export const promotionStatusEnum = pgEnum('promotion_status', ['active', 'archiv
 
 // Schedule
 export const lifecycleEnum = pgEnum('lifecycle', ['active', 'cancelled'])
+// Workshop / class / corporate session instructor role (§4.3)
+export const workshopInstructorRoleEnum = pgEnum('workshop_instructor_role', ['main', 'supporting'])
+export type WorkshopInstructorRole = (typeof workshopInstructorRoleEnum.enumValues)[number]
 // `pt_session_status` enum is REMOVED — PT request states now live on pt_requests via pt_request_status.
 export const ptRequestStatusEnum = pgEnum('pt_request_status', [
   'pending',
