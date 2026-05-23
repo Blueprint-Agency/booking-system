@@ -8,6 +8,7 @@ import instructors from './instructors'
 import policy from './policy'
 import classPackages from './class-packages'
 import ptPackages from './pt-packages'
+import corporatePackages from './corporate-packages'
 import workshops from './workshops'
 import schedule from './schedule'
 import availability from './availability'
@@ -39,6 +40,7 @@ const app = new Hono()
   .route('/policy', policy)
   .route('/class-packages', classPackages)
   .route('/pt-packages', ptPackages)
+  .route('/corporate-packages', corporatePackages)
   .route('/workshops', workshops)
   .route('/schedule', schedule)
   .route('/', availability)
