@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Search, Plus, Loader2 } from "lucide-react";
+import { Search, Plus, Loader2, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import {
   Avatar,
@@ -30,7 +30,8 @@ interface ApiClient {
 }
 
 export default function ClientsPage() {
-  const { api } = useWorkspace();
+  const { api, currentStaff } = useWorkspace();
+  const isSuperadmin = currentStaff?.role === "superadmin";
   const [clients, setClients] = useState<ApiClient[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +56,26 @@ export default function ClientsPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function accessAsClient(clientId: string) {
+    if (!api) return;
+    try {
+      const res = await api.post<{
+        ticket: string;
+        grant: string;
+        fe_client_url: string;
+      }>(`/portal/admin/clients/${clientId}/impersonate`, {});
+      window.open(res.fe_client_url, "_blank", "noopener");
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 422) {
+        toast.error("This client hasn't activated their account yet.");
+      } else if (err instanceof ApiError && err.status === 403) {
+        toast.error("Only superadmins can impersonate.");
+      } else {
+        toast.error("Failed to start impersonation.");
+      }
+    }
+  }
 
   const filtered = useMemo(
     () =>
@@ -152,6 +173,20 @@ export default function ClientsPage() {
                         <span className="ml-auto">{formatDate(c.joined_at)}</span>
                       </div>
                     </div>
+                    {isSuperadmin && c.status === "active" && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          void accessAsClient(c.id);
+                        }}
+                        className="ml-auto"
+                      >
+                        <KeyRound className="h-3.5 w-3.5" /> Access
+                      </Button>
+                    )}
                   </Link>
                 </li>
               ))}
@@ -166,6 +201,7 @@ export default function ClientsPage() {
                     <th className="px-5 py-3 font-medium">Phone</th>
                     <th className="px-5 py-3 font-medium">Joined</th>
                     <th className="px-5 py-3 font-medium">Status</th>
+                    {isSuperadmin && <th className="px-5 py-3 font-medium" />}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -192,6 +228,24 @@ export default function ClientsPage() {
                           <Badge tone="error">Suspended</Badge>
                         )}
                       </td>
+                      {isSuperadmin && (
+                        <td className="px-5 py-3 text-right">
+                          {c.status === "active" && (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                void accessAsClient(c.id);
+                              }}
+                              className="ml-auto"
+                            >
+                              <KeyRound className="h-3.5 w-3.5" /> Access
+                            </Button>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
