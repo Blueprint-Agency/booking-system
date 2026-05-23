@@ -97,10 +97,10 @@ export function ClientPackagesProvider({ children }: { children: ReactNode }) {
   }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const value: ClientPackagesValue = {
-    classCredits: data?.classCredits.total ?? 0,
-    isUnlimited: data?.classCredits.isUnlimited ?? false,
-    unlimitedExpiresAt: data?.classCredits.unlimitedExpiresAt ?? null,
-    ptSessions: data?.ptSessions.total ?? 0,
+    classCredits: data?.classCredits?.total ?? 0,
+    isUnlimited: data?.classCredits?.isUnlimited ?? false,
+    unlimitedExpiresAt: data?.classCredits?.unlimitedExpiresAt ?? null,
+    ptSessions: data?.ptSessions?.total ?? 0,
     packages: data?.packages ?? [],
     loading,
     refetch: load,

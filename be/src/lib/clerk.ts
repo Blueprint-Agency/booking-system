@@ -38,3 +38,20 @@ export async function verifyStaffToken(token: string): Promise<{ sub: string; [k
   })
   return claims as { sub: string; [k: string]: unknown }
 }
+
+/**
+ * Verifies a client (member-facing) Clerk JWT. Mirrors verifyStaffToken but
+ * routes through the dedicated CLIENT Clerk app — cross-app tokens MUST be
+ * rejected per spec §6a. Throws if CLERK_CLIENT_SECRET_KEY is unset (caller
+ * should map to 500) or if signature/issuer/expiry checks fail (caller maps
+ * to 401).
+ */
+export async function verifyClientToken(token: string): Promise<{ sub: string; [k: string]: unknown }> {
+  if (!env.CLERK_CLIENT_SECRET_KEY) {
+    throw new Error('CLERK_CLIENT_SECRET_KEY is not set — client Clerk app not configured')
+  }
+  const claims = await verifyToken(token, {
+    secretKey: env.CLERK_CLIENT_SECRET_KEY,
+  })
+  return claims as { sub: string; [k: string]: unknown }
+}

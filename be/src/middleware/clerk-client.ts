@@ -1,9 +1,8 @@
 import type { MiddlewareHandler } from 'hono'
-import { verifyToken } from '@clerk/backend'
 import { db } from '../db'
 import { clients } from '../db/schema/identity'
 import { eq } from 'drizzle-orm'
-import { getClerkClientApp } from '../lib/clerk'
+import { getClerkClientApp, verifyClientToken } from '../lib/clerk'
 import { syncClientFromClerk } from '../services/auth/webhook-sync'
 
 export interface ClerkClientClaims {
@@ -70,11 +69,10 @@ export const clerkClientAuth: MiddlewareHandler = async (c, next) => {
 
   let payload: any
   try {
-    // fe-client currently shares the staff Clerk app (CLERK_STAFF_SECRET_KEY).
-    // When a dedicated client Clerk app is created, swap this to CLERK_SECRET_KEY.
-    payload = await verifyToken(token, {
-      secretKey: process.env.CLERK_STAFF_SECRET_KEY!,
-    })
+    // fe-client is wired to the dedicated CLIENT Clerk app (separate publishable
+    // + secret per spec §6a). Cross-app tokens — including staff tokens — must
+    // be rejected: verifyClientToken uses CLERK_CLIENT_SECRET_KEY's JWKS.
+    payload = await verifyClientToken(token)
   } catch {
     return c.json({ error: 'invalid_token' }, 401)
   }
