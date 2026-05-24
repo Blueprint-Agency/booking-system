@@ -37,9 +37,11 @@ export const classPackages = pgTable(
     priceSgd: numeric('price_sgd', { precision: 10, scale: 2 }).notNull(),
     status: packageStatusEnum('status').notNull().default('active'),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   table => ({
     statusKindIdx: index('class_packages_status_kind_idx').on(table.status, table.kind),
+    deletedIdx: index('class_packages_deleted_idx').on(table.deletedAt),
     // Kind-specific column requirements per §4d:
     //  - credit_bundle → credits NOT NULL, validity_days NOT NULL, duration_days NULL
     //  - unlimited     → credits NULL, validity_days NULL, duration_days NOT NULL
@@ -76,6 +78,7 @@ export const ptPackages = pgTable('pt_packages', {
   priceSgd: numeric('price_sgd', { precision: 10, scale: 2 }).notNull(),
   status: packageStatusEnum('status').notNull().default('active'),
   archivedAt: timestamp('archived_at', { withTimezone: true }),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
 })
 
 // ---------- promotions (§4d) — polymorphic ----------
@@ -193,6 +196,7 @@ export const corporatePackages = pgTable(
     priceSgd: numeric('price_sgd', { precision: 10, scale: 2 }).notNull(),
     status: packageStatusEnum('status').notNull().default('active'),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdByStaffId: uuid('created_by_staff_id')
       .notNull()
@@ -200,6 +204,7 @@ export const corporatePackages = pgTable(
   },
   table => ({
     statusIdx: index('corporate_packages_status_idx').on(table.status),
+    deletedIdx: index('corporate_packages_deleted_idx').on(table.deletedAt),
     pricePositive: check('corporate_packages_price_positive', sql`${table.priceSgd} >= 0`),
   }),
 )

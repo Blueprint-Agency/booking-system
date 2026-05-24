@@ -29,6 +29,12 @@ export const clients = pgTable(
     dob: date('dob'),
     status: clientStatusEnum('status').notNull().default('active'),
     suspendedAt: timestamp('suspended_at', { withTimezone: true }),
+    // Soft-delete (superadmin-only). When set, the row is filtered out of every
+    // admin/client read path; Clerk user is banned in parallel so the member
+    // can't log in. Restore clears both. Hard erase (GDPR) is a separate Purge
+    // action that anonymises PII — not implemented in this slice.
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+    deletedByStaffId: uuid('deleted_by_staff_id'),
     referredByClientId: uuid('referred_by_client_id'),
     referralCreditGrantedAt: timestamp('referral_credit_granted_at', { withTimezone: true }),
     joinedAt: timestamp('joined_at', { withTimezone: true }).notNull().defaultNow(),
@@ -39,6 +45,7 @@ export const clients = pgTable(
     statusIdx: index('clients_status_idx').on(table.status),
     referrerIdx: index('clients_referrer_idx').on(table.referredByClientId),
     nameIdx: index('clients_name_lower_idx').on(sql`lower(${table.name})`),
+    deletedIdx: index('clients_deleted_idx').on(table.deletedAt),
     referrerFk: foreignKey({
       columns: [table.referredByClientId],
       foreignColumns: [table.id],
@@ -65,6 +72,7 @@ export const staffUsers = pgTable(
       .default(sql`'{}'::uuid[]`),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
     archivedByStaffId: uuid('archived_by_staff_id'),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
     invitedAt: timestamp('invited_at', { withTimezone: true }),
     acceptedAt: timestamp('accepted_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -72,6 +80,7 @@ export const staffUsers = pgTable(
   },
   table => ({
     roleStatusIdx: index('staff_role_status_idx').on(table.role, table.status),
+    deletedIdx: index('staff_users_deleted_idx').on(table.deletedAt),
     // GIN on the uuid[] column for workspace membership filters (§4a indexes).
     grantedLocationsGinIdx: index('staff_users_granted_locations_gin_idx')
       .using('gin', table.grantedLocationIds),

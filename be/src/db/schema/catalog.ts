@@ -21,9 +21,11 @@ export const locations = pgTable(
     gmapsUrl: text('gmaps_url'),
     phone: text('phone'),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   table => ({
     archivedIdx: index('locations_archived_idx').on(table.archivedAt),
+    deletedIdx: index('locations_deleted_idx').on(table.deletedAt),
   }),
 )
 
@@ -43,12 +45,14 @@ export const rooms = pgTable(
     name: text('name').notNull(),
     capacity: integer('capacity').notNull(),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   table => ({
     locationArchivedIdx: index('rooms_location_archived_idx').on(
       table.locationId,
       table.archivedAt,
     ),
+    deletedIdx: index('rooms_deleted_idx').on(table.deletedAt),
     locationNameLowerUnique: uniqueIndex('rooms_location_name_lower_unique').on(
       table.locationId,
       sql`lower(${table.name})`,
@@ -67,9 +71,11 @@ export const classTypes: any = pgTable(
     // a child (parent_id IS NOT NULL) cannot itself become a parent.
     parentId: uuid('parent_id').references((): any => classTypes.id, { onDelete: 'restrict' }),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   table => ({
     archivedIdx: index('class_types_archived_idx').on(table.archivedAt),
+    deletedIdx: index('class_types_deleted_idx').on(table.deletedAt),
     nameIdx: index('class_types_name_lower_idx').on(sql`lower(${table.name})`),
     parentIdx: index('class_types_parent_idx').on(table.parentId),
   }),
