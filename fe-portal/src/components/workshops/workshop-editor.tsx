@@ -123,11 +123,18 @@ function fromApiWorkshop(d: ApiWorkshopDetail): Workshop {
       .map((day) => {
         const start = new Date(day.starts_at);
         const end = new Date(day.ends_at);
+        // dayToApi writes wall-clock time as local-zone Date then converts to UTC,
+        // so we mirror that here: format back in the browser's local zone instead of
+        // slicing the UTC ISO string (which would shift hours by the TZ offset).
+        const pad = (n: number) => String(n).padStart(2, "0");
+        const fmtDate = (x: Date) =>
+          `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate())}`;
+        const fmtTime = (x: Date) => `${pad(x.getHours())}:${pad(x.getMinutes())}`;
         return {
           id: day.id,
-          date: start.toISOString().slice(0, 10),
-          startTime: start.toISOString().slice(11, 16),
-          endTime: end.toISOString().slice(11, 16),
+          date: fmtDate(start),
+          startTime: fmtTime(start),
+          endTime: fmtTime(end),
           roomId: day.room_id ?? "",
           capacity: {
             waitlist: day.capacity_waitlist,
@@ -296,14 +303,32 @@ export function WorkshopEditor({
     if (!locationId) return setError("Location is required.");
     if (!mainInstructorId) return setError("Main instructor is required.");
     if (!isEdit && days.length === 0) return setError("Add at least one day.");
-    if (!isEdit && days.some((d) => !d.roomId))
-      return setError("Every day needs a room.");
+    if (!isEdit) {
+      for (let i = 0; i < days.length; i++) {
+        const d = days[i];
+        const label = `Day ${i + 1}`;
+        if (!d.roomId) return setError(`${label}: pick a room.`);
+        if (!d.date) return setError(`${label}: date is required.`);
+        if (!d.startTime || !d.endTime)
+          return setError(`${label}: start and end time are required.`);
+        if (d.endTime <= d.startTime)
+          return setError(`${label}: end time must be after start time.`);
+        if (d.capacity.onlineBooking < 1)
+          return setError(`${label}: online booking capacity must be at least 1.`);
+      }
+    }
     if (!isEdit && tiers.length === 0) return setError("Add at least one pricing tier.");
     for (const t of tiers) {
       if (!t.name.trim()) return setError("Every tier needs a name.");
       if (t.dayIds.length === 0) return setError(`Tier "${t.name}" needs at least one day.`);
-      if (t.earlyBirdPriceSgd !== null && t.earlyBirdPriceSgd >= t.priceSgd) {
-        return setError(`Tier "${t.name}": early-bird price must be lower than tier price.`);
+      if (t.priceSgd < 0) return setError(`Tier "${t.name}": price cannot be negative.`);
+      if (t.earlyBirdPriceSgd !== null) {
+        if (t.earlyBirdPriceSgd >= t.priceSgd) {
+          return setError(`Tier "${t.name}": early-bird price must be lower than tier price.`);
+        }
+        if (!t.earlyBirdCutoffAt) {
+          return setError(`Tier "${t.name}": set an early-bird cutoff so the discount expires.`);
+        }
       }
     }
     if (hasPromotionOverlap(promotions)) {
@@ -416,7 +441,15 @@ export function WorkshopEditor({
           <select
             id="ws-location"
             value={locationId}
-            onChange={(e) => setLocationId(e.target.value)}
+            onChange={(e) => {
+              const next = e.target.value;
+              setLocationId(next);
+              if (!isEdit && next !== locationId) {
+                // Rooms are scoped per location — clear stale picks so the BE
+                // can't reject the save with room_location_mismatch.
+                setDays((cur) => cur.map((d) => ({ ...d, roomId: "" })));
+              }
+            }}
             className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
           >
             <option value="">— select —</option>

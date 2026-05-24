@@ -61,6 +61,8 @@ export function WorkshopTiersEditor({
       {tiers.map((t) => {
         const ebInvalid =
           t.earlyBirdPriceSgd !== null && t.earlyBirdPriceSgd >= t.priceSgd;
+        const ebCutoffMissing =
+          t.earlyBirdPriceSgd !== null && !t.earlyBirdCutoffAt;
         return (
           <div key={t.id} className="space-y-3 rounded-lg border border-border bg-paper p-4">
             <div className="flex gap-2">
@@ -176,6 +178,11 @@ export function WorkshopTiersEditor({
             {ebInvalid && (
               <p className="text-xs text-error">
                 Early-bird price must be lower than the tier price.
+              </p>
+            )}
+            {ebCutoffMissing && (
+              <p className="text-xs text-error">
+                Set an early-bird cutoff so the discount expires.
               </p>
             )}
           </div>

@@ -29,11 +29,16 @@ function newDay(date: string): WorkshopDay {
 
 function expandRange(start: string, end: string): string[] {
   if (!start || !end || start > end) return [];
+  // Iterate by ISO date string directly so we never round-trip through
+  // toISOString() in a non-UTC timezone (which would shift each date by ±1 day).
   const out: string[] = [];
-  const s = new Date(start + "T00:00:00");
-  const e = new Date(end + "T00:00:00");
-  for (let d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) {
-    out.push(d.toISOString().slice(0, 10));
+  let cur = start;
+  while (cur <= end) {
+    out.push(cur);
+    const [y, m, d] = cur.split("-").map(Number);
+    const next = new Date(Date.UTC(y, m - 1, d));
+    next.setUTCDate(next.getUTCDate() + 1);
+    cur = next.toISOString().slice(0, 10);
   }
   return out;
 }
@@ -141,14 +146,16 @@ export function WorkshopDaysEditor({
               <div className="text-xs font-semibold uppercase tracking-wider text-muted">
                 Day {idx + 1}
               </div>
-              <button
-                type="button"
-                onClick={() => removeDay(d.id)}
-                className="rounded p-1 text-muted hover:text-error"
-                aria-label="Remove day"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
+              {mode === "individual" && (
+                <button
+                  type="button"
+                  onClick={() => removeDay(d.id)}
+                  className="rounded p-1 text-muted hover:text-error"
+                  aria-label="Remove day"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
               <div className="space-y-1">
@@ -173,9 +180,14 @@ export function WorkshopDaysEditor({
                 <Label className="text-xs">End time</Label>
                 <Input
                   type="time"
+                  min={d.startTime || undefined}
                   value={d.endTime}
+                  aria-invalid={!!d.endTime && !!d.startTime && d.endTime <= d.startTime}
                   onChange={(e) => updateDay(d.id, { endTime: e.target.value })}
                 />
+                {d.endTime && d.startTime && d.endTime <= d.startTime && (
+                  <p className="text-xs text-error">End must be after start.</p>
+                )}
               </div>
               <div className="space-y-1 md:col-span-3">
                 <Label className="text-xs">
