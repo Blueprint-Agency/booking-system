@@ -482,13 +482,10 @@ function BundleCard({
           {credits} {credits === 1 ? "credit" : "credits"}
         </p>
         <p className="text-base font-medium text-ink mt-0.5">{pkg.name}</p>
+        <p className="text-sm text-muted mt-1">Valid for {validity}</p>
       </div>
       <PriceBlock pkg={pkg} />
-      <ul className="text-sm text-muted space-y-2 mt-6 flex-1">
-        <li>Valid for {validity}</li>
-        <li>Use at both studio locations</li>
-        <li>1 credit = 1 class attendance</li>
-      </ul>
+      <div className="mt-6 flex-1" />
       {disabled ? (
         <span
           title={disabledReason}
