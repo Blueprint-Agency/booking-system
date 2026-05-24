@@ -46,13 +46,6 @@ interface ApiInstructor {
   archived_at: string | null;
 }
 
-interface ApiWorkshop {
-  id: string;
-  name: string;
-  location_id: string;
-  lifecycle: "active" | "cancelled";
-}
-
 interface ApiCorporatePackage {
   id: string;
   name: string;
@@ -73,12 +66,10 @@ export default function SchedulePage() {
   const [type, setType] = useState<FilterType>("all");
   const [instructorId, setInstructorId] = useState<string>("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [workshopMenuOpen, setWorkshopMenuOpen] = useState(false);
   const [corporateMenuOpen, setCorporateMenuOpen] = useState(false);
   const [ptPickerOpen, setPtPickerOpen] = useState(false);
 
   const [instructorsList, setInstructorsList] = useState<ApiInstructor[]>([]);
-  const [workshopsList, setWorkshopsList] = useState<ApiWorkshop[]>([]);
   const [corporatePackagesList, setCorporatePackagesList] = useState<
     ApiCorporatePackage[]
   >([]);
@@ -88,9 +79,8 @@ export default function SchedulePage() {
     let cancelled = false;
     void (async () => {
       try {
-        const [ins, wsh, cps] = await Promise.all([
+        const [ins, cps] = await Promise.all([
           api.get<{ instructors: ApiInstructor[] }>("/portal/admin/instructors"),
-          api.get<{ workshops: ApiWorkshop[] }>("/portal/admin/workshops"),
           api.get<{ corporatePackages: ApiCorporatePackage[] }>(
             "/portal/admin/corporate-packages",
             { status: "active" },
@@ -98,7 +88,6 @@ export default function SchedulePage() {
         ]);
         if (cancelled) return;
         setInstructorsList(ins.instructors);
-        setWorkshopsList(wsh.workshops);
         setCorporatePackagesList(cps.corporatePackages);
       } catch {
         // Names degrade to "Unknown" / dropdowns stay empty if the catalog fetch fails.
@@ -131,16 +120,6 @@ export default function SchedulePage() {
         (i) => i.status === "active" && !i.archived_at,
       ),
     [instructorsList],
-  );
-
-  const activeWorkshops = useMemo(
-    () =>
-      workshopsList.filter(
-        (w) =>
-          w.lifecycle === "active" &&
-          (!activeLocationId || w.location_id === activeLocationId),
-      ),
-    [workshopsList, activeLocationId],
   );
 
   const range = useMemo(() => getRange(view, cursor), [view, cursor]);
@@ -202,50 +181,6 @@ export default function SchedulePage() {
                 <Plus className="h-4 w-4" /> Class
               </Button>
             </Link>
-            <div className="relative">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setWorkshopMenuOpen((o) => !o)}
-              >
-                Workshop <ChevronDown className="h-3.5 w-3.5" />
-              </Button>
-              {workshopMenuOpen && (
-                <div className="absolute right-0 z-30 mt-2 w-72 rounded-lg border border-border bg-card p-2 shadow-soft">
-                  {activeWorkshops.length === 0 && (
-                    <div className="px-3 py-2 text-xs text-muted">
-                      No workshops configured.
-                    </div>
-                  )}
-                  {activeWorkshops.map((w) => (
-                    <Link
-                      key={w.id}
-                      href={`/admin/packages/workshops/${w.id}/edit`}
-                      onClick={() => setWorkshopMenuOpen(false)}
-                      className="block rounded px-3 py-2 text-sm hover:bg-paper"
-                    >
-                      {w.name}
-                    </Link>
-                  ))}
-                  <div className="mt-1 border-t border-border pt-1">
-                    <Link
-                      href="/admin/packages/workshops/new"
-                      onClick={() => setWorkshopMenuOpen(false)}
-                      className="inline-flex w-full items-center gap-1 rounded px-3 py-2 text-sm text-accent hover:bg-paper"
-                    >
-                      <Plus className="h-3.5 w-3.5" /> New workshop
-                    </Link>
-                    <Link
-                      href="/admin/packages/workshops"
-                      onClick={() => setWorkshopMenuOpen(false)}
-                      className="block rounded px-3 py-2 text-xs text-muted hover:bg-paper"
-                    >
-                      Manage workshops →
-                    </Link>
-                  </div>
-                </div>
-              )}
-            </div>
             <div className="relative">
               <Button
                 variant="secondary"
@@ -646,7 +581,7 @@ function MonthView({ monthStart, entries }: { monthStart: Date; entries: Entry[]
                     <Link
                       href={`/admin/schedule/${e.kind}/${e.kind === "workshop" ? e.raw.id : e.id}`}
                       className={cn(
-                        "flex items-center gap-1 truncate rounded-md border-l-[3px] px-1.5 py-1 text-[11px] font-medium ring-1 ring-inset ring-current/10 transition-all hover:-translate-y-px hover:shadow-sm",
+                        "flex items-center gap-1 truncate rounded-sm border-l-[3px] px-1.5 py-1 text-[11px] font-medium ring-1 ring-inset ring-current/10 transition-all hover:-translate-y-px hover:shadow-sm",
                         kindClasses(e)
                       )}
                       title={`${formatTime(e.startsAt)} · ${e.label}`}
@@ -893,7 +828,7 @@ function EventBlock({
         width: `calc(${width}% - 4px)`,
       }}
       className={cn(
-        "absolute flex flex-col overflow-hidden rounded-lg border-l-[3px] px-2.5 py-1.5 leading-tight ring-1 ring-inset ring-current/10 shadow-sm transition-all duration-150 hover:z-10 hover:-translate-y-px hover:shadow-hover",
+        "absolute flex flex-col overflow-hidden rounded-sm border-l-[3px] px-2.5 py-1.5 leading-tight ring-1 ring-inset ring-current/10 shadow-sm transition-all duration-150 hover:z-10 hover:-translate-y-px hover:shadow-hover",
         kindClasses(entry),
         entry.eventState === "cancelled" && "opacity-60 line-through"
       )}

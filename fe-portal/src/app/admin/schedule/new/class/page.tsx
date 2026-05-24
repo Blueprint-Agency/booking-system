@@ -34,7 +34,7 @@ interface ApiRoom {
 
 export default function NewClassPage() {
   const router = useRouter();
-  const { api, accessibleLocations, activeLocationId } = useWorkspace();
+  const { api, activeLocationId } = useWorkspace();
 
   const [classTypes, setClassTypes] = useState<ApiClassType[]>([]);
   const [instructors, setInstructors] = useState<ApiInstructor[]>([]);
@@ -85,17 +85,15 @@ export default function NewClassPage() {
     };
   }, [api]);
 
+  // Location is driven by the workspace switcher in the top nav — keep this
+  // state in sync so room filtering and the create payload stay correct.
   useEffect(() => {
-    if (activeLocationId && !locationId) setLocationId(activeLocationId);
-  }, [activeLocationId, locationId]);
+    setLocationId(activeLocationId ?? "");
+  }, [activeLocationId]);
 
   const activeClassTypes = useMemo(
     () => classTypes.filter((c) => !c.archived_at),
     [classTypes],
-  );
-  const activeLocations = useMemo(
-    () => accessibleLocations.filter((l) => !l.archivedAt),
-    [accessibleLocations],
   );
   const roomsForLocation = useMemo(
     () => rooms.filter((r) => !r.archived_at && r.location_id === locationId),
@@ -279,20 +277,6 @@ export default function NewClassPage() {
                     </span>
                   )}
               </div>
-              <p className="text-xs text-muted">
-                Optional — supporting instructors appear on the schedule but don&apos;t
-                count toward solo capacity rules.
-              </p>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="loc">Location</Label>
-              <SelectField
-                id="loc"
-                value={locationId}
-                onChange={setLocationId}
-                placeholder="Select…"
-                options={activeLocations.map((l) => ({ val: l.id, label: l.name }))}
-              />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="room">Room</Label>
@@ -301,7 +285,7 @@ export default function NewClassPage() {
                 value={roomId}
                 onChange={setRoomId}
                 disabled={!locationId}
-                placeholder={locationId ? "Select…" : "Pick a location first"}
+                placeholder={locationId ? "Select…" : "No workspace selected"}
                 options={roomsForLocation.map((r) => ({ val: r.id, label: r.name }))}
               />
             </div>
