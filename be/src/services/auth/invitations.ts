@@ -1,9 +1,9 @@
 /**
- * Staff invitation lifecycle (admin or superadmin — instructors use a separate
- * flow that doesn't email in v1). The very first superadmin is seeded from
- * SUPERADMIN_EMAIL; additional superadmins are invited via this flow (per user
- * direction, overriding the original "superadmin not invitable" line in
- * `admin-restructure.md` §15a). See `be-portal.md` §3a.
+ * Staff invitation lifecycle (admin, superadmin, or instructor). The very first
+ * superadmin is seeded from SUPERADMIN_EMAIL; additional superadmins are invited
+ * via this flow (per user direction, overriding the original "superadmin not
+ * invitable" line in `admin-restructure.md` §15a). Instructors share the same
+ * email-invite path as admins. See `be-portal.md` §3a.
  *
  * Flow:
  *   1. Superadmin POSTs /portal/admin/staff/invite { email, granted_location_ids? }
@@ -17,6 +17,7 @@ import { randomBytes } from 'node:crypto'
 import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { staffUsers, staffInvitations } from '../../db/schema/identity'
+import { instructors } from '../../db/schema/catalog'
 import { ConflictError, NotFoundError } from '../../shared/errors'
 import { env } from '../../env'
 import { sendTemplatedEmail } from '../notifications/send'
@@ -26,7 +27,7 @@ const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000
 export type StaffUserRow = typeof staffUsers.$inferSelect
 export type StaffInvitationRow = typeof staffInvitations.$inferSelect
 
-export type InvitableRole = 'admin' | 'superadmin'
+export type InvitableRole = 'admin' | 'superadmin' | 'instructor'
 
 export interface InviteAdminInput {
   email: string
@@ -65,7 +66,8 @@ export async function inviteAdmin(input: InviteAdminInput): Promise<StaffInvitat
   const email = input.email.trim().toLowerCase()
   const role: InvitableRole = input.role ?? 'admin'
   // Superadmin ignores granted_location_ids (implicit grant = all locations).
-  const grants = role === 'superadmin' ? [] : (input.grantedLocationIds ?? [])
+  // Instructors don't carry location grants — they teach where assigned.
+  const grants = role === 'admin' ? (input.grantedLocationIds ?? []) : []
   const now = new Date()
   const expiresAt = new Date(now.getTime() + INVITE_TTL_MS)
 
@@ -76,7 +78,7 @@ export async function inviteAdmin(input: InviteAdminInput): Promise<StaffInvitat
     const [existing] = await tx
       .select()
       .from(staffUsers)
-      .where(sql`lower(${staffUsers.email}) = ${email}`)
+      .where(and(sql`lower(${staffUsers.email}) = ${email}`, isNull(staffUsers.deletedAt)))
       .limit(1)
     if (existing) {
       if (existing.status === 'archived') {
@@ -102,6 +104,18 @@ export async function inviteAdmin(input: InviteAdminInput): Promise<StaffInvitat
       })
       .returning()
     if (!staffRow) throw new Error('staff_users_insert_failed')
+
+    // Instructor role requires a profile row so the catalog INNER JOIN in
+    // listInstructors/loadById matches. Profile fields are populated later
+    // when the instructor edits their bio/photo.
+    if (role === 'instructor') {
+      await tx.insert(instructors).values({
+        staffUserId: staffRow.id,
+        bio: null,
+        phone: null,
+        photoR2Key: null,
+      })
+    }
 
     const [inv] = await tx
       .insert(staffInvitations)
@@ -167,7 +181,12 @@ export async function listStaffAndInvitations(opts?: {
   const staff = await db
     .select()
     .from(staffUsers)
-    .where(includeArchived ? sql`true` : sql`${staffUsers.status} <> 'archived'`)
+    .where(
+      and(
+        isNull(staffUsers.deletedAt),
+        includeArchived ? sql`true` : sql`${staffUsers.status} <> 'archived'`,
+      ),
+    )
     .orderBy(desc(staffUsers.createdAt))
 
   // Denormalise inviter name via a correlated subquery.

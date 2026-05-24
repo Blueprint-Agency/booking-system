@@ -78,5 +78,11 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'locations', id })
     return c.json(serialize(row))
   })
+  .delete('/:id', zValidator('param', idParam), async c => {
+    const { id } = c.req.valid('param')
+    await svc.softDeleteLocation(id)
+    c.set('auditTarget' as any, { table: 'locations', id })
+    return c.body(null, 204)
+  })
 
 export default app

@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, gte, inArray, lt, ne, sql } from 'drizzle-orm'
+import { and, asc, eq, gt, gte, inArray, isNull, lt, ne, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import {
   classes,
@@ -150,7 +150,12 @@ export async function createCorporateSession(
   const [pkg] = await db
     .select()
     .from(corporatePackages)
-    .where(eq(corporatePackages.id, input.corporatePackageId))
+    .where(
+      and(
+        eq(corporatePackages.id, input.corporatePackageId),
+        isNull(corporatePackages.deletedAt),
+      ),
+    )
     .limit(1)
   if (!pkg) return { ok: false, error: 'package_not_found' }
   if (pkg.status !== 'active') return { ok: false, error: 'package_archived' }
@@ -318,7 +323,12 @@ export async function rescheduleCorporateSession(
     const [pkg] = await db
       .select()
       .from(corporatePackages)
-      .where(eq(corporatePackages.id, nextCorporatePackageId))
+      .where(
+        and(
+          eq(corporatePackages.id, nextCorporatePackageId),
+          isNull(corporatePackages.deletedAt),
+        ),
+      )
       .limit(1)
     if (!pkg) return { ok: false, error: 'package_not_found' }
     if (pkg.status !== 'active') return { ok: false, error: 'package_archived' }

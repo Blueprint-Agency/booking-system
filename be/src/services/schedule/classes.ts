@@ -1,7 +1,41 @@
-import { eq } from 'drizzle-orm'
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { classes, classSupportingInstructors } from '../../db/schema'
+import { instructors } from '../../db/schema/catalog'
+import { staffUsers } from '../../db/schema/identity'
 import { assertRoomAvailable, assertRoomInLocation } from './room-conflicts'
+import { BadRequestError } from '../../shared/errors'
+
+/**
+ * Ensure every staff_user referenced as an instructor has the matching
+ * `instructors` profile row. Heals orphans created before the inviteAdmin
+ * flow began auto-inserting the profile row (see 0008_backfill_instructor_profiles.sql)
+ * and rejects ids that don't belong to an active instructor.
+ */
+async function ensureInstructorRows(
+  tx: typeof db,
+  ids: string[],
+): Promise<void> {
+  if (ids.length === 0) return
+  const unique = Array.from(new Set(ids))
+  const valid = await tx
+    .select({ id: staffUsers.id })
+    .from(staffUsers)
+    .where(
+      and(
+        inArray(staffUsers.id, unique),
+        eq(staffUsers.role, 'instructor'),
+        isNull(staffUsers.deletedAt),
+      ),
+    )
+  if (valid.length !== unique.length) {
+    throw new BadRequestError('invalid_instructor_id')
+  }
+  await tx
+    .insert(instructors)
+    .values(unique.map(staffUserId => ({ staffUserId })))
+    .onConflictDoNothing({ target: instructors.staffUserId })
+}
 
 export interface CreateClassInput {
   classTypeId: string
@@ -37,6 +71,7 @@ export async function createClass(input: CreateClassInput): Promise<ClassRow> {
   const supports = normalizeSupporting(input.mainInstructorId, input.supportingInstructorIds)
 
   return db.transaction(async tx => {
+    await ensureInstructorRows(tx as unknown as typeof db, [input.mainInstructorId, ...supports])
     const rows = await tx
       .insert(classes)
       .values({
@@ -113,6 +148,13 @@ export async function updateClass(id: string, patch: UpdateClassInput): Promise<
   }
 
   return db.transaction(async tx => {
+    const idsToEnsure: string[] = []
+    if (patch.mainInstructorId !== undefined) idsToEnsure.push(patch.mainInstructorId)
+    if (supports !== undefined) idsToEnsure.push(...supports)
+    if (idsToEnsure.length > 0) {
+      await ensureInstructorRows(tx as unknown as typeof db, idsToEnsure)
+    }
+
     const set: Partial<typeof classes.$inferInsert> = {}
     if (patch.classTypeId !== undefined) set.classTypeId = patch.classTypeId
     if (patch.mainInstructorId !== undefined) set.mainInstructorId = patch.mainInstructorId

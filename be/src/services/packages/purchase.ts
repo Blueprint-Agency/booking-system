@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { db } from '../../db'
 import { clientPackages, classPackages, ptPackages } from '../../db/schema/packages'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
@@ -66,7 +66,7 @@ export async function grantPackage(
     const [row] = await db
       .select()
       .from(classPackages)
-      .where(eq(classPackages.id, input.packageId))
+      .where(and(eq(classPackages.id, input.packageId), isNull(classPackages.deletedAt)))
       .limit(1)
     if (!row) throw new NotFoundError('class_package_not_found')
     if (row.status !== 'active') throw new BadRequestError('class_package_not_active')
@@ -78,7 +78,7 @@ export async function grantPackage(
     const [row] = await db
       .select()
       .from(ptPackages)
-      .where(eq(ptPackages.id, input.packageId))
+      .where(and(eq(ptPackages.id, input.packageId), isNull(ptPackages.deletedAt)))
       .limit(1)
     if (!row) throw new NotFoundError('pt_package_not_found')
     if (row.status !== 'active') throw new BadRequestError('pt_package_not_active')
@@ -130,7 +130,7 @@ export async function purchaseFreeTrial(
   const [pkg] = await db
     .select()
     .from(classPackages)
-    .where(eq(classPackages.id, classPackageId))
+    .where(and(eq(classPackages.id, classPackageId), isNull(classPackages.deletedAt)))
     .limit(1)
   if (!pkg) throw new NotFoundError('class_package_not_found')
   if (pkg.status !== 'active') throw new BadRequestError('class_package_not_active')

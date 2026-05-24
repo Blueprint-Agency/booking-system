@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull } from 'drizzle-orm'
+import { and, eq, gt, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { locations, rooms } from '../../db/schema/catalog'
 import { classes, workshopDays, workshops, ptSessions } from '../../db/schema/schedule'
@@ -10,10 +10,9 @@ export async function listRooms(opts: {
   locationId?: string
   includeArchived: boolean
 }): Promise<RoomRow[]> {
-  const conds = []
+  const conds = [isNull(rooms.deletedAt)]
   if (opts.locationId) conds.push(eq(rooms.locationId, opts.locationId))
   if (!opts.includeArchived) conds.push(isNull(rooms.archivedAt))
-  if (conds.length === 0) return db.select().from(rooms)
   return db
     .select()
     .from(rooms)
@@ -21,13 +20,21 @@ export async function listRooms(opts: {
 }
 
 export async function getRoom(id: string): Promise<RoomRow> {
-  const [row] = await db.select().from(rooms).where(eq(rooms.id, id)).limit(1)
+  const [row] = await db
+    .select()
+    .from(rooms)
+    .where(and(eq(rooms.id, id), isNull(rooms.deletedAt)))
+    .limit(1)
   if (!row) throw new NotFoundError('room_not_found')
   return row
 }
 
 async function assertLocationActive(locationId: string): Promise<void> {
-  const [loc] = await db.select().from(locations).where(eq(locations.id, locationId)).limit(1)
+  const [loc] = await db
+    .select()
+    .from(locations)
+    .where(and(eq(locations.id, locationId), isNull(locations.deletedAt)))
+    .limit(1)
   if (!loc) throw new NotFoundError('location_not_found')
   if (loc.archivedAt) throw new BadRequestError('location_archived', { location_id: locationId })
 }
@@ -97,7 +104,8 @@ async function gatherLinkedDataBlockers(roomId: string) {
 }
 
 export async function archiveRoom(id: string): Promise<RoomRow> {
-  await getRoom(id)
+  const existing = await getRoom(id)
+  if (existing.deletedAt) throw new NotFoundError('room_not_found')
   const { futureClasses, futureWorkshopDays, futurePtSessions } =
     await gatherLinkedDataBlockers(id)
   if (futureClasses.length || futureWorkshopDays.length || futurePtSessions.length) {
@@ -116,7 +124,24 @@ export async function archiveRoom(id: string): Promise<RoomRow> {
 }
 
 export async function unarchiveRoom(id: string): Promise<RoomRow> {
-  await getRoom(id)
+  const existing = await getRoom(id)
+  if (existing.archivedAt === null) {
+    throw new BadRequestError('room_not_archived')
+  }
   const [row] = await db.update(rooms).set({ archivedAt: null }).where(eq(rooms.id, id)).returning()
   return row!
+}
+
+/**
+ * Soft-delete a room. Must already be archived and not yet deleted.
+ */
+export async function softDeleteRoom(id: string): Promise<void> {
+  const existing = await getRoom(id)
+  if (existing.archivedAt === null) {
+    throw new BadRequestError('room_not_archived')
+  }
+  await db
+    .update(rooms)
+    .set({ deletedAt: sql`now()` })
+    .where(eq(rooms.id, id))
 }

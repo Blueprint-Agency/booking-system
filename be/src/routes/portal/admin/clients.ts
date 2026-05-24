@@ -1,11 +1,14 @@
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
+import { requireRole } from '../../../middleware/require-role'
 import {
   listClients,
   createClientWithInvite,
   getClientById,
   listRecentAdjustments,
+  softDeleteClient,
+  restoreClient,
   type ClientRow,
   type ManualAdjustmentRow,
 } from '../../../services/clients/manage'
@@ -18,6 +21,8 @@ const idPkgParam = z.object({ id: z.string().uuid(), pid: z.string().uuid() })
 const listQuery = z.object({
   q: z.string().max(200).optional(),
   status: z.enum(['active', 'suspended']).optional(),
+  // Stringly-typed because Hono query params are strings; only "true" enables.
+  include_deleted: z.enum(['true', 'false']).optional(),
 })
 
 const createSchema = z.object({
@@ -48,6 +53,8 @@ function clientRow(c: ClientRow) {
     status: c.status,
     joined_at: c.joinedAt,
     suspended_at: c.suspendedAt,
+    deleted_at: c.deletedAt,
+    deleted_by_staff_id: c.deletedByStaffId,
   }
 }
 
@@ -91,7 +98,11 @@ function editedPackageView(p: ClientPackageRow) {
 const app = new Hono()
   .get('/', zValidator('query', listQuery), async c => {
     const q = c.req.valid('query')
-    const rows = await listClients({ q: q.q, status: q.status })
+    // Only superadmins can see the deleted view; non-superadmins silently get
+    // the default filtered list regardless of the query param.
+    const role = c.get('staffRow')?.role
+    const includeDeleted = q.include_deleted === 'true' && role === 'superadmin'
+    const rows = await listClients({ q: q.q, status: q.status, includeDeleted })
     return c.json({ clients: rows.map(clientRow) })
   })
   .post('/', zValidator('json', createSchema), async c => {
@@ -162,5 +173,24 @@ const app = new Hono()
   .post('/:id/suspend', c => c.json({ todo: 'suspend + Clerk revokeAllSessions' }, 501))
   .post('/:id/unsuspend', c => c.json({ todo: 'unsuspend' }, 501))
   .post('/:id/packages/issue', c => c.json({ todo: 'admin grants complimentary package' }, 501))
+  // ---- soft delete + restore (superadmin-only) ----
+  .delete('/:id', requireRole('superadmin'), zValidator('param', idParam), async c => {
+    const { id } = c.req.valid('param')
+    const row = await softDeleteClient({
+      targetClientId: id,
+      actorStaffId: c.get('staffUserId'),
+    })
+    c.set('auditTarget' as any, { table: 'clients', id })
+    return c.json(clientRow(row))
+  })
+  .post('/:id/restore', requireRole('superadmin'), zValidator('param', idParam), async c => {
+    const { id } = c.req.valid('param')
+    const row = await restoreClient({
+      targetClientId: id,
+      actorStaffId: c.get('staffUserId'),
+    })
+    c.set('auditTarget' as any, { table: 'clients', id })
+    return c.json(clientRow(row))
+  })
 
 export default app

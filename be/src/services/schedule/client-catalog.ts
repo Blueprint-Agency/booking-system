@@ -143,7 +143,7 @@ export async function listClassCards(filters: ClassListFilters): Promise<ClassCa
     const roomRows = await db
       .select({ id: rooms.id, name: rooms.name })
       .from(rooms)
-      .where(inArray(rooms.id, roomIds))
+      .where(and(inArray(rooms.id, roomIds), isNull(rooms.deletedAt)))
     for (const r of roomRows) roomById.set(r.id, { id: r.id, name: r.name })
   }
 
@@ -227,7 +227,7 @@ export async function getClassDetail(id: string): Promise<ClassDetailPayload> {
     const [roomRow] = await db
       .select({ id: rooms.id, name: rooms.name })
       .from(rooms)
-      .where(eq(rooms.id, r.roomId))
+      .where(and(eq(rooms.id, r.roomId), isNull(rooms.deletedAt)))
       .limit(1)
     room = roomRow ?? null
   }
@@ -302,7 +302,7 @@ export async function listActiveLocations(): Promise<
       phone: locations.phone,
     })
     .from(locations)
-    .where(isNull(locations.archivedAt))
+    .where(and(isNull(locations.archivedAt), isNull(locations.deletedAt)))
     .orderBy(locations.name)
   return rows.map(r => ({
     id: r.id,
@@ -332,7 +332,13 @@ export async function listActiveInstructors(): Promise<InstructorLite[]> {
     })
     .from(instructors)
     .innerJoin(staffUsers, eq(instructors.staffUserId, staffUsers.id))
-    .where(and(isNull(staffUsers.archivedAt), eq(staffUsers.status, 'active')))
+    .where(
+      and(
+        isNull(staffUsers.archivedAt),
+        isNull(staffUsers.deletedAt),
+        eq(staffUsers.status, 'active'),
+      ),
+    )
     .orderBy(staffUsers.name)
 
   return rows.map(r => ({

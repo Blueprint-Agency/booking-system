@@ -1,4 +1,4 @@
-import { and, eq, gt, sql } from 'drizzle-orm'
+import { and, eq, gt, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { staffUsers } from '../../db/schema/identity'
 import { instructors } from '../../db/schema/catalog'
@@ -30,8 +30,14 @@ async function loadById(id: string): Promise<InstructorView> {
       ins: instructors,
     })
     .from(staffUsers)
-    .innerJoin(instructors, eq(instructors.staffUserId, staffUsers.id))
-    .where(eq(staffUsers.id, id))
+    .leftJoin(instructors, eq(instructors.staffUserId, staffUsers.id))
+    .where(
+      and(
+        eq(staffUsers.id, id),
+        eq(staffUsers.role, 'instructor'),
+        isNull(staffUsers.deletedAt),
+      ),
+    )
     .limit(1)
   if (!row) throw new NotFoundError('instructor_not_found')
 
@@ -43,22 +49,22 @@ async function loadById(id: string): Promise<InstructorView> {
     archivedAt: row.staff.archivedAt,
     invitedAt: row.staff.invitedAt,
     acceptedAt: row.staff.acceptedAt,
-    bio: row.ins.bio,
-    phone: row.ins.phone,
-    photoR2Key: row.ins.photoR2Key,
+    bio: row.ins?.bio ?? null,
+    phone: row.ins?.phone ?? null,
+    photoR2Key: row.ins?.photoR2Key ?? null,
   }
 }
 
 export async function listInstructors(opts: {
   status?: 'pending' | 'active' | 'archived'
 }): Promise<InstructorView[]> {
-  const filters = [eq(staffUsers.role, 'instructor')]
+  const filters = [eq(staffUsers.role, 'instructor'), isNull(staffUsers.deletedAt)]
   if (opts.status) filters.push(eq(staffUsers.status, opts.status))
 
   const rows = await db
     .select({ staff: staffUsers, ins: instructors })
     .from(staffUsers)
-    .innerJoin(instructors, eq(instructors.staffUserId, staffUsers.id))
+    .leftJoin(instructors, eq(instructors.staffUserId, staffUsers.id))
     .where(and(...filters))
 
   return rows.map(r => ({
@@ -69,9 +75,9 @@ export async function listInstructors(opts: {
     archivedAt: r.staff.archivedAt,
     invitedAt: r.staff.invitedAt,
     acceptedAt: r.staff.acceptedAt,
-    bio: r.ins.bio,
-    phone: r.ins.phone,
-    photoR2Key: r.ins.photoR2Key,
+    bio: r.ins?.bio ?? null,
+    phone: r.ins?.phone ?? null,
+    photoR2Key: r.ins?.photoR2Key ?? null,
   }))
 }
 
@@ -107,7 +113,7 @@ export async function createInstructor(input: CreateInstructorInput): Promise<In
     const existing = await tx
       .select({ id: staffUsers.id })
       .from(staffUsers)
-      .where(sql`lower(${staffUsers.email}) = ${email}`)
+      .where(and(sql`lower(${staffUsers.email}) = ${email}`, isNull(staffUsers.deletedAt)))
       .limit(1)
     if (existing.length) throw new ConflictError('staff_email_exists')
 
@@ -191,7 +197,10 @@ export async function updateInstructor(id: string, patch: UpdateInstructorInput)
 }
 
 export async function archiveInstructor(id: string): Promise<InstructorView> {
-  await loadById(id)
+  const existing = await loadById(id)
+  if (existing.status === 'archived') {
+    throw new BadRequestError('instructor_already_archived')
+  }
   const now = new Date()
 
   const futureClasses = await db
@@ -232,4 +241,32 @@ export async function archiveInstructor(id: string): Promise<InstructorView> {
     .where(eq(staffUsers.id, id))
 
   return loadById(id)
+}
+
+export async function unarchiveInstructor(id: string): Promise<InstructorView> {
+  const existing = await loadById(id)
+  if (existing.status !== 'archived') {
+    throw new BadRequestError('instructor_not_archived')
+  }
+  const now = new Date()
+  await db
+    .update(staffUsers)
+    .set({ status: 'active', archivedAt: null, updatedAt: now })
+    .where(eq(staffUsers.id, id))
+  return loadById(id)
+}
+
+/**
+ * Soft-delete an instructor. Must be currently archived; row remains in
+ * staff_users with deleted_at=now() so audit/FK references keep resolving.
+ */
+export async function softDeleteInstructor(id: string): Promise<void> {
+  const existing = await loadById(id)
+  if (existing.status !== 'archived') {
+    throw new BadRequestError('instructor_not_archived')
+  }
+  await db
+    .update(staffUsers)
+    .set({ deletedAt: sql`now()`, updatedAt: new Date() })
+    .where(eq(staffUsers.id, id))
 }

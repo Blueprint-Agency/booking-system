@@ -1,18 +1,27 @@
-import { and, eq, isNull, or, gt, inArray } from 'drizzle-orm'
+import { and, eq, isNull, or, gt, inArray, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { locations } from '../../db/schema/catalog'
 import { classes, workshops, ptSessions } from '../../db/schema/schedule'
-import { ConflictError, NotFoundError } from '../../shared/errors'
+import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 
 export type LocationRow = typeof locations.$inferSelect
 
 export async function listLocations(opts: { includeArchived: boolean }): Promise<LocationRow[]> {
-  if (opts.includeArchived) return db.select().from(locations)
-  return db.select().from(locations).where(isNull(locations.archivedAt))
+  if (opts.includeArchived) {
+    return db.select().from(locations).where(isNull(locations.deletedAt))
+  }
+  return db
+    .select()
+    .from(locations)
+    .where(and(isNull(locations.archivedAt), isNull(locations.deletedAt)))
 }
 
 export async function getLocation(id: string): Promise<LocationRow> {
-  const [row] = await db.select().from(locations).where(eq(locations.id, id)).limit(1)
+  const [row] = await db
+    .select()
+    .from(locations)
+    .where(and(eq(locations.id, id), isNull(locations.deletedAt)))
+    .limit(1)
   if (!row) throw new NotFoundError('location_not_found')
   return row
 }
@@ -49,7 +58,8 @@ export async function updateLocation(
  * Returns the offending IDs grouped by kind so the UI can render a list.
  */
 export async function archiveLocation(id: string): Promise<LocationRow> {
-  await getLocation(id)
+  const existing = await getLocation(id)
+  if (existing.deletedAt) throw new NotFoundError('location_not_found')
   const now = new Date()
 
   const activeClasses = await db
@@ -90,13 +100,32 @@ export async function archiveLocation(id: string): Promise<LocationRow> {
 }
 
 export async function unarchiveLocation(id: string): Promise<LocationRow> {
-  await getLocation(id)
+  const existing = await getLocation(id)
+  if (existing.archivedAt === null) {
+    throw new BadRequestError('location_not_archived')
+  }
   const [row] = await db
     .update(locations)
     .set({ archivedAt: null })
     .where(eq(locations.id, id))
     .returning()
   return row!
+}
+
+/**
+ * Soft-delete: row must be currently archived AND not already deleted.
+ * Sets deleted_at = now(). The row stays in DB so historical references
+ * (audit trail, FKs) keep resolving.
+ */
+export async function softDeleteLocation(id: string): Promise<void> {
+  const existing = await getLocation(id)
+  if (existing.archivedAt === null) {
+    throw new BadRequestError('location_not_archived')
+  }
+  await db
+    .update(locations)
+    .set({ deletedAt: sql`now()` })
+    .where(eq(locations.id, id))
 }
 
 // re-exports for tests / debugging

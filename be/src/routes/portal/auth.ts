@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { inArray } from 'drizzle-orm'
+import { and, inArray, isNull } from 'drizzle-orm'
 import { db } from '../../db'
 import { locations } from '../../db/schema/catalog'
 import { isSeededSuperadminEmail } from '../../services/auth/staff-archive'
@@ -20,9 +20,12 @@ const app = new Hono().get('/me', async c => {
 
   if (granted.length === 0) {
     // "All active locations" — superadmin or implicit grant.
-    activeLocations = await db.select().from(locations)
+    activeLocations = await db.select().from(locations).where(isNull(locations.deletedAt))
   } else {
-    activeLocations = await db.select().from(locations).where(inArray(locations.id, granted))
+    activeLocations = await db
+      .select()
+      .from(locations)
+      .where(and(inArray(locations.id, granted), isNull(locations.deletedAt)))
   }
 
   return c.json({

@@ -3,11 +3,16 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { requireRole } from '../../../middleware/require-role'
 import * as svc from '../../../services/auth/invitations'
-import { archiveStaff, isSeededSuperadminEmail } from '../../../services/auth/staff-archive'
+import {
+  archiveStaff,
+  isSeededSuperadminEmail,
+  softDeleteStaff,
+  unarchiveStaff,
+} from '../../../services/auth/staff-archive'
 
 const inviteSchema = z.object({
   email: z.string().email().max(254),
-  role: z.enum(['admin', 'superadmin']).optional(), // default 'admin' in the service
+  role: z.enum(['admin', 'superadmin', 'instructor']).optional(), // default 'admin' in the service
   granted_location_ids: z.array(z.string().uuid()).optional(),
 })
 
@@ -87,6 +92,20 @@ const app = new Hono()
     const row = await archiveStaff({ targetStaffId: id, actorStaffId: actor })
     c.set('auditTarget' as any, { table: 'staff_users', id })
     return c.json(serializeStaff(row))
+  })
+  .post('/:id/unarchive', zValidator('param', idParam), async c => {
+    const { id } = c.req.valid('param')
+    const actor = c.get('staffUserId')
+    const row = await unarchiveStaff({ targetStaffId: id, actorStaffId: actor })
+    c.set('auditTarget' as any, { table: 'staff_users', id })
+    return c.json(serializeStaff(row))
+  })
+  .delete('/:id', zValidator('param', idParam), async c => {
+    const { id } = c.req.valid('param')
+    const actor = c.get('staffUserId')
+    await softDeleteStaff({ targetStaffId: id, actorStaffId: actor })
+    c.set('auditTarget' as any, { table: 'staff_users', id })
+    return c.body(null, 204)
   })
 
 export default app

@@ -101,12 +101,18 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'corporate_packages', id })
     return c.json({ corporatePackage: serialize(row) })
   })
+  .post('/:id/unarchive', zValidator('param', idParam), async c => {
+    const { id } = c.req.valid('param')
+    const row = await svc.unarchiveCorporatePackage(id)
+    if (!row) return c.json({ error: 'not_found' }, 404)
+    c.set('auditTarget' as any, { table: 'corporate_packages', id })
+    return c.json({ corporatePackage: serialize(row) })
+  })
   .delete('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    const result = await svc.deleteCorporatePackage(id)
-    if (result === 'in_use') return c.json({ error: 'in_use' }, 409)
+    await svc.softDeleteCorporatePackage(id)
     c.set('auditTarget' as any, { table: 'corporate_packages', id })
-    return c.json({ ok: true })
+    return c.body(null, 204)
   })
 
 export default app

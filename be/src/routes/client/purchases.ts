@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
-import { eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { stripe } from '../../lib/stripe'
 import { db } from '../../db'
 import { classPackages, ptPackages } from '../../db/schema/packages'
@@ -50,7 +50,7 @@ const app = new Hono()
       const [pkg] = await db
         .select()
         .from(classPackages)
-        .where(eq(classPackages.id, package_id))
+        .where(and(eq(classPackages.id, package_id), isNull(classPackages.deletedAt)))
         .limit(1)
       if (!pkg) throw new NotFoundError('class_package_not_found')
       if (pkg.status !== 'active') throw new BadRequestError('class_package_not_active')
@@ -78,7 +78,7 @@ const app = new Hono()
       const [pkg] = await db
         .select()
         .from(ptPackages)
-        .where(eq(ptPackages.id, package_id))
+        .where(and(eq(ptPackages.id, package_id), isNull(ptPackages.deletedAt)))
         .limit(1)
       if (!pkg) throw new NotFoundError('pt_package_not_found')
       if (pkg.status !== 'active') throw new BadRequestError('pt_package_not_active')

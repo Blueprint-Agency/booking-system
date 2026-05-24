@@ -1,4 +1,4 @@
-import { eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { db } from '../../db'
 import { env } from '../../env'
 import {
@@ -250,7 +250,10 @@ export async function listActiveWorkshopCards(): Promise<WorkshopCardPayload[]> 
 
   // Resolve location for all in one round-trip.
   const locIds = Array.from(new Set(ws.map(w => w.locationId)))
-  const locRows = await db.select().from(locations).where(inArray(locations.id, locIds))
+  const locRows = await db
+    .select()
+    .from(locations)
+    .where(and(inArray(locations.id, locIds), isNull(locations.deletedAt)))
   const locById = new Map(
     locRows.map(l => [l.id, { id: l.id, name: l.name, address: l.address }]),
   )
@@ -284,7 +287,11 @@ export async function getWorkshopDetailPayload(id: string): Promise<WorkshopDeta
   const days = daysByWorkshop.get(w.id) ?? []
   const tiers = tiersByWorkshop.get(w.id) ?? []
 
-  const [locRow] = await db.select().from(locations).where(eq(locations.id, w.locationId)).limit(1)
+  const [locRow] = await db
+    .select()
+    .from(locations)
+    .where(and(eq(locations.id, w.locationId), isNull(locations.deletedAt)))
+    .limit(1)
 
   const imageRows = await db
     .select()
@@ -318,7 +325,12 @@ export async function getWorkshopDetailPayload(id: string): Promise<WorkshopDeta
       })
       .from(instructors)
       .innerJoin(staffUsers, eq(staffUsers.id, instructors.staffUserId))
-      .where(inArray(instructors.staffUserId, instructorIds))
+      .where(
+        and(
+          inArray(instructors.staffUserId, instructorIds),
+          isNull(staffUsers.deletedAt),
+        ),
+      )
     const byId = new Map(rows.map(r => [r.id, r]))
     // Preserve [main, ...supporting] ordering.
     instructorPayload = instructorIds

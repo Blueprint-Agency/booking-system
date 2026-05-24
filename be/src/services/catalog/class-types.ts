@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray, isNull } from 'drizzle-orm'
+import { and, eq, gt, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { classTypes } from '../../db/schema/catalog'
 import { classes } from '../../db/schema/schedule'
@@ -7,12 +7,21 @@ import { BadRequestError, ConflictError, NotFoundError } from '../../shared/erro
 export type ClassTypeRow = typeof classTypes.$inferSelect
 
 export async function listClassTypes(opts: { includeArchived: boolean }): Promise<ClassTypeRow[]> {
-  if (opts.includeArchived) return db.select().from(classTypes)
-  return db.select().from(classTypes).where(isNull(classTypes.archivedAt))
+  if (opts.includeArchived) {
+    return db.select().from(classTypes).where(isNull(classTypes.deletedAt))
+  }
+  return db
+    .select()
+    .from(classTypes)
+    .where(and(isNull(classTypes.archivedAt), isNull(classTypes.deletedAt)))
 }
 
 export async function getClassType(id: string): Promise<ClassTypeRow> {
-  const [row] = await db.select().from(classTypes).where(eq(classTypes.id, id)).limit(1)
+  const [row] = await db
+    .select()
+    .from(classTypes)
+    .where(and(eq(classTypes.id, id), isNull(classTypes.deletedAt)))
+    .limit(1)
   if (!row) throw new NotFoundError('class_type_not_found')
   return row
 }
@@ -31,7 +40,7 @@ async function assertNoChildren(id: string): Promise<void> {
   const children = await db
     .select({ id: classTypes.id })
     .from(classTypes)
-    .where(eq(classTypes.parentId, id))
+    .where(and(eq(classTypes.parentId, id), isNull(classTypes.deletedAt)))
   if (children.length) {
     throw new ConflictError('class_type_has_children', { child_ids: children.map(r => r.id) })
   }
@@ -81,7 +90,7 @@ async function gatherLinkedDataBlockers(rootId: string) {
   const children = await db
     .select({ id: classTypes.id })
     .from(classTypes)
-    .where(eq(classTypes.parentId, rootId))
+    .where(and(eq(classTypes.parentId, rootId), isNull(classTypes.deletedAt)))
   const idsToCheck = [rootId, ...children.map(c => c.id)]
   const now = new Date()
 
@@ -100,7 +109,8 @@ async function gatherLinkedDataBlockers(rootId: string) {
 }
 
 export async function archiveClassType(id: string): Promise<ClassTypeRow> {
-  await getClassType(id)
+  const existing = await getClassType(id)
+  if (existing.deletedAt) throw new NotFoundError('class_type_not_found')
   const { futureClasses, idsChecked } = await gatherLinkedDataBlockers(id)
   if (futureClasses.length) {
     throw new ConflictError('class_type_in_use', {
@@ -118,11 +128,28 @@ export async function archiveClassType(id: string): Promise<ClassTypeRow> {
 }
 
 export async function unarchiveClassType(id: string): Promise<ClassTypeRow> {
-  await getClassType(id)
+  const existing = await getClassType(id)
+  if (existing.archivedAt === null) {
+    throw new BadRequestError('class_type_not_archived')
+  }
   const [row] = await db
     .update(classTypes)
     .set({ archivedAt: null })
     .where(eq(classTypes.id, id))
     .returning()
   return row!
+}
+
+/**
+ * Soft-delete a class type. Must be currently archived and not yet deleted.
+ */
+export async function softDeleteClassType(id: string): Promise<void> {
+  const existing = await getClassType(id)
+  if (existing.archivedAt === null) {
+    throw new BadRequestError('class_type_not_archived')
+  }
+  await db
+    .update(classTypes)
+    .set({ deletedAt: sql`now()` })
+    .where(eq(classTypes.id, id))
 }

@@ -1,4 +1,4 @@
-import { and, eq, gt, lt, ne } from 'drizzle-orm'
+import { and, eq, gt, isNull, lt, ne } from 'drizzle-orm'
 import { db } from '../../db'
 import { rooms } from '../../db/schema/catalog'
 import {
@@ -22,7 +22,11 @@ export interface RoomConflict {
  * Throws NotFoundError / BadRequestError otherwise.
  */
 export async function assertRoomInLocation(roomId: string, locationId: string): Promise<void> {
-  const [room] = await db.select().from(rooms).where(eq(rooms.id, roomId)).limit(1)
+  const [room] = await db
+    .select()
+    .from(rooms)
+    .where(and(eq(rooms.id, roomId), isNull(rooms.deletedAt)))
+    .limit(1)
   if (!room) throw new NotFoundError('room_not_found')
   if (room.archivedAt) throw new BadRequestError('room_archived', { room_id: roomId })
   if (room.locationId !== locationId) {

@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { classPackages } from '../../db/schema/packages'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
@@ -10,18 +10,21 @@ export async function listClassPackages(opts: {
   status?: 'active' | 'archived'
   kind?: ClassPackageKind
 }): Promise<ClassPackageRow[]> {
-  const filters = []
+  const filters = [isNull(classPackages.deletedAt)]
   if (opts.status) filters.push(eq(classPackages.status, opts.status))
   if (opts.kind) filters.push(eq(classPackages.kind, opts.kind))
-  if (!filters.length) return db.select().from(classPackages)
   return db
     .select()
     .from(classPackages)
-    .where(and(...filters))
+    .where(filters.length === 1 ? filters[0] : and(...filters))
 }
 
 export async function getClassPackage(id: string): Promise<ClassPackageRow> {
-  const [row] = await db.select().from(classPackages).where(eq(classPackages.id, id)).limit(1)
+  const [row] = await db
+    .select()
+    .from(classPackages)
+    .where(and(eq(classPackages.id, id), isNull(classPackages.deletedAt)))
+    .limit(1)
   if (!row) throw new NotFoundError('class_package_not_found')
   return row
 }
@@ -122,11 +125,42 @@ export async function updateClassPackage(
 }
 
 export async function archiveClassPackage(id: string): Promise<ClassPackageRow> {
-  await getClassPackage(id)
+  const existing = await getClassPackage(id)
+  if (existing.status === 'archived') {
+    throw new BadRequestError('class_package_already_archived')
+  }
   const [row] = await db
     .update(classPackages)
     .set({ status: 'archived', archivedAt: new Date() })
     .where(eq(classPackages.id, id))
     .returning()
   return row!
+}
+
+export async function unarchiveClassPackage(id: string): Promise<ClassPackageRow> {
+  const existing = await getClassPackage(id)
+  if (existing.status !== 'archived') {
+    throw new BadRequestError('class_package_not_archived')
+  }
+  const [row] = await db
+    .update(classPackages)
+    .set({ status: 'active', archivedAt: null })
+    .where(eq(classPackages.id, id))
+    .returning()
+  return row!
+}
+
+/**
+ * Soft-delete a class package. Must be currently archived; the row stays in
+ * DB so historical client_packages references keep resolving.
+ */
+export async function softDeleteClassPackage(id: string): Promise<void> {
+  const existing = await getClassPackage(id)
+  if (existing.status !== 'archived') {
+    throw new BadRequestError('class_package_not_archived')
+  }
+  await db
+    .update(classPackages)
+    .set({ deletedAt: sql`now()` })
+    .where(eq(classPackages.id, id))
 }

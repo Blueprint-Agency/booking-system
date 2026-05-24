@@ -78,5 +78,17 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'staff_users', id })
     return c.json(serialize(view))
   })
+  .post('/:id/unarchive', zValidator('param', idParam), async c => {
+    const { id } = c.req.valid('param')
+    const view = await svc.unarchiveInstructor(id)
+    c.set('auditTarget' as any, { table: 'staff_users', id })
+    return c.json(serialize(view))
+  })
+  .delete('/:id', zValidator('param', idParam), async c => {
+    const { id } = c.req.valid('param')
+    await svc.softDeleteInstructor(id)
+    c.set('auditTarget' as any, { table: 'staff_users', id })
+    return c.body(null, 204)
+  })
 
 export default app

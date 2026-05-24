@@ -155,5 +155,17 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'pt_packages', id })
     return c.json(await serializeWithPromos(row))
   })
+  .post('/:id/unarchive', zValidator('param', idParam), async c => {
+    const { id } = c.req.valid('param')
+    const row = await svc.unarchivePtPackage(id)
+    c.set('auditTarget' as any, { table: 'pt_packages', id })
+    return c.json(await serializeWithPromos(row))
+  })
+  .delete('/:id', zValidator('param', idParam), async c => {
+    const { id } = c.req.valid('param')
+    await svc.softDeletePtPackage(id)
+    c.set('auditTarget' as any, { table: 'pt_packages', id })
+    return c.body(null, 204)
+  })
 
 export default app

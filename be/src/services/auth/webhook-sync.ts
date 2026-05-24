@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { staffUsers, staffInvitations, clients } from '../../db/schema/identity'
 
@@ -65,7 +65,7 @@ export async function syncStaffFromClerk(clerkUser: ClerkWebhookUser): Promise<S
   const [row] = await db
     .select()
     .from(staffUsers)
-    .where(sql`lower(${staffUsers.email}) = ${normalized}`)
+    .where(and(sql`lower(${staffUsers.email}) = ${normalized}`, isNull(staffUsers.deletedAt)))
     .limit(1)
 
   if (!row) return { kind: 'no_staff_row' }

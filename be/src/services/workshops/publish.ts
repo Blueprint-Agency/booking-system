@@ -40,7 +40,13 @@ async function ensureLocation(id: string) {
   const [r] = await db
     .select({ id: locations.id })
     .from(locations)
-    .where(and(eq(locations.id, id), isNull(locations.archivedAt)))
+    .where(
+      and(
+        eq(locations.id, id),
+        isNull(locations.archivedAt),
+        isNull(locations.deletedAt),
+      ),
+    )
     .limit(1)
   if (!r) throw new BadRequestError('invalid_location_id')
 }
@@ -51,7 +57,13 @@ async function ensureInstructors(ids: string[]) {
     .select({ id: staffUsers.id })
     .from(staffUsers)
     .innerJoin(instructors, eq(instructors.staffUserId, staffUsers.id))
-    .where(and(inArray(staffUsers.id, ids), eq(staffUsers.status, 'active')))
+    .where(
+      and(
+        inArray(staffUsers.id, ids),
+        eq(staffUsers.status, 'active'),
+        isNull(staffUsers.deletedAt),
+      ),
+    )
   if (found.length !== ids.length) {
     throw new BadRequestError('invalid_instructor_ids', {
       invalid: ids.filter(id => !found.find(f => f.id === id)),

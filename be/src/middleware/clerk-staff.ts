@@ -1,5 +1,5 @@
 import type { MiddlewareHandler } from 'hono'
-import { eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { clerkStaffApp, verifyStaffToken } from '../lib/clerk'
 import { db } from '../db'
 import { staffUsers } from '../db/schema/identity'
@@ -49,7 +49,7 @@ export const clerkStaffAuth: MiddlewareHandler = async (c, next) => {
   let [row] = await db
     .select()
     .from(staffUsers)
-    .where(eq(staffUsers.clerkUserId, payload.sub))
+    .where(and(eq(staffUsers.clerkUserId, payload.sub), isNull(staffUsers.deletedAt)))
     .limit(1)
 
   // Auto-link fallback: webhook hasn't fired (e.g. no ngrok in dev) but the
@@ -73,7 +73,7 @@ export const clerkStaffAuth: MiddlewareHandler = async (c, next) => {
         ;[row] = await db
           .select()
           .from(staffUsers)
-          .where(eq(staffUsers.id, sync.staffUserId))
+          .where(and(eq(staffUsers.id, sync.staffUserId), isNull(staffUsers.deletedAt)))
           .limit(1)
       }
     } catch (err) {

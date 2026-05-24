@@ -1,4 +1,4 @@
-import { and, desc, eq, ilike, or, sql } from 'drizzle-orm'
+import { and, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { clients } from '../../db/schema/identity'
 import { manualAdjustments } from '../../db/schema/ledger'
@@ -13,14 +13,18 @@ export type ManualAdjustmentRow = typeof manualAdjustments.$inferSelect
 export interface ListClientsOptions {
   q?: string
   status?: 'active' | 'suspended'
+  // Default: hide soft-deleted rows. Superadmin "Deleted" view passes true.
+  includeDeleted?: boolean
 }
 
 /**
  * Admin client directory. Self-registered members (via the client app webhook)
- * and admin-invited members both land here.
+ * and admin-invited members both land here. Soft-deleted clients (deletedAt
+ * set) are filtered out unless includeDeleted is true.
  */
 export async function listClients(opts: ListClientsOptions): Promise<ClientRow[]> {
   const conds = []
+  if (!opts.includeDeleted) conds.push(isNull(clients.deletedAt))
   if (opts.status) conds.push(eq(clients.status, opts.status))
   if (opts.q?.trim()) {
     const term = `%${opts.q.trim()}%`
@@ -33,6 +37,10 @@ export async function listClients(opts: ListClientsOptions): Promise<ClientRow[]
     .orderBy(desc(clients.joinedAt))
 }
 
+/**
+ * Fetch by id. Soft-deleted rows are still returned (so the profile page can
+ * render the "Deleted" state + Restore button); the caller decides what to do.
+ */
 export async function getClientById(id: string): Promise<ClientRow> {
   const [row] = await db.select().from(clients).where(eq(clients.id, id)).limit(1)
   if (!row) throw new NotFoundError('client_not_found')
@@ -151,4 +159,124 @@ export async function createClientWithInvite(input: CreateClientInput): Promise<
   })
 
   return row
+}
+
+export interface SoftDeleteClientInput {
+  targetClientId: string
+  actorStaffId: string
+}
+
+/**
+ * Soft-delete a client (superadmin-only — route enforces). Sets deletedAt +
+ * deletedByStaffId on the row and bans + revokes all sessions on the Clerk
+ * user so they're booted immediately and cannot re-sign-in. The DB row, all
+ * bookings, packages, credit ledger entries, and the clerk_user_id are
+ * preserved so the action is fully reversible via restoreClient.
+ *
+ * Clerk side is best-effort: a transient Clerk failure must NOT roll back the
+ * DB flip (admin-read-only filters and the deleted_at check on every read are
+ * the load-bearing guard; banning is defense-in-depth).
+ *
+ * Idempotent: already-deleted target returns the existing row unchanged.
+ */
+export async function softDeleteClient(input: SoftDeleteClientInput): Promise<ClientRow> {
+  const { targetClientId, actorStaffId } = input
+
+  const [target] = await db
+    .select()
+    .from(clients)
+    .where(eq(clients.id, targetClientId))
+    .limit(1)
+  if (!target) throw new NotFoundError('client_not_found')
+  if (target.deletedAt) return target
+
+  const now = new Date()
+  const [updated] = await db
+    .update(clients)
+    .set({
+      deletedAt: now,
+      deletedByStaffId: actorStaffId,
+      updatedAt: now,
+    })
+    .where(eq(clients.id, targetClientId))
+    .returning()
+  if (!updated) throw new ConflictError('client_delete_failed')
+
+  // Best-effort Clerk ban + session revoke. Failures are logged, not thrown —
+  // the DB flip is what locks the client out of the BE; Clerk is belt-and-braces.
+  try {
+    const clerk = getClerkClientApp()
+    await clerk.users.banUser(target.clerkUserId).catch(err => {
+      // eslint-disable-next-line no-console
+      console.warn('[softDeleteClient] Clerk banUser failed', {
+        clientId: targetClientId,
+        err: err instanceof Error ? err.message : String(err),
+      })
+    })
+    const sessions = await clerk.sessions.getSessionList({ userId: target.clerkUserId })
+    await Promise.allSettled(sessions.data.map(s => clerk.sessions.revokeSession(s.id)))
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('[softDeleteClient] Clerk client app unavailable', {
+      clientId: targetClientId,
+      err: err instanceof Error ? err.message : String(err),
+    })
+  }
+
+  return updated
+}
+
+export interface RestoreClientInput {
+  targetClientId: string
+  actorStaffId: string
+}
+
+/**
+ * Reverse a soft-delete. Clears deletedAt + deletedByStaffId and unbans the
+ * Clerk user so they can sign back in. Idempotent for non-deleted targets.
+ * The actorStaffId is accepted for symmetry with softDelete and audit-log
+ * consistency even though it's not persisted on the row (the audit middleware
+ * captures the actor).
+ */
+export async function restoreClient(input: RestoreClientInput): Promise<ClientRow> {
+  const { targetClientId } = input
+
+  const [target] = await db
+    .select()
+    .from(clients)
+    .where(eq(clients.id, targetClientId))
+    .limit(1)
+  if (!target) throw new NotFoundError('client_not_found')
+  if (!target.deletedAt) return target
+
+  const now = new Date()
+  const [updated] = await db
+    .update(clients)
+    .set({
+      deletedAt: null,
+      deletedByStaffId: null,
+      updatedAt: now,
+    })
+    .where(eq(clients.id, targetClientId))
+    .returning()
+  if (!updated) throw new ConflictError('client_restore_failed')
+
+  try {
+    const clerk = getClerkClientApp()
+    await clerk.users.unbanUser(target.clerkUserId).catch(err => {
+      // eslint-disable-next-line no-console
+      console.warn('[restoreClient] Clerk unbanUser failed', {
+        clientId: targetClientId,
+        err: err instanceof Error ? err.message : String(err),
+      })
+    })
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('[restoreClient] Clerk client app unavailable', {
+      clientId: targetClientId,
+      err: err instanceof Error ? err.message : String(err),
+    })
+  }
+
+  return updated
 }
