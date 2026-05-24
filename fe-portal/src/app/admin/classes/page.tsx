@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Pencil, Archive, AlertTriangle, Loader2 } from "lucide-react";
+import { Plus, Pencil, Archive, AlertTriangle, Loader2, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button, PageHeader, Badge, EmptyState, Tabs, TabsList, TabsTrigger } from "@/components/ui";
 import { ClassPackageDialog } from "@/components/packages/class-package-dialog";
@@ -104,16 +104,47 @@ export default function ClassPackagesPage() {
 
   async function archive(pkg: ClassPackage) {
     if (!api) return;
-    if (pkg.status === "archived") {
-      toast.info("Restore is a v1 feature.");
-      return;
-    }
     try {
       await api.post(`/portal/admin/class-packages/${pkg.id}/archive`);
       await load();
       toast.success("Package archived.");
     } catch (err) {
       toast.error(err instanceof ApiError ? `Archive failed (HTTP ${err.status}).` : "Archive failed.");
+    }
+  }
+
+  async function unarchive(pkg: ClassPackage) {
+    if (!api) return;
+    try {
+      await api.post(`/portal/admin/class-packages/${pkg.id}/unarchive`);
+      await load();
+      toast.success("Package restored.");
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const body = err.body as { error?: string; message?: string } | null;
+        toast.error(body?.message ?? body?.error ?? `Unarchive failed (HTTP ${err.status}).`);
+      } else {
+        toast.error("Unarchive failed.");
+      }
+    }
+  }
+
+  async function handleDelete(pkg: ClassPackage) {
+    if (!api) return;
+    if (!window.confirm("Delete this package? It will be removed from the UI and cannot be restored.")) {
+      return;
+    }
+    try {
+      await api.del(`/portal/admin/class-packages/${pkg.id}`);
+      setPackages((prev) => prev.filter((p) => p.id !== pkg.id));
+      toast.success("Package deleted.");
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const body = err.body as { error?: string; message?: string } | null;
+        toast.error(body?.message ?? body?.error ?? `Delete failed (HTTP ${err.status}).`);
+      } else {
+        toast.error("Delete failed.");
+      }
     }
   }
 
@@ -177,7 +208,9 @@ export default function ClassPackagesPage() {
               <PackageGroup
                 title="Credit bundles"
                 description="Fixed number of credits valid for a period."
-                packages={active.filter((p) => p.kind === "credit_bundle")}
+                packages={active
+                  .filter((p) => p.kind === "credit_bundle")
+                  .sort((a, b) => (a.credits ?? 0) - (b.credits ?? 0))}
                 onEdit={(pkg) => setDialog({ kind: "edit", pkg })}
                 onArchive={archive}
               />
@@ -203,6 +236,8 @@ export default function ClassPackagesPage() {
                 packages={archived}
                 onEdit={(pkg) => setDialog({ kind: "edit", pkg })}
                 onArchive={archive}
+                onUnarchive={unarchive}
+                onDelete={handleDelete}
                 archived
               />
             ))}
@@ -226,6 +261,8 @@ function PackageGroup({
   packages,
   onEdit,
   onArchive,
+  onUnarchive,
+  onDelete,
   archived,
   warning,
 }: {
@@ -234,6 +271,8 @@ function PackageGroup({
   packages: ClassPackage[];
   onEdit: (pkg: ClassPackage) => void;
   onArchive: (pkg: ClassPackage) => void;
+  onUnarchive?: (pkg: ClassPackage) => void;
+  onDelete?: (pkg: ClassPackage) => void;
   archived?: boolean;
   warning?: string | null;
 }) {
@@ -257,6 +296,8 @@ function PackageGroup({
             archived={archived}
             onEdit={() => onEdit(pkg)}
             onArchive={() => onArchive(pkg)}
+            onUnarchive={onUnarchive ? () => onUnarchive(pkg) : undefined}
+            onDelete={onDelete ? () => onDelete(pkg) : undefined}
           />
         ))}
       </div>
@@ -269,22 +310,31 @@ function PackageCard({
   archived,
   onEdit,
   onArchive,
+  onUnarchive,
+  onDelete,
 }: {
   pkg: ClassPackage;
   archived?: boolean;
   onEdit: () => void;
   onArchive: () => void;
+  onUnarchive?: () => void;
+  onDelete?: () => void;
 }) {
-  const subtitle =
+  const heading =
     pkg.kind === "credit_bundle"
-      ? `${pkg.credits} credits · ${pkg.validityDays}-day validity`
+      ? `${pkg.credits} ${(pkg.credits ?? 0) === 1 ? "credit" : "credits"}`
+      : pkg.name;
+  const subtitleLines: string[] =
+    pkg.kind === "credit_bundle"
+      ? [pkg.name, `${pkg.validityDays}-day validity`]
       : pkg.kind === "unlimited"
-      ? `${pkg.durationDays}-day pass`
+      ? [`${pkg.durationDays}-day pass`]
       : pkg.kind === "trial"
-      ? `${pkg.credits} class${(pkg.credits ?? 0) === 1 ? "" : "es"}${
-          pkg.validityDays ? ` · ${pkg.validityDays}-day validity` : " · no expiry"
-        }`
-      : "";
+      ? [
+          `${pkg.credits} class${(pkg.credits ?? 0) === 1 ? "" : "es"}`,
+          pkg.validityDays ? `${pkg.validityDays}-day validity` : "no expiry",
+        ]
+      : [];
   return (
     <div
       className={`rounded-xl border border-border bg-card p-5 shadow-soft transition ${
@@ -293,8 +343,12 @@ function PackageCard({
     >
       <div className="mb-2 flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <h3 className="truncate text-base font-semibold text-ink">{pkg.name}</h3>
-          <p className="text-xs text-muted">{subtitle}</p>
+          <h3 className="truncate text-base font-semibold text-ink">{heading}</h3>
+          {subtitleLines.map((line) => (
+            <p key={line} className="text-xs text-muted">
+              {line}
+            </p>
+          ))}
         </div>
         {archived && <Badge tone="neutral">Archived</Badge>}
       </div>
@@ -311,6 +365,16 @@ function PackageCard({
         {pkg.status === "active" && (
           <Button size="sm" variant="ghost" onClick={onArchive}>
             <Archive className="h-3.5 w-3.5" /> Archive
+          </Button>
+        )}
+        {pkg.status === "archived" && onUnarchive && (
+          <Button size="sm" variant="ghost" onClick={onUnarchive}>
+            <RotateCcw className="h-3.5 w-3.5" /> Unarchive
+          </Button>
+        )}
+        {pkg.status === "archived" && onDelete && (
+          <Button size="sm" variant="ghost" onClick={onDelete}>
+            <Trash2 className="h-3.5 w-3.5" /> Delete
           </Button>
         )}
       </div>

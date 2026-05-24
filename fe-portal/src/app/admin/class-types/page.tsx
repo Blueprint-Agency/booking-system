@@ -1,6 +1,6 @@
 "use client";
 import { Fragment, useCallback, useEffect, useState } from "react";
-import { Plus, Archive, RotateCcw, Pencil, Loader2, CornerDownRight } from "lucide-react";
+import { Plus, Archive, RotateCcw, Pencil, Loader2, CornerDownRight, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   Button,
@@ -143,6 +143,25 @@ export default function ClassTypesPage() {
     }
   }
 
+  async function handleDelete(ct: ClassType) {
+    if (!api) return;
+    if (!window.confirm("Delete this class type? It will be removed from the UI and cannot be restored.")) {
+      return;
+    }
+    try {
+      await api.del(`/portal/admin/class-types/${ct.id}`);
+      setClassTypes((prev) => prev.filter((c) => c.id !== ct.id));
+      toast.success("Class type deleted.");
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const body = err.body as { error?: string; message?: string } | null;
+        toast.error(body?.message ?? body?.error ?? `Delete failed (HTTP ${err.status}).`);
+      } else {
+        toast.error("Delete failed.");
+      }
+    }
+  }
+
   return (
     <div className="mx-auto max-w-3xl">
       <PageHeader
@@ -183,6 +202,7 @@ export default function ClassTypesPage() {
           all={archived}
           onEdit={(ct) => setDialog({ kind: "edit", ct })}
           onArchive={(ct) => toggleArchive(ct)}
+          onDelete={(ct) => handleDelete(ct)}
           dimmed
         />
       )}
@@ -227,11 +247,13 @@ function Tree({
   all,
   onEdit,
   onArchive,
+  onDelete,
   dimmed,
 }: {
   all: ClassType[];
   onEdit: (ct: ClassType) => void;
   onArchive: (ct: ClassType) => void;
+  onDelete?: (ct: ClassType) => void;
   dimmed?: boolean;
 }) {
   // Group by parent. Roots = parentId === null. Children grouped under their parent.
@@ -260,13 +282,19 @@ function Tree({
         const children = byParent.get(ct.id) ?? [];
         return (
           <Fragment key={ct.id}>
-            <ClassTypeRow ct={ct} onEdit={() => onEdit(ct)} onArchive={() => onArchive(ct)} />
+            <ClassTypeRow
+              ct={ct}
+              onEdit={() => onEdit(ct)}
+              onArchive={() => onArchive(ct)}
+              onDelete={onDelete ? () => onDelete(ct) : undefined}
+            />
             {children.map((child) => (
               <ClassTypeRow
                 key={child.id}
                 ct={child}
                 onEdit={() => onEdit(child)}
                 onArchive={() => onArchive(child)}
+                onDelete={onDelete ? () => onDelete(child) : undefined}
                 indent
               />
             ))}
@@ -281,11 +309,13 @@ function ClassTypeRow({
   ct,
   onEdit,
   onArchive,
+  onDelete,
   indent,
 }: {
   ct: ClassType;
   onEdit: () => void;
   onArchive: () => void;
+  onDelete?: () => void;
   indent?: boolean;
 }) {
   const isArchived = !!ct.archivedAt;
@@ -318,6 +348,11 @@ function ClassTypeRow({
             </>
           )}
         </Button>
+        {isArchived && onDelete && (
+          <Button size="sm" variant="ghost" onClick={onDelete}>
+            <Trash2 className="h-3.5 w-3.5" /> Delete
+          </Button>
+        )}
       </div>
     </li>
   );

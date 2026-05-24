@@ -1,7 +1,18 @@
 "use client";
 import Link from "next/link";
 import { use, useCallback, useEffect, useState } from "react";
-import { ArrowLeft, Mail, Phone, MoreVertical, ShieldOff, ShieldCheck, Loader2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Mail,
+  Phone,
+  MoreVertical,
+  ShieldOff,
+  ShieldCheck,
+  Loader2,
+  Trash2,
+  RotateCcw,
+  AlertTriangle,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, Badge, Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
 import { PackageExpiryDialog } from "@/components/clients/package-expiry-dialog";
@@ -42,6 +53,8 @@ interface ApiProfile {
   status: "active" | "suspended";
   joined_at: string;
   suspended_at: string | null;
+  deleted_at: string | null;
+  deleted_by_staff_id: string | null;
   packages: ApiPackage[];
   adjustments: ApiAdjustment[];
 }
@@ -70,6 +83,7 @@ export default function ClientProfilePage({
   const { id } = use(params);
   const { api, role } = useWorkspace();
   const canEdit = role === "admin" || role === "superadmin";
+  const isSuperadmin = role === "superadmin";
 
   const [profile, setProfile] = useState<ApiProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -79,6 +93,8 @@ export default function ClientProfilePage({
   const [adjustFor, setAdjustFor] = useState<ApiPackage | null>(null);
   const [balanceFor, setBalanceFor] = useState<ApiPackage | null>(null);
   const [expiryFor, setExpiryFor] = useState<ApiPackage | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [restoring, setRestoring] = useState(false);
 
   const load = useCallback(async () => {
     if (!api) return;
@@ -149,12 +165,62 @@ export default function ClientProfilePage({
             </div>
           )}
 
+          {profile.deleted_at && (
+            <div className="flex items-start gap-3 rounded-lg border border-error/30 bg-error/5 px-4 py-3 text-sm">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-error" />
+              <div className="flex-1">
+                <div className="font-medium text-error">
+                  Deleted {formatRelative(profile.deleted_at)}
+                </div>
+                <div className="mt-0.5 text-xs text-muted">
+                  This client cannot sign in. Bookings, packages, and credit
+                  history are preserved. Superadmins can restore them.
+                </div>
+              </div>
+              {isSuperadmin && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={restoring}
+                  onClick={async () => {
+                    if (!api) return;
+                    setRestoring(true);
+                    try {
+                      await api.post(`/portal/admin/clients/${id}/restore`, {});
+                      toast.success("Client restored.");
+                      await load();
+                    } catch (err) {
+                      toast.error(
+                        err instanceof ApiError
+                          ? `Restore failed (HTTP ${err.status}).`
+                          : "Restore failed.",
+                      );
+                    } finally {
+                      setRestoring(false);
+                    }
+                  }}
+                >
+                  {restoring ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  )}
+                  Restore
+                </Button>
+              )}
+            </div>
+          )}
+
           <header className="flex items-start gap-4 border-b border-border pb-6">
             <Avatar name={profile.name} size={64} />
             <div className="flex-1">
               <div className="flex items-center gap-2">
                 <h1 className="text-2xl font-semibold text-ink">{profile.name}</h1>
-                {profile.status === "suspended" ? (
+                {profile.deleted_at ? (
+                  <Badge tone="error">
+                    <Trash2 className="mr-1 h-3 w-3" /> Deleted
+                  </Badge>
+                ) : profile.status === "suspended" ? (
                   <Badge tone="error">
                     <ShieldOff className="mr-1 h-3 w-3" /> Suspended
                   </Badge>
@@ -174,6 +240,16 @@ export default function ClientProfilePage({
                 <span>Joined {formatDate(profile.joined_at)}</span>
               </div>
             </div>
+            {isSuperadmin && !profile.deleted_at && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setDeleteOpen(true)}
+                className="text-error hover:bg-error/10 hover:text-error"
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Delete
+              </Button>
+            )}
           </header>
 
           <section>
@@ -370,7 +446,102 @@ export default function ClientProfilePage({
           onClose={() => setExpiryFor(null)}
         />
       )}
+
+      {isSuperadmin && deleteOpen && profile && (
+        <DeleteClientDialog
+          email={profile.email}
+          name={profile.name}
+          onClose={() => setDeleteOpen(false)}
+          onConfirm={async () => {
+            if (!api) return;
+            try {
+              await api.del(`/portal/admin/clients/${id}`);
+              toast.success("Client deleted.");
+              setDeleteOpen(false);
+              await load();
+            } catch (err) {
+              toast.error(
+                err instanceof ApiError
+                  ? `Delete failed (HTTP ${err.status}).`
+                  : "Delete failed.",
+              );
+            }
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+function DeleteClientDialog({
+  email,
+  name,
+  onClose,
+  onConfirm,
+}: {
+  email: string;
+  name: string;
+  onClose: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const matches = typed.trim().toLowerCase() === email.trim().toLowerCase();
+  return (
+    <Dialog
+      open
+      onOpenChange={(o) => !o && onClose()}
+      title={`Delete ${name}?`}
+      description="The client will be locked out of the booking app and hidden from the directory. Bookings, packages, and credit history are kept. A superadmin can restore them later."
+    >
+      <form
+        className="space-y-4"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (!matches || busy) return;
+          setBusy(true);
+          try {
+            await onConfirm();
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <div className="space-y-1.5">
+          <Label htmlFor="confirm-email">
+            Type <span className="font-mono text-ink">{email}</span> to confirm
+          </Label>
+          <Input
+            id="confirm-email"
+            autoFocus
+            autoComplete="off"
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            placeholder={email}
+          />
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            disabled={!matches || busy}
+            className="bg-error text-white hover:bg-error/90"
+          >
+            {busy ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" /> Deleting…
+              </>
+            ) : (
+              <>
+                <Trash2 className="h-4 w-4" /> Delete client
+              </>
+            )}
+          </Button>
+        </DialogFooter>
+      </form>
+    </Dialog>
   );
 }
 

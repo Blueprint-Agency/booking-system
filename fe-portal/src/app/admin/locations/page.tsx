@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Plus, Archive, RotateCcw, MapPin, Phone, ExternalLink } from "lucide-react";
+import { Plus, Archive, RotateCcw, MapPin, Phone, ExternalLink, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button, PageHeader, Badge, EmptyState, Tabs, TabsList, TabsTrigger } from "@/components/ui";
 import { LocationFormDialog } from "@/components/locations/location-form-dialog";
@@ -11,11 +11,13 @@ import type { Location } from "@/types";
 export default function LocationsPage() {
   const {
     role,
+    api,
     locations,
     addLocation,
     updateLocation,
     archiveLocation,
     restoreLocation,
+    refresh,
   } = useWorkspace();
   const [editing, setEditing] = useState<Location | null>(null);
   const [creating, setCreating] = useState(false);
@@ -56,6 +58,25 @@ export default function LocationsPage() {
         toast.error("Cannot archive: location is referenced by active sessions.");
       } else {
         toast.error("Archive failed.");
+      }
+    }
+  }
+
+  async function handleDelete(loc: Location) {
+    if (!api) return;
+    if (!window.confirm("Delete this location? It will be removed from the UI and cannot be restored.")) {
+      return;
+    }
+    try {
+      await api.del(`/portal/admin/locations/${loc.id}`);
+      await refresh();
+      toast.success("Location deleted.");
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const body = err.body as { error?: string; message?: string } | null;
+        toast.error(body?.message ?? body?.error ?? `Delete failed (HTTP ${err.status}).`);
+      } else {
+        toast.error("Delete failed.");
       }
     }
   }
@@ -132,6 +153,7 @@ export default function LocationsPage() {
               location={loc}
               onEdit={() => setEditing(loc)}
               onArchive={() => toggleArchive(loc)}
+              onDelete={() => handleDelete(loc)}
             />
           ))}
         </div>
@@ -155,10 +177,12 @@ function LocationCard({
   location,
   onEdit,
   onArchive,
+  onDelete,
 }: {
   location: Location;
   onEdit: () => void;
   onArchive: () => void;
+  onDelete?: () => void;
 }) {
   const isArchived = !!location.archivedAt;
   return (
@@ -193,6 +217,11 @@ function LocationCard({
               </>
             )}
           </Button>
+          {isArchived && onDelete && (
+            <Button size="sm" variant="ghost" onClick={onDelete}>
+              <Trash2 className="h-3.5 w-3.5" /> Delete
+            </Button>
+          )}
         </div>
       </div>
       <ul className="space-y-1.5 text-sm text-muted">

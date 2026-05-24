@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Pencil, Archive, Save, Loader2 } from "lucide-react";
+import { Plus, Pencil, Archive, Save, Loader2, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button, PageHeader, Badge, EmptyState, Input, Label, Tabs, TabsList, TabsTrigger } from "@/components/ui";
 import { PtPackageDialog } from "@/components/packages/pt-package-dialog";
@@ -110,16 +110,47 @@ export default function PrivateSessionsPage() {
 
   async function archive(pkg: PtPackage) {
     if (!api) return;
-    if (pkg.status === "archived") {
-      toast.info("Restore is a v1 feature.");
-      return;
-    }
     try {
-      await api.patch(`/portal/admin/pt-packages/${pkg.id}`, { status: "archived" });
+      await api.post(`/portal/admin/pt-packages/${pkg.id}/archive`);
       await load();
       toast.success("PT package archived.");
     } catch (err) {
       toast.error(err instanceof ApiError ? `Archive failed (HTTP ${err.status}).` : "Archive failed.");
+    }
+  }
+
+  async function unarchive(pkg: PtPackage) {
+    if (!api) return;
+    try {
+      await api.post(`/portal/admin/pt-packages/${pkg.id}/unarchive`);
+      await load();
+      toast.success("PT package restored.");
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const body = err.body as { error?: string; message?: string } | null;
+        toast.error(body?.message ?? body?.error ?? `Unarchive failed (HTTP ${err.status}).`);
+      } else {
+        toast.error("Unarchive failed.");
+      }
+    }
+  }
+
+  async function handleDelete(pkg: PtPackage) {
+    if (!api) return;
+    if (!window.confirm("Delete this PT package? It will be removed from the UI and cannot be restored.")) {
+      return;
+    }
+    try {
+      await api.del(`/portal/admin/pt-packages/${pkg.id}`);
+      setPackages((prev) => prev.filter((p) => p.id !== pkg.id));
+      toast.success("PT package deleted.");
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const body = err.body as { error?: string; message?: string } | null;
+        toast.error(body?.message ?? body?.error ?? `Delete failed (HTTP ${err.status}).`);
+      } else {
+        toast.error("Delete failed.");
+      }
     }
   }
 
@@ -243,6 +274,8 @@ export default function PrivateSessionsPage() {
                   packages={archived}
                   onEdit={(pkg) => setDialog({ kind: "edit", pkg })}
                   onArchive={archive}
+                  onUnarchive={unarchive}
+                  onDelete={handleDelete}
                   archived
                 />
               ))}
@@ -266,12 +299,16 @@ function PackageGroup({
   packages,
   onEdit,
   onArchive,
+  onUnarchive,
+  onDelete,
   archived,
 }: {
   title: string;
   packages: PtPackage[];
   onEdit: (pkg: PtPackage) => void;
   onArchive: (pkg: PtPackage) => void;
+  onUnarchive?: (pkg: PtPackage) => void;
+  onDelete?: (pkg: PtPackage) => void;
   archived?: boolean;
 }) {
   if (packages.length === 0) return null;
@@ -307,6 +344,16 @@ function PackageGroup({
               {pkg.status === "active" && (
                 <Button size="sm" variant="ghost" onClick={() => onArchive(pkg)}>
                   <Archive className="h-3.5 w-3.5" /> Archive
+                </Button>
+              )}
+              {pkg.status === "archived" && onUnarchive && (
+                <Button size="sm" variant="ghost" onClick={() => onUnarchive(pkg)}>
+                  <RotateCcw className="h-3.5 w-3.5" /> Unarchive
+                </Button>
+              )}
+              {pkg.status === "archived" && onDelete && (
+                <Button size="sm" variant="ghost" onClick={() => onDelete(pkg)}>
+                  <Trash2 className="h-3.5 w-3.5" /> Delete
                 </Button>
               )}
             </div>

@@ -1,5 +1,4 @@
 "use client";
-import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import {
   Plus,
@@ -9,7 +8,9 @@ import {
   X,
   Shield,
   ShieldCheck,
-  ChevronRight,
+  Sparkles,
+  RotateCcw,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -56,7 +57,7 @@ interface InvitationApiRow {
   invited_by_staff_name: string | null;
 }
 
-type InvitableRole = "admin" | "superadmin";
+type InvitableRole = "admin" | "superadmin" | "instructor";
 
 interface StaffListResponse {
   staff: StaffApiRow[];
@@ -79,6 +80,8 @@ export default function StaffPage() {
   const [busyInviteId, setBusyInviteId] = useState<string | null>(null);
   const [archiveTarget, setArchiveTarget] = useState<StaffApiRow | null>(null);
   const [archiveBusy, setArchiveBusy] = useState(false);
+  const [unarchiveBusyId, setUnarchiveBusyId] = useState<string | null>(null);
+  const [deleteBusyId, setDeleteBusyId] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!api) return;
@@ -112,6 +115,59 @@ export default function StaffPage() {
     return true;
   }
 
+  function canManageArchived(target: StaffApiRow): boolean {
+    if (!isSuperadmin) return false;
+    if (target.status !== "archived") return false;
+    if (target.is_seeded_superadmin) return false;
+    if (target.role === "superadmin" && !isSeededSuperadmin) return false;
+    return true;
+  }
+
+  async function handleUnarchive(target: StaffApiRow) {
+    if (!api) return;
+    setUnarchiveBusyId(target.id);
+    try {
+      await api.post(`/portal/admin/staff/${target.id}/unarchive`);
+      toast.success(`${target.name} has been restored.`);
+      await refresh();
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const body = err.body as { error?: string; details?: { message?: string } } | null;
+        toast.error(body?.details?.message ?? `Unarchive failed (HTTP ${err.status}).`);
+      } else {
+        toast.error("Unarchive failed.");
+      }
+    } finally {
+      setUnarchiveBusyId(null);
+    }
+  }
+
+  async function handleDelete(target: StaffApiRow) {
+    if (!api) return;
+    if (
+      !window.confirm(
+        `Delete ${target.name}? They will be removed from the UI and cannot be restored.`,
+      )
+    ) {
+      return;
+    }
+    setDeleteBusyId(target.id);
+    try {
+      await api.del(`/portal/admin/staff/${target.id}`);
+      toast.success(`${target.name} has been deleted.`);
+      setStaff((prev) => prev.filter((s) => s.id !== target.id));
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const body = err.body as { error?: string; details?: { message?: string } } | null;
+        toast.error(body?.details?.message ?? `Delete failed (HTTP ${err.status}).`);
+      } else {
+        toast.error("Delete failed.");
+      }
+    } finally {
+      setDeleteBusyId(null);
+    }
+  }
+
   async function handleArchive(target: StaffApiRow) {
     if (!api) return;
     setArchiveBusy(true);
@@ -135,16 +191,18 @@ export default function StaffPage() {
     t === "instructors" ? role === "instructor" : role === "admin" || role === "superadmin";
 
   const tabStaff = staff.filter(s => roleInTab(s.role, tab));
-  const active = tabStaff.filter(s => s.status !== "archived");
+  // Pending staff are already represented by their invitation row above,
+  // so the main list shows only fully-accepted (active) accounts.
+  const active = tabStaff.filter(s => s.status === "active");
   const archived = tabStaff.filter(s => s.status === "archived");
   const pendingInvites = invites.filter(i => i.status === "pending" && roleInTab(i.role, tab));
 
   // Active counts per tab for the tab labels.
   const adminCount = staff.filter(
-    s => s.status !== "archived" && roleInTab(s.role, "admin"),
+    s => s.status === "active" && roleInTab(s.role, "admin"),
   ).length;
   const instructorCount = staff.filter(
-    s => s.status !== "archived" && roleInTab(s.role, "instructors"),
+    s => s.status === "active" && roleInTab(s.role, "instructors"),
   ).length;
 
   async function handleInvite(
@@ -157,7 +215,7 @@ export default function StaffPage() {
       await api.post("/portal/admin/staff/invite", {
         email,
         role,
-        // Superadmin always gets implicit grant to all locations — ignore the field.
+        // Superadmin/instructor don't carry location grants — only admin does.
         granted_location_ids:
           role === "admin" && grantedLocationIds.length ? grantedLocationIds : undefined,
       });
@@ -224,17 +282,9 @@ export default function StaffPage() {
         description="Admins and instructors. Roles are mutually exclusive — one email holds one staff account. Archived accounts can never be hard-deleted (audit log integrity)."
         actions={
           isSuperadmin ? (
-            tab === "admin" ? (
-              <Button onClick={() => setInviteDialog(true)}>
-                <Plus className="h-4 w-4" /> Invite staff
-              </Button>
-            ) : (
-              <Link href="/admin/instructors/new">
-                <Button>
-                  <Plus className="h-4 w-4" /> Add instructor
-                </Button>
-              </Link>
-            )
+            <Button onClick={() => setInviteDialog(true)}>
+              <Plus className="h-4 w-4" /> Invite staff
+            </Button>
           ) : null
         }
       />
@@ -356,7 +406,6 @@ export default function StaffPage() {
                       isSelf={s.id === currentStaff?.id}
                       canArchive={canArchiveTarget(s)}
                       onArchive={() => setArchiveTarget(s)}
-                      detailHref={tab === "instructors" ? `/admin/instructors/${s.id}` : undefined}
                     />
                   ))}
                 </ul>
@@ -383,7 +432,11 @@ export default function StaffPage() {
                       isSelf={s.id === currentStaff?.id}
                       canArchive={canArchiveTarget(s)}
                       onArchive={() => setArchiveTarget(s)}
-                      detailHref={tab === "instructors" ? `/admin/instructors/${s.id}` : undefined}
+                      canManageArchived={canManageArchived(s)}
+                      onUnarchive={() => handleUnarchive(s)}
+                      onDelete={() => handleDelete(s)}
+                      unarchiveBusy={unarchiveBusyId === s.id}
+                      deleteBusy={deleteBusyId === s.id}
                     />
                   ))}
                 </ul>
@@ -395,6 +448,7 @@ export default function StaffPage() {
 
       {inviteDialog && (
         <InviteAdminDialog
+          defaultRole={tab === "instructors" ? "instructor" : "admin"}
           locations={locations
             .filter(l => !l.archivedAt)
             .map(l => ({ id: l.id, name: l.name }))}
@@ -465,13 +519,21 @@ function StaffRow({
   isSelf,
   canArchive,
   onArchive,
-  detailHref,
+  canManageArchived,
+  onUnarchive,
+  onDelete,
+  unarchiveBusy,
+  deleteBusy,
 }: {
   staff: StaffApiRow;
   isSelf: boolean;
   canArchive?: boolean;
   onArchive?: () => void;
-  detailHref?: string;
+  canManageArchived?: boolean;
+  onUnarchive?: () => void;
+  onDelete?: () => void;
+  unarchiveBusy?: boolean;
+  deleteBusy?: boolean;
 }) {
   const isArchived = staff.status === "archived";
   const isPending = staff.status === "pending";
@@ -518,21 +580,21 @@ function StaffRow({
 
   return (
     <li className="flex items-center gap-4 px-5 py-3">
-      {detailHref ? (
-        <Link
-          href={detailHref}
-          className="flex min-w-0 flex-1 items-center gap-4 rounded-md transition-opacity hover:opacity-80"
-        >
-          {identity}
-        </Link>
-      ) : (
-        identity
-      )}
+      {identity}
       {meta}
-      {detailHref && <ChevronRight className="h-4 w-4 shrink-0 text-muted" />}
       {canArchive && onArchive && (
         <Button size="sm" variant="ghost" onClick={onArchive}>
           <Archive className="h-3.5 w-3.5" /> Archive
+        </Button>
+      )}
+      {isArchived && canManageArchived && onUnarchive && (
+        <Button size="sm" variant="ghost" disabled={unarchiveBusy} onClick={onUnarchive}>
+          <RotateCcw className="h-3.5 w-3.5" /> Unarchive
+        </Button>
+      )}
+      {isArchived && canManageArchived && onDelete && (
+        <Button size="sm" variant="ghost" disabled={deleteBusy} onClick={onDelete}>
+          <Trash2 className="h-3.5 w-3.5" /> Delete
         </Button>
       )}
     </li>
@@ -580,10 +642,12 @@ function TabCount({ n, active }: { n: number; active: boolean }) {
 // ---------------- Invite-admin dialog ----------------
 
 function InviteAdminDialog({
+  defaultRole,
   locations,
   onSubmit,
   onClose,
 }: {
+  defaultRole: InvitableRole;
   locations: Array<{ id: string; name: string }>;
   onSubmit: (
     email: string,
@@ -593,7 +657,7 @@ function InviteAdminDialog({
   onClose: () => void;
 }) {
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState<InvitableRole>("admin");
+  const [role, setRole] = useState<InvitableRole>(defaultRole);
   const [grantedIds, setGrantedIds] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const allLocations = grantedIds.length === 0;
@@ -638,7 +702,7 @@ function InviteAdminDialog({
 
         <div className="space-y-1.5">
           <Label>Role</Label>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <button
               type="button"
               onClick={() => setRole("admin")}
@@ -669,6 +733,22 @@ function InviteAdminDialog({
               </div>
               <div className="mt-0.5 text-xs text-muted">
                 Full access, all locations.
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setRole("instructor")}
+              className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
+                role === "instructor"
+                  ? "border-accent bg-accent/5 text-ink"
+                  : "border-border bg-card text-muted hover:text-ink"
+              }`}
+            >
+              <div className="flex items-center gap-1.5 font-medium">
+                <Sparkles className="h-3.5 w-3.5" /> Instructor
+              </div>
+              <div className="mt-0.5 text-xs text-muted">
+                Teaches classes; no admin access.
               </div>
             </button>
           </div>
@@ -714,6 +794,14 @@ function InviteAdminDialog({
             Superadmins have full access across all locations and can manage other
             staff, including other superadmins. The main seeded superadmin is set
             via the <code className="text-ink">SUPERADMIN_EMAIL</code> env var.
+          </p>
+        )}
+
+        {role === "instructor" && (
+          <p className="rounded-lg border border-border bg-paper px-3 py-2 text-xs text-muted">
+            Instructors sign in to view their schedule and class rosters. They
+            have no admin access and are assigned to locations through the
+            schedule, not on invite.
           </p>
         )}
 

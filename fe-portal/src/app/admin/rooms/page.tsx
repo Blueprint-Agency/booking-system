@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { Plus, Archive, RotateCcw, Pencil, Loader2, Users } from "lucide-react";
+import { Plus, Archive, RotateCcw, Pencil, Loader2, Users, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   Button,
@@ -148,6 +148,25 @@ export default function RoomsPage() {
     }
   }
 
+  async function handleDelete(room: Room) {
+    if (!api) return;
+    if (!window.confirm("Delete this room? It will be removed from the UI and cannot be restored.")) {
+      return;
+    }
+    try {
+      await api.del(`/portal/admin/rooms/${room.id}`);
+      setRooms((prev) => prev.filter((r) => r.id !== room.id));
+      toast.success("Room deleted.");
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const body = err.body as { error?: string; message?: string } | null;
+        toast.error(body?.message ?? body?.error ?? `Delete failed (HTTP ${err.status}).`);
+      } else {
+        toast.error("Delete failed.");
+      }
+    }
+  }
+
   const active = rooms.filter((r) => !r.archivedAt);
   const archived = rooms.filter((r) => r.archivedAt);
 
@@ -207,6 +226,7 @@ export default function RoomsPage() {
           rooms={archived}
           onEdit={(room) => setDialog({ kind: "edit", room })}
           onArchive={(room) => toggleArchive(room)}
+          onDelete={(room) => handleDelete(room)}
           dimmed
         />
       )}
@@ -252,11 +272,13 @@ function RoomList({
   rooms,
   onEdit,
   onArchive,
+  onDelete,
   dimmed,
 }: {
   rooms: Room[];
   onEdit: (room: Room) => void;
   onArchive: (room: Room) => void;
+  onDelete?: (room: Room) => void;
   dimmed?: boolean;
 }) {
   return (
@@ -293,6 +315,11 @@ function RoomList({
                   </>
                 )}
               </Button>
+              {isArchived && onDelete && (
+                <Button size="sm" variant="ghost" onClick={() => onDelete(room)}>
+                  <Trash2 className="h-3.5 w-3.5" /> Delete
+                </Button>
+              )}
             </div>
           </li>
         );

@@ -95,11 +95,11 @@ export default function EditCorporatePackagePage() {
     setActionError(null);
     setArchiveBusy(true);
     try {
-      const nextStatus = row.status === "archived" ? "active" : "archived";
-      const res = await api.patch<{ corporatePackage: ApiCorporatePackage }>(
-        `/portal/admin/corporate-packages/${row.id}`,
-        { status: nextStatus },
-      );
+      const path =
+        row.status === "archived"
+          ? `/portal/admin/corporate-packages/${row.id}/unarchive`
+          : `/portal/admin/corporate-packages/${row.id}/archive`;
+      const res = await api.post<{ corporatePackage: ApiCorporatePackage }>(path);
       setRow(res.corporatePackage);
     } catch (err) {
       if (err instanceof ApiError) {
@@ -115,7 +115,13 @@ export default function EditCorporatePackagePage() {
 
   const onDelete = async () => {
     if (!api || !row) return;
-    if (!window.confirm("Delete this corporate package? This cannot be undone.")) return;
+    if (
+      !window.confirm(
+        "Delete this corporate package? It will be removed from the UI and cannot be restored.",
+      )
+    ) {
+      return;
+    }
     setActionError(null);
     setDeleteBusy(true);
     try {
@@ -123,14 +129,8 @@ export default function EditCorporatePackagePage() {
       router.push("/admin/packages/corporate");
     } catch (err) {
       if (err instanceof ApiError) {
-        const body = err.body as { error?: string } | null;
-        if (err.status === 409 && body?.error === "in_use") {
-          setActionError(
-            "This package can't be deleted — it's referenced by one or more scheduled corporate sessions. Archive it instead.",
-          );
-        } else {
-          setActionError(`Failed (HTTP ${err.status})`);
-        }
+        const body = err.body as { error?: string; message?: string } | null;
+        setActionError(body?.message ?? body?.error ?? `Failed (HTTP ${err.status})`);
       } else {
         setActionError("Network error");
       }
@@ -259,26 +259,28 @@ export default function EditCorporatePackagePage() {
         </div>
       </form>
 
-      <div className="rounded-xl border border-error/30 bg-error/5 p-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h2 className="text-sm font-semibold text-ink">Delete package</h2>
-            <p className="mt-1 text-xs text-muted">
-              Permanent. Only allowed if no corporate sessions reference this package.
-            </p>
+      {isArchived && (
+        <div className="rounded-xl border border-error/30 bg-error/5 p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-ink">Delete package</h2>
+              <p className="mt-1 text-xs text-muted">
+                Removes this archived package from the UI. It cannot be restored.
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="danger"
+              size="sm"
+              onClick={onDelete}
+              disabled={deleteBusy}
+            >
+              {deleteBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+              Delete
+            </Button>
           </div>
-          <Button
-            type="button"
-            variant="danger"
-            size="sm"
-            onClick={onDelete}
-            disabled={deleteBusy}
-          >
-            {deleteBusy && <Loader2 className="h-4 w-4 animate-spin" />}
-            Delete
-          </Button>
         </div>
-      </div>
+      )}
     </div>
   );
 }
