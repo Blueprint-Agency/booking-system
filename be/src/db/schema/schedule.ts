@@ -10,6 +10,8 @@ import {
   primaryKey,
   check,
   foreignKey,
+  date,
+  time,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { staffUsers, clients } from './identity'
@@ -280,17 +282,23 @@ export const workshopTierDays = pgTable(
 )
 
 // ============================================================================
-// pt_requests (NEW — §4e / admin-restructure.md §9 / fe-client-features.md §5.2)
-// Client-submitted intent to schedule a PT session. No location_id (assigned only at scheduling).
-// Workspace-agnostic (every admin sees the same triage queue).
+// pt_requests (reshape — see docs/md/be-client.md §PT & docs/md/be-portal.md §PT)
+// ---------------------------------------------------------------------------
+// Client-submitted intent to schedule a PT session. Simplified flow:
+//   1. Client picks class_type + session_type (1on1 / 2on1) + 1..N proposed
+//      date/time slots + optional message (+ partner for 2on1).
+//   2. Admin schedules out-of-app (WhatsApp), then picks ONE final slot in
+//      the portal — that creates a pt_sessions row and flips status to
+//      'scheduled'. No "approve" or "decline" — see ptRequestStatusEnum.
+//   3. Cancellation refund depends on current status (see services/pt-sessions).
+//
+// No location_id here — assigned at scheduling time on pt_sessions.
+// Instructor preference is NOT captured — admin assigns instructor when
+// scheduling, matching live availability and class type expertise.
 // ----------------------------------------------------------------------------
 // Circular-FK note: pt_requests.scheduled_pt_session_id → pt_sessions.id, while
-// pt_sessions.pt_request_id → pt_requests.id. We forward-declare `ptSessions` as a separate
-// table reference using Drizzle's `foreignKey()` constraint (declared after pt_sessions below)
-// so JS module order doesn't matter. The FK is declared on `pt_requests` using a self-ref
-// trick: leave `scheduled_pt_session_id` as a plain uuid column here, then add the FK in
-// the table-builder `extras` after `ptSessions` is declared. Drizzle Kit will emit a
-// follow-up ALTER for the FK in the generated SQL.
+// pt_sessions.pt_request_id → pt_requests.id. The reverse FK is declared on
+// pt_sessions below; the pt_requests side is left as a plain uuid column.
 // ============================================================================
 
 export const ptRequests = pgTable(
@@ -300,17 +308,20 @@ export const ptRequests = pgTable(
     clientId: uuid('client_id')
       .notNull()
       .references(() => clients.id, { onDelete: 'restrict' }),
-    preferredInstructorId: uuid('preferred_instructor_id').references(
-      () => instructors.staffUserId,
-      { onDelete: 'restrict' },
-    ),
-    preferredStartsAt: timestamp('preferred_starts_at', { withTimezone: true }).notNull(),
-    preferredEndsAt: timestamp('preferred_ends_at', { withTimezone: true }).notNull(),
+    classTypeId: uuid('class_type_id')
+      .notNull()
+      .references(() => classTypes.id, { onDelete: 'restrict' }),
     sessionType: ptSessionTypeEnum('session_type').notNull(),
+    // Partner for 2on1. Either an existing member (co_client_id) OR free-text
+    // name+email when the partner isn't a member yet (admin will create the
+    // account when scheduling). Service enforces:
+    //   sessionType='1on1' → all three NULL
+    //   sessionType='2on1' → exactly one of co_client_id, OR (co_client_name AND co_client_email)
     coClientId: uuid('co_client_id').references(() => clients.id, { onDelete: 'restrict' }),
+    coClientName: text('co_client_name'),
+    coClientEmail: text('co_client_email'),
     message: text('message'),
     status: ptRequestStatusEnum('status').notNull().default('pending'),
-    declineNote: text('decline_note'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     // FK to pt_sessions.id added via a separate foreignKey() declaration below to break the
     // circular reference at TS-declaration time.
@@ -324,17 +335,36 @@ export const ptRequests = pgTable(
   table => ({
     statusCreatedIdx: index('pt_requests_status_created_idx').on(table.status, table.createdAt),
     clientStatusIdx: index('pt_requests_client_status_idx').on(table.clientId, table.status),
-    preferredInstructorStatusIdx: index('pt_requests_preferred_instructor_status_idx').on(
-      table.preferredInstructorId,
-      table.status,
-    ),
+    classTypeIdx: index('pt_requests_class_type_idx').on(table.classTypeId),
     // Drives the expiry sweep — partial index over only `pending` rows.
     expiresAtPendingIdx: index('pt_requests_expires_at_pending_idx')
       .on(table.expiresAt)
       .where(sql`status = 'pending'`),
-    endsAfterStarts: check(
-      'pt_requests_preferred_ends_after_starts',
-      sql`${table.preferredEndsAt} > ${table.preferredStartsAt}`,
+  }),
+)
+
+// ============================================================================
+// pt_request_slots — proposed date+time-frame slots for a pt_request (1..N).
+// Admin picks one of these (or any other slot, after WhatsApp negotiation)
+// when scheduling. Cascade-deleted with the parent request.
+// ============================================================================
+
+export const ptRequestSlots = pgTable(
+  'pt_request_slots',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    ptRequestId: uuid('pt_request_id')
+      .notNull()
+      .references(() => ptRequests.id, { onDelete: 'cascade' }),
+    proposedDate: date('proposed_date').notNull(),
+    startTime: time('start_time').notNull(),
+    endTime: time('end_time').notNull(),
+  },
+  table => ({
+    requestIdx: index('pt_request_slots_request_idx').on(table.ptRequestId),
+    endAfterStart: check(
+      'pt_request_slots_end_after_start',
+      sql`${table.endTime} > ${table.startTime}`,
     ),
   }),
 )

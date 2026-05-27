@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { Button, Dialog } from "@/components/ui";
-import { clients, instructors, ptRequests as seedRequests } from "@/data";
+import { clients, classTypes, ptRequests as seedRequests } from "@/data";
 import {
   ScheduleFromRequestDialog,
   type SchedulePayload,
@@ -51,9 +51,8 @@ export function PtRequestPickerDialog({
         <ul className="divide-y divide-border">
           {pending.map((r) => {
             const client = clients.find((c) => c.id === r.clientId);
-            const instructor = r.preferredInstructorId
-              ? instructors.find((i) => i.id === r.preferredInstructorId)
-              : null;
+            const classType = classTypes.find((ct) => ct.id === r.classTypeId);
+            const first = r.slots[0];
             return (
               <li key={r.id}>
                 <button
@@ -65,9 +64,8 @@ export function PtRequestPickerDialog({
                     {client?.name ?? "—"}
                   </div>
                   <div className="text-xs text-muted">
-                    {r.sessionType.toUpperCase()} · {r.durationMinutes} min ·{" "}
-                    {instructor?.name ?? "Any"} · {r.preferredSlots[0].date}{" "}
-                    {r.preferredSlots[0].startTime}
+                    {r.sessionType.toUpperCase()} · {classType?.name ?? "—"} ·{" "}
+                    {first.proposedDate} {first.startTime}–{first.endTime}
                   </div>
                 </button>
               </li>

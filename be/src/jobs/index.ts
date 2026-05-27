@@ -1,5 +1,5 @@
 import cron from 'node-cron'
-import { expireStaleSessions, escalateSLA } from '../services/pt-sessions/cancel'
+import { expireStaleSessions } from '../services/pt-sessions/cancel'
 import { flipNoShows } from '../services/bookings/check-in'
 import { expirePackages, sendLapsingAlerts, sendExpiredNotifications } from '../services/packages/expire'
 import { flagExpiredWaivers } from '../services/waiver'
@@ -9,9 +9,10 @@ export async function registerJobs() {
   // Boot: prime feature-flag cache
   await loadFeatureFlags()
 
-  // Every 5 min — PT request SLA / staleness
+  // Every 5 min — auto-expire pending PT requests past their window (refunds credits).
+  // Note: no SLA escalation in the simplified flow — admin negotiates via WhatsApp,
+  // not in-app, so there's nothing to escalate inside the system.
   cron.schedule('*/5 * * * *', expireStaleSessions)
-  cron.schedule('*/5 * * * *', escalateSLA)
 
   // Every 1 min — no-show flip on bookings whose session has ended
   cron.schedule('* * * * *', flipNoShows)

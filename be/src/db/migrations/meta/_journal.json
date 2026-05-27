@@ -64,6 +64,13 @@
       "when": 1779800000000,
       "tag": "0008_backfill_instructor_profiles",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1780000000000,
+      "tag": "0009_pt_request_reshape",
+      "breakpoints": true
     }
   ]
 }

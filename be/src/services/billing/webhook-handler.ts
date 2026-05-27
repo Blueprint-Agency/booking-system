@@ -14,6 +14,7 @@ import { db } from '../../db'
 import { stripePayments } from '../../db/schema/ledger'
 import { eq } from 'drizzle-orm'
 import { grantPackage } from '../packages/purchase'
+import { bookWorkshopPaid } from '../workshops/book'
 
 export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
   if (event.type === 'checkout.session.completed') {
@@ -60,8 +61,43 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
     }
 
     if (kind === 'workshop') {
-      // TODO: insert workshop booking + send confirmation email
-      // Requires schedule schema to be fully implemented
+      const workshopId = meta.workshop_id
+      const workshopTierId = meta.workshop_tier_id
+      const clientId = meta.client_id
+      if (!workshopId || !workshopTierId || !clientId) return
+
+      const amountSgd = meta.amount_sgd ?? String(((session.amount_total ?? 0) / 100).toFixed(2))
+      const appliedPromotionId = meta.applied_promotion_id || null
+
+      // Idempotency — skip if we already processed this payment intent
+      const [existing] = await db
+        .select({ status: stripePayments.status })
+        .from(stripePayments)
+        .where(eq(stripePayments.paymentIntentId, paymentIntentId))
+        .limit(1)
+      if (existing?.status === 'succeeded') return
+
+      if (!existing) {
+        await db
+          .insert(stripePayments)
+          .values({
+            paymentIntentId,
+            amountSgd,
+            kind: 'workshop',
+            clientId,
+            status: 'pending',
+          })
+          .onConflictDoNothing()
+      }
+
+      await bookWorkshopPaid({
+        clientId,
+        workshopId,
+        workshopTierId,
+        paymentIntentId,
+        amountSgd,
+        appliedPromotionId,
+      })
       return
     }
   }

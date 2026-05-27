@@ -312,38 +312,47 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
 ### 5.1 Landing `/private-sessions`
 
 **Business logic**
-- Lists instructors who offer private sessions for browse / context only — there is no per-instructor "available slot" calendar in v1. Booking is **request-driven**: the client submits preferred slots, the studio triages.
-- Each instructor card shows: photo, name, specialties, bio, locations they serve.
+- Lists instructors who offer private sessions for browse / context only — there is no per-instructor "available slot" calendar in v1. Booking is **request-driven**: the client submits a request, the studio negotiates over WhatsApp, then schedules.
+- Each instructor card shows: photo, name, specialties, bio, locations they serve. Cards are **informational only** — instructor is NOT carried into the request form. The client doesn't pick an instructor; the studio assigns one when scheduling.
 - Page exposes the user's **PT credit balance cards** (1-on-1 sessions remaining, 2-on-1 sessions remaining) so they know what they can spend before requesting.
-- The primary CTA on this page is **"Request a Private Session"** — opens the PT request form (§5.2). Tapping an instructor card pre-fills `preferred_instructor_id` on that form.
+- The primary CTA on this page is **"Request a Private Session"** — opens the PT request form (§5.2).
 
 **Layout**
 - Top of page: PT balance cards (one per format, with expiry dates) and a "Buy more" CTA → `/packages`.
 - Primary CTA: "Request a Private Session".
-- 2-column grid (1 col mobile) of instructor cards (informational; click pre-fills the request form).
+- 2-column grid (1 col mobile) of instructor cards (informational only — clicking opens a profile preview, not the form).
 
 ### 5.2 Submit PT request `/private-sessions/request`
 
-**Business logic**
-- Single request form. Fields:
-  - **Format** — 1-on-1 or 2-on-1.
-  - **Duration** — minutes.
-  - **Preferred instructor** — optional (defaults to "Any" unless pre-filled from §5.1).
-  - **Preferred slots** — one or more `{ date, start_time }` rows. The client may add multiple options to maximise the chance the studio can schedule one of them. Min 1.
-  - **Note** — optional free-text for the studio.
-- Submitting creates a `PtRequest` with `status = "pending"` — **no session deducted, no payment taken, no `location_id` set yet** (location is assigned by the studio at scheduling time).
-- If the user has no VIP-session entitlement for the selected format, the page surfaces a nudge to `/packages` first; submission is still allowed (entitlement is resolved/charged when the studio schedules the request).
+**Business logic — minimal form, no back-and-forth in app**
+
+The form deliberately collects **only what the studio needs to start the WhatsApp conversation**. Everything beyond that — instructor, location, room, final time — is settled out-of-app and recorded by the admin at scheduling time.
+
+Fields, in order:
+1. **Session type** — 1-on-1 or 2-on-1. Gated by which PT package(s) the client owns; if they hold only one type, that option is auto-selected and the radio is hidden.
+2. **Class type** — dropdown of all active class types (yoga style focus, e.g. Hatha, Vinyasa). Drives which instructor the admin assigns.
+3. **Proposed slots** — 1..N rows of `{ date, start_time, end_time }`. Date picked via calendar; time as a HH:mm window per row. "Add another slot" button below the last row. Multiple slots maximise the chance the studio can schedule one of them.
+4. **Note** — optional free-form message to the studio.
+5. **Partner (2-on-1 only)** — email field with exact-match autocomplete against existing members:
+   - If the typed email matches a member → row collapses to "Partner: {name}" with the resolved `co_client_id`.
+   - If no match → a name field reveals and the client types the partner's full name; the request stores `co_client_email + co_client_name`, the admin creates the partner's account before scheduling.
+
+**On submit**
+- Creates a `PtRequest` with `status = "pending"`.
+- **Debits the client's PT package immediately**: 1 session for 1-on-1, 2 sessions for 2-on-1 (one per attendee). Cancellation before the studio schedules refunds those sessions; cancellation after schedules forfeits them (v1).
+- If the client has no PT-session entitlement for the selected format, the submit button is disabled with a "Buy a PT package first" link to `/packages` — the form does **not** allow optimistic submission without credits.
+- No payment is taken at this step (credits already paid for).
+- No `location_id` is set yet — assigned by the studio at scheduling time.
 
 **User journey**
-1. From `/private-sessions`, tap "Request a Private Session" (or pick an instructor card to pre-fill).
-2. Fill the form: format, duration, optional instructor, one or more preferred slots, optional note.
-3. Submit → confirmation page: *"Your request is pending. We will update you within 12 hours."*
-4. Studio triages the request in `/admin/pt-requests`:
-   - On **scheduled** → user receives notification (email + in-app), `PtRequest.status = "scheduled"`, a `PtSession` is created with the studio-assigned slot and location, 1 session deducted, per-booking QR generated, item appears in `/account/private-sessions` (Confirmed tab).
-   - On **declined** → user is notified with the studio's decline note and can submit a new request with different slots.
+1. From `/private-sessions`, tap "Request a Private Session".
+2. Fill the form: session type, class type, one or more proposed slots, optional note, partner (if 2-on-1).
+3. Submit → confirmation toast: *"Your request is in. We'll reach you on WhatsApp shortly to confirm the time."* Page redirects to `/account/private-sessions` with the new request highlighted in the **Pending** group.
+4. Studio takes over on WhatsApp, then schedules in `/admin/pt-requests` → the client receives an email confirming the final time + venue, and the row moves to **Confirmed** on `/account/private-sessions`.
+5. If the studio can't accommodate any proposed slot and the WhatsApp negotiation fails, either side can **cancel** the request from their UI. While `pending`, cancel refunds credits.
 
 **Where admin comes in**
-- **`/admin/pt-requests`** triage page (replaces the prior inbox-based flow). Admin schedules or declines. Decline requires a note. Scheduling opens `ScheduleFromRequestDialog` pre-filled from the first preferred slot, with quick-pick chips for the other preferred slots.
+- **`/admin/pt-requests`** triage page is the single surface — see admin-restructure.md §9.
 - The system enforces the invariant: **no `PtSession` exists without a backing `PtRequest`** in v1.
 - Instructor profile pages on the staff side manage bio, photo, and eligible class types (no `available` flag, no availability slots — the surface was removed).
 
@@ -469,13 +478,14 @@ The account section is a sticky sidebar (desktop) / tab bar (mobile). All sub-pa
 ### 8.5 My Private Sessions `/account/private-sessions`
 
 **Business logic**
-- Three states visible to the user: **Pending** (awaiting studio), **Confirmed** (upcoming), **Past**.
-- For pending: a "Cancel request" affordance.
-- For confirmed: QR + cancel/reschedule.
+- Four groupings visible to the user: **Pending** (awaiting studio), **Confirmed** (scheduled upcoming), **Past** (attended), **Cancelled** (rolls up both `cancelled_before_scheduled` and `cancelled_after_scheduled`).
+- **Pending row** — shows class type, session type, all proposed slots, partner (if 2on1, with "pending invite" badge if the partner isn't yet a member), and a **"Cancel request"** button. Cancelling while pending refunds credits.
+- **Confirmed row** — final date/time, location, instructor (assigned by studio), partner, QR + per-booking code, and a **"Cancel"** button. Cancelling here does **not** refund credits (v1 policy); UI shows that warning in the confirm dialog.
+- **Past row** — same fields plus check-in outcome (attended / no-show).
+- **Cancelled row** — read-only, dim. Notes whether credits were refunded.
 
 **Where admin comes in**
-- Admin's `/private/inbox` is the counterpart — pending requests resolve there.
-- Admin sets per-instructor session pricing/availability that drives whether requests are accepted.
+- Admin's `/admin/pt-requests` is the counterpart — see admin-restructure.md §9.
 
 ### 8.6 Invoices `/account/invoices`
 

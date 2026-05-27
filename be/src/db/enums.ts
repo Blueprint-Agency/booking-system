@@ -24,12 +24,18 @@ export const lifecycleEnum = pgEnum('lifecycle', ['active', 'cancelled'])
 export const workshopInstructorRoleEnum = pgEnum('workshop_instructor_role', ['main', 'supporting'])
 export type WorkshopInstructorRole = (typeof workshopInstructorRoleEnum.enumValues)[number]
 // `pt_session_status` enum is REMOVED — PT request states now live on pt_requests via pt_request_status.
+// Lifecycle (no admin approval step — scheduling is the implicit approval):
+//   pending                      — client submitted, admin hasn't scheduled yet
+//   scheduled                    — admin scheduled the session (pt_session row created)
+//   cancelled_before_scheduled   — cancelled while pending (by client or admin); credits refunded
+//   cancelled_after_scheduled    — cancelled after scheduling (by client or admin); NO refund (v1)
+//   attended                     — derived from the booking check-in; mirrored here for queue display
 export const ptRequestStatusEnum = pgEnum('pt_request_status', [
   'pending',
   'scheduled',
-  'declined',
-  'cancelled',
-  'expired',
+  'cancelled_before_scheduled',
+  'cancelled_after_scheduled',
+  'attended',
 ])
 
 // Bookings

@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, Suspense, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Lock, ShoppingCart, Tag, Check, AlertCircle } from "lucide-react";
 import { cn, formatCurrency } from "@/lib/utils";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useAuth } from "@clerk/nextjs";
 import { getApiBaseUrl } from "@/lib/api-url";
+import { tierEffectivePrice, type ApiWorkshopDetail, type ApiWorkshopTier } from "@/lib/workshops";
 
 interface PackageInfo {
   id: string;
@@ -35,14 +36,20 @@ function subtitleForPackage(pkg: PackageInfo, kind: "class" | "pt"): string {
 }
 
 function CheckoutContent() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const { getToken, isSignedIn, isLoaded } = useAuth();
 
   const packageId = searchParams.get("package");
   const packageKind = (searchParams.get("kind") ?? "class") as "class" | "pt";
+  const workshopId = searchParams.get("workshop");
+  const tierId = searchParams.get("tier");
   const cancelled = searchParams.get("cancelled") === "1";
+  const mode: "package" | "workshop" = workshopId ? "workshop" : "package";
 
   const [pkg, setPkg] = useState<PackageInfo | null>(null);
+  const [workshop, setWorkshop] = useState<ApiWorkshopDetail | null>(null);
+  const [selectedTier, setSelectedTier] = useState<ApiWorkshopTier | null>(null);
   const [loadingPkg, setLoadingPkg] = useState(true);
   const [pkgError, setPkgError] = useState<string | null>(null);
 
@@ -54,8 +61,24 @@ function CheckoutContent() {
   const [redirecting, setRedirecting] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
 
-  // Fetch package details from the catalogue
+  // Fetch package or workshop details from the catalogue
   useEffect(() => {
+    if (mode === "workshop") {
+      if (!workshopId) { setLoadingPkg(false); return; }
+      fetch(`${getApiBaseUrl()}/public/workshops/${workshopId}`)
+        .then(r => r.json())
+        .then((data: ApiWorkshopDetail) => {
+          if (!data?.id) { setPkgError("Workshop not found."); return; }
+          setWorkshop(data);
+          const fallback = data.tiers[0] ?? null;
+          const chosen = tierId ? data.tiers.find(t => t.id === tierId) ?? fallback : fallback;
+          if (!chosen) { setPkgError("Workshop has no tiers available."); return; }
+          setSelectedTier(chosen);
+        })
+        .catch(() => setPkgError("Could not load workshop details."))
+        .finally(() => setLoadingPkg(false));
+      return;
+    }
     if (!packageId) {
       setLoadingPkg(false);
       return;
@@ -74,7 +97,7 @@ function CheckoutContent() {
       })
       .catch(() => setPkgError("Could not load package details."))
       .finally(() => setLoadingPkg(false));
-  }, [packageId, packageKind]);
+  }, [mode, packageId, packageKind, workshopId, tierId]);
 
   async function applyPromo() {
     const code = promoInput.trim();
@@ -102,26 +125,41 @@ function CheckoutContent() {
   }
 
   async function handleProceed() {
-    if (!pkg || !packageId) return;
     setRedirecting(true);
     setCheckoutError(null);
     try {
       const token = await getToken();
-      const res = await fetch(`${getApiBaseUrl()}/me/checkout/package`, {
+      const endpoint = mode === "workshop" ? "/me/checkout/workshop" : "/me/checkout/package";
+      const body = mode === "workshop"
+        ? { workshop_id: workshopId, workshop_tier_id: selectedTier?.id, promo_code: promoApplied?.code }
+        : { package_kind: packageKind, package_id: packageId, promo_code: promoApplied?.code };
+      const res = await fetch(`${getApiBaseUrl()}${endpoint}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          package_kind: packageKind,
-          package_id: packageId,
-          promo_code: promoApplied?.code,
-        }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
-      if (!res.ok || !data.url) {
+      if (!res.ok) {
         setCheckoutError(data.error ?? "Could not start checkout. Please try again.");
+        setRedirecting(false);
+        return;
+      }
+      // Free path: BE returned an immediate grant (free trial package, or free workshop).
+      if (data.outcome === "granted") {
+        if (mode === "workshop" && data.booking_id) {
+          router.push(`/booking/confirmation?type=workshop&workshop_id=${workshopId}&booking_id=${data.booking_id}`);
+        } else if (mode === "package" && data.client_package_id) {
+          router.push(`/booking/confirmation?type=package&package_id=${packageId}&package_kind=${packageKind}`);
+        } else {
+          router.push(`/account`);
+        }
+        return;
+      }
+      if (!data.url) {
+        setCheckoutError("Could not start checkout. Please try again.");
         setRedirecting(false);
         return;
       }
@@ -140,14 +178,15 @@ function CheckoutContent() {
     );
   }
 
-  if (!packageId || pkgError || !pkg) {
+  const hasItem = mode === "workshop" ? Boolean(workshop && selectedTier) : Boolean(pkg);
+  if (pkgError || !hasItem) {
     return (
       <BookingSurface maxWidth="lg" padding="default">
         <EmptyState
           icon={ShoppingCart}
           title="Your cart is empty"
           description={pkgError ?? "Pick a package or workshop to get started."}
-          cta={{ href: "/packages", label: "Browse packages" }}
+          cta={{ href: mode === "workshop" ? "/workshops" : "/packages", label: mode === "workshop" ? "Browse workshops" : "Browse packages" }}
         />
       </BookingSurface>
     );
@@ -182,12 +221,19 @@ function CheckoutContent() {
     );
   }
 
-  const price = parseFloat(pkg.priceSgd);
+  const itemName = mode === "workshop"
+    ? `${workshop!.name} — ${selectedTier!.name}`
+    : pkg!.name;
+  const subtitle = mode === "workshop"
+    ? (selectedTier!.description ?? `${selectedTier!.day_ids.length} session${selectedTier!.day_ids.length === 1 ? "" : "s"} included`)
+    : subtitleForPackage(pkg!, packageKind);
+  const price = mode === "workshop"
+    ? parseFloat(tierEffectivePrice(selectedTier!).amount)
+    : parseFloat(pkg!.priceSgd);
   const discount = promoApplied ? Math.min(promoApplied.discountSgd, price) : 0;
   const discountedBase = price - discount;
   const tax = Math.round(discountedBase * 0.09 * 100) / 100;
   const grandTotal = discountedBase + tax;
-  const subtitle = subtitleForPackage(pkg, packageKind);
 
   return (
     <div id="checkout">
@@ -208,7 +254,7 @@ function CheckoutContent() {
             <div className="flex gap-3 items-start pb-4 border-b border-ink/5">
               <div className="h-12 w-12 rounded-lg bg-warm shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-ink">{pkg.name}</p>
+                <p className="text-sm font-medium text-ink">{itemName}</p>
                 <p className="text-xs text-muted mt-0.5">{subtitle}</p>
               </div>
               <p className="text-sm font-semibold shrink-0">{formatCurrency(price)}</p>

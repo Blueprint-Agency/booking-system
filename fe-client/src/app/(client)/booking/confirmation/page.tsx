@@ -408,6 +408,110 @@ function SessionSuccess({
   );
 }
 
+// ── Workshop post-payment success ─────────────────────────────────────────────
+function WorkshopSuccess({
+  workshopId,
+  stripeSessionId,
+}: {
+  workshopId: string;
+  stripeSessionId: string | null;
+}) {
+  const { getToken } = useAuth();
+  const [synced, setSynced] = useState(false);
+  const [workshop, setWorkshop] = useState<{
+    name: string;
+    starts_at: string | null;
+    location: { name: string; address: string | null } | null;
+  } | null>(null);
+
+  // Sync the Stripe session server-side so the booking row is created immediately
+  // even if the local Stripe CLI webhook listener isn't running.
+  useEffect(() => {
+    if (!stripeSessionId) { setSynced(true); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        await fetch(`${getApiBaseUrl()}/me/checkout/sync-session`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ session_id: stripeSessionId }),
+        });
+      } catch { /* non-fatal */ }
+      if (!cancelled) setSynced(true);
+    })();
+    return () => { cancelled = true; };
+  }, [stripeSessionId, getToken]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${getApiBaseUrl()}/public/workshops/${workshopId}`)
+      .then(r => r.json())
+      .then(data => { if (!cancelled) setWorkshop(data); })
+      .catch(() => { /* non-fatal */ });
+    return () => { cancelled = true; };
+  }, [workshopId]);
+
+  const dateLine = workshop?.starts_at
+    ? new Date(workshop.starts_at).toLocaleString(undefined, {
+        weekday: "short", day: "numeric", month: "short",
+        hour: "numeric", minute: "2-digit",
+      })
+    : null;
+
+  return (
+    <div id="summary">
+      <BookingSurface maxWidth="md" padding="loose">
+        <div className="text-center mb-6">
+          <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-4">
+            {synced
+              ? <Check className="w-8 h-8 text-accent" />
+              : <svg className="w-8 h-8 text-accent animate-spin" viewBox="0 0 24 24" fill="none"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+            }
+          </div>
+          <p className="text-sm uppercase tracking-wider text-muted mb-1">Payment successful</p>
+          <h1 className="font-serif text-3xl text-ink">
+            {synced ? "You're booked!" : "Confirming your booking…"}
+          </h1>
+        </div>
+
+        {synced && workshop && (
+          <>
+            <SectionHeading eyebrow="Your workshop" title="Booking details" align="center" />
+            <div className="text-center">
+              <p className="text-2xl font-bold text-ink">{workshop.name}</p>
+              {dateLine && <p className="text-lg text-muted mt-2">{dateLine}</p>}
+              {workshop.location && (
+                <p className="text-sm text-muted mt-1">
+                  {workshop.location.name}
+                  {workshop.location.address ? ` · ${workshop.location.address}` : ""}
+                </p>
+              )}
+            </div>
+            <div className="mt-10 flex gap-3 justify-center">
+              <Link
+                href="/account/workshops"
+                className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 transition-colors"
+              >
+                View my workshops
+              </Link>
+              <Link
+                href="/workshops"
+                className="rounded-full border border-ink/10 px-5 py-3 text-sm font-medium hover:border-accent transition-colors"
+              >
+                Browse more
+              </Link>
+            </div>
+          </>
+        )}
+      </BookingSurface>
+    </div>
+  );
+}
+
 // ── Package post-payment success ──────────────────────────────────────────────
 function PackageSuccess({
   packageId,
@@ -540,7 +644,15 @@ function ConfirmationContent() {
     }
   }
 
-  // Workshop post-payment success
+  // Workshop post-payment success — triggered by Stripe success_url redirect
+  // params: type=workshop, workshop_id=<uuid>, session_id=cs_... (paid)
+  //  OR    : type=workshop, workshop_id=<uuid>, booking_id=<uuid>   (free)
+  const workshopId = searchParams.get("workshop_id");
+  if (type === "workshop" && workshopId) {
+    return <WorkshopSuccess workshopId={workshopId} stripeSessionId={stripeSessionId} />;
+  }
+
+  // Legacy mock workshop link (kept for the demo `?type=workshop&session=<sessionId>`).
   if (type === "workshop" && sessionId) {
     const session = allSessions.find((s) => s.id === sessionId);
     const instructor = allInstructors.find(

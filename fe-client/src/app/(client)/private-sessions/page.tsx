@@ -125,6 +125,22 @@ export default function PrivateSessionsPage() {
         <BookingSurface maxWidth="lg" padding="default">
           <SectionHeading eyebrow="Private sessions" title="Find a time that works" />
 
+          {/* Primary CTA — new request flow (no back-and-forth in app). */}
+          <div className="mt-6 mb-8 rounded-2xl border border-accent/30 bg-accent/5 p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-ink">Request a private session</p>
+              <p className="text-xs text-muted mt-0.5">
+                Pick a class type, propose a few time windows — we&apos;ll confirm on WhatsApp.
+              </p>
+            </div>
+            <Link
+              href="/private-sessions/request"
+              className="shrink-0 inline-flex items-center justify-center rounded-full bg-ink text-paper px-5 py-2.5 text-sm font-medium hover:bg-ink/90 transition-colors"
+            >
+              Submit a request
+            </Link>
+          </div>
+
           {/* How private sessions work */}
           <details className="group mb-6 md:mb-10 rounded-2xl border border-border bg-warm">
             <summary className="flex items-center justify-between gap-3 px-4 py-3 md:px-5 md:py-4 cursor-pointer list-none [&::-webkit-details-marker]:hidden">

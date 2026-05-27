@@ -1,25 +1,42 @@
 "use client";
 import { X } from "lucide-react";
-import { clients, instructors } from "@/data";
+import { clients, classTypes } from "@/data";
 import { Avatar, Badge, Button } from "@/components/ui";
 import { formatDateTime, formatRelative } from "@/lib/formatters";
 import type { PtRequest } from "@/types";
 
+const STATUS_LABEL: Record<PtRequest["status"], string> = {
+  pending: "pending",
+  scheduled: "scheduled",
+  cancelled_before_scheduled: "cancelled (refunded)",
+  cancelled_after_scheduled: "cancelled (forfeited)",
+  attended: "attended",
+};
+
+const STATUS_TONE: Record<PtRequest["status"], "accent" | "sage" | "error" | "neutral"> = {
+  pending: "accent",
+  scheduled: "sage",
+  cancelled_before_scheduled: "error",
+  cancelled_after_scheduled: "error",
+  attended: "sage",
+};
+
 export function PtRequestDrawer({
   request,
   onSchedule,
-  onDecline,
+  onCancel,
   onClose,
 }: {
   request: PtRequest;
   onSchedule: () => void;
-  onDecline: () => void;
+  onCancel: () => void;
   onClose: () => void;
 }) {
   const client = clients.find((c) => c.id === request.clientId);
-  const instructor = request.preferredInstructorId
-    ? instructors.find((i) => i.id === request.preferredInstructorId)
-    : null;
+  const classType = classTypes.find((ct) => ct.id === request.classTypeId);
+  const partnerLabel = partnerDisplay(request);
+  const partnerNeedsAccount =
+    request.sessionType === "2on1" && !request.coClientId;
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
@@ -44,63 +61,86 @@ export function PtRequestDrawer({
           </div>
         </div>
         <dl className="space-y-3 border-y border-border py-4 text-sm">
-          <Row label="Session">
-            {request.sessionType.toUpperCase()} · {request.durationMinutes} min
+          <Row label="Format">
+            {request.sessionType === "1on1" ? "1-on-1" : "2-on-1"}
           </Row>
-          <Row label="Instructor preference">{instructor?.name ?? "Any instructor"}</Row>
-          <Row label="Preferred slots">
+          <Row label="Class type">{classType?.name ?? "—"}</Row>
+          {request.sessionType === "2on1" && (
+            <Row label="Partner">
+              <div className="flex items-center gap-2">
+                <span>{partnerLabel}</span>
+                {partnerNeedsAccount && (
+                  <Badge tone="accent">needs account</Badge>
+                )}
+              </div>
+            </Row>
+          )}
+          <Row label="Proposed slots">
             <ul className="space-y-0.5">
-              {request.preferredSlots.map((s, i) => (
+              {request.slots.map((s, i) => (
                 <li key={i} className="text-ink">
-                  {s.date} · {s.startTime}
+                  {s.proposedDate} · {s.startTime}–{s.endTime}
                 </li>
               ))}
             </ul>
           </Row>
-          {request.clientNote && (
-            <Row label="Note">
+          {request.message && (
+            <Row label="Message">
               <blockquote className="rounded-md border-l-2 border-border bg-paper p-2 italic">
-                {request.clientNote}
+                {request.message}
               </blockquote>
             </Row>
           )}
           <Row label="Status">
-            <Badge
-              tone={
-                request.status === "pending"
-                  ? "accent"
-                  : request.status === "scheduled"
-                  ? "sage"
-                  : "error"
-              }
-            >
-              {request.status}
+            <Badge tone={STATUS_TONE[request.status]}>
+              {STATUS_LABEL[request.status]}
             </Badge>
           </Row>
         </dl>
-        {request.status === "pending" ? (
+        {request.status === "pending" && (
           <div className="mt-6 flex gap-2">
             <Button onClick={onSchedule}>Schedule</Button>
-            <Button variant="ghost" onClick={onDecline}>
-              Decline
+            <Button variant="ghost" onClick={onCancel}>
+              Cancel request
             </Button>
           </div>
-        ) : (
-          <div className="mt-6 rounded-md bg-paper p-3 text-xs text-muted">
-            {request.status === "scheduled" && request.decidedAt && (
-              <>Scheduled on {formatDateTime(request.decidedAt)}.</>
-            )}
-            {request.status === "declined" && request.decidedAt && (
-              <>
-                Declined on {formatDateTime(request.decidedAt)} — &ldquo;
-                {request.declineNote}&rdquo;.
-              </>
-            )}
+        )}
+        {request.status === "scheduled" && (
+          <div className="mt-6 space-y-3">
+            <div className="rounded-md bg-paper p-3 text-xs text-muted">
+              {request.resolvedAt && (
+                <>Scheduled on {formatDateTime(request.resolvedAt)}.</>
+              )}
+            </div>
+            <Button variant="ghost" onClick={onCancel}>
+              Cancel session (no refund)
+            </Button>
           </div>
         )}
+        {(request.status === "cancelled_before_scheduled" ||
+          request.status === "cancelled_after_scheduled" ||
+          request.status === "attended") &&
+          request.resolvedAt && (
+            <div className="mt-6 rounded-md bg-paper p-3 text-xs text-muted">
+              {STATUS_LABEL[request.status]} on{" "}
+              {formatDateTime(request.resolvedAt)}.
+            </div>
+          )}
       </div>
     </div>
   );
+}
+
+function partnerDisplay(r: PtRequest): string {
+  if (r.coClientId) {
+    return (
+      clients.find((c) => c.id === r.coClientId)?.name ?? "Existing member"
+    );
+  }
+  if (r.coClientName || r.coClientEmail) {
+    return [r.coClientName, r.coClientEmail].filter(Boolean).join(" · ");
+  }
+  return "—";
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {

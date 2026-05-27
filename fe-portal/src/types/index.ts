@@ -196,28 +196,37 @@ export interface PtSession {
   cancelledByStaffId: string | null;
 }
 
-// --- PT Requests (§8 — replaces availability) ---
+// --- PT Requests (admin-restructure.md §9) ---
 
-export type PtRequestStatus = "pending" | "scheduled" | "declined" | "cancelled";
+export type PtRequestStatus =
+  | "pending"
+  | "scheduled"
+  | "cancelled_before_scheduled"
+  | "cancelled_after_scheduled"
+  | "attended";
 
 export interface PtRequestSlot {
-  date: string;      // YYYY-MM-DD
-  startTime: string; // HH:mm
+  proposedDate: string; // YYYY-MM-DD
+  startTime: string;    // HH:mm
+  endTime: string;      // HH:mm
 }
 
 export interface PtRequest {
   id: string;
   clientId: string;
-  preferredInstructorId: string | null;
+  classTypeId: string;
   sessionType: PtSessionType;
-  durationMinutes: number;
-  preferredSlots: PtRequestSlot[];
-  clientNote: string;
+  slots: PtRequestSlot[];
+  message: string;
+  /** Partner for 2on1: either coClientId (existing member) OR coClientName + coClientEmail (not yet a member). */
+  coClientId: string | null;
+  coClientName: string | null;
+  coClientEmail: string | null;
   status: PtRequestStatus;
-  ptSessionId: string | null;
-  declineNote: string | null;
-  decidedByStaffId: string | null;
-  decidedAt: string | null;
+  scheduledPtSessionId: string | null;
+  expiresAt: string;
+  resolvedByStaffId: string | null;
+  resolvedAt: string | null;
   createdAt: string;
 }
 

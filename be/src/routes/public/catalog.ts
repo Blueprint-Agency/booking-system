@@ -78,6 +78,9 @@ const app = new Hono()
     const slots = await classCatalog.listInstructorAvailability(c.req.param('id'))
     return c.json({ slots })
   })
+  // Active class types — used by the fe-client PT request form's class type dropdown.
+  // Server still 501 until catalog.listActiveClassTypes lands.
+  .get('/class-types', c => c.json({ todo: 'list active class types' }, 501))
   .get('/packages', async c => {
     const [classRows, ptRows] = await Promise.all([
       classSvc.listClassPackages({ status: 'active' }),

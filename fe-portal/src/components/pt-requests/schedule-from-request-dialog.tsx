@@ -9,7 +9,7 @@ import type { Capacity, PtRequest } from "@/types";
 export type SchedulePayload = {
   date: string;
   startTime: string;
-  durationMinutes: number;
+  endTime: string;
   instructorId: string;
   locationId: string;
   roomId: string;
@@ -25,15 +25,16 @@ export function ScheduleFromRequestDialog({
   onConfirm: (payload: SchedulePayload) => void;
   onClose: () => void;
 }) {
-  const first = request.preferredSlots[0];
-  const [date, setDate] = useState(first.date);
+  const first = request.slots[0];
+  const [date, setDate] = useState(first.proposedDate);
   const [startTime, setStartTime] = useState(first.startTime);
-  const [duration, setDuration] = useState(request.durationMinutes);
+  const [endTime, setEndTime] = useState(first.endTime);
+
   const activeInstructors = instructors.filter((i) => !i.archivedAt);
   const activeLocations = locations.filter((l) => !l.archivedAt);
-  const [instructorId, setInstructorId] = useState(
-    request.preferredInstructorId ?? activeInstructors[0]?.id ?? ""
-  );
+
+  // No `preferredInstructorId` to pre-fill from — admin picks from scratch.
+  const [instructorId, setInstructorId] = useState(activeInstructors[0]?.id ?? "");
   const [locationId, setLocationId] = useState(activeLocations[0]?.id ?? "");
   const roomsForLocation = useMemo(
     () => rooms.filter((r) => !r.archivedAt && r.locationId === locationId),
@@ -49,8 +50,12 @@ export function ScheduleFromRequestDialog({
   const [capacity, setCapacity] = useState<Capacity>(
     request.sessionType === "1on1"
       ? { waitlist: 0, onlineBooking: 1, buffer: 0 }
-      : { waitlist: 0, onlineBooking: 2, buffer: 0 }
+      : { waitlist: 0, onlineBooking: 2, buffer: 0 },
   );
+
+  // Block scheduling for 2on1 when the partner is not yet a member.
+  const partnerBlocked =
+    request.sessionType === "2on1" && !request.coClientId;
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()} title="Schedule PT session">
@@ -58,10 +63,11 @@ export function ScheduleFromRequestDialog({
         className="space-y-4"
         onSubmit={(e) => {
           e.preventDefault();
+          if (partnerBlocked) return;
           onConfirm({
             date,
             startTime,
-            durationMinutes: duration,
+            endTime,
             instructorId,
             locationId,
             roomId,
@@ -69,20 +75,28 @@ export function ScheduleFromRequestDialog({
           });
         }}
       >
-        {request.preferredSlots.length > 1 && (
+        {partnerBlocked && (
+          <div className="rounded-md border border-warning/30 bg-warning/10 p-3 text-xs text-warning">
+            Partner ({request.coClientName ?? request.coClientEmail ?? "—"}) is
+            not a member yet. Create the partner&apos;s client account first,
+            then re-open this dialog.
+          </div>
+        )}
+        {request.slots.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-muted">Preferred slots:</span>
-            {request.preferredSlots.map((s, i) => (
+            <span className="text-xs text-muted">Proposed slots:</span>
+            {request.slots.map((s, i) => (
               <button
                 key={i}
                 type="button"
                 onClick={() => {
-                  setDate(s.date);
+                  setDate(s.proposedDate);
                   setStartTime(s.startTime);
+                  setEndTime(s.endTime);
                 }}
                 className="rounded-full border border-border bg-card px-2.5 py-1 text-xs hover:border-accent/40"
               >
-                {s.date} · {s.startTime}
+                {s.proposedDate} · {s.startTime}–{s.endTime}
               </button>
             ))}
           </div>
@@ -98,6 +112,12 @@ export function ScheduleFromRequestDialog({
             />
           </div>
           <div className="space-y-1.5">
+            <Label>Session type</Label>
+            <div className="rounded-md border border-border bg-paper px-3 py-2 text-sm text-muted">
+              {request.sessionType === "1on1" ? "1-on-1" : "2-on-1"}
+            </div>
+          </div>
+          <div className="space-y-1.5">
             <Label>Start time</Label>
             <Input
               type="time"
@@ -106,20 +126,12 @@ export function ScheduleFromRequestDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Duration (min)</Label>
+            <Label>End time</Label>
             <Input
-              type="number"
-              min={30}
-              step={15}
-              value={duration}
-              onChange={(e) => setDuration(Number(e.target.value) || 60)}
+              type="time"
+              value={endTime}
+              onChange={(e) => setEndTime(e.target.value)}
             />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Session type</Label>
-            <div className="rounded-md border border-border bg-paper px-3 py-2 text-sm text-muted">
-              {request.sessionType === "1on1" ? "1-on-1" : "2-on-1"}
-            </div>
           </div>
           <div className="space-y-1.5">
             <Label>Instructor</Label>
@@ -170,7 +182,9 @@ export function ScheduleFromRequestDialog({
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit">Schedule session</Button>
+          <Button type="submit" disabled={partnerBlocked}>
+            Schedule session
+          </Button>
         </DialogFooter>
       </form>
     </Dialog>

@@ -162,24 +162,20 @@ Workshops are configured under Packages (not Schedule). Three-stage editor: **Ba
 
 ### `pt-requests.ts` (workspace-**agnostic** — `admin-restructure.md` §9)
 
-Replaces the old "approve PT session" flow. PT requests are the actionable entity; PT sessions only come into being on schedule. The admin queue is shared across workspaces (no `granted_location_ids` filter) because PT requests have no `location_id` until scheduled.
+PT requests are the actionable entity. **No back-and-forth in app — all negotiation is on WhatsApp.** The portal exposes exactly two terminal actions: **schedule** (the implicit approval) and **cancel**. There is no decline-with-note path and no approve button.
+
+The admin queue is shared across workspaces (no `granted_location_ids` filter) because PT requests have no `location_id` until scheduled.
 
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/pt-requests` | Triage queue. Default `?status=pending`, ordered `created_at desc`. Filters: `?status`, `?preferred_instructor_id`, `?client_id`, `?session_type`, `?from`, `?to`. |
-| GET | `/pt-requests/:id` | Detail incl. client profile snapshot, co-client (if 2-on-1), instructor preference, message, expiry. |
-| POST | `/pt-requests/:id/schedule` | Convert request → `pt_sessions` row. Body: `{ instructor_id, location_id, starts_at, ends_at, capacity_online?, capacity_waitlist?, capacity_buffer? }`. Calls `services/pt-sessions/schedule.ts:scheduleFromRequest()` — see §3c. `location_id` must be in the acting admin's `granted_location_ids` (the scheduling step lands the session in a workspace; the request itself isn't workspace-bound). |
-| POST | `/pt-requests/:id/decline` | `{ decline_note }` (required). Sets `pt_requests.status='declined'`, `resolved_at`, `resolved_by_staff_id`. Emails the client (`pt_session_declined` template — request entity, same template). |
-| POST | `/pt-requests/:id/cancel` | Admin cancels a pending request on the client's behalf (e.g. client called the studio). Sets `status='cancelled'`. |
+| GET | `/pt-requests` | Triage queue. Default `?status=pending`, ordered `created_at desc`. Filters: `?status`, `?class_type_id`, `?client_id`, `?session_type`, `?from`, `?to`. |
+| GET | `/pt-requests/:id` | Detail incl. client profile snapshot, class type, all proposed slots (`pt_request_slots`), co-client (resolved `co_client_id` OR free-text `co_client_name + co_client_email`), message, expiry. |
+| POST | `/pt-requests/:id/schedule` | Convert request → `pt_sessions` row. Body: `{ instructor_id, location_id, room_id, starts_at, ends_at, capacity_online?, capacity_waitlist?, capacity_buffer? }`. Calls `services/pt-sessions/schedule.ts:schedulePtRequest()` — see §3c. `location_id` must be in the acting admin's `granted_location_ids`. **For 2on1 requests with no `co_client_id` yet** the call rejects with 409 — admin must create the partner's client first via `/admin/clients`, the FE then re-opens the schedule dialog with `co_client_id` resolved. |
+| POST | `/pt-requests/:id/cancel` | Admin cancel. Branches on current status: `pending` → `cancelled_before_scheduled` + refund (1 session for 1on1, 2 for 2on1) to the originating client package; `scheduled` → `cancelled_after_scheduled`, cascade-cancel the linked `pt_sessions` row + every booking on it (state='cancelled', refund_outcome='forfeited'), **no refund** (v1 policy). Emits `admin_cancel_class_pt` inbox row and emails the affected client(s). Idempotent — calling on an already-terminal request is a no-op. |
 
-### `pt-sessions.ts` (admin cancel of confirmed sessions only)
+### `pt-sessions.ts` — removed
 
-PT request approval moved to `pt-requests.ts`. This file only handles cancellation of already-scheduled sessions.
-
-| Method | Path | Effect |
-|---|---|---|
-| GET | `/pt-sessions` | List confirmed `pt_sessions` filtered by `granted_location_ids` (location is set at scheduling time). |
-| POST | `/pt-sessions/:id/cancel` | Admin cancel a confirmed session — refunds session count to all clients in `pt_session_clients` (per `services/bookings/cancel.ts` admin path, §3b). |
+Admin-side PT actions all flow through `/pt-requests/*`. Cancellation of a scheduled session goes via `POST /pt-requests/:id/cancel` (branches as documented above) so the request and session stay in lockstep. Listing scheduled `pt_sessions` for the schedule view is handled by `schedule.ts:listScheduleItems`.
 
 ### `bookings.ts`
 | Method | Path | Effect |
@@ -318,37 +314,74 @@ The Stripe webhook `charge.refunded` arrives separately and updates `stripe_paym
 
 Triggered from `POST /pt-requests/:id/schedule` (admin or instructor).
 
+**Credit accounting:** sessions are debited **at submit time** in `services/pt-sessions/request.ts:submitPtRequest` (1 session for 1on1, 2 for 2on1). The schedule path below does NOT touch credit balances — it just materialises the session. Cancellation, not scheduling, is the surface that returns credits (see §3c.cancel below).
+
 ```
-services/pt-sessions/schedule.ts:scheduleFromRequest({
-  pt_request_id, instructor_id, location_id, starts_at, ends_at, actor_staff_id,
+services/pt-sessions/schedule.ts:schedulePtRequest({
+  pt_request_id, instructor_id, location_id, room_id, starts_at, ends_at, actor_staff_id,
   capacity_online?, capacity_waitlist?, capacity_buffer?
 })
   ↓
 tx start
 1. SELECT pt_requests FOR UPDATE WHERE id=X AND status='pending'
    → else 409 request_not_pending
-2. Conflict check: no class, workshop_day, or confirmed pt_session for instructor_id overlaps [starts_at, ends_at]
+2. For 2on1 requests: pt_requests.co_client_id MUST be NOT NULL
+   → else 409 partner_account_required (admin must create the partner via /admin/clients first)
+3. Conflict check: no class, workshop_day, or confirmed pt_session for instructor_id overlaps [starts_at, ends_at]
    → if conflict: 409 instructor_conflict
-3. Workspace check: location_id ∈ actor's granted_location_ids (superadmin bypasses)
-4. Decrement client_packages.credits_or_sessions_remaining for each client in the request
-   (requesting client + co_client if 2-on-1); 409 insufficient_pt_sessions on any zero balance
-5. Insert pt_sessions row: pt_request_id=X, instructor_id, location_id, starts_at, ends_at,
+4. Room check: services/schedule/room-conflicts.ts (assertRoomInLocation + assertRoomAvailable)
+5. Workspace check: location_id ∈ actor's granted_location_ids (superadmin bypasses)
+6. Insert pt_sessions row: pt_request_id=X, instructor_id, location_id, room_id, starts_at, ends_at,
    session_type (copied from request), capacity_online (default 1 for 1on1, 2 for 2on1),
    lifecycle='active', scheduled_at=now(), scheduled_by_staff_id=actor_staff_id
-6. Insert pt_session_clients rows: requesting client + co_client (if 2on1)
-7. Insert bookings row(s): kind='pt', pt_session_id=new id, state='confirmed',
-   credits_or_sessions_used=1 per client; generate qr_token + code
-8. Update pt_requests: status='scheduled', scheduled_pt_session_id=new id,
+7. Insert pt_session_clients rows: requesting client + co_client (if 2on1)
+8. Insert bookings row(s): kind='pt', pt_session_id=new id, state='confirmed',
+   credits_or_sessions_used=1 per client (recorded on the booking for audit; the debit
+   itself already happened on submit and is not re-applied here); generate qr_token + code
+9. Update pt_requests: status='scheduled', scheduled_pt_session_id=new id,
    resolved_at=now(), resolved_by_staff_id=actor_staff_id
-9. enqueueEmail('pt_session_approved', client.email, { instructor_name, starts_at, location, qr_url })
+10. enqueueEmail('pt_session_scheduled', client.email, { instructor_name, starts_at, location, room, qr_url })
+    (and to partner if 2on1)
 tx commit
 ```
 
-Decline path: `POST /pt-requests/:id/decline` sets `pt_requests.status='declined'`, `decline_note`, `resolved_at`, `resolved_by_staff_id`, and emails `pt_session_declined`. Clients have to re-submit.
+#### 3c.cancel — Cancellation (`services/pt-sessions/cancel.ts:cancelPtRequest`)
 
-Expiry path (`pt-request-expiry` cron): pending requests past `expires_at` move to `status='expired'`, and the client receives the new `pt_request_expired` email.
+Single entry point for both client cancel (`/me/pt-sessions/:id/cancel`) and admin cancel (`/pt-requests/:id/cancel`). Branches on current `pt_requests.status`:
 
-**Invariant:** `pt_sessions.pt_request_id` is `NOT NULL UNIQUE`. There is no path that creates a `pt_sessions` row without going through this service.
+```
+tx start
+SELECT pt_requests FOR UPDATE WHERE id=X
+
+CASE status
+  WHEN 'pending':
+    1. Update pt_requests SET status='cancelled_before_scheduled',
+                              resolved_at=now(), resolved_by_staff_id=actor (NULL for system/client)
+    2. REFUND: increment client_packages.credits_or_sessions_remaining
+       — 1 for 1on1, 2 for 2on1 — against the originating package.
+    3. enqueueEmail('pt_cancelled_session_returned')
+
+  WHEN 'scheduled':
+    1. Update pt_requests SET status='cancelled_after_scheduled', resolved_at=now()
+    2. Update pt_sessions SET lifecycle='cancelled', cancelled_at=now(),
+                              cancelled_by_staff_id=actor (NULL for client/system)
+    3. UPDATE every booking on the session: state='cancelled', refund_outcome='forfeited',
+       cancelled_at=now()
+    4. INSERT cancellations rows (kind='pt', source=client|admin, was_within_window=false,
+       was_within_cap=true, refund_fired=false)
+    5. INSERT inbox_items row (type='admin_cancel_class_pt') for the admin queue.
+    6. enqueueEmail('pt_cancelled_forfeited')
+
+  WHEN other (already terminal):
+    no-op (idempotent)
+END
+
+tx commit
+```
+
+Expiry path (`pt-request-expiry` cron): pending requests past `expires_at` go through the same `'pending'` branch above with `actor=NULL`, ending up `cancelled_before_scheduled` + credits refunded. Client receives the `pt_cancelled_session_returned` email (subject mentions auto-expiry).
+
+**Invariant:** `pt_sessions.pt_request_id` is `NOT NULL UNIQUE`. There is no path that creates a `pt_sessions` row without going through the schedule service.
 
 ### 3d. Manual credit / session adjustments
 
@@ -397,9 +430,9 @@ Scoped to the authenticated instructor. The middleware loads `staff_users` then 
 ### `pt-requests.ts`
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/pt-requests` | Pending PT requests where `preferred_instructor_id = ctx.instructor_id` OR `preferred_instructor_id IS NULL`. Workspace-agnostic. |
-| POST | `/pt-requests/:id/schedule` | Same shape as the admin route — `services/pt-sessions/schedule.ts:scheduleFromRequest()` checks the instructor is the acting one (or unspecified). |
-| POST | `/pt-requests/:id/decline` | Service guards: instructor may only decline requests where they are preferred or unspecified. |
+| GET | `/pt-requests` | All pending PT requests (workspace-agnostic). The request no longer carries an instructor preference — instructors see the full pending queue and pick up the ones they can run, same as admins. |
+| POST | `/pt-requests/:id/schedule` | Same shape as the admin route — `services/pt-sessions/schedule.ts:schedulePtRequest()`. The service forces `instructor_id = ctx.instructor_id` on this surface. |
+| POST | `/pt-requests/:id/cancel` | Same shape as admin cancel — branches on current status per §3c.cancel. |
 
 ### ~~`availability.ts`~~ — REMOVED
 

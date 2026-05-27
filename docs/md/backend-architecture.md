@@ -563,30 +563,45 @@ Which days each tier grants access to. A "Full Event" tier covers all `workshop_
 
 **Indexes:** `(workshop_day_id)` for reverse lookup (capacity recompute on day edit).
 
-#### `pt_requests` (NEW — `admin-restructure.md` §9, `fe-client-features.md` §5.2)
+#### `pt_requests` (reshape — `admin-restructure.md` §9, `fe-client-features.md` §5.2)
 
 Client-submitted intent to schedule a private session. Has no `location_id` (assigned only at scheduling). The system invariant is: **no `pt_sessions` row may exist without a matching `pt_requests` row** (FK `pt_sessions.pt_request_id`).
+
+The simplified v1 flow has **no in-app back-and-forth** — all negotiation is on WhatsApp. Admin schedules (implicit approval) or cancels; no decline-with-note, no approval step. Instructor preference is NOT captured (admin assigns at schedule time, informed by `class_type_id`).
 
 | Column | Type | Notes |
 |---|---|---|
 | id | uuid | PK |
 | client_id | uuid | FK → clients.id — the submitting client |
-| preferred_instructor_id | uuid | FK → instructors.staff_user_id, nullable — "no preference" allowed |
-| preferred_starts_at | timestamptz | not null |
-| preferred_ends_at | timestamptz | not null, CHECK > preferred_starts_at |
+| class_type_id | uuid | FK → class_types.id, not null — yoga style / focus area |
 | session_type | enum `pt_session_type` | `1on1`, `2on1` |
-| co_client_id | uuid | FK → clients.id, nullable — set when session_type=`2on1` |
+| co_client_id | uuid | FK → clients.id, nullable — set for 2on1 when partner is already a member (resolved via /pt-sessions/partner-lookup at submit) |
+| co_client_name | text | nullable — set for 2on1 when partner is not yet a member; admin creates the account before scheduling |
+| co_client_email | text | nullable — same, for the not-yet-a-member case |
 | message | text | nullable — free-form note from client |
-| status | enum `pt_request_status` | not null, default `'pending'` — `pending`, `scheduled`, `declined`, `cancelled`, `expired` |
-| decline_note | text | nullable, required at app layer when status=`declined` |
+| status | enum `pt_request_status` | not null, default `'pending'` — `pending`, `scheduled`, `cancelled_before_scheduled`, `cancelled_after_scheduled`, `attended` (mirrored from booking check-in) |
 | expires_at | timestamptz | not null — `created_at + ttl` from `pt_booking_config` (sweep job, §5) |
 | scheduled_pt_session_id | uuid | FK → pt_sessions.id, nullable — set when status=`scheduled` |
-| resolved_at, resolved_by_staff_id | | nullable — set on scheduled / declined / cancelled / expired |
+| resolved_at, resolved_by_staff_id | | nullable — set on scheduled or either cancellation; staff id NULL for client-initiated / system (expiry) |
 | created_at | timestamptz | not null |
 
-**Indexes:** `(status, created_at desc)` — drives the `/admin/pt-requests` triage queue; `(client_id, status)` for client's own list; `(preferred_instructor_id, status)`; `(expires_at) WHERE status='pending'` for the expiry sweep.
+**Indexes:** `(status, created_at desc)` — drives the `/admin/pt-requests` triage queue; `(client_id, status)` for client's own list; `(class_type_id)` for class-type filters; `(expires_at) WHERE status='pending'` for the expiry sweep.
 
 **Workspace scope.** PT requests are workspace-agnostic per `admin-restructure.md` Overview — every admin sees the same triage queue regardless of `granted_location_ids`.
+
+#### `pt_request_slots` (1..N proposed slots per request)
+
+Each row is one date+time-frame option the client put forward. Admin picks any one (or any negotiated alternative) at scheduling.
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid | PK |
+| pt_request_id | uuid | FK → pt_requests.id, on delete cascade |
+| proposed_date | date | not null |
+| start_time | time | not null |
+| end_time | time | not null, CHECK > start_time |
+
+**Indexes:** `(pt_request_id)`.
 
 #### `pt_sessions` (created when a PT request is scheduled by admin/instructor)
 

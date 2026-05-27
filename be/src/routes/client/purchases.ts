@@ -13,6 +13,8 @@ import {
   listActivePromotionsFor,
 } from '../../services/packages/promotions'
 import { validatePromoCode } from '../../lib/promo-codes'
+import { bookWorkshopFree } from '../../services/workshops/book'
+import { workshops, workshopTiers } from '../../db/schema/schedule'
 import { env } from '../../env'
 
 const CLIENT_URL = env.CLIENT_ORIGIN ?? 'http://localhost:3000'
@@ -25,6 +27,12 @@ const checkoutPackageSchema = z.object({
 
 const validatePromoSchema = z.object({
   code: z.string().min(1),
+})
+
+const checkoutWorkshopSchema = z.object({
+  workshop_id: z.string().uuid(),
+  workshop_tier_id: z.string().uuid(),
+  promo_code: z.string().optional(),
 })
 
 const app = new Hono()
@@ -135,9 +143,76 @@ const app = new Hono()
 
     return c.json({ url: session.url })
   })
-  .post('/checkout/workshop', requireVerified, c =>
-    c.json({ todo: 'create Stripe Payment Intent for workshop (free workshops bypass)' }, 501),
-  )
+  .post('/checkout/workshop', requireVerified, zValidator('json', checkoutWorkshopSchema), async c => {
+    const clientId = c.get('clientId')
+    const clientRow = c.get('clientRow')
+    const { workshop_id, workshop_tier_id, promo_code } = c.req.valid('json')
+
+    const [tier] = await db
+      .select()
+      .from(workshopTiers)
+      .where(and(eq(workshopTiers.id, workshop_tier_id), eq(workshopTiers.workshopId, workshop_id)))
+      .limit(1)
+    if (!tier) throw new NotFoundError('workshop_tier_not_found')
+
+    const [ws] = await db.select().from(workshops).where(eq(workshops.id, workshop_id)).limit(1)
+    if (!ws) throw new NotFoundError('workshop_not_found')
+    if (ws.lifecycle !== 'active') throw new BadRequestError('workshop_not_active')
+
+    const promos = await listActivePromotionsFor('workshop', [workshop_id])
+    const eff = bestPrice(tier.regularPriceSgd, promos[workshop_id] ?? [])
+    const baseAfterPromotion = parseFloat(eff.effectivePriceSgd)
+
+    // Free workshop (price 0 after promotion) → book immediately, skip Stripe.
+    if (baseAfterPromotion === 0) {
+      const result = await bookWorkshopFree({ clientId, workshopId: workshop_id, workshopTierId: workshop_tier_id })
+      return c.json({ outcome: 'granted', booking_id: result.bookingId, free: true }, 201)
+    }
+
+    // Apply user-entered promo code on top of any automatic promotion.
+    let promoDiscountSgd = 0
+    if (promo_code) {
+      const promo = validatePromoCode(promo_code)
+      if (promo.valid) {
+        promoDiscountSgd = Math.min(promo.discountSgd, baseAfterPromotion)
+      }
+    }
+    const discountedBase = baseAfterPromotion - promoDiscountSgd
+    const totalCents = Math.round(discountedBase * 1.09 * 100)
+
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      customer_email: clientRow.email,
+      line_items: [
+        {
+          price_data: {
+            currency: 'sgd',
+            unit_amount: totalCents,
+            product_data: {
+              name: `${ws.name} — ${tier.name}`,
+              description: `Yoga Sadhana · includes 9% GST${promo_code ? ` · promo ${promo_code.toUpperCase()} applied` : ''}`,
+            },
+          },
+          quantity: 1,
+        },
+      ],
+      metadata: {
+        kind: 'workshop',
+        workshop_id,
+        workshop_tier_id,
+        client_id: clientId,
+        promo_code: promo_code ?? '',
+        promo_discount_sgd: String(promoDiscountSgd),
+        applied_promotion_id: eff.appliedPromotionId ?? '',
+        list_price_sgd: tier.regularPriceSgd,
+        amount_sgd: String((totalCents / 100).toFixed(2)),
+      },
+      success_url: `${CLIENT_URL}/booking/confirmation?type=workshop&workshop_id=${workshop_id}&workshop_tier_id=${workshop_tier_id}&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${CLIENT_URL}/workshops/${workshop_id}?cancelled=1`,
+    })
+
+    return c.json({ url: session.url })
+  })
   // Called by the confirmation page after Stripe redirects back.
   // Idempotent — safe to call multiple times. Handles the case where the webhook
   // hasn't fired yet (no Stripe CLI listener in local dev).

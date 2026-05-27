@@ -108,22 +108,17 @@ Same shape as `routes/public/catalog.ts` but adds:
 | POST | `/bookings/workshop` | `{ workshop_id, workshop_tier_id }` — initiates Stripe checkout; see §4b |
 | DELETE | `/bookings/:id` | Self-cancel — see §4c |
 
-### `pt-requests.ts` (verification gate applies)
+### `pt-sessions.ts` (verification gate applies)
 
-Per `admin-restructure.md` §9 and `fe-client-features.md` §5.2, the client-facing entity is the **PT Request** — clients submit a request with their preferred slot; admin schedules a `pt_sessions` row from it.
+Per `admin-restructure.md` §9 and `fe-client-features.md` §5.2, the client-facing entity is the **PT Request**. The route file is named `pt-sessions.ts` because requests and their scheduled sessions are paired 1:1 and the FE renders them together; the URL space is `/me/pt-sessions/*`.
 
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/pt-requests` | List own PT requests (any status). Each row carries linked `scheduled_pt_session_id` (if scheduled) plus an inlined booking for `/me/bookings` cross-display. |
-| GET | `/pt-requests/:id` | Detail |
-| POST | `/pt-requests` | `{ preferred_instructor_id?, preferred_starts_at, preferred_ends_at, session_type: '1on1'\|'2on1', co_client_email?, message? }`. See §4d. PT session count is **not** decremented at submission — only at admin schedule time per `fe-client-features.md` §5.2. `co_client_email` resolves to a `client_id` server-side; 422 if not found. |
-| DELETE | `/pt-requests/:id` | Cancel own pending request — sets `pt_requests.status='cancelled'`. Only valid when `status='pending'`. Confirmed sessions are cancelled via `DELETE /bookings/:id` instead (which follows the §4c path and refunds the session count). |
-
-### `pt-sessions.ts` (read-only — verification gate applies)
-| Method | Path | Effect |
-|---|---|---|
-| GET | `/pt-sessions` | List own confirmed/cancelled PT sessions. Submission moved to `pt-requests.ts`. |
+| GET | `/pt-sessions` | List own PT requests (any status). Each row carries the linked `pt_sessions` row when `status='scheduled'` (final date/time/location/room/instructor + per-attendee booking/qr/code) so the FE can render one card per request without a follow-up call. |
 | GET | `/pt-sessions/:id` | Detail |
+| GET | `/pt-sessions/partner-lookup?email=<email>` | Exact-match email lookup for 2on1 partner autocomplete. Returns `{ found: false }` OR `{ found: true, client_id, name }`. Used by the request form — leaks nothing beyond presence + display name. |
+| POST | `/pt-sessions/request` | Submit. Body: `{ class_type_id, session_type: '1on1'\|'2on1', client_package_id, slots: [{ proposed_date, start_time, end_time }, ...], message?, partner?: { kind: 'existing', co_client_id } \| { kind: 'new', name, email } }`. See §4d. **Debits the source package immediately** — 1 session for 1on1, 2 for 2on1. 422 `insufficient_pt_sessions` if balance < required. 422 `partner_required` if 2on1 without `partner`. |
+| POST | `/pt-sessions/:id/cancel` | Cancel own request. Branches on current status — `pending` → `cancelled_before_scheduled` + refund; `scheduled` → `cancelled_after_scheduled` (no refund, cascades through linked `pt_sessions` + bookings). Calls into the same `services/pt-sessions/cancel.ts:cancelPtRequest` the admin route uses, with `source='client'`. Idempotent on terminal states. |
 
 ### `purchases.ts` (verification gate applies)
 | Method | Path | Effect |
@@ -288,31 +283,47 @@ The cap evaluation (step 4) is the load-bearing call. It reads `cancellations WH
 
 ### 4d. PT Request submission
 
-`POST /me/pt-requests`:
+`POST /me/pt-sessions/request`:
 
 ```
-services/pt-sessions/request.ts:submitRequest({
-  client_id, preferred_instructor_id?, preferred_starts_at, preferred_ends_at,
-  session_type, message?, co_client_email?
+services/pt-sessions/request.ts:submitPtRequest({
+  client_id, class_type_id, session_type, client_package_id,
+  slots: [{ proposed_date, start_time, end_time }, ...],   // 1..N
+  message?,
+  partner?: { kind: 'existing', co_client_id }            // 2on1, partner is a member
+           | { kind: 'new', name, email }                  // 2on1, partner is not yet a member
 })
   ↓
 tx start
-1. Validate: now() <= preferred_starts_at <= now() + pt_booking_config.book_in_advance_days * 1d
-2. Validate session_type: '1on1' → co_client_email NULL; '2on1' → co_client_email required + must resolve to a client_id
-3. Soft-check both clients hold an active client_packages row with kind='pt' and remaining >= 1
-   (Decrement happens at admin schedule time, NOT request time — per fe-client-features.md §5.2.
-    Soft-check just avoids submitting requests that can never be scheduled.)
-   → if no PT package: 422 no_pt_package
-4. Insert pt_requests row: status='pending', preferred_instructor_id, preferred_starts_at,
-   preferred_ends_at, session_type, co_client_id (resolved), message,
-   expires_at = now() + pt_request_ttl (see §4f of admin-restructure.md / spine §5)
-5. enqueueEmail('pt_request_submitted', client.email, { instructor_name?, preferred_starts_at })
+1. Validate class_type_id exists and is active.
+2. Validate slots[]: 1..N rows; each end_time > start_time; each proposed_date in
+   [today, today + pt_booking_config.book_in_advance_days] (local SGT date math).
+3. Validate session_type:
+   '1on1' → partner MUST be omitted.
+   '2on1' → partner REQUIRED. If kind='existing', co_client_id MUST be a different active client.
+            If kind='new', email MUST NOT match any existing client (otherwise the FE should have
+            collapsed to 'existing' via /partner-lookup; reject 422 partner_should_be_existing).
+4. SELECT client_packages FOR UPDATE WHERE id=client_package_id AND client_id=ctx.client_id.
+   Required: kind='pt', not expired, session_type matches, credits_or_sessions_remaining >=
+   (1 for 1on1, 2 for 2on1) → else 422 insufficient_pt_sessions.
+5. DEBIT the package: credits_or_sessions_remaining -= (1 for 1on1, 2 for 2on1).
+   The debit is recorded against pt_requests.id via the manual_adjustments shape with
+   reason='pt_request_submit' so cancellation can reverse it precisely.
+6. Insert pt_requests row: status='pending', class_type_id, session_type,
+   co_client_id | co_client_name + co_client_email (depending on partner.kind),
+   message, expires_at = now() + pt_request_ttl (see spine §5).
+7. Insert pt_request_slots rows for each entry in slots[].
+8. enqueueEmail('pt_request_submitted', client.email, { class_type_name, slots, partner_label }).
+9. enqueueEmail('pt_request_submitted_admin', studio_inbox, ...) — admin gets a heads-up email
+   so the WhatsApp follow-up can start without polling /admin/pt-requests.
 tx commit
 ```
 
-The request becomes a `pt_sessions` row only when admin or instructor schedules it (see `be-portal.md` §3c). Pending requests past `expires_at` are swept by the hourly `pt-request-expiry` cron — see spine §5.
+The request becomes a `pt_sessions` row only when admin (or instructor) schedules it via `be-portal.md` §3c. **No back-and-forth in app**: all date/time negotiation, partner clarification, and instructor matching happens on WhatsApp out-of-band; the admin records the final outcome by scheduling or cancelling.
 
-**No Inbox row inserted.** Per `admin-restructure.md` §13, PT requests are not Inbox items; admin sees them on the dedicated `/admin/pt-requests` page.
+Pending requests past `expires_at` are swept by the `pt-request-expiry` cron (every 5 min) — it routes through the same `services/pt-sessions/cancel.ts:cancelPtRequest` `'pending'` branch with `source='system'`, refunding the debit.
+
+**No Inbox row inserted** on submit — admin sees pending requests on `/admin/pt-requests`. Inbox rows are reserved for cancellation notifications per `admin-restructure.md` §13.
 
 ### 4e. Package purchase flow
 

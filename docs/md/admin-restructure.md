@@ -384,22 +384,28 @@ The Availability system is gone (§8). PT sessions now exist only as the resolut
 
 **Invariant:** in v1, **no `PtSession` can exist without a matching `PtRequest`.**
 
+> **v1 flow rule:** there is **no in-app back-and-forth** between client and admin. All negotiation (date, time, partner availability, instructor swap) happens **out-of-app on WhatsApp**. The portal exposes exactly two terminal actions: **schedule** (the implicit approval) and **cancel**. There is no "approve" button and no "decline with note" path.
+
 ### 9a. Data shape — `PtRequest`
 
 | Field | Notes |
 |---|---|
 | `id` | |
-| `client_id` | |
-| `preferred_instructor_id: string \| null` | Optional — client may have no preference |
+| `client_id` | The requester |
+| `class_type_id` | Class type focus picked from the active list (drives instructor expertise hint) |
 | `session_type` | `1on1` or `2on1` |
-| `duration_minutes` | Set by client |
-| `preferred_slots: PtRequestSlot[]` | Array of `{ date, start_time }` — client supplies multiple options |
-| `client_note` | Optional |
-| `status` | `pending` / `scheduled` / `declined` / `cancelled` |
-| `pt_session_id` | Set when scheduled |
-| `decline_note` | Required on decline (min 5 chars) |
-| `decided_by_staff_id`, `decided_at` | Audit |
+| `co_client_id: string \| null` | 2on1 only: existing partner (matched by email lookup at submit time) |
+| `co_client_name: string \| null` | 2on1 only: partner full name when not yet a member |
+| `co_client_email: string \| null` | 2on1 only: partner email when not yet a member |
+| `message` | Optional free-form note from the client |
+| `status` | `pending` / `scheduled` / `cancelled_before_scheduled` / `cancelled_after_scheduled` / `attended` |
+| `scheduled_pt_session_id` | Set when scheduled |
+| `expires_at` | Auto-cancels the request (refund) if no schedule by this point |
+| `resolved_by_staff_id`, `resolved_at` | Audit — set on schedule or cancel |
 | `created_at` | |
+| `slots: PtRequestSlot[]` (separate `pt_request_slots` table, 1..N) | Each `{ proposed_date, start_time, end_time }` — client supplies multiple options |
+
+**Instructor preference is NOT captured** — admin assigns instructor at scheduling, informed by `class_type_id` and live availability.
 
 ### 9b. Workspace-agnostic
 
@@ -407,14 +413,16 @@ PT Requests have **no `location_id`** until they are scheduled — at scheduling
 
 ### 9c. Triage UI (`/admin/pt-requests`)
 
-- Filter chips: `pending` / `scheduled` / `declined` / `all`. Pending count badge appears on the sidebar item.
-- Row click opens a **detail drawer** with the full request, the preferred slots, and the client's note.
-- **Decline** requires a note (min 5 chars). Logged to `decline_note`, fires the "PT session declined" email (§16, template #6).
+- Filter chips: `pending` / `scheduled` / `cancelled` / `attended` / `all`. (`cancelled` rolls up both cancelled variants.) Pending count badge appears on the sidebar item.
+- Row click opens a **detail drawer** with: class type, session type, all proposed slots, partner info (with "needs account" badge if `co_client_id` is null), and the client's message.
 - **Schedule** opens `ScheduleFromRequestDialog`:
-  - Pre-filled from the first preferred slot.
-  - Quick-pick chips for the remaining preferred slots — clicking one updates the date/time fields.
+  - Quick-pick chips for each proposed slot — clicking one fills date / start / end.
+  - Admin can also free-type a date/time that wasn't proposed (post-WhatsApp negotiation).
+  - **Instructor**: admin picks from active instructors, no pre-fill (no `preferred_instructor_id`).
+  - **Location + Room**: required; room must belong to the chosen location.
+  - **2on1 + partner is not yet a member** → admin is prompted to create the partner's client account first (via a "+ Create partner" inline action) before submit; the scheduler refuses to save until `co_client_id` is populated.
   - `<CapacityFields />` defaults from session type (`1on1` → `online_booking: 1, buffer: 0, waitlist: 0`; `2on1` → `online_booking: 2`).
-  - Instructor defaults to `preferred_instructor_id` if present.
+- **Cancel** (admin) is a single-confirm action — no decline note. Branches on current status (see §9e).
 
 ### 9d. Two converging entry points
 
@@ -425,13 +433,19 @@ Both paths share `ScheduleFromRequestDialog`:
 
 The scheduler can no longer create a PT session ad-hoc — it must always originate from a request, preserving the invariant.
 
-### 9e. Outcomes
+### 9e. Status lifecycle + refund policy
 
-- **Schedule** → `PtRequest.status = "scheduled"`, `pt_session_id` set, client notified (template #5).
-- **Decline** → `PtRequest.status = "declined"`, `decline_note` saved, client notified (template #6).
-- **Cancel** (client-initiated before triage) → `PtRequest.status = "cancelled"`.
+Credit deduction happens **on submit**, not on schedule. 1 session debited for `1on1`, 2 for `2on1` (one per attendee).
 
-Credit deduction is unchanged: 1 PT session per booking, deducted on schedule (not on submit).
+| Transition | Trigger | Refund |
+|---|---|---|
+| `→ pending` | Client submits | n/a (credits debited) |
+| `pending → scheduled` | Admin schedules (creates `pt_sessions` + per-client `bookings`) | n/a |
+| `pending → cancelled_before_scheduled` | Client or admin cancels while pending **or** request expires | **Refund** — 1 (1on1) or 2 (2on1) sessions returned to the source package |
+| `scheduled → cancelled_after_scheduled` | Client or admin cancels after scheduling | **No refund (v1)** — cascade-cancels the `pt_sessions` row + every booking on it; bookings marked `state='cancelled'`, `refund_outcome='forfeited'` |
+| `scheduled → attended` | Check-in on the linked PT booking flips the mirrored status | n/a |
+
+Both the cancel-before and cancel-after paths fire the same client email (subject differs only in whether a refund line is included). The matching admin Inbox entry uses `type='admin_cancel_class_pt'`.
 
 ---
 
