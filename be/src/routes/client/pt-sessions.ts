@@ -1,17 +1,66 @@
 import { Hono } from 'hono'
+import { zValidator } from '@hono/zod-validator'
+import { z } from 'zod'
+import { submitPtRequest } from '../../services/pt-sessions/request'
+import { cancelPtRequest } from '../../services/pt-sessions/cancel'
+import { listClientPtRequests, lookupPartnerByEmail } from '../../services/pt-sessions/list'
 
-// Client-side PT request endpoints. See docs/md/be-client.md §PT.
-//   GET    /                    list own pt_requests (incl. scheduled pt_sessions detail)
-//   POST   /request             submit a new pt_request (debits package on submit)
-//   POST   /:id/cancel          cancel own request:
-//                                 pending   → cancelled_before_scheduled (refund)
-//                                 scheduled → cancelled_after_scheduled (no refund v1)
-//   GET    /partner-lookup?email=…  exact-match email lookup for 2on1 partner autocomplete
-//                                   (returns {found: boolean, clientId?: string, name?: string})
+const slotSchema = z.object({
+  proposedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  startTime: z.string().regex(/^\d{2}:\d{2}$/),
+  endTime: z.string().regex(/^\d{2}:\d{2}$/),
+})
+
+const requestSchema = z.object({
+  classTypeId: z.string().uuid(),
+  locationId: z.string().uuid(),
+  sessionType: z.enum(['1on1', '2on1']),
+  clientPackageId: z.string().uuid(),
+  slots: z.array(slotSchema).min(1),
+  message: z.string().max(2000).optional(),
+  partner: z
+    .union([
+      z.object({ kind: z.literal('existing'), coClientId: z.string().uuid() }),
+      z.object({ kind: z.literal('new'), name: z.string().min(1).max(160), email: z.string().email() }),
+    ])
+    .optional(),
+})
+
+function serializeRequest(r: Awaited<ReturnType<typeof listClientPtRequests>>[number]) {
+  return {
+    id: r.id,
+    class_type_id: r.classTypeId,
+    class_name: r.className,
+    location_id: r.locationId,
+    location_name: r.locationName,
+    session_type: r.sessionType,
+    status: r.status,
+    message: r.message,
+    co_client_name: r.coClientName,
+    created_at: r.createdAt,
+    expires_at: r.expiresAt,
+    slots: r.slots.map(s => ({ proposed_date: s.proposedDate, start_time: s.startTime, end_time: s.endTime })),
+  }
+}
+
 const app = new Hono()
-  .get('/', c => c.json({ todo: 'list own PT requests + scheduled sessions' }, 501))
-  .get('/partner-lookup', c => c.json({ todo: 'exact-match partner email lookup for 2on1' }, 501))
-  .post('/request', c => c.json({ todo: 'submit PT request — see services/pt-sessions/request' }, 501))
-  .post('/:id/cancel', c => c.json({ todo: 'client cancel — see services/pt-sessions/cancel' }, 501))
+  .get('/', async c => {
+    const rows = await listClientPtRequests(c.get('clientId'))
+    return c.json({ pt_requests: rows.map(serializeRequest) })
+  })
+  .get('/partner-lookup', zValidator('query', z.object({ email: z.string().email() })), async c => {
+    const { email } = c.req.valid('query')
+    const r = await lookupPartnerByEmail(email, c.get('clientId'))
+    return c.json({ found: r.found, client_id: r.clientId ?? null, name: r.name ?? null })
+  })
+  .post('/request', zValidator('json', requestSchema), async c => {
+    const body = c.req.valid('json')
+    const { ptRequestId } = await submitPtRequest({ clientId: c.get('clientId'), ...body })
+    return c.json({ pt_request_id: ptRequestId }, 201)
+  })
+  .post('/:id/cancel', async c => {
+    await cancelPtRequest(c.req.param('id'), 'client')
+    return c.json({ ok: true })
+  })
 
 export default app
