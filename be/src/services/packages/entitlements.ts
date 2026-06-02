@@ -1,4 +1,4 @@
-import { and, eq, gt, gte, isNull, or, sql } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { clientPackages, classPackages, ptPackages } from '../../db/schema/packages'
 
@@ -6,7 +6,8 @@ export interface ClientEntitlements {
   trialUsed: boolean
   hasActiveUnlimited: boolean
   hasActiveBundleCredits: boolean
-  ptSessionsRemaining: number
+  pt1on1Remaining: number
+  pt2on1Remaining: number
 }
 
 /**
@@ -18,31 +19,44 @@ export interface ClientEntitlements {
 export async function getClientEntitlements(clientId: string): Promise<ClientEntitlements> {
   const now = new Date()
 
-  const rows = await db.select().from(clientPackages).where(eq(clientPackages.clientId, clientId))
+  const rows = await db
+    .select({
+      kind: clientPackages.kind,
+      active: clientPackages.active,
+      expiresAt: clientPackages.expiresAt,
+      remaining: clientPackages.creditsOrSessionsRemaining,
+      ptSessionType: ptPackages.sessionType,
+    })
+    .from(clientPackages)
+    .leftJoin(ptPackages, eq(ptPackages.id, clientPackages.sourcePtPackageId))
+    .where(eq(clientPackages.clientId, clientId))
 
   let trialUsed = false
   let hasActiveUnlimited = false
   let hasActiveBundleCredits = false
-  let ptSessionsRemaining = 0
+  let pt1on1Remaining = 0
+  let pt2on1Remaining = 0
 
   for (const r of rows) {
-    const notExpired = r.expiresAt === null || r.expiresAt > now
+    // active is authoritative; the live expiry check covers cron lag.
+    const consumable = r.active && (r.expiresAt === null || r.expiresAt > now)
+    const balance = r.remaining ?? 0
     if (r.kind === 'trial') {
-      // Any trial purchase ever (active or expired) counts as used.
-      trialUsed = true
-      if (notExpired && (r.creditsOrSessionsRemaining ?? 0) > 0) {
-        hasActiveBundleCredits = true
-      }
+      trialUsed = true // any trial ever (active or expired) counts as used
+      if (consumable && balance > 0) hasActiveBundleCredits = true
     } else if (r.kind === 'unlimited') {
-      if (notExpired) hasActiveUnlimited = true
+      if (consumable) hasActiveUnlimited = true
     } else if (r.kind === 'credit_bundle') {
-      if (notExpired && (r.creditsOrSessionsRemaining ?? 0) > 0) hasActiveBundleCredits = true
+      if (consumable && balance > 0) hasActiveBundleCredits = true
     } else if (r.kind === 'pt') {
-      if (notExpired) ptSessionsRemaining += r.creditsOrSessionsRemaining ?? 0
+      if (consumable && balance > 0) {
+        if (r.ptSessionType === '2on1') pt2on1Remaining += balance
+        else pt1on1Remaining += balance
+      }
     }
   }
 
-  return { trialUsed, hasActiveUnlimited, hasActiveBundleCredits, ptSessionsRemaining }
+  return { trialUsed, hasActiveUnlimited, hasActiveBundleCredits, pt1on1Remaining, pt2on1Remaining }
 }
 
 export interface ClientPackageWithSource {
@@ -56,6 +70,9 @@ export interface ClientPackageWithSource {
   expiresAt: Date | null
   purchasedAt: Date
   amountPaidSgd: string
+  active: boolean
+  /** '1on1' | '2on1' for PT packages; null otherwise. */
+  sessionType: '1on1' | '2on1' | null
 }
 
 /**
@@ -68,11 +85,7 @@ export async function listClientPackages(
 ): Promise<ClientPackageWithSource[]> {
   const now = new Date()
   const baseConds = [eq(clientPackages.clientId, clientId)]
-  if (onlyActive) {
-    baseConds.push(
-      or(isNull(clientPackages.expiresAt), gt(clientPackages.expiresAt, now))!,
-    )
-  }
+  if (onlyActive) baseConds.push(eq(clientPackages.active, true))
 
   const rows = await db
     .select({
@@ -88,6 +101,8 @@ export async function listClientPackages(
       ptPackageName: ptPackages.name,
       classPackageCredits: classPackages.credits,
       ptPackageSessions: ptPackages.numSessions,
+      active: clientPackages.active,
+      ptSessionType: ptPackages.sessionType,
     })
     .from(clientPackages)
     .leftJoin(classPackages, eq(classPackages.id, clientPackages.sourceClassPackageId))
@@ -104,5 +119,7 @@ export async function listClientPackages(
     expiresAt: r.expiresAt,
     purchasedAt: r.purchasedAt,
     amountPaidSgd: r.amountPaidSgd,
+    active: r.active,
+    sessionType: (r.ptSessionType ?? null) as '1on1' | '2on1' | null,
   }))
 }
