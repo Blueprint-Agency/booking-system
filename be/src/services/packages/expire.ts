@@ -1,8 +1,23 @@
+import { and, eq, isNotNull, lte, sql } from 'drizzle-orm'
+import { db } from '../../db'
+import { clientPackages } from '../../db/schema/packages'
+
 /**
- * Daily cron: hard-expire client_packages past expires_at.
+ * Daily cron: deactivate client_packages whose expiry has passed. This is the
+ * time-trigger that flips `active=false` on expiry (debit/refund handle the
+ * balance-driven flips inline). Already registered in jobs/index.ts (01:00 SGT).
  */
 export async function expirePackages(): Promise<void> {
-  // TODO: UPDATE client_packages SET credits_or_sessions_remaining = 0 WHERE expires_at < now()
+  await db
+    .update(clientPackages)
+    .set({ active: false })
+    .where(
+      and(
+        eq(clientPackages.active, true),
+        isNotNull(clientPackages.expiresAt),
+        lte(clientPackages.expiresAt, sql`now()`),
+      ),
+    )
 }
 
 /**
