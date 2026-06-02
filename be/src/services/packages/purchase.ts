@@ -3,6 +3,7 @@ import { db } from '../../db'
 import { clientPackages, classPackages, ptPackages } from '../../db/schema/packages'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { bestPrice, listActivePromotionsFor } from './promotions'
+import { PT_VALIDITY_DAYS, computeActive } from './validity'
 
 type ClassPackageRow = typeof classPackages.$inferSelect
 type PtPackageRow = typeof ptPackages.$inferSelect
@@ -11,14 +12,18 @@ type PtPackageRow = typeof ptPackages.$inferSelect
  *  - credit_bundle: now + validity_days
  *  - unlimited:     now + duration_days
  *  - trial:         now + validity_days (null if validity_days is null)
- *  - pt:            null (no expiry; admin manages)
+ *  - pt:            now + PT_VALIDITY_DAYS (365)
  */
 function computeExpiry(
   kind: 'credit_bundle' | 'unlimited' | 'trial' | 'pt',
   src: ClassPackageRow | PtPackageRow,
   now: Date,
 ): Date | null {
-  if (kind === 'pt') return null
+  if (kind === 'pt') {
+    const d = new Date(now)
+    d.setDate(d.getDate() + PT_VALIDITY_DAYS)
+    return d
+  }
   const cs = src as ClassPackageRow
   let days: number | null = null
   if (kind === 'credit_bundle') days = cs.validityDays
@@ -113,6 +118,7 @@ export async function grantPackage(
         appliedPromotionId: input.appliedPromotionId ?? null,
         creditsOrSessionsRemaining,
         expiresAt,
+        active: computeActive({ kind, expiresAt, creditsOrSessionsRemaining }, now),
         amountPaidSgd: input.amountSgd,
         stripePaymentIntentId: input.paymentIntentId,
       })
