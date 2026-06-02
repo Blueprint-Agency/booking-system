@@ -83,7 +83,8 @@ const TYPE_META: Record<MockBooking["type"], { label: string; href: string; tone
 export default function AccountOverview() {
   const { user } = useUser();
   const state = useMockState();
-  const { classCredits, isUnlimited: unlimited, unlimitedExpiresAt, ptSessions: ptSessionsRemaining, packages: livePackages, loading: pkgLoading } = useClientPackages();
+  const { classCredits, isUnlimited: unlimited, unlimitedExpiresAt, pt1on1, pt2on1, packages: livePackages, loading: pkgLoading } = useClientPackages();
+  const ptSessionsRemaining = pt1on1 + pt2on1;
   const firstName = user?.firstName || "there";
   const [nextUpVisible, setNextUpVisible] = useState(PAGE_SIZE);
 

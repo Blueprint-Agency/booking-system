@@ -9,11 +9,7 @@ import { SectionHeading } from "@/components/booking/section-heading";
 import { ScheduleSegments } from "@/components/booking/schedule-segments";
 import { useClientPackages } from "@/lib/use-client-packages";
 import { useLocations } from "@/lib/classes";
-import {
-  mockPartnerLookup,
-  submitPtRequest,
-  type LocalPtRequestPartner,
-} from "@/lib/pt-requests-mock";
+import { usePtSessionsApi } from "@/lib/pt-sessions";
 
 // Class types: hardcoded list until /public/class-types ships. Matches the
 // admin-side seed names so the dropdown UX is realistic during preview.
@@ -47,13 +43,11 @@ function todayIso() {
 
 export default function PrivateSessionsPage() {
   const router = useRouter();
-  const { ptSessions, packages, loading: pkgLoading } = useClientPackages();
+  const { pt1on1, pt2on1, packages, loading: pkgLoading } = useClientPackages();
   const { data: locations } = useLocations();
+  const ptApi = usePtSessionsApi();
 
   const ptPackages = packages.filter((p) => p.kind === "pt");
-  // First active PT package — the form debits this one. Real BE will pick
-  // by session_type compatibility.
-  const defaultPackageId = ptPackages[0]?.id ?? "";
 
   const [sessionType, setSessionType] = useState<"1on1" | "2on1">("1on1");
   const [classTypeId, setClassTypeId] = useState<string>(CLASS_TYPES[0].id);
@@ -80,9 +74,6 @@ export default function PrivateSessionsPage() {
   // Set when the user submits without enough PT sessions — prompts them to buy.
   const [showBuyPrompt, setShowBuyPrompt] = useState(false);
 
-  const required = sessionType === "2on1" ? 2 : 1;
-  const hasEnoughCredits = ptSessions >= required;
-
   function setSlot(i: number, patch: Partial<Slot>) {
     setSlots((prev) => prev.map((s, j) => (i === j ? { ...s, ...patch } : s)));
   }
@@ -93,17 +84,21 @@ export default function PrivateSessionsPage() {
     setSlots((prev) => prev.filter((_, j) => j !== i));
   }
 
-  function runPartnerLookup() {
+  async function runPartnerLookup() {
     const email = partnerEmail.trim();
     if (!email) {
       setPartnerLookup({ state: "idle" });
       return;
     }
-    const r = mockPartnerLookup(email);
-    if (r.found && r.clientId && r.name) {
-      setPartnerLookup({ state: "found", clientId: r.clientId, name: r.name });
-      setPartnerName("");
-    } else {
+    try {
+      const r = await ptApi.partnerLookup(email);
+      if (r.found && r.client_id && r.name) {
+        setPartnerLookup({ state: "found", clientId: r.client_id, name: r.name });
+        setPartnerName("");
+      } else {
+        setPartnerLookup({ state: "not_found" });
+      }
+    } catch {
       setPartnerLookup({ state: "not_found" });
     }
   }
@@ -128,9 +123,8 @@ export default function PrivateSessionsPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    // Gate: a request needs an active PT package with enough sessions. If not,
-    // prompt the member to buy a package instead of submitting.
-    if (!defaultPackageId || !hasEnoughCredits) {
+    // Gate: a request needs an active PT package of the right type with enough credits.
+    if (!matchingPackage || !hasEnoughCredits) {
       setShowBuyPrompt(true);
       setErrors([]);
       return;
@@ -142,30 +136,32 @@ export default function PrivateSessionsPage() {
     if (errs.length > 0) return;
 
     setSubmitting(true);
-    const partner = buildPartner();
-    const classType = CLASS_TYPES.find((c) => c.id === classTypeId)!;
-    const location = (locations ?? []).find((l) => l.id === locationId);
-    submitPtRequest({
-      classTypeId,
-      className: classType.name,
-      locationId,
-      locationName: location?.name ?? "",
-      sessionType,
-      slots,
-      message: message.trim(),
-      partner,
-    });
-    // BE submit is still 501 — local store is the source of truth for now.
-    // When wired: POST /me/pt-sessions/request → on success, refetchClientPackages() then redirect.
-    router.push("/account/private-sessions?submitted=1");
+    try {
+      await ptApi.submitRequest({
+        classTypeId,
+        locationId,
+        sessionType: computedSessionType,
+        clientPackageId: matchingPackage.id,
+        slots: slots.map((s) => ({ proposedDate: s.proposedDate, startTime: s.startTime, endTime: s.endTime })),
+        message: message.trim() || undefined,
+        partner: buildPartner() ?? undefined,
+      });
+      router.push("/account/private-sessions?submitted=1");
+    } catch (err: unknown) {
+      const msg =
+        err instanceof Error ? err.message : "Something went wrong. Please try again.";
+      setErrors([msg]);
+    } finally {
+      setSubmitting(false);
+    }
   }
 
-  function buildPartner(): LocalPtRequestPartner | null {
-    if (sessionType === "1on1") return null;
+  function buildPartner() {
+    if (computedSessionType === "1on1") return null;
     if (partnerLookup.state === "found") {
-      return { kind: "existing", coClientId: partnerLookup.clientId, name: partnerLookup.name };
+      return { kind: "existing" as const, coClientId: partnerLookup.clientId, name: partnerLookup.name };
     }
-    return { kind: "new", name: partnerName.trim(), email: partnerEmail.trim() };
+    return { kind: "new" as const, name: partnerName.trim(), email: partnerEmail.trim() };
   }
 
   // If the user only has one PT format available, hide the radio.
@@ -177,6 +173,10 @@ export default function PrivateSessionsPage() {
     if (has2on1 && !has1on1) return "2on1";
     return "1on1";
   }, [showSessionTypeChoice, sessionType, has1on1, has2on1]);
+
+  const balanceForType = (t: "1on1" | "2on1") => (t === "2on1" ? pt2on1 : pt1on1);
+  const matchingPackage = ptPackages.find((p) => p.sessionType === computedSessionType);
+  const hasEnoughCredits = balanceForType(computedSessionType) >= 1;
 
   return (
     <BookingSurface maxWidth="md" padding="default">
@@ -212,8 +212,7 @@ export default function PrivateSessionsPage() {
                 ))}
               </div>
               <p className="text-xs text-muted mt-2">
-                You have {ptSessions} PT session{ptSessions === 1 ? "" : "s"} remaining.
-                {computedSessionType === "2on1" ? " A 2-on-1 uses 2 sessions." : ""}
+                You have {pt1on1} 1-on-1 and {pt2on1} 2-on-1 sessions remaining.
               </p>
             </div>
           )}
@@ -373,9 +372,9 @@ export default function PrivateSessionsPage() {
 
           {showBuyPrompt && (
             <div className="rounded-2xl border border-warning/30 bg-warning/10 p-5 text-sm text-ink">
-              {ptPackages.length === 0
-                ? "You don't have an active PT package yet."
-                : `You don't have enough PT sessions for this ${computedSessionType === "2on1" ? "2-on-1" : "1-on-1"} request (you have ${ptSessions}).`}{" "}
+              {!matchingPackage
+                ? `You don't have an active ${computedSessionType === "2on1" ? "2-on-1" : "1-on-1"} PT package yet.`
+                : `You have no ${computedSessionType === "2on1" ? "2-on-1" : "1-on-1"} credits remaining.`}{" "}
               <Link href="/packages#private" className="underline font-medium hover:text-ink">
                 Buy a private session package
               </Link>{" "}
@@ -396,7 +395,7 @@ export default function PrivateSessionsPage() {
             disabled={submitting}
             className="w-full rounded-full bg-ink text-paper px-6 py-3 text-sm font-medium hover:bg-ink/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {submitting ? "Submitting…" : `Submit request (uses ${required} session${required === 1 ? "" : "s"})`}
+            {submitting ? "Submitting…" : `Submit request (uses 1 session)`}
           </button>
         </form>
       )}
