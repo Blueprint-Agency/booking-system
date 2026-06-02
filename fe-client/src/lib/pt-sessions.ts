@@ -39,19 +39,27 @@ export interface SubmitPtRequestResult {
 
 // ── Response types ────────────────────────────────────────────────────────────
 
+/** Snake_case slot shape as returned by the BE list endpoint. */
+export interface RawPtSlot {
+  proposed_date: string;
+  start_time: string;
+  end_time: string;
+}
+
 export interface RawPtRequest {
   id: string;
   session_type: "1on1" | "2on1";
   status: string;
-  class_type_id: string;
-  class_type_name?: string;
-  location_id: string;
+  class_type_id?: string;
+  class_name?: string;
+  location_id?: string;
   location_name?: string;
-  slots: PtSlot[];
+  slots: RawPtSlot[];
   message?: string | null;
-  partner?: PtPartner | null;
+  co_client_name?: string | null;
   created_at: string;
   updated_at?: string;
+  expires_at?: string | null;
 }
 
 export interface ListPtRequestsResult {

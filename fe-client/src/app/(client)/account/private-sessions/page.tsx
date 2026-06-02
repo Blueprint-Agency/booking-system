@@ -1,19 +1,22 @@
 "use client";
 
-import { useMemo, useState, Suspense } from "react";
+import { useMemo, useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { CalendarX, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { SectionHeading } from "@/components/booking/section-heading";
 import { AccountMobileNav } from "@/components/account/account-mobile-nav";
 import { EmptyState } from "@/components/ui/empty-state";
-import {
-  cancelPtRequest,
-  usePtRequests,
-  type LocalPtRequest,
-  type LocalPtRequestStatus,
-} from "@/lib/pt-requests-mock";
+import { usePtSessionsApi, type RawPtRequest } from "@/lib/pt-sessions";
+import { useClientPackages } from "@/lib/use-client-packages";
 
 type Tab = "pending" | "confirmed" | "past" | "cancelled";
+
+type PtStatus =
+  | "pending"
+  | "scheduled"
+  | "cancelled_before_scheduled"
+  | "cancelled_after_scheduled"
+  | "attended";
 
 const TAB_LABEL: Record<Tab, string> = {
   pending: "Pending",
@@ -22,7 +25,7 @@ const TAB_LABEL: Record<Tab, string> = {
   cancelled: "Cancelled",
 };
 
-function inTab(r: LocalPtRequest, t: Tab): boolean {
+function inTab(r: RawPtRequest, t: Tab): boolean {
   switch (t) {
     case "pending":
       return r.status === "pending";
@@ -38,7 +41,7 @@ function inTab(r: LocalPtRequest, t: Tab): boolean {
   }
 }
 
-function statusBadge(status: LocalPtRequestStatus) {
+function statusBadge(status: PtStatus) {
   switch (status) {
     case "pending":
       return { label: "Pending", tone: "bg-accent/10 text-accent", icon: Clock };
@@ -64,14 +67,37 @@ export default function AccountPrivateSessionsPage() {
 function Inner() {
   const params = useSearchParams();
   const justSubmitted = params.get("submitted") === "1";
-  const requests = usePtRequests();
-  const [tab, setTab] = useState<Tab>(justSubmitted ? "pending" : "pending");
+  const ptApi = usePtSessionsApi();
+  const { refetch: refetchPackages } = useClientPackages();
+
+  const [requests, setRequests] = useState<RawPtRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("pending");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await ptApi.listRequests();
+      setRequests(result.pt_requests ?? []);
+    } catch {
+      setError("Could not load your PT sessions. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }, [ptApi]);
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filtered = useMemo(
     () =>
       requests
         .filter((r) => inTab(r, tab))
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+        .sort((a, b) => b.created_at.localeCompare(a.created_at)),
     [requests, tab],
   );
   const tabs: Tab[] = ["pending", "confirmed", "past", "cancelled"];
@@ -88,42 +114,61 @@ function Inner() {
           </div>
         )}
 
-        <div className="mt-6 flex flex-wrap gap-2">
-          {tabs.map((t) => {
-            const count = requests.filter((r) => inTab(r, t)).length;
-            return (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setTab(t)}
-                className={`rounded-full border px-3 py-1.5 text-xs transition ${
-                  tab === t
-                    ? "border-accent bg-accent/10 text-ink"
-                    : "border-ink/10 bg-card text-muted hover:text-ink"
-                }`}
-              >
-                {TAB_LABEL[t]} ({count})
-              </button>
-            );
-          })}
-        </div>
+        {error && (
+          <div className="mt-4 rounded-xl border border-error/30 bg-error/10 p-4 text-sm text-error">
+            {error}
+          </div>
+        )}
 
-        <div className="mt-6">
-          {filtered.length === 0 ? (
-            <EmptyState
-              icon={CalendarX}
-              title={emptyTitle(tab)}
-              description="Submit a request to get started."
-              cta={{ href: "/private-sessions", label: "Request a session" }}
-            />
-          ) : (
-            <ul className="space-y-3">
-              {filtered.map((r) => (
-                <RequestCard key={r.id} request={r} />
-              ))}
-            </ul>
-          )}
-        </div>
+        {loading ? (
+          <div className="mt-10 text-sm text-muted text-center">Loading…</div>
+        ) : (
+          <>
+            <div className="mt-6 flex flex-wrap gap-2">
+              {tabs.map((t) => {
+                const count = requests.filter((r) => inTab(r, t)).length;
+                return (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setTab(t)}
+                    className={`rounded-full border px-3 py-1.5 text-xs transition ${
+                      tab === t
+                        ? "border-accent bg-accent/10 text-ink"
+                        : "border-ink/10 bg-card text-muted hover:text-ink"
+                    }`}
+                  >
+                    {TAB_LABEL[t]} ({count})
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-6">
+              {filtered.length === 0 ? (
+                <EmptyState
+                  icon={CalendarX}
+                  title={emptyTitle(tab)}
+                  description="Submit a request to get started."
+                  cta={{ href: "/private-sessions", label: "Request a session" }}
+                />
+              ) : (
+                <ul className="space-y-3">
+                  {filtered.map((r) => (
+                    <RequestCard
+                      key={r.id}
+                      request={r}
+                      onCancelled={async () => {
+                        await load();
+                        await refetchPackages();
+                      }}
+                    />
+                  ))}
+                </ul>
+              )}
+            </div>
+          </>
+        )}
 
         <p className="text-xs text-muted mt-10 leading-relaxed">
           Pending requests refund their session credits when cancelled. Cancelling after the studio has scheduled the session does not refund credits.
@@ -142,14 +187,18 @@ function emptyTitle(tab: Tab): string {
   }
 }
 
-function RequestCard({ request: r }: { request: LocalPtRequest }) {
-  const badge = statusBadge(r.status);
-  const partnerLine = r.partner
-    ? r.partner.kind === "existing"
-      ? `Partner: ${r.partner.name}`
-      : `Partner: ${r.partner.name} (${r.partner.email}) — pending account`
-    : null;
+function RequestCard({
+  request: r,
+  onCancelled,
+}: {
+  request: RawPtRequest;
+  onCancelled: () => Promise<void>;
+}) {
+  const status = r.status as PtStatus;
+  const badge = statusBadge(status);
 
+  const slot0 = r.slots[0];
+  const coClientLine = r.co_client_name ? `Partner: ${r.co_client_name}` : null;
   const canCancel = r.status === "pending" || r.status === "scheduled";
   const refunds = r.status === "pending";
 
@@ -158,28 +207,20 @@ function RequestCard({ request: r }: { request: LocalPtRequest }) {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs uppercase tracking-wider text-muted">
-            {r.sessionType === "1on1" ? "1-on-1" : "2-on-1"} · {r.className}
-            {r.locationName ? ` · ${r.locationName}` : ""}
+            {r.session_type === "1on1" ? "1-on-1" : "2-on-1"}
+            {r.class_name ? ` · ${r.class_name}` : ""}
+            {r.location_name ? ` · ${r.location_name}` : ""}
           </p>
-          {r.scheduled ? (
+          {slot0 ? (
             <p className="font-serif text-lg text-ink mt-1">
-              {r.scheduled.date} · {r.scheduled.startTime}–{r.scheduled.endTime}
-            </p>
-          ) : (
-            <p className="font-serif text-lg text-ink mt-1">
-              {r.slots[0]?.proposedDate} · {r.slots[0]?.startTime}–{r.slots[0]?.endTime}
+              {slot0.proposed_date} · {slot0.start_time}–{slot0.end_time}
               {r.slots.length > 1 ? (
                 <span className="text-sm text-muted ml-2">+{r.slots.length - 1} more</span>
               ) : null}
             </p>
-          )}
-          {r.scheduled && (
-            <p className="text-xs text-muted mt-1">
-              {r.scheduled.instructorName} · {r.scheduled.locationName}
-            </p>
-          )}
-          {partnerLine && (
-            <p className="text-xs text-muted mt-1">{partnerLine}</p>
+          ) : null}
+          {coClientLine && (
+            <p className="text-xs text-muted mt-1">{coClientLine}</p>
           )}
           {r.message && (
             <blockquote className="mt-2 rounded-md border-l-2 border-ink/10 bg-paper px-3 py-1.5 text-xs italic text-muted">
@@ -200,7 +241,7 @@ function RequestCard({ request: r }: { request: LocalPtRequest }) {
           <ul className="mt-2 space-y-1 text-xs text-muted">
             {r.slots.slice(1).map((s, i) => (
               <li key={i}>
-                {s.proposedDate} · {s.startTime}–{s.endTime}
+                {s.proposed_date} · {s.start_time}–{s.end_time}
               </li>
             ))}
           </ul>
@@ -209,15 +250,44 @@ function RequestCard({ request: r }: { request: LocalPtRequest }) {
 
       {canCancel && (
         <div className="mt-4 flex justify-end">
-          <CancelButton requestId={r.id} refunds={refunds} />
+          <CancelButton requestId={r.id} refunds={refunds} onCancelled={onCancelled} />
         </div>
       )}
     </li>
   );
 }
 
-function CancelButton({ requestId, refunds }: { requestId: string; refunds: boolean }) {
+function CancelButton({
+  requestId,
+  refunds,
+  onCancelled,
+}: {
+  requestId: string;
+  refunds: boolean;
+  onCancelled: () => Promise<void>;
+}) {
+  const ptApi = usePtSessionsApi();
   const [confirming, setConfirming] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+
+  async function handleCancel() {
+    setCancelling(true);
+    setCancelError(null);
+    try {
+      await ptApi.cancelRequest(requestId);
+      await onCancelled();
+    } catch {
+      setCancelError("Cancel failed. Please try again.");
+      setCancelling(false);
+      setConfirming(false);
+    }
+  }
+
+  if (cancelError) {
+    return <span className="text-xs text-error">{cancelError}</span>;
+  }
+
   if (!confirming) {
     return (
       <button
@@ -229,6 +299,7 @@ function CancelButton({ requestId, refunds }: { requestId: string; refunds: bool
       </button>
     );
   }
+
   return (
     <div className="flex items-center gap-2 text-xs">
       <span className="text-muted">
@@ -237,16 +308,18 @@ function CancelButton({ requestId, refunds }: { requestId: string; refunds: bool
       <button
         type="button"
         onClick={() => setConfirming(false)}
-        className="rounded-full border border-ink/10 px-2.5 py-1 text-muted hover:text-ink"
+        disabled={cancelling}
+        className="rounded-full border border-ink/10 px-2.5 py-1 text-muted hover:text-ink disabled:opacity-50"
       >
         Keep
       </button>
       <button
         type="button"
-        onClick={() => cancelPtRequest(requestId)}
-        className="rounded-full bg-error text-paper px-2.5 py-1 hover:bg-error/90"
+        onClick={handleCancel}
+        disabled={cancelling}
+        className="rounded-full bg-error text-paper px-2.5 py-1 hover:bg-error/90 disabled:opacity-50"
       >
-        Cancel
+        {cancelling ? "Cancelling…" : "Cancel"}
       </button>
     </div>
   );
