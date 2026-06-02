@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { useUser, useClerk } from "@clerk/nextjs";
 import { useClientPackages } from "@/lib/use-client-packages";
 
 const NAV_LINKS = [
-  { href: "/classes", label: "Classes" },
+  { href: "/", label: "Schedule" },
   { href: "/workshops", label: "Workshops" },
   { href: "/private-sessions", label: "Private Sessions" },
   { href: "/packages", label: "Packages" },
@@ -18,7 +18,6 @@ const NAV_LINKS = [
 export function ClientNav({ impersonating = false }: { impersonating?: boolean } = {}) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [scrolled, setScrolled] = useState(false);
   const { user, isSignedIn } = useUser();
   const { signOut } = useClerk();
   const isAuth = !!isSignedIn;
@@ -29,21 +28,6 @@ export function ClientNav({ impersonating = false }: { impersonating?: boolean }
   const userInitials = isAuth
     ? (firstName.charAt(0) + lastName.charAt(0)).toUpperCase() || "U"
     : "";
-  const isHome = pathname === "/";
-
-  useEffect(() => {
-    if (!isHome) {
-      setScrolled(false);
-      return;
-    }
-    const handleScroll = () => setScrolled(window.scrollY > 40);
-    handleScroll();
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    return () => window.removeEventListener("scroll", handleScroll);
-  }, [isHome]);
-
-  const isTransparent = isHome && !scrolled;
-
   function isActive(href: string) {
     return pathname === href || pathname.startsWith(href + "/");
   }
@@ -53,9 +37,7 @@ export function ClientNav({ impersonating = false }: { impersonating?: boolean }
       className={cn(
         "sticky z-50 transition-all duration-300",
         impersonating ? "top-10" : "top-0",
-        isTransparent
-          ? "bg-transparent"
-          : "bg-paper/95 backdrop-blur-sm border-b border-border"
+        "bg-paper/95 backdrop-blur-sm border-b border-border"
       )}
     >
       <div className="max-w-[1280px] mx-auto px-6 sm:px-8">

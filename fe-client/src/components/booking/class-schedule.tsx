@@ -52,7 +52,7 @@ function ClassRow({
   const handleBookClick = (e: React.MouseEvent) => {
     e.preventDefault();
     if (!isSignedIn) {
-      router.push(`/login?next=${encodeURIComponent("/classes")}`);
+      router.push(`/login?next=${encodeURIComponent("/")}`);
       return;
     }
     if (canBookLoaded && !canBook) {
@@ -252,7 +252,7 @@ function FilterSelect({ value, onChange, options, placeholder }: FilterSelectPro
   );
 }
 
-export default function ClassesPage() {
+export function ClassSchedule() {
   const today = useMemo(() => new Date(), []);
   const todayStr = toLocalDateStr(today.toISOString());
 
@@ -313,7 +313,7 @@ export default function ClassesPage() {
   return (
     <div id="schedule">
       <BookingSurface maxWidth="xl" padding="default">
-        <SectionHeading eyebrow="Schedule" title="Book a class" description="Pick a day, filter the schedule, and reserve your spot." />
+        <SectionHeading eyebrow="Yoga Sadhana · Tai Seng & Outram Park" title="Book a class" description="Pick a day, filter the schedule, and reserve your spot." />
 
         {/* Calendar */}
         <div className="rounded-2xl border border-ink/10 bg-paper overflow-hidden mb-6">
