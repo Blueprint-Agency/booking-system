@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Plus, Trash2, CheckCircle2, AlertCircle } from "lucide-react";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { SectionHeading } from "@/components/booking/section-heading";
+import { ScheduleSegments } from "@/components/booking/schedule-segments";
 import { useClientPackages } from "@/lib/use-client-packages";
 import { useLocations } from "@/lib/classes";
 import {
@@ -180,6 +181,9 @@ export default function PrivateSessionsPage() {
   return (
     <BookingSurface maxWidth="md" padding="default">
       <SectionHeading eyebrow="Private sessions" title="Request a session" />
+      <div className="mt-4">
+        <ScheduleSegments />
+      </div>
       <p className="text-sm text-muted mt-2 mb-8 leading-relaxed">
         Tell us what you want and when — we&apos;ll reach you on WhatsApp shortly to confirm. No back-and-forth in the app.
       </p>

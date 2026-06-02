@@ -1,5 +1,5 @@
-import { ClassSchedule } from "@/components/booking/class-schedule";
+import { ClassFeed } from "@/components/booking/class-feed";
 
 export default function HomePage() {
-  return <ClassSchedule />;
+  return <ClassFeed />;
 }

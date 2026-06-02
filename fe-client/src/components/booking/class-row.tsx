@@ -1,35 +1,12 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, HelpCircle } from "lucide-react";
+import { ChevronRight, HelpCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  useClasses,
-  useLocations,
-  useCanBookClass,
-  toLocalDateStr,
-  formatClassTime,
-  durationMinutes,
-  type ApiClassCard,
-} from "@/lib/classes";
-import { useUser } from "@clerk/nextjs";
-import { BookingSurface } from "@/components/booking/booking-surface";
-import { SectionHeading } from "@/components/booking/section-heading";
+import { formatClassTime, durationMinutes, type ApiClassCard } from "@/lib/classes";
 
-const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const MONTH_NAMES = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-];
-
-function getMonthGrid(year: number, month: number): Date[] {
-  const firstDay = new Date(year, month, 1);
-  const startOffset = firstDay.getDay();
-  return Array.from({ length: 42 }, (_, i) => new Date(year, month, 1 - startOffset + i));
-}
-
-function ClassRow({
+export function ClassRow({
   cls,
   showLocation,
   canBook,
@@ -232,7 +209,7 @@ type FilterSelectProps = {
   placeholder: string;
 };
 
-function FilterSelect({ value, onChange, options, placeholder }: FilterSelectProps) {
+export function FilterSelect({ value, onChange, options, placeholder }: FilterSelectProps) {
   return (
     <div className="relative flex-1 min-w-[160px]">
       <select
@@ -248,213 +225,6 @@ function FilterSelect({ value, onChange, options, placeholder }: FilterSelectPro
         ))}
       </select>
       <ChevronRight size={14} className="absolute right-3 top-1/2 -translate-y-1/2 rotate-90 text-muted pointer-events-none" />
-    </div>
-  );
-}
-
-export function ClassSchedule() {
-  const today = useMemo(() => new Date(), []);
-  const todayStr = toLocalDateStr(today.toISOString());
-
-  const [calMonth, setCalMonth] = useState({ year: today.getFullYear(), month: today.getMonth() });
-  const [selectedDate, setSelectedDate] = useState<string>(todayStr);
-  const [selectedLocation, setSelectedLocation] = useState<string>("");
-  const [instructor, setInstructor] = useState("");
-
-  const showLocationBadge = !selectedLocation;
-  const calDays = useMemo(() => getMonthGrid(calMonth.year, calMonth.month), [calMonth]);
-
-  const monthFrom = new Date(calMonth.year, calMonth.month, 1).toISOString();
-  const monthTo = new Date(calMonth.year, calMonth.month + 1, 1).toISOString();
-  const { data: classes, loading } = useClasses({
-    from: monthFrom,
-    to: monthTo,
-    location_id: selectedLocation || undefined,
-    instructor_id: instructor || undefined,
-  });
-  const { data: locations } = useLocations();
-  const { isSignedIn } = useUser();
-  const { canBook, loaded: canBookLoaded } = useCanBookClass();
-
-  const all = useMemo(() => classes ?? [], [classes]);
-
-  const instructorOptions = useMemo(() => {
-    const seen = new Map<string, string>();
-    for (const c of all) seen.set(c.instructor.id, c.instructor.name);
-    return Array.from(seen, ([value, label]) => ({ value, label }));
-  }, [all]);
-
-  const dateDotSet = useMemo(() => new Set(all.map((c) => toLocalDateStr(c.starts_at))), [all]);
-
-  const classesForDay = useMemo(
-    () =>
-      all
-        .filter((c) => toLocalDateStr(c.starts_at) === selectedDate)
-        .sort((a, b) => a.starts_at.localeCompare(b.starts_at)),
-    [all, selectedDate],
-  );
-
-  const monthLabel = `${MONTH_NAMES[calMonth.month]} ${calMonth.year}`;
-  const selectedDateLabel = new Date(selectedDate + "T00:00:00").toLocaleDateString("en-SG", {
-    weekday: "long", day: "numeric", month: "long", year: "numeric",
-  });
-
-  function goToPrevMonth() {
-    setCalMonth(({ year, month }) => (month === 0 ? { year: year - 1, month: 11 } : { year, month: month - 1 }));
-  }
-  function goToNextMonth() {
-    setCalMonth(({ year, month }) => (month === 11 ? { year: year + 1, month: 0 } : { year, month: month + 1 }));
-  }
-  function goToToday() {
-    setCalMonth({ year: today.getFullYear(), month: today.getMonth() });
-    setSelectedDate(todayStr);
-  }
-
-  return (
-    <div id="schedule">
-      <BookingSurface maxWidth="xl" padding="default">
-        <SectionHeading eyebrow="Yoga Sadhana · Tai Seng & Outram Park" title="Book a class" description="Pick a day, filter the schedule, and reserve your spot." />
-
-        {/* Calendar */}
-        <div className="rounded-2xl border border-ink/10 bg-paper overflow-hidden mb-6">
-
-          {/* Calendar header */}
-          <div className="flex items-center px-4 py-3 border-b border-ink/10">
-            <button
-              onClick={goToToday}
-              className="text-xs font-medium px-3 py-1.5 rounded-full border border-ink/15 text-ink hover:bg-warm transition-colors"
-            >
-              Today
-            </button>
-            <div className="flex-1 flex items-center justify-center gap-2">
-              <button
-                onClick={goToPrevMonth}
-                className="flex items-center justify-center w-7 h-7 rounded-full hover:bg-warm text-muted hover:text-ink transition-colors"
-                aria-label="Previous month"
-              >
-                <ChevronLeft size={15} />
-              </button>
-              <span className="font-serif text-base text-ink w-40 text-center select-none">
-                {monthLabel}
-              </span>
-              <button
-                onClick={goToNextMonth}
-                className="flex items-center justify-center w-7 h-7 rounded-full hover:bg-warm text-muted hover:text-ink transition-colors"
-                aria-label="Next month"
-              >
-                <ChevronRight size={15} />
-              </button>
-            </div>
-            {/* Spacer balances the Today button */}
-            <div className="w-[60px]" />
-          </div>
-
-          {/* Day-of-week header */}
-          <div className="grid grid-cols-7 border-b border-ink/10">
-            {DAY_LABELS.map((d) => (
-              <div
-                key={d}
-                className="py-2 text-center text-[10px] font-mono uppercase tracking-wider text-muted"
-              >
-                {d}
-              </div>
-            ))}
-          </div>
-
-          {/* Date grid — 6 rows × 7 cols */}
-          <div className="grid grid-cols-7">
-            {calDays.map((d, i) => {
-              const ds = toLocalDateStr(d.toISOString());
-              const isCurrentMonth = d.getMonth() === calMonth.month;
-              const isSelected = ds === selectedDate;
-              const isToday = ds === todayStr;
-              const hasClasses = dateDotSet.has(ds) && isCurrentMonth;
-              const isLastCol = (i + 1) % 7 === 0;
-              const isLastRow = i >= 35;
-
-              return (
-                <button
-                  key={i}
-                  onClick={() => {
-                    if (isCurrentMonth) setSelectedDate(ds);
-                  }}
-                  disabled={!isCurrentMonth}
-                  className={cn(
-                    "relative flex flex-col items-center justify-start pt-2 pb-2 min-h-[56px] md:min-h-[68px] transition-colors",
-                    !isLastCol && "border-r border-ink/5",
-                    !isLastRow && "border-b border-ink/5",
-                    isCurrentMonth && !isSelected
-                      ? "hover:bg-warm cursor-pointer"
-                      : "cursor-default"
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "w-7 h-7 flex items-center justify-center rounded-full text-sm leading-none transition-colors",
-                      isSelected
-                        ? "bg-ink text-paper font-semibold"
-                        : isToday
-                        ? "ring-2 ring-accent text-accent font-semibold"
-                        : isCurrentMonth
-                        ? "text-ink"
-                        : "text-muted/25"
-                    )}
-                  >
-                    {d.getDate()}
-                  </span>
-                  {hasClasses && (
-                    <span
-                      className={cn(
-                        "mt-1 w-1.5 h-1.5 rounded-full",
-                        isSelected ? "bg-paper" : "bg-accent"
-                      )}
-                    />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Selected date label */}
-        <p className="font-serif text-base text-ink mb-4">{selectedDateLabel}</p>
-
-        {/* Filters */}
-        <div className="flex flex-wrap gap-2 mb-6">
-          <FilterSelect
-            value={selectedLocation}
-            onChange={setSelectedLocation}
-            options={(locations ?? []).map((l) => ({ value: l.id, label: l.name }))}
-            placeholder="All locations"
-          />
-          <FilterSelect
-            value={instructor}
-            onChange={setInstructor}
-            options={instructorOptions}
-            placeholder="All instructors"
-          />
-        </div>
-
-        {/* Class list */}
-        <div className="flex flex-col gap-3">
-          {loading ? (
-            <div className="text-center py-16 text-sm text-muted">Loading schedule…</div>
-          ) : classesForDay.length === 0 ? (
-            <div className="text-center py-16 text-sm text-muted">No classes scheduled for this day.</div>
-          ) : (
-            classesForDay.map((c) => (
-              <ClassRow
-                key={c.id}
-                cls={c}
-                showLocation={showLocationBadge}
-                canBook={canBook}
-                canBookLoaded={canBookLoaded}
-                isSignedIn={!!isSignedIn}
-              />
-            ))
-          )}
-        </div>
-      </BookingSurface>
     </div>
   );
 }
