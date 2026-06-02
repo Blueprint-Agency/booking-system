@@ -9,6 +9,7 @@ import {
   index,
   uniqueIndex,
   check,
+  boolean,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { clients, staffUsers } from './identity'
@@ -160,6 +161,7 @@ export const clientPackages = pgTable(
     }),
     creditsOrSessionsRemaining: integer('credits_or_sessions_remaining'),
     expiresAt: timestamp('expires_at', { withTimezone: true }),
+    active: boolean('active').notNull().default(true),
     purchasedAt: timestamp('purchased_at', { withTimezone: true }).notNull().defaultNow(),
     amountPaidSgd: numeric('amount_paid_sgd', { precision: 10, scale: 2 }).notNull(),
     // Nullable per §4d — null for admin-issued grants (§16) and free trial passes at 0 SGD.

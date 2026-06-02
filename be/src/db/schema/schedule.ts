@@ -16,7 +16,7 @@ import {
 import { sql } from 'drizzle-orm'
 import { staffUsers, clients } from './identity'
 import { instructors, classTypes, locations, rooms } from './catalog'
-import { corporatePackages } from './packages'
+import { clientPackages, corporatePackages } from './packages'
 import {
   lifecycleEnum,
   ptSessionTypeEnum,
@@ -337,6 +337,10 @@ export const ptRequests = pgTable(
     // FK to pt_sessions.id added via a separate foreignKey() declaration below to break the
     // circular reference at TS-declaration time.
     scheduledPtSessionId: uuid('scheduled_pt_session_id'),
+    // The client_packages row debited at submit, so a cancel-while-pending refunds the exact package.
+    debitedClientPackageId: uuid('debited_client_package_id').references(() => clientPackages.id, {
+      onDelete: 'restrict',
+    }),
     resolvedAt: timestamp('resolved_at', { withTimezone: true }),
     resolvedByStaffId: uuid('resolved_by_staff_id').references(() => staffUsers.id, {
       onDelete: 'restrict',
