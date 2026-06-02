@@ -20,6 +20,8 @@ export interface LivePackage {
   expiresAt: string | null;
   purchasedAt: string;
   amountPaidSgd: string;
+  active: boolean;
+  sessionType: "1on1" | "2on1" | null;
 }
 
 export interface ClientPackagesData {
@@ -28,7 +30,7 @@ export interface ClientPackagesData {
     isUnlimited: boolean;
     unlimitedExpiresAt: string | null;
   };
-  ptSessions: { total: number };
+  ptSessions: { oneOnOne: number; twoOnOne: number };
   packages: LivePackage[];
 }
 
@@ -36,7 +38,8 @@ export interface ClientPackagesValue {
   classCredits: number;
   isUnlimited: boolean;
   unlimitedExpiresAt: string | null;
-  ptSessions: number;
+  pt1on1: number;
+  pt2on1: number;
   packages: LivePackage[];
   loading: boolean;
   refetch: () => Promise<void>;
@@ -53,6 +56,8 @@ interface RawClientPackage {
   expires_at: string | null;
   purchased_at: string;
   amount_paid_sgd: string;
+  active: boolean;
+  session_type: "1on1" | "2on1" | null;
 }
 interface RawPackagesResponse {
   client_packages: RawClientPackage[];
@@ -60,7 +65,8 @@ interface RawPackagesResponse {
     trial_used: boolean;
     has_active_unlimited: boolean;
     has_active_bundle_credits: boolean;
-    pt_sessions_remaining: number;
+    pt_1on1_remaining: number;
+    pt_2on1_remaining: number;
   };
 }
 
@@ -71,22 +77,16 @@ interface RawPackagesResponse {
  * wallet of *active* packages.
  */
 function mapPackagesResponse(raw: RawPackagesResponse): ClientPackagesData {
-  const now = Date.now();
   const pkgs = raw.client_packages ?? [];
   const ent = raw.entitlements ?? {
     trial_used: false,
     has_active_unlimited: false,
     has_active_bundle_credits: false,
-    pt_sessions_remaining: 0,
+    pt_1on1_remaining: 0,
+    pt_2on1_remaining: 0,
   };
 
-  const notExpired = (p: RawClientPackage) =>
-    p.expires_at === null || new Date(p.expires_at).getTime() > now;
-  const isActive = (p: RawClientPackage) => {
-    if (!notExpired(p)) return false;
-    if (p.kind === "unlimited") return true;
-    return (p.credits_or_sessions_remaining ?? 0) > 0;
-  };
+  const isActive = (p: RawClientPackage) => p.active;
 
   // Class credit total = sum of active credit-bundle + trial credits.
   let classTotal = 0;
@@ -111,6 +111,8 @@ function mapPackagesResponse(raw: RawPackagesResponse): ClientPackagesData {
       expiresAt: p.expires_at,
       purchasedAt: p.purchased_at,
       amountPaidSgd: p.amount_paid_sgd,
+      active: p.active,
+      sessionType: p.session_type,
     }));
 
   return {
@@ -119,7 +121,7 @@ function mapPackagesResponse(raw: RawPackagesResponse): ClientPackagesData {
       isUnlimited: Boolean(ent.has_active_unlimited),
       unlimitedExpiresAt,
     },
-    ptSessions: { total: ent.pt_sessions_remaining ?? 0 },
+    ptSessions: { oneOnOne: ent.pt_1on1_remaining ?? 0, twoOnOne: ent.pt_2on1_remaining ?? 0 },
     packages,
   };
 }
@@ -180,7 +182,8 @@ export function ClientPackagesProvider({ children }: { children: ReactNode }) {
     classCredits: data?.classCredits?.total ?? 0,
     isUnlimited: data?.classCredits?.isUnlimited ?? false,
     unlimitedExpiresAt: data?.classCredits?.unlimitedExpiresAt ?? null,
-    ptSessions: data?.ptSessions?.total ?? 0,
+    pt1on1: data?.ptSessions?.oneOnOne ?? 0,
+    pt2on1: data?.ptSessions?.twoOnOne ?? 0,
     packages: data?.packages ?? [],
     loading,
     refetch: load,
