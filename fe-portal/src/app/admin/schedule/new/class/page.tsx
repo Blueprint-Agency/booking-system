@@ -6,7 +6,7 @@ import { ArrowLeft, Loader2, Save } from "lucide-react";
 import { Button, Input, Label, PageHeader } from "@/components/ui";
 import { CapacityFields } from "@/components/schedule/capacity-fields";
 import { useWorkspace } from "@/lib/workspace-context";
-import { todayIso } from "@/lib/formatters";
+import { todayIso, currentHourTime } from "@/lib/formatters";
 import { ApiError } from "@/lib/api";
 import type { Capacity, ClassTypeDifficulty } from "@/types";
 
@@ -47,8 +47,8 @@ export default function NewClassPage() {
   const [locationId, setLocationId] = useState(activeLocationId ?? "");
   const [roomId, setRoomId] = useState("");
   const [date, setDate] = useState("");
-  const [startTime, setStartTime] = useState("");
-  const [endTime, setEndTime] = useState("");
+  const [startTime, setStartTime] = useState(currentHourTime());
+  const [endTime, setEndTime] = useState(currentHourTime(1));
   const [capacity, setCapacity] = useState<Capacity>({
     waitlist: 0,
     onlineBooking: 18,

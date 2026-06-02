@@ -5,6 +5,7 @@ export const ptRequests: PtRequest[] = [
     id: "req-1",
     clientId: "cli-1",
     classTypeId: "ct-vinyasa",
+    locationId: "loc-breadtalk",
     sessionType: "1on1",
     slots: [
       { proposedDate: "2026-05-30", startTime: "09:00", endTime: "10:00" },
@@ -25,6 +26,7 @@ export const ptRequests: PtRequest[] = [
     id: "req-2",
     clientId: "cli-2",
     classTypeId: "ct-yin",
+    locationId: "loc-outram",
     sessionType: "2on1",
     slots: [{ proposedDate: "2026-06-02", startTime: "18:00", endTime: "19:30" }],
     message: "",
@@ -43,6 +45,7 @@ export const ptRequests: PtRequest[] = [
     id: "req-3",
     clientId: "cli-3",
     classTypeId: "ct-aerial",
+    locationId: "loc-breadtalk",
     sessionType: "1on1",
     slots: [{ proposedDate: "2026-05-18", startTime: "07:00", endTime: "08:00" }],
     message: "Recovering from a knee niggle.",

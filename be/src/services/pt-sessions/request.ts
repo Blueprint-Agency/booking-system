@@ -26,6 +26,8 @@ export interface PtRequestInput {
   clientId: string
   /** Class type the client wants the session focused on. FK to class_types. */
   classTypeId: string
+  /** Studio location the client wants the session at. FK to locations. */
+  locationId: string
   sessionType: '1on1' | '2on1'
   /** Source PT package the request is debited from. Must be the requester's. */
   clientPackageId: string

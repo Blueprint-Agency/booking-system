@@ -29,6 +29,18 @@ export function todayIso(): string {
   return format(new Date(), "yyyy-MM-dd");
 }
 
+/**
+ * Current local hour as `HH:mm` with minutes pinned to `00`, optionally offset
+ * by whole hours. Used to seed empty `<input type="time">` fields so the native
+ * picker defaults to the top of the hour instead of the current wall-clock minute.
+ */
+export function currentHourTime(offsetHours = 0): string {
+  const d = new Date();
+  d.setMinutes(0, 0, 0);
+  d.setHours(d.getHours() + offsetHours);
+  return format(d, "HH:mm");
+}
+
 export function formatDuration(startsAt: string, endsAt: string): string {
   const ms = parseISO(endsAt).getTime() - parseISO(startsAt).getTime();
   const minutes = Math.round(ms / 60000);

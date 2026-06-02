@@ -21,8 +21,7 @@ Locations are workspaces. Surfaces are partitioned as follows:
 | Tier | Surfaces |
 |---|---|
 | **Global (superadmin-only)** | Locations CRUD, Class Types, Rooms, Packages → Classes, Packages → Workshops, Packages → Private Sessions, Promotions (nested in packages), Global Policy, Notifications, Waiver, Staff |
-| **Workspace-scoped** | Schedule, Check-in, Inbox |
-| **Workspace-agnostic** | PT Requests (no `location_id` until scheduled — see §9) |
+| **Workspace-scoped** | Schedule, Check-in, Inbox, PT Requests (clients pick a `location_id` at request time — see §9) |
 | **Cross-workspace (global, read-only for admin)** | Clients — cross-location credits mean a client record spans workspaces; admin sees all clients but cannot mutate (no kebab actions, no expiry edits, no set-balance, no manual adjustments, no suspend/reactivate) |
 
 > **Workshops are a global package surface.** Like Classes and Private Sessions, Packages → Workshops is **not** filtered by the topbar workspace switcher — it lists every workshop across all locations. Each workshop still carries a `location_id` chosen in the editor (its days' rooms come from that location); the surface is simply not workspace-scoped.
@@ -47,7 +46,7 @@ Locations are workspaces. Surfaces are partitioned as follows:
 - **Settings**: Class Types, Global Policy, Notifications, Waiver (location-independent building blocks + config).
 - **Packages**: Classes, Workshops, Private Sessions (global, shared across locations).
 - **People**: Clients, Staff (members + staff accounts). **Instructors are merged into Staff** — the Staff page has **Admin** and **Instructors** tabs. "+ Invite staff" (Admin tab) invites admin/superadmin; "+ Add instructor" (Instructors tab) routes to the instructor creation flow (which still captures bio, photo, and eligible class types). Instructor rows link to their detail page. There is no separate "Instructors" sidebar item.
-- **Workspace zone** (bottom, separated by a divider, under a header showing the active location's name): **Schedule, Rooms, Check-in, Inbox, PT Requests**. Schedule/Rooms/Check-in/Inbox are filtered by `activeLocationId`; flipping the switcher reloads them. **PT Requests is grouped here for navigation but remains workspace-agnostic** — a single shared triage queue (no `location_id` until scheduled), so it is not filtered by the switcher.
+- **Workspace zone** (bottom, separated by a divider, under a header showing the active location's name): **Schedule, Rooms, Check-in, Inbox, PT Requests**. All are filtered by `activeLocationId`; flipping the switcher reloads them. **PT Requests is workspace-scoped** — clients pick a `location_id` at request time, so the triage queue shows only the active location's requests.
 
 `NavItem.workspaceScoped` marks the workspace-zone items; it is distinct from `NavItem.scope`, which only governs role visibility (admin vs superadmin). The build-order below is the recommended *setup* sequence, not the visual order.
 
@@ -409,9 +408,9 @@ The Availability system is gone (§8). PT sessions now exist only as the resolut
 
 **Instructor preference is NOT captured** — admin assigns instructor at scheduling, informed by `class_type_id` and live availability.
 
-### 9b. Workspace-agnostic
+### 9b. Workspace-scoped
 
-PT Requests have **no `location_id`** until they are scheduled — at scheduling time the resulting `PtSession.location_id` is assigned. The `/admin/pt-requests` page shows a hint banner explaining this; admins from any workspace see all pending requests in a single shared queue.
+PT Requests carry a `location_id` chosen by the client at request time. The `/admin/pt-requests` queue is therefore **filtered by the active workspace location** (superadmin sees all); flipping the workspace switcher re-scopes the list, and the page shows a banner naming the active location. At scheduling time the resulting `PtSession.location_id` defaults to the requested location (admin can still change it in `ScheduleFromRequestDialog`).
 
 ### 9c. Triage UI (`/admin/pt-requests`)
 

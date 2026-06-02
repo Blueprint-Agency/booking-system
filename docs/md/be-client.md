@@ -120,7 +120,7 @@ Per `admin-restructure.md` §9 and `fe-client-features.md` §5.2, the client-fac
 | GET | `/pt-sessions` | List own PT requests (any status). Each row carries the linked `pt_sessions` row when `status='scheduled'` (final date/time/location/room/instructor + per-attendee booking/qr/code) so the FE can render one card per request without a follow-up call. |
 | GET | `/pt-sessions/:id` | Detail |
 | GET | `/pt-sessions/partner-lookup?email=<email>` | Exact-match email lookup for 2on1 partner autocomplete. Returns `{ found: false }` OR `{ found: true, client_id, name }`. Used by the request form — leaks nothing beyond presence + display name. |
-| POST | `/pt-sessions/request` | Submit. Body: `{ class_type_id, session_type: '1on1'\|'2on1', client_package_id, slots: [{ proposed_date, start_time, end_time }, ...], message?, partner?: { kind: 'existing', co_client_id } \| { kind: 'new', name, email } }`. See §4d. **Debits the source package immediately** — 1 session for 1on1, 2 for 2on1. 422 `insufficient_pt_sessions` if balance < required. 422 `partner_required` if 2on1 without `partner`. |
+| POST | `/pt-sessions/request` | Submit. Body: `{ class_type_id, location_id, session_type: '1on1'\|'2on1', client_package_id, slots: [{ proposed_date, start_time, end_time }, ...], message?, partner?: { kind: 'existing', co_client_id } \| { kind: 'new', name, email } }`. `location_id` is the studio the client wants the session at (required; powers the portal's workspace-scoped triage queue). See §4d. **Debits the source package immediately** — 1 session for 1on1, 2 for 2on1. 422 `insufficient_pt_sessions` if balance < required. 422 `partner_required` if 2on1 without `partner`. |
 | POST | `/pt-sessions/:id/cancel` | Cancel own request. Branches on current status — `pending` → `cancelled_before_scheduled` + refund; `scheduled` → `cancelled_after_scheduled` (no refund, cascades through linked `pt_sessions` + bookings). Calls into the same `services/pt-sessions/cancel.ts:cancelPtRequest` the admin route uses, with `source='client'`. Idempotent on terminal states. |
 
 ### `purchases.ts` (verification gate applies)
@@ -290,7 +290,7 @@ The cap evaluation (step 4) is the load-bearing call. It reads `cancellations WH
 
 ```
 services/pt-sessions/request.ts:submitPtRequest({
-  client_id, class_type_id, session_type, client_package_id,
+  client_id, class_type_id, location_id, session_type, client_package_id,
   slots: [{ proposed_date, start_time, end_time }, ...],   // 1..N
   message?,
   partner?: { kind: 'existing', co_client_id }            // 2on1, partner is a member
@@ -298,7 +298,7 @@ services/pt-sessions/request.ts:submitPtRequest({
 })
   ↓
 tx start
-1. Validate class_type_id exists and is active.
+1. Validate class_type_id exists and is active. Validate location_id exists and is not archived.
 2. Validate slots[]: 1..N rows; each end_time > start_time; each proposed_date in
    [today, today + pt_booking_config.book_in_advance_days] (local SGT date math).
 3. Validate session_type:
@@ -312,7 +312,7 @@ tx start
 5. DEBIT the package: credits_or_sessions_remaining -= (1 for 1on1, 2 for 2on1).
    The debit is recorded against pt_requests.id via the manual_adjustments shape with
    reason='pt_request_submit' so cancellation can reverse it precisely.
-6. Insert pt_requests row: status='pending', class_type_id, session_type,
+6. Insert pt_requests row: status='pending', class_type_id, location_id, session_type,
    co_client_id | co_client_name + co_client_email (depending on partner.kind),
    message, expires_at = now() + pt_request_ttl (see spine §5).
 7. Insert pt_request_slots rows for each entry in slots[].

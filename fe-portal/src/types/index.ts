@@ -215,6 +215,8 @@ export interface PtRequest {
   id: string;
   clientId: string;
   classTypeId: string;
+  /** Studio location the client requested the session at (set at request time). */
+  locationId: string;
   sessionType: PtSessionType;
   slots: PtRequestSlot[];
   message: string;

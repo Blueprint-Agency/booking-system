@@ -1,416 +1,401 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { AnimatePresence, motion } from "framer-motion";
+import { Plus, Trash2, CheckCircle2, AlertCircle } from "lucide-react";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { SectionHeading } from "@/components/booking/section-heading";
-import { Info, CalendarX, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
-import { EmptyState } from "@/components/ui/empty-state";
-import { PRIVATE_SESSION_CANCELLATION_POLICY } from "@/data/policy";
+import { useClientPackages } from "@/lib/use-client-packages";
+import { useLocations } from "@/lib/classes";
 import {
-  useInstructors,
-  useLocations,
-  usePtAvailability,
-  toLocalDateStr,
-  formatClassTime,
-  durationMinutes,
-  type ApiPtSlot,
-} from "@/lib/classes";
+  mockPartnerLookup,
+  submitPtRequest,
+  type LocalPtRequestPartner,
+} from "@/lib/pt-requests-mock";
 
-type Slot = ApiPtSlot & { instructorName: string };
+// Class types: hardcoded list until /public/class-types ships. Matches the
+// admin-side seed names so the dropdown UX is realistic during preview.
+const CLASS_TYPES: { id: string; name: string }[] = [
+  { id: "ct-vinyasa", name: "Vinyasa Flow" },
+  { id: "ct-yin", name: "Yin Yoga" },
+  { id: "ct-aerial", name: "Aerial Yoga" },
+  { id: "ct-restorative", name: "Restorative" },
+  { id: "ct-prenatal", name: "Prenatal" },
+];
 
-const MAX_RANGE_DAYS = 14;
-const DAYS_PER_PAGE = 7;
+type Slot = { proposedDate: string; startTime: string; endTime: string };
 
-function formatDateLabel(iso: string): string {
-  const d = new Date(iso + "T00:00:00");
-  return d.toLocaleDateString("en-SG", { weekday: "short", day: "numeric", month: "short" });
+// Current local hour as `HH:mm` with minutes pinned to `00`, optionally offset
+// by whole hours. Seeds empty time inputs so the native picker defaults to the
+// top of the hour instead of the current wall-clock minute.
+function currentHourTime(offsetHours = 0) {
+  const d = new Date();
+  d.setMinutes(0, 0, 0);
+  d.setHours(d.getHours() + offsetHours);
+  return `${String(d.getHours()).padStart(2, "0")}:00`;
 }
-function addDays(iso: string, days: number): string {
-  const d = new Date(iso + "T00:00:00");
-  d.setDate(d.getDate() + days);
-  return d.toISOString().split("T")[0];
+
+function emptySlot(): Slot {
+  return { proposedDate: "", startTime: currentHourTime(), endTime: currentHourTime(1) };
 }
-function sessionTypeLabel(t: "1on1" | "2on1"): string {
-  return t === "1on1" ? "1-on-1" : "2-on-1";
+
+function todayIso() {
+  return new Date().toISOString().split("T")[0];
 }
 
 export default function PrivateSessionsPage() {
-  const today = new Date().toISOString().split("T")[0];
-
-  const { data: instructors } = useInstructors();
+  const router = useRouter();
+  const { ptSessions, packages, loading: pkgLoading } = useClientPackages();
   const { data: locations } = useLocations();
 
-  const [instructorFilter, setInstructorFilter] = useState<string>("any");
-  const [locationFilter, setLocationFilter] = useState<string>("any");
-  const [fromDate, setFromDate] = useState<string>(today);
-  const [toDate, setToDate] = useState<string>(addDays(today, MAX_RANGE_DAYS - 1));
-  const maxToDate = addDays(fromDate, MAX_RANGE_DAYS - 1);
+  const ptPackages = packages.filter((p) => p.kind === "pt");
+  // First active PT package — the form debits this one. Real BE will pick
+  // by session_type compatibility.
+  const defaultPackageId = ptPackages[0]?.id ?? "";
 
-  const [appliedFilters, setAppliedFilters] = useState({
-    instructor: "any",
-    location: "any",
-    from: today,
-    to: addDays(today, MAX_RANGE_DAYS - 1),
-  });
+  const [sessionType, setSessionType] = useState<"1on1" | "2on1">("1on1");
+  const [classTypeId, setClassTypeId] = useState<string>(CLASS_TYPES[0].id);
+  const [locationId, setLocationId] = useState<string>("");
+  const [slots, setSlots] = useState<Slot[]>([emptySlot()]);
+  const [message, setMessage] = useState<string>("");
 
-  const instructorIds = useMemo(() => {
-    if (!instructors) return [];
-    if (appliedFilters.instructor !== "any") return [appliedFilters.instructor];
-    return instructors.map((i) => i.id);
-  }, [instructors, appliedFilters.instructor]);
-
-  const { data: rawSlots, loading } = usePtAvailability(instructorIds);
-
-  const instructorNameById = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const i of instructors ?? []) m.set(i.id, i.name);
-    return m;
-  }, [instructors]);
-
-  const filteredSlots = useMemo<Slot[]>(() => {
-    return (rawSlots ?? [])
-      .map((s) => ({ ...s, instructorName: instructorNameById.get(s.instructor_id) ?? "Instructor" }))
-      .filter((s) => {
-        const date = toLocalDateStr(s.starts_at);
-        if (appliedFilters.location !== "any" && s.location?.id !== appliedFilters.location) return false;
-        if (date < appliedFilters.from) return false;
-        if (date > appliedFilters.to) return false;
-        return true;
-      });
-  }, [rawSlots, instructorNameById, appliedFilters]);
-
-  const grouped = useMemo(() => {
-    const map = new Map<string, Slot[]>();
-    for (const s of filteredSlots) {
-      const date = toLocalDateStr(s.starts_at);
-      if (!map.has(date)) map.set(date, []);
-      map.get(date)!.push(s);
+  // Default to the first location once the public list loads.
+  useEffect(() => {
+    if (!locationId && locations && locations.length > 0) {
+      setLocationId(locations[0].id);
     }
-    for (const list of map.values()) list.sort((a, b) => a.starts_at.localeCompare(b.starts_at));
-    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
-  }, [filteredSlots]);
+  }, [locations, locationId]);
 
-  const [openDays, setOpenDays] = useState<Set<string>>(new Set());
-  const [page, setPage] = useState(0);
-  const [selectedSlot, setSelectedSlot] = useState<Slot | null>(null);
+  // Partner state (2on1 only).
+  const [partnerEmail, setPartnerEmail] = useState<string>("");
+  const [partnerLookup, setPartnerLookup] = useState<
+    { state: "idle" } | { state: "found"; clientId: string; name: string } | { state: "not_found" }
+  >({ state: "idle" });
+  const [partnerName, setPartnerName] = useState<string>("");
 
-  function toggleDay(date: string) {
-    setOpenDays((prev) => {
-      const next = new Set(prev);
-      if (next.has(date)) next.delete(date);
-      else next.add(date);
-      return next;
-    });
+  const [submitting, setSubmitting] = useState(false);
+  const [errors, setErrors] = useState<string[]>([]);
+  // Set when the user submits without enough PT sessions — prompts them to buy.
+  const [showBuyPrompt, setShowBuyPrompt] = useState(false);
+
+  const required = sessionType === "2on1" ? 2 : 1;
+  const hasEnoughCredits = ptSessions >= required;
+
+  function setSlot(i: number, patch: Partial<Slot>) {
+    setSlots((prev) => prev.map((s, j) => (i === j ? { ...s, ...patch } : s)));
+  }
+  function addSlot() {
+    setSlots((prev) => [...prev, emptySlot()]);
+  }
+  function removeSlot(i: number) {
+    setSlots((prev) => prev.filter((_, j) => j !== i));
   }
 
-  function handleFind() {
-    const clampedTo = toDate > maxToDate ? maxToDate : toDate;
-    if (clampedTo !== toDate) setToDate(clampedTo);
-    setAppliedFilters({
-      instructor: instructorFilter,
-      location: locationFilter,
-      from: fromDate,
-      to: clampedTo,
-    });
-    setPage(0);
+  function runPartnerLookup() {
+    const email = partnerEmail.trim();
+    if (!email) {
+      setPartnerLookup({ state: "idle" });
+      return;
+    }
+    const r = mockPartnerLookup(email);
+    if (r.found && r.clientId && r.name) {
+      setPartnerLookup({ state: "found", clientId: r.clientId, name: r.name });
+      setPartnerName("");
+    } else {
+      setPartnerLookup({ state: "not_found" });
+    }
   }
 
-  const totalPages = Math.ceil(grouped.length / DAYS_PER_PAGE);
+  function validate(): string[] {
+    const errs: string[] = [];
+    if (!locationId) errs.push("Pick a location.");
+    if (!classTypeId) errs.push("Pick a class type.");
+    if (slots.length === 0) errs.push("Add at least one proposed slot.");
+    slots.forEach((s, i) => {
+      if (!s.proposedDate || !s.startTime || !s.endTime) errs.push(`Slot ${i + 1}: complete date, start and end time.`);
+      else if (s.endTime <= s.startTime) errs.push(`Slot ${i + 1}: end time must be after start time.`);
+    });
+    if (sessionType === "2on1") {
+      if (!partnerEmail.trim()) errs.push("Partner email is required for a 2-on-1.");
+      else if (partnerLookup.state === "idle") errs.push("Run partner lookup first.");
+      else if (partnerLookup.state === "not_found" && !partnerName.trim()) errs.push("Partner name is required when they're not yet a member.");
+    }
+    return errs;
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+
+    // Gate: a request needs an active PT package with enough sessions. If not,
+    // prompt the member to buy a package instead of submitting.
+    if (!defaultPackageId || !hasEnoughCredits) {
+      setShowBuyPrompt(true);
+      setErrors([]);
+      return;
+    }
+    setShowBuyPrompt(false);
+
+    const errs = validate();
+    setErrors(errs);
+    if (errs.length > 0) return;
+
+    setSubmitting(true);
+    const partner = buildPartner();
+    const classType = CLASS_TYPES.find((c) => c.id === classTypeId)!;
+    const location = (locations ?? []).find((l) => l.id === locationId);
+    submitPtRequest({
+      classTypeId,
+      className: classType.name,
+      locationId,
+      locationName: location?.name ?? "",
+      sessionType,
+      slots,
+      message: message.trim(),
+      partner,
+    });
+    // BE submit is still 501 — local store is the source of truth for now.
+    // When wired: POST /me/pt-sessions/request → on success, refetchClientPackages() then redirect.
+    router.push("/account/private-sessions?submitted=1");
+  }
+
+  function buildPartner(): LocalPtRequestPartner | null {
+    if (sessionType === "1on1") return null;
+    if (partnerLookup.state === "found") {
+      return { kind: "existing", coClientId: partnerLookup.clientId, name: partnerLookup.name };
+    }
+    return { kind: "new", name: partnerName.trim(), email: partnerEmail.trim() };
+  }
+
+  // If the user only has one PT format available, hide the radio.
+  const has1on1 = ptPackages.some((p) => /1on1|1-on-1/i.test(p.name));
+  const has2on1 = ptPackages.some((p) => /2on1|2-on-1/i.test(p.name));
+  const showSessionTypeChoice = (has1on1 && has2on1) || ptPackages.length === 0;
+  const computedSessionType: "1on1" | "2on1" = useMemo(() => {
+    if (showSessionTypeChoice) return sessionType;
+    if (has2on1 && !has1on1) return "2on1";
+    return "1on1";
+  }, [showSessionTypeChoice, sessionType, has1on1, has2on1]);
 
   return (
-    <>
-      <div id="form">
-        <BookingSurface maxWidth="lg" padding="default">
-          <SectionHeading eyebrow="Private sessions" title="Find a time that works" />
+    <BookingSurface maxWidth="md" padding="default">
+      <SectionHeading eyebrow="Private sessions" title="Request a session" />
+      <p className="text-sm text-muted mt-2 mb-8 leading-relaxed">
+        Tell us what you want and when — we&apos;ll reach you on WhatsApp shortly to confirm. No back-and-forth in the app.
+      </p>
 
-          {/* Primary CTA — new request flow (no back-and-forth in app). */}
-          <div className="mt-6 mb-8 rounded-2xl border border-accent/30 bg-accent/5 p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      {pkgLoading ? (
+        <div className="text-sm text-muted py-12 text-center">Loading your packages…</div>
+      ) : (
+        <form className="space-y-6" onSubmit={handleSubmit}>
+          {showSessionTypeChoice && (
             <div>
-              <p className="text-sm font-medium text-ink">Request a private session</p>
-              <p className="text-xs text-muted mt-0.5">
-                Pick a class type, propose a few time windows — we&apos;ll confirm on WhatsApp.
+              <label className="text-xs uppercase tracking-wider text-muted mb-2 block">Session type</label>
+              <div className="grid grid-cols-2 gap-2">
+                {(["1on1", "2on1"] as const).map((t) => (
+                  <button
+                    type="button"
+                    key={t}
+                    onClick={() => setSessionType(t)}
+                    className={`rounded-xl border px-4 py-3 text-sm transition ${
+                      computedSessionType === t
+                        ? "border-accent bg-accent/10 text-ink"
+                        : "border-ink/10 bg-card text-muted hover:border-accent/40"
+                    }`}
+                  >
+                    {t === "1on1" ? "1-on-1" : "2-on-1"}
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-muted mt-2">
+                You have {ptSessions} PT session{ptSessions === 1 ? "" : "s"} remaining.
+                {computedSessionType === "2on1" ? " A 2-on-1 uses 2 sessions." : ""}
               </p>
             </div>
-            <Link
-              href="/private-sessions/request"
-              className="shrink-0 inline-flex items-center justify-center rounded-full bg-ink text-paper px-5 py-2.5 text-sm font-medium hover:bg-ink/90 transition-colors"
+          )}
+
+          <div>
+            <label className="text-xs uppercase tracking-wider text-muted mb-1.5 block" htmlFor="location">
+              Location
+            </label>
+            <select
+              id="location"
+              value={locationId}
+              onChange={(e) => setLocationId(e.target.value)}
+              className="w-full rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent"
             >
-              Submit a request
-            </Link>
+              {(locations ?? []).map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
           </div>
 
-          {/* How private sessions work */}
-          <details className="group mb-6 md:mb-10 rounded-2xl border border-border bg-warm">
-            <summary className="flex items-center justify-between gap-3 px-4 py-3 md:px-5 md:py-4 cursor-pointer list-none [&::-webkit-details-marker]:hidden">
-              <span className="flex items-center gap-2">
-                <Info size={16} className="text-accent shrink-0" />
-                <span className="text-sm font-semibold text-ink">How private sessions work</span>
-              </span>
-              <ChevronDown size={14} className="text-muted transition-transform group-open:rotate-180" />
-            </summary>
-            <div className="px-4 pb-4 md:px-5 md:pb-5">
-              <ul className="text-xs text-muted leading-relaxed space-y-1 list-disc pl-6">
-                <li>Browse available times by instructor, location, or date.</li>
-                <li>Submit a request — no upfront payment needed.</li>
-                <li>We confirm within <span className="font-medium text-ink">12 hours</span>.</li>
-                <li>Private packages are counted in sessions (1 session = 30 mins).</li>
-              </ul>
-            </div>
-          </details>
+          <div>
+            <label className="text-xs uppercase tracking-wider text-muted mb-1.5 block" htmlFor="class-type">
+              Class type
+            </label>
+            <select
+              id="class-type"
+              value={classTypeId}
+              onChange={(e) => setClassTypeId(e.target.value)}
+              className="w-full rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent"
+            >
+              {CLASS_TYPES.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </div>
 
-          {/* Filters */}
-          <div className="rounded-2xl border border-ink/10 bg-paper p-4 sm:p-6 md:p-7">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-5">
-              <div>
-                <label className="text-xs uppercase tracking-wider text-muted mb-1.5 block">Instructor</label>
-                <select
-                  value={instructorFilter}
-                  onChange={(e) => setInstructorFilter(e.target.value)}
-                  className="w-full rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent cursor-pointer"
-                >
-                  <option value="any">Any instructor</option>
-                  {(instructors ?? []).map((i) => (
-                    <option key={i.id} value={i.id}>
-                      {i.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="text-xs uppercase tracking-wider text-muted mb-1.5 block">Location</label>
-                <select
-                  value={locationFilter}
-                  onChange={(e) => setLocationFilter(e.target.value)}
-                  className="w-full rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent cursor-pointer"
-                >
-                  <option value="any">Any location</option>
-                  {(locations ?? []).map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="col-span-1 md:col-span-2 lg:col-span-2 grid grid-cols-2 gap-3 md:gap-5">
-                <div>
-                  <label className="text-xs uppercase tracking-wider text-muted mb-1.5 block">From</label>
-                  <input
-                    type="date"
-                    value={fromDate}
-                    min={today}
-                    onChange={(e) => {
-                      const newFrom = e.target.value;
-                      setFromDate(newFrom);
-                      const newMax = addDays(newFrom, MAX_RANGE_DAYS - 1);
-                      if (toDate > newMax || toDate < newFrom) setToDate(newMax);
-                    }}
-                    className="w-full rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent cursor-pointer"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs uppercase tracking-wider text-muted mb-1.5 block">To</label>
-                  <input
-                    type="date"
-                    value={toDate}
-                    min={fromDate}
-                    max={maxToDate}
-                    onChange={(e) => setToDate(e.target.value)}
-                    className="w-full rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent cursor-pointer"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-5 md:mt-7 flex justify-center">
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-xs uppercase tracking-wider text-muted">Proposed slots</label>
               <button
                 type="button"
-                onClick={handleFind}
-                className="w-full md:w-auto rounded-full bg-ink text-paper px-6 py-2.5 text-sm font-medium hover:bg-ink/90 transition-colors"
+                onClick={addSlot}
+                className="inline-flex items-center gap-1 text-xs text-accent hover:text-accent-deep"
               >
-                Find availability
+                <Plus size={14} /> Add slot
               </button>
             </div>
-          </div>
-
-          {/* Results */}
-          <div className="mt-12">
-            <div className="flex items-baseline justify-between mb-6">
-              <p className="text-xs uppercase tracking-wider text-muted">Available times</p>
-              <p className="text-xs text-muted">
-                {filteredSlots.length} {filteredSlots.length === 1 ? "slot" : "slots"}
-              </p>
+            <div className="space-y-3">
+              {slots.map((s, i) => (
+                <div
+                  key={i}
+                  className="rounded-xl border border-ink/10 bg-card p-3"
+                >
+                  <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_1fr_auto] gap-2">
+                    <input
+                      type="date"
+                      min={todayIso()}
+                      value={s.proposedDate}
+                      onChange={(e) => setSlot(i, { proposedDate: e.target.value })}
+                      className="rounded-lg border border-ink/10 bg-paper px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent"
+                      aria-label={`Slot ${i + 1} date`}
+                    />
+                    <input
+                      type="time"
+                      value={s.startTime}
+                      onChange={(e) => setSlot(i, { startTime: e.target.value })}
+                      className="rounded-lg border border-ink/10 bg-paper px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent"
+                      aria-label={`Slot ${i + 1} start time`}
+                    />
+                    <input
+                      type="time"
+                      value={s.endTime}
+                      onChange={(e) => setSlot(i, { endTime: e.target.value })}
+                      className="rounded-lg border border-ink/10 bg-paper px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent"
+                      aria-label={`Slot ${i + 1} end time`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeSlot(i)}
+                      disabled={slots.length === 1}
+                      className="inline-flex items-center justify-center rounded-lg border border-ink/10 px-3 py-2 text-muted hover:text-error disabled:opacity-40 disabled:cursor-not-allowed"
+                      aria-label={`Remove slot ${i + 1}`}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
-
-            {loading ? (
-              <div className="text-center py-16 text-sm text-muted">Loading availability…</div>
-            ) : grouped.length === 0 ? (
-              <EmptyState
-                icon={CalendarX}
-                title="No availability"
-                description="Try a different instructor, location, or wider date range."
-              />
-            ) : (
-              <>
-                <div className="space-y-4">
-                  {grouped.slice(page * DAYS_PER_PAGE, page * DAYS_PER_PAGE + DAYS_PER_PAGE).map(([date, slots]) => {
-                    const isOpen = openDays.has(date);
-                    return (
-                      <div key={date} className="rounded-2xl border border-ink/10 bg-card overflow-hidden">
-                        <button
-                          type="button"
-                          onClick={() => toggleDay(date)}
-                          aria-expanded={isOpen}
-                          className="w-full flex items-center justify-between px-6 py-5 text-left hover:bg-warm/60 transition-colors"
-                        >
-                          <span className="text-sm font-medium text-ink">{formatDateLabel(date)}</span>
-                          <span className="flex items-center gap-3">
-                            <span className="text-xs text-muted">
-                              {slots.length} {slots.length === 1 ? "slot" : "slots"}
-                            </span>
-                            <ChevronDown size={16} className={`text-muted transition-transform ${isOpen ? "rotate-180" : ""}`} />
-                          </span>
-                        </button>
-                        <AnimatePresence initial={false}>
-                          {isOpen && (
-                            <motion.div
-                              initial={{ height: 0, opacity: 0 }}
-                              animate={{ height: "auto", opacity: 1 }}
-                              exit={{ height: 0, opacity: 0 }}
-                              transition={{ duration: 0.2 }}
-                              className="overflow-hidden"
-                            >
-                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 p-5 border-t border-ink/10">
-                                {slots.map((slot) => (
-                                  <button
-                                    key={slot.id}
-                                    type="button"
-                                    onClick={() => setSelectedSlot(slot)}
-                                    className="rounded-xl border border-ink/10 bg-paper p-4 text-left hover:border-accent transition-colors"
-                                  >
-                                    <div className="flex items-center justify-between">
-                                      <span className="text-sm font-medium text-ink">{formatClassTime(slot.starts_at)}</span>
-                                      <span className="text-xs text-muted">{durationMinutes(slot.starts_at, slot.ends_at)} min</span>
-                                    </div>
-                                    <p className="text-xs text-muted mt-1.5 leading-relaxed">
-                                      {slot.instructorName}
-                                      {slot.location ? ` · ${slot.location.name}` : ""}
-                                    </p>
-                                    <p className="text-[11px] text-accent-deep mt-1">
-                                      {sessionTypeLabel(slot.session_type)} · {slot.spots_left} spot{slot.spots_left === 1 ? "" : "s"} left
-                                    </p>
-                                  </button>
-                                ))}
-                              </div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                    );
-                  })}
-                </div>
-                {totalPages > 1 && (
-                  <div className="mt-8 flex items-center justify-between">
-                    <button
-                      type="button"
-                      onClick={() => setPage((p) => Math.max(0, p - 1))}
-                      disabled={page === 0}
-                      className="inline-flex items-center gap-1 rounded-full border border-ink/15 px-4 py-2 text-sm text-ink disabled:opacity-40 disabled:cursor-not-allowed hover:bg-warm transition-colors"
-                    >
-                      <ChevronLeft size={14} /> Prev
-                    </button>
-                    <p className="text-xs text-muted">Week {page + 1} of {totalPages}</p>
-                    <button
-                      type="button"
-                      onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-                      disabled={page >= totalPages - 1}
-                      className="inline-flex items-center gap-1 rounded-full border border-ink/15 px-4 py-2 text-sm text-ink disabled:opacity-40 disabled:cursor-not-allowed hover:bg-warm transition-colors"
-                    >
-                      Next <ChevronRight size={14} />
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
           </div>
 
-          {/* Policy footnote */}
-          <p className="text-xs text-muted mt-12 leading-relaxed">
-            Reschedule or cancel up to {PRIVATE_SESSION_CANCELLATION_POLICY.window} before your session at no charge.
-            See <Link href="/packages#private" className="underline hover:text-ink">private session packages</Link> for pricing.
-          </p>
-        </BookingSurface>
-      </div>
-
-      {/* Slot detail modal — request submission is coming soon */}
-      <AnimatePresence>
-        {selectedSlot && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 backdrop-blur-sm px-4"
-            onClick={() => setSelectedSlot(null)}
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.92, y: 12 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ duration: 0.2 }}
-              className="bg-card rounded-2xl p-7 max-w-sm w-full shadow-modal"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <p className="text-xs uppercase tracking-wider text-muted mb-2">Private session</p>
-              <h2 className="font-serif text-xl text-ink mb-4">{selectedSlot.instructorName}</h2>
-
-              <div className="rounded-xl border border-ink/10 bg-warm p-4 space-y-1.5 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted">Date</span>
-                  <span className="text-ink font-medium">{formatDateLabel(toLocalDateStr(selectedSlot.starts_at))}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted">Time</span>
-                  <span className="text-ink font-medium">{formatClassTime(selectedSlot.starts_at)}</span>
-                </div>
-                {selectedSlot.location && (
-                  <div className="flex justify-between">
-                    <span className="text-muted">Location</span>
-                    <span className="text-ink font-medium">{selectedSlot.location.name}</span>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-muted">Type</span>
-                  <span className="text-ink font-medium">{sessionTypeLabel(selectedSlot.session_type)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted">Duration</span>
-                  <span className="text-ink font-medium">{durationMinutes(selectedSlot.starts_at, selectedSlot.ends_at)} min</span>
-                </div>
-              </div>
-
-              <p className="text-sm text-muted mt-4 leading-relaxed">
-                Online private-session requests are coming soon. In the meantime, reach out to the studio to book this slot.
-              </p>
-
-              <div className="flex gap-2 mt-5">
+          {computedSessionType === "2on1" && (
+            <div>
+              <label className="text-xs uppercase tracking-wider text-muted mb-1.5 block" htmlFor="partner-email">
+                Partner email
+              </label>
+              <div className="flex gap-2">
+                <input
+                  id="partner-email"
+                  type="email"
+                  value={partnerEmail}
+                  onChange={(e) => {
+                    setPartnerEmail(e.target.value);
+                    setPartnerLookup({ state: "idle" });
+                  }}
+                  onBlur={runPartnerLookup}
+                  placeholder="partner@example.com"
+                  className="flex-1 rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent"
+                />
                 <button
                   type="button"
-                  onClick={() => setSelectedSlot(null)}
-                  className="flex-1 rounded-full border border-ink/15 text-ink px-4 py-2.5 text-sm font-medium hover:bg-warm transition-colors"
+                  onClick={runPartnerLookup}
+                  className="rounded-xl border border-ink/10 px-3 py-2.5 text-sm text-ink hover:bg-warm"
                 >
-                  Close
+                  Look up
                 </button>
-                <Link
-                  href="/packages#private"
-                  className="flex-1 text-center rounded-full bg-ink text-paper px-4 py-2.5 text-sm font-medium hover:bg-ink/90 transition-colors"
-                >
-                  View packages
-                </Link>
               </div>
-            </motion.div>
+              {partnerLookup.state === "found" && (
+                <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-sage">
+                  <CheckCircle2 size={14} /> {partnerLookup.name} — existing member.
+                </p>
+              )}
+              {partnerLookup.state === "not_found" && (
+                <div className="mt-2 space-y-2">
+                  <p className="inline-flex items-center gap-1.5 text-xs text-muted">
+                    <AlertCircle size={14} /> Not a member yet — the studio will create their account.
+                  </p>
+                  <input
+                    type="text"
+                    value={partnerName}
+                    onChange={(e) => setPartnerName(e.target.value)}
+                    placeholder="Partner full name"
+                    className="w-full rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          <div>
+            <label className="text-xs uppercase tracking-wider text-muted mb-1.5 block" htmlFor="message">
+              Note (optional)
+            </label>
+            <textarea
+              id="message"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              rows={3}
+              placeholder="Anything we should know — focus areas, injuries, preferences."
+              className="w-full rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent resize-y"
+            />
           </div>
-        )}
-      </AnimatePresence>
-    </>
+
+          {showBuyPrompt && (
+            <div className="rounded-2xl border border-warning/30 bg-warning/10 p-5 text-sm text-ink">
+              {ptPackages.length === 0
+                ? "You don't have an active PT package yet."
+                : `You don't have enough PT sessions for this ${computedSessionType === "2on1" ? "2-on-1" : "1-on-1"} request (you have ${ptSessions}).`}{" "}
+              <Link href="/packages#private" className="underline font-medium hover:text-ink">
+                Buy a private session package
+              </Link>{" "}
+              to continue.
+            </div>
+          )}
+
+          {errors.length > 0 && (
+            <ul className="rounded-xl border border-error/30 bg-error/10 p-3 text-xs text-error space-y-1">
+              {errors.map((e, i) => (
+                <li key={i}>{e}</li>
+              ))}
+            </ul>
+          )}
+
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full rounded-full bg-ink text-paper px-6 py-3 text-sm font-medium hover:bg-ink/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {submitting ? "Submitting…" : `Submit request (uses ${required} session${required === 1 ? "" : "s"})`}
+          </button>
+        </form>
+      )}
+    </BookingSurface>
   );
 }

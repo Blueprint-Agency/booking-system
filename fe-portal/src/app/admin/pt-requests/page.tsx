@@ -1,7 +1,8 @@
 "use client";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { PageHeader, Badge } from "@/components/ui";
-import { ptRequests as seedRequests, clients, classTypes } from "@/data";
+import { ptRequests as seedRequests, clients, classTypes, locations } from "@/data";
+import { useWorkspace } from "@/lib/workspace-context";
 import { PtRequestDrawer } from "@/components/pt-requests/pt-request-drawer";
 import {
   ScheduleFromRequestDialog,
@@ -53,7 +54,35 @@ export default function PtRequestsPage() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [schedFor, setSchedFor] = useState<PtRequest | null>(null);
 
-  const filtered = requests
+  const { activeLocation, loading: wsLoading } = useWorkspace();
+
+  // Seed-era bridge: the workspace switcher is wired to the live BE (real
+  // location UUIDs) while this page still renders seed requests (seed ids like
+  // `loc-breadtalk`). Map the active location to its seed row by name so the
+  // workspace dropdown visibly scopes the list today.
+  // TODO: once this page is wired to the BE pt-requests list endpoint, requests
+  // will carry real location UUIDs — compare `r.locationId === activeLocation.id`
+  // directly and delete this bridge + the seed `locations` import.
+  const activeSeedLocationId = useMemo(() => {
+    if (!activeLocation) return null;
+    const a = activeLocation.name.trim().toLowerCase();
+    const match = locations.find((l) => {
+      const n = l.name.trim().toLowerCase();
+      return n === a || a.includes(n) || n.includes(a);
+    });
+    return match?.id ?? null;
+  }, [activeLocation]);
+
+  // Requests for the active workspace location only.
+  const locationScoped = useMemo(
+    () =>
+      activeSeedLocationId
+        ? requests.filter((r) => r.locationId === activeSeedLocationId)
+        : [],
+    [requests, activeSeedLocationId],
+  );
+
+  const filtered = locationScoped
     .filter((r) => inFilter(r, tab))
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const active = requests.find((r) => r.id === activeId) ?? null;
@@ -97,7 +126,7 @@ export default function PtRequestsPage() {
     setActiveId(null);
   }
 
-  const pendingCount = requests.filter((r) => r.status === "pending").length;
+  const pendingCount = locationScoped.filter((r) => r.status === "pending").length;
   const filters: Filter[] = ["pending", "scheduled", "cancelled", "attended", "all"];
 
   return (
@@ -108,15 +137,17 @@ export default function PtRequestsPage() {
       />
 
       <div className="rounded-lg border border-border bg-paper/60 px-3 py-2 text-xs text-muted">
-        PT requests are shown across all locations — clients pick their location when the session is scheduled.
+        {activeLocation
+          ? `Showing PT requests for ${activeLocation.name}. Switch the workspace location to see other studios.`
+          : "Select a workspace location to see its PT requests."}
       </div>
 
       <div className="flex flex-wrap gap-2">
         {filters.map((f) => {
           const count =
             f === "all"
-              ? requests.length
-              : requests.filter((r) => inFilter(r, f)).length;
+              ? locationScoped.length
+              : locationScoped.filter((r) => inFilter(r, f)).length;
           return (
             <button
               key={f}
@@ -136,7 +167,9 @@ export default function PtRequestsPage() {
 
       {filtered.length === 0 ? (
         <div className="rounded-lg border border-border bg-card p-8 text-center text-sm text-muted">
-          {tab === "pending"
+          {wsLoading
+            ? "Loading…"
+            : tab === "pending"
             ? "No pending requests."
             : tab === "scheduled"
             ? "No scheduled PT requests yet."

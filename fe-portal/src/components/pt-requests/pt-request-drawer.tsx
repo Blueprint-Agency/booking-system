@@ -1,6 +1,6 @@
 "use client";
 import { X } from "lucide-react";
-import { clients, classTypes } from "@/data";
+import { clients, classTypes, locations } from "@/data";
 import { Avatar, Badge, Button } from "@/components/ui";
 import { formatDateTime, formatRelative } from "@/lib/formatters";
 import type { PtRequest } from "@/types";
@@ -34,6 +34,7 @@ export function PtRequestDrawer({
 }) {
   const client = clients.find((c) => c.id === request.clientId);
   const classType = classTypes.find((ct) => ct.id === request.classTypeId);
+  const location = locations.find((l) => l.id === request.locationId);
   const partnerLabel = partnerDisplay(request);
   const partnerNeedsAccount =
     request.sessionType === "2on1" && !request.coClientId;
@@ -65,6 +66,7 @@ export function PtRequestDrawer({
             {request.sessionType === "1on1" ? "1-on-1" : "2-on-1"}
           </Row>
           <Row label="Class type">{classType?.name ?? "—"}</Row>
+          <Row label="Location">{location?.name ?? "—"}</Row>
           {request.sessionType === "2on1" && (
             <Row label="Partner">
               <div className="flex items-center gap-2">

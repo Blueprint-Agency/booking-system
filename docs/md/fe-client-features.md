@@ -326,14 +326,15 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
 
 **Business logic — minimal form, no back-and-forth in app**
 
-The form deliberately collects **only what the studio needs to start the WhatsApp conversation**. Everything beyond that — instructor, location, room, final time — is settled out-of-app and recorded by the admin at scheduling time.
+The form deliberately collects **only what the studio needs to start the WhatsApp conversation**. Everything beyond that — instructor, room, final time — is settled out-of-app and recorded by the admin at scheduling time.
 
 Fields, in order:
-1. **Session type** — 1-on-1 or 2-on-1. Gated by which PT package(s) the client owns; if they hold only one type, that option is auto-selected and the radio is hidden.
-2. **Class type** — dropdown of all active class types (yoga style focus, e.g. Hatha, Vinyasa). Drives which instructor the admin assigns.
-3. **Proposed slots** — 1..N rows of `{ date, start_time, end_time }`. Date picked via calendar; time as a HH:mm window per row. "Add another slot" button below the last row. Multiple slots maximise the chance the studio can schedule one of them.
-4. **Note** — optional free-form message to the studio.
-5. **Partner (2-on-1 only)** — email field with exact-match autocomplete against existing members:
+1. **Location** — dropdown of the studio's active locations (from `/public/locations`), required. Routes the request to the right workspace queue in the portal; the studio defaults the scheduled session to this location (and can still change it at scheduling time).
+2. **Session type** — 1-on-1 or 2-on-1. Gated by which PT package(s) the client owns; if they hold only one type, that option is auto-selected and the radio is hidden.
+3. **Class type** — dropdown of all active class types (yoga style focus, e.g. Hatha, Vinyasa). Drives which instructor the admin assigns.
+4. **Proposed slots** — 1..N rows of `{ date, start_time, end_time }`. Date picked via calendar; time as a HH:mm window per row. "Add another slot" button below the last row. Multiple slots maximise the chance the studio can schedule one of them.
+5. **Note** — optional free-form message to the studio.
+6. **Partner (2-on-1 only)** — email field with exact-match autocomplete against existing members:
    - If the typed email matches a member → row collapses to "Partner: {name}" with the resolved `co_client_id`.
    - If no match → a name field reveals and the client types the partner's full name; the request stores `co_client_email + co_client_name`, the admin creates the partner's account before scheduling.
 
@@ -342,11 +343,11 @@ Fields, in order:
 - **Debits the client's PT package immediately**: 1 session for 1-on-1, 2 sessions for 2-on-1 (one per attendee). Cancellation before the studio schedules refunds those sessions; cancellation after schedules forfeits them (v1).
 - If the client has no PT-session entitlement for the selected format, the submit button is disabled with a "Buy a PT package first" link to `/packages` — the form does **not** allow optimistic submission without credits.
 - No payment is taken at this step (credits already paid for).
-- No `location_id` is set yet — assigned by the studio at scheduling time.
+- `location_id` is set from the client's selection — it routes the request to that location's workspace queue in the portal and pre-fills the scheduling dialog (admin can still change it).
 
 **User journey**
 1. From `/private-sessions`, tap "Request a Private Session".
-2. Fill the form: session type, class type, one or more proposed slots, optional note, partner (if 2-on-1).
+2. Fill the form: location, session type, class type, one or more proposed slots, optional note, partner (if 2-on-1).
 3. Submit → confirmation toast: *"Your request is in. We'll reach you on WhatsApp shortly to confirm the time."* Page redirects to `/account/private-sessions` with the new request highlighted in the **Pending** group.
 4. Studio takes over on WhatsApp, then schedules in `/admin/pt-requests` → the client receives an email confirming the final time + venue, and the row moves to **Confirmed** on `/account/private-sessions`.
 5. If the studio can't accommodate any proposed slot and the WhatsApp negotiation fails, either side can **cancel** the request from their UI. While `pending`, cancel refunds credits.

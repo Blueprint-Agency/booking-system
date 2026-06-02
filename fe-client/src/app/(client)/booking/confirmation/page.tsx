@@ -11,6 +11,7 @@ import type { Session, Instructor } from "@/types";
 import sessionsData from "@/data/sessions.json";
 import instructorsData from "@/data/instructors.json";
 import { recordBooking, hasActiveUnlimited, useMockState, isExpired, markAttended, type MockPackage } from "@/lib/mock-state";
+import { useClientPackages } from "@/lib/use-client-packages";
 import { CLASS_CANCELLATION_POLICY } from "@/data/policy";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { SectionHeading } from "@/components/booking/section-heading";
@@ -523,12 +524,16 @@ function PackageSuccess({
   stripeSessionId: string | null;
 }) {
   const { getToken } = useAuth();
+  const { refetch } = useClientPackages();
   const [synced, setSynced] = useState(false);
 
   // Sync the Stripe session server-side so credits are granted immediately
-  // without waiting for the webhook (handles local dev where no CLI listener runs).
+  // without waiting for the webhook (handles local dev where no CLI listener runs),
+  // then refetch the live packages so the header/account credit + session totals
+  // reflect the purchase without a manual page refresh. (The provider's
+  // pathname-based refetch races ahead of sync-session and would read stale data.)
   useEffect(() => {
-    if (!stripeSessionId) { setSynced(true); return; }
+    if (!stripeSessionId) { setSynced(true); void refetch(); return; }
     let cancelled = false;
     (async () => {
       try {
@@ -542,10 +547,13 @@ function PackageSuccess({
           body: JSON.stringify({ session_id: stripeSessionId }),
         });
       } catch { /* non-fatal */ }
-      if (!cancelled) setSynced(true);
+      if (!cancelled) {
+        setSynced(true);
+        await refetch();
+      }
     })();
     return () => { cancelled = true; };
-  }, [stripeSessionId, getToken]);
+  }, [stripeSessionId, getToken, refetch]);
 
   const legacy = PACKAGE_DISPLAY[packageId];
   const name = legacy?.name ?? "Package";

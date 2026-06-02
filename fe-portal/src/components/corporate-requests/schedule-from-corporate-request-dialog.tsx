@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
-import { todayIso } from "@/lib/formatters";
+import { todayIso, currentHourTime } from "@/lib/formatters";
 import { useWorkspace } from "@/lib/workspace-context";
 import { corporateErrorMessage } from "@/lib/corporate-errors";
 import type { CorporateRequest } from "@/types";
@@ -44,8 +44,8 @@ export function ScheduleFromCorporateRequestDialog({
   const [catalogError, setCatalogError] = useState<string | null>(null);
 
   const [date, setDate] = useState("");
-  const [startTime, setStartTime] = useState("");
-  const [endTime, setEndTime] = useState("");
+  const [startTime, setStartTime] = useState(currentHourTime());
+  const [endTime, setEndTime] = useState(currentHourTime(1));
   const [mainInstructorId, setMainInstructorId] = useState("");
   const [supportingInstructorIds, setSupportingInstructorIds] = useState<
     string[]

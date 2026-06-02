@@ -317,6 +317,11 @@ export const ptRequests = pgTable(
     classTypeId: uuid('class_type_id')
       .notNull()
       .references(() => classTypes.id, { onDelete: 'restrict' }),
+    // Location the client wants the session at. Captured at request time (the
+    // portal filters pending requests by the staff's active workspace location).
+    locationId: uuid('location_id')
+      .notNull()
+      .references(() => locations.id, { onDelete: 'restrict' }),
     sessionType: ptSessionTypeEnum('session_type').notNull(),
     // Partner for 2on1. Either an existing member (co_client_id) OR free-text
     // name+email when the partner isn't a member yet (admin will create the
@@ -341,6 +346,8 @@ export const ptRequests = pgTable(
   table => ({
     statusCreatedIdx: index('pt_requests_status_created_idx').on(table.status, table.createdAt),
     clientStatusIdx: index('pt_requests_client_status_idx').on(table.clientId, table.status),
+    // Backs the portal's location-scoped pending-request list.
+    locationStatusIdx: index('pt_requests_location_status_idx').on(table.locationId, table.status),
     classTypeIdx: index('pt_requests_class_type_idx').on(table.classTypeId),
     // Drives the expiry sweep — partial index over only `pending` rows.
     expiresAtPendingIdx: index('pt_requests_expires_at_pending_idx')

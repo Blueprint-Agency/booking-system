@@ -27,6 +27,9 @@ export type LocalPtRequest = {
   id: string;
   classTypeId: string;
   className: string;
+  // Studio location the client wants the session at — picked at request time.
+  locationId: string;
+  locationName: string;
   sessionType: "1on1" | "2on1";
   slots: LocalPtRequestSlot[];
   message: string;

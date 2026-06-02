@@ -114,7 +114,7 @@ function Inner() {
               icon={CalendarX}
               title={emptyTitle(tab)}
               description="Submit a request to get started."
-              cta={{ href: "/private-sessions/request", label: "Request a session" }}
+              cta={{ href: "/private-sessions", label: "Request a session" }}
             />
           ) : (
             <ul className="space-y-3">
@@ -159,6 +159,7 @@ function RequestCard({ request: r }: { request: LocalPtRequest }) {
         <div className="min-w-0">
           <p className="text-xs uppercase tracking-wider text-muted">
             {r.sessionType === "1on1" ? "1-on-1" : "2-on-1"} · {r.className}
+            {r.locationName ? ` · ${r.locationName}` : ""}
           </p>
           {r.scheduled ? (
             <p className="font-serif text-lg text-ink mt-1">

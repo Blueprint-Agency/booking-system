@@ -35,7 +35,12 @@ export function ScheduleFromRequestDialog({
 
   // No `preferredInstructorId` to pre-fill from — admin picks from scratch.
   const [instructorId, setInstructorId] = useState(activeInstructors[0]?.id ?? "");
-  const [locationId, setLocationId] = useState(activeLocations[0]?.id ?? "");
+  // Default to the location the client requested (admin can still change it).
+  const [locationId, setLocationId] = useState(
+    activeLocations.some((l) => l.id === request.locationId)
+      ? request.locationId
+      : activeLocations[0]?.id ?? "",
+  );
   const roomsForLocation = useMemo(
     () => rooms.filter((r) => !r.archivedAt && r.locationId === locationId),
     [locationId],

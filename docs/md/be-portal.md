@@ -160,15 +160,15 @@ Workshops are configured under Packages (not Schedule). Three-stage editor: **Ba
 | GET | `/workshops/:id/roster` | All confirmed bookings on the workshop (across tiers). Returns each booking with the `day_ids[]` it grants access to (joined via `workshop_tier_days`). |
 | GET | `/workshops/:id/days/:day_id/roster` | Bookings whose tier covers this specific day. Used by the workshop check-in screen even though workshops are not check-in tracked in v1 — admin still needs the per-day attendee list. |
 
-### `pt-requests.ts` (workspace-**agnostic** — `admin-restructure.md` §9)
+### `pt-requests.ts` (workspace-**scoped** — `admin-restructure.md` §9)
 
 PT requests are the actionable entity. **No back-and-forth in app — all negotiation is on WhatsApp.** The portal exposes exactly two terminal actions: **schedule** (the implicit approval) and **cancel**. There is no decline-with-note path and no approve button.
 
-The admin queue is shared across workspaces (no `granted_location_ids` filter) because PT requests have no `location_id` until scheduled.
+PT requests carry a `location_id` chosen by the client at submission time, so the triage queue is **workspace-scoped** — filtered by the acting admin's `granted_location_ids` (superadmin sees all). The portal scopes the list to the staff's active workspace location.
 
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/pt-requests` | Triage queue. Default `?status=pending`, ordered `created_at desc`. Filters: `?status`, `?class_type_id`, `?client_id`, `?session_type`, `?from`, `?to`. |
+| GET | `/pt-requests` | Triage queue, **filtered by `granted_location_ids`**. Default `?status=pending`, ordered `created_at desc`. Filters: `?status`, `?location_id` (must be in scope), `?class_type_id`, `?client_id`, `?session_type`, `?from`, `?to`. |
 | GET | `/pt-requests/:id` | Detail incl. client profile snapshot, class type, all proposed slots (`pt_request_slots`), co-client (resolved `co_client_id` OR free-text `co_client_name + co_client_email`), message, expiry. |
 | POST | `/pt-requests/:id/schedule` | Convert request → `pt_sessions` row. Body: `{ instructor_id, location_id, room_id, starts_at, ends_at, capacity_online?, capacity_waitlist?, capacity_buffer? }`. Calls `services/pt-sessions/schedule.ts:schedulePtRequest()` — see §3c. `location_id` must be in the acting admin's `granted_location_ids`. **For 2on1 requests with no `co_client_id` yet** the call rejects with 409 — admin must create the partner's client first via `/admin/clients`, the FE then re-opens the schedule dialog with `co_client_id` resolved. |
 | POST | `/pt-requests/:id/cancel` | Admin cancel. Branches on current status: `pending` → `cancelled_before_scheduled` + refund (1 session for 1on1, 2 for 2on1) to the originating client package; `scheduled` → `cancelled_after_scheduled`, cascade-cancel the linked `pt_sessions` row + every booking on it (state='cancelled', refund_outcome='forfeited'), **no refund** (v1 policy). Emits `admin_cancel_class_pt` inbox row and emails the affected client(s). Idempotent — calling on an already-terminal request is a no-op. |
