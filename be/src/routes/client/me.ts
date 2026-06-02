@@ -29,6 +29,8 @@ function serializeClientPackage(r: Awaited<ReturnType<typeof listClientPackages>
     expires_at: r.expiresAt,
     purchased_at: r.purchasedAt,
     amount_paid_sgd: r.amountPaidSgd,
+    active: r.active,
+    session_type: r.sessionType,
   }
 }
 
@@ -76,7 +78,8 @@ const app = new Hono()
         trial_used: ent.trialUsed,
         has_active_unlimited: ent.hasActiveUnlimited,
         has_active_bundle_credits: ent.hasActiveBundleCredits,
-        pt_sessions_remaining: ent.ptSessionsRemaining,
+        pt_1on1_remaining: ent.pt1on1Remaining,
+        pt_2on1_remaining: ent.pt2on1Remaining,
       },
     })
   })
