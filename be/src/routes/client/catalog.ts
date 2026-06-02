@@ -10,6 +10,28 @@ import {
 import { getClientEntitlements } from '../../services/packages/entitlements'
 import * as workshopsSvc from '../../services/workshops/catalog'
 import { listMyWorkshopBookings } from '../../services/workshops/my-bookings'
+import { listCorporatePackages } from '../../services/packages/corporate-packages'
+import {
+  listCorporateRequestsForClient,
+  type HydratedCorporateRequest,
+} from '../../services/corporate/requests'
+
+function serializeCorporateRequest(r: HydratedCorporateRequest) {
+  return {
+    id: r.id,
+    status: r.status,
+    package: r.package,
+    created_at: r.createdAt.toISOString(),
+    session: r.session
+      ? {
+          starts_at: r.session.startsAt.toISOString(),
+          ends_at: r.session.endsAt.toISOString(),
+          location_name: r.session.locationName,
+          instructor_name: r.session.instructorName,
+        }
+      : null,
+  }
+}
 
 function serializeClassPackage(
   r: classSvc.ClassPackageRow,
@@ -112,6 +134,25 @@ const app = new Hono()
   .get('/instructors/:id/availability', async c => {
     const slots = await classCatalog.listInstructorAvailability(c.req.param('id'))
     return c.json({ slots })
+  })
+  // Corporate catalogue — surfaced to signed-in members (no promotions).
+  .get('/corporate-packages', async c => {
+    const rows = await listCorporatePackages({ status: 'active' })
+    return c.json({
+      corporate_packages: rows.map(r => ({
+        id: r.id,
+        name: r.name,
+        description: r.description,
+        price_sgd: r.priceSgd,
+        status: r.status,
+      })),
+    })
+  })
+  // The signed-in member's corporate requests (pending / scheduled / attended / cancelled).
+  .get('/corporate-requests', async c => {
+    const clientId = c.get('clientId')
+    const rows = await listCorporateRequestsForClient(clientId)
+    return c.json({ corporate_requests: rows.map(serializeCorporateRequest) })
   })
 
 export default app

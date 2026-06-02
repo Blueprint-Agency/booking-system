@@ -11,6 +11,10 @@ export const invitationStatusEnum = pgEnum('invitation_status', ['pending', 'acc
 export const classPackageKindEnum = pgEnum('class_package_kind', ['credit_bundle', 'unlimited', 'trial'])
 export const ptSessionTypeEnum = pgEnum('pt_session_type', ['1on1', '2on1'])
 export const packageStatusEnum = pgEnum('package_status', ['active', 'archived'])
+// Corporate purchases deliberately do NOT create a client_packages row: they carry no
+// credits and the corporate_request IS the entitlement. (A 'corporate' kind here would
+// pollute listClientPackages, which renders the class/PT wallet.) The purchase record is
+// the corporate_request + a stripe_payments row (kind='corporate_package').
 export const clientPackageKindEnum = pgEnum('client_package_kind', ['credit_bundle', 'unlimited', 'trial', 'pt'])
 
 // Promotions (§4d)
@@ -38,6 +42,19 @@ export const ptRequestStatusEnum = pgEnum('pt_request_status', [
   'attended',
 ])
 
+// Corporate request lifecycle. Mirrors pt_request_status but simpler: corporate
+// has no slots, so there's no pre/post-schedule cancel split — one `cancelled`.
+//   pending    — client purchased, admin hasn't scheduled yet (negotiated via WhatsApp)
+//   scheduled  — admin scheduled the corporate_session
+//   cancelled  — cancelled while pending or after scheduling (by client or admin)
+//   attended   — admin marked the scheduled session as delivered
+export const corporateRequestStatusEnum = pgEnum('corporate_request_status', [
+  'pending',
+  'scheduled',
+  'cancelled',
+  'attended',
+])
+
 // Bookings
 export const bookingKindEnum = pgEnum('booking_kind', ['class', 'workshop', 'pt'])
 export const bookingStateEnum = pgEnum('booking_state', ['confirmed', 'cancelled', 'no_show'])
@@ -55,7 +72,7 @@ export const checkinMethodEnum = pgEnum('checkin_method', ['qr', 'code', 'manual
 
 // Ledger
 export const auditActorTypeEnum = pgEnum('audit_actor_type', ['staff', 'system'])
-export const stripePaymentKindEnum = pgEnum('stripe_payment_kind', ['workshop', 'class_package', 'pt_package'])
+export const stripePaymentKindEnum = pgEnum('stripe_payment_kind', ['workshop', 'class_package', 'pt_package', 'corporate_package'])
 export const stripePaymentStatusEnum = pgEnum('stripe_payment_status', ['pending', 'succeeded', 'refunded', 'failed'])
 
 // Content
@@ -82,6 +99,7 @@ export type ClassPackageKind = (typeof classPackageKindEnum.enumValues)[number]
 export type PromotionParent = (typeof promotionParentEnum.enumValues)[number]
 export type PromotionKind = (typeof promotionKindEnum.enumValues)[number]
 export type PtRequestStatus = (typeof ptRequestStatusEnum.enumValues)[number]
+export type CorporateRequestStatus = (typeof corporateRequestStatusEnum.enumValues)[number]
 export type BookingKind = (typeof bookingKindEnum.enumValues)[number]
 export type BookingState = (typeof bookingStateEnum.enumValues)[number]
 export type Lifecycle = (typeof lifecycleEnum.enumValues)[number]

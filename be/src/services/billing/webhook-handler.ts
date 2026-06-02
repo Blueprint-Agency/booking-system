@@ -15,6 +15,7 @@ import { stripePayments } from '../../db/schema/ledger'
 import { eq } from 'drizzle-orm'
 import { grantPackage } from '../packages/purchase'
 import { bookWorkshopPaid } from '../workshops/book'
+import { submitCorporateRequest } from '../corporate/requests'
 
 export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
   if (event.type === 'checkout.session.completed') {
@@ -50,13 +51,53 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         }).onConflictDoNothing()
       }
 
-      await grantPackage({
+      const granted = await grantPackage({
         clientId,
         paymentIntentId,
         amountSgd,
         packageKind: kind === 'class_package' ? 'class' : 'pt',
         packageId,
       })
+
+      // Mark the payment succeeded + link the granted package so a second
+      // delivery (webhook AND sync-session both fire in local dev) short-circuits
+      // at the `status === 'succeeded'` guard above instead of double-granting.
+      await db
+        .update(stripePayments)
+        .set({ status: 'succeeded', clientPackageId: granted.clientPackageId })
+        .where(eq(stripePayments.paymentIntentId, paymentIntentId))
+      return
+    }
+
+    if (kind === 'corporate_package') {
+      const packageId = meta.package_id
+      const clientId = meta.client_id
+      if (!packageId || !clientId) return
+
+      const amountSgd = meta.amount_sgd ?? String(((session.amount_total ?? 0) / 100).toFixed(2))
+
+      // Idempotency — the stripe_payments row (unique on payment_intent_id) doubles
+      // as the guard: if it already exists, we've already created the request.
+      const [existing] = await db
+        .select({ status: stripePayments.status })
+        .from(stripePayments)
+        .where(eq(stripePayments.paymentIntentId, paymentIntentId))
+        .limit(1)
+      if (existing) return
+
+      await db
+        .insert(stripePayments)
+        .values({
+          paymentIntentId,
+          amountSgd,
+          kind: 'corporate_package',
+          clientId,
+          status: 'succeeded',
+        })
+        .onConflictDoNothing()
+
+      // Corporate carries no credits — the request IS the entitlement.
+      await submitCorporateRequest({ clientId, corporatePackageId: packageId })
       return
     }
 

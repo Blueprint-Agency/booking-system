@@ -49,6 +49,7 @@ Unauthenticated. Cache-friendly (HTTP `Cache-Control: public, max-age=60` where 
 | GET | `/workshops` | List multi-day workshops. Each row carries: `days[]` (one per `workshop_days` with starts_at, ends_at, derived `seats_left = capacity_online - booked_via_tier`), `tiers[]` (with **derived** `seats_left = min(seats_left for day in tier.day_ids)`), and resolved promotion fields (see below). |
 | GET | `/workshops/:id` | Detail incl. tiers (each with derived seats-left + effective price), `tier_days{}` (which tier covers which days), images (presigned R2 URLs), instructors, description. |
 | GET | `/packages` | List active class_packages + pt_packages. Each row carries resolved promotion fields. **Trial Pass first, then credit bundles, then unlimited, then PT** (matches fe-client `/packages` ordering per `fe-client-features.md` §6.1). |
+| GET | `/corporate-packages` | List active `corporate_packages`. Shape: `{ corporate_packages: [{ id, name, description, price_sgd, status }] }`. Same shape as the authenticated `/me/corporate-packages`. |
 
 **Promotion resolution shape** — every package and every workshop tier in `/packages`, `/workshops`, `/classes` responses includes:
 
@@ -91,6 +92,8 @@ All endpoints prefixed with `/api/v1/me`.
 | GET | `/dashboard` | Aggregated home payload: next-up booking, package balances (credits + sessions remaining + days to expiry), referral conversions count. One round-trip for the `/account` landing page. |
 | GET | `/packages` | List `client_packages` for this client with each linked source (class_packages or pt_packages) and the `applied_promotion` frozen at purchase (if any). |
 | GET | `/packages/eligibility` | `{ trial_used: bool, holds_active_bundle: bool, holds_active_unlimited: bool }` — drives fe-client `/packages` gating per `fe-client-features.md` §6.1. `trial_used` is `true` if any `client_packages WHERE client_id=me AND kind='trial'` exists (active or expired). `holds_active_bundle` / `holds_active_unlimited` derive the "Bundle excludes Unlimited and vice versa" rule. Cheap query — call on every `/packages` page load. |
+| GET | `/corporate-packages` | List active `corporate_packages`: `{ corporate_packages: [{ id, name, description, price_sgd, status }] }`. Powers the fe-client Corporate catalog (`fe-client-features.md` §6.2). |
+| GET | `/corporate-requests` | The client's own corporate requests: `{ corporate_requests: [{ id, status, package: { id, name }, created_at, session: null \| { starts_at, ends_at, location_name, instructor_name } }] }`. `session` is populated when `status='scheduled'`. Drives the `/account/corporate` status page. |
 
 ### `catalog.ts` (authenticated browse)
 Same shape as `routes/public/catalog.ts` but adds:
@@ -123,7 +126,7 @@ Per `admin-restructure.md` §9 and `fe-client-features.md` §5.2, the client-fac
 ### `purchases.ts` (verification gate applies)
 | Method | Path | Effect |
 |---|---|---|
-| POST | `/checkout/package` | `{ package_kind: 'class' \| 'pt', package_id }` — creates Stripe Payment Intent, returns `client_secret`. **Server resolves the best-price-wins promotion and the intent amount is derived from `effective_price_sgd`** — client-supplied price is never trusted. For `class_packages.kind='trial'`: pre-check the `(client_id) WHERE kind='trial'` partial unique index — 409 `trial_already_used` if the client already holds one. The intent metadata carries `applied_promotion_id` so the webhook can freeze it onto `client_packages`. See §4e. |
+| POST | `/checkout/package` | `{ package_kind: 'class' \| 'pt' \| 'corporate', package_id }` — creates Stripe checkout, returns `{ url }`. **Server resolves the best-price-wins promotion and the intent amount is derived from `effective_price_sgd`** — client-supplied price is never trusted. For `class_packages.kind='trial'`: pre-check the `(client_id) WHERE kind='trial'` partial unique index — 409 `trial_already_used` if the client already holds one. The intent metadata carries `applied_promotion_id` so the webhook can freeze it onto `client_packages`. **`package_kind='corporate'`** is paid (no promotions); on success the webhook records a `stripe_payments` row (kind `corporate_package`) and auto-creates ONE pending `corporate_requests` row — it does **not** insert a `client_packages` row (no credits; the request is the entitlement). See §4e. |
 | POST | `/checkout/workshop` | `{ workshop_id, workshop_tier_id }` — same. Server resolves the workshop's best-price-wins promotion plus tier-level early-bird (early_bird wins over regular, then promotion further reduces if applicable — see §4b for the ordering). Free workshops (effective_price = 0) **bypass Stripe entirely** and route through `/workshops/:id/register` semantics inline. |
 | POST | `/workshops/:id/register` | `{ workshop_tier_id }` — explicit free-workshop registration endpoint. Returns 409 if the resolved effective price is non-zero (client must use `/checkout/workshop`). Inserts a `bookings` row with `kind='workshop'`, `state='confirmed'`, `stripe_payment_intent_id=NULL` directly. Convenience: idempotent on `(client_id, workshop_tier_id)` — re-call returns the existing booking instead of erroring. |
 
@@ -383,6 +386,23 @@ tx start
 5. Referral conversion check (same as workshop §4b)
 tx commit
 ```
+
+#### Corporate branch (`package_kind='corporate'`)
+
+Corporate is **paid, no promotions**, and grants no credits. `packageIntent` loads `corporate_packages` (status must be `active`), charges `price_sgd`, and tags the intent metadata `kind='corporate_package'`. The webhook diverges from the class/PT grant above:
+
+```
+tx start
+1. SELECT stripe_payments FOR UPDATE WHERE payment_intent_id=X — retry no-op if succeeded
+2. Insert NO client_packages row (corporate buys grant no credits)
+3. Insert corporate_requests: status='pending', client_id, corporate_package_id (from metadata),
+   message=NULL  — this pending request is the entitlement; scheduling happens in the portal
+4. Update stripe_payments: status='succeeded', kind='corporate_package', receipt_url
+5. enqueueEmail('corporate_request_submitted' equivalent — confirmation that the studio will reach out on WhatsApp)
+tx commit
+```
+
+The client then tracks the request on `/account/corporate` (`fe-client-features.md` §8.8); the studio schedules it via `be-portal.md` §3f.
 
 ### 4f. Registration flow
 

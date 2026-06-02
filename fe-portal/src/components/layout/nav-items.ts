@@ -35,7 +35,7 @@ export interface NavItem {
   badgeKey?: "inboxUnread" | "ptRequestsPending";
 }
 
-export type NavGroup = "Packages" | "People" | "Settings";
+export type NavGroup = "Config" | "Packages" | "People" | "Settings";
 
 export const NAV_ITEMS: NavItem[] = [
   // --- Workspace zone (switcher-controlled; rendered at top under the location name) ---
@@ -46,7 +46,13 @@ export const NAV_ITEMS: NavItem[] = [
   // Grouped in the location zone for navigation, but PT Requests is a workspace-AGNOSTIC
   // shared triage queue (no location_id until scheduled) — it is NOT filtered by the switcher.
   { group: "Settings", label: "PT Requests", href: "/admin/pt-requests", icon: HandHeart, scope: "workspace", workspaceScoped: true, badgeKey: "ptRequestsPending" },
+  // Corporate Requests is also a workspace-AGNOSTIC shared triage queue (no
+  // location_id until scheduled) — NOT filtered by the switcher.
+  { group: "Settings", label: "Corporate Requests", href: "/admin/corporate-requests", icon: Briefcase, scope: "workspace", workspaceScoped: true },
   { group: "Settings", label: "Rooms", href: "/admin/rooms", icon: DoorOpen, scope: "both", workspaceScoped: true },
+
+  // --- Config (global building blocks, shared across locations) ---
+  { group: "Config", label: "Class Types", href: "/admin/class-types", icon: Tag, scope: "global" },
 
   // --- Packages (global, shared across locations) ---
   { group: "Packages", label: "Classes", href: "/admin/classes", icon: Layers, scope: "global" },
@@ -59,11 +65,10 @@ export const NAV_ITEMS: NavItem[] = [
   { group: "People", label: "Clients", href: "/admin/clients", icon: Users, scope: "both" },
   { group: "People", label: "Staff", href: "/admin/staff", icon: UserCog, scope: "global" },
 
-  // --- Settings (location-independent building blocks + config) ---
-  { group: "Settings", label: "Class Types", href: "/admin/class-types", icon: Tag, scope: "global" },
+  // --- Settings (location-independent policy + config) ---
   { group: "Settings", label: "Global Policy", href: "/admin/policy", icon: Shield, scope: "global" },
   { group: "Settings", label: "Notifications", href: "/admin/notifications", icon: Mail, scope: "global" },
   { group: "Settings", label: "Waiver", href: "/admin/waiver", icon: FileText, scope: "global" },
 ];
 
-export const NAV_GROUP_ORDER: NavGroup[] = ["Packages", "People", "Settings"];
+export const NAV_GROUP_ORDER: NavGroup[] = ["Config", "Packages", "People", "Settings"];

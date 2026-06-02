@@ -56,6 +56,18 @@ export async function grantPackage(
 ): Promise<{ clientPackageId: string }> {
   const now = new Date()
 
+  // Idempotency — if a package was already granted for this Stripe payment
+  // intent, return it instead of inserting a duplicate. The webhook and the
+  // confirmation-page sync-session fallback can both fire for one purchase.
+  if (input.paymentIntentId) {
+    const [existing] = await db
+      .select({ id: clientPackages.id })
+      .from(clientPackages)
+      .where(eq(clientPackages.stripePaymentIntentId, input.paymentIntentId))
+      .limit(1)
+    if (existing) return { clientPackageId: existing.id }
+  }
+
   let kind: 'credit_bundle' | 'unlimited' | 'trial' | 'pt'
   let sourceClassPackageId: string | null = null
   let sourcePtPackageId: string | null = null

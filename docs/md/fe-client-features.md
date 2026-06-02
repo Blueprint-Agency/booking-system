@@ -389,6 +389,22 @@ Fields, in order:
 - Admin needs reporting on package sales (revenue mix, conversion).
 - Admin (superadmin) can grant/issue a package manually (e.g., promo, refund replacement) and can edit expiry / set balance on a client's active packages via the kebab menu.
 
+### 6.2 Corporate `/corporate`
+
+**Business logic**
+- Corporate packages (company / group sessions) are surfaced to clients as their own catalogue — a dedicated **"Corporate"** nav item and `/corporate` catalog page (previously these were admin-only). There is also a public read for unauthenticated browse.
+- Each card shows name, description, and price. Corporate is **paid directly via Stripe** — no credits, no promotions.
+- Buying a corporate package is **request-driven**, mirroring private sessions: there is **no client form**. On purchase, the system auto-creates a single **pending corporate request**; all negotiation (date, time, venue, headcount) happens over **WhatsApp** with the studio.
+
+**User journey**
+1. User browses `/corporate`, taps **Buy** on a package → normal Stripe checkout (`/checkout`).
+2. On success → a pending corporate request is created; the user lands on `/account/corporate` (§8.8) with a WhatsApp contact button (number **6582067247**).
+3. Studio negotiates on WhatsApp, then schedules → the request flips to **Scheduled** (date/time, location, instructor shown). After the session, it moves to **done** (attended). Either side can end up at **Cancelled**.
+
+**Where admin comes in**
+- Admin (superadmin) manages corporate packages under Packages.
+- Admin handles requests on the **Corporate Requests** portal page and schedules them from the Schedule's "+ Corporate" picker — see `admin-restructure.md` §9b.
+
 ---
 
 ## 7. Checkout `/checkout`
@@ -516,14 +532,27 @@ The account section is a sticky sidebar (desktop) / tab bar (mobile). All sub-pa
 - Admin sees the global referral graph: who referred whom, attribution status, payout (credit issuance) audit.
 - Admin sets the reward amount; can blacklist abusive codes; can manually mark a conversion.
 
+### 8.8 My Corporate `/account/corporate`
+
+**Business logic**
+- Lists the user's corporate requests, one card per request, with a status that the FE reflects back from the backend:
+  - **Pending** — request created on purchase; shows a **WhatsApp contact** button (deep link to **6582067247**) so the user can start the conversation. No in-app form.
+  - **Scheduled** — shows final date/time, location, and assigned instructor.
+  - **Attended** — rendered as "done".
+  - **Cancelled** — read-only, dim.
+- No client-side cancel/reschedule in v1 — corporate is handled out-of-app over WhatsApp.
+
+**Where admin comes in**
+- Admin's **Corporate Requests** page (`admin-restructure.md` §9b) is the counterpart — schedule / cancel / mark attended.
+
 ---
 
 ## 9. Layout & navigation (cross-cutting)
 
 ### 9.1 Top nav
 
-- **Unauthenticated**: Logo | Classes | Workshops | Private Sessions | Packages | Login button.
-- **Authenticated**: Logo | Classes | Workshops | Private Sessions | Packages | My Bookings | Avatar dropdown (Account, My QR, Logout).
+- **Unauthenticated**: Logo | Classes | Workshops | Private Sessions | Packages | Corporate | Login button.
+- **Authenticated**: Logo | Classes | Workshops | Private Sessions | Packages | Corporate | My Bookings | Avatar dropdown (Account, My QR, Logout).
 - Mobile: hamburger drawer with the same items.
 - Sticky top, transparent on landing hero, solid on scroll/interior pages.
 - A credit balance pill is shown in the avatar area for authenticated users.

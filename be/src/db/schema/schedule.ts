@@ -17,7 +17,13 @@ import { sql } from 'drizzle-orm'
 import { staffUsers, clients } from './identity'
 import { instructors, classTypes, locations, rooms } from './catalog'
 import { corporatePackages } from './packages'
-import { lifecycleEnum, ptSessionTypeEnum, ptRequestStatusEnum, workshopInstructorRoleEnum } from '../enums'
+import {
+  lifecycleEnum,
+  ptSessionTypeEnum,
+  ptRequestStatusEnum,
+  corporateRequestStatusEnum,
+  workshopInstructorRoleEnum,
+} from '../enums'
 
 // ============================================================================
 // classes (§4e / §7b) — capacity decomposed into online/waitlist/buffer
@@ -495,6 +501,11 @@ export const corporateSessions = pgTable(
     corporatePackageId: uuid('corporate_package_id')
       .notNull()
       .references(() => corporatePackages.id, { onDelete: 'restrict' }),
+    // Back-link to the corporate_request this session was scheduled from. Nullable:
+    // legacy/ad-hoc sessions predate the request flow. The FK is a deferred circular
+    // reference (corporate_sessions ↔ corporate_requests) added by the hand-edited
+    // migration — see the comment block below corporate_requests.
+    corporateRequestId: uuid('corporate_request_id'),
     clientName: text('client_name').notNull(),
     mainInstructorId: uuid('main_instructor_id')
       .notNull()
@@ -558,3 +569,62 @@ export const corporateSessionSupportingInstructors = pgTable(
     instructorIdx: index('corporate_session_supporting_instructors_instructor_idx').on(table.instructorId),
   }),
 )
+
+// ============================================================================
+// corporate_requests — one per purchased corporate package (NOW visible to fe-client).
+// Auto-created when a member buys a corporate package; admin schedules it into a
+// corporate_session (the implicit approval). Mirrors pt_requests but simpler:
+// no slots, no class_type, no partner, no expiry (negotiation is open-ended via
+// WhatsApp). scheduled_corporate_session_id is a deferred circular FK — see note.
+// ============================================================================
+
+export const corporateRequests = pgTable(
+  'corporate_requests',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id, { onDelete: 'restrict' }),
+    corporatePackageId: uuid('corporate_package_id')
+      .notNull()
+      .references(() => corporatePackages.id, { onDelete: 'restrict' }),
+    status: corporateRequestStatusEnum('status').notNull().default('pending'),
+    // Optional free-form note (unused at auto-create; reserved for future use).
+    message: text('message'),
+    // FK to corporate_sessions.id added via the hand-edited migration below to break
+    // the circular reference at TS-declaration time.
+    scheduledCorporateSessionId: uuid('scheduled_corporate_session_id'),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    resolvedByStaffId: uuid('resolved_by_staff_id').references(() => staffUsers.id, {
+      onDelete: 'restrict',
+    }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  table => ({
+    statusCreatedIdx: index('corporate_requests_status_created_idx').on(
+      table.status,
+      table.createdAt,
+    ),
+    clientStatusIdx: index('corporate_requests_client_status_idx').on(
+      table.clientId,
+      table.status,
+    ),
+  }),
+)
+
+// NOTE: the two cross-table FKs between corporate_requests and corporate_sessions are
+// circular, so drizzle-kit won't emit them. After `npm run db:generate`, hand-edit the
+// generated migration to append, AFTER both tables are created:
+//
+//   ALTER TABLE corporate_requests
+//     ADD CONSTRAINT corporate_requests_scheduled_corporate_session_fk
+//     FOREIGN KEY (scheduled_corporate_session_id) REFERENCES corporate_sessions(id)
+//     ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED;
+//
+//   ALTER TABLE corporate_sessions
+//     ADD CONSTRAINT corporate_sessions_corporate_request_fk
+//     FOREIGN KEY (corporate_request_id) REFERENCES corporate_requests(id)
+//     ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED;
+//
+// The DEFERRABLE clause lets scheduleCorporateRequest() insert the session and update
+// the request's scheduled_corporate_session_id inside a single transaction.

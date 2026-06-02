@@ -7,8 +7,6 @@ import { syncClientFromClerk } from '../services/auth/webhook-sync'
 
 export interface ClerkClientClaims {
   sub: string
-  email_verified?: boolean
-  phone_verified?: boolean
 }
 
 declare module 'hono' {
@@ -79,8 +77,6 @@ export const clerkClientAuth: MiddlewareHandler = async (c, next) => {
 
   const claims: ClerkClientClaims = {
     sub: payload.sub,
-    email_verified: payload.email_verified,
-    phone_verified: payload.phone_verified,
   }
 
   let [row] = await db.select().from(clients).where(eq(clients.clerkUserId, payload.sub)).limit(1)
@@ -120,22 +116,6 @@ export const requireActiveClient: MiddlewareHandler = async (c, next) => {
   const row = c.get('clientRow')
   if (row.status !== 'active') {
     return c.json({ error: 'client_suspended' }, 403)
-  }
-  await next()
-}
-
-export const requireVerified: MiddlewareHandler = async (c, next) => {
-  const claims = c.get('clerkClaims')
-  // Email is always verified at Clerk sign-up. Phone verification is required
-  // before booking (not before purchasing) — Stripe handles payment security.
-  if (!claims.phone_verified) {
-    return c.json(
-      {
-        error: 'verification_required',
-        missing: { email: false, phone: true },
-      },
-      403,
-    )
   }
   await next()
 }

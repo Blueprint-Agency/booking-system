@@ -6,7 +6,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Filter as FilterIcon,
-  ChevronDown,
   Loader2,
 } from "lucide-react";
 import {
@@ -28,6 +27,7 @@ import { Button, PageHeader } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { formatTime } from "@/lib/formatters";
 import { PtRequestPickerDialog } from "@/components/schedule/pt-request-picker-dialog";
+import { CorporateRequestPickerDialog } from "@/components/schedule/corporate-request-picker-dialog";
 import { useWorkspace } from "@/lib/workspace-context";
 import { useSchedule, type ScheduleEntry } from "@/lib/use-schedule";
 
@@ -46,13 +46,6 @@ interface ApiInstructor {
   archived_at: string | null;
 }
 
-interface ApiCorporatePackage {
-  id: string;
-  name: string;
-  price_sgd: string;
-  status: "active" | "archived";
-}
-
 const TODAY = new Date();
 const HOUR_START = 7;
 const HOUR_END = 22;
@@ -66,31 +59,23 @@ export default function SchedulePage() {
   const [type, setType] = useState<FilterType>("all");
   const [instructorId, setInstructorId] = useState<string>("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [corporateMenuOpen, setCorporateMenuOpen] = useState(false);
   const [ptPickerOpen, setPtPickerOpen] = useState(false);
+  const [corporatePickerOpen, setCorporatePickerOpen] = useState(false);
 
   const [instructorsList, setInstructorsList] = useState<ApiInstructor[]>([]);
-  const [corporatePackagesList, setCorporatePackagesList] = useState<
-    ApiCorporatePackage[]
-  >([]);
 
   useEffect(() => {
     if (!api) return;
     let cancelled = false;
     void (async () => {
       try {
-        const [ins, cps] = await Promise.all([
-          api.get<{ instructors: ApiInstructor[] }>("/portal/admin/instructors"),
-          api.get<{ corporatePackages: ApiCorporatePackage[] }>(
-            "/portal/admin/corporate-packages",
-            { status: "active" },
-          ),
-        ]);
+        const ins = await api.get<{ instructors: ApiInstructor[] }>(
+          "/portal/admin/instructors",
+        );
         if (cancelled) return;
         setInstructorsList(ins.instructors);
-        setCorporatePackagesList(cps.corporatePackages);
       } catch {
-        // Names degrade to "Unknown" / dropdowns stay empty if the catalog fetch fails.
+        // Names degrade to "Unknown" if the catalog fetch fails.
       }
     })();
     return () => {
@@ -124,7 +109,7 @@ export default function SchedulePage() {
 
   const range = useMemo(() => getRange(view, cursor), [view, cursor]);
 
-  const { entries: allEntries, loading, error } = useSchedule({
+  const { entries: allEntries, loading, error, reload } = useSchedule({
     from: range.start.toISOString(),
     to: range.end.toISOString(),
     locationId: activeLocationId ?? undefined,
@@ -181,50 +166,13 @@ export default function SchedulePage() {
                 <Plus className="h-4 w-4" /> Class
               </Button>
             </Link>
-            <div className="relative">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setCorporateMenuOpen((o) => !o)}
-              >
-                Corporate <ChevronDown className="h-3.5 w-3.5" />
-              </Button>
-              {corporateMenuOpen && (
-                <div className="absolute right-0 z-30 mt-2 w-72 rounded-lg border border-border bg-card p-2 shadow-soft">
-                  {corporatePackagesList.length === 0 && (
-                    <div className="px-3 py-2 text-xs text-muted">
-                      No corporate packages configured.
-                    </div>
-                  )}
-                  {corporatePackagesList.map((p) => (
-                    <Link
-                      key={p.id}
-                      href={`/admin/schedule/new/corporate?packageId=${p.id}`}
-                      onClick={() => setCorporateMenuOpen(false)}
-                      className="block rounded px-3 py-2 text-sm hover:bg-paper"
-                    >
-                      {p.name}
-                    </Link>
-                  ))}
-                  <div className="mt-1 border-t border-border pt-1">
-                    <Link
-                      href="/admin/packages/corporate/new"
-                      onClick={() => setCorporateMenuOpen(false)}
-                      className="inline-flex w-full items-center gap-1 rounded px-3 py-2 text-sm text-accent hover:bg-paper"
-                    >
-                      <Plus className="h-3.5 w-3.5" /> New corporate package
-                    </Link>
-                    <Link
-                      href="/admin/packages/corporate"
-                      onClick={() => setCorporateMenuOpen(false)}
-                      className="block rounded px-3 py-2 text-xs text-muted hover:bg-paper"
-                    >
-                      Manage corporate packages →
-                    </Link>
-                  </div>
-                </div>
-              )}
-            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setCorporatePickerOpen(true)}
+            >
+              <Plus className="h-4 w-4" /> Corporate
+            </Button>
             <Button size="sm" onClick={() => setPtPickerOpen(true)}>
               <Plus className="h-4 w-4" /> PT Session
             </Button>
@@ -367,6 +315,16 @@ export default function SchedulePage() {
           onScheduled={() => {
             setPtPickerOpen(false);
             alert("PT session scheduled (mock).");
+          }}
+        />
+      )}
+
+      {corporatePickerOpen && (
+        <CorporateRequestPickerDialog
+          onClose={() => setCorporatePickerOpen(false)}
+          onScheduled={() => {
+            setCorporatePickerOpen(false);
+            void reload();
           }}
         />
       )}

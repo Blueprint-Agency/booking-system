@@ -1,0 +1,336 @@
+"use client";
+import { useEffect, useMemo, useState } from "react";
+import { Loader2 } from "lucide-react";
+import { Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
+import { todayIso } from "@/lib/formatters";
+import { useWorkspace } from "@/lib/workspace-context";
+import { corporateErrorMessage } from "@/lib/corporate-errors";
+import type { CorporateRequest } from "@/types";
+
+interface ApiInstructor {
+  id: string;
+  name: string;
+  status: "pending" | "active" | "archived";
+  archived_at: string | null;
+}
+
+interface ApiRoom {
+  id: string;
+  location_id: string;
+  name: string;
+  archived_at: string | null;
+}
+
+/**
+ * Schedules a pending corporate request. Mirrors the PT
+ * schedule-from-request-dialog, but drives instructor/location/room options
+ * from the live admin catalog endpoints and POSTs to the corporate-requests
+ * schedule endpoint. No class-type / slot pre-fill — corporate requests carry
+ * no proposed slots.
+ */
+export function ScheduleFromCorporateRequestDialog({
+  request,
+  onClose,
+  onScheduled,
+}: {
+  request: CorporateRequest;
+  onClose: () => void;
+  onScheduled: () => void;
+}) {
+  const { api, accessibleLocations, activeLocationId } = useWorkspace();
+
+  const [instructors, setInstructors] = useState<ApiInstructor[]>([]);
+  const [rooms, setRooms] = useState<ApiRoom[]>([]);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+
+  const [date, setDate] = useState("");
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
+  const [mainInstructorId, setMainInstructorId] = useState("");
+  const [supportingInstructorIds, setSupportingInstructorIds] = useState<
+    string[]
+  >([]);
+  const [locationId, setLocationId] = useState(activeLocationId ?? "");
+  const [roomId, setRoomId] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!api) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const [ins, rm] = await Promise.all([
+          api.get<{ instructors: ApiInstructor[] }>(
+            "/portal/admin/instructors",
+          ),
+          api.get<{ rooms: ApiRoom[] }>("/portal/admin/rooms"),
+        ]);
+        if (cancelled) return;
+        setInstructors(ins.instructors);
+        setRooms(rm.rooms);
+      } catch {
+        if (cancelled) return;
+        setCatalogError("Failed to load instructors / rooms.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [api]);
+
+  useEffect(() => {
+    if (activeLocationId && !locationId) setLocationId(activeLocationId);
+  }, [activeLocationId, locationId]);
+
+  const activeLocations = useMemo(
+    () => accessibleLocations.filter((l) => !l.archivedAt),
+    [accessibleLocations],
+  );
+  const activeInstructors = useMemo(
+    () => instructors.filter((i) => !i.archived_at),
+    [instructors],
+  );
+  const roomsForLocation = useMemo(
+    () => rooms.filter((r) => !r.archived_at && r.location_id === locationId),
+    [rooms, locationId],
+  );
+  const availableForSupporting = useMemo(
+    () =>
+      activeInstructors.filter(
+        (i) =>
+          i.id !== mainInstructorId &&
+          !supportingInstructorIds.includes(i.id),
+      ),
+    [activeInstructors, mainInstructorId, supportingInstructorIds],
+  );
+
+  // Drop the main instructor from supporting if it gets selected as main.
+  useEffect(() => {
+    if (!mainInstructorId) return;
+    setSupportingInstructorIds((prev) =>
+      prev.filter((id) => id !== mainInstructorId),
+    );
+  }, [mainInstructorId]);
+
+  // Keep the selected room valid as the location changes.
+  useEffect(() => {
+    if (roomId && !roomsForLocation.some((r) => r.id === roomId)) setRoomId("");
+  }, [roomId, roomsForLocation]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!api) return;
+    if (!mainInstructorId || !locationId || !roomId) return;
+    if (!date || !startTime || !endTime) return;
+
+    const startsAt = new Date(`${date}T${startTime}:00`);
+    const endsAt = new Date(`${date}T${endTime}:00`);
+    if (endsAt <= startsAt) {
+      setSubmitError("End time must be after start time.");
+      return;
+    }
+
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      await api.post(
+        `/portal/admin/corporate-requests/${request.id}/schedule`,
+        {
+          main_instructor_id: mainInstructorId,
+          supporting_instructor_ids: supportingInstructorIds,
+          location_id: locationId,
+          room_id: roomId,
+          starts_at: startsAt.toISOString(),
+          ends_at: endsAt.toISOString(),
+        },
+      );
+      onScheduled();
+    } catch (err) {
+      setSubmitError(corporateErrorMessage(err));
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(o) => !o && onClose()}
+      title="Schedule corporate session"
+    >
+      <form className="space-y-4" onSubmit={handleSubmit}>
+        <div className="rounded-md bg-paper p-3 text-xs text-muted">
+          <span className="font-medium text-ink">{request.client.name}</span>{" "}
+          · {request.package.name}
+        </div>
+
+        {catalogError && (
+          <div className="rounded-md border border-error/30 bg-error/5 p-3 text-xs text-error">
+            {catalogError}
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label>Date</Label>
+            <Input
+              type="date"
+              min={todayIso()}
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Main instructor</Label>
+            <select
+              value={mainInstructorId}
+              onChange={(e) => setMainInstructorId(e.target.value)}
+              className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
+            >
+              <option value="">Select…</option>
+              {activeInstructors.map((i) => (
+                <option key={i.id} value={i.id}>
+                  {i.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Start time</Label>
+            <Input
+              type="time"
+              value={startTime}
+              onChange={(e) => setStartTime(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>End time</Label>
+            <Input
+              type="time"
+              value={endTime}
+              onChange={(e) => setEndTime(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Location</Label>
+            <select
+              value={locationId}
+              onChange={(e) => setLocationId(e.target.value)}
+              className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
+            >
+              <option value="">Select…</option>
+              {activeLocations.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Room</Label>
+            <select
+              value={roomId}
+              onChange={(e) => setRoomId(e.target.value)}
+              disabled={!locationId}
+              className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm disabled:opacity-50"
+            >
+              <option value="">
+                {locationId ? "Select…" : "Pick a location first"}
+              </option>
+              {roomsForLocation.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>Supporting instructors</Label>
+          <div className="flex flex-wrap items-center gap-2">
+            {supportingInstructorIds.map((sid) => {
+              const name =
+                activeInstructors.find((i) => i.id === sid)?.name ?? "Unknown";
+              return (
+                <span
+                  key={sid}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 px-2.5 py-1 text-xs text-ink"
+                >
+                  {name}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setSupportingInstructorIds((prev) =>
+                        prev.filter((x) => x !== sid),
+                      )
+                    }
+                    className="text-muted hover:text-ink"
+                    aria-label={`Remove ${name}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              );
+            })}
+            {availableForSupporting.length > 0 && (
+              <select
+                value=""
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v)
+                    setSupportingInstructorIds((prev) => [...prev, v]);
+                }}
+                className="flex h-9 rounded-lg border border-border bg-card px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                <option value="">
+                  {supportingInstructorIds.length === 0
+                    ? "+ Add supporting instructor"
+                    : "+ Add another"}
+                </option>
+                {availableForSupporting.map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            {supportingInstructorIds.length === 0 &&
+              availableForSupporting.length === 0 && (
+                <span className="text-xs text-muted">
+                  No additional instructors available.
+                </span>
+              )}
+          </div>
+        </div>
+
+        {submitError && (
+          <div className="rounded-md border border-error/30 bg-error/5 p-3 text-xs text-error">
+            {submitError}
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            disabled={
+              submitting ||
+              !mainInstructorId ||
+              !locationId ||
+              !roomId ||
+              !date ||
+              !startTime ||
+              !endTime
+            }
+          >
+            {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+            Schedule session
+          </Button>
+        </DialogFooter>
+      </form>
+    </Dialog>
+  );
+}

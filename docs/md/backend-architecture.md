@@ -627,6 +627,54 @@ Each row is one date+time-frame option the client put forward. Admin picks any o
 
 pt_session_id, client_id, **PK** pair, FKs, on delete cascade.
 
+#### `corporate_packages` (admin catalogue — surfaced to clients)
+
+Corporate offerings (group/company sessions). Mirrors `pt_packages` shape but is purchased to **start a request**, not to grant credits.
+
+id, name (text, not null), description (text, nullable), price_sgd (numeric(10,2), not null), status (enum `package_status` — `active`, `archived`), archived_at (nullable).
+
+#### `corporate_requests` (request-driven flow — mirrors `pt_requests`, `admin-restructure.md` §9b)
+
+Created automatically when a client buys a corporate package (no client form — negotiation happens over WhatsApp). The system invariant is: **a `corporate_sessions` row exists only by scheduling a `corporate_requests` row** (FK `corporate_sessions.corporate_request_id`).
+
+Unlike `pt_requests`, the cancelled state is a **single** `cancelled` value (no before/after split), and there is **no `expires_at`** — a corporate request never auto-expires.
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid | PK |
+| client_id | uuid | FK → clients.id, **on delete restrict** — the purchasing member |
+| corporate_package_id | uuid | FK → corporate_packages.id, **on delete restrict** |
+| status | enum `corporate_request_status` | not null, default `'pending'` — `pending`, `scheduled`, `cancelled`, `attended` |
+| message | text | nullable |
+| scheduled_corporate_session_id | uuid | FK → corporate_sessions.id, **nullable** — set when status=`scheduled`. Deferred circular FK (see note below). |
+| resolved_at | timestamptz | nullable — set on scheduled / cancelled / attended |
+| resolved_by_staff_id | uuid | FK → staff_users.id, nullable |
+| created_at | timestamptz | not null, default now() |
+
+**Indexes:** `(status, created_at)` — drives the `/admin/corporate-requests` triage queue; `(client_id, status)` for the client's own list.
+
+#### `corporate_sessions` (created when a corporate request is scheduled by admin)
+
+A scheduled corporate session. Carries a `corporate_request_id` back-reference so request and session stay in lockstep; `client_name` is derived from the linked request's member record (no freeform name — the old admin-direct-create path that took a freeform client name is removed).
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid | PK |
+| corporate_request_id | uuid | FK → corporate_requests.id, **nullable** — deferred circular FK (see note). Set at scheduling. |
+| main_instructor_id | uuid | FK → instructors.staff_user_id, not null |
+| location_id | uuid | FK → locations.id, not null |
+| room_id | uuid | FK → rooms.id, not null |
+| client_name | text | not null — derived from the member record on the linked request |
+| starts_at, ends_at | timestamptz | not null, CHECK ends_at > starts_at |
+| lifecycle | enum `lifecycle` | not null, default `'active'` — `active`, `cancelled` (time-derived event state per §4e header) |
+| cancelled_at, cancelled_by_staff_id | | nullable |
+| scheduled_at, scheduled_by_staff_id | | not null |
+| created_at | timestamptz | not null |
+
+Supporting instructors are stored M:N (`corporate_session_instructors` — `corporate_session_id`, `instructor_id`, **PK** pair, FKs on delete cascade). Room + instructor conflicts are checked at schedule time, reusing the existing corporate-session create logic.
+
+**Circular FK note.** `corporate_requests.scheduled_corporate_session_id` and `corporate_sessions.corporate_request_id` reference each other. Both are declared `DEFERRABLE INITIALLY DEFERRED` so the schedule transaction can insert the session, then update the request, within one tx. **Migration:** `0010_corporate_requests.sql`.
+
 ### 4f. Availability — REMOVED in v1
 
 Per `admin-restructure.md` §8: the Availability system has been removed. PT scheduling now flows from client-submitted `pt_requests` (§4e), and the scheduling service simply checks for instructor conflicts against existing `classes`, `workshops` (via `workshop_days`), and confirmed `pt_sessions` at the moment of admin approval — no stored availability calendar.
@@ -711,7 +759,9 @@ UI surfacing is next phase (§19) but the table is populated this phase.
 
 #### `stripe_payments`
 
-id, payment_intent_id (text unique), amount_sgd, kind enum (`workshop`, `class_package`, `pt_package`), client_id (FK), booking_id (FK, nullable), client_package_id (FK, nullable), status enum (`pending`, `succeeded`, `refunded`, `failed`), receipt_url (text, nullable — Stripe-hosted receipt; populated by `payment_intent.succeeded` webhook handler from `latest_charge.receipt_url`), refunded_at (nullable), created_at.
+id, payment_intent_id (text unique), amount_sgd, kind enum (`workshop`, `class_package`, `pt_package`, `corporate_package`), client_id (FK), booking_id (FK, nullable), client_package_id (FK, nullable), status enum (`pending`, `succeeded`, `refunded`, `failed`), receipt_url (text, nullable — Stripe-hosted receipt; populated by `payment_intent.succeeded` webhook handler from `latest_charge.receipt_url`), refunded_at (nullable), created_at.
+
+**Corporate purchases.** A `kind='corporate_package'` payment is recorded on `checkout.session.completed` like any other, but unlike `class_package` / `pt_package` it does **not** insert a `client_packages` row (corporate buys grant no credits — the resulting `corporate_requests` row is the entitlement). `client_package_id` stays NULL. See §4e `corporate_requests` and the webhook flow in §6b.
 
 **Indexes:** `(payment_intent_id) unique`, `(client_id, created_at desc)`.
 
@@ -872,6 +922,7 @@ Idempotency keys on `stripe-refund` jobs (booking_id) prevent double refund on r
 - **`payment_intent.succeeded` webhook** → `billing/grants.ts`:
   - kind=`class_package` or `pt_package` → insert `client_packages` row
   - kind=`workshop` → insert `bookings` row (workshop_id + workshop_tier_id + state=`confirmed`)
+  - kind=`corporate_package` → insert **no** `client_packages` row; instead auto-create ONE `corporate_requests` row (status=`pending`, `client_id`, `corporate_package_id` from the intent metadata). The pending request is the entitlement; scheduling happens via the portal (`be-portal.md` §3f). The `checkout.session.completed` path carries the same effect for the corporate branch.
   - Always insert `stripe_payments` row with `status='succeeded'`
 - **Workshop admin-cancel** (§7a) → enqueue one `stripe-refund` job per booking in workshop. Worker calls Stripe Refund API. `charge.refunded` webhook closes the loop.
 - **Free workshops** (`workshop_tiers.regular_price_sgd = 0`) skip Stripe entirely. Booking flow inserts a `bookings` row with `kind='workshop'`, `state='confirmed'`, `stripe_payment_intent_id = null`, and **no** `stripe_payments` row is created. The receipt UI on fe-client suppresses the Download link when `receipt_url` is null.

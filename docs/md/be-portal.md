@@ -177,6 +177,39 @@ The admin queue is shared across workspaces (no `granted_location_ids` filter) b
 
 Admin-side PT actions all flow through `/pt-requests/*`. Cancellation of a scheduled session goes via `POST /pt-requests/:id/cancel` (branches as documented above) so the request and session stay in lockstep. Listing scheduled `pt_sessions` for the schedule view is handled by `schedule.ts:listScheduleItems`.
 
+### `corporate-requests.ts` (gated `staffAny` — admin + superadmin, like pt-requests)
+
+Corporate moved from **admin-direct-create** (admin made a `corporate_sessions` row with a freeform client name on the schedule) to a **request-driven flow mirroring PT**. A member buys a corporate package; the Stripe webhook auto-creates ONE pending `corporate_requests` row (no client form — negotiation is on WhatsApp). The portal exposes **schedule** (the implicit approval — no approve/decline step), **cancel**, and **mark attended**.
+
+The old "+ corporate" package dropdown and the `/admin/schedule/new/corporate` direct-create page are **removed**. Corporate sessions are now created **only** by scheduling a pending request (see §3f).
+
+| Method | Path | Effect |
+|---|---|---|
+| GET | `/corporate-requests` | Triage queue. `?status=pending\|scheduled\|cancelled\|attended\|all` (default `pending`). |
+| GET | `/corporate-requests/:id` | Detail. |
+| POST | `/corporate-requests/:id/schedule` | Schedule the pending request → creates the `corporate_sessions` row (reuses the existing corporate-session create logic: room/instructor conflict checks), sets `corporate_request_id`, flips request to `scheduled`. Body: `{ main_instructor_id, supporting_instructor_ids?, location_id, room_id, starts_at, ends_at }` → 201. See §3f. |
+| POST | `/corporate-requests/:id/cancel` | Cancel. `pending` → `cancelled`; `scheduled` → `cancelled` + cancels the linked `corporate_sessions` row. |
+| POST | `/corporate-requests/:id/attended` | `scheduled` → `attended`. |
+
+**Schedule errors:** `404 request_not_found` / `404 package_not_found`; `409 not_pending` / `409 room_conflict` / `409 instructor_conflict`; `422 package_archived`; `400 main_in_supporting` / `400 bad_time_range`.
+
+**Request JSON shape** (GET responses):
+
+```jsonc
+{
+  "id": "...",
+  "status": "pending",
+  "message": null,
+  "created_at": "...",
+  "resolved_at": null,
+  "client":  { "id": "...", "name": "...", "email": "..." },
+  "package": { "id": "...", "name": "..." },
+  "session": null
+  // when scheduled:
+  // "session": { "id", "starts_at", "ends_at", "location_name", "instructor_name" }
+}
+```
+
 ### `bookings.ts`
 | Method | Path | Effect |
 |---|---|---|
@@ -403,6 +436,36 @@ The negative-balance check is enforced in service AND as a DB CHECK — defence 
 ### 3e. Marketing edit
 
 Trivial: `PATCH /marketing` updates the singleton; the public read endpoint (`GET /api/v1/public/marketing`) serves it directly with HTTP cache headers (`Cache-Control: public, max-age=60`). No CDN purge — 60-second propagation is acceptable for marketing copy.
+
+### 3f. Corporate request scheduling (from a corporate request)
+
+Triggered from `POST /corporate-requests/:id/schedule`. Reuses the existing corporate-session create logic — same room/instructor conflict checks as any scheduled session.
+
+```
+services/corporate/schedule.ts:scheduleCorporateRequest({
+  corporate_request_id, main_instructor_id, supporting_instructor_ids?,
+  location_id, room_id, starts_at, ends_at, actor_staff_id
+})
+  ↓
+tx start  (FKs are DEFERRABLE INITIALLY DEFERRED — the circular request↔session refs settle at commit)
+1. SELECT corporate_requests FOR UPDATE WHERE id=X
+   → else 404 request_not_found; if status != 'pending' → 409 not_pending
+2. Load corporate_packages → 404 package_not_found; if status='archived' → 422 package_archived
+3. Validate body: ends_at > starts_at → else 400 bad_time_range;
+   main_instructor_id ∉ supporting_instructor_ids → else 400 main_in_supporting
+4. Conflict checks (reused corporate-session create logic):
+   - room clash across classes / workshop_days / pt_sessions / corporate_sessions → 409 room_conflict
+   - instructor (main + supporting) overlap → 409 instructor_conflict
+5. Insert corporate_sessions: corporate_request_id=X, main_instructor_id, location_id, room_id,
+   client_name (derived from the request's member record), starts_at, ends_at,
+   lifecycle='active', scheduled_at=now(), scheduled_by_staff_id=actor
+   + corporate_session_instructors rows for each supporting instructor
+6. Update corporate_requests: status='scheduled', scheduled_corporate_session_id=new id,
+   resolved_at=now(), resolved_by_staff_id=actor
+tx commit  → 201
+```
+
+**Cancel** (`/corporate-requests/:id/cancel`): `pending` → `cancelled`; `scheduled` → `cancelled` + the linked `corporate_sessions` row is cancelled (`lifecycle='cancelled'`). **Mark attended** (`/corporate-requests/:id/attended`): `scheduled` → `attended`. Both set `resolved_at` / `resolved_by_staff_id`. There is no approve/decline — scheduling is the implicit approval.
 
 ---
 

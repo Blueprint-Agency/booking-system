@@ -7,7 +7,7 @@ import { Calendar, MapPin, CalendarX, Loader2 } from "lucide-react";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { SectionHeading } from "@/components/booking/section-heading";
 import { EmptyState } from "@/components/ui/empty-state";
-import { GatedLink } from "@/components/auth/auth-gate";
+import { BuyButton } from "@/components/checkout/buy-button";
 import { cn } from "@/lib/utils";
 import {
   type ApiWorkshopTier,
@@ -329,17 +329,21 @@ export default function WorkshopDetailPage() {
                     </p>
                   )}
 
-                  <GatedLink
-                    href={`/checkout?workshop=${workshop.id}${
-                      selectedTier ? `&tier=${selectedTier.id}` : ""
-                    }`}
+                  <BuyButton
+                    target={{
+                      kind: "workshop",
+                      workshopId: workshop.id,
+                      tierId: selectedTier?.id ?? null,
+                    }}
                     context="book a workshop"
+                    gateHref={`/workshops/${workshop.id}`}
                     className="block rounded-full bg-ink text-paper w-full py-3 text-sm font-medium mt-1 hover:bg-ink/90 transition-colors text-center"
+                    loadingLabel="Redirecting…"
                   >
                     Purchase Now
-                  </GatedLink>
+                  </BuyButton>
                   <p className="text-xs text-muted text-center">
-                    You will be redirected to checkout
+                    You will be redirected to secure payment
                   </p>
                 </>
               )}

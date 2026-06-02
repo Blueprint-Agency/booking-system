@@ -12,6 +12,7 @@ const NAV_LINKS = [
   { href: "/workshops", label: "Workshops" },
   { href: "/private-sessions", label: "Private Sessions" },
   { href: "/packages", label: "Packages" },
+  { href: "/corporate", label: "Corporate" },
 ];
 
 export function ClientNav({ impersonating = false }: { impersonating?: boolean } = {}) {

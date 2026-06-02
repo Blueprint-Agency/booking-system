@@ -230,6 +230,34 @@ export interface PtRequest {
   createdAt: string;
 }
 
+// --- Corporate Requests ---
+// Request-driven corporate flow (mirrors PT requests). A member buys a
+// corporate package → BE auto-creates one pending request. Note: unlike PT,
+// corporate has a SINGLE `cancelled` state (no before/after split).
+
+export type CorporateRequestStatus =
+  | "pending"
+  | "scheduled"
+  | "cancelled"
+  | "attended";
+
+export interface CorporateRequest {
+  id: string;
+  status: CorporateRequestStatus;
+  message: string | null;
+  createdAt: string;
+  resolvedAt: string | null;
+  client: { id: string; name: string; email: string };
+  package: { id: string; name: string };
+  session: null | {
+    id: string;
+    startsAt: string;
+    endsAt: string;
+    locationName: string | null;
+    instructorName: string | null;
+  };
+}
+
 // --- Bookings (§10, §12) ---
 
 export type BookingKind = "class" | "workshop" | "pt";

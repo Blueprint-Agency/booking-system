@@ -351,6 +351,8 @@ Workshop creation is no longer in the scheduler — see §7e.
 - Selecting a workshop **does not create anything** — its `WorkshopDay` tiles already render on the timetable automatically (one tile per day, `Day N/M` chip).
 - Cancelling a workshop still happens from the Schedule detail page (cancellation rules unchanged — full automatic Stripe refund to all attendees per §7a).
 
+**"+ Corporate" picker (replaces the old direct-create).** The scheduler's **"+ Corporate"** button opens a picker of **pending corporate requests** — selecting one opens the schedule dialog (instructor, location, room, date/time). The old "+ corporate" package dropdown and the `/admin/schedule/new/corporate` direct-create page (which took a freeform client name) are **removed**: a `corporate_session` is now created **only** by scheduling a corporate request, and its client name is derived from the member record. See §9b.
+
 ### 7d. Structured capacity (`<CapacityFields />`)
 
 `Capacity` is no longer a scalar. Applied to `ClassInstance.capacity`, `WorkshopDay.capacity`, and `PtSession.capacity`:
@@ -446,6 +448,30 @@ Credit deduction happens **on submit**, not on schedule. 1 session debited for `
 | `scheduled → attended` | Check-in on the linked PT booking flips the mirrored status | n/a |
 
 Both the cancel-before and cancel-after paths fire the same client email (subject differs only in whether a refund line is included). The matching admin Inbox entry uses `type='admin_cancel_class_pt'`.
+
+### 9b. Corporate Requests (`/admin/corporate-requests`)
+
+Corporate sessions follow the **same request-driven pattern as PT** (§9). The old admin-direct-create — where an admin made a `corporate_session` with a freeform client name straight on the schedule — is **removed**. Corporate packages are now surfaced to clients (a "Corporate" catalogue in the client app); a member **buys** one via Stripe, and the purchase auto-creates a single **pending** corporate request. There is **no client form** — negotiation happens over **WhatsApp**.
+
+> **v1 flow rule:** like PT, there is **no in-app back-and-forth** and no approve/decline. The portal exposes three actions: **schedule** (the implicit approval), **cancel**, and **mark attended**.
+
+**Status lifecycle** — `pending` / `scheduled` / `cancelled` / `attended`. Note the **single `cancelled`** state (no before/after split, unlike PT) and **no `expires_at`** (a corporate request never auto-expires).
+
+| Transition | Trigger |
+|---|---|
+| `→ pending` | Member buys a corporate package (Stripe webhook auto-creates the request — no credits granted; the request itself is the entitlement) |
+| `pending → scheduled` | Admin schedules → creates the `corporate_session` (room + instructor conflict-checked, reusing the existing corporate-session create logic); session's client name is derived from the member record |
+| `pending → cancelled` | Admin cancels |
+| `scheduled → cancelled` | Admin cancels → also cancels the linked `corporate_session` |
+| `scheduled → attended` | Admin marks attended |
+
+**Triage UI:**
+- Filter chips: `pending` / `scheduled` / `cancelled` / `attended` / `all`. Pending count badge on the sidebar item.
+- Row → detail drawer: client, package, message, and (when scheduled) the linked session's date/time, location, instructor.
+- **Schedule** dialog: `main_instructor` (+ optional supporting instructors), `location`, `room` (must belong to the location), date/time. Same conflict checks as any scheduled session.
+- Two converging entry points (like PT): the **Corporate Requests** page row drawer, and the Schedule **"+ Corporate"** picker (§7c) — both open the same schedule dialog.
+
+The client reflects status back on `/account/corporate` (`fe-client-features.md` §8.8); pending requests surface a WhatsApp contact button.
 
 ---
 

@@ -1,0 +1,133 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Loader2 } from "lucide-react";
+import { useAuth, useUser } from "@clerk/nextjs";
+import { useAuthGate } from "@/components/auth/auth-gate";
+import { getApiBaseUrl } from "@/lib/api-url";
+import { cn } from "@/lib/utils";
+
+type BuyTarget =
+  | { kind: "package"; packageKind: "class" | "pt"; packageId: string }
+  | { kind: "workshop"; workshopId: string; tierId: string | null };
+
+type AuthGateContext = "buy a package" | "book a workshop";
+
+/**
+ * One-click purchase button. Skips the cart/review page entirely:
+ * gates on auth, POSTs straight to the checkout endpoint, then either
+ * redirects to Stripe Checkout (paid) or jumps to the confirmation page
+ * (free trial / free workshop, which the BE grants immediately).
+ *
+ * `gateHref` is where the login modal sends the user to come back after
+ * signing in (the original page they were on).
+ */
+export function BuyButton({
+  target,
+  context,
+  gateHref,
+  className,
+  children,
+  loadingLabel = "Redirecting…",
+}: {
+  target: BuyTarget;
+  context: AuthGateContext;
+  gateHref: string;
+  className?: string;
+  children: React.ReactNode;
+  loadingLabel?: string;
+}) {
+  const router = useRouter();
+  const { getToken } = useAuth();
+  const { isSignedIn } = useUser();
+  const { requireAuth, gate } = useAuthGate(context);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function start() {
+    setBusy(true);
+    setError(null);
+    try {
+      const token = await getToken();
+      const endpoint =
+        target.kind === "workshop"
+          ? "/me/checkout/workshop"
+          : "/me/checkout/package";
+      const body =
+        target.kind === "workshop"
+          ? { workshop_id: target.workshopId, workshop_tier_id: target.tierId }
+          : { package_kind: target.packageKind, package_id: target.packageId };
+
+      const res = await fetch(`${getApiBaseUrl()}${endpoint}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error ?? "Could not start checkout. Please try again.");
+        setBusy(false);
+        return;
+      }
+
+      // Free path — BE granted immediately (free trial package / free workshop).
+      if (data.outcome === "granted") {
+        if (target.kind === "workshop" && data.booking_id) {
+          router.push(
+            `/booking/confirmation?type=workshop&workshop_id=${target.workshopId}&booking_id=${data.booking_id}`,
+          );
+        } else if (target.kind === "package" && data.client_package_id) {
+          router.push(
+            `/booking/confirmation?type=package&package_id=${target.packageId}&package_kind=${target.packageKind}`,
+          );
+        } else {
+          router.push("/account");
+        }
+        return;
+      }
+
+      if (!data.url) {
+        setError("Could not start checkout. Please try again.");
+        setBusy(false);
+        return;
+      }
+      window.location.href = data.url;
+    } catch {
+      setError("Network error. Please try again.");
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => {
+          if (!isSignedIn) {
+            requireAuth(gateHref);
+            return;
+          }
+          if (!busy) void start();
+        }}
+        className={cn(
+          className,
+          busy && "opacity-70 cursor-wait",
+          "inline-flex items-center justify-center gap-2",
+        )}
+      >
+        {busy && <Loader2 className="h-4 w-4 animate-spin" />}
+        {busy ? loadingLabel : children}
+      </button>
+      {error && (
+        <p className="text-xs text-red-600 mt-2 text-center">{error}</p>
+      )}
+      {gate}
+    </>
+  );
+}

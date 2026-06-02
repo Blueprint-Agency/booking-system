@@ -8,6 +8,7 @@ import {
   serializePromotion,
 } from '../../services/packages/promotions'
 import * as workshopsSvc from '../../services/workshops/catalog'
+import { listCorporatePackages } from '../../services/packages/corporate-packages'
 
 function serializeClassPackage(
   r: classSvc.ClassPackageRow,
@@ -107,6 +108,19 @@ const app = new Hono()
         const ps = ptPromos[r.id] ?? []
         return serializePtPackage(r, ps.map(serializePromotion), bestPrice(r.priceSgd, ps))
       }),
+    })
+  })
+  // Corporate catalogue for signed-out browsing (no promotions, no entitlements).
+  .get('/corporate-packages', async c => {
+    const rows = await listCorporatePackages({ status: 'active' })
+    return c.json({
+      corporate_packages: rows.map(r => ({
+        id: r.id,
+        name: r.name,
+        description: r.description,
+        price_sgd: r.priceSgd,
+        status: r.status,
+      })),
     })
   })
 

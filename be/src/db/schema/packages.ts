@@ -185,7 +185,7 @@ export const clientPackages = pgTable(
   }),
 )
 
-// ---------- corporate_packages (admin-only catalogue, NOT visible to fe-client) ----------
+// ---------- corporate_packages (admin catalogue; surfaced to fe-client as the Corporate tab) ----------
 
 export const corporatePackages = pgTable(
   'corporate_packages',

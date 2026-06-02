@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
-import { GatedLink, useAuthGate } from "@/components/auth/auth-gate";
+import { useAuthGate } from "@/components/auth/auth-gate";
+import { BuyButton } from "@/components/checkout/buy-button";
 import { cn } from "@/lib/utils";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { SectionHeading } from "@/components/booking/section-heading";
@@ -494,13 +495,14 @@ function BundleCard({
           Unavailable
         </span>
       ) : (
-        <GatedLink
-          href={`/checkout?package=${pkg.id}&kind=class`}
+        <BuyButton
+          target={{ kind: "package", packageKind: "class", packageId: pkg.id }}
           context="buy a package"
+          gateHref="/packages"
           className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
         >
           Purchase
-        </GatedLink>
+        </BuyButton>
       )}
     </div>
   );
@@ -541,13 +543,14 @@ function UnlimitedCard({
           Unavailable
         </span>
       ) : (
-        <GatedLink
-          href={`/checkout?package=${pkg.id}&kind=class`}
+        <BuyButton
+          target={{ kind: "package", packageKind: "class", packageId: pkg.id }}
           context="buy a package"
+          gateHref="/packages"
           className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
         >
           Purchase
-        </GatedLink>
+        </BuyButton>
       )}
     </div>
   );
@@ -620,13 +623,14 @@ function TrialCard({
           {gate}
         </>
       ) : (
-        <GatedLink
-          href={`/checkout?package=${pkg.id}&kind=class`}
+        <BuyButton
+          target={{ kind: "package", packageKind: "class", packageId: pkg.id }}
           context="buy a package"
+          gateHref="/packages#trial"
           className="rounded-full bg-accent text-white px-5 py-3 text-sm font-medium hover:bg-accent/90 mt-6 w-full text-center transition-colors"
         >
           Get trial
-        </GatedLink>
+        </BuyButton>
       )}
     </div>
   );
@@ -652,13 +656,14 @@ function PtCard({ pkg }: { pkg: ApiPtPackage }) {
         <li>Dedicated instructor throughout</li>
         <li>Valid across both locations</li>
       </ul>
-      <GatedLink
-        href={`/checkout?package=${pkg.id}&kind=pt`}
+      <BuyButton
+        target={{ kind: "package", packageKind: "pt", packageId: pkg.id }}
         context="buy a package"
+        gateHref="/packages"
         className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
       >
         Purchase
-      </GatedLink>
+      </BuyButton>
     </div>
   );
 }

@@ -15,6 +15,7 @@ import schedule from './schedule'
 import availability from './availability'
 import ptSessions from './pt-sessions'
 import corporateSessions from './corporate-sessions'
+import corporateRequests from './corporate-requests'
 import bookings from './bookings'
 import checkIn from './check-in'
 import inbox from './inbox'
@@ -69,6 +70,9 @@ const app = new Hono()
   // ── Shared read/write (workspace-scoped operations) ─────────────────────
   .use('/schedule/*', staffAny)
   .use('/pt-sessions/*', staffAny)
+  // Corporate requests are driven from the schedule (staffAny), so both roles
+  // operate the queue — unlike corporate-packages/-sessions (superadmin-only).
+  .use('/corporate-requests/*', staffAny)
   .use('/check-in/*', staffAny)
   .use('/inbox/*', staffAny)
 
@@ -91,6 +95,7 @@ const app = new Hono()
   .route('/', availability)
   .route('/pt-sessions', ptSessions)
   .route('/corporate-sessions', corporateSessions)
+  .route('/corporate-requests', corporateRequests)
   .route('/bookings', bookings)
   .route('/check-in', checkIn)
   .route('/inbox', inbox)

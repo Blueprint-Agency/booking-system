@@ -4,8 +4,7 @@ import { z } from 'zod'
 import { and, eq, isNull } from 'drizzle-orm'
 import { stripe } from '../../lib/stripe'
 import { db } from '../../db'
-import { classPackages, ptPackages } from '../../db/schema/packages'
-import { requireVerified } from '../../middleware/clerk-client'
+import { classPackages, ptPackages, corporatePackages } from '../../db/schema/packages'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
 import { purchaseFreeTrial } from '../../services/packages/purchase'
 import {
@@ -20,7 +19,7 @@ import { env } from '../../env'
 const CLIENT_URL = env.CLIENT_ORIGIN ?? 'http://localhost:3000'
 
 const checkoutPackageSchema = z.object({
-  package_kind: z.enum(['class', 'pt']),
+  package_kind: z.enum(['class', 'pt', 'corporate']),
   package_id: z.string().uuid(),
   promo_code: z.string().optional(),
 })
@@ -36,7 +35,7 @@ const checkoutWorkshopSchema = z.object({
 })
 
 const app = new Hono()
-  .post('/checkout/validate-promo', requireVerified, zValidator('json', validatePromoSchema), c => {
+  .post('/checkout/validate-promo', zValidator('json', validatePromoSchema), c => {
     const { code } = c.req.valid('json')
     const result = validatePromoCode(code)
     if (!result.valid) {
@@ -44,7 +43,7 @@ const app = new Hono()
     }
     return c.json({ valid: true, discountSgd: result.discountSgd, description: result.description })
   })
-  .post('/checkout/package', requireVerified, zValidator('json', checkoutPackageSchema), async c => {
+  .post('/checkout/package', zValidator('json', checkoutPackageSchema), async c => {
     const clientId = c.get('clientId')
     const clientRow = c.get('clientRow')
     const { package_kind, package_id, promo_code } = c.req.valid('json')
@@ -82,7 +81,7 @@ const app = new Hono()
       priceSgd = pkg.priceSgd
       appliedPromotionId = eff.appliedPromotionId
       effectivePriceSgd = eff.effectivePriceSgd
-    } else {
+    } else if (package_kind === 'pt') {
       const [pkg] = await db
         .select()
         .from(ptPackages)
@@ -97,6 +96,20 @@ const app = new Hono()
       priceSgd = pkg.priceSgd
       appliedPromotionId = eff.appliedPromotionId
       effectivePriceSgd = eff.effectivePriceSgd
+    } else {
+      // Corporate — paid, no promotions. Webhook auto-creates a corporate_request.
+      const [pkg] = await db
+        .select()
+        .from(corporatePackages)
+        .where(and(eq(corporatePackages.id, package_id), isNull(corporatePackages.deletedAt)))
+        .limit(1)
+      if (!pkg) throw new NotFoundError('corporate_package_not_found')
+      if (pkg.status !== 'active') throw new BadRequestError('corporate_package_not_active')
+
+      packageName = pkg.name
+      priceSgd = pkg.priceSgd
+      appliedPromotionId = null
+      effectivePriceSgd = pkg.priceSgd
     }
 
     // Apply user-entered promo code on top of any automatic promotion.
@@ -128,7 +141,12 @@ const app = new Hono()
         },
       ],
       metadata: {
-        kind: package_kind === 'class' ? 'class_package' : 'pt_package',
+        kind:
+          package_kind === 'class'
+            ? 'class_package'
+            : package_kind === 'pt'
+              ? 'pt_package'
+              : 'corporate_package',
         package_id,
         client_id: clientId,
         promo_code: promo_code ?? '',
@@ -143,7 +161,7 @@ const app = new Hono()
 
     return c.json({ url: session.url })
   })
-  .post('/checkout/workshop', requireVerified, zValidator('json', checkoutWorkshopSchema), async c => {
+  .post('/checkout/workshop', zValidator('json', checkoutWorkshopSchema), async c => {
     const clientId = c.get('clientId')
     const clientRow = c.get('clientRow')
     const { workshop_id, workshop_tier_id, promo_code } = c.req.valid('json')
@@ -216,7 +234,7 @@ const app = new Hono()
   // Called by the confirmation page after Stripe redirects back.
   // Idempotent — safe to call multiple times. Handles the case where the webhook
   // hasn't fired yet (no Stripe CLI listener in local dev).
-  .post('/checkout/sync-session', requireVerified, zValidator('json', z.object({ session_id: z.string() })), async c => {
+  .post('/checkout/sync-session', zValidator('json', z.object({ session_id: z.string() })), async c => {
     const { session_id } = c.req.valid('json')
     const clientId = c.get('clientId')
 

@@ -20,6 +20,10 @@ export function corporateErrorMessage(err: unknown): string {
       return "End time must be after start time.";
     case "package_not_found":
       return "Corporate package not found.";
+    case "request_not_found":
+      return "Corporate request not found.";
+    case "not_pending":
+      return "This request is no longer pending — it may already be scheduled or cancelled.";
     case "not_found":
       return "Corporate session not found.";
     default:
