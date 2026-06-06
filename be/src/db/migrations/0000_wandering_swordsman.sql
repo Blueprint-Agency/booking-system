@@ -9,6 +9,7 @@ CREATE TYPE "public"."class_package_kind" AS ENUM('credit_bundle', 'unlimited', 
 CREATE TYPE "public"."client_gender" AS ENUM('female', 'male', 'non_binary', 'prefer_not_to_say');--> statement-breakpoint
 CREATE TYPE "public"."client_package_kind" AS ENUM('credit_bundle', 'unlimited', 'trial', 'pt');--> statement-breakpoint
 CREATE TYPE "public"."client_status" AS ENUM('active', 'suspended');--> statement-breakpoint
+CREATE TYPE "public"."corporate_request_status" AS ENUM('pending', 'scheduled', 'cancelled', 'attended');--> statement-breakpoint
 CREATE TYPE "public"."email_log_status" AS ENUM('queued', 'sent', 'failed');--> statement-breakpoint
 CREATE TYPE "public"."email_recipient_kind" AS ENUM('client', 'staff');--> statement-breakpoint
 CREATE TYPE "public"."inbox_item_type" AS ENUM('client_cancellation', 'admin_cancel_class_pt', 'admin_cancel_workshop');--> statement-breakpoint
@@ -18,14 +19,14 @@ CREATE TYPE "public"."package_status" AS ENUM('active', 'archived');--> statemen
 CREATE TYPE "public"."promotion_kind" AS ENUM('percent', 'special_price');--> statement-breakpoint
 CREATE TYPE "public"."promotion_parent" AS ENUM('class_package', 'pt_package', 'workshop');--> statement-breakpoint
 CREATE TYPE "public"."promotion_status" AS ENUM('active', 'archived');--> statement-breakpoint
-CREATE TYPE "public"."pt_request_status" AS ENUM('pending', 'scheduled', 'declined', 'cancelled', 'expired');--> statement-breakpoint
+CREATE TYPE "public"."pt_request_status" AS ENUM('pending', 'scheduled', 'cancelled_before_scheduled', 'cancelled_after_scheduled', 'attended');--> statement-breakpoint
 CREATE TYPE "public"."pt_session_type" AS ENUM('1on1', '2on1');--> statement-breakpoint
-CREATE TYPE "public"."rating_kind" AS ENUM('class', 'workshop');--> statement-breakpoint
 CREATE TYPE "public"."refund_outcome" AS ENUM('credit_returned', 'session_returned', 'stripe_refunded', 'forfeited', 'n_a');--> statement-breakpoint
 CREATE TYPE "public"."staff_role" AS ENUM('superadmin', 'admin', 'instructor');--> statement-breakpoint
 CREATE TYPE "public"."staff_status" AS ENUM('pending', 'active', 'archived');--> statement-breakpoint
-CREATE TYPE "public"."stripe_payment_kind" AS ENUM('workshop', 'class_package', 'pt_package');--> statement-breakpoint
+CREATE TYPE "public"."stripe_payment_kind" AS ENUM('workshop', 'class_package', 'pt_package', 'corporate_package');--> statement-breakpoint
 CREATE TYPE "public"."stripe_payment_status" AS ENUM('pending', 'succeeded', 'refunded', 'failed');--> statement-breakpoint
+CREATE TYPE "public"."workshop_instructor_role" AS ENUM('main', 'supporting');--> statement-breakpoint
 CREATE TABLE "clients" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"clerk_user_id" text NOT NULL,
@@ -36,6 +37,8 @@ CREATE TABLE "clients" (
 	"dob" date,
 	"status" "client_status" DEFAULT 'active' NOT NULL,
 	"suspended_at" timestamp with time zone,
+	"deleted_at" timestamp with time zone,
+	"deleted_by_staff_id" uuid,
 	"referred_by_client_id" uuid,
 	"referral_credit_granted_at" timestamp with time zone,
 	"joined_at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -71,6 +74,7 @@ CREATE TABLE "staff_users" (
 	"granted_location_ids" uuid[] DEFAULT '{}'::uuid[] NOT NULL,
 	"archived_at" timestamp with time zone,
 	"archived_by_staff_id" uuid,
+	"deleted_at" timestamp with time zone,
 	"invited_at" timestamp with time zone,
 	"accepted_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -82,7 +86,10 @@ CREATE TABLE "staff_users" (
 CREATE TABLE "class_types" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"name" text NOT NULL,
-	"archived_at" timestamp with time zone
+	"description" text,
+	"parent_id" uuid,
+	"archived_at" timestamp with time zone,
+	"deleted_at" timestamp with time zone
 );
 --> statement-breakpoint
 CREATE TABLE "instructor_class_types" (
@@ -104,7 +111,18 @@ CREATE TABLE "locations" (
 	"address" text,
 	"gmaps_url" text,
 	"phone" text,
-	"archived_at" timestamp with time zone
+	"archived_at" timestamp with time zone,
+	"deleted_at" timestamp with time zone
+);
+--> statement-breakpoint
+CREATE TABLE "rooms" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"location_id" uuid NOT NULL,
+	"name" text NOT NULL,
+	"capacity" integer NOT NULL,
+	"archived_at" timestamp with time zone,
+	"deleted_at" timestamp with time zone,
+	CONSTRAINT "rooms_capacity_positive" CHECK ("rooms"."capacity" > 0)
 );
 --> statement-breakpoint
 CREATE TABLE "global_policy" (
@@ -137,6 +155,7 @@ CREATE TABLE "class_packages" (
 	"price_sgd" numeric(10, 2) NOT NULL,
 	"status" "package_status" DEFAULT 'active' NOT NULL,
 	"archived_at" timestamp with time zone,
+	"deleted_at" timestamp with time zone,
 	CONSTRAINT "class_packages_kind_fields" CHECK (
         ("class_packages"."kind" = 'credit_bundle'
           AND "class_packages"."credits" IS NOT NULL
@@ -163,10 +182,24 @@ CREATE TABLE "client_packages" (
 	"applied_promotion_id" uuid,
 	"credits_or_sessions_remaining" integer,
 	"expires_at" timestamp with time zone,
+	"active" boolean DEFAULT true NOT NULL,
 	"purchased_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"amount_paid_sgd" numeric(10, 2) NOT NULL,
 	"stripe_payment_intent_id" text,
 	CONSTRAINT "client_packages_non_negative_balance" CHECK ("client_packages"."credits_or_sessions_remaining" IS NULL OR "client_packages"."credits_or_sessions_remaining" >= 0)
+);
+--> statement-breakpoint
+CREATE TABLE "corporate_packages" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"name" text NOT NULL,
+	"description" text,
+	"price_sgd" numeric(10, 2) NOT NULL,
+	"status" "package_status" DEFAULT 'active' NOT NULL,
+	"archived_at" timestamp with time zone,
+	"deleted_at" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"created_by_staff_id" uuid NOT NULL,
+	CONSTRAINT "corporate_packages_price_positive" CHECK ("corporate_packages"."price_sgd" >= 0)
 );
 --> statement-breakpoint
 CREATE TABLE "promotions" (
@@ -205,14 +238,22 @@ CREATE TABLE "pt_packages" (
 	"num_sessions" integer NOT NULL,
 	"price_sgd" numeric(10, 2) NOT NULL,
 	"status" "package_status" DEFAULT 'active' NOT NULL,
-	"archived_at" timestamp with time zone
+	"archived_at" timestamp with time zone,
+	"deleted_at" timestamp with time zone
+);
+--> statement-breakpoint
+CREATE TABLE "class_supporting_instructors" (
+	"class_id" uuid NOT NULL,
+	"instructor_id" uuid NOT NULL,
+	CONSTRAINT "class_supporting_instructors_class_id_instructor_id_pk" PRIMARY KEY("class_id","instructor_id")
 );
 --> statement-breakpoint
 CREATE TABLE "classes" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"class_type_id" uuid NOT NULL,
-	"instructor_id" uuid NOT NULL,
+	"main_instructor_id" uuid NOT NULL,
 	"location_id" uuid NOT NULL,
+	"room_id" uuid,
 	"starts_at" timestamp with time zone NOT NULL,
 	"ends_at" timestamp with time zone NOT NULL,
 	"capacity_online" integer NOT NULL,
@@ -232,23 +273,68 @@ CREATE TABLE "classes" (
 	CONSTRAINT "classes_credit_non_negative" CHECK ("classes"."credit_cost" >= 0)
 );
 --> statement-breakpoint
+CREATE TABLE "corporate_requests" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"client_id" uuid NOT NULL,
+	"corporate_package_id" uuid NOT NULL,
+	"status" "corporate_request_status" DEFAULT 'pending' NOT NULL,
+	"message" text,
+	"scheduled_corporate_session_id" uuid,
+	"resolved_at" timestamp with time zone,
+	"resolved_by_staff_id" uuid,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "corporate_session_supporting_instructors" (
+	"corporate_session_id" uuid NOT NULL,
+	"instructor_id" uuid NOT NULL,
+	CONSTRAINT "corporate_session_supporting_instructors_corporate_session_id_instructor_id_pk" PRIMARY KEY("corporate_session_id","instructor_id")
+);
+--> statement-breakpoint
+CREATE TABLE "corporate_sessions" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"corporate_package_id" uuid NOT NULL,
+	"corporate_request_id" uuid,
+	"client_name" text NOT NULL,
+	"main_instructor_id" uuid NOT NULL,
+	"location_id" uuid NOT NULL,
+	"room_id" uuid NOT NULL,
+	"starts_at" timestamp with time zone NOT NULL,
+	"ends_at" timestamp with time zone NOT NULL,
+	"lifecycle" "lifecycle" DEFAULT 'active' NOT NULL,
+	"cancelled_at" timestamp with time zone,
+	"cancelled_by_staff_id" uuid,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"created_by_staff_id" uuid NOT NULL,
+	CONSTRAINT "corporate_sessions_ends_after_starts" CHECK ("corporate_sessions"."ends_at" > "corporate_sessions"."starts_at")
+);
+--> statement-breakpoint
+CREATE TABLE "pt_request_slots" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"pt_request_id" uuid NOT NULL,
+	"proposed_date" date NOT NULL,
+	"start_time" time NOT NULL,
+	"end_time" time NOT NULL,
+	CONSTRAINT "pt_request_slots_end_after_start" CHECK ("pt_request_slots"."end_time" > "pt_request_slots"."start_time")
+);
+--> statement-breakpoint
 CREATE TABLE "pt_requests" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"client_id" uuid NOT NULL,
-	"preferred_instructor_id" uuid,
-	"preferred_starts_at" timestamp with time zone NOT NULL,
-	"preferred_ends_at" timestamp with time zone NOT NULL,
+	"class_type_id" uuid NOT NULL,
+	"location_id" uuid NOT NULL,
 	"session_type" "pt_session_type" NOT NULL,
 	"co_client_id" uuid,
+	"co_client_name" text,
+	"co_client_email" text,
 	"message" text,
 	"status" "pt_request_status" DEFAULT 'pending' NOT NULL,
-	"decline_note" text,
 	"expires_at" timestamp with time zone NOT NULL,
 	"scheduled_pt_session_id" uuid,
+	"debited_client_package_id" uuid,
 	"resolved_at" timestamp with time zone,
 	"resolved_by_staff_id" uuid,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "pt_requests_preferred_ends_after_starts" CHECK ("pt_requests"."preferred_ends_at" > "pt_requests"."preferred_starts_at")
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE "pt_session_clients" (
@@ -262,6 +348,7 @@ CREATE TABLE "pt_sessions" (
 	"pt_request_id" uuid NOT NULL,
 	"instructor_id" uuid NOT NULL,
 	"location_id" uuid NOT NULL,
+	"room_id" uuid,
 	"starts_at" timestamp with time zone NOT NULL,
 	"ends_at" timestamp with time zone NOT NULL,
 	"session_type" "pt_session_type" NOT NULL,
@@ -285,6 +372,7 @@ CREATE TABLE "workshop_days" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"workshop_id" uuid NOT NULL,
 	"ord" integer NOT NULL,
+	"room_id" uuid,
 	"starts_at" timestamp with time zone NOT NULL,
 	"ends_at" timestamp with time zone NOT NULL,
 	"base_price_sgd" numeric(10, 2) NOT NULL,
@@ -308,6 +396,7 @@ CREATE TABLE "workshop_images" (
 CREATE TABLE "workshop_instructors" (
 	"workshop_id" uuid NOT NULL,
 	"instructor_id" uuid NOT NULL,
+	"role" "workshop_instructor_role" NOT NULL,
 	CONSTRAINT "workshop_instructors_workshop_id_instructor_id_pk" PRIMARY KEY("workshop_id","instructor_id")
 );
 --> statement-breakpoint
@@ -332,7 +421,6 @@ CREATE TABLE "workshop_tiers" (
 CREATE TABLE "workshops" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"name" text NOT NULL,
-	"class_type_id" uuid NOT NULL,
 	"cover_r2_key" text,
 	"description_html" text,
 	"location_id" uuid NOT NULL,
@@ -385,24 +473,6 @@ CREATE TABLE "check_ins" (
 	"checked_in_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"checked_in_by_staff_id" uuid NOT NULL,
 	"method" "checkin_method" NOT NULL
-);
---> statement-breakpoint
-CREATE TABLE "ratings" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"booking_id" uuid NOT NULL,
-	"client_id" uuid NOT NULL,
-	"kind" "rating_kind" NOT NULL,
-	"class_id" uuid,
-	"workshop_id" uuid,
-	"instructor_id" uuid NOT NULL,
-	"stars" integer NOT NULL,
-	"comment" text,
-	"rated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"edited_at" timestamp with time zone,
-	"edit_window_closes_at" timestamp with time zone NOT NULL,
-	CONSTRAINT "ratings_stars_range" CHECK ("ratings"."stars" BETWEEN 1 AND 5),
-	CONSTRAINT "ratings_kind_fk" CHECK (("ratings"."kind" = 'class' AND "ratings"."class_id" IS NOT NULL AND "ratings"."workshop_id" IS NULL)
-       OR ("ratings"."kind" = 'workshop' AND "ratings"."workshop_id" IS NOT NULL AND "ratings"."class_id" IS NULL))
 );
 --> statement-breakpoint
 CREATE TABLE "audit_log" (
@@ -513,40 +583,61 @@ ALTER TABLE "clients" ADD CONSTRAINT "clients_referrer_fk" FOREIGN KEY ("referre
 ALTER TABLE "staff_invitations" ADD CONSTRAINT "staff_invitations_invited_by_staff_id_staff_users_id_fk" FOREIGN KEY ("invited_by_staff_id") REFERENCES "public"."staff_users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "staff_invitations" ADD CONSTRAINT "staff_invitations_staff_user_id_staff_users_id_fk" FOREIGN KEY ("staff_user_id") REFERENCES "public"."staff_users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "staff_users" ADD CONSTRAINT "staff_archiver_fk" FOREIGN KEY ("archived_by_staff_id") REFERENCES "public"."staff_users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "class_types" ADD CONSTRAINT "class_types_parent_id_class_types_id_fk" FOREIGN KEY ("parent_id") REFERENCES "public"."class_types"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "instructor_class_types" ADD CONSTRAINT "instructor_class_types_instructor_id_instructors_staff_user_id_fk" FOREIGN KEY ("instructor_id") REFERENCES "public"."instructors"("staff_user_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "instructor_class_types" ADD CONSTRAINT "instructor_class_types_class_type_id_class_types_id_fk" FOREIGN KEY ("class_type_id") REFERENCES "public"."class_types"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "instructors" ADD CONSTRAINT "instructors_staff_user_id_staff_users_id_fk" FOREIGN KEY ("staff_user_id") REFERENCES "public"."staff_users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "rooms" ADD CONSTRAINT "rooms_location_id_locations_id_fk" FOREIGN KEY ("location_id") REFERENCES "public"."locations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "global_policy" ADD CONSTRAINT "global_policy_updated_by_staff_id_staff_users_id_fk" FOREIGN KEY ("updated_by_staff_id") REFERENCES "public"."staff_users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "pt_booking_config" ADD CONSTRAINT "pt_booking_config_updated_by_staff_id_staff_users_id_fk" FOREIGN KEY ("updated_by_staff_id") REFERENCES "public"."staff_users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "client_packages" ADD CONSTRAINT "client_packages_client_id_clients_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."clients"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "client_packages" ADD CONSTRAINT "client_packages_source_class_package_id_class_packages_id_fk" FOREIGN KEY ("source_class_package_id") REFERENCES "public"."class_packages"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "client_packages" ADD CONSTRAINT "client_packages_source_pt_package_id_pt_packages_id_fk" FOREIGN KEY ("source_pt_package_id") REFERENCES "public"."pt_packages"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "client_packages" ADD CONSTRAINT "client_packages_applied_promotion_id_promotions_id_fk" FOREIGN KEY ("applied_promotion_id") REFERENCES "public"."promotions"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "corporate_packages" ADD CONSTRAINT "corporate_packages_created_by_staff_id_staff_users_id_fk" FOREIGN KEY ("created_by_staff_id") REFERENCES "public"."staff_users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "promotions" ADD CONSTRAINT "promotions_created_by_staff_id_staff_users_id_fk" FOREIGN KEY ("created_by_staff_id") REFERENCES "public"."staff_users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "class_supporting_instructors" ADD CONSTRAINT "class_supporting_instructors_class_id_classes_id_fk" FOREIGN KEY ("class_id") REFERENCES "public"."classes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "class_supporting_instructors" ADD CONSTRAINT "class_supporting_instructors_instructor_id_instructors_staff_user_id_fk" FOREIGN KEY ("instructor_id") REFERENCES "public"."instructors"("staff_user_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "classes" ADD CONSTRAINT "classes_class_type_id_class_types_id_fk" FOREIGN KEY ("class_type_id") REFERENCES "public"."class_types"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "classes" ADD CONSTRAINT "classes_instructor_id_instructors_staff_user_id_fk" FOREIGN KEY ("instructor_id") REFERENCES "public"."instructors"("staff_user_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "classes" ADD CONSTRAINT "classes_main_instructor_id_instructors_staff_user_id_fk" FOREIGN KEY ("main_instructor_id") REFERENCES "public"."instructors"("staff_user_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "classes" ADD CONSTRAINT "classes_location_id_locations_id_fk" FOREIGN KEY ("location_id") REFERENCES "public"."locations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "classes" ADD CONSTRAINT "classes_room_id_rooms_id_fk" FOREIGN KEY ("room_id") REFERENCES "public"."rooms"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "classes" ADD CONSTRAINT "classes_cancelled_by_staff_id_staff_users_id_fk" FOREIGN KEY ("cancelled_by_staff_id") REFERENCES "public"."staff_users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "classes" ADD CONSTRAINT "classes_created_by_staff_id_staff_users_id_fk" FOREIGN KEY ("created_by_staff_id") REFERENCES "public"."staff_users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "corporate_requests" ADD CONSTRAINT "corporate_requests_client_id_clients_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."clients"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "corporate_requests" ADD CONSTRAINT "corporate_requests_corporate_package_id_corporate_packages_id_fk" FOREIGN KEY ("corporate_package_id") REFERENCES "public"."corporate_packages"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "corporate_requests" ADD CONSTRAINT "corporate_requests_resolved_by_staff_id_staff_users_id_fk" FOREIGN KEY ("resolved_by_staff_id") REFERENCES "public"."staff_users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "corporate_session_supporting_instructors" ADD CONSTRAINT "corporate_session_supporting_instructors_corporate_session_id_corporate_sessions_id_fk" FOREIGN KEY ("corporate_session_id") REFERENCES "public"."corporate_sessions"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "corporate_session_supporting_instructors" ADD CONSTRAINT "corporate_session_supporting_instructors_instructor_id_instructors_staff_user_id_fk" FOREIGN KEY ("instructor_id") REFERENCES "public"."instructors"("staff_user_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "corporate_sessions" ADD CONSTRAINT "corporate_sessions_corporate_package_id_corporate_packages_id_fk" FOREIGN KEY ("corporate_package_id") REFERENCES "public"."corporate_packages"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "corporate_sessions" ADD CONSTRAINT "corporate_sessions_main_instructor_id_instructors_staff_user_id_fk" FOREIGN KEY ("main_instructor_id") REFERENCES "public"."instructors"("staff_user_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "corporate_sessions" ADD CONSTRAINT "corporate_sessions_location_id_locations_id_fk" FOREIGN KEY ("location_id") REFERENCES "public"."locations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "corporate_sessions" ADD CONSTRAINT "corporate_sessions_room_id_rooms_id_fk" FOREIGN KEY ("room_id") REFERENCES "public"."rooms"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "corporate_sessions" ADD CONSTRAINT "corporate_sessions_cancelled_by_staff_id_staff_users_id_fk" FOREIGN KEY ("cancelled_by_staff_id") REFERENCES "public"."staff_users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "corporate_sessions" ADD CONSTRAINT "corporate_sessions_created_by_staff_id_staff_users_id_fk" FOREIGN KEY ("created_by_staff_id") REFERENCES "public"."staff_users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "pt_request_slots" ADD CONSTRAINT "pt_request_slots_pt_request_id_pt_requests_id_fk" FOREIGN KEY ("pt_request_id") REFERENCES "public"."pt_requests"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "pt_requests" ADD CONSTRAINT "pt_requests_client_id_clients_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."clients"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "pt_requests" ADD CONSTRAINT "pt_requests_preferred_instructor_id_instructors_staff_user_id_fk" FOREIGN KEY ("preferred_instructor_id") REFERENCES "public"."instructors"("staff_user_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "pt_requests" ADD CONSTRAINT "pt_requests_class_type_id_class_types_id_fk" FOREIGN KEY ("class_type_id") REFERENCES "public"."class_types"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "pt_requests" ADD CONSTRAINT "pt_requests_location_id_locations_id_fk" FOREIGN KEY ("location_id") REFERENCES "public"."locations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "pt_requests" ADD CONSTRAINT "pt_requests_co_client_id_clients_id_fk" FOREIGN KEY ("co_client_id") REFERENCES "public"."clients"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "pt_requests" ADD CONSTRAINT "pt_requests_debited_client_package_id_client_packages_id_fk" FOREIGN KEY ("debited_client_package_id") REFERENCES "public"."client_packages"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "pt_requests" ADD CONSTRAINT "pt_requests_resolved_by_staff_id_staff_users_id_fk" FOREIGN KEY ("resolved_by_staff_id") REFERENCES "public"."staff_users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "pt_session_clients" ADD CONSTRAINT "pt_session_clients_pt_session_id_pt_sessions_id_fk" FOREIGN KEY ("pt_session_id") REFERENCES "public"."pt_sessions"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "pt_session_clients" ADD CONSTRAINT "pt_session_clients_client_id_clients_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."clients"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "pt_sessions" ADD CONSTRAINT "pt_sessions_instructor_id_instructors_staff_user_id_fk" FOREIGN KEY ("instructor_id") REFERENCES "public"."instructors"("staff_user_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "pt_sessions" ADD CONSTRAINT "pt_sessions_location_id_locations_id_fk" FOREIGN KEY ("location_id") REFERENCES "public"."locations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "pt_sessions" ADD CONSTRAINT "pt_sessions_room_id_rooms_id_fk" FOREIGN KEY ("room_id") REFERENCES "public"."rooms"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "pt_sessions" ADD CONSTRAINT "pt_sessions_cancelled_by_staff_id_staff_users_id_fk" FOREIGN KEY ("cancelled_by_staff_id") REFERENCES "public"."staff_users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "pt_sessions" ADD CONSTRAINT "pt_sessions_scheduled_by_staff_id_staff_users_id_fk" FOREIGN KEY ("scheduled_by_staff_id") REFERENCES "public"."staff_users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "pt_sessions" ADD CONSTRAINT "pt_sessions_pt_request_fk" FOREIGN KEY ("pt_request_id") REFERENCES "public"."pt_requests"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workshop_days" ADD CONSTRAINT "workshop_days_workshop_id_workshops_id_fk" FOREIGN KEY ("workshop_id") REFERENCES "public"."workshops"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "workshop_days" ADD CONSTRAINT "workshop_days_room_id_rooms_id_fk" FOREIGN KEY ("room_id") REFERENCES "public"."rooms"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workshop_images" ADD CONSTRAINT "workshop_images_workshop_id_workshops_id_fk" FOREIGN KEY ("workshop_id") REFERENCES "public"."workshops"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workshop_instructors" ADD CONSTRAINT "workshop_instructors_workshop_id_workshops_id_fk" FOREIGN KEY ("workshop_id") REFERENCES "public"."workshops"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workshop_instructors" ADD CONSTRAINT "workshop_instructors_instructor_id_instructors_staff_user_id_fk" FOREIGN KEY ("instructor_id") REFERENCES "public"."instructors"("staff_user_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workshop_tier_days" ADD CONSTRAINT "workshop_tier_days_workshop_tier_id_workshop_tiers_id_fk" FOREIGN KEY ("workshop_tier_id") REFERENCES "public"."workshop_tiers"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workshop_tier_days" ADD CONSTRAINT "workshop_tier_days_workshop_day_id_workshop_days_id_fk" FOREIGN KEY ("workshop_day_id") REFERENCES "public"."workshop_days"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workshop_tiers" ADD CONSTRAINT "workshop_tiers_workshop_id_workshops_id_fk" FOREIGN KEY ("workshop_id") REFERENCES "public"."workshops"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "workshops" ADD CONSTRAINT "workshops_class_type_id_class_types_id_fk" FOREIGN KEY ("class_type_id") REFERENCES "public"."class_types"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workshops" ADD CONSTRAINT "workshops_location_id_locations_id_fk" FOREIGN KEY ("location_id") REFERENCES "public"."locations"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workshops" ADD CONSTRAINT "workshops_cancelled_by_staff_id_staff_users_id_fk" FOREIGN KEY ("cancelled_by_staff_id") REFERENCES "public"."staff_users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "workshops" ADD CONSTRAINT "workshops_created_by_staff_id_staff_users_id_fk" FOREIGN KEY ("created_by_staff_id") REFERENCES "public"."staff_users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
@@ -561,11 +652,6 @@ ALTER TABLE "cancellations" ADD CONSTRAINT "cancellations_booking_id_bookings_id
 ALTER TABLE "cancellations" ADD CONSTRAINT "cancellations_client_id_clients_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."clients"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "check_ins" ADD CONSTRAINT "check_ins_booking_id_bookings_id_fk" FOREIGN KEY ("booking_id") REFERENCES "public"."bookings"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "check_ins" ADD CONSTRAINT "check_ins_checked_in_by_staff_id_staff_users_id_fk" FOREIGN KEY ("checked_in_by_staff_id") REFERENCES "public"."staff_users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "ratings" ADD CONSTRAINT "ratings_booking_id_bookings_id_fk" FOREIGN KEY ("booking_id") REFERENCES "public"."bookings"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "ratings" ADD CONSTRAINT "ratings_client_id_clients_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."clients"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "ratings" ADD CONSTRAINT "ratings_class_id_classes_id_fk" FOREIGN KEY ("class_id") REFERENCES "public"."classes"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "ratings" ADD CONSTRAINT "ratings_workshop_id_workshops_id_fk" FOREIGN KEY ("workshop_id") REFERENCES "public"."workshops"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "ratings" ADD CONSTRAINT "ratings_instructor_id_instructors_staff_user_id_fk" FOREIGN KEY ("instructor_id") REFERENCES "public"."instructors"("staff_user_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "audit_log" ADD CONSTRAINT "audit_log_actor_staff_id_staff_users_id_fk" FOREIGN KEY ("actor_staff_id") REFERENCES "public"."staff_users"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "manual_adjustments" ADD CONSTRAINT "manual_adjustments_client_id_clients_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."clients"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "manual_adjustments" ADD CONSTRAINT "manual_adjustments_client_package_id_client_packages_id_fk" FOREIGN KEY ("client_package_id") REFERENCES "public"."client_packages"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
@@ -582,35 +668,62 @@ ALTER TABLE "feature_flags" ADD CONSTRAINT "feature_flags_updated_by_staff_id_st
 CREATE INDEX "clients_status_idx" ON "clients" USING btree ("status");--> statement-breakpoint
 CREATE INDEX "clients_referrer_idx" ON "clients" USING btree ("referred_by_client_id");--> statement-breakpoint
 CREATE INDEX "clients_name_lower_idx" ON "clients" USING btree (lower("name"));--> statement-breakpoint
+CREATE INDEX "clients_deleted_idx" ON "clients" USING btree ("deleted_at");--> statement-breakpoint
 CREATE INDEX "staff_invitations_email_status_idx" ON "staff_invitations" USING btree ("email","status");--> statement-breakpoint
 CREATE INDEX "staff_invitations_inviter_idx" ON "staff_invitations" USING btree ("invited_by_staff_id");--> statement-breakpoint
 CREATE INDEX "staff_role_status_idx" ON "staff_users" USING btree ("role","status");--> statement-breakpoint
+CREATE INDEX "staff_users_deleted_idx" ON "staff_users" USING btree ("deleted_at");--> statement-breakpoint
 CREATE INDEX "staff_users_granted_locations_gin_idx" ON "staff_users" USING gin ("granted_location_ids");--> statement-breakpoint
 CREATE INDEX "class_types_archived_idx" ON "class_types" USING btree ("archived_at");--> statement-breakpoint
+CREATE INDEX "class_types_deleted_idx" ON "class_types" USING btree ("deleted_at");--> statement-breakpoint
 CREATE INDEX "class_types_name_lower_idx" ON "class_types" USING btree (lower("name"));--> statement-breakpoint
+CREATE INDEX "class_types_parent_idx" ON "class_types" USING btree ("parent_id");--> statement-breakpoint
 CREATE INDEX "locations_archived_idx" ON "locations" USING btree ("archived_at");--> statement-breakpoint
+CREATE INDEX "locations_deleted_idx" ON "locations" USING btree ("deleted_at");--> statement-breakpoint
+CREATE INDEX "rooms_location_archived_idx" ON "rooms" USING btree ("location_id","archived_at");--> statement-breakpoint
+CREATE INDEX "rooms_deleted_idx" ON "rooms" USING btree ("deleted_at");--> statement-breakpoint
+CREATE UNIQUE INDEX "rooms_location_name_lower_unique" ON "rooms" USING btree ("location_id",lower("name"));--> statement-breakpoint
 CREATE INDEX "class_packages_status_kind_idx" ON "class_packages" USING btree ("status","kind");--> statement-breakpoint
+CREATE INDEX "class_packages_deleted_idx" ON "class_packages" USING btree ("deleted_at");--> statement-breakpoint
 CREATE INDEX "client_packages_client_kind_idx" ON "client_packages" USING btree ("client_id","kind");--> statement-breakpoint
 CREATE INDEX "client_packages_client_expiry_idx" ON "client_packages" USING btree ("client_id","expires_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "client_packages_stripe_intent_unique" ON "client_packages" USING btree ("stripe_payment_intent_id") WHERE "client_packages"."stripe_payment_intent_id" IS NOT NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "client_packages_trial_unique_per_client" ON "client_packages" USING btree ("client_id") WHERE "client_packages"."kind" = 'trial';--> statement-breakpoint
+CREATE INDEX "corporate_packages_status_idx" ON "corporate_packages" USING btree ("status");--> statement-breakpoint
+CREATE INDEX "corporate_packages_deleted_idx" ON "corporate_packages" USING btree ("deleted_at");--> statement-breakpoint
 CREATE INDEX "promotions_parent_lookup_idx" ON "promotions" USING btree ("parent_type","parent_id","status","starts_at","ends_at");--> statement-breakpoint
 CREATE INDEX "promotions_sort_idx" ON "promotions" USING btree ("sort_id");--> statement-breakpoint
+CREATE INDEX "class_supporting_instructors_instructor_idx" ON "class_supporting_instructors" USING btree ("instructor_id");--> statement-breakpoint
 CREATE INDEX "classes_starts_at_idx" ON "classes" USING btree ("starts_at");--> statement-breakpoint
-CREATE INDEX "classes_instructor_starts_idx" ON "classes" USING btree ("instructor_id","starts_at");--> statement-breakpoint
+CREATE INDEX "classes_main_instructor_starts_idx" ON "classes" USING btree ("main_instructor_id","starts_at");--> statement-breakpoint
 CREATE INDEX "classes_location_starts_idx" ON "classes" USING btree ("location_id","starts_at");--> statement-breakpoint
+CREATE INDEX "classes_room_starts_idx" ON "classes" USING btree ("room_id","starts_at");--> statement-breakpoint
 CREATE INDEX "classes_class_type_idx" ON "classes" USING btree ("class_type_id");--> statement-breakpoint
 CREATE INDEX "classes_lifecycle_starts_idx" ON "classes" USING btree ("lifecycle","starts_at");--> statement-breakpoint
+CREATE INDEX "corporate_requests_status_created_idx" ON "corporate_requests" USING btree ("status","created_at");--> statement-breakpoint
+CREATE INDEX "corporate_requests_client_status_idx" ON "corporate_requests" USING btree ("client_id","status");--> statement-breakpoint
+CREATE INDEX "corporate_session_supporting_instructors_instructor_idx" ON "corporate_session_supporting_instructors" USING btree ("instructor_id");--> statement-breakpoint
+CREATE INDEX "corporate_sessions_starts_at_idx" ON "corporate_sessions" USING btree ("starts_at");--> statement-breakpoint
+CREATE INDEX "corporate_sessions_instructor_starts_idx" ON "corporate_sessions" USING btree ("main_instructor_id","starts_at");--> statement-breakpoint
+CREATE INDEX "corporate_sessions_location_starts_idx" ON "corporate_sessions" USING btree ("location_id","starts_at");--> statement-breakpoint
+CREATE INDEX "corporate_sessions_room_starts_idx" ON "corporate_sessions" USING btree ("room_id","starts_at");--> statement-breakpoint
+CREATE INDEX "corporate_sessions_lifecycle_starts_idx" ON "corporate_sessions" USING btree ("lifecycle","starts_at");--> statement-breakpoint
+CREATE INDEX "pt_request_slots_request_idx" ON "pt_request_slots" USING btree ("pt_request_id");--> statement-breakpoint
 CREATE INDEX "pt_requests_status_created_idx" ON "pt_requests" USING btree ("status","created_at");--> statement-breakpoint
 CREATE INDEX "pt_requests_client_status_idx" ON "pt_requests" USING btree ("client_id","status");--> statement-breakpoint
-CREATE INDEX "pt_requests_preferred_instructor_status_idx" ON "pt_requests" USING btree ("preferred_instructor_id","status");--> statement-breakpoint
+CREATE INDEX "pt_requests_location_status_idx" ON "pt_requests" USING btree ("location_id","status");--> statement-breakpoint
+CREATE INDEX "pt_requests_class_type_idx" ON "pt_requests" USING btree ("class_type_id");--> statement-breakpoint
 CREATE INDEX "pt_requests_expires_at_pending_idx" ON "pt_requests" USING btree ("expires_at") WHERE status = 'pending';--> statement-breakpoint
 CREATE INDEX "pt_sessions_instructor_starts_idx" ON "pt_sessions" USING btree ("instructor_id","starts_at");--> statement-breakpoint
 CREATE INDEX "pt_sessions_lifecycle_starts_idx" ON "pt_sessions" USING btree ("lifecycle","starts_at");--> statement-breakpoint
+CREATE INDEX "pt_sessions_room_starts_idx" ON "pt_sessions" USING btree ("room_id","starts_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "pt_sessions_pt_request_unique" ON "pt_sessions" USING btree ("pt_request_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "workshop_days_workshop_ord_unique" ON "workshop_days" USING btree ("workshop_id","ord");--> statement-breakpoint
 CREATE INDEX "workshop_days_starts_at_idx" ON "workshop_days" USING btree ("starts_at");--> statement-breakpoint
+CREATE INDEX "workshop_days_room_starts_idx" ON "workshop_days" USING btree ("room_id","starts_at");--> statement-breakpoint
 CREATE INDEX "workshop_images_workshop_ord_idx" ON "workshop_images" USING btree ("workshop_id","ord");--> statement-breakpoint
+CREATE UNIQUE INDEX "workshop_instructors_main_unique" ON "workshop_instructors" USING btree ("workshop_id") WHERE role = 'main';--> statement-breakpoint
+CREATE INDEX "workshop_instructors_workshop_role_idx" ON "workshop_instructors" USING btree ("workshop_id","role");--> statement-breakpoint
 CREATE INDEX "workshop_tier_days_day_idx" ON "workshop_tier_days" USING btree ("workshop_day_id");--> statement-breakpoint
 CREATE INDEX "workshop_tiers_workshop_ord_idx" ON "workshop_tiers" USING btree ("workshop_id","ord");--> statement-breakpoint
 CREATE INDEX "workshops_location_lifecycle_idx" ON "workshops" USING btree ("location_id","lifecycle");--> statement-breakpoint
@@ -625,8 +738,6 @@ CREATE INDEX "bookings_check_in_state_idx" ON "bookings" USING btree ("check_in_
 CREATE UNIQUE INDEX "bookings_stripe_intent_unique" ON "bookings" USING btree ("stripe_payment_intent_id") WHERE "bookings"."stripe_payment_intent_id" IS NOT NULL;--> statement-breakpoint
 CREATE INDEX "cancellations_client_cancelled_idx" ON "cancellations" USING btree ("client_id","cancelled_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "check_ins_booking_unique" ON "check_ins" USING btree ("booking_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "ratings_booking_unique" ON "ratings" USING btree ("booking_id");--> statement-breakpoint
-CREATE INDEX "ratings_instructor_rated_idx" ON "ratings" USING btree ("instructor_id","rated_at");--> statement-breakpoint
 CREATE INDEX "audit_log_target_idx" ON "audit_log" USING btree ("target_table","target_id","created_at");--> statement-breakpoint
 CREATE INDEX "audit_log_actor_idx" ON "audit_log" USING btree ("actor_staff_id","created_at");--> statement-breakpoint
 CREATE INDEX "audit_log_action_idx" ON "audit_log" USING btree ("action","created_at");--> statement-breakpoint
@@ -638,7 +749,4 @@ CREATE INDEX "email_log_recipient_queued_idx" ON "email_log" USING btree ("recip
 CREATE INDEX "email_log_status_idx" ON "email_log" USING btree ("status");--> statement-breakpoint
 CREATE INDEX "email_log_template_queued_idx" ON "email_log" USING btree ("template_slug","queued_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "waiver_signatures_client_unique" ON "waiver_signatures" USING btree ("client_id");--> statement-breakpoint
-CREATE INDEX "inbox_items_type_read_created_idx" ON "inbox_items" USING btree ("type","read_at","created_at");--> statement-breakpoint
--- Reverse FK on pt_requests.scheduled_pt_session_id (drizzle-kit can't emit deferrable refs for forward declarations).
--- Deferrable so a single transaction can insert pt_sessions then update pt_requests.scheduled_pt_session_id in either order.
-ALTER TABLE "pt_requests" ADD CONSTRAINT "pt_requests_scheduled_pt_session_fk" FOREIGN KEY ("scheduled_pt_session_id") REFERENCES "public"."pt_sessions"("id") ON DELETE set null ON UPDATE no action DEFERRABLE INITIALLY DEFERRED;
+CREATE INDEX "inbox_items_type_read_created_idx" ON "inbox_items" USING btree ("type","read_at","created_at");

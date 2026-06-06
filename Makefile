@@ -22,7 +22,6 @@ studio:
 	cd be && npm run db:studio
 
 init: ensure-db
-	cd be && npm run db:generate
 	cd be && npm run db:migrate
 	cd be && npm run db:seed
 
