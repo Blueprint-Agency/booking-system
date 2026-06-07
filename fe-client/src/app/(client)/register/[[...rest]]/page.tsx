@@ -7,6 +7,7 @@ import PhoneInput, { isValidPhoneNumber } from "react-phone-number-input";
 import "react-phone-number-input/style.css";
 import Link from "next/link";
 import { AuthSplitShell } from "@/components/auth/auth-split-shell";
+import { OtpInput } from "@/components/auth/otp-input";
 
 const inputClass =
   "rounded-xl border border-ink/10 bg-paper px-4 py-3 text-sm w-full focus:border-accent focus:outline-none";
@@ -164,17 +165,10 @@ function RegisterContent() {
         </p>
         <form onSubmit={handleVerify} className="space-y-4">
           <div>
-            <label htmlFor="code" className={labelClass}>
+            <label className={labelClass}>
               Verification code
             </label>
-            <input
-              id="code"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              className={inputClass}
-              value={code}
-              onChange={(ev) => setCode(ev.target.value)}
-            />
+            <OtpInput value={code} onChange={setCode} autoFocus />
           </div>
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
           <button type="submit" disabled={submitting} className={primaryBtnClass}>
