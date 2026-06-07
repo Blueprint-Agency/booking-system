@@ -32,7 +32,9 @@ function LoginContent() {
   const searchParams = useSearchParams();
   const next = searchParams.get("next") || "/";
 
-  const [view, setView] = useState<"signin" | "forgot" | "reset">("signin");
+  const [view, setView] = useState<"signin" | "forgot" | "reset">(
+    searchParams.get("reset") === "1" ? "forgot" : "signin",
+  );
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

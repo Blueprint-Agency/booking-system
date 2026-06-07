@@ -318,7 +318,7 @@ export default function ProfilePage() {
             <div className="flex flex-wrap justify-between gap-3 items-center pt-2">
               <button
                 type="button"
-                onClick={() => signOut({ redirectUrl: "/login" })}
+                onClick={() => signOut({ redirectUrl: "/login?reset=1" })}
                 className="text-sm text-accent-deep font-medium"
               >
                 Forgot your password?
