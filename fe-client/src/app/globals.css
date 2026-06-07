@@ -131,3 +131,9 @@
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* react-phone-number-input — match AuthSplitShell field styling */
+.ys-phone-input { display: flex; gap: 0.5rem; }
+.ys-phone-input .PhoneInputInput { border-radius: 0.75rem; border: 1px solid rgba(13, 26, 62, 0.1); background: #f5f6fa; padding: 0.75rem 1rem; font-size: 0.875rem; width: 100%; color: #0d1a3e; }
+.ys-phone-input .PhoneInputInput:focus { outline: none; border-color: #1a2a7a; }
+.ys-phone-input .PhoneInputCountry { border-radius: 0.75rem; border: 1px solid rgba(13, 26, 62, 0.1); padding: 0 0.75rem; }
