@@ -6,8 +6,14 @@ import { CalendarX, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { SectionHeading } from "@/components/booking/section-heading";
 import { AccountMobileNav } from "@/components/account/account-mobile-nav";
 import { EmptyState } from "@/components/ui/empty-state";
+import { QrBadge } from "@/components/account/qr-badge";
 import { usePtSessionsApi, type RawPtRequest } from "@/lib/pt-sessions";
 import { useClientPackages } from "@/lib/use-client-packages";
+import { formatDate } from "@/lib/utils";
+import { formatClassTime } from "@/lib/classes";
+
+// Slot times arrive as HH:MM:SS (Postgres time) — trim to HH:MM for display.
+const hhmm = (t: string) => t.slice(0, 5);
 
 type Tab = "pending" | "confirmed" | "past" | "cancelled";
 
@@ -201,6 +207,7 @@ function RequestCard({
   const coClientLine = r.co_client_name ? `Partner: ${r.co_client_name}` : null;
   const canCancel = r.status === "pending" || r.status === "scheduled";
   const refunds = r.status === "pending";
+  const scheduled = r.session ?? null;
 
   return (
     <li className="rounded-2xl border border-ink/10 bg-card p-5">
@@ -211,9 +218,20 @@ function RequestCard({
             {r.class_name ? ` · ${r.class_name}` : ""}
             {r.location_name ? ` · ${r.location_name}` : ""}
           </p>
-          {slot0 ? (
+          {scheduled ? (
+            <>
+              <p className="font-serif text-lg text-ink mt-1">
+                {formatDate(scheduled.starts_at)} · {formatClassTime(scheduled.starts_at)}–
+                {formatClassTime(scheduled.ends_at)}
+              </p>
+              <p className="text-sm text-muted mt-0.5">
+                with {scheduled.instructor_name ?? "your instructor"}
+                {scheduled.room_name ? ` · ${scheduled.room_name}` : ""}
+              </p>
+            </>
+          ) : slot0 ? (
             <p className="font-serif text-lg text-ink mt-1">
-              {slot0.proposed_date} · {slot0.start_time}–{slot0.end_time}
+              {formatDate(slot0.proposed_date)} · {hhmm(slot0.start_time)}–{hhmm(slot0.end_time)}
               {r.slots.length > 1 ? (
                 <span className="text-sm text-muted ml-2">+{r.slots.length - 1} more</span>
               ) : null}
@@ -226,6 +244,18 @@ function RequestCard({
             <blockquote className="mt-2 rounded-md border-l-2 border-ink/10 bg-paper px-3 py-1.5 text-xs italic text-muted">
               {r.message}
             </blockquote>
+          )}
+          {scheduled && r.booking && (
+            <div className="mt-3 flex items-center gap-2">
+              <QrBadge
+                value={r.booking.qr_token}
+                label={`${r.session_type === "1on1" ? "1-on-1" : "2-on-1"} session`}
+                subLabel={`${formatDate(scheduled.starts_at)} · ${r.booking.code}`}
+              />
+              <span className="text-xs text-muted">
+                Check-in code: <span className="font-mono text-ink">{r.booking.code}</span>
+              </span>
+            </div>
           )}
         </div>
         <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs ${badge.tone}`}>
@@ -241,7 +271,7 @@ function RequestCard({
           <ul className="mt-2 space-y-1 text-xs text-muted">
             {r.slots.slice(1).map((s, i) => (
               <li key={i}>
-                {s.proposed_date} · {s.start_time}–{s.end_time}
+                {formatDate(s.proposed_date)} · {hhmm(s.start_time)}–{hhmm(s.end_time)}
               </li>
             ))}
           </ul>

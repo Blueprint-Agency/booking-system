@@ -157,6 +157,13 @@ export async function getClassDetail(id: string): Promise<ClassDetail> {
   }
 }
 
+export interface PtSessionAttendee {
+  id: string
+  name: string
+  code: string | null
+  checkInState: 'pending' | 'attended' | 'no_show' | 'n_a' | null
+}
+
 export interface PtSessionDetail {
   id: string
   lifecycle: 'active' | 'cancelled'
@@ -165,10 +172,11 @@ export interface PtSessionDetail {
   sessionType: '1on1' | '2on1'
   instructor: NamedRef | null
   location: NamedRef | null
+  room: NamedRef | null
   capacityOnline: number
   capacityWaitlist: number
   capacityBuffer: number
-  clients: NamedRef[]
+  clients: PtSessionAttendee[]
 }
 
 export async function getPtSessionDetail(id: string): Promise<PtSessionDetail> {
@@ -186,18 +194,30 @@ export async function getPtSessionDetail(id: string): Promise<PtSessionDetail> {
       instructorName: staffUsers.name,
       locationId: ptSessions.locationId,
       locationName: locations.name,
+      roomId: ptSessions.roomId,
+      roomName: rooms.name,
     })
     .from(ptSessions)
     .leftJoin(staffUsers, eq(staffUsers.id, ptSessions.instructorId))
     .leftJoin(locations, eq(locations.id, ptSessions.locationId))
+    .leftJoin(rooms, eq(rooms.id, ptSessions.roomId))
     .where(eq(ptSessions.id, id))
     .limit(1)
   if (!row) throw new NotFoundError('pt_session_not_found')
 
   const clientRows = await db
-    .select({ id: clients.id, name: clients.name })
+    .select({
+      id: clients.id,
+      name: clients.name,
+      code: bookings.code,
+      checkInState: bookings.checkInState,
+    })
     .from(ptSessionClients)
     .innerJoin(clients, eq(clients.id, ptSessionClients.clientId))
+    .leftJoin(
+      bookings,
+      and(eq(bookings.ptSessionId, id), eq(bookings.clientId, ptSessionClients.clientId)),
+    )
     .where(eq(ptSessionClients.ptSessionId, id))
 
   return {
@@ -208,9 +228,15 @@ export async function getPtSessionDetail(id: string): Promise<PtSessionDetail> {
     sessionType: row.sessionType as PtSessionDetail['sessionType'],
     instructor: row.instructorName ? { id: row.instructorId, name: row.instructorName } : null,
     location: row.locationName ? { id: row.locationId, name: row.locationName } : null,
+    room: row.roomId && row.roomName ? { id: row.roomId, name: row.roomName } : null,
     capacityOnline: row.capacityOnline,
     capacityWaitlist: row.capacityWaitlist,
     capacityBuffer: row.capacityBuffer,
-    clients: clientRows,
+    clients: clientRows.map(c => ({
+      id: c.id,
+      name: c.name,
+      code: c.code ?? null,
+      checkInState: (c.checkInState as PtSessionAttendee['checkInState']) ?? null,
+    })),
   }
 }

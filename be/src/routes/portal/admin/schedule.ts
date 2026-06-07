@@ -157,10 +157,16 @@ const app = new Hono()
       session_type: d.sessionType,
       instructor: d.instructor,
       location: d.location,
+      room: d.room,
       capacity_online: d.capacityOnline,
       capacity_waitlist: d.capacityWaitlist,
       capacity_buffer: d.capacityBuffer,
-      clients: d.clients,
+      clients: d.clients.map(cl => ({
+        id: cl.id,
+        name: cl.name,
+        code: cl.code,
+        check_in_state: cl.checkInState,
+      })),
     })
   })
   .post('/classes', zValidator('json', createClassSchema), async c => {

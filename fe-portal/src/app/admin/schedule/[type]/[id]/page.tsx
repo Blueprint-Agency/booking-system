@@ -95,6 +95,13 @@ interface ApiClassAttendee {
   code: string;
 }
 
+interface ApiPtAttendee {
+  id: string;
+  name: string;
+  code: string | null;
+  check_in_state: "pending" | "attended" | "no_show" | "n_a" | null;
+}
+
 interface ApiPtDetail {
   id: string;
   lifecycle: "active" | "cancelled";
@@ -103,10 +110,11 @@ interface ApiPtDetail {
   session_type: "1on1" | "2on1";
   instructor: NamedRef | null;
   location: NamedRef | null;
+  room: NamedRef | null;
   capacity_online: number;
   capacity_waitlist: number;
   capacity_buffer: number;
-  clients: NamedRef[];
+  clients: ApiPtAttendee[];
 }
 
 export default function SessionDetailPage({
@@ -563,6 +571,7 @@ function PtDetail({ id }: { id: string }) {
     `${formatTime(data.starts_at)} – ${formatTime(data.ends_at)}`,
     data.instructor?.name,
     data.location?.name,
+    data.room?.name,
   ].filter((x): x is string => Boolean(x));
 
   return (
@@ -573,6 +582,22 @@ function PtDetail({ id }: { id: string }) {
         title={`Private session · ${typeLabel}`}
         meta={meta}
       />
+
+      <section className="mb-6 rounded-xl border border-border bg-card p-5 shadow-soft">
+        <h2 className="mb-4 text-sm font-semibold text-ink">Details</h2>
+        <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+          <DetailField label="Date" value={formatDate(data.starts_at)} />
+          <DetailField
+            label="Time"
+            value={`${formatTime(data.starts_at)} – ${formatTime(data.ends_at)}`}
+          />
+          <DetailField label="Format" value={typeLabel} />
+          <DetailField label="Instructor" value={data.instructor?.name ?? "—"} />
+          <DetailField label="Location" value={data.location?.name ?? "—"} />
+          <DetailField label="Room" value={data.room?.name ?? "—"} />
+        </dl>
+      </section>
+
       <section className="rounded-xl border border-border bg-card p-5 shadow-soft">
         <h2 className="mb-3 text-sm font-semibold text-ink">
           Clients ({data.clients.length})
@@ -582,10 +607,19 @@ function PtDetail({ id }: { id: string }) {
         ) : (
           <ul className="divide-y divide-border">
             {data.clients.map((cl) => (
-              <li key={cl.id} className="py-2 text-sm text-ink">
-                <Link href={`/admin/clients/${cl.id}`} className="hover:text-accent">
-                  {cl.name}
-                </Link>
+              <li
+                key={cl.id}
+                className="flex items-center justify-between gap-3 py-2.5 text-sm"
+              >
+                <div className="min-w-0">
+                  <Link href={`/admin/clients/${cl.id}`} className="text-ink hover:text-accent">
+                    {cl.name}
+                  </Link>
+                  {cl.code && (
+                    <div className="text-xs text-muted">Code {cl.code}</div>
+                  )}
+                </div>
+                <PtCheckInBadge state={cl.check_in_state} />
               </li>
             ))}
           </ul>
@@ -593,6 +627,13 @@ function PtDetail({ id }: { id: string }) {
       </section>
     </DetailFrame>
   );
+}
+
+function PtCheckInBadge({ state }: { state: ApiPtAttendee["check_in_state"] }) {
+  if (state === "attended") return <Badge tone="sage">Checked in</Badge>;
+  if (state === "no_show") return <Badge tone="error">No-show</Badge>;
+  if (state === "pending") return <Badge tone="neutral">Pending</Badge>;
+  return null;
 }
 
 /* ------------------------------- Workshop ------------------------------- */

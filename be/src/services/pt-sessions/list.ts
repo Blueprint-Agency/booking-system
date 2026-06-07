@@ -3,6 +3,7 @@ import { db } from '../../db'
 import { clients, staffUsers } from '../../db/schema/identity'
 import { classTypes, locations, rooms } from '../../db/schema/catalog'
 import { ptRequests, ptRequestSlots, ptSessions } from '../../db/schema/schedule'
+import { bookings } from '../../db/schema/bookings'
 
 export interface ClientPtRequestView {
   id: string
@@ -17,6 +18,15 @@ export interface ClientPtRequestView {
   createdAt: Date
   expiresAt: Date
   slots: { proposedDate: string; startTime: string; endTime: string }[]
+  /** Populated once the request is scheduled — the final session details. */
+  session: {
+    startsAt: Date
+    endsAt: Date
+    instructorName: string | null
+    roomName: string | null
+  } | null
+  /** This member's own booking on the scheduled session (for QR check-in). */
+  booking: { qrToken: string; code: string; checkInState: string } | null
 }
 
 export async function listClientPtRequests(clientId: string): Promise<ClientPtRequestView[]> {
@@ -33,10 +43,18 @@ export async function listClientPtRequests(clientId: string): Promise<ClientPtRe
       coClientName: ptRequests.coClientName,
       createdAt: ptRequests.createdAt,
       expiresAt: ptRequests.expiresAt,
+      sessionId: ptSessions.id,
+      sessionStartsAt: ptSessions.startsAt,
+      sessionEndsAt: ptSessions.endsAt,
+      instructorName: staffUsers.name,
+      roomName: rooms.name,
     })
     .from(ptRequests)
     .leftJoin(classTypes, eq(classTypes.id, ptRequests.classTypeId))
     .leftJoin(locations, eq(locations.id, ptRequests.locationId))
+    .leftJoin(ptSessions, eq(ptSessions.id, ptRequests.scheduledPtSessionId))
+    .leftJoin(staffUsers, eq(staffUsers.id, ptSessions.instructorId))
+    .leftJoin(rooms, eq(rooms.id, ptSessions.roomId))
     .where(eq(ptRequests.clientId, clientId))
     .orderBy(desc(ptRequests.createdAt))
 
@@ -56,6 +74,30 @@ export async function listClientPtRequests(clientId: string): Promise<ClientPtRe
     slotsByReq.set(s.ptRequestId, list)
   }
 
+  // This member's booking on each scheduled session (QR/code/check-in for the card).
+  const sessionIds = reqRows.map(r => r.sessionId).filter((v): v is string => !!v)
+  const bookingBySession = new Map<string, { qrToken: string; code: string; checkInState: string }>()
+  if (sessionIds.length) {
+    const bks = await db
+      .select({
+        ptSessionId: bookings.ptSessionId,
+        qrToken: bookings.qrToken,
+        code: bookings.code,
+        checkInState: bookings.checkInState,
+      })
+      .from(bookings)
+      .where(and(eq(bookings.clientId, clientId), inArray(bookings.ptSessionId, sessionIds)))
+    for (const b of bks) {
+      if (b.ptSessionId) {
+        bookingBySession.set(b.ptSessionId, {
+          qrToken: b.qrToken,
+          code: b.code,
+          checkInState: b.checkInState,
+        })
+      }
+    }
+  }
+
   return reqRows.map(r => ({
     id: r.id,
     classTypeId: r.classTypeId,
@@ -69,6 +111,15 @@ export async function listClientPtRequests(clientId: string): Promise<ClientPtRe
     createdAt: r.createdAt,
     expiresAt: r.expiresAt,
     slots: slotsByReq.get(r.id) ?? [],
+    session: r.sessionId
+      ? {
+          startsAt: r.sessionStartsAt!,
+          endsAt: r.sessionEndsAt!,
+          instructorName: r.instructorName,
+          roomName: r.roomName,
+        }
+      : null,
+    booking: r.sessionId ? bookingBySession.get(r.sessionId) ?? null : null,
   }))
 }
 

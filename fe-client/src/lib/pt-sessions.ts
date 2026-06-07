@@ -60,6 +60,18 @@ export interface RawPtRequest {
   created_at: string;
   updated_at?: string;
   expires_at?: string | null;
+  // Present once scheduled — the confirmed session + this member's check-in booking.
+  session?: {
+    starts_at: string;
+    ends_at: string;
+    instructor_name: string | null;
+    room_name: string | null;
+  } | null;
+  booking?: {
+    qr_token: string;
+    code: string;
+    check_in_state: "pending" | "attended" | "no_show" | "n_a";
+  } | null;
 }
 
 export interface ListPtRequestsResult {

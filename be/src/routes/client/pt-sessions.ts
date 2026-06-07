@@ -40,6 +40,17 @@ function serializeRequest(r: Awaited<ReturnType<typeof listClientPtRequests>>[nu
     created_at: r.createdAt,
     expires_at: r.expiresAt,
     slots: r.slots.map(s => ({ proposed_date: s.proposedDate, start_time: s.startTime, end_time: s.endTime })),
+    session: r.session
+      ? {
+          starts_at: r.session.startsAt.toISOString(),
+          ends_at: r.session.endsAt.toISOString(),
+          instructor_name: r.session.instructorName,
+          room_name: r.session.roomName,
+        }
+      : null,
+    booking: r.booking
+      ? { qr_token: r.booking.qrToken, code: r.booking.code, check_in_state: r.booking.checkInState }
+      : null,
   }
 }
 
