@@ -4,6 +4,8 @@ import { clientPackages, classPackages, ptPackages } from '../../db/schema/packa
 
 export interface ClientEntitlements {
   trialUsed: boolean
+  /** Trial is for brand-new members only: true iff the client owns NO packages yet. */
+  trialEligible: boolean
   hasActiveUnlimited: boolean
   hasActiveBundleCredits: boolean
   pt1on1Remaining: number
@@ -56,7 +58,17 @@ export async function getClientEntitlements(clientId: string): Promise<ClientEnt
     }
   }
 
-  return { trialUsed, hasActiveUnlimited, hasActiveBundleCredits, pt1on1Remaining, pt2on1Remaining }
+  // Eligible only when the client owns nothing yet (any package kind disqualifies).
+  const trialEligible = rows.length === 0
+
+  return {
+    trialUsed,
+    trialEligible,
+    hasActiveUnlimited,
+    hasActiveBundleCredits,
+    pt1on1Remaining,
+    pt2on1Remaining,
+  }
 }
 
 export interface ClientPackageWithSource {

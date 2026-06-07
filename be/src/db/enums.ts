@@ -24,6 +24,14 @@ export const promotionStatusEnum = pgEnum('promotion_status', ['active', 'archiv
 
 // Schedule
 export const lifecycleEnum = pgEnum('lifecycle', ['active', 'cancelled'])
+// Class-type difficulty (§ catalog). Values mirror the fe-portal `ClassTypeDifficulty`
+// union. `general` = "all levels" and is the default for existing/new types.
+export const classDifficultyEnum = pgEnum('class_difficulty', [
+  'general',
+  'beginner',
+  'intermediate',
+  'advanced',
+])
 // Workshop / class / corporate session instructor role (§4.3)
 export const workshopInstructorRoleEnum = pgEnum('workshop_instructor_role', ['main', 'supporting'])
 export type WorkshopInstructorRole = (typeof workshopInstructorRoleEnum.enumValues)[number]
@@ -103,3 +111,4 @@ export type CorporateRequestStatus = (typeof corporateRequestStatusEnum.enumValu
 export type BookingKind = (typeof bookingKindEnum.enumValues)[number]
 export type BookingState = (typeof bookingStateEnum.enumValues)[number]
 export type Lifecycle = (typeof lifecycleEnum.enumValues)[number]
+export type ClassDifficulty = (typeof classDifficultyEnum.enumValues)[number]

@@ -138,6 +138,31 @@ export async function grantPackage(
 }
 
 /**
+ * Trial-pass eligibility gate (fe-client-features.md §6.1). A trial pass is for
+ * brand-new members only: the client must have NO packages of any kind yet, and
+ * may claim a trial only once ever. Workshops never create a client_packages row,
+ * so a prior workshop booking does NOT disqualify the client.
+ *
+ * Runs BEFORE creating a Stripe Checkout session so a priced trial never charges
+ * an ineligible client. The partial-unique index on client_packages remains the
+ * final backstop against a race.
+ *
+ *   409 trial_already_used  — client has claimed a trial before (active or expired)
+ *   409 trial_not_eligible  — client already owns some other package (bundle/unlimited/pt)
+ */
+export async function assertTrialEligible(clientId: string): Promise<void> {
+  const rows = await db
+    .select({ kind: clientPackages.kind })
+    .from(clientPackages)
+    .where(eq(clientPackages.clientId, clientId))
+  if (rows.length === 0) return
+  if (rows.some(r => r.kind === 'trial')) {
+    throw new ConflictError('trial_already_used')
+  }
+  throw new ConflictError('trial_not_eligible')
+}
+
+/**
  * Free trial pass purchase — no Stripe, no payment intent. Reuses grantPackage
  * so the partial-unique index enforces one-trial-per-client.
  */

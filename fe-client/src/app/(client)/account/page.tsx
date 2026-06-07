@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Ticket,
@@ -8,112 +8,60 @@ import {
   CalendarX,
   Package,
 } from "lucide-react";
-import { formatDate, formatTime } from "@/lib/utils";
+import { formatDate } from "@/lib/utils";
+import { formatClassTime } from "@/lib/classes";
 import { SectionHeading } from "@/components/booking/section-heading";
 import { AccountMobileNav } from "@/components/account/account-mobile-nav";
 import { EmptyState } from "@/components/ui/empty-state";
 import { QrBadge } from "@/components/account/qr-badge";
-import type { Session, Instructor } from "@/types";
-import sessionsData from "@/data/sessions.json";
-import instructorsData from "@/data/instructors.json";
 import { useUser } from "@clerk/nextjs";
-import {
-  useMockState,
-  isExpired,
-  type MockBooking,
-} from "@/lib/mock-state";
+import { useApi } from "@/lib/api";
 import { useClientPackages, type LivePackage } from "@/lib/use-client-packages";
-
-const sessions = sessionsData as Session[];
-const instructors = instructorsData as Instructor[];
-
-function getSession(id: string) {
-  return sessions.find((s) => s.id === id);
-}
-function getInstructor(id: string) {
-  return instructors.find((i) => i.id === id);
-}
-
-type NextUpItem = {
-  booking: MockBooking;
-  name: string;
-  instructorName?: string;
-  date: string;
-  time: string;
-  startMs: number;
-  detailHref: string;
-};
+import type { ApiBooking } from "@/components/account/class-bookings";
 
 const PAGE_SIZE = 5;
 
-function getBookingStart(b: MockBooking): { name: string; instructorName?: string; date: string; time: string; startMs: number; endMs: number } | null {
-  if (b.meta) {
-    const d = new Date(b.meta.startsAt);
-    if (isNaN(d.getTime())) return null;
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return {
-      name: b.meta.name,
-      instructorName: b.meta.instructorName,
-      date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
-      time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
-      startMs: d.getTime(),
-      endMs: d.getTime() + (b.meta.duration ?? 60) * 60 * 1000,
-    };
-  }
-  const s = getSession(b.sessionId);
-  if (!s) return null;
-  const inst = getInstructor(s.instructorId);
-  const startMs = new Date(`${s.date}T${s.time}:00`).getTime();
-  return {
-    name: s.name,
-    instructorName: inst?.name,
-    date: s.date,
-    time: s.time,
-    startMs,
-    endMs: startMs + (s.duration ?? 60) * 60 * 1000,
-  };
-}
-
-const TYPE_META: Record<MockBooking["type"], { label: string; href: string; tone: string }> = {
-  class:     { label: "Class",           href: "/account/classes",          tone: "bg-accent/15 text-accent-deep" },
-  workshop:  { label: "Workshop",        href: "/account/workshops",        tone: "bg-sage/15 text-sage" },
-  private:   { label: "Private session", href: "/account/private-sessions", tone: "bg-warm text-ink" },
-};
-
 export default function AccountOverview() {
   const { user } = useUser();
-  const state = useMockState();
-  const { classCredits, isUnlimited: unlimited, unlimitedExpiresAt, pt1on1, pt2on1, packages: livePackages, loading: pkgLoading } = useClientPackages();
+  const api = useApi();
+  const {
+    classCredits,
+    isUnlimited: unlimited,
+    unlimitedExpiresAt,
+    pt1on1,
+    pt2on1,
+    packages: livePackages,
+    loading: pkgLoading,
+  } = useClientPackages();
   const ptSessionsRemaining = pt1on1 + pt2on1;
   const firstName = user?.firstName || "there";
   const [nextUpVisible, setNextUpVisible] = useState(PAGE_SIZE);
 
-  const upcomingBookings = useMemo<NextUpItem[]>(() => {
-    const now = Date.now();
-    const items: NextUpItem[] = [];
-    for (const b of state.bookings) {
-      if (state.cancelledBookings.includes(b.id)) continue;
-      if (state.attendedBookings.includes(b.id)) continue;
-      if (b.type === "private" && !state.confirmedPrivateBookings.includes(b.id)) continue;
-      const d = getBookingStart(b);
-      if (!d) continue;
-      const isFuture = d.endMs >= now || new Date(b.bookedAt).getTime() >= d.endMs;
-      if (!isFuture) continue;
-      items.push({
-        booking: b,
-        name: d.name,
-        instructorName: d.instructorName,
-        date: d.date,
-        time: d.time,
-        startMs: d.startMs,
-        detailHref: TYPE_META[b.type].href,
-      });
-    }
-    return items.sort((a, b) => a.startMs - b.startMs);
-  }, [state.bookings, state.cancelledBookings, state.attendedBookings, state.confirmedPrivateBookings]);
+  const [upcoming, setUpcoming] = useState<ApiBooking[]>([]);
+  const [upcomingLoading, setUpcomingLoading] = useState(true);
 
-  const classPackages = livePackages.filter(p => p.kind === "credit_bundle" || p.kind === "unlimited");
-  const ptPackages = livePackages.filter(p => p.kind === "pt");
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setUpcomingLoading(true);
+      try {
+        const res = await api.get<{ bookings: ApiBooking[] }>("/me/bookings/upcoming");
+        if (!cancelled) setUpcoming(res.bookings ?? []);
+      } catch {
+        if (!cancelled) setUpcoming([]);
+      } finally {
+        if (!cancelled) setUpcomingLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [api]);
+
+  const classPackages = livePackages.filter(
+    (p) => p.kind === "credit_bundle" || p.kind === "unlimited",
+  );
+  const ptPackages = livePackages.filter((p) => p.kind === "pt");
 
   return (
     <div>
@@ -150,50 +98,56 @@ export default function AccountOverview() {
         </div>
       </div>
 
-      {/* Next up */}
+      {/* Next up — upcoming classes (live) */}
       <div className="mt-6 rounded-2xl bg-paper border border-ink/10 p-6">
-        <h3 className="text-sm font-semibold uppercase tracking-wider text-muted mb-4">
-          Next up
-        </h3>
-        {upcomingBookings.length === 0 ? (
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-muted">
+            Next up
+          </h3>
+          {upcoming.length > 0 && (
+            <Link href="/account/classes" className="text-xs font-medium text-accent-deep hover:underline">
+              View all
+            </Link>
+          )}
+        </div>
+        {upcomingLoading ? (
+          <div className="py-6 text-center text-sm text-muted">Loading…</div>
+        ) : upcoming.length === 0 ? (
           <EmptyState
             icon={CalendarX}
-            title="No upcoming bookings"
+            title="No upcoming classes"
             description="Browse classes to book your next session."
             cta={{ href: "/classes", label: "Browse classes" }}
           />
         ) : (
           <div>
-            {upcomingBookings.slice(0, nextUpVisible).map((item) => {
-              const meta = TYPE_META[item.booking.type];
-              return (
-                <Link
-                  key={item.booking.id}
-                  href={item.detailHref}
-                  className="flex items-center justify-between gap-4 py-3 border-b border-ink/5 last:border-0 hover:opacity-80 transition-opacity"
-                >
-                  <div className="min-w-0">
-                    <span className={`inline-flex shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider ${meta.tone}`}>
-                      {meta.label}
-                    </span>
-                    <p className="font-medium text-ink truncate mt-1">{item.name}</p>
-                    {item.instructorName && (
-                      <p className="text-sm text-muted mt-0.5">with {item.instructorName}</p>
-                    )}
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-sm text-ink">{formatDate(item.date)}</p>
-                    <p className="text-sm text-muted">{formatTime(item.time)}</p>
-                  </div>
-                  <QrBadge
-                    value={`teeko:booking:${item.booking.id}`}
-                    label={item.name}
-                    subLabel={`${formatDate(item.date)} · ${formatTime(item.time)}`}
-                  />
-                </Link>
-              );
-            })}
-            {upcomingBookings.length > nextUpVisible && (
+            {upcoming.slice(0, nextUpVisible).map((b) => (
+              <Link
+                key={b.booking_id}
+                href="/account/classes"
+                className="flex items-center justify-between gap-4 py-3 border-b border-ink/5 last:border-0 hover:opacity-80 transition-opacity"
+              >
+                <div className="min-w-0">
+                  <span className="inline-flex shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider bg-accent/15 text-accent-deep">
+                    Class
+                  </span>
+                  <p className="font-medium text-ink truncate mt-1">{b.name}</p>
+                  {b.instructor && (
+                    <p className="text-sm text-muted mt-0.5">with {b.instructor.name}</p>
+                  )}
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-sm text-ink">{formatDate(b.starts_at)}</p>
+                  <p className="text-sm text-muted">{formatClassTime(b.starts_at)}</p>
+                </div>
+                <QrBadge
+                  value={b.qr_token}
+                  label={b.name}
+                  subLabel={`${formatDate(b.starts_at)} · ${b.code}`}
+                />
+              </Link>
+            ))}
+            {upcoming.length > nextUpVisible && (
               <div className="mt-4 flex justify-center">
                 <button
                   onClick={(e) => {
@@ -251,7 +205,6 @@ export default function AccountOverview() {
           </div>
         )}
       </div>
-
     </div>
   );
 }

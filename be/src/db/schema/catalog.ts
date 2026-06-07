@@ -11,6 +11,7 @@ import {
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { staffUsers } from './identity'
+import { classDifficultyEnum } from '../enums'
 
 export const locations = pgTable(
   'locations',
@@ -67,6 +68,9 @@ export const classTypes: any = pgTable(
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     name: text('name').notNull(),
     description: text('description'),
+    // Difficulty/level shown to clients and on the admin schedule detail. Defaults
+    // to 'general' (all levels) for every existing and new type.
+    difficulty: classDifficultyEnum('difficulty').notNull().default('general'),
     // Single-level hierarchy. Depth capped at 1 — enforced in service layer:
     // a child (parent_id IS NOT NULL) cannot itself become a parent.
     parentId: uuid('parent_id').references((): any => classTypes.id, { onDelete: 'restrict' }),

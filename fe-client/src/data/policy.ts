@@ -1,15 +1,15 @@
 // Single source of truth for cancellation-window copy. Import from here.
 // Keep the numeric hours and the human-readable copy in sync.
 
-export const CLASS_CANCELLATION_HOURS = 12;
+export const CLASS_CANCELLATION_HOURS = 24;
 export const PRIVATE_SESSION_CANCELLATION_HOURS = 12;
 
 export const CLASS_CANCELLATION_POLICY = {
   window: `${CLASS_CANCELLATION_HOURS} hours`,
-  beforeShort: `Cancel more than ${CLASS_CANCELLATION_HOURS} hours before class — full credit refund.`,
-  withinShort: `Cancel within ${CLASS_CANCELLATION_HOURS} hours — no credit refund.`,
+  beforeShort: `Cancel at least ${CLASS_CANCELLATION_HOURS} hours before class — full credit refund.`,
+  withinShort: `Classes can't be cancelled within ${CLASS_CANCELLATION_HOURS} hours of the start time.`,
   repeat: "Repeated last-minute cancellations for the same class may result in a booking restriction.",
-  faqShort: `Cancel more than ${CLASS_CANCELLATION_HOURS} hours before class with no penalty. Later cancellations forfeit the credit.`,
+  faqShort: `Cancel at least ${CLASS_CANCELLATION_HOURS} hours before class for a full credit refund. Within ${CLASS_CANCELLATION_HOURS} hours, the booking can no longer be cancelled.`,
 } as const;
 
 export const PRIVATE_SESSION_CANCELLATION_POLICY = {

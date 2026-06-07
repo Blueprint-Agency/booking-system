@@ -11,7 +11,7 @@ export async function seedPolicy(db: PostgresJsDatabase<typeof schema>) {
       id: POLICY_SINGLETON_ID,
       cancelCapCount: 3,
       cancelCapCycleDays: 30,
-      classWindowHours: 2,
+      classWindowHours: 24,
       ptWindowHours: 24,
     })
     .onConflictDoNothing()

@@ -113,6 +113,7 @@ const app = new Hono()
       }),
       entitlements: {
         trial_used: ent.trialUsed,
+        trial_eligible: ent.trialEligible,
         has_active_unlimited: ent.hasActiveUnlimited,
         has_active_bundle_credits: ent.hasActiveBundleCredits,
       },

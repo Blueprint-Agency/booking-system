@@ -22,6 +22,7 @@ export interface ClassType {
   id: string;
   name: string;
   description: string;
+  difficulty: ClassTypeDifficulty;
   parentId: string | null;
   archivedAt: string | null;
 }

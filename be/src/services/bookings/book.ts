@@ -87,7 +87,14 @@ export async function bookClass(input: BookClassInput): Promise<BookClassResult>
       .where(and(eq(clientPackages.clientId, clientId), eq(clientPackages.active, true)))
       .for('update')
 
-    const consumable = pkgs.filter(p => p.expiresAt === null || p.expiresAt > now)
+    // Usable now AND still valid when the class actually runs — a package that expires
+    // before the class can't pay for it (G1: validity is checked against the class date,
+    // not just `now`). Applies to both unlimited and credit packages.
+    const consumable = pkgs.filter(
+      p =>
+        (p.expiresAt === null || p.expiresAt > now) &&
+        (p.expiresAt === null || p.expiresAt >= cls.startsAt),
+    )
 
     let clientPackageId: string
     let creditsUsed: number

@@ -18,12 +18,27 @@ import {
 } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
-import type { ClassType } from "@/types";
+import type { ClassType, ClassTypeDifficulty } from "@/types";
+
+// Shared difficulty presentation. `general` = "all levels".
+const DIFFICULTY_OPTIONS: { value: ClassTypeDifficulty; label: string }[] = [
+  { value: "general", label: "All levels" },
+  { value: "beginner", label: "Beginner" },
+  { value: "intermediate", label: "Intermediate" },
+  { value: "advanced", label: "Advanced" },
+];
+const DIFFICULTY_LABEL: Record<ClassTypeDifficulty, string> = {
+  general: "All levels",
+  beginner: "Beginner",
+  intermediate: "Intermediate",
+  advanced: "Advanced",
+};
 
 interface ApiClassType {
   id: string;
   name: string;
   description: string | null;
+  difficulty: ClassTypeDifficulty;
   parent_id: string | null;
   archived_at: string | null;
 }
@@ -33,6 +48,7 @@ function fromApi(r: ApiClassType): ClassType {
     id: r.id,
     name: r.name,
     description: r.description ?? "",
+    difficulty: r.difficulty ?? "general",
     parentId: r.parent_id,
     archivedAt: r.archived_at,
   };
@@ -84,6 +100,7 @@ export default function ClassTypesPage() {
       const body = {
         name: ct.name,
         description: ct.description?.trim() ? ct.description.trim() : null,
+        difficulty: ct.difficulty,
         parent_id: ct.parentId,
       };
       if (exists) {
@@ -326,6 +343,9 @@ function ClassTypeRow({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium text-ink">{ct.name}</span>
+            <Badge tone={ct.difficulty === "general" ? "neutral" : "accent"}>
+              {DIFFICULTY_LABEL[ct.difficulty]}
+            </Badge>
             {isArchived && <Badge tone="neutral">Archived</Badge>}
           </div>
           {ct.description && (
@@ -371,6 +391,9 @@ function ClassTypeDialog({
 }) {
   const [name, setName] = useState(ct?.name ?? "");
   const [description, setDescription] = useState(ct?.description ?? "");
+  const [difficulty, setDifficulty] = useState<ClassTypeDifficulty>(
+    ct?.difficulty ?? "general",
+  );
   const [parentId, setParentId] = useState<string | "">(ct?.parentId ?? "");
 
   function handleSubmit(e: React.FormEvent) {
@@ -379,6 +402,7 @@ function ClassTypeDialog({
       id: ct?.id ?? `ct-${Date.now().toString(36)}`,
       name: name.trim(),
       description: description.trim(),
+      difficulty,
       parentId: parentId === "" ? null : parentId,
       archivedAt: ct?.archivedAt ?? null,
     });
@@ -413,6 +437,25 @@ function ClassTypeDialog({
             placeholder="Short blurb shown to clients on /classes and workshop cards."
           />
           <p className="text-xs text-muted">Optional. Up to ~500 characters.</p>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="ct-difficulty">Difficulty</Label>
+          <select
+            id="ct-difficulty"
+            value={difficulty}
+            onChange={(e) => setDifficulty(e.target.value as ClassTypeDifficulty)}
+            className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-accent"
+          >
+            {DIFFICULTY_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-muted">
+            Shown to clients and on the schedule detail. “All levels” is the default.
+          </p>
         </div>
 
         <div className="space-y-1.5">

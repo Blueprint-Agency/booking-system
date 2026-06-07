@@ -4,6 +4,7 @@ import { z } from 'zod'
 import * as timetable from '../../../services/schedule/timetable'
 import * as classesSvc from '../../../services/schedule/classes'
 import { getClassDetail, getPtSessionDetail } from '../../../services/schedule/detail'
+import { cancelClass } from '../../../services/bookings/cancel-class'
 
 const isoDate = z
   .string()
@@ -120,6 +121,7 @@ const app = new Hono()
       starts_at: d.startsAt.toISOString(),
       ends_at: d.endsAt.toISOString(),
       class_type: d.classType,
+      difficulty: d.difficulty,
       instructor: d.instructor,
       main_instructor_id: d.mainInstructorId,
       supporting_instructor_ids: d.supportingInstructorIds,
@@ -132,6 +134,16 @@ const app = new Hono()
       capacity_buffer: d.capacityBuffer,
       credit_cost: d.creditCost,
       booked_count: d.bookedCount,
+      attendees: d.attendees.map(a => ({
+        booking_id: a.bookingId,
+        client: a.client,
+        package_kind: a.packageKind,
+        credits_used: a.creditsUsed,
+        check_in_state: a.checkInState,
+        code: a.code,
+      })),
+      created_at: d.createdAt.toISOString(),
+      scheduled_by: d.scheduledBy,
     })
   })
   .get('/pt/:id', zValidator('param', z.object({ id: z.string().uuid() })), async c => {
@@ -201,7 +213,17 @@ const app = new Hono()
       return c.json(await classRow(row))
     },
   )
-  .post('/classes/:id/cancel', c => c.json({ todo: 'admin-cancel class' }, 501))
+  .post(
+    '/classes/:id/cancel',
+    zValidator('param', z.object({ id: z.string().uuid() })),
+    async c => {
+      const { id } = c.req.valid('param')
+      const staffId = c.get('staffUserId')
+      const res = await cancelClass({ classId: id, actorStaffId: staffId })
+      c.set('auditTarget' as any, { table: 'classes', id })
+      return c.json({ total_bookings: res.totalBookings, refunded_count: res.refundedCount })
+    },
+  )
   .post('/workshops/:id/cancel', c =>
     c.json({ todo: 'admin-cancel workshop + refund fanout' }, 501),
   )

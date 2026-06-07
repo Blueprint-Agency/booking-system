@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, MessageCircle } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
 import { useAuthGate } from "@/components/auth/auth-gate";
 import { BuyButton } from "@/components/checkout/buy-button";
@@ -16,50 +16,76 @@ import {
   hasDiscount,
   usePackagesCatalog,
 } from "@/lib/packages";
+import {
+  ApiCorporatePackage,
+  corporateContactWhatsappHref,
+  purchaseCorporate,
+  useCorporatePackages,
+} from "@/lib/corporate";
 
 // ── Tab definitions ────────────────────────────────────────────────────────────
 
-type MainTab = "classCredits" | "pt1on1" | "pt2on1";
+type MainTab = "group" | "private" | "corporate";
 type ClassSubTab = "bundle" | "unlimited" | "trial";
+type PrivateSubTab = "1on1" | "2on1";
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export default function PackagesPage() {
   const { data, loading, error, refresh } = usePackagesCatalog();
+  const { data: corporateData } = useCorporatePackages();
   const api = useApi();
-  const [activeTab, setActiveTab] = useState<MainTab>("classCredits");
+  const [activeTab, setActiveTab] = useState<MainTab>("group");
   const [classSubTab, setClassSubTab] = useState<ClassSubTab>("bundle");
+  const [privateSubTab, setPrivateSubTab] = useState<PrivateSubTab>("1on1");
   const [claimingTrialId, setClaimingTrialId] = useState<string | null>(null);
+  const [pendingTrial, setPendingTrial] = useState<ApiClassPackage | null>(null);
   const [trialMessage, setTrialMessage] = useState<
     { kind: "ok" | "err"; text: string } | null
   >(null);
 
   useEffect(() => {
-    function fromHash(): { main: MainTab | null; sub: ClassSubTab | null } {
+    function fromHash(): {
+      main: MainTab | null;
+      sub: ClassSubTab | null;
+      priv: PrivateSubTab | null;
+    } {
       const h =
         typeof window !== "undefined"
           ? window.location.hash.replace(/^#/, "").toLowerCase()
           : "";
+      const none = { main: null, sub: null, priv: null };
       if (h === "trial" || h === "trial-pass")
-        return { main: "classCredits", sub: "trial" };
-      if (h === "unlimited") return { main: "classCredits", sub: "unlimited" };
+        return { main: "group", sub: "trial", priv: null };
+      if (h === "unlimited") return { main: "group", sub: "unlimited", priv: null };
       if (h === "bundle" || h === "bundles")
-        return { main: "classCredits", sub: "bundle" };
-      if (h === "pt1on1" || h === "private" || h === "1on1" || h === "1-on-1")
-        return { main: "pt1on1", sub: null };
+        return { main: "group", sub: "bundle", priv: null };
+      if (h === "pt1on1" || h === "1on1" || h === "1-on-1")
+        return { main: "private", sub: null, priv: "1on1" };
       if (h === "pt2on1" || h === "2on1" || h === "2-on-1")
-        return { main: "pt2on1", sub: null };
-      if (h === "classcredits" || h === "classes" || h === "credits")
-        return { main: "classCredits", sub: null };
-      return { main: null, sub: null };
+        return { main: "private", sub: null, priv: "2on1" };
+      if (h === "private" || h === "pt")
+        return { main: "private", sub: null, priv: null };
+      if (h === "corporate" || h === "corp")
+        return { main: "corporate", sub: null, priv: null };
+      if (
+        h === "group" ||
+        h === "classcredits" ||
+        h === "classes" ||
+        h === "credits"
+      )
+        return { main: "group", sub: null, priv: null };
+      return none;
     }
     const initial = fromHash();
     if (initial.main) setActiveTab(initial.main);
     if (initial.sub) setClassSubTab(initial.sub);
+    if (initial.priv) setPrivateSubTab(initial.priv);
     const onHash = () => {
       const next = fromHash();
       if (next.main) setActiveTab(next.main);
       if (next.sub) setClassSubTab(next.sub);
+      if (next.priv) setPrivateSubTab(next.priv);
     };
     window.addEventListener("hashchange", onHash);
     return () => window.removeEventListener("hashchange", onHash);
@@ -86,30 +112,52 @@ export default function PackagesPage() {
     [data],
   );
 
+  const corporate = useMemo(
+    () => (corporateData ?? []).filter((p) => p.status === "active"),
+    [corporateData],
+  );
+
   const ent = data?.entitlements ?? null;
   const hasUnlimited = ent?.has_active_unlimited ?? false;
   const hasBundle = ent?.has_active_bundle_credits ?? false;
   const trialUsed = ent?.trial_used ?? false;
+  // Default eligible when signed-out (entitlements null) — auth gate runs on click.
+  const trialEligible = ent?.trial_eligible ?? true;
 
   const MAIN_TABS: { key: MainTab; label: string; hidden?: boolean }[] = [
-    { key: "classCredits", label: "Class Credits" },
-    { key: "pt1on1", label: "PT 1-on-1" },
-    { key: "pt2on1", label: "PT 2-on-1" },
+    { key: "group", label: "Group" },
+    { key: "private", label: "Private" },
+    { key: "corporate", label: "Corporate" },
   ];
 
-  async function claimTrial(pkg: ApiClassPackage) {
+  // Runs only AFTER the client confirms the Singapore-citizen disclaimer modal.
+  // A $0 trial is granted immediately; a priced trial returns a Stripe Checkout
+  // URL we redirect to.
+  async function purchaseTrial(pkg: ApiClassPackage) {
+    setPendingTrial(null);
     setClaimingTrialId(pkg.id);
     setTrialMessage(null);
     try {
-      await api.post("/me/checkout/package", {
+      const res = await api.post<{
+        outcome?: string;
+        url?: string;
+        client_package_id?: string;
+      }>("/me/checkout/package", {
         package_kind: "class",
         package_id: pkg.id,
       });
+      // Priced trial → off to Stripe Checkout.
+      if (res?.url) {
+        window.location.href = res.url;
+        return;
+      }
+      // Free trial → granted immediately.
       setTrialMessage({
         kind: "ok",
         text: "Trial pass claimed — head to Classes to book.",
       });
       await refresh();
+      setClaimingTrialId(null);
     } catch (err) {
       const body =
         err && typeof err === "object" && "body" in err
@@ -119,18 +167,13 @@ export default function PackagesPage() {
         body && typeof body === "object" && "error" in body
           ? String((body as { error: unknown }).error)
           : "";
-      if (code === "trial_already_used") {
-        setTrialMessage({
-          kind: "err",
-          text: "You've already used your trial pass.",
-        });
-      } else {
-        setTrialMessage({
-          kind: "err",
-          text: "Couldn't claim trial pass. Please try again.",
-        });
-      }
-    } finally {
+      const text =
+        code === "trial_already_used"
+          ? "You've already used your trial pass."
+          : code === "trial_not_eligible"
+            ? "The trial pass is for new members only — it looks like you already have a package."
+            : "Couldn't start the trial purchase. Please try again.";
+      setTrialMessage({ kind: "err", text });
       setClaimingTrialId(null);
     }
   }
@@ -141,7 +184,7 @@ export default function PackagesPage() {
         <BookingSurface maxWidth="xl" padding="default">
           <SectionHeading
             eyebrow="Choose your track"
-            title={trials.length > 0 ? "Class credits, trial or PT" : "Class credits or PT"}
+            title="Group, private or corporate"
           />
 
           {loading && (
@@ -187,8 +230,8 @@ export default function PackagesPage() {
                 </div>
               </div>
 
-              {/* ── Class Credits tab ───────────────────────────────── */}
-              {activeTab === "classCredits" && (
+              {/* ── Group tab ───────────────────────────────────────── */}
+              {activeTab === "group" && (
                 <ClassCreditsSection
                   bundles={bundles}
                   unlimited={unlimited}
@@ -198,21 +241,37 @@ export default function PackagesPage() {
                   hasUnlimited={hasUnlimited}
                   hasBundle={hasBundle}
                   trialUsed={trialUsed}
+                  trialEligible={trialEligible}
                   claimingTrialId={claimingTrialId}
                   trialBanner={trialMessage}
-                  onClaimTrial={claimTrial}
+                  onRequestTrial={setPendingTrial}
                 />
               )}
 
-              {/* ── PT 1-on-1 tab ───────────────────────────────────── */}
-              {activeTab === "pt1on1" && <PtSection items={pt1on1} blurb={SHARED_BLURBS.pt1on1} />}
+              {/* ── Private (PT) tab ────────────────────────────────── */}
+              {activeTab === "private" && (
+                <PrivateSection
+                  pt1on1={pt1on1}
+                  pt2on1={pt2on1}
+                  subTab={privateSubTab}
+                  setSubTab={setPrivateSubTab}
+                />
+              )}
 
-              {/* ── PT 2-on-1 tab ───────────────────────────────────── */}
-              {activeTab === "pt2on1" && <PtSection items={pt2on1} blurb={SHARED_BLURBS.pt2on1} />}
+              {/* ── Corporate tab ───────────────────────────────────── */}
+              {activeTab === "corporate" && <CorporateSection items={corporate} />}
             </>
           )}
         </BookingSurface>
       </div>
+
+      {pendingTrial && (
+        <TrialDisclaimerModal
+          pkg={pendingTrial}
+          onCancel={() => setPendingTrial(null)}
+          onConfirm={() => purchaseTrial(pendingTrial)}
+        />
+      )}
     </>
   );
 }
@@ -235,9 +294,10 @@ function ClassCreditsSection({
   hasUnlimited,
   hasBundle,
   trialUsed,
+  trialEligible,
   claimingTrialId,
   trialBanner,
-  onClaimTrial,
+  onRequestTrial,
 }: {
   bundles: ApiClassPackage[];
   unlimited: ApiClassPackage[];
@@ -247,9 +307,10 @@ function ClassCreditsSection({
   hasUnlimited: boolean;
   hasBundle: boolean;
   trialUsed: boolean;
+  trialEligible: boolean;
   claimingTrialId: string | null;
   trialBanner: { kind: "ok" | "err"; text: string } | null;
-  onClaimTrial: (pkg: ApiClassPackage) => void | Promise<void>;
+  onRequestTrial: (pkg: ApiClassPackage) => void;
 }) {
   const subTabs: { key: ClassSubTab; label: string; hidden?: boolean }[] = [
     { key: "bundle", label: "Credit Bundles" },
@@ -346,9 +407,10 @@ function ClassCreditsSection({
         <TrialSection
           trials={trials}
           trialUsed={trialUsed}
+          trialEligible={trialEligible}
           claimingId={claimingTrialId}
           banner={trialBanner}
-          onClaim={onClaimTrial}
+          onRequestTrial={onRequestTrial}
         />
       )}
     </div>
@@ -358,25 +420,45 @@ function ClassCreditsSection({
 function TrialSection({
   trials,
   trialUsed,
+  trialEligible,
   claimingId,
   banner,
-  onClaim,
+  onRequestTrial,
 }: {
   trials: ApiClassPackage[];
   trialUsed: boolean;
+  trialEligible: boolean;
   claimingId: string | null;
   banner: { kind: "ok" | "err"; text: string } | null;
-  onClaim: (pkg: ApiClassPackage) => void | Promise<void>;
+  onRequestTrial: (pkg: ApiClassPackage) => void;
 }) {
   if (trials.length === 0) {
     return <EmptyCatalog kind="trial" />;
   }
+  // Greyed out unless the client owns nothing yet. Distinguish "already used"
+  // from "not a new member" so the reason is clear.
+  const disabledReason = !trialEligible
+    ? trialUsed
+      ? "Trial already used"
+      : "New members only"
+    : undefined;
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted text-center max-w-xl mx-auto">
-        First time? Try us once — one credit, no commitment. Limited to one per
-        student, ever.
+        First time? Try us once — no commitment. Limited to one per student, ever.
       </p>
+
+      {/* Eligibility disclaimer — shown before purchase, always visible. */}
+      <div className="rounded-xl border border-accent/30 bg-accent/5 text-ink text-xs sm:text-sm px-4 py-3 max-w-xl mx-auto">
+        <p className="font-medium">🇸🇬 Singapore citizens only</p>
+        <p className="text-muted mt-1 leading-relaxed">
+          The trial pass is available to Singapore citizens only. We verify
+          citizenship by checking your ID at the studio. If you purchase a trial
+          pass but cannot verify Singapore citizenship, it is{" "}
+          <span className="font-medium text-ink">non-refundable</span>.
+        </p>
+      </div>
+
       {banner && (
         <div
           className={cn(
@@ -389,10 +471,11 @@ function TrialSection({
           {banner.text}
         </div>
       )}
-      {trialUsed && !banner && (
+      {!trialEligible && !banner && (
         <div className="rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3 text-center max-w-xl mx-auto">
-          You've already used your trial pass. Browse our bundles or unlimited
-          options to continue practising.
+          {trialUsed
+            ? "You've already used your trial pass. Browse our bundles or unlimited options to continue practising."
+            : "The trial pass is for new members only. Since you already have a package, browse our bundles or unlimited options."}
         </div>
       )}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
@@ -400,12 +483,63 @@ function TrialSection({
           <TrialCard
             key={p.id}
             pkg={p}
-            disabled={trialUsed}
+            disabled={!trialEligible}
+            disabledReason={disabledReason}
             isClaiming={claimingId === p.id}
-            onClaim={() => onClaim(p)}
+            onRequestPurchase={() => onRequestTrial(p)}
           />
         ))}
       </div>
+    </div>
+  );
+}
+
+function PrivateSection({
+  pt1on1,
+  pt2on1,
+  subTab,
+  setSubTab,
+}: {
+  pt1on1: ApiPtPackage[];
+  pt2on1: ApiPtPackage[];
+  subTab: PrivateSubTab;
+  setSubTab: (s: PrivateSubTab) => void;
+}) {
+  const subTabs: { key: PrivateSubTab; label: string }[] = [
+    { key: "1on1", label: "1-on-1" },
+    { key: "2on1", label: "2-on-1" },
+  ];
+
+  return (
+    <div className="space-y-8">
+      <div role="tablist" aria-label="Private session type" className="flex justify-center gap-8">
+        {subTabs.map((tab) => {
+          const isActive = subTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              role="tab"
+              aria-selected={isActive}
+              onClick={() => setSubTab(tab.key)}
+              className={cn(
+                "relative pb-3 text-sm font-medium transition-colors",
+                isActive ? "text-ink" : "text-muted hover:text-ink",
+              )}
+            >
+              {tab.label}
+              <span
+                className={cn(
+                  "absolute left-0 right-0 -bottom-px h-0.5 rounded-full transition-all",
+                  isActive ? "bg-ink" : "bg-transparent",
+                )}
+              />
+            </button>
+          );
+        })}
+      </div>
+
+      {subTab === "1on1" && <PtSection items={pt1on1} blurb={SHARED_BLURBS.pt1on1} />}
+      {subTab === "2on1" && <PtSection items={pt2on1} blurb={SHARED_BLURBS.pt2on1} />}
     </div>
   );
 }
@@ -559,13 +693,15 @@ function UnlimitedCard({
 function TrialCard({
   pkg,
   disabled,
+  disabledReason,
   isClaiming,
-  onClaim,
+  onRequestPurchase,
 }: {
   pkg: ApiClassPackage;
   disabled: boolean;
+  disabledReason?: string;
   isClaiming: boolean;
-  onClaim: () => void;
+  onRequestPurchase: () => void;
 }) {
   const { isSignedIn } = useUser();
   const { requireAuth, gate } = useAuthGate("buy a package");
@@ -598,12 +734,12 @@ function TrialCard({
       </ul>
       {disabled ? (
         <span
-          title="Trial already used"
+          title={disabledReason}
           className="mt-6 w-full text-center rounded-full bg-ink/10 text-muted px-5 py-3 text-sm font-medium cursor-not-allowed"
         >
-          Already used
+          {disabledReason ?? "Unavailable"}
         </span>
-      ) : isFree ? (
+      ) : (
         <>
           <button
             type="button"
@@ -613,25 +749,95 @@ function TrialCard({
                 requireAuth("/packages#trial");
                 return;
               }
-              if (!isClaiming) onClaim();
+              if (!isClaiming) onRequestPurchase();
             }}
             className={ctaClass}
           >
             {isClaiming && <Loader2 className="h-4 w-4 animate-spin" />}
-            {isClaiming ? "Claiming…" : "Claim trial"}
+            {isClaiming ? "Processing…" : isFree ? "Claim trial" : "Get trial pass"}
           </button>
           {gate}
         </>
-      ) : (
-        <BuyButton
-          target={{ kind: "package", packageKind: "class", packageId: pkg.id }}
-          context="buy a package"
-          gateHref="/packages#trial"
-          className="rounded-full bg-accent text-white px-5 py-3 text-sm font-medium hover:bg-accent/90 mt-6 w-full text-center transition-colors"
-        >
-          Get trial
-        </BuyButton>
       )}
+    </div>
+  );
+}
+
+// Singapore-citizen eligibility gate shown AFTER the client clicks purchase and
+// BEFORE we hit checkout. Requires an explicit acknowledgement.
+function TrialDisclaimerModal({
+  pkg,
+  onCancel,
+  onConfirm,
+}: {
+  pkg: ApiClassPackage;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const [ack, setAck] = useState(false);
+  const isFree = Number(pkg.effective_price_sgd) === 0;
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4"
+      onClick={onCancel}
+    >
+      <div
+        className="bg-paper rounded-2xl p-8 max-w-md w-full shadow-modal"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="font-serif text-xl text-ink leading-snug">
+          Trial pass — Singapore citizens only
+        </h3>
+        <p className="text-sm text-muted mt-2 leading-relaxed">
+          Before you continue, please confirm you understand:
+        </p>
+        <ul className="text-sm text-muted mt-3 space-y-2 leading-relaxed list-disc pl-5">
+          <li>The trial pass is available to Singapore citizens only.</li>
+          <li>
+            We verify Singapore citizenship by checking your ID at the studio on
+            your first visit.
+          </li>
+          <li>
+            If you purchase a trial pass but cannot verify Singapore
+            citizenship, it is{" "}
+            <span className="font-medium text-ink">non-refundable</span>.
+          </li>
+        </ul>
+
+        <label className="flex items-start gap-2.5 mt-5 text-sm text-ink cursor-pointer">
+          <input
+            type="checkbox"
+            checked={ack}
+            onChange={(e) => setAck(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-ink/30 text-accent focus:ring-accent"
+          />
+          <span>
+            I am a Singapore citizen and I understand the trial pass is
+            non-refundable if my citizenship cannot be verified.
+          </span>
+        </label>
+
+        <div className="mt-6 flex flex-col gap-2">
+          <button
+            type="button"
+            disabled={!ack}
+            onClick={onConfirm}
+            className={cn(
+              "w-full rounded-full bg-accent text-white py-3 text-sm font-semibold transition-colors",
+              ack ? "hover:bg-accent/90" : "opacity-50 cursor-not-allowed",
+            )}
+          >
+            {isFree ? "Claim trial pass" : "Continue to payment"}
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="w-full rounded-full border border-ink/10 py-2.5 text-sm text-muted hover:text-ink transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -646,7 +852,9 @@ function PtCard({ pkg }: { pkg: ApiPtPackage }) {
     <div className="relative rounded-2xl bg-paper border border-ink/10 p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all">
       <PromoTag pkg={pkg} />
       <div>
-        <p className="text-4xl font-extrabold text-ink">{pkg.num_sessions}</p>
+        <p className="text-4xl font-extrabold text-ink">
+          {pkg.num_sessions} {pkg.num_sessions === 1 ? "session" : "sessions"}
+        </p>
         <p className="text-base font-medium text-ink mt-0.5">{pkg.name}</p>
       </div>
       <PriceBlock pkg={pkg} />
@@ -664,6 +872,107 @@ function PtCard({ pkg }: { pkg: ApiPtPackage }) {
       >
         Purchase
       </BuyButton>
+    </div>
+  );
+}
+
+// ── Corporate ─────────────────────────────────────────────────────────────────
+
+function CorporateSection({ items }: { items: ApiCorporatePackage[] }) {
+  return (
+    <div className="space-y-8">
+      <p className="text-sm text-muted text-center max-w-xl mx-auto">
+        Bring mindful movement to your workplace. Request a package below — we
+        arrange the dates, location and instructor with you over WhatsApp.
+      </p>
+
+      {items.length === 0 ? (
+        <div className="mx-auto max-w-md text-center py-8 text-muted text-sm">
+          No corporate packages are available right now.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {items.map((p) => (
+            <CorporateCard key={p.id} pkg={p} />
+          ))}
+        </div>
+      )}
+
+      <div className="mt-10 flex flex-col items-center gap-2 text-center">
+        <a
+          href={corporateContactWhatsappHref()}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center justify-center gap-2 rounded-full border border-ink/15 px-5 py-3 text-sm font-medium text-ink hover:bg-warm transition-colors"
+        >
+          <MessageCircle className="h-4 w-4" strokeWidth={1.5} />
+          Contact us on WhatsApp
+        </a>
+        <p className="text-xs text-muted">
+          Questions first? Chat with us before you buy.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
+  const { isSignedIn } = useUser();
+  const { requireAuth, gate } = useAuthGate("buy a package");
+  const api = useApi();
+  const [pending, setPending] = useState(false);
+  const [err, setErr] = useState(false);
+
+  async function startCheckout() {
+    setPending(true);
+    setErr(false);
+    try {
+      const { url } = await purchaseCorporate(api, pkg.id);
+      window.location.href = url;
+    } catch {
+      setErr(true);
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="relative rounded-2xl bg-paper border border-ink/10 p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all">
+      <div>
+        <p className="text-base font-medium text-ink">{pkg.name}</p>
+        {pkg.description && (
+          <p className="text-sm text-muted mt-2 leading-relaxed">
+            {pkg.description}
+          </p>
+        )}
+      </div>
+      <div className="flex items-baseline gap-2 mt-4">
+        <p className="text-2xl font-bold">{formatSgd(pkg.price_sgd)}</p>
+      </div>
+      <div className="mt-6 flex-1" />
+      {err && (
+        <p className="text-xs text-error mb-2">
+          Couldn&apos;t start checkout. Please try again.
+        </p>
+      )}
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => {
+          if (!isSignedIn) {
+            requireAuth("/packages#corporate");
+            return;
+          }
+          if (!pending) void startCheckout();
+        }}
+        className={cn(
+          "rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 w-full text-center transition-colors inline-flex items-center justify-center gap-2",
+          pending && "opacity-70 cursor-wait",
+        )}
+      >
+        {pending && <Loader2 className="h-4 w-4 animate-spin" />}
+        {pending ? "Redirecting…" : "Request this package"}
+      </button>
+      {gate}
     </div>
   );
 }

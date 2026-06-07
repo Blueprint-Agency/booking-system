@@ -1,12 +1,12 @@
 "use client";
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Ban, Loader2, Save } from "lucide-react";
+import { ArrowLeft, Ban, Check, Loader2, Save } from "lucide-react";
 import { Badge, Button, Input, Label } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { computeEventState } from "@/lib/event-state";
-import { formatDate, formatTime, formatSgd } from "@/lib/formatters";
+import { formatDate, formatTime, formatDateTime, formatSgd } from "@/lib/formatters";
 import { corporateErrorMessage } from "@/lib/corporate-errors";
 import type { EventState } from "@/types";
 
@@ -53,12 +53,22 @@ interface ApiWorkshopDetail {
   instructor_ids: string[];
 }
 
+type ClassDifficulty = "general" | "beginner" | "intermediate" | "advanced";
+
+const DIFFICULTY_LABEL: Record<ClassDifficulty, string> = {
+  general: "All levels",
+  beginner: "Beginner",
+  intermediate: "Intermediate",
+  advanced: "Advanced",
+};
+
 interface ApiClassDetail {
   id: string;
   lifecycle: "active" | "cancelled";
   starts_at: string;
   ends_at: string;
   class_type: NamedRef | null;
+  difficulty: ClassDifficulty;
   instructor: NamedRef | null;
   main_instructor_id: string | null;
   supporting_instructor_ids: string[];
@@ -71,6 +81,18 @@ interface ApiClassDetail {
   capacity_buffer: number;
   credit_cost: number;
   booked_count: number;
+  attendees: ApiClassAttendee[];
+  created_at: string;
+  scheduled_by: NamedRef | null;
+}
+
+interface ApiClassAttendee {
+  booking_id: string;
+  client: NamedRef;
+  package_kind: "credit_bundle" | "unlimited" | "trial" | "pt" | null;
+  credits_used: number;
+  check_in_state: "pending" | "attended" | "no_show" | "n_a";
+  code: string;
 }
 
 interface ApiPtDetail {
@@ -143,13 +165,6 @@ function ClassDetail({ id }: { id: string }) {
     lifecycle: data.lifecycle,
   });
   const capacity = data.capacity_online + data.capacity_waitlist + data.capacity_buffer;
-  const meta = [
-    formatDate(data.starts_at),
-    `${formatTime(data.starts_at)} – ${formatTime(data.ends_at)}`,
-    data.instructor?.name,
-    data.location?.name,
-    data.room?.name,
-  ].filter((x): x is string => Boolean(x));
 
   return (
     <DetailFrame>
@@ -157,13 +172,45 @@ function ClassDetail({ id }: { id: string }) {
         badge={<Badge tone="cyan">Class</Badge>}
         state={state}
         title={data.class_type?.name ?? "Class"}
-        meta={meta}
+        meta={[
+          formatDate(data.starts_at),
+          `${formatTime(data.starts_at)} – ${formatTime(data.ends_at)}`,
+        ]}
       />
+
+      <section className="mb-6 rounded-xl border border-border bg-card p-5 shadow-soft">
+        <h2 className="mb-4 text-sm font-semibold text-ink">Details</h2>
+        <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+          <DetailField label="Date" value={formatDate(data.starts_at)} />
+          <DetailField
+            label="Time"
+            value={`${formatTime(data.starts_at)} – ${formatTime(data.ends_at)}`}
+          />
+          <DetailField label="Location" value={data.location?.name ?? "—"} />
+          <DetailField label="Room" value={data.room?.name ?? "—"} />
+          <DetailField label="Difficulty">
+            <Badge tone={data.difficulty === "general" ? "neutral" : "accent"}>
+              {DIFFICULTY_LABEL[data.difficulty]}
+            </Badge>
+          </DetailField>
+          <DetailField
+            label="Scheduled by"
+            value={data.scheduled_by?.name ?? "—"}
+            sub={`on ${formatDateTime(data.created_at)}`}
+          />
+        </dl>
+      </section>
+
       <div className="grid gap-3 sm:grid-cols-3">
         <Stat label="Booked" value={`${data.booked_count} / ${capacity}`} />
         <Stat label="Credit cost" value={`${data.credit_cost} credit${data.credit_cost === 1 ? "" : "s"}`} />
         <Stat label="Capacity split" value={`${data.capacity_online} / ${data.capacity_waitlist} / ${data.capacity_buffer}`} sub="online / waitlist / buffer" />
       </div>
+      <ClassRoster
+        attendees={data.attendees ?? []}
+        startsAt={data.starts_at}
+        cancelled={data.lifecycle === "cancelled"}
+      />
       <ClassInstructorEditor
         classId={data.id}
         instructors={instructors}
@@ -173,6 +220,142 @@ function ClassDetail({ id }: { id: string }) {
         onSaved={load}
       />
     </DetailFrame>
+  );
+}
+
+const PACKAGE_KIND_LABEL: Record<NonNullable<ApiClassAttendee["package_kind"]>, string> = {
+  credit_bundle: "Credit bundle",
+  unlimited: "Unlimited",
+  trial: "Trial pass",
+  pt: "PT",
+};
+
+function ClassRoster({
+  attendees,
+  startsAt,
+  cancelled,
+}: {
+  attendees: ApiClassAttendee[];
+  startsAt: string;
+  cancelled: boolean;
+}) {
+  const { api } = useWorkspace();
+  const [rows, setRows] = useState<ApiClassAttendee[]>(attendees);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  // Re-sync when the parent reloads the class.
+  useEffect(() => setRows(attendees), [attendees]);
+
+  // The tick is only available from the class start time onwards.
+  const started = Date.now() >= new Date(startsAt).getTime();
+  const attendedCount = rows.filter((r) => r.check_in_state === "attended").length;
+
+  async function toggle(a: ApiClassAttendee) {
+    if (!api || cancelled || !started || busyId) return;
+    const attended = a.check_in_state !== "attended";
+    setBusyId(a.booking_id);
+    setErr(null);
+    try {
+      const res = await api.post<{ check_in_state: ApiClassAttendee["check_in_state"] }>(
+        "/portal/admin/check-in/manual",
+        { booking_id: a.booking_id, attended },
+      );
+      setRows((prev) =>
+        prev.map((r) =>
+          r.booking_id === a.booking_id ? { ...r, check_in_state: res.check_in_state } : r,
+        ),
+      );
+    } catch (e) {
+      setErr(
+        e instanceof ApiError && e.status === 422
+          ? "Check-in opens once the class has started."
+          : "Couldn't update attendance. Please try again.",
+      );
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <section className="mt-6 rounded-xl border border-border bg-card p-5 shadow-soft">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h2 className="text-sm font-semibold text-ink">Booked clients ({rows.length})</h2>
+        {rows.length > 0 && (
+          <span className="text-xs text-muted">{attendedCount} checked in</span>
+        )}
+      </div>
+      {!started && !cancelled && rows.length > 0 && (
+        <p className="mb-3 rounded-md border border-border bg-card px-3 py-2 text-xs text-muted">
+          Check-in opens when the class starts.
+        </p>
+      )}
+      {err && (
+        <p className="mb-3 rounded-md border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
+          {err}
+        </p>
+      )}
+      {rows.length === 0 ? (
+        <p className="text-sm text-muted">No bookings yet.</p>
+      ) : (
+        <ul className="divide-y divide-border">
+          {rows.map((a) => {
+            const attended = a.check_in_state === "attended";
+            const noShow = a.check_in_state === "no_show";
+            const disabled = cancelled || !started || busyId === a.booking_id;
+            return (
+              <li
+                key={a.booking_id}
+                className="flex items-center justify-between gap-3 py-2.5 text-sm"
+              >
+                <div className="min-w-0">
+                  <Link
+                    href={`/admin/clients/${a.client.id}`}
+                    className="text-ink hover:text-accent"
+                  >
+                    {a.client.name}
+                  </Link>
+                  <div className="text-xs text-muted">
+                    {a.package_kind ? PACKAGE_KIND_LABEL[a.package_kind] : "—"} · {a.code}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {noShow && !attended && (
+                    <Badge tone="error">No-show</Badge>
+                  )}
+                  <button
+                    type="button"
+                    role="checkbox"
+                    aria-checked={attended}
+                    aria-label={attended ? "Mark as not attended" : "Mark as attended"}
+                    disabled={disabled}
+                    onClick={() => toggle(a)}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                      attended
+                        ? "border-sage/40 bg-sage/15 text-sage"
+                        : "border-border bg-card text-muted hover:border-accent/40 hover:text-ink"
+                    }`}
+                  >
+                    {busyId === a.booking_id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <span
+                        className={`flex h-4 w-4 items-center justify-center rounded border ${
+                          attended ? "border-sage bg-sage text-white" : "border-muted"
+                        }`}
+                      >
+                        {attended && <Check className="h-3 w-3" />}
+                      </span>
+                    )}
+                    {attended ? "Attended" : "Mark attended"}
+                  </button>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }
 
@@ -1048,6 +1231,28 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
       <div className="text-xs font-medium uppercase tracking-wide text-muted">{label}</div>
       <div className="mt-1 font-mono text-lg font-semibold text-ink">{value}</div>
       {sub && <div className="text-xs text-muted">{sub}</div>}
+    </div>
+  );
+}
+
+// Read-only label/value pair for the Details section. Pass `children` for a
+// non-text value (e.g. a Badge); otherwise pass `value`.
+function DetailField({
+  label,
+  value,
+  sub,
+  children,
+}: {
+  label: string;
+  value?: string;
+  sub?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs font-medium uppercase tracking-wide text-muted">{label}</dt>
+      <dd className="mt-1 text-sm text-ink">{children ?? value}</dd>
+      {sub && <dd className="mt-0.5 text-xs text-muted">{sub}</dd>}
     </div>
   );
 }

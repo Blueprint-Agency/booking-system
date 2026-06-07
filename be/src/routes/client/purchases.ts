@@ -6,7 +6,7 @@ import { stripe } from '../../lib/stripe'
 import { db } from '../../db'
 import { classPackages, ptPackages, corporatePackages } from '../../db/schema/packages'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
-import { purchaseFreeTrial } from '../../services/packages/purchase'
+import { purchaseFreeTrial, assertTrialEligible } from '../../services/packages/purchase'
 import {
   bestPrice,
   listActivePromotionsFor,
@@ -62,21 +62,27 @@ const app = new Hono()
       if (!pkg) throw new NotFoundError('class_package_not_found')
       if (pkg.status !== 'active') throw new BadRequestError('class_package_not_active')
 
-      // Trial pass → free, no Stripe. Grant immediately.
-      if (pkg.kind === 'trial') {
-        const result = await purchaseFreeTrial(clientId, pkg.id)
-        return c.json(
-          {
-            outcome: 'granted',
-            client_package_id: result.clientPackageId,
-            free: true,
-          },
-          201,
-        )
-      }
-
       const promos = await listActivePromotionsFor('class_package', [pkg.id])
       const eff = bestPrice(pkg.priceSgd, promos[pkg.id] ?? [])
+
+      // Trial pass: new-member-only + once-per-client. Gate BEFORE any charge.
+      if (pkg.kind === 'trial') {
+        await assertTrialEligible(clientId)
+        // A $0 trial is granted immediately (no Stripe). A priced trial falls
+        // through to the standard paid-class-package Checkout below.
+        if (Number(eff.effectivePriceSgd) <= 0) {
+          const result = await purchaseFreeTrial(clientId, pkg.id)
+          return c.json(
+            {
+              outcome: 'granted',
+              client_package_id: result.clientPackageId,
+              free: true,
+            },
+            201,
+          )
+        }
+      }
+
       packageName = pkg.name
       priceSgd = pkg.priceSgd
       appliedPromotionId = eff.appliedPromotionId

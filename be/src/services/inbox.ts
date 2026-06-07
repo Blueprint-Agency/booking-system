@@ -1,20 +1,28 @@
-/** Insert / mark read / resolve action on inbox_items. */
-export type InboxItemType =
-  | 'client_cancellation'
-  | 'admin_cancel_class_pt'
-  | 'admin_cancel_workshop'
-  | 'pt_request'
+/** Insert / mark read on inbox_items. */
+import { eq } from 'drizzle-orm'
+import { db } from '../db'
+import { inboxItems } from '../db/schema/inbox'
+
+// Mirrors inboxItemTypeEnum (the `pt_request` value was removed per §4l — PT triage
+// moved to /admin/pt-requests).
+export type InboxItemType = 'client_cancellation' | 'admin_cancel_class_pt' | 'admin_cancel_workshop'
 
 export interface InsertInboxInput {
   type: InboxItemType
   payload: Record<string, unknown>
-  sourcePtSessionId?: string
 }
 
-export async function insertInbox(_input: InsertInboxInput): Promise<{ id: string }> {
-  throw new Error('not implemented')
+export async function insertInbox(input: InsertInboxInput): Promise<{ id: string }> {
+  const [row] = await db
+    .insert(inboxItems)
+    .values({ type: input.type, payload: input.payload })
+    .returning({ id: inboxItems.id })
+  return { id: row!.id }
 }
 
-export async function markRead(_inboxId: string, _staffId: string): Promise<void> {
-  throw new Error('not implemented')
+export async function markRead(inboxId: string, staffId: string): Promise<void> {
+  await db
+    .update(inboxItems)
+    .set({ readAt: new Date(), readByStaffId: staffId })
+    .where(eq(inboxItems.id, inboxId))
 }

@@ -47,6 +47,8 @@ export interface ApiPtPackage {
 
 export interface CatalogEntitlements {
   trial_used: boolean;
+  /** Trial is for brand-new members only — true iff the client owns no packages yet. */
+  trial_eligible: boolean;
   has_active_unlimited: boolean;
   has_active_bundle_credits: boolean;
 }

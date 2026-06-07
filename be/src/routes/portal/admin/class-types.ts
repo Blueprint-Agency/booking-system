@@ -6,6 +6,7 @@ import * as svc from '../../../services/catalog/class-types'
 const createSchema = z.object({
   name: z.string().min(1).max(120),
   description: z.string().max(500).nullable().optional(),
+  difficulty: z.enum(['general', 'beginner', 'intermediate', 'advanced']).optional(),
   parent_id: z.string().uuid().nullable().optional(),
 })
 const updateSchema = createSchema.partial()
@@ -17,6 +18,7 @@ function serialize(row: svc.ClassTypeRow) {
     id: row.id,
     name: row.name,
     description: row.description,
+    difficulty: row.difficulty,
     parent_id: row.parentId,
     archived_at: row.archivedAt,
   }

@@ -2,6 +2,7 @@ import { and, eq, gt, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { classTypes } from '../../db/schema/catalog'
 import { classes } from '../../db/schema/schedule'
+import type { ClassDifficulty } from '../../db/enums'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 
 export type ClassTypeRow = typeof classTypes.$inferSelect
@@ -49,6 +50,7 @@ async function assertNoChildren(id: string): Promise<void> {
 export async function createClassType(input: {
   name: string
   description?: string | null
+  difficulty?: ClassDifficulty
   parent_id?: string | null
 }): Promise<ClassTypeRow> {
   await assertValidParent(input.parent_id)
@@ -57,6 +59,7 @@ export async function createClassType(input: {
     .values({
       name: input.name,
       description: input.description ?? null,
+      difficulty: input.difficulty ?? 'general',
       parentId: input.parent_id ?? null,
     })
     .returning()
@@ -65,7 +68,12 @@ export async function createClassType(input: {
 
 export async function updateClassType(
   id: string,
-  patch: { name?: string; description?: string | null; parent_id?: string | null },
+  patch: {
+    name?: string
+    description?: string | null
+    difficulty?: ClassDifficulty
+    parent_id?: string | null
+  },
 ): Promise<ClassTypeRow> {
   await getClassType(id) // 404 if missing
   if (patch.parent_id !== undefined) {
@@ -79,6 +87,7 @@ export async function updateClassType(
   const setPatch: Record<string, unknown> = {}
   if (patch.name !== undefined) setPatch.name = patch.name
   if (patch.description !== undefined) setPatch.description = patch.description
+  if (patch.difficulty !== undefined) setPatch.difficulty = patch.difficulty
   if (patch.parent_id !== undefined) setPatch.parentId = patch.parent_id
   const [row] = await db.update(classTypes).set(setPatch).where(eq(classTypes.id, id)).returning()
   return row!
