@@ -23,6 +23,7 @@ interface ClerkWebhookUser {
   first_name?: string | null
   last_name?: string | null
   username?: string | null
+  unsafe_metadata?: { phone?: string } | null
 }
 
 function primaryPhone(user: ClerkWebhookUser): string | null {
@@ -32,6 +33,13 @@ function primaryPhone(user: ClerkWebhookUser): string | null {
     if (hit) return hit.phone_number
   }
   return list[0]?.phone_number ?? null
+}
+
+// The custom client sign-up form stashes the collected (non-SMS) phone here,
+// since Clerk only stores phone numbers that are verified identifiers.
+function unsafePhone(user: ClerkWebhookUser): string | null {
+  const p = user.unsafe_metadata?.phone
+  return p && p.trim() ? p.trim() : null
 }
 
 function primaryEmail(user: ClerkWebhookUser): string | null {
@@ -188,7 +196,7 @@ export async function syncClientFromClerk(clerkUser: ClerkWebhookUser): Promise<
       clerkUserId: clerkUser.id,
       email: normalized,
       name: displayName(clerkUser) ?? normalized.split('@')[0]!,
-      phone: primaryPhone(clerkUser) ?? '',
+      phone: primaryPhone(clerkUser) ?? unsafePhone(clerkUser) ?? '',
       status: 'active',
     })
     .returning({ id: clients.id })
