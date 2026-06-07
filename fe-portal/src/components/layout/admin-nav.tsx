@@ -5,21 +5,11 @@ import { useEffect, useState } from "react";
 import { Menu, X, MapPin, Settings, ChevronDown } from "lucide-react";
 import { createPortal } from "react-dom";
 import { NAV_ITEMS, NAV_GROUP_ORDER, type NavItem, type NavGroup } from "./nav-items";
-import { inboxItems, ptRequests } from "@/data";
+import { inboxItems } from "@/data";
 import { cn } from "@/lib/utils";
 import { useWorkspace } from "@/lib/workspace-context";
 
-function getBadge(key: NavItem["badgeKey"]): number | undefined {
-  if (key === "inboxUnread") {
-    const n = inboxItems.filter((i) => i.readAt === null).length;
-    return n > 0 ? n : undefined;
-  }
-  if (key === "ptRequestsPending") {
-    const n = ptRequests.filter((r) => r.status === "pending").length;
-    return n > 0 ? n : undefined;
-  }
-  return undefined;
-}
+type BadgeMap = Partial<Record<NonNullable<NavItem["badgeKey"]>, number | undefined>>;
 
 function NavBrand() {
   return (
@@ -41,6 +31,7 @@ function NavLinkList({
   onNavigate,
   onAccent,
   staggered,
+  badges,
 }: {
   items: NavItem[];
   pathname: string;
@@ -49,12 +40,13 @@ function NavLinkList({
   onAccent?: boolean;
   /** Cascade each row in with a slide (used in the keyed location zone on workspace switch). */
   staggered?: boolean;
+  badges?: BadgeMap;
 }) {
   return (
     <ul className="space-y-0.5">
       {items.map((item, idx) => {
         const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
-        const badge = getBadge(item.badgeKey);
+        const badge = item.badgeKey ? badges?.[item.badgeKey] : undefined;
         return (
           <li
             key={item.href}
@@ -110,11 +102,13 @@ function CollapsibleNavGroup({
   items,
   pathname,
   onNavigate,
+  badges,
 }: {
   label: string;
   items: NavItem[];
   pathname: string;
   onNavigate?: () => void;
+  badges?: BadgeMap;
 }) {
   const hasActiveChild = items.some(
     (i) => pathname === i.href || pathname.startsWith(i.href + "/")
@@ -152,7 +146,7 @@ function CollapsibleNavGroup({
       </button>
       {open && (
         <div className="ml-[18px] mt-0.5 border-l border-border/70 pl-2">
-          <NavLinkList items={items} pathname={pathname} onNavigate={onNavigate} />
+          <NavLinkList items={items} pathname={pathname} onNavigate={onNavigate} badges={badges} />
         </div>
       )}
     </div>
@@ -160,7 +154,39 @@ function CollapsibleNavGroup({
 }
 
 function NavContent({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
-  const { role, activeLocationId, accessibleLocations } = useWorkspace();
+  const { role, activeLocationId, accessibleLocations, api } = useWorkspace();
+
+  // Live, workspace-scoped count of PENDING PT requests for the nav badge.
+  const [ptPending, setPtPending] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    if (!api || !activeLocationId) {
+      setPtPending(undefined);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await api.get<{ pt_requests: unknown[] }>(
+          "/portal/admin/pt-sessions",
+          { status: "pending", location_id: activeLocationId },
+        );
+        if (!cancelled) setPtPending(res.pt_requests?.length || undefined);
+      } catch {
+        if (!cancelled) setPtPending(undefined);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Re-count when the workspace changes or the route changes (e.g. after triaging).
+  }, [api, activeLocationId, pathname]);
+
+  const inboxUnread = inboxItems.filter((i) => i.readAt === null).length;
+  const badges: BadgeMap = {
+    inboxUnread: inboxUnread > 0 ? inboxUnread : undefined,
+    ptRequestsPending: ptPending,
+  };
+
   const visibleItems = NAV_ITEMS.filter((item) => {
     if (item.scope === "both") return true;
     if (role === "superadmin") return true; // superadmin sees everything
@@ -208,6 +234,7 @@ function NavContent({ pathname, onNavigate }: { pathname: string; onNavigate?: (
               pathname={pathname}
               onNavigate={onNavigate}
               staggered
+              badges={badges}
             />
           </div>
         </div>
@@ -225,6 +252,7 @@ function NavContent({ pathname, onNavigate }: { pathname: string; onNavigate?: (
               items={items}
               pathname={pathname}
               onNavigate={onNavigate}
+              badges={badges}
             />
           );
         }
@@ -233,7 +261,7 @@ function NavContent({ pathname, onNavigate }: { pathname: string; onNavigate?: (
             <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-muted/70">
               {group}
             </div>
-            <NavLinkList items={items} pathname={pathname} onNavigate={onNavigate} />
+            <NavLinkList items={items} pathname={pathname} onNavigate={onNavigate} badges={badges} />
           </div>
         );
       })}

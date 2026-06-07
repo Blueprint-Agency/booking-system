@@ -39,10 +39,13 @@ export function ScheduleFromRequestDialog({
 }) {
   const { api, accessibleLocations } = useWorkspace();
 
+  // Postgres `time` columns serialise as HH:MM:SS; <input type="time"> and our
+  // datetime construction expect HH:MM, so normalise.
+  const hhmm = (t: string) => t.slice(0, 5);
   const first = request.slots[0];
   const [date, setDate] = useState(first?.proposed_date ?? todayIso());
-  const [startTime, setStartTime] = useState(first?.start_time ?? "09:00");
-  const [endTime, setEndTime] = useState(first?.end_time ?? "10:00");
+  const [startTime, setStartTime] = useState(first ? hhmm(first.start_time) : "09:00");
+  const [endTime, setEndTime] = useState(first ? hhmm(first.end_time) : "10:00");
 
   const [instructors, setInstructors] = useState<ApiInstructor[]>([]);
   const [rooms, setRooms] = useState<ApiRoom[]>([]);
@@ -105,6 +108,10 @@ export function ScheduleFromRequestDialog({
     }
     const startsAt = new Date(`${date}T${startTime}:00`);
     const endsAt = new Date(`${date}T${endTime}:00`);
+    if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) {
+      setErr("Pick a valid date and time.");
+      return;
+    }
     if (endsAt <= startsAt) {
       setErr("End time must be after start time.");
       return;
@@ -153,8 +160,8 @@ export function ScheduleFromRequestDialog({
                 type="button"
                 onClick={() => {
                   setDate(s.proposed_date);
-                  setStartTime(s.start_time);
-                  setEndTime(s.end_time);
+                  setStartTime(hhmm(s.start_time));
+                  setEndTime(hhmm(s.end_time));
                 }}
                 className="rounded-full border border-border bg-card px-2.5 py-1 text-xs hover:border-accent/40"
               >
