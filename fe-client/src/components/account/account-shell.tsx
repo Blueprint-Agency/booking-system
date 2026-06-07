@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useClerk } from "@clerk/nextjs";
 import {
   LayoutDashboard,
   CalendarCheck,
@@ -29,6 +30,7 @@ const navItems = [
 
 export function AccountShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const { signOut } = useClerk();
 
   return (
     <div className="bg-warm min-h-[calc(100vh-72px-320px)]">
@@ -62,6 +64,7 @@ export function AccountShell({ children }: { children: React.ReactNode }) {
             })}
             <button
               type="button"
+              onClick={() => signOut({ redirectUrl: "/" })}
               className="mt-4 flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium text-error hover:bg-error/10 transition-colors"
             >
               <LogOut className="h-4 w-4" />
