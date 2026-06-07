@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { usePathname } from "next/navigation";
 import { useClerk } from "@clerk/nextjs";
 import {
@@ -27,6 +28,7 @@ const navItems = [
 export function AccountShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { signOut } = useClerk();
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
 
   return (
     <div className="bg-warm min-h-[calc(100vh-72px-320px)]">
@@ -60,7 +62,7 @@ export function AccountShell({ children }: { children: React.ReactNode }) {
             })}
             <button
               type="button"
-              onClick={() => signOut({ redirectUrl: "/" })}
+              onClick={() => setConfirmSignOut(true)}
               className="mt-4 flex items-center gap-3 rounded-xl px-4 py-2.5 text-sm font-medium text-error hover:bg-error/10 transition-colors"
             >
               <LogOut className="h-4 w-4" />
@@ -71,6 +73,39 @@ export function AccountShell({ children }: { children: React.ReactNode }) {
 
         <main className="min-w-0">{children}</main>
       </div>
+
+      {confirmSignOut && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4"
+          onClick={() => setConfirmSignOut(false)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-paper border border-ink/10 p-6 shadow-hover"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold text-ink">Sign out?</h3>
+            <p className="mt-1 text-sm text-muted">
+              You&apos;ll need to sign in again to access your account.
+            </p>
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmSignOut(false)}
+                className="flex-1 min-h-[44px] rounded-full border border-ink/10 px-4 text-sm font-medium hover:border-accent transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => signOut({ redirectUrl: "/" })}
+                className="flex-1 min-h-[44px] rounded-full bg-error px-4 text-sm font-medium text-paper hover:bg-error/90 transition-colors"
+              >
+                Sign out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
