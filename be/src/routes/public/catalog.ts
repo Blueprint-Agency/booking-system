@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import * as classCatalog from '../../services/schedule/client-catalog'
+import * as classTypesSvc from '../../services/catalog/class-types'
 import * as classSvc from '../../services/packages/class-packages'
 import * as ptSvc from '../../services/packages/pt-packages'
 import {
@@ -80,8 +81,10 @@ const app = new Hono()
     return c.json({ slots })
   })
   // Active class types — used by the fe-client PT request form's class type dropdown.
-  // Server still 501 until catalog.listActiveClassTypes lands.
-  .get('/class-types', c => c.json({ todo: 'list active class types' }, 501))
+  .get('/class-types', async c => {
+    const rows = await classTypesSvc.listClassTypes({ includeArchived: false })
+    return c.json({ class_types: rows.map(r => ({ id: r.id, name: r.name })) })
+  })
   .get('/packages', async c => {
     const [classRows, ptRows] = await Promise.all([
       classSvc.listClassPackages({ status: 'active' }),

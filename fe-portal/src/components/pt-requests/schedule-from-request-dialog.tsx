@@ -1,90 +1,147 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import { Loader2 } from "lucide-react";
 import { Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
 import { todayIso } from "@/lib/formatters";
-import { instructors, locations, rooms } from "@/data";
-import { CapacityFields } from "@/components/schedule/capacity-fields";
-import type { Capacity, PtRequest } from "@/types";
+import { ApiError } from "@/lib/api";
+import { useWorkspace } from "@/lib/workspace-context";
+import type { ApiPtRequest } from "@/lib/pt-requests";
 
-export type SchedulePayload = {
-  date: string;
-  startTime: string;
-  endTime: string;
-  instructorId: string;
-  locationId: string;
-  roomId: string;
-  capacity: Capacity;
+interface ApiInstructor {
+  id: string;
+  name: string;
+  archived_at?: string | null;
+}
+interface ApiRoom {
+  id: string;
+  location_id: string;
+  name: string;
+  archived_at: string | null;
+}
+
+const SCHEDULE_ERROR: Record<string, string> = {
+  not_pending: "This request is no longer pending.",
+  room_conflict: "That room is already booked for this time.",
+  instructor_conflict: "That instructor is already booked for this time.",
+  partner_account_required:
+    "The partner needs a member account before this can be scheduled.",
+  bad_time_range: "End time must be after start time.",
 };
 
 export function ScheduleFromRequestDialog({
   request,
-  onConfirm,
+  onScheduled,
   onClose,
 }: {
-  request: PtRequest;
-  onConfirm: (payload: SchedulePayload) => void;
+  request: ApiPtRequest;
+  onScheduled: () => void;
   onClose: () => void;
 }) {
+  const { api, accessibleLocations } = useWorkspace();
+
   const first = request.slots[0];
-  const [date, setDate] = useState(first.proposedDate);
-  const [startTime, setStartTime] = useState(first.startTime);
-  const [endTime, setEndTime] = useState(first.endTime);
+  const [date, setDate] = useState(first?.proposed_date ?? todayIso());
+  const [startTime, setStartTime] = useState(first?.start_time ?? "09:00");
+  const [endTime, setEndTime] = useState(first?.end_time ?? "10:00");
 
-  const activeInstructors = instructors.filter((i) => !i.archivedAt);
-  const activeLocations = locations.filter((l) => !l.archivedAt);
+  const [instructors, setInstructors] = useState<ApiInstructor[]>([]);
+  const [rooms, setRooms] = useState<ApiRoom[]>([]);
+  const [refLoading, setRefLoading] = useState(true);
 
-  // No `preferredInstructorId` to pre-fill from — admin picks from scratch.
-  const [instructorId, setInstructorId] = useState(activeInstructors[0]?.id ?? "");
-  // Default to the location the client requested (admin can still change it).
-  const [locationId, setLocationId] = useState(
-    activeLocations.some((l) => l.id === request.locationId)
-      ? request.locationId
-      : activeLocations[0]?.id ?? "",
+  const [instructorId, setInstructorId] = useState("");
+  const [locationId, setLocationId] = useState(request.location.id);
+  const [roomId, setRoomId] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  // Partner must be a member before a 2on1 can be scheduled (BE enforces too).
+  const partnerBlocked =
+    request.session_type === "2on1" && !request.co_client?.clientId;
+
+  useEffect(() => {
+    if (!api) return;
+    let cancelled = false;
+    setRefLoading(true);
+    void (async () => {
+      try {
+        const [ins, rm] = await Promise.all([
+          api.get<{ instructors: ApiInstructor[] }>("/portal/admin/instructors"),
+          api.get<{ rooms: ApiRoom[] }>("/portal/admin/rooms"),
+        ]);
+        if (cancelled) return;
+        const activeIns = ins.instructors.filter((i) => !i.archived_at);
+        setInstructors(activeIns);
+        setRooms(rm.rooms.filter((r) => !r.archived_at));
+        setInstructorId((prev) => prev || activeIns[0]?.id || "");
+      } finally {
+        if (!cancelled) setRefLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [api]);
+
+  const activeLocations = useMemo(
+    () => accessibleLocations.filter((l) => !l.archivedAt),
+    [accessibleLocations],
   );
   const roomsForLocation = useMemo(
-    () => rooms.filter((r) => !r.archivedAt && r.locationId === locationId),
-    [locationId],
+    () => rooms.filter((r) => r.location_id === locationId),
+    [rooms, locationId],
   );
-  const [roomId, setRoomId] = useState(roomsForLocation[0]?.id ?? "");
-  // Keep the selected room valid as the location changes.
   useEffect(() => {
     if (!roomsForLocation.some((r) => r.id === roomId)) {
       setRoomId(roomsForLocation[0]?.id ?? "");
     }
   }, [roomsForLocation, roomId]);
-  const [capacity, setCapacity] = useState<Capacity>(
-    request.sessionType === "1on1"
-      ? { waitlist: 0, onlineBooking: 1, buffer: 0 }
-      : { waitlist: 0, onlineBooking: 2, buffer: 0 },
-  );
 
-  // Block scheduling for 2on1 when the partner is not yet a member.
-  const partnerBlocked =
-    request.sessionType === "2on1" && !request.coClientId;
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!api || partnerBlocked || saving) return;
+    if (!instructorId || !locationId || !roomId) {
+      setErr("Pick an instructor, location, and room.");
+      return;
+    }
+    const startsAt = new Date(`${date}T${startTime}:00`);
+    const endsAt = new Date(`${date}T${endTime}:00`);
+    if (endsAt <= startsAt) {
+      setErr("End time must be after start time.");
+      return;
+    }
+    setSaving(true);
+    setErr(null);
+    try {
+      await api.post(`/portal/admin/pt-sessions/${request.id}/schedule`, {
+        instructor_id: instructorId,
+        location_id: locationId,
+        room_id: roomId,
+        starts_at: startsAt.toISOString(),
+        ends_at: endsAt.toISOString(),
+      });
+      onScheduled();
+    } catch (e) {
+      const code =
+        e instanceof ApiError &&
+        e.body &&
+        typeof e.body === "object" &&
+        "error" in e.body
+          ? String((e.body as { error: unknown }).error)
+          : "";
+      setErr(SCHEDULE_ERROR[code] ?? "Couldn't schedule the session. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()} title="Schedule PT session">
-      <form
-        className="space-y-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (partnerBlocked) return;
-          onConfirm({
-            date,
-            startTime,
-            endTime,
-            instructorId,
-            locationId,
-            roomId,
-            capacity,
-          });
-        }}
-      >
+      <form className="space-y-4" onSubmit={handleSubmit}>
         {partnerBlocked && (
           <div className="rounded-md border border-warning/30 bg-warning/10 p-3 text-xs text-warning">
-            Partner ({request.coClientName ?? request.coClientEmail ?? "—"}) is
-            not a member yet. Create the partner&apos;s client account first,
-            then re-open this dialog.
+            Partner ({request.co_client?.name ?? request.co_client?.email ?? "—"}) is
+            not a member yet. Create the partner&apos;s client account first, then
+            re-open this dialog.
           </div>
         )}
         {request.slots.length > 0 && (
@@ -95,13 +152,13 @@ export function ScheduleFromRequestDialog({
                 key={i}
                 type="button"
                 onClick={() => {
-                  setDate(s.proposedDate);
-                  setStartTime(s.startTime);
-                  setEndTime(s.endTime);
+                  setDate(s.proposed_date);
+                  setStartTime(s.start_time);
+                  setEndTime(s.end_time);
                 }}
                 className="rounded-full border border-border bg-card px-2.5 py-1 text-xs hover:border-accent/40"
               >
-                {s.proposedDate} · {s.startTime}–{s.endTime}
+                {s.proposed_date} · {s.start_time}–{s.end_time}
               </button>
             ))}
           </div>
@@ -119,7 +176,7 @@ export function ScheduleFromRequestDialog({
           <div className="space-y-1.5">
             <Label>Session type</Label>
             <div className="rounded-md border border-border bg-paper px-3 py-2 text-sm text-muted">
-              {request.sessionType === "1on1" ? "1-on-1" : "2-on-1"}
+              {request.session_type === "1on1" ? "1-on-1" : "2-on-1"}
             </div>
           </div>
           <div className="space-y-1.5">
@@ -142,10 +199,12 @@ export function ScheduleFromRequestDialog({
             <Label>Instructor</Label>
             <select
               value={instructorId}
+              disabled={refLoading}
               onChange={(e) => setInstructorId(e.target.value)}
-              className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
+              className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm disabled:opacity-50"
             >
-              {activeInstructors.map((i) => (
+              <option value="">Select…</option>
+              {instructors.map((i) => (
                 <option key={i.id} value={i.id}>
                   {i.name}
                 </option>
@@ -159,6 +218,7 @@ export function ScheduleFromRequestDialog({
               onChange={(e) => setLocationId(e.target.value)}
               className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
             >
+              <option value="">Select…</option>
               {activeLocations.map((l) => (
                 <option key={l.id} value={l.id}>
                   {l.name}
@@ -170,10 +230,11 @@ export function ScheduleFromRequestDialog({
             <Label>Room</Label>
             <select
               value={roomId}
+              disabled={refLoading || !locationId}
               onChange={(e) => setRoomId(e.target.value)}
-              className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
+              className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm disabled:opacity-50"
             >
-              <option value="">Select room…</option>
+              <option value="">{locationId ? "Select room…" : "Pick a location first"}</option>
               {roomsForLocation.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.name}
@@ -182,13 +243,18 @@ export function ScheduleFromRequestDialog({
             </select>
           </div>
         </div>
-        <CapacityFields value={capacity} onChange={setCapacity} />
+        {err && (
+          <p className="rounded-md border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
+            {err}
+          </p>
+        )}
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" disabled={partnerBlocked}>
-            Schedule session
+          <Button type="submit" disabled={partnerBlocked || saving || refLoading}>
+            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+            {saving ? "Scheduling…" : "Schedule session"}
           </Button>
         </DialogFooter>
       </form>

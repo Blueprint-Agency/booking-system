@@ -12,8 +12,10 @@ import { db } from '../../db'
 import { clientPackages, ptPackages } from '../../db/schema/packages'
 import { ptRequests, ptRequestSlots } from '../../db/schema/schedule'
 import { ptBookingConfig } from '../../db/schema/policy'
+import { manualAdjustments } from '../../db/schema/ledger'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { computeActive } from '../packages/validity'
+import { ptSessionCost } from './cost'
 
 const PT_CONFIG_SINGLETON_ID = '00000000-0000-0000-0000-000000000002'
 
@@ -70,7 +72,9 @@ export async function submitPtRequest(input: PtRequestInput): Promise<{ ptReques
       .from(clientPackages)
       .leftJoin(ptPackages, eq(ptPackages.id, clientPackages.sourcePtPackageId))
       .where(and(eq(clientPackages.id, input.clientPackageId), eq(clientPackages.clientId, input.clientId)))
-      .for('update')
+      // Lock only client_packages — Postgres rejects FOR UPDATE on the nullable
+      // side of the outer join (pt_packages is read-only metadata here anyway).
+      .for('update', { of: clientPackages })
       .limit(1)
 
     if (!pkg) throw new NotFoundError('client_package_not_found')
@@ -80,7 +84,9 @@ export async function submitPtRequest(input: PtRequestInput): Promise<{ ptReques
     const now = new Date()
     const notExpired = pkg.expiresAt === null || pkg.expiresAt > now
     if (!pkg.active || !notExpired) throw new ConflictError('package_not_consumable')
-    if ((pkg.remaining ?? 0) < 1) throw new ConflictError('insufficient_pt_credit')
+    // 1on1 debits 1 session, 2on1 debits 2 (one per attendee).
+    const cost = ptSessionCost(input.sessionType)
+    if ((pkg.remaining ?? 0) < cost) throw new ConflictError('insufficient_pt_credit')
 
     const [cfg] = await tx
       .select({ days: ptBookingConfig.bookInAdvanceDays })
@@ -90,7 +96,7 @@ export async function submitPtRequest(input: PtRequestInput): Promise<{ ptReques
     const expiresAt = new Date(now)
     expiresAt.setDate(expiresAt.getDate() + (cfg?.days ?? 14))
 
-    const newRemaining = (pkg.remaining ?? 0) - 1
+    const newRemaining = (pkg.remaining ?? 0) - cost
     await tx
       .update(clientPackages)
       .set({
@@ -98,6 +104,16 @@ export async function submitPtRequest(input: PtRequestInput): Promise<{ ptReques
         active: computeActive({ kind: 'pt', expiresAt: pkg.expiresAt, creditsOrSessionsRemaining: newRemaining }, now),
       })
       .where(eq(clientPackages.id, pkg.id))
+
+    // Credit-movement ledger entry so the cancel/expiry refund is auditable and
+    // reversible to the exact package (backend-architecture §4, parity with classes).
+    await tx.insert(manualAdjustments).values({
+      clientId: input.clientId,
+      clientPackageId: pkg.id,
+      delta: -cost,
+      reason: 'pt_request_submit',
+      actedByStaffId: null,
+    })
 
     const [req] = await tx
       .insert(ptRequests)

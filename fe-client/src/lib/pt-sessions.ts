@@ -80,9 +80,9 @@ export function makePtSessionsApi(api: Api) {
     submitRequest: (payload: SubmitPtRequestPayload) =>
       api.post<SubmitPtRequestResult>("/me/pt-sessions/request", payload),
 
-    /** GET /me/pt-sessions/ */
+    /** GET /me/pt-sessions */
     listRequests: () =>
-      api.get<ListPtRequestsResult>("/me/pt-sessions/"),
+      api.get<ListPtRequestsResult>("/me/pt-sessions"),
 
     /** POST /me/pt-sessions/:id/cancel */
     cancelRequest: (id: string) =>

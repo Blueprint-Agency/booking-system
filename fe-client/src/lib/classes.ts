@@ -156,6 +156,34 @@ export function useLocations(): {
   return { data, loading };
 }
 
+export interface ApiClassType {
+  id: string;
+  name: string;
+}
+
+/** Active class types for the PT request form's dropdown. Public (no auth). */
+export function useClassTypes(): { data: ApiClassType[] | null; loading: boolean } {
+  const [data, setData] = useState<ApiClassType[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await publicApi.get<{ class_types: ApiClassType[] }>("/public/class-types");
+        if (!cancelled) setData(res.class_types);
+      } catch {
+        if (!cancelled) setData([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return { data, loading };
+}
+
 export interface ClassEntitlements {
   trial_used: boolean;
   has_active_unlimited: boolean;

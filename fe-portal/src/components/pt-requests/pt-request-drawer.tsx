@@ -1,25 +1,13 @@
 "use client";
 import { X } from "lucide-react";
-import { clients, classTypes, locations } from "@/data";
 import { Avatar, Badge, Button } from "@/components/ui";
 import { formatDateTime, formatRelative } from "@/lib/formatters";
-import type { PtRequest } from "@/types";
-
-const STATUS_LABEL: Record<PtRequest["status"], string> = {
-  pending: "pending",
-  scheduled: "scheduled",
-  cancelled_before_scheduled: "cancelled (refunded)",
-  cancelled_after_scheduled: "cancelled (forfeited)",
-  attended: "attended",
-};
-
-const STATUS_TONE: Record<PtRequest["status"], "accent" | "sage" | "error" | "neutral"> = {
-  pending: "accent",
-  scheduled: "sage",
-  cancelled_before_scheduled: "error",
-  cancelled_after_scheduled: "error",
-  attended: "sage",
-};
+import {
+  type ApiPtRequest,
+  PT_STATUS_LABEL,
+  PT_STATUS_TONE,
+  ptPartnerDisplay,
+} from "@/lib/pt-requests";
 
 export function PtRequestDrawer({
   request,
@@ -27,17 +15,13 @@ export function PtRequestDrawer({
   onCancel,
   onClose,
 }: {
-  request: PtRequest;
+  request: ApiPtRequest;
   onSchedule: () => void;
   onCancel: () => void;
   onClose: () => void;
 }) {
-  const client = clients.find((c) => c.id === request.clientId);
-  const classType = classTypes.find((ct) => ct.id === request.classTypeId);
-  const location = locations.find((l) => l.id === request.locationId);
-  const partnerLabel = partnerDisplay(request);
   const partnerNeedsAccount =
-    request.sessionType === "2on1" && !request.coClientId;
+    request.session_type === "2on1" && !request.co_client?.clientId;
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
@@ -51,29 +35,25 @@ export function PtRequestDrawer({
           <X className="h-4 w-4" />
         </button>
         <div className="mb-4 flex items-center gap-3">
-          <Avatar name={client?.name ?? "Unknown"} size={40} />
+          <Avatar name={request.client.name} size={40} />
           <div>
-            <h2 className="text-base font-semibold text-ink">
-              {client?.name ?? "Unknown client"}
-            </h2>
+            <h2 className="text-base font-semibold text-ink">{request.client.name}</h2>
             <div className="text-xs text-muted">
-              Submitted {formatRelative(request.createdAt)}
+              Submitted {formatRelative(request.created_at)}
             </div>
           </div>
         </div>
         <dl className="space-y-3 border-y border-border py-4 text-sm">
           <Row label="Format">
-            {request.sessionType === "1on1" ? "1-on-1" : "2-on-1"}
+            {request.session_type === "1on1" ? "1-on-1" : "2-on-1"}
           </Row>
-          <Row label="Class type">{classType?.name ?? "—"}</Row>
-          <Row label="Location">{location?.name ?? "—"}</Row>
-          {request.sessionType === "2on1" && (
+          <Row label="Class type">{request.class_type.name}</Row>
+          <Row label="Location">{request.location.name}</Row>
+          {request.session_type === "2on1" && (
             <Row label="Partner">
               <div className="flex items-center gap-2">
-                <span>{partnerLabel}</span>
-                {partnerNeedsAccount && (
-                  <Badge tone="accent">needs account</Badge>
-                )}
+                <span>{ptPartnerDisplay(request)}</span>
+                {partnerNeedsAccount && <Badge tone="accent">needs account</Badge>}
               </div>
             </Row>
           )}
@@ -81,7 +61,7 @@ export function PtRequestDrawer({
             <ul className="space-y-0.5">
               {request.slots.map((s, i) => (
                 <li key={i} className="text-ink">
-                  {s.proposedDate} · {s.startTime}–{s.endTime}
+                  {s.proposed_date} · {s.start_time}–{s.end_time}
                 </li>
               ))}
             </ul>
@@ -94,10 +74,23 @@ export function PtRequestDrawer({
             </Row>
           )}
           <Row label="Status">
-            <Badge tone={STATUS_TONE[request.status]}>
-              {STATUS_LABEL[request.status]}
+            <Badge tone={PT_STATUS_TONE[request.status]}>
+              {PT_STATUS_LABEL[request.status]}
             </Badge>
           </Row>
+          {request.session && (
+            <Row label="Scheduled session">
+              <div className="text-ink">
+                {formatDateTime(request.session.starts_at)} –{" "}
+                {formatDateTime(request.session.ends_at)}
+              </div>
+              <div className="text-xs text-muted">
+                {[request.session.instructor_name, request.session.room_name]
+                  .filter(Boolean)
+                  .join(" · ") || "—"}
+              </div>
+            </Row>
+          )}
         </dl>
         {request.status === "pending" && (
           <div className="mt-6 flex gap-2">
@@ -109,40 +102,27 @@ export function PtRequestDrawer({
         )}
         {request.status === "scheduled" && (
           <div className="mt-6 space-y-3">
-            <div className="rounded-md bg-paper p-3 text-xs text-muted">
-              {request.resolvedAt && (
-                <>Scheduled on {formatDateTime(request.resolvedAt)}.</>
-              )}
-            </div>
+            {request.resolved_at && (
+              <div className="rounded-md bg-paper p-3 text-xs text-muted">
+                Scheduled on {formatDateTime(request.resolved_at)}.
+              </div>
+            )}
             <Button variant="ghost" onClick={onCancel}>
-              Cancel session (no refund)
+              Cancel session (full refund)
             </Button>
           </div>
         )}
         {(request.status === "cancelled_before_scheduled" ||
           request.status === "cancelled_after_scheduled" ||
           request.status === "attended") &&
-          request.resolvedAt && (
+          request.resolved_at && (
             <div className="mt-6 rounded-md bg-paper p-3 text-xs text-muted">
-              {STATUS_LABEL[request.status]} on{" "}
-              {formatDateTime(request.resolvedAt)}.
+              {PT_STATUS_LABEL[request.status]} on {formatDateTime(request.resolved_at)}.
             </div>
           )}
       </div>
     </div>
   );
-}
-
-function partnerDisplay(r: PtRequest): string {
-  if (r.coClientId) {
-    return (
-      clients.find((c) => c.id === r.coClientId)?.name ?? "Existing member"
-    );
-  }
-  if (r.coClientName || r.coClientEmail) {
-    return [r.coClientName, r.coClientEmail].filter(Boolean).join(" · ");
-  }
-  return "—";
 }
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {

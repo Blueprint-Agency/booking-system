@@ -8,18 +8,8 @@ import { BookingSurface } from "@/components/booking/booking-surface";
 import { SectionHeading } from "@/components/booking/section-heading";
 import { ScheduleSegments } from "@/components/booking/schedule-segments";
 import { useClientPackages } from "@/lib/use-client-packages";
-import { useLocations } from "@/lib/classes";
+import { useLocations, useClassTypes } from "@/lib/classes";
 import { usePtSessionsApi } from "@/lib/pt-sessions";
-
-// Class types: hardcoded list until /public/class-types ships. Matches the
-// admin-side seed names so the dropdown UX is realistic during preview.
-const CLASS_TYPES: { id: string; name: string }[] = [
-  { id: "ct-vinyasa", name: "Vinyasa Flow" },
-  { id: "ct-yin", name: "Yin Yoga" },
-  { id: "ct-aerial", name: "Aerial Yoga" },
-  { id: "ct-restorative", name: "Restorative" },
-  { id: "ct-prenatal", name: "Prenatal" },
-];
 
 type Slot = { proposedDate: string; startTime: string; endTime: string };
 
@@ -45,12 +35,13 @@ export default function PrivateSessionsPage() {
   const router = useRouter();
   const { pt1on1, pt2on1, packages, loading: pkgLoading } = useClientPackages();
   const { data: locations } = useLocations();
+  const { data: classTypes } = useClassTypes();
   const ptApi = usePtSessionsApi();
 
   const ptPackages = packages.filter((p) => p.kind === "pt");
 
   const [sessionType, setSessionType] = useState<"1on1" | "2on1">("1on1");
-  const [classTypeId, setClassTypeId] = useState<string>(CLASS_TYPES[0].id);
+  const [classTypeId, setClassTypeId] = useState<string>("");
   const [locationId, setLocationId] = useState<string>("");
   const [slots, setSlots] = useState<Slot[]>([emptySlot()]);
   const [message, setMessage] = useState<string>("");
@@ -61,6 +52,13 @@ export default function PrivateSessionsPage() {
       setLocationId(locations[0].id);
     }
   }, [locations, locationId]);
+
+  // Default to the first class type once the public list loads.
+  useEffect(() => {
+    if (!classTypeId && classTypes && classTypes.length > 0) {
+      setClassTypeId(classTypes[0].id);
+    }
+  }, [classTypes, classTypeId]);
 
   // Partner state (2on1 only).
   const [partnerEmail, setPartnerEmail] = useState<string>("");
@@ -245,7 +243,7 @@ export default function PrivateSessionsPage() {
               onChange={(e) => setClassTypeId(e.target.value)}
               className="w-full rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent"
             >
-              {CLASS_TYPES.map((c) => (
+              {(classTypes ?? []).map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
                 </option>

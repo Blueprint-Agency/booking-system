@@ -59,8 +59,12 @@ const app = new Hono()
     return c.json({ pt_request_id: ptRequestId }, 201)
   })
   .post('/:id/cancel', async c => {
-    await cancelPtRequest(c.req.param('id'), 'client')
-    return c.json({ ok: true })
+    const result = await cancelPtRequest({
+      ptRequestId: c.req.param('id'),
+      source: 'client',
+      clientId: c.get('clientId'),
+    })
+    return c.json({ ok: true, ...result })
   })
 
 export default app

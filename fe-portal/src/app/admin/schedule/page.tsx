@@ -314,7 +314,7 @@ export default function SchedulePage() {
           onClose={() => setPtPickerOpen(false)}
           onScheduled={() => {
             setPtPickerOpen(false);
-            alert("PT session scheduled (mock).");
+            void reload();
           }}
         />
       )}

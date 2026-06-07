@@ -1,9 +1,30 @@
 # PT Session Lifecycle — Completion Spec
 
-Status: **partially implemented (2026-06-07)** on `feat/pt-typed-credits-package-active`.
+Status: **backend lifecycle implemented (2026-06-07)** on `feat/pt-typed-credits-package-active`.
 Scope: **personal-training (PT) sessions only** — 1-on-1 and 2-on-1. Classes and workshops
 are referenced where they share policy but are not the subject here. Companion to
 `class-booking-lifecycle.md`.
+
+## Implementation status (this change)
+
+| Gap | Status | File |
+|---|---|---|
+| P1 — scheduling service + admin routes | ✅ done | `services/pt-sessions/schedule.ts`, `routes/portal/admin/pt-sessions.ts` |
+| P1 — instructor routes (instructor_id forced) | ✅ done | `routes/portal/instructor/pt-requests.ts` |
+| P2 — scheduled-session cancel cascade | ✅ done | `services/pt-sessions/cancel.ts` (`scheduled` branch) |
+| P3 — 2-on-1 debits/refunds 2 (not 1) | ✅ done | `services/pt-sessions/cost.ts`, `request.ts`, `cancel.ts` |
+| P4 — window-based refund via `evaluateCancellation` | ✅ done | `cancel.ts` (client scheduled-cancel) |
+| P5 — `manual_adjustments` ledger on debit/refund | ✅ done | `request.ts`, `cancel.ts` |
+| P6 — `expireStaleSessions` cron body | ✅ done | `cancel.ts` (cron already registered, every 5 min) |
+| Client cancel ownership assertion | ✅ done | `cancel.ts`, `routes/client/pt-sessions.ts` |
+| P7 — fe-portal pt-requests list/schedule/cancel wired to BE | ⛔ deferred | blocked on a portal-wide live-data pattern (no admin page calls `makeApi` yet; sibling corporate dialog is also seed-based) |
+| P8 — 2-on-1 new-partner "create account" loop | ⛔ deferred | needs P7 + admin client-create surface |
+| email notifications (`pt_session_approved`, `pt_cancelled_*`) | ⛔ deferred | inbox-only in v1, matching the class cancel path |
+
+Verified with `npx tsc --noEmit` in `be/` (EXIT=0; no test infra per project convention).
+**D1 resolved**: client scheduled-cancels are gated by the PT window + shared cap
+(`evaluateCancellation(kind='pt')`); admin cancels are always full refund. `be-portal.md §3c`'s
+"v1 = always forfeit" wording is superseded by this change and should be updated.
 
 The PT lifecycle has two halves. The **client request + pending-cancel + refund** half is
 built and live. The **admin-schedules → session materialises → scheduled-cancel** half is

@@ -1,133 +1,87 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { PageHeader, Badge } from "@/components/ui";
-import { ptRequests as seedRequests, clients, classTypes, locations } from "@/data";
 import { useWorkspace } from "@/lib/workspace-context";
 import { PtRequestDrawer } from "@/components/pt-requests/pt-request-drawer";
-import {
-  ScheduleFromRequestDialog,
-  type SchedulePayload,
-} from "@/components/pt-requests/schedule-from-request-dialog";
+import { ScheduleFromRequestDialog } from "@/components/pt-requests/schedule-from-request-dialog";
 import { formatRelative } from "@/lib/formatters";
-import type { PtRequest } from "@/types";
-
-type Filter = "pending" | "scheduled" | "cancelled" | "attended" | "all";
-
-const FILTER_LABEL: Record<Filter, string> = {
-  pending: "Pending",
-  scheduled: "Scheduled",
-  cancelled: "Cancelled",
-  attended: "Attended",
-  all: "All",
-};
-
-const STATUS_TONE: Record<PtRequest["status"], "accent" | "sage" | "error"> = {
-  pending: "accent",
-  scheduled: "sage",
-  cancelled_before_scheduled: "error",
-  cancelled_after_scheduled: "error",
-  attended: "sage",
-};
-
-const STATUS_SHORT: Record<PtRequest["status"], string> = {
-  pending: "pending",
-  scheduled: "scheduled",
-  cancelled_before_scheduled: "cancelled",
-  cancelled_after_scheduled: "cancelled",
-  attended: "attended",
-};
-
-function inFilter(r: PtRequest, f: Filter): boolean {
-  if (f === "all") return true;
-  if (f === "cancelled") {
-    return (
-      r.status === "cancelled_before_scheduled" ||
-      r.status === "cancelled_after_scheduled"
-    );
-  }
-  return r.status === f;
-}
+import {
+  type ApiPtRequest,
+  type PtFilter,
+  PT_FILTER_LABEL,
+  PT_STATUS_TONE,
+  PT_STATUS_SHORT,
+  ptInFilter,
+} from "@/lib/pt-requests";
 
 export default function PtRequestsPage() {
-  const [requests, setRequests] = useState<PtRequest[]>(seedRequests);
-  const [tab, setTab] = useState<Filter>("pending");
+  const { api, activeLocation, loading: wsLoading } = useWorkspace();
+
+  const [requests, setRequests] = useState<ApiPtRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<PtFilter>("pending");
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [schedFor, setSchedFor] = useState<PtRequest | null>(null);
+  const [schedFor, setSchedFor] = useState<ApiPtRequest | null>(null);
 
-  const { activeLocation, loading: wsLoading } = useWorkspace();
+  // Fetch every status for the active workspace location; tabs filter client-side
+  // so the per-tab counts stay accurate.
+  const load = useCallback(async () => {
+    if (!api || !activeLocation) {
+      setRequests([]);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await api.get<{ pt_requests: ApiPtRequest[] }>(
+        "/portal/admin/pt-sessions",
+        { status: "all", location_id: activeLocation.id },
+      );
+      setRequests(res.pt_requests ?? []);
+    } catch {
+      setError("Couldn't load PT requests.");
+      setRequests([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [api, activeLocation]);
 
-  // Seed-era bridge: the workspace switcher is wired to the live BE (real
-  // location UUIDs) while this page still renders seed requests (seed ids like
-  // `loc-breadtalk`). Map the active location to its seed row by name so the
-  // workspace dropdown visibly scopes the list today.
-  // TODO: once this page is wired to the BE pt-requests list endpoint, requests
-  // will carry real location UUIDs — compare `r.locationId === activeLocation.id`
-  // directly and delete this bridge + the seed `locations` import.
-  const activeSeedLocationId = useMemo(() => {
-    if (!activeLocation) return null;
-    const a = activeLocation.name.trim().toLowerCase();
-    const match = locations.find((l) => {
-      const n = l.name.trim().toLowerCase();
-      return n === a || a.includes(n) || n.includes(a);
-    });
-    return match?.id ?? null;
-  }, [activeLocation]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
-  // Requests for the active workspace location only.
-  const locationScoped = useMemo(
+  const filtered = useMemo(
     () =>
-      activeSeedLocationId
-        ? requests.filter((r) => r.locationId === activeSeedLocationId)
-        : [],
-    [requests, activeSeedLocationId],
+      requests
+        .filter((r) => ptInFilter(r, tab))
+        .sort((a, b) => b.created_at.localeCompare(a.created_at)),
+    [requests, tab],
   );
-
-  const filtered = locationScoped
-    .filter((r) => inFilter(r, tab))
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const active = requests.find((r) => r.id === activeId) ?? null;
+  const pendingCount = requests.filter((r) => r.status === "pending").length;
+  const filters: PtFilter[] = ["pending", "scheduled", "cancelled", "attended", "all"];
 
-  function applySchedule(req: PtRequest, payload: SchedulePayload) {
-    setRequests((prev) =>
-      prev.map((r) =>
-        r.id === req.id
-          ? {
-              ...r,
-              status: "scheduled" as const,
-              scheduledPtSessionId: `pts-${Date.now().toString(36)}`,
-              resolvedByStaffId: "stf-admin-1",
-              resolvedAt: new Date().toISOString(),
-            }
-          : r,
-      ),
-    );
-    setSchedFor(null);
-    setActiveId(null);
-    void payload;
+  async function handleCancel(req: ApiPtRequest) {
+    if (!api) return;
+    const scheduled = req.status === "scheduled";
+    if (
+      !confirm(
+        scheduled
+          ? "Cancel this scheduled session? The client is fully refunded (admin cancellation)."
+          : "Cancel this pending request? The held credits are refunded.",
+      )
+    )
+      return;
+    try {
+      await api.post(`/portal/admin/pt-sessions/${req.id}/cancel`);
+      setActiveId(null);
+      await load();
+    } catch {
+      setError("Couldn't cancel the request. Please try again.");
+    }
   }
-
-  function applyCancel(req: PtRequest) {
-    // Branches on current status — matches services/pt-sessions/cancel.ts.
-    setRequests((prev) =>
-      prev.map((r) =>
-        r.id === req.id
-          ? {
-              ...r,
-              status:
-                r.status === "scheduled"
-                  ? ("cancelled_after_scheduled" as const)
-                  : ("cancelled_before_scheduled" as const),
-              resolvedByStaffId: "stf-admin-1",
-              resolvedAt: new Date().toISOString(),
-            }
-          : r,
-      ),
-    );
-    setActiveId(null);
-  }
-
-  const pendingCount = locationScoped.filter((r) => r.status === "pending").length;
-  const filters: Filter[] = ["pending", "scheduled", "cancelled", "attended", "all"];
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -142,12 +96,15 @@ export default function PtRequestsPage() {
           : "Select a workspace location to see its PT requests."}
       </div>
 
+      {error && (
+        <div className="rounded-lg border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
+          {error}
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-2">
         {filters.map((f) => {
-          const count =
-            f === "all"
-              ? locationScoped.length
-              : locationScoped.filter((r) => inFilter(r, f)).length;
+          const count = requests.filter((r) => ptInFilter(r, f)).length;
           return (
             <button
               key={f}
@@ -159,17 +116,19 @@ export default function PtRequestsPage() {
                   : "border-border bg-card text-muted"
               }`}
             >
-              {FILTER_LABEL[f]} ({count})
+              {PT_FILTER_LABEL[f]} ({count})
             </button>
           );
         })}
       </div>
 
-      {filtered.length === 0 ? (
+      {loading || wsLoading ? (
         <div className="rounded-lg border border-border bg-card p-8 text-center text-sm text-muted">
-          {wsLoading
-            ? "Loading…"
-            : tab === "pending"
+          Loading…
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="rounded-lg border border-border bg-card p-8 text-center text-sm text-muted">
+          {tab === "pending"
             ? "No pending requests."
             : tab === "scheduled"
             ? "No scheduled PT requests yet."
@@ -182,12 +141,12 @@ export default function PtRequestsPage() {
       ) : (
         <ul className="divide-y divide-border rounded-xl border border-border bg-card shadow-soft">
           {filtered.map((r) => {
-            const client = clients.find((c) => c.id === r.clientId);
-            const classType = classTypes.find((ct) => ct.id === r.classTypeId);
             const first = r.slots[0];
             const more = r.slots.length - 1;
             const partnerHint =
-              r.sessionType === "2on1" && !r.coClientId ? " · partner: needs account" : "";
+              r.session_type === "2on1" && !r.co_client?.clientId
+                ? " · partner: needs account"
+                : "";
             return (
               <li key={r.id}>
                 <button
@@ -197,19 +156,23 @@ export default function PtRequestsPage() {
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="font-medium text-ink">{client?.name ?? "—"}</div>
+                      <div className="font-medium text-ink">{r.client.name}</div>
                       <div className="text-xs text-muted">
-                        {r.sessionType.toUpperCase()} · {classType?.name ?? "—"} ·{" "}
-                        {first.proposedDate} {first.startTime}–{first.endTime}
+                        {r.session_type.toUpperCase()} · {r.class_type.name}
+                        {first
+                          ? ` · ${first.proposed_date} ${first.start_time}–${first.end_time}`
+                          : ""}
                         {more > 0 ? ` +${more} more` : ""}
                         {partnerHint}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      <Badge tone={STATUS_TONE[r.status]}>
-                        {STATUS_SHORT[r.status]}
+                      <Badge tone={PT_STATUS_TONE[r.status]}>
+                        {PT_STATUS_SHORT[r.status]}
                       </Badge>
-                      <span className="text-xs text-muted">{formatRelative(r.createdAt)}</span>
+                      <span className="text-xs text-muted">
+                        {formatRelative(r.created_at)}
+                      </span>
                     </div>
                   </div>
                 </button>
@@ -224,14 +187,18 @@ export default function PtRequestsPage() {
           request={active}
           onClose={() => setActiveId(null)}
           onSchedule={() => setSchedFor(active)}
-          onCancel={() => applyCancel(active)}
+          onCancel={() => handleCancel(active)}
         />
       )}
       {schedFor && (
         <ScheduleFromRequestDialog
           request={schedFor}
           onClose={() => setSchedFor(null)}
-          onConfirm={(payload) => applySchedule(schedFor, payload)}
+          onScheduled={() => {
+            setSchedFor(null);
+            setActiveId(null);
+            void load();
+          }}
         />
       )}
 

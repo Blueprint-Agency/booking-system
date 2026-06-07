@@ -1,31 +1,56 @@
-import { eq } from 'drizzle-orm'
+import { and, eq, lt } from 'drizzle-orm'
 import { db } from '../../db'
-import { ptRequests } from '../../db/schema/schedule'
+import { ptRequests, ptSessions } from '../../db/schema/schedule'
+import { bookings, cancellations } from '../../db/schema/bookings'
 import { clientPackages } from '../../db/schema/packages'
-import { ConflictError, NotFoundError } from '../../shared/errors'
+import { manualAdjustments } from '../../db/schema/ledger'
+import { inboxItems } from '../../db/schema/inbox'
+import { evaluateCancellation } from '../policy/evaluate-cancellation'
 import { computeActive } from '../packages/validity'
+import { ptSessionCost } from './cost'
+import { AppError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 
 /**
- * Cancel a PT request, branching on its current status:
+ * Cancel a PT request, branching on its current status. Single entry point for
+ * client self-cancel (`/me/pt-sessions/:id/cancel`), admin cancel
+ * (`/pt-requests|pt-sessions/:id/cancel`), and the expiry cron.
  *
- *   pending   → status := cancelled_before_scheduled
- *               REFUND: credit the package back 1 session to the exact debited package.
- *               No pt_session row exists yet, so no booking-level work.
+ *   pending   → cancelled_before_scheduled
+ *               Always refund the debit (1 for 1on1 / 2 for 2on1) to the exact
+ *               package recorded at submit. No pt_session exists yet.
  *
- *   scheduled → status := cancelled_after_scheduled
- *               NO REFUND in v1 (policy decision — see docs/md/be-portal.md §PT).
- *               Cascade-cancel the linked pt_sessions row (lifecycle='cancelled')
- *               and every booking on it (state='cancelled', refund_outcome='forfeited').
+ *   scheduled → cancelled_after_scheduled
+ *               Cascade-cancel the linked pt_sessions row + its bookings.
+ *               Refund decision (be-portal.md §3c, superseding the old v1
+ *               "always forfeit"): admin → always full refund; client → routed
+ *               through evaluateCancellation(kind='pt') so a cancel within the
+ *               configured PT window + cap returns the session(s), otherwise the
+ *               action is rejected outright (hard deadline, mirroring classes).
  *
- * Both client and admin can hit this. Source is recorded on the cancellations row.
- * Calling cancel on a request already in a terminal state is a no-op (idempotent).
+ * Terminal states are an idempotent no-op. Credit movements write a
+ * manual_adjustments ledger row for traceability/parity with the class path.
  */
-export async function cancelPtRequest(
-  ptRequestId: string,
-  source: 'client' | 'admin',
-  actorStaffId?: string,
-): Promise<void> {
-  await db.transaction(async tx => {
+export type CancelPtSource = 'client' | 'admin' | 'system'
+
+export interface CancelPtRequestInput {
+  ptRequestId: string
+  source: CancelPtSource
+  /** Required for source='client' — asserts the request belongs to this client. */
+  clientId?: string
+  /** Staff actor for admin cancels (recorded on the request + ledger). */
+  actorStaffId?: string
+}
+
+export interface CancelPtRequestResult {
+  status: 'cancelled_before_scheduled' | 'cancelled_after_scheduled' | 'noop'
+  refundedSessions: number
+  refundOutcome: 'session_returned' | 'forfeited' | 'n_a'
+}
+
+export async function cancelPtRequest(input: CancelPtRequestInput): Promise<CancelPtRequestResult> {
+  const { ptRequestId, source, clientId, actorStaffId } = input
+
+  return db.transaction(async tx => {
     const [req] = await tx
       .select()
       .from(ptRequests)
@@ -34,20 +59,26 @@ export async function cancelPtRequest(
       .limit(1)
     if (!req) throw new NotFoundError('pt_request_not_found')
 
+    // Ownership: a client may only cancel their own request.
+    if (source === 'client' && clientId && req.clientId !== clientId) {
+      throw new ForbiddenError('not_your_request')
+    }
+
     // Terminal states → idempotent no-op.
     if (
       req.status === 'cancelled_before_scheduled' ||
       req.status === 'cancelled_after_scheduled' ||
       req.status === 'attended'
     ) {
-      return
+      return { status: 'noop', refundedSessions: 0, refundOutcome: 'n_a' }
     }
-    // Scheduled-request cancellation (with its no-refund + session cascade) is out of
-    // scope for this change — admin scheduling itself isn't built yet.
-    if (req.status !== 'pending') throw new ConflictError('cannot_cancel_non_pending')
 
-    // Refund 1 to the exact debited package.
-    if (req.debitedClientPackageId) {
+    const cost = ptSessionCost(req.sessionType)
+    const resolvedByStaffId = source === 'admin' ? (actorStaffId ?? null) : null
+
+    // Refund `n` sessions to the exact debited package + write a ledger row.
+    const refundToPackage = async (n: number, reason: string) => {
+      if (n <= 0 || !req.debitedClientPackageId) return
       const [pkg] = await tx
         .select({
           kind: clientPackages.kind,
@@ -58,36 +89,173 @@ export async function cancelPtRequest(
         .where(eq(clientPackages.id, req.debitedClientPackageId))
         .for('update')
         .limit(1)
-      if (pkg) {
-        const newRemaining = (pkg.remaining ?? 0) + 1
-        await tx
-          .update(clientPackages)
-          .set({
-            creditsOrSessionsRemaining: newRemaining,
-            active: computeActive({ kind: pkg.kind, expiresAt: pkg.expiresAt, creditsOrSessionsRemaining: newRemaining }),
-          })
-          .where(eq(clientPackages.id, req.debitedClientPackageId))
+      if (!pkg) return
+      const newRemaining = (pkg.remaining ?? 0) + n
+      await tx
+        .update(clientPackages)
+        .set({
+          creditsOrSessionsRemaining: newRemaining,
+          active: computeActive({ kind: pkg.kind, expiresAt: pkg.expiresAt, creditsOrSessionsRemaining: newRemaining }),
+        })
+        .where(eq(clientPackages.id, req.debitedClientPackageId))
+      await tx.insert(manualAdjustments).values({
+        clientId: req.clientId,
+        clientPackageId: req.debitedClientPackageId,
+        delta: n,
+        reason,
+        actedByStaffId: resolvedByStaffId,
+      })
+    }
+
+    // ---- pending → cancelled_before_scheduled (always refund) -------------
+    if (req.status === 'pending') {
+      await refundToPackage(
+        cost,
+        source === 'system' ? 'pt_request_expiry_refund' : 'pt_request_cancel_refund',
+      )
+      await tx
+        .update(ptRequests)
+        .set({ status: 'cancelled_before_scheduled', resolvedAt: new Date(), resolvedByStaffId })
+        .where(eq(ptRequests.id, ptRequestId))
+      return {
+        status: 'cancelled_before_scheduled',
+        refundedSessions: cost,
+        refundOutcome: 'session_returned',
       }
+    }
+
+    // ---- scheduled → cancelled_after_scheduled (cascade) ------------------
+    if (req.status !== 'scheduled') throw new ConflictError('cannot_cancel')
+
+    const [session] = await tx
+      .select({ id: ptSessions.id, startsAt: ptSessions.startsAt, lifecycle: ptSessions.lifecycle })
+      .from(ptSessions)
+      .where(eq(ptSessions.id, req.scheduledPtSessionId ?? ''))
+      .for('update')
+      .limit(1)
+    if (!session) throw new NotFoundError('pt_session_not_found')
+
+    const now = new Date()
+
+    // Refund decision. Admin bypasses window/cap (always full); client is gated
+    // by the PT window + shared cancellation cap.
+    let refundSessions = 0
+    let wasWithinWindow = true
+    let wasWithinCap = true
+    if (source === 'admin') {
+      refundSessions = cost
+    } else {
+      const evaluation = await evaluateCancellation({
+        clientId: req.clientId,
+        kind: 'pt',
+        sessionStartsAt: session.startsAt,
+        now,
+      })
+      wasWithinWindow = evaluation.wasWithinWindow
+      wasWithinCap = evaluation.wasWithinCap
+      // Hard deadline: inside the window (or after start) the cancel is rejected,
+      // not merely forfeited — same contract as the class self-cancel path.
+      if (!evaluation.wasWithinWindow) {
+        throw new AppError(422, 'cancellation_window_passed', { window_hours: evaluation.windowHours })
+      }
+      refundSessions = evaluation.refund === 'full' ? cost : 0
+    }
+    const refundOutcome: CancelPtRequestResult['refundOutcome'] =
+      refundSessions > 0 ? 'session_returned' : 'forfeited'
+
+    await refundToPackage(refundSessions, source === 'admin' ? 'pt_admin_cancel_refund' : 'pt_cancel_refund')
+
+    // Cancel the session.
+    await tx
+      .update(ptSessions)
+      .set({
+        lifecycle: 'cancelled',
+        cancelledAt: now,
+        cancelledByStaffId: source === 'admin' ? (actorStaffId ?? null) : null,
+      })
+      .where(eq(ptSessions.id, session.id))
+
+    // Cancel every booking on the session. The requester's booking carries the
+    // refund outcome; co-clients (2on1 partner) only lose their seat (`n_a`).
+    const sessionBookings = await tx
+      .select({ id: bookings.id, clientId: bookings.clientId })
+      .from(bookings)
+      .where(and(eq(bookings.ptSessionId, session.id), eq(bookings.state, 'confirmed')))
+      .for('update')
+    for (const bk of sessionBookings) {
+      await tx
+        .update(bookings)
+        .set({
+          state: 'cancelled',
+          refundOutcome: bk.clientId === req.clientId ? refundOutcome : 'n_a',
+          checkInState: 'n_a',
+          cancelledAt: now,
+        })
+        .where(eq(bookings.id, bk.id))
+    }
+
+    // One cancellation row, attributed to the requester (the actor who owns the
+    // request + the debit). Counts once toward their shared class/PT cap.
+    const requesterBooking = sessionBookings.find(b => b.clientId === req.clientId)
+    if (requesterBooking) {
+      await tx.insert(cancellations).values({
+        bookingId: requesterBooking.id,
+        clientId: req.clientId,
+        kind: 'pt',
+        source: source === 'admin' ? 'admin' : 'client',
+        wasWithinWindow,
+        wasWithinCap,
+        refundFired: refundSessions > 0,
+        cancelledAt: now,
+      })
     }
 
     await tx
       .update(ptRequests)
-      .set({
-        status: 'cancelled_before_scheduled',
-        resolvedAt: new Date(),
-        resolvedByStaffId: source === 'admin' ? (actorStaffId ?? null) : null,
-      })
+      .set({ status: 'cancelled_after_scheduled', resolvedAt: now, resolvedByStaffId })
       .where(eq(ptRequests.id, ptRequestId))
+
+    await tx.insert(inboxItems).values({
+      type: source === 'admin' ? 'admin_cancel_class_pt' : 'client_cancellation',
+      payload: {
+        ptRequestId,
+        ptSessionId: session.id,
+        clientId: req.clientId,
+        kind: 'pt',
+        refundOutcome,
+        refundedSessions: refundSessions,
+        ...(actorStaffId ? { actorStaffId } : {}),
+        at: now.toISOString(),
+      },
+    })
+
+    // NOTE(email): pt_cancelled_session_returned / pt_cancelled_forfeited are sent
+    // out-of-band, consistent with the class cancel path which is inbox-only in v1.
+
+    return { status: 'cancelled_after_scheduled', refundedSessions: refundSessions, refundOutcome }
   })
 }
 
 /**
- * Daily cron: expire stale pending PT requests past their advance booking window.
- * Cascades the same refund path as a client/admin cancel on a `pending` row, with
- * source='system'. Replaces the old private-session.service.ts:expireStaleSessions.
+ * Every 5 min (jobs/index.ts): expire pending PT requests past their advance
+ * booking window. Routes each through the same `pending` refund path with
+ * source='system' — refund the debit, flip to cancelled_before_scheduled.
  */
 export async function expireStaleSessions(): Promise<void> {
-  // TODO: SELECT pt_requests WHERE status='pending' AND expires_at < now()
-  //       For each: refund credits, set status='cancelled_before_scheduled',
-  //                 resolved_at=now(), resolved_by_staff_id=NULL.
+  const now = new Date()
+  const stale = await db
+    .select({ id: ptRequests.id })
+    .from(ptRequests)
+    .where(and(eq(ptRequests.status, 'pending'), lt(ptRequests.expiresAt, now)))
+
+  for (const row of stale) {
+    try {
+      await cancelPtRequest({ ptRequestId: row.id, source: 'system' })
+    } catch (err) {
+      // A request that raced into a terminal/scheduled state between the scan and
+      // the lock is fine to skip — the sweep is best-effort and idempotent.
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[pt-expiry] failed to expire request ${row.id}:`, msg)
+    }
+  }
 }
