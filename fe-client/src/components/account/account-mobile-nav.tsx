@@ -7,8 +7,6 @@ import {
   CalendarCheck,
   UserRound,
   GraduationCap,
-  Share2,
-  Receipt,
   UserCircle,
   Building2,
 } from "lucide-react";
@@ -21,8 +19,6 @@ const navItems = [
   { href: "/account/private-sessions", label: "Private Sessions", icon: UserRound, match: "prefix" as const },
   { href: "/account/corporate", label: "Corporate", icon: Building2, match: "prefix" as const },
   { href: "/account/workshops", label: "My Workshops", icon: GraduationCap, match: "prefix" as const },
-  { href: "/account/referral", label: "Referral", icon: Share2, match: "prefix" as const },
-  { href: "/account/invoices", label: "Invoices", icon: Receipt, match: "prefix" as const },
   { href: "/account/profile", label: "Profile", icon: UserCircle, match: "prefix" as const },
 ];
 

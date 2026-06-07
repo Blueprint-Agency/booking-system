@@ -1,19 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useUser, useClerk } from "@clerk/nextjs";
+import { useUser } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
 import { useClientPackages } from "@/lib/use-client-packages";
 
 export function AppTopBar({ impersonating = false }: { impersonating?: boolean }) {
   const { user, isSignedIn } = useUser();
-  const { signOut } = useClerk();
   const isAuth = !!isSignedIn;
   const { classCredits, pt1on1, pt2on1, isUnlimited: unlimited } = useClientPackages();
   const sessionCredits = pt1on1 + pt2on1;
   const firstName = user?.firstName ?? "";
   const lastName = user?.lastName ?? "";
-  const email = user?.primaryEmailAddress?.emailAddress ?? "";
   const userInitials = isAuth ? (firstName.charAt(0) + lastName.charAt(0)).toUpperCase() || "U" : "";
 
   return (
@@ -34,7 +32,7 @@ export function AppTopBar({ impersonating = false }: { impersonating?: boolean }
         </Link>
 
         {isAuth ? (
-          <div className="relative group flex items-center gap-2.5">
+          <div className="flex items-center gap-2.5">
             <Link
               href="/account"
               className="flex items-center gap-2 px-3 py-2 rounded-md bg-warm border border-ink/10 hover:border-ink/20 transition-colors"
@@ -51,39 +49,13 @@ export function AppTopBar({ impersonating = false }: { impersonating?: boolean }
                 <span className="hidden sm:inline text-[10px] font-medium text-muted">PT sessions</span>
               </span>
             </Link>
-            <button
-              className="w-9 h-9 rounded-full bg-accent/15 flex items-center justify-center text-[12px] font-bold text-accent-deep group-hover:bg-accent group-hover:text-inverse transition-colors"
-              aria-label="Account menu"
+            <Link
+              href="/account"
+              aria-label="Account"
+              className="w-9 h-9 rounded-full bg-accent/15 flex items-center justify-center text-[12px] font-bold text-accent-deep hover:bg-accent hover:text-inverse transition-colors"
             >
               {userInitials}
-            </button>
-            <div className="absolute right-0 top-full mt-2 w-64 bg-card border border-border rounded-lg shadow-hover opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50 overflow-hidden">
-              <div className="px-4 pt-4 pb-3">
-                <p className="text-[13px] font-semibold text-ink truncate leading-tight">
-                  {firstName} {lastName}
-                </p>
-                <p className="text-[11px] text-muted truncate leading-tight mt-0.5">{email}</p>
-              </div>
-              <div className="border-t border-border py-1">
-                <Link href="/account" className="block px-4 py-2 text-[13px] font-medium text-muted hover:text-ink hover:bg-warm transition-colors">
-                  Overview
-                </Link>
-                <Link href="/account/classes" className="block px-4 py-2 text-[13px] font-medium text-muted hover:text-ink hover:bg-warm transition-colors">
-                  Classes
-                </Link>
-                <Link href="/account/profile" className="block px-4 py-2 text-[13px] font-medium text-muted hover:text-ink hover:bg-warm transition-colors">
-                  Profile
-                </Link>
-              </div>
-              <div className="border-t border-border">
-                <button
-                  onClick={() => signOut({ redirectUrl: "/" })}
-                  className="block w-full text-left px-4 py-2.5 text-[13px] font-medium text-error hover:bg-error/10 transition-colors"
-                >
-                  Log out
-                </button>
-              </div>
-            </div>
+            </Link>
           </div>
         ) : (
           <div className="flex items-center gap-2">
