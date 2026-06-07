@@ -53,14 +53,6 @@ export default function ProfilePage() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Password — change in place.
-  const [currentPw, setCurrentPw] = useState("");
-  const [newPw, setNewPw] = useState("");
-  const [confirmPw, setConfirmPw] = useState("");
-  const [pwSaving, setPwSaving] = useState(false);
-  const [pwSaved, setPwSaved] = useState(false);
-  const [pwError, setPwError] = useState<string | null>(null);
-
   // Initial load. clerkClientAuth on the BE auto-provisions the row from token
   // claims if the webhook hasn't fired yet, so GET /me should always return a
   // row for an authenticated session.
@@ -125,38 +117,6 @@ export default function ProfilePage() {
       );
     } finally {
       setSaving(false);
-    }
-  }
-
-  async function handlePasswordChange(e: React.FormEvent) {
-    e.preventDefault();
-    if (pwSaving) return;
-    setPwError(null);
-    setPwSaved(false);
-    if (newPw.length < 8) {
-      setPwError("New password must be at least 8 characters.");
-      return;
-    }
-    if (newPw !== confirmPw) {
-      setPwError("New passwords don't match.");
-      return;
-    }
-    if (!user) return;
-    setPwSaving(true);
-    try {
-      await user.updatePassword({
-        currentPassword: currentPw,
-        newPassword: newPw,
-      });
-      setPwSaved(true);
-      setCurrentPw("");
-      setNewPw("");
-      setConfirmPw("");
-      setTimeout(() => setPwSaved(false), 3000);
-    } catch (err) {
-      setPwError(clerkErrorMessage(err) ?? "Couldn't update your password.");
-    } finally {
-      setPwSaving(false);
     }
   }
 
@@ -263,88 +223,23 @@ export default function ProfilePage() {
         </form>
 
         {/* Password */}
-        <form onSubmit={handlePasswordChange}>
-          <section className={cardClass}>
-            <div>
-              <h3 className="font-serif text-lg text-ink">Password</h3>
-              <p className="text-sm text-muted mt-1">
-                Choose a strong password you don&apos;t use elsewhere.
-              </p>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <label htmlFor="currentPw" className={labelClass}>
-                  Current password
-                </label>
-                <input
-                  id="currentPw"
-                  type="password"
-                  autoComplete="current-password"
-                  value={currentPw}
-                  onChange={(e) => setCurrentPw(e.target.value)}
-                  className={inputClass}
-                />
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label htmlFor="newPw" className={labelClass}>
-                    New password
-                  </label>
-                  <input
-                    id="newPw"
-                    type="password"
-                    autoComplete="new-password"
-                    value={newPw}
-                    onChange={(e) => setNewPw(e.target.value)}
-                    className={inputClass}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="confirmPw" className={labelClass}>
-                    Confirm new password
-                  </label>
-                  <input
-                    id="confirmPw"
-                    type="password"
-                    autoComplete="new-password"
-                    value={confirmPw}
-                    onChange={(e) => setConfirmPw(e.target.value)}
-                    className={inputClass}
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap justify-between gap-3 items-center pt-2">
-              <button
-                type="button"
-                onClick={() => signOut({ redirectUrl: "/login?reset=1" })}
-                className="text-sm text-accent-deep font-medium"
-              >
-                Forgot your password?
-              </button>
-              <div className="flex flex-wrap items-center gap-3">
-                {pwError && (
-                  <span className="text-sm text-red-600 font-medium">
-                    {pwError}
-                  </span>
-                )}
-                {pwSaved && (
-                  <span className="text-sm text-sage font-medium">
-                    Password updated
-                  </span>
-                )}
-                <button
-                  type="submit"
-                  disabled={pwSaving}
-                  className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium disabled:opacity-60"
-                >
-                  {pwSaving ? "Updating…" : "Update password"}
-                </button>
-              </div>
-            </div>
-          </section>
-        </form>
+        <section className={cardClass}>
+          <div>
+            <h3 className="font-serif text-lg text-ink">Password</h3>
+            <p className="text-sm text-muted mt-1">
+              We&apos;ll sign you out and email you a code to set a new password.
+            </p>
+          </div>
+          <div className="flex justify-start">
+            <button
+              type="button"
+              onClick={() => signOut({ redirectUrl: "/login?reset=1" })}
+              className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium"
+            >
+              Reset password
+            </button>
+          </div>
+        </section>
       </div>
     </div>
   );
