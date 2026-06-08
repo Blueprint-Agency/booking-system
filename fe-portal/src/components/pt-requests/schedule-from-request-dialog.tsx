@@ -54,6 +54,7 @@ export function ScheduleFromRequestDialog({
   const [instructorId, setInstructorId] = useState("");
   const [locationId, setLocationId] = useState(request.location.id);
   const [roomId, setRoomId] = useState("");
+  const [instructorPay, setInstructorPay] = useState("");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -125,6 +126,8 @@ export function ScheduleFromRequestDialog({
         room_id: roomId,
         starts_at: startsAt.toISOString(),
         ends_at: endsAt.toISOString(),
+        instructor_pay_sgd:
+          instructorPay.trim() === "" ? undefined : Number(instructorPay),
       });
       onScheduled();
     } catch (e) {
@@ -248,6 +251,18 @@ export function ScheduleFromRequestDialog({
                 </option>
               ))}
             </select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Instructor pay (S$)</Label>
+            <Input
+              type="number"
+              min={0}
+              step="0.01"
+              inputMode="decimal"
+              placeholder="Optional"
+              value={instructorPay}
+              onChange={(e) => setInstructorPay(e.target.value)}
+            />
           </div>
         </div>
         {err && (

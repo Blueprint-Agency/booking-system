@@ -76,16 +76,12 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
 
       const amountSgd = meta.amount_sgd ?? String(((session.amount_total ?? 0) / 100).toFixed(2))
 
-      // Idempotency — the stripe_payments row (unique on payment_intent_id) doubles
-      // as the guard: if it already exists, we've already created the request.
-      const [existing] = await db
-        .select({ status: stripePayments.status })
-        .from(stripePayments)
-        .where(eq(stripePayments.paymentIntentId, paymentIntentId))
-        .limit(1)
-      if (existing) return
-
-      await db
+      // Idempotency must be ATOMIC: the webhook and the confirmation page's
+      // sync-session both deliver this event (and dev StrictMode can double-fire),
+      // so a read-then-act guard races and creates duplicate requests. Instead we
+      // let the unique constraint on payment_intent_id arbitrate — only the insert
+      // that actually wins (returns a row) goes on to create the request.
+      const inserted = await db
         .insert(stripePayments)
         .values({
           paymentIntentId,
@@ -95,9 +91,17 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
           status: 'succeeded',
         })
         .onConflictDoNothing()
+        .returning({ id: stripePayments.id })
+      if (inserted.length === 0) return // already processed by a concurrent delivery
 
-      // Corporate carries no credits — the request IS the entitlement.
-      await submitCorporateRequest({ clientId, corporatePackageId: packageId })
+      // Corporate carries no credits — the request IS the entitlement. The
+      // member's preferred location + notes ride along in metadata as separate fields.
+      await submitCorporateRequest({
+        clientId,
+        corporatePackageId: packageId,
+        preferredLocation: meta.corporate_location?.trim() || null,
+        message: meta.corporate_notes?.trim() || null,
+      })
       return
     }
 

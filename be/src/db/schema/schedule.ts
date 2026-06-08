@@ -52,6 +52,9 @@ export const classes = pgTable(
     capacityWaitlist: integer('capacity_waitlist').notNull().default(0),
     capacityBuffer: integer('capacity_buffer').notNull().default(0),
     creditCost: integer('credit_cost').notNull(),
+    // Gross pay to the main instructor for this single class, in SGD. Manually
+    // entered at scheduling and editable from the Payroll page. NULL = not priced yet.
+    instructorPaySgd: numeric('instructor_pay_sgd', { precision: 10, scale: 2 }),
     lifecycle: lifecycleEnum('lifecycle').notNull().default('active'),
     cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
     cancelledByStaffId: uuid('cancelled_by_staff_id').references(() => staffUsers.id, {
@@ -411,6 +414,9 @@ export const ptSessions = pgTable(
     startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
     endsAt: timestamp('ends_at', { withTimezone: true }).notNull(),
     sessionType: ptSessionTypeEnum('session_type').notNull(),
+    // Gross pay to the instructor for this single PT session, in SGD. Same semantics
+    // as classes.instructor_pay_sgd. NULL = not priced yet.
+    instructorPaySgd: numeric('instructor_pay_sgd', { precision: 10, scale: 2 }),
     capacityOnline: integer('capacity_online').notNull(),
     capacityWaitlist: integer('capacity_waitlist').notNull().default(0),
     capacityBuffer: integer('capacity_buffer').notNull().default(0),
@@ -521,12 +527,12 @@ export const corporateSessions = pgTable(
     mainInstructorId: uuid('main_instructor_id')
       .notNull()
       .references(() => instructors.staffUserId, { onDelete: 'restrict' }),
-    locationId: uuid('location_id')
-      .notNull()
-      .references(() => locations.id, { onDelete: 'restrict' }),
-    roomId: uuid('room_id')
-      .notNull()
-      .references(() => rooms.id, { onDelete: 'restrict' }),
+    // Nullable: corporate sessions can be held off-site at the client's own
+    // venue (location_text), in which case there's no studio location_id/room_id.
+    locationId: uuid('location_id').references(() => locations.id, { onDelete: 'restrict' }),
+    roomId: uuid('room_id').references(() => rooms.id, { onDelete: 'restrict' }),
+    // Free-text venue when the session is off-site (mutually exclusive with location_id).
+    locationText: text('location_text'),
     startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
     endsAt: timestamp('ends_at', { withTimezone: true }).notNull(),
     lifecycle: lifecycleEnum('lifecycle').notNull().default('active'),
@@ -600,7 +606,11 @@ export const corporateRequests = pgTable(
       .notNull()
       .references(() => corporatePackages.id, { onDelete: 'restrict' }),
     status: corporateRequestStatusEnum('status').notNull().default('pending'),
-    // Optional free-form note (unused at auto-create; reserved for future use).
+    // Member's preferred location for the sessions, captured by the fe-client
+    // request form. Free text — a studio name or the member's own venue.
+    preferredLocation: text('preferred_location'),
+    // Optional free-form note from the request form. Kept separate from
+    // preferred_location so admin reviews them as distinct fields.
     message: text('message'),
     // FK to corporate_sessions.id added via the hand-edited migration below to break
     // the circular reference at TS-declaration time.

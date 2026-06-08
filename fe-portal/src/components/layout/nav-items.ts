@@ -14,6 +14,7 @@ import {
   Mail,
   FileText,
   UserCog,
+  Wallet,
 } from "lucide-react";
 
 export type NavScope = "global" | "workspace" | "both";
@@ -32,10 +33,10 @@ export interface NavItem {
    * from `scope`, which is about role visibility.
    */
   workspaceScoped?: boolean;
-  badgeKey?: "inboxUnread" | "ptRequestsPending";
+  badgeKey?: "inboxUnread" | "ptRequestsPending" | "corporateRequestsPending";
 }
 
-export type NavGroup = "Config" | "Packages" | "People" | "Settings";
+export type NavGroup = "Config" | "Packages" | "Corporate" | "People" | "Finance" | "Settings";
 
 export const NAV_ITEMS: NavItem[] = [
   // --- Workspace zone (switcher-controlled; rendered at top under the location name) ---
@@ -46,9 +47,6 @@ export const NAV_ITEMS: NavItem[] = [
   // Grouped in the location zone for navigation, but PT Requests is a workspace-AGNOSTIC
   // shared triage queue (no location_id until scheduled) — it is NOT filtered by the switcher.
   { group: "Settings", label: "PT Requests", href: "/admin/pt-requests", icon: HandHeart, scope: "workspace", workspaceScoped: true, badgeKey: "ptRequestsPending" },
-  // Corporate Requests is also a workspace-AGNOSTIC shared triage queue (no
-  // location_id until scheduled) — NOT filtered by the switcher.
-  { group: "Settings", label: "Corporate Requests", href: "/admin/corporate-requests", icon: Briefcase, scope: "workspace", workspaceScoped: true },
   { group: "Settings", label: "Rooms", href: "/admin/rooms", icon: DoorOpen, scope: "both", workspaceScoped: true },
 
   // --- Config (global building blocks, shared across locations) ---
@@ -60,10 +58,17 @@ export const NAV_ITEMS: NavItem[] = [
   { group: "Packages", label: "Private Sessions", href: "/admin/private-sessions", icon: UserRound, scope: "global" },
   { group: "Packages", label: "Corporate", href: "/admin/packages/corporate", icon: Briefcase, scope: "global" },
 
+  // --- Corporate (workspace-AGNOSTIC; no location_id until scheduled, so NOT
+  // filtered by the workspace switcher — lives in its own group, not the location zone) ---
+  { group: "Corporate", label: "Corporate Requests", href: "/admin/corporate-requests", icon: HandHeart, scope: "both", badgeKey: "corporateRequestsPending" },
+
   // --- People (members + staff accounts) ---
   // Instructors are managed under Staff → Instructors tab (merged), not a separate item.
   { group: "People", label: "Clients", href: "/admin/clients", icon: Users, scope: "both" },
   { group: "People", label: "Staff", href: "/admin/staff", icon: UserCog, scope: "global" },
+
+  // --- Finance (operations surface; both roles view records + edit pay) ---
+  { group: "Finance", label: "Payroll", href: "/admin/payroll", icon: Wallet, scope: "both" },
 
   // --- Settings (location-independent policy + config) ---
   { group: "Settings", label: "Global Policy", href: "/admin/policy", icon: Shield, scope: "global" },
@@ -71,4 +76,4 @@ export const NAV_ITEMS: NavItem[] = [
   { group: "Settings", label: "Waiver", href: "/admin/waiver", icon: FileText, scope: "global" },
 ];
 
-export const NAV_GROUP_ORDER: NavGroup[] = ["Config", "Packages", "People", "Settings"];
+export const NAV_GROUP_ORDER: NavGroup[] = ["Config", "Packages", "Corporate", "People", "Finance", "Settings"];

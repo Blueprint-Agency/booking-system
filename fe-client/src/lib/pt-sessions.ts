@@ -50,6 +50,10 @@ export interface RawPtRequest {
   id: string;
   session_type: "1on1" | "2on1";
   status: string;
+  // Is the caller the requester (owns the credit, can cancel) or the 2on1 partner (read-only)?
+  role?: "requester" | "partner";
+  // The requester's name — shown on partner cards ("hosted by …").
+  host_name?: string | null;
   class_type_id?: string;
   class_name?: string;
   location_id?: string;

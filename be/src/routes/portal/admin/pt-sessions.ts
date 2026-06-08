@@ -30,6 +30,7 @@ const scheduleSchema = z
     room_id: z.string().uuid(),
     starts_at: isoDate,
     ends_at: isoDate,
+    instructor_pay_sgd: z.number().min(0).optional(),
   })
   .refine(v => new Date(v.ends_at) > new Date(v.starts_at), {
     message: 'ends_at must be after starts_at',
@@ -104,6 +105,7 @@ const app = new Hono()
       roomId: body.room_id,
       startsAt: new Date(body.starts_at),
       endsAt: new Date(body.ends_at),
+      instructorPaySgd: body.instructor_pay_sgd ?? null,
       actorStaffId: actor,
     })
     if (!result.ok) return c.json({ error: result.error }, statusForScheduleError(result.error))

@@ -202,8 +202,15 @@ function RequestCard({
   const badge = statusBadge(status);
 
   const slot0 = r.slots[0];
-  const coClientLine = r.co_client_name ? `Partner: ${r.co_client_name}` : null;
-  const canCancel = r.status === "pending" || r.status === "scheduled";
+  const isPartner = r.role === "partner";
+  // Requester sees their partner; partner sees who's hosting them.
+  const coClientLine = isPartner
+    ? `You're the partner · hosted by ${r.host_name ?? "the host"}`
+    : r.co_client_name
+      ? `Partner: ${r.co_client_name}`
+      : null;
+  // Only the requester (who owns the debited credits) can cancel.
+  const canCancel = !isPartner && (r.status === "pending" || r.status === "scheduled");
   const refunds = r.status === "pending";
   const scheduled = r.session ?? null;
 

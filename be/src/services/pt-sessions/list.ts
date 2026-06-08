@@ -1,4 +1,5 @@
-import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, ne, or, sql } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/pg-core'
 import { db } from '../../db'
 import { clients, staffUsers } from '../../db/schema/identity'
 import { classTypes, locations, rooms } from '../../db/schema/catalog'
@@ -13,6 +14,10 @@ export interface ClientPtRequestView {
   locationName: string
   sessionType: '1on1' | '2on1'
   status: string
+  /** Is this client the requester (who owns the credit) or the 2on1 partner (read-only)? */
+  role: 'requester' | 'partner'
+  /** The requester's name. Used by partner cards ("hosted by …"). */
+  requesterName: string | null
   message: string | null
   coClientName: string | null
   createdAt: Date
@@ -30,9 +35,14 @@ export interface ClientPtRequestView {
 }
 
 export async function listClientPtRequests(clientId: string): Promise<ClientPtRequestView[]> {
+  // Aliased so we can read the requester's name even when `clientId` is the
+  // 2on1 partner (and ptRequests.clientId is someone else).
+  const requester = alias(clients, 'requester')
   const reqRows = await db
     .select({
       id: ptRequests.id,
+      requesterClientId: ptRequests.clientId,
+      requesterName: requester.name,
       classTypeId: ptRequests.classTypeId,
       className: classTypes.name,
       locationId: ptRequests.locationId,
@@ -50,12 +60,14 @@ export async function listClientPtRequests(clientId: string): Promise<ClientPtRe
       roomName: rooms.name,
     })
     .from(ptRequests)
+    .leftJoin(requester, eq(requester.id, ptRequests.clientId))
     .leftJoin(classTypes, eq(classTypes.id, ptRequests.classTypeId))
     .leftJoin(locations, eq(locations.id, ptRequests.locationId))
     .leftJoin(ptSessions, eq(ptSessions.id, ptRequests.scheduledPtSessionId))
     .leftJoin(staffUsers, eq(staffUsers.id, ptSessions.instructorId))
     .leftJoin(rooms, eq(rooms.id, ptSessions.roomId))
-    .where(eq(ptRequests.clientId, clientId))
+    // Caller is either the requester OR the 2on1 partner (co_client_id).
+    .where(or(eq(ptRequests.clientId, clientId), eq(ptRequests.coClientId, clientId)))
     .orderBy(desc(ptRequests.createdAt))
 
   if (reqRows.length === 0) return []
@@ -98,7 +110,9 @@ export async function listClientPtRequests(clientId: string): Promise<ClientPtRe
     }
   }
 
-  return reqRows.map(r => ({
+  return reqRows.map(r => {
+    const role: 'requester' | 'partner' = r.requesterClientId === clientId ? 'requester' : 'partner'
+    return {
     id: r.id,
     classTypeId: r.classTypeId,
     className: r.className ?? 'Class',
@@ -106,7 +120,10 @@ export async function listClientPtRequests(clientId: string): Promise<ClientPtRe
     locationName: r.locationName ?? 'Studio',
     sessionType: r.sessionType as '1on1' | '2on1',
     status: r.status,
-    message: r.message,
+    role,
+    requesterName: r.requesterName,
+    // The requester's private note to the instructor isn't the partner's to read.
+    message: role === 'partner' ? null : r.message,
     coClientName: r.coClientName,
     createdAt: r.createdAt,
     expiresAt: r.expiresAt,
@@ -120,7 +137,8 @@ export async function listClientPtRequests(clientId: string): Promise<ClientPtRe
         }
       : null,
     booking: r.sessionId ? bookingBySession.get(r.sessionId) ?? null : null,
-  }))
+    }
+  })
 }
 
 // ----------------------------------------------------------------------------

@@ -55,6 +55,7 @@ export default function NewClassPage() {
     buffer: 2,
   });
   const [creditCost, setCreditCost] = useState("1");
+  const [instructorPay, setInstructorPay] = useState("");
   const [difficulty, setDifficulty] = useState<ClassTypeDifficulty>("general");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -151,6 +152,8 @@ export default function NewClassPage() {
         capacity_waitlist: capacity.waitlist,
         capacity_buffer: capacity.buffer,
         credit_cost: Number(creditCost),
+        instructor_pay_sgd:
+          instructorPay.trim() === "" ? undefined : Number(instructorPay),
       });
       router.push("/admin/schedule");
     } catch (err) {
@@ -367,6 +370,23 @@ export default function NewClassPage() {
                 onChange={(e) => setCreditCost(e.target.value)}
               />
               <p className="text-xs text-muted">Credits charged per booking on this instance.</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="instructor-pay">Instructor pay (S$)</Label>
+              <Input
+                id="instructor-pay"
+                type="number"
+                min={0}
+                step="0.01"
+                inputMode="decimal"
+                placeholder="Optional"
+                value={instructorPay}
+                onChange={(e) => setInstructorPay(e.target.value)}
+              />
+              <p className="text-xs text-muted">
+                Amount paid to the main instructor for this class. Optional now —
+                editable later from Payroll.
+              </p>
             </div>
           </div>
         </section>

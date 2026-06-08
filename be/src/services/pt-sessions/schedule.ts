@@ -43,6 +43,8 @@ export interface SchedulePtRequestInput {
   /** Final agreed start/end (timezone-aware). Need not match any proposed slot. */
   startsAt: Date
   endsAt: Date
+  /** Gross pay to the instructor for this session, in SGD. null/undefined = unpriced. */
+  instructorPaySgd?: number | null
   actorStaffId: string
 }
 
@@ -148,6 +150,8 @@ export async function schedulePtRequest(input: SchedulePtRequestInput): Promise<
         startsAt: input.startsAt,
         endsAt: input.endsAt,
         sessionType: req.sessionType,
+        instructorPaySgd:
+          input.instructorPaySgd == null ? null : input.instructorPaySgd.toFixed(2),
         capacityOnline,
         lifecycle: 'active',
         scheduledAt: new Date(),

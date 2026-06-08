@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { SectionHeading } from "@/components/booking/section-heading";
 import { useApi } from "@/lib/api";
+import { useLocations } from "@/lib/classes";
 import {
   ApiClassPackage,
   ApiPtPackage,
@@ -28,6 +29,10 @@ import {
 type MainTab = "group" | "private" | "corporate";
 type ClassSubTab = "bundle" | "unlimited" | "trial";
 type PrivateSubTab = "1on1" | "2on1";
+
+// Flat transport surcharge for corporate sessions at the member's own venue.
+// Must match CORPORATE_TRANSPORT_SURCHARGE_SGD in be/src/routes/client/purchases.ts.
+const CORPORATE_TRANSPORT_SURCHARGE_SGD = 50;
 
 // ── Page ─────────────────────────────────────────────────────────────────────
 
@@ -922,16 +927,28 @@ function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
   const api = useApi();
   const [pending, setPending] = useState(false);
   const [err, setErr] = useState(false);
+  const [formOpen, setFormOpen] = useState(false);
 
-  async function startCheckout() {
+  // Submitting the request form proceeds to Stripe checkout, carrying the
+  // member's preferred location + notes along as separate request fields.
+  async function startCheckout(details: {
+    location: string;
+    notes: string;
+    customLocation: boolean;
+  }) {
     setPending(true);
     setErr(false);
     try {
-      const { url } = await purchaseCorporate(api, pkg.id);
+      const { url } = await purchaseCorporate(api, pkg.id, {
+        location: details.location || undefined,
+        notes: details.notes || undefined,
+        customLocation: details.customLocation,
+      });
       window.location.href = url;
     } catch {
       setErr(true);
       setPending(false);
+      setFormOpen(false);
     }
   }
 
@@ -962,7 +979,7 @@ function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
             requireAuth("/packages#corporate");
             return;
           }
-          if (!pending) void startCheckout();
+          if (!pending) setFormOpen(true);
         }}
         className={cn(
           "rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 w-full text-center transition-colors inline-flex items-center justify-center gap-2",
@@ -973,6 +990,184 @@ function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
         {pending ? "Redirecting…" : "Request this package"}
       </button>
       {gate}
+
+      {formOpen && (
+        <CorporateRequestModal
+          pkg={pkg}
+          pending={pending}
+          onCancel={() => setFormOpen(false)}
+          onSubmit={startCheckout}
+        />
+      )}
+    </div>
+  );
+}
+
+// Collected before checkout so we can tell the studio where the member wants
+// the corporate sessions held and capture any notes. The choices are the studio
+// locations plus a free-text "our own venue" option.
+function CorporateRequestModal({
+  pkg,
+  pending,
+  onCancel,
+  onSubmit,
+}: {
+  pkg: ApiCorporatePackage;
+  pending: boolean;
+  onCancel: () => void;
+  onSubmit: (details: {
+    location: string;
+    notes: string;
+    customLocation: boolean;
+  }) => void;
+}) {
+  const { data: locations } = useLocations();
+  const studioOptions = (locations ?? []).map((l) => l.name);
+  const CUSTOM = "__custom__";
+  const [where, setWhere] = useState("");
+  const [customWhere, setCustomWhere] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const isCustom = where === CUSTOM;
+  const resolvedWhere = isCustom ? customWhere.trim() : where.trim();
+  const canSubmit = resolvedWhere.length > 0 && !pending;
+  // Custom venue adds a flat transport surcharge (kept in sync with the BE).
+  const subtotal = Number(pkg.price_sgd) + (isCustom ? CORPORATE_TRANSPORT_SURCHARGE_SGD : 0);
+
+  function handleSubmit() {
+    if (!canSubmit) return;
+    onSubmit({ location: resolvedWhere, notes: notes.trim(), customLocation: isCustom });
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4"
+      onClick={pending ? undefined : onCancel}
+    >
+      <div
+        className="bg-paper rounded-2xl p-8 max-w-md w-full shadow-modal max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="font-serif text-xl text-ink leading-snug">
+          Request {pkg.name}
+        </h3>
+        <p className="text-sm text-muted mt-2 leading-relaxed">
+          Tell us where you&apos;d like the sessions held and anything we should
+          know. We&apos;ll reach out to you to further confirm the corporate
+          package arrangements.
+        </p>
+
+        {/* Where */}
+        <div className="mt-5">
+          <label className="block text-sm font-medium text-ink">
+            Where would you like the sessions?
+          </label>
+          <div className="mt-2 space-y-2">
+            {studioOptions.map((name) => (
+              <label
+                key={name}
+                className="flex items-center gap-2.5 text-sm text-ink cursor-pointer"
+              >
+                <input
+                  type="radio"
+                  name="corporate-where"
+                  value={name}
+                  checked={where === name}
+                  onChange={(e) => setWhere(e.target.value)}
+                  className="h-4 w-4 border-ink/30 text-accent focus:ring-accent"
+                />
+                <span>{name}</span>
+              </label>
+            ))}
+            <label className="flex items-center gap-2.5 text-sm text-ink cursor-pointer">
+              <input
+                type="radio"
+                name="corporate-where"
+                value={CUSTOM}
+                checked={where === CUSTOM}
+                onChange={(e) => setWhere(e.target.value)}
+                className="h-4 w-4 border-ink/30 text-accent focus:ring-accent"
+              />
+              <span>Another location (our office / venue)</span>
+            </label>
+          </div>
+          {isCustom && (
+            <>
+              <input
+                type="text"
+                value={customWhere}
+                onChange={(e) => setCustomWhere(e.target.value)}
+                placeholder="Address or venue name"
+                className="mt-2 w-full rounded-xl border border-ink/15 bg-card px-3.5 py-2.5 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+              />
+              <p className="mt-2 text-xs text-muted">
+                Sessions at your own venue add a{" "}
+                <span className="font-medium text-ink">
+                  {formatSgd(CORPORATE_TRANSPORT_SURCHARGE_SGD)} transport surcharge
+                </span>{" "}
+                to cover instructor travel.
+              </p>
+            </>
+          )}
+        </div>
+
+        {/* Notes */}
+        <div className="mt-5">
+          <label className="block text-sm font-medium text-ink">
+            Notes <span className="font-normal text-muted">(optional)</span>
+          </label>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={4}
+            maxLength={500}
+            placeholder="Group size, preferred dates/times, focus, or anything else."
+            className="mt-2 w-full rounded-xl border border-ink/15 bg-card px-3.5 py-2.5 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent resize-none"
+          />
+        </div>
+
+        {/* Price summary — surfaces the transport surcharge before checkout. */}
+        <dl className="mt-6 space-y-1.5 border-t border-ink/10 pt-4 text-sm">
+          <div className="flex items-center justify-between text-muted">
+            <dt>{pkg.name}</dt>
+            <dd>{formatSgd(pkg.price_sgd)}</dd>
+          </div>
+          {isCustom && (
+            <div className="flex items-center justify-between text-muted">
+              <dt>Transport surcharge</dt>
+              <dd>+{formatSgd(CORPORATE_TRANSPORT_SURCHARGE_SGD)}</dd>
+            </div>
+          )}
+          <div className="flex items-center justify-between font-medium text-ink">
+            <dt>Subtotal</dt>
+            <dd>{formatSgd(subtotal)}</dd>
+          </div>
+          <p className="text-xs text-muted">9% GST added at checkout.</p>
+        </dl>
+
+        <div className="mt-4 flex flex-col gap-2">
+          <button
+            type="button"
+            disabled={!canSubmit}
+            onClick={handleSubmit}
+            className={cn(
+              "w-full rounded-full bg-ink text-paper py-3 text-sm font-semibold transition-colors inline-flex items-center justify-center gap-2",
+              canSubmit ? "hover:bg-ink/90" : "opacity-50 cursor-not-allowed",
+            )}
+          >
+            {pending && <Loader2 className="h-4 w-4 animate-spin" />}
+            {pending ? "Redirecting…" : "Continue to payment"}
+          </button>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={onCancel}
+            className="w-full rounded-full border border-ink/10 py-2.5 text-sm text-muted hover:text-ink transition-colors disabled:opacity-50"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

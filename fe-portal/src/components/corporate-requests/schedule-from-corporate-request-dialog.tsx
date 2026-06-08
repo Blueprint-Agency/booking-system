@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
 import { todayIso, currentHourTime } from "@/lib/formatters";
+import { cn } from "@/lib/utils";
 import { useWorkspace } from "@/lib/workspace-context";
 import { corporateErrorMessage } from "@/lib/corporate-errors";
 import type { CorporateRequest } from "@/types";
@@ -52,6 +53,13 @@ export function ScheduleFromCorporateRequestDialog({
   >([]);
   const [locationId, setLocationId] = useState(activeLocationId ?? "");
   const [roomId, setRoomId] = useState("");
+  // Default to the client's suggested off-site venue when they gave one; else a studio.
+  const [locationMode, setLocationMode] = useState<"studio" | "custom">(
+    request.preferredLocation ? "custom" : "studio",
+  );
+  const [customLocation, setCustomLocation] = useState(
+    request.preferredLocation ?? "",
+  );
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -118,10 +126,16 @@ export function ScheduleFromCorporateRequestDialog({
     if (roomId && !roomsForLocation.some((r) => r.id === roomId)) setRoomId("");
   }, [roomId, roomsForLocation]);
 
+  const isCustomLocation = locationMode === "custom";
+  const trimmedCustomLocation = customLocation.trim();
+  const locationReady = isCustomLocation
+    ? trimmedCustomLocation.length > 0
+    : Boolean(locationId);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!api) return;
-    if (!mainInstructorId || !locationId || !roomId) return;
+    if (!mainInstructorId || !locationReady) return;
     if (!date || !startTime || !endTime) return;
 
     const startsAt = new Date(`${date}T${startTime}:00`);
@@ -139,8 +153,13 @@ export function ScheduleFromCorporateRequestDialog({
         {
           main_instructor_id: mainInstructorId,
           supporting_instructor_ids: supportingInstructorIds,
-          location_id: locationId,
-          room_id: roomId,
+          // Studio location (with optional room) OR a free-text off-site venue.
+          ...(isCustomLocation
+            ? { location_text: trimmedCustomLocation }
+            : {
+                location_id: locationId,
+                ...(roomId ? { room_id: roomId } : {}),
+              }),
           starts_at: startsAt.toISOString(),
           ends_at: endsAt.toISOString(),
         },
@@ -211,39 +230,87 @@ export function ScheduleFromCorporateRequestDialog({
               onChange={(e) => setEndTime(e.target.value)}
             />
           </div>
-          <div className="space-y-1.5">
+        </div>
+
+        {/* Location: a studio (with optional room) or the client's own off-site venue. */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
             <Label>Location</Label>
-            <select
-              value={locationId}
-              onChange={(e) => setLocationId(e.target.value)}
-              className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
-            >
-              <option value="">Select…</option>
-              {activeLocations.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name}
-                </option>
-              ))}
-            </select>
+            <div className="inline-flex rounded-md border border-border p-0.5 text-xs">
+              <button
+                type="button"
+                onClick={() => setLocationMode("studio")}
+                className={cn(
+                  "rounded px-2.5 py-1 transition-colors",
+                  !isCustomLocation ? "bg-ink text-paper" : "text-muted hover:text-ink",
+                )}
+              >
+                Studio
+              </button>
+              <button
+                type="button"
+                onClick={() => setLocationMode("custom")}
+                className={cn(
+                  "rounded px-2.5 py-1 transition-colors",
+                  isCustomLocation ? "bg-ink text-paper" : "text-muted hover:text-ink",
+                )}
+              >
+                Custom venue
+              </button>
+            </div>
           </div>
-          <div className="space-y-1.5">
-            <Label>Room</Label>
-            <select
-              value={roomId}
-              onChange={(e) => setRoomId(e.target.value)}
-              disabled={!locationId}
-              className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm disabled:opacity-50"
-            >
-              <option value="">
-                {locationId ? "Select…" : "Pick a location first"}
-              </option>
-              {roomsForLocation.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name}
-                </option>
-              ))}
-            </select>
-          </div>
+
+          {isCustomLocation ? (
+            <div className="space-y-1.5">
+              <Input
+                value={customLocation}
+                onChange={(e) => setCustomLocation(e.target.value)}
+                placeholder="Client office / venue address"
+              />
+              {request.preferredLocation && (
+                <p className="text-xs text-muted">
+                  Client suggested:{" "}
+                  <span className="text-ink">{request.preferredLocation}</span>
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted">Studio</Label>
+                <select
+                  value={locationId}
+                  onChange={(e) => setLocationId(e.target.value)}
+                  className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
+                >
+                  <option value="">Select…</option>
+                  {activeLocations.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted">Room (optional)</Label>
+                <select
+                  value={roomId}
+                  onChange={(e) => setRoomId(e.target.value)}
+                  disabled={!locationId}
+                  className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm disabled:opacity-50"
+                >
+                  <option value="">
+                    {locationId ? "No room" : "Pick a studio first"}
+                  </option>
+                  {roomsForLocation.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="space-y-1.5">
@@ -319,8 +386,7 @@ export function ScheduleFromCorporateRequestDialog({
             disabled={
               submitting ||
               !mainInstructorId ||
-              !locationId ||
-              !roomId ||
+              !locationReady ||
               !date ||
               !startTime ||
               !endTime

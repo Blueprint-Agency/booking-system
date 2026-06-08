@@ -131,15 +131,22 @@ export function useCorporateRequests(): {
 
 /**
  * Starts Stripe checkout for a corporate package. Returns the Stripe checkout
- * URL — redirect the browser to it (mirrors the paid-package flow).
+ * URL — redirect the browser to it (mirrors the paid-package flow). The optional
+ * `location` and `notes` carry the member's request-form answers as separate
+ * fields; they're stored on the auto-created corporate request once payment
+ * completes (admin reviews them individually).
  */
 export function purchaseCorporate(
   api: Api,
   packageId: string,
+  details?: { location?: string; notes?: string; customLocation?: boolean },
 ): Promise<{ url: string }> {
   return api.post<{ url: string }>("/me/checkout/package", {
     package_kind: "corporate",
     package_id: packageId,
+    ...(details?.location ? { location: details.location } : {}),
+    ...(details?.notes ? { notes: details.notes } : {}),
+    ...(details?.customLocation ? { custom_location: true } : {}),
   });
 }
 

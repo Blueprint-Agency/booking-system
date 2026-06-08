@@ -35,6 +35,7 @@ function serialize(r: svc.CorporateSessionRow) {
     client_name: r.clientName,
     main_instructor_id: r.mainInstructorId,
     location_id: r.locationId,
+    location_text: r.locationText,
     room_id: r.roomId,
     starts_at: r.startsAt.toISOString(),
     ends_at: r.endsAt.toISOString(),
@@ -64,6 +65,7 @@ function statusFor(error: svc.CorporateSessionError): 400 | 404 | 409 | 422 {
       return 409
     case 'main_in_supporting':
     case 'bad_time_range':
+    case 'location_required':
       return 400
   }
 }

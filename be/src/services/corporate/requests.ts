@@ -37,6 +37,7 @@ export interface CorporateRequestSessionDetail {
 export interface HydratedCorporateRequest {
   id: string
   status: CorporateRequestStatus
+  preferredLocation: string | null
   message: string | null
   createdAt: Date
   resolvedAt: Date | null
@@ -53,12 +54,17 @@ export interface HydratedCorporateRequest {
 export interface SubmitCorporateRequestInput {
   clientId: string
   corporatePackageId: string
+  /** Preferred location captured by the fe-client request form (optional). */
+  preferredLocation?: string | null
+  /** Free-text notes captured by the fe-client request form (optional). */
+  message?: string | null
 }
 
 /**
  * Auto-create one pending corporate request for a purchased package. Called from
  * the Stripe webhook after `checkout.session.completed`. No slots, no negotiation
- * captured here — that all happens over WhatsApp.
+ * captured here — that all happens over WhatsApp. The member's preferred location
+ * and free-text notes (from the request form) are stored as separate fields.
  */
 export async function submitCorporateRequest(
   input: SubmitCorporateRequestInput,
@@ -78,6 +84,8 @@ export async function submitCorporateRequest(
     .values({
       clientId: input.clientId,
       corporatePackageId: input.corporatePackageId,
+      preferredLocation: input.preferredLocation ?? null,
+      message: input.message ?? null,
       status: 'pending',
     })
     .returning({ id: corporateRequests.id })
@@ -93,6 +101,7 @@ function hydratedSelect() {
     .select({
       id: corporateRequests.id,
       status: corporateRequests.status,
+      preferredLocation: corporateRequests.preferredLocation,
       message: corporateRequests.message,
       createdAt: corporateRequests.createdAt,
       resolvedAt: corporateRequests.resolvedAt,
@@ -106,6 +115,7 @@ function hydratedSelect() {
       sessionEndsAt: corporateSessions.endsAt,
       sessionLifecycle: corporateSessions.lifecycle,
       locationName: locations.name,
+      locationText: corporateSessions.locationText,
       instructorName: staffUsers.name,
     })
     .from(corporateRequests)
@@ -126,6 +136,7 @@ function mapRow(r: HydratedRow): HydratedCorporateRequest {
   return {
     id: r.id,
     status: r.status,
+    preferredLocation: r.preferredLocation,
     message: r.message,
     createdAt: r.createdAt,
     resolvedAt: r.resolvedAt,
@@ -136,7 +147,8 @@ function mapRow(r: HydratedRow): HydratedCorporateRequest {
           id: r.sessionId,
           startsAt: r.sessionStartsAt!,
           endsAt: r.sessionEndsAt!,
-          locationName: r.locationName,
+          // Off-site sessions have no studio location row — fall back to the venue text.
+          locationName: r.locationName ?? r.locationText,
           instructorName: r.instructorName,
         }
       : null,
@@ -176,8 +188,11 @@ export interface ScheduleCorporateRequestInput {
   corporateRequestId: string
   mainInstructorId: string
   supportingInstructorIds: string[]
-  locationId: string
-  roomId: string
+  // Either a studio location (locationId, optional roomId) OR a free-text off-site
+  // venue (locationText). Room is optional even for a studio location.
+  locationId?: string | null
+  locationText?: string | null
+  roomId?: string | null
   startsAt: Date
   endsAt: Date
   actorStaffId: string
@@ -222,6 +237,7 @@ export async function scheduleCorporateRequest(
     mainInstructorId: input.mainInstructorId,
     supportingInstructorIds: input.supportingInstructorIds,
     locationId: input.locationId,
+    locationText: input.locationText,
     roomId: input.roomId,
     startsAt: input.startsAt,
     endsAt: input.endsAt,

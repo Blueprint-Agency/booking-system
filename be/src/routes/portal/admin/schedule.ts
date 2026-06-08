@@ -32,6 +32,7 @@ const createClassSchema = z
     capacity_waitlist: z.number().int().min(0).default(0),
     capacity_buffer: z.number().int().min(0).default(0),
     credit_cost: z.number().int().min(0),
+    instructor_pay_sgd: z.number().min(0).optional(),
   })
   .refine(v => v.capacity_online + v.capacity_waitlist + v.capacity_buffer > 0, {
     message: 'capacity must be positive',
@@ -54,6 +55,7 @@ const updateClassSchema = z.object({
   capacity_waitlist: z.number().int().min(0).optional(),
   capacity_buffer: z.number().int().min(0).optional(),
   credit_cost: z.number().int().min(0).optional(),
+  instructor_pay_sgd: z.number().min(0).nullable().optional(),
 })
 
 function entryRow(e: timetable.ScheduleEntryRow) {
@@ -95,6 +97,7 @@ async function classRow(c: classesSvc.ClassRow) {
     capacity_waitlist: c.capacityWaitlist,
     capacity_buffer: c.capacityBuffer,
     credit_cost: c.creditCost,
+    instructor_pay_sgd: c.instructorPaySgd == null ? null : Number(c.instructorPaySgd),
     lifecycle: c.lifecycle,
   }
 }
@@ -184,6 +187,7 @@ const app = new Hono()
       capacityWaitlist: body.capacity_waitlist,
       capacityBuffer: body.capacity_buffer,
       creditCost: body.credit_cost,
+      instructorPaySgd: body.instructor_pay_sgd ?? null,
       createdByStaffId: staffId,
     })
     c.set('auditTarget' as any, { table: 'classes', id: row.id })
@@ -214,6 +218,9 @@ const app = new Hono()
           : {}),
         ...(body.capacity_buffer !== undefined ? { capacityBuffer: body.capacity_buffer } : {}),
         ...(body.credit_cost !== undefined ? { creditCost: body.credit_cost } : {}),
+        ...(body.instructor_pay_sgd !== undefined
+          ? { instructorPaySgd: body.instructor_pay_sgd }
+          : {}),
       })
       c.set('auditTarget' as any, { table: 'classes', id })
       return c.json(await classRow(row))

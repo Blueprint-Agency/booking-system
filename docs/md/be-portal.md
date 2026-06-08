@@ -131,7 +131,7 @@ Promotions are nested under their parent (class package, PT package, or workshop
 | Method | Path | Effect |
 |---|---|---|
 | GET | `/schedule` | Unified timetable: union of `classes`, `workshop_days` (one tile per day with `Day N/M` chip per `admin-restructure.md` §7c), confirmed `pt_sessions`. **Filtered by `granted_location_ids`** at the middleware. Query filters: `?instructor_id`, `?class_type_id`, `?from`, `?to`, `?type=class\|workshop\|pt`. Each row carries `event_state` computed at read time per `services/policy/event-state.ts`. |
-| POST | `/schedule/classes` | Create class instance. Body includes `capacity_online`, `capacity_waitlist`, `capacity_buffer` (the structured capacity per `admin-restructure.md` §7d). `location_id` must be in `granted_location_ids`. |
+| POST | `/schedule/classes` | Create class instance. Body includes `capacity_online`, `capacity_waitlist`, `capacity_buffer` (the structured capacity per `admin-restructure.md` §7d) and optional `instructor_pay_sgd` (pay to the main instructor — see `payroll.ts`). `location_id` must be in `granted_location_ids`. |
 | PATCH | `/schedule/classes/:id` | Edit (rejects if any confirmed bookings AND material change, e.g. moving start time more than 15 min) |
 | POST | `/schedule/classes/:id/cancel` | Admin cancellation — see §3b |
 | POST | `/schedule/workshops/:id/cancel` | Admin cancellation of an entire workshop (all days, all tiers) + Stripe refund fanout to attendees — see §3b. **No** workshop create/edit here; those live in `workshops.ts`. |
@@ -170,7 +170,7 @@ PT requests carry a `location_id` chosen by the client at submission time, so th
 |---|---|---|
 | GET | `/pt-requests` | Triage queue, **filtered by `granted_location_ids`**. Default `?status=pending`, ordered `created_at desc`. Filters: `?status`, `?location_id` (must be in scope), `?class_type_id`, `?client_id`, `?session_type`, `?from`, `?to`. |
 | GET | `/pt-requests/:id` | Detail incl. client profile snapshot, class type, all proposed slots (`pt_request_slots`), co-client (resolved `co_client_id` OR free-text `co_client_name + co_client_email`), message, expiry. |
-| POST | `/pt-requests/:id/schedule` | Convert request → `pt_sessions` row. Body: `{ instructor_id, location_id, room_id, starts_at, ends_at, capacity_online?, capacity_waitlist?, capacity_buffer? }`. Calls `services/pt-sessions/schedule.ts:schedulePtRequest()` — see §3c. `location_id` must be in the acting admin's `granted_location_ids`. **For 2on1 requests with no `co_client_id` yet** the call rejects with 409 — admin must create the partner's client first via `/admin/clients`, the FE then re-opens the schedule dialog with `co_client_id` resolved. |
+| POST | `/pt-requests/:id/schedule` | Convert request → `pt_sessions` row. Body: `{ instructor_id, location_id, room_id, starts_at, ends_at, instructor_pay_sgd?, capacity_online?, capacity_waitlist?, capacity_buffer? }` (`instructor_pay_sgd` = pay to the instructor — see `payroll.ts`). Calls `services/pt-sessions/schedule.ts:schedulePtRequest()` — see §3c. `location_id` must be in the acting admin's `granted_location_ids`. **For 2on1 requests with no `co_client_id` yet** the call rejects with 409 — admin must create the partner's client first via `/admin/clients`, the FE then re-opens the schedule dialog with `co_client_id` resolved. |
 | POST | `/pt-requests/:id/cancel` | Admin cancel. Branches on current status: `pending` → `cancelled_before_scheduled` + refund (1 session for 1on1, 2 for 2on1) to the originating client package; `scheduled` → `cancelled_after_scheduled`, cascade-cancel the linked `pt_sessions` row + every booking on it (state='cancelled', refund_outcome='forfeited'), **no refund** (v1 policy). Emits `admin_cancel_class_pt` inbox row and emails the affected client(s). Idempotent — calling on an already-terminal request is a no-op. |
 
 ### `pt-sessions.ts` — removed
@@ -217,6 +217,17 @@ The old "+ corporate" package dropdown and the `/admin/schedule/new/corporate` d
 | GET | `/bookings/:id` | Detail |
 | POST | `/bookings/:id/cancel` | Admin force-cancel (always full refund, bypasses cap — see §3b client-vs-admin path table) |
 | POST | `/bookings/:id/no-show` | Mark `state='no_show'`, `check_in_state='no_show'`, fire forfeit logic |
+
+### `payroll.ts` (gated `staffAny` — admin + superadmin)
+
+Instructor payroll. The pay owed for a session is stored per-session on `classes.instructor_pay_sgd` / `pt_sessions.instructor_pay_sgd` (`numeric(10,2)`, nullable), coupled to that session's **main** instructor (`main_instructor_id` / `instructor_id`). Supporting instructors are **not** paid via this surface in v1. The amount is set optionally when scheduling (see `schedule.ts:POST /schedule/classes` and `pt-requests.ts:POST /pt-requests/:id/schedule`, both now accepting `instructor_pay_sgd?`) and is editable inline from the Payroll page.
+
+A session is **completed** (and thus on payroll) when `lifecycle = 'active' AND ends_at < now()` — cancelled sessions never owe pay; future sessions haven't happened yet even if pre-priced.
+
+| Method | Path | Effect |
+|---|---|---|
+| GET | `/payroll` | Completed classes **and** PT sessions, merged, sorted `starts_at desc`. Optional filters: `?instructor_id`, `?class_type_id` (PT matched via its originating `pt_requests.class_type_id`), `?from`, `?to` (ISO, bound on `starts_at`). Each row: `{ kind: 'class'\|'pt', id, instructor_id, instructor_name, class_type_id, label, session_type, starts_at, ends_at, duration_minutes, instructor_pay_sgd }`. Response also carries `totals[]` (`{ instructor_id, instructor_name, total_sgd, session_count }`, priced rows only — the "pay by end of month" view) and `unpriced_count` (completed sessions with no amount yet). |
+| PATCH | `/payroll/:kind/:id` | `kind ∈ {class, pt}`. Body `{ instructor_pay_sgd: number\|null }` — sets or (with `null`) clears the pay on that one session. `404 not_found` if the id doesn't exist. |
 
 ### `check-in.ts`
 | Method | Path | Effect |

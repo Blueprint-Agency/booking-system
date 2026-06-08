@@ -1,0 +1,1 @@
+ALTER TABLE "corporate_requests" ADD COLUMN "preferred_location" text;

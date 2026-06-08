@@ -17,19 +17,32 @@ const listQuery = z.object({
   status: z.enum(['pending', 'scheduled', 'cancelled', 'attended', 'all']).default('pending'),
 })
 
-const scheduleSchema = z.object({
-  main_instructor_id: z.string().uuid(),
-  supporting_instructor_ids: z.array(z.string().uuid()).default([]),
-  location_id: z.string().uuid(),
-  room_id: z.string().uuid(),
-  starts_at: isoDate,
-  ends_at: isoDate,
-})
+const scheduleSchema = z
+  .object({
+    main_instructor_id: z.string().uuid(),
+    supporting_instructor_ids: z.array(z.string().uuid()).default([]),
+    // Either a studio location (location_id, optional room_id) OR a free-text
+    // off-site venue (location_text). Room is optional.
+    location_id: z.string().uuid().optional(),
+    location_text: z.string().trim().min(1).max(300).optional(),
+    room_id: z.string().uuid().optional(),
+    starts_at: isoDate,
+    ends_at: isoDate,
+  })
+  .refine(v => Boolean(v.location_id) || Boolean(v.location_text), {
+    message: 'either location_id or location_text is required',
+    path: ['location_id'],
+  })
+  .refine(v => !v.room_id || Boolean(v.location_id), {
+    message: 'room_id requires a studio location_id',
+    path: ['room_id'],
+  })
 
 function serialize(r: svc.HydratedCorporateRequest) {
   return {
     id: r.id,
     status: r.status,
+    preferred_location: r.preferredLocation,
     message: r.message,
     created_at: r.createdAt.toISOString(),
     resolved_at: r.resolvedAt ? r.resolvedAt.toISOString() : null,
@@ -60,6 +73,7 @@ function statusForScheduleError(error: svc.ScheduleCorporateRequestError): 400 |
       return 422
     case 'main_in_supporting':
     case 'bad_time_range':
+    case 'location_required':
       return 400
   }
 }
@@ -88,6 +102,7 @@ const app = new Hono()
       mainInstructorId: body.main_instructor_id,
       supportingInstructorIds: body.supporting_instructor_ids,
       locationId: body.location_id,
+      locationText: body.location_text,
       roomId: body.room_id,
       startsAt: new Date(body.starts_at),
       endsAt: new Date(body.ends_at),

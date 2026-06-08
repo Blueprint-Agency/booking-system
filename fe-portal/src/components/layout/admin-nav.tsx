@@ -181,10 +181,37 @@ function NavContent({ pathname, onNavigate }: { pathname: string; onNavigate?: (
     // Re-count when the workspace changes or the route changes (e.g. after triaging).
   }, [api, activeLocationId, pathname]);
 
+  // Live count of PENDING corporate requests for the nav badge. Workspace-AGNOSTIC
+  // (no location_id until scheduled) — unlike PT, it's NOT filtered by the switcher.
+  const [corporatePending, setCorporatePending] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    if (!api) {
+      setCorporatePending(undefined);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await api.get<{ corporate_requests: unknown[] }>(
+          "/portal/admin/corporate-requests",
+          { status: "pending" },
+        );
+        if (!cancelled) setCorporatePending(res.corporate_requests?.length || undefined);
+      } catch {
+        if (!cancelled) setCorporatePending(undefined);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Re-count when the route changes (e.g. after triaging a request).
+  }, [api, pathname]);
+
   const inboxUnread = inboxItems.filter((i) => i.readAt === null).length;
   const badges: BadgeMap = {
     inboxUnread: inboxUnread > 0 ? inboxUnread : undefined,
     ptRequestsPending: ptPending,
+    corporateRequestsPending: corporatePending,
   };
 
   const visibleItems = NAV_ITEMS.filter((item) => {

@@ -39,6 +39,7 @@ const FILTERS: Filter[] = [
 interface ApiCorporateRequest {
   id: string;
   status: CorporateRequestStatus;
+  preferred_location: string | null;
   message: string | null;
   created_at: string;
   resolved_at: string | null;
@@ -57,6 +58,7 @@ function fromApi(r: ApiCorporateRequest): CorporateRequest {
   return {
     id: r.id,
     status: r.status,
+    preferredLocation: r.preferred_location,
     message: r.message,
     createdAt: r.created_at,
     resolvedAt: r.resolved_at,

@@ -49,6 +49,8 @@ export interface CreateClassInput {
   capacityWaitlist: number
   capacityBuffer: number
   creditCost: number
+  /** Gross pay to the main instructor for this class, in SGD. null/undefined = unpriced. */
+  instructorPaySgd?: number | null
   createdByStaffId: string
 }
 
@@ -85,6 +87,8 @@ export async function createClass(input: CreateClassInput): Promise<ClassRow> {
         capacityWaitlist: input.capacityWaitlist,
         capacityBuffer: input.capacityBuffer,
         creditCost: input.creditCost,
+        instructorPaySgd:
+          input.instructorPaySgd == null ? null : input.instructorPaySgd.toFixed(2),
         createdByStaffId: input.createdByStaffId,
       })
       .returning()
@@ -112,6 +116,8 @@ export interface UpdateClassInput {
   capacityWaitlist?: number
   capacityBuffer?: number
   creditCost?: number
+  /** undefined = leave unchanged; null = clear; number = set (SGD). */
+  instructorPaySgd?: number | null
 }
 
 export async function updateClass(id: string, patch: UpdateClassInput): Promise<ClassRow> {
@@ -166,6 +172,9 @@ export async function updateClass(id: string, patch: UpdateClassInput): Promise<
     if (patch.capacityWaitlist !== undefined) set.capacityWaitlist = patch.capacityWaitlist
     if (patch.capacityBuffer !== undefined) set.capacityBuffer = patch.capacityBuffer
     if (patch.creditCost !== undefined) set.creditCost = patch.creditCost
+    if (patch.instructorPaySgd !== undefined)
+      set.instructorPaySgd =
+        patch.instructorPaySgd == null ? null : patch.instructorPaySgd.toFixed(2)
 
     let row = existing
     if (Object.keys(set).length) {

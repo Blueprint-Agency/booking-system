@@ -70,9 +70,16 @@ export function CorporateRequestDrawer({
               <Row label="Instructor">{session.instructorName ?? "—"}</Row>
             </>
           )}
+          {request.preferredLocation && (
+            <Row label="Preferred location">
+              <blockquote className="rounded-md border-l-2 border-border bg-paper p-2">
+                {request.preferredLocation}
+              </blockquote>
+            </Row>
+          )}
           {request.message && (
-            <Row label="Message">
-              <blockquote className="rounded-md border-l-2 border-border bg-paper p-2 italic">
+            <Row label="Notes">
+              <blockquote className="whitespace-pre-line rounded-md border-l-2 border-border bg-paper p-2 italic">
                 {request.message}
               </blockquote>
             </Row>

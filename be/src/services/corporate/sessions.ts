@@ -21,8 +21,11 @@ export interface CreateCorporateSessionInput {
   clientName: string
   mainInstructorId: string
   supportingInstructorIds: string[]
-  locationId: string
-  roomId: string
+  // Either a studio location (locationId, optionally with a roomId) OR a free-text
+  // off-site venue (locationText). Room is optional even for a studio location.
+  locationId?: string | null
+  locationText?: string | null
+  roomId?: string | null
   startsAt: Date
   endsAt: Date
   createdByStaffId: string
@@ -35,6 +38,7 @@ export type CorporateSessionError =
   | 'instructor_conflict'
   | 'main_in_supporting'
   | 'bad_time_range'
+  | 'location_required'
 
 export type CreateCorporateSessionResult =
   | { ok: true; session: CorporateSessionRow }
@@ -160,21 +164,30 @@ export async function createCorporateSession(
   if (!pkg) return { ok: false, error: 'package_not_found' }
   if (pkg.status !== 'active') return { ok: false, error: 'package_archived' }
 
-  // Room must belong to location (throws on mismatch — let the AppError propagate
-  // so misconfigured requests still surface 400, consistent with sister-services).
-  await assertRoomInLocation(input.roomId, input.locationId)
-
-  // 4. Room conflict (reuse shared helper — it throws ConflictError on clash)
-  try {
-    await assertRoomAvailable(input.roomId, input.startsAt, input.endsAt)
-  } catch (err) {
-    if (err instanceof AppError && err.code === 'room_clash') {
-      return { ok: false, error: 'room_conflict' }
-    }
-    throw err
+  // 4. Location: a studio location_id OR a free-text off-site venue is required.
+  const locationText = input.locationText?.trim() || null
+  if (!input.locationId && !locationText) {
+    return { ok: false, error: 'location_required' }
   }
 
-  // 5. Main-instructor conflict (supporting does not block)
+  // 5. Room (optional). A room only makes sense inside a studio location; validate
+  //    it belongs to that location and is free. Off-site venues carry no room.
+  if (input.roomId) {
+    if (!input.locationId) return { ok: false, error: 'location_required' }
+    // Room must belong to location (throws on mismatch — let the AppError propagate
+    // so misconfigured requests still surface 400, consistent with sister-services).
+    await assertRoomInLocation(input.roomId, input.locationId)
+    try {
+      await assertRoomAvailable(input.roomId, input.startsAt, input.endsAt)
+    } catch (err) {
+      if (err instanceof AppError && err.code === 'room_clash') {
+        return { ok: false, error: 'room_conflict' }
+      }
+      throw err
+    }
+  }
+
+  // 6. Main-instructor conflict (supporting does not block)
   if (
     await hasMainInstructorConflict(input.mainInstructorId, input.startsAt, input.endsAt)
   ) {
@@ -191,8 +204,10 @@ export async function createCorporateSession(
         corporatePackageId: input.corporatePackageId,
         clientName: input.clientName,
         mainInstructorId: input.mainInstructorId,
-        locationId: input.locationId,
-        roomId: input.roomId,
+        // Studio location and off-site text are mutually exclusive.
+        locationId: input.locationId ?? null,
+        locationText: input.locationId ? null : locationText,
+        roomId: input.locationId ? (input.roomId ?? null) : null,
         startsAt: input.startsAt,
         endsAt: input.endsAt,
         createdByStaffId: input.createdByStaffId,
@@ -298,6 +313,10 @@ export async function rescheduleCorporateSession(
   const nextMainInstructorId = patch.mainInstructorId ?? existing.mainInstructorId
   const nextLocationId = patch.locationId ?? existing.locationId
   const nextRoomId = patch.roomId ?? existing.roomId
+  const nextLocationText =
+    patch.locationText !== undefined
+      ? patch.locationText?.trim() || null
+      : existing.locationText
   const nextStartsAt = patch.startsAt ?? existing.startsAt
   const nextEndsAt = patch.endsAt ?? existing.endsAt
 
@@ -334,19 +353,26 @@ export async function rescheduleCorporateSession(
     if (pkg.status !== 'active') return { ok: false, error: 'package_archived' }
   }
 
-  // Validate room/location coherence
-  await assertRoomInLocation(nextRoomId, nextLocationId)
+  // Location: a studio location_id OR a free-text venue must remain set.
+  if (!nextLocationId && !nextLocationText) {
+    return { ok: false, error: 'location_required' }
+  }
 
-  // 4. Room conflict (exclude self)
-  try {
-    await assertRoomAvailable(nextRoomId, nextStartsAt, nextEndsAt, {
-      excludeCorporateSessionId: id,
-    })
-  } catch (err) {
-    if (err instanceof AppError && err.code === 'room_clash') {
-      return { ok: false, error: 'room_conflict' }
+  // Room (optional) is only valid inside a studio location — validate coherence
+  // and availability only when both are present.
+  if (nextRoomId) {
+    if (!nextLocationId) return { ok: false, error: 'location_required' }
+    await assertRoomInLocation(nextRoomId, nextLocationId)
+    try {
+      await assertRoomAvailable(nextRoomId, nextStartsAt, nextEndsAt, {
+        excludeCorporateSessionId: id,
+      })
+    } catch (err) {
+      if (err instanceof AppError && err.code === 'room_clash') {
+        return { ok: false, error: 'room_conflict' }
+      }
+      throw err
     }
-    throw err
   }
 
   // 5. Main-instructor conflict (exclude self)
@@ -364,8 +390,16 @@ export async function rescheduleCorporateSession(
     if (patch.corporatePackageId !== undefined) set.corporatePackageId = nextCorporatePackageId
     if (patch.clientName !== undefined) set.clientName = nextClientName
     if (patch.mainInstructorId !== undefined) set.mainInstructorId = nextMainInstructorId
-    if (patch.locationId !== undefined) set.locationId = nextLocationId
-    if (patch.roomId !== undefined) set.roomId = nextRoomId
+    // Re-normalize location/room/text together so studio vs off-site stays coherent.
+    if (
+      patch.locationId !== undefined ||
+      patch.locationText !== undefined ||
+      patch.roomId !== undefined
+    ) {
+      set.locationId = nextLocationId ?? null
+      set.locationText = nextLocationId ? null : nextLocationText
+      set.roomId = nextLocationId ? (nextRoomId ?? null) : null
+    }
     if (patch.startsAt !== undefined) set.startsAt = nextStartsAt
     if (patch.endsAt !== undefined) set.endsAt = nextEndsAt
 

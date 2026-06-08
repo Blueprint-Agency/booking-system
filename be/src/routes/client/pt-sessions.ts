@@ -35,6 +35,8 @@ function serializeRequest(r: Awaited<ReturnType<typeof listClientPtRequests>>[nu
     location_name: r.locationName,
     session_type: r.sessionType,
     status: r.status,
+    role: r.role,
+    host_name: r.requesterName,
     message: r.message,
     co_client_name: r.coClientName,
     created_at: r.createdAt,

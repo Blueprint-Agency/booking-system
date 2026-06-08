@@ -247,6 +247,7 @@ export type CorporateRequestStatus =
 export interface CorporateRequest {
   id: string;
   status: CorporateRequestStatus;
+  preferredLocation: string | null;
   message: string | null;
   createdAt: string;
   resolvedAt: string | null;
