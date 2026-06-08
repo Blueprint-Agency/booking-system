@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AccountHeader } from "./account-header";
+import { AccountMobileNav } from "./account-mobile-nav";
 
 const navItems = [
   { href: "/account", label: "Overview", icon: LayoutDashboard, match: "exact" as const },
@@ -70,6 +71,11 @@ export function AccountShell({ children }: { children: React.ReactNode }) {
             </button>
           </nav>
         </aside>
+
+        {/* Mobile / tablet nav — the desktop sidebar is hidden below lg, so
+            members on small screens reach the account sections from here.
+            Centralised here so every account page gets it (and only once). */}
+        <AccountMobileNav />
 
         <main className="min-w-0">{children}</main>
       </div>

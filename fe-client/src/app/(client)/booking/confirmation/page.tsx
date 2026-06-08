@@ -514,18 +514,74 @@ function WorkshopSuccess({
 }
 
 // ── Package post-payment success ──────────────────────────────────────────────
+type PackageKind = "class" | "pt" | "corporate";
+
+// Real catalogue details for the just-purchased item, fetched from the public
+// catalogue so the overlay reflects exactly what was bought (live packages use
+// UUIDs, so the legacy PACKAGE_DISPLAY slug map can't cover them).
+type PackageDetails =
+  | { kind: "class"; subKind: "credit_bundle" | "unlimited"; name: string; credits: number }
+  | { kind: "pt"; name: string; numSessions: number }
+  | { kind: "corporate"; name: string };
+
+// The overlay's copy + CTAs, derived so each purchase type reads relevantly.
+function buildPackageView(
+  packageKind: PackageKind,
+  details: PackageDetails | null,
+  legacy: { name: string; subtitle: string } | undefined,
+) {
+  if (packageKind === "corporate") {
+    return {
+      title: "Corporate package",
+      name: (details?.kind === "corporate" ? details.name : undefined) ?? legacy?.name ?? "Corporate package",
+      subtitle: "Thanks for your purchase. Our team will be in touch to set up your corporate plan.",
+      primary: { href: "/account/corporate", label: "View corporate packages" },
+      secondary: { href: "/account", label: "View my account" },
+    };
+  }
+
+  if (packageKind === "pt") {
+    const sessions = details?.kind === "pt" ? details.numSessions : undefined;
+    return {
+      title: "Package details",
+      name: (details?.kind === "pt" ? details.name : undefined) ?? legacy?.name ?? "Private session package",
+      subtitle: sessions != null
+        ? `${sessions} private session${sessions === 1 ? "" : "s"} added to your account`
+        : "Your private sessions have been added to your account",
+      primary: { href: "/private-sessions", label: "Start Booking Private Sessions" },
+      secondary: { href: "/account", label: "View my account" },
+    };
+  }
+
+  // class — credit bundle or unlimited pass
+  const isUnlimited = details?.kind === "class" && details.subKind === "unlimited";
+  const credits = details?.kind === "class" ? details.credits : undefined;
+  return {
+    title: "Package details",
+    name: (details?.kind === "class" ? details.name : undefined) ?? legacy?.name ?? "Package",
+    subtitle: isUnlimited
+      ? "Your unlimited pass is now active — book any class, anytime."
+      : credits != null
+        ? `${credits} class credit${credits === 1 ? "" : "s"} added to your account`
+        : legacy?.subtitle ?? "Credits have been added to your account",
+    primary: { href: "/classes", label: "Start Booking Classes" },
+    secondary: { href: "/account", label: "View my account" },
+  };
+}
+
 function PackageSuccess({
   packageId,
   packageKind,
   stripeSessionId,
 }: {
   packageId: string;
-  packageKind: "class" | "pt";
+  packageKind: PackageKind;
   stripeSessionId: string | null;
 }) {
   const { getToken } = useAuth();
   const { refetch } = useClientPackages();
   const [synced, setSynced] = useState(false);
+  const [details, setDetails] = useState<PackageDetails | null>(null);
 
   // Sync the Stripe session server-side so credits are granted immediately
   // without waiting for the webhook (handles local dev where no CLI listener runs),
@@ -555,12 +611,33 @@ function PackageSuccess({
     return () => { cancelled = true; };
   }, [stripeSessionId, getToken, refetch]);
 
-  const legacy = PACKAGE_DISPLAY[packageId];
-  const name = legacy?.name ?? "Package";
-  const subtitle = legacy?.subtitle ?? "Credits have been added to your account";
-  const isPrivatePackage = packageKind === "pt";
-  const ctaHref = isPrivatePackage ? "/private-sessions" : "/classes";
-  const ctaLabel = isPrivatePackage ? "Start Booking Private Sessions" : "Start Booking Classes";
+  // Pull the real catalogue entry so the overlay copy matches what was bought.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (packageKind === "corporate") {
+          const res = await fetch(`${getApiBaseUrl()}/public/corporate-packages`);
+          const data = await res.json();
+          const row = data.corporate_packages?.find((p: { id: string }) => p.id === packageId);
+          if (!cancelled && row) setDetails({ kind: "corporate", name: row.name });
+          return;
+        }
+        const res = await fetch(`${getApiBaseUrl()}/public/packages`);
+        const data = await res.json();
+        const cls = data.class_packages?.find((p: { id: string }) => p.id === packageId);
+        if (cls) {
+          if (!cancelled) setDetails({ kind: "class", subKind: cls.kind, name: cls.name, credits: cls.credits });
+          return;
+        }
+        const pt = data.pt_packages?.find((p: { id: string }) => p.id === packageId);
+        if (pt && !cancelled) setDetails({ kind: "pt", name: pt.name, numSessions: pt.num_sessions });
+      } catch { /* non-fatal — falls back to legacy/ generic copy */ }
+    })();
+    return () => { cancelled = true; };
+  }, [packageId, packageKind]);
+
+  const view = buildPackageView(packageKind, details, PACKAGE_DISPLAY[packageId]);
 
   return (
     <>
@@ -581,23 +658,23 @@ function PackageSuccess({
 
           {synced && (
             <>
-              <SectionHeading eyebrow="Your purchase" title="Package details" align="center" />
+              <SectionHeading eyebrow="Your purchase" title={view.title} align="center" />
               <div className="text-center">
-                <p className="text-2xl font-bold text-ink">{name}</p>
-                <p className="text-lg text-muted mt-2">{subtitle}</p>
+                <p className="text-2xl font-bold text-ink">{view.name}</p>
+                <p className="text-lg text-muted mt-2">{view.subtitle}</p>
               </div>
               <div className="mt-10 flex gap-3 justify-center">
                 <Link
-                  href={ctaHref}
+                  href={view.primary.href}
                   className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 transition-colors"
                 >
-                  {ctaLabel}
+                  {view.primary.label}
                 </Link>
                 <Link
-                  href="/account"
+                  href={view.secondary.href}
                   className="rounded-full border border-ink/10 px-5 py-3 text-sm font-medium hover:border-accent transition-colors"
                 >
-                  View my account
+                  {view.secondary.label}
                 </Link>
               </div>
             </>
@@ -617,7 +694,7 @@ function ConfirmationContent() {
   const stripeSessionId = searchParams.get("session_id"); // cs_test_...
   // Legacy slug-based param (mock links) OR real UUID-based param from Stripe success_url
   const packageId = searchParams.get("package_id") ?? searchParams.get("package");
-  const packageKind = (searchParams.get("package_kind") ?? "class") as "class" | "pt";
+  const packageKind = (searchParams.get("package_kind") ?? "class") as PackageKind;
   const alreadyConfirmed = searchParams.get("confirmed") === "1";
 
   // Generate a booking reference for QR from URL params or a stable mock

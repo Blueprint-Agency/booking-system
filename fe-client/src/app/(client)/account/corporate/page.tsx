@@ -10,7 +10,6 @@ import {
   XCircle,
 } from "lucide-react";
 import { SectionHeading } from "@/components/booking/section-heading";
-import { AccountMobileNav } from "@/components/account/account-mobile-nav";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
   ApiCorporateRequest,
@@ -99,7 +98,6 @@ export default function AccountCorporatePage() {
 
   return (
     <>
-      <AccountMobileNav />
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
         <SectionHeading eyebrow="Corporate" title="Your corporate packages" />
 

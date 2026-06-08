@@ -4,7 +4,6 @@ import { useMemo, useState, useEffect, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { CalendarX, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { SectionHeading } from "@/components/booking/section-heading";
-import { AccountMobileNav } from "@/components/account/account-mobile-nav";
 import { EmptyState } from "@/components/ui/empty-state";
 import { QrBadge } from "@/components/account/qr-badge";
 import { usePtSessionsApi, type RawPtRequest } from "@/lib/pt-sessions";
@@ -110,7 +109,6 @@ function Inner() {
 
   return (
     <>
-      <AccountMobileNav />
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
         <SectionHeading eyebrow="Private sessions" title="Your PT sessions" />
 

@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { useUser, useClerk } from "@clerk/nextjs";
 import { Lock } from "lucide-react";
 import { SectionHeading } from "@/components/booking/section-heading";
-import { AccountMobileNav } from "@/components/account/account-mobile-nav";
 import { ApiError, useApi } from "@/lib/api";
 
 interface ApiClientProfile {
@@ -127,7 +126,6 @@ export default function ProfilePage() {
         title="Account details"
         description="Keep your info current so we can reach you."
       />
-      <AccountMobileNav />
 
       <div className="mt-8 space-y-6">
         {/* Name + contact */}

@@ -11,7 +11,6 @@ import {
 import { formatDate } from "@/lib/utils";
 import { formatClassTime } from "@/lib/classes";
 import { SectionHeading } from "@/components/booking/section-heading";
-import { AccountMobileNav } from "@/components/account/account-mobile-nav";
 import { EmptyState } from "@/components/ui/empty-state";
 import { QrBadge } from "@/components/account/qr-badge";
 import { useUser } from "@clerk/nextjs";
@@ -69,7 +68,6 @@ export default function AccountOverview() {
         eyebrow={`Welcome back, ${firstName}`}
         title="Here's your practice"
       />
-      <AccountMobileNav />
 
       {/* Credit totals */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
