@@ -514,15 +514,14 @@ function WorkshopSuccess({
 }
 
 // ── Package post-payment success ──────────────────────────────────────────────
-type PackageKind = "class" | "pt" | "corporate";
+type PackageKind = "class" | "pt";
 
 // Real catalogue details for the just-purchased item, fetched from the public
 // catalogue so the overlay reflects exactly what was bought (live packages use
 // UUIDs, so the legacy PACKAGE_DISPLAY slug map can't cover them).
 type PackageDetails =
   | { kind: "class"; subKind: "credit_bundle" | "unlimited"; name: string; credits: number }
-  | { kind: "pt"; name: string; numSessions: number }
-  | { kind: "corporate"; name: string };
+  | { kind: "pt"; name: string; numSessions: number };
 
 // The overlay's copy + CTAs, derived so each purchase type reads relevantly.
 function buildPackageView(
@@ -530,16 +529,6 @@ function buildPackageView(
   details: PackageDetails | null,
   legacy: { name: string; subtitle: string } | undefined,
 ) {
-  if (packageKind === "corporate") {
-    return {
-      title: "Corporate package",
-      name: (details?.kind === "corporate" ? details.name : undefined) ?? legacy?.name ?? "Corporate package",
-      subtitle: "Thanks for your purchase. Our team will be in touch to set up your corporate plan.",
-      primary: { href: "/account/corporate", label: "View corporate packages" },
-      secondary: { href: "/account", label: "View my account" },
-    };
-  }
-
   if (packageKind === "pt") {
     const sessions = details?.kind === "pt" ? details.numSessions : undefined;
     return {
@@ -616,13 +605,6 @@ function PackageSuccess({
     let cancelled = false;
     (async () => {
       try {
-        if (packageKind === "corporate") {
-          const res = await fetch(`${getApiBaseUrl()}/public/corporate-packages`);
-          const data = await res.json();
-          const row = data.corporate_packages?.find((p: { id: string }) => p.id === packageId);
-          if (!cancelled && row) setDetails({ kind: "corporate", name: row.name });
-          return;
-        }
         const res = await fetch(`${getApiBaseUrl()}/public/packages`);
         const data = await res.json();
         const cls = data.class_packages?.find((p: { id: string }) => p.id === packageId);

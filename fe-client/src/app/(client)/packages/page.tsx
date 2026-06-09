@@ -20,7 +20,7 @@ import {
 import {
   ApiCorporatePackage,
   corporateContactWhatsappHref,
-  purchaseCorporate,
+  submitCorporateRequest,
   useCorporatePackages,
 } from "@/lib/corporate";
 
@@ -30,8 +30,8 @@ type MainTab = "group" | "private" | "corporate";
 type ClassSubTab = "bundle" | "unlimited" | "trial";
 type PrivateSubTab = "1on1" | "2on1";
 
-// Flat transport surcharge for corporate sessions at the member's own venue.
-// Must match CORPORATE_TRANSPORT_SURCHARGE_SGD in be/src/routes/client/purchases.ts.
+// Indicative transport surcharge shown for corporate sessions at the member's own
+// venue. Display only — nothing is charged in-app; the studio confirms it in the quote.
 const CORPORATE_TRANSPORT_SURCHARGE_SGD = 50;
 
 // ── Page ─────────────────────────────────────────────────────────────────────
@@ -929,9 +929,10 @@ function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
   const [err, setErr] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
 
-  // Submitting the request form proceeds to Stripe checkout, carrying the
-  // member's preferred location + notes along as separate request fields.
-  async function startCheckout(details: {
+  // Submitting the request form sends a corporate request directly — no payment.
+  // The studio arranges the rest over WhatsApp; the new request appears under the
+  // member's account, so we route there on success.
+  async function startRequest(details: {
     location: string;
     notes: string;
     customLocation: boolean;
@@ -939,12 +940,11 @@ function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
     setPending(true);
     setErr(false);
     try {
-      const { url } = await purchaseCorporate(api, pkg.id, {
+      await submitCorporateRequest(api, pkg.id, {
         location: details.location || undefined,
         notes: details.notes || undefined,
-        customLocation: details.customLocation,
       });
-      window.location.href = url;
+      window.location.href = "/account/corporate";
     } catch {
       setErr(true);
       setPending(false);
@@ -968,7 +968,7 @@ function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
       <div className="mt-6 flex-1" />
       {err && (
         <p className="text-xs text-error mb-2">
-          Couldn&apos;t start checkout. Please try again.
+          Couldn&apos;t send your request. Please try again.
         </p>
       )}
       <button
@@ -987,7 +987,7 @@ function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
         )}
       >
         {pending && <Loader2 className="h-4 w-4 animate-spin" />}
-        {pending ? "Redirecting…" : "Request this package"}
+        {pending ? "Sending…" : "Request this package"}
       </button>
       {gate}
 
@@ -996,7 +996,7 @@ function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
           pkg={pkg}
           pending={pending}
           onCancel={() => setFormOpen(false)}
-          onSubmit={startCheckout}
+          onSubmit={startRequest}
         />
       )}
     </div>
@@ -1031,8 +1031,6 @@ function CorporateRequestModal({
   const isCustom = where === CUSTOM;
   const resolvedWhere = isCustom ? customWhere.trim() : where.trim();
   const canSubmit = resolvedWhere.length > 0 && !pending;
-  // Custom venue adds a flat transport surcharge (kept in sync with the BE).
-  const subtotal = Number(pkg.price_sgd) + (isCustom ? CORPORATE_TRANSPORT_SURCHARGE_SGD : 0);
 
   function handleSubmit() {
     if (!canSubmit) return;
@@ -1101,11 +1099,11 @@ function CorporateRequestModal({
                 className="mt-2 w-full rounded-xl border border-ink/15 bg-card px-3.5 py-2.5 text-sm text-ink placeholder:text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
               />
               <p className="mt-2 text-xs text-muted">
-                Sessions at your own venue add a{" "}
+                Sessions at your own venue typically add a{" "}
                 <span className="font-medium text-ink">
                   {formatSgd(CORPORATE_TRANSPORT_SURCHARGE_SGD)} transport surcharge
                 </span>{" "}
-                to cover instructor travel.
+                for instructor travel — we&apos;ll confirm it in your quote.
               </p>
             </>
           )}
@@ -1126,23 +1124,17 @@ function CorporateRequestModal({
           />
         </div>
 
-        {/* Price summary — surfaces the transport surcharge before checkout. */}
+        {/* Indicative price — nothing is charged here; the studio confirms the
+            final quote when arranging the sessions. */}
         <dl className="mt-6 space-y-1.5 border-t border-ink/10 pt-4 text-sm">
-          <div className="flex items-center justify-between text-muted">
+          <div className="flex items-center justify-between font-medium text-ink">
             <dt>{pkg.name}</dt>
             <dd>{formatSgd(pkg.price_sgd)}</dd>
           </div>
-          {isCustom && (
-            <div className="flex items-center justify-between text-muted">
-              <dt>Transport surcharge</dt>
-              <dd>+{formatSgd(CORPORATE_TRANSPORT_SURCHARGE_SGD)}</dd>
-            </div>
-          )}
-          <div className="flex items-center justify-between font-medium text-ink">
-            <dt>Subtotal</dt>
-            <dd>{formatSgd(subtotal)}</dd>
-          </div>
-          <p className="text-xs text-muted">9% GST added at checkout.</p>
+          <p className="text-xs text-muted">
+            No payment now — we&apos;ll confirm the final quote
+            {isCustom ? " (incl. transport)" : ""} when we reach out.
+          </p>
         </dl>
 
         <div className="mt-4 flex flex-col gap-2">
@@ -1156,7 +1148,7 @@ function CorporateRequestModal({
             )}
           >
             {pending && <Loader2 className="h-4 w-4 animate-spin" />}
-            {pending ? "Redirecting…" : "Continue to payment"}
+            {pending ? "Sending…" : "Send request"}
           </button>
           <button
             type="button"

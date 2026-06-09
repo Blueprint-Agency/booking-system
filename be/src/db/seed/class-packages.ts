@@ -19,17 +19,17 @@ export async function seedClassPackages(db: PostgresJsDatabase<typeof schema>) {
     priceSgd: string
     description: string | null
   }> = [
-    // --- Credit bundles ---
+    // --- Credit bundles (Price List → CLASS BUNDLES) ---
     { name: 'One-time Pass',      kind: 'credit_bundle', credits: 1,    validityDays: 1,    durationDays: null, priceSgd: '40.00',   description: null },
-    { name: 'Bundle of 10',       kind: 'credit_bundle', credits: 10,   validityDays: 90,   durationDays: null, priceSgd: '300.00',  description: null },
-    { name: 'Bundle of 20',       kind: 'credit_bundle', credits: 20,   validityDays: 180,  durationDays: null, priceSgd: '550.00',  description: null },
-    { name: 'Bundle of 30',       kind: 'credit_bundle', credits: 30,   validityDays: 365,  durationDays: null, priceSgd: '750.00',  description: null },
-    { name: 'Bundle of 50',       kind: 'credit_bundle', credits: 50,   validityDays: 365,  durationDays: null, priceSgd: '1100.00', description: null },
-    { name: 'Bundle of 100',      kind: 'credit_bundle', credits: 100,  validityDays: 365,  durationDays: null, priceSgd: '2000.00', description: null },
-    // --- Unlimited memberships ---
-    { name: '3-Month Unlimited',  kind: 'unlimited',     credits: null, validityDays: null, durationDays: 90,   priceSgd: '600.00',  description: null },
-    { name: '6-Month Unlimited',  kind: 'unlimited',     credits: null, validityDays: null, durationDays: 180,  priceSgd: '1000.00', description: null },
-    { name: '12-Month Unlimited', kind: 'unlimited',     credits: null, validityDays: null, durationDays: 365,  priceSgd: '1700.00', description: null },
+    { name: 'Bundle of 10',       kind: 'credit_bundle', credits: 10,   validityDays: 60,   durationDays: null, priceSgd: '340.00',  description: null },
+    { name: 'Bundle of 20',       kind: 'credit_bundle', credits: 20,   validityDays: 120,  durationDays: null, priceSgd: '630.00',  description: null },
+    { name: 'Bundle of 30',       kind: 'credit_bundle', credits: 30,   validityDays: 180,  durationDays: null, priceSgd: '860.00',  description: null },
+    { name: 'Bundle of 50',       kind: 'credit_bundle', credits: 50,   validityDays: 260,  durationDays: null, priceSgd: '1270.00', description: null },
+    { name: 'Bundle of 100',      kind: 'credit_bundle', credits: 100,  validityDays: 450,  durationDays: null, priceSgd: '2300.00', description: null },
+    // --- Unlimited memberships (Price List → UNLIMITED MEMBERSHIP) ---
+    { name: '3-Month Unlimited',  kind: 'unlimited',     credits: null, validityDays: null, durationDays: 90,   priceSgd: '690.00',  description: null },
+    { name: '6-Month Unlimited',  kind: 'unlimited',     credits: null, validityDays: null, durationDays: 180,  priceSgd: '1150.00', description: null },
+    { name: '12-Month Unlimited', kind: 'unlimited',     credits: null, validityDays: null, durationDays: 365,  priceSgd: '1955.00', description: null },
   ]
 
   for (const r of rows) {

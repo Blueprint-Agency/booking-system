@@ -19,13 +19,13 @@ export async function seedPtPackages(db: PostgresJsDatabase<typeof schema>) {
     numSessions: number
     priceSgd: string
   }> = [
-    // --- VIP 1-on-1 ---
-    { name: 'VIP 1-on-1 · 10',  sessionType: '1on1', numSessions: 10,  priceSgd: '1600.00' },
-    { name: 'VIP 1-on-1 · 20',  sessionType: '1on1', numSessions: 20,  priceSgd: '3000.00' },
-    { name: 'VIP 1-on-1 · 30',  sessionType: '1on1', numSessions: 30,  priceSgd: '4200.00' },
-    { name: 'VIP 1-on-1 · 40',  sessionType: '1on1', numSessions: 40,  priceSgd: '5200.00' },
-    { name: 'VIP 1-on-1 · 50',  sessionType: '1on1', numSessions: 50,  priceSgd: '6000.00' },
-    { name: 'VIP 1-on-1 · 100', sessionType: '1on1', numSessions: 100, priceSgd: '11000.00' },
+    // --- VIP 1-on-1 (Price List → PERSONAL TRAINING) ---
+    { name: 'VIP 1-on-1 · 10',  sessionType: '1on1', numSessions: 10,  priceSgd: '1840.00' },
+    { name: 'VIP 1-on-1 · 20',  sessionType: '1on1', numSessions: 20,  priceSgd: '3450.00' },
+    { name: 'VIP 1-on-1 · 30',  sessionType: '1on1', numSessions: 30,  priceSgd: '4830.00' },
+    { name: 'VIP 1-on-1 · 40',  sessionType: '1on1', numSessions: 40,  priceSgd: '5980.00' },
+    { name: 'VIP 1-on-1 · 50',  sessionType: '1on1', numSessions: 50,  priceSgd: '6900.00' },
+    { name: 'VIP 1-on-1 · 100', sessionType: '1on1', numSessions: 100, priceSgd: '12650.00' },
     // --- VIP 2-on-1 ---
     { name: 'VIP 2-on-1 · 10',  sessionType: '2on1', numSessions: 10,  priceSgd: '2000.00' },
     { name: 'VIP 2-on-1 · 20',  sessionType: '2on1', numSessions: 20,  priceSgd: '3600.00' },

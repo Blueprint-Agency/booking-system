@@ -9,6 +9,7 @@ import { seedRooms } from './rooms'
 import { seedClassTypes } from './class-types'
 import { seedClassPackages } from './class-packages'
 import { seedPtPackages } from './pt-packages'
+import { seedCorporatePackages } from './corporate-packages'
 import { seedPolicy } from './policy'
 import { seedEmailTemplates } from './email-templates'
 import { seedWaiver } from './waiver'
@@ -34,6 +35,8 @@ async function main() {
     await seedClassPackages(db)
     console.log('[seed] pt packages…')
     await seedPtPackages(db)
+    console.log('[seed] corporate packages…')
+    await seedCorporatePackages(db)
     console.log('[seed] policy + pt booking config…')
     await seedPolicy(db)
     console.log('[seed] email templates…')

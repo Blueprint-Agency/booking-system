@@ -15,7 +15,6 @@ import { stripePayments } from '../../db/schema/ledger'
 import { eq } from 'drizzle-orm'
 import { grantPackage } from '../packages/purchase'
 import { bookWorkshopPaid } from '../workshops/book'
-import { submitCorporateRequest } from '../corporate/requests'
 
 export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
   if (event.type === 'checkout.session.completed') {
@@ -66,42 +65,6 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         .update(stripePayments)
         .set({ status: 'succeeded', clientPackageId: granted.clientPackageId })
         .where(eq(stripePayments.paymentIntentId, paymentIntentId))
-      return
-    }
-
-    if (kind === 'corporate_package') {
-      const packageId = meta.package_id
-      const clientId = meta.client_id
-      if (!packageId || !clientId) return
-
-      const amountSgd = meta.amount_sgd ?? String(((session.amount_total ?? 0) / 100).toFixed(2))
-
-      // Idempotency must be ATOMIC: the webhook and the confirmation page's
-      // sync-session both deliver this event (and dev StrictMode can double-fire),
-      // so a read-then-act guard races and creates duplicate requests. Instead we
-      // let the unique constraint on payment_intent_id arbitrate — only the insert
-      // that actually wins (returns a row) goes on to create the request.
-      const inserted = await db
-        .insert(stripePayments)
-        .values({
-          paymentIntentId,
-          amountSgd,
-          kind: 'corporate_package',
-          clientId,
-          status: 'succeeded',
-        })
-        .onConflictDoNothing()
-        .returning({ id: stripePayments.id })
-      if (inserted.length === 0) return // already processed by a concurrent delivery
-
-      // Corporate carries no credits — the request IS the entitlement. The
-      // member's preferred location + notes ride along in metadata as separate fields.
-      await submitCorporateRequest({
-        clientId,
-        corporatePackageId: packageId,
-        preferredLocation: meta.corporate_location?.trim() || null,
-        message: meta.corporate_notes?.trim() || null,
-      })
       return
     }
 

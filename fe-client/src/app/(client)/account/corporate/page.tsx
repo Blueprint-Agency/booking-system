@@ -154,8 +154,9 @@ export default function AccountCorporatePage() {
             </div>
 
             <p className="text-xs text-muted mt-10 leading-relaxed">
-              After purchasing, message us on WhatsApp to arrange the dates,
-              location and instructor. Once scheduled, the details appear here.
+              After requesting, we&apos;ll reach out on WhatsApp to arrange the
+              dates, location and instructor. Once scheduled, the details appear
+              here.
             </p>
           </>
         )}

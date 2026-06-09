@@ -1,4 +1,6 @@
 import { Hono } from 'hono'
+import { zValidator } from '@hono/zod-validator'
+import { z } from 'zod'
 import * as classCatalog from '../../services/schedule/client-catalog'
 import * as classSvc from '../../services/packages/class-packages'
 import * as ptSvc from '../../services/packages/pt-packages'
@@ -13,6 +15,7 @@ import { listMyWorkshopBookings } from '../../services/workshops/my-bookings'
 import { listCorporatePackages } from '../../services/packages/corporate-packages'
 import {
   listCorporateRequestsForClient,
+  submitCorporateRequest,
   type HydratedCorporateRequest,
 } from '../../services/corporate/requests'
 
@@ -155,5 +158,31 @@ const app = new Hono()
     const rows = await listCorporateRequestsForClient(clientId)
     return c.json({ corporate_requests: rows.map(serializeCorporateRequest) })
   })
+  // Submit a corporate request directly — no payment. Creates one pending request;
+  // the studio arranges dates/location/instructor over WhatsApp, then schedules it.
+  // `preferred_location` carries the member's chosen venue (studio name or own venue
+  // address); `notes` is free text. Both optional.
+  .post(
+    '/corporate-requests',
+    zValidator(
+      'json',
+      z.object({
+        package_id: z.string().uuid(),
+        preferred_location: z.string().trim().max(300).optional(),
+        notes: z.string().trim().max(500).optional(),
+      }),
+    ),
+    async c => {
+      const clientId = c.get('clientId')
+      const { package_id, preferred_location, notes } = c.req.valid('json')
+      const { corporateRequestId } = await submitCorporateRequest({
+        clientId,
+        corporatePackageId: package_id,
+        preferredLocation: preferred_location || null,
+        message: notes || null,
+      })
+      return c.json({ corporate_request_id: corporateRequestId }, 201)
+    },
+  )
 
 export default app

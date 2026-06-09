@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { and, eq, isNull } from 'drizzle-orm'
 import { stripe } from '../../lib/stripe'
 import { db } from '../../db'
-import { classPackages, ptPackages, corporatePackages } from '../../db/schema/packages'
+import { classPackages, ptPackages } from '../../db/schema/packages'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
 import { purchaseFreeTrial, assertTrialEligible } from '../../services/packages/purchase'
 import {
@@ -19,23 +19,10 @@ import { env } from '../../env'
 const CLIENT_URL = env.CLIENT_ORIGIN ?? 'http://localhost:3000'
 
 const checkoutPackageSchema = z.object({
-  package_kind: z.enum(['class', 'pt', 'corporate']),
+  package_kind: z.enum(['class', 'pt']),
   package_id: z.string().uuid(),
   promo_code: z.string().optional(),
-  // Corporate only: the member's preferred location + notes from the request
-  // form, kept as separate fields. Carried through Stripe metadata to the webhook,
-  // which stores them on the auto-created corporate_request. Capped to fit Stripe's
-  // 500-char-per-value metadata limit.
-  location: z.string().trim().max(300).optional(),
-  notes: z.string().trim().max(500).optional(),
-  // Corporate only: true when the member chose their own off-site venue rather
-  // than a studio. Adds a flat transport surcharge (see CORPORATE_TRANSPORT_SURCHARGE_SGD).
-  custom_location: z.boolean().optional(),
 })
-
-// Flat surcharge added to a corporate package when the member requests sessions
-// at their own venue (covers instructor transport). Taxable like the rest.
-const CORPORATE_TRANSPORT_SURCHARGE_SGD = 50
 
 const validatePromoSchema = z.object({
   code: z.string().min(1),
@@ -59,8 +46,7 @@ const app = new Hono()
   .post('/checkout/package', zValidator('json', checkoutPackageSchema), async c => {
     const clientId = c.get('clientId')
     const clientRow = c.get('clientRow')
-    const { package_kind, package_id, promo_code, location, notes, custom_location } =
-      c.req.valid('json')
+    const { package_kind, package_id, promo_code } = c.req.valid('json')
 
     let packageName: string
     let priceSgd: string
@@ -101,7 +87,7 @@ const app = new Hono()
       priceSgd = pkg.priceSgd
       appliedPromotionId = eff.appliedPromotionId
       effectivePriceSgd = eff.effectivePriceSgd
-    } else if (package_kind === 'pt') {
+    } else {
       const [pkg] = await db
         .select()
         .from(ptPackages)
@@ -116,20 +102,6 @@ const app = new Hono()
       priceSgd = pkg.priceSgd
       appliedPromotionId = eff.appliedPromotionId
       effectivePriceSgd = eff.effectivePriceSgd
-    } else {
-      // Corporate — paid, no promotions. Webhook auto-creates a corporate_request.
-      const [pkg] = await db
-        .select()
-        .from(corporatePackages)
-        .where(and(eq(corporatePackages.id, package_id), isNull(corporatePackages.deletedAt)))
-        .limit(1)
-      if (!pkg) throw new NotFoundError('corporate_package_not_found')
-      if (pkg.status !== 'active') throw new BadRequestError('corporate_package_not_active')
-
-      packageName = pkg.name
-      priceSgd = pkg.priceSgd
-      appliedPromotionId = null
-      effectivePriceSgd = pkg.priceSgd
     }
 
     // Apply user-entered promo code on top of any automatic promotion.
@@ -141,11 +113,7 @@ const app = new Hono()
         promoDiscountSgd = Math.min(promo.discountSgd, baseAfterPromotion)
       }
     }
-    // Off-site corporate venue → flat transport surcharge, added after any discount
-    // (the surcharge itself is never discounted) and taxed with the rest.
-    const transportSurchargeSgd =
-      package_kind === 'corporate' && custom_location ? CORPORATE_TRANSPORT_SURCHARGE_SGD : 0
-    const discountedBase = baseAfterPromotion - promoDiscountSgd + transportSurchargeSgd
+    const discountedBase = baseAfterPromotion - promoDiscountSgd
     const totalCents = Math.round(discountedBase * 1.09 * 100)
 
     const session = await stripe.checkout.sessions.create({
@@ -158,19 +126,14 @@ const app = new Hono()
             unit_amount: totalCents,
             product_data: {
               name: packageName,
-              description: `Yoga Sadhana · includes 9% GST${transportSurchargeSgd ? ` · +$${transportSurchargeSgd} transport (custom venue)` : ''}${promo_code ? ` · promo ${promo_code.toUpperCase()} applied` : ''}`,
+              description: `Yoga Sadhana · includes 9% GST${promo_code ? ` · promo ${promo_code.toUpperCase()} applied` : ''}`,
             },
           },
           quantity: 1,
         },
       ],
       metadata: {
-        kind:
-          package_kind === 'class'
-            ? 'class_package'
-            : package_kind === 'pt'
-              ? 'pt_package'
-              : 'corporate_package',
+        kind: package_kind === 'class' ? 'class_package' : 'pt_package',
         package_id,
         client_id: clientId,
         promo_code: promo_code ?? '',
@@ -178,10 +141,6 @@ const app = new Hono()
         applied_promotion_id: appliedPromotionId ?? '',
         list_price_sgd: priceSgd,
         amount_sgd: String((totalCents / 100).toFixed(2)),
-        // Corporate request form payload — preferred location + notes as separate
-        // fields. Empty for class/pt; the webhook only reads them for corporate.
-        corporate_location: package_kind === 'corporate' ? (location ?? '') : '',
-        corporate_notes: package_kind === 'corporate' ? (notes ?? '') : '',
       },
       success_url: `${CLIENT_URL}/booking/confirmation?type=package&package_id=${package_id}&package_kind=${package_kind}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${CLIENT_URL}/checkout?package=${package_id}&kind=${package_kind}&cancelled=1`,

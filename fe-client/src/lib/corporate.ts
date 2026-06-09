@@ -130,23 +130,20 @@ export function useCorporateRequests(): {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * Starts Stripe checkout for a corporate package. Returns the Stripe checkout
- * URL — redirect the browser to it (mirrors the paid-package flow). The optional
- * `location` and `notes` carry the member's request-form answers as separate
- * fields; they're stored on the auto-created corporate request once payment
- * completes (admin reviews them individually).
+ * Submits a corporate request — no payment. Creates one pending corporate request
+ * the studio then arranges over WhatsApp. The optional `location` (chosen venue —
+ * a studio name or the member's own venue) and `notes` are stored on the request
+ * for the admin to review.
  */
-export function purchaseCorporate(
+export function submitCorporateRequest(
   api: Api,
   packageId: string,
-  details?: { location?: string; notes?: string; customLocation?: boolean },
-): Promise<{ url: string }> {
-  return api.post<{ url: string }>("/me/checkout/package", {
-    package_kind: "corporate",
+  details?: { location?: string; notes?: string },
+): Promise<{ corporate_request_id: string }> {
+  return api.post<{ corporate_request_id: string }>("/me/corporate-requests", {
     package_id: packageId,
-    ...(details?.location ? { location: details.location } : {}),
+    ...(details?.location ? { preferred_location: details.location } : {}),
     ...(details?.notes ? { notes: details.notes } : {}),
-    ...(details?.customLocation ? { custom_location: true } : {}),
   });
 }
 
