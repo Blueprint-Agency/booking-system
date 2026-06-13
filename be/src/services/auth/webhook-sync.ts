@@ -62,6 +62,7 @@ export type SyncOutcome =
   | { kind: 'idempotent'; staffUserId: string }
   | { kind: 'no_staff_row' }
   | { kind: 'email_mismatch'; staffUserId: string }
+  | { kind: 'invite_expired'; staffUserId: string }
   | { kind: 'noop' }
 
 export async function syncStaffFromClerk(clerkUser: ClerkWebhookUser): Promise<SyncOutcome> {
@@ -97,8 +98,33 @@ export async function syncStaffFromClerk(clerkUser: ClerkWebhookUser): Promise<S
     return { kind: 'idempotent', staffUserId: row.id }
   }
 
-  // Link + activate.
   const now = new Date()
+
+  // Invitation-validity gate. If this row has a matching pending invitation that
+  // has lapsed, refuse to activate — leave BOTH the invitation (still 'pending')
+  // and the staff row ('pending') untouched, so requireActiveStaff keeps 403ing
+  // while the invite stays visible/resendable. A resend extends expires_at and
+  // the next sign-in re-runs this gate and succeeds. No invitation row at all
+  // (seeded superadmin / legacy createInstructor path) means nothing to expire,
+  // so activation proceeds as before.
+  const [pendingInv] = await db
+    .select()
+    .from(staffInvitations)
+    .where(
+      and(
+        eq(staffInvitations.staffUserId, row.id),
+        eq(staffInvitations.status, 'pending'),
+      ),
+    )
+    .limit(1)
+  if (pendingInv && pendingInv.expiresAt.getTime() < now.getTime()) {
+    console.warn(
+      `[clerk-webhook] refusing to activate staff_users.id=${row.id}: invitation expired at ${pendingInv.expiresAt.toISOString()} (resend to extend)`,
+    )
+    return { kind: 'invite_expired', staffUserId: row.id }
+  }
+
+  // Link + activate.
   const name = displayName(clerkUser) ?? row.name
   await db
     .update(staffUsers)

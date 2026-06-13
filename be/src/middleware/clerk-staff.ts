@@ -54,7 +54,9 @@ export const clerkStaffAuth: MiddlewareHandler = async (c, next) => {
 
   // Auto-link fallback: webhook hasn't fired (e.g. no ngrok in dev) but the
   // signed-in Clerk user matches a pre-seeded/invited staff_users row by email.
-  // Same gate as the webhook — only emails already in staff_users get a role.
+  // Same gate as the webhook — only emails already in staff_users get a role,
+  // and an expired invitation still refuses (sync returns `invite_expired`).
+  let syncReason: string | undefined
   if (!row) {
     try {
       const clerkUser = await clerkStaffApp.users.getUser(payload.sub)
@@ -75,13 +77,18 @@ export const clerkStaffAuth: MiddlewareHandler = async (c, next) => {
           .from(staffUsers)
           .where(and(eq(staffUsers.id, sync.staffUserId), isNull(staffUsers.deletedAt)))
           .limit(1)
+      } else {
+        // no_staff_row | email_mismatch | invite_expired | noop — surface why so
+        // a stuck invite is diagnosable from the 403 body and logs.
+        syncReason = sync.kind
       }
     } catch (err) {
-      console.warn('[clerk-staff] auto-link fallback failed:', err)
+      console.error('[clerk-staff] auto-link fallback failed:', err)
+      syncReason = 'sync_error'
     }
   }
 
-  if (!row) return c.json({ error: 'staff_not_provisioned' }, 403)
+  if (!row) return c.json({ error: 'staff_not_provisioned', reason: syncReason }, 403)
 
   c.set('staffClaims', { sub: payload.sub })
   c.set('staffUserId', row.id)

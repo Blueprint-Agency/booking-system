@@ -61,6 +61,9 @@ export async function apiFetch<T = unknown>(
     headers,
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
     signal: opts.signal,
+    // This is an authenticated API client — auth/role responses must never be
+    // served from the HTTP/bfcache. Always hit the network with the live token.
+    cache: "no-store",
   });
 
   let parsed: unknown = null;

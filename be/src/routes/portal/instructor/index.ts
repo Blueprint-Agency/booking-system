@@ -6,6 +6,8 @@ import roster from './roster'
 import checkIn from './check-in'
 import ptRequests from './pt-requests'
 import profile from './profile'
+import payroll from './payroll'
+import catalog from './catalog'
 
 const app = new Hono()
   .use('*', requireRole('instructor', 'admin', 'superadmin'))
@@ -14,5 +16,7 @@ const app = new Hono()
   .route('/check-in', checkIn)
   .route('/pt-requests', ptRequests)
   .route('/profile', profile)
+  .route('/payroll', payroll)
+  .route('/catalog', catalog)
 
 export default app

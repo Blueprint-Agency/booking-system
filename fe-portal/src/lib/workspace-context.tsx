@@ -13,7 +13,7 @@ import { useAuth, useClerk } from "@clerk/nextjs";
 import { ApiError, makeApi, type Api } from "@/lib/api";
 import type { Location, StaffRole, StaffUser } from "@/types";
 
-const STORAGE_KEY_LOC = "ys.activeLocationId";
+export const STORAGE_KEY_LOC = "ys.activeLocationId";
 
 interface AuthMePayload {
   id: string;
@@ -126,7 +126,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setLocations(accessible);
     } catch (err) {
       if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
-        // Clerk session exists but no staff_users row, or staff archived.
+        // Clerk session exists but no staff_users row, or staff archived/pending.
+        // Clear the persisted workspace so the next user on this browser doesn't
+        // inherit a stale active location.
+        if (typeof window !== "undefined") {
+          window.localStorage.removeItem(STORAGE_KEY_LOC);
+        }
         await signOut(() => router.push("/login"));
         return;
       }
@@ -174,7 +179,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const accessibleLocations = useMemo(() => {
     const active = locations.filter(l => !l.archivedAt);
     if (!currentStaff) return [];
-    if (currentStaff.role === "superadmin") return active;
+    // Empty grants = "all active locations" — matches the BE /auth/me rule.
+    // This covers superadmin AND instructors (who carry no location grants);
+    // without it an instructor resolves to zero workspaces and a dead shell.
+    if (
+      currentStaff.role === "superadmin" ||
+      currentStaff.grantedLocationIds.length === 0
+    )
+      return active;
     return active.filter(l => currentStaff.grantedLocationIds.includes(l.id));
   }, [locations, currentStaff]);
 

@@ -45,8 +45,45 @@ function emailLocalPart(email: string): string {
   return at > 0 ? email.slice(0, at) : email
 }
 
-export function buildSignUpUrl(email: string): string {
-  return `${env.PORTAL_ORIGIN.replace(/\/+$/, '')}/signup?invite_email=${encodeURIComponent(email)}`
+export function buildSignUpUrl(email: string, token?: string): string {
+  const base = `${env.PORTAL_ORIGIN.replace(/\/+$/, '')}/signup?invite_email=${encodeURIComponent(email)}`
+  return token ? `${base}&invite_token=${encodeURIComponent(token)}` : base
+}
+
+export type InvitationLookupStatus = 'valid' | 'expired' | 'used' | 'revoked' | 'not_found'
+
+export interface InvitationLookup {
+  status: InvitationLookupStatus
+  email: string | null
+  role: InvitableRole | null
+}
+
+/**
+ * Public (unauthenticated) lookup used by the signup page to render the right
+ * state for an invite link. Expiry is computed from `expires_at`, NOT persisted:
+ * the row stays `pending` so it remains visible in the admin invitation list and
+ * a resend (which extends `expires_at`) revives the link. This also keeps the
+ * public endpoint read-only.
+ */
+export async function lookupInvitationByToken(token: string): Promise<InvitationLookup> {
+  const [inv] = await db
+    .select()
+    .from(staffInvitations)
+    .where(eq(staffInvitations.token, token))
+    .limit(1)
+  if (!inv) return { status: 'not_found', email: null, role: null }
+
+  const role = inv.role as InvitableRole
+  if (inv.status === 'accepted') return { status: 'used', email: inv.email, role }
+  if (inv.status === 'revoked') return { status: 'revoked', email: inv.email, role }
+
+  // pending (or a legacy 'expired' status) — treat a past-due invite as expired
+  // by comparison, without mutating the row.
+  if (inv.status === 'expired' || inv.expiresAt.getTime() < Date.now()) {
+    return { status: 'expired', email: inv.email, role }
+  }
+
+  return { status: 'valid', email: inv.email, role }
 }
 
 function formatExpiresAt(d: Date): string {
@@ -150,13 +187,13 @@ export async function inviteAdmin(input: InviteAdminInput): Promise<StaffInvitat
     variables: {
       // Canonical variables from services/notifications/variables.ts
       name: emailLocalPart(email),
-      invite_url: buildSignUpUrl(email),
+      invite_url: buildSignUpUrl(email, invitation.token),
       expires_at: formatExpiresAt(expiresAt),
       // Friendly extras — unknown {{}} are left as-is per spec, but the
       // seeded template uses these for richer copy.
       invitee_email: email,
       inviter_name: inviterName,
-      sign_up_url: buildSignUpUrl(email),
+      sign_up_url: buildSignUpUrl(email, invitation.token),
     },
   })
 
@@ -300,11 +337,11 @@ export async function resendInvitation(
     recipient: { email: inv.email, userId: inv.staffUserId, userKind: 'staff' },
     variables: {
       name: emailLocalPart(inv.email),
-      invite_url: buildSignUpUrl(inv.email),
+      invite_url: buildSignUpUrl(inv.email, inv.token),
       expires_at: formatExpiresAt(expiresAt),
       invitee_email: inv.email,
       inviter_name: inviter?.name ?? 'Yoga Sadhana',
-      sign_up_url: buildSignUpUrl(inv.email),
+      sign_up_url: buildSignUpUrl(inv.email, inv.token),
     },
   })
 
