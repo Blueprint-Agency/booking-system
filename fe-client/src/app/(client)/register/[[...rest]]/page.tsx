@@ -8,6 +8,7 @@ import "react-phone-number-input/style.css";
 import Link from "next/link";
 import { AuthSplitShell } from "@/components/auth/auth-split-shell";
 import { OtpInput } from "@/components/auth/otp-input";
+import { PasswordInput } from "@/components/auth/password-input";
 
 const inputClass =
   "rounded-xl border border-ink/10 bg-paper px-4 py-3 text-sm w-full focus:border-accent focus:outline-none";
@@ -38,7 +39,11 @@ function RegisterContent() {
   const { signUp } = useSignUp();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") || "/";
+  // Only honour internal paths — never an absolute/protocol-relative URL — so a
+  // crafted ?next= can't redirect a newly-registered member off-site.
+  const rawNext = searchParams.get("next");
+  const next =
+    rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/";
 
   const [view, setView] = useState<"form" | "verify">("form");
 
@@ -225,12 +230,12 @@ function RegisterContent() {
         </div>
         <div>
           <label htmlFor="password" className={labelClass}>Password</label>
-          <input id="password" type="password" autoComplete="new-password" className={inputClass}
+          <PasswordInput id="password" autoComplete="new-password" className={inputClass}
             value={password} onChange={(ev) => setPassword(ev.target.value)} />
         </div>
         <div>
           <label htmlFor="confirm" className={labelClass}>Confirm password</label>
-          <input id="confirm" type="password" autoComplete="new-password" className={inputClass}
+          <PasswordInput id="confirm" autoComplete="new-password" className={inputClass}
             value={confirm} onChange={(ev) => setConfirm(ev.target.value)} />
         </div>
 

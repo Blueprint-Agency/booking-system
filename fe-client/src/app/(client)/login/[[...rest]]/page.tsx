@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { AuthSplitShell } from "@/components/auth/auth-split-shell";
 import { OtpInput } from "@/components/auth/otp-input";
+import { PasswordInput } from "@/components/auth/password-input";
 
 const inputClass =
   "rounded-xl border border-ink/10 bg-paper px-4 py-3 text-sm w-full focus:border-accent focus:outline-none";
@@ -30,7 +31,11 @@ function LoginContent() {
   const { signIn } = useSignIn();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") || "/";
+  // Only honour internal paths — never an absolute/protocol-relative URL — so a
+  // crafted ?next= can't redirect an authenticated member off-site.
+  const rawNext = searchParams.get("next");
+  const next =
+    rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/";
 
   const [view, setView] = useState<"signin" | "forgot" | "reset">(
     searchParams.get("reset") === "1" ? "forgot" : "signin",
@@ -203,12 +208,12 @@ function LoginContent() {
           </div>
           <div>
             <label htmlFor="newPassword" className={labelClass}>New password</label>
-            <input id="newPassword" type="password" autoComplete="new-password" className={inputClass}
+            <PasswordInput id="newPassword" autoComplete="new-password" className={inputClass}
               value={newPassword} onChange={(ev) => setNewPassword(ev.target.value)} />
           </div>
           <div>
             <label htmlFor="confirm" className={labelClass}>Confirm new password</label>
-            <input id="confirm" type="password" autoComplete="new-password" className={inputClass}
+            <PasswordInput id="confirm" autoComplete="new-password" className={inputClass}
               value={confirm} onChange={(ev) => setConfirm(ev.target.value)} />
           </div>
           {error ? <p className="text-sm text-error rounded-xl border border-error/30 bg-error/10 px-3 py-2">{error}</p> : null}
@@ -243,7 +248,7 @@ function LoginContent() {
         </div>
         <div>
           <label htmlFor="password" className={labelClass}>Password</label>
-          <input id="password" type="password" autoComplete="current-password" className={inputClass}
+          <PasswordInput id="password" autoComplete="current-password" className={inputClass}
             value={password} onChange={(ev) => setPassword(ev.target.value)} />
         </div>
         {error ? <p className="text-sm text-error rounded-xl border border-error/30 bg-error/10 px-3 py-2">{error}</p> : null}
