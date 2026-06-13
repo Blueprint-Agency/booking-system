@@ -76,10 +76,6 @@ const app = new Hono()
     const instructors = await classCatalog.listActiveInstructors()
     return c.json({ instructors })
   })
-  .get('/instructors/:id/availability', async c => {
-    const slots = await classCatalog.listInstructorAvailability(c.req.param('id'))
-    return c.json({ slots })
-  })
   // Active class types — used by the fe-client PT request form's class type dropdown.
   .get('/class-types', async c => {
     const rows = await classTypesSvc.listClassTypes({ includeArchived: false })

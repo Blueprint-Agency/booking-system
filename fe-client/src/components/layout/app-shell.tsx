@@ -16,7 +16,7 @@ export function AppShell({
       <AppTopBar impersonating={impersonating} />
       <div className="flex flex-1">
         <SideRail />
-        <main className="flex-1 min-w-0 pb-24 md:pb-0">{children}</main>
+        <main className="flex-1 min-w-0 pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-0">{children}</main>
       </div>
       <BottomTabBar />
     </>

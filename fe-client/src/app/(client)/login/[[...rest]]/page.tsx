@@ -17,13 +17,13 @@ const primaryBtnClass =
 // Unexpected throw → readable message.
 function clerkErrorMessage(err: unknown): string {
   const e = err as { errors?: Array<{ code?: string; message?: string }> };
-  return e?.errors?.[0]?.message ?? "Something went wrong. Please try again.";
+  return e?.errors?.[0]?.message ?? "We couldn't sign you in. Please check your details and try again.";
 }
 
 // Returned `{ error }` from a future-API call → readable message.
 function clerkApiError(err: { code?: string; message?: string } | null | undefined): string | null {
   if (!err) return null;
-  return err.message ?? "Something went wrong. Please try again.";
+  return err.message ?? "We couldn't sign you in. Please check your details and try again.";
 }
 
 function LoginContent() {
@@ -168,7 +168,7 @@ function LoginContent() {
             <input id="email" type="email" autoComplete="email" className={inputClass}
               value={email} onChange={(ev) => setEmail(ev.target.value)} />
           </div>
-          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          {error ? <p className="text-sm text-error rounded-xl border border-error/30 bg-error/10 px-3 py-2">{error}</p> : null}
           <button type="submit" disabled={submitting} className={primaryBtnClass}>
             {submitting ? "Sending…" : "Send reset code"}
           </button>
@@ -211,7 +211,7 @@ function LoginContent() {
             <input id="confirm" type="password" autoComplete="new-password" className={inputClass}
               value={confirm} onChange={(ev) => setConfirm(ev.target.value)} />
           </div>
-          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          {error ? <p className="text-sm text-error rounded-xl border border-error/30 bg-error/10 px-3 py-2">{error}</p> : null}
           <button type="submit" disabled={submitting} className={primaryBtnClass}>
             {submitting ? "Resetting…" : "Reset password & sign in"}
           </button>
@@ -246,7 +246,7 @@ function LoginContent() {
           <input id="password" type="password" autoComplete="current-password" className={inputClass}
             value={password} onChange={(ev) => setPassword(ev.target.value)} />
         </div>
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        {error ? <p className="text-sm text-error rounded-xl border border-error/30 bg-error/10 px-3 py-2">{error}</p> : null}
 
         {/* Clerk Smart CAPTCHA mounts here (required for custom flows). */}
         <div id="clerk-captcha" />

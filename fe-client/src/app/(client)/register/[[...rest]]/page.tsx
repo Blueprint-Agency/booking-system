@@ -23,7 +23,7 @@ function clerkErrorMessage(err: unknown): string {
   if (first?.code === "form_identifier_exists") {
     return "An account with this email already exists. Try signing in instead.";
   }
-  return first?.message ?? "Something went wrong. Please try again.";
+  return first?.message ?? "We couldn't create your account. Please check your details and try again.";
 }
 
 function clerkApiError(err: { code?: string; message?: string } | null | undefined): string | null {
@@ -31,7 +31,7 @@ function clerkApiError(err: { code?: string; message?: string } | null | undefin
   if (err.code === "form_identifier_exists") {
     return "An account with this email already exists. Try signing in instead.";
   }
-  return err.message ?? "Something went wrong. Please try again.";
+  return err.message ?? "We couldn't create your account. Please check your details and try again.";
 }
 
 function RegisterContent() {
@@ -170,7 +170,7 @@ function RegisterContent() {
             </label>
             <OtpInput value={code} onChange={setCode} autoFocus />
           </div>
-          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          {error ? <p className="text-sm text-error rounded-xl border border-error/30 bg-error/10 px-3 py-2">{error}</p> : null}
           <button type="submit" disabled={submitting} className={primaryBtnClass}>
             {submitting ? "Verifying…" : "Verify & create account"}
           </button>
@@ -234,7 +234,7 @@ function RegisterContent() {
             value={confirm} onChange={(ev) => setConfirm(ev.target.value)} />
         </div>
 
-        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        {error ? <p className="text-sm text-error rounded-xl border border-error/30 bg-error/10 px-3 py-2">{error}</p> : null}
 
         {/* Clerk Smart CAPTCHA mounts here (required for custom sign-up flows). */}
         <div id="clerk-captcha" />

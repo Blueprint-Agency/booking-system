@@ -125,7 +125,7 @@ export function BuyButton({
         {busy ? loadingLabel : children}
       </button>
       {error && (
-        <p className="text-xs text-red-600 mt-2 text-center">{error}</p>
+        <p className="text-xs text-error mt-2 text-center">{error}</p>
       )}
       {gate}
     </>

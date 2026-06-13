@@ -17,8 +17,8 @@ booking-system/
 ## Current Progress
 
 - **fe-portal**: 🟢 wired to live BE — signup, middleware, role-aware admin pages, packages + workshops admin all hitting `/api/v1/portal/admin/*`.
-- **fe-client**: 🟡 partially wired — packages catalog (incl. trial pass claim) and workshops list/detail hit live BE; classes, checkout (paid), account/* still pulling from mock-state.
-- **be**: 🟡 schema + portal admin routes complete; client-facing read paths (packages, workshops, /me/packages) implemented; bookings, Stripe checkout, webhooks, refunds, and most account endpoints still stubbed at 501.
+- **fe-client**: 🟢 fully wired to live BE — classes (browse/book/cancel), packages (incl. trial claim + Stripe checkout), workshops (browse/buy + account list), PT requests, corporate, account/*. The old mock-state layer has been deleted.
+- **be**: 🟡 schema + portal admin routes + client paths (catalog, class bookings, Stripe checkout for packages/workshops, sync-session, PT requests, corporate) implemented; still 501-stubbed: refunds, invoices, waiver, referral, dashboard, booking QR PNG, marketing.
 
 ## Spec Docs (canonical, in `docs/md/`)
 

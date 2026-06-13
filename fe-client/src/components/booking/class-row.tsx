@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ChevronRight, UserRound, MapPin, Ticket, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ApiError, useApi } from "@/lib/api";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 import { formatClassTime, type ApiClassCard } from "@/lib/classes";
 
 export function ClassRow({
@@ -27,6 +28,8 @@ export function ClassRow({
   const [booked, setBooked] = useState(cls.is_booked ?? false);
   const [spotsLeft, setSpotsLeft] = useState(cls.spots_left);
   const [booking, setBooking] = useState(false);
+  const noPackageTrapRef = useFocusTrap<HTMLDivElement>(showNoPackage);
+  const bookErrorTrapRef = useFocusTrap<HTMLDivElement>(Boolean(bookError));
   const isFull = spotsLeft <= 0;
   const locationName = cls.location?.name ?? null;
 
@@ -169,7 +172,7 @@ export function ClassRow({
 
       {showNoPackage && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4" onClick={() => setShowNoPackage(false)}>
-          <div className="bg-paper rounded-2xl p-8 max-w-sm w-full shadow-modal text-center" onClick={(e) => e.stopPropagation()}>
+          <div ref={noPackageTrapRef} role="dialog" aria-modal="true" aria-label="You need a package to book a class" tabIndex={-1} className="bg-paper rounded-2xl p-8 max-w-sm w-full shadow-modal text-center outline-none" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-serif text-xl text-ink leading-snug">You need a package to book a class</h3>
             <p className="text-sm text-muted mt-2 leading-relaxed">You&apos;re out of credits. Grab a package to keep booking.</p>
             <div className="mt-6 flex flex-col gap-2">
@@ -182,7 +185,7 @@ export function ClassRow({
 
       {bookError && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4" onClick={() => setBookError(null)}>
-          <div className="bg-paper rounded-2xl p-8 max-w-sm w-full shadow-modal text-center" onClick={(e) => e.stopPropagation()}>
+          <div ref={bookErrorTrapRef} role="dialog" aria-modal="true" aria-label="Couldn't book" tabIndex={-1} className="bg-paper rounded-2xl p-8 max-w-sm w-full shadow-modal text-center outline-none" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-serif text-xl text-ink leading-snug">Couldn&apos;t book</h3>
             <p className="text-sm text-muted mt-2 leading-relaxed">{bookError}</p>
             <button onClick={() => setBookError(null)} className="mt-6 w-full rounded-full border border-ink/10 py-2.5 text-sm text-muted hover:text-ink transition-colors">Got it</button>

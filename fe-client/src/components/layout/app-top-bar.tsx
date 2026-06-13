@@ -62,7 +62,7 @@ export function AppTopBar({ impersonating = false }: { impersonating?: boolean }
             <Link href="/login" className="px-4 py-2 text-sm font-semibold text-ink hover:text-accent-deep transition-colors">
               Log in
             </Link>
-            <Link href="/register" className="px-4 py-2 text-sm font-bold text-inverse bg-accent rounded-md hover:bg-accent-deep transition-colors">
+            <Link href="/register" className="px-4 py-2 text-sm font-bold text-inverse bg-accent rounded-full hover:bg-accent-deep transition-colors">
               Sign up
             </Link>
           </div>

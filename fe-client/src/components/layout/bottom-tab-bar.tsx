@@ -20,6 +20,7 @@ export function BottomTabBar() {
             <Link
               key={href}
               href={href}
+              aria-current={active ? "page" : undefined}
               className={cn(
                 "flex flex-col items-center justify-center gap-0.5 py-2.5 text-[10px] font-medium transition-colors",
                 active ? "text-accent-deep" : "text-muted hover:text-ink",

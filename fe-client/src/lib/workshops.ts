@@ -169,11 +169,7 @@ export function useWorkshop(id: string | undefined): {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-export function formatSgd(price: string | number): string {
-  const n = typeof price === "string" ? Number(price) : price;
-  if (Number.isNaN(n)) return "S$0";
-  return `S$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-}
+export { formatSgd } from "./utils";
 
 export function formatDayRange(
   startsAt: string | null,
@@ -186,8 +182,9 @@ export function formatDayRange(
     weekday: "short",
     day: "numeric",
     month: "short",
+    timeZone: "Asia/Singapore",
   };
-  const sStr = s.toLocaleDateString(undefined, fmt);
+  const sStr = s.toLocaleDateString("en-SG", fmt);
   if (!e) return sStr;
   // Same calendar day → just one date.
   const sameDay =
@@ -195,7 +192,7 @@ export function formatDayRange(
     s.getMonth() === e.getMonth() &&
     s.getDate() === e.getDate();
   if (sameDay) return sStr;
-  return `${sStr} – ${e.toLocaleDateString(undefined, fmt)}`;
+  return `${sStr} – ${e.toLocaleDateString("en-SG", fmt)}`;
 }
 
 /**

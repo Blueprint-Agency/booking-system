@@ -5,7 +5,6 @@ import schedule from './schedule'
 import roster from './roster'
 import checkIn from './check-in'
 import ptRequests from './pt-requests'
-import availability from './availability'
 import profile from './profile'
 
 const app = new Hono()
@@ -14,7 +13,6 @@ const app = new Hono()
   .route('/', roster)
   .route('/check-in', checkIn)
   .route('/pt-requests', ptRequests)
-  .route('/availability', availability)
   .route('/profile', profile)
 
 export default app

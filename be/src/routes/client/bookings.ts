@@ -54,9 +54,6 @@ const app = new Hono()
       return c.json({ booking_id: res.bookingId, qr_token: res.qrToken, code: res.code }, 201)
     },
   )
-  .post('/workshop', c =>
-    c.json({ todo: 'workshop booking — initiates Stripe checkout' }, 501),
-  )
   .delete('/:id', zValidator('param', z.object({ id: z.string().uuid() })), async c => {
     const clientId = c.get('clientId')
     const { id } = c.req.valid('param')

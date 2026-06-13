@@ -200,7 +200,7 @@ export default function ProfilePage() {
 
             <div className="flex flex-wrap justify-end gap-3 items-center pt-2">
               {error && (
-                <span className="text-sm text-red-600 font-medium mr-2">
+                <span className="text-sm text-error font-medium mr-2">
                   {error}
                 </span>
               )}

@@ -1,11 +1,99 @@
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { bookings } from '../../db/schema/bookings'
-import { workshops, workshopTiers } from '../../db/schema/schedule'
+import {
+  workshops,
+  workshopTiers,
+  workshopTierDays,
+  workshopDays,
+} from '../../db/schema/schedule'
 import { stripePayments } from '../../db/schema/ledger'
 import { generateBookingCodes } from '../bookings/qr'
 import { bestPrice, listActivePromotionsFor } from '../packages/promotions'
-import { BadRequestError, NotFoundError } from '../../shared/errors'
+import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
+
+type WorkshopTierRow = typeof workshopTiers.$inferSelect
+
+/**
+ * Effective base price for a tier in SGD ("120.00"), mirroring fe-client's
+ * `tierEffectivePrice()`: an early-bird price takes precedence over promotions
+ * while the cutoff is in the future; otherwise best-price-wins applies against
+ * the regular price. Returns the frozen promotion id only when a promotion
+ * (not early-bird) set the price.
+ */
+export function tierEffectivePrice(
+  tier: WorkshopTierRow,
+  promos: Parameters<typeof bestPrice>[1],
+  now = new Date(),
+): { baseSgd: string; appliedPromotionId: string | null } {
+  const earlyBirdActive =
+    tier.earlyBirdPriceSgd != null && tier.earlyBirdCutoffAt != null && tier.earlyBirdCutoffAt > now
+  if (earlyBirdActive) {
+    return { baseSgd: tier.earlyBirdPriceSgd!, appliedPromotionId: null }
+  }
+  const eff = bestPrice(tier.regularPriceSgd, promos)
+  return { baseSgd: eff.effectivePriceSgd, appliedPromotionId: eff.appliedPromotionId }
+}
+
+/**
+ * Pre-purchase gate for workshop bookings, run BEFORE creating a Stripe
+ * Checkout session (no automated refund flow exists yet, so charging for an
+ * unbookable spot must be prevented up front):
+ *
+ *   409 already_booked — the client already holds a confirmed booking for this workshop
+ *   409 workshop_full  — any day covered by the tier has no online capacity left
+ *
+ * Capacity = per-day `capacity_online` vs confirmed bookings across ALL tiers
+ * covering that day. Best-effort (no row lock) — acceptable for v1 volumes.
+ */
+export async function assertWorkshopBookable(args: {
+  clientId: string
+  workshopId: string
+  workshopTierId: string
+}): Promise<void> {
+  const [dup] = await db
+    .select({ id: bookings.id })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.clientId, args.clientId),
+        eq(bookings.workshopId, args.workshopId),
+        eq(bookings.kind, 'workshop'),
+        eq(bookings.state, 'confirmed'),
+      ),
+    )
+    .limit(1)
+  if (dup) throw new ConflictError('already_booked')
+
+  const tierDayRows = await db
+    .select({ dayId: workshopTierDays.workshopDayId, cap: workshopDays.capacityOnline })
+    .from(workshopTierDays)
+    .innerJoin(workshopDays, eq(workshopDays.id, workshopTierDays.workshopDayId))
+    .where(eq(workshopTierDays.workshopTierId, args.workshopTierId))
+  if (tierDayRows.length === 0) return
+
+  const dayIds = tierDayRows.map(r => r.dayId)
+  const counts = await db
+    .select({
+      dayId: workshopTierDays.workshopDayId,
+      cnt: sql<number>`count(*)::int`,
+    })
+    .from(bookings)
+    .innerJoin(workshopTierDays, eq(workshopTierDays.workshopTierId, bookings.workshopTierId))
+    .where(
+      and(
+        eq(bookings.kind, 'workshop'),
+        eq(bookings.state, 'confirmed'),
+        inArray(workshopTierDays.workshopDayId, dayIds),
+      ),
+    )
+    .groupBy(workshopTierDays.workshopDayId)
+  const bookedByDay = new Map(counts.map(c => [c.dayId, Number(c.cnt)]))
+
+  for (const d of tierDayRows) {
+    if ((bookedByDay.get(d.dayId) ?? 0) >= d.cap) throw new ConflictError('workshop_full')
+  }
+}
 
 export interface BookWorkshopInput {
   clientId: string
@@ -93,10 +181,14 @@ export async function bookWorkshopFree(args: {
   if (ws.lifecycle !== 'active') throw new BadRequestError('workshop_not_active')
 
   const promos = await listActivePromotionsFor('workshop', [args.workshopId])
-  const eff = bestPrice(tier.regularPriceSgd, promos[args.workshopId] ?? [])
-  if (Number(eff.effectivePriceSgd) > 0) {
+  const eff = tierEffectivePrice(tier, promos[args.workshopId] ?? [])
+  if (Number(eff.baseSgd) > 0) {
     throw new BadRequestError('workshop_is_not_free')
   }
+
+  // Free bookings carry no payment-intent idempotency key, so gate duplicates
+  // (and capacity) explicitly.
+  await assertWorkshopBookable(args)
 
   return insertWorkshopBooking({
     clientId: args.clientId,

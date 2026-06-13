@@ -7,6 +7,7 @@ import { BookingSurface } from "@/components/booking/booking-surface";
 import { SectionHeading } from "@/components/booking/section-heading";
 import { ClassRow, FilterSelect } from "@/components/booking/class-row";
 import { ScheduleSegments } from "@/components/booking/schedule-segments";
+import { Skeleton } from "@/components/ui/skeleton";
 
 const WINDOW_DAYS = 30;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -95,7 +96,12 @@ export function ClassFeed() {
       </div>
 
       {loading ? (
-        <div className="text-center py-16 text-sm text-muted">Loading schedule…</div>
+        <div className="flex flex-col gap-3" aria-label="Loading schedule">
+          <Skeleton className="h-5 w-40 mb-1" />
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-[72px] rounded-2xl" />
+          ))}
+        </div>
       ) : groups.length === 0 ? (
         <div className="text-center py-16 text-sm text-muted">No upcoming classes in the next {WINDOW_DAYS} days.</div>
       ) : (

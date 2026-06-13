@@ -3,15 +3,9 @@ import { and, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { env } from '../../env'
 import { bookings } from '../../db/schema/bookings'
-import {
-  classes,
-  classSupportingInstructors,
-  ptSessionClients,
-  ptSessions,
-} from '../../db/schema/schedule'
+import { classes, classSupportingInstructors } from '../../db/schema/schedule'
 import { classTypes, instructors, locations, rooms } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
-import { ptBookingConfig } from '../../db/schema/policy'
 import { NotFoundError } from '../../shared/errors'
 
 function r2Url(key: string | null | undefined): string | null {
@@ -349,67 +343,3 @@ export async function listActiveInstructors(): Promise<InstructorLite[]> {
   }))
 }
 
-export interface PtSlotPayload {
-  id: string
-  starts_at: string
-  ends_at: string
-  session_type: '1on1' | '2on1'
-  spots_left: number
-  location: { id: string; name: string } | null
-}
-
-async function getBookInAdvanceDays(): Promise<number> {
-  const [cfg] = await db
-    .select({ days: ptBookingConfig.bookInAdvanceDays })
-    .from(ptBookingConfig)
-    .limit(1)
-  return cfg?.days ?? 14
-}
-
-export async function listInstructorAvailability(instructorId: string): Promise<PtSlotPayload[]> {
-  const days = await getBookInAdvanceDays()
-  const now = new Date()
-  const until = new Date(now.getTime() + days * DAY_MS)
-
-  const rows = await db
-    .select({
-      id: ptSessions.id,
-      startsAt: ptSessions.startsAt,
-      endsAt: ptSessions.endsAt,
-      sessionType: ptSessions.sessionType,
-      capacityOnline: ptSessions.capacityOnline,
-      locationId: locations.id,
-      locationName: locations.name,
-    })
-    .from(ptSessions)
-    .leftJoin(locations, eq(ptSessions.locationId, locations.id))
-    .where(
-      and(
-        eq(ptSessions.instructorId, instructorId),
-        eq(ptSessions.lifecycle, 'active'),
-        gte(ptSessions.startsAt, now),
-        lt(ptSessions.startsAt, until),
-      ),
-    )
-    .orderBy(ptSessions.startsAt)
-
-  const ids = rows.map(r => r.id)
-  const bookedBySession = new Map<string, number>()
-  if (ids.length) {
-    const counts = await db
-      .select({ ptSessionId: ptSessionClients.ptSessionId, cnt: sql<number>`count(*)::int` })
-      .from(ptSessionClients)
-      .where(inArray(ptSessionClients.ptSessionId, ids))
-      .groupBy(ptSessionClients.ptSessionId)
-    for (const c of counts) bookedBySession.set(c.ptSessionId, Number(c.cnt))
-  }
-
-  return rows.map(r => ({
-    id: r.id,
-    starts_at: r.startsAt.toISOString(),
-    ends_at: r.endsAt.toISOString(),
-    session_type: r.sessionType as '1on1' | '2on1',
-    spots_left: Math.max(0, r.capacityOnline - (bookedBySession.get(r.id) ?? 0)),
-    location: r.locationId && r.locationName ? { id: r.locationId, name: r.locationName } : null,
-  }))
-}

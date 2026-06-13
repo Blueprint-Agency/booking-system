@@ -135,10 +135,6 @@ const app = new Hono()
       }),
     })
   })
-  .get('/instructors/:id/availability', async c => {
-    const slots = await classCatalog.listInstructorAvailability(c.req.param('id'))
-    return c.json({ slots })
-  })
   // Corporate catalogue — surfaced to signed-in members (no promotions).
   .get('/corporate-packages', async c => {
     const rows = await listCorporatePackages({ status: 'active' })

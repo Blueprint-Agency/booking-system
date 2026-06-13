@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { X } from "lucide-react";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 
 type Props = {
   value: string;
@@ -12,6 +13,14 @@ type Props = {
 
 export function QrBadge({ value, label, subLabel }: Props) {
   const [open, setOpen] = useState(false);
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
 
   return (
     <>
@@ -36,7 +45,7 @@ export function QrBadge({ value, label, subLabel }: Props) {
 
       {open && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/60 backdrop-blur-sm p-4"
           onClick={(e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -44,7 +53,12 @@ export function QrBadge({ value, label, subLabel }: Props) {
           }}
         >
           <div
-            className="relative w-full max-w-sm rounded-2xl bg-paper border border-ink/10 p-8 shadow-hover"
+            ref={trapRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label={label ? `QR code — ${label}` : "QR code"}
+            tabIndex={-1}
+            className="relative w-full max-w-sm rounded-2xl bg-paper border border-ink/10 p-8 shadow-modal outline-none"
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();

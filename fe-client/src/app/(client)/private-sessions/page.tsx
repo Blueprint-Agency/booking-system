@@ -147,7 +147,7 @@ export default function PrivateSessionsPage() {
       router.push("/account/private-sessions?submitted=1");
     } catch (err: unknown) {
       const msg =
-        err instanceof Error ? err.message : "Something went wrong. Please try again.";
+        err instanceof Error ? err.message : "We couldn't submit your request. Please try again.";
       setErrors([msg]);
     } finally {
       setSubmitting(false);
@@ -163,8 +163,8 @@ export default function PrivateSessionsPage() {
   }
 
   // If the user only has one PT format available, hide the radio.
-  const has1on1 = ptPackages.some((p) => /1on1|1-on-1/i.test(p.name));
-  const has2on1 = ptPackages.some((p) => /2on1|2-on-1/i.test(p.name));
+  const has1on1 = ptPackages.some((p) => p.sessionType === "1on1");
+  const has2on1 = ptPackages.some((p) => p.sessionType === "2on1");
   const showSessionTypeChoice = (has1on1 && has2on1) || ptPackages.length === 0;
   const computedSessionType: "1on1" | "2on1" = useMemo(() => {
     if (showSessionTypeChoice) return sessionType;
@@ -190,6 +190,14 @@ export default function PrivateSessionsPage() {
         <div className="text-sm text-muted py-12 text-center">Loading your packages…</div>
       ) : (
         <form className="space-y-6" onSubmit={handleSubmit}>
+          {!showSessionTypeChoice && (
+            <p className="text-xs text-muted">
+              You have {balanceForType(computedSessionType)}{" "}
+              {computedSessionType === "2on1" ? "2-on-1" : "1-on-1"} session
+              {balanceForType(computedSessionType) === 1 ? "" : "s"} remaining.
+            </p>
+          )}
+
           {showSessionTypeChoice && (
             <div>
               <label className="text-xs uppercase tracking-wider text-muted mb-2 block">Session type</label>
@@ -268,29 +276,53 @@ export default function PrivateSessionsPage() {
                   key={i}
                   className="rounded-xl border border-ink/10 bg-card p-3"
                 >
-                  <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_1fr_auto] gap-2">
-                    <input
-                      type="date"
-                      min={todayIso()}
-                      value={s.proposedDate}
-                      onChange={(e) => setSlot(i, { proposedDate: e.target.value })}
-                      className="rounded-lg border border-ink/10 bg-paper px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent"
-                      aria-label={`Slot ${i + 1} date`}
-                    />
-                    <input
-                      type="time"
-                      value={s.startTime}
-                      onChange={(e) => setSlot(i, { startTime: e.target.value })}
-                      className="rounded-lg border border-ink/10 bg-paper px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent"
-                      aria-label={`Slot ${i + 1} start time`}
-                    />
-                    <input
-                      type="time"
-                      value={s.endTime}
-                      onChange={(e) => setSlot(i, { endTime: e.target.value })}
-                      className="rounded-lg border border-ink/10 bg-paper px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent"
-                      aria-label={`Slot ${i + 1} end time`}
-                    />
+                  <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_1fr_auto] gap-2 items-end">
+                    <div>
+                      <label
+                        htmlFor={`slot-${i}-date`}
+                        className="text-[11px] uppercase tracking-wider text-muted mb-1 block"
+                      >
+                        Date
+                      </label>
+                      <input
+                        id={`slot-${i}-date`}
+                        type="date"
+                        min={todayIso()}
+                        value={s.proposedDate}
+                        onChange={(e) => setSlot(i, { proposedDate: e.target.value })}
+                        className="w-full rounded-lg border border-ink/10 bg-paper px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent"
+                      />
+                    </div>
+                    <div>
+                      <label
+                        htmlFor={`slot-${i}-start`}
+                        className="text-[11px] uppercase tracking-wider text-muted mb-1 block"
+                      >
+                        Start time
+                      </label>
+                      <input
+                        id={`slot-${i}-start`}
+                        type="time"
+                        value={s.startTime}
+                        onChange={(e) => setSlot(i, { startTime: e.target.value })}
+                        className="w-full rounded-lg border border-ink/10 bg-paper px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent"
+                      />
+                    </div>
+                    <div>
+                      <label
+                        htmlFor={`slot-${i}-end`}
+                        className="text-[11px] uppercase tracking-wider text-muted mb-1 block"
+                      >
+                        End time
+                      </label>
+                      <input
+                        id={`slot-${i}-end`}
+                        type="time"
+                        value={s.endTime}
+                        onChange={(e) => setSlot(i, { endTime: e.target.value })}
+                        className="w-full rounded-lg border border-ink/10 bg-paper px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent"
+                      />
+                    </div>
                     <button
                       type="button"
                       onClick={() => removeSlot(i)}

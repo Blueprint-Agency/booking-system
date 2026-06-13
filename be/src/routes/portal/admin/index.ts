@@ -12,7 +12,6 @@ import ptPackages from './pt-packages'
 import corporatePackages from './corporate-packages'
 import workshops from './workshops'
 import schedule from './schedule'
-import availability from './availability'
 import ptSessions from './pt-sessions'
 import corporateSessions from './corporate-sessions'
 import corporateRequests from './corporate-requests'
@@ -62,11 +61,6 @@ const app = new Hono()
   .use('/waiver/*', superadminOnly)
   .use('/marketing/*', superadminOnly)
   .use('/feature-flags/*', superadminOnly)
-  // availability lives at `/instructors/:id/availability/...` so it's
-  // covered by the instructors prefix gate below; we still mount it for
-  // routing. Re-gate explicitly in case a future path moves out of the
-  // `/instructors` tree.
-  .use('/instructors/*', superadminOnly)
 
   // ── Shared read/write (workspace-scoped operations) ─────────────────────
   .use('/schedule/*', staffAny)
@@ -95,7 +89,6 @@ const app = new Hono()
   .route('/corporate-packages', corporatePackages)
   .route('/workshops', workshops)
   .route('/schedule', schedule)
-  .route('/', availability)
   .route('/pt-sessions', ptSessions)
   .route('/corporate-sessions', corporateSessions)
   .route('/corporate-requests', corporateRequests)

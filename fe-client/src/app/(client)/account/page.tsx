@@ -12,6 +12,7 @@ import { formatDate } from "@/lib/utils";
 import { formatClassTime } from "@/lib/classes";
 import { SectionHeading } from "@/components/booking/section-heading";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Skeleton } from "@/components/ui/skeleton";
 import { QrBadge } from "@/components/account/qr-badge";
 import { useUser } from "@clerk/nextjs";
 import { useApi } from "@/lib/api";
@@ -109,7 +110,11 @@ export default function AccountOverview() {
           )}
         </div>
         {upcomingLoading ? (
-          <div className="py-6 text-center text-sm text-muted">Loading…</div>
+          <div className="space-y-3 py-2" aria-label="Loading upcoming classes">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-12" />
+            ))}
+          </div>
         ) : upcoming.length === 0 ? (
           <EmptyState
             icon={CalendarX}

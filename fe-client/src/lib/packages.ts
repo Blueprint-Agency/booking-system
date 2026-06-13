@@ -126,10 +126,7 @@ export function usePackagesCatalog(): {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-export function formatSgd(price: string | number): string {
-  const n = typeof price === "string" ? Number(price) : price;
-  return `S$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-}
+export { formatSgd } from "./utils";
 
 export function hasDiscount(p: ApiClassPackage | ApiPtPackage): boolean {
   return Number(p.effective_price_sgd) < Number(p.price_sgd);

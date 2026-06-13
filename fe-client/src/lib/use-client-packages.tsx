@@ -7,6 +7,7 @@ import {
   useEffect,
   useCallback,
   useContext,
+  useRef,
   type ReactNode,
 } from "react";
 import { usePathname } from "next/navigation";
@@ -172,8 +173,15 @@ export function ClientPackagesProvider({ children }: { children: ReactNode }) {
     load();
   }, [isLoaded, isSignedIn, userId, load]);
 
-  // Refetch after route changes (e.g. post-checkout confirmation → account)
+  // Refetch after route changes (e.g. post-checkout confirmation → account).
+  // Skips the initial render — the auth effect above already loads on mount,
+  // and firing both would issue a duplicate in-flight request.
+  const firstPathname = useRef(true);
   useEffect(() => {
+    if (firstPathname.current) {
+      firstPathname.current = false;
+      return;
+    }
     if (!isLoaded || !isSignedIn || !userId) return;
     load();
   }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps

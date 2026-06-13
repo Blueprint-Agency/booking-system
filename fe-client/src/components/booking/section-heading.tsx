@@ -1,3 +1,5 @@
+import { cn } from "@/lib/utils";
+
 type SectionHeadingProps = {
   eyebrow?: string;
   title: string;
@@ -11,9 +13,8 @@ export function SectionHeading({
   description,
   align = "left",
 }: SectionHeadingProps) {
-  const alignClass = align === "center" ? "text-center mx-auto" : "";
   return (
-    <div className={`max-w-3xl mb-6 ${alignClass}`}>
+    <div className={cn("max-w-3xl mb-6", align === "center" && "text-center mx-auto")}>
       {eyebrow ? (
         <div className="text-xs font-medium uppercase tracking-[0.2em] text-accent-deep mb-2">
           {eyebrow}

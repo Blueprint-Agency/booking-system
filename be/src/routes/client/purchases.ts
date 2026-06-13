@@ -12,7 +12,11 @@ import {
   listActivePromotionsFor,
 } from '../../services/packages/promotions'
 import { validatePromoCode } from '../../lib/promo-codes'
-import { bookWorkshopFree } from '../../services/workshops/book'
+import {
+  assertWorkshopBookable,
+  bookWorkshopFree,
+  tierEffectivePrice,
+} from '../../services/workshops/book'
 import { workshops, workshopTiers } from '../../db/schema/schedule'
 import { env } from '../../env'
 
@@ -105,16 +109,17 @@ const app = new Hono()
     }
 
     // Apply user-entered promo code on top of any automatic promotion.
-    let promoDiscountSgd = 0
-    const baseAfterPromotion = parseFloat(effectivePriceSgd)
+    // All money math in integer cents — float arithmetic drifts on edge cases.
+    const baseCents = Math.round(parseFloat(effectivePriceSgd) * 100)
+    let promoDiscountCents = 0
     if (promo_code) {
       const promo = validatePromoCode(promo_code)
       if (promo.valid) {
-        promoDiscountSgd = Math.min(promo.discountSgd, baseAfterPromotion)
+        promoDiscountCents = Math.min(Math.round(promo.discountSgd * 100), baseCents)
       }
     }
-    const discountedBase = baseAfterPromotion - promoDiscountSgd
-    const totalCents = Math.round(discountedBase * 1.09 * 100)
+    const discountedBaseCents = baseCents - promoDiscountCents
+    const totalCents = Math.round(discountedBaseCents * 1.09)
 
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
@@ -137,10 +142,10 @@ const app = new Hono()
         package_id,
         client_id: clientId,
         promo_code: promo_code ?? '',
-        promo_discount_sgd: String(promoDiscountSgd),
+        promo_discount_sgd: (promoDiscountCents / 100).toFixed(2),
         applied_promotion_id: appliedPromotionId ?? '',
         list_price_sgd: priceSgd,
-        amount_sgd: String((totalCents / 100).toFixed(2)),
+        amount_sgd: (totalCents / 100).toFixed(2),
       },
       success_url: `${CLIENT_URL}/booking/confirmation?type=package&package_id=${package_id}&package_kind=${package_kind}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${CLIENT_URL}/checkout?package=${package_id}&kind=${package_kind}&cancelled=1`,
@@ -165,25 +170,31 @@ const app = new Hono()
     if (ws.lifecycle !== 'active') throw new BadRequestError('workshop_not_active')
 
     const promos = await listActivePromotionsFor('workshop', [workshop_id])
-    const eff = bestPrice(tier.regularPriceSgd, promos[workshop_id] ?? [])
-    const baseAfterPromotion = parseFloat(eff.effectivePriceSgd)
+    // Early-bird beats promotions while the cutoff is live — same rule the
+    // FE uses to display the price, so what's shown is what's charged.
+    const eff = tierEffectivePrice(tier, promos[workshop_id] ?? [])
+    const baseCents = Math.round(parseFloat(eff.baseSgd) * 100)
 
     // Free workshop (price 0 after promotion) → book immediately, skip Stripe.
-    if (baseAfterPromotion === 0) {
+    if (baseCents === 0) {
       const result = await bookWorkshopFree({ clientId, workshopId: workshop_id, workshopTierId: workshop_tier_id })
       return c.json({ outcome: 'granted', booking_id: result.bookingId, free: true }, 201)
     }
 
-    // Apply user-entered promo code on top of any automatic promotion.
-    let promoDiscountSgd = 0
+    // Reject duplicates / full tiers BEFORE charging — there is no automated
+    // refund flow yet, so an unbookable spot must never reach Stripe.
+    await assertWorkshopBookable({ clientId, workshopId: workshop_id, workshopTierId: workshop_tier_id })
+
+    // Apply user-entered promo code on top, in integer cents.
+    let promoDiscountCents = 0
     if (promo_code) {
       const promo = validatePromoCode(promo_code)
       if (promo.valid) {
-        promoDiscountSgd = Math.min(promo.discountSgd, baseAfterPromotion)
+        promoDiscountCents = Math.min(Math.round(promo.discountSgd * 100), baseCents)
       }
     }
-    const discountedBase = baseAfterPromotion - promoDiscountSgd
-    const totalCents = Math.round(discountedBase * 1.09 * 100)
+    const discountedBaseCents = baseCents - promoDiscountCents
+    const totalCents = Math.round(discountedBaseCents * 1.09)
 
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
@@ -207,10 +218,10 @@ const app = new Hono()
         workshop_tier_id,
         client_id: clientId,
         promo_code: promo_code ?? '',
-        promo_discount_sgd: String(promoDiscountSgd),
+        promo_discount_sgd: (promoDiscountCents / 100).toFixed(2),
         applied_promotion_id: eff.appliedPromotionId ?? '',
         list_price_sgd: tier.regularPriceSgd,
-        amount_sgd: String((totalCents / 100).toFixed(2)),
+        amount_sgd: (totalCents / 100).toFixed(2),
       },
       success_url: `${CLIENT_URL}/booking/confirmation?type=workshop&workshop_id=${workshop_id}&workshop_tier_id=${workshop_tier_id}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${CLIENT_URL}/workshops/${workshop_id}?cancelled=1`,

@@ -3,36 +3,30 @@
 import { useState, Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Lock, ShoppingCart, Tag, Check, AlertCircle } from "lucide-react";
-import { cn, formatCurrency } from "@/lib/utils";
+import { cn, formatCurrency, formatDurationDays } from "@/lib/utils";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useAuth } from "@clerk/nextjs";
 import { getApiBaseUrl } from "@/lib/api-url";
 import { tierEffectivePrice, type ApiWorkshopDetail, type ApiWorkshopTier } from "@/lib/workshops";
+import type { ApiClassPackage, ApiPtPackage } from "@/lib/packages";
 
-interface PackageInfo {
-  id: string;
-  name: string;
-  kind: "credit_bundle" | "unlimited";
-  credits: number | null;
-  validityDays: number | null;
-  durationDays: number | null;
-  priceSgd: string;
-  sessionType?: "1on1" | "2on1";
-  numSessions?: number;
-}
+// Either catalogue entry the checkout can hold; both are snake_case wire shapes.
+type PackageInfo =
+  | ({ _kind: "class" } & ApiClassPackage)
+  | ({ _kind: "pt" } & ApiPtPackage);
 
-function subtitleForPackage(pkg: PackageInfo, kind: "class" | "pt"): string {
-  if (kind === "pt") {
-    return `${pkg.numSessions} private sessions`;
+function subtitleForPackage(pkg: PackageInfo): string {
+  if (pkg._kind === "pt") {
+    return `${pkg.num_sessions} private sessions`;
   }
-  if (pkg.kind === "credit_bundle") {
-    const days = pkg.validityDays ?? 0;
-    const validity = days === 1 ? "1 day" : days >= 365 ? "365 days" : `${days} days`;
+  if (pkg.kind === "credit_bundle" || pkg.kind === "trial") {
+    const days = pkg.validity_days ?? 0;
+    const validity = days === 1 ? "1 day" : `${days} days`;
     return `${pkg.credits} credit${pkg.credits === 1 ? "" : "s"} · valid ${validity}`;
   }
-  const months = pkg.durationDays != null ? Math.round(pkg.durationDays / 30) : "?";
-  return `Unlimited classes · ${months} months`;
+  const duration = pkg.duration_days != null ? formatDurationDays(pkg.duration_days) : "?";
+  return `Unlimited classes · ${duration}`;
 }
 
 function CheckoutContent() {
@@ -85,13 +79,15 @@ function CheckoutContent() {
     }
     fetch(`${getApiBaseUrl()}/public/packages`)
       .then(r => r.json())
-      .then((data: { classPackages: PackageInfo[]; ptPackages: (PackageInfo & { sessionType: string; numSessions: number })[] }) => {
-        let found: PackageInfo | undefined;
-        if (packageKind === "class") {
-          found = data.classPackages?.find((p: PackageInfo) => p.id === packageId);
-        } else {
-          found = data.ptPackages?.find((p: PackageInfo) => p.id === packageId) as PackageInfo | undefined;
-        }
+      .then((data: { class_packages?: ApiClassPackage[]; pt_packages?: ApiPtPackage[] }) => {
+        const found: PackageInfo | undefined =
+          packageKind === "class"
+            ? data.class_packages
+                ?.filter((p) => p.id === packageId)
+                .map((p) => ({ _kind: "class" as const, ...p }))[0]
+            : data.pt_packages
+                ?.filter((p) => p.id === packageId)
+                .map((p) => ({ _kind: "pt" as const, ...p }))[0];
         if (!found) setPkgError("Package not found.");
         else setPkg(found);
       })
@@ -105,13 +101,19 @@ function CheckoutContent() {
     setPromoLoading(true);
     setPromoError(null);
     try {
+      // /me/* routes require the Clerk token — without it the BE 401s and the
+      // promo would always read as invalid.
+      const token = await getToken();
       const res = await fetch(`${getApiBaseUrl()}/me/checkout/validate-promo`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ code }),
       });
       const data = await res.json();
-      if (!data.valid) {
+      if (!res.ok || !data.valid || typeof data.discountSgd !== "number" || data.discountSgd <= 0) {
         setPromoError("Invalid promo code");
         setPromoApplied(null);
       } else {
@@ -226,14 +228,23 @@ function CheckoutContent() {
     : pkg!.name;
   const subtitle = mode === "workshop"
     ? (selectedTier!.description ?? `${selectedTier!.day_ids.length} session${selectedTier!.day_ids.length === 1 ? "" : "s"} included`)
-    : subtitleForPackage(pkg!, packageKind);
-  const price = mode === "workshop"
-    ? parseFloat(tierEffectivePrice(selectedTier!).amount)
-    : parseFloat(pkg!.priceSgd);
-  const discount = promoApplied ? Math.min(promoApplied.discountSgd, price) : 0;
-  const discountedBase = price - discount;
-  const tax = Math.round(discountedBase * 0.09 * 100) / 100;
-  const grandTotal = discountedBase + tax;
+    : subtitleForPackage(pkg!);
+  // Mirror the BE's charge math exactly (integer cents, effective price incl.
+  // any automatic promotion) so the total shown equals the Stripe charge.
+  const baseCents = Math.round(
+    parseFloat(
+      mode === "workshop" ? tierEffectivePrice(selectedTier!).amount : pkg!.effective_price_sgd,
+    ) * 100,
+  );
+  const discountCents = promoApplied
+    ? Math.min(Math.round(promoApplied.discountSgd * 100), baseCents)
+    : 0;
+  const discountedBaseCents = baseCents - discountCents;
+  const totalCents = Math.round(discountedBaseCents * 1.09);
+  const price = baseCents / 100;
+  const discount = discountCents / 100;
+  const tax = (totalCents - discountedBaseCents) / 100;
+  const grandTotal = totalCents / 100;
 
   return (
     <div id="checkout">
@@ -300,7 +311,7 @@ function CheckoutContent() {
                       Apply
                     </button>
                   </div>
-                  {promoError && <p className="text-xs text-red-600 mt-1.5">{promoError}</p>}
+                  {promoError && <p className="text-xs text-error mt-1.5">{promoError}</p>}
                 </>
               )}
             </div>
@@ -329,7 +340,7 @@ function CheckoutContent() {
           </div>
 
           {checkoutError && (
-            <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div className="flex items-start gap-3 rounded-xl border border-error/30 bg-error/10 px-4 py-3 text-sm text-error">
               <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
               <span>{checkoutError}</span>
             </div>

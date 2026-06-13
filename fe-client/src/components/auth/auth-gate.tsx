@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, useCallback, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useUser } from "@clerk/nextjs";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 
 type AuthGateContext = "buy a package" | "book a class" | "book a workshop" | "book a private session" | "continue";
 
@@ -20,6 +21,7 @@ function LoginRequiredModal({
   nextHref: string;
 }) {
   const [mounted, setMounted] = useState(false);
+  const trapRef = useFocusTrap<HTMLDivElement>(open && mounted);
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -47,10 +49,12 @@ function LoginRequiredModal({
       onClick={onClose}
     >
       <div
+        ref={trapRef}
         role="dialog"
         aria-modal="true"
         aria-label="Sign in required"
-        className="w-full max-w-md bg-paper rounded-xl shadow-hover p-6 sm:p-8"
+        tabIndex={-1}
+        className="w-full max-w-md bg-paper rounded-xl shadow-hover p-6 sm:p-8 outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center mb-4">
@@ -78,13 +82,13 @@ function LoginRequiredModal({
         <div className="flex flex-col sm:flex-row gap-2.5">
           <Link
             href={loginHref}
-            className="flex-1 inline-flex items-center justify-center px-4 py-2.5 text-sm font-bold text-inverse bg-accent rounded-md hover:bg-accent-deep transition-colors"
+            className="flex-1 inline-flex items-center justify-center px-4 py-2.5 text-sm font-bold text-inverse bg-accent rounded-full hover:bg-accent-deep transition-colors"
           >
             Log in
           </Link>
           <Link
             href={registerHref}
-            className="flex-1 inline-flex items-center justify-center px-4 py-2.5 text-sm font-bold text-ink border border-ink/15 rounded-md hover:bg-warm transition-colors"
+            className="flex-1 inline-flex items-center justify-center px-4 py-2.5 text-sm font-bold text-ink border border-ink/10 rounded-full hover:bg-warm transition-colors"
           >
             Sign up
           </Link>
