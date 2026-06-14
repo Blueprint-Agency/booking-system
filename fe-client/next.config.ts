@@ -2,6 +2,11 @@ import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
+  // Pin the workspace root to this app. Without this, Next/Turbopack walks up
+  // and mis-infers the root from a stray lockfile in the home directory.
+  turbopack: {
+    root: __dirname,
+  },
   images: {
     remotePatterns: [
       {
@@ -36,5 +41,9 @@ const nextConfig: NextConfig = {
 // gated on NEXT_PUBLIC_SENTRY_DSN in the sentry.*.config files.
 export default withSentryConfig(nextConfig, {
   silent: true,
-  disableLogger: true,
+  webpack: {
+    treeshake: {
+      removeDebugLogging: true,
+    },
+  },
 });

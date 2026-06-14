@@ -115,17 +115,18 @@ jobs:
 
             docker pull blueprintagency/booking-be:latest
             cd /root/stacks/booking-system
+
+            # Run DB migrations + seed in a SHORT-LIVED one-off container, BEFORE
+            # the API server starts. Previously these ran via `docker compose exec`
+            # INTO the already-running server container, so a second tsx/esbuild
+            # process stacked on top of the long-running `tsx src/server.ts` and the
+            # box OOM-killed the migrate step (exit 137). `compose run` brings up the
+            # db dependency (waiting on its healthcheck via depends_on) but NOT the
+            # server, so the migrate/seed tsx never overlaps with the server tsx.
+            # Both steps are idempotent — they run on every deploy.
+            docker compose run --rm -T booking-be sh -c "npm run db:migrate && npm run db:seed"
+
+            # Start (or recreate) the API server now that the schema is up to date.
             docker compose up -d --remove-orphans
-
-            # Wait for backend container to be running, then run DB migrations + seed.
-            # Both must be idempotent — they run on every deploy.
-            for i in $(seq 1 30); do
-              if [ "$(docker inspect -f '{{.State.Running}}' booking-be 2>/dev/null)" = "true" ]; then
-                break
-              fi
-              sleep 2
-            done
-
-            docker compose exec -T booking-be sh -c "npm run db:migrate && npm run db:seed"
 
             docker image prune -f
