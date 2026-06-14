@@ -7,6 +7,7 @@ import { useAuth, useUser } from "@clerk/nextjs";
 import { useAuthGate } from "@/components/auth/auth-gate";
 import { getApiBaseUrl } from "@/lib/api-url";
 import { cn } from "@/lib/utils";
+import { reportError } from "@/lib/report-error";
 
 type BuyTarget =
   | { kind: "package"; packageKind: "class" | "pt"; packageId: string }
@@ -70,6 +71,12 @@ export function BuyButton({
       const data = await res.json();
 
       if (!res.ok) {
+        reportError(new Error(`checkout ${res.status}`), {
+          scope: "checkout",
+          endpoint,
+          status: res.status,
+          body: data,
+        });
         setError(data.error ?? "Could not start checkout. Please try again.");
         setBusy(false);
         return;
@@ -97,7 +104,8 @@ export function BuyButton({
         return;
       }
       window.location.href = data.url;
-    } catch {
+    } catch (err) {
+      reportError(err, { scope: "checkout", kind: target.kind });
       setError("Network error. Please try again.");
       setBusy(false);
     }

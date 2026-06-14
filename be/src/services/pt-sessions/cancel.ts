@@ -9,6 +9,7 @@ import { evaluateCancellation } from '../policy/evaluate-cancellation'
 import { computeActive } from '../packages/validity'
 import { ptSessionCost } from './cost'
 import { AppError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
+import { logger } from '../../shared/logger'
 
 /**
  * Cancel a PT request, branching on its current status. Single entry point for
@@ -277,7 +278,7 @@ export async function expireStaleSessions(): Promise<void> {
       // A request that raced into a terminal/scheduled state between the scan and
       // the lock is fine to skip — the sweep is best-effort and idempotent.
       const msg = err instanceof Error ? err.message : String(err)
-      console.error(`[pt-expiry] failed to expire request ${row.id}:`, msg)
+      logger.error({ ptRequestId: row.id, err: msg }, 'pt-expiry: failed to expire request')
     }
   }
 }

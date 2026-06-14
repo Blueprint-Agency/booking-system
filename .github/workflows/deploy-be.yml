@@ -2,7 +2,7 @@ name: BE Deploy
 
 on:
   push:
-    branches: [main]
+    branches: [staging]
     paths:
       - 'be/**'
       - '.github/workflows/deploy-be.yml'
@@ -10,9 +10,9 @@ on:
 
 jobs:
   deploy:
-    if: github.ref_name == 'main'
+    if: github.ref_name == 'staging'
     runs-on: ubuntu-latest
-    environment: production
+    environment: staging
 
     steps:
       - name: Checkout
@@ -55,9 +55,16 @@ jobs:
             #            SMTP_USER, SMTP_PASSWORD,
             #            (deferred — set when next slice lands)
             #            STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
-            #            R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, R2_PUBLIC_URL
+            #            R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, R2_PUBLIC_URL,
+            #            (optional — error monitoring) SENTRY_DSN
             {
+              # NODE_ENV stays "production" on ANY server (build flag — enables
+              # optimizations + JSON logging). The environment NAME lives in
+              # APP_ENV below.
               echo "NODE_ENV=production"
+              # APP_ENV names this deployment. It's the STAGING server for now;
+              # switch to "production" when the real prod server is set up.
+              echo "APP_ENV=staging"
               echo "PORT=${{ vars.PORT }}"
               echo "TZ=Asia/Kuala_Lumpur"
               echo "DATABASE_URL=postgres://${{ secrets.DB_USER }}:${{ secrets.DB_PASSWORD }}@db-booking:5432/${{ secrets.DB_NAME }}"
@@ -94,6 +101,8 @@ jobs:
               echo "R2_SECRET_ACCESS_KEY=${{ secrets.R2_SECRET_ACCESS_KEY }}"
               echo "R2_BUCKET_NAME=${{ secrets.R2_BUCKET_NAME }}"
               echo "R2_PUBLIC_URL=${{ secrets.R2_PUBLIC_URL }}"
+              # Error monitoring (optional) — backend Sentry DSN; blank disables it
+              echo "SENTRY_DSN=${{ secrets.SENTRY_DSN }}"
             } > /root/stacks/booking-system/.env.booking-be
             chmod 600 /root/stacks/booking-system/.env.booking-be
             # Postgres creds — same source as DATABASE_URL above

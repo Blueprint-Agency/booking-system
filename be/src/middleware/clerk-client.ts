@@ -4,6 +4,7 @@ import { clients } from '../db/schema/identity'
 import { eq } from 'drizzle-orm'
 import { getClerkClientApp, verifyClientToken } from '../lib/clerk'
 import { syncClientFromClerk } from '../services/auth/webhook-sync'
+import { logger } from '../shared/logger'
 
 export interface ClerkClientClaims {
   sub: string
@@ -99,7 +100,7 @@ export const clerkClientAuth: MiddlewareHandler = async (c, next) => {
         ;[row] = await db.select().from(clients).where(eq(clients.id, sync.clientId)).limit(1)
       }
     } catch (err) {
-      console.warn('[clerk-client] auto-provision failed:', err)
+      logger.warn({ err }, 'clerk-client: auto-provision failed')
     }
   }
 

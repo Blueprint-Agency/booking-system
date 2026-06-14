@@ -60,17 +60,20 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 
 | App | Target | How it deploys |
 |---|---|---|
-| `fe-client/` | Vercel project (Root Directory = `fe-client/`) | Auto-deploy on push to `main`. Env vars set in the Vercel dashboard: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`. Clerk routing URLs are hardcoded in `src/app/layout.tsx` (NOT env-driven). |
-| `fe-portal/` | Vercel project (Root Directory = `fe-portal/`) | Auto-deploy on push to `main`. Same env shape as fe-client but with the **staff** Clerk app keys. |
-| `be/` | VPS3 (Docker) | `.github/workflows/deploy-be.yml` builds the image, pushes to Docker Hub (`blueprintagency/booking-be`), SSHes to VPS3, writes `.env.booking-be` from GitHub repo secrets/vars, and runs `docker compose up -d` followed by `db:migrate && db:seed`. |
+| `fe-client/` | Vercel project (Root Directory = `fe-client/`) | Push to `staging` → Vercel **preview** deployment; pushes to `main` deploy nothing (disabled via `vercel.json` → `git.deploymentEnabled`). Env vars (set for the **Preview** scope): `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `NEXT_PUBLIC_SENTRY_DSN`, `NEXT_PUBLIC_APP_ENV` (=`staging`). Clerk routing URLs are hardcoded in `src/app/layout.tsx` (NOT env-driven). |
+| `fe-portal/` | Vercel project (Root Directory = `fe-portal/`) | Push to `staging` → Vercel **preview** deployment; `main` disabled via `vercel.json`. Same env shape as fe-client (incl. `NEXT_PUBLIC_SENTRY_DSN`, `NEXT_PUBLIC_APP_ENV`), set for the **Preview** scope, but with the **staff** Clerk app keys. |
+| `be/` | VPS3 (Docker) | Auto-deploy on push to the `staging` branch (paths-filtered to `be/**`). `.github/workflows/deploy-be.yml` builds the image, pushes to Docker Hub (`blueprintagency/booking-be`), SSHes to VPS3, writes `.env.booking-be` from GitHub repo secrets/vars, and runs `docker compose up -d` followed by `db:migrate && db:seed`. |
+
+**Deploy branch & environments:** all non-local deploys currently target the **`staging`** branch — pushing to `staging` triggers the BE workflow (VPS) and a Vercel **preview** deployment of both frontends. Pushing to `main` deploys nothing: the BE workflow ignores it, and each frontend's `vercel.json` disables `main` (`git.deploymentEnabled`). **There is no production server yet — staging runs as a Vercel preview** (so set Vercel env vars on the **Preview** scope; do NOT set the Production Branch to `staging`). `NODE_ENV` stays `production` on any server/build, incl. Vercel previews (build flag — enables optimizations + JSON logging); the environment NAME lives in `APP_ENV` (backend) / `NEXT_PUBLIC_APP_ENV` (frontend), set to `staging`. When a prod server is added, give it a `main`→production deploy path (re-enable `main` in `vercel.json` + set its Production Branch) and set those to `production`. Sentry reports from any deployed env (`APP_ENV !== development`) and is off in local dev.
 
 **CORS:** the BE allowlists both frontends via two env vars — `PORTAL_ORIGIN` (required) and `CLIENT_ORIGIN` (optional, omit to lock down to fe-portal only). Both must be full URLs with scheme, no trailing slash. In CI these come from `vars.PORTAL_ORIGIN` / `vars.CLIENT_ORIGIN`.
 
 **Clerk apps:** two separate Clerk applications. fe-portal + `CLERK_STAFF_*` is the staff/instructor app; fe-client + `CLERK_CLIENT_*` is the member-facing app. Cross-app tokens are rejected by the BE middleware on purpose — never share keys between them.
 
-**GitHub repo settings driving `deploy-be.yml`** (see the comment block at the top of the workflow for the canonical list):
+**GitHub repo settings driving `deploy-be.yml`** (see the comment block at the top of the workflow for the canonical list). The workflow job runs in the GitHub **`staging`** Environment, so environment-scoped secrets must live there (or be repo-level):
 - `vars`: `PORT`, `VPS3_HOST`, `DOCKERHUB_USERNAME`, `PORTAL_ORIGIN`, `CLIENT_ORIGIN`, `SUPERADMIN_EMAIL`
-- `secrets`: `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DOCKERHUB_TOKEN`, `SSH_PRIVATE_KEY`, `CLERK_STAFF_*` (×3), `CLERK_CLIENT_*` (×3), `SMTP_USER`, `SMTP_PASSWORD`, plus deferred `STRIPE_*` and `R2_*`.
+- `secrets`: `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DOCKERHUB_TOKEN`, `SSH_PRIVATE_KEY`, `CLERK_STAFF_*` (×3), `CLERK_CLIENT_*` (×3), `SMTP_USER`, `SMTP_PASSWORD`, `SENTRY_DSN` (optional — error monitoring), plus deferred `STRIPE_*` and `R2_*`.
+- `NODE_ENV` (=`production`) and `APP_ENV` (=`staging`) are hardcoded in the workflow, not repo settings.
 
 ## Conventions
 

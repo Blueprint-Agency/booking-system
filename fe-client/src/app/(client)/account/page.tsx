@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { QrBadge } from "@/components/account/qr-badge";
 import { useUser } from "@clerk/nextjs";
 import { useApi } from "@/lib/api";
+import { reportError } from "@/lib/report-error";
 import { useClientPackages, type LivePackage } from "@/lib/use-client-packages";
 import type { ApiBooking } from "@/components/account/class-bookings";
 
@@ -47,7 +48,8 @@ export default function AccountOverview() {
       try {
         const res = await api.get<{ bookings: ApiBooking[] }>("/me/bookings/upcoming");
         if (!cancelled) setUpcoming(res.bookings ?? []);
-      } catch {
+      } catch (err) {
+        reportError(err, { scope: "upcoming-bookings" });
         if (!cancelled) setUpcoming([]);
       } finally {
         if (!cancelled) setUpcomingLoading(false);

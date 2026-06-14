@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { Webhook } from 'svix'
 import { env } from '../../env'
 import { handleClerkStaffEvent, handleClerkClientEvent } from '../../services/auth/webhook-sync'
+import { logger } from '../../shared/logger'
 
 /**
  * Clerk → /api/v1/webhooks/clerk
@@ -48,7 +49,7 @@ const app = new Hono().post('/clerk', async c => {
     const outcome = await handleClerkClientEvent(clientEvent!)
     return c.json({ received: true, app: 'client', outcome: outcome.kind })
   } catch (err) {
-    console.error('[clerk-webhook] handler error', err)
+    logger.error({ err }, 'clerk-webhook handler error')
     // Return 500 so Svix retries.
     return c.json({ error: 'handler_failed' }, 500)
   }

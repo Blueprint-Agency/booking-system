@@ -7,6 +7,7 @@ import { env } from './env'
 import { db } from './db'
 import { errorBoundary } from './middleware/error'
 import { requestId } from './middleware/request-id'
+import { requestLogger } from './middleware/logger'
 
 import publicRoutes from './routes/public'
 import clientRoutes from './routes/client'
@@ -16,6 +17,7 @@ import webhookRoutes from './routes/webhooks'
 const app = new Hono()
 
 app.use('*', requestId)
+app.use('*', requestLogger)
 app.use('*', errorBoundary)
 app.use('*', secureHeaders())
 
@@ -80,5 +82,8 @@ app.route('/api/v1/public', publicRoutes)
 app.route('/api/v1/me', clientRoutes)
 app.route('/api/v1/portal', portalRoutes)
 app.route('/api/v1/webhooks', webhookRoutes)
+
+// Unmatched routes — consistent JSON shape instead of Hono's default text 404.
+app.notFound(c => c.json({ error: 'not_found' }, 404))
 
 export default app

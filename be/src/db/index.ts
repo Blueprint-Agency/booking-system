@@ -8,3 +8,6 @@ if (!url) throw new Error('DATABASE_URL is required')
 
 const client = postgres(url)
 export const db = drizzle(client, { schema })
+
+/** Close the Postgres connection pool — called during graceful shutdown. */
+export const closeDb = () => client.end({ timeout: 5 })

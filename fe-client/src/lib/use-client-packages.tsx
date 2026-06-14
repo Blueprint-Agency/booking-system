@@ -12,6 +12,7 @@ import {
 } from "react";
 import { usePathname } from "next/navigation";
 import { getApiBaseUrl } from "./api-url";
+import { reportError } from "./report-error";
 
 export interface LivePackage {
   id: string;
@@ -155,10 +156,17 @@ export function ClientPackagesProvider({ children }: { children: ReactNode }) {
       const res = await fetch(`${getApiBaseUrl()}/me/packages`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        reportError(new Error(`/me/packages ${res.status}`), {
+          scope: "load-packages",
+          status: res.status,
+        });
+        return;
+      }
       setData(mapPackagesResponse(await res.json()));
-    } catch {
-      // Non-fatal — UI falls back to zero values
+    } catch (err) {
+      // Non-fatal for the UI (falls back to zero values), but report so it's not silent.
+      reportError(err, { scope: "load-packages" });
     } finally {
       setLoading(false);
     }

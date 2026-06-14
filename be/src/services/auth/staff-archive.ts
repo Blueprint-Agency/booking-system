@@ -27,6 +27,7 @@ import {
   ForbiddenError,
   NotFoundError,
 } from '../../shared/errors'
+import { logger } from '../../shared/logger'
 
 export type StaffUserRow = typeof staffUsers.$inferSelect
 
@@ -103,11 +104,13 @@ export async function archiveStaff(input: ArchiveStaffInput): Promise<StaffUserR
         sessions.data.map(s => clerkStaffApp.sessions.revokeSession(s.id)),
       )
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.warn('[archiveStaff] Clerk session revoke failed', {
-        staffId: targetStaffId,
-        err: err instanceof Error ? err.message : String(err),
-      })
+      logger.warn(
+        {
+          staffId: targetStaffId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'archiveStaff: Clerk session revoke failed',
+      )
     }
   }
 

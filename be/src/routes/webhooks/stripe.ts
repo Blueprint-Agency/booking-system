@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { stripe } from '../../lib/stripe'
 import { handleStripeEvent } from '../../services/billing/webhook-handler'
+import { logger } from '../../shared/logger'
 
 const app = new Hono().post('/stripe', async c => {
   const secret = process.env.STRIPE_WEBHOOK_SECRET
@@ -19,7 +20,7 @@ const app = new Hono().post('/stripe', async c => {
   try {
     await handleStripeEvent(event)
   } catch (err) {
-    console.error('[stripe-webhook] handler error', err)
+    logger.error({ err }, 'stripe-webhook handler error')
     return c.json({ error: 'handler_failed' }, 500)
   }
 

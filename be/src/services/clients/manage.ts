@@ -6,6 +6,7 @@ import { getClerkClientApp } from '../../lib/clerk'
 import { env } from '../../env'
 import { sendTemplatedEmail } from '../notifications/send'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
+import { logger } from '../../shared/logger'
 
 export type ClientRow = typeof clients.$inferSelect
 export type ManualAdjustmentRow = typeof manualAdjustments.$inferSelect
@@ -207,20 +208,24 @@ export async function softDeleteClient(input: SoftDeleteClientInput): Promise<Cl
   try {
     const clerk = getClerkClientApp()
     await clerk.users.banUser(target.clerkUserId).catch(err => {
-      // eslint-disable-next-line no-console
-      console.warn('[softDeleteClient] Clerk banUser failed', {
-        clientId: targetClientId,
-        err: err instanceof Error ? err.message : String(err),
-      })
+      logger.warn(
+        {
+          clientId: targetClientId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'softDeleteClient: Clerk banUser failed',
+      )
     })
     const sessions = await clerk.sessions.getSessionList({ userId: target.clerkUserId })
     await Promise.allSettled(sessions.data.map(s => clerk.sessions.revokeSession(s.id)))
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.warn('[softDeleteClient] Clerk client app unavailable', {
-      clientId: targetClientId,
-      err: err instanceof Error ? err.message : String(err),
-    })
+    logger.warn(
+      {
+        clientId: targetClientId,
+        err: err instanceof Error ? err.message : String(err),
+      },
+      'softDeleteClient: Clerk client app unavailable',
+    )
   }
 
   return updated
@@ -264,18 +269,22 @@ export async function restoreClient(input: RestoreClientInput): Promise<ClientRo
   try {
     const clerk = getClerkClientApp()
     await clerk.users.unbanUser(target.clerkUserId).catch(err => {
-      // eslint-disable-next-line no-console
-      console.warn('[restoreClient] Clerk unbanUser failed', {
-        clientId: targetClientId,
-        err: err instanceof Error ? err.message : String(err),
-      })
+      logger.warn(
+        {
+          clientId: targetClientId,
+          err: err instanceof Error ? err.message : String(err),
+        },
+        'restoreClient: Clerk unbanUser failed',
+      )
     })
   } catch (err) {
-    // eslint-disable-next-line no-console
-    console.warn('[restoreClient] Clerk client app unavailable', {
-      clientId: targetClientId,
-      err: err instanceof Error ? err.message : String(err),
-    })
+    logger.warn(
+      {
+        clientId: targetClientId,
+        err: err instanceof Error ? err.message : String(err),
+      },
+      'restoreClient: Clerk client app unavailable',
+    )
   }
 
   return updated

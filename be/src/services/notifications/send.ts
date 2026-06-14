@@ -3,6 +3,7 @@ import { sendMail } from '../../lib/mailer'
 import { db } from '../../db'
 import { emailTemplates, emailLog } from '../../db/schema/content'
 import { eq } from 'drizzle-orm'
+import { logger } from '../../shared/logger'
 
 export type TemplateSlug =
   | 'welcome'
@@ -83,7 +84,7 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
       .where(eq(emailLog.id, logRow.id))
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error(`[email] send failed for template=${slug} to=${recipient.email}:`, msg)
+    logger.error({ template: slug, to: recipient.email, err: msg }, 'email send failed')
     await db
       .update(emailLog)
       .set({ status: 'failed', error: msg })

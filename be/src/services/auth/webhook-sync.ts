@@ -1,6 +1,7 @@
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { staffUsers, staffInvitations, clients } from '../../db/schema/identity'
+import { logger } from '../../shared/logger'
 
 /**
  * Clerk user.* webhook → link to pre-seeded staff_users row.
@@ -80,8 +81,14 @@ export async function syncStaffFromClerk(clerkUser: ClerkWebhookUser): Promise<S
   if (!row) return { kind: 'no_staff_row' }
 
   if (row.clerkUserId && row.clerkUserId !== clerkUser.id) {
-    console.warn(
-      `[clerk-webhook] staff_users.id=${row.id} already linked to clerk_user_id=${row.clerkUserId}; incoming sub=${clerkUser.id} for email=${normalized}`,
+    logger.warn(
+      {
+        staffUserId: row.id,
+        existingClerkUserId: row.clerkUserId,
+        incomingSub: clerkUser.id,
+        email: normalized,
+      },
+      'clerk-webhook: staff_users row already linked to a different clerk_user_id',
     )
     return { kind: 'email_mismatch', staffUserId: row.id }
   }
@@ -118,8 +125,12 @@ export async function syncStaffFromClerk(clerkUser: ClerkWebhookUser): Promise<S
     )
     .limit(1)
   if (pendingInv && pendingInv.expiresAt.getTime() < now.getTime()) {
-    console.warn(
-      `[clerk-webhook] refusing to activate staff_users.id=${row.id}: invitation expired at ${pendingInv.expiresAt.toISOString()} (resend to extend)`,
+    logger.warn(
+      {
+        staffUserId: row.id,
+        invitationExpiresAt: pendingInv.expiresAt.toISOString(),
+      },
+      'clerk-webhook: refusing to activate staff user, invitation expired (resend to extend)',
     )
     return { kind: 'invite_expired', staffUserId: row.id }
   }
@@ -209,8 +220,13 @@ export async function syncClientFromClerk(clerkUser: ClerkWebhookUser): Promise<
     .where(sql`lower(${clients.email}) = ${normalized}`)
     .limit(1)
   if (byEmail) {
-    console.warn(
-      `[clerk-webhook] clients.id=${byEmail.id} email=${normalized} exists with a different clerk_user_id; incoming sub=${clerkUser.id}`,
+    logger.warn(
+      {
+        clientId: byEmail.id,
+        email: normalized,
+        incomingSub: clerkUser.id,
+      },
+      'clerk-webhook: clients row exists with a different clerk_user_id',
     )
     return { kind: 'email_conflict' }
   }

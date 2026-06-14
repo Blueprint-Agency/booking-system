@@ -4,6 +4,7 @@ import { clerkStaffApp, verifyStaffToken } from '../lib/clerk'
 import { db } from '../db'
 import { staffUsers } from '../db/schema/identity'
 import { syncStaffFromClerk } from '../services/auth/webhook-sync'
+import { logger } from '../shared/logger'
 
 export interface ClerkStaffClaims {
   sub: string
@@ -83,7 +84,7 @@ export const clerkStaffAuth: MiddlewareHandler = async (c, next) => {
         syncReason = sync.kind
       }
     } catch (err) {
-      console.error('[clerk-staff] auto-link fallback failed:', err)
+      logger.error({ err }, 'clerk-staff: auto-link fallback failed')
       syncReason = 'sync_error'
     }
   }
