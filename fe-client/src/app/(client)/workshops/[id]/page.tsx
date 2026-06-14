@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import Image from "next/image";
-import { Calendar, MapPin, CalendarX, Loader2 } from "lucide-react";
+import { Calendar, MapPin, CalendarX, Loader2, AlertCircle } from "lucide-react";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { SectionHeading } from "@/components/booking/section-heading";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -37,6 +37,8 @@ function formatDayChip(startsAt: string, endsAt: string): string {
 
 export default function WorkshopDetailPage() {
   const { id } = useParams<{ id: string }>();
+  // Stripe sends the user back here with ?cancelled=1 if they abandon checkout.
+  const cancelled = useSearchParams().get("cancelled");
   const { data: workshop, loading, error } = useWorkshop(id);
   const [selectedTierId, setSelectedTierId] = useState<string | null>(null);
 
@@ -99,6 +101,12 @@ export default function WorkshopDetailPage() {
     <>
       <div id="purchase">
         <BookingSurface maxWidth="lg" padding="default">
+          {cancelled && (
+            <div className="mb-6 flex items-start gap-3 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-ink">
+              <AlertCircle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
+              <span>Payment was cancelled — you haven&apos;t been charged. Choose a tier below to try again.</span>
+            </div>
+          )}
           <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-10">
             {/* Left column */}
             <div>

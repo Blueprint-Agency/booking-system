@@ -15,11 +15,18 @@ export function formatCurrency(amount: number): string {
   }).format(amount);
 }
 
-/** Compact `S$1,234` price tag used across catalogue cards. */
+/**
+ * Compact `S$1,234` price tag used across catalogue cards. Whole dollars stay
+ * whole; cents are shown when present so a S$30.50 price never renders as S$31
+ * (the card price must match what Stripe charges).
+ */
 export function formatSgd(price: string | number): string {
   const n = typeof price === "string" ? Number(price) : price;
   if (Number.isNaN(n)) return "S$0";
-  return `S$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  return `S$${n.toLocaleString(undefined, {
+    minimumFractionDigits: Number.isInteger(n) ? 0 : 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 /**

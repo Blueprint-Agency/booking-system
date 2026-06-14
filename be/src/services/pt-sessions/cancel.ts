@@ -1,4 +1,4 @@
-import { and, eq, lt } from 'drizzle-orm'
+import { and, eq, inArray, lt } from 'drizzle-orm'
 import { db } from '../../db'
 import { ptRequests, ptSessions } from '../../db/schema/schedule'
 import { bookings, cancellations } from '../../db/schema/bookings'
@@ -39,6 +39,12 @@ export interface CancelPtRequestInput {
   clientId?: string
   /** Staff actor for admin cancels (recorded on the request + ledger). */
   actorStaffId?: string
+  /**
+   * When set (instructor-initiated cancel), restricts the action to a SCHEDULED
+   * session the instructor personally runs. Instructors cannot cancel pending
+   * (un-triaged) requests, nor sessions assigned to another instructor.
+   */
+  requireOwnInstructorId?: string
 }
 
 export interface CancelPtRequestResult {
@@ -71,6 +77,12 @@ export async function cancelPtRequest(input: CancelPtRequestInput): Promise<Canc
       req.status === 'attended'
     ) {
       return { status: 'noop', refundedSessions: 0, refundOutcome: 'n_a' }
+    }
+
+    // Instructors may only cancel sessions they run, and only once scheduled —
+    // triage (pending) is an admin responsibility.
+    if (input.requireOwnInstructorId && req.status !== 'scheduled') {
+      throw new ForbiddenError('not_your_session')
     }
 
     const cost = ptSessionCost(req.sessionType)
@@ -128,12 +140,22 @@ export async function cancelPtRequest(input: CancelPtRequestInput): Promise<Canc
     if (req.status !== 'scheduled') throw new ConflictError('cannot_cancel')
 
     const [session] = await tx
-      .select({ id: ptSessions.id, startsAt: ptSessions.startsAt, lifecycle: ptSessions.lifecycle })
+      .select({
+        id: ptSessions.id,
+        startsAt: ptSessions.startsAt,
+        lifecycle: ptSessions.lifecycle,
+        instructorId: ptSessions.instructorId,
+      })
       .from(ptSessions)
       .where(eq(ptSessions.id, req.scheduledPtSessionId ?? ''))
       .for('update')
       .limit(1)
     if (!session) throw new NotFoundError('pt_session_not_found')
+
+    // Ownership guard for instructor-initiated cancels.
+    if (input.requireOwnInstructorId && session.instructorId !== input.requireOwnInstructorId) {
+      throw new ForbiddenError('not_your_session')
+    }
 
     const now = new Date()
 
@@ -258,4 +280,31 @@ export async function expireStaleSessions(): Promise<void> {
       console.error(`[pt-expiry] failed to expire request ${row.id}:`, msg)
     }
   }
+}
+
+/**
+ * Companion to flipNoShows (jobs/index.ts): a SCHEDULED PT request whose session
+ * has ended moves to the terminal `attended` state, so it drops off the client's
+ * "upcoming" list and surfaces under their "past" history (and the admin "attended"
+ * filter). Per-booking check_in_state (attended / no_show) still records who actually
+ * showed up — this only advances the request lifecycle past its session.
+ */
+export async function completeEndedPtSessions(): Promise<void> {
+  const now = new Date()
+  const ended = await db
+    .select({ id: ptRequests.id })
+    .from(ptRequests)
+    .innerJoin(ptSessions, eq(ptSessions.id, ptRequests.scheduledPtSessionId))
+    .where(
+      and(
+        eq(ptRequests.status, 'scheduled'),
+        eq(ptSessions.lifecycle, 'active'),
+        lt(ptSessions.endsAt, now),
+      ),
+    )
+  if (!ended.length) return
+  await db
+    .update(ptRequests)
+    .set({ status: 'attended' })
+    .where(inArray(ptRequests.id, ended.map(r => r.id)))
 }

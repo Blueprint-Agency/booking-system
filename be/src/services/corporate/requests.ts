@@ -61,10 +61,14 @@ export interface SubmitCorporateRequestInput {
 }
 
 /**
- * Auto-create one pending corporate request for a purchased package. Called from
- * the Stripe webhook after `checkout.session.completed`. No slots, no negotiation
- * captured here — that all happens over WhatsApp. The member's preferred location
- * and free-text notes (from the request form) are stored as separate fields.
+ * Create one pending corporate request from the fe-client request form. Corporate is
+ * a free request/quote flow in v1 — NOT a Stripe-paid item — so this is called
+ * directly from `POST /me/catalog/corporate-requests`, not from a webhook. No slots,
+ * no negotiation captured here — that all happens over WhatsApp. The member's preferred
+ * location and free-text notes (from the request form) are stored as separate fields.
+ *
+ * NOTE: the `corporate_package` value in the stripePaymentKind enum is currently unused
+ * (corporate is unpaid); it is left in place to avoid a destructive enum migration.
  */
 export async function submitCorporateRequest(
   input: SubmitCorporateRequestInput,

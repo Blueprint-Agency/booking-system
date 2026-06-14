@@ -1,5 +1,5 @@
 import cron from 'node-cron'
-import { expireStaleSessions } from '../services/pt-sessions/cancel'
+import { expireStaleSessions, completeEndedPtSessions } from '../services/pt-sessions/cancel'
 import { flipNoShows } from '../services/bookings/check-in'
 import { expirePackages, sendLapsingAlerts, sendExpiredNotifications } from '../services/packages/expire'
 import { flagExpiredWaivers } from '../services/waiver'
@@ -16,6 +16,9 @@ export async function registerJobs() {
 
   // Every 1 min — no-show flip on bookings whose session has ended
   cron.schedule('* * * * *', flipNoShows)
+
+  // Every 5 min — advance scheduled PT requests whose session has ended to `attended`
+  cron.schedule('*/5 * * * *', completeEndedPtSessions)
 
   // Daily 01:00 SGT (17:00 UTC) — package expiry
   cron.schedule('0 17 * * *', expirePackages)

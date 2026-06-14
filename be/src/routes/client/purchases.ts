@@ -118,8 +118,10 @@ const app = new Hono()
         promoDiscountCents = Math.min(Math.round(promo.discountSgd * 100), baseCents)
       }
     }
-    const discountedBaseCents = baseCents - promoDiscountCents
-    const totalCents = Math.round(discountedBaseCents * 1.09)
+    // Catalogue prices are GST-inclusive (SG consumer pricing / IRAS). The amount
+    // charged IS the listed price; the "includes 9% GST" line reflects the embedded
+    // GST rather than adding it on top.
+    const totalCents = baseCents - promoDiscountCents
 
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
@@ -193,8 +195,8 @@ const app = new Hono()
         promoDiscountCents = Math.min(Math.round(promo.discountSgd * 100), baseCents)
       }
     }
-    const discountedBaseCents = baseCents - promoDiscountCents
-    const totalCents = Math.round(discountedBaseCents * 1.09)
+    // GST-inclusive (see package checkout above) — charge the listed price.
+    const totalCents = baseCents - promoDiscountCents
 
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',

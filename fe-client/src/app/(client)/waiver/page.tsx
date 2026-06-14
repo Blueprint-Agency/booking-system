@@ -22,7 +22,7 @@ const WAIVER_TEXT = [
   },
   {
     title: "4. Studio Policies and Conduct",
-    body: `You agree to abide by all studio rules, policies, and guidelines as communicated by staff and instructors. You understand that the studio reserves the right to refuse service or remove any participant whose conduct is deemed inappropriate, disruptive, or unsafe. Late arrivals may be denied entry to a class in progress to maintain the experience for all participants. Cancellations must be made at least 12 hours prior to the scheduled class time to avoid forfeiture of a session credit.`,
+    body: `You agree to abide by all studio rules, policies, and guidelines as communicated by staff and instructors. You understand that the studio reserves the right to refuse service or remove any participant whose conduct is deemed inappropriate, disruptive, or unsafe. Late arrivals may be denied entry to a class in progress to maintain the experience for all participants. Cancellations must be made at least 24 hours prior to the scheduled class time; inside that window a class cannot be self-cancelled and the session credit is forfeited.`,
   },
   {
     title: "5. Personal Property and Privacy",

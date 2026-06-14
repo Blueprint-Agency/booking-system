@@ -175,7 +175,7 @@ function Inner() {
         )}
 
         <p className="text-xs text-muted mt-10 leading-relaxed">
-          Pending requests refund their session credits when cancelled. Cancelling after the studio has scheduled the session does not refund credits.
+          Pending requests refund their session credits when cancelled. A scheduled session can be cancelled up until the cancellation window before it starts — cancel in time and your credits are returned; inside the window it can no longer be cancelled in-app, so please contact the studio.
         </p>
       </div>
     </>

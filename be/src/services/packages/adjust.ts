@@ -8,6 +8,7 @@ import { db } from '../../db'
 import { clientPackages } from '../../db/schema/packages'
 import { manualAdjustments } from '../../db/schema/ledger'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
+import { computeActive } from './validity'
 
 export type ClientPackageRow = typeof clientPackages.$inferSelect
 
@@ -54,9 +55,18 @@ export async function adjustBalance(input: AdjustInput): Promise<ClientPackageRo
     const next = pkg.creditsOrSessionsRemaining + input.delta
     if (next < 0) throw new BadRequestError('balance_cannot_go_negative')
 
+    // Recompute the consumable flag — adding credits to an exhausted bundle must
+    // reactivate it, and zeroing one must deactivate it, without waiting for the
+    // nightly expiry sweep.
+    const nextActive = computeActive({
+      kind: pkg.kind,
+      expiresAt: pkg.expiresAt,
+      creditsOrSessionsRemaining: next,
+    })
+
     await tx
       .update(clientPackages)
-      .set({ creditsOrSessionsRemaining: next })
+      .set({ creditsOrSessionsRemaining: next, active: nextActive })
       .where(eq(clientPackages.id, pkg.id))
 
     await tx.insert(manualAdjustments).values({
@@ -67,7 +77,7 @@ export async function adjustBalance(input: AdjustInput): Promise<ClientPackageRo
       actedByStaffId: input.actedByStaffId,
     })
 
-    return { ...pkg, creditsOrSessionsRemaining: next }
+    return { ...pkg, creditsOrSessionsRemaining: next, active: nextActive }
   })
 }
 
@@ -131,9 +141,18 @@ export async function setPackageExpiry(input: SetExpiryInput): Promise<ClientPac
     const fmt = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : 'no expiry')
     const reason = `Expiry changed from ${fmt(pkg.expiresAt)} to ${fmt(input.expiresAt)}: ${input.reason.trim()}`
 
+    // Extending an expired package's expiry must make its credits usable again
+    // (and shortening it past `now` must deactivate it) — recompute, don't wait
+    // for the nightly sweep. `bookClass` filters on `active = true`.
+    const nextActive = computeActive({
+      kind: pkg.kind,
+      expiresAt: input.expiresAt,
+      creditsOrSessionsRemaining: pkg.creditsOrSessionsRemaining,
+    })
+
     await tx
       .update(clientPackages)
-      .set({ expiresAt: input.expiresAt })
+      .set({ expiresAt: input.expiresAt, active: nextActive })
       .where(eq(clientPackages.id, pkg.id))
 
     await tx.insert(manualAdjustments).values({
@@ -144,6 +163,6 @@ export async function setPackageExpiry(input: SetExpiryInput): Promise<ClientPac
       actedByStaffId: input.actedByStaffId,
     })
 
-    return { ...pkg, expiresAt: input.expiresAt }
+    return { ...pkg, expiresAt: input.expiresAt, active: nextActive }
   })
 }

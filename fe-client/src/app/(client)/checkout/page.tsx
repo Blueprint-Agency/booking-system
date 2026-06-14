@@ -229,8 +229,10 @@ function CheckoutContent() {
   const subtitle = mode === "workshop"
     ? (selectedTier!.description ?? `${selectedTier!.day_ids.length} session${selectedTier!.day_ids.length === 1 ? "" : "s"} included`)
     : subtitleForPackage(pkg!);
-  // Mirror the BE's charge math exactly (integer cents, effective price incl.
-  // any automatic promotion) so the total shown equals the Stripe charge.
+  // Catalogue prices are GST-inclusive — the total charged IS the (post-promo)
+  // listed price; GST is the portion embedded within it, not added on top. Mirrors
+  // the BE charge math exactly (be/src/routes/client/purchases.ts) so the shown
+  // total equals the Stripe charge.
   const baseCents = Math.round(
     parseFloat(
       mode === "workshop" ? tierEffectivePrice(selectedTier!).amount : pkg!.effective_price_sgd,
@@ -239,11 +241,10 @@ function CheckoutContent() {
   const discountCents = promoApplied
     ? Math.min(Math.round(promoApplied.discountSgd * 100), baseCents)
     : 0;
-  const discountedBaseCents = baseCents - discountCents;
-  const totalCents = Math.round(discountedBaseCents * 1.09);
+  const totalCents = baseCents - discountCents;
   const price = baseCents / 100;
   const discount = discountCents / 100;
-  const tax = (totalCents - discountedBaseCents) / 100;
+  const includedGst = (totalCents - Math.round(totalCents / 1.09)) / 100;
   const grandTotal = totalCents / 100;
 
   return (
@@ -329,8 +330,8 @@ function CheckoutContent() {
                 </div>
               )}
               <div className="flex justify-between py-1.5 text-sm text-muted">
-                <span>GST (9%)</span>
-                <span>{formatCurrency(tax)}</span>
+                <span>Includes GST (9%)</span>
+                <span>{formatCurrency(includedGst)}</span>
               </div>
               <div className="flex justify-between text-base font-bold text-ink mt-2 pt-2 border-t border-ink/10">
                 <span>Total</span>

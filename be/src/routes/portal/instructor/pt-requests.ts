@@ -97,7 +97,14 @@ const app = new Hono()
   .post('/:id/cancel', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const self = c.get('staffUserId') as string
-    const result = await cancelPtRequest({ ptRequestId: id, source: 'admin', actorStaffId: self })
+    // source:'admin' = staff-initiated (full refund, doesn't count to client cap),
+    // but requireOwnInstructorId restricts it to the instructor's own scheduled session.
+    const result = await cancelPtRequest({
+      ptRequestId: id,
+      source: 'admin',
+      actorStaffId: self,
+      requireOwnInstructorId: self,
+    })
     c.set('auditTarget' as any, { table: 'pt_requests', id })
     const row = await getPtRequestForAdmin(id)
     return c.json({ pt_request: row ? serialize(row) : null, result })

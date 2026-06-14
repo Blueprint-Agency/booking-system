@@ -117,6 +117,14 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       : null
     if (!paymentIntentId) return
 
+    // Only flip the payment to 'refunded' on a FULL refund. A partial refund (e.g. a
+    // manual goodwill refund issued from the Stripe dashboard while automated refunds
+    // are still deferred) must not mark the whole payment refunded.
+    // TODO(refunds slice): record partial refund amounts once the ledger supports it.
+    const captured = charge.amount_captured ?? charge.amount ?? 0
+    const fullyRefunded = captured > 0 && (charge.amount_refunded ?? 0) >= captured
+    if (!fullyRefunded) return
+
     await db.update(stripePayments)
       .set({ status: 'refunded', refundedAt: new Date() })
       .where(eq(stripePayments.paymentIntentId, paymentIntentId))
