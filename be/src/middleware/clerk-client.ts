@@ -32,31 +32,39 @@ async function provisionFromClaims(payload: any): Promise<ClientSyncOutcome | nu
   const email = str(payload.email)
   if (!email) return null
   const phone = str(payload.phone_number)
-  return syncClientFromClerk({
-    id: payload.sub,
-    primary_email_address_id: 'token',
-    email_addresses: [{ id: 'token', email_address: email }],
-    primary_phone_number_id: phone ? 'token' : null,
-    phone_numbers: phone ? [{ id: 'token', phone_number: phone }] : [],
-    first_name: str(payload.first_name) ?? str(payload.given_name),
-    last_name: str(payload.last_name) ?? str(payload.family_name),
-    username: str(payload.username),
-  })
+  return syncClientFromClerk(
+    {
+      id: payload.sub,
+      primary_email_address_id: 'token',
+      email_addresses: [{ id: 'token', email_address: email }],
+      primary_phone_number_id: phone ? 'token' : null,
+      phone_numbers: phone ? [{ id: 'token', phone_number: phone }] : [],
+      first_name: str(payload.first_name) ?? str(payload.given_name),
+      last_name: str(payload.last_name) ?? str(payload.family_name),
+      username: str(payload.username),
+    },
+    { emailVerified: payload.email_verified === true },
+  )
 }
 
 /** Fallback: fetch the full Clerk profile and provision from it. */
 async function provisionFromClerkApi(sub: string): Promise<ClientSyncOutcome> {
   const clerkUser = await getClerkClientApp().users.getUser(sub)
-  return syncClientFromClerk({
-    id: clerkUser.id,
-    primary_email_address_id: clerkUser.primaryEmailAddressId,
-    email_addresses: clerkUser.emailAddresses.map(e => ({ id: e.id, email_address: e.emailAddress })),
-    primary_phone_number_id: clerkUser.primaryPhoneNumberId,
-    phone_numbers: clerkUser.phoneNumbers.map(p => ({ id: p.id, phone_number: p.phoneNumber })),
-    first_name: clerkUser.firstName,
-    last_name: clerkUser.lastName,
-    username: clerkUser.username,
-  })
+  const primaryEmail = clerkUser.emailAddresses.find(e => e.id === clerkUser.primaryEmailAddressId)
+  const emailVerified = primaryEmail?.verification?.status === 'verified'
+  return syncClientFromClerk(
+    {
+      id: clerkUser.id,
+      primary_email_address_id: clerkUser.primaryEmailAddressId,
+      email_addresses: clerkUser.emailAddresses.map(e => ({ id: e.id, email_address: e.emailAddress })),
+      primary_phone_number_id: clerkUser.primaryPhoneNumberId,
+      phone_numbers: clerkUser.phoneNumbers.map(p => ({ id: p.id, phone_number: p.phoneNumber })),
+      first_name: clerkUser.firstName,
+      last_name: clerkUser.lastName,
+      username: clerkUser.username,
+    },
+    { emailVerified },
+  )
 }
 
 export const clerkClientAuth: MiddlewareHandler = async (c, next) => {
@@ -95,7 +103,15 @@ export const clerkClientAuth: MiddlewareHandler = async (c, next) => {
   // syncClientFromClerk so the insert + email-conflict guard stay in one place.
   if (!row) {
     try {
-      const sync = (await provisionFromClaims(payload)) ?? (await provisionFromClerkApi(payload.sub))
+      // Prefer the verified token claims (no Clerk API round-trip). Fall back to
+      // the Clerk Backend API when the token carries no email *or* when the claims
+      // path hit an email conflict it couldn't resolve — the API is authoritative
+      // for email verification, which gates re-linking a pre-existing row (see
+      // syncClientFromClerk).
+      let sync = await provisionFromClaims(payload)
+      if (!sync || sync.kind === 'email_conflict') {
+        sync = await provisionFromClerkApi(payload.sub)
+      }
       if (sync && (sync.kind === 'created' || sync.kind === 'updated' || sync.kind === 'idempotent')) {
         ;[row] = await db.select().from(clients).where(eq(clients.id, sync.clientId)).limit(1)
       }

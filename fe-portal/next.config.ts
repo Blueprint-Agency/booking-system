@@ -2,11 +2,16 @@ import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
-  // Pin the workspace root to this app. Without this, Next/Turbopack walks up
-  // and mis-infers the root from a stray lockfile in the home directory.
+  // Pin the workspace root to this app. Without this, Next walks up and
+  // mis-infers the root from a stray lockfile in the home directory, then
+  // resolves deps (e.g. tailwindcss) from there instead of ./node_modules.
+  // `turbopack.root` covers Turbopack; `outputFileTracingRoot` covers the
+  // webpack path (used here because the Sentry plugin forces webpack), so the
+  // root is pinned regardless of which bundler runs.
   turbopack: {
     root: __dirname,
   },
+  outputFileTracingRoot: __dirname,
 };
 
 // Wrapped for Sentry. Without SENTRY_AUTH_TOKEN/org/project the build simply

@@ -18,7 +18,7 @@ import { logger } from '../../shared/logger'
 interface ClerkWebhookUser {
   id: string
   primary_email_address_id?: string | null
-  email_addresses?: Array<{ id: string; email_address: string }>
+  email_addresses?: Array<{ id: string; email_address: string; verification?: { status?: string | null } | null }>
   primary_phone_number_id?: string | null
   phone_numbers?: Array<{ id: string; phone_number: string }>
   first_name?: string | null
@@ -50,6 +50,14 @@ function primaryEmail(user: ClerkWebhookUser): string | null {
     if (hit) return hit.email_address
   }
   return list[0]?.email_address ?? null
+}
+
+function primaryEmailVerified(user: ClerkWebhookUser): boolean {
+  const list = user.email_addresses ?? []
+  const primary = user.primary_email_address_id
+    ? list.find(e => e.id === user.primary_email_address_id)
+    : list[0]
+  return primary?.verification?.status === 'verified'
 }
 
 function displayName(user: ClerkWebhookUser): string | null {
@@ -186,7 +194,10 @@ export type ClientSyncOutcome =
   | { kind: 'email_conflict' }
   | { kind: 'noop' }
 
-export async function syncClientFromClerk(clerkUser: ClerkWebhookUser): Promise<ClientSyncOutcome> {
+export async function syncClientFromClerk(
+  clerkUser: ClerkWebhookUser,
+  opts: { emailVerified?: boolean } = {},
+): Promise<ClientSyncOutcome> {
   const email = primaryEmail(clerkUser)
   if (!email) return { kind: 'noop' }
   const normalized = email.trim().toLowerCase()
@@ -212,14 +223,34 @@ export async function syncClientFromClerk(clerkUser: ClerkWebhookUser): Promise<
     return { kind: 'idempotent', clientId: byClerk.id }
   }
 
-  // A row with this email but a different clerk_user_id should never happen
-  // (email is unique + we set clerk_user_id at admin-create time). Guard anyway.
+  // A clients row with this email but a *different* clerk_user_id happens when a
+  // member is deleted in Clerk and signs up again: Clerk mints a fresh user id,
+  // the row keeps the stale one, and every authed request then 404s
+  // `client_not_found`. Re-link the row to the new identity — but only when the
+  // incoming email is verified and the row isn't soft-deleted, so this can't be
+  // abused as an email-based account takeover or resurrect a banned member.
   const [byEmail] = await db
-    .select({ id: clients.id })
+    .select({ id: clients.id, deletedAt: clients.deletedAt })
     .from(clients)
     .where(sql`lower(${clients.email}) = ${normalized}`)
     .limit(1)
   if (byEmail) {
+    if (opts.emailVerified && !byEmail.deletedAt) {
+      const name = displayName(clerkUser)
+      const phone = primaryPhone(clerkUser) ?? unsafePhone(clerkUser)
+      const set: Partial<typeof clients.$inferInsert> = {
+        clerkUserId: clerkUser.id,
+        updatedAt: new Date(),
+      }
+      if (name) set.name = name
+      if (phone) set.phone = phone
+      await db.update(clients).set(set).where(eq(clients.id, byEmail.id))
+      logger.info(
+        { clientId: byEmail.id, email: normalized, incomingSub: clerkUser.id },
+        'clerk-webhook: re-linked clients row to new clerk_user_id',
+      )
+      return { kind: 'updated', clientId: byEmail.id }
+    }
     logger.warn(
       {
         clientId: byEmail.id,
@@ -250,7 +281,7 @@ export async function handleClerkClientEvent(event: {
   data: ClerkWebhookUser
 }): Promise<ClientSyncOutcome> {
   if (event.type === 'user.created' || event.type === 'user.updated') {
-    return syncClientFromClerk(event.data)
+    return syncClientFromClerk(event.data, { emailVerified: primaryEmailVerified(event.data) })
   }
   return { kind: 'noop' }
 }
