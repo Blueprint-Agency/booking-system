@@ -126,7 +126,44 @@ jobs:
             # Both steps are idempotent — they run on every deploy.
             docker compose run --rm -T booking-be sh -c "npm run db:migrate && npm run db:seed"
 
-            # Start (or recreate) the API server now that the schema is up to date.
-            docker compose up -d --remove-orphans
+            # ── Smoke-test the freshly pulled image BEFORE recreating the live
+            # container. Boot it as a throwaway on booking-network with the REAL
+            # env and probe /health (catches env/Zod failures, boot crashes, and
+            # DB-connectivity breaks). If it can't come up healthy, abort NOW —
+            # the currently-serving booking-be is left untouched, so a bad build
+            # never takes the API down. (Traefik 404s only when NO container is
+            # running for the bookingapi host; this guarantees one always is.)
+            echo "Smoke-testing blueprintagency/booking-be:latest ..."
+            docker rm -f booking-be-smoke >/dev/null 2>&1 || true
+            docker run -d --name booking-be-smoke \
+              --env-file /root/stacks/booking-system/.env.booking-be \
+              --network booking-network \
+              blueprintagency/booking-be:latest >/dev/null
+            smoke_ok=0
+            for _ in $(seq 1 20); do
+              if docker exec booking-be-smoke node -e "fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" >/dev/null 2>&1; then
+                smoke_ok=1; break
+              fi
+              # Bail out immediately if it already crashed (bad env / boot error).
+              if [ "$(docker inspect -f '{{.State.Running}}' booking-be-smoke 2>/dev/null)" != "true" ]; then
+                break
+              fi
+              sleep 2
+            done
+            if [ "$smoke_ok" != "1" ]; then
+              echo "Smoke test FAILED — new image never became healthy. Recent logs:"
+              docker logs --tail 80 booking-be-smoke 2>&1 || true
+              docker rm -f booking-be-smoke >/dev/null 2>&1 || true
+              echo "Aborting deploy — existing booking-be container left running."
+              exit 1
+            fi
+            docker rm -f booking-be-smoke >/dev/null 2>&1 || true
+            echo "Smoke test passed."
+
+            # Recreate the API server now that the new image is verified and the
+            # schema is up to date. --wait blocks until the container is HEALTHY
+            # (per the compose healthcheck) so a crash-loop fails the job loudly
+            # instead of silently leaving Traefik with no route (404).
+            docker compose up -d --remove-orphans --wait --wait-timeout 90
 
             docker image prune -f
