@@ -2,16 +2,19 @@ import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
-  // Pin the workspace root to this app. Without this, Next walks up and
-  // mis-infers the root from a stray lockfile in the home directory, then
-  // resolves deps (e.g. tailwindcss) from there instead of ./node_modules.
-  // `turbopack.root` covers Turbopack; `outputFileTracingRoot` covers the
-  // webpack path (used here because the Sentry plugin forces webpack), so the
-  // root is pinned regardless of which bundler runs.
-  turbopack: {
-    root: __dirname,
-  },
-  outputFileTracingRoot: __dirname,
+  // Workspace-root pinning is a LOCAL-ONLY workaround: a stray lockfile in the
+  // home dir makes Next mis-infer the root (dev watcher scans the whole home
+  // tree; webpack resolves deps like tailwindcss from the wrong place).
+  // `turbopack.root` covers Turbopack, `outputFileTracingRoot` the webpack path.
+  // On Vercel the clone is clean so neither is needed — and outputFileTracingRoot
+  // there breaks the monorepo build (mislocates
+  // .next/routes-manifest-deterministic.json → ENOENT). Apply off-Vercel only.
+  ...(process.env.VERCEL
+    ? {}
+    : { turbopack: { root: __dirname }, outputFileTracingRoot: __dirname }),
+  // Keep Sentry's module-loader shims as real Node externals (parity with
+  // fe-client) so a Turbopack build doesn't fail loading require-in-the-middle.
+  serverExternalPackages: ["require-in-the-middle", "import-in-the-middle"],
 };
 
 // Wrapped for Sentry. Without SENTRY_AUTH_TOKEN/org/project the build simply
