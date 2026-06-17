@@ -17,8 +17,22 @@ const primaryBtnClass =
 
 // Unexpected throw → readable message.
 function clerkErrorMessage(err: unknown): string {
-  const e = err as { errors?: Array<{ code?: string; message?: string }> };
-  return e?.errors?.[0]?.message ?? "We couldn't sign you in. Please check your details and try again.";
+  const e = err as {
+    code?: string;
+    errors?: Array<{ code?: string; longMessage?: string; message?: string }>;
+    longMessage?: string;
+    message?: string;
+  };
+  const first = e?.errors?.[0];
+  return (
+    first?.longMessage ??
+    first?.message ??
+    e?.longMessage ??
+    e?.message ??
+    first?.code ??
+    e?.code ??
+    "We couldn't sign you in. Please check your details and try again."
+  );
 }
 
 // Returned `{ error }` from a future-API call → readable message.
@@ -42,6 +56,12 @@ function isAlreadySignedInError(err: unknown): boolean {
   });
 }
 
+type MfaStrategy = "email_code" | "phone_code" | "totp" | "backup_code";
+type SecondFactor = {
+  safeIdentifier?: string;
+  strategy: string;
+};
+
 function LoginContent() {
   const { signIn } = useSignIn();
   const { setActive } = useClerk();
@@ -53,13 +73,16 @@ function LoginContent() {
   const next =
     rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/";
 
-  const [view, setView] = useState<"signin" | "forgot" | "reset">(
+  const [view, setView] = useState<"signin" | "forgot" | "reset" | "mfa">(
     searchParams.get("reset") === "1" ? "forgot" : "signin",
   );
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
+  const [mfaCode, setMfaCode] = useState("");
+  const [mfaStrategy, setMfaStrategy] = useState<MfaStrategy | null>(null);
+  const [mfaTarget, setMfaTarget] = useState<string | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [confirm, setConfirm] = useState("");
 
@@ -81,13 +104,99 @@ function LoginContent() {
     }
   }
 
-  async function activateCreatedSession(
-    createdSessionId: string | null | undefined,
-    fallbackMessage: string,
-  ): Promise<string | null> {
-    if (!createdSessionId) return fallbackMessage;
-    await setActive({ session: createdSessionId });
-    return null;
+  function navigateAfterAuth(destination: string) {
+    return async ({ decorateUrl }: { decorateUrl: (url: string) => string }) => {
+      const url = decorateUrl(destination);
+      if (/^https?:\/\//i.test(url)) {
+        window.location.href = url;
+        return;
+      }
+      router.push(url);
+    };
+  }
+
+  function findSecondFactor(strategy: MfaStrategy): SecondFactor | null {
+    return (
+      (signIn?.supportedSecondFactors as SecondFactor[] | undefined)?.find(
+        factor => factor.strategy === strategy,
+      ) ?? null
+    );
+  }
+
+  function preferredSecondFactor(): SecondFactor | null {
+    const factors = (signIn?.supportedSecondFactors as SecondFactor[] | undefined) ?? [];
+    return (
+      factors.find(factor => factor.strategy === "email_code") ??
+      factors.find(factor => factor.strategy === "phone_code") ??
+      factors.find(factor => factor.strategy === "totp") ??
+      factors.find(factor => factor.strategy === "backup_code") ??
+      null
+    );
+  }
+
+  function signInStatusMessage(status: string | null | undefined) {
+    switch (status) {
+      case "needs_second_factor":
+        return "Additional verification is required to complete sign in.";
+      case "needs_new_password":
+        return "This account requires a new password. Use the password reset flow to continue.";
+      case "needs_client_trust":
+        return "This browser needs an additional security check. Refresh the page and try again.";
+      case "needs_first_factor":
+      case "needs_identifier":
+        return "Please check your email and password, then try again.";
+      default:
+        return "Could not complete sign in.";
+    }
+  }
+
+  async function beginSecondFactor() {
+    if (!signIn) return false;
+    const factor = preferredSecondFactor();
+    if (!factor) {
+      setError("Additional verification is required, but no supported verification method is available.");
+      return false;
+    }
+
+    if (factor.strategy === "email_code") {
+      const { error: sendErr } = await signIn.mfa.sendEmailCode();
+      if (sendErr) {
+        setError(clerkApiError(sendErr) ?? "Could not send verification code.");
+        return false;
+      }
+    } else if (factor.strategy === "phone_code") {
+      const { error: sendErr } = await signIn.mfa.sendPhoneCode();
+      if (sendErr) {
+        setError(clerkApiError(sendErr) ?? "Could not send verification code.");
+        return false;
+      }
+    }
+
+    setMfaStrategy(factor.strategy as MfaStrategy);
+    setMfaTarget(factor.safeIdentifier ?? null);
+    setMfaCode("");
+    setView("mfa");
+    return true;
+  }
+
+  async function completeSignIn() {
+    if (!signIn) return false;
+    if (signIn.status === "needs_second_factor") {
+      return beginSecondFactor();
+    }
+    if (signIn.status !== "complete") {
+      setError(signInStatusMessage(signIn.status));
+      return false;
+    }
+
+    const { error: finalErr } = await signIn.finalize({
+      navigate: navigateAfterAuth(next),
+    });
+    if (finalErr) {
+      setError(clerkApiError(finalErr) ?? "Could not complete sign in.");
+      return false;
+    }
+    return true;
   }
 
   async function handleSignIn(e: React.FormEvent) {
@@ -107,15 +216,7 @@ function LoginContent() {
         setError(clerkApiError(pwErr) ?? "Incorrect email or password.");
         return;
       }
-      const activationErr = await activateCreatedSession(
-        signIn.createdSessionId,
-        "Could not complete sign in.",
-      );
-      if (activationErr) {
-        setError(activationErr);
-        return;
-      }
-      router.push(next);
+      await completeSignIn();
     } catch (err) {
       setError(clerkErrorMessage(err));
     } finally {
@@ -174,15 +275,7 @@ function LoginContent() {
         setError(clerkApiError(submitErr) ?? "Could not reset password.");
         return;
       }
-      const activationErr = await activateCreatedSession(
-        signIn.createdSessionId,
-        "Could not complete sign in.",
-      );
-      if (activationErr) {
-        setError(activationErr);
-        return;
-      }
-      router.push(next);
+      await completeSignIn();
     } catch (err) {
       setError(clerkErrorMessage(err));
     } finally {
@@ -199,6 +292,122 @@ function LoginContent() {
     } catch (err) {
       setError(clerkErrorMessage(err));
     }
+  }
+
+  async function handleMfaVerify(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!signIn || !mfaStrategy) return;
+
+    setSubmitting(true);
+    try {
+      const trimmedCode = mfaCode.trim();
+      const { error: verifyErr } =
+        mfaStrategy === "email_code"
+          ? await signIn.mfa.verifyEmailCode({ code: trimmedCode })
+          : mfaStrategy === "phone_code"
+            ? await signIn.mfa.verifyPhoneCode({ code: trimmedCode })
+            : mfaStrategy === "totp"
+              ? await signIn.mfa.verifyTOTP({ code: trimmedCode })
+              : await signIn.mfa.verifyBackupCode({ code: trimmedCode });
+
+      if (verifyErr) {
+        setError(clerkApiError(verifyErr) ?? "Invalid or expired verification code.");
+        return;
+      }
+
+      await completeSignIn();
+    } catch (err) {
+      setError(clerkErrorMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleMfaResend() {
+    setError(null);
+    if (!signIn || !mfaStrategy) return;
+    try {
+      if (mfaStrategy === "email_code") {
+        const { error: sendErr } = await signIn.mfa.sendEmailCode();
+        if (sendErr) setError(clerkApiError(sendErr) ?? "Could not resend code.");
+      } else if (mfaStrategy === "phone_code") {
+        const { error: sendErr } = await signIn.mfa.sendPhoneCode();
+        if (sendErr) setError(clerkApiError(sendErr) ?? "Could not resend code.");
+      }
+    } catch (err) {
+      setError(clerkErrorMessage(err));
+    }
+  }
+
+  function switchMfaStrategy(strategy: MfaStrategy) {
+    const factor = findSecondFactor(strategy);
+    if (!factor) return;
+    setMfaStrategy(strategy);
+    setMfaTarget(factor.safeIdentifier ?? null);
+    setMfaCode("");
+    setError(null);
+  }
+
+  if (view === "mfa") {
+    const canResend = mfaStrategy === "email_code" || mfaStrategy === "phone_code";
+    const hasBackup = Boolean(findSecondFactor("backup_code"));
+    return (
+      <AuthSplitShell
+        imageKey="hero-yoga-01"
+        quote="The pose you avoid is the one you need most."
+      >
+        <h1 className="text-3xl font-extrabold tracking-tight text-ink mb-2">
+          Verify your sign in
+        </h1>
+        <p className="text-sm text-muted mb-8">
+          {mfaStrategy === "totp"
+            ? "Enter the code from your authenticator app."
+            : mfaStrategy === "backup_code"
+              ? "Enter one of your backup codes."
+              : `We sent a verification code${mfaTarget ? ` to ${mfaTarget}` : ""}.`}
+        </p>
+        <form onSubmit={handleMfaVerify} className="space-y-4">
+          <div>
+            <label className={labelClass}>Verification code</label>
+            <OtpInput value={mfaCode} onChange={setMfaCode} autoFocus />
+          </div>
+          {error ? <p className="text-sm text-error rounded-xl border border-error/30 bg-error/10 px-3 py-2">{error}</p> : null}
+          <button type="submit" disabled={submitting} className={primaryBtnClass}>
+            {submitting ? "Verifying..." : "Verify and continue"}
+          </button>
+        </form>
+        <div className="mt-4 flex flex-wrap gap-3 text-sm">
+          {canResend ? (
+            <button
+              type="button"
+              onClick={handleMfaResend}
+              className="font-medium text-accent-deep"
+            >
+              Resend code
+            </button>
+          ) : null}
+          {hasBackup && mfaStrategy !== "backup_code" ? (
+            <button
+              type="button"
+              onClick={() => switchMfaStrategy("backup_code")}
+              className="font-medium text-accent-deep"
+            >
+              Use backup code
+            </button>
+          ) : null}
+          {findSecondFactor("totp") && mfaStrategy !== "totp" ? (
+            <button
+              type="button"
+              onClick={() => switchMfaStrategy("totp")}
+              className="font-medium text-accent-deep"
+            >
+              Use authenticator app
+            </button>
+          ) : null}
+        </div>
+      </AuthSplitShell>
+    );
   }
 
   if (view === "forgot") {

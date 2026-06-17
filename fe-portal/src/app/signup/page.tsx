@@ -66,12 +66,25 @@ function InviteNotice({
 }
 
 function clerkErrorMessage(err: unknown): string {
-  const e = err as { errors?: Array<{ code?: string; message?: string }> };
+  const e = err as {
+    code?: string;
+    errors?: Array<{ code?: string; longMessage?: string; message?: string }>;
+    longMessage?: string;
+    message?: string;
+  };
   const first = e?.errors?.[0];
   if (first?.code === "form_identifier_exists") {
     return "An account with this email already exists. Sign in instead.";
   }
-  return first?.message ?? "We couldn't create your account. Please check your details and try again.";
+  return (
+    first?.longMessage ??
+    first?.message ??
+    e?.longMessage ??
+    e?.message ??
+    first?.code ??
+    e?.code ??
+    "We couldn't create your account. Please check your details and try again."
+  );
 }
 
 function clerkApiError(
@@ -137,13 +150,15 @@ function SignupForm({ email }: { email?: string }) {
     }
   }
 
-  async function activateCreatedSession(
-    createdSessionId: string | null | undefined,
-    fallbackMessage: string,
-  ): Promise<string | null> {
-    if (!createdSessionId) return fallbackMessage;
-    await setActive({ session: createdSessionId });
-    return null;
+  function navigateAfterAuth(destination: string) {
+    return async ({ decorateUrl }: { decorateUrl: (url: string) => string }) => {
+      const url = decorateUrl(destination);
+      if (/^https?:\/\//i.test(url)) {
+        window.location.href = url;
+        return;
+      }
+      router.push(url);
+    };
   }
 
   useEffect(() => {
@@ -215,16 +230,13 @@ function SignupForm({ email }: { email?: string }) {
         return;
       }
 
-      const activationErr = await activateCreatedSession(
-        signUp.createdSessionId,
-        "Could not complete sign-up.",
-      );
-      if (activationErr) {
-        setError(activationErr);
+      const { error: finalErr } = await signUp.finalize({
+        navigate: navigateAfterAuth("/admin"),
+      });
+      if (finalErr) {
+        setError(clerkApiError(finalErr) ?? "Could not complete sign-up.");
         return;
       }
-
-      router.push("/admin");
     } catch (err) {
       setError(clerkErrorMessage(err));
     } finally {
