@@ -27,10 +27,36 @@ app.use('*', secureHeaders())
 const allowedOrigins = [env.PORTAL_ORIGIN, env.CLIENT_ORIGIN].filter(
   (o): o is string => Boolean(o),
 )
+
+function isAllowedOrigin(origin: string) {
+  return allowedOrigins.some(allowedOrigin => originMatchesPattern(origin, allowedOrigin))
+}
+
+function originMatchesPattern(origin: string, pattern: string) {
+  if (!pattern.includes('*')) return origin === pattern
+  if (!pattern.includes('://*.')) return false
+
+  try {
+    const originUrl = new URL(origin)
+    const patternUrl = new URL(pattern.replace('://*.', '://wildcard.'))
+    const suffix = patternUrl.hostname.replace(/^wildcard\./, '').toLowerCase()
+    const hostname = originUrl.hostname.toLowerCase()
+
+    return (
+      originUrl.protocol === patternUrl.protocol &&
+      (!patternUrl.port || originUrl.port === patternUrl.port) &&
+      hostname !== suffix &&
+      hostname.endsWith(`.${suffix}`)
+    )
+  } catch {
+    return false
+  }
+}
+
 app.use(
   '*',
   cors({
-    origin: origin => (allowedOrigins.includes(origin) ? origin : null),
+    origin: origin => (isAllowedOrigin(origin) ? origin : null),
     credentials: true,
     allowMethods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     allowHeaders: [
