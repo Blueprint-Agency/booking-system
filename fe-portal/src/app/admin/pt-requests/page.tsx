@@ -12,6 +12,7 @@ import {
   PT_STATUS_TONE,
   PT_STATUS_SHORT,
   ptInFilter,
+  ptStatusLabel,
 } from "@/lib/pt-requests";
 
 export default function PtRequestsPage() {
@@ -69,7 +70,7 @@ export default function PtRequestsPage() {
     if (
       !confirm(
         scheduled
-          ? "Cancel this scheduled session? The client is fully refunded (admin cancellation)."
+          ? "Cancel this scheduled session? Admin cancellation returns the requester session."
           : "Cancel this pending request? The held credits are refunded.",
       )
     )
@@ -168,7 +169,9 @@ export default function PtRequestsPage() {
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <Badge tone={PT_STATUS_TONE[r.status]}>
-                        {PT_STATUS_SHORT[r.status]}
+                        {r.status === "cancelled_after_scheduled"
+                          ? ptStatusLabel(r)
+                          : PT_STATUS_SHORT[r.status]}
                       </Badge>
                       <span className="text-xs text-muted">
                         {formatRelative(r.created_at)}
@@ -194,6 +197,10 @@ export default function PtRequestsPage() {
         <ScheduleFromRequestDialog
           request={schedFor}
           onClose={() => setSchedFor(null)}
+          onRequestUpdated={(updated) => {
+            setRequests((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+            setSchedFor(updated);
+          }}
           onScheduled={() => {
             setSchedFor(null);
             setActiveId(null);

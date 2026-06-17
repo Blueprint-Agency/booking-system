@@ -22,6 +22,7 @@ type PtStatus =
   | "cancelled_before_scheduled"
   | "cancelled_after_scheduled"
   | "attended";
+type RefundOutcome = "session_returned" | "forfeited" | "n_a" | null | undefined;
 
 const TAB_LABEL: Record<Tab, string> = {
   pending: "Pending",
@@ -46,7 +47,7 @@ function inTab(r: RawPtRequest, t: Tab): boolean {
   }
 }
 
-function statusBadge(status: PtStatus) {
+function statusBadge(status: PtStatus, refundOutcome?: RefundOutcome) {
   switch (status) {
     case "pending":
       return { label: "Pending", tone: "bg-accent/10 text-accent", icon: Clock };
@@ -57,7 +58,13 @@ function statusBadge(status: PtStatus) {
     case "cancelled_before_scheduled":
       return { label: "Cancelled · refunded", tone: "bg-warm text-muted", icon: XCircle };
     case "cancelled_after_scheduled":
-      return { label: "Cancelled · forfeited", tone: "bg-error/15 text-error", icon: XCircle };
+      if (refundOutcome === "session_returned") {
+        return { label: "Cancelled · refunded", tone: "bg-warm text-muted", icon: XCircle };
+      }
+      if (refundOutcome === "forfeited") {
+        return { label: "Cancelled · forfeited", tone: "bg-error/15 text-error", icon: XCircle };
+      }
+      return { label: "Cancelled", tone: "bg-warm text-muted", icon: XCircle };
   }
 }
 
@@ -199,7 +206,7 @@ function RequestCard({
   onCancelled: () => Promise<void>;
 }) {
   const status = r.status as PtStatus;
-  const badge = statusBadge(status);
+  const badge = statusBadge(status, r.refund_outcome);
 
   const slot0 = r.slots[0];
   const isPartner = r.role === "partner";
@@ -211,7 +218,10 @@ function RequestCard({
       : null;
   // Only the requester (who owns the debited credits) can cancel.
   const canCancel = !isPartner && (r.status === "pending" || r.status === "scheduled");
-  const refunds = r.status === "pending";
+  const refundPrompt =
+    r.status === "pending"
+      ? "Cancel and refund credits?"
+      : "Cancel this session? Refund depends on the cancellation policy.";
   const scheduled = r.session ?? null;
 
   return (
@@ -285,7 +295,7 @@ function RequestCard({
 
       {canCancel && (
         <div className="mt-4 flex justify-end">
-          <CancelButton requestId={r.id} refunds={refunds} onCancelled={onCancelled} />
+          <CancelButton requestId={r.id} prompt={refundPrompt} onCancelled={onCancelled} />
         </div>
       )}
     </li>
@@ -294,11 +304,11 @@ function RequestCard({
 
 function CancelButton({
   requestId,
-  refunds,
+  prompt,
   onCancelled,
 }: {
   requestId: string;
-  refunds: boolean;
+  prompt: string;
   onCancelled: () => Promise<void>;
 }) {
   const ptApi = usePtSessionsApi();
@@ -338,7 +348,7 @@ function CancelButton({
   return (
     <div className="flex items-center gap-2 text-xs">
       <span className="text-muted">
-        {refunds ? "Cancel and refund credits?" : "Cancel without refund?"}
+        {prompt}
       </span>
       <button
         type="button"

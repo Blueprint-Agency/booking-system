@@ -41,6 +41,7 @@ function serializeRequest(r: Awaited<ReturnType<typeof listClientPtRequests>>[nu
     co_client_name: r.coClientName,
     created_at: r.createdAt,
     expires_at: r.expiresAt,
+    refund_outcome: r.refundOutcome,
     slots: r.slots.map(s => ({ proposed_date: s.proposedDate, start_time: s.startTime, end_time: s.endTime })),
     session: r.session
       ? {
@@ -51,7 +52,12 @@ function serializeRequest(r: Awaited<ReturnType<typeof listClientPtRequests>>[nu
         }
       : null,
     booking: r.booking
-      ? { qr_token: r.booking.qrToken, code: r.booking.code, check_in_state: r.booking.checkInState }
+      ? {
+          qr_token: r.booking.qrToken,
+          code: r.booking.code,
+          check_in_state: r.booking.checkInState,
+          refund_outcome: r.booking.refundOutcome,
+        }
       : null,
   }
 }

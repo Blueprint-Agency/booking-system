@@ -6,6 +6,7 @@ import {
   getPtRequestForAdmin,
   type AdminPtRequestView,
 } from '../../../services/pt-sessions/list'
+import { linkPtRequestPartner } from '../../../services/pt-sessions/request'
 import { schedulePtRequest, type SchedulePtRequestError } from '../../../services/pt-sessions/schedule'
 import { cancelPtRequest } from '../../../services/pt-sessions/cancel'
 
@@ -37,6 +38,15 @@ const scheduleSchema = z
     path: ['ends_at'],
   })
 
+const linkPartnerSchema = z
+  .object({
+    client_id: z.string().uuid().optional(),
+    email: z.string().email().optional(),
+  })
+  .refine(v => Boolean(v.client_id || v.email), {
+    message: 'client_id_or_email_required',
+  })
+
 function serialize(r: AdminPtRequestView) {
   return {
     id: r.id,
@@ -46,6 +56,7 @@ function serialize(r: AdminPtRequestView) {
     created_at: r.createdAt.toISOString(),
     expires_at: r.expiresAt.toISOString(),
     resolved_at: r.resolvedAt ? r.resolvedAt.toISOString() : null,
+    refund_outcome: r.refundOutcome,
     client: r.client,
     class_type: r.classType,
     location: r.location,
@@ -112,6 +123,14 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'pt_requests', id })
     const row = await getPtRequestForAdmin(id)
     return c.json({ pt_request: row ? serialize(row) : null }, 201)
+  })
+  .post('/:id/link-partner', zValidator('param', idParam), zValidator('json', linkPartnerSchema), async c => {
+    const { id } = c.req.valid('param')
+    const { client_id, email } = c.req.valid('json')
+    await linkPtRequestPartner({ ptRequestId: id, coClientId: client_id, email })
+    c.set('auditTarget' as any, { table: 'pt_requests', id })
+    const row = await getPtRequestForAdmin(id)
+    return c.json({ pt_request: row ? serialize(row) : null })
   })
   // Branches on status: pending → cancelled_before_scheduled (refund);
   // scheduled → cancelled_after_scheduled (cascade; admin = always full refund).

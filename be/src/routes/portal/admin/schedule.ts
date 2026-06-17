@@ -5,6 +5,7 @@ import * as timetable from '../../../services/schedule/timetable'
 import * as classesSvc from '../../../services/schedule/classes'
 import { getClassDetail, getPtSessionDetail } from '../../../services/schedule/detail'
 import { cancelClass } from '../../../services/bookings/cancel-class'
+import { cancelWorkshop } from '../../../services/workshops/cancel'
 
 const isoDate = z
   .string()
@@ -237,8 +238,16 @@ const app = new Hono()
       return c.json({ total_bookings: res.totalBookings, refunded_count: res.refundedCount })
     },
   )
-  .post('/workshops/:id/cancel', c =>
-    c.json({ todo: 'admin-cancel workshop + refund fanout' }, 501),
+  .post(
+    '/workshops/:id/cancel',
+    zValidator('param', z.object({ id: z.string().uuid() })),
+    async c => {
+      const { id } = c.req.valid('param')
+      const staffId = c.get('staffUserId')
+      await cancelWorkshop(id, staffId)
+      c.set('auditTarget' as any, { table: 'workshops', id })
+      return c.json({ ok: true })
+    },
   )
 
 export default app

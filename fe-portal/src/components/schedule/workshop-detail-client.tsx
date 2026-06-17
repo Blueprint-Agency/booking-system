@@ -35,16 +35,11 @@ export function WorkshopDetailClient({
 
   function handleCancel() {
     alert(
-      `Workshop cancelled (mock).\n\nFull Stripe refund issued to ${confirmed.length} attendees automatically. Inbox notification generated.`
+      `Workshop cancelled (mock).\n\n${confirmed.length} attendee booking${confirmed.length === 1 ? "" : "s"} cancelled. Inbox notification generated.`
     );
     setConfirm(false);
     router.push("/admin/schedule");
   }
-
-  const totalRefund = confirmed.reduce((s, r) => {
-    if (!r.tier) return s;
-    return s + r.tier.priceSgd;
-  }, 0);
 
   const isCancellable = workshop.lifecycle === "active";
 
@@ -122,14 +117,14 @@ export function WorkshopDetailClient({
         open={confirm}
         onOpenChange={setConfirm}
         title="Cancel this workshop?"
-        description={`All ${confirmed.length} attendees will receive a full Stripe refund automatically (~${formatSgd(totalRefund)} total).`}
+        description={`All ${confirmed.length} attendee booking${confirmed.length === 1 ? "" : "s"} will be cancelled. Payment handling is reviewed separately by the studio.`}
       >
         <DialogFooter>
           <Button variant="ghost" onClick={() => setConfirm(false)}>
             Keep workshop
           </Button>
           <Button variant="danger" onClick={handleCancel}>
-            Cancel & refund {confirmed.length} attendees
+            Cancel workshop
           </Button>
         </DialogFooter>
       </Dialog>

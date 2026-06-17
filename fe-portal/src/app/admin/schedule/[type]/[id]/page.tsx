@@ -139,6 +139,8 @@ function ClassDetail({ id }: { id: string }) {
   const [instructors, setInstructors] = useState<ApiInstructor[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!api) return;
@@ -164,6 +166,23 @@ function ClassDetail({ id }: { id: string }) {
     void load();
   }, [load]);
 
+  async function handleCancelClass() {
+    if (!api || !data) return;
+    if (!confirm("Cancel this class? Attendee bookings will be cancelled and credits returned.")) {
+      return;
+    }
+    setCancelBusy(true);
+    setActionError(null);
+    try {
+      await api.post(`/portal/admin/schedule/classes/${data.id}/cancel`);
+      await load();
+    } catch (err) {
+      setActionError(detailError(err, "Class not found."));
+    } finally {
+      setCancelBusy(false);
+    }
+  }
+
   if (loading) return <LoadingDetail label="class" />;
   if (error || !data) return <ErrorDetail kind="Class" message={error ?? "Class not found."} />;
 
@@ -184,7 +203,32 @@ function ClassDetail({ id }: { id: string }) {
           formatDate(data.starts_at),
           `${formatTime(data.starts_at)} – ${formatTime(data.ends_at)}`,
         ]}
+        action={
+          data.lifecycle === "active" ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleCancelClass}
+              disabled={cancelBusy}
+              className="text-error hover:text-error"
+            >
+              {cancelBusy ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Ban className="h-4 w-4" />
+              )}
+              Cancel class
+            </Button>
+          ) : undefined
+        }
       />
+
+      {actionError && (
+        <p className="mb-4 rounded-md border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
+          {actionError}
+        </p>
+      )}
 
       <section className="mb-6 rounded-xl border border-border bg-card p-5 shadow-soft">
         <h2 className="mb-4 text-sm font-semibold text-ink">Details</h2>
@@ -644,32 +688,47 @@ function WorkshopDetail({ id }: { id: string }) {
   const [instructors, setInstructors] = useState<ApiInstructor[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(async () => {
     if (!api) return;
-    let cancelled = false;
     setLoading(true);
     setError(null);
-    void (async () => {
-      try {
-        const [w, ins] = await Promise.all([
-          api.get<ApiWorkshopDetail>(`/portal/admin/workshops/${id}`),
-          api.get<{ instructors: ApiInstructor[] }>("/portal/admin/instructors"),
-        ]);
-        if (cancelled) return;
-        setData(w);
-        setInstructors(ins.instructors);
-      } catch (err) {
-        if (cancelled) return;
-        setError(detailError(err, "Workshop not found."));
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    try {
+      const [w, ins] = await Promise.all([
+        api.get<ApiWorkshopDetail>(`/portal/admin/workshops/${id}`),
+        api.get<{ instructors: ApiInstructor[] }>("/portal/admin/instructors"),
+      ]);
+      setData(w);
+      setInstructors(ins.instructors);
+    } catch (err) {
+      setError(detailError(err, "Workshop not found."));
+    } finally {
+      setLoading(false);
+    }
   }, [api, id]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function handleCancelWorkshop() {
+    if (!api || !data) return;
+    if (!confirm("Cancel this workshop? Confirmed workshop bookings will be cancelled.")) {
+      return;
+    }
+    setCancelBusy(true);
+    setActionError(null);
+    try {
+      await api.post(`/portal/admin/schedule/workshops/${data.id}/cancel`);
+      await load();
+    } catch (err) {
+      setActionError(detailError(err, "Workshop not found."));
+    } finally {
+      setCancelBusy(false);
+    }
+  }
 
   if (loading) return <LoadingDetail label="workshop" />;
   if (error || !data) return <ErrorDetail kind="Workshop" message={error ?? "Workshop not found."} />;
@@ -705,14 +764,39 @@ function WorkshopDetail({ id }: { id: string }) {
         title={data.name}
         meta={[dateMeta, locName, instructorNames].filter(Boolean)}
         action={
-          <Link
-            href={`/admin/packages/workshops/${data.id}/edit`}
-            className="rounded-md border border-border bg-card px-3 py-1 text-xs text-muted hover:border-accent/40 hover:text-ink"
-          >
-            Edit content
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/admin/packages/workshops/${data.id}/edit`}
+              className="rounded-md border border-border bg-card px-3 py-1 text-xs text-muted hover:border-accent/40 hover:text-ink"
+            >
+              Edit content
+            </Link>
+            {data.lifecycle === "active" && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={handleCancelWorkshop}
+                disabled={cancelBusy}
+                className="text-error hover:text-error"
+              >
+                {cancelBusy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Ban className="h-4 w-4" />
+                )}
+                Cancel workshop
+              </Button>
+            )}
+          </div>
         }
       />
+
+      {actionError && (
+        <p className="mb-4 rounded-md border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
+          {actionError}
+        </p>
+      )}
 
       <section className="mb-6 rounded-xl border border-border bg-card p-5 shadow-soft">
         <h2 className="mb-3 text-sm font-semibold text-ink">Days</h2>
@@ -781,8 +865,9 @@ interface ApiCorporateSession {
   client_name: string;
   main_instructor_id: string;
   supporting_instructor_ids: string[];
-  location_id: string;
-  room_id: string;
+  location_id: string | null;
+  location_text: string | null;
+  room_id: string | null;
   starts_at: string;
   ends_at: string;
   lifecycle: "active" | "cancelled";
@@ -863,8 +948,10 @@ function CorporateDetail({ id }: { id: string }) {
   const mainName =
     instructors.find((i) => i.id === data.main_instructor_id)?.name ?? "Unknown";
   const locationName =
-    accessibleLocations.find((l) => l.id === data.location_id)?.name ?? "—";
-  const roomName = rooms.find((r) => r.id === data.room_id)?.name ?? "—";
+    (data.location_id
+      ? accessibleLocations.find((l) => l.id === data.location_id)?.name
+      : data.location_text) ?? "—";
+  const roomName = data.room_id ? rooms.find((r) => r.id === data.room_id)?.name ?? "—" : "—";
   const meta = [
     formatDate(data.starts_at),
     `${formatTime(data.starts_at)} – ${formatTime(data.ends_at)}`,
@@ -943,8 +1030,8 @@ function CorporateEditor({
   const [supportingInstructorIds, setSupportingInstructorIds] = useState<string[]>(
     session.supporting_instructor_ids,
   );
-  const [locationId, setLocationId] = useState(session.location_id);
-  const [roomId, setRoomId] = useState(session.room_id);
+  const [locationId, setLocationId] = useState(session.location_id ?? "");
+  const [roomId, setRoomId] = useState(session.room_id ?? "");
   const [date, setDate] = useState(initialDate);
   const [startTime, setStartTime] = useState(initialStart);
   const [endTime, setEndTime] = useState(initialEnd);
@@ -956,8 +1043,8 @@ function CorporateEditor({
     setClientName(session.client_name);
     setMainInstructorId(session.main_instructor_id);
     setSupportingInstructorIds(session.supporting_instructor_ids);
-    setLocationId(session.location_id);
-    setRoomId(session.room_id);
+    setLocationId(session.location_id ?? "");
+    setRoomId(session.room_id ?? "");
     setDate(session.starts_at.slice(0, 10));
     setStartTime(toHHMM(session.starts_at));
     setEndTime(toHHMM(session.ends_at));

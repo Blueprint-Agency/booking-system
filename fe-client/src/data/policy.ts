@@ -2,7 +2,7 @@
 // Keep the numeric hours and the human-readable copy in sync.
 
 export const CLASS_CANCELLATION_HOURS = 24;
-export const PRIVATE_SESSION_CANCELLATION_HOURS = 12;
+export const PRIVATE_SESSION_CANCELLATION_HOURS = 24;
 
 export const CLASS_CANCELLATION_POLICY = {
   window: `${CLASS_CANCELLATION_HOURS} hours`,

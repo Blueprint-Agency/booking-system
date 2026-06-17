@@ -38,6 +38,7 @@ function serialize(r: AdminPtRequestView) {
     created_at: r.createdAt.toISOString(),
     expires_at: r.expiresAt.toISOString(),
     resolved_at: r.resolvedAt ? r.resolvedAt.toISOString() : null,
+    refund_outcome: r.refundOutcome,
     client: r.client,
     class_type: r.classType,
     location: r.location,

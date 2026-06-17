@@ -7,6 +7,7 @@ export type PtStatus =
   | "cancelled_before_scheduled"
   | "cancelled_after_scheduled"
   | "attended";
+export type PtRefundOutcome = "session_returned" | "forfeited" | "n_a" | null;
 
 export interface ApiPtRequest {
   id: string;
@@ -16,6 +17,7 @@ export interface ApiPtRequest {
   created_at: string;
   expires_at: string;
   resolved_at: string | null;
+  refund_outcome: PtRefundOutcome;
   client: { id: string; name: string; email: string };
   class_type: { id: string; name: string };
   location: { id: string; name: string };
@@ -61,9 +63,23 @@ export const PT_STATUS_LABEL: Record<PtStatus, string> = {
   pending: "pending",
   scheduled: "scheduled",
   cancelled_before_scheduled: "cancelled (refunded)",
-  cancelled_after_scheduled: "cancelled (forfeited)",
+  cancelled_after_scheduled: "cancelled",
   attended: "attended",
 };
+
+export function ptStatusLabel(r: ApiPtRequest): string {
+  if (r.status === "cancelled_after_scheduled") {
+    if (r.refund_outcome === "session_returned") return "cancelled (refunded)";
+    if (r.refund_outcome === "forfeited") return "cancelled (forfeited)";
+  }
+  return PT_STATUS_LABEL[r.status];
+}
+
+export function ptRefundLabel(outcome: PtRefundOutcome): string | null {
+  if (outcome === "session_returned") return "session returned";
+  if (outcome === "forfeited") return "session forfeited";
+  return null;
+}
 
 export function ptInFilter(r: ApiPtRequest, f: PtFilter): boolean {
   if (f === "all") return true;

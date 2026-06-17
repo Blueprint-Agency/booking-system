@@ -31,7 +31,9 @@ export interface ClientPtRequestView {
     roomName: string | null
   } | null
   /** This member's own booking on the scheduled session (for QR check-in). */
-  booking: { qrToken: string; code: string; checkInState: string } | null
+  booking: { qrToken: string; code: string; checkInState: string; refundOutcome: string } | null
+  /** Cancellation outcome when the request is terminal; null while active/pending. */
+  refundOutcome: string | null
 }
 
 export async function listClientPtRequests(clientId: string): Promise<ClientPtRequestView[]> {
@@ -88,7 +90,7 @@ export async function listClientPtRequests(clientId: string): Promise<ClientPtRe
 
   // This member's booking on each scheduled session (QR/code/check-in for the card).
   const sessionIds = reqRows.map(r => r.sessionId).filter((v): v is string => !!v)
-  const bookingBySession = new Map<string, { qrToken: string; code: string; checkInState: string }>()
+  const bookingBySession = new Map<string, { qrToken: string; code: string; checkInState: string; refundOutcome: string }>()
   if (sessionIds.length) {
     const bks = await db
       .select({
@@ -96,6 +98,7 @@ export async function listClientPtRequests(clientId: string): Promise<ClientPtRe
         qrToken: bookings.qrToken,
         code: bookings.code,
         checkInState: bookings.checkInState,
+        refundOutcome: bookings.refundOutcome,
       })
       .from(bookings)
       .where(and(eq(bookings.clientId, clientId), inArray(bookings.ptSessionId, sessionIds)))
@@ -105,6 +108,7 @@ export async function listClientPtRequests(clientId: string): Promise<ClientPtRe
           qrToken: b.qrToken,
           code: b.code,
           checkInState: b.checkInState,
+          refundOutcome: b.refundOutcome,
         })
       }
     }
@@ -112,31 +116,39 @@ export async function listClientPtRequests(clientId: string): Promise<ClientPtRe
 
   return reqRows.map(r => {
     const role: 'requester' | 'partner' = r.requesterClientId === clientId ? 'requester' : 'partner'
+    const booking = r.sessionId ? bookingBySession.get(r.sessionId) ?? null : null
+    const refundOutcome =
+      r.status === 'cancelled_before_scheduled'
+        ? 'session_returned'
+        : r.status === 'cancelled_after_scheduled'
+          ? (booking?.refundOutcome ?? (role === 'requester' ? 'forfeited' : 'n_a'))
+          : null
     return {
-    id: r.id,
-    classTypeId: r.classTypeId,
-    className: r.className ?? 'Class',
-    locationId: r.locationId,
-    locationName: r.locationName ?? 'Studio',
-    sessionType: r.sessionType as '1on1' | '2on1',
-    status: r.status,
-    role,
-    requesterName: r.requesterName,
-    // The requester's private note to the instructor isn't the partner's to read.
-    message: role === 'partner' ? null : r.message,
-    coClientName: r.coClientName,
-    createdAt: r.createdAt,
-    expiresAt: r.expiresAt,
-    slots: slotsByReq.get(r.id) ?? [],
-    session: r.sessionId
-      ? {
-          startsAt: r.sessionStartsAt!,
-          endsAt: r.sessionEndsAt!,
-          instructorName: r.instructorName,
-          roomName: r.roomName,
-        }
-      : null,
-    booking: r.sessionId ? bookingBySession.get(r.sessionId) ?? null : null,
+      id: r.id,
+      classTypeId: r.classTypeId,
+      className: r.className ?? 'Class',
+      locationId: r.locationId,
+      locationName: r.locationName ?? 'Studio',
+      sessionType: r.sessionType as '1on1' | '2on1',
+      status: r.status,
+      role,
+      requesterName: r.requesterName,
+      // The requester's private note to the instructor isn't the partner's to read.
+      message: role === 'partner' ? null : r.message,
+      coClientName: r.coClientName,
+      createdAt: r.createdAt,
+      expiresAt: r.expiresAt,
+      slots: slotsByReq.get(r.id) ?? [],
+      session: r.sessionId
+        ? {
+            startsAt: r.sessionStartsAt!,
+            endsAt: r.sessionEndsAt!,
+            instructorName: r.instructorName,
+            roomName: r.roomName,
+          }
+        : null,
+      booking,
+      refundOutcome,
     }
   })
 }
@@ -174,6 +186,8 @@ export interface AdminPtRequestView {
     instructorName: string | null
     roomName: string | null
   } | null
+  /** Requester booking cancellation outcome when terminal; null while active/pending. */
+  refundOutcome: string | null
 }
 
 function adminSelect() {
@@ -240,6 +254,27 @@ async function hydrateAdminRows(rows: AdminRow[]): Promise<AdminPtRequestView[]>
     slotsByReq.set(s.ptRequestId, list)
   }
 
+  const sessionIds = rows.map(r => r.sessionId).filter((v): v is string => !!v)
+  const requesterOutcomeBySession = new Map<string, string>()
+  if (sessionIds.length) {
+    const bks = await db
+      .select({
+        ptSessionId: bookings.ptSessionId,
+        clientId: bookings.clientId,
+        refundOutcome: bookings.refundOutcome,
+      })
+      .from(bookings)
+      .where(inArray(bookings.ptSessionId, sessionIds))
+    const requesterBySession = new Map(
+      rows.filter(r => r.sessionId).map(r => [r.sessionId!, r.clientId]),
+    )
+    for (const b of bks) {
+      if (b.ptSessionId && requesterBySession.get(b.ptSessionId) === b.clientId) {
+        requesterOutcomeBySession.set(b.ptSessionId, b.refundOutcome)
+      }
+    }
+  }
+
   return rows.map(r => {
     let coClient: AdminPtRequestView['coClient'] = null
     if (r.sessionType === '2on1') {
@@ -272,6 +307,12 @@ async function hydrateAdminRows(rows: AdminRow[]): Promise<AdminPtRequestView[]>
             roomName: r.roomName,
           }
         : null,
+      refundOutcome:
+        r.status === 'cancelled_before_scheduled'
+          ? 'session_returned'
+          : r.status === 'cancelled_after_scheduled'
+            ? (r.sessionId ? requesterOutcomeBySession.get(r.sessionId) ?? 'forfeited' : 'forfeited')
+            : null,
     }
   })
 }

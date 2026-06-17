@@ -7,8 +7,9 @@
  * implicit approval. See docs/md/be-client.md §PT for the full contract.
  */
 
-import { and, eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { db } from '../../db'
+import { clients } from '../../db/schema/identity'
 import { clientPackages, ptPackages } from '../../db/schema/packages'
 import { ptRequests, ptRequestSlots } from '../../db/schema/schedule'
 import { ptBookingConfig } from '../../db/schema/policy'
@@ -141,5 +142,55 @@ export async function submitPtRequest(input: PtRequestInput): Promise<{ ptReques
     )
 
     return { ptRequestId: req!.id }
+  })
+}
+
+export async function linkPtRequestPartner(input: {
+  ptRequestId: string
+  coClientId?: string
+  email?: string
+}): Promise<void> {
+  if (!input.coClientId && !input.email?.trim()) throw new BadRequestError('partner_required')
+
+  await db.transaction(async tx => {
+    const [req] = await tx
+      .select({
+        id: ptRequests.id,
+        clientId: ptRequests.clientId,
+        sessionType: ptRequests.sessionType,
+        status: ptRequests.status,
+        coClientId: ptRequests.coClientId,
+      })
+      .from(ptRequests)
+      .where(eq(ptRequests.id, input.ptRequestId))
+      .for('update')
+      .limit(1)
+
+    if (!req) throw new NotFoundError('pt_request_not_found')
+    if (req.status !== 'pending') throw new ConflictError('pt_request_not_pending')
+    if (req.sessionType !== '2on1') throw new BadRequestError('not_a_2on1_request')
+    if (req.coClientId) throw new ConflictError('partner_already_linked')
+
+    const [partner] = await tx
+      .select({ id: clients.id, status: clients.status, deletedAt: clients.deletedAt })
+      .from(clients)
+      .where(
+        input.coClientId
+          ? eq(clients.id, input.coClientId)
+          : sql`lower(${clients.email}) = ${input.email!.trim().toLowerCase()}`,
+      )
+      .limit(1)
+    if (!partner) throw new NotFoundError('partner_client_not_found')
+    if (req.clientId === partner.id) throw new BadRequestError('partner_cannot_be_requester')
+    if (partner.status !== 'active' || partner.deletedAt) throw new ConflictError('partner_not_active')
+
+    await tx
+      .update(ptRequests)
+      .set({
+        coClientId: partner.id,
+        coClientName: null,
+        coClientEmail: null,
+      })
+      .where(eq(ptRequests.id, input.ptRequestId))
   })
 }

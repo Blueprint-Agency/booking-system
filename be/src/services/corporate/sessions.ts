@@ -3,6 +3,7 @@ import { db } from '../../db'
 import {
   classes,
   classSupportingInstructors,
+  corporateRequests,
   corporateSessions,
   corporateSessionSupportingInstructors,
   ptSessions,
@@ -280,16 +281,38 @@ export async function cancelCorporateSession(
   id: string,
   staffId: string,
 ): Promise<CorporateSessionRow | null> {
-  const rows = await db
-    .update(corporateSessions)
-    .set({
-      lifecycle: 'cancelled',
-      cancelledAt: new Date(),
-      cancelledByStaffId: staffId,
-    })
-    .where(and(eq(corporateSessions.id, id), eq(corporateSessions.lifecycle, 'active')))
-    .returning()
-  return rows[0] ?? null
+  return db.transaction(async tx => {
+    const now = new Date()
+    const rows = await tx
+      .update(corporateSessions)
+      .set({
+        lifecycle: 'cancelled',
+        cancelledAt: now,
+        cancelledByStaffId: staffId,
+      })
+      .where(and(eq(corporateSessions.id, id), eq(corporateSessions.lifecycle, 'active')))
+      .returning()
+    const session = rows[0] ?? null
+    if (!session) return null
+
+    if (session.corporateRequestId) {
+      await tx
+        .update(corporateRequests)
+        .set({
+          status: 'cancelled',
+          resolvedAt: now,
+          resolvedByStaffId: staffId,
+        })
+        .where(
+          and(
+            eq(corporateRequests.id, session.corporateRequestId),
+            eq(corporateRequests.status, 'scheduled'),
+          ),
+        )
+    }
+
+    return session
+  })
 }
 
 export type RescheduleCorporateSessionPatch = Partial<

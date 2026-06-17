@@ -4,9 +4,10 @@ import { Avatar, Badge, Button } from "@/components/ui";
 import { formatDateTime, formatRelative } from "@/lib/formatters";
 import {
   type ApiPtRequest,
-  PT_STATUS_LABEL,
   PT_STATUS_TONE,
   ptPartnerDisplay,
+  ptRefundLabel,
+  ptStatusLabel,
 } from "@/lib/pt-requests";
 
 export function PtRequestDrawer({
@@ -75,9 +76,14 @@ export function PtRequestDrawer({
           )}
           <Row label="Status">
             <Badge tone={PT_STATUS_TONE[request.status]}>
-              {PT_STATUS_LABEL[request.status]}
+              {ptStatusLabel(request)}
             </Badge>
           </Row>
+          {ptRefundLabel(request.refund_outcome) && (
+            <Row label="Refund outcome">
+              {ptRefundLabel(request.refund_outcome)}
+            </Row>
+          )}
           {request.session && (
             <Row label="Scheduled session">
               <div className="text-ink">
@@ -108,7 +114,7 @@ export function PtRequestDrawer({
               </div>
             )}
             <Button variant="ghost" onClick={onCancel}>
-              Cancel session (full refund)
+              Cancel session
             </Button>
           </div>
         )}
@@ -117,7 +123,7 @@ export function PtRequestDrawer({
           request.status === "attended") &&
           request.resolved_at && (
             <div className="mt-6 rounded-md bg-paper p-3 text-xs text-muted">
-              {PT_STATUS_LABEL[request.status]} on {formatDateTime(request.resolved_at)}.
+              {ptStatusLabel(request)} on {formatDateTime(request.resolved_at)}.
             </div>
           )}
       </div>

@@ -10,8 +10,16 @@ import { ScheduleSegments } from "@/components/booking/schedule-segments";
 import { useClientPackages } from "@/lib/use-client-packages";
 import { useLocations, useClassTypes } from "@/lib/classes";
 import { usePtSessionsApi } from "@/lib/pt-sessions";
+import { ApiError } from "@/lib/api";
 
 type Slot = { proposedDate: string; startTime: string; endTime: string };
+
+function apiErrorCode(err: unknown): string | null {
+  if (!(err instanceof ApiError)) return null;
+  if (!err.body || typeof err.body !== "object" || !("error" in err.body)) return null;
+  const code = (err.body as { error?: unknown }).error;
+  return typeof code === "string" ? code : null;
+}
 
 // Current local hour as `HH:mm` with minutes pinned to `00`, optionally offset
 // by whole hours. Seeds empty time inputs so the native picker defaults to the
@@ -146,8 +154,14 @@ export default function PrivateSessionsPage() {
       });
       router.push("/account/private-sessions?submitted=1");
     } catch (err: unknown) {
+      const code = apiErrorCode(err);
       const msg =
-        err instanceof Error ? err.message : "We couldn't submit your request. Please try again.";
+        code === "insufficient_pt_credit"
+          ? `This ${computedSessionType === "2on1" ? "2-on-1" : "1-on-1"} request uses ${requestCost} session${requestCost === 1 ? "" : "s"}. Choose a package with enough sessions or buy another package.`
+          : err instanceof Error
+            ? err.message
+            : "We couldn't submit your request. Please try again.";
+      if (code === "insufficient_pt_credit") setShowBuyPrompt(true);
       setErrors([msg]);
     } finally {
       setSubmitting(false);
@@ -173,8 +187,14 @@ export default function PrivateSessionsPage() {
   }, [showSessionTypeChoice, sessionType, has1on1, has2on1]);
 
   const balanceForType = (t: "1on1" | "2on1") => (t === "2on1" ? pt2on1 : pt1on1);
-  const matchingPackage = ptPackages.find((p) => p.sessionType === computedSessionType);
-  const hasEnoughCredits = balanceForType(computedSessionType) >= 1;
+  const requestCost = computedSessionType === "2on1" ? 2 : 1;
+  const matchingPackage = ptPackages.find(
+    (p) =>
+      p.sessionType === computedSessionType &&
+      (p.creditsOrSessionsRemaining ?? 0) >= requestCost,
+  );
+  const hasPackageForType = ptPackages.some((p) => p.sessionType === computedSessionType);
+  const hasEnoughCredits = Boolean(matchingPackage) && balanceForType(computedSessionType) >= requestCost;
 
   return (
     <BookingSurface maxWidth="md" padding="default">
@@ -195,6 +215,7 @@ export default function PrivateSessionsPage() {
               You have {balanceForType(computedSessionType)}{" "}
               {computedSessionType === "2on1" ? "2-on-1" : "1-on-1"} session
               {balanceForType(computedSessionType) === 1 ? "" : "s"} remaining.
+              {" "}This request uses {requestCost}.
             </p>
           )}
 
@@ -402,9 +423,9 @@ export default function PrivateSessionsPage() {
 
           {showBuyPrompt && (
             <div className="rounded-2xl border border-warning/30 bg-warning/10 p-5 text-sm text-ink">
-              {!matchingPackage
+              {!hasPackageForType
                 ? `You don't have an active ${computedSessionType === "2on1" ? "2-on-1" : "1-on-1"} PT package yet.`
-                : `You have no ${computedSessionType === "2on1" ? "2-on-1" : "1-on-1"} credits remaining.`}{" "}
+                : `You need ${requestCost} ${computedSessionType === "2on1" ? "2-on-1" : "1-on-1"} session${requestCost === 1 ? "" : "s"} in one active package to submit this request.`}{" "}
               <Link href="/packages#private" className="underline font-medium hover:text-ink">
                 Buy a private session package
               </Link>{" "}
@@ -425,7 +446,9 @@ export default function PrivateSessionsPage() {
             disabled={submitting}
             className="w-full rounded-full bg-ink text-paper px-6 py-3 text-sm font-medium hover:bg-ink/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {submitting ? "Submitting…" : `Submit request (uses 1 session)`}
+            {submitting
+              ? "Submitting…"
+              : `Submit request (uses ${requestCost} session${requestCost === 1 ? "" : "s"})`}
           </button>
         </form>
       )}

@@ -28,16 +28,38 @@ const SCHEDULE_ERROR: Record<string, string> = {
   bad_time_range: "End time must be after start time.",
 };
 
+const PARTNER_LINK_ERROR: Record<string, string> = {
+  partner_client_not_found: "No active client account was found for that email.",
+  partner_cannot_be_requester: "The requester cannot also be the partner.",
+  partner_not_active: "That partner account is not active.",
+  partner_already_linked: "This request already has a linked partner.",
+  pt_request_not_pending: "This request is no longer pending.",
+  not_a_2on1_request: "Only 2-on-1 requests can have a linked partner.",
+};
+
+function apiErrorCode(e: unknown): string {
+  return e instanceof ApiError &&
+    e.body &&
+    typeof e.body === "object" &&
+    "error" in e.body
+    ? String((e.body as { error: unknown }).error)
+    : "";
+}
+
 export function ScheduleFromRequestDialog({
   request,
   onScheduled,
+  onRequestUpdated,
   onClose,
 }: {
   request: ApiPtRequest;
   onScheduled: () => void;
+  onRequestUpdated?: (request: ApiPtRequest) => void;
   onClose: () => void;
 }) {
   const { api, accessibleLocations } = useWorkspace();
+  const [linkedRequest, setLinkedRequest] = useState<ApiPtRequest | null>(null);
+  const currentRequest = linkedRequest ?? request;
 
   // Postgres `time` columns serialise as HH:MM:SS; <input type="time"> and our
   // datetime construction expect HH:MM, so normalise.
@@ -57,10 +79,19 @@ export function ScheduleFromRequestDialog({
   const [instructorPay, setInstructorPay] = useState("");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [partnerEmail, setPartnerEmail] = useState(request.co_client?.email ?? "");
+  const [partnerLinking, setPartnerLinking] = useState(false);
+  const [partnerLinkError, setPartnerLinkError] = useState<string | null>(null);
 
   // Partner must be a member before a 2on1 can be scheduled (BE enforces too).
   const partnerBlocked =
-    request.session_type === "2on1" && !request.co_client?.clientId;
+    currentRequest.session_type === "2on1" && !currentRequest.co_client?.clientId;
+
+  useEffect(() => {
+    setLinkedRequest(null);
+    setPartnerEmail(request.co_client?.email ?? "");
+    setPartnerLinkError(null);
+  }, [request.id, request.co_client?.email]);
 
   useEffect(() => {
     if (!api) return;
@@ -120,7 +151,7 @@ export function ScheduleFromRequestDialog({
     setSaving(true);
     setErr(null);
     try {
-      await api.post(`/portal/admin/pt-sessions/${request.id}/schedule`, {
+      await api.post(`/portal/admin/pt-sessions/${currentRequest.id}/schedule`, {
         instructor_id: instructorId,
         location_id: locationId,
         room_id: roomId,
@@ -131,16 +162,36 @@ export function ScheduleFromRequestDialog({
       });
       onScheduled();
     } catch (e) {
-      const code =
-        e instanceof ApiError &&
-        e.body &&
-        typeof e.body === "object" &&
-        "error" in e.body
-          ? String((e.body as { error: unknown }).error)
-          : "";
+      const code = apiErrorCode(e);
       setErr(SCHEDULE_ERROR[code] ?? "Couldn't schedule the session. Please try again.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleLinkPartner() {
+    if (!api || partnerLinking) return;
+    const email = partnerEmail.trim();
+    if (!email) {
+      setPartnerLinkError("Enter the partner's account email.");
+      return;
+    }
+    setPartnerLinking(true);
+    setPartnerLinkError(null);
+    try {
+      const res = await api.post<{ pt_request: ApiPtRequest | null }>(
+        `/portal/admin/pt-sessions/${currentRequest.id}/link-partner`,
+        { email },
+      );
+      if (res.pt_request) {
+        setLinkedRequest(res.pt_request);
+        onRequestUpdated?.(res.pt_request);
+      }
+    } catch (e) {
+      const code = apiErrorCode(e);
+      setPartnerLinkError(PARTNER_LINK_ERROR[code] ?? "Couldn't link the partner.");
+    } finally {
+      setPartnerLinking(false);
     }
   }
 
@@ -148,16 +199,30 @@ export function ScheduleFromRequestDialog({
     <Dialog open onOpenChange={(o) => !o && onClose()} title="Schedule PT session">
       <form className="space-y-4" onSubmit={handleSubmit}>
         {partnerBlocked && (
-          <div className="rounded-md border border-warning/30 bg-warning/10 p-3 text-xs text-warning">
-            Partner ({request.co_client?.name ?? request.co_client?.email ?? "—"}) is
-            not a member yet. Create the partner&apos;s client account first, then
-            re-open this dialog.
+          <div className="space-y-3 rounded-md border border-warning/30 bg-warning/10 p-3 text-xs text-warning">
+            <p>
+              Partner ({currentRequest.co_client?.name ?? currentRequest.co_client?.email ?? "—"}) is
+              not linked to a member account yet.
+            </p>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <Input
+                type="email"
+                value={partnerEmail}
+                onChange={(e) => setPartnerEmail(e.target.value)}
+                placeholder="partner@email.com"
+              />
+              <Button type="button" onClick={handleLinkPartner} disabled={partnerLinking}>
+                {partnerLinking && <Loader2 className="h-4 w-4 animate-spin" />}
+                {partnerLinking ? "Linking…" : "Link partner"}
+              </Button>
+            </div>
+            {partnerLinkError && <p className="text-error">{partnerLinkError}</p>}
           </div>
         )}
-        {request.slots.length > 0 && (
+        {currentRequest.slots.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-muted">Proposed slots:</span>
-            {request.slots.map((s, i) => (
+            {currentRequest.slots.map((s, i) => (
               <button
                 key={i}
                 type="button"
@@ -186,7 +251,7 @@ export function ScheduleFromRequestDialog({
           <div className="space-y-1.5">
             <Label>Session type</Label>
             <div className="rounded-md border border-border bg-paper px-3 py-2 text-sm text-muted">
-              {request.session_type === "1on1" ? "1-on-1" : "2-on-1"}
+              {currentRequest.session_type === "1on1" ? "1-on-1" : "2-on-1"}
             </div>
           </div>
           <div className="space-y-1.5">

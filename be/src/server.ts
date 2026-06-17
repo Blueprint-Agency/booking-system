@@ -14,13 +14,23 @@ import { closeDb } from './db'
  * validated up front — if anything required is missing, boot fails loudly with
  * a Zod error report before we open the HTTP socket.
  *
- * registerJobs is intentionally NOT mounted yet — the cron handlers depend on
- * services that aren't all wired, so enabling them now would throw at boot. The
- * safeJob wrapper in jobs/index.ts is in place for when they're switched on.
+ * Background lifecycle jobs are opt-in through ENABLE_JOBS=true.
  */
 const server = serve({ fetch: app.fetch, port: env.PORT }, info => {
   logger.info({ port: info.port, env: env.NODE_ENV }, 'yoga-sadhana-be started')
 })
+
+if (env.ENABLE_JOBS) {
+  void import('./jobs')
+    .then(({ registerJobs }) => registerJobs())
+    .then(() => {
+      logger.info('background jobs registered')
+    })
+    .catch(err => {
+      logger.error({ err }, 'failed to register background jobs')
+      captureException(err)
+    })
+}
 
 // ---- Graceful shutdown -------------------------------------------------------
 // Docker sends SIGTERM on `stop`/redeploy; drain in-flight requests, then exit.

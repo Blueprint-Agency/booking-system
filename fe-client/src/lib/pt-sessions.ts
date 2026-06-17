@@ -50,6 +50,7 @@ export interface RawPtRequest {
   id: string;
   session_type: "1on1" | "2on1";
   status: string;
+  refund_outcome?: "session_returned" | "forfeited" | "n_a" | null;
   // Is the caller the requester (owns the credit, can cancel) or the 2on1 partner (read-only)?
   role?: "requester" | "partner";
   // The requester's name — shown on partner cards ("hosted by …").
@@ -75,6 +76,7 @@ export interface RawPtRequest {
     qr_token: string;
     code: string;
     check_in_state: "pending" | "attended" | "no_show" | "n_a";
+    refund_outcome?: "session_returned" | "forfeited" | "n_a" | null;
   } | null;
 }
 

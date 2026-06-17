@@ -189,13 +189,13 @@ export const emailTemplates: EmailTemplate[] = [
     slug: "admin_cancel_workshop",
     category: "Admin cancellations",
     label: "Workshop cancelled by admin",
-    description: "Sent to all attendees on workshop cancellation. Stripe refund is automatic.",
+    description: "Sent to all attendees on workshop cancellation. Payment handling is reviewed by the studio.",
     trigger: "Admin cancels a workshop (§7a)",
     recipient: "All attendees",
-    variables: ["client_name", "workshop_name", "amount_refunded"],
-    subject: "Workshop cancelled — full refund issued",
+    variables: ["client_name", "workshop_name"],
+    subject: "Workshop cancelled",
     bodyHtml:
-      "<p>Hi {{client_name}},</p><p>We've had to cancel {{workshop_name}}. A full refund of SGD {{amount_refunded}} has been issued to your original payment method.</p>",
+      "<p>Hi {{client_name}},</p><p>We've had to cancel {{workshop_name}}. The studio will contact you about payment handling or next steps.</p>",
     updatedAt,
   },
   // --- Packages ---

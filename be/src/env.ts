@@ -1,6 +1,17 @@
 import 'dotenv/config'
 import { z } from 'zod'
 
+const booleanEnv = z.preprocess(value => {
+  if (value === undefined || value === '') return false
+  if (typeof value === 'boolean') return value
+  if (typeof value === 'string') {
+    const normalized = value.toLowerCase()
+    if (['1', 'true', 'yes', 'on'].includes(normalized)) return true
+    if (['0', 'false', 'no', 'off'].includes(normalized)) return false
+  }
+  return value
+}, z.boolean())
+
 /**
  * Zod-validated env loader. Required vars cover:
  *   - DB connection
@@ -19,6 +30,7 @@ const schema = z.object({
   // Sentry reports. 'staging' now; 'production' once that server exists.
   APP_ENV: z.enum(['development', 'staging', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(4000),
+  ENABLE_JOBS: booleanEnv,
 
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
 

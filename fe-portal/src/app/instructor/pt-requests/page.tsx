@@ -64,20 +64,6 @@ export default function InstructorPtRequestsPage() {
     void load();
   }, [load]);
 
-  async function handleCancel(req: InstructorPtRequest) {
-    if (!api) return;
-    if (!confirm("Cancel this pending request? The held credits are refunded.")) return;
-    try {
-      await api.post(`/portal/instructor/pt-requests/${req.id}/cancel`);
-      toast.success("Request cancelled");
-      await load();
-    } catch (err) {
-      toast.error(
-        err instanceof ApiError ? `Couldn't cancel (HTTP ${err.status})` : "Couldn't cancel",
-      );
-    }
-  }
-
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <PageHeader
@@ -152,7 +138,6 @@ export default function InstructorPtRequestsPage() {
                       setSchedId(null);
                       void load();
                     }}
-                    onCancelRequest={() => handleCancel(r)}
                   />
                 )}
               </li>
@@ -169,13 +154,11 @@ function ScheduleForm({
   rooms,
   onClose,
   onScheduled,
-  onCancelRequest,
 }: {
   request: InstructorPtRequest;
   rooms: ApiRoom[];
   onClose: () => void;
   onScheduled: () => void;
-  onCancelRequest: () => void;
 }) {
   const { api } = useWorkspace();
   const first = request.slots[0];
@@ -293,14 +276,7 @@ function ScheduleForm({
 
       {err && <p className="mt-2 text-xs text-error">{err}</p>}
 
-      <div className="mt-3 flex items-center justify-between">
-        <button
-          type="button"
-          onClick={onCancelRequest}
-          className="text-xs text-muted hover:text-error"
-        >
-          Cancel request
-        </button>
+      <div className="mt-3 flex justify-end">
         <Button type="submit" size="sm" disabled={submitting || !canSubmit}>
           {submitting ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
