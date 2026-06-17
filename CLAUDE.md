@@ -70,9 +70,11 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 
 **Clerk apps:** two separate Clerk applications. fe-portal + `CLERK_STAFF_*` is the staff/instructor app; fe-client + `CLERK_CLIENT_*` is the member-facing app. Cross-app tokens are rejected by the BE middleware on purpose — never share keys between them.
 
-**GitHub repo settings driving `deploy-be.yml`** (see the comment block at the top of the workflow for the canonical list). The workflow job runs in the GitHub **`staging`** Environment, so environment-scoped secrets must live there (or be repo-level):
-- `vars`: `PORT`, `VPS3_HOST`, `DOCKERHUB_USERNAME`, `PORTAL_ORIGIN`, `CLIENT_ORIGIN`, `SUPERADMIN_EMAIL`
-- `secrets`: `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DOCKERHUB_TOKEN`, `SSH_PRIVATE_KEY`, `CLERK_STAFF_*` (×3), `CLERK_CLIENT_*` (×3), `SMTP_USER`, `SMTP_PASSWORD`, `SENTRY_DSN` (optional — error monitoring), plus deferred `STRIPE_*` and `R2_*`.
+**GitHub repo settings driving `deploy-be.yml`** (see the comment block at the top of the workflow for the canonical list). The workflow job runs in the GitHub **`staging`** Environment, so repo/environment settings can override organization-level settings with the same name. Shared deploy settings should live under the **Blueprint-Agency organization** and grant access to `booking-system`.
+- `org vars`: `VPS3_TAILSCALE_HOST`
+- `repo/env vars`: `PORT`, `VPS3_HOST`, `DOCKERHUB_USERNAME`, `PORTAL_ORIGIN`, `CLIENT_ORIGIN`, `SUPERADMIN_EMAIL`
+- `org secrets`: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`
+- `repo/env secrets`: `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DOCKERHUB_TOKEN`, `SSH_PRIVATE_KEY`, `CLERK_STAFF_*` (×3), `CLERK_CLIENT_*` (×3), `SMTP_USER`, `SMTP_PASSWORD`, `SENTRY_DSN` (optional — error monitoring), plus deferred `STRIPE_*` and `R2_*`.
 - `NODE_ENV` (=`production`) and `APP_ENV` (=`staging`) are hardcoded in the workflow, not repo settings.
 
 ## Conventions

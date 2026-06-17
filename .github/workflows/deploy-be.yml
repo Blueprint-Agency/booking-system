@@ -8,6 +8,13 @@ on:
       - '.github/workflows/deploy-be.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: booking-be-staging-deploy
+  cancel-in-progress: false
+
 jobs:
   deploy:
     if: github.ref_name == 'staging'
@@ -33,12 +40,24 @@ jobs:
             blueprintagency/booking-be:latest
             blueprintagency/booking-be:${{ github.sha }}
 
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          ping: ${{ vars.VPS3_TAILSCALE_HOST }}
+
       - name: Deploy to VPS3
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ vars.VPS3_HOST }}
+          host: ${{ vars.VPS3_TAILSCALE_HOST }}
+          port: 22
           username: deploy
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          timeout: 90s
+          command_timeout: 20m
+          debug: true
           script: |
             set -euo pipefail
             mkdir -p /root/stacks/booking-system
@@ -47,8 +66,10 @@ jobs:
             # db-booking is only reachable inside booking-network, never exposed.
             #
             # Required GitHub repo settings:
-            #   vars:    PORT, VPS3_HOST, DOCKERHUB_USERNAME, PORTAL_ORIGIN, CLIENT_ORIGIN, SUPERADMIN_EMAIL
-            #   secrets: DB_USER, DB_PASSWORD, DB_NAME, DOCKERHUB_TOKEN, SSH_PRIVATE_KEY,
+            #   org vars:    VPS3_TAILSCALE_HOST
+            #   org secrets: TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET
+            #   vars:        PORT, VPS3_HOST, DOCKERHUB_USERNAME, PORTAL_ORIGIN, CLIENT_ORIGIN, SUPERADMIN_EMAIL
+            #   secrets:     DB_USER, DB_PASSWORD, DB_NAME, DOCKERHUB_TOKEN, SSH_PRIVATE_KEY,
             #            CLERK_STAFF_PUBLISHABLE_KEY, CLERK_STAFF_SECRET_KEY, CLERK_STAFF_WEBHOOK_SECRET,
             #            CLERK_CLIENT_PUBLISHABLE_KEY, CLERK_CLIENT_SECRET_KEY, CLERK_CLIENT_WEBHOOK_SECRET,
             #            IMPERSONATION_SECRET,
