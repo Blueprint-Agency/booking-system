@@ -8,6 +8,7 @@ Sentry.init({
   enabled: Boolean(dsn) && process.env.NODE_ENV === "production",
   environment: process.env.NEXT_PUBLIC_APP_ENV ?? process.env.NODE_ENV,
   tracesSampleRate: 0,
+  enableLogs: true,
 });
 
 export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;

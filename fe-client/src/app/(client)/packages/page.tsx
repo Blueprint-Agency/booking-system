@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { Loader2, MessageCircle } from "lucide-react";
 import { useUser } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
 import { useAuthGate } from "@/components/auth/auth-gate";
 import { BuyButton } from "@/components/checkout/buy-button";
 import { cn, formatDurationDays } from "@/lib/utils";
@@ -925,6 +927,7 @@ function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
   const { isSignedIn } = useUser();
   const { requireAuth, gate } = useAuthGate("buy a package");
   const api = useApi();
+  const router = useRouter();
   const [pending, setPending] = useState(false);
   const [err, setErr] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
@@ -944,11 +947,10 @@ function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
         location: details.location || undefined,
         notes: details.notes || undefined,
       });
-      window.location.href = "/account/corporate";
+      router.push("/account/corporate");
     } catch {
       setErr(true);
       setPending(false);
-      setFormOpen(false);
     }
   }
 
@@ -979,7 +981,10 @@ function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
             requireAuth("/packages#corporate");
             return;
           }
-          if (!pending) setFormOpen(true);
+          if (!pending) {
+            setErr(false);
+            setFormOpen(true);
+          }
         }}
         className={cn(
           "rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 w-full text-center transition-colors inline-flex items-center justify-center gap-2",
@@ -995,7 +1000,11 @@ function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
         <CorporateRequestModal
           pkg={pkg}
           pending={pending}
-          onCancel={() => setFormOpen(false)}
+          submitError={err}
+          onCancel={() => {
+            setErr(false);
+            setFormOpen(false);
+          }}
           onSubmit={startRequest}
         />
       )}
@@ -1009,11 +1018,13 @@ function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
 function CorporateRequestModal({
   pkg,
   pending,
+  submitError,
   onCancel,
   onSubmit,
 }: {
   pkg: ApiCorporatePackage;
   pending: boolean;
+  submitError: boolean;
   onCancel: () => void;
   onSubmit: (details: {
     location: string;
@@ -1027,17 +1038,40 @@ function CorporateRequestModal({
   const [where, setWhere] = useState("");
   const [customWhere, setCustomWhere] = useState("");
   const [notes, setNotes] = useState("");
+  const [mounted, setMounted] = useState(false);
 
   const isCustom = where === CUSTOM;
   const resolvedWhere = isCustom ? customWhere.trim() : where.trim();
   const canSubmit = resolvedWhere.length > 0 && !pending;
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, []);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape" && !pending) onCancel();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onCancel, pending]);
 
   function handleSubmit() {
     if (!canSubmit) return;
     onSubmit({ location: resolvedWhere, notes: notes.trim(), customLocation: isCustom });
   }
 
-  return (
+  if (!mounted) return null;
+
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4"
       onClick={pending ? undefined : onCancel}
@@ -1137,6 +1171,12 @@ function CorporateRequestModal({
           </p>
         </dl>
 
+        {submitError && (
+          <p className="mt-4 rounded-xl border border-error/30 bg-error/10 px-3 py-2 text-sm text-error">
+            Couldn&apos;t send your request. Please try again.
+          </p>
+        )}
+
         <div className="mt-4 flex flex-col gap-2">
           <button
             type="button"
@@ -1160,6 +1200,7 @@ function CorporateRequestModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

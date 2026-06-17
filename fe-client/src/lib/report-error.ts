@@ -10,5 +10,11 @@ import * as Sentry from "@sentry/nextjs";
 export function reportError(error: unknown, context?: Record<string, unknown>) {
   // eslint-disable-next-line no-console
   console.error("[client-error]", error, context ?? {});
+  Sentry.logger.error(errorMessage(error), context);
   Sentry.captureException(error, context ? { extra: context } : undefined);
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return typeof error === "string" ? error : "Unknown client error";
 }

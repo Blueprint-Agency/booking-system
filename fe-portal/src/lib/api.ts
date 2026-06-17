@@ -7,6 +7,7 @@
  * Errors: non-2xx responses throw an `ApiError` that carries `status` plus the
  * parsed JSON body (if any) so callers can render structured copy.
  */
+import { reportError } from "@/lib/report-error";
 
 const BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -56,15 +57,26 @@ export async function apiFetch<T = unknown>(
   if (token) headers.Authorization = `Bearer ${token}`;
   if (opts.body !== undefined) headers["Content-Type"] = "application/json";
 
-  const res = await fetch(buildUrl(path, opts.query), {
-    method: opts.method ?? "GET",
-    headers,
-    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
-    signal: opts.signal,
-    // This is an authenticated API client — auth/role responses must never be
-    // served from the HTTP/bfcache. Always hit the network with the live token.
-    cache: "no-store",
-  });
+  const method = opts.method ?? "GET";
+  let res: Response;
+  try {
+    res = await fetch(buildUrl(path, opts.query), {
+      method,
+      headers,
+      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+      signal: opts.signal,
+      // This is an authenticated API client — auth/role responses must never be
+      // served from the HTTP/bfcache. Always hit the network with the live token.
+      cache: "no-store",
+    });
+  } catch (err) {
+    reportError(new Error("Portal API network request failed"), {
+      scope: "api-fetch-network",
+      method,
+      errorType: err instanceof Error ? err.name : typeof err,
+    });
+    throw err;
+  }
 
   let parsed: unknown = null;
   const text = await res.text();
@@ -77,7 +89,15 @@ export async function apiFetch<T = unknown>(
   }
 
   if (!res.ok) {
-    throw new ApiError(res.status, parsed);
+    const error = new ApiError(res.status, parsed);
+    if (res.status >= 500) {
+      reportError(new Error(`Portal API returned ${res.status}`), {
+        scope: "api-fetch-5xx",
+        method,
+        status: res.status,
+      });
+    }
+    throw error;
   }
   return parsed as T;
 }

@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm'
 import { getClerkClientApp, verifyClientToken } from '../lib/clerk'
 import { syncClientFromClerk } from '../services/auth/webhook-sync'
 import { logger } from '../shared/logger'
+import { captureException } from '../instrument'
 
 export interface ClerkClientClaims {
   sub: string
@@ -117,6 +118,7 @@ export const clerkClientAuth: MiddlewareHandler = async (c, next) => {
       }
     } catch (err) {
       logger.warn({ err }, 'clerk-client: auto-provision failed')
+      captureException(err, { scope: 'clerk-client-auto-provision' })
     }
   }
 

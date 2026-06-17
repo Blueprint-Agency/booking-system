@@ -11,4 +11,5 @@ Sentry.init({
   environment: process.env.NEXT_PUBLIC_APP_ENV ?? process.env.NODE_ENV,
   // Errors only for now (matches the backend). Raise to enable tracing later.
   tracesSampleRate: 0,
+  enableLogs: true,
 });

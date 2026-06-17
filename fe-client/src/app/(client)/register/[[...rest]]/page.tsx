@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useState } from "react";
-import { useSignUp } from "@clerk/nextjs";
+import { useClerk, useSignUp } from "@clerk/nextjs";
 import { useRouter, useSearchParams } from "next/navigation";
 import PhoneInput, { isValidPhoneNumber } from "react-phone-number-input";
 import "react-phone-number-input/style.css";
@@ -35,8 +35,24 @@ function clerkApiError(err: { code?: string; message?: string } | null | undefin
   return err.message ?? "We couldn't create your account. Please check your details and try again.";
 }
 
+function isAlreadySignedInError(err: unknown): boolean {
+  const errors = (err as { errors?: Array<{ code?: string; message?: string }> })?.errors ?? [err as { code?: string; message?: string }];
+  return errors.some((e) => {
+    const code = String(e?.code ?? "").toLowerCase();
+    const message = String(e?.message ?? "").toLowerCase();
+    return (
+      code.includes("session_exists") ||
+      code.includes("already_signed") ||
+      /already.*sign(ed)? in/.test(message) ||
+      /sign(ed)? in.*already/.test(message) ||
+      /already.*logged in/.test(message)
+    );
+  });
+}
+
 function RegisterContent() {
   const { signUp } = useSignUp();
+  const { setActive } = useClerk();
   const router = useRouter();
   const searchParams = useSearchParams();
   // Only honour internal paths — never an absolute/protocol-relative URL — so a
@@ -57,6 +73,30 @@ function RegisterContent() {
 
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  async function runAuthStep<T extends { error: { code?: string; message?: string } | null }>(
+    step: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      const result = await step();
+      if (!result.error || !isAlreadySignedInError(result.error)) return result;
+      await setActive({ session: null });
+      return step();
+    } catch (err) {
+      if (!isAlreadySignedInError(err)) throw err;
+      await setActive({ session: null });
+      return step();
+    }
+  }
+
+  async function activateCreatedSession(
+    createdSessionId: string | null | undefined,
+    fallbackMessage: string,
+  ): Promise<string | null> {
+    if (!createdSessionId) return fallbackMessage;
+    await setActive({ session: createdSessionId });
+    return null;
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -82,23 +122,15 @@ function RegisterContent() {
 
     setSubmitting(true);
     try {
-      const { error: createErr } = await signUp.create({
+      const { error: createErr } = await runAuthStep(() => signUp.create({
         emailAddress: email.trim(),
+        password,
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         unsafeMetadata: { phone },
-      });
+      }));
       if (createErr) {
         setError(clerkApiError(createErr) ?? "Could not create account.");
-        return;
-      }
-
-      const { error: pwErr } = await signUp.password({
-        password,
-        emailAddress: email.trim(),
-      });
-      if (pwErr) {
-        setError(clerkApiError(pwErr) ?? "Could not set password.");
         return;
       }
 
@@ -129,9 +161,12 @@ function RegisterContent() {
         return;
       }
 
-      const { error: finalErr } = await signUp.finalize();
-      if (finalErr) {
-        setError(clerkApiError(finalErr) ?? "Could not complete sign-up.");
+      const activationErr = await activateCreatedSession(
+        signUp.createdSessionId,
+        "Could not complete sign-up.",
+      );
+      if (activationErr) {
+        setError(activationErr);
         return;
       }
 

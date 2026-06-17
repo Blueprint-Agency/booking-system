@@ -1,7 +1,6 @@
 "use client";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { UserButton } from "@clerk/nextjs";
 import { Loader2 } from "lucide-react";
 import { InstructorNav, InstructorMobileNavTrigger } from "./instructor-nav";
 import { WorkspaceSwitcher } from "./workspace-switcher";
@@ -17,7 +16,6 @@ function InstructorTopBar() {
       </div>
       <div className="flex items-center gap-2 sm:gap-3">
         <DevRoleSwitcher />
-        <UserButton appearance={{ elements: { avatarBox: "h-8 w-8" } }} />
       </div>
     </header>
   );

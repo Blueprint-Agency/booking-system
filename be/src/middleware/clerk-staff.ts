@@ -5,6 +5,7 @@ import { db } from '../db'
 import { staffUsers } from '../db/schema/identity'
 import { syncStaffFromClerk } from '../services/auth/webhook-sync'
 import { logger } from '../shared/logger'
+import { captureException } from '../instrument'
 
 export interface ClerkStaffClaims {
   sub: string
@@ -85,6 +86,7 @@ export const clerkStaffAuth: MiddlewareHandler = async (c, next) => {
       }
     } catch (err) {
       logger.error({ err }, 'clerk-staff: auto-link fallback failed')
+      captureException(err, { scope: 'clerk-staff-auto-link' })
       syncReason = 'sync_error'
     }
   }

@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useState } from "react";
-import { useSignIn } from "@clerk/nextjs";
+import { useClerk, useSignIn } from "@clerk/nextjs";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { AuthSplitShell } from "@/components/auth/auth-split-shell";
@@ -27,8 +27,24 @@ function clerkApiError(err: { code?: string; message?: string } | null | undefin
   return err.message ?? "We couldn't sign you in. Please check your details and try again.";
 }
 
+function isAlreadySignedInError(err: unknown): boolean {
+  const errors = (err as { errors?: Array<{ code?: string; message?: string }> })?.errors ?? [err as { code?: string; message?: string }];
+  return errors.some((e) => {
+    const code = String(e?.code ?? "").toLowerCase();
+    const message = String(e?.message ?? "").toLowerCase();
+    return (
+      code.includes("session_exists") ||
+      code.includes("already_signed") ||
+      /already.*sign(ed)? in/.test(message) ||
+      /sign(ed)? in.*already/.test(message) ||
+      /already.*logged in/.test(message)
+    );
+  });
+}
+
 function LoginContent() {
   const { signIn } = useSignIn();
+  const { setActive } = useClerk();
   const router = useRouter();
   const searchParams = useSearchParams();
   // Only honour internal paths — never an absolute/protocol-relative URL — so a
@@ -50,6 +66,30 @@ function LoginContent() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  async function runAuthStep<T extends { error: { code?: string; message?: string } | null }>(
+    step: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      const result = await step();
+      if (!result.error || !isAlreadySignedInError(result.error)) return result;
+      await setActive({ session: null });
+      return step();
+    } catch (err) {
+      if (!isAlreadySignedInError(err)) throw err;
+      await setActive({ session: null });
+      return step();
+    }
+  }
+
+  async function activateCreatedSession(
+    createdSessionId: string | null | undefined,
+    fallbackMessage: string,
+  ): Promise<string | null> {
+    if (!createdSessionId) return fallbackMessage;
+    await setActive({ session: createdSessionId });
+    return null;
+  }
+
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -57,7 +97,7 @@ function LoginContent() {
 
     setSubmitting(true);
     try {
-      const { error: createErr } = await signIn.create({ identifier: email.trim() });
+      const { error: createErr } = await runAuthStep(() => signIn.create({ identifier: email.trim() }));
       if (createErr) {
         setError(clerkApiError(createErr) ?? "Could not sign in.");
         return;
@@ -67,9 +107,12 @@ function LoginContent() {
         setError(clerkApiError(pwErr) ?? "Incorrect email or password.");
         return;
       }
-      const { error: finalErr } = await signIn.finalize();
-      if (finalErr) {
-        setError(clerkApiError(finalErr) ?? "Could not complete sign in.");
+      const activationErr = await activateCreatedSession(
+        signIn.createdSessionId,
+        "Could not complete sign in.",
+      );
+      if (activationErr) {
+        setError(activationErr);
         return;
       }
       router.push(next);
@@ -87,7 +130,7 @@ function LoginContent() {
 
     setSubmitting(true);
     try {
-      const { error: createErr } = await signIn.create({ identifier: email.trim() });
+      const { error: createErr } = await runAuthStep(() => signIn.create({ identifier: email.trim() }));
       if (createErr) {
         setError(clerkApiError(createErr) ?? "Could not find that account.");
         return;
@@ -131,9 +174,12 @@ function LoginContent() {
         setError(clerkApiError(submitErr) ?? "Could not reset password.");
         return;
       }
-      const { error: finalErr } = await signIn.finalize();
-      if (finalErr) {
-        setError(clerkApiError(finalErr) ?? "Could not complete sign in.");
+      const activationErr = await activateCreatedSession(
+        signIn.createdSessionId,
+        "Could not complete sign in.",
+      );
+      if (activationErr) {
+        setError(activationErr);
         return;
       }
       router.push(next);

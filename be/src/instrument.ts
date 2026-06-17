@@ -25,7 +25,13 @@ if (sentryEnabled) {
     // Errors only for now. Bump this (0..1) when we add performance tracing
     // in the observability phase.
     tracesSampleRate: 0,
+    enableLogs: true,
   })
+}
+
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message
+  return typeof err === 'string' ? err : 'Unknown error'
 }
 
 /**
@@ -34,6 +40,7 @@ if (sentryEnabled) {
  */
 export function captureException(err: unknown, context?: Record<string, unknown>) {
   if (!sentryEnabled) return
+  Sentry.logger.error(errorMessage(err), context)
   Sentry.captureException(err, context ? { extra: context } : undefined)
 }
 

@@ -11,6 +11,7 @@ import {
 import { useRouter } from "next/navigation";
 import { useAuth, useClerk } from "@clerk/nextjs";
 import { ApiError, makeApi, type Api } from "@/lib/api";
+import { reportError } from "@/lib/report-error";
 import type { Location, StaffRole, StaffUser } from "@/types";
 
 export const STORAGE_KEY_LOC = "ys.activeLocationId";
@@ -137,8 +138,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
       // Network or unexpected — leave staff null so UI shows error/empty
       // state. Re-thrown errors here would crash the whole admin app.
-      // eslint-disable-next-line no-console
-      console.error("Failed to load /portal/auth/me", err);
+      reportError(err, { scope: "workspace-auth-me" });
     } finally {
       setLoading(false);
     }
@@ -167,8 +167,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       );
       setLocations(data.locations.map(locationFromApi));
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error("Failed to load all locations", err);
+      reportError(err, { scope: "workspace-all-locations" });
     }
   }, [api, currentStaff]);
 
