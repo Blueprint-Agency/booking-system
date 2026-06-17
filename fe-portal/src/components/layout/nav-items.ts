@@ -44,8 +44,9 @@ export const NAV_ITEMS: NavItem[] = [
   // but must still be a valid NavGroup for the type.
   { group: "Settings", label: "Schedule", href: "/admin/schedule", icon: CalendarDays, scope: "workspace", workspaceScoped: true },
   { group: "Settings", label: "Check-in", href: "/admin/check-in", icon: QrCode, scope: "workspace", workspaceScoped: true },
-  // Grouped in the location zone for navigation, but PT Requests is a workspace-AGNOSTIC
-  // shared triage queue (no location_id until scheduled) — it is NOT filtered by the switcher.
+  // PT Requests IS location-scoped: pt_requests.location_id is set at request time
+  // (the client picks a studio), so both this list and the pending badge filter by the
+  // active workspace. Contrast Corporate below, which has no location until scheduled.
   { group: "Settings", label: "PT Requests", href: "/admin/pt-requests", icon: HandHeart, scope: "workspace", workspaceScoped: true, badgeKey: "ptRequestsPending" },
   { group: "Settings", label: "Rooms", href: "/admin/rooms", icon: DoorOpen, scope: "both", workspaceScoped: true },
 
