@@ -20,11 +20,19 @@ const listQuery = z.object({
   location_id: z.string().uuid().optional(),
 })
 
+const supportingInstructorSchema = z.object({
+  instructor_id: z.string().uuid(),
+  pay_sgd: z.number().min(0).nullable().optional(),
+})
+
 const createClassSchema = z
   .object({
     class_type_id: z.string().uuid(),
     main_instructor_id: z.string().uuid(),
-    supporting_instructor_ids: z.array(z.string().uuid()).default([]),
+    // New shape (per-instructor pay). `supporting_instructor_ids` (bare id array,
+    // pay defaults to null) is kept for back-compat — only one of the two may be sent.
+    supporting_instructors: z.array(supportingInstructorSchema).optional(),
+    supporting_instructor_ids: z.array(z.string().uuid()).optional(),
     location_id: z.string().uuid(),
     room_id: z.string().uuid(),
     starts_at: isoDate,
@@ -43,11 +51,6 @@ const createClassSchema = z
     message: 'ends_at must be after starts_at',
     path: ['ends_at'],
   })
-
-const supportingInstructorSchema = z.object({
-  instructor_id: z.string().uuid(),
-  pay_sgd: z.number().min(0).nullable().optional(),
-})
 
 const updateClassSchema = z.object({
   class_type_id: z.string().uuid().optional(),
@@ -201,10 +204,24 @@ const app = new Hono()
   .post('/classes', zValidator('json', createClassSchema), async c => {
     const body = c.req.valid('json')
     const staffId = c.get('staffUserId')
+    // Back-compat: bare `supporting_instructor_ids` (old shape, pay defaults
+    // to null) still works alongside the new `supporting_instructors` shape.
+    let supportingInstructors: classesSvc.SupportingInstructorInput[] | undefined
+    if (body.supporting_instructors !== undefined) {
+      supportingInstructors = body.supporting_instructors.map(s => ({
+        instructorId: s.instructor_id,
+        paySgd: s.pay_sgd ?? null,
+      }))
+    } else if (body.supporting_instructor_ids !== undefined) {
+      supportingInstructors = body.supporting_instructor_ids.map(instructorId => ({
+        instructorId,
+        paySgd: null,
+      }))
+    }
     const row = await classesSvc.createClass({
       classTypeId: body.class_type_id,
       mainInstructorId: body.main_instructor_id,
-      supportingInstructorIds: body.supporting_instructor_ids,
+      supportingInstructors,
       locationId: body.location_id,
       roomId: body.room_id,
       startsAt: new Date(body.starts_at),

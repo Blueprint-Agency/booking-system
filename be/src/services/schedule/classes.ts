@@ -40,6 +40,8 @@ async function ensureInstructorRows(
 export interface CreateClassInput {
   classTypeId: string
   mainInstructorId: string
+  /** Preferred — per-instructor pay. `supportingInstructorIds` (bare, pay null) kept for back-compat callers. */
+  supportingInstructors?: SupportingInstructorInput[]
   supportingInstructorIds?: string[]
   locationId: string
   roomId: string
@@ -89,10 +91,18 @@ function normalizeSupportingWithPay(
 export async function createClass(input: CreateClassInput): Promise<ClassRow> {
   await assertRoomInLocation(input.roomId, input.locationId)
   await assertRoomAvailable(input.roomId, input.startsAt, input.endsAt)
-  const supports = normalizeSupporting(input.mainInstructorId, input.supportingInstructorIds)
+  const supports =
+    input.supportingInstructors !== undefined
+      ? normalizeSupportingWithPay(input.mainInstructorId, input.supportingInstructors)
+      : normalizeSupporting(input.mainInstructorId, input.supportingInstructorIds).map(
+          instructorId => ({ instructorId, paySgd: null as number | null }),
+        )
 
   return db.transaction(async tx => {
-    await ensureInstructorRows(tx as unknown as typeof db, [input.mainInstructorId, ...supports])
+    await ensureInstructorRows(tx as unknown as typeof db, [
+      input.mainInstructorId,
+      ...supports.map(s => s.instructorId),
+    ])
     const rows = await tx
       .insert(classes)
       .values({
@@ -116,7 +126,11 @@ export async function createClass(input: CreateClassInput): Promise<ClassRow> {
 
     if (supports.length > 0) {
       await tx.insert(classSupportingInstructors).values(
-        supports.map(instructorId => ({ classId: row.id, instructorId })),
+        supports.map(s => ({
+          classId: row.id,
+          instructorId: s.instructorId,
+          paySgd: s.paySgd == null ? null : s.paySgd.toFixed(2),
+        })),
       )
     }
     return row

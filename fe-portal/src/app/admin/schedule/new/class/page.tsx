@@ -32,6 +32,11 @@ interface ApiRoom {
   archived_at: string | null;
 }
 
+interface SupportingRow {
+  instructorId: string;
+  pay: string;
+}
+
 export default function NewClassPage() {
   const router = useRouter();
   const { api, activeLocationId } = useWorkspace();
@@ -43,7 +48,8 @@ export default function NewClassPage() {
 
   const [classTypeId, setClassTypeId] = useState("");
   const [mainInstructorId, setMainInstructorId] = useState("");
-  const [supportingInstructorIds, setSupportingInstructorIds] = useState<string[]>([]);
+  const [mainPay, setMainPay] = useState("");
+  const [supporting, setSupporting] = useState<SupportingRow[]>([]);
   const [locationId, setLocationId] = useState(activeLocationId ?? "");
   const [roomId, setRoomId] = useState("");
   const [date, setDate] = useState("");
@@ -55,7 +61,6 @@ export default function NewClassPage() {
     buffer: 2,
   });
   const [creditCost, setCreditCost] = useState("1");
-  const [instructorPay, setInstructorPay] = useState("");
   const [difficulty, setDifficulty] = useState<ClassTypeDifficulty>("general");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -107,15 +112,15 @@ export default function NewClassPage() {
   const availableForSupporting = useMemo(
     () =>
       activeInstructors.filter(
-        (i) => i.id !== mainInstructorId && !supportingInstructorIds.includes(i.id),
+        (i) => i.id !== mainInstructorId && !supporting.some((s) => s.instructorId === i.id),
       ),
-    [activeInstructors, mainInstructorId, supportingInstructorIds],
+    [activeInstructors, mainInstructorId, supporting],
   );
 
   // If the main instructor changes and overlaps a supporting one, drop the dup.
   useEffect(() => {
     if (!mainInstructorId) return;
-    setSupportingInstructorIds((prev) => prev.filter((id) => id !== mainInstructorId));
+    setSupporting((prev) => prev.filter((s) => s.instructorId !== mainInstructorId));
   }, [mainInstructorId]);
 
   // Clear the selected room if it no longer belongs to the chosen location.
@@ -143,7 +148,10 @@ export default function NewClassPage() {
       await api.post("/portal/admin/schedule/classes", {
         class_type_id: classTypeId,
         main_instructor_id: mainInstructorId,
-        supporting_instructor_ids: supportingInstructorIds,
+        supporting_instructors: supporting.map((s) => ({
+          instructor_id: s.instructorId,
+          pay_sgd: s.pay.trim() === "" ? null : Number(s.pay),
+        })),
         location_id: locationId,
         room_id: roomId,
         starts_at: startsAt.toISOString(),
@@ -152,8 +160,7 @@ export default function NewClassPage() {
         capacity_waitlist: capacity.waitlist,
         capacity_buffer: capacity.buffer,
         credit_cost: Number(creditCost),
-        instructor_pay_sgd:
-          instructorPay.trim() === "" ? undefined : Number(instructorPay),
+        instructor_pay_sgd: mainPay.trim() === "" ? undefined : Number(mainPay),
       });
       router.push("/admin/schedule");
     } catch (err) {
@@ -225,23 +232,54 @@ export default function NewClassPage() {
                 options={activeInstructors.map((i) => ({ val: i.id, label: i.name }))}
               />
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="main-pay">Main instructor pay (S$)</Label>
+              <Input
+                id="main-pay"
+                type="number"
+                min={0}
+                step="0.01"
+                inputMode="decimal"
+                placeholder="Optional"
+                value={mainPay}
+                onChange={(e) => setMainPay(e.target.value)}
+              />
+            </div>
             <div className="space-y-1.5 sm:col-span-2">
               <Label>Supporting instructors</Label>
               <div className="flex flex-wrap items-center gap-2">
-                {supportingInstructorIds.map((sid) => {
+                {supporting.map((s) => {
                   const name =
-                    activeInstructors.find((i) => i.id === sid)?.name ?? "Unknown";
+                    activeInstructors.find((i) => i.id === s.instructorId)?.name ?? "Unknown";
                   return (
                     <span
-                      key={sid}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 px-2.5 py-1 text-xs text-ink"
+                      key={s.instructorId}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 py-1 pl-2.5 pr-1.5 text-xs text-ink"
                     >
                       {name}
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        inputMode="decimal"
+                        placeholder="S$"
+                        value={s.pay}
+                        onChange={(e) =>
+                          setSupporting((prev) =>
+                            prev.map((row) =>
+                              row.instructorId === s.instructorId
+                                ? { ...row, pay: e.target.value }
+                                : row,
+                            ),
+                          )
+                        }
+                        className="h-6 w-16 rounded border border-border bg-card px-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                      />
                       <button
                         type="button"
                         onClick={() =>
-                          setSupportingInstructorIds((prev) =>
-                            prev.filter((x) => x !== sid),
+                          setSupporting((prev) =>
+                            prev.filter((row) => row.instructorId !== s.instructorId),
                           )
                         }
                         className="text-muted hover:text-ink"
@@ -257,12 +295,12 @@ export default function NewClassPage() {
                     value=""
                     onChange={(e) => {
                       const v = e.target.value;
-                      if (v) setSupportingInstructorIds((prev) => [...prev, v]);
+                      if (v) setSupporting((prev) => [...prev, { instructorId: v, pay: "" }]);
                     }}
                     className="flex h-9 rounded-lg border border-border bg-card px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                   >
                     <option value="">
-                      {supportingInstructorIds.length === 0
+                      {supporting.length === 0
                         ? "+ Add supporting instructor"
                         : "+ Add another"}
                     </option>
@@ -273,7 +311,7 @@ export default function NewClassPage() {
                     ))}
                   </select>
                 )}
-                {supportingInstructorIds.length === 0 &&
+                {supporting.length === 0 &&
                   availableForSupporting.length === 0 && (
                     <span className="text-xs text-muted">
                       No additional instructors available.
@@ -370,23 +408,6 @@ export default function NewClassPage() {
                 onChange={(e) => setCreditCost(e.target.value)}
               />
               <p className="text-xs text-muted">Credits charged per booking on this instance.</p>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="instructor-pay">Instructor pay (S$)</Label>
-              <Input
-                id="instructor-pay"
-                type="number"
-                min={0}
-                step="0.01"
-                inputMode="decimal"
-                placeholder="Optional"
-                value={instructorPay}
-                onChange={(e) => setInstructorPay(e.target.value)}
-              />
-              <p className="text-xs text-muted">
-                Amount paid to the main instructor for this class. Optional now —
-                editable later from Payroll.
-              </p>
             </div>
           </div>
         </section>
