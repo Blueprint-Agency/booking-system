@@ -6,10 +6,21 @@ import {
   ArrowUpDown,
   Loader2,
   AlertCircle,
+  Plus,
+  Trash2,
 } from "lucide-react";
-import { EmptyState, PageHeader } from "@/components/ui";
+import {
+  EmptyState,
+  PageHeader,
+  Button,
+  Dialog,
+  DialogFooter,
+  Input,
+  Label,
+  Select,
+} from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
-import { ApiError } from "@/lib/api";
+import { ApiError, type Api } from "@/lib/api";
 import { formatDate, formatDuration, formatSgd } from "@/lib/formatters";
 import { toast } from "sonner";
 import type {
@@ -66,6 +77,9 @@ export default function PayrollPage() {
   // Local draft values for the inline-editable amount cells, keyed `${kind}:${id}`.
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [savingKey, setSavingKey] = useState<string | null>(null);
+
+  const [showCreate, setShowCreate] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Filter dropdown options.
   useEffect(() => {
@@ -198,11 +212,33 @@ export default function PayrollPage() {
     }
   }
 
+  async function handleDeleteManual(row: ApiPayrollRow) {
+    if (!api) return;
+    if (!window.confirm("Delete this payroll entry? This cannot be undone.")) return;
+    setDeletingId(row.id);
+    try {
+      await api.del(`/portal/admin/payroll/manual/${row.id}`);
+      toast.success("Entry deleted");
+      await load();
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError ? `Couldn't delete (HTTP ${err.status})` : "Couldn't delete",
+      );
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
     <div>
       <PageHeader
         title="Payroll"
         description="Completed classes and private sessions with the pay owed to each instructor. Fill in or adjust an amount inline — it saves to that session."
+        actions={
+          <Button type="button" onClick={() => setShowCreate(true)}>
+            <Plus className="h-4 w-4" /> Create payroll
+          </Button>
+        }
       />
 
       {/* Filters */}
@@ -320,12 +356,19 @@ export default function PayrollPage() {
                           Workshop
                         </span>
                       )}
+                      {row.kind === "manual" && (
+                        <span className="ml-2 rounded-full border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] text-accent">
+                          Manual
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-2.5 text-muted">{formatDate(row.starts_at)}</td>
                     <td className="px-3 py-2.5 text-muted">
                       {row.kind === "workshop"
                         ? `${formatDate(row.starts_at)} – ${formatDate(row.ends_at)}`
-                        : formatDuration(row.starts_at, row.ends_at)}
+                        : row.kind === "manual"
+                          ? "—"
+                          : formatDuration(row.starts_at, row.ends_at)}
                     </td>
                     <td className="px-3 py-2.5 text-right">
                       <div className="flex items-center justify-end gap-2">
@@ -353,6 +396,21 @@ export default function PayrollPage() {
                             className="h-9 w-28 rounded-lg border border-border bg-paper py-1 pl-7 pr-2 text-right text-sm tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                           />
                         </div>
+                        {row.kind === "manual" && (
+                          <button
+                            type="button"
+                            aria-label="Delete entry"
+                            disabled={deletingId === row.id}
+                            onClick={() => void handleDeleteManual(row)}
+                            className="rounded-md p-1.5 text-muted hover:bg-error/10 hover:text-error disabled:opacity-50"
+                          >
+                            {deletingId === row.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -361,6 +419,18 @@ export default function PayrollPage() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {showCreate && (
+        <ManualPayrollDialog
+          api={api}
+          instructors={instructors}
+          onClose={() => setShowCreate(false)}
+          onCreated={async () => {
+            setShowCreate(false);
+            await load();
+          }}
+        />
       )}
     </div>
   );
@@ -435,5 +505,119 @@ function FilterSelect({
         ))}
       </select>
     </div>
+  );
+}
+
+function ManualPayrollDialog({
+  api,
+  instructors,
+  onClose,
+  onCreated,
+}: {
+  api: Api | null;
+  instructors: ApiInstructor[];
+  onClose: () => void;
+  onCreated: () => void | Promise<void>;
+}) {
+  const [instructorId, setInstructorId] = useState("");
+  const [amount, setAmount] = useState("");
+  const [label, setLabel] = useState("");
+  const [date, setDate] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+      d.getDate()
+    ).padStart(2, "0")}`;
+  });
+  const [saving, setSaving] = useState(false);
+
+  const amountNum = Number(amount);
+  const valid =
+    instructorId !== "" && amount.trim() !== "" && !Number.isNaN(amountNum) &&
+    amountNum >= 0 && label.trim() !== "" && date !== "";
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!api || !valid) return;
+    setSaving(true);
+    try {
+      await api.post("/portal/admin/payroll", {
+        instructor_id: instructorId,
+        amount_sgd: amountNum,
+        label: label.trim(),
+        entry_date: new Date(`${date}T12:00:00`).toISOString(),
+      });
+      toast.success("Payroll entry created");
+      await onCreated();
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError ? `Couldn't create (HTTP ${err.status})` : "Couldn't create",
+      );
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()} title="Create payroll entry">
+      <form className="space-y-4" onSubmit={handleSubmit}>
+        <div className="space-y-1.5">
+          <Label htmlFor="mp-instructor">Instructor</Label>
+          <Select
+            id="mp-instructor"
+            required
+            value={instructorId}
+            onChange={(e) => setInstructorId(e.target.value)}
+          >
+            <option value="">Select instructor…</option>
+            {instructors.map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.name}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="mp-amount">Amount (S$)</Label>
+          <Input
+            id="mp-amount"
+            type="number"
+            min={0}
+            step="0.01"
+            inputMode="decimal"
+            required
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="mp-label">Label</Label>
+          <Input
+            id="mp-label"
+            required
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder="e.g. Cover for Jane, Jan workshop bonus"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="mp-date">Date</Label>
+          <Input
+            id="mp-date"
+            type="date"
+            required
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+          />
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={onClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={!valid || saving}>
+            {saving ? "Creating…" : "Create"}
+          </Button>
+        </DialogFooter>
+      </form>
+    </Dialog>
   );
 }

@@ -1,7 +1,7 @@
 // Shapes for the /portal/admin/payroll surface. See be/src/routes/portal/admin/payroll.ts.
 
 export interface ApiPayrollRow {
-  kind: "class" | "pt" | "workshop";
+  kind: "class" | "pt" | "workshop" | "manual";
   id: string;
   instructor_id: string;
   instructor_name: string;
