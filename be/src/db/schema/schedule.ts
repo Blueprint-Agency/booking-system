@@ -107,6 +107,9 @@ export const classSupportingInstructors = pgTable(
     instructorId: uuid('instructor_id')
       .notNull()
       .references(() => instructors.staffUserId, { onDelete: 'restrict' }),
+    // Gross pay to this supporting instructor for this class, in SGD. Same
+    // semantics as classes.instructor_pay_sgd. NULL = not priced yet.
+    paySgd: numeric('pay_sgd', { precision: 10, scale: 2 }),
   },
   table => ({
     pk: primaryKey({ columns: [table.classId, table.instructorId] }),
@@ -233,6 +236,9 @@ export const workshopInstructors = pgTable(
       .notNull()
       .references(() => instructors.staffUserId, { onDelete: 'cascade' }),
     role: workshopInstructorRoleEnum('role').notNull(),
+    // Gross pay to this instructor for the workshop, in SGD. Same semantics as
+    // classes.instructor_pay_sgd. NULL = not priced yet.
+    paySgd: numeric('pay_sgd', { precision: 10, scale: 2 }),
   },
   table => ({
     pk: primaryKey({ columns: [table.workshopId, table.instructorId] }),
@@ -503,6 +509,29 @@ export const ptSessionClients = pgTable(
   },
   table => ({
     pk: primaryKey({ columns: [table.ptSessionId, table.clientId] }),
+  }),
+)
+
+// ============================================================================
+// pt_session_supporting_instructors (§4.3) — 0..N per PT session, mirrors
+// class_supporting_instructors. Main instructor lives on pt_sessions.instructor_id.
+// ============================================================================
+
+export const ptSessionSupportingInstructors = pgTable(
+  'pt_session_supporting_instructors',
+  {
+    ptSessionId: uuid('pt_session_id')
+      .notNull()
+      .references(() => ptSessions.id, { onDelete: 'cascade' }),
+    instructorId: uuid('instructor_id')
+      .notNull()
+      .references(() => instructors.staffUserId, { onDelete: 'restrict' }),
+    // Gross pay to this supporting instructor for this PT session, in SGD. Same
+    // semantics as classes.instructor_pay_sgd. NULL = not priced yet.
+    paySgd: numeric('pay_sgd', { precision: 10, scale: 2 }),
+  },
+  table => ({
+    pk: primaryKey({ columns: [table.ptSessionId, table.instructorId] }),
   }),
 )
 
