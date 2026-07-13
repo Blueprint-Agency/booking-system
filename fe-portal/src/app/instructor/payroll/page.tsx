@@ -148,7 +148,9 @@ export default function InstructorPayrollPage() {
                   </td>
                   <td className="px-3 py-2.5 text-muted">{formatDate(row.starts_at)}</td>
                   <td className="px-3 py-2.5 text-muted">
-                    {formatDuration(row.starts_at, row.ends_at)}
+                    {row.kind === "workshop"
+                      ? `${formatDate(row.starts_at)} – ${formatDate(row.ends_at)}`
+                      : formatDuration(row.starts_at, row.ends_at)}
                   </td>
                   <td className="px-3 py-2.5 text-right tabular-nums">
                     {row.instructor_pay_sgd == null ? (
