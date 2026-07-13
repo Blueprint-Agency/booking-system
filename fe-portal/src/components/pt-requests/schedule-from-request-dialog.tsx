@@ -287,6 +287,18 @@ export function ScheduleFromRequestDialog({
             </select>
           </div>
           <div className="space-y-1.5">
+            <Label>Instructor pay (S$)</Label>
+            <Input
+              type="number"
+              min={0}
+              step="0.01"
+              inputMode="decimal"
+              placeholder="Optional"
+              value={instructorPay}
+              onChange={(e) => setInstructorPay(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
             <Label>Location</Label>
             <select
               value={locationId}
@@ -316,18 +328,6 @@ export function ScheduleFromRequestDialog({
                 </option>
               ))}
             </select>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Instructor pay (S$)</Label>
-            <Input
-              type="number"
-              min={0}
-              step="0.01"
-              inputMode="decimal"
-              placeholder="Optional"
-              value={instructorPay}
-              onChange={(e) => setInstructorPay(e.target.value)}
-            />
           </div>
         </div>
         {err && (
