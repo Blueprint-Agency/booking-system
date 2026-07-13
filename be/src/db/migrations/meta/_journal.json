@@ -50,6 +50,13 @@
       "when": 1783939298612,
       "tag": "0006_striped_black_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783953149401,
+      "tag": "0007_noisy_next_avengers",
+      "breakpoints": true
     }
   ]
 }

@@ -675,6 +675,36 @@ export const corporateRequests = pgTable(
 //     ADD CONSTRAINT corporate_sessions_corporate_request_fk
 //     FOREIGN KEY (corporate_request_id) REFERENCES corporate_requests(id)
 //     ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED;
+
+// ============================================================================
+// manual_payroll_entries (NEW — admin ad-hoc pay lines: bonus/adjustment/one-off
+// not tied to a class/PT/workshop). Folded into the payroll list as kind='manual'.
+// ============================================================================
+
+export const manualPayrollEntries = pgTable(
+  'manual_payroll_entries',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    instructorId: uuid('instructor_id')
+      .notNull()
+      .references(() => instructors.staffUserId, { onDelete: 'restrict' }),
+    amountSgd: numeric('amount_sgd', { precision: 10, scale: 2 }).notNull(),
+    // What the payment is for, e.g. "Q2 bonus" — shown as the payroll row's label.
+    label: text('label').notNull(),
+    // Used for payroll period filtering (like starts_at on other rows).
+    entryDate: timestamp('entry_date', { withTimezone: true }).notNull(),
+    createdByStaffId: uuid('created_by_staff_id')
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: 'restrict' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  table => ({
+    instructorEntryDateIdx: index('manual_payroll_entries_instructor_entry_date_idx').on(
+      table.instructorId,
+      table.entryDate,
+    ),
+  }),
+)
 //
 // The DEFERRABLE clause lets scheduleCorporateRequest() insert the session and update
 // the request's scheduled_corporate_session_id inside a single transaction.

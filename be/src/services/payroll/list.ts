@@ -27,6 +27,7 @@ import {
   workshops,
   workshopDays,
   workshopInstructors,
+  manualPayrollEntries,
 } from '../../db/schema/schedule'
 import { classTypes } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
@@ -42,7 +43,7 @@ export interface PayrollFilter {
 }
 
 export interface PayrollRow {
-  kind: 'class' | 'pt' | 'workshop'
+  kind: 'class' | 'pt' | 'workshop' | 'manual'
   /** The session/workshop id — shared by every instructor row for that event. */
   id: string
   instructorId: string
@@ -209,12 +210,47 @@ export async function listPayroll(filter: PayrollFilter): Promise<PayrollRow[]> 
       .having(sql.join(havingParts, sql` AND `))
   }
 
+  // -- manual payroll entries (NEW payroll source) ----------------------------
+  // Ad-hoc bonus/adjustment/one-off lines, not tied to a class/PT/workshop —
+  // like workshops, they have no class_type, so a class_type_id filter simply
+  // excludes them. entry_date stands in for both starts_at and ends_at.
+  let manualRows: {
+    id: string
+    instructorId: string
+    instructorName: string
+    label: string
+    instructorPaySgd: string | null
+    startsAt: Date
+    endsAt: Date
+  }[] = []
+  if (!filter.classTypeId) {
+    const manualConds = []
+    if (filter.instructorId) manualConds.push(eq(manualPayrollEntries.instructorId, filter.instructorId))
+    if (filter.from) manualConds.push(gte(manualPayrollEntries.entryDate, filter.from))
+    if (filter.to) manualConds.push(lte(manualPayrollEntries.entryDate, filter.to))
+
+    manualRows = await db
+      .select({
+        id: manualPayrollEntries.id,
+        instructorId: manualPayrollEntries.instructorId,
+        instructorName: staffUsers.name,
+        label: manualPayrollEntries.label,
+        instructorPaySgd: manualPayrollEntries.amountSgd,
+        startsAt: manualPayrollEntries.entryDate,
+        endsAt: manualPayrollEntries.entryDate,
+      })
+      .from(manualPayrollEntries)
+      .innerJoin(staffUsers, eq(staffUsers.id, manualPayrollEntries.instructorId))
+      .where(manualConds.length ? and(...manualConds) : undefined)
+  }
+
   const rows: PayrollRow[] = [
     ...classRows.map(r => ({ ...r, kind: 'class' as const, sessionType: null })),
     ...classSupportingRows.map(r => ({ ...r, kind: 'class' as const, sessionType: null })),
     ...ptRows.map(r => ({ ...r, kind: 'pt' as const })),
     ...ptSupportingRows.map(r => ({ ...r, kind: 'pt' as const })),
     ...workshopRows.map(r => ({ ...r, kind: 'workshop' as const, classTypeId: null, sessionType: null })),
+    ...manualRows.map(r => ({ ...r, kind: 'manual' as const, classTypeId: null, sessionType: null })),
   ]
   rows.sort((a, b) => b.startsAt.getTime() - a.startsAt.getTime())
   return rows
@@ -238,12 +274,22 @@ export interface UpdatePayrollResult {
  * matching supporting-instructor join row.
  */
 export async function updatePayrollAmount(
-  kind: 'class' | 'pt' | 'workshop',
+  kind: 'class' | 'pt' | 'workshop' | 'manual',
   id: string,
   amount: number | null,
   instructorId?: string,
 ): Promise<UpdatePayrollResult> {
   const value = amount == null ? null : amount.toFixed(2)
+
+  if (kind === 'manual') {
+    if (value == null) throw new BadRequestError('manual_amount_required')
+    const rows = await db
+      .update(manualPayrollEntries)
+      .set({ amountSgd: value })
+      .where(eq(manualPayrollEntries.id, id))
+      .returning({ id: manualPayrollEntries.id })
+    return { ok: rows.length > 0 }
+  }
 
   if (kind === 'workshop') {
     if (!instructorId) throw new BadRequestError('instructor_id_required')
@@ -314,5 +360,37 @@ export async function updatePayrollAmount(
     .set({ instructorPaySgd: value })
     .where(eq(ptSessions.id, id))
     .returning({ id: ptSessions.id })
+  return { ok: rows.length > 0 }
+}
+
+export interface CreateManualPayrollInput {
+  instructorId: string
+  amountSgd: number
+  label: string
+  entryDate: Date
+}
+
+/** Ad-hoc pay line for an instructor — bonus/adjustment/one-off not tied to a session. */
+export async function createManualPayroll(input: CreateManualPayrollInput, actorStaffId: string) {
+  const rows = await db
+    .insert(manualPayrollEntries)
+    .values({
+      instructorId: input.instructorId,
+      amountSgd: input.amountSgd.toFixed(2),
+      label: input.label,
+      entryDate: input.entryDate,
+      createdByStaffId: actorStaffId,
+    })
+    .returning()
+  const row = rows[0]
+  if (!row) throw new Error('insert returned no rows')
+  return row
+}
+
+export async function deleteManualPayroll(id: string): Promise<UpdatePayrollResult> {
+  const rows = await db
+    .delete(manualPayrollEntries)
+    .where(eq(manualPayrollEntries.id, id))
+    .returning({ id: manualPayrollEntries.id })
   return { ok: rows.length > 0 }
 }
