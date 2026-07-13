@@ -41,6 +41,7 @@ export interface ClassDetail {
   difficulty: ClassDifficulty
   instructor: NamedRef | null
   mainInstructorId: string
+  instructorPaySgd: number | null
   supportingInstructorIds: string[]
   supportingInstructors: (NamedRef & { paySgd: number | null })[]
   location: NamedRef | null
@@ -68,6 +69,7 @@ export async function getClassDetail(id: string): Promise<ClassDetail> {
       capacityWaitlist: classes.capacityWaitlist,
       capacityBuffer: classes.capacityBuffer,
       creditCost: classes.creditCost,
+      instructorPaySgd: classes.instructorPaySgd,
       classTypeId: classes.classTypeId,
       classTypeName: classTypes.name,
       difficulty: classTypes.difficulty,
@@ -148,6 +150,7 @@ export async function getClassDetail(id: string): Promise<ClassDetail> {
     difficulty: row.difficulty as ClassDifficulty,
     instructor: row.instructorName ? { id: row.instructorId, name: row.instructorName } : null,
     mainInstructorId: row.instructorId,
+    instructorPaySgd: row.instructorPaySgd == null ? null : Number(row.instructorPaySgd),
     supportingInstructorIds,
     supportingInstructors,
     location: row.locationName ? { id: row.locationId, name: row.locationName } : null,

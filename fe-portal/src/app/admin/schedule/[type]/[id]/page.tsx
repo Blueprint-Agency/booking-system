@@ -20,6 +20,12 @@ interface ApiInstructor {
   name: string;
 }
 
+interface ApiClassType {
+  id: string;
+  name: string;
+  archived_at: string | null;
+}
+
 interface ApiWorkshopDay {
   id: string;
   ord: number;
@@ -71,8 +77,9 @@ interface ApiClassDetail {
   difficulty: ClassDifficulty;
   instructor: NamedRef | null;
   main_instructor_id: string | null;
+  instructor_pay_sgd: number | null;
   supporting_instructor_ids: string[];
-  supporting_instructors: NamedRef[];
+  supporting_instructors: (NamedRef & { pay_sgd: number | null })[];
   instructor_ids: string[];
   location: NamedRef | null;
   room: NamedRef | null;
@@ -137,6 +144,8 @@ function ClassDetail({ id }: { id: string }) {
   const { api } = useWorkspace();
   const [data, setData] = useState<ApiClassDetail | null>(null);
   const [instructors, setInstructors] = useState<ApiInstructor[]>([]);
+  const [classTypes, setClassTypes] = useState<ApiClassType[]>([]);
+  const [rooms, setRooms] = useState<ApiRoom[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [cancelBusy, setCancelBusy] = useState(false);
@@ -147,14 +156,18 @@ function ClassDetail({ id }: { id: string }) {
     setLoading(true);
     setError(null);
     try {
-      const [d, ins] = await Promise.all([
+      const [d, ins, ct, rm] = await Promise.all([
         api.get<ApiClassDetail>(`/portal/admin/schedule/classes/${id}`),
         api.get<{ instructors: Array<ApiInstructor & { archived_at?: string | null }> }>(
           "/portal/admin/instructors",
         ),
+        api.get<{ class_types: ApiClassType[] }>("/portal/admin/class-types"),
+        api.get<{ rooms: ApiRoom[] }>("/portal/admin/rooms"),
       ]);
       setData(d);
       setInstructors(ins.instructors.filter((i) => !i.archived_at));
+      setClassTypes(ct.class_types);
+      setRooms(rm.rooms);
     } catch (err) {
       setError(detailError(err, "Class not found."));
     } finally {
@@ -263,12 +276,11 @@ function ClassDetail({ id }: { id: string }) {
         startsAt={data.starts_at}
         cancelled={data.lifecycle === "cancelled"}
       />
-      <ClassInstructorEditor
-        classId={data.id}
+      <ClassEditor
+        data={data}
         instructors={instructors}
-        initialMainId={data.main_instructor_id ?? ""}
-        initialSupportingIds={data.supporting_instructor_ids ?? []}
-        disabled={data.lifecycle === "cancelled"}
+        classTypes={classTypes}
+        rooms={rooms}
         onSaved={load}
       />
     </DetailFrame>
@@ -411,66 +423,136 @@ function ClassRoster({
   );
 }
 
-function ClassInstructorEditor({
-  classId,
+interface SupportingRow {
+  instructorId: string;
+  pay: string;
+}
+
+function classErrorMessage(err: unknown): string {
+  if (!(err instanceof ApiError)) return "Network error";
+  const body = (err.body as { error?: string } | null) ?? null;
+  if (err.status === 409 && body?.error === "room_clash") {
+    return "That room is already booked for an overlapping time. Pick another room or time.";
+  }
+  if (err.status === 400 && body?.error === "room_location_mismatch") {
+    return "That room belongs to a different location.";
+  }
+  return `Save failed (HTTP ${err.status}).`;
+}
+
+function ClassEditor({
+  data,
   instructors,
-  initialMainId,
-  initialSupportingIds,
-  disabled,
+  classTypes,
+  rooms,
   onSaved,
 }: {
-  classId: string;
+  data: ApiClassDetail;
   instructors: ApiInstructor[];
-  initialMainId: string;
-  initialSupportingIds: string[];
-  disabled: boolean;
+  classTypes: ApiClassType[];
+  rooms: ApiRoom[];
   onSaved: () => void | Promise<void>;
 }) {
-  const { api } = useWorkspace();
-  const [mainInstructorId, setMainInstructorId] = useState(initialMainId);
-  const [supportingInstructorIds, setSupportingInstructorIds] =
-    useState<string[]>(initialSupportingIds);
+  const { api, accessibleLocations } = useWorkspace();
+  const disabled = data.lifecycle === "cancelled";
+
+  const [classTypeId, setClassTypeId] = useState(data.class_type?.id ?? "");
+  const [mainInstructorId, setMainInstructorId] = useState(data.main_instructor_id ?? "");
+  const [mainPay, setMainPay] = useState(
+    data.instructor_pay_sgd == null ? "" : String(data.instructor_pay_sgd),
+  );
+  const [supporting, setSupporting] = useState<SupportingRow[]>(
+    data.supporting_instructors.map((s) => ({
+      instructorId: s.id,
+      pay: s.pay_sgd == null ? "" : String(s.pay_sgd),
+    })),
+  );
+  const [locationId, setLocationId] = useState(data.location?.id ?? "");
+  const [roomId, setRoomId] = useState(data.room?.id ?? "");
+  const [date, setDate] = useState(data.starts_at.slice(0, 10));
+  const [startTime, setStartTime] = useState(toHHMM(data.starts_at));
+  const [endTime, setEndTime] = useState(toHHMM(data.ends_at));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
-  // Re-sync if parent reloads.
-  useEffect(() => setMainInstructorId(initialMainId), [initialMainId]);
-  useEffect(
-    () => setSupportingInstructorIds(initialSupportingIds),
-    [initialSupportingIds],
-  );
+  // Re-sync when the parent reloads the class.
+  useEffect(() => {
+    setClassTypeId(data.class_type?.id ?? "");
+    setMainInstructorId(data.main_instructor_id ?? "");
+    setMainPay(data.instructor_pay_sgd == null ? "" : String(data.instructor_pay_sgd));
+    setSupporting(
+      data.supporting_instructors.map((s) => ({
+        instructorId: s.id,
+        pay: s.pay_sgd == null ? "" : String(s.pay_sgd),
+      })),
+    );
+    setLocationId(data.location?.id ?? "");
+    setRoomId(data.room?.id ?? "");
+    setDate(data.starts_at.slice(0, 10));
+    setStartTime(toHHMM(data.starts_at));
+    setEndTime(toHHMM(data.ends_at));
+  }, [data]);
 
-  // Drop any supporting that overlaps the main.
+  // Drop any supporting row that overlaps the main instructor.
   useEffect(() => {
     if (!mainInstructorId) return;
-    setSupportingInstructorIds((prev) => prev.filter((sid) => sid !== mainInstructorId));
+    setSupporting((prev) => prev.filter((s) => s.instructorId !== mainInstructorId));
   }, [mainInstructorId]);
 
+  const activeLocations = useMemo(
+    () => accessibleLocations.filter((l) => !l.archivedAt),
+    [accessibleLocations],
+  );
+  const roomsForLocation = useMemo(
+    () => rooms.filter((r) => !r.archived_at && r.location_id === locationId),
+    [rooms, locationId],
+  );
+  const activeClassTypes = useMemo(
+    () => classTypes.filter((c) => !c.archived_at),
+    [classTypes],
+  );
   const availableForSupporting = useMemo(
     () =>
       instructors.filter(
-        (i) => i.id !== mainInstructorId && !supportingInstructorIds.includes(i.id),
+        (i) => i.id !== mainInstructorId && !supporting.some((s) => s.instructorId === i.id),
       ),
-    [instructors, mainInstructorId, supportingInstructorIds],
+    [instructors, mainInstructorId, supporting],
   );
 
-  const dirty =
-    mainInstructorId !== initialMainId ||
-    supportingInstructorIds.length !== initialSupportingIds.length ||
-    supportingInstructorIds.some((s, i) => s !== initialSupportingIds[i]);
+  // Clear the selected room if it no longer belongs to the chosen location.
+  useEffect(() => {
+    if (roomId && !roomsForLocation.some((r) => r.id === roomId)) setRoomId("");
+  }, [roomId, roomsForLocation]);
 
   async function handleSave() {
-    if (!api || !mainInstructorId) return;
+    if (!api) return;
+    if (!classTypeId || !mainInstructorId || !locationId || !roomId) return;
+    if (!date || !startTime || !endTime) return;
+    const startsAt = new Date(`${date}T${startTime}:00`);
+    const endsAt = new Date(`${date}T${endTime}:00`);
+    if (endsAt <= startsAt) {
+      setErr("End time must be after start time.");
+      return;
+    }
     setSaving(true);
     setErr(null);
     try {
-      await api.patch(`/portal/admin/schedule/classes/${classId}`, {
+      await api.patch(`/portal/admin/schedule/classes/${data.id}`, {
+        class_type_id: classTypeId,
         main_instructor_id: mainInstructorId,
-        supporting_instructor_ids: supportingInstructorIds,
+        instructor_pay_sgd: mainPay.trim() === "" ? null : Number(mainPay),
+        supporting_instructors: supporting.map((s) => ({
+          instructor_id: s.instructorId,
+          pay_sgd: s.pay.trim() === "" ? null : Number(s.pay),
+        })),
+        location_id: locationId,
+        room_id: roomId,
+        starts_at: startsAt.toISOString(),
+        ends_at: endsAt.toISOString(),
       });
       await onSaved();
     } catch (e) {
-      setErr(e instanceof ApiError ? `Save failed (HTTP ${e.status}).` : "Save failed.");
+      setErr(classErrorMessage(e));
     } finally {
       setSaving(false);
     }
@@ -478,8 +560,26 @@ function ClassInstructorEditor({
 
   return (
     <section className="mt-6 rounded-xl border border-border bg-card p-5 shadow-soft">
-      <h2 className="mb-3 text-sm font-semibold text-ink">Instructors</h2>
+      <h2 className="mb-4 text-sm font-semibold text-ink">Edit class</h2>
       <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label htmlFor="cls-type">Class type</Label>
+          <select
+            id="cls-type"
+            value={classTypeId}
+            disabled={disabled || saving}
+            onChange={(e) => setClassTypeId(e.target.value)}
+            className="flex h-10 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+          >
+            <option value="">Select…</option>
+            {activeClassTypes.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div />
         <div className="space-y-1.5">
           <Label htmlFor="cls-main-ins">Main instructor</Label>
           <select
@@ -498,22 +598,55 @@ function ClassInstructorEditor({
           </select>
         </div>
         <div className="space-y-1.5">
+          <Label htmlFor="cls-main-pay">Main instructor pay (S$)</Label>
+          <Input
+            id="cls-main-pay"
+            type="number"
+            min={0}
+            step="0.01"
+            inputMode="decimal"
+            placeholder="Optional"
+            value={mainPay}
+            disabled={disabled || saving}
+            onChange={(e) => setMainPay(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5 sm:col-span-2">
           <Label>Supporting instructors</Label>
           <div className="flex flex-wrap items-center gap-2">
-            {supportingInstructorIds.map((sid) => {
-              const name = instructors.find((i) => i.id === sid)?.name ?? "Unknown";
+            {supporting.map((s) => {
+              const name = instructors.find((i) => i.id === s.instructorId)?.name ?? "Unknown";
               return (
                 <span
-                  key={sid}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 px-2.5 py-1 text-xs text-ink"
+                  key={s.instructorId}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 py-1 pl-2.5 pr-1.5 text-xs text-ink"
                 >
                   {name}
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    inputMode="decimal"
+                    placeholder="S$"
+                    value={s.pay}
+                    disabled={disabled || saving}
+                    onChange={(e) =>
+                      setSupporting((prev) =>
+                        prev.map((row) =>
+                          row.instructorId === s.instructorId
+                            ? { ...row, pay: e.target.value }
+                            : row,
+                        ),
+                      )
+                    }
+                    className="h-6 w-16 rounded border border-border bg-card px-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+                  />
                   <button
                     type="button"
                     disabled={disabled || saving}
                     onClick={() =>
-                      setSupportingInstructorIds((prev) =>
-                        prev.filter((x) => x !== sid),
+                      setSupporting((prev) =>
+                        prev.filter((row) => row.instructorId !== s.instructorId),
                       )
                     }
                     className="text-muted hover:text-ink disabled:opacity-50"
@@ -530,14 +663,12 @@ function ClassInstructorEditor({
                 disabled={saving}
                 onChange={(e) => {
                   const v = e.target.value;
-                  if (v) setSupportingInstructorIds((prev) => [...prev, v]);
+                  if (v) setSupporting((prev) => [...prev, { instructorId: v, pay: "" }]);
                 }}
                 className="flex h-9 rounded-lg border border-border bg-card px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
               >
                 <option value="">
-                  {supportingInstructorIds.length === 0
-                    ? "+ Add supporting instructor"
-                    : "+ Add another"}
+                  {supporting.length === 0 ? "+ Add supporting instructor" : "+ Add another"}
                 </option>
                 {availableForSupporting.map((i) => (
                   <option key={i.id} value={i.id}>
@@ -546,10 +677,74 @@ function ClassInstructorEditor({
                 ))}
               </select>
             )}
-            {supportingInstructorIds.length === 0 && availableForSupporting.length === 0 && (
+            {supporting.length === 0 && availableForSupporting.length === 0 && (
               <span className="text-xs text-muted">No additional instructors available.</span>
             )}
           </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="cls-loc">Location</Label>
+          <select
+            id="cls-loc"
+            value={locationId}
+            disabled={disabled || saving}
+            onChange={(e) => setLocationId(e.target.value)}
+            className="flex h-10 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+          >
+            <option value="">Select…</option>
+            {activeLocations.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="cls-room">Room</Label>
+          <select
+            id="cls-room"
+            value={roomId}
+            disabled={disabled || saving || !locationId}
+            onChange={(e) => setRoomId(e.target.value)}
+            className="flex h-10 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+          >
+            <option value="">{locationId ? "Select…" : "Pick a location first"}</option>
+            {roomsForLocation.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="cls-d">Date</Label>
+          <Input
+            id="cls-d"
+            type="date"
+            value={date}
+            disabled={disabled || saving}
+            onChange={(e) => setDate(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="cls-s">Start time</Label>
+          <Input
+            id="cls-s"
+            type="time"
+            value={startTime}
+            disabled={disabled || saving}
+            onChange={(e) => setStartTime(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="cls-e">End time</Label>
+          <Input
+            id="cls-e"
+            type="time"
+            value={endTime}
+            disabled={disabled || saving}
+            onChange={(e) => setEndTime(e.target.value)}
+          />
         </div>
       </div>
       {err && (
@@ -557,20 +752,22 @@ function ClassInstructorEditor({
           {err}
         </p>
       )}
-      <div className="mt-4 flex justify-end">
-        <Button
-          size="sm"
-          onClick={handleSave}
-          disabled={disabled || saving || !dirty || !mainInstructorId}
-        >
-          {saving ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <Save className="h-4 w-4" />
-          )}
-          Save instructors
-        </Button>
-      </div>
+      {!disabled && (
+        <div className="mt-4 flex justify-end">
+          <Button
+            size="sm"
+            onClick={handleSave}
+            disabled={saving || !classTypeId || !mainInstructorId || !locationId || !roomId}
+          >
+            {saving ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+            Save changes
+          </Button>
+        </div>
+      )}
     </section>
   );
 }
