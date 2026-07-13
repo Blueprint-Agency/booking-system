@@ -42,7 +42,7 @@ export interface ClassDetail {
   instructor: NamedRef | null
   mainInstructorId: string
   supportingInstructorIds: string[]
-  supportingInstructors: NamedRef[]
+  supportingInstructors: (NamedRef & { paySgd: number | null })[]
   location: NamedRef | null
   room: NamedRef | null
   capacityOnline: number
@@ -122,12 +122,20 @@ export async function getClassDetail(id: string): Promise<ClassDetail> {
   }))
 
   const supportingRows = await db
-    .select({ instructorId: classSupportingInstructors.instructorId, name: staffUsers.name })
+    .select({
+      instructorId: classSupportingInstructors.instructorId,
+      name: staffUsers.name,
+      paySgd: classSupportingInstructors.paySgd,
+    })
     .from(classSupportingInstructors)
     .leftJoin(staffUsers, eq(staffUsers.id, classSupportingInstructors.instructorId))
     .where(eq(classSupportingInstructors.classId, id))
   const supportingInstructors = supportingRows
-    .map(r => ({ id: r.instructorId, name: r.name ?? 'Instructor' }))
+    .map(r => ({
+      id: r.instructorId,
+      name: r.name ?? 'Instructor',
+      paySgd: r.paySgd == null ? null : Number(r.paySgd),
+    }))
     .sort((a, b) => a.id.localeCompare(b.id))
   const supportingInstructorIds = supportingInstructors.map(s => s.id)
 

@@ -67,6 +67,25 @@ function normalizeSupporting(
   return supports
 }
 
+export interface SupportingInstructorInput {
+  instructorId: string
+  /** null/undefined = unpriced. */
+  paySgd?: number | null
+}
+
+function normalizeSupportingWithPay(
+  mainInstructorId: string,
+  supports: SupportingInstructorInput[] | undefined,
+): { instructorId: string; paySgd: number | null }[] {
+  const byId = new Map<string, number | null>()
+  for (const s of supports ?? []) byId.set(s.instructorId, s.paySgd ?? null)
+  const result = Array.from(byId, ([instructorId, paySgd]) => ({ instructorId, paySgd }))
+  if (result.some(r => r.instructorId === mainInstructorId)) {
+    throw new Error('main instructor cannot also appear in supportingInstructorIds')
+  }
+  return result
+}
+
 export async function createClass(input: CreateClassInput): Promise<ClassRow> {
   await assertRoomInLocation(input.roomId, input.locationId)
   await assertRoomAvailable(input.roomId, input.startsAt, input.endsAt)
@@ -107,7 +126,7 @@ export async function createClass(input: CreateClassInput): Promise<ClassRow> {
 export interface UpdateClassInput {
   classTypeId?: string
   mainInstructorId?: string
-  supportingInstructorIds?: string[]
+  supportingInstructors?: SupportingInstructorInput[]
   locationId?: string
   roomId?: string
   startsAt?: Date
@@ -141,10 +160,10 @@ export async function updateClass(id: string, patch: UpdateClassInput): Promise<
     }
   }
 
-  let supports: string[] | undefined
-  if (patch.supportingInstructorIds !== undefined) {
+  let supports: { instructorId: string; paySgd: number | null }[] | undefined
+  if (patch.supportingInstructors !== undefined) {
     const mainForCheck = patch.mainInstructorId ?? existing.mainInstructorId
-    supports = normalizeSupporting(mainForCheck, patch.supportingInstructorIds)
+    supports = normalizeSupportingWithPay(mainForCheck, patch.supportingInstructors)
   } else if (patch.mainInstructorId !== undefined) {
     // If main changes but supporting list is not provided, ensure new main isn't in existing supporting set.
     const existingSupports = await listSupportingInstructorIds(id)
@@ -156,7 +175,7 @@ export async function updateClass(id: string, patch: UpdateClassInput): Promise<
   return db.transaction(async tx => {
     const idsToEnsure: string[] = []
     if (patch.mainInstructorId !== undefined) idsToEnsure.push(patch.mainInstructorId)
-    if (supports !== undefined) idsToEnsure.push(...supports)
+    if (supports !== undefined) idsToEnsure.push(...supports.map(s => s.instructorId))
     if (idsToEnsure.length > 0) {
       await ensureInstructorRows(tx as unknown as typeof db, idsToEnsure)
     }
@@ -189,7 +208,11 @@ export async function updateClass(id: string, patch: UpdateClassInput): Promise<
         .where(eq(classSupportingInstructors.classId, id))
       if (supports.length > 0) {
         await tx.insert(classSupportingInstructors).values(
-          supports.map(instructorId => ({ classId: id, instructorId })),
+          supports.map(s => ({
+            classId: id,
+            instructorId: s.instructorId,
+            paySgd: s.paySgd == null ? null : s.paySgd.toFixed(2),
+          })),
         )
       }
     }
@@ -203,4 +226,19 @@ export async function listSupportingInstructorIds(classId: string): Promise<stri
     .from(classSupportingInstructors)
     .where(eq(classSupportingInstructors.classId, classId))
   return rows.map(r => r.instructorId).sort()
+}
+
+export async function listSupportingInstructors(
+  classId: string,
+): Promise<{ instructorId: string; paySgd: number | null }[]> {
+  const rows = await db
+    .select({
+      instructorId: classSupportingInstructors.instructorId,
+      paySgd: classSupportingInstructors.paySgd,
+    })
+    .from(classSupportingInstructors)
+    .where(eq(classSupportingInstructors.classId, classId))
+  return rows
+    .map(r => ({ instructorId: r.instructorId, paySgd: r.paySgd == null ? null : Number(r.paySgd) }))
+    .sort((a, b) => a.instructorId.localeCompare(b.instructorId))
 }

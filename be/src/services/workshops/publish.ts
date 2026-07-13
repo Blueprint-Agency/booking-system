@@ -36,6 +36,29 @@ function normalizeSupporting(
   return supports
 }
 
+export interface WorkshopInstructorInput {
+  instructorId: string
+  /** null/undefined = unpriced. */
+  paySgd?: number | null
+}
+
+function normalizeSupportingWithPay(
+  mainInstructorId: string,
+  supports: WorkshopInstructorInput[] | undefined,
+): { instructorId: string; paySgd: number | null }[] {
+  const byId = new Map<string, number | null>()
+  for (const s of supports ?? []) byId.set(s.instructorId, s.paySgd ?? null)
+  const result = Array.from(byId, ([instructorId, paySgd]) => ({ instructorId, paySgd }))
+  if (result.some(r => r.instructorId === mainInstructorId)) {
+    throw new BadRequestError('main_instructor_cannot_be_supporting')
+  }
+  return result
+}
+
+function toNumeric(n: number | null): string | null {
+  return n == null ? null : n.toFixed(2)
+}
+
 async function ensureLocation(id: string) {
   const [r] = await db
     .select({ id: locations.id })
@@ -120,7 +143,9 @@ export interface UpdateWorkshopInput {
   descriptionHtml?: string | null
   coverR2Key?: string | null
   mainInstructorId?: string
-  supportingInstructorIds?: string[]
+  /** undefined = leave unchanged; null = clear; number = set (SGD). Only applies when the main instructor row is touched. */
+  mainInstructorPaySgd?: number | null
+  supportingInstructors?: WorkshopInstructorInput[]
   imageR2Keys?: string[]
 }
 
@@ -139,31 +164,45 @@ export async function updateWorkshop(id: string, patch: UpdateWorkshopInput): Pr
 
   // Resolve the instructor roster shape we're going to write, if any touch was requested.
   const touchingInstructors =
-    patch.mainInstructorId !== undefined || patch.supportingInstructorIds !== undefined
+    patch.mainInstructorId !== undefined ||
+    patch.supportingInstructors !== undefined ||
+    patch.mainInstructorPaySgd !== undefined
 
   let resolvedMainId: string | null = null
-  let resolvedSupports: string[] = []
+  let resolvedMainPaySgd: number | null = null
+  let resolvedSupports: { instructorId: string; paySgd: number | null }[] = []
   if (touchingInstructors) {
+    const [currentMain] = await db
+      .select({ id: workshopInstructors.instructorId, paySgd: workshopInstructors.paySgd })
+      .from(workshopInstructors)
+      .where(and(eq(workshopInstructors.workshopId, id), eq(workshopInstructors.role, 'main')))
+      .limit(1)
+
     if (patch.mainInstructorId !== undefined) {
       resolvedMainId = patch.mainInstructorId
+      // New main instructor and no explicit pay given → unpriced, don't carry
+      // over the previous main's dollar amount to a different person.
+      resolvedMainPaySgd =
+        patch.mainInstructorPaySgd !== undefined ? patch.mainInstructorPaySgd ?? null : null
     } else {
-      // Re-use existing main when only supporting list is being patched.
-      const [currentMain] = await db
-        .select({ id: workshopInstructors.instructorId })
-        .from(workshopInstructors)
-        .where(and(eq(workshopInstructors.workshopId, id), eq(workshopInstructors.role, 'main')))
-        .limit(1)
+      // Re-use existing main when only supporting list / pay is being patched.
       if (!currentMain) throw new BadRequestError('workshop_has_no_main_instructor')
       resolvedMainId = currentMain.id
+      resolvedMainPaySgd =
+        patch.mainInstructorPaySgd !== undefined
+          ? patch.mainInstructorPaySgd ?? null
+          : currentMain.paySgd == null
+            ? null
+            : Number(currentMain.paySgd)
     }
     if (!resolvedMainId) throw new BadRequestError('main_instructor_id_required')
 
     const supportsInput =
-      patch.supportingInstructorIds !== undefined
-        ? patch.supportingInstructorIds
+      patch.supportingInstructors !== undefined
+        ? patch.supportingInstructors
         : (
             await db
-              .select({ id: workshopInstructors.instructorId })
+              .select({ id: workshopInstructors.instructorId, paySgd: workshopInstructors.paySgd })
               .from(workshopInstructors)
               .where(
                 and(
@@ -171,9 +210,12 @@ export async function updateWorkshop(id: string, patch: UpdateWorkshopInput): Pr
                   eq(workshopInstructors.role, 'supporting'),
                 ),
               )
-          ).map(r => r.id)
-    resolvedSupports = normalizeSupporting(resolvedMainId, supportsInput)
-    await ensureInstructors([resolvedMainId, ...resolvedSupports])
+          ).map(r => ({
+            instructorId: r.id,
+            paySgd: r.paySgd == null ? null : Number(r.paySgd),
+          }))
+    resolvedSupports = normalizeSupportingWithPay(resolvedMainId, supportsInput)
+    await ensureInstructors([resolvedMainId, ...resolvedSupports.map(s => s.instructorId)])
   }
 
   await db.transaction(async tx => {
@@ -189,11 +231,17 @@ export async function updateWorkshop(id: string, patch: UpdateWorkshopInput): Pr
     if (touchingInstructors && resolvedMainId) {
       await tx.delete(workshopInstructors).where(eq(workshopInstructors.workshopId, id))
       await tx.insert(workshopInstructors).values([
-        { workshopId: id, instructorId: resolvedMainId, role: 'main' as const },
-        ...resolvedSupports.map(instructorId => ({
+        {
           workshopId: id,
-          instructorId,
+          instructorId: resolvedMainId,
+          role: 'main' as const,
+          paySgd: toNumeric(resolvedMainPaySgd),
+        },
+        ...resolvedSupports.map(s => ({
+          workshopId: id,
+          instructorId: s.instructorId,
           role: 'supporting' as const,
+          paySgd: toNumeric(s.paySgd),
         })),
       ])
     }

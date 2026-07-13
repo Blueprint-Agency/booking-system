@@ -40,12 +40,22 @@ const createBasicsSchema = z.object({
   image_r2_keys: z.array(z.string().max(500)).default([]),
 })
 
+const workshopInstructorSchema = z.object({
+  instructor_id: z.string().uuid(),
+  pay_sgd: z.number().min(0).nullable().optional(),
+})
+
 const updateBasicsSchema = z.object({
   name: z.string().min(1).max(200).optional(),
   location_id: z.string().uuid().optional(),
   description_html: z.string().max(20000).nullish().optional(),
   cover_r2_key: z.string().max(500).nullish().optional(),
   main_instructor_id: z.string().uuid().optional(),
+  main_instructor_pay_sgd: z.number().min(0).nullable().optional(),
+  // New shape (per-instructor pay). `supporting_instructor_ids` (bare id array,
+  // pay defaults to null) is kept for back-compat until the frontend edit UI
+  // task lands — only one of the two may be sent.
+  supporting_instructors: z.array(workshopInstructorSchema).optional(),
   supporting_instructor_ids: z.array(z.string().uuid()).optional(),
   image_r2_keys: z.array(z.string().max(500)).optional(),
 })
@@ -223,6 +233,20 @@ const app = new Hono()
   .patch('/:id', zValidator('param', idParam), zValidator('json', updateBasicsSchema), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
+    // Back-compat: bare `supporting_instructor_ids` (old shape, pay defaults
+    // to null) still works alongside the new `supporting_instructors` shape.
+    let supportingInstructors: publish.WorkshopInstructorInput[] | undefined
+    if (body.supporting_instructors !== undefined) {
+      supportingInstructors = body.supporting_instructors.map(s => ({
+        instructorId: s.instructor_id,
+        paySgd: s.pay_sgd ?? null,
+      }))
+    } else if (body.supporting_instructor_ids !== undefined) {
+      supportingInstructors = body.supporting_instructor_ids.map(instructorId => ({
+        instructorId,
+        paySgd: null,
+      }))
+    }
     const row = await publish.updateWorkshop(id, {
       ...(body.name !== undefined ? { name: body.name } : {}),
       ...(body.location_id !== undefined ? { locationId: body.location_id } : {}),
@@ -231,9 +255,10 @@ const app = new Hono()
       ...(body.main_instructor_id !== undefined
         ? { mainInstructorId: body.main_instructor_id }
         : {}),
-      ...(body.supporting_instructor_ids !== undefined
-        ? { supportingInstructorIds: body.supporting_instructor_ids }
+      ...(body.main_instructor_pay_sgd !== undefined
+        ? { mainInstructorPaySgd: body.main_instructor_pay_sgd }
         : {}),
+      ...(supportingInstructors !== undefined ? { supportingInstructors } : {}),
       ...(body.image_r2_keys !== undefined ? { imageR2Keys: body.image_r2_keys } : {}),
     })
     c.set('auditTarget' as any, { table: 'workshops', id })

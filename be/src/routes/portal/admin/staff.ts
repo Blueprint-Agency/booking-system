@@ -8,11 +8,26 @@ import {
   isSeededSuperadminEmail,
   softDeleteStaff,
   unarchiveStaff,
+  updateStaffProfile,
 } from '../../../services/auth/staff-archive'
 
 const inviteSchema = z.object({
   email: z.string().email().max(254),
   role: z.enum(['admin', 'superadmin', 'instructor']).optional(), // default 'admin' in the service
+  granted_location_ids: z.array(z.string().uuid()).optional(),
+})
+
+const genderEnum = z.enum(['female', 'male', 'non_binary', 'prefer_not_to_say'])
+
+const updateStaffSchema = z.object({
+  first_name: z.string().trim().min(1).max(120).optional(),
+  last_name: z.string().trim().max(120).nullable().optional(),
+  phone: z.string().trim().max(40).nullable().optional(),
+  address: z.string().trim().max(500).nullable().optional(),
+  gender: genderEnum.nullable().optional(),
+  bio: z.string().max(4000).nullable().optional(),
+  languages: z.array(z.string().trim().min(1).max(60)).optional(),
+  role: z.enum(['admin', 'superadmin', 'instructor']).optional(),
   granted_location_ids: z.array(z.string().uuid()).optional(),
 })
 
@@ -23,6 +38,13 @@ function serializeStaff(row: svc.StaffUserRow) {
     id: row.id,
     email: row.email,
     name: row.name,
+    first_name: row.firstName,
+    last_name: row.lastName,
+    phone: row.phone,
+    address: row.address,
+    gender: row.gender,
+    bio: row.bio,
+    languages: row.languages,
     role: row.role,
     status: row.status,
     granted_location_ids: row.grantedLocationIds,
@@ -85,6 +107,30 @@ const app = new Hono()
     const inv = await svc.resendInvitation(id, actor)
     c.set('auditTarget' as any, { table: 'staff_invitations', id })
     return c.json(serializeInvitation({ ...inv, invitedByStaffName: null }))
+  })
+  .patch('/:id', zValidator('param', idParam), zValidator('json', updateStaffSchema), async c => {
+    const { id } = c.req.valid('param')
+    const body = c.req.valid('json')
+    const actor = c.get('staffUserId')
+    const row = await updateStaffProfile({
+      targetStaffId: id,
+      actorStaffId: actor,
+      patch: {
+        ...(body.first_name !== undefined ? { firstName: body.first_name } : {}),
+        ...(body.last_name !== undefined ? { lastName: body.last_name } : {}),
+        ...(body.phone !== undefined ? { phone: body.phone } : {}),
+        ...(body.address !== undefined ? { address: body.address } : {}),
+        ...(body.gender !== undefined ? { gender: body.gender } : {}),
+        ...(body.bio !== undefined ? { bio: body.bio } : {}),
+        ...(body.languages !== undefined ? { languages: body.languages } : {}),
+        ...(body.role !== undefined ? { role: body.role } : {}),
+        ...(body.granted_location_ids !== undefined
+          ? { grantedLocationIds: body.granted_location_ids }
+          : {}),
+      },
+    })
+    c.set('auditTarget' as any, { table: 'staff_users', id })
+    return c.json(serializeStaff(row))
   })
   .post('/:id/archive', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')

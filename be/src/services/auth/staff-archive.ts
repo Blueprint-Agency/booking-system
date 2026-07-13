@@ -21,6 +21,7 @@ import { db } from '../../db'
 import { staffUsers } from '../../db/schema/identity'
 import { clerkStaffApp } from '../../lib/clerk'
 import { env } from '../../env'
+import { joinName } from '../../lib/name'
 import {
   BadRequestError,
   ConflictError,
@@ -204,4 +205,98 @@ export async function softDeleteStaff(input: {
     .update(staffUsers)
     .set({ deletedAt: sql`now()`, updatedAt: new Date() })
     .where(eq(staffUsers.id, targetStaffId))
+}
+
+/**
+ * Update a staff profile (name/contact/bio fields, role, location grants).
+ * Guards mirror archiveStaff exactly, but scoped to *role changes* only —
+ * editing your own or the seeded superadmin's non-role profile fields
+ * (phone, bio, etc.) is fine; only a role change is locked down:
+ *
+ *   - Cannot change your own role (self_role_edit_forbidden).
+ *   - Cannot change the seeded superadmin's role at all.
+ *   - Changing an existing superadmin's role requires the actor to BE the
+ *     seeded superadmin (same "only seeded can touch a superadmin" rule
+ *     archive/delete enforce).
+ */
+export interface UpdateStaffProfileInput {
+  targetStaffId: string
+  actorStaffId: string
+  patch: {
+    firstName?: string
+    lastName?: string | null
+    phone?: string | null
+    address?: string | null
+    gender?: StaffUserRow['gender']
+    bio?: string | null
+    languages?: string[]
+    role?: StaffUserRow['role']
+    grantedLocationIds?: string[]
+  }
+}
+
+export async function updateStaffProfile(input: UpdateStaffProfileInput): Promise<StaffUserRow> {
+  const { targetStaffId, actorStaffId, patch } = input
+
+  const [target] = await db
+    .select()
+    .from(staffUsers)
+    .where(and(eq(staffUsers.id, targetStaffId), isNull(staffUsers.deletedAt)))
+    .limit(1)
+  if (!target) throw new NotFoundError('staff_not_found')
+
+  const changingRole = patch.role !== undefined && patch.role !== target.role
+  if (changingRole) {
+    if (targetStaffId === actorStaffId) {
+      throw new ForbiddenError('self_role_edit_forbidden', {
+        message: 'You cannot change your own role.',
+      })
+    }
+    if (isSeededSuperadminEmail(target.email)) {
+      throw new ForbiddenError('cannot_edit_seeded_superadmin_role', {
+        message:
+          'The main superadmin (set via SUPERADMIN_EMAIL) cannot have its role changed.',
+      })
+    }
+    if (target.role === 'superadmin') {
+      const [actor] = await db
+        .select()
+        .from(staffUsers)
+        .where(and(eq(staffUsers.id, actorStaffId), isNull(staffUsers.deletedAt)))
+        .limit(1)
+      if (!actor) throw new ForbiddenError('actor_not_found')
+      if (!isSeededSuperadminEmail(actor.email)) {
+        throw new ForbiddenError('only_seeded_can_edit_superadmin_role', {
+          message: "Only the main superadmin can change another superadmin's role.",
+        })
+      }
+    }
+  }
+
+  const set: Partial<typeof staffUsers.$inferInsert> = {}
+  if (patch.firstName !== undefined || patch.lastName !== undefined) {
+    const nextFirstName = patch.firstName !== undefined ? patch.firstName : (target.firstName ?? '')
+    const nextLastName = patch.lastName !== undefined ? patch.lastName : target.lastName
+    set.firstName = nextFirstName
+    set.lastName = nextLastName
+    set.name = joinName(nextFirstName, nextLastName)
+  }
+  if (patch.phone !== undefined) set.phone = patch.phone
+  if (patch.address !== undefined) set.address = patch.address
+  if (patch.gender !== undefined) set.gender = patch.gender
+  if (patch.bio !== undefined) set.bio = patch.bio
+  if (patch.languages !== undefined) set.languages = patch.languages
+  if (patch.role !== undefined) set.role = patch.role
+  if (patch.grantedLocationIds !== undefined) set.grantedLocationIds = patch.grantedLocationIds
+
+  if (Object.keys(set).length === 0) return target
+
+  set.updatedAt = new Date()
+  const [updated] = await db
+    .update(staffUsers)
+    .set(set)
+    .where(eq(staffUsers.id, targetStaffId))
+    .returning()
+  if (!updated) throw new ConflictError('staff_update_failed')
+  return updated
 }

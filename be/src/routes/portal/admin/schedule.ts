@@ -44,9 +44,18 @@ const createClassSchema = z
     path: ['ends_at'],
   })
 
+const supportingInstructorSchema = z.object({
+  instructor_id: z.string().uuid(),
+  pay_sgd: z.number().min(0).nullable().optional(),
+})
+
 const updateClassSchema = z.object({
   class_type_id: z.string().uuid().optional(),
   main_instructor_id: z.string().uuid().optional(),
+  // New shape (per-instructor pay). `supporting_instructor_ids` (bare id array,
+  // pay defaults to null) is kept for back-compat until the frontend edit UI
+  // task lands — only one of the two may be sent.
+  supporting_instructors: z.array(supportingInstructorSchema).optional(),
   supporting_instructor_ids: z.array(z.string().uuid()).optional(),
   location_id: z.string().uuid().optional(),
   room_id: z.string().uuid().optional(),
@@ -83,12 +92,17 @@ function entryRow(e: timetable.ScheduleEntryRow) {
 }
 
 async function classRow(c: classesSvc.ClassRow) {
-  const supportingInstructorIds = await classesSvc.listSupportingInstructorIds(c.id)
+  const supportingInstructors = await classesSvc.listSupportingInstructors(c.id)
+  const supportingInstructorIds = supportingInstructors.map(s => s.instructorId)
   return {
     id: c.id,
     class_type_id: c.classTypeId,
     main_instructor_id: c.mainInstructorId,
     supporting_instructor_ids: supportingInstructorIds,
+    supporting_instructors: supportingInstructors.map(s => ({
+      instructor_id: s.instructorId,
+      pay_sgd: s.paySgd,
+    })),
     instructor_ids: [c.mainInstructorId, ...supportingInstructorIds],
     location_id: c.locationId,
     room_id: c.roomId,
@@ -205,14 +219,26 @@ const app = new Hono()
     async c => {
       const { id } = c.req.valid('param')
       const body = c.req.valid('json')
+      // Back-compat: bare `supporting_instructor_ids` (old shape, pay defaults
+      // to null) still works alongside the new `supporting_instructors` shape.
+      let supportingInstructors: classesSvc.SupportingInstructorInput[] | undefined
+      if (body.supporting_instructors !== undefined) {
+        supportingInstructors = body.supporting_instructors.map(s => ({
+          instructorId: s.instructor_id,
+          paySgd: s.pay_sgd ?? null,
+        }))
+      } else if (body.supporting_instructor_ids !== undefined) {
+        supportingInstructors = body.supporting_instructor_ids.map(instructorId => ({
+          instructorId,
+          paySgd: null,
+        }))
+      }
       const row = await classesSvc.updateClass(id, {
         ...(body.class_type_id !== undefined ? { classTypeId: body.class_type_id } : {}),
         ...(body.main_instructor_id !== undefined
           ? { mainInstructorId: body.main_instructor_id }
           : {}),
-        ...(body.supporting_instructor_ids !== undefined
-          ? { supportingInstructorIds: body.supporting_instructor_ids }
-          : {}),
+        ...(supportingInstructors !== undefined ? { supportingInstructors } : {}),
         ...(body.location_id !== undefined ? { locationId: body.location_id } : {}),
         ...(body.room_id !== undefined ? { roomId: body.room_id } : {}),
         ...(body.starts_at !== undefined ? { startsAt: new Date(body.starts_at) } : {}),

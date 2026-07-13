@@ -21,6 +21,7 @@ import { instructors } from '../../db/schema/catalog'
 import { ConflictError, NotFoundError } from '../../shared/errors'
 import { env } from '../../env'
 import { sendTemplatedEmail } from '../notifications/send'
+import { splitName, joinName } from '../../lib/name'
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -129,11 +130,18 @@ export async function inviteAdmin(input: InviteAdminInput): Promise<StaffInvitat
       })
     }
 
+    // No first/last name is collected at invite time (just email + role). We
+    // still split the email-derived placeholder so `name` stays derived via
+    // joinName(firstName, lastName) — same single source of truth the
+    // profile-edit path (updateStaffProfile) writes through.
+    const { firstName, lastName } = splitName(emailLocalPart(email))
     const [staffRow] = await tx
       .insert(staffUsers)
       .values({
         email,
-        name: emailLocalPart(email),
+        name: joinName(firstName, lastName),
+        firstName,
+        lastName,
         role,
         status: 'pending',
         grantedLocationIds: grants,
