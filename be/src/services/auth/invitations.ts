@@ -148,8 +148,6 @@ export async function inviteAdmin(input: InviteAdminInput): Promise<StaffInvitat
     if (role === 'instructor') {
       await tx.insert(instructors).values({
         staffUserId: staffRow.id,
-        bio: null,
-        phone: null,
         photoR2Key: null,
       })
     }

@@ -43,6 +43,13 @@
       "when": 1783938893904,
       "tag": "0005_absent_bucky",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783939298612,
+      "tag": "0006_striped_black_queen",
+      "breakpoints": true
     }
   ]
 }

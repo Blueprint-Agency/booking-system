@@ -319,7 +319,7 @@ export async function getWorkshopDetailPayload(id: string): Promise<WorkshopDeta
     const rows = await db
       .select({
         id: instructors.staffUserId,
-        bio: instructors.bio,
+        bio: staffUsers.bio,
         photoR2Key: instructors.photoR2Key,
         name: staffUsers.name,
       })

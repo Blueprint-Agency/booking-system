@@ -61,6 +61,13 @@ export const staffUsers = pgTable(
     clerkUserId: text('clerk_user_id').unique(),
     email: text('email').notNull().unique(),
     name: text('name').notNull(),
+    firstName: text('first_name'),
+    lastName: text('last_name'),
+    phone: text('phone'),
+    address: text('address'),
+    gender: clientGenderEnum('gender'),
+    bio: text('bio'),
+    languages: text('languages').array().notNull().default(sql`'{}'`),
     role: staffRoleEnum('role').notNull(),
     status: staffStatusEnum('status').notNull().default('pending'),
     // Workspace grants per admin-restructure.md §15a. Empty array = "all active locations"

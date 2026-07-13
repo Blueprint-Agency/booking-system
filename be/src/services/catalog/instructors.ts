@@ -49,8 +49,8 @@ async function loadById(id: string): Promise<InstructorView> {
     archivedAt: row.staff.archivedAt,
     invitedAt: row.staff.invitedAt,
     acceptedAt: row.staff.acceptedAt,
-    bio: row.ins?.bio ?? null,
-    phone: row.ins?.phone ?? null,
+    bio: row.staff.bio,
+    phone: row.staff.phone,
     photoR2Key: row.ins?.photoR2Key ?? null,
   }
 }
@@ -75,8 +75,8 @@ export async function listInstructors(opts: {
     archivedAt: r.staff.archivedAt,
     invitedAt: r.staff.invitedAt,
     acceptedAt: r.staff.acceptedAt,
-    bio: r.ins?.bio ?? null,
-    phone: r.ins?.phone ?? null,
+    bio: r.staff.bio,
+    phone: r.staff.phone,
     photoR2Key: r.ins?.photoR2Key ?? null,
   }))
 }
@@ -126,13 +126,13 @@ export async function createInstructor(input: CreateInstructorInput): Promise<In
         status: 'pending',
         clerkUserId: null,
         invitedAt: new Date(),
+        bio: input.bio ?? null,
+        phone: input.phone ?? null,
       })
       .returning()
 
     await tx.insert(instructors).values({
       staffUserId: staffRow!.id,
-      bio: input.bio ?? null,
-      phone: input.phone ?? null,
       photoR2Key: input.photoR2Key ?? null,
     })
 
@@ -177,19 +177,22 @@ export async function updateInstructor(id: string, patch: UpdateInstructorInput)
   await loadById(id) // 404 if missing
 
   await db.transaction(async tx => {
-    if (patch.name !== undefined) {
+    const staffPatch: Partial<StaffRow> = {}
+    if (patch.name !== undefined) staffPatch.name = patch.name
+    if (patch.bio !== undefined) staffPatch.bio = patch.bio
+    if (patch.phone !== undefined) staffPatch.phone = patch.phone
+    if (Object.keys(staffPatch).length) {
       await tx
         .update(staffUsers)
-        .set({ name: patch.name, updatedAt: new Date() })
+        .set({ ...staffPatch, updatedAt: new Date() })
         .where(eq(staffUsers.id, id))
     }
 
-    const profilePatch: Partial<InstructorProfile> = {}
-    if (patch.bio !== undefined) profilePatch.bio = patch.bio
-    if (patch.phone !== undefined) profilePatch.phone = patch.phone
-    if (patch.photoR2Key !== undefined) profilePatch.photoR2Key = patch.photoR2Key
-    if (Object.keys(profilePatch).length) {
-      await tx.update(instructors).set(profilePatch).where(eq(instructors.staffUserId, id))
+    if (patch.photoR2Key !== undefined) {
+      await tx
+        .update(instructors)
+        .set({ photoR2Key: patch.photoR2Key })
+        .where(eq(instructors.staffUserId, id))
     }
   })
 

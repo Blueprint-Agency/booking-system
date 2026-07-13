@@ -90,8 +90,6 @@ export const instructors = pgTable('instructors', {
     .primaryKey()
     .references(() => staffUsers.id, { onDelete: 'cascade' }),
   photoR2Key: text('photo_r2_key'),
-  bio: text('bio'),
-  phone: text('phone'),
 })
 
 export const instructorClassTypes = pgTable(

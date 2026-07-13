@@ -318,7 +318,7 @@ export async function listActiveInstructors(): Promise<InstructorLite[]> {
   const rows = await db
     .select({
       staffUserId: instructors.staffUserId,
-      bio: instructors.bio,
+      bio: staffUsers.bio,
       photoR2Key: instructors.photoR2Key,
       name: staffUsers.name,
       status: staffUsers.status,
