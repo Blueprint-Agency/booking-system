@@ -11,6 +11,7 @@ import {
   Sparkles,
   RotateCcw,
   Trash2,
+  Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -30,6 +31,10 @@ import {
 import { ApiError } from "@/lib/api";
 import { useWorkspace } from "@/lib/workspace-context";
 import { formatDate, formatRelative } from "@/lib/formatters";
+import {
+  StaffEditDialog,
+  type StaffEditPatch,
+} from "@/components/staff/staff-edit-dialog";
 
 // ---------------- API shapes ----------------
 
@@ -37,6 +42,13 @@ interface StaffApiRow {
   id: string;
   email: string;
   name: string;
+  first_name: string | null;
+  last_name: string | null;
+  phone: string | null;
+  address: string | null;
+  gender: "female" | "male" | "non_binary" | "prefer_not_to_say" | null;
+  bio: string | null;
+  languages: string[] | null;
   role: "superadmin" | "admin" | "instructor";
   status: "pending" | "active" | "archived";
   granted_location_ids: string[];
@@ -82,6 +94,7 @@ export default function StaffPage() {
   const [archiveBusy, setArchiveBusy] = useState(false);
   const [unarchiveBusyId, setUnarchiveBusyId] = useState<string | null>(null);
   const [deleteBusyId, setDeleteBusyId] = useState<string | null>(null);
+  const [editTarget, setEditTarget] = useState<StaffApiRow | null>(null);
 
   const refresh = useCallback(async () => {
     if (!api) return;
@@ -165,6 +178,23 @@ export default function StaffPage() {
       }
     } finally {
       setDeleteBusyId(null);
+    }
+  }
+
+  async function handleEdit(id: string, patch: StaffEditPatch) {
+    if (!api) return;
+    try {
+      await api.patch(`/portal/admin/staff/${id}`, patch);
+      toast.success("Profile updated.");
+      setEditTarget(null);
+      await refresh();
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const body = err.body as { error?: string; details?: { message?: string } } | null;
+        toast.error(body?.details?.message ?? `Update failed (HTTP ${err.status}).`);
+      } else {
+        toast.error("Update failed.");
+      }
     }
   }
 
@@ -406,6 +436,8 @@ export default function StaffPage() {
                       isSelf={s.id === currentStaff?.id}
                       canArchive={canArchiveTarget(s)}
                       onArchive={() => setArchiveTarget(s)}
+                      canEdit={isSuperadmin}
+                      onEdit={() => setEditTarget(s)}
                     />
                   ))}
                 </ul>
@@ -432,6 +464,8 @@ export default function StaffPage() {
                       isSelf={s.id === currentStaff?.id}
                       canArchive={canArchiveTarget(s)}
                       onArchive={() => setArchiveTarget(s)}
+                      canEdit={isSuperadmin}
+                      onEdit={() => setEditTarget(s)}
                       canManageArchived={canManageArchived(s)}
                       onUnarchive={() => handleUnarchive(s)}
                       onDelete={() => handleDelete(s)}
@@ -487,6 +521,14 @@ export default function StaffPage() {
         </Dialog>
       )}
 
+      {editTarget && (
+        <StaffEditDialog
+          staff={editTarget}
+          onSubmit={handleEdit}
+          onClose={() => setEditTarget(null)}
+        />
+      )}
+
       {revokeTarget && (
         <Dialog
           open
@@ -519,6 +561,8 @@ function StaffRow({
   isSelf,
   canArchive,
   onArchive,
+  canEdit,
+  onEdit,
   canManageArchived,
   onUnarchive,
   onDelete,
@@ -529,6 +573,8 @@ function StaffRow({
   isSelf: boolean;
   canArchive?: boolean;
   onArchive?: () => void;
+  canEdit?: boolean;
+  onEdit?: () => void;
   canManageArchived?: boolean;
   onUnarchive?: () => void;
   onDelete?: () => void;
@@ -582,6 +628,11 @@ function StaffRow({
     <li className="flex items-center gap-4 px-5 py-3">
       {identity}
       {meta}
+      {canEdit && onEdit && (
+        <Button size="sm" variant="ghost" onClick={onEdit}>
+          <Pencil className="h-3.5 w-3.5" /> Edit
+        </Button>
+      )}
       {canArchive && onArchive && (
         <Button size="sm" variant="ghost" onClick={onArchive}>
           <Archive className="h-3.5 w-3.5" /> Archive
