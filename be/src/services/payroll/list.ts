@@ -177,9 +177,12 @@ export async function listPayroll(filter: PayrollFilter): Promise<PayrollRow[]> 
     const workshopConds = [eq(workshops.lifecycle, 'active')]
     if (filter.instructorId) workshopConds.push(eq(workshopInstructors.instructorId, filter.instructorId))
 
-    const havingParts = [sql`max(${workshopDays.endsAt}) < ${now}`]
-    if (filter.from) havingParts.push(sql`min(${workshopDays.startsAt}) >= ${filter.from}`)
-    if (filter.to) havingParts.push(sql`min(${workshopDays.startsAt}) <= ${filter.to}`)
+    // Bare JS Dates can't be serialized inside a raw sql`` fragment (unlike the
+    // typed lt()/gte() helpers the other arms use), so pass ISO strings — Postgres
+    // coerces them to the timestamp of the aggregate they're compared against.
+    const havingParts = [sql`max(${workshopDays.endsAt}) < ${now.toISOString()}`]
+    if (filter.from) havingParts.push(sql`min(${workshopDays.startsAt}) >= ${filter.from.toISOString()}`)
+    if (filter.to) havingParts.push(sql`min(${workshopDays.startsAt}) <= ${filter.to.toISOString()}`)
 
     workshopRows = await db
       .select({
