@@ -1,15 +1,17 @@
 // Shapes for the /portal/admin/payroll surface. See be/src/routes/portal/admin/payroll.ts.
 
 export interface ApiPayrollRow {
-  kind: "class" | "pt";
+  kind: "class" | "pt" | "workshop";
   id: string;
   instructor_id: string;
   instructor_name: string;
-  class_type_id: string;
+  /** null for workshops — they aren't tied to a single class type. */
+  class_type_id: string | null;
   label: string;
   session_type: "1on1" | "2on1" | null;
   starts_at: string;
   ends_at: string;
+  /** For workshops this is the full multi-day span, not a per-session duration. */
   duration_minutes: number;
   instructor_pay_sgd: number | null;
 }

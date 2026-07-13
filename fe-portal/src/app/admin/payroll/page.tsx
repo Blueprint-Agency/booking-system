@@ -160,7 +160,7 @@ export default function PayrollPage() {
 
   async function saveAmount(row: ApiPayrollRow) {
     if (!api) return;
-    const key = `${row.kind}:${row.id}`;
+    const key = `${row.kind}:${row.id}:${row.instructor_id}`;
     const raw = drafts[key];
     if (raw === undefined) return; // untouched
     const trimmed = raw.trim();
@@ -179,8 +179,13 @@ export default function PayrollPage() {
     }
     setSavingKey(key);
     try {
+      // instructor_id targets this row's specific instructor (main/supporting/
+      // workshop) — required for workshops, and needed for classes/PT sessions
+      // that have supporting instructors so the write doesn't fall through to
+      // the main-instructor back-compat path.
       await api.patch(`/portal/admin/payroll/${row.kind}/${row.id}`, {
         instructor_pay_sgd: next,
+        instructor_id: row.instructor_id,
       });
       toast.success("Pay updated");
       await load();
@@ -296,7 +301,7 @@ export default function PayrollPage() {
             </thead>
             <tbody className="divide-y divide-border">
               {sortedRows.map((row) => {
-                const key = `${row.kind}:${row.id}`;
+                const key = `${row.kind}:${row.id}:${row.instructor_id}`;
                 const draft =
                   drafts[key] ??
                   (row.instructor_pay_sgd == null ? "" : String(row.instructor_pay_sgd));
@@ -310,10 +315,17 @@ export default function PayrollPage() {
                           Private · {row.session_type === "2on1" ? "2-on-1" : "1-on-1"}
                         </span>
                       )}
+                      {row.kind === "workshop" && (
+                        <span className="ml-2 rounded-full border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[10px] text-accent">
+                          Workshop
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-2.5 text-muted">{formatDate(row.starts_at)}</td>
                     <td className="px-3 py-2.5 text-muted">
-                      {formatDuration(row.starts_at, row.ends_at)}
+                      {row.kind === "workshop"
+                        ? `${formatDate(row.starts_at)} – ${formatDate(row.ends_at)}`
+                        : formatDuration(row.starts_at, row.ends_at)}
                     </td>
                     <td className="px-3 py-2.5 text-right">
                       <div className="flex items-center justify-end gap-2">
