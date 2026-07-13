@@ -174,12 +174,14 @@ const app = new Hono()
     const d = await getPtSessionDetail(id)
     return c.json({
       id: d.id,
+      pt_request_id: d.ptRequestId,
       lifecycle: d.lifecycle,
       starts_at: d.startsAt.toISOString(),
       ends_at: d.endsAt.toISOString(),
       session_type: d.sessionType,
       instructor: d.instructor,
       main_instructor_id: d.mainInstructorId,
+      instructor_pay_sgd: d.instructorPaySgd,
       supporting_instructor_ids: d.supportingInstructorIds,
       supporting_instructors: d.supportingInstructors,
       instructor_ids: [d.mainInstructorId, ...d.supportingInstructorIds],

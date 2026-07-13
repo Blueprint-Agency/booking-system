@@ -111,11 +111,15 @@ interface ApiPtAttendee {
 
 interface ApiPtDetail {
   id: string;
+  pt_request_id: string;
   lifecycle: "active" | "cancelled";
   starts_at: string;
   ends_at: string;
   session_type: "1on1" | "2on1";
   instructor: NamedRef | null;
+  main_instructor_id: string;
+  instructor_pay_sgd: number | null;
+  supporting_instructors: (NamedRef & { pay_sgd: number | null })[];
   location: NamedRef | null;
   room: NamedRef | null;
   capacity_online: number;
@@ -774,18 +778,43 @@ function ClassEditor({
 
 /* ------------------------------- PT session ------------------------------- */
 
+function ptErrorMessage(err: unknown): string {
+  if (!(err instanceof ApiError)) return "Network error";
+  const body = (err.body as { error?: string } | null) ?? null;
+  if (err.status === 409 && body?.error === "room_clash") {
+    return "That room is already booked for an overlapping time. Pick another room or time.";
+  }
+  if (err.status === 400 && body?.error === "room_location_mismatch") {
+    return "That room belongs to a different location.";
+  }
+  return `Save failed (HTTP ${err.status}).`;
+}
+
 function PtDetail({ id }: { id: string }) {
   const { api } = useWorkspace();
   const [data, setData] = useState<ApiPtDetail | null>(null);
+  const [instructors, setInstructors] = useState<ApiInstructor[]>([]);
+  const [rooms, setRooms] = useState<ApiRoom[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!api) return;
     setLoading(true);
     setError(null);
     try {
-      setData(await api.get<ApiPtDetail>(`/portal/admin/schedule/pt/${id}`));
+      const [d, ins, rm] = await Promise.all([
+        api.get<ApiPtDetail>(`/portal/admin/schedule/pt/${id}`),
+        api.get<{ instructors: Array<ApiInstructor & { archived_at?: string | null }> }>(
+          "/portal/admin/instructors",
+        ),
+        api.get<{ rooms: ApiRoom[] }>("/portal/admin/rooms"),
+      ]);
+      setData(d);
+      setInstructors(ins.instructors.filter((i) => !i.archived_at));
+      setRooms(rm.rooms);
     } catch (err) {
       setError(detailError(err, "Private session not found."));
     } finally {
@@ -796,6 +825,27 @@ function PtDetail({ id }: { id: string }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function handleCancelPt() {
+    if (!api || !data) return;
+    if (
+      !confirm(
+        "Cancel this private session? Client bookings will be cancelled and credits returned.",
+      )
+    ) {
+      return;
+    }
+    setCancelBusy(true);
+    setActionError(null);
+    try {
+      await api.post(`/portal/admin/pt-sessions/${data.pt_request_id}/cancel`);
+      await load();
+    } catch (err) {
+      setActionError(detailError(err, "Private session not found."));
+    } finally {
+      setCancelBusy(false);
+    }
+  }
 
   if (loading) return <LoadingDetail label="private session" />;
   if (error || !data)
@@ -822,7 +872,32 @@ function PtDetail({ id }: { id: string }) {
         state={state}
         title={`Private session · ${typeLabel}`}
         meta={meta}
+        action={
+          data.lifecycle === "active" ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleCancelPt}
+              disabled={cancelBusy}
+              className="text-error hover:text-error"
+            >
+              {cancelBusy ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Ban className="h-4 w-4" />
+              )}
+              Cancel session
+            </Button>
+          ) : undefined
+        }
       />
+
+      {actionError && (
+        <p className="mb-4 rounded-md border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
+          {actionError}
+        </p>
+      )}
 
       <section className="mb-6 rounded-xl border border-border bg-card p-5 shadow-soft">
         <h2 className="mb-4 text-sm font-semibold text-ink">Details</h2>
@@ -866,7 +941,331 @@ function PtDetail({ id }: { id: string }) {
           </ul>
         )}
       </section>
+
+      <PtEditor data={data} instructors={instructors} rooms={rooms} onSaved={load} />
     </DetailFrame>
+  );
+}
+
+function PtEditor({
+  data,
+  instructors,
+  rooms,
+  onSaved,
+}: {
+  data: ApiPtDetail;
+  instructors: ApiInstructor[];
+  rooms: ApiRoom[];
+  onSaved: () => void | Promise<void>;
+}) {
+  const { api, accessibleLocations } = useWorkspace();
+  const disabled = data.lifecycle === "cancelled";
+
+  const [sessionType, setSessionType] = useState<"1on1" | "2on1">(data.session_type);
+  const [mainInstructorId, setMainInstructorId] = useState(data.main_instructor_id);
+  const [mainPay, setMainPay] = useState(
+    data.instructor_pay_sgd == null ? "" : String(data.instructor_pay_sgd),
+  );
+  const [supporting, setSupporting] = useState<SupportingRow[]>(
+    data.supporting_instructors.map((s) => ({
+      instructorId: s.id,
+      pay: s.pay_sgd == null ? "" : String(s.pay_sgd),
+    })),
+  );
+  const [locationId, setLocationId] = useState(data.location?.id ?? "");
+  const [roomId, setRoomId] = useState(data.room?.id ?? "");
+  const [date, setDate] = useState(toLocalDate(data.starts_at));
+  const [startTime, setStartTime] = useState(toHHMM(data.starts_at));
+  const [endTime, setEndTime] = useState(toHHMM(data.ends_at));
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  // Re-sync when the parent reloads the session.
+  useEffect(() => {
+    setSessionType(data.session_type);
+    setMainInstructorId(data.main_instructor_id);
+    setMainPay(data.instructor_pay_sgd == null ? "" : String(data.instructor_pay_sgd));
+    setSupporting(
+      data.supporting_instructors.map((s) => ({
+        instructorId: s.id,
+        pay: s.pay_sgd == null ? "" : String(s.pay_sgd),
+      })),
+    );
+    setLocationId(data.location?.id ?? "");
+    setRoomId(data.room?.id ?? "");
+    setDate(toLocalDate(data.starts_at));
+    setStartTime(toHHMM(data.starts_at));
+    setEndTime(toHHMM(data.ends_at));
+  }, [data]);
+
+  // Drop any supporting row that overlaps the main instructor.
+  useEffect(() => {
+    if (!mainInstructorId) return;
+    setSupporting((prev) => prev.filter((s) => s.instructorId !== mainInstructorId));
+  }, [mainInstructorId]);
+
+  const activeLocations = useMemo(
+    () => accessibleLocations.filter((l) => !l.archivedAt),
+    [accessibleLocations],
+  );
+  const roomsForLocation = useMemo(
+    () => rooms.filter((r) => !r.archived_at && r.location_id === locationId),
+    [rooms, locationId],
+  );
+  const availableForSupporting = useMemo(
+    () =>
+      instructors.filter(
+        (i) => i.id !== mainInstructorId && !supporting.some((s) => s.instructorId === i.id),
+      ),
+    [instructors, mainInstructorId, supporting],
+  );
+
+  // Clear the selected room if it no longer belongs to the chosen location.
+  useEffect(() => {
+    if (roomId && !roomsForLocation.some((r) => r.id === roomId)) setRoomId("");
+  }, [roomId, roomsForLocation]);
+
+  async function handleSave() {
+    if (!api) return;
+    if (!mainInstructorId || !locationId || !roomId) return;
+    if (!date || !startTime || !endTime) return;
+    const startsAt = new Date(`${date}T${startTime}:00`);
+    const endsAt = new Date(`${date}T${endTime}:00`);
+    if (endsAt <= startsAt) {
+      setErr("End time must be after start time.");
+      return;
+    }
+    setSaving(true);
+    setErr(null);
+    try {
+      await api.patch(`/portal/admin/pt-sessions/sessions/${data.id}`, {
+        session_type: sessionType,
+        instructor_id: mainInstructorId,
+        instructor_pay_sgd: mainPay.trim() === "" ? null : Number(mainPay),
+        supporting_instructors: supporting.map((s) => ({
+          instructor_id: s.instructorId,
+          pay_sgd: s.pay.trim() === "" ? null : Number(s.pay),
+        })),
+        location_id: locationId,
+        room_id: roomId,
+        starts_at: startsAt.toISOString(),
+        ends_at: endsAt.toISOString(),
+      });
+      await onSaved();
+    } catch (e) {
+      setErr(ptErrorMessage(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="mt-6 rounded-xl border border-border bg-card p-5 shadow-soft">
+      <h2 className="mb-4 text-sm font-semibold text-ink">Edit private session</h2>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label htmlFor="pt-type">Format</Label>
+          <select
+            id="pt-type"
+            value={sessionType}
+            disabled={disabled || saving}
+            onChange={(e) => setSessionType(e.target.value as "1on1" | "2on1")}
+            className="flex h-10 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+          >
+            <option value="1on1">1-on-1</option>
+            <option value="2on1">2-on-1</option>
+          </select>
+        </div>
+        <div />
+        <div className="space-y-1.5">
+          <Label htmlFor="pt-main-ins">Main instructor</Label>
+          <select
+            id="pt-main-ins"
+            value={mainInstructorId}
+            disabled={disabled || saving}
+            onChange={(e) => setMainInstructorId(e.target.value)}
+            className="flex h-10 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+          >
+            <option value="">Select…</option>
+            {instructors.map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="pt-main-pay">Main instructor pay (S$)</Label>
+          <Input
+            id="pt-main-pay"
+            type="number"
+            min={0}
+            step="0.01"
+            inputMode="decimal"
+            placeholder="Optional"
+            value={mainPay}
+            disabled={disabled || saving}
+            onChange={(e) => setMainPay(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5 sm:col-span-2">
+          <Label>Supporting instructors</Label>
+          <div className="flex flex-wrap items-center gap-2">
+            {supporting.map((s) => {
+              const name = instructors.find((i) => i.id === s.instructorId)?.name ?? "Unknown";
+              return (
+                <span
+                  key={s.instructorId}
+                  className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 py-1 pl-2.5 pr-1.5 text-xs text-ink"
+                >
+                  {name}
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    inputMode="decimal"
+                    placeholder="S$"
+                    value={s.pay}
+                    disabled={disabled || saving}
+                    onChange={(e) =>
+                      setSupporting((prev) =>
+                        prev.map((row) =>
+                          row.instructorId === s.instructorId
+                            ? { ...row, pay: e.target.value }
+                            : row,
+                        ),
+                      )
+                    }
+                    className="h-6 w-16 rounded border border-border bg-card px-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+                  />
+                  <button
+                    type="button"
+                    disabled={disabled || saving}
+                    onClick={() =>
+                      setSupporting((prev) =>
+                        prev.filter((row) => row.instructorId !== s.instructorId),
+                      )
+                    }
+                    className="text-muted hover:text-ink disabled:opacity-50"
+                    aria-label={`Remove ${name}`}
+                  >
+                    ×
+                  </button>
+                </span>
+              );
+            })}
+            {!disabled && availableForSupporting.length > 0 && (
+              <select
+                value=""
+                disabled={saving}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (v) setSupporting((prev) => [...prev, { instructorId: v, pay: "" }]);
+                }}
+                className="flex h-9 rounded-lg border border-border bg-card px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+              >
+                <option value="">
+                  {supporting.length === 0 ? "+ Add supporting instructor" : "+ Add another"}
+                </option>
+                {availableForSupporting.map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            {supporting.length === 0 && availableForSupporting.length === 0 && (
+              <span className="text-xs text-muted">No additional instructors available.</span>
+            )}
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="pt-loc">Location</Label>
+          <select
+            id="pt-loc"
+            value={locationId}
+            disabled={disabled || saving}
+            onChange={(e) => setLocationId(e.target.value)}
+            className="flex h-10 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+          >
+            <option value="">Select…</option>
+            {activeLocations.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="pt-room">Room</Label>
+          <select
+            id="pt-room"
+            value={roomId}
+            disabled={disabled || saving || !locationId}
+            onChange={(e) => setRoomId(e.target.value)}
+            className="flex h-10 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
+          >
+            <option value="">{locationId ? "Select…" : "Pick a location first"}</option>
+            {roomsForLocation.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="pt-d">Date</Label>
+          <Input
+            id="pt-d"
+            type="date"
+            value={date}
+            disabled={disabled || saving}
+            onChange={(e) => setDate(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="pt-s">Start time</Label>
+          <Input
+            id="pt-s"
+            type="time"
+            value={startTime}
+            disabled={disabled || saving}
+            onChange={(e) => setStartTime(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="pt-e">End time</Label>
+          <Input
+            id="pt-e"
+            type="time"
+            value={endTime}
+            disabled={disabled || saving}
+            onChange={(e) => setEndTime(e.target.value)}
+          />
+        </div>
+      </div>
+      {err && (
+        <p className="mt-3 rounded-md border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
+          {err}
+        </p>
+      )}
+      {!disabled && (
+        <div className="mt-4 flex justify-end">
+          <Button
+            size="sm"
+            onClick={handleSave}
+            disabled={saving || !mainInstructorId || !locationId || !roomId}
+          >
+            {saving ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Save className="h-4 w-4" />
+            )}
+            Save changes
+          </Button>
+        </div>
+      )}
+    </section>
   );
 }
 

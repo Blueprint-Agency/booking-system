@@ -178,12 +178,14 @@ export interface PtSessionAttendee {
 
 export interface PtSessionDetail {
   id: string
+  ptRequestId: string
   lifecycle: 'active' | 'cancelled'
   startsAt: Date
   endsAt: Date
   sessionType: '1on1' | '2on1'
   instructor: NamedRef | null
   mainInstructorId: string
+  instructorPaySgd: number | null
   supportingInstructorIds: string[]
   supportingInstructors: (NamedRef & { paySgd: number | null })[]
   location: NamedRef | null
@@ -198,6 +200,7 @@ export async function getPtSessionDetail(id: string): Promise<PtSessionDetail> {
   const [row] = await db
     .select({
       id: ptSessions.id,
+      ptRequestId: ptSessions.ptRequestId,
       lifecycle: ptSessions.lifecycle,
       startsAt: ptSessions.startsAt,
       endsAt: ptSessions.endsAt,
@@ -207,6 +210,7 @@ export async function getPtSessionDetail(id: string): Promise<PtSessionDetail> {
       capacityBuffer: ptSessions.capacityBuffer,
       instructorId: ptSessions.instructorId,
       instructorName: staffUsers.name,
+      instructorPaySgd: ptSessions.instructorPaySgd,
       locationId: ptSessions.locationId,
       locationName: locations.name,
       roomId: ptSessions.roomId,
@@ -255,12 +259,14 @@ export async function getPtSessionDetail(id: string): Promise<PtSessionDetail> {
 
   return {
     id: row.id,
+    ptRequestId: row.ptRequestId,
     lifecycle: row.lifecycle as PtSessionDetail['lifecycle'],
     startsAt: row.startsAt,
     endsAt: row.endsAt,
     sessionType: row.sessionType as PtSessionDetail['sessionType'],
     instructor: row.instructorName ? { id: row.instructorId, name: row.instructorName } : null,
     mainInstructorId: row.instructorId,
+    instructorPaySgd: row.instructorPaySgd == null ? null : Number(row.instructorPaySgd),
     supportingInstructorIds,
     supportingInstructors,
     location: row.locationName ? { id: row.locationId, name: row.locationName } : null,
