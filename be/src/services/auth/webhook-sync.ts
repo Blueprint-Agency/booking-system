@@ -2,6 +2,7 @@ import { and, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { staffUsers, staffInvitations, clients } from '../../db/schema/identity'
 import { logger } from '../../shared/logger'
+import { splitName } from '../../lib/name'
 
 /**
  * Clerk user.* webhook → link to pre-seeded staff_users row.
@@ -105,9 +106,10 @@ export async function syncStaffFromClerk(clerkUser: ClerkWebhookUser): Promise<S
     // Already linked — sync name on user.updated.
     const name = displayName(clerkUser)
     if (name && name !== row.name) {
+      const { firstName, lastName } = splitName(name)
       await db
         .update(staffUsers)
-        .set({ name, updatedAt: new Date() })
+        .set({ name, firstName, lastName, updatedAt: new Date() })
         .where(eq(staffUsers.id, row.id))
     }
     return { kind: 'idempotent', staffUserId: row.id }
@@ -145,12 +147,15 @@ export async function syncStaffFromClerk(clerkUser: ClerkWebhookUser): Promise<S
 
   // Link + activate.
   const name = displayName(clerkUser) ?? row.name
+  const { firstName, lastName } = splitName(name)
   await db
     .update(staffUsers)
     .set({
       clerkUserId: clerkUser.id,
       status: 'active',
       name,
+      firstName,
+      lastName,
       acceptedAt: row.acceptedAt ?? now,
       updatedAt: now,
     })
