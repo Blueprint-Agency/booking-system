@@ -23,6 +23,7 @@ import {
   ptRequests,
   ptSessionClients,
   ptSessions,
+  ptSessionSupportingInstructors,
   workshopDays,
   workshopInstructors,
   workshops,
@@ -31,7 +32,7 @@ import { bookings } from '../../db/schema/bookings'
 import { generateBookingCodes } from '../bookings/qr'
 import { assertRoomAvailable, assertRoomInLocation } from '../schedule/room-conflicts'
 import { ptSessionCost } from './cost'
-import { AppError } from '../../shared/errors'
+import { AppError, BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 
 export interface SchedulePtRequestInput {
   ptRequestId: string
@@ -198,4 +199,126 @@ export async function schedulePtRequest(input: SchedulePtRequestInput): Promise<
   // class booking path which is inbox/in-app only in v1.
 
   return { ok: true, ptSessionId }
+}
+
+// ============================================================================
+// updatePtSession — edit/reschedule a SCHEDULED pt_sessions row. Mirrors
+// services/schedule/classes.ts:updateClass (same shape/guards), swapping
+// classSupportingInstructors for pt_session_supporting_instructors and the
+// class capacity fields for PT's derived capacity_online (session_type → cost).
+// ============================================================================
+
+export type PtSessionRow = typeof ptSessions.$inferSelect
+
+export interface PtSupportingInstructorPatch {
+  instructorId: string
+  paySgd?: number | null
+}
+
+export interface UpdatePtSessionInput {
+  instructorId?: string
+  locationId?: string
+  roomId?: string
+  startsAt?: Date
+  endsAt?: Date
+  sessionType?: '1on1' | '2on1'
+  /** undefined = leave unchanged; null = clear; number = set (SGD). */
+  instructorPaySgd?: number | null
+  /** When provided, REPLACES the full supporting-instructor roster for this session. */
+  supportingInstructors?: PtSupportingInstructorPatch[]
+}
+
+function normalizeSupportingPt(
+  mainInstructorId: string,
+  supporting: PtSupportingInstructorPatch[],
+): PtSupportingInstructorPatch[] {
+  const byInstructor = new Map(supporting.map(s => [s.instructorId, s]))
+  const deduped = Array.from(byInstructor.values())
+  if (deduped.some(s => s.instructorId === mainInstructorId)) {
+    throw new BadRequestError('supporting_instructor_duplicates_main')
+  }
+  return deduped
+}
+
+export async function updatePtSession(id: string, patch: UpdatePtSessionInput): Promise<PtSessionRow> {
+  const [existing] = await db.select().from(ptSessions).where(eq(ptSessions.id, id)).limit(1)
+  if (!existing) throw new NotFoundError('pt_session_not_found')
+  if (existing.lifecycle !== 'active') throw new ConflictError('session_cancelled')
+
+  const newRoomId = patch.roomId ?? existing.roomId
+  const newLocationId = patch.locationId ?? existing.locationId
+  const newStartsAt = patch.startsAt ?? existing.startsAt
+  const newEndsAt = patch.endsAt ?? existing.endsAt
+
+  if (newEndsAt <= newStartsAt) throw new BadRequestError('bad_time_range')
+
+  if (
+    patch.roomId !== undefined ||
+    patch.locationId !== undefined ||
+    patch.startsAt !== undefined ||
+    patch.endsAt !== undefined
+  ) {
+    if (newRoomId) {
+      await assertRoomInLocation(newRoomId, newLocationId)
+      await assertRoomAvailable(newRoomId, newStartsAt, newEndsAt, { excludePtSessionId: id })
+    }
+  }
+
+  let supports: PtSupportingInstructorPatch[] | undefined
+  if (patch.supportingInstructors !== undefined) {
+    const mainForCheck = patch.instructorId ?? existing.instructorId
+    supports = normalizeSupportingPt(mainForCheck, patch.supportingInstructors)
+  } else if (patch.instructorId !== undefined) {
+    // If main changes but the supporting roster isn't provided, ensure the new
+    // main doesn't already sit in the existing supporting set.
+    const existingSupports = await db
+      .select({ instructorId: ptSessionSupportingInstructors.instructorId })
+      .from(ptSessionSupportingInstructors)
+      .where(eq(ptSessionSupportingInstructors.ptSessionId, id))
+    if (existingSupports.some(s => s.instructorId === patch.instructorId)) {
+      throw new BadRequestError('supporting_instructor_duplicates_main')
+    }
+  }
+
+  return db.transaction(async tx => {
+    const set: Partial<typeof ptSessions.$inferInsert> = {}
+    if (patch.instructorId !== undefined) set.instructorId = patch.instructorId
+    if (patch.locationId !== undefined) set.locationId = patch.locationId
+    if (patch.roomId !== undefined) set.roomId = patch.roomId
+    if (patch.startsAt !== undefined) set.startsAt = patch.startsAt
+    if (patch.endsAt !== undefined) set.endsAt = patch.endsAt
+    if (patch.sessionType !== undefined) {
+      set.sessionType = patch.sessionType
+      // PT capacity is derived from session_type (1on1 → 1 seat, 2on1 → 2), same
+      // rule schedulePtRequest applies at creation — no independently-settable
+      // capacity_online field for PT, unlike classes.
+      set.capacityOnline = ptSessionCost(patch.sessionType)
+    }
+    if (patch.instructorPaySgd !== undefined) {
+      set.instructorPaySgd = patch.instructorPaySgd == null ? null : patch.instructorPaySgd.toFixed(2)
+    }
+
+    let row = existing
+    if (Object.keys(set).length) {
+      const rows = await tx.update(ptSessions).set(set).where(eq(ptSessions.id, id)).returning()
+      if (!rows[0]) throw new Error('update returned no rows')
+      row = rows[0]
+    }
+
+    if (supports !== undefined) {
+      await tx
+        .delete(ptSessionSupportingInstructors)
+        .where(eq(ptSessionSupportingInstructors.ptSessionId, id))
+      if (supports.length > 0) {
+        await tx.insert(ptSessionSupportingInstructors).values(
+          supports.map(s => ({
+            ptSessionId: id,
+            instructorId: s.instructorId,
+            paySgd: s.paySgd == null ? null : s.paySgd.toFixed(2),
+          })),
+        )
+      }
+    }
+    return row
+  })
 }

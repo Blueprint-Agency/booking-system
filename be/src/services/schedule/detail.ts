@@ -6,6 +6,7 @@ import {
   classSupportingInstructors,
   ptSessions,
   ptSessionClients,
+  ptSessionSupportingInstructors,
   classTypes,
   locations,
   rooms,
@@ -171,6 +172,9 @@ export interface PtSessionDetail {
   endsAt: Date
   sessionType: '1on1' | '2on1'
   instructor: NamedRef | null
+  mainInstructorId: string
+  supportingInstructorIds: string[]
+  supportingInstructors: (NamedRef & { paySgd: number | null })[]
   location: NamedRef | null
   room: NamedRef | null
   capacityOnline: number
@@ -220,6 +224,24 @@ export async function getPtSessionDetail(id: string): Promise<PtSessionDetail> {
     )
     .where(eq(ptSessionClients.ptSessionId, id))
 
+  const supportingRows = await db
+    .select({
+      instructorId: ptSessionSupportingInstructors.instructorId,
+      name: staffUsers.name,
+      paySgd: ptSessionSupportingInstructors.paySgd,
+    })
+    .from(ptSessionSupportingInstructors)
+    .leftJoin(staffUsers, eq(staffUsers.id, ptSessionSupportingInstructors.instructorId))
+    .where(eq(ptSessionSupportingInstructors.ptSessionId, id))
+  const supportingInstructors = supportingRows
+    .map(r => ({
+      id: r.instructorId,
+      name: r.name ?? 'Instructor',
+      paySgd: r.paySgd == null ? null : Number(r.paySgd),
+    }))
+    .sort((a, b) => a.id.localeCompare(b.id))
+  const supportingInstructorIds = supportingInstructors.map(s => s.id)
+
   return {
     id: row.id,
     lifecycle: row.lifecycle as PtSessionDetail['lifecycle'],
@@ -227,6 +249,9 @@ export async function getPtSessionDetail(id: string): Promise<PtSessionDetail> {
     endsAt: row.endsAt,
     sessionType: row.sessionType as PtSessionDetail['sessionType'],
     instructor: row.instructorName ? { id: row.instructorId, name: row.instructorName } : null,
+    mainInstructorId: row.instructorId,
+    supportingInstructorIds,
+    supportingInstructors,
     location: row.locationName ? { id: row.locationId, name: row.locationName } : null,
     room: row.roomId && row.roomName ? { id: row.roomId, name: row.roomName } : null,
     capacityOnline: row.capacityOnline,

@@ -7,8 +7,13 @@ import {
   type AdminPtRequestView,
 } from '../../../services/pt-sessions/list'
 import { linkPtRequestPartner } from '../../../services/pt-sessions/request'
-import { schedulePtRequest, type SchedulePtRequestError } from '../../../services/pt-sessions/schedule'
+import {
+  schedulePtRequest,
+  updatePtSession,
+  type SchedulePtRequestError,
+} from '../../../services/pt-sessions/schedule'
 import { cancelPtRequest } from '../../../services/pt-sessions/cancel'
+import { getPtSessionDetail, type PtSessionDetail } from '../../../services/schedule/detail'
 
 // PT request triage for admins. No "approve"/"decline" in the simplified flow —
 // admin negotiates over WhatsApp, then either schedules (the implicit approval)
@@ -37,6 +42,26 @@ const scheduleSchema = z
     message: 'ends_at must be after starts_at',
     path: ['ends_at'],
   })
+
+// PATCH /:id targets a SCHEDULED pt_sessions row (distinct from the pt_requests
+// id used by the routes above) — the only id space with starts_at/room/etc.
+const updateSessionSchema = z.object({
+  starts_at: isoDate.optional(),
+  ends_at: isoDate.optional(),
+  room_id: z.string().uuid().optional(),
+  location_id: z.string().uuid().optional(),
+  session_type: z.enum(['1on1', '2on1']).optional(),
+  instructor_id: z.string().uuid().optional(),
+  instructor_pay_sgd: z.number().min(0).nullable().optional(),
+  supporting_instructors: z
+    .array(
+      z.object({
+        instructor_id: z.string().uuid(),
+        pay_sgd: z.number().min(0).nullable().optional(),
+      }),
+    )
+    .optional(),
+})
 
 const linkPartnerSchema = z
   .object({
@@ -71,6 +96,26 @@ function serialize(r: AdminPtRequestView) {
           room_name: r.session.roomName,
         }
       : null,
+  }
+}
+
+function serializeSession(d: PtSessionDetail) {
+  return {
+    id: d.id,
+    lifecycle: d.lifecycle,
+    starts_at: d.startsAt.toISOString(),
+    ends_at: d.endsAt.toISOString(),
+    session_type: d.sessionType,
+    instructor: d.instructor,
+    main_instructor_id: d.mainInstructorId,
+    supporting_instructor_ids: d.supportingInstructorIds,
+    supporting_instructors: d.supportingInstructors,
+    instructor_ids: [d.mainInstructorId, ...d.supportingInstructorIds],
+    location: d.location,
+    room: d.room,
+    capacity_online: d.capacityOnline,
+    capacity_waitlist: d.capacityWaitlist,
+    capacity_buffer: d.capacityBuffer,
   }
 }
 
@@ -123,6 +168,32 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'pt_requests', id })
     const row = await getPtRequestForAdmin(id)
     return c.json({ pt_request: row ? serialize(row) : null }, 201)
+  })
+  // Edit/reschedule a SCHEDULED session. :id here is the pt_session id (see note
+  // on updateSessionSchema above) — auth → zod parse → service → format.
+  .patch('/:id', zValidator('param', idParam), zValidator('json', updateSessionSchema), async c => {
+    const { id } = c.req.valid('param')
+    const body = c.req.valid('json')
+    await updatePtSession(id, {
+      ...(body.instructor_id !== undefined ? { instructorId: body.instructor_id } : {}),
+      ...(body.location_id !== undefined ? { locationId: body.location_id } : {}),
+      ...(body.room_id !== undefined ? { roomId: body.room_id } : {}),
+      ...(body.starts_at !== undefined ? { startsAt: new Date(body.starts_at) } : {}),
+      ...(body.ends_at !== undefined ? { endsAt: new Date(body.ends_at) } : {}),
+      ...(body.session_type !== undefined ? { sessionType: body.session_type } : {}),
+      ...(body.instructor_pay_sgd !== undefined ? { instructorPaySgd: body.instructor_pay_sgd } : {}),
+      ...(body.supporting_instructors !== undefined
+        ? {
+            supportingInstructors: body.supporting_instructors.map(s => ({
+              instructorId: s.instructor_id,
+              paySgd: s.pay_sgd,
+            })),
+          }
+        : {}),
+    })
+    c.set('auditTarget' as any, { table: 'pt_sessions', id })
+    const detail = await getPtSessionDetail(id)
+    return c.json(serializeSession(detail))
   })
   .post('/:id/link-partner', zValidator('param', idParam), zValidator('json', linkPartnerSchema), async c => {
     const { id } = c.req.valid('param')
