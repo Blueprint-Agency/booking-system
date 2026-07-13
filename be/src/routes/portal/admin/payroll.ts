@@ -18,8 +18,14 @@ const listQuery = z.object({
   to: isoDate.optional(),
 })
 
-const patchParam = z.object({ kind: z.enum(['class', 'pt']), id: z.string().uuid() })
-const patchBody = z.object({ instructor_pay_sgd: z.number().min(0).nullable() })
+const patchParam = z.object({ kind: z.enum(['class', 'pt', 'workshop']), id: z.string().uuid() })
+const patchBody = z.object({
+  instructor_pay_sgd: z.number().min(0).nullable(),
+  // Targets a specific instructor's pay row when a session has more than one
+  // (main + supporting). Omitted → back-compat: writes the session's own pay
+  // column. Required for kind='workshop' (no single default-pay column there).
+  instructor_id: z.string().uuid().optional(),
+})
 
 function serialize(r: PayrollRow) {
   return {
@@ -73,10 +79,12 @@ const app = new Hono()
   // Inline edit of one session's pay (from the payroll table). null clears it.
   .patch('/:kind/:id', zValidator('param', patchParam), zValidator('json', patchBody), async c => {
     const { kind, id } = c.req.valid('param')
-    const { instructor_pay_sgd } = c.req.valid('json')
-    const res = await updatePayrollAmount(kind, id, instructor_pay_sgd)
+    const { instructor_pay_sgd, instructor_id } = c.req.valid('json')
+    const res = await updatePayrollAmount(kind, id, instructor_pay_sgd, instructor_id)
     if (!res.ok) return c.json({ error: 'not_found' }, 404)
-    c.set('auditTarget' as any, { table: kind === 'class' ? 'classes' : 'pt_sessions', id })
+    const table =
+      kind === 'class' ? 'classes' : kind === 'pt' ? 'pt_sessions' : 'workshop_instructors'
+    c.set('auditTarget' as any, { table, id })
     return c.json({ ok: true })
   })
 
