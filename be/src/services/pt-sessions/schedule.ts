@@ -301,7 +301,7 @@ export async function updatePtSession(id: string, patch: UpdatePtSessionInput): 
     let row = existing
     if (Object.keys(set).length) {
       const rows = await tx.update(ptSessions).set(set).where(eq(ptSessions.id, id)).returning()
-      if (!rows[0]) throw new Error('update returned no rows')
+      if (!rows[0]) throw new ConflictError('pt_session_update_failed')
       row = rows[0]
     }
 

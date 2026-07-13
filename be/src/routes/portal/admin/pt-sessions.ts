@@ -43,7 +43,7 @@ const scheduleSchema = z
     path: ['ends_at'],
   })
 
-// PATCH /:id targets a SCHEDULED pt_sessions row (distinct from the pt_requests
+// PATCH /sessions/:id targets a SCHEDULED pt_sessions row (distinct from the pt_requests
 // id used by the routes above) — the only id space with starts_at/room/etc.
 const updateSessionSchema = z.object({
   starts_at: isoDate.optional(),
@@ -169,9 +169,10 @@ const app = new Hono()
     const row = await getPtRequestForAdmin(id)
     return c.json({ pt_request: row ? serialize(row) : null }, 201)
   })
-  // Edit/reschedule a SCHEDULED session. :id here is the pt_session id (see note
-  // on updateSessionSchema above) — auth → zod parse → service → format.
-  .patch('/:id', zValidator('param', idParam), zValidator('json', updateSessionSchema), async c => {
+  // Edit/reschedule a SCHEDULED session. :id here is the pt_session id — kept under
+  // /sessions/:id (distinct from the pt_request :id used by the routes above) so the
+  // same path template never resolves to two different entities across verbs.
+  .patch('/sessions/:id', zValidator('param', idParam), zValidator('json', updateSessionSchema), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
     await updatePtSession(id, {
