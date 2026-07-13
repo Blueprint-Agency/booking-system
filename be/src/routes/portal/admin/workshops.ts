@@ -209,7 +209,12 @@ const app = new Hono()
       tiers: detail.tiers.map(t => tierRow(t as tiersSvc.TierWithDays)),
       images: detail.images.map(im => ({ id: im.id, r2_key: im.r2Key, ord: im.ord })),
       main_instructor_id: detail.mainInstructorId,
+      main_instructor_pay_sgd: detail.mainInstructorPaySgd,
       supporting_instructor_ids: detail.supportingInstructorIds,
+      supporting_instructors: detail.supportingInstructors.map(s => ({
+        instructor_id: s.instructorId,
+        pay_sgd: s.paySgd,
+      })),
       instructor_ids: detail.instructorIds,
       promotions: (promosMap[id] ?? []).map(serializePromotion),
     })

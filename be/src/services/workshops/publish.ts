@@ -305,6 +305,8 @@ export interface WorkshopDetailView {
   supportingInstructorIds: string[]
   /** Back-compat — [main, ...supporting]. */
   instructorIds: string[]
+  mainInstructorPaySgd: number | null
+  supportingInstructors: { instructorId: string; paySgd: number | null }[]
 }
 
 export async function getWorkshopDetail(id: string): Promise<WorkshopDetailView> {
@@ -341,17 +343,32 @@ export async function getWorkshopDetail(id: string): Promise<WorkshopDetailView>
     .orderBy(workshopImages.ord)
 
   const instructorRows = await db
-    .select({ id: workshopInstructors.instructorId, role: workshopInstructors.role })
+    .select({
+      id: workshopInstructors.instructorId,
+      role: workshopInstructors.role,
+      paySgd: workshopInstructors.paySgd,
+    })
     .from(workshopInstructors)
     .where(eq(workshopInstructors.workshopId, id))
 
   let mainInstructorId: string | null = null
+  let mainInstructorPaySgd: number | null = null
   const supportingInstructorIds: string[] = []
+  const supportingInstructors: { instructorId: string; paySgd: number | null }[] = []
   for (const r of instructorRows) {
-    if (r.role === 'main') mainInstructorId = r.id
-    else supportingInstructorIds.push(r.id)
+    if (r.role === 'main') {
+      mainInstructorId = r.id
+      mainInstructorPaySgd = r.paySgd == null ? null : Number(r.paySgd)
+    } else {
+      supportingInstructorIds.push(r.id)
+      supportingInstructors.push({
+        instructorId: r.id,
+        paySgd: r.paySgd == null ? null : Number(r.paySgd),
+      })
+    }
   }
   supportingInstructorIds.sort()
+  supportingInstructors.sort((a, b) => a.instructorId.localeCompare(b.instructorId))
 
   return {
     workshop,
@@ -363,6 +380,8 @@ export async function getWorkshopDetail(id: string): Promise<WorkshopDetailView>
     instructorIds: mainInstructorId
       ? [mainInstructorId, ...supportingInstructorIds]
       : [...supportingInstructorIds],
+    mainInstructorPaySgd,
+    supportingInstructors,
   }
 }
 

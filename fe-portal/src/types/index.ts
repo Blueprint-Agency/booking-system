@@ -171,6 +171,9 @@ export interface Workshop {
   supportingInstructorIds: string[];
   /** Back-compat: `[main, ...supporting]`. Read-only mirror of the two fields above. */
   instructorIds: string[];
+  mainInstructorPaySgd?: number | null;
+  /** Keyed by instructor id (supporting instructors only). */
+  supportingInstructorPay?: Record<string, number | null>;
   coverUrl: string | null;
   additionalImages: string[];
   descriptionHtml: string;

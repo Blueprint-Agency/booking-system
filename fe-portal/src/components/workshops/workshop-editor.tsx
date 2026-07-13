@@ -54,7 +54,9 @@ interface ApiWorkshopDetail {
     day_ids: string[];
   }>;
   main_instructor_id: string | null;
+  main_instructor_pay_sgd?: number | null;
   supporting_instructor_ids: string[];
+  supporting_instructors?: Array<{ instructor_id: string; pay_sgd: number | null }>;
   /** Back-compat: `[main, ...supporting]`. */
   instructor_ids: string[];
   promotions?: ApiPromotion[];
@@ -105,6 +107,10 @@ function fromApiWorkshop(d: ApiWorkshopDetail): Workshop {
   const supportingInstructorIds =
     d.supporting_instructor_ids ??
     d.instructor_ids.filter((id) => id !== mainInstructorId);
+  const supportingInstructorPay: Record<string, number | null> = {};
+  for (const s of d.supporting_instructors ?? []) {
+    supportingInstructorPay[s.instructor_id] = s.pay_sgd;
+  }
   return {
     id: d.id,
     name: d.name,
@@ -114,6 +120,8 @@ function fromApiWorkshop(d: ApiWorkshopDetail): Workshop {
     instructorIds: mainInstructorId
       ? [mainInstructorId, ...supportingInstructorIds]
       : supportingInstructorIds,
+    mainInstructorPaySgd: d.main_instructor_pay_sgd ?? null,
+    supportingInstructorPay,
     coverUrl: null,
     additionalImages: [],
     descriptionHtml: d.description_html ?? "",
@@ -208,6 +216,72 @@ async function createWorkshopWithChildren(
   return basics.id;
 }
 
+/**
+ * Reconcile an existing workshop's days/tiers against their originally-loaded
+ * state: rows still carrying their original (server) id are PATCHed in place,
+ * rows without a matching original id are new and get POSTed, and original
+ * rows no longer present get DELETEd. Deletes run first so freed room/time
+ * slots and day ids are available to the update/create passes that follow.
+ * Order: delete tiers -> delete days -> update/create days -> update/create
+ * tiers (tier day_ids are remapped/filtered through the day id map so stale
+ * references to a removed day are dropped, same as the create flow).
+ */
+async function saveDaysAndTiers(
+  api: Api,
+  workshopId: string,
+  originalDays: WorkshopDay[],
+  currentDaysUnsorted: WorkshopDay[],
+  originalTiers: WorkshopTier[],
+  currentTiers: WorkshopTier[],
+) {
+  const originalDayIds = new Set(originalDays.map((d) => d.id));
+  const currentDays = [...currentDaysUnsorted].sort((a, b) => a.date.localeCompare(b.date));
+  const currentDayIds = new Set(currentDays.map((d) => d.id));
+  const originalTierIds = new Set(originalTiers.map((t) => t.id));
+  const currentTierIds = new Set(currentTiers.map((t) => t.id));
+
+  for (const t of originalTiers) {
+    if (!currentTierIds.has(t.id)) {
+      await api.del(`/portal/admin/workshops/${workshopId}/tiers/${t.id}`);
+    }
+  }
+  for (const d of originalDays) {
+    if (!currentDayIds.has(d.id)) {
+      await api.del(`/portal/admin/workshops/${workshopId}/days/${d.id}`);
+    }
+  }
+
+  const dayIdMap = new Map<string, string>();
+  let dayOrd = 1;
+  for (const d of currentDays) {
+    if (originalDayIds.has(d.id)) {
+      await api.patch(`/portal/admin/workshops/${workshopId}/days/${d.id}`, dayToApi(d, dayOrd++));
+      dayIdMap.set(d.id, d.id);
+    } else {
+      const created = await api.post<{ id: string }>(
+        `/portal/admin/workshops/${workshopId}/days`,
+        dayToApi(d, dayOrd++),
+      );
+      dayIdMap.set(d.id, created.id);
+    }
+  }
+
+  let tierOrd = 1;
+  for (const t of currentTiers) {
+    const payload = tierToApi(t, tierOrd++, dayIdMap);
+    if (originalTierIds.has(t.id)) {
+      await api.patch(`/portal/admin/workshops/${workshopId}/tiers/${t.id}`, payload);
+    } else {
+      await api.post(`/portal/admin/workshops/${workshopId}/tiers`, payload);
+    }
+  }
+}
+
+function parsePay(v: string): number | null {
+  const t = v.trim();
+  return t === "" ? null : Number(t);
+}
+
 export function WorkshopEditor({
   initial,
   onSave,
@@ -232,6 +306,17 @@ export function WorkshopEditor({
   const [supportingInstructorIds, setSupportingInstructorIds] = useState<string[]>(
     initial?.supportingInstructorIds ?? [],
   );
+  const [mainPay, setMainPay] = useState(
+    initial?.mainInstructorPaySgd == null ? "" : String(initial.mainInstructorPaySgd),
+  );
+  const [supportingPay, setSupportingPay] = useState<Record<string, string>>(() => {
+    const map: Record<string, string> = {};
+    for (const id of initial?.supportingInstructorIds ?? []) {
+      const v = initial?.supportingInstructorPay?.[id];
+      map[id] = v == null ? "" : String(v);
+    }
+    return map;
+  });
   const [descriptionHtml, setDescriptionHtml] = useState(initial?.descriptionHtml ?? "");
   const [days, setDays] = useState<WorkshopDay[]>(initial?.days ?? []);
   const [tiers, setTiers] = useState<WorkshopTier[]>(initial?.tiers ?? []);
@@ -302,23 +387,28 @@ export function WorkshopEditor({
     if (!name.trim()) return setError("Name is required.");
     if (!locationId) return setError("Location is required.");
     if (!mainInstructorId) return setError("Main instructor is required.");
-    if (!isEdit && days.length === 0) return setError("Add at least one day.");
-    if (!isEdit) {
-      for (let i = 0; i < days.length; i++) {
-        const d = days[i];
-        const label = `Day ${i + 1}`;
-        if (!d.roomId) return setError(`${label}: pick a room.`);
-        if (!d.date) return setError(`${label}: date is required.`);
-        if (!d.startTime || !d.endTime)
-          return setError(`${label}: start and end time are required.`);
-        if (d.endTime <= d.startTime)
-          return setError(`${label}: end time must be after start time.`);
-        if (d.capacity.onlineBooking < 1)
-          return setError(`${label}: online booking capacity must be at least 1.`);
-      }
+    if (days.length === 0) return setError("Add at least one day.");
+    for (let i = 0; i < days.length; i++) {
+      const d = days[i];
+      const label = `Day ${i + 1}`;
+      if (!d.roomId) return setError(`${label}: pick a room.`);
+      if (!d.date) return setError(`${label}: date is required.`);
+      if (!d.startTime || !d.endTime)
+        return setError(`${label}: start and end time are required.`);
+      if (d.endTime <= d.startTime)
+        return setError(`${label}: end time must be after start time.`);
+      if (d.capacity.onlineBooking < 1)
+        return setError(`${label}: online booking capacity must be at least 1.`);
     }
-    if (!isEdit && tiers.length === 0) return setError("Add at least one pricing tier.");
-    for (const t of tiers) {
+    if (tiers.length === 0) return setError("Add at least one pricing tier.");
+    // Drop references to days that have since been removed from the form —
+    // otherwise a tier can look non-empty locally but map to zero valid days.
+    const currentDayIdSet = new Set(days.map((d) => d.id));
+    const prunedTiers = tiers.map((t) => ({
+      ...t,
+      dayIds: t.dayIds.filter((id) => currentDayIdSet.has(id)),
+    }));
+    for (const t of prunedTiers) {
       if (!t.name.trim()) return setError("Every tier needs a name.");
       if (t.dayIds.length === 0) return setError(`Tier "${t.name}" needs at least one day.`);
       if (t.priceSgd < 0) return setError(`Tier "${t.name}": price cannot be negative.`);
@@ -338,19 +428,29 @@ export function WorkshopEditor({
     setSaving(true);
     try {
       if (isEdit && initial) {
-        // v0 edit: patch basics only. Day/tier edits require per-row PATCH/DELETE
-        // flows that are scope for v1.
         await api.patch(`/portal/admin/workshops/${initial.id}`, {
           name: name.trim(),
           location_id: locationId,
           description_html: descriptionHtml || null,
           main_instructor_id: mainInstructorId,
-          supporting_instructor_ids: supportingInstructorIds,
+          main_instructor_pay_sgd: parsePay(mainPay),
+          supporting_instructors: supportingInstructorIds.map((iid) => ({
+            instructor_id: iid,
+            pay_sgd: parsePay(supportingPay[iid] ?? ""),
+          })),
         });
+        await saveDaysAndTiers(
+          api,
+          initial.id,
+          initial.days,
+          days,
+          initial.tiers,
+          prunedTiers,
+        );
         await api.put(`/portal/admin/workshops/${initial.id}/promotions`, {
           promotions: promotions.map(promotionToApiPayload),
         });
-        toast.success("Workshop saved. (Editing days/tiers ships in v1.)");
+        toast.success("Workshop saved.");
         onSave(initial.id);
       } else {
         const id = await createWorkshopWithChildren(api, {
@@ -360,8 +460,20 @@ export function WorkshopEditor({
           mainInstructorId,
           supportingInstructorIds,
           days: [...days].sort((a, b) => a.date.localeCompare(b.date)),
-          tiers,
+          tiers: prunedTiers,
         });
+        const hasPay =
+          mainPay.trim() !== "" ||
+          supportingInstructorIds.some((iid) => (supportingPay[iid] ?? "").trim() !== "");
+        if (hasPay) {
+          await api.patch(`/portal/admin/workshops/${id}`, {
+            main_instructor_pay_sgd: parsePay(mainPay),
+            supporting_instructors: supportingInstructorIds.map((iid) => ({
+              instructor_id: iid,
+              pay_sgd: parsePay(supportingPay[iid] ?? ""),
+            })),
+          });
+        }
         if (promotions.length) {
           await api.put(`/portal/admin/workshops/${id}/promotions`, {
             promotions: promotions.map(promotionToApiPayload),
@@ -412,7 +524,7 @@ export function WorkshopEditor({
           title={initial ? "Edit workshop" : "New workshop"}
           description={
             initial
-              ? "Edit basics. Day & tier edits ship in v1."
+              ? "Edit basics, days, and pricing tiers."
               : "Configure basics first, then days, then pricing tiers."
           }
           actions={
@@ -444,7 +556,7 @@ export function WorkshopEditor({
             onChange={(e) => {
               const next = e.target.value;
               setLocationId(next);
-              if (!isEdit && next !== locationId) {
+              if (next !== locationId) {
                 // Rooms are scoped per location — clear stale picks so the BE
                 // can't reject the save with room_location_mismatch.
                 setDays((cur) => cur.map((d) => ({ ...d, roomId: "" })));
@@ -460,33 +572,56 @@ export function WorkshopEditor({
             ))}
           </select>
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="ws-main-instructor">Main instructor</Label>
-          <select
-            id="ws-main-instructor"
-            value={mainInstructorId}
-            onChange={(e) => setMainInstructorId(e.target.value)}
-            className="flex h-10 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          >
-            <option value="">— select —</option>
-            {activeInstructors.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.name}
-              </option>
-            ))}
-          </select>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="ws-main-instructor">Main instructor</Label>
+            <select
+              id="ws-main-instructor"
+              value={mainInstructorId}
+              onChange={(e) => setMainInstructorId(e.target.value)}
+              className="flex h-10 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              <option value="">— select —</option>
+              {activeInstructors.map((i) => (
+                <option key={i.id} value={i.id}>
+                  {i.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="ws-main-pay">Main instructor pay (SGD)</Label>
+            <Input
+              id="ws-main-pay"
+              type="number"
+              min={0}
+              placeholder="Optional"
+              value={mainPay}
+              onChange={(e) => setMainPay(e.target.value)}
+            />
+          </div>
         </div>
         <div className="space-y-1.5">
           <Label>Supporting instructors</Label>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="space-y-2">
             {supportingInstructorIds.map((sid) => {
               const ins = catalog.instructors.find((i) => i.id === sid);
               return (
-                <span
+                <div
                   key={sid}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 px-2.5 py-1 text-xs text-ink"
+                  className="flex items-center gap-2 rounded-md border border-border bg-paper px-3 py-2"
                 >
-                  {ins?.name ?? "Unknown"}
+                  <span className="flex-1 text-sm text-ink">{ins?.name ?? "Unknown"}</span>
+                  <Input
+                    type="number"
+                    min={0}
+                    placeholder="Pay (SGD)"
+                    value={supportingPay[sid] ?? ""}
+                    onChange={(e) =>
+                      setSupportingPay((prev) => ({ ...prev, [sid]: e.target.value }))
+                    }
+                    className="w-32"
+                  />
                   <button
                     type="button"
                     onClick={() => removeSupporting(sid)}
@@ -495,7 +630,7 @@ export function WorkshopEditor({
                   >
                     ×
                   </button>
-                </span>
+                </div>
               );
             })}
             {availableForSupporting.length > 0 && (
@@ -539,67 +674,32 @@ export function WorkshopEditor({
         </div>
       </Section>
 
-      <Section
-        title="Days"
-        step="2"
-        note={isEdit ? "Day-level edits ship in v1; currently read-only." : undefined}
-      >
-        {isEdit ? (
-          <ul className="space-y-1 text-sm text-ink">
-            {days.map((d) => (
-              <li key={d.id} className="rounded-md border border-border bg-paper px-3 py-2">
-                {d.date} · {d.startTime}–{d.endTime} · cap {d.capacity.onlineBooking}
-              </li>
-            ))}
-            {days.length === 0 && (
-              <p className="text-xs text-muted">No days configured.</p>
-            )}
-          </ul>
-        ) : (
-          <WorkshopDaysEditor
-            mode={mode}
-            onModeChange={setMode}
-            rangeStart={rangeStart}
-            rangeEnd={rangeEnd}
-            onRangeChange={(s, e) => {
-              setRangeStart(s);
-              setRangeEnd(e);
-            }}
-            days={days}
-            onChange={setDays}
-            rooms={catalog.rooms
-              .filter((r) => r.location_id === locationId)
-              .map((r) => ({ id: r.id, name: r.name }))}
-            locationChosen={!!locationId}
-          />
-        )}
+      <Section title="Days" step="2">
+        <WorkshopDaysEditor
+          mode={mode}
+          onModeChange={setMode}
+          rangeStart={rangeStart}
+          rangeEnd={rangeEnd}
+          onRangeChange={(s, e) => {
+            setRangeStart(s);
+            setRangeEnd(e);
+          }}
+          days={days}
+          onChange={setDays}
+          rooms={catalog.rooms
+            .filter((r) => r.location_id === locationId)
+            .map((r) => ({ id: r.id, name: r.name }))}
+          locationChosen={!!locationId}
+        />
       </Section>
 
-      <Section
-        title="Pricing tiers"
-        step="3"
-        note={isEdit ? "Tier edits ship in v1; currently read-only." : undefined}
-      >
-        {isEdit ? (
-          <ul className="space-y-1 text-sm text-ink">
-            {tiers.map((t) => (
-              <li key={t.id} className="rounded-md border border-border bg-paper px-3 py-2">
-                {t.name} · S${t.priceSgd} · {t.dayIds.length} day
-                {t.dayIds.length === 1 ? "" : "s"}
-              </li>
-            ))}
-            {tiers.length === 0 && (
-              <p className="text-xs text-muted">No tiers configured.</p>
-            )}
-          </ul>
-        ) : (
-          <WorkshopTiersEditor
-            workshopId="new"
-            days={days}
-            tiers={tiers}
-            onChange={setTiers}
-          />
-        )}
+      <Section title="Pricing tiers" step="3">
+        <WorkshopTiersEditor
+          workshopId={initial?.id ?? "new"}
+          days={days}
+          tiers={tiers}
+          onChange={setTiers}
+        />
       </Section>
 
       <Section title="Promotions" step="4">
