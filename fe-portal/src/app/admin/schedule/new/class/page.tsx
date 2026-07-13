@@ -222,6 +222,7 @@ export default function NewClassPage() {
                 options={activeClassTypes.map((c) => ({ val: c.id, label: c.name }))}
               />
             </div>
+            <div />
             <div className="space-y-1.5">
               <Label htmlFor="ins">Main instructor</Label>
               <SelectField
