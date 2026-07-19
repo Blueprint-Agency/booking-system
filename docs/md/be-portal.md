@@ -254,8 +254,10 @@ Per `admin-restructure.md` §15a, **admin role is read-only on Clients**. Mutati
 |---|---|---|---|
 | GET | `/clients` | admin+superadmin | List with search, status filter |
 | GET | `/clients/:id` | admin+superadmin | Profile incl. packages (including any trial pass + active promotion frozen at purchase), booking history, cancellation count, attendance, referrals, waiver. Admin views are workspace-agnostic — Clients is global. |
-| POST | `/clients/:id/suspend` | superadmin | Set `status='suspended'`, `suspended_at`. Calls Clerk `revokeAllSessions`. |
-| POST | `/clients/:id/unsuspend` | superadmin | Reverse |
+| DELETE | `/clients/:id` | superadmin | **Block** — sets `deleted_at`, bans the user in Clerk and revokes sessions. Nothing is erased; bookings/packages/ledger are preserved. |
+| POST | `/clients/:id/restore` | superadmin | **Unblock** — clears `deleted_at`, unbans in Clerk. |
+
+There is no separate suspend/unsuspend surface — blocking is the single mechanism. `requireActiveClient` rejects a blocked client on `deleted_at` as well as `status`, so a failed Clerk ban can't leave them with API access.
 | POST | `/clients/:id/credits/adjust` | superadmin | `{ client_package_id, delta, reason }` — manual credit adjust. Valid for `kind in ('credit_bundle', 'unlimited', 'trial')`. See §3d. |
 | POST | `/clients/:id/sessions/adjust` | superadmin | Same shape, for PT session balance (`kind='pt'`) |
 | POST | `/clients/:id/packages/:client_package_id/expiry` | superadmin | `{ expires_at, reason }` — edit expiry on `client_packages` (per `admin-restructure.md` §16 "Edit expiry" action, applies to `credit_bundle`, `unlimited`, `trial`). Writes a `manual_adjustments` row with `delta=0` and the reason note. |

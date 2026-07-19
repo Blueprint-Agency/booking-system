@@ -9,7 +9,6 @@ import {
   ShieldOff,
   ShieldCheck,
   Loader2,
-  Trash2,
   RotateCcw,
   AlertTriangle,
 } from "lucide-react";
@@ -170,11 +169,11 @@ export default function ClientProfilePage({
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-error" />
               <div className="flex-1">
                 <div className="font-medium text-error">
-                  Deleted {formatRelative(profile.deleted_at)}
+                  Blocked {formatRelative(profile.deleted_at)}
                 </div>
                 <div className="mt-0.5 text-xs text-muted">
                   This client cannot sign in. Bookings, packages, and credit
-                  history are preserved. Superadmins can restore them.
+                  history are preserved. Superadmins can unblock them.
                 </div>
               </div>
               {isSuperadmin && (
@@ -187,13 +186,13 @@ export default function ClientProfilePage({
                     setRestoring(true);
                     try {
                       await api.post(`/portal/admin/clients/${id}/restore`, {});
-                      toast.success("Client restored.");
+                      toast.success("Client unblocked.");
                       await load();
                     } catch (err) {
                       toast.error(
                         err instanceof ApiError
-                          ? `Restore failed (HTTP ${err.status}).`
-                          : "Restore failed.",
+                          ? `Unblock failed (HTTP ${err.status}).`
+                          : "Unblock failed.",
                       );
                     } finally {
                       setRestoring(false);
@@ -205,7 +204,7 @@ export default function ClientProfilePage({
                   ) : (
                     <RotateCcw className="h-3.5 w-3.5" />
                   )}
-                  Restore
+                  Unblock
                 </Button>
               )}
             </div>
@@ -218,11 +217,7 @@ export default function ClientProfilePage({
                 <h1 className="text-2xl font-semibold text-ink">{profile.name}</h1>
                 {profile.deleted_at ? (
                   <Badge tone="error">
-                    <Trash2 className="mr-1 h-3 w-3" /> Deleted
-                  </Badge>
-                ) : profile.status === "suspended" ? (
-                  <Badge tone="error">
-                    <ShieldOff className="mr-1 h-3 w-3" /> Suspended
+                    <ShieldOff className="mr-1 h-3 w-3" /> Blocked
                   </Badge>
                 ) : (
                   <Badge tone="sage">
@@ -247,7 +242,7 @@ export default function ClientProfilePage({
                 onClick={() => setDeleteOpen(true)}
                 className="text-error hover:bg-error/10 hover:text-error"
               >
-                <Trash2 className="h-3.5 w-3.5" /> Delete
+                <ShieldOff className="h-3.5 w-3.5" /> Block
               </Button>
             )}
           </header>
@@ -448,7 +443,7 @@ export default function ClientProfilePage({
       )}
 
       {isSuperadmin && deleteOpen && profile && (
-        <DeleteClientDialog
+        <BlockClientDialog
           email={profile.email}
           name={profile.name}
           onClose={() => setDeleteOpen(false)}
@@ -456,14 +451,14 @@ export default function ClientProfilePage({
             if (!api) return;
             try {
               await api.del(`/portal/admin/clients/${id}`);
-              toast.success("Client deleted.");
+              toast.success("Client blocked.");
               setDeleteOpen(false);
               await load();
             } catch (err) {
               toast.error(
                 err instanceof ApiError
-                  ? `Delete failed (HTTP ${err.status}).`
-                  : "Delete failed.",
+                  ? `Block failed (HTTP ${err.status}).`
+                  : "Block failed.",
               );
             }
           }}
@@ -473,7 +468,7 @@ export default function ClientProfilePage({
   );
 }
 
-function DeleteClientDialog({
+function BlockClientDialog({
   email,
   name,
   onClose,
@@ -491,8 +486,8 @@ function DeleteClientDialog({
     <Dialog
       open
       onOpenChange={(o) => !o && onClose()}
-      title={`Delete ${name}?`}
-      description="The client will be locked out of the booking app and hidden from the directory. Bookings, packages, and credit history are kept. A superadmin can restore them later."
+      title={`Block ${name}?`}
+      description="The client will be locked out of the booking app and hidden from the directory. Bookings, packages, and credit history are kept. A superadmin can unblock them later."
     >
       <form
         className="space-y-4"
@@ -531,11 +526,11 @@ function DeleteClientDialog({
           >
             {busy ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin" /> Deleting…
+                <Loader2 className="h-4 w-4 animate-spin" /> Blocking…
               </>
             ) : (
               <>
-                <Trash2 className="h-4 w-4" /> Delete client
+                <ShieldOff className="h-4 w-4" /> Block client
               </>
             )}
           </Button>

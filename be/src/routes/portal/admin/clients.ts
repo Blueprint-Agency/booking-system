@@ -170,8 +170,8 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'client_packages', id: pid })
     return c.json(editedPackageView(row))
   })
-  .post('/:id/suspend', c => c.json({ todo: 'suspend + Clerk revokeAllSessions' }, 501))
-  .post('/:id/unsuspend', c => c.json({ todo: 'unsuspend' }, 501))
+  // Blocking is DELETE /:id + POST /:id/restore below — there is deliberately no
+  // separate suspend mechanism.
   .post('/:id/packages/issue', c => c.json({ todo: 'admin grants complimentary package' }, 501))
   // ---- soft delete + restore (superadmin-only) ----
   .delete('/:id', requireRole('superadmin'), zValidator('param', idParam), async c => {

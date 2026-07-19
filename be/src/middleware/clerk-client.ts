@@ -133,8 +133,11 @@ export const clerkClientAuth: MiddlewareHandler = async (c, next) => {
 
 export const requireActiveClient: MiddlewareHandler = async (c, next) => {
   const row = c.get('clientRow')
-  if (row.status !== 'active') {
-    return c.json({ error: 'client_suspended' }, 403)
+  // Blocking sets deleted_at and bans the user in Clerk, but that Clerk call is
+  // best-effort (see softDeleteClient) — so enforce it here too rather than
+  // trusting the ban to have landed.
+  if (row.deletedAt || row.status !== 'active') {
+    return c.json({ error: 'client_blocked' }, 403)
   }
   await next()
 }

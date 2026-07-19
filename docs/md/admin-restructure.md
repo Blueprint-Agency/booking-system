@@ -653,7 +653,7 @@ Two staff role types in the system. (The `instructor` role is reserved in the sc
 ### 15a. Client List (`/admin/clients`)
 
 - Searchable by name or email.
-- Filterable by status (Active / Suspended).
+- Filterable by status (All / Active / Blocked — the Blocked pill is superadmin-only).
 - Each row shows: name, email, join date, active package count, upcoming booking count, status chip.
 - "Add client" is not present — clients self-register via the client app. This list is read-only at the list level.
 
@@ -689,12 +689,12 @@ Two staff role types in the system. (The `instructor` role is reserved in the sc
 
 ### 15c. Account Status
 
-Two states: **Active** and **Suspended**.
+Two states: **Active** and **Blocked**.
 
 - **Active** — default. Client can browse, book, and cancel normally.
-- **Suspended** — client cannot make new bookings. Existing upcoming bookings are unaffected (not auto-cancelled). Client can still log in and view their history.
+- **Blocked** — client is locked out of the booking app entirely (banned in Clerk, sessions revoked, and rejected by `requireActiveClient`) and hidden from the default directory listing. Existing upcoming bookings are unaffected (not auto-cancelled).
 
-Admin can toggle status from the client profile. No reason note required (internal action).
+Superadmins block from the client profile ("Block") and reverse it from the banner on the same page ("Unblock"). Blocked clients are reachable via the superadmin-only **Blocked** filter on the clients list. No reason note required (internal action).
 
 No hard delete — client records are never permanently removed (preserves booking history, check-in records, refund audit trail).
 

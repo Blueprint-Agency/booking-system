@@ -17,16 +17,16 @@ import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { formatDate } from "@/lib/formatters";
 
-type StatusFilter = "all" | "active" | "suspended";
+type StatusFilter = "all" | "active" | "blocked";
 
 interface ApiClient {
   id: string;
   name: string;
   email: string;
   phone: string;
-  status: "active" | "suspended";
   joined_at: string;
-  suspended_at: string | null;
+  /** Set = blocked. Only returned when the caller asked to include them. */
+  deleted_at: string | null;
 }
 
 export default function ClientsPage() {
@@ -44,14 +44,18 @@ export default function ClientsPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get<{ clients: ApiClient[] }>("/portal/admin/clients");
+      // Blocked clients are filtered out server-side unless asked for, and the
+      // BE only honours the flag for superadmins.
+      const res = await api.get<{ clients: ApiClient[] }>("/portal/admin/clients", {
+        include_deleted: isSuperadmin ? "true" : undefined,
+      });
       setClients(res.clients);
     } catch (err) {
       setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
     } finally {
       setLoading(false);
     }
-  }, [api]);
+  }, [api, isSuperadmin]);
 
   useEffect(() => {
     void load();
@@ -80,7 +84,9 @@ export default function ClientsPage() {
   const filtered = useMemo(
     () =>
       clients.filter((c) => {
-        if (status !== "all" && c.status !== status) return false;
+        const blocked = c.deleted_at !== null;
+        if (status === "active" && blocked) return false;
+        if (status === "blocked" && !blocked) return false;
         if (query.trim()) {
           const q = query.toLowerCase();
           return (
@@ -96,7 +102,7 @@ export default function ClientsPage() {
     <div>
       <PageHeader
         title="Clients"
-        description="Members who self-registered via the client app or were added here. Adjustments and status toggles live on the profile."
+        description="Members who self-registered via the client app or were added here. Adjustments and blocking live on the profile."
         actions={
           <Button onClick={() => setAddOpen(true)}>
             <Plus className="h-4 w-4" /> Client
@@ -115,7 +121,9 @@ export default function ClientsPage() {
           />
         </div>
         <div className="flex gap-1.5 text-xs">
-          {(["all", "active", "suspended"] as StatusFilter[]).map((s) => (
+          {((isSuperadmin
+            ? ["all", "active", "blocked"]
+            : ["all", "active"]) as StatusFilter[]).map((s) => (
             <button
               key={s}
               type="button"
@@ -161,10 +169,10 @@ export default function ClientsPage() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="truncate font-medium text-ink">{c.name}</span>
-                        {c.status === "active" ? (
-                          <Badge tone="sage">Active</Badge>
+                        {c.deleted_at ? (
+                          <Badge tone="error">Blocked</Badge>
                         ) : (
-                          <Badge tone="error">Suspended</Badge>
+                          <Badge tone="sage">Active</Badge>
                         )}
                       </div>
                       <div className="truncate text-xs text-muted">{c.email}</div>
@@ -173,7 +181,7 @@ export default function ClientsPage() {
                         <span className="ml-auto">{formatDate(c.joined_at)}</span>
                       </div>
                     </div>
-                    {isSuperadmin && c.status === "active" && (
+                    {isSuperadmin && !c.deleted_at && (
                       <Button
                         variant="secondary"
                         size="sm"
@@ -222,15 +230,15 @@ export default function ClientsPage() {
                       <td className="px-5 py-3 text-sm text-muted">{c.phone || "—"}</td>
                       <td className="px-5 py-3 text-sm text-muted">{formatDate(c.joined_at)}</td>
                       <td className="px-5 py-3">
-                        {c.status === "active" ? (
-                          <Badge tone="sage">Active</Badge>
+                        {c.deleted_at ? (
+                          <Badge tone="error">Blocked</Badge>
                         ) : (
-                          <Badge tone="error">Suspended</Badge>
+                          <Badge tone="sage">Active</Badge>
                         )}
                       </td>
                       {isSuperadmin && (
                         <td className="px-5 py-3 text-right">
-                          {c.status === "active" && (
+                          {!c.deleted_at && (
                             <Button
                               variant="secondary"
                               size="sm"
