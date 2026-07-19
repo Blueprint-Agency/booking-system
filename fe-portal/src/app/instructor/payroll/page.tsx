@@ -2,6 +2,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { AlertCircle, Loader2, Wallet } from "lucide-react";
 import { EmptyState, PageHeader } from "@/components/ui";
+import {
+  DateRangeFilter,
+  presetRange,
+  rangeToParams,
+  type DateRange,
+} from "@/components/date-range-filter";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { formatDate, formatDuration, formatSgd } from "@/lib/formatters";
@@ -14,23 +20,9 @@ interface InstructorPayrollResponse {
   unpriced_count: number;
 }
 
-/** "2026-06" → [first instant of the month, last instant], as ISO strings. */
-function monthRange(month: string): { from: string; to: string } | null {
-  if (!month) return null;
-  const [y, m] = month.split("-").map(Number);
-  if (!y || !m) return null;
-  const from = new Date(y, m - 1, 1, 0, 0, 0, 0);
-  const to = new Date(y, m, 0, 23, 59, 59, 999);
-  return { from: from.toISOString(), to: to.toISOString() };
-}
-function currentMonth(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-
 export default function InstructorPayrollPage() {
   const { api } = useWorkspace();
-  const [month, setMonth] = useState(currentMonth());
+  const [range, setRange] = useState<DateRange>(() => presetRange("month"));
   const [data, setData] = useState<InstructorPayrollResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -40,10 +32,9 @@ export default function InstructorPayrollPage() {
     setLoading(true);
     setError(null);
     try {
-      const range = monthRange(month);
       const res = await api.get<InstructorPayrollResponse>(
         "/portal/instructor/payroll",
-        { from: range?.from, to: range?.to },
+        rangeToParams(range),
       );
       setData(res);
     } catch (err) {
@@ -51,7 +42,7 @@ export default function InstructorPayrollPage() {
     } finally {
       setLoading(false);
     }
-  }, [api, month]);
+  }, [api, range]);
 
   useEffect(() => {
     void load();
@@ -64,25 +55,8 @@ export default function InstructorPayrollPage() {
         description="Your completed classes and private sessions, and the pay recorded for each. Amounts are set by an admin."
       />
 
-      <div className="mb-4 flex flex-wrap items-end gap-3">
-        <div className="space-y-1.5">
-          <label className="block text-xs font-medium text-muted">Month</label>
-          <input
-            type="month"
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-            className="h-10 rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          />
-        </div>
-        {month && (
-          <button
-            type="button"
-            onClick={() => setMonth("")}
-            className="h-10 rounded-lg border border-border bg-card px-3 text-sm text-muted hover:text-ink"
-          >
-            All time
-          </button>
-        )}
+      <div className="mb-4 rounded-xl border border-border bg-card p-3 shadow-soft">
+        <DateRangeFilter value={range} onChange={setRange} />
       </div>
 
       {data && (

@@ -4,11 +4,20 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
   Loader2,
   AlertCircle,
   Plus,
   Trash2,
 } from "lucide-react";
+import {
+  addMonths,
+  format as formatDateFns,
+  isSameMonth,
+  startOfDay,
+  startOfMonth,
+} from "date-fns";
 import {
   EmptyState,
   PageHeader,
@@ -19,6 +28,13 @@ import {
   Label,
   Select,
 } from "@/components/ui";
+import {
+  DateRangeFilter,
+  presetRange,
+  rangeToParams,
+  type DateRange,
+} from "@/components/date-range-filter";
+import { PayrollCalendar, monthGridDays } from "@/components/payroll-calendar";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError, type Api } from "@/lib/api";
 import { formatDate, formatDuration, formatSgd } from "@/lib/formatters";
@@ -42,21 +58,6 @@ interface ApiClassType {
   archived_at: string | null;
 }
 
-/** "2026-06" → [first instant of the month, last instant], as ISO strings. */
-function monthRange(month: string): { from: string; to: string } | null {
-  if (!month) return null;
-  const [y, m] = month.split("-").map(Number);
-  if (!y || !m) return null;
-  const from = new Date(y, m - 1, 1, 0, 0, 0, 0);
-  const to = new Date(y, m, 0, 23, 59, 59, 999);
-  return { from: from.toISOString(), to: to.toISOString() };
-}
-
-function currentMonth(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-
 export default function PayrollPage() {
   const { api } = useWorkspace();
 
@@ -65,7 +66,27 @@ export default function PayrollPage() {
 
   const [instructorId, setInstructorId] = useState("");
   const [classTypeId, setClassTypeId] = useState("");
-  const [month, setMonth] = useState(currentMonth());
+  const [range, setRange] = useState<DateRange>(() => presetRange("month"));
+
+  const [view, setView] = useState<"list" | "calendar">("list");
+  const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
+  // Payroll is past-only, so there is nothing to page forward into.
+  const atCurrentMonth = isSameMonth(cursor, new Date());
+
+  // In calendar view the month cursor drives the query instead of the preset
+  // row — two independent date controls on one screen would just fight.
+  // The grid's trailing days are clamped to today for the same reason.
+  const calendarRange = useMemo<DateRange>(() => {
+    const days = monthGridDays(cursor);
+    const today = startOfDay(new Date());
+    const last = days[days.length - 1] > today ? today : days[days.length - 1];
+    return {
+      from: formatDateFns(days[0], "yyyy-MM-dd"),
+      to: formatDateFns(last, "yyyy-MM-dd"),
+    };
+  }, [cursor]);
+
+  const activeRange = view === "calendar" ? calendarRange : range;
 
   const [data, setData] = useState<ApiPayrollResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -108,12 +129,12 @@ export default function PayrollPage() {
     setLoading(true);
     setError(null);
     try {
-      const range = monthRange(month);
+      const { from, to } = rangeToParams(activeRange);
       const res = await api.get<ApiPayrollResponse>("/portal/admin/payroll", {
         instructor_id: instructorId || undefined,
         class_type_id: classTypeId || undefined,
-        from: range?.from,
-        to: range?.to,
+        from,
+        to,
       });
       setData(res);
       setDrafts({});
@@ -122,7 +143,7 @@ export default function PayrollPage() {
     } finally {
       setLoading(false);
     }
-  }, [api, instructorId, classTypeId, month]);
+  }, [api, instructorId, classTypeId, activeRange]);
 
   useEffect(() => {
     void load();
@@ -241,40 +262,79 @@ export default function PayrollPage() {
         }
       />
 
-      {/* Filters */}
-      <div className="mb-4 flex flex-wrap items-end gap-3">
-        <FilterSelect
-          label="Instructor"
-          value={instructorId}
-          onChange={setInstructorId}
-          allLabel="All instructors"
-          options={instructors.map((i) => ({ val: i.id, label: i.name }))}
-        />
-        <FilterSelect
-          label="Class"
-          value={classTypeId}
-          onChange={setClassTypeId}
-          allLabel="All classes"
-          options={classTypes.map((c) => ({ val: c.id, label: c.name }))}
-        />
-        <div className="space-y-1.5">
-          <label className="block text-xs font-medium text-muted">Month</label>
-          <input
-            type="month"
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-            className="h-10 rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      {/* Filters — who/what above the rule, when below it. */}
+      <div className="mb-4 rounded-xl border border-border bg-card p-3 shadow-soft">
+        <div className="flex flex-wrap items-end gap-3">
+          <FilterSelect
+            label="Instructor"
+            value={instructorId}
+            onChange={setInstructorId}
+            allLabel="All instructors"
+            options={instructors.map((i) => ({ val: i.id, label: i.name }))}
+          />
+          <FilterSelect
+            label="Class"
+            value={classTypeId}
+            onChange={setClassTypeId}
+            allLabel="All classes"
+            options={classTypes.map((c) => ({ val: c.id, label: c.name }))}
           />
         </div>
-        {month && (
-          <button
-            type="button"
-            onClick={() => setMonth("")}
-            className="h-10 rounded-lg border border-border bg-card px-3 text-sm text-muted hover:text-ink"
-          >
-            All time
-          </button>
-        )}
+        <div className="mt-3 flex flex-wrap items-end justify-between gap-3 border-t border-border pt-3">
+          {view === "list" ? (
+            <DateRangeFilter value={range} onChange={setRange} />
+          ) : (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label="Previous month"
+                onClick={() => setCursor((c) => addMonths(c, -1))}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="min-w-[9rem] text-sm font-semibold text-ink">
+                {formatDateFns(cursor, "MMMM yyyy")}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label="Next month"
+                disabled={atCurrentMonth}
+                onClick={() => setCursor((c) => addMonths(c, 1))}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+              {!atCurrentMonth && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setCursor(startOfMonth(new Date()))}
+                >
+                  This month
+                </Button>
+              )}
+            </div>
+          )}
+
+          <div className="inline-flex items-center rounded-md border border-border bg-paper p-0.5">
+            {(["list", "calendar"] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                aria-pressed={view === v}
+                onClick={() => setView(v)}
+                className={`h-7 rounded px-3 text-xs font-medium capitalize transition-colors ${
+                  view === v
+                    ? "bg-card text-ink shadow-soft"
+                    : "text-muted hover:text-ink"
+                }`}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Per-instructor totals */}
@@ -318,6 +378,8 @@ export default function PayrollPage() {
         <div className="flex items-center justify-center py-16 text-muted">
           <Loader2 className="h-5 w-5 animate-spin" />
         </div>
+      ) : view === "calendar" ? (
+        <PayrollCalendar monthStart={cursor} rows={data?.rows ?? []} />
       ) : sortedRows.length === 0 ? (
         <EmptyState
           title="No completed sessions"
@@ -495,7 +557,7 @@ function FilterSelect({
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-10 min-w-[10rem] rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        className="h-9 min-w-[10rem] rounded-lg border border-border bg-paper px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
       >
         <option value="">{allLabel}</option>
         {options.map((o) => (
