@@ -1,8 +1,13 @@
 name: BE Deploy
 
+# Both instances live on bpvps2:
+#   staging branch -> booking-staging stack -> bookingapi.teeko.ai
+#   main   branch -> booking-prod    stack -> prodbookingapi.teeko.ai
+# They share nothing but Traefik — separate containers, volumes, networks and
+# databases, keyed off ENV_NAME in the compose file.
 on:
   push:
-    branches: [staging]
+    branches: [staging, main]
     paths:
       - 'be/**'
       - '.github/workflows/deploy-be.yml'
@@ -12,14 +17,23 @@ permissions:
   contents: read
 
 concurrency:
-  group: booking-be-staging-deploy
+  # Per-branch, so a prod deploy never cancels or queues behind a staging one.
+  group: booking-be-deploy-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   deploy:
-    if: github.ref_name == 'staging'
+    if: github.ref_name == 'staging' || github.ref_name == 'main'
     runs-on: ubuntu-latest
-    environment: staging
+    # GitHub environment names are case-sensitive: "staging" vs "Production".
+    environment: ${{ github.ref_name == 'main' && 'Production' || 'staging' }}
+
+    env:
+      APP_ENV:      ${{ github.ref_name == 'main' && 'production'      || 'staging' }}
+      ENV_NAME:     ${{ github.ref_name == 'main' && 'prod'            || 'staging' }}
+      STACK_DIR:    ${{ github.ref_name == 'main' && 'booking-prod'    || 'booking-staging' }}
+      BOOKING_HOST: ${{ github.ref_name == 'main' && 'prodbookingapi'  || 'bookingapi' }}
+      IMAGE_TAG:    ${{ github.ref_name == 'main' && 'latest'          || 'staging' }}
 
     steps:
       - name: Checkout
@@ -37,7 +51,7 @@ jobs:
           context: ./be
           push: true
           tags: |
-            blueprintagency/booking-be:latest
+            blueprintagency/booking-be:${{ env.IMAGE_TAG }}
             blueprintagency/booking-be:${{ github.sha }}
 
       - name: Connect to Tailscale
@@ -46,12 +60,12 @@ jobs:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
-          ping: ${{ vars.VPS3_TAILSCALE_HOST }}
+          ping: ${{ vars.BPVPS2_TAILSCALE_HOST }}
 
-      - name: Deploy to VPS3
+      - name: Deploy to bpvps2 (${{ env.STACK_DIR }})
         uses: appleboy/ssh-action@v1
         with:
-          host: ${{ vars.VPS3_TAILSCALE_HOST }}
+          host: ${{ vars.BPVPS2_TAILSCALE_HOST }}
           port: 22
           username: deploy
           key: ${{ secrets.SSH_PRIVATE_KEY }}
@@ -60,32 +74,41 @@ jobs:
           debug: true
           script: |
             set -euo pipefail
-            mkdir -p /root/stacks/booking-system
+            STACK=/root/stacks/${{ env.STACK_DIR }}
+            mkdir -p "$STACK"
+            cd "$STACK"
+
+            # Per-instance compose vars. Written idempotently so the shared
+            # Traefik vars already in .env (BASE_DOMAIN, ACME_EMAIL,
+            # CF_DNS_API_TOKEN, TRAEFIK_DASHBOARD_AUTH) survive untouched.
+            for kv in "ENV_NAME=${{ env.ENV_NAME }}" \
+                      "BOOKING_HOST=${{ env.BOOKING_HOST }}" \
+                      "IMAGE_TAG=${{ env.IMAGE_TAG }}"; do
+              k="${kv%%=*}"
+              sed -i "/^${k}=/d" .env 2>/dev/null || true
+              echo "$kv" >> .env
+            done
+
             # Backend env. DATABASE_URL is assembled from the same DB_* secrets that
             # configure the Postgres container — single source of truth.
-            # db-booking is only reachable inside booking-network, never exposed.
+            # db-booking is only reachable inside this instance's network.
             #
-            # Required GitHub repo settings:
-            #   org vars:    VPS3_TAILSCALE_HOST
-            #   org secrets: TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET
-            #   vars:        PORT, VPS3_HOST, DOCKERHUB_USERNAME, PORTAL_ORIGIN, CLIENT_ORIGIN, SUPERADMIN_EMAIL
-            #   secrets:     DB_USER, DB_PASSWORD, DB_NAME, DOCKERHUB_TOKEN, SSH_PRIVATE_KEY,
+            # Required GitHub settings:
+            #   org vars:    BPVPS2_TAILSCALE_HOST, DOCKERHUB_USERNAME
+            #   org secrets: TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET, SSH_PRIVATE_KEY, DOCKERHUB_TOKEN
+            #   env vars:    PORT, PORTAL_ORIGIN, CLIENT_ORIGIN, SUPERADMIN_EMAIL
+            #   env secrets: DB_USER, DB_PASSWORD, DB_NAME,
             #            CLERK_STAFF_PUBLISHABLE_KEY, CLERK_STAFF_SECRET_KEY, CLERK_STAFF_WEBHOOK_SECRET,
             #            CLERK_CLIENT_PUBLISHABLE_KEY, CLERK_CLIENT_SECRET_KEY, CLERK_CLIENT_WEBHOOK_SECRET,
-            #            IMPERSONATION_SECRET,
-            #            SMTP_USER, SMTP_PASSWORD,
-            #            (deferred — set when next slice lands)
+            #            IMPERSONATION_SECRET, SMTP_USER, SMTP_PASSWORD,
             #            STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
             #            R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, R2_PUBLIC_URL,
-            #            (optional — error monitoring) SENTRY_DSN
+            #            (optional) SENTRY_DSN
             {
               # NODE_ENV stays "production" on ANY server (build flag — enables
-              # optimizations + JSON logging). The environment NAME lives in
-              # APP_ENV below.
+              # optimizations + JSON logging). The environment NAME is APP_ENV.
               echo "NODE_ENV=production"
-              # APP_ENV names this deployment. It's the STAGING server for now;
-              # switch to "production" when the real prod server is set up.
-              echo "APP_ENV=staging"
+              echo "APP_ENV=${{ env.APP_ENV }}"
               echo "PORT=${{ vars.PORT }}"
               echo "TZ=Asia/Kuala_Lumpur"
               echo "DATABASE_URL=postgres://${{ secrets.DB_USER }}:${{ secrets.DB_PASSWORD }}@db-booking:5432/${{ secrets.DB_NAME }}"
@@ -113,10 +136,8 @@ jobs:
               # in be/src/lib/mailer.ts (Gmail SMTP for the life of the project).
               echo "SMTP_USER=${{ secrets.SMTP_USER }}"
               echo "SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}"
-              # Stripe (deferred — set when payments slice lands)
               echo "STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }}"
               echo "STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}"
-              # R2 (deferred — set when photo uploads slice lands)
               echo "R2_ACCOUNT_ID=${{ secrets.R2_ACCOUNT_ID }}"
               echo "R2_ACCESS_KEY_ID=${{ secrets.R2_ACCESS_KEY_ID }}"
               echo "R2_SECRET_ACCESS_KEY=${{ secrets.R2_SECRET_ACCESS_KEY }}"
@@ -124,18 +145,17 @@ jobs:
               echo "R2_PUBLIC_URL=${{ secrets.R2_PUBLIC_URL }}"
               # Error monitoring (optional) — backend Sentry DSN; blank disables it
               echo "SENTRY_DSN=${{ secrets.SENTRY_DSN }}"
-            } > /root/stacks/booking-system/.env.booking-be
-            chmod 600 /root/stacks/booking-system/.env.booking-be
+            } > .env.booking-be
+            chmod 600 .env.booking-be
             # Postgres creds — same source as DATABASE_URL above
             {
               echo "POSTGRES_USER=${{ secrets.DB_USER }}"
               echo "POSTGRES_PASSWORD=${{ secrets.DB_PASSWORD }}"
               echo "POSTGRES_DB=${{ secrets.DB_NAME }}"
-            } > /root/stacks/booking-system/.env.booking-db
-            chmod 600 /root/stacks/booking-system/.env.booking-db
+            } > .env.booking-db
+            chmod 600 .env.booking-db
 
-            docker pull blueprintagency/booking-be:latest
-            cd /root/stacks/booking-system
+            docker pull blueprintagency/booking-be:${{ env.IMAGE_TAG }}
 
             # Run DB migrations + seed in a SHORT-LIVED one-off container, BEFORE
             # the API server starts. Previously these ran via `docker compose exec`
@@ -148,37 +168,38 @@ jobs:
             docker compose run --rm -T booking-be sh -c "npm run db:migrate && npm run db:seed"
 
             # ── Smoke-test the freshly pulled image BEFORE recreating the live
-            # container. Boot it as a throwaway on booking-network with the REAL
-            # env and probe /health (catches env/Zod failures, boot crashes, and
+            # container. Boot it as a throwaway on this instance's network with the
+            # REAL env and probe /health (catches env/Zod failures, boot crashes, and
             # DB-connectivity breaks). If it can't come up healthy, abort NOW —
-            # the currently-serving booking-be is left untouched, so a bad build
+            # the currently-serving container is left untouched, so a bad build
             # never takes the API down. (Traefik 404s only when NO container is
-            # running for the bookingapi host; this guarantees one always is.)
-            echo "Smoke-testing blueprintagency/booking-be:latest ..."
-            docker rm -f booking-be-smoke >/dev/null 2>&1 || true
-            docker run -d --name booking-be-smoke \
-              --env-file /root/stacks/booking-system/.env.booking-be \
-              --network booking-network \
-              blueprintagency/booking-be:latest >/dev/null
+            # running for that host; this guarantees one always is.)
+            SMOKE=booking-be-smoke-${{ env.ENV_NAME }}
+            echo "Smoke-testing blueprintagency/booking-be:${{ env.IMAGE_TAG }} ..."
+            docker rm -f "$SMOKE" >/dev/null 2>&1 || true
+            docker run -d --name "$SMOKE" \
+              --env-file "$STACK/.env.booking-be" \
+              --network booking-${{ env.ENV_NAME }}-network \
+              blueprintagency/booking-be:${{ env.IMAGE_TAG }} >/dev/null
             smoke_ok=0
             for _ in $(seq 1 20); do
-              if docker exec booking-be-smoke node -e "fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" >/dev/null 2>&1; then
+              if docker exec "$SMOKE" node -e "fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" >/dev/null 2>&1; then
                 smoke_ok=1; break
               fi
               # Bail out immediately if it already crashed (bad env / boot error).
-              if [ "$(docker inspect -f '{{.State.Running}}' booking-be-smoke 2>/dev/null)" != "true" ]; then
+              if [ "$(docker inspect -f '{{.State.Running}}' "$SMOKE" 2>/dev/null)" != "true" ]; then
                 break
               fi
               sleep 2
             done
             if [ "$smoke_ok" != "1" ]; then
               echo "Smoke test FAILED — new image never became healthy. Recent logs:"
-              docker logs --tail 80 booking-be-smoke 2>&1 || true
-              docker rm -f booking-be-smoke >/dev/null 2>&1 || true
-              echo "Aborting deploy — existing booking-be container left running."
+              docker logs --tail 80 "$SMOKE" 2>&1 || true
+              docker rm -f "$SMOKE" >/dev/null 2>&1 || true
+              echo "Aborting deploy — existing container left running."
               exit 1
             fi
-            docker rm -f booking-be-smoke >/dev/null 2>&1 || true
+            docker rm -f "$SMOKE" >/dev/null 2>&1 || true
             echo "Smoke test passed."
 
             # Recreate the API server now that the new image is verified and the
