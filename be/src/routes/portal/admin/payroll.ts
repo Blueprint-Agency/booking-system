@@ -2,11 +2,11 @@ import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import {
-  listPayroll,
+  getPayroll,
   updatePayrollAmount,
   createManualPayroll,
   deleteManualPayroll,
-  type PayrollRow,
+  payrollAuditTable,
 } from '../../../services/payroll/list'
 
 // Payroll: completed class + PT sessions with the pay owed to each instructor.
@@ -40,54 +40,18 @@ const createManualBody = z.object({
   entry_date: z.string().refine(v => !Number.isNaN(Date.parse(v)), { message: 'invalid iso datetime' }).optional(),
 })
 
-function serialize(r: PayrollRow) {
-  return {
-    kind: r.kind,
-    id: r.id,
-    instructor_id: r.instructorId,
-    instructor_name: r.instructorName,
-    class_type_id: r.classTypeId,
-    label: r.label,
-    session_type: r.sessionType,
-    starts_at: r.startsAt.toISOString(),
-    ends_at: r.endsAt.toISOString(),
-    duration_minutes: Math.round((r.endsAt.getTime() - r.startsAt.getTime()) / 60000),
-    instructor_pay_sgd: r.instructorPaySgd == null ? null : Number(r.instructorPaySgd),
-  }
-}
-
 const app = new Hono()
   // ?instructor_id= ?class_type_id= ?from=ISO ?to=ISO — all optional.
+  // Per-instructor totals over the filtered set — the "pay by end of month" view.
   .get('/', zValidator('query', listQuery), async c => {
     const q = c.req.valid('query')
-    const rows = await listPayroll({
+    const { rows, totals, unpriced_count } = await getPayroll({
       instructorId: q.instructor_id,
       classTypeId: q.class_type_id,
       from: q.from ? new Date(q.from) : undefined,
       to: q.to ? new Date(q.to) : undefined,
     })
-
-    // Per-instructor totals over the filtered set — the "pay by end of month" view.
-    // Only priced rows contribute to total_sgd; unpriced ones are surfaced separately.
-    const totalsMap = new Map<
-      string,
-      { instructor_id: string; instructor_name: string; total_sgd: number; session_count: number }
-    >()
-    let unpricedCount = 0
-    for (const r of rows) {
-      const t =
-        totalsMap.get(r.instructorId) ??
-        { instructor_id: r.instructorId, instructor_name: r.instructorName, total_sgd: 0, session_count: 0 }
-      t.session_count += 1
-      if (r.instructorPaySgd == null) unpricedCount += 1
-      else t.total_sgd += Number(r.instructorPaySgd)
-      totalsMap.set(r.instructorId, t)
-    }
-    const totals = Array.from(totalsMap.values()).sort((a, b) =>
-      a.instructor_name.localeCompare(b.instructor_name),
-    )
-
-    return c.json({ rows: rows.map(serialize), totals, unpriced_count: unpricedCount })
+    return c.json({ rows, totals, unpriced_count })
   })
   // Create an ad-hoc pay line for an instructor (bonus/adjustment/one-off, not
   // tied to a class/PT/workshop). entry_date defaults to now.
@@ -120,15 +84,7 @@ const app = new Hono()
     const { instructor_pay_sgd, instructor_id } = c.req.valid('json')
     const res = await updatePayrollAmount(kind, id, instructor_pay_sgd, instructor_id)
     if (!res.ok) return c.json({ error: 'not_found' }, 404)
-    const table =
-      kind === 'class'
-        ? 'classes'
-        : kind === 'pt'
-          ? 'pt_sessions'
-          : kind === 'workshop'
-            ? 'workshop_instructors'
-            : 'manual_payroll_entries'
-    c.set('auditTarget' as any, { table, id })
+    c.set('auditTarget' as any, { table: payrollAuditTable[kind], id })
     return c.json({ ok: true })
   })
 
