@@ -86,7 +86,7 @@ export async function updateDay(
   const timeChanged = patch.startsAt !== undefined || patch.endsAt !== undefined
   if (nextRoomId && (roomChanged || timeChanged)) {
     await assertRoomInLocation(nextRoomId, w.locationId)
-    await assertRoomAvailable(nextRoomId, nextStarts, nextEnds, { excludeWorkshopDayId: dayId })
+    await assertRoomAvailable(nextRoomId, nextStarts, nextEnds, { kind: 'workshop_day', id: dayId })
   }
 
   const [row] = await db

@@ -172,7 +172,7 @@ export async function updateClass(id: string, patch: UpdateClassInput): Promise<
   ) {
     if (newRoomId) {
       await assertRoomInLocation(newRoomId, newLocationId)
-      await assertRoomAvailable(newRoomId, newStartsAt, newEndsAt, { excludeClassId: id })
+      await assertRoomAvailable(newRoomId, newStartsAt, newEndsAt, { kind: 'class', id })
     }
   }
 
