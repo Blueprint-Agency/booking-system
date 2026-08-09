@@ -1,10 +1,11 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowLeft, Loader2, Save } from "lucide-react";
 import { Button, Input, Label, PageHeader } from "@/components/ui";
 import { CapacityFields } from "@/components/schedule/capacity-fields";
+import { LocationRoomFields } from "@/components/schedule/location-room-fields";
 import { useWorkspace } from "@/lib/workspace-context";
 import { todayIso, currentHourTime } from "@/lib/formatters";
 import { ApiError } from "@/lib/api";
@@ -23,7 +24,7 @@ interface ApiRoom {
 
 export default function InstructorNewClassPage() {
   const router = useRouter();
-  const { api, activeLocationId, accessibleLocations } = useWorkspace();
+  const { api, activeLocationId } = useWorkspace();
 
   const [classTypes, setClassTypes] = useState<ApiClassType[]>([]);
   const [rooms, setRooms] = useState<ApiRoom[]>([]);
@@ -74,16 +75,6 @@ export default function InstructorNewClassPage() {
   useEffect(() => {
     setLocationId((prev) => prev || activeLocationId || "");
   }, [activeLocationId]);
-
-  const roomsForLocation = useMemo(
-    () => rooms.filter((r) => r.location_id === locationId),
-    [rooms, locationId],
-  );
-
-  // Clear the selected room if it no longer belongs to the chosen location.
-  useEffect(() => {
-    if (roomId && !roomsForLocation.some((r) => r.id === roomId)) setRoomId("");
-  }, [roomId, roomsForLocation]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -152,27 +143,14 @@ export default function InstructorNewClassPage() {
                 options={classTypes.map((c) => ({ val: c.id, label: c.name }))}
               />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="loc">Location</Label>
-              <SelectField
-                id="loc"
-                value={locationId}
-                onChange={setLocationId}
-                placeholder="Select…"
-                options={accessibleLocations.map((l) => ({ val: l.id, label: l.name }))}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="room">Room</Label>
-              <SelectField
-                id="room"
-                value={roomId}
-                onChange={setRoomId}
-                disabled={!locationId}
-                placeholder={locationId ? "Select…" : "Pick a location first"}
-                options={roomsForLocation.map((r) => ({ val: r.id, label: r.name }))}
-              />
-            </div>
+            <LocationRoomFields
+              idPrefix="ins-cls"
+              rooms={rooms}
+              locationId={locationId}
+              roomId={roomId}
+              onLocationChange={setLocationId}
+              onRoomChange={setRoomId}
+            />
           </div>
         </section>
 

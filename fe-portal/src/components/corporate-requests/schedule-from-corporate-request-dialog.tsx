@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
+import { LocationRoomFields } from "@/components/schedule/location-room-fields";
 import { todayIso, currentHourTime } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -30,7 +31,7 @@ export function ScheduleFromCorporateRequestDialog({
   onClose: () => void;
   onScheduled: () => void;
 }) {
-  const { api, accessibleLocations, activeLocationId } = useWorkspace();
+  const { api, activeLocationId } = useWorkspace();
 
   const [instructors, setInstructors] = useState<CatalogInstructor[]>([]);
   const [rooms, setRooms] = useState<CatalogRoom[]>([]);
@@ -81,14 +82,6 @@ export function ScheduleFromCorporateRequestDialog({
     if (activeLocationId && !locationId) setLocationId(activeLocationId);
   }, [activeLocationId, locationId]);
 
-  const activeLocations = useMemo(
-    () => accessibleLocations.filter((l) => !l.archivedAt),
-    [accessibleLocations],
-  );
-  const roomsForLocation = useMemo(
-    () => rooms.filter((r) => r.location_id === locationId),
-    [rooms, locationId],
-  );
   const availableForSupporting = useMemo(
     () =>
       instructors.filter(
@@ -106,11 +99,6 @@ export function ScheduleFromCorporateRequestDialog({
       prev.filter((id) => id !== mainInstructorId),
     );
   }, [mainInstructorId]);
-
-  // Keep the selected room valid as the location changes.
-  useEffect(() => {
-    if (roomId && !roomsForLocation.some((r) => r.id === roomId)) setRoomId("");
-  }, [roomId, roomsForLocation]);
 
   const isCustomLocation = locationMode === "custom";
   const trimmedCustomLocation = customLocation.trim();
@@ -262,39 +250,16 @@ export function ScheduleFromCorporateRequestDialog({
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted">Studio</Label>
-                <select
-                  value={locationId}
-                  onChange={(e) => setLocationId(e.target.value)}
-                  className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
-                >
-                  <option value="">Select…</option>
-                  {activeLocations.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted">Room (optional)</Label>
-                <select
-                  value={roomId}
-                  onChange={(e) => setRoomId(e.target.value)}
-                  disabled={!locationId}
-                  className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm disabled:opacity-50"
-                >
-                  <option value="">
-                    {locationId ? "No room" : "Pick a studio first"}
-                  </option>
-                  {roomsForLocation.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              <LocationRoomFields
+                idPrefix="corp-req"
+                rooms={rooms}
+                locationId={locationId}
+                roomId={roomId}
+                onLocationChange={setLocationId}
+                onRoomChange={setRoomId}
+                locationLabel="Studio"
+                roomOptional
+              />
             </div>
           )}
         </div>
