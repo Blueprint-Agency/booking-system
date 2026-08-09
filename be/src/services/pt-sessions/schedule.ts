@@ -15,10 +15,13 @@
  *
  * See docs/md/be-portal.md §3c for the full contract.
  */
-import { and, eq } from 'drizzle-orm'
+import { and, eq, ne } from 'drizzle-orm'
 import { db } from '../../db'
 import { ptRequests, ptSessionClients, ptSessions } from '../../db/schema/schedule'
 import { bookings } from '../../db/schema/bookings'
+import { clients } from '../../db/schema/identity'
+import { clientPackages } from '../../db/schema/packages'
+import { debitCredits, refundCredits, type Tx } from '../packages/ledger'
 import { generateBookingCodes } from '../bookings/qr'
 import { assertRoomAvailable, assertRoomInLocation } from '../schedule/room-conflicts'
 import { assertInstructorsAvailable, plannedInstructorIds } from '../schedule/occupancy'
@@ -28,7 +31,7 @@ import {
   type RosterAssignment,
   type RosterPatch,
 } from '../schedule/roster'
-import { ptSessionCost } from './cost'
+import { planPtTypeChange, ptSessionCost } from './cost'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 
 export interface SchedulePtRequestInput {
@@ -116,9 +119,12 @@ export async function schedulePtRequest(input: SchedulePtRequestInput): Promise<
     const clientIds = [req.clientId, ...(req.coClientId ? [req.coClientId] : [])]
     await tx.insert(ptSessionClients).values(clientIds.map(clientId => ({ ptSessionId: sessionId, clientId })))
 
-    // One confirmed booking per attendee. The debit already happened at submit;
-    // `credits_or_sessions_used = 1 per client` is recorded for audit only. The
-    // requester's booking carries the source package; the partner's seat is covered.
+    // One confirmed booking per attendee. The debit already happened at submit.
+    // The requester's booking carries the source package AND the FULL cost (2 for
+    // a 2on1) — services/bookings/cancel.ts refunds `credits_or_sessions_used`
+    // from `client_package_id`, so recording 1 there made a per-booking cancel
+    // return half of what cancel.ts:cancelPtRequest returns. The partner's seat
+    // is covered by the requester, hence 0 and no package.
     for (const clientId of clientIds) {
       const { qrToken, code } = generateBookingCodes()
       await tx.insert(bookings).values({
@@ -127,7 +133,7 @@ export async function schedulePtRequest(input: SchedulePtRequestInput): Promise<
         ptSessionId: sessionId,
         clientPackageId: clientId === req.clientId ? req.debitedClientPackageId : null,
         state: 'confirmed',
-        creditsOrSessionsUsed: 1,
+        creditsOrSessionsUsed: clientId === req.clientId ? cost : 0,
         qrToken,
         code,
       })
@@ -174,10 +180,161 @@ export interface UpdatePtSessionInput {
   startsAt?: Date
   endsAt?: Date
   sessionType?: '1on1' | '2on1'
+  /**
+   * The partner joining a 1on1 → 2on1 upgrade. Optional only when the request
+   * already records a co-client (e.g. re-upgrading after a downgrade); ignored
+   * for every other change.
+   */
+  partnerClientId?: string
   /** undefined = leave unchanged; null = clear; number = set (SGD). */
   instructorPaySgd?: number | null
   /** When provided, REPLACES the full supporting-instructor roster for this session. */
   supportingInstructors?: PtSupportingInstructorPatch[]
+}
+
+/**
+ * Switching a scheduled session's type has to move credits, the partner's
+ * attendee row, the partner's booking and the request row TOGETHER — the request
+ * row because cancel.ts prices its refund off `pt_requests.session_type`.
+ *
+ * Runs inside the caller's transaction, so a failure anywhere leaves nothing
+ * behind. The cost rule and the delta decision come from ./cost.ts; this only
+ * writes what the plan says. Refuse-before-apply: every check (balance, partner)
+ * runs before the first write.
+ */
+async function reconcileSessionType(
+  tx: Tx,
+  args: {
+    sessionId: string
+    ptRequestId: string
+    from: '1on1' | '2on1'
+    to: '1on1' | '2on1'
+    partnerClientId?: string
+  },
+): Promise<void> {
+  const [req] = await tx
+    .select({
+      id: ptRequests.id,
+      clientId: ptRequests.clientId,
+      coClientId: ptRequests.coClientId,
+      debitedClientPackageId: ptRequests.debitedClientPackageId,
+    })
+    .from(ptRequests)
+    .where(eq(ptRequests.id, args.ptRequestId))
+    .for('update')
+    .limit(1)
+  if (!req) throw new NotFoundError('pt_request_not_found')
+  if (!req.debitedClientPackageId) throw new ConflictError('pt_request_not_debited')
+
+  const [pkg] = await tx
+    .select({ remaining: clientPackages.creditsOrSessionsRemaining })
+    .from(clientPackages)
+    .where(
+      and(
+        eq(clientPackages.id, req.debitedClientPackageId),
+        eq(clientPackages.clientId, req.clientId),
+      ),
+    )
+    .for('update')
+    .limit(1)
+  if (!pkg) throw new NotFoundError('client_package_not_found')
+
+  const plan = planPtTypeChange(args.from, args.to, pkg.remaining)
+  // Same error identity the ledger raises for an overdraw — one failure, one code.
+  if (plan.refusal) throw new ConflictError(plan.refusal)
+
+  // Resolve (and validate) the partner before anything is written.
+  let partnerId: string | null = null
+  if (plan.partner === 'add') {
+    partnerId = args.partnerClientId ?? req.coClientId
+    if (!partnerId) throw new BadRequestError('partner_required')
+    if (partnerId === req.clientId) throw new BadRequestError('partner_cannot_be_requester')
+    const [partner] = await tx
+      .select({ id: clients.id, status: clients.status, deletedAt: clients.deletedAt })
+      .from(clients)
+      .where(eq(clients.id, partnerId))
+      .limit(1)
+    if (!partner) throw new NotFoundError('partner_client_not_found')
+    if (partner.status !== 'active' || partner.deletedAt) throw new ConflictError('partner_not_active')
+  }
+
+  // --- from here on, writes -------------------------------------------------
+  if (plan.delta < 0) {
+    await debitCredits(tx, {
+      clientId: req.clientId,
+      clientPackageId: req.debitedClientPackageId,
+      amount: -plan.delta,
+      reason: 'pt_type_change_debit',
+    })
+  } else if (plan.delta > 0) {
+    await refundCredits(tx, {
+      clientId: req.clientId,
+      clientPackageId: req.debitedClientPackageId,
+      amount: plan.delta,
+      reason: 'pt_type_change_refund',
+    })
+  }
+
+  if (plan.partner === 'add') {
+    await tx.insert(ptSessionClients).values({ ptSessionId: args.sessionId, clientId: partnerId! })
+    const { qrToken, code } = generateBookingCodes()
+    await tx.insert(bookings).values({
+      clientId: partnerId!,
+      kind: 'pt',
+      ptSessionId: args.sessionId,
+      state: 'confirmed',
+      creditsOrSessionsUsed: 0,
+      qrToken,
+      code,
+    })
+  } else if (plan.partner === 'remove') {
+    // Anyone on the session who isn't the requester loses their seat. The booking
+    // is cancelled rather than deleted, matching cancel.ts (a co-client's seat
+    // going away is `n_a` — they never held a credit of their own).
+    await tx
+      .delete(ptSessionClients)
+      .where(
+        and(
+          eq(ptSessionClients.ptSessionId, args.sessionId),
+          ne(ptSessionClients.clientId, req.clientId),
+        ),
+      )
+    await tx
+      .update(bookings)
+      .set({ state: 'cancelled', refundOutcome: 'n_a', checkInState: 'n_a', cancelledAt: new Date() })
+      .where(
+        and(
+          eq(bookings.ptSessionId, args.sessionId),
+          ne(bookings.clientId, req.clientId),
+          eq(bookings.state, 'confirmed'),
+        ),
+      )
+  }
+
+  // The request is what cancel.ts reads to price its refund, and what the portal
+  // renders as the co-client — both have to follow the session.
+  await tx
+    .update(ptRequests)
+    .set({
+      sessionType: args.to,
+      coClientId: partnerId,
+      coClientName: null,
+      coClientEmail: null,
+    })
+    .where(eq(ptRequests.id, req.id))
+
+  // Keep the recorded figure equal to what the package actually paid, so a
+  // per-booking cancel returns the same amount the whole-request cancel does.
+  await tx
+    .update(bookings)
+    .set({ creditsOrSessionsUsed: ptSessionCost(args.to) })
+    .where(
+      and(
+        eq(bookings.ptSessionId, args.sessionId),
+        eq(bookings.clientId, req.clientId),
+        eq(bookings.state, 'confirmed'),
+      ),
+    )
 }
 
 export async function updatePtSession(id: string, patch: UpdatePtSessionInput): Promise<PtSessionRow> {
@@ -234,6 +391,29 @@ export async function updatePtSession(id: string, patch: UpdatePtSessionInput): 
   }
 
   return db.transaction(async tx => {
+    // Credits, attendees, bookings and the type flip all commit or roll back
+    // together. Re-read under FOR UPDATE so two concurrent retypes can't both
+    // see the old type and debit twice.
+    if (patch.sessionType !== undefined) {
+      const [locked] = await tx
+        .select({ sessionType: ptSessions.sessionType, ptRequestId: ptSessions.ptRequestId })
+        .from(ptSessions)
+        .where(eq(ptSessions.id, id))
+        .for('update')
+        .limit(1)
+      if (!locked) throw new NotFoundError('pt_session_not_found')
+      // Setting the type to what it already is is a no-op, not a second debit.
+      if (locked.sessionType !== patch.sessionType) {
+        await reconcileSessionType(tx, {
+          sessionId: id,
+          ptRequestId: locked.ptRequestId,
+          from: locked.sessionType,
+          to: patch.sessionType,
+          ...(patch.partnerClientId !== undefined ? { partnerClientId: patch.partnerClientId } : {}),
+        })
+      }
+    }
+
     const set: Partial<typeof ptSessions.$inferInsert> = {}
     if (patch.locationId !== undefined) set.locationId = patch.locationId
     if (patch.roomId !== undefined) set.roomId = patch.roomId
