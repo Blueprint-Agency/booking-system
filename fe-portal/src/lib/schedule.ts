@@ -233,11 +233,9 @@ const SCHEDULE_ERROR_COPY: Record<string, string> = {
   room_location_mismatch: "That room belongs to a different location.",
   instructor_conflict: "The main instructor has another session at that time.",
   package_archived: "This corporate package is archived and can't be scheduled.",
-  // Same mistake, two backend spellings again: the roster module (classes,
-  // workshops, PT) refuses with `supporting_instructor_duplicates_main`, the
-  // corporate routes with `main_in_supporting`.
+  // The roster module refuses these for all four event kinds.
   supporting_instructor_duplicates_main: "An instructor can't be both main and supporting.",
-  main_in_supporting: "An instructor can't be both main and supporting.",
+  invalid_instructor_id: "One of those instructors is no longer available. Reload and pick again.",
   bad_time_range: "End time must be after start time.",
   package_not_found: "Corporate package not found.",
   request_not_found: "Corporate request not found.",

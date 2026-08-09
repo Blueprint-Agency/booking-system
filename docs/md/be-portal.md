@@ -191,7 +191,7 @@ The old "+ corporate" package dropdown and the `/admin/schedule/new/corporate` d
 | POST | `/corporate-requests/:id/cancel` | Cancel. `pending` → `cancelled`; `scheduled` → `cancelled` + cancels the linked `corporate_sessions` row. |
 | POST | `/corporate-requests/:id/attended` | `scheduled` → `attended`. |
 
-**Schedule errors:** `404 request_not_found` / `404 package_not_found`; `409 not_pending` / `409 room_conflict` / `409 instructor_conflict`; `422 package_archived`; `400 main_in_supporting` / `400 bad_time_range`.
+**Schedule errors:** `404 request_not_found` / `404 package_not_found`; `409 not_pending` / `409 room_conflict` / `409 instructor_conflict`; `422 package_archived`; `400 supporting_instructor_duplicates_main` / `400 invalid_instructor_id` / `400 bad_time_range`. The two roster errors are the shared vocabulary all four event kinds return — see `services/schedule/roster.ts`.
 
 **Request JSON shape** (GET responses):
 
@@ -465,7 +465,8 @@ tx start  (FKs are DEFERRABLE INITIALLY DEFERRED — the circular request↔sess
    → else 404 request_not_found; if status != 'pending' → 409 not_pending
 2. Load corporate_packages → 404 package_not_found; if status='archived' → 422 package_archived
 3. Validate body: ends_at > starts_at → else 400 bad_time_range;
-   main_instructor_id ∉ supporting_instructor_ids → else 400 main_in_supporting
+   main_instructor_id ∉ supporting_instructor_ids → else 400 supporting_instructor_duplicates_main
+   (enforced by the roster module at write time, in the transaction)
 4. Conflict checks (reused corporate-session create logic):
    - room clash across classes / workshop_days / pt_sessions / corporate_sessions → 409 room_conflict
    - instructor (main + supporting) overlap → 409 instructor_conflict

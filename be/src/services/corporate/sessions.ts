@@ -1,11 +1,9 @@
-import { and, asc, eq, gt, gte, inArray, isNull, lt, ne, sql } from 'drizzle-orm'
+import { and, asc, eq, gt, gte, isNull, lt, ne } from 'drizzle-orm'
 import { db } from '../../db'
 import {
   classes,
-  classSupportingInstructors,
   corporateRequests,
   corporateSessions,
-  corporateSessionSupportingInstructors,
   ptSessions,
   workshopDays,
   workshopInstructors,
@@ -13,6 +11,7 @@ import {
 } from '../../db/schema/schedule'
 import { corporatePackages } from '../../db/schema/packages'
 import { assertRoomAvailable, assertRoomInLocation } from '../schedule/room-conflicts'
+import { ensureInstructors, readRoster, replaceRoster } from '../schedule/roster'
 import { AppError } from '../../shared/errors'
 
 export type CorporateSessionRow = typeof corporateSessions.$inferSelect
@@ -32,12 +31,17 @@ export interface CreateCorporateSessionInput {
   createdByStaffId: string
 }
 
+/**
+ * Roster mistakes are NOT in here. Naming the main instructor in the supporting
+ * list, or naming someone who isn't an instructor, is refused by the roster
+ * module with the same 400 the other three event kinds return
+ * (`supporting_instructor_duplicates_main` / `invalid_instructor_id`).
+ */
 export type CorporateSessionError =
   | 'package_archived'
   | 'package_not_found'
   | 'room_conflict'
   | 'instructor_conflict'
-  | 'main_in_supporting'
   | 'bad_time_range'
   | 'location_required'
 
@@ -134,10 +138,6 @@ async function hasMainInstructorConflict(
   return false
 }
 
-function uniqueSorted(ids: string[]): string[] {
-  return Array.from(new Set(ids)).sort()
-}
-
 export async function createCorporateSession(
   input: CreateCorporateSessionInput,
 ): Promise<CreateCorporateSessionResult> {
@@ -146,12 +146,7 @@ export async function createCorporateSession(
     return { ok: false, error: 'bad_time_range' }
   }
 
-  // 2. Main not in supporting list
-  if (input.supportingInstructorIds.includes(input.mainInstructorId)) {
-    return { ok: false, error: 'main_in_supporting' }
-  }
-
-  // 3. Package must exist and be active
+  // 2. Package must exist and be active
   const [pkg] = await db
     .select()
     .from(corporatePackages)
@@ -165,13 +160,13 @@ export async function createCorporateSession(
   if (!pkg) return { ok: false, error: 'package_not_found' }
   if (pkg.status !== 'active') return { ok: false, error: 'package_archived' }
 
-  // 4. Location: a studio location_id OR a free-text off-site venue is required.
+  // 3. Location: a studio location_id OR a free-text off-site venue is required.
   const locationText = input.locationText?.trim() || null
   if (!input.locationId && !locationText) {
     return { ok: false, error: 'location_required' }
   }
 
-  // 5. Room (optional). A room only makes sense inside a studio location; validate
+  // 4. Room (optional). A room only makes sense inside a studio location; validate
   //    it belongs to that location and is free. Off-site venues carry no room.
   if (input.roomId) {
     if (!input.locationId) return { ok: false, error: 'location_required' }
@@ -188,17 +183,18 @@ export async function createCorporateSession(
     }
   }
 
-  // 6. Main-instructor conflict (supporting does not block)
+  // 5. Main-instructor conflict (supporting does not block)
   if (
     await hasMainInstructorConflict(input.mainInstructorId, input.startsAt, input.endsAt)
   ) {
     return { ok: false, error: 'instructor_conflict' }
   }
 
-  const supports = uniqueSorted(input.supportingInstructorIds)
-
   // 6. Insert in a transaction
   const session = await db.transaction(async tx => {
+    // The session row's own main_instructor_id FK points at
+    // instructors.staff_user_id, so the profile row has to exist first.
+    await ensureInstructors([input.mainInstructorId], tx)
     const rows = await tx
       .insert(corporateSessions)
       .values({
@@ -217,14 +213,13 @@ export async function createCorporateSession(
     const row = rows[0]
     if (!row) throw new Error('insert returned no rows')
 
-    if (supports.length > 0) {
-      await tx.insert(corporateSessionSupportingInstructors).values(
-        supports.map(instructorId => ({
-          corporateSessionId: row.id,
-          instructorId,
-        })),
-      )
-    }
+    // Instructor validation, dedup and the main-cannot-be-supporting rule all
+    // live in the roster module — nothing to pre-check here.
+    await replaceRoster(
+      tx,
+      { kind: 'corporate_session', id: row.id },
+      { supportingInstructorIds: input.supportingInstructorIds },
+    )
     return row
   })
 
@@ -247,13 +242,8 @@ export async function getCorporateSession(
 export async function listSupportingInstructorIds(
   corporateSessionId: string,
 ): Promise<string[]> {
-  const rows = await db
-    .select({
-      instructorId: corporateSessionSupportingInstructors.instructorId,
-    })
-    .from(corporateSessionSupportingInstructors)
-    .where(eq(corporateSessionSupportingInstructors.corporateSessionId, corporateSessionId))
-  return rows.map(r => r.instructorId).sort()
+  const roster = await readRoster({ kind: 'corporate_session', id: corporateSessionId })
+  return roster.filter(r => r.role === 'supporting').map(r => r.instructorId)
 }
 
 export interface ListCorporateSessionsOpts {
@@ -343,22 +333,12 @@ export async function rescheduleCorporateSession(
   const nextStartsAt = patch.startsAt ?? existing.startsAt
   const nextEndsAt = patch.endsAt ?? existing.endsAt
 
-  const currentSupports = await listSupportingInstructorIds(id)
-  const nextSupports = patch.supportingInstructorIds
-    ? uniqueSorted(patch.supportingInstructorIds)
-    : currentSupports
-
   // 1. Time range
   if (nextEndsAt <= nextStartsAt) {
     return { ok: false, error: 'bad_time_range' }
   }
 
-  // 2. Main not in supporting
-  if (nextSupports.includes(nextMainInstructorId)) {
-    return { ok: false, error: 'main_in_supporting' }
-  }
-
-  // 3. Package must exist and be active when changed; when unchanged we still
+  // 2. Package must exist and be active when changed; when unchanged we still
   //    require it to be active (rescheduling an archived-package session would
   //    be inconsistent with createCorporateSession's contract).
   if (patch.corporatePackageId !== undefined) {
@@ -399,7 +379,7 @@ export async function rescheduleCorporateSession(
     }
   }
 
-  // 5. Main-instructor conflict (exclude self)
+  // 4. Main-instructor conflict (exclude self)
   if (
     await hasMainInstructorConflict(nextMainInstructorId, nextStartsAt, nextEndsAt, {
       excludeCorporateSessionId: id,
@@ -408,12 +388,12 @@ export async function rescheduleCorporateSession(
     return { ok: false, error: 'instructor_conflict' }
   }
 
-  // 6. Apply in a transaction
+  // 5. Apply in a transaction
   const session = await db.transaction(async tx => {
     const set: Partial<typeof corporateSessions.$inferInsert> = {}
     if (patch.corporatePackageId !== undefined) set.corporatePackageId = nextCorporatePackageId
     if (patch.clientName !== undefined) set.clientName = nextClientName
-    if (patch.mainInstructorId !== undefined) set.mainInstructorId = nextMainInstructorId
+    // main_instructor_id is the roster's column, written below — not here.
     // Re-normalize location/room/text together so studio vs off-site stays coherent.
     if (
       patch.locationId !== undefined ||
@@ -438,18 +418,26 @@ export async function rescheduleCorporateSession(
       row = rows[0]
     }
 
-    if (patch.supportingInstructorIds !== undefined) {
-      await tx
-        .delete(corporateSessionSupportingInstructors)
-        .where(eq(corporateSessionSupportingInstructors.corporateSessionId, id))
-      if (nextSupports.length > 0) {
-        await tx.insert(corporateSessionSupportingInstructors).values(
-          nextSupports.map(instructorId => ({
-            corporateSessionId: id,
-            instructorId,
-          })),
-        )
-      }
+    if (patch.mainInstructorId !== undefined || patch.supportingInstructorIds !== undefined) {
+      await replaceRoster(
+        tx,
+        { kind: 'corporate_session', id },
+        {
+          ...(patch.mainInstructorId !== undefined
+            ? { main: { instructorId: patch.mainInstructorId } }
+            : {}),
+          ...(patch.supportingInstructorIds !== undefined
+            ? { supportingInstructorIds: patch.supportingInstructorIds }
+            : {}),
+        },
+      )
+      // main_instructor_id may have moved under us.
+      const [fresh] = await tx
+        .select()
+        .from(corporateSessions)
+        .where(eq(corporateSessions.id, id))
+        .limit(1)
+      if (fresh) row = fresh
     }
     return row
   })
@@ -457,32 +445,3 @@ export async function rescheduleCorporateSession(
   return { ok: true, session }
 }
 
-/**
- * Hydrate a batch of corporate sessions with their supporting-instructor IDs.
- * Used by the schedule aggregator to avoid N+1 queries.
- */
-export async function listSupportingInstructorsForSessions(
-  sessionIds: string[],
-): Promise<Map<string, string[]>> {
-  const map = new Map<string, string[]>()
-  if (!sessionIds.length) return map
-  const rows = await db
-    .select({
-      corporateSessionId: corporateSessionSupportingInstructors.corporateSessionId,
-      instructorId: corporateSessionSupportingInstructors.instructorId,
-    })
-    .from(corporateSessionSupportingInstructors)
-    .where(
-      inArray(corporateSessionSupportingInstructors.corporateSessionId, sessionIds),
-    )
-  for (const r of rows) {
-    const list = map.get(r.corporateSessionId) ?? []
-    list.push(r.instructorId)
-    map.set(r.corporateSessionId, list)
-  }
-  for (const list of map.values()) list.sort()
-  return map
-}
-
-// Avoid an unused-import warning until/unless we need raw SQL again.
-void sql

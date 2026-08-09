@@ -71,7 +71,6 @@ function statusForScheduleError(error: svc.ScheduleCorporateRequestError): 400 |
       return 409
     case 'package_archived':
       return 422
-    case 'main_in_supporting':
     case 'bad_time_range':
     case 'location_required':
       return 400
