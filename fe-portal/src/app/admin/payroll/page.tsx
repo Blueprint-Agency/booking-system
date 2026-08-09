@@ -46,12 +46,14 @@ import {
 import { formatDate, formatDuration, formatSgd } from "@/lib/formatters";
 import { atLocalTime, localDay } from "@/lib/local-day";
 import { toast } from "sonner";
-import type {
-  ApiPayrollResponse,
-  ApiPayrollRow,
-  ApiPayrollTotal,
-  PayrollSortKey,
-  SortDir,
+import {
+  payrollErrorMessage,
+  payrollNeedsReload,
+  type ApiPayrollResponse,
+  type ApiPayrollRow,
+  type ApiPayrollTotal,
+  type PayrollSortKey,
+  type SortDir,
 } from "@/lib/payroll";
 
 export default function PayrollPage() {
@@ -221,9 +223,10 @@ export default function PayrollPage() {
       toast.success("Pay updated");
       await load();
     } catch (err) {
-      toast.error(
-        err instanceof ApiError ? `Couldn't save (HTTP ${err.status})` : "Couldn't save",
-      );
+      toast.error(payrollErrorMessage(err));
+      // The session or the assignment is gone: reload so the stale row (and the
+      // draft still sitting in its box, looking saved) is replaced by the truth.
+      if (payrollNeedsReload(err)) await load();
     } finally {
       setSavingKey(null);
     }
@@ -238,9 +241,8 @@ export default function PayrollPage() {
       toast.success("Entry deleted");
       await load();
     } catch (err) {
-      toast.error(
-        err instanceof ApiError ? `Couldn't delete (HTTP ${err.status})` : "Couldn't delete",
-      );
+      toast.error(payrollErrorMessage(err, "Couldn't delete"));
+      if (payrollNeedsReload(err)) await load();
     } finally {
       setDeletingId(null);
     }
@@ -602,9 +604,7 @@ function ManualPayrollDialog({
       toast.success("Payroll entry created");
       await onCreated();
     } catch (err) {
-      toast.error(
-        err instanceof ApiError ? `Couldn't create (HTTP ${err.status})` : "Couldn't create",
-      );
+      toast.error(payrollErrorMessage(err, "Couldn't create"));
     } finally {
       setSaving(false);
     }

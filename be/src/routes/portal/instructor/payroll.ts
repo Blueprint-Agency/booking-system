@@ -10,6 +10,10 @@ import { getPayroll } from '../../../services/payroll/list'
  * query, so an instructor can never see another instructor's pay. Read-only:
  * pay amounts are set by admins (no PATCH here). See the payroll design — pay is
  * a teaching log; rates/statements/payouts are external.
+ *
+ * Nothing here maps a `PayrollSaveReason`: there is no save on this surface. If
+ * an instructor ever gets one, it maps through `payrollSaveStatus` /
+ * `payrollSaveMessage` exactly as the admin route does — do not re-derive it.
  */
 
 const isoDate = z

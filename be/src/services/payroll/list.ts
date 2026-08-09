@@ -37,9 +37,11 @@ import {
 } from '../../db/schema/schedule'
 import { classTypes } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
-import { BadRequestError } from '../../shared/errors'
-import { readRoster, setInstructorPay, type RosterEventKind } from '../schedule/roster'
+import { readRoster, readRosters, setInstructorPay, type RosterEventKind } from '../schedule/roster'
 import { summarizePayroll, type PayrollSummary } from './totals'
+import { payrollSaveFailed, type PayrollSaveResult } from './save-reasons'
+
+export type { PayrollSaveReason, PayrollSaveResult } from './save-reasons'
 
 export type PayrollKind = 'class' | 'pt' | 'workshop' | 'manual'
 
@@ -293,10 +295,6 @@ export async function getPayroll(filter: PayrollFilter): Promise<PayrollSummary>
   return summarizePayroll(await listPayroll(filter))
 }
 
-export interface UpdatePayrollResult {
-  ok: boolean
-}
-
 /** Payroll's kind → the roster module's. Payroll has no corporate rows (corporate
  *  sessions carry no pay columns), and 'manual' isn't an event at all. */
 const rosterKind: Record<Exclude<PayrollKind, 'manual'>, RosterEventKind> = {
@@ -307,8 +305,8 @@ const rosterKind: Record<Exclude<PayrollKind, 'manual'>, RosterEventKind> = {
 
 /**
  * Set (or clear, when amount is null) the pay for one (session, instructor) pair.
- * `ok: false` means nothing was written — the event is gone, or that instructor
- * isn't on it; the route turns that into a 404.
+ * A failure comes back as a reason, never a bare false — see ./save-reasons.ts
+ * for why, and for which status each reason earns.
  *
  * Everything except a manual entry is a roster write, so it goes through
  * `setInstructorPay` — which storage shape holds the pay (event column vs join
@@ -324,23 +322,42 @@ export async function updatePayrollAmount(
   id: string,
   amount: number | null,
   instructorId?: string,
-): Promise<UpdatePayrollResult> {
+): Promise<PayrollSaveResult> {
+  // The route's zod schema says the same thing, but this is the trust boundary
+  // for every other caller — a NaN reaching toFixed() writes garbage money.
+  if (amount != null && (!Number.isFinite(amount) || amount < 0)) {
+    return payrollSaveFailed('invalid_amount')
+  }
+
   if (kind === 'manual') {
-    if (amount == null) throw new BadRequestError('manual_amount_required')
+    // A manual line IS its amount; clearing it would leave a labelled ghost.
+    if (amount == null) return payrollSaveFailed('invalid_amount')
     const rows = await db
       .update(manualPayrollEntries)
       .set({ amountSgd: amount.toFixed(2) })
       .where(eq(manualPayrollEntries.id, id))
       .returning({ id: manualPayrollEntries.id })
-    return { ok: rows.length > 0 }
+    return rows.length > 0 ? { ok: true } : payrollSaveFailed('record_not_found')
   }
 
-  if (kind === 'workshop' && !instructorId) throw new BadRequestError('instructor_id_required')
+  if (kind === 'workshop' && !instructorId) return payrollSaveFailed('instructor_required')
 
   const ref = { kind: rosterKind[kind], id }
+  // No main to fall back on means the event row itself is gone: classes and PT
+  // sessions keep their main instructor ON the row, so a roster without one is a
+  // roster with no event behind it (workshops, whose main is just another row,
+  // were required to name an instructor above).
   const target = instructorId ?? (await readRoster(ref)).find(r => r.role === 'main')?.instructorId
-  if (!target) return { ok: false }
-  return { ok: await setInstructorPay(ref, target, amount) }
+  if (!target) return payrollSaveFailed('record_not_found')
+
+  if (await setInstructorPay(ref, target, amount)) return { ok: true }
+
+  // `setInstructorPay` answers false for two different situations — no event, or
+  // an event this instructor isn't on. Only the failing path pays for the extra
+  // read that tells them apart; `readRosters` keys events it FOUND, so a missing
+  // key is a missing event (an empty roster is a real state for a workshop).
+  const exists = (await readRosters(ref.kind, [ref.id])).has(ref.id)
+  return payrollSaveFailed(exists ? 'instructor_not_assigned' : 'record_not_found')
 }
 
 export interface CreateManualPayrollInput {
@@ -367,10 +384,10 @@ export async function createManualPayroll(input: CreateManualPayrollInput, actor
   return row
 }
 
-export async function deleteManualPayroll(id: string): Promise<UpdatePayrollResult> {
+export async function deleteManualPayroll(id: string): Promise<PayrollSaveResult> {
   const rows = await db
     .delete(manualPayrollEntries)
     .where(eq(manualPayrollEntries.id, id))
     .returning({ id: manualPayrollEntries.id })
-  return { ok: rows.length > 0 }
+  return rows.length > 0 ? { ok: true } : payrollSaveFailed('record_not_found')
 }

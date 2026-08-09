@@ -1,4 +1,4 @@
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import {
@@ -7,11 +7,21 @@ import {
   createManualPayroll,
   deleteManualPayroll,
   payrollAuditTable,
+  type PayrollKind,
 } from '../../../services/payroll/list'
+import {
+  payrollSaveMessage,
+  payrollSaveStatus,
+  type PayrollSaveReason,
+} from '../../../services/payroll/save-reasons'
 
 // Payroll: completed class + PT sessions with the pay owed to each instructor.
 // Shared read/write for superadmin + admin (gated in routes/portal/admin/index.ts).
 // See docs/md/be-portal.md §Payroll.
+//
+// A save that didn't happen answers with its reason; the status comes from
+// `payrollSaveStatus` and the sentence from `payrollSaveMessage` — this file
+// decides neither. Body shape matches the error boundary's, `{ error, message }`.
 
 const isoDate = z
   .string()
@@ -39,6 +49,10 @@ const createManualBody = z.object({
   label: z.string().min(1),
   entry_date: z.string().refine(v => !Number.isNaN(Date.parse(v)), { message: 'invalid iso datetime' }).optional(),
 })
+
+/** The failure response for a payroll write — one shape for both handlers. */
+const saveFailure = (c: Context, kind: PayrollKind, reason: PayrollSaveReason) =>
+  c.json({ error: reason, message: payrollSaveMessage(reason, kind) }, payrollSaveStatus[reason])
 
 const app = new Hono()
   // ?instructor_id= ?class_type_id= ?from=ISO ?to=ISO — all optional.
@@ -74,7 +88,7 @@ const app = new Hono()
   .delete('/manual/:id', async c => {
     const id = c.req.param('id')
     const res = await deleteManualPayroll(id)
-    if (!res.ok) return c.json({ error: 'not_found' }, 404)
+    if (!res.ok) return saveFailure(c, 'manual', res.reason)
     c.set('auditTarget' as any, { table: 'manual_payroll_entries', id })
     return c.json({ ok: true })
   })
@@ -83,7 +97,7 @@ const app = new Hono()
     const { kind, id } = c.req.valid('param')
     const { instructor_pay_sgd, instructor_id } = c.req.valid('json')
     const res = await updatePayrollAmount(kind, id, instructor_pay_sgd, instructor_id)
-    if (!res.ok) return c.json({ error: 'not_found' }, 404)
+    if (!res.ok) return saveFailure(c, kind, res.reason)
     c.set('auditTarget' as any, { table: payrollAuditTable[kind], id })
     return c.json({ ok: true })
   })
