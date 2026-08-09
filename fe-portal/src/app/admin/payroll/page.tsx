@@ -38,6 +38,7 @@ import { PayrollCalendar, monthGridDays } from "@/components/payroll-calendar";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError, type Api } from "@/lib/api";
 import { formatDate, formatDuration, formatSgd } from "@/lib/formatters";
+import { atLocalTime, localDay } from "@/lib/local-day";
 import { toast } from "sonner";
 import type {
   ApiPayrollResponse,
@@ -584,12 +585,7 @@ function ManualPayrollDialog({
   const [instructorId, setInstructorId] = useState("");
   const [amount, setAmount] = useState("");
   const [label, setLabel] = useState("");
-  const [date, setDate] = useState(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-      d.getDate()
-    ).padStart(2, "0")}`;
-  });
+  const [date, setDate] = useState(() => localDay());
   const [saving, setSaving] = useState(false);
 
   const amountNum = Number(amount);
@@ -606,7 +602,7 @@ function ManualPayrollDialog({
         instructor_id: instructorId,
         amount_sgd: amountNum,
         label: label.trim(),
-        entry_date: new Date(`${date}T12:00:00`).toISOString(),
+        entry_date: atLocalTime(date, "00:00").toISOString(),
       });
       toast.success("Payroll entry created");
       await onCreated();

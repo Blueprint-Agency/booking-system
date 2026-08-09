@@ -1,4 +1,5 @@
 import { format, formatDistanceToNow, parseISO } from "date-fns";
+import { localDay } from "./local-day";
 
 export function formatSgd(amount: number): string {
   return new Intl.NumberFormat("en-SG", {
@@ -26,7 +27,7 @@ export function formatRelative(iso: string): string {
 
 /** Today's local date as `yyyy-MM-dd`, for use as the `min` of a date input. */
 export function todayIso(): string {
-  return format(new Date(), "yyyy-MM-dd");
+  return localDay();
 }
 
 /**

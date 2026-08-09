@@ -3,6 +3,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { Button, Input, Label } from "@/components/ui";
 import { CapacityFields } from "@/components/schedule/capacity-fields";
 import { todayIso } from "@/lib/formatters";
+import { atLocalTime, localDay } from "@/lib/local-day";
 import type { Capacity, WorkshopDay } from "@/types";
 
 type Mode = "range" | "individual";
@@ -29,18 +30,20 @@ function newDay(date: string): WorkshopDay {
 
 function expandRange(start: string, end: string): string[] {
   if (!start || !end || start > end) return [];
-  // Iterate by ISO date string directly so we never round-trip through
-  // toISOString() in a non-UTC timezone (which would shift each date by ±1 day).
   const out: string[] = [];
   let cur = start;
   while (cur <= end) {
     out.push(cur);
-    const [y, m, d] = cur.split("-").map(Number);
-    const next = new Date(Date.UTC(y, m - 1, d));
-    next.setUTCDate(next.getUTCDate() + 1);
-    cur = next.toISOString().slice(0, 10);
+    cur = localDay(addDays(cur, 1));
   }
   return out;
+}
+
+/** `day` shifted by n calendar days, as a local instant. */
+function addDays(day: string, n: number): Date {
+  const d = atLocalTime(day, "00:00");
+  d.setDate(d.getDate() + n);
+  return d;
 }
 
 export function WorkshopDaysEditor({
@@ -76,10 +79,8 @@ export function WorkshopDaysEditor({
   }
 
   function addIndividual() {
-    const last = days[days.length - 1]?.date ?? new Date().toISOString().slice(0, 10);
-    const next = new Date(last + "T00:00:00");
-    next.setDate(next.getDate() + 7);
-    onChange([...days, newDay(next.toISOString().slice(0, 10))]);
+    const last = days[days.length - 1]?.date ?? localDay();
+    onChange([...days, newDay(localDay(addDays(last, 7)))]);
   }
 
   function updateDay(id: string, patch: Partial<WorkshopDay>) {

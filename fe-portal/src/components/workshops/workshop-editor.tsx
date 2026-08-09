@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Save, Ban, Loader2 } from "lucide-react";
+import { format } from "date-fns";
 import { toast } from "sonner";
 import { Button, Input, Label, PageHeader, Badge } from "@/components/ui";
 import { WorkshopDaysEditor } from "./workshop-days-editor";
@@ -9,6 +10,7 @@ import { WorkshopTiersEditor } from "./workshop-tiers-editor";
 import { PromotionsEditor } from "@/components/packages/promotions-editor";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError, type Api } from "@/lib/api";
+import { atLocalTime, localDay } from "@/lib/local-day";
 import {
   hasPromotionOverlap,
   promotionFromApi,
@@ -78,8 +80,8 @@ function dayToApi(d: WorkshopDay, ord: number) {
   return {
     ord,
     room_id: d.roomId,
-    starts_at: new Date(`${d.date}T${d.startTime}:00`).toISOString(),
-    ends_at: new Date(`${d.date}T${d.endTime}:00`).toISOString(),
+    starts_at: atLocalTime(d.date, d.startTime).toISOString(),
+    ends_at: atLocalTime(d.date, d.endTime).toISOString(),
     capacity_online: d.capacity.onlineBooking,
     capacity_waitlist: d.capacity.waitlist,
     capacity_buffer: d.capacity.buffer,
@@ -131,18 +133,13 @@ function fromApiWorkshop(d: ApiWorkshopDetail): Workshop {
       .map((day) => {
         const start = new Date(day.starts_at);
         const end = new Date(day.ends_at);
-        // dayToApi writes wall-clock time as local-zone Date then converts to UTC,
-        // so we mirror that here: format back in the browser's local zone instead of
-        // slicing the UTC ISO string (which would shift hours by the TZ offset).
-        const pad = (n: number) => String(n).padStart(2, "0");
-        const fmtDate = (x: Date) =>
-          `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate())}`;
-        const fmtTime = (x: Date) => `${pad(x.getHours())}:${pad(x.getMinutes())}`;
+        // dayToApi writes wall-clock time as a local-zone Date, so read it back
+        // in the browser's local zone too.
         return {
           id: day.id,
-          date: fmtDate(start),
-          startTime: fmtTime(start),
-          endTime: fmtTime(end),
+          date: localDay(start),
+          startTime: format(start, "HH:mm"),
+          endTime: format(end, "HH:mm"),
           roomId: day.room_id ?? "",
           capacity: {
             waitlist: day.capacity_waitlist,

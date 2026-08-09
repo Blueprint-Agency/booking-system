@@ -2,10 +2,16 @@
 import { AlertTriangle, Plus, Trash2 } from "lucide-react";
 import { Button, Label } from "@/components/ui";
 import { todayIso } from "@/lib/formatters";
+import { localDay, localDayRange } from "@/lib/local-day";
 import { overlappingPromotionIds } from "@/lib/promotions";
 import type { Promotion, PromotionMode } from "@/types";
 
 const QUICK_PERCENTS = [10, 25, 50];
+
+// A promotion runs for whole local days: from local midnight on its first day
+// through the last instant of its last day.
+const startsOn = (day: string) => localDayRange(day).start.toISOString();
+const endsOn = (day: string) => localDayRange(day).end.toISOString();
 
 export function PromotionsEditor({
   basePriceSgd,
@@ -18,8 +24,8 @@ export function PromotionsEditor({
 }) {
   function add() {
     const today = new Date();
-    const start = today.toISOString().slice(0, 10);
-    const end = new Date(today.getTime() + 14 * 86400_000).toISOString().slice(0, 10);
+    const start = localDay(today);
+    const end = localDay(new Date(today.getTime() + 14 * 86400_000));
     onChange([
       ...value,
       {
@@ -28,8 +34,8 @@ export function PromotionsEditor({
         mode: "percent",
         percent: 10,
         priceSgd: null,
-        startsAt: `${start}T00:00:00.000Z`,
-        endsAt: `${end}T23:59:59.000Z`,
+        startsAt: startsOn(start),
+        endsAt: endsOn(end),
       },
     ]);
   }
@@ -152,12 +158,13 @@ export function PromotionsEditor({
               <input
                 type="date"
                 min={todayIso()}
-                value={p.startsAt.slice(0, 10)}
+                value={localDay(p.startsAt)}
                 onChange={(e) => {
                   const start = e.target.value;
-                  const patch: Partial<Promotion> = { startsAt: `${start}T00:00:00.000Z` };
+                  if (!start) return; // cleared field — keep the last valid day
+                  const patch: Partial<Promotion> = { startsAt: startsOn(start) };
                   // Keep end on/after start.
-                  if (p.endsAt.slice(0, 10) < start) patch.endsAt = `${start}T23:59:59.000Z`;
+                  if (localDay(p.endsAt) < start) patch.endsAt = endsOn(start);
                   update(p.id, patch);
                 }}
                 className="w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
@@ -167,9 +174,11 @@ export function PromotionsEditor({
               <Label className="text-xs">Ends</Label>
               <input
                 type="date"
-                min={p.startsAt.slice(0, 10) || todayIso()}
-                value={p.endsAt.slice(0, 10)}
-                onChange={(e) => update(p.id, { endsAt: `${e.target.value}T23:59:59.000Z` })}
+                min={localDay(p.startsAt) || todayIso()}
+                value={localDay(p.endsAt)}
+                onChange={(e) =>
+                  e.target.value && update(p.id, { endsAt: endsOn(e.target.value) })
+                }
                 className="w-full rounded-md border border-border bg-card px-2 py-1.5 text-sm"
               />
             </div>
