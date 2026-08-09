@@ -5,6 +5,10 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Loader2, Save } from "lucide-react";
 import { Button, Input, Label, PageHeader } from "@/components/ui";
 import { CapacityFields } from "@/components/schedule/capacity-fields";
+import {
+  SupportingInstructorsField,
+  type SupportingRow,
+} from "@/components/schedule/supporting-instructors-field";
 import { useWorkspace } from "@/lib/workspace-context";
 import { todayIso, currentHourTime } from "@/lib/formatters";
 import { ApiError } from "@/lib/api";
@@ -20,11 +24,6 @@ import {
 import type { Capacity, ClassTypeDifficulty } from "@/types";
 
 const DIFFICULTIES: ClassTypeDifficulty[] = ["general", "beginner", "intermediate", "advanced"];
-
-interface SupportingRow {
-  instructorId: string;
-  pay: string;
-}
 
 export default function NewClassPage() {
   const router = useRouter();
@@ -90,20 +89,6 @@ export default function NewClassPage() {
     () => rooms.filter((r) => r.location_id === locationId),
     [rooms, locationId],
   );
-  const availableForSupporting = useMemo(
-    () =>
-      instructors.filter(
-        (i) => i.id !== mainInstructorId && !supporting.some((s) => s.instructorId === i.id),
-      ),
-    [instructors, mainInstructorId, supporting],
-  );
-
-  // If the main instructor changes and overlaps a supporting one, drop the dup.
-  useEffect(() => {
-    if (!mainInstructorId) return;
-    setSupporting((prev) => prev.filter((s) => s.instructorId !== mainInstructorId));
-  }, [mainInstructorId]);
-
   // Clear the selected room if it no longer belongs to the chosen location.
   useEffect(() => {
     if (roomId && !roomsForLocation.some((r) => r.id === roomId)) setRoomId("");
@@ -207,80 +192,12 @@ export default function NewClassPage() {
                 onChange={(e) => setMainPay(e.target.value)}
               />
             </div>
-            <div className="space-y-1.5 sm:col-span-2">
-              <Label>Supporting instructors</Label>
-              <div className="flex flex-wrap items-center gap-2">
-                {supporting.map((s) => {
-                  const name =
-                    instructors.find((i) => i.id === s.instructorId)?.name ?? "Unknown";
-                  return (
-                    <span
-                      key={s.instructorId}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 py-1 pl-2.5 pr-1.5 text-xs text-ink"
-                    >
-                      {name}
-                      <input
-                        type="number"
-                        min={0}
-                        step="0.01"
-                        inputMode="decimal"
-                        placeholder="S$"
-                        value={s.pay}
-                        onChange={(e) =>
-                          setSupporting((prev) =>
-                            prev.map((row) =>
-                              row.instructorId === s.instructorId
-                                ? { ...row, pay: e.target.value }
-                                : row,
-                            ),
-                          )
-                        }
-                        className="h-6 w-16 rounded border border-border bg-card px-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                      />
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setSupporting((prev) =>
-                            prev.filter((row) => row.instructorId !== s.instructorId),
-                          )
-                        }
-                        className="text-muted hover:text-ink"
-                        aria-label={`Remove ${name}`}
-                      >
-                        ×
-                      </button>
-                    </span>
-                  );
-                })}
-                {availableForSupporting.length > 0 && (
-                  <select
-                    value=""
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      if (v) setSupporting((prev) => [...prev, { instructorId: v, pay: "" }]);
-                    }}
-                    className="flex h-9 rounded-lg border border-border bg-card px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                  >
-                    <option value="">
-                      {supporting.length === 0
-                        ? "+ Add supporting instructor"
-                        : "+ Add another"}
-                    </option>
-                    {availableForSupporting.map((i) => (
-                      <option key={i.id} value={i.id}>
-                        {i.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                {supporting.length === 0 &&
-                  availableForSupporting.length === 0 && (
-                    <span className="text-xs text-muted">
-                      No additional instructors available.
-                    </span>
-                  )}
-              </div>
-            </div>
+            <SupportingInstructorsField
+              instructors={instructors}
+              mainInstructorId={mainInstructorId}
+              value={supporting}
+              onChange={setSupporting}
+            />
             <div className="space-y-1.5">
               <Label htmlFor="room">Room</Label>
               <SelectField
