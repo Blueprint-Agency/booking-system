@@ -4,7 +4,7 @@ import { classes, classSupportingInstructors } from '../../db/schema'
 import { instructors } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
 import { assertRoomAvailable, assertRoomInLocation } from './room-conflicts'
-import { BadRequestError } from '../../shared/errors'
+import { BadRequestError, NotFoundError } from '../../shared/errors'
 
 /**
  * Ensure every staff_user referenced as an instructor has the matching
@@ -64,7 +64,7 @@ function normalizeSupporting(
 ): string[] {
   const supports = Array.from(new Set(supportingInstructorIds ?? []))
   if (supports.includes(mainInstructorId)) {
-    throw new Error('main instructor cannot also appear in supportingInstructorIds')
+    throw new BadRequestError('supporting_instructor_duplicates_main')
   }
   return supports
 }
@@ -83,7 +83,7 @@ function normalizeSupportingWithPay(
   for (const s of supports ?? []) byId.set(s.instructorId, s.paySgd ?? null)
   const result = Array.from(byId, ([instructorId, paySgd]) => ({ instructorId, paySgd }))
   if (result.some(r => r.instructorId === mainInstructorId)) {
-    throw new Error('main instructor cannot also appear in supportingInstructorIds')
+    throw new BadRequestError('supporting_instructor_duplicates_main')
   }
   return result
 }
@@ -122,6 +122,8 @@ export async function createClass(input: CreateClassInput): Promise<ClassRow> {
       })
       .returning()
     const row = rows[0]
+    // Unreachable DB invariant, not a client error — deliberately left untyped so
+    // errorBoundary logs + reports it as a 500 rather than blaming the caller.
     if (!row) throw new Error('insert returned no rows')
 
     if (supports.length > 0) {
@@ -155,7 +157,7 @@ export interface UpdateClassInput {
 
 export async function updateClass(id: string, patch: UpdateClassInput): Promise<ClassRow> {
   const [existing] = await db.select().from(classes).where(eq(classes.id, id)).limit(1)
-  if (!existing) throw new Error('class_not_found')
+  if (!existing) throw new NotFoundError('class_not_found')
 
   const newRoomId = patch.roomId ?? existing.roomId
   const newLocationId = patch.locationId ?? existing.locationId
@@ -182,7 +184,7 @@ export async function updateClass(id: string, patch: UpdateClassInput): Promise<
     // If main changes but supporting list is not provided, ensure new main isn't in existing supporting set.
     const existingSupports = await listSupportingInstructorIds(id)
     if (existingSupports.includes(patch.mainInstructorId)) {
-      throw new Error('main instructor cannot also appear in supportingInstructorIds')
+      throw new BadRequestError('supporting_instructor_duplicates_main')
     }
   }
 
@@ -212,6 +214,7 @@ export async function updateClass(id: string, patch: UpdateClassInput): Promise<
     let row = existing
     if (Object.keys(set).length) {
       const rows = await tx.update(classes).set(set).where(eq(classes.id, id)).returning()
+      // Unreachable DB invariant (row existence checked above) — see note above.
       if (!rows[0]) throw new Error('update returned no rows')
       row = rows[0]
     }
