@@ -6,13 +6,12 @@
  * (0 credits used) just release the seat — outcome `n_a`, no balance write. All in one
  * transaction; the class row is locked FOR UPDATE so it can't race in-flight bookings/cancels.
  */
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { classes } from '../../db/schema/schedule'
 import { bookings, cancellations } from '../../db/schema/bookings'
-import { clientPackages } from '../../db/schema/packages'
 import { inboxItems } from '../../db/schema/inbox'
-import { manualAdjustments } from '../../db/schema/ledger'
+import { refundCredits } from '../packages/ledger'
 import { ConflictError, NotFoundError } from '../../shared/errors'
 
 export interface CancelClassInput {
@@ -64,16 +63,12 @@ export async function cancelClass(input: CancelClassInput): Promise<CancelClassR
       const refundFired = used > 0 && !!bk.clientPackageId
 
       if (refundFired) {
-        await tx
-          .update(clientPackages)
-          .set({
-            creditsOrSessionsRemaining: sql`${clientPackages.creditsOrSessionsRemaining} + ${used}`,
-          })
-          .where(eq(clientPackages.id, bk.clientPackageId!))
-        await tx.insert(manualAdjustments).values({
+        // Ledger re-derives `active` — an emptied bundle refunded here is
+        // spendable again (it previously came back unusable).
+        await refundCredits(tx, {
           clientId: bk.clientId,
           clientPackageId: bk.clientPackageId!,
-          delta: used,
+          amount: used,
           reason: 'admin_class_cancellation_refund',
           actedByStaffId: actorStaffId,
         })

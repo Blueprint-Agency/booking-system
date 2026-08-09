@@ -13,13 +13,12 @@
  * Everything runs in one transaction. The class/PT row is locked FOR UPDATE so a self-cancel
  * can't race an admin bulk class-cancel.
  */
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { bookings, cancellations } from '../../db/schema/bookings'
-import { clientPackages } from '../../db/schema/packages'
 import { classes, ptSessions } from '../../db/schema/schedule'
 import { inboxItems } from '../../db/schema/inbox'
-import { manualAdjustments } from '../../db/schema/ledger'
+import { refundCredits } from '../packages/ledger'
 import { decideOutcome, type RefundOutcome } from './refund-outcome'
 import { evaluateCancellation } from '../policy/evaluate-cancellation'
 import { AppError, BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
@@ -126,20 +125,15 @@ export async function cancelBooking(input: CancelInput): Promise<CancelResult> {
       refundFired = false
     }
 
-    // 4. Return the credit/session to the originating package.
+    // 4. Return the credit/session to the originating package. The ledger also
+    // re-derives `active`, so a bundle emptied to zero becomes spendable again
+    // (it used to come back with credits but flagged unusable) — and writes the
+    // credit-movement audit row (traceability per backend-architecture §4).
     if (refundFired) {
-      await tx
-        .update(clientPackages)
-        .set({
-          creditsOrSessionsRemaining: sql`${clientPackages.creditsOrSessionsRemaining} + ${used}`,
-        })
-        .where(eq(clientPackages.id, bk.clientPackageId!))
-
-      // Credit-movement ledger entry (traceability per backend-architecture §4).
-      await tx.insert(manualAdjustments).values({
+      await refundCredits(tx, {
         clientId: bk.clientId,
         clientPackageId: bk.clientPackageId!,
-        delta: used,
+        amount: used,
         reason: source === 'admin' ? 'admin_cancellation_refund' : 'client_cancellation_refund',
         actedByStaffId: actorStaffId ?? null,
       })
