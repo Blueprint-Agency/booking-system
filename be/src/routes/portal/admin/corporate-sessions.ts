@@ -63,7 +63,6 @@ function statusFor(error: svc.CorporateSessionError): 400 | 404 | 409 | 422 {
     case 'room_conflict':
     case 'instructor_conflict':
       return 409
-    case 'main_in_supporting':
     case 'bad_time_range':
     case 'location_required':
       return 400

@@ -185,11 +185,14 @@ const app = new Hono()
       ...(body.ends_at !== undefined ? { endsAt: new Date(body.ends_at) } : {}),
       ...(body.session_type !== undefined ? { sessionType: body.session_type } : {}),
       ...(body.instructor_pay_sgd !== undefined ? { instructorPaySgd: body.instructor_pay_sgd } : {}),
+      // snake_case → the roster module's shape, and nothing else. An OMITTED
+      // `pay_sgd` stays omitted (the roster keeps whatever is recorded); an
+      // explicit `null` stays null (unpriced). See services/schedule/roster-merge.ts.
       ...(body.supporting_instructors !== undefined
         ? {
             supportingInstructors: body.supporting_instructors.map(s => ({
               instructorId: s.instructor_id,
-              paySgd: s.pay_sgd,
+              ...(s.pay_sgd !== undefined ? { paySgd: s.pay_sgd } : {}),
             })),
           }
         : {}),

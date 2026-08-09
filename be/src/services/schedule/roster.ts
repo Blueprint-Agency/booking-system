@@ -16,13 +16,12 @@
  *   - Storage shape is implementation: pay is `numeric(10,2)` in the DB and a
  *     plain SGD number here; for classes/PT/corporate the main instructor is a
  *     column on the event while workshops model it as a `role='main'` row.
- *     Callers see one shape — a list of `RosterEntry`.
+ *     Corporate sessions carry no pay columns at all, so everyone on one reads
+ *     back unpriced. Callers see one shape — a list of `RosterEntry`.
  *   - Deduplication and the main-cannot-also-be-supporting rule are enforced in
  *     the merge, not by callers.
  *
- * Migrated so far: classes and workshops. PT sessions and corporate sessions
- * join by widening `RosterEventKind` and adding their table wiring below — the
- * exported functions do not change shape.
+ * All four event kinds are here.
  *
  * Still writes these columns outside this module, deliberately:
  *   - `payroll/list.ts` — `updatePayrollAmount`. Its per-instructor write is
@@ -33,6 +32,10 @@ import { db } from '../../db'
 import {
   classes,
   classSupportingInstructors,
+  corporateSessions,
+  corporateSessionSupportingInstructors,
+  ptSessions,
+  ptSessionSupportingInstructors,
   workshops,
   workshopInstructors,
 } from '../../db/schema/schedule'
@@ -46,8 +49,7 @@ export type { RosterAssignment, RosterEntry, RosterPatch, RosterRole } from './r
 /** The handle `db.transaction(async tx => …)` hands its callback. */
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
-/** Widens to `| 'pt_session' | 'corporate_session'` as those kinds migrate. */
-export type RosterEventKind = 'class' | 'workshop'
+export type RosterEventKind = 'class' | 'workshop' | 'pt_session' | 'corporate_session'
 
 /** Which event a roster belongs to. */
 export interface RosterRef {
@@ -59,6 +61,8 @@ export interface RosterRef {
 const notFoundCode: Record<RosterEventKind, string> = {
   class: 'class_not_found',
   workshop: 'workshop_not_found',
+  pt_session: 'pt_session_not_found',
+  corporate_session: 'corporate_session_not_found',
 }
 
 /** A transaction handle is the same object at runtime; drizzle just types the
@@ -67,6 +71,9 @@ const exec = (tx?: Tx): typeof db => (tx ? (tx as unknown as typeof db) : db)
 
 /** SGD number → the `numeric(10,2)` text postgres wants. */
 const money = (paySgd: number | null): string | null => (paySgd == null ? null : paySgd.toFixed(2))
+
+/** …and back. */
+const sgd = (paySgd: string | null): number | null => (paySgd == null ? null : Number(paySgd))
 
 /**
  * Assert every id belongs to an active instructor, and heal a missing
@@ -132,41 +139,83 @@ export async function readRosters(
       out.get(a.workshopId)?.push({
         instructorId: a.instructorId,
         role: a.role,
-        paySgd: a.paySgd == null ? null : Number(a.paySgd),
+        paySgd: sgd(a.paySgd),
       })
     }
   } else {
-    const events = await exec(tx)
-      .select({
-        id: classes.id,
-        mainInstructorId: classes.mainInstructorId,
-        paySgd: classes.instructorPaySgd,
-      })
-      .from(classes)
-      .where(inArray(classes.id, eventIds))
-    for (const e of events) {
-      out.set(e.id, [
-        {
-          instructorId: e.mainInstructorId,
-          role: 'main',
-          paySgd: e.paySgd == null ? null : Number(e.paySgd),
-        },
-      ])
+    // The other three keep the main instructor on the event row and everyone
+    // else in a side table — only the column names differ. Corporate sessions
+    // have no pay columns anywhere, so their roster reads back unpriced.
+    const mains =
+      kind === 'class'
+        ? (
+            await exec(tx)
+              .select({
+                id: classes.id,
+                instructorId: classes.mainInstructorId,
+                paySgd: classes.instructorPaySgd,
+              })
+              .from(classes)
+              .where(inArray(classes.id, eventIds))
+          ).map(e => ({ id: e.id, instructorId: e.instructorId, paySgd: sgd(e.paySgd) }))
+        : kind === 'pt_session'
+          ? (
+              await exec(tx)
+                .select({
+                  id: ptSessions.id,
+                  instructorId: ptSessions.instructorId,
+                  paySgd: ptSessions.instructorPaySgd,
+                })
+                .from(ptSessions)
+                .where(inArray(ptSessions.id, eventIds))
+            ).map(e => ({ id: e.id, instructorId: e.instructorId, paySgd: sgd(e.paySgd) }))
+          : (
+              await exec(tx)
+                .select({ id: corporateSessions.id, instructorId: corporateSessions.mainInstructorId })
+                .from(corporateSessions)
+                .where(inArray(corporateSessions.id, eventIds))
+            ).map(e => ({ id: e.id, instructorId: e.instructorId, paySgd: null }))
+    for (const m of mains) {
+      out.set(m.id, [{ instructorId: m.instructorId, role: 'main', paySgd: m.paySgd }])
     }
 
-    const supporting = await exec(tx)
-      .select({
-        classId: classSupportingInstructors.classId,
-        instructorId: classSupportingInstructors.instructorId,
-        paySgd: classSupportingInstructors.paySgd,
-      })
-      .from(classSupportingInstructors)
-      .where(inArray(classSupportingInstructors.classId, eventIds))
+    const supporting =
+      kind === 'class'
+        ? (
+            await exec(tx)
+              .select({
+                eventId: classSupportingInstructors.classId,
+                instructorId: classSupportingInstructors.instructorId,
+                paySgd: classSupportingInstructors.paySgd,
+              })
+              .from(classSupportingInstructors)
+              .where(inArray(classSupportingInstructors.classId, eventIds))
+          ).map(s => ({ eventId: s.eventId, instructorId: s.instructorId, paySgd: sgd(s.paySgd) }))
+        : kind === 'pt_session'
+          ? (
+              await exec(tx)
+                .select({
+                  eventId: ptSessionSupportingInstructors.ptSessionId,
+                  instructorId: ptSessionSupportingInstructors.instructorId,
+                  paySgd: ptSessionSupportingInstructors.paySgd,
+                })
+                .from(ptSessionSupportingInstructors)
+                .where(inArray(ptSessionSupportingInstructors.ptSessionId, eventIds))
+            ).map(s => ({ eventId: s.eventId, instructorId: s.instructorId, paySgd: sgd(s.paySgd) }))
+          : (
+              await exec(tx)
+                .select({
+                  eventId: corporateSessionSupportingInstructors.corporateSessionId,
+                  instructorId: corporateSessionSupportingInstructors.instructorId,
+                })
+                .from(corporateSessionSupportingInstructors)
+                .where(inArray(corporateSessionSupportingInstructors.corporateSessionId, eventIds))
+            ).map(s => ({ eventId: s.eventId, instructorId: s.instructorId, paySgd: null }))
     for (const s of supporting) {
-      out.get(s.classId)?.push({
+      out.get(s.eventId)?.push({
         instructorId: s.instructorId,
         role: 'supporting',
-        paySgd: s.paySgd == null ? null : Number(s.paySgd),
+        paySgd: s.paySgd,
       })
     }
   }
@@ -243,30 +292,75 @@ export async function replaceRoster(
   if (patch.main !== undefined) {
     const main = roster.find(r => r.role === 'main')
     if (main) {
-      await exec(tx)
-        .update(classes)
-        .set({ mainInstructorId: main.instructorId, instructorPaySgd: money(main.paySgd) })
-        .where(eq(classes.id, ref.id))
+      const pay = money(main.paySgd)
+      if (ref.kind === 'class') {
+        await exec(tx)
+          .update(classes)
+          .set({ mainInstructorId: main.instructorId, instructorPaySgd: pay })
+          .where(eq(classes.id, ref.id))
+      } else if (ref.kind === 'pt_session') {
+        await exec(tx)
+          .update(ptSessions)
+          .set({ instructorId: main.instructorId, instructorPaySgd: pay })
+          .where(eq(ptSessions.id, ref.id))
+      } else {
+        // No pay column on a corporate session — who runs it is all there is.
+        await exec(tx)
+          .update(corporateSessions)
+          .set({ mainInstructorId: main.instructorId })
+          .where(eq(corporateSessions.id, ref.id))
+      }
     }
   }
 
   if (patch.supporting !== undefined || patch.supportingInstructorIds !== undefined) {
     // Safe to rewrite wholesale now: the rows being re-inserted already carry
     // the merged pay, so nothing is lost by the delete.
-    await exec(tx)
-      .delete(classSupportingInstructors)
-      .where(eq(classSupportingInstructors.classId, ref.id))
     const supporting = roster.filter(r => r.role === 'supporting')
-    if (supporting.length > 0) {
+    if (ref.kind === 'class') {
       await exec(tx)
-        .insert(classSupportingInstructors)
-        .values(
-          supporting.map(s => ({
-            classId: ref.id,
-            instructorId: s.instructorId,
-            paySgd: money(s.paySgd),
-          })),
-        )
+        .delete(classSupportingInstructors)
+        .where(eq(classSupportingInstructors.classId, ref.id))
+      if (supporting.length > 0) {
+        await exec(tx)
+          .insert(classSupportingInstructors)
+          .values(
+            supporting.map(s => ({
+              classId: ref.id,
+              instructorId: s.instructorId,
+              paySgd: money(s.paySgd),
+            })),
+          )
+      }
+    } else if (ref.kind === 'pt_session') {
+      await exec(tx)
+        .delete(ptSessionSupportingInstructors)
+        .where(eq(ptSessionSupportingInstructors.ptSessionId, ref.id))
+      if (supporting.length > 0) {
+        await exec(tx)
+          .insert(ptSessionSupportingInstructors)
+          .values(
+            supporting.map(s => ({
+              ptSessionId: ref.id,
+              instructorId: s.instructorId,
+              paySgd: money(s.paySgd),
+            })),
+          )
+      }
+    } else {
+      await exec(tx)
+        .delete(corporateSessionSupportingInstructors)
+        .where(eq(corporateSessionSupportingInstructors.corporateSessionId, ref.id))
+      if (supporting.length > 0) {
+        await exec(tx)
+          .insert(corporateSessionSupportingInstructors)
+          .values(
+            supporting.map(s => ({
+              corporateSessionId: ref.id,
+              instructorId: s.instructorId,
+            })),
+          )
+      }
     }
   }
 
@@ -302,31 +396,61 @@ export async function setInstructorPay(
     return rows.length > 0
   }
 
-  const [event] = await exec(tx)
-    .select({ mainInstructorId: classes.mainInstructorId })
-    .from(classes)
-    .where(eq(classes.id, ref.id))
-    .limit(1)
+  // A corporate session has no pay column on either table — nobody on one can
+  // be priced, so there is nothing to write. Payroll doesn't list them.
+  if (ref.kind === 'corporate_session') return false
+
+  const [event] =
+    ref.kind === 'class'
+      ? await exec(tx)
+          .select({ mainInstructorId: classes.mainInstructorId })
+          .from(classes)
+          .where(eq(classes.id, ref.id))
+          .limit(1)
+      : await exec(tx)
+          .select({ mainInstructorId: ptSessions.instructorId })
+          .from(ptSessions)
+          .where(eq(ptSessions.id, ref.id))
+          .limit(1)
   if (!event) return false
 
   if (event.mainInstructorId === instructorId) {
-    const rows = await exec(tx)
-      .update(classes)
-      .set({ instructorPaySgd: money(paySgd) })
-      .where(eq(classes.id, ref.id))
-      .returning({ id: classes.id })
+    const rows =
+      ref.kind === 'class'
+        ? await exec(tx)
+            .update(classes)
+            .set({ instructorPaySgd: money(paySgd) })
+            .where(eq(classes.id, ref.id))
+            .returning({ id: classes.id })
+        : await exec(tx)
+            .update(ptSessions)
+            .set({ instructorPaySgd: money(paySgd) })
+            .where(eq(ptSessions.id, ref.id))
+            .returning({ id: ptSessions.id })
     return rows.length > 0
   }
 
-  const rows = await exec(tx)
-    .update(classSupportingInstructors)
-    .set({ paySgd: money(paySgd) })
-    .where(
-      and(
-        eq(classSupportingInstructors.classId, ref.id),
-        eq(classSupportingInstructors.instructorId, instructorId),
-      ),
-    )
-    .returning({ classId: classSupportingInstructors.classId })
+  const rows =
+    ref.kind === 'class'
+      ? await exec(tx)
+          .update(classSupportingInstructors)
+          .set({ paySgd: money(paySgd) })
+          .where(
+            and(
+              eq(classSupportingInstructors.classId, ref.id),
+              eq(classSupportingInstructors.instructorId, instructorId),
+            ),
+          )
+          .returning({ id: classSupportingInstructors.classId })
+      : await exec(tx)
+          .update(ptSessionSupportingInstructors)
+          .set({ paySgd: money(paySgd) })
+          .where(
+            and(
+              eq(ptSessionSupportingInstructors.ptSessionId, ref.id),
+              eq(ptSessionSupportingInstructors.instructorId, instructorId),
+            ),
+          )
+          .returning({ id: ptSessionSupportingInstructors.ptSessionId })
   return rows.length > 0
 }

@@ -23,7 +23,6 @@ import {
   ptRequests,
   ptSessionClients,
   ptSessions,
-  ptSessionSupportingInstructors,
   workshopDays,
   workshopInstructors,
   workshops,
@@ -31,6 +30,11 @@ import {
 import { bookings } from '../../db/schema/bookings'
 import { generateBookingCodes } from '../bookings/qr'
 import { assertRoomAvailable, assertRoomInLocation } from '../schedule/room-conflicts'
+import {
+  ensureInstructors,
+  replaceRoster,
+  type RosterAssignment,
+} from '../schedule/roster'
 import { ptSessionCost } from './cost'
 import { AppError, BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 
@@ -141,6 +145,9 @@ export async function schedulePtRequest(input: SchedulePtRequestInput): Promise<
   const capacityOnline = cost // 1on1 → 1 seat, 2on1 → 2 seats
 
   const ptSessionId = await db.transaction(async tx => {
+    // The session row's own instructor_id FK points at instructors.staff_user_id,
+    // so the profile row has to exist before there is a session to hang it on.
+    await ensureInstructors([input.instructorId], tx)
     const [session] = await tx
       .insert(ptSessions)
       .values({
@@ -210,10 +217,11 @@ export async function schedulePtRequest(input: SchedulePtRequestInput): Promise<
 
 export type PtSessionRow = typeof ptSessions.$inferSelect
 
-export interface PtSupportingInstructorPatch {
-  instructorId: string
-  paySgd?: number | null
-}
+/**
+ * One supporting instructor as the caller supplies them. Omitting `paySgd`
+ * means "leave whatever is recorded alone" — see services/schedule/roster.ts.
+ */
+export type PtSupportingInstructorPatch = RosterAssignment
 
 export interface UpdatePtSessionInput {
   instructorId?: string
@@ -226,18 +234,6 @@ export interface UpdatePtSessionInput {
   instructorPaySgd?: number | null
   /** When provided, REPLACES the full supporting-instructor roster for this session. */
   supportingInstructors?: PtSupportingInstructorPatch[]
-}
-
-function normalizeSupportingPt(
-  mainInstructorId: string,
-  supporting: PtSupportingInstructorPatch[],
-): PtSupportingInstructorPatch[] {
-  const byInstructor = new Map(supporting.map(s => [s.instructorId, s]))
-  const deduped = Array.from(byInstructor.values())
-  if (deduped.some(s => s.instructorId === mainInstructorId)) {
-    throw new BadRequestError('supporting_instructor_duplicates_main')
-  }
-  return deduped
 }
 
 export async function updatePtSession(id: string, patch: UpdatePtSessionInput): Promise<PtSessionRow> {
@@ -264,25 +260,13 @@ export async function updatePtSession(id: string, patch: UpdatePtSessionInput): 
     }
   }
 
-  let supports: PtSupportingInstructorPatch[] | undefined
-  if (patch.supportingInstructors !== undefined) {
-    const mainForCheck = patch.instructorId ?? existing.instructorId
-    supports = normalizeSupportingPt(mainForCheck, patch.supportingInstructors)
-  } else if (patch.instructorId !== undefined) {
-    // If main changes but the supporting roster isn't provided, ensure the new
-    // main doesn't already sit in the existing supporting set.
-    const existingSupports = await db
-      .select({ instructorId: ptSessionSupportingInstructors.instructorId })
-      .from(ptSessionSupportingInstructors)
-      .where(eq(ptSessionSupportingInstructors.ptSessionId, id))
-    if (existingSupports.some(s => s.instructorId === patch.instructorId)) {
-      throw new BadRequestError('supporting_instructor_duplicates_main')
-    }
-  }
+  // Who is on the session, and what they're paid, belongs to the roster module —
+  // including instructor_id and instructor_pay_sgd, which live on this row.
+  const touchesMain = patch.instructorId !== undefined || patch.instructorPaySgd !== undefined
+  const touchesRoster = touchesMain || patch.supportingInstructors !== undefined
 
   return db.transaction(async tx => {
     const set: Partial<typeof ptSessions.$inferInsert> = {}
-    if (patch.instructorId !== undefined) set.instructorId = patch.instructorId
     if (patch.locationId !== undefined) set.locationId = patch.locationId
     if (patch.roomId !== undefined) set.roomId = patch.roomId
     if (patch.startsAt !== undefined) set.startsAt = patch.startsAt
@@ -294,9 +278,6 @@ export async function updatePtSession(id: string, patch: UpdatePtSessionInput): 
       // capacity_online field for PT, unlike classes.
       set.capacityOnline = ptSessionCost(patch.sessionType)
     }
-    if (patch.instructorPaySgd !== undefined) {
-      set.instructorPaySgd = patch.instructorPaySgd == null ? null : patch.instructorPaySgd.toFixed(2)
-    }
 
     let row = existing
     if (Object.keys(set).length) {
@@ -305,19 +286,31 @@ export async function updatePtSession(id: string, patch: UpdatePtSessionInput): 
       row = rows[0]
     }
 
-    if (supports !== undefined) {
-      await tx
-        .delete(ptSessionSupportingInstructors)
-        .where(eq(ptSessionSupportingInstructors.ptSessionId, id))
-      if (supports.length > 0) {
-        await tx.insert(ptSessionSupportingInstructors).values(
-          supports.map(s => ({
-            ptSessionId: id,
-            instructorId: s.instructorId,
-            paySgd: s.paySgd == null ? null : s.paySgd.toFixed(2),
-          })),
-        )
-      }
+    if (touchesRoster) {
+      await replaceRoster(
+        tx,
+        { kind: 'pt_session', id },
+        {
+          ...(touchesMain
+            ? {
+                main: {
+                  ...(patch.instructorId !== undefined
+                    ? { instructorId: patch.instructorId }
+                    : {}),
+                  ...(patch.instructorPaySgd !== undefined
+                    ? { paySgd: patch.instructorPaySgd }
+                    : {}),
+                },
+              }
+            : {}),
+          ...(patch.supportingInstructors !== undefined
+            ? { supporting: patch.supportingInstructors }
+            : {}),
+        },
+      )
+      // instructor_id / instructor_pay_sgd may have moved under us.
+      const [fresh] = await tx.select().from(ptSessions).where(eq(ptSessions.id, id)).limit(1)
+      if (fresh) row = fresh
     }
     return row
   })

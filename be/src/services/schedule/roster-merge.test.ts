@@ -187,4 +187,23 @@ assert.deepStrictEqual(
   roster('A:main=250', 'B=30'),
 )
 
+// --- corporate sessions: a kind that records no pay at all -------------------
+// Neither table has a pay column, so every entry reads back unpriced and every
+// patch is ids-only. Nothing here should ever invent a number.
+// Creating one: the main is already on the event row, the patch is bare ids.
+assert.deepStrictEqual(
+  merged(roster('A:main'), { supportingInstructorIds: ['C', 'B', 'C'] }),
+  roster('A:main', 'B', 'C'),
+)
+// Swapping the main on an all-unpriced roster, supporting list untouched.
+assert.deepStrictEqual(
+  merged(roster('A:main', 'B'), { main: { instructorId: 'Z' } }),
+  roster('Z:main', 'B'),
+)
+// ...and the shared refusal still applies when nobody has a price.
+assert.strictEqual(
+  refusal(roster('A:main', 'B'), { main: { instructorId: 'B' } }),
+  'supporting_instructor_duplicates_main',
+)
+
 console.log('roster-merge.test ok')
