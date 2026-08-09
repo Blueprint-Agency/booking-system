@@ -385,11 +385,3 @@ export async function getWorkshopDetail(id: string): Promise<WorkshopDetailView>
   }
 }
 
-// Backwards-compat — the old stub signature took capacity-based tiers; v0 splits
-// creation into POST workshop basics + nested POST /days + POST /tiers.
-// publishWorkshop is left as a thin wrapper that just creates the basics.
-export type PublishWorkshopInput = CreateWorkshopInput
-export async function publishWorkshop(input: PublishWorkshopInput): Promise<{ workshopId: string }> {
-  const row = await createWorkshop(input)
-  return { workshopId: row.id }
-}

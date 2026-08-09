@@ -6,6 +6,7 @@ import { Button, EmptyState, PageHeader } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { formatDate, formatTime, todayIso } from "@/lib/formatters";
+import { localDay } from "@/lib/local-day";
 
 interface ScheduleEntry {
   kind: "class" | "workshop" | "pt" | "corporate";
@@ -46,11 +47,8 @@ function plusDaysIso(days: number): string {
   return d.toISOString();
 }
 // Group/compare by LOCAL calendar day so the day headers, grouping, and the
-// "Today" badge all agree. Slicing the ISO string would use the UTC date, which
-// drifts a day off for early-morning sessions in SGT (UTC+8).
-function dayKey(iso: string): string {
-  return formatDate(iso, "yyyy-MM-dd");
-}
+// "Today" badge all agree — see lib/local-day.ts for the rule.
+const dayKey = localDay;
 
 export default function InstructorSchedulePage() {
   const { api, accessibleLocations } = useWorkspace();

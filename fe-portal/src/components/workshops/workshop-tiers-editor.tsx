@@ -2,6 +2,7 @@
 import { Plus, Trash2 } from "lucide-react";
 import { Button, Input, Label } from "@/components/ui";
 import type { WorkshopDay, WorkshopTier } from "@/types";
+import { atLocalTime } from "@/lib/local-day";
 
 export function WorkshopTiersEditor({
   workshopId,
@@ -118,7 +119,7 @@ export function WorkshopTiersEditor({
                         className="h-3 w-3"
                       />
                       Day {idx + 1} ·{" "}
-                      {new Date(d.date + "T00:00:00").toLocaleDateString(undefined, {
+                      {atLocalTime(d.date, "00:00").toLocaleDateString(undefined, {
                         day: "numeric",
                         month: "short",
                       })}

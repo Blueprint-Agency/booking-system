@@ -34,4 +34,9 @@ assert.ok(new Date(2026, 7, 9, 23, 59, 59) <= end);
 assert.ok(new Date(2026, 7, 8, 23, 59, 59, 999) < start);
 assert.ok(new Date(2026, 7, 10, 0, 0) > end);
 
+// A bare calendar day is already a day — it must not be re-parsed as UTC
+// midnight, which reads as the previous day west of UTC.
+assert.strictEqual(localDay("2026-08-09"), "2026-08-09");
+assert.strictEqual(localDay(localDay("2026-01-01")), "2026-01-01");
+
 console.log("local-day.test ok");
