@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { localDay, localDayRange } from "@/lib/local-day";
 
 /**
  * Preset + custom date-range filter, shared by the admin and instructor payroll
@@ -23,15 +24,9 @@ const PRESETS: { key: PresetKey; label: string }[] = [
   { key: "all", label: "All time" },
 ];
 
-function ymd(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-    d.getDate(),
-  ).padStart(2, "0")}`;
-}
-
 export function presetRange(key: PresetKey): DateRange {
   const now = new Date();
-  const today = ymd(now);
+  const today = localDay(now);
   switch (key) {
     case "today":
       return { from: today, to: today };
@@ -41,14 +36,14 @@ export function presetRange(key: PresetKey): DateRange {
       const n = key === "7d" ? 7 : key === "14d" ? 14 : 30;
       const start = new Date(now);
       start.setDate(now.getDate() - (n - 1));
-      return { from: ymd(start), to: today };
+      return { from: localDay(start), to: today };
     }
     case "month":
       // Payroll is past-only, so ending "today" rather than end-of-month is
       // equivalent and reads more honestly.
-      return { from: ymd(new Date(now.getFullYear(), now.getMonth(), 1)), to: today };
+      return { from: localDay(new Date(now.getFullYear(), now.getMonth(), 1)), to: today };
     case "year":
-      return { from: ymd(new Date(now.getFullYear(), 0, 1)), to: today };
+      return { from: localDay(new Date(now.getFullYear(), 0, 1)), to: today };
     case "all":
       return null;
   }
@@ -61,8 +56,8 @@ export function rangeToParams(r: DateRange): {
 } {
   if (!r) return { from: undefined, to: undefined };
   return {
-    from: new Date(`${r.from}T00:00:00`).toISOString(),
-    to: new Date(`${r.to}T23:59:59.999`).toISOString(),
+    from: localDayRange(r.from).start.toISOString(),
+    to: localDayRange(r.to).end.toISOString(),
   };
 }
 

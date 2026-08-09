@@ -6,21 +6,15 @@ import {
   format,
   isSameDay,
   isSameMonth,
-  parseISO,
   startOfDay,
   startOfMonth,
   startOfWeek,
 } from "date-fns";
 import { formatSgd } from "@/lib/formatters";
+import { localDay } from "@/lib/local-day";
 import type { ApiPayrollRow } from "@/lib/payroll";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
-/** Local-time day key. Slicing the ISO string would bucket by UTC and push
- *  late-evening SGT sessions onto the wrong day. */
-function dayKey(iso: string): string {
-  return format(parseISO(iso), "yyyy-MM-dd");
-}
 
 export function monthGridDays(monthStart: Date): Date[] {
   const gridStart = startOfWeek(startOfMonth(monthStart), { weekStartsOn: 1 });
@@ -40,7 +34,7 @@ export function PayrollCalendar({
   // Bucket once rather than re-filtering the array in all 42 cells.
   const byDay = new Map<string, ApiPayrollRow[]>();
   for (const r of rows) {
-    const k = dayKey(r.starts_at);
+    const k = localDay(r.starts_at);
     const bucket = byDay.get(k);
     if (bucket) bucket.push(r);
     else byDay.set(k, [r]);
@@ -60,7 +54,7 @@ export function PayrollCalendar({
       </div>
       <div className="grid grid-cols-7">
         {days.map((day) => {
-          const entries = byDay.get(format(day, "yyyy-MM-dd")) ?? [];
+          const entries = byDay.get(localDay(day)) ?? [];
           const inMonth = isSameMonth(day, monthStart);
           // Payroll only ever covers finished sessions, so a future cell isn't
           // empty-because-nothing-happened — it hasn't happened yet.

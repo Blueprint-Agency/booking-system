@@ -7,6 +7,7 @@ import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { computeEventState } from "@/lib/event-state";
 import { formatDate, formatTime, formatDateTime, formatSgd } from "@/lib/formatters";
+import { localDay } from "@/lib/local-day";
 import { corporateErrorMessage } from "@/lib/corporate-errors";
 import type { EventState } from "@/types";
 
@@ -473,7 +474,7 @@ function ClassEditor({
   );
   const [locationId, setLocationId] = useState(data.location?.id ?? "");
   const [roomId, setRoomId] = useState(data.room?.id ?? "");
-  const [date, setDate] = useState(toLocalDate(data.starts_at));
+  const [date, setDate] = useState(localDay(data.starts_at));
   const [startTime, setStartTime] = useState(toHHMM(data.starts_at));
   const [endTime, setEndTime] = useState(toHHMM(data.ends_at));
   const [saving, setSaving] = useState(false);
@@ -492,7 +493,7 @@ function ClassEditor({
     );
     setLocationId(data.location?.id ?? "");
     setRoomId(data.room?.id ?? "");
-    setDate(toLocalDate(data.starts_at));
+    setDate(localDay(data.starts_at));
     setStartTime(toHHMM(data.starts_at));
     setEndTime(toHHMM(data.ends_at));
   }, [data]);
@@ -974,7 +975,7 @@ function PtEditor({
   );
   const [locationId, setLocationId] = useState(data.location?.id ?? "");
   const [roomId, setRoomId] = useState(data.room?.id ?? "");
-  const [date, setDate] = useState(toLocalDate(data.starts_at));
+  const [date, setDate] = useState(localDay(data.starts_at));
   const [startTime, setStartTime] = useState(toHHMM(data.starts_at));
   const [endTime, setEndTime] = useState(toHHMM(data.ends_at));
   const [saving, setSaving] = useState(false);
@@ -993,7 +994,7 @@ function PtEditor({
     );
     setLocationId(data.location?.id ?? "");
     setRoomId(data.room?.id ?? "");
-    setDate(toLocalDate(data.starts_at));
+    setDate(localDay(data.starts_at));
     setStartTime(toHHMM(data.starts_at));
     setEndTime(toHHMM(data.ends_at));
   }, [data]);
@@ -1617,7 +1618,7 @@ function CorporateEditor({
   const { api, accessibleLocations } = useWorkspace();
   const cancelled = session.lifecycle === "cancelled";
 
-  const initialDate = toLocalDate(session.starts_at);
+  const initialDate = localDay(session.starts_at);
   const initialStart = toHHMM(session.starts_at);
   const initialEnd = toHHMM(session.ends_at);
 
@@ -1641,7 +1642,7 @@ function CorporateEditor({
     setSupportingInstructorIds(session.supporting_instructor_ids);
     setLocationId(session.location_id ?? "");
     setRoomId(session.room_id ?? "");
-    setDate(toLocalDate(session.starts_at));
+    setDate(localDay(session.starts_at));
     setStartTime(toHHMM(session.starts_at));
     setEndTime(toHHMM(session.ends_at));
   }, [session]);
@@ -1914,14 +1915,6 @@ function toHHMM(iso: string): string {
   const hh = String(d.getHours()).padStart(2, "0");
   const mm = String(d.getMinutes()).padStart(2, "0");
   return `${hh}:${mm}`;
-}
-
-function toLocalDate(iso: string): string {
-  const d = new Date(iso);
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
 }
 
 /* ------------------------------- Shared ------------------------------- */
