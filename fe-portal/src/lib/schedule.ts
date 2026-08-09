@@ -225,13 +225,11 @@ export function cancelCorporateSession(api: Api, sessionId: string): Promise<unk
 // not-found codes are `class_not_found` / `pt_session_not_found` and fall
 // through to the generic message.
 const SCHEDULE_ERROR_COPY: Record<string, string> = {
-  // One clash, two backend spellings: the shared schedule helper throws
-  // `room_clash`, and the PT and corporate routes translate it to
-  // `room_conflict`.
-  room_clash: "That room is already booked for an overlapping time. Pick another room or time.",
-  room_conflict: "That room is already booked for an overlapping time. Pick another room or time.",
+  // A taken room and a busy instructor are one refusal, `schedule_conflict`. The
+  // backend names the subject and the clashing event in `message`, which
+  // `scheduleErrorMessage` prefers — this is only the fallback wording.
+  schedule_conflict: "That room or instructor is already booked for an overlapping time.",
   room_location_mismatch: "That room belongs to a different location.",
-  instructor_conflict: "The main instructor has another session at that time.",
   package_archived: "This corporate package is archived and can't be scheduled.",
   // The roster module refuses these for all four event kinds.
   supporting_instructor_duplicates_main: "An instructor can't be both main and supporting.",
@@ -247,10 +245,15 @@ const SCHEDULE_ERROR_COPY: Record<string, string> = {
  * Admin-readable copy for a failed schedule read, save or cancel. `fallback`
  * names the action for codes with no copy of their own ("Save failed (HTTP
  * 500).").
+ *
+ * A `message` in the body wins: a scheduling clash is the one refusal where only
+ * the backend knows WHO is double-booked and by which event, so it composes the
+ * sentence and this passes it through.
  */
 export function scheduleErrorMessage(err: unknown, fallback = "Save failed"): string {
   if (!(err instanceof ApiError)) return "Network error";
-  const code = (err.body as { error?: string } | null)?.error;
-  const known = code ? SCHEDULE_ERROR_COPY[code] : undefined;
+  const body = err.body as { error?: string; message?: string } | null;
+  if (typeof body?.message === "string" && body.message) return body.message;
+  const known = body?.error ? SCHEDULE_ERROR_COPY[body.error] : undefined;
   return known ?? `${fallback} (HTTP ${err.status}).`;
 }

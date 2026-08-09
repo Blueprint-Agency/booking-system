@@ -75,7 +75,7 @@ Physical spaces, location-scoped. Building block under "Building Blocks" in fe-p
 | POST | `/rooms/:id/archive` | — | Set `archived_at`. **Blocks** with `409 room_in_use` if any active future `classes` / `workshop_days` / `pt_sessions` reference it. |
 | POST | `/rooms/:id/unarchive` | — | Clear `archived_at` |
 
-**Scheduling integration.** `room_id` is now a **required** field on the create/reschedule paths for classes (`schedule.ts → POST /schedule/classes`), workshop days (`workshops.ts → POST/PATCH /workshops/:id/days`), and PT sessions (`pt-sessions approve`). The service layer validates the room belongs to the session's location (`400 room_location_mismatch` / `400 room_archived` / `404 room_not_found`) and that it is clash-free — two active sessions can't share a room at overlapping times, checked across all three tables. A clash returns `409 room_clash` with `{ conflicts: [{ kind, id, starts_at, ends_at }] }`.
+**Scheduling integration.** `room_id` is now a **required** field on the create/reschedule paths for classes (`schedule.ts → POST /schedule/classes`), workshop days (`workshops.ts → POST/PATCH /workshops/:id/days`), and PT sessions (`pt-sessions approve`). The service layer validates the room belongs to the session's location (`400 room_location_mismatch` / `400 room_archived` / `404 room_not_found`) and that it is clash-free — two active sessions can't share a room at overlapping times, checked across all four event kinds. The same check covers instructors: nobody on the roster, main or supporting, may already be booked in that window. Either way a clash returns `409 schedule_conflict` with `{ subject, subject_id, message, conflicts: [{ kind, id, starts_at, ends_at }] }`, where `message` is the admin-facing sentence naming who is taken and by what.
 
 ### `class-types.ts`
 Same CRUD shape as locations. Archive is blocked if any non-archived `instructor_class_types` references the type, or any active future `classes` / `workshops` reference it.
@@ -191,7 +191,7 @@ The old "+ corporate" package dropdown and the `/admin/schedule/new/corporate` d
 | POST | `/corporate-requests/:id/cancel` | Cancel. `pending` → `cancelled`; `scheduled` → `cancelled` + cancels the linked `corporate_sessions` row. |
 | POST | `/corporate-requests/:id/attended` | `scheduled` → `attended`. |
 
-**Schedule errors:** `404 request_not_found` / `404 package_not_found`; `409 not_pending` / `409 room_conflict` / `409 instructor_conflict`; `422 package_archived`; `400 supporting_instructor_duplicates_main` / `400 invalid_instructor_id` / `400 bad_time_range`. The two roster errors are the shared vocabulary all four event kinds return — see `services/schedule/roster.ts`.
+**Schedule errors:** `404 request_not_found` / `404 package_not_found`; `409 not_pending` / `409 schedule_conflict`; `422 package_archived`; `400 supporting_instructor_duplicates_main` / `400 invalid_instructor_id` / `400 bad_time_range`. The roster and conflict errors are the shared vocabulary all four event kinds return — see `services/schedule/roster.ts` and `services/schedule/occupancy.ts`.
 
 **Request JSON shape** (GET responses):
 
@@ -373,8 +373,9 @@ tx start
    → else 409 request_not_pending
 2. For 2on1 requests: pt_requests.co_client_id MUST be NOT NULL
    → else 409 partner_account_required (admin must create the partner via /admin/clients first)
-3. Conflict check: no class, workshop_day, or confirmed pt_session for instructor_id overlaps [starts_at, ends_at]
-   → if conflict: 409 instructor_conflict
+3. Conflict check: no class, workshop_day, pt_session or corporate_session the instructor is
+   ON — main or supporting — overlaps [starts_at, ends_at]
+   → if conflict: 409 schedule_conflict
 4. Room check: services/schedule/room-conflicts.ts (assertRoomInLocation + assertRoomAvailable)
 5. Workspace check: location_id ∈ actor's granted_location_ids (superadmin bypasses)
 6. Insert pt_sessions row: pt_request_id=X, instructor_id, location_id, room_id, starts_at, ends_at,
@@ -467,9 +468,9 @@ tx start  (FKs are DEFERRABLE INITIALLY DEFERRED — the circular request↔sess
 3. Validate body: ends_at > starts_at → else 400 bad_time_range;
    main_instructor_id ∉ supporting_instructor_ids → else 400 supporting_instructor_duplicates_main
    (enforced by the roster module at write time, in the transaction)
-4. Conflict checks (reused corporate-session create logic):
-   - room clash across classes / workshop_days / pt_sessions / corporate_sessions → 409 room_conflict
-   - instructor (main + supporting) overlap → 409 instructor_conflict
+4. Conflict checks (reused corporate-session create logic) — both are 409 schedule_conflict:
+   - room clash across classes / workshop_days / pt_sessions / corporate_sessions
+   - instructor (main + supporting) overlap, across the same four kinds
 5. Insert corporate_sessions: corporate_request_id=X, main_instructor_id, location_id, room_id,
    client_name (derived from the request's member record), starts_at, ends_at,
    lifecycle='active', scheduled_at=now(), scheduled_by_staff_id=actor

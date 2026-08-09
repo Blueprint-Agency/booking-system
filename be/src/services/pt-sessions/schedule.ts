@@ -15,28 +15,21 @@
  *
  * See docs/md/be-portal.md §3c for the full contract.
  */
-import { and, eq, gt, lt, type AnyColumn } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
-import {
-  classes,
-  corporateSessions,
-  ptRequests,
-  ptSessionClients,
-  ptSessions,
-  workshopDays,
-  workshopInstructors,
-  workshops,
-} from '../../db/schema/schedule'
+import { ptRequests, ptSessionClients, ptSessions } from '../../db/schema/schedule'
 import { bookings } from '../../db/schema/bookings'
 import { generateBookingCodes } from '../bookings/qr'
 import { assertRoomAvailable, assertRoomInLocation } from '../schedule/room-conflicts'
+import { assertInstructorsAvailable, plannedInstructorIds } from '../schedule/occupancy'
 import {
   ensureInstructors,
   replaceRoster,
   type RosterAssignment,
+  type RosterPatch,
 } from '../schedule/roster'
 import { ptSessionCost } from './cost'
-import { AppError, BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
+import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 
 export interface SchedulePtRequestInput {
   ptRequestId: string
@@ -58,58 +51,13 @@ export type SchedulePtRequestError =
   | 'not_pending'
   | 'partner_account_required'
   | 'bad_time_range'
-  | 'room_conflict'
-  | 'instructor_conflict'
+// Room / instructor clashes are NOT in here: they throw
+// ConflictError('schedule_conflict') from the occupancy module, the same 409
+// every other scheduling path returns. See services/schedule/occupancy.ts.
 
 export type SchedulePtRequestResult =
   | { ok: true; ptSessionId: string }
   | { ok: false; error: SchedulePtRequestError }
-
-/**
- * Does the instructor already have an active class / pt / corporate (main) /
- * workshop (main) session overlapping [startsAt, endsAt)? Supporting roles do
- * not block. Mirrors services/corporate/sessions.ts:hasMainInstructorConflict.
- */
-async function hasInstructorConflict(instructorId: string, startsAt: Date, endsAt: Date): Promise<boolean> {
-  const overlap = (s: AnyColumn, e: AnyColumn) => and(lt(s, endsAt), gt(e, startsAt))
-
-  const classHit = await db
-    .select({ id: classes.id })
-    .from(classes)
-    .where(and(eq(classes.mainInstructorId, instructorId), eq(classes.lifecycle, 'active'), overlap(classes.startsAt, classes.endsAt)))
-    .limit(1)
-  if (classHit.length) return true
-
-  const ptHit = await db
-    .select({ id: ptSessions.id })
-    .from(ptSessions)
-    .where(and(eq(ptSessions.instructorId, instructorId), eq(ptSessions.lifecycle, 'active'), overlap(ptSessions.startsAt, ptSessions.endsAt)))
-    .limit(1)
-  if (ptHit.length) return true
-
-  const corpHit = await db
-    .select({ id: corporateSessions.id })
-    .from(corporateSessions)
-    .where(and(eq(corporateSessions.mainInstructorId, instructorId), eq(corporateSessions.lifecycle, 'active'), overlap(corporateSessions.startsAt, corporateSessions.endsAt)))
-    .limit(1)
-  if (corpHit.length) return true
-
-  const wsHit = await db
-    .select({ id: workshopDays.id })
-    .from(workshopDays)
-    .innerJoin(workshops, eq(workshops.id, workshopDays.workshopId))
-    .innerJoin(
-      workshopInstructors,
-      and(
-        eq(workshopInstructors.workshopId, workshops.id),
-        eq(workshopInstructors.role, 'main'),
-        eq(workshopInstructors.instructorId, instructorId),
-      ),
-    )
-    .where(and(eq(workshops.lifecycle, 'active'), overlap(workshopDays.startsAt, workshopDays.endsAt)))
-    .limit(1)
-  return wsHit.length > 0
-}
 
 export async function schedulePtRequest(input: SchedulePtRequestInput): Promise<SchedulePtRequestResult> {
   if (input.endsAt <= input.startsAt) return { ok: false, error: 'bad_time_range' }
@@ -129,17 +77,13 @@ export async function schedulePtRequest(input: SchedulePtRequestInput): Promise<
   // Room must belong to the location (throws AppError on mismatch — surfaces 4xx).
   await assertRoomInLocation(input.roomId, input.locationId)
 
-  // Room clash (shared helper throws ConflictError 'room_clash').
-  try {
-    await assertRoomAvailable(input.roomId, input.startsAt, input.endsAt)
-  } catch (err) {
-    if (err instanceof AppError && err.code === 'room_clash') return { ok: false, error: 'room_conflict' }
-    throw err
-  }
-
-  if (await hasInstructorConflict(input.instructorId, input.startsAt, input.endsAt)) {
-    return { ok: false, error: 'instructor_conflict' }
-  }
+  // Room and instructor clashes both throw ConflictError('schedule_conflict') —
+  // one identity, one 409, whichever subject was taken.
+  await assertRoomAvailable(input.roomId, input.startsAt, input.endsAt)
+  await assertInstructorsAvailable([input.instructorId], {
+    startsAt: input.startsAt,
+    endsAt: input.endsAt,
+  })
 
   const cost = ptSessionCost(req.sessionType)
   const capacityOnline = cost // 1on1 → 1 seat, 2on1 → 2 seats
@@ -265,6 +209,30 @@ export async function updatePtSession(id: string, patch: UpdatePtSessionInput): 
   const touchesMain = patch.instructorId !== undefined || patch.instructorPaySgd !== undefined
   const touchesRoster = touchesMain || patch.supportingInstructors !== undefined
 
+  const rosterPatch: RosterPatch = {
+    ...(touchesMain
+      ? {
+          main: {
+            ...(patch.instructorId !== undefined ? { instructorId: patch.instructorId } : {}),
+            ...(patch.instructorPaySgd !== undefined ? { paySgd: patch.instructorPaySgd } : {}),
+          },
+        }
+      : {}),
+    ...(patch.supportingInstructors !== undefined
+      ? { supporting: patch.supportingInstructors }
+      : {}),
+  }
+
+  // A new roster, or the same roster at a new time, can put someone in two
+  // places at once. Ask about whoever the session will END UP with.
+  if (touchesRoster || patch.startsAt !== undefined || patch.endsAt !== undefined) {
+    await assertInstructorsAvailable(
+      await plannedInstructorIds({ kind: 'pt_session', id }, rosterPatch),
+      { startsAt: newStartsAt, endsAt: newEndsAt },
+      { kind: 'pt_session', id },
+    )
+  }
+
   return db.transaction(async tx => {
     const set: Partial<typeof ptSessions.$inferInsert> = {}
     if (patch.locationId !== undefined) set.locationId = patch.locationId
@@ -287,27 +255,7 @@ export async function updatePtSession(id: string, patch: UpdatePtSessionInput): 
     }
 
     if (touchesRoster) {
-      await replaceRoster(
-        tx,
-        { kind: 'pt_session', id },
-        {
-          ...(touchesMain
-            ? {
-                main: {
-                  ...(patch.instructorId !== undefined
-                    ? { instructorId: patch.instructorId }
-                    : {}),
-                  ...(patch.instructorPaySgd !== undefined
-                    ? { paySgd: patch.instructorPaySgd }
-                    : {}),
-                },
-              }
-            : {}),
-          ...(patch.supportingInstructors !== undefined
-            ? { supporting: patch.supportingInstructors }
-            : {}),
-        },
-      )
+      await replaceRoster(tx, { kind: 'pt_session', id }, rosterPatch)
       // instructor_id / instructor_pay_sgd may have moved under us.
       const [fresh] = await tx.select().from(ptSessions).where(eq(ptSessions.id, id)).limit(1)
       if (fresh) row = fresh

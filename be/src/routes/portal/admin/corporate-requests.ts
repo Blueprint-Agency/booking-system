@@ -66,8 +66,6 @@ function statusForScheduleError(error: svc.ScheduleCorporateRequestError): 400 |
     case 'package_not_found':
       return 404
     case 'not_pending':
-    case 'room_conflict':
-    case 'instructor_conflict':
       return 409
     case 'package_archived':
       return 422

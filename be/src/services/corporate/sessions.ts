@@ -1,18 +1,10 @@
-import { and, asc, eq, gt, gte, isNull, lt, ne } from 'drizzle-orm'
+import { and, asc, eq, gte, isNull, lt, ne } from 'drizzle-orm'
 import { db } from '../../db'
-import {
-  classes,
-  corporateRequests,
-  corporateSessions,
-  ptSessions,
-  workshopDays,
-  workshopInstructors,
-  workshops,
-} from '../../db/schema/schedule'
+import { corporateRequests, corporateSessions } from '../../db/schema/schedule'
 import { corporatePackages } from '../../db/schema/packages'
 import { assertRoomAvailable, assertRoomInLocation } from '../schedule/room-conflicts'
+import { assertInstructorsAvailable, plannedInstructorIds } from '../schedule/occupancy'
 import { ensureInstructors, readRoster, replaceRoster } from '../schedule/roster'
-import { AppError } from '../../shared/errors'
 
 export type CorporateSessionRow = typeof corporateSessions.$inferSelect
 
@@ -36,12 +28,14 @@ export interface CreateCorporateSessionInput {
  * list, or naming someone who isn't an instructor, is refused by the roster
  * module with the same 400 the other three event kinds return
  * (`supporting_instructor_duplicates_main` / `invalid_instructor_id`).
+ *
+ * Nor are clashes: a taken room or a busy instructor throws
+ * ConflictError('schedule_conflict') from the occupancy module — one 409 for
+ * both subjects, shared with every other scheduling path.
  */
 export type CorporateSessionError =
   | 'package_archived'
   | 'package_not_found'
-  | 'room_conflict'
-  | 'instructor_conflict'
   | 'bad_time_range'
   | 'location_required'
 
@@ -53,90 +47,10 @@ export interface CorporateSessionHydrated extends CorporateSessionRow {
   supportingInstructorIds: string[]
 }
 
-/**
- * Main-instructor conflict scan. Supporting instructors do NOT block.
- * Checks against active classes (main only), pt_sessions, corporate_sessions
- * (main only), and workshops (main only — via workshop_instructors.role='main').
- * Returns true if a conflict exists.
- */
-async function hasMainInstructorConflict(
-  instructorId: string,
-  startsAt: Date,
-  endsAt: Date,
-  opts: { excludeCorporateSessionId?: string } = {},
-): Promise<boolean> {
-  // classes (main only)
-  const classHit = await db
-    .select({ id: classes.id })
-    .from(classes)
-    .where(
-      and(
-        eq(classes.mainInstructorId, instructorId),
-        eq(classes.lifecycle, 'active'),
-        lt(classes.startsAt, endsAt),
-        gt(classes.endsAt, startsAt),
-      ),
-    )
-    .limit(1)
-  if (classHit.length) return true
-
-  // pt sessions
-  const ptHit = await db
-    .select({ id: ptSessions.id })
-    .from(ptSessions)
-    .where(
-      and(
-        eq(ptSessions.instructorId, instructorId),
-        eq(ptSessions.lifecycle, 'active'),
-        lt(ptSessions.startsAt, endsAt),
-        gt(ptSessions.endsAt, startsAt),
-      ),
-    )
-    .limit(1)
-  if (ptHit.length) return true
-
-  // corporate sessions (main only, exclude self when rescheduling)
-  const corpConds = [
-    eq(corporateSessions.mainInstructorId, instructorId),
-    eq(corporateSessions.lifecycle, 'active'),
-    lt(corporateSessions.startsAt, endsAt),
-    gt(corporateSessions.endsAt, startsAt),
-  ]
-  if (opts.excludeCorporateSessionId) {
-    corpConds.push(ne(corporateSessions.id, opts.excludeCorporateSessionId))
-  }
-  const corpHit = await db
-    .select({ id: corporateSessions.id })
-    .from(corporateSessions)
-    .where(and(...corpConds))
-    .limit(1)
-  if (corpHit.length) return true
-
-  // workshops (main role only) via workshop_days time window
-  const wsHit = await db
-    .select({ id: workshopDays.id })
-    .from(workshopDays)
-    .innerJoin(workshops, eq(workshops.id, workshopDays.workshopId))
-    .innerJoin(
-      workshopInstructors,
-      and(
-        eq(workshopInstructors.workshopId, workshops.id),
-        eq(workshopInstructors.role, 'main'),
-        eq(workshopInstructors.instructorId, instructorId),
-      ),
-    )
-    .where(
-      and(
-        eq(workshops.lifecycle, 'active'),
-        lt(workshopDays.startsAt, endsAt),
-        gt(workshopDays.endsAt, startsAt),
-      ),
-    )
-    .limit(1)
-  if (wsHit.length) return true
-
-  return false
-}
+// The main-instructor conflict scan that used to live here is gone: it read the
+// main-instructor COLUMN of each kind, so a supporting instructor could be
+// double-booked, and workshops were matched on role='main' only. The occupancy
+// module asks the roster instead — see services/schedule/occupancy.ts.
 
 export async function createCorporateSession(
   input: CreateCorporateSessionInput,
@@ -173,22 +87,14 @@ export async function createCorporateSession(
     // Room must belong to location (throws on mismatch — let the AppError propagate
     // so misconfigured requests still surface 400, consistent with sister-services).
     await assertRoomInLocation(input.roomId, input.locationId)
-    try {
-      await assertRoomAvailable(input.roomId, input.startsAt, input.endsAt)
-    } catch (err) {
-      if (err instanceof AppError && err.code === 'room_clash') {
-        return { ok: false, error: 'room_conflict' }
-      }
-      throw err
-    }
+    await assertRoomAvailable(input.roomId, input.startsAt, input.endsAt)
   }
 
-  // 5. Main-instructor conflict (supporting does not block)
-  if (
-    await hasMainInstructorConflict(input.mainInstructorId, input.startsAt, input.endsAt)
-  ) {
-    return { ok: false, error: 'instructor_conflict' }
-  }
+  // 5. Nobody on the session may already be booked then — supporting included.
+  await assertInstructorsAvailable(
+    [input.mainInstructorId, ...input.supportingInstructorIds],
+    { startsAt: input.startsAt, endsAt: input.endsAt },
+  )
 
   // 6. Insert in a transaction
   const session = await db.transaction(async tx => {
@@ -366,27 +272,29 @@ export async function rescheduleCorporateSession(
   if (nextRoomId) {
     if (!nextLocationId) return { ok: false, error: 'location_required' }
     await assertRoomInLocation(nextRoomId, nextLocationId)
-    try {
-      await assertRoomAvailable(nextRoomId, nextStartsAt, nextEndsAt, {
-        kind: 'corporate_session',
-        id,
-      })
-    } catch (err) {
-      if (err instanceof AppError && err.code === 'room_clash') {
-        return { ok: false, error: 'room_conflict' }
-      }
-      throw err
-    }
+    await assertRoomAvailable(nextRoomId, nextStartsAt, nextEndsAt, {
+      kind: 'corporate_session',
+      id,
+    })
   }
 
-  // 4. Main-instructor conflict (exclude self)
-  if (
-    await hasMainInstructorConflict(nextMainInstructorId, nextStartsAt, nextEndsAt, {
-      excludeCorporateSessionId: id,
-    })
-  ) {
-    return { ok: false, error: 'instructor_conflict' }
-  }
+  // 4. Whoever the session will END UP with has to be free then — the merge
+  //    below is the same one the write performs, so the two can't disagree.
+  await assertInstructorsAvailable(
+    await plannedInstructorIds(
+      { kind: 'corporate_session', id },
+      {
+        ...(patch.mainInstructorId !== undefined
+          ? { main: { instructorId: patch.mainInstructorId } }
+          : {}),
+        ...(patch.supportingInstructorIds !== undefined
+          ? { supportingInstructorIds: patch.supportingInstructorIds }
+          : {}),
+      },
+    ),
+    { startsAt: nextStartsAt, endsAt: nextEndsAt },
+    { kind: 'corporate_session', id },
+  )
 
   // 5. Apply in a transaction
   const session = await db.transaction(async tx => {

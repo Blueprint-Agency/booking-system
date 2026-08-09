@@ -1,5 +1,5 @@
 import assert from 'node:assert'
-import { overlaps, occupies } from './occupancy'
+import { overlaps, occupies, conflictMessage } from './occupancy'
 
 /** `at('09:00-10:00')` → a window on 2026-01-01. */
 const at = (range: string) => {
@@ -61,5 +61,35 @@ for (const kind of ['class', 'workshop_day', 'pt_session', 'corporate_session'] 
   assert.strictEqual(occupies(ev, at('10:00-11:00'), { kind, id: 'x' }), false)
   assert.strictEqual(occupies(ev, at('10:00-11:00')), true)
 }
+
+// --- the refusal sentence ---
+
+const conflict = (kind: 'class' | 'workshop_day' | 'pt_session' | 'corporate_session') => ({
+  kind,
+  id: 'e1',
+  // 10:00-11:00 UTC is 18:00-19:00 in Singapore — the clock an admin reads.
+  starts_at: '2026-01-01T10:00:00.000Z',
+  ends_at: '2026-01-01T11:00:00.000Z',
+})
+
+// names the subject, the conflicting event, and its window in studio time
+assert.strictEqual(
+  conflictMessage('Anya', [conflict('class')]),
+  'Anya is already booked — a class on 1 Jan, 18:00–19:00.',
+)
+
+// a room reads the same way; the caller supplies the label
+assert.match(conflictMessage('Room Studio A', [conflict('pt_session')]), /^Room Studio A is already/)
+
+// each kind gets a word an admin recognises, never the enum spelling
+assert.match(conflictMessage('Anya', [conflict('workshop_day')]), /a workshop day on/)
+assert.match(conflictMessage('Anya', [conflict('pt_session')]), /a private session on/)
+assert.match(conflictMessage('Anya', [conflict('corporate_session')]), /a corporate session on/)
+
+// more than one clash: name the first, count the rest
+assert.match(conflictMessage('Anya', [conflict('class'), conflict('pt_session')]), /\(and 1 more\)\.$/)
+
+// defensive — never claim a conflict with nothing to point at
+assert.strictEqual(conflictMessage('Anya', []), 'Anya is not available at that time.')
 
 console.log('occupancy.test ok')
