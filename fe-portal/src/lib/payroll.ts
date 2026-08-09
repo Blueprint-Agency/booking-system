@@ -1,6 +1,14 @@
-// The portal's payroll surface: the row/total shapes both payroll screens read,
-// and the one mapping from a failed pay edit to the sentence an admin reads.
-// Shapes mirror be/src/routes/portal/{admin,instructor}/payroll.ts.
+// The portal's payroll surface: the routes both payroll screens call, the
+// row/total shapes they read, and the one mapping from a failed pay edit to the
+// sentence an admin reads. Mirrors be/src/routes/portal/{admin,instructor}/
+// payroll.ts.
+//
+// The routes live here because the period is the thing that must not drift. A
+// screen shows rows and totals side by side, and the backend computes both from
+// one filtered set (be/src/services/payroll/totals.ts) — so as long as they come
+// out of the SAME request, they cannot disagree. Every read below therefore
+// takes the `DateRange` the filter produced and converts it once; no screen
+// composes its own from/to, and no screen totals anything itself.
 //
 // The error copy lives here because a pay edit fails in four different ways that
 // used to arrive as one anonymous 404 — the session was deleted, the instructor
@@ -9,11 +17,21 @@
 // not tell which one to fix. `payrollErrorMessage` is the only place that
 // translation happens, so the admin table and any future editor read alike.
 //
-// What is deliberately NOT unified: this stays separate from
-// `scheduleErrorMessage`. The two surfaces share the wire shape but not one
-// error, and a class edit and a pay edit fail for entirely different reasons —
-// one table of both would just be two tables in a trench coat.
-import { ApiError } from "@/lib/api";
+// What is deliberately NOT unified:
+//   - The two reads stay two functions. The admin gets a per-instructor
+//     breakdown, an instructor gets one flat total for themselves, and the
+//     instructor's identity is forced by the backend — an `instructor_id` sent
+//     from that screen would be ignored, so the type refuses to carry one.
+//   - This stays separate from `scheduleErrorMessage`. The two surfaces share
+//     the wire shape but not one error, and a class edit and a pay edit fail for
+//     entirely different reasons — one table of both would just be two tables in
+//     a trench coat.
+//
+// Takes the backend handle as a parameter rather than reaching for React
+// context, following `catalog.ts`.
+import { ApiError, type Api } from "@/lib/api";
+import { rangeToParams, type DateRange } from "@/components/date-range-filter";
+import { atLocalTime } from "@/lib/local-day";
 
 export interface ApiPayrollRow {
   kind: "class" | "pt" | "workshop" | "manual";
@@ -40,7 +58,17 @@ export interface ApiPayrollTotal {
 
 export interface ApiPayrollResponse {
   rows: ApiPayrollRow[];
+  /** Per instructor, over the same filtered set as `rows`. */
   totals: ApiPayrollTotal[];
+  /** Rows with no pay set yet. Counted here, excluded from every total. */
+  unpriced_count: number;
+}
+
+/** The instructor route answers with one flat total instead of a breakdown. */
+export interface ApiInstructorPayrollResponse {
+  rows: ApiPayrollRow[];
+  total_sgd: number;
+  session_count: number;
   unpriced_count: number;
 }
 
@@ -52,6 +80,69 @@ export type PayrollSortKey =
   | "amount";
 
 export type SortDir = "asc" | "desc";
+
+/* --------------------------------- Reads --------------------------------- */
+
+/** Empty strings mean "no filter" — that is what the picker's "All" option is. */
+export function fetchAdminPayroll(
+  api: Api,
+  filters: { instructorId?: string; classTypeId?: string; range: DateRange },
+): Promise<ApiPayrollResponse> {
+  return api.get<ApiPayrollResponse>("/portal/admin/payroll", {
+    instructor_id: filters.instructorId || undefined,
+    class_type_id: filters.classTypeId || undefined,
+    ...rangeToParams(filters.range),
+  });
+}
+
+/** The caller's own teaching log; the backend scopes it, never the query. */
+export function fetchInstructorPayroll(
+  api: Api,
+  range: DateRange,
+): Promise<ApiInstructorPayrollResponse> {
+  return api.get<ApiInstructorPayrollResponse>(
+    "/portal/instructor/payroll",
+    rangeToParams(range),
+  );
+}
+
+/* --------------------------------- Writes -------------------------------- */
+
+/**
+ * `instructor_id` targets this row's specific instructor (main/supporting/
+ * workshop) — required for workshops, and needed for classes and PT sessions
+ * with supporting instructors so the write doesn't fall through to the
+ * main-instructor back-compat path. Pass the row, not its id, so it can't be
+ * left off.
+ */
+export function savePayrollAmount(
+  api: Api,
+  row: ApiPayrollRow,
+  paySgd: number | null,
+): Promise<unknown> {
+  return api.patch(`/portal/admin/payroll/${row.kind}/${row.id}`, {
+    instructor_pay_sgd: paySgd,
+    instructor_id: row.instructor_id,
+  });
+}
+
+/** `day` is a YYYY-MM-DD from a date input; the API wants a local-midnight instant. */
+export function createManualPayroll(
+  api: Api,
+  entry: { instructorId: string; amountSgd: number; label: string; day: string },
+): Promise<unknown> {
+  return api.post("/portal/admin/payroll", {
+    instructor_id: entry.instructorId,
+    amount_sgd: entry.amountSgd,
+    label: entry.label,
+    entry_date: atLocalTime(entry.day, "00:00").toISOString(),
+  });
+}
+
+/** Only manual entries can be deleted — the rest are records of work done. */
+export function deleteManualPayroll(api: Api, id: string): Promise<unknown> {
+  return api.del(`/portal/admin/payroll/manual/${id}`);
+}
 
 /* ------------------------------- Error copy ------------------------------- */
 

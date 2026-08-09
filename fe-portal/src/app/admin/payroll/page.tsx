@@ -31,12 +31,11 @@ import {
 import {
   DateRangeFilter,
   presetRange,
-  rangeToParams,
   type DateRange,
 } from "@/components/date-range-filter";
 import { PayrollCalendar, monthGridDays } from "@/components/payroll-calendar";
 import { useWorkspace } from "@/lib/workspace-context";
-import { ApiError, type Api } from "@/lib/api";
+import type { Api } from "@/lib/api";
 import {
   fetchActiveClassTypes,
   fetchActiveInstructors,
@@ -44,11 +43,15 @@ import {
   type CatalogInstructor,
 } from "@/lib/catalog";
 import { formatDate, formatDuration, formatSgd } from "@/lib/formatters";
-import { atLocalTime, localDay } from "@/lib/local-day";
+import { localDay } from "@/lib/local-day";
 import { toast } from "sonner";
 import {
+  createManualPayroll,
+  deleteManualPayroll,
+  fetchAdminPayroll,
   payrollErrorMessage,
   payrollNeedsReload,
+  savePayrollAmount,
   type ApiPayrollResponse,
   type ApiPayrollRow,
   type ApiPayrollTotal,
@@ -126,18 +129,14 @@ export default function PayrollPage() {
     if (!api) return;
     setLoading(true);
     setError(null);
+    // Drop the old period's figures before asking for the new one's — totals
+    // sitting above a loading table are totals for a period you can't see.
+    setData(null);
     try {
-      const { from, to } = rangeToParams(activeRange);
-      const res = await api.get<ApiPayrollResponse>("/portal/admin/payroll", {
-        instructor_id: instructorId || undefined,
-        class_type_id: classTypeId || undefined,
-        from,
-        to,
-      });
-      setData(res);
+      setData(await fetchAdminPayroll(api, { instructorId, classTypeId, range: activeRange }));
       setDrafts({});
     } catch (err) {
-      setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
+      setError(payrollErrorMessage(err, "Couldn't load payroll"));
     } finally {
       setLoading(false);
     }
@@ -212,14 +211,7 @@ export default function PayrollPage() {
     }
     setSavingKey(key);
     try {
-      // instructor_id targets this row's specific instructor (main/supporting/
-      // workshop) — required for workshops, and needed for classes/PT sessions
-      // that have supporting instructors so the write doesn't fall through to
-      // the main-instructor back-compat path.
-      await api.patch(`/portal/admin/payroll/${row.kind}/${row.id}`, {
-        instructor_pay_sgd: next,
-        instructor_id: row.instructor_id,
-      });
+      await savePayrollAmount(api, row, next);
       toast.success("Pay updated");
       await load();
     } catch (err) {
@@ -237,7 +229,7 @@ export default function PayrollPage() {
     if (!window.confirm("Delete this payroll entry? This cannot be undone.")) return;
     setDeletingId(row.id);
     try {
-      await api.del(`/portal/admin/payroll/manual/${row.id}`);
+      await deleteManualPayroll(api, row.id);
       toast.success("Entry deleted");
       await load();
     } catch (err) {
@@ -368,7 +360,7 @@ export default function PayrollPage() {
 
       {error && (
         <div className="mb-4 rounded-lg border border-error/30 bg-error/5 p-3 text-xs text-error">
-          Failed to load payroll: {error}
+          {error}
         </div>
       )}
 
@@ -453,7 +445,14 @@ export default function PayrollPage() {
                             onKeyDown={(e) => {
                               if (e.key === "Enter") e.currentTarget.blur();
                             }}
-                            className="h-9 w-28 rounded-lg border border-border bg-paper py-1 pl-7 pr-2 text-right text-sm tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                            // An unpriced row is work the admin still has to do,
+                            // so it reads like the calendar's unpriced chip
+                            // rather than like an ordinary empty box.
+                            className={`h-9 w-28 rounded-lg border py-1 pl-7 pr-2 text-right text-sm tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+                              row.instructor_pay_sgd == null
+                                ? "border-warning/50 bg-warning/10"
+                                : "border-border bg-paper"
+                            }`}
                           />
                         </div>
                         {row.kind === "manual" && (
@@ -595,11 +594,11 @@ function ManualPayrollDialog({
     if (!api || !valid) return;
     setSaving(true);
     try {
-      await api.post("/portal/admin/payroll", {
-        instructor_id: instructorId,
-        amount_sgd: amountNum,
+      await createManualPayroll(api, {
+        instructorId,
+        amountSgd: amountNum,
         label: label.trim(),
-        entry_date: atLocalTime(date, "00:00").toISOString(),
+        day: date,
       });
       toast.success("Payroll entry created");
       await onCreated();

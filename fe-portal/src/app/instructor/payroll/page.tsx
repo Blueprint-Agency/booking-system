@@ -5,25 +5,20 @@ import { EmptyState, PageHeader } from "@/components/ui";
 import {
   DateRangeFilter,
   presetRange,
-  rangeToParams,
   type DateRange,
 } from "@/components/date-range-filter";
 import { useWorkspace } from "@/lib/workspace-context";
-import { ApiError } from "@/lib/api";
 import { formatDate, formatDuration, formatSgd } from "@/lib/formatters";
-import type { ApiPayrollRow } from "@/lib/payroll";
-
-interface InstructorPayrollResponse {
-  rows: ApiPayrollRow[];
-  total_sgd: number;
-  session_count: number;
-  unpriced_count: number;
-}
+import {
+  fetchInstructorPayroll,
+  payrollErrorMessage,
+  type ApiInstructorPayrollResponse,
+} from "@/lib/payroll";
 
 export default function InstructorPayrollPage() {
   const { api } = useWorkspace();
   const [range, setRange] = useState<DateRange>(() => presetRange("month"));
-  const [data, setData] = useState<InstructorPayrollResponse | null>(null);
+  const [data, setData] = useState<ApiInstructorPayrollResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,14 +26,13 @@ export default function InstructorPayrollPage() {
     if (!api) return;
     setLoading(true);
     setError(null);
+    // Drop the old period's figures before asking for the new one's — a total
+    // sitting above a loading table is a total for a period you can't see.
+    setData(null);
     try {
-      const res = await api.get<InstructorPayrollResponse>(
-        "/portal/instructor/payroll",
-        rangeToParams(range),
-      );
-      setData(res);
+      setData(await fetchInstructorPayroll(api, range));
     } catch (err) {
-      setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
+      setError(payrollErrorMessage(err, "Couldn't load payroll"));
     } finally {
       setLoading(false);
     }
@@ -85,7 +79,7 @@ export default function InstructorPayrollPage() {
 
       {error && (
         <div className="mb-4 rounded-lg border border-error/30 bg-error/5 p-3 text-xs text-error">
-          Failed to load payroll: {error}
+          {error}
         </div>
       )}
 
