@@ -60,8 +60,8 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 
 | App | Target | How it deploys |
 |---|---|---|
-| `fe-client/` | Vercel project `booking-system` (Root Directory = `fe-client/`) | `main` → **production** at `https://yogasadhana.reservetoday.app`; `staging` → **preview**. Env vars: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `NEXT_PUBLIC_SENTRY_DSN`, `NEXT_PUBLIC_APP_ENV` — set **twice**, once per scope (Production / Preview). Clerk routing URLs are hardcoded in `src/app/layout.tsx` (NOT env-driven). |
-| `fe-portal/` | Vercel project `booking-system-admin` (Root Directory = `fe-portal/`) | `main` → **production** at `https://portal.yogasadhana.reservetoday.app`; `staging` → **preview**. Same env shape as fe-client, but with the **staff** Clerk app keys. |
+| `fe-client/` | Vercel project `booking-system` (Root Directory = `fe-client/`) | `main` → `https://yogasadhana.reservetoday.app`; `staging` → `https://staging.yogasadhana.reservetoday.app`. Env vars: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `NEXT_PUBLIC_SENTRY_DSN`, `NEXT_PUBLIC_APP_ENV` — set **twice**, once per scope (Production / Preview). Clerk routing URLs are hardcoded in `src/app/layout.tsx` (NOT env-driven). |
+| `fe-portal/` | Vercel project `booking-system-admin` (Root Directory = `fe-portal/`) | `main` → `https://portal.yogasadhana.reservetoday.app`; `staging` → `https://staging-portal.yogasadhana.reservetoday.app`. Same env shape as fe-client, but with the **staff** Clerk app keys. |
 | `be/` | bpvps2 (Docker) | Auto-deploy on push to `staging` **or** `main` (paths-filtered to `be/**`). `.github/workflows/deploy-be.yml` builds the image, pushes to Docker Hub (`blueprintagency/booking-be`), SSHes to bpvps2 over Tailscale, writes `.env.booking-be` from the branch's GitHub Environment, and runs migrate/seed + `docker compose up -d`. |
 
 **Deploy branch & environments:** two live environments, one per branch.
@@ -71,9 +71,20 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 | Backend | `booking-staging` stack on bpvps2 → `https://api.staging.reservetoday.app` | `booking-prod` stack on bpvps2 → `https://api.reservetoday.app` |
 | GitHub Environment | `staging` (lowercase) | `Production` (capital P) |
 | Image tag | `blueprintagency/booking-be:staging` | `…:latest` |
-| fe-client | Vercel **preview** | `https://yogasadhana.reservetoday.app` |
-| fe-portal | Vercel **preview** | `https://portal.yogasadhana.reservetoday.app` |
+| fe-client | `https://staging.yogasadhana.reservetoday.app` | `https://yogasadhana.reservetoday.app` |
+| fe-portal | `https://staging-portal.yogasadhana.reservetoday.app` | `https://portal.yogasadhana.reservetoday.app` |
+| Vercel target | **preview** (branch-pinned domain) | **production** |
+| `PORTAL_ORIGIN` / `CLIENT_ORIGIN` | the two staging URLs above | the two production URLs above |
+| Clerk instance | development (`*.clerk.accounts.dev`) | production (`clerk.reservetoday.app`, `clerk.yogasadhana.reservetoday.app`) |
 | `APP_ENV` / `NEXT_PUBLIC_APP_ENV` | `staging` | `production` |
+
+> **Every staging/production URL is a real domain — do not test against `*.vercel.app`.**
+> The generated aliases still exist and still resolve, but the backend's CORS allowlist contains
+> only the four domains above, so a `.vercel.app` alias fails every API call. The trap is
+> `booking-system-admin-git-main-….vercel.app`: it reads like a dev URL but `-git-main-` is the
+> **production** build, so it fails on CORS *and* serves production Clerk. Vercel truncates the
+> staging alias to `booking-system-adm-git-40d5d8-…` (63-char DNS label limit), which is why it
+> looks nothing like a staging URL.
 
 `NODE_ENV` stays `production` on any server/build, incl. Vercel previews (build flag — enables optimizations + JSON logging); the environment NAME lives in `APP_ENV` (backend) / `NEXT_PUBLIC_APP_ENV` (frontend). Sentry reports from any deployed env (`APP_ENV !== development`) and is off in local dev.
 
