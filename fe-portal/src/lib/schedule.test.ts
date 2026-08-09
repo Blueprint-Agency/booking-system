@@ -3,14 +3,27 @@ import assert from "node:assert";
 import { scheduleErrorMessage, fetchCorporateSession } from "./schedule";
 import { ApiError, type Api } from "./api";
 
-// A room clash reads the same sentence whichever kind of event hit it — the
-// backend spells it `room_clash` on classes and workshops and `room_conflict`
-// on PT and corporate.
-test("both spellings of a room clash give the same sentence", () => {
-  const expected =
-    "That room is already booked for an overlapping time. Pick another room or time.";
-  assert.strictEqual(scheduleErrorMessage(new ApiError(409, { error: "room_clash" })), expected);
-  assert.strictEqual(scheduleErrorMessage(new ApiError(409, { error: "room_conflict" })), expected);
+// A clash is one code for both subjects, and the backend says who is taken by
+// what — that sentence is the whole point, so it must survive to the screen.
+test("a scheduling clash shows the backend's specific sentence", () => {
+  assert.strictEqual(
+    scheduleErrorMessage(
+      new ApiError(409, {
+        error: "schedule_conflict",
+        subject: "instructor",
+        message: "Anya is already booked — a class on 1 Jan, 18:00–19:00.",
+      }),
+    ),
+    "Anya is already booked — a class on 1 Jan, 18:00–19:00.",
+  );
+});
+
+// ...and if it ever arrives without one, the code still explains itself.
+test("a clash with no message falls back to the code's copy", () => {
+  assert.strictEqual(
+    scheduleErrorMessage(new ApiError(409, { error: "schedule_conflict" })),
+    "That room or instructor is already booked for an overlapping time.",
+  );
 });
 
 test("a known code is explained without a status", () => {

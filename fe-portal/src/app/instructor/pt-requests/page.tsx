@@ -5,6 +5,7 @@ import { Button, EmptyState, Label, PageHeader } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { formatRelative } from "@/lib/formatters";
+import { scheduleErrorMessage } from "@/lib/schedule";
 import { toast } from "sonner";
 
 interface PtSlot {
@@ -197,15 +198,13 @@ function ScheduleForm({
     } catch (e2) {
       const status = e2 instanceof ApiError ? e2.status : 0;
       const body = e2 instanceof ApiError ? (e2.body as { error?: string } | null) : null;
-      if (status === 409 && body?.error === "room_conflict")
-        setErr("That room is booked for an overlapping time.");
-      else if (status === 409 && body?.error === "instructor_conflict")
-        setErr("You already have a session overlapping that time.");
-      else if (status === 409 && body?.error === "not_pending")
+      if (status === 409 && body?.error === "not_pending")
         setErr("This request was already taken or cancelled.");
       else if (status === 422)
         setErr("The 2-on-1 partner needs a member account before this can be scheduled.");
-      else setErr(status ? `Couldn't schedule (HTTP ${status})` : "Network error");
+      // A clash names the room or instructor and the event in the way — that
+      // sentence comes from the backend, so pass it straight through.
+      else setErr(scheduleErrorMessage(e2, "Couldn't schedule"));
       setSubmitting(false);
     }
   }

@@ -2,12 +2,14 @@ import { eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { classes } from '../../db/schema'
 import { assertRoomAvailable, assertRoomInLocation } from './room-conflicts'
+import { assertInstructorsAvailable, plannedInstructorIds } from './occupancy'
 import { NotFoundError } from '../../shared/errors'
 import {
   ensureInstructors,
   readRoster,
   replaceRoster,
   type RosterAssignment,
+  type RosterPatch,
 } from './roster'
 
 export type { RosterAssignment } from './roster'
@@ -36,6 +38,16 @@ export type ClassRow = typeof classes.$inferSelect
 export async function createClass(input: CreateClassInput): Promise<ClassRow> {
   await assertRoomInLocation(input.roomId, input.locationId)
   await assertRoomAvailable(input.roomId, input.startsAt, input.endsAt)
+  // Nobody on the roster may already be teaching then — supporting included.
+  await assertInstructorsAvailable(
+    [
+      input.mainInstructorId,
+      ...(input.supportingInstructors?.map(s => s.instructorId) ??
+        input.supportingInstructorIds ??
+        []),
+    ],
+    { startsAt: input.startsAt, endsAt: input.endsAt },
+  )
 
   return db.transaction(async tx => {
     // The class row's own main_instructor_id FK points at instructors.staff_user_id,
@@ -130,6 +142,35 @@ export async function updateClass(id: string, patch: UpdateClassInput): Promise<
     patch.supportingInstructors !== undefined ||
     patch.supportingInstructorIds !== undefined
 
+  const rosterPatch: RosterPatch = {
+    ...(touchesMain
+      ? {
+          main: {
+            ...(patch.mainInstructorId !== undefined
+              ? { instructorId: patch.mainInstructorId }
+              : {}),
+            ...(patch.instructorPaySgd !== undefined ? { paySgd: patch.instructorPaySgd } : {}),
+          },
+        }
+      : {}),
+    ...(patch.supportingInstructors !== undefined
+      ? { supporting: patch.supportingInstructors }
+      : {}),
+    ...(patch.supportingInstructorIds !== undefined
+      ? { supportingInstructorIds: patch.supportingInstructorIds }
+      : {}),
+  }
+
+  // A new roster, or the same roster at a new time, can put someone in two
+  // places at once. Ask about whoever the class will END UP with.
+  if (touchesRoster || patch.startsAt !== undefined || patch.endsAt !== undefined) {
+    await assertInstructorsAvailable(
+      await plannedInstructorIds({ kind: 'class', id }, rosterPatch),
+      { startsAt: newStartsAt, endsAt: newEndsAt },
+      { kind: 'class', id },
+    )
+  }
+
   return db.transaction(async tx => {
     const set: Partial<typeof classes.$inferInsert> = {}
     if (patch.classTypeId !== undefined) set.classTypeId = patch.classTypeId
@@ -151,30 +192,7 @@ export async function updateClass(id: string, patch: UpdateClassInput): Promise<
     }
 
     if (touchesRoster) {
-      await replaceRoster(
-        tx,
-        { kind: 'class', id },
-        {
-          ...(touchesMain
-            ? {
-                main: {
-                  ...(patch.mainInstructorId !== undefined
-                    ? { instructorId: patch.mainInstructorId }
-                    : {}),
-                  ...(patch.instructorPaySgd !== undefined
-                    ? { paySgd: patch.instructorPaySgd }
-                    : {}),
-                },
-              }
-            : {}),
-          ...(patch.supportingInstructors !== undefined
-            ? { supporting: patch.supportingInstructors }
-            : {}),
-          ...(patch.supportingInstructorIds !== undefined
-            ? { supportingInstructorIds: patch.supportingInstructorIds }
-            : {}),
-        },
-      )
+      await replaceRoster(tx, { kind: 'class', id }, rosterPatch)
       // main_instructor_id / instructor_pay_sgd may have moved under us.
       const [fresh] = await tx.select().from(classes).where(eq(classes.id, id)).limit(1)
       if (fresh) row = fresh

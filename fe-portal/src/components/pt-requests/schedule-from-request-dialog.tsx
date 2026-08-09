@@ -11,15 +11,16 @@ import {
   type CatalogInstructor,
   type CatalogRoom,
 } from "@/lib/catalog";
+import { scheduleErrorMessage } from "@/lib/schedule";
 import type { ApiPtRequest } from "@/lib/pt-requests";
 
+// Codes only this dialog raises. A room or instructor clash is NOT here — it
+// arrives as `schedule_conflict` carrying the specific sentence, which
+// `scheduleErrorMessage` passes through.
 const SCHEDULE_ERROR: Record<string, string> = {
   not_pending: "This request is no longer pending.",
-  room_conflict: "That room is already booked for this time.",
-  instructor_conflict: "That instructor is already booked for this time.",
   partner_account_required:
     "The partner needs a member account before this can be scheduled.",
-  bad_time_range: "End time must be after start time.",
 };
 
 const PARTNER_LINK_ERROR: Record<string, string> = {
@@ -156,7 +157,10 @@ export function ScheduleFromRequestDialog({
       onScheduled();
     } catch (e) {
       const code = apiErrorCode(e);
-      setErr(SCHEDULE_ERROR[code] ?? "Couldn't schedule the session. Please try again.");
+      setErr(
+        SCHEDULE_ERROR[code] ??
+          scheduleErrorMessage(e, "Couldn't schedule the session"),
+      );
     } finally {
       setSaving(false);
     }

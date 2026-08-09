@@ -126,8 +126,6 @@ function statusForScheduleError(error: SchedulePtRequestError): 400 | 404 | 409 
     case 'request_not_found':
       return 404
     case 'not_pending':
-    case 'room_conflict':
-    case 'instructor_conflict':
       return 409
     case 'partner_account_required':
       return 422
