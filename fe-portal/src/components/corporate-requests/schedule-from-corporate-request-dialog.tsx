@@ -6,21 +6,13 @@ import { todayIso, currentHourTime } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
 import { useWorkspace } from "@/lib/workspace-context";
 import { corporateErrorMessage } from "@/lib/corporate-errors";
+import {
+  fetchActiveInstructors,
+  fetchActiveRooms,
+  type CatalogInstructor,
+  type CatalogRoom,
+} from "@/lib/catalog";
 import type { CorporateRequest } from "@/types";
-
-interface ApiInstructor {
-  id: string;
-  name: string;
-  status: "pending" | "active" | "archived";
-  archived_at: string | null;
-}
-
-interface ApiRoom {
-  id: string;
-  location_id: string;
-  name: string;
-  archived_at: string | null;
-}
 
 /**
  * Schedules a pending corporate request. Mirrors the PT
@@ -40,8 +32,8 @@ export function ScheduleFromCorporateRequestDialog({
 }) {
   const { api, accessibleLocations, activeLocationId } = useWorkspace();
 
-  const [instructors, setInstructors] = useState<ApiInstructor[]>([]);
-  const [rooms, setRooms] = useState<ApiRoom[]>([]);
+  const [instructors, setInstructors] = useState<CatalogInstructor[]>([]);
+  const [rooms, setRooms] = useState<CatalogRoom[]>([]);
   const [catalogError, setCatalogError] = useState<string | null>(null);
 
   const [date, setDate] = useState("");
@@ -69,14 +61,12 @@ export function ScheduleFromCorporateRequestDialog({
     void (async () => {
       try {
         const [ins, rm] = await Promise.all([
-          api.get<{ instructors: ApiInstructor[] }>(
-            "/portal/admin/instructors",
-          ),
-          api.get<{ rooms: ApiRoom[] }>("/portal/admin/rooms"),
+          fetchActiveInstructors(api),
+          fetchActiveRooms(api),
         ]);
         if (cancelled) return;
-        setInstructors(ins.instructors);
-        setRooms(rm.rooms);
+        setInstructors(ins);
+        setRooms(rm);
       } catch {
         if (cancelled) return;
         setCatalogError("Failed to load instructors / rooms.");
@@ -95,22 +85,18 @@ export function ScheduleFromCorporateRequestDialog({
     () => accessibleLocations.filter((l) => !l.archivedAt),
     [accessibleLocations],
   );
-  const activeInstructors = useMemo(
-    () => instructors.filter((i) => !i.archived_at),
-    [instructors],
-  );
   const roomsForLocation = useMemo(
-    () => rooms.filter((r) => !r.archived_at && r.location_id === locationId),
+    () => rooms.filter((r) => r.location_id === locationId),
     [rooms, locationId],
   );
   const availableForSupporting = useMemo(
     () =>
-      activeInstructors.filter(
+      instructors.filter(
         (i) =>
           i.id !== mainInstructorId &&
           !supportingInstructorIds.includes(i.id),
       ),
-    [activeInstructors, mainInstructorId, supportingInstructorIds],
+    [instructors, mainInstructorId, supportingInstructorIds],
   );
 
   // Drop the main instructor from supporting if it gets selected as main.
@@ -207,7 +193,7 @@ export function ScheduleFromCorporateRequestDialog({
               className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
             >
               <option value="">Select…</option>
-              {activeInstructors.map((i) => (
+              {instructors.map((i) => (
                 <option key={i.id} value={i.id}>
                   {i.name}
                 </option>
@@ -318,7 +304,7 @@ export function ScheduleFromCorporateRequestDialog({
           <div className="flex flex-wrap items-center gap-2">
             {supportingInstructorIds.map((sid) => {
               const name =
-                activeInstructors.find((i) => i.id === sid)?.name ?? "Unknown";
+                instructors.find((i) => i.id === sid)?.name ?? "Unknown";
               return (
                 <span
                   key={sid}

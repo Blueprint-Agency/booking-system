@@ -9,22 +9,19 @@ import { computeEventState } from "@/lib/event-state";
 import { formatDate, formatTime, formatDateTime, formatSgd } from "@/lib/formatters";
 import { localDay } from "@/lib/local-day";
 import { corporateErrorMessage } from "@/lib/corporate-errors";
+import {
+  fetchActiveClassTypes,
+  fetchActiveInstructors,
+  fetchActiveRooms,
+  type CatalogClassType,
+  type CatalogInstructor,
+  type CatalogRoom,
+} from "@/lib/catalog";
 import type { EventState } from "@/types";
 
 interface NamedRef {
   id: string;
   name: string;
-}
-
-interface ApiInstructor {
-  id: string;
-  name: string;
-}
-
-interface ApiClassType {
-  id: string;
-  name: string;
-  archived_at: string | null;
 }
 
 interface ApiWorkshopDay {
@@ -148,9 +145,9 @@ export default function SessionDetailPage({
 function ClassDetail({ id }: { id: string }) {
   const { api } = useWorkspace();
   const [data, setData] = useState<ApiClassDetail | null>(null);
-  const [instructors, setInstructors] = useState<ApiInstructor[]>([]);
-  const [classTypes, setClassTypes] = useState<ApiClassType[]>([]);
-  const [rooms, setRooms] = useState<ApiRoom[]>([]);
+  const [instructors, setInstructors] = useState<CatalogInstructor[]>([]);
+  const [classTypes, setClassTypes] = useState<CatalogClassType[]>([]);
+  const [rooms, setRooms] = useState<CatalogRoom[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [cancelBusy, setCancelBusy] = useState(false);
@@ -163,16 +160,14 @@ function ClassDetail({ id }: { id: string }) {
     try {
       const [d, ins, ct, rm] = await Promise.all([
         api.get<ApiClassDetail>(`/portal/admin/schedule/classes/${id}`),
-        api.get<{ instructors: Array<ApiInstructor & { archived_at?: string | null }> }>(
-          "/portal/admin/instructors",
-        ),
-        api.get<{ class_types: ApiClassType[] }>("/portal/admin/class-types"),
-        api.get<{ rooms: ApiRoom[] }>("/portal/admin/rooms"),
+        fetchActiveInstructors(api),
+        fetchActiveClassTypes(api),
+        fetchActiveRooms(api),
       ]);
       setData(d);
-      setInstructors(ins.instructors.filter((i) => !i.archived_at));
-      setClassTypes(ct.class_types);
-      setRooms(rm.rooms);
+      setInstructors(ins);
+      setClassTypes(ct);
+      setRooms(rm);
     } catch (err) {
       setError(detailError(err, "Class not found."));
     } finally {
@@ -453,9 +448,9 @@ function ClassEditor({
   onSaved,
 }: {
   data: ApiClassDetail;
-  instructors: ApiInstructor[];
-  classTypes: ApiClassType[];
-  rooms: ApiRoom[];
+  instructors: CatalogInstructor[];
+  classTypes: CatalogClassType[];
+  rooms: CatalogRoom[];
   onSaved: () => void | Promise<void>;
 }) {
   const { api, accessibleLocations } = useWorkspace();
@@ -509,12 +504,8 @@ function ClassEditor({
     [accessibleLocations],
   );
   const roomsForLocation = useMemo(
-    () => rooms.filter((r) => !r.archived_at && r.location_id === locationId),
+    () => rooms.filter((r) => r.location_id === locationId),
     [rooms, locationId],
-  );
-  const activeClassTypes = useMemo(
-    () => classTypes.filter((c) => !c.archived_at),
-    [classTypes],
   );
   const availableForSupporting = useMemo(
     () =>
@@ -577,7 +568,7 @@ function ClassEditor({
             className="flex h-10 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
           >
             <option value="">Select…</option>
-            {activeClassTypes.map((c) => (
+            {classTypes.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
               </option>
@@ -794,8 +785,8 @@ function ptErrorMessage(err: unknown): string {
 function PtDetail({ id }: { id: string }) {
   const { api } = useWorkspace();
   const [data, setData] = useState<ApiPtDetail | null>(null);
-  const [instructors, setInstructors] = useState<ApiInstructor[]>([]);
-  const [rooms, setRooms] = useState<ApiRoom[]>([]);
+  const [instructors, setInstructors] = useState<CatalogInstructor[]>([]);
+  const [rooms, setRooms] = useState<CatalogRoom[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [cancelBusy, setCancelBusy] = useState(false);
@@ -808,14 +799,12 @@ function PtDetail({ id }: { id: string }) {
     try {
       const [d, ins, rm] = await Promise.all([
         api.get<ApiPtDetail>(`/portal/admin/schedule/pt/${id}`),
-        api.get<{ instructors: Array<ApiInstructor & { archived_at?: string | null }> }>(
-          "/portal/admin/instructors",
-        ),
-        api.get<{ rooms: ApiRoom[] }>("/portal/admin/rooms"),
+        fetchActiveInstructors(api),
+        fetchActiveRooms(api),
       ]);
       setData(d);
-      setInstructors(ins.instructors.filter((i) => !i.archived_at));
-      setRooms(rm.rooms);
+      setInstructors(ins);
+      setRooms(rm);
     } catch (err) {
       setError(detailError(err, "Private session not found."));
     } finally {
@@ -955,8 +944,8 @@ function PtEditor({
   onSaved,
 }: {
   data: ApiPtDetail;
-  instructors: ApiInstructor[];
-  rooms: ApiRoom[];
+  instructors: CatalogInstructor[];
+  rooms: CatalogRoom[];
   onSaved: () => void | Promise<void>;
 }) {
   const { api, accessibleLocations } = useWorkspace();
@@ -1010,7 +999,7 @@ function PtEditor({
     [accessibleLocations],
   );
   const roomsForLocation = useMemo(
-    () => rooms.filter((r) => !r.archived_at && r.location_id === locationId),
+    () => rooms.filter((r) => r.location_id === locationId),
     [rooms, locationId],
   );
   const availableForSupporting = useMemo(
@@ -1282,7 +1271,7 @@ function PtCheckInBadge({ state }: { state: ApiPtAttendee["check_in_state"] }) {
 function WorkshopDetail({ id }: { id: string }) {
   const { api, accessibleLocations } = useWorkspace();
   const [data, setData] = useState<ApiWorkshopDetail | null>(null);
-  const [instructors, setInstructors] = useState<ApiInstructor[]>([]);
+  const [instructors, setInstructors] = useState<CatalogInstructor[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [cancelBusy, setCancelBusy] = useState(false);
@@ -1295,10 +1284,10 @@ function WorkshopDetail({ id }: { id: string }) {
     try {
       const [w, ins] = await Promise.all([
         api.get<ApiWorkshopDetail>(`/portal/admin/workshops/${id}`),
-        api.get<{ instructors: ApiInstructor[] }>("/portal/admin/instructors"),
+        fetchActiveInstructors(api),
       ]);
       setData(w);
-      setInstructors(ins.instructors);
+      setInstructors(ins);
     } catch (err) {
       setError(detailError(err, "Workshop not found."));
     } finally {
@@ -1477,19 +1466,12 @@ interface ApiCorporatePackageBrief {
   status: "active" | "archived";
 }
 
-interface ApiRoom {
-  id: string;
-  location_id: string;
-  name: string;
-  archived_at: string | null;
-}
-
 function CorporateDetail({ id }: { id: string }) {
   const { api, accessibleLocations } = useWorkspace();
   const [data, setData] = useState<ApiCorporateSession | null>(null);
   const [pkg, setPkg] = useState<ApiCorporatePackageBrief | null>(null);
-  const [instructors, setInstructors] = useState<ApiInstructor[]>([]);
-  const [rooms, setRooms] = useState<ApiRoom[]>([]);
+  const [instructors, setInstructors] = useState<CatalogInstructor[]>([]);
+  const [rooms, setRooms] = useState<CatalogRoom[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -1502,14 +1484,12 @@ function CorporateDetail({ id }: { id: string }) {
         api.get<{ corporate_session: ApiCorporateSession }>(
           `/portal/admin/corporate-sessions/${id}`,
         ),
-        api.get<{ instructors: Array<ApiInstructor & { archived_at?: string | null }> }>(
-          "/portal/admin/instructors",
-        ),
-        api.get<{ rooms: ApiRoom[] }>("/portal/admin/rooms"),
+        fetchActiveInstructors(api),
+        fetchActiveRooms(api),
       ]);
       setData(d.corporate_session);
-      setInstructors(ins.instructors.filter((i) => !i.archived_at));
-      setRooms(rm.rooms);
+      setInstructors(ins);
+      setRooms(rm);
       try {
         const p = await api.get<{
           corporatePackage: ApiCorporatePackageBrief;
@@ -1611,8 +1591,8 @@ function CorporateEditor({
   onSaved,
 }: {
   session: ApiCorporateSession;
-  instructors: ApiInstructor[];
-  rooms: ApiRoom[];
+  instructors: CatalogInstructor[];
+  rooms: CatalogRoom[];
   onSaved: () => void | Promise<void>;
 }) {
   const { api, accessibleLocations } = useWorkspace();
@@ -1657,7 +1637,7 @@ function CorporateEditor({
     [accessibleLocations],
   );
   const roomsForLocation = useMemo(
-    () => rooms.filter((r) => !r.archived_at && r.location_id === locationId),
+    () => rooms.filter((r) => r.location_id === locationId),
     [rooms, locationId],
   );
   const availableForSupporting = useMemo(

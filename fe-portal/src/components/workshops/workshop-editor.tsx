@@ -10,6 +10,14 @@ import { WorkshopTiersEditor } from "./workshop-tiers-editor";
 import { PromotionsEditor } from "@/components/packages/promotions-editor";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError, type Api } from "@/lib/api";
+import {
+  fetchActiveInstructors,
+  fetchActiveLocations,
+  fetchActiveRooms,
+  type CatalogInstructor,
+  type CatalogLocation,
+  type CatalogRoom,
+} from "@/lib/catalog";
 import { atLocalTime, localDay } from "@/lib/local-day";
 import {
   hasPromotionOverlap,
@@ -21,10 +29,10 @@ import type { Workshop, WorkshopDay, WorkshopTier, Promotion } from "@/types";
 
 type Mode = "range" | "individual";
 
-interface ApiCatalog {
-  locations: Array<{ id: string; name: string }>;
-  instructors: Array<{ id: string; name: string; archived_at: string | null }>;
-  rooms: Array<{ id: string; name: string; location_id: string; archived_at: string | null }>;
+interface Catalog {
+  locations: CatalogLocation[];
+  instructors: CatalogInstructor[];
+  rooms: CatalogRoom[];
 }
 
 interface ApiWorkshopDetail {
@@ -287,7 +295,7 @@ export function WorkshopEditor({
   onCancel: () => void;
 }) {
   const { api } = useWorkspace();
-  const [catalog, setCatalog] = useState<ApiCatalog>({
+  const [catalog, setCatalog] = useState<Catalog>({
     locations: [],
     instructors: [],
     rooms: [],
@@ -330,22 +338,12 @@ export function WorkshopEditor({
     if (!api) return;
     try {
       const [loc, ins, rm] = await Promise.all([
-        api.get<{
-          locations: Array<{ id: string; name: string; archived_at: string | null }>;
-        }>("/portal/admin/locations"),
-        api.get<{
-          instructors: Array<{ id: string; name: string; archived_at: string | null }>;
-        }>("/portal/admin/instructors"),
-        api.get<{
-          rooms: Array<{ id: string; name: string; location_id: string; archived_at: string | null }>;
-        }>("/portal/admin/rooms"),
+        fetchActiveLocations(api),
+        fetchActiveInstructors(api),
+        fetchActiveRooms(api),
       ]);
-      setCatalog({
-        locations: loc.locations.filter((l) => !l.archived_at),
-        instructors: ins.instructors,
-        rooms: rm.rooms.filter((r) => !r.archived_at),
-      });
-      if (!locationId && loc.locations[0]) setLocationId(loc.locations[0].id);
+      setCatalog({ locations: loc, instructors: ins, rooms: rm });
+      if (!locationId && loc[0]) setLocationId(loc[0].id);
     } catch {
       // surfaced via the form's general error display when save fails
     }
@@ -355,16 +353,12 @@ export function WorkshopEditor({
     void loadCatalog();
   }, [loadCatalog]);
 
-  const activeInstructors = useMemo(
-    () => catalog.instructors.filter((i) => !i.archived_at),
-    [catalog.instructors],
-  );
   const availableForSupporting = useMemo(
     () =>
-      activeInstructors.filter(
+      catalog.instructors.filter(
         (i) => i.id !== mainInstructorId && !supportingInstructorIds.includes(i.id),
       ),
-    [activeInstructors, mainInstructorId, supportingInstructorIds],
+    [catalog.instructors, mainInstructorId, supportingInstructorIds],
   );
 
   // If the chosen main overlaps a supporting one, drop the dup.
@@ -577,7 +571,7 @@ export function WorkshopEditor({
               className="flex h-10 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               <option value="">— select —</option>
-              {activeInstructors.map((i) => (
+              {catalog.instructors.map((i) => (
                 <option key={i.id} value={i.id}>
                   {i.name}
                 </option>

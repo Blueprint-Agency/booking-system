@@ -5,19 +5,13 @@ import { Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
 import { todayIso } from "@/lib/formatters";
 import { ApiError } from "@/lib/api";
 import { useWorkspace } from "@/lib/workspace-context";
+import {
+  fetchActiveInstructors,
+  fetchActiveRooms,
+  type CatalogInstructor,
+  type CatalogRoom,
+} from "@/lib/catalog";
 import type { ApiPtRequest } from "@/lib/pt-requests";
-
-interface ApiInstructor {
-  id: string;
-  name: string;
-  archived_at?: string | null;
-}
-interface ApiRoom {
-  id: string;
-  location_id: string;
-  name: string;
-  archived_at: string | null;
-}
 
 const SCHEDULE_ERROR: Record<string, string> = {
   not_pending: "This request is no longer pending.",
@@ -69,8 +63,8 @@ export function ScheduleFromRequestDialog({
   const [startTime, setStartTime] = useState(first ? hhmm(first.start_time) : "09:00");
   const [endTime, setEndTime] = useState(first ? hhmm(first.end_time) : "10:00");
 
-  const [instructors, setInstructors] = useState<ApiInstructor[]>([]);
-  const [rooms, setRooms] = useState<ApiRoom[]>([]);
+  const [instructors, setInstructors] = useState<CatalogInstructor[]>([]);
+  const [rooms, setRooms] = useState<CatalogRoom[]>([]);
   const [refLoading, setRefLoading] = useState(true);
 
   const [instructorId, setInstructorId] = useState("");
@@ -100,14 +94,13 @@ export function ScheduleFromRequestDialog({
     void (async () => {
       try {
         const [ins, rm] = await Promise.all([
-          api.get<{ instructors: ApiInstructor[] }>("/portal/admin/instructors"),
-          api.get<{ rooms: ApiRoom[] }>("/portal/admin/rooms"),
+          fetchActiveInstructors(api),
+          fetchActiveRooms(api),
         ]);
         if (cancelled) return;
-        const activeIns = ins.instructors.filter((i) => !i.archived_at);
-        setInstructors(activeIns);
-        setRooms(rm.rooms.filter((r) => !r.archived_at));
-        setInstructorId((prev) => prev || activeIns[0]?.id || "");
+        setInstructors(ins);
+        setRooms(rm);
+        setInstructorId((prev) => prev || ins[0]?.id || "");
       } finally {
         if (!cancelled) setRefLoading(false);
       }
