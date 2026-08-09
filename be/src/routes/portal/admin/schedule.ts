@@ -6,6 +6,7 @@ import * as classesSvc from '../../../services/schedule/classes'
 import { getClassDetail, getPtSessionDetail } from '../../../services/schedule/detail'
 import { cancelClass } from '../../../services/bookings/cancel-class'
 import { cancelWorkshop } from '../../../services/workshops/cancel'
+import { workshopRow } from './workshops'
 
 const isoDate = z
   .string()
@@ -298,9 +299,11 @@ const app = new Hono()
     async c => {
       const { id } = c.req.valid('param')
       const staffId = c.get('staffUserId')
-      await cancelWorkshop(id, staffId)
+      const w = await cancelWorkshop(id, staffId)
       c.set('auditTarget' as any, { table: 'workshops', id })
-      return c.json({ ok: true })
+      // Same serializer as POST /admin/workshops/:id/cancel: one cancellation,
+      // one response shape, whichever path reached it.
+      return c.json(workshopRow(w))
     },
   )
 

@@ -129,7 +129,7 @@ function toPromotionWriteInput(p: z.infer<typeof promotionInputSchema>): Promoti
 // Serializers
 // ---------------------------------------------------------------------------
 
-function workshopRow(w: publish.WorkshopRow) {
+export function workshopRow(w: publish.WorkshopRow) {
   return {
     id: w.id,
     name: w.name,
