@@ -8,29 +8,17 @@ import { CapacityFields } from "@/components/schedule/capacity-fields";
 import { useWorkspace } from "@/lib/workspace-context";
 import { todayIso, currentHourTime } from "@/lib/formatters";
 import { ApiError } from "@/lib/api";
+import {
+  fetchActiveClassTypes,
+  fetchActiveInstructors,
+  fetchActiveRooms,
+  type CatalogClassType,
+  type CatalogInstructor,
+  type CatalogRoom,
+} from "@/lib/catalog";
 import type { Capacity, ClassTypeDifficulty } from "@/types";
 
 const DIFFICULTIES: ClassTypeDifficulty[] = ["general", "beginner", "intermediate", "advanced"];
-
-interface ApiClassType {
-  id: string;
-  name: string;
-  archived_at: string | null;
-}
-
-interface ApiInstructor {
-  id: string;
-  name: string;
-  status: "pending" | "active" | "archived";
-  archived_at: string | null;
-}
-
-interface ApiRoom {
-  id: string;
-  location_id: string;
-  name: string;
-  archived_at: string | null;
-}
 
 interface SupportingRow {
   instructorId: string;
@@ -41,9 +29,9 @@ export default function NewClassPage() {
   const router = useRouter();
   const { api, activeLocationId } = useWorkspace();
 
-  const [classTypes, setClassTypes] = useState<ApiClassType[]>([]);
-  const [instructors, setInstructors] = useState<ApiInstructor[]>([]);
-  const [rooms, setRooms] = useState<ApiRoom[]>([]);
+  const [classTypes, setClassTypes] = useState<CatalogClassType[]>([]);
+  const [instructors, setInstructors] = useState<CatalogInstructor[]>([]);
+  const [rooms, setRooms] = useState<CatalogRoom[]>([]);
   const [catalogError, setCatalogError] = useState<string | null>(null);
 
   const [classTypeId, setClassTypeId] = useState("");
@@ -71,14 +59,14 @@ export default function NewClassPage() {
     void (async () => {
       try {
         const [ct, ins, rm] = await Promise.all([
-          api.get<{ class_types: ApiClassType[] }>("/portal/admin/class-types"),
-          api.get<{ instructors: ApiInstructor[] }>("/portal/admin/instructors"),
-          api.get<{ rooms: ApiRoom[] }>("/portal/admin/rooms"),
+          fetchActiveClassTypes(api),
+          fetchActiveInstructors(api),
+          fetchActiveRooms(api),
         ]);
         if (cancelled) return;
-        setClassTypes(ct.class_types);
-        setInstructors(ins.instructors);
-        setRooms(rm.rooms);
+        setClassTypes(ct);
+        setInstructors(ins);
+        setRooms(rm);
       } catch (err) {
         if (cancelled) return;
         setCatalogError(
@@ -97,24 +85,16 @@ export default function NewClassPage() {
     setLocationId(activeLocationId ?? "");
   }, [activeLocationId]);
 
-  const activeClassTypes = useMemo(
-    () => classTypes.filter((c) => !c.archived_at),
-    [classTypes],
-  );
   const roomsForLocation = useMemo(
-    () => rooms.filter((r) => !r.archived_at && r.location_id === locationId),
+    () => rooms.filter((r) => r.location_id === locationId),
     [rooms, locationId],
-  );
-  const activeInstructors = useMemo(
-    () => instructors.filter((i) => !i.archived_at),
-    [instructors],
   );
   const availableForSupporting = useMemo(
     () =>
-      activeInstructors.filter(
+      instructors.filter(
         (i) => i.id !== mainInstructorId && !supporting.some((s) => s.instructorId === i.id),
       ),
-    [activeInstructors, mainInstructorId, supporting],
+    [instructors, mainInstructorId, supporting],
   );
 
   // If the main instructor changes and overlaps a supporting one, drop the dup.
@@ -219,7 +199,7 @@ export default function NewClassPage() {
                 value={classTypeId}
                 onChange={setClassTypeId}
                 placeholder="Select…"
-                options={activeClassTypes.map((c) => ({ val: c.id, label: c.name }))}
+                options={classTypes.map((c) => ({ val: c.id, label: c.name }))}
               />
             </div>
             <div />
@@ -230,7 +210,7 @@ export default function NewClassPage() {
                 value={mainInstructorId}
                 onChange={setMainInstructorId}
                 placeholder="Select…"
-                options={activeInstructors.map((i) => ({ val: i.id, label: i.name }))}
+                options={instructors.map((i) => ({ val: i.id, label: i.name }))}
               />
             </div>
             <div className="space-y-1.5">
@@ -251,7 +231,7 @@ export default function NewClassPage() {
               <div className="flex flex-wrap items-center gap-2">
                 {supporting.map((s) => {
                   const name =
-                    activeInstructors.find((i) => i.id === s.instructorId)?.name ?? "Unknown";
+                    instructors.find((i) => i.id === s.instructorId)?.name ?? "Unknown";
                   return (
                     <span
                       key={s.instructorId}

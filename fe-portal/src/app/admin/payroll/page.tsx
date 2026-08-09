@@ -37,6 +37,12 @@ import {
 import { PayrollCalendar, monthGridDays } from "@/components/payroll-calendar";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError, type Api } from "@/lib/api";
+import {
+  fetchActiveClassTypes,
+  fetchActiveInstructors,
+  type CatalogClassType,
+  type CatalogInstructor,
+} from "@/lib/catalog";
 import { formatDate, formatDuration, formatSgd } from "@/lib/formatters";
 import { atLocalTime, localDay } from "@/lib/local-day";
 import { toast } from "sonner";
@@ -48,22 +54,11 @@ import type {
   SortDir,
 } from "@/lib/payroll";
 
-interface ApiInstructor {
-  id: string;
-  name: string;
-  archived_at?: string | null;
-}
-interface ApiClassType {
-  id: string;
-  name: string;
-  archived_at: string | null;
-}
-
 export default function PayrollPage() {
   const { api } = useWorkspace();
 
-  const [instructors, setInstructors] = useState<ApiInstructor[]>([]);
-  const [classTypes, setClassTypes] = useState<ApiClassType[]>([]);
+  const [instructors, setInstructors] = useState<CatalogInstructor[]>([]);
+  const [classTypes, setClassTypes] = useState<CatalogClassType[]>([]);
 
   const [instructorId, setInstructorId] = useState("");
   const [classTypeId, setClassTypeId] = useState("");
@@ -110,12 +105,12 @@ export default function PayrollPage() {
     void (async () => {
       try {
         const [ins, ct] = await Promise.all([
-          api.get<{ instructors: ApiInstructor[] }>("/portal/admin/instructors"),
-          api.get<{ class_types: ApiClassType[] }>("/portal/admin/class-types"),
+          fetchActiveInstructors(api),
+          fetchActiveClassTypes(api),
         ]);
         if (cancelled) return;
-        setInstructors(ins.instructors.filter((i) => !i.archived_at));
-        setClassTypes(ct.class_types.filter((c) => !c.archived_at));
+        setInstructors(ins);
+        setClassTypes(ct);
       } catch {
         /* filters degrade gracefully — the table still loads */
       }
@@ -578,7 +573,7 @@ function ManualPayrollDialog({
   onCreated,
 }: {
   api: Api | null;
-  instructors: ApiInstructor[];
+  instructors: CatalogInstructor[];
   onClose: () => void;
   onCreated: () => void | Promise<void>;
 }) {
