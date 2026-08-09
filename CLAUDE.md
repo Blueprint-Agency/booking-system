@@ -60,22 +60,44 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 
 | App | Target | How it deploys |
 |---|---|---|
-| `fe-client/` | Vercel project (Root Directory = `fe-client/`) | Push to `staging` → Vercel **preview** deployment; pushes to `main` deploy nothing (disabled via `vercel.json` → `git.deploymentEnabled`). Env vars (set for the **Preview** scope): `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `NEXT_PUBLIC_SENTRY_DSN`, `NEXT_PUBLIC_APP_ENV` (=`staging`). Clerk routing URLs are hardcoded in `src/app/layout.tsx` (NOT env-driven). |
-| `fe-portal/` | Vercel project (Root Directory = `fe-portal/`) | Push to `staging` → Vercel **preview** deployment; `main` disabled via `vercel.json`. Same env shape as fe-client (incl. `NEXT_PUBLIC_SENTRY_DSN`, `NEXT_PUBLIC_APP_ENV`), set for the **Preview** scope, but with the **staff** Clerk app keys. |
-| `be/` | VPS3 (Docker) | Auto-deploy on push to the `staging` branch (paths-filtered to `be/**`). `.github/workflows/deploy-be.yml` builds the image, pushes to Docker Hub (`blueprintagency/booking-be`), SSHes to VPS3, writes `.env.booking-be` from GitHub repo secrets/vars, and runs `docker compose up -d` followed by `db:migrate && db:seed`. |
+| `fe-client/` | Vercel project `booking-system` (Root Directory = `fe-client/`) | `main` → **production** at `https://yogasadhana.reservetoday.app`; `staging` → **preview**. Env vars: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `NEXT_PUBLIC_SENTRY_DSN`, `NEXT_PUBLIC_APP_ENV` — set **twice**, once per scope (Production / Preview). Clerk routing URLs are hardcoded in `src/app/layout.tsx` (NOT env-driven). |
+| `fe-portal/` | Vercel project `booking-system-admin` (Root Directory = `fe-portal/`) | `main` → **production** at `https://portal.yogasadhana.reservetoday.app`; `staging` → **preview**. Same env shape as fe-client, but with the **staff** Clerk app keys. |
+| `be/` | bpvps2 (Docker) | Auto-deploy on push to `staging` **or** `main` (paths-filtered to `be/**`). `.github/workflows/deploy-be.yml` builds the image, pushes to Docker Hub (`blueprintagency/booking-be`), SSHes to bpvps2 over Tailscale, writes `.env.booking-be` from the branch's GitHub Environment, and runs migrate/seed + `docker compose up -d`. |
 
-**Deploy branch & environments:** all non-local deploys currently target the **`staging`** branch — pushing to `staging` triggers the BE workflow (VPS) and a Vercel **preview** deployment of both frontends. Pushing to `main` deploys nothing: the BE workflow ignores it, and each frontend's `vercel.json` disables `main` (`git.deploymentEnabled`). **There is no production server yet — staging runs as a Vercel preview** (so set Vercel env vars on the **Preview** scope; do NOT set the Production Branch to `staging`). `NODE_ENV` stays `production` on any server/build, incl. Vercel previews (build flag — enables optimizations + JSON logging); the environment NAME lives in `APP_ENV` (backend) / `NEXT_PUBLIC_APP_ENV` (frontend), set to `staging`. When a prod server is added, give it a `main`→production deploy path (re-enable `main` in `vercel.json` + set its Production Branch) and set those to `production`. Sentry reports from any deployed env (`APP_ENV !== development`) and is off in local dev.
+**Deploy branch & environments:** two live environments, one per branch.
+
+| | `staging` branch | `main` branch |
+|---|---|---|
+| Backend | `booking-staging` stack on bpvps2 → `https://api.staging.reservetoday.app` | `booking-prod` stack on bpvps2 → `https://api.reservetoday.app` |
+| GitHub Environment | `staging` (lowercase) | `Production` (capital P) |
+| Image tag | `blueprintagency/booking-be:staging` | `…:latest` |
+| fe-client | Vercel **preview** | `https://yogasadhana.reservetoday.app` |
+| fe-portal | Vercel **preview** | `https://portal.yogasadhana.reservetoday.app` |
+| `APP_ENV` / `NEXT_PUBLIC_APP_ENV` | `staging` | `production` |
+
+`NODE_ENV` stays `production` on any server/build, incl. Vercel previews (build flag — enables optimizations + JSON logging); the environment NAME lives in `APP_ENV` (backend) / `NEXT_PUBLIC_APP_ENV` (frontend). Sentry reports from any deployed env (`APP_ENV !== development`) and is off in local dev.
+
+> **`booking-staging` carries the real data.** It predates `booking-prod`, which is a fresh
+> database. Migrating that data is a separate job — don't assume prod is populated.
+
+> There is no `vercel.json` in either frontend on purpose. Vercel's defaults already give
+> `main` → production and every other branch → preview; a `git.deploymentEnabled` block existed
+> only while `main` was intentionally dead, and re-adding one silently disables a branch.
+
+> The BE Traefik router matches a **full** hostname (`BOOKING_FQDN`), not `${BOOKING_HOST}.${BASE_DOMAIN}` —
+> bpvps2's host-wide `BASE_DOMAIN` is `teeko.ai` and cannot express `reservetoday.app`. The compose
+> lives in the infra repo at `vps/bpvps2/stacks/booking/docker-compose.yml`.
 
 **CORS:** the BE allowlists both frontends via `PORTAL_ORIGIN` (required) and `CLIENT_ORIGIN` (optional, omit to lock down to fe-portal only). Each can be an exact full URL with scheme and no trailing slash, or a leading-wildcard origin such as `https://*.vercel.app` for Vercel preview URLs. Exact URLs are also used as canonical link bases for staff invites / client redirects; wildcard values should only be used when that tradeoff is acceptable. In CI these come from `vars.PORTAL_ORIGIN` / `vars.CLIENT_ORIGIN`.
 
 **Clerk apps:** two separate Clerk applications. fe-portal + `CLERK_STAFF_*` is the staff/instructor app; fe-client + `CLERK_CLIENT_*` is the member-facing app. Cross-app tokens are rejected by the BE middleware on purpose — never share keys between them.
 
-**GitHub repo settings driving `deploy-be.yml`** (see the comment block at the top of the workflow for the canonical list). The workflow job runs in the GitHub **`staging`** Environment, so repo/environment settings can override organization-level settings with the same name. Shared deploy settings should live under the **Blueprint-Agency organization** and grant access to `booking-system`.
-- `org vars`: `VPS3_TAILSCALE_HOST`
-- `repo/env vars`: `PORT`, `VPS3_HOST`, `DOCKERHUB_USERNAME`, `PORTAL_ORIGIN`, `CLIENT_ORIGIN`, `SUPERADMIN_EMAIL`
+**GitHub repo settings driving `deploy-be.yml`** (see the comment block at the top of the workflow for the canonical list). The workflow job runs in the GitHub Environment named by the branch (`staging` / `Production`), so repo/environment settings can override organization-level settings with the same name. Shared deploy settings should live under the **Blueprint-Agency organization** and grant access to `booking-system`.
+- `org vars`: `BPVPS2_TAILSCALE_HOST`, `DOCKERHUB_USERNAME`
+- `env vars` (set in **both** Environments): `PORT`, `PORTAL_ORIGIN`, `CLIENT_ORIGIN`, `SUPERADMIN_EMAIL`
 - `org secrets`: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`
 - `repo/env secrets`: `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DOCKERHUB_TOKEN`, `SSH_PRIVATE_KEY`, `CLERK_STAFF_*` (×3), `CLERK_CLIENT_*` (×3), `SMTP_USER`, `SMTP_PASSWORD`, `SENTRY_DSN` (optional — error monitoring), plus deferred `STRIPE_*` and `R2_*`.
-- `NODE_ENV` (=`production`) and `APP_ENV` (=`staging`) are hardcoded in the workflow, not repo settings.
+- `NODE_ENV` (always `production`), `APP_ENV`, `ENV_NAME`, `STACK_DIR`, `BOOKING_FQDN` and `IMAGE_TAG` are derived from the branch in the workflow's `env:` block, not from repo settings.
 
 ## Conventions
 

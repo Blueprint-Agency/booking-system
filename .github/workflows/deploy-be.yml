@@ -1,8 +1,8 @@
 name: BE Deploy
 
 # Both instances live on bpvps2:
-#   staging branch -> booking-staging stack -> bookingapi.teeko.ai
-#   main   branch -> booking-prod    stack -> prodbookingapi.teeko.ai
+#   staging branch -> booking-staging stack -> api.staging.reservetoday.app
+#   main   branch -> booking-prod    stack -> api.reservetoday.app
 # They share nothing but Traefik — separate containers, volumes, networks and
 # databases, keyed off ENV_NAME in the compose file.
 on:
@@ -32,7 +32,9 @@ jobs:
       APP_ENV:      ${{ github.ref_name == 'main' && 'production'      || 'staging' }}
       ENV_NAME:     ${{ github.ref_name == 'main' && 'prod'            || 'staging' }}
       STACK_DIR:    ${{ github.ref_name == 'main' && 'booking-prod'    || 'booking-staging' }}
-      BOOKING_HOST: ${{ github.ref_name == 'main' && 'prodbookingapi'  || 'bookingapi' }}
+      # Full hostname — booking is on reservetoday.app, not the host-wide
+      # BASE_DOMAIN (teeko.ai), so the Traefik rule takes an FQDN.
+      BOOKING_FQDN: ${{ github.ref_name == 'main' && 'api.reservetoday.app' || 'api.staging.reservetoday.app' }}
       IMAGE_TAG:    ${{ github.ref_name == 'main' && 'latest'          || 'staging' }}
 
     steps:
@@ -81,8 +83,10 @@ jobs:
             # Per-instance compose vars. Written idempotently so the shared
             # Traefik vars already in .env (BASE_DOMAIN, ACME_EMAIL,
             # CF_DNS_API_TOKEN, TRAEFIK_DASHBOARD_AUTH) survive untouched.
+            # BOOKING_HOST is dead — the router rule takes a full FQDN now.
+            sed -i '/^BOOKING_HOST=/d' .env 2>/dev/null || true
             for kv in "ENV_NAME=${{ env.ENV_NAME }}" \
-                      "BOOKING_HOST=${{ env.BOOKING_HOST }}" \
+                      "BOOKING_FQDN=${{ env.BOOKING_FQDN }}" \
                       "IMAGE_TAG=${{ env.IMAGE_TAG }}"; do
               k="${kv%%=*}"
               sed -i "/^${k}=/d" .env 2>/dev/null || true
