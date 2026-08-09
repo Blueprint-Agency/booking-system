@@ -26,12 +26,28 @@ const supportingInstructorSchema = z.object({
   pay_sgd: z.number().min(0).nullable().optional(),
 })
 
+/**
+ * snake_case → the roster module's shape, and nothing else. An OMITTED `pay_sgd`
+ * stays omitted (the roster keeps whatever is recorded); an explicit `null`
+ * stays null (unpriced). What either means is the roster module's business —
+ * see services/schedule/roster-merge.ts.
+ */
+function toAssignments(
+  supporting: z.infer<typeof supportingInstructorSchema>[],
+): classesSvc.RosterAssignment[] {
+  return supporting.map(s => ({
+    instructorId: s.instructor_id,
+    ...(s.pay_sgd !== undefined ? { paySgd: s.pay_sgd } : {}),
+  }))
+}
+
 const createClassSchema = z
   .object({
     class_type_id: z.string().uuid(),
     main_instructor_id: z.string().uuid(),
-    // New shape (per-instructor pay). `supporting_instructor_ids` (bare id array,
-    // pay defaults to null) is kept for back-compat — only one of the two may be sent.
+    // New shape (per-instructor pay). `supporting_instructor_ids` (bare id array)
+    // is kept for back-compat and means "these are the instructors, leave pay
+    // alone" — send only one of the two; `supporting_instructors` wins.
     supporting_instructors: z.array(supportingInstructorSchema).optional(),
     supporting_instructor_ids: z.array(z.string().uuid()).optional(),
     location_id: z.string().uuid(),
@@ -56,9 +72,9 @@ const createClassSchema = z
 const updateClassSchema = z.object({
   class_type_id: z.string().uuid().optional(),
   main_instructor_id: z.string().uuid().optional(),
-  // New shape (per-instructor pay). `supporting_instructor_ids` (bare id array,
-  // pay defaults to null) is kept for back-compat until the frontend edit UI
-  // task lands — only one of the two may be sent.
+  // New shape (per-instructor pay). `supporting_instructor_ids` (bare id array)
+  // is kept for back-compat and means "these are the instructors, leave pay
+  // alone" — send only one of the two; `supporting_instructors` wins.
   supporting_instructors: z.array(supportingInstructorSchema).optional(),
   supporting_instructor_ids: z.array(z.string().uuid()).optional(),
   location_id: z.string().uuid().optional(),
@@ -205,24 +221,15 @@ const app = new Hono()
   .post('/classes', zValidator('json', createClassSchema), async c => {
     const body = c.req.valid('json')
     const staffId = c.get('staffUserId')
-    // Back-compat: bare `supporting_instructor_ids` (old shape, pay defaults
-    // to null) still works alongside the new `supporting_instructors` shape.
-    let supportingInstructors: classesSvc.SupportingInstructorInput[] | undefined
-    if (body.supporting_instructors !== undefined) {
-      supportingInstructors = body.supporting_instructors.map(s => ({
-        instructorId: s.instructor_id,
-        paySgd: s.pay_sgd ?? null,
-      }))
-    } else if (body.supporting_instructor_ids !== undefined) {
-      supportingInstructors = body.supporting_instructor_ids.map(instructorId => ({
-        instructorId,
-        paySgd: null,
-      }))
-    }
     const row = await classesSvc.createClass({
       classTypeId: body.class_type_id,
       mainInstructorId: body.main_instructor_id,
-      supportingInstructors,
+      ...(body.supporting_instructors !== undefined
+        ? { supportingInstructors: toAssignments(body.supporting_instructors) }
+        : {}),
+      ...(body.supporting_instructor_ids !== undefined
+        ? { supportingInstructorIds: body.supporting_instructor_ids }
+        : {}),
       locationId: body.location_id,
       roomId: body.room_id,
       startsAt: new Date(body.starts_at),
@@ -244,26 +251,17 @@ const app = new Hono()
     async c => {
       const { id } = c.req.valid('param')
       const body = c.req.valid('json')
-      // Back-compat: bare `supporting_instructor_ids` (old shape, pay defaults
-      // to null) still works alongside the new `supporting_instructors` shape.
-      let supportingInstructors: classesSvc.SupportingInstructorInput[] | undefined
-      if (body.supporting_instructors !== undefined) {
-        supportingInstructors = body.supporting_instructors.map(s => ({
-          instructorId: s.instructor_id,
-          paySgd: s.pay_sgd ?? null,
-        }))
-      } else if (body.supporting_instructor_ids !== undefined) {
-        supportingInstructors = body.supporting_instructor_ids.map(instructorId => ({
-          instructorId,
-          paySgd: null,
-        }))
-      }
       const row = await classesSvc.updateClass(id, {
         ...(body.class_type_id !== undefined ? { classTypeId: body.class_type_id } : {}),
         ...(body.main_instructor_id !== undefined
           ? { mainInstructorId: body.main_instructor_id }
           : {}),
-        ...(supportingInstructors !== undefined ? { supportingInstructors } : {}),
+        ...(body.supporting_instructors !== undefined
+          ? { supportingInstructors: toAssignments(body.supporting_instructors) }
+          : {}),
+        ...(body.supporting_instructor_ids !== undefined
+          ? { supportingInstructorIds: body.supporting_instructor_ids }
+          : {}),
         ...(body.location_id !== undefined ? { locationId: body.location_id } : {}),
         ...(body.room_id !== undefined ? { roomId: body.room_id } : {}),
         ...(body.starts_at !== undefined ? { startsAt: new Date(body.starts_at) } : {}),
