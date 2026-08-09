@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { PageHeader, Badge } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
-import { corporateErrorMessage } from "@/lib/corporate-errors";
+import { scheduleErrorMessage } from "@/lib/schedule";
 import { CorporateRequestDrawer } from "@/components/corporate-requests/corporate-request-drawer";
 import { ScheduleFromCorporateRequestDialog } from "@/components/corporate-requests/schedule-from-corporate-request-dialog";
 import { formatRelative, formatDateTime } from "@/lib/formatters";
@@ -98,7 +98,7 @@ export default function CorporateRequestsPage() {
       );
       setRequests(res.corporate_requests.map(fromApi));
     } catch (err) {
-      setError(corporateErrorMessage(err));
+      setError(scheduleErrorMessage(err, "Failed"));
     } finally {
       setLoading(false);
     }
@@ -123,7 +123,7 @@ export default function CorporateRequestsPage() {
       setActiveId(null);
       await load();
     } catch (err) {
-      setError(corporateErrorMessage(err));
+      setError(scheduleErrorMessage(err, "Failed"));
     } finally {
       setActionBusy(false);
     }
