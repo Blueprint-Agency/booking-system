@@ -2,11 +2,9 @@ import { and, eq, inArray, lt } from 'drizzle-orm'
 import { db } from '../../db'
 import { ptRequests, ptSessions } from '../../db/schema/schedule'
 import { bookings, cancellations } from '../../db/schema/bookings'
-import { clientPackages } from '../../db/schema/packages'
-import { manualAdjustments } from '../../db/schema/ledger'
 import { inboxItems } from '../../db/schema/inbox'
 import { evaluateCancellation } from '../policy/evaluate-cancellation'
-import { computeActive } from '../packages/validity'
+import { refundCredits } from '../packages/ledger'
 import { ptSessionCost } from './cost'
 import { AppError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { logger } from '../../shared/logger'
@@ -90,32 +88,14 @@ export async function cancelPtRequest(input: CancelPtRequestInput): Promise<Canc
     const cost = ptSessionCost(req.sessionType)
     const resolvedByStaffId = source === 'admin' ? (actorStaffId ?? null) : null
 
-    // Refund `n` sessions to the exact debited package + write a ledger row.
+    // Refund `n` sessions to the exact debited package (ledger locks the row,
+    // re-derives `active` and writes the audit entry).
     const refundToPackage = async (n: number, reason: string) => {
       if (n <= 0 || !req.debitedClientPackageId) return
-      const [pkg] = await tx
-        .select({
-          kind: clientPackages.kind,
-          expiresAt: clientPackages.expiresAt,
-          remaining: clientPackages.creditsOrSessionsRemaining,
-        })
-        .from(clientPackages)
-        .where(eq(clientPackages.id, req.debitedClientPackageId))
-        .for('update')
-        .limit(1)
-      if (!pkg) return
-      const newRemaining = (pkg.remaining ?? 0) + n
-      await tx
-        .update(clientPackages)
-        .set({
-          creditsOrSessionsRemaining: newRemaining,
-          active: computeActive({ kind: pkg.kind, expiresAt: pkg.expiresAt, creditsOrSessionsRemaining: newRemaining }),
-        })
-        .where(eq(clientPackages.id, req.debitedClientPackageId))
-      await tx.insert(manualAdjustments).values({
+      await refundCredits(tx, {
         clientId: req.clientId,
         clientPackageId: req.debitedClientPackageId,
-        delta: n,
+        amount: n,
         reason,
         actedByStaffId: resolvedByStaffId,
       })

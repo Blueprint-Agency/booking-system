@@ -13,9 +13,8 @@ import { clients } from '../../db/schema/identity'
 import { clientPackages, ptPackages } from '../../db/schema/packages'
 import { ptRequests, ptRequestSlots } from '../../db/schema/schedule'
 import { ptBookingConfig } from '../../db/schema/policy'
-import { manualAdjustments } from '../../db/schema/ledger'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
-import { computeActive } from '../packages/validity'
+import { debitCredits } from '../packages/ledger'
 import { ptSessionCost } from './cost'
 
 const PT_CONFIG_SINGLETON_ID = '00000000-0000-0000-0000-000000000002'
@@ -97,23 +96,14 @@ export async function submitPtRequest(input: PtRequestInput): Promise<{ ptReques
     const expiresAt = new Date(now)
     expiresAt.setDate(expiresAt.getDate() + (cfg?.days ?? 14))
 
-    const newRemaining = (pkg.remaining ?? 0) - cost
-    await tx
-      .update(clientPackages)
-      .set({
-        creditsOrSessionsRemaining: newRemaining,
-        active: computeActive({ kind: 'pt', expiresAt: pkg.expiresAt, creditsOrSessionsRemaining: newRemaining }, now),
-      })
-      .where(eq(clientPackages.id, pkg.id))
-
-    // Credit-movement ledger entry so the cancel/expiry refund is auditable and
-    // reversible to the exact package (backend-architecture §4, parity with classes).
-    await tx.insert(manualAdjustments).values({
+    // Debit through the credit ledger: it re-derives `active` and writes the
+    // credit-movement audit row, so the cancel/expiry refund is reversible to
+    // the exact package (backend-architecture §4, parity with classes).
+    await debitCredits(tx, {
       clientId: input.clientId,
       clientPackageId: pkg.id,
-      delta: -cost,
+      amount: cost,
       reason: 'pt_request_submit',
-      actedByStaffId: null,
     })
 
     const [req] = await tx

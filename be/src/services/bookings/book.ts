@@ -18,6 +18,7 @@ import { classes } from '../../db/schema/schedule'
 import { bookings } from '../../db/schema/bookings'
 import { clientPackages } from '../../db/schema/packages'
 import { generateBookingCodes } from './qr'
+import { debitCredits } from '../packages/ledger'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 
 export interface BookClassInput {
@@ -117,12 +118,16 @@ export async function bookClass(input: BookClassInput): Promise<BookClassResult>
         })[0]
       if (!credit) throw new ConflictError('insufficient_credits')
 
-      await tx
-        .update(clientPackages)
-        .set({
-          creditsOrSessionsRemaining: sql`${clientPackages.creditsOrSessionsRemaining} - ${cls.creditCost}`,
-        })
-        .where(eq(clientPackages.id, credit.id))
+      // The ledger re-derives `active` — a bundle spent to exactly zero stops
+      // being a booking candidate immediately, not at the nightly sweep.
+      await debitCredits(tx, {
+        clientId,
+        clientPackageId: credit.id,
+        amount: cls.creditCost,
+        reason: 'class_booking_debit',
+        // See ledger.ts — booking debits stay out of the admin adjustments panel.
+        audit: false,
+      })
       clientPackageId = credit.id
       creditsUsed = cls.creditCost
     }
