@@ -5,7 +5,7 @@ import { Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
 import { todayIso, currentHourTime } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
 import { useWorkspace } from "@/lib/workspace-context";
-import { corporateErrorMessage } from "@/lib/corporate-errors";
+import { scheduleErrorMessage } from "@/lib/schedule";
 import {
   fetchActiveInstructors,
   fetchActiveRooms,
@@ -152,7 +152,7 @@ export function ScheduleFromCorporateRequestDialog({
       );
       onScheduled();
     } catch (err) {
-      setSubmitError(corporateErrorMessage(err));
+      setSubmitError(scheduleErrorMessage(err, "Failed"));
       setSubmitting(false);
     }
   }

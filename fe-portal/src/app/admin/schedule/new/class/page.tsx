@@ -8,6 +8,7 @@ import { CapacityFields } from "@/components/schedule/capacity-fields";
 import { useWorkspace } from "@/lib/workspace-context";
 import { todayIso, currentHourTime } from "@/lib/formatters";
 import { ApiError } from "@/lib/api";
+import { scheduleErrorMessage } from "@/lib/schedule";
 import {
   fetchActiveClassTypes,
   fetchActiveInstructors,
@@ -144,27 +145,7 @@ export default function NewClassPage() {
       });
       router.push("/admin/schedule");
     } catch (err) {
-      if (err instanceof ApiError && err.status === 409) {
-        const body = err.body as { error?: string } | null;
-        setSubmitError(
-          body?.error === "room_clash"
-            ? "That room is already booked for an overlapping time. Pick another room or time."
-            : `Failed to create class (HTTP ${err.status})`,
-        );
-      } else if (err instanceof ApiError && err.status === 400) {
-        const body = err.body as { error?: string } | null;
-        setSubmitError(
-          body?.error === "room_location_mismatch"
-            ? "That room belongs to a different location."
-            : `Failed to create class (HTTP ${err.status})`,
-        );
-      } else {
-        setSubmitError(
-          err instanceof ApiError
-            ? `Failed to create class (HTTP ${err.status})`
-            : "Network error",
-        );
-      }
+      setSubmitError(scheduleErrorMessage(err, "Failed to create class"));
       setSubmitting(false);
     }
   }

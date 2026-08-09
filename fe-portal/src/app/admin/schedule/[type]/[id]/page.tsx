@@ -8,7 +8,26 @@ import { ApiError } from "@/lib/api";
 import { computeEventState } from "@/lib/event-state";
 import { formatDate, formatTime, formatDateTime, formatSgd } from "@/lib/formatters";
 import { localDay } from "@/lib/local-day";
-import { corporateErrorMessage } from "@/lib/corporate-errors";
+import {
+  cancelClass,
+  cancelCorporateSession,
+  cancelPtRequest,
+  fetchClassDetail,
+  fetchCorporatePackageBrief,
+  fetchCorporateSession,
+  fetchPtDetail,
+  patchClass,
+  patchCorporateSession,
+  patchPtSession,
+  scheduleErrorMessage,
+  type ScheduleClassAttendee,
+  type ScheduleClassDetail,
+  type ClassDifficulty,
+  type ScheduleCorporatePackageBrief,
+  type ScheduleCorporateSession,
+  type SchedulePtAttendee,
+  type SchedulePtDetail,
+} from "@/lib/schedule";
 import {
   fetchActiveClassTypes,
   fetchActiveInstructors,
@@ -18,11 +37,6 @@ import {
   type CatalogRoom,
 } from "@/lib/catalog";
 import type { EventState } from "@/types";
-
-interface NamedRef {
-  id: string;
-  name: string;
-}
 
 interface ApiWorkshopDay {
   id: string;
@@ -57,74 +71,12 @@ interface ApiWorkshopDetail {
   instructor_ids: string[];
 }
 
-type ClassDifficulty = "general" | "beginner" | "intermediate" | "advanced";
-
 const DIFFICULTY_LABEL: Record<ClassDifficulty, string> = {
   general: "All levels",
   beginner: "Beginner",
   intermediate: "Intermediate",
   advanced: "Advanced",
 };
-
-interface ApiClassDetail {
-  id: string;
-  lifecycle: "active" | "cancelled";
-  starts_at: string;
-  ends_at: string;
-  class_type: NamedRef | null;
-  difficulty: ClassDifficulty;
-  instructor: NamedRef | null;
-  main_instructor_id: string | null;
-  instructor_pay_sgd: number | null;
-  supporting_instructor_ids: string[];
-  supporting_instructors: (NamedRef & { pay_sgd: number | null })[];
-  instructor_ids: string[];
-  location: NamedRef | null;
-  room: NamedRef | null;
-  capacity_online: number;
-  capacity_waitlist: number;
-  capacity_buffer: number;
-  credit_cost: number;
-  booked_count: number;
-  attendees: ApiClassAttendee[];
-  created_at: string;
-  scheduled_by: NamedRef | null;
-}
-
-interface ApiClassAttendee {
-  booking_id: string;
-  client: NamedRef;
-  package_kind: "credit_bundle" | "unlimited" | "trial" | "pt" | null;
-  credits_used: number;
-  check_in_state: "pending" | "attended" | "no_show" | "n_a";
-  code: string;
-}
-
-interface ApiPtAttendee {
-  id: string;
-  name: string;
-  code: string | null;
-  check_in_state: "pending" | "attended" | "no_show" | "n_a" | null;
-}
-
-interface ApiPtDetail {
-  id: string;
-  pt_request_id: string;
-  lifecycle: "active" | "cancelled";
-  starts_at: string;
-  ends_at: string;
-  session_type: "1on1" | "2on1";
-  instructor: NamedRef | null;
-  main_instructor_id: string;
-  instructor_pay_sgd: number | null;
-  supporting_instructors: (NamedRef & { pay_sgd: number | null })[];
-  location: NamedRef | null;
-  room: NamedRef | null;
-  capacity_online: number;
-  capacity_waitlist: number;
-  capacity_buffer: number;
-  clients: ApiPtAttendee[];
-}
 
 export default function SessionDetailPage({
   params,
@@ -144,7 +96,7 @@ export default function SessionDetailPage({
 
 function ClassDetail({ id }: { id: string }) {
   const { api } = useWorkspace();
-  const [data, setData] = useState<ApiClassDetail | null>(null);
+  const [data, setData] = useState<ScheduleClassDetail | null>(null);
   const [instructors, setInstructors] = useState<CatalogInstructor[]>([]);
   const [classTypes, setClassTypes] = useState<CatalogClassType[]>([]);
   const [rooms, setRooms] = useState<CatalogRoom[]>([]);
@@ -159,7 +111,7 @@ function ClassDetail({ id }: { id: string }) {
     setError(null);
     try {
       const [d, ins, ct, rm] = await Promise.all([
-        api.get<ApiClassDetail>(`/portal/admin/schedule/classes/${id}`),
+        fetchClassDetail(api, id),
         fetchActiveInstructors(api),
         fetchActiveClassTypes(api),
         fetchActiveRooms(api),
@@ -187,7 +139,7 @@ function ClassDetail({ id }: { id: string }) {
     setCancelBusy(true);
     setActionError(null);
     try {
-      await api.post(`/portal/admin/schedule/classes/${data.id}/cancel`);
+      await cancelClass(api, data.id);
       await load();
     } catch (err) {
       setActionError(detailError(err, "Class not found."));
@@ -287,7 +239,7 @@ function ClassDetail({ id }: { id: string }) {
   );
 }
 
-const PACKAGE_KIND_LABEL: Record<NonNullable<ApiClassAttendee["package_kind"]>, string> = {
+const PACKAGE_KIND_LABEL: Record<NonNullable<ScheduleClassAttendee["package_kind"]>, string> = {
   credit_bundle: "Credit bundle",
   unlimited: "Unlimited",
   trial: "Trial pass",
@@ -299,12 +251,12 @@ function ClassRoster({
   startsAt,
   cancelled,
 }: {
-  attendees: ApiClassAttendee[];
+  attendees: ScheduleClassAttendee[];
   startsAt: string;
   cancelled: boolean;
 }) {
   const { api } = useWorkspace();
-  const [rows, setRows] = useState<ApiClassAttendee[]>(attendees);
+  const [rows, setRows] = useState<ScheduleClassAttendee[]>(attendees);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -315,13 +267,13 @@ function ClassRoster({
   const started = Date.now() >= new Date(startsAt).getTime();
   const attendedCount = rows.filter((r) => r.check_in_state === "attended").length;
 
-  async function toggle(a: ApiClassAttendee) {
+  async function toggle(a: ScheduleClassAttendee) {
     if (!api || cancelled || !started || busyId) return;
     const attended = a.check_in_state !== "attended";
     setBusyId(a.booking_id);
     setErr(null);
     try {
-      const res = await api.post<{ check_in_state: ApiClassAttendee["check_in_state"] }>(
+      const res = await api.post<{ check_in_state: ScheduleClassAttendee["check_in_state"] }>(
         "/portal/admin/check-in/manual",
         { booking_id: a.booking_id, attended },
       );
@@ -428,18 +380,6 @@ interface SupportingRow {
   pay: string;
 }
 
-function classErrorMessage(err: unknown): string {
-  if (!(err instanceof ApiError)) return "Network error";
-  const body = (err.body as { error?: string } | null) ?? null;
-  if (err.status === 409 && body?.error === "room_clash") {
-    return "That room is already booked for an overlapping time. Pick another room or time.";
-  }
-  if (err.status === 400 && body?.error === "room_location_mismatch") {
-    return "That room belongs to a different location.";
-  }
-  return `Save failed (HTTP ${err.status}).`;
-}
-
 function ClassEditor({
   data,
   instructors,
@@ -447,7 +387,7 @@ function ClassEditor({
   rooms,
   onSaved,
 }: {
-  data: ApiClassDetail;
+  data: ScheduleClassDetail;
   instructors: CatalogInstructor[];
   classTypes: CatalogClassType[];
   rooms: CatalogRoom[];
@@ -533,7 +473,7 @@ function ClassEditor({
     setSaving(true);
     setErr(null);
     try {
-      await api.patch(`/portal/admin/schedule/classes/${data.id}`, {
+      await patchClass(api, data.id, {
         class_type_id: classTypeId,
         main_instructor_id: mainInstructorId,
         instructor_pay_sgd: mainPay.trim() === "" ? null : Number(mainPay),
@@ -548,7 +488,7 @@ function ClassEditor({
       });
       await onSaved();
     } catch (e) {
-      setErr(classErrorMessage(e));
+      setErr(scheduleErrorMessage(e));
     } finally {
       setSaving(false);
     }
@@ -770,21 +710,9 @@ function ClassEditor({
 
 /* ------------------------------- PT session ------------------------------- */
 
-function ptErrorMessage(err: unknown): string {
-  if (!(err instanceof ApiError)) return "Network error";
-  const body = (err.body as { error?: string } | null) ?? null;
-  if (err.status === 409 && body?.error === "room_clash") {
-    return "That room is already booked for an overlapping time. Pick another room or time.";
-  }
-  if (err.status === 400 && body?.error === "room_location_mismatch") {
-    return "That room belongs to a different location.";
-  }
-  return `Save failed (HTTP ${err.status}).`;
-}
-
 function PtDetail({ id }: { id: string }) {
   const { api } = useWorkspace();
-  const [data, setData] = useState<ApiPtDetail | null>(null);
+  const [data, setData] = useState<SchedulePtDetail | null>(null);
   const [instructors, setInstructors] = useState<CatalogInstructor[]>([]);
   const [rooms, setRooms] = useState<CatalogRoom[]>([]);
   const [loading, setLoading] = useState(true);
@@ -798,7 +726,7 @@ function PtDetail({ id }: { id: string }) {
     setError(null);
     try {
       const [d, ins, rm] = await Promise.all([
-        api.get<ApiPtDetail>(`/portal/admin/schedule/pt/${id}`),
+        fetchPtDetail(api, id),
         fetchActiveInstructors(api),
         fetchActiveRooms(api),
       ]);
@@ -828,7 +756,8 @@ function PtDetail({ id }: { id: string }) {
     setCancelBusy(true);
     setActionError(null);
     try {
-      await api.post(`/portal/admin/pt-sessions/${data.pt_request_id}/cancel`);
+      // Cancellation is against the PT request, not this session.
+      await cancelPtRequest(api, data.pt_request_id);
       await load();
     } catch (err) {
       setActionError(detailError(err, "Private session not found."));
@@ -943,7 +872,7 @@ function PtEditor({
   rooms,
   onSaved,
 }: {
-  data: ApiPtDetail;
+  data: SchedulePtDetail;
   instructors: CatalogInstructor[];
   rooms: CatalogRoom[];
   onSaved: () => void | Promise<void>;
@@ -1028,7 +957,7 @@ function PtEditor({
     setSaving(true);
     setErr(null);
     try {
-      await api.patch(`/portal/admin/pt-sessions/sessions/${data.id}`, {
+      await patchPtSession(api, data.id, {
         session_type: sessionType,
         instructor_id: mainInstructorId,
         instructor_pay_sgd: mainPay.trim() === "" ? null : Number(mainPay),
@@ -1043,7 +972,7 @@ function PtEditor({
       });
       await onSaved();
     } catch (e) {
-      setErr(ptErrorMessage(e));
+      setErr(scheduleErrorMessage(e));
     } finally {
       setSaving(false);
     }
@@ -1259,7 +1188,7 @@ function PtEditor({
   );
 }
 
-function PtCheckInBadge({ state }: { state: ApiPtAttendee["check_in_state"] }) {
+function PtCheckInBadge({ state }: { state: SchedulePtAttendee["check_in_state"] }) {
   if (state === "attended") return <Badge tone="sage">Checked in</Badge>;
   if (state === "no_show") return <Badge tone="error">No-show</Badge>;
   if (state === "pending") return <Badge tone="neutral">Pending</Badge>;
@@ -1445,31 +1374,10 @@ function WorkshopDetail({ id }: { id: string }) {
 
 /* ------------------------------- Corporate ------------------------------- */
 
-interface ApiCorporateSession {
-  id: string;
-  corporate_package_id: string;
-  client_name: string;
-  main_instructor_id: string;
-  supporting_instructor_ids: string[];
-  location_id: string | null;
-  location_text: string | null;
-  room_id: string | null;
-  starts_at: string;
-  ends_at: string;
-  lifecycle: "active" | "cancelled";
-  cancelled_at: string | null;
-}
-
-interface ApiCorporatePackageBrief {
-  id: string;
-  name: string;
-  status: "active" | "archived";
-}
-
 function CorporateDetail({ id }: { id: string }) {
   const { api, accessibleLocations } = useWorkspace();
-  const [data, setData] = useState<ApiCorporateSession | null>(null);
-  const [pkg, setPkg] = useState<ApiCorporatePackageBrief | null>(null);
+  const [data, setData] = useState<ScheduleCorporateSession | null>(null);
+  const [pkg, setPkg] = useState<ScheduleCorporatePackageBrief | null>(null);
   const [instructors, setInstructors] = useState<CatalogInstructor[]>([]);
   const [rooms, setRooms] = useState<CatalogRoom[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1481,22 +1389,15 @@ function CorporateDetail({ id }: { id: string }) {
     setError(null);
     try {
       const [d, ins, rm] = await Promise.all([
-        api.get<{ corporate_session: ApiCorporateSession }>(
-          `/portal/admin/corporate-sessions/${id}`,
-        ),
+        fetchCorporateSession(api, id),
         fetchActiveInstructors(api),
         fetchActiveRooms(api),
       ]);
-      setData(d.corporate_session);
+      setData(d);
       setInstructors(ins);
       setRooms(rm);
       try {
-        const p = await api.get<{
-          corporatePackage: ApiCorporatePackageBrief;
-        }>(
-          `/portal/admin/corporate-packages/${d.corporate_session.corporate_package_id}`,
-        );
-        setPkg(p.corporatePackage);
+        setPkg(await fetchCorporatePackageBrief(api, d.corporate_package_id));
       } catch {
         setPkg(null);
       }
@@ -1590,7 +1491,7 @@ function CorporateEditor({
   rooms,
   onSaved,
 }: {
-  session: ApiCorporateSession;
+  session: ScheduleCorporateSession;
   instructors: CatalogInstructor[];
   rooms: CatalogRoom[];
   onSaved: () => void | Promise<void>;
@@ -1665,7 +1566,7 @@ function CorporateEditor({
     setSaving(true);
     setErr(null);
     try {
-      await api.patch(`/portal/admin/corporate-sessions/${session.id}`, {
+      await patchCorporateSession(api, session.id, {
         client_name: clientName.trim(),
         main_instructor_id: mainInstructorId,
         supporting_instructor_ids: supportingInstructorIds,
@@ -1676,7 +1577,7 @@ function CorporateEditor({
       });
       await onSaved();
     } catch (e) {
-      setErr(corporateErrorMessage(e));
+      setErr(scheduleErrorMessage(e, "Failed"));
     } finally {
       setSaving(false);
     }
@@ -1688,10 +1589,10 @@ function CorporateEditor({
     setCancelBusy(true);
     setErr(null);
     try {
-      await api.post(`/portal/admin/corporate-sessions/${session.id}/cancel`);
+      await cancelCorporateSession(api, session.id);
       await onSaved();
     } catch (e) {
-      setErr(corporateErrorMessage(e));
+      setErr(scheduleErrorMessage(e, "Failed"));
     } finally {
       setCancelBusy(false);
     }

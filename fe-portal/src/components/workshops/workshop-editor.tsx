@@ -19,6 +19,7 @@ import {
   type CatalogRoom,
 } from "@/lib/catalog";
 import { atLocalTime, localDay } from "@/lib/local-day";
+import { scheduleErrorMessage } from "@/lib/schedule";
 import {
   hasPromotionOverlap,
   promotionFromApi,
@@ -472,15 +473,7 @@ export function WorkshopEditor({
         onSave(id);
       }
     } catch (err) {
-      let msg = err instanceof ApiError ? `Save failed (HTTP ${err.status}).` : "Save failed.";
-      if (err instanceof ApiError) {
-        const body = err.body as { error?: string } | null;
-        if (body?.error === "room_clash") {
-          msg = "A room is already booked for an overlapping time on one of these days. Pick another room or time.";
-        } else if (body?.error === "room_location_mismatch") {
-          msg = "A selected room belongs to a different location.";
-        }
-      }
+      const msg = scheduleErrorMessage(err);
       setError(msg);
       toast.error(msg);
     } finally {
