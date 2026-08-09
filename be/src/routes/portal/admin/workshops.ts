@@ -52,9 +52,9 @@ const updateBasicsSchema = z.object({
   cover_r2_key: z.string().max(500).nullish().optional(),
   main_instructor_id: z.string().uuid().optional(),
   main_instructor_pay_sgd: z.number().min(0).nullable().optional(),
-  // New shape (per-instructor pay). `supporting_instructor_ids` (bare id array,
-  // pay defaults to null) is kept for back-compat until the frontend edit UI
-  // task lands — only one of the two may be sent.
+  // New shape (per-instructor pay). `supporting_instructor_ids` (bare id array)
+  // is kept for back-compat and means "these are the instructors, leave pay
+  // alone" — send only one of the two; `supporting_instructors` wins.
   supporting_instructors: z.array(workshopInstructorSchema).optional(),
   supporting_instructor_ids: z.array(z.string().uuid()).optional(),
   image_r2_keys: z.array(z.string().max(500)).optional(),
@@ -238,20 +238,14 @@ const app = new Hono()
   .patch('/:id', zValidator('param', idParam), zValidator('json', updateBasicsSchema), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
-    // Back-compat: bare `supporting_instructor_ids` (old shape, pay defaults
-    // to null) still works alongside the new `supporting_instructors` shape.
-    let supportingInstructors: publish.WorkshopInstructorInput[] | undefined
-    if (body.supporting_instructors !== undefined) {
-      supportingInstructors = body.supporting_instructors.map(s => ({
+    // snake_case → the roster module's shape, and nothing else. An OMITTED
+    // `pay_sgd` stays omitted (the roster keeps whatever is recorded); an
+    // explicit `null` stays null (unpriced). See services/schedule/roster-merge.ts.
+    const supportingInstructors: publish.WorkshopInstructorInput[] | undefined =
+      body.supporting_instructors?.map(s => ({
         instructorId: s.instructor_id,
-        paySgd: s.pay_sgd ?? null,
+        ...(s.pay_sgd !== undefined ? { paySgd: s.pay_sgd } : {}),
       }))
-    } else if (body.supporting_instructor_ids !== undefined) {
-      supportingInstructors = body.supporting_instructor_ids.map(instructorId => ({
-        instructorId,
-        paySgd: null,
-      }))
-    }
     const row = await publish.updateWorkshop(id, {
       ...(body.name !== undefined ? { name: body.name } : {}),
       ...(body.location_id !== undefined ? { locationId: body.location_id } : {}),
@@ -264,6 +258,9 @@ const app = new Hono()
         ? { mainInstructorPaySgd: body.main_instructor_pay_sgd }
         : {}),
       ...(supportingInstructors !== undefined ? { supportingInstructors } : {}),
+      ...(body.supporting_instructor_ids !== undefined
+        ? { supportingInstructorIds: body.supporting_instructor_ids }
+        : {}),
       ...(body.image_r2_keys !== undefined ? { imageR2Keys: body.image_r2_keys } : {}),
     })
     c.set('auditTarget' as any, { table: 'workshops', id })

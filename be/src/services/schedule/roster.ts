@@ -20,8 +20,8 @@
  *   - Deduplication and the main-cannot-also-be-supporting rule are enforced in
  *     the merge, not by callers.
  *
- * Migrated so far: classes. Workshops, PT sessions and corporate sessions join
- * by widening `RosterEventKind` and adding their table wiring below — the
+ * Migrated so far: classes and workshops. PT sessions and corporate sessions
+ * join by widening `RosterEventKind` and adding their table wiring below — the
  * exported functions do not change shape.
  *
  * Still writes these columns outside this module, deliberately:
@@ -30,7 +30,12 @@
  */
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { db } from '../../db'
-import { classes, classSupportingInstructors } from '../../db/schema/schedule'
+import {
+  classes,
+  classSupportingInstructors,
+  workshops,
+  workshopInstructors,
+} from '../../db/schema/schedule'
 import { instructors } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
@@ -41,8 +46,8 @@ export type { RosterAssignment, RosterEntry, RosterPatch, RosterRole } from './r
 /** The handle `db.transaction(async tx => …)` hands its callback. */
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
-/** Widens to `| 'workshop' | 'pt_session' | 'corporate_session'` as those kinds migrate. */
-export type RosterEventKind = 'class'
+/** Widens to `| 'pt_session' | 'corporate_session'` as those kinds migrate. */
+export type RosterEventKind = 'class' | 'workshop'
 
 /** Which event a roster belongs to. */
 export interface RosterRef {
@@ -51,7 +56,10 @@ export interface RosterRef {
 }
 
 /** Error identity for "that event doesn't exist", one per kind. */
-const notFoundCode: Record<RosterEventKind, string> = { class: 'class_not_found' }
+const notFoundCode: Record<RosterEventKind, string> = {
+  class: 'class_not_found',
+  workshop: 'workshop_not_found',
+}
 
 /** A transaction handle is the same object at runtime; drizzle just types the
  *  two differently. Same cast the class module used before this existed. */
@@ -101,40 +109,66 @@ export async function readRosters(
 ): Promise<Map<string, RosterEntry[]>> {
   const out = new Map<string, RosterEntry[]>()
   if (eventIds.length === 0) return out
-  void kind // one kind so far; the switch lands with the second.
 
-  const events = await exec(tx)
-    .select({
-      id: classes.id,
-      mainInstructorId: classes.mainInstructorId,
-      paySgd: classes.instructorPaySgd,
-    })
-    .from(classes)
-    .where(inArray(classes.id, eventIds))
-  for (const e of events) {
-    out.set(e.id, [
-      {
-        instructorId: e.mainInstructorId,
-        role: 'main',
-        paySgd: e.paySgd == null ? null : Number(e.paySgd),
-      },
-    ])
-  }
+  if (kind === 'workshop') {
+    // Every assignment is a row here, main included — so existence comes from
+    // the workshop itself, not from having any roster rows.
+    const events = await exec(tx)
+      .select({ id: workshops.id })
+      .from(workshops)
+      .where(inArray(workshops.id, eventIds))
+    for (const e of events) out.set(e.id, [])
 
-  const supporting = await exec(tx)
-    .select({
-      classId: classSupportingInstructors.classId,
-      instructorId: classSupportingInstructors.instructorId,
-      paySgd: classSupportingInstructors.paySgd,
-    })
-    .from(classSupportingInstructors)
-    .where(inArray(classSupportingInstructors.classId, eventIds))
-  for (const s of supporting) {
-    out.get(s.classId)?.push({
-      instructorId: s.instructorId,
-      role: 'supporting',
-      paySgd: s.paySgd == null ? null : Number(s.paySgd),
-    })
+    const assigned = await exec(tx)
+      .select({
+        workshopId: workshopInstructors.workshopId,
+        instructorId: workshopInstructors.instructorId,
+        role: workshopInstructors.role,
+        paySgd: workshopInstructors.paySgd,
+      })
+      .from(workshopInstructors)
+      .where(inArray(workshopInstructors.workshopId, eventIds))
+    for (const a of assigned) {
+      out.get(a.workshopId)?.push({
+        instructorId: a.instructorId,
+        role: a.role,
+        paySgd: a.paySgd == null ? null : Number(a.paySgd),
+      })
+    }
+  } else {
+    const events = await exec(tx)
+      .select({
+        id: classes.id,
+        mainInstructorId: classes.mainInstructorId,
+        paySgd: classes.instructorPaySgd,
+      })
+      .from(classes)
+      .where(inArray(classes.id, eventIds))
+    for (const e of events) {
+      out.set(e.id, [
+        {
+          instructorId: e.mainInstructorId,
+          role: 'main',
+          paySgd: e.paySgd == null ? null : Number(e.paySgd),
+        },
+      ])
+    }
+
+    const supporting = await exec(tx)
+      .select({
+        classId: classSupportingInstructors.classId,
+        instructorId: classSupportingInstructors.instructorId,
+        paySgd: classSupportingInstructors.paySgd,
+      })
+      .from(classSupportingInstructors)
+      .where(inArray(classSupportingInstructors.classId, eventIds))
+    for (const s of supporting) {
+      out.get(s.classId)?.push({
+        instructorId: s.instructorId,
+        role: 'supporting',
+        paySgd: s.paySgd == null ? null : Number(s.paySgd),
+      })
+    }
   }
 
   for (const roster of out.values()) {
@@ -186,6 +220,26 @@ export async function replaceRoster(
     tx,
   )
 
+  if (ref.kind === 'workshop') {
+    // Main and supporting are rows in one table, so one rewrite covers both.
+    // Safe wholesale: `roster` restates untouched members with their merged pay,
+    // so the delete can't drop a price the caller didn't ask to change.
+    await exec(tx).delete(workshopInstructors).where(eq(workshopInstructors.workshopId, ref.id))
+    if (roster.length > 0) {
+      await exec(tx)
+        .insert(workshopInstructors)
+        .values(
+          roster.map(r => ({
+            workshopId: ref.id,
+            instructorId: r.instructorId,
+            role: r.role,
+            paySgd: money(r.paySgd),
+          })),
+        )
+    }
+    return roster
+  }
+
   if (patch.main !== undefined) {
     const main = roster.find(r => r.role === 'main')
     if (main) {
@@ -233,6 +287,21 @@ export async function setInstructorPay(
   paySgd: number | null,
   tx?: Tx,
 ): Promise<boolean> {
+  if (ref.kind === 'workshop') {
+    // Role doesn't matter: main and supporting are the same row shape here.
+    const rows = await exec(tx)
+      .update(workshopInstructors)
+      .set({ paySgd: money(paySgd) })
+      .where(
+        and(
+          eq(workshopInstructors.workshopId, ref.id),
+          eq(workshopInstructors.instructorId, instructorId),
+        ),
+      )
+      .returning({ workshopId: workshopInstructors.workshopId })
+    return rows.length > 0
+  }
+
   const [event] = await exec(tx)
     .select({ mainInstructorId: classes.mainInstructorId })
     .from(classes)

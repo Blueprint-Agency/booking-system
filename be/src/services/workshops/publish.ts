@@ -1,7 +1,6 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { db } from '../../db'
-import { staffUsers } from '../../db/schema/identity'
-import { locations, instructors } from '../../db/schema/catalog'
+import { locations } from '../../db/schema/catalog'
 import {
   workshops,
   workshopInstructors,
@@ -11,6 +10,7 @@ import {
   workshopTierDays,
 } from '../../db/schema/schedule'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
+import { replaceRoster, type RosterAssignment } from '../schedule/roster'
 
 export type WorkshopRow = typeof workshops.$inferSelect
 
@@ -25,39 +25,11 @@ export interface CreateWorkshopInput {
   createdByStaffId: string
 }
 
-function normalizeSupporting(
-  mainInstructorId: string,
-  supportingInstructorIds: string[] | undefined,
-): string[] {
-  const supports = Array.from(new Set(supportingInstructorIds ?? []))
-  if (supports.includes(mainInstructorId)) {
-    throw new BadRequestError('main_instructor_cannot_be_supporting')
-  }
-  return supports
-}
-
-export interface WorkshopInstructorInput {
-  instructorId: string
-  /** null/undefined = unpriced. */
-  paySgd?: number | null
-}
-
-function normalizeSupportingWithPay(
-  mainInstructorId: string,
-  supports: WorkshopInstructorInput[] | undefined,
-): { instructorId: string; paySgd: number | null }[] {
-  const byId = new Map<string, number | null>()
-  for (const s of supports ?? []) byId.set(s.instructorId, s.paySgd ?? null)
-  const result = Array.from(byId, ([instructorId, paySgd]) => ({ instructorId, paySgd }))
-  if (result.some(r => r.instructorId === mainInstructorId)) {
-    throw new BadRequestError('main_instructor_cannot_be_supporting')
-  }
-  return result
-}
-
-function toNumeric(n: number | null): string | null {
-  return n == null ? null : n.toFixed(2)
-}
+/**
+ * One supporting instructor as the caller supplies them. Omitting `paySgd`
+ * means "leave whatever is recorded alone" — see services/schedule/roster.ts.
+ */
+export type WorkshopInstructorInput = RosterAssignment
 
 async function ensureLocation(id: string) {
   const [r] = await db
@@ -74,33 +46,11 @@ async function ensureLocation(id: string) {
   if (!r) throw new BadRequestError('invalid_location_id')
 }
 
-async function ensureInstructors(ids: string[]) {
-  if (!ids.length) return
-  const found = await db
-    .select({ id: staffUsers.id })
-    .from(staffUsers)
-    .innerJoin(instructors, eq(instructors.staffUserId, staffUsers.id))
-    .where(
-      and(
-        inArray(staffUsers.id, ids),
-        eq(staffUsers.status, 'active'),
-        isNull(staffUsers.deletedAt),
-      ),
-    )
-  if (found.length !== ids.length) {
-    throw new BadRequestError('invalid_instructor_ids', {
-      invalid: ids.filter(id => !found.find(f => f.id === id)),
-    })
-  }
-}
-
 export async function createWorkshop(input: CreateWorkshopInput): Promise<WorkshopRow> {
   if (!input.mainInstructorId) {
     throw new BadRequestError('main_instructor_id_required')
   }
   await ensureLocation(input.locationId)
-  const supports = normalizeSupporting(input.mainInstructorId, input.supportingInstructorIds)
-  await ensureInstructors([input.mainInstructorId, ...supports])
 
   return db.transaction(async tx => {
     const [row] = await tx
@@ -115,14 +65,16 @@ export async function createWorkshop(input: CreateWorkshopInput): Promise<Worksh
       })
       .returning()
 
-    await tx.insert(workshopInstructors).values([
-      { workshopId: row!.id, instructorId: input.mainInstructorId, role: 'main' as const },
-      ...supports.map(instructorId => ({
-        workshopId: row!.id,
-        instructorId,
-        role: 'supporting' as const,
-      })),
-    ])
+    // Instructor validation, dedup and the main-cannot-be-supporting rule all
+    // live in the roster module — nothing to pre-check here.
+    await replaceRoster(
+      tx,
+      { kind: 'workshop', id: row!.id },
+      {
+        main: { instructorId: input.mainInstructorId },
+        supportingInstructorIds: input.supportingInstructorIds ?? [],
+      },
+    )
 
     if (input.imageR2Keys?.length) {
       await tx.insert(workshopImages).values(
@@ -143,9 +95,11 @@ export interface UpdateWorkshopInput {
   descriptionHtml?: string | null
   coverR2Key?: string | null
   mainInstructorId?: string
-  /** undefined = leave unchanged; null = clear; number = set (SGD). Only applies when the main instructor row is touched. */
+  /** undefined = leave unchanged; null = clear; number = set (SGD). */
   mainInstructorPaySgd?: number | null
+  /** Preferred — per-instructor pay. `supportingInstructorIds` (bare ids) is the older shape. */
   supportingInstructors?: WorkshopInstructorInput[]
+  supportingInstructorIds?: string[]
   imageR2Keys?: string[]
 }
 
@@ -162,61 +116,14 @@ export async function updateWorkshop(id: string, patch: UpdateWorkshopInput): Pr
   }
   if (patch.locationId !== undefined) await ensureLocation(patch.locationId)
 
-  // Resolve the instructor roster shape we're going to write, if any touch was requested.
-  const touchingInstructors =
-    patch.mainInstructorId !== undefined ||
+  // Who is on the workshop, and what they're paid, belongs to the roster module —
+  // including the role='main' row, which it treats as any other main instructor.
+  const touchesMain =
+    patch.mainInstructorId !== undefined || patch.mainInstructorPaySgd !== undefined
+  const touchesRoster =
+    touchesMain ||
     patch.supportingInstructors !== undefined ||
-    patch.mainInstructorPaySgd !== undefined
-
-  let resolvedMainId: string | null = null
-  let resolvedMainPaySgd: number | null = null
-  let resolvedSupports: { instructorId: string; paySgd: number | null }[] = []
-  if (touchingInstructors) {
-    const [currentMain] = await db
-      .select({ id: workshopInstructors.instructorId, paySgd: workshopInstructors.paySgd })
-      .from(workshopInstructors)
-      .where(and(eq(workshopInstructors.workshopId, id), eq(workshopInstructors.role, 'main')))
-      .limit(1)
-
-    if (patch.mainInstructorId !== undefined) {
-      resolvedMainId = patch.mainInstructorId
-      // New main instructor and no explicit pay given → unpriced, don't carry
-      // over the previous main's dollar amount to a different person.
-      resolvedMainPaySgd =
-        patch.mainInstructorPaySgd !== undefined ? patch.mainInstructorPaySgd ?? null : null
-    } else {
-      // Re-use existing main when only supporting list / pay is being patched.
-      if (!currentMain) throw new BadRequestError('workshop_has_no_main_instructor')
-      resolvedMainId = currentMain.id
-      resolvedMainPaySgd =
-        patch.mainInstructorPaySgd !== undefined
-          ? patch.mainInstructorPaySgd ?? null
-          : currentMain.paySgd == null
-            ? null
-            : Number(currentMain.paySgd)
-    }
-    if (!resolvedMainId) throw new BadRequestError('main_instructor_id_required')
-
-    const supportsInput =
-      patch.supportingInstructors !== undefined
-        ? patch.supportingInstructors
-        : (
-            await db
-              .select({ id: workshopInstructors.instructorId, paySgd: workshopInstructors.paySgd })
-              .from(workshopInstructors)
-              .where(
-                and(
-                  eq(workshopInstructors.workshopId, id),
-                  eq(workshopInstructors.role, 'supporting'),
-                ),
-              )
-          ).map(r => ({
-            instructorId: r.id,
-            paySgd: r.paySgd == null ? null : Number(r.paySgd),
-          }))
-    resolvedSupports = normalizeSupportingWithPay(resolvedMainId, supportsInput)
-    await ensureInstructors([resolvedMainId, ...resolvedSupports.map(s => s.instructorId)])
-  }
+    patch.supportingInstructorIds !== undefined
 
   await db.transaction(async tx => {
     const set: Partial<typeof workshops.$inferInsert> = {}
@@ -228,22 +135,35 @@ export async function updateWorkshop(id: string, patch: UpdateWorkshopInput): Pr
       await tx.update(workshops).set(set).where(eq(workshops.id, id))
     }
 
-    if (touchingInstructors && resolvedMainId) {
-      await tx.delete(workshopInstructors).where(eq(workshopInstructors.workshopId, id))
-      await tx.insert(workshopInstructors).values([
+    if (touchesRoster) {
+      const roster = await replaceRoster(
+        tx,
+        { kind: 'workshop', id },
         {
-          workshopId: id,
-          instructorId: resolvedMainId,
-          role: 'main' as const,
-          paySgd: toNumeric(resolvedMainPaySgd),
+          ...(touchesMain
+            ? {
+                main: {
+                  ...(patch.mainInstructorId !== undefined
+                    ? { instructorId: patch.mainInstructorId }
+                    : {}),
+                  ...(patch.mainInstructorPaySgd !== undefined
+                    ? { paySgd: patch.mainInstructorPaySgd }
+                    : {}),
+                },
+              }
+            : {}),
+          ...(patch.supportingInstructors !== undefined
+            ? { supporting: patch.supportingInstructors }
+            : {}),
+          ...(patch.supportingInstructorIds !== undefined
+            ? { supportingInstructorIds: patch.supportingInstructorIds }
+            : {}),
         },
-        ...resolvedSupports.map(s => ({
-          workshopId: id,
-          instructorId: s.instructorId,
-          role: 'supporting' as const,
-          paySgd: toNumeric(s.paySgd),
-        })),
-      ])
+      )
+      // A workshop with no main row is a broken row, not a state to save into.
+      if (!roster.some(r => r.role === 'main')) {
+        throw new BadRequestError('workshop_has_no_main_instructor')
+      }
     }
 
     if (patch.imageR2Keys !== undefined) {

@@ -167,4 +167,24 @@ assert.deepStrictEqual(
   roster('B:main=30'),
 )
 
+// --- workshops: the whole roster is rows, main included ---------------------
+// Nothing above changes for them — `readRosters` hands the merge the same shape
+// either way — but these are the patterns only the row-shaped kinds produce.
+// Creating one: an empty roster plus a main and some bare ids.
+assert.deepStrictEqual(
+  merged([], { main: { instructorId: 'A' }, supportingInstructorIds: ['C', 'B'] }),
+  roster('A:main', 'B', 'C'),
+)
+// A supporting-only edit round-trips the main row back out with its pay — this
+// is the defect: the main row used to be deleted and re-inserted unpriced.
+assert.deepStrictEqual(
+  merged(roster('A:main=200', 'B=30'), { supportingInstructorIds: ['B', 'C'] }),
+  roster('A:main=200', 'B=30', 'C'),
+)
+// Re-pricing the main row alone leaves the supporting rows untouched.
+assert.deepStrictEqual(
+  merged(roster('A:main=200', 'B=30'), { main: { paySgd: 250 } }),
+  roster('A:main=250', 'B=30'),
+)
+
 console.log('roster-merge.test ok')
