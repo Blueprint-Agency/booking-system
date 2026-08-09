@@ -51,6 +51,9 @@ const updateSessionSchema = z.object({
   room_id: z.string().uuid().optional(),
   location_id: z.string().uuid().optional(),
   session_type: z.enum(['1on1', '2on1']).optional(),
+  // Partner for a 1on1 → 2on1 upgrade. Only needed when the request doesn't
+  // already carry a co-client. See services/pt-sessions/schedule.ts.
+  co_client_id: z.string().uuid().optional(),
   instructor_id: z.string().uuid().optional(),
   instructor_pay_sgd: z.number().min(0).nullable().optional(),
   supporting_instructors: z
@@ -182,6 +185,7 @@ const app = new Hono()
       ...(body.starts_at !== undefined ? { startsAt: new Date(body.starts_at) } : {}),
       ...(body.ends_at !== undefined ? { endsAt: new Date(body.ends_at) } : {}),
       ...(body.session_type !== undefined ? { sessionType: body.session_type } : {}),
+      ...(body.co_client_id !== undefined ? { partnerClientId: body.co_client_id } : {}),
       ...(body.instructor_pay_sgd !== undefined ? { instructorPaySgd: body.instructor_pay_sgd } : {}),
       // snake_case → the roster module's shape, and nothing else. An OMITTED
       // `pay_sgd` stays omitted (the roster keeps whatever is recorded); an
