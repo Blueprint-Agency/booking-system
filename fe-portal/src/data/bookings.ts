@@ -1,4 +1,4 @@
-import type { Booking, CancellationRecord } from "@/types";
+import type { Booking } from "@/types";
 
 // Mix of past attended/completed/no-show, upcoming confirmed, plus a cancelled example.
 // Codes match §11 format: YS-XXXXXX, case-insensitive.
@@ -288,30 +288,5 @@ export const bookings: Booking[] = [
     code: "YS-O8V6Z3",
     bookedAt: "2026-05-06T08:00:00.000Z",
     cancelledAt: "2026-05-09T03:00:00.000Z",
-  },
-];
-
-export const cancellations: CancellationRecord[] = [
-  {
-    id: "can-1",
-    bookingId: "bkg-14",
-    clientId: "cli-3",
-    kind: "class",
-    source: "client",
-    cancelledAt: "2026-05-09T07:30:00.000Z",
-    wasWithinWindow: true,
-    wasWithinCap: true,
-    refundFired: true,
-  },
-  {
-    id: "can-2",
-    bookingId: "bkg-15",
-    clientId: "cli-4",
-    kind: "class",
-    source: "client",
-    cancelledAt: "2026-05-09T03:00:00.000Z",
-    wasWithinWindow: false,
-    wasWithinCap: true,
-    refundFired: false,
   },
 ];
