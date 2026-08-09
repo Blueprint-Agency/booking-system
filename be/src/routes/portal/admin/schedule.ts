@@ -297,7 +297,7 @@ const app = new Hono()
     async c => {
       const { id } = c.req.valid('param')
       const staffId = c.get('staffUserId')
-      const w = await cancelWorkshop(id, staffId)
+      const w = await cancelWorkshop(id, staffId, c.get('staffRow').role)
       c.set('auditTarget' as any, { table: 'workshops', id })
       // Same serializer as POST /admin/workshops/:id/cancel: one cancellation,
       // one response shape, whichever path reached it.
