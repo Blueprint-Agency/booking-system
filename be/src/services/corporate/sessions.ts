@@ -388,7 +388,8 @@ export async function rescheduleCorporateSession(
     await assertRoomInLocation(nextRoomId, nextLocationId)
     try {
       await assertRoomAvailable(nextRoomId, nextStartsAt, nextEndsAt, {
-        excludeCorporateSessionId: id,
+        kind: 'corporate_session',
+        id,
       })
     } catch (err) {
       if (err instanceof AppError && err.code === 'room_clash') {

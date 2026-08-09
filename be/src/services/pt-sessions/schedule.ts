@@ -260,7 +260,7 @@ export async function updatePtSession(id: string, patch: UpdatePtSessionInput): 
   ) {
     if (newRoomId) {
       await assertRoomInLocation(newRoomId, newLocationId)
-      await assertRoomAvailable(newRoomId, newStartsAt, newEndsAt, { excludePtSessionId: id })
+      await assertRoomAvailable(newRoomId, newStartsAt, newEndsAt, { kind: 'pt_session', id })
     }
   }
 
