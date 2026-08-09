@@ -7,6 +7,8 @@ import { classes, classSupportingInstructors } from '../../db/schema/schedule'
 import { classTypes, instructors, locations, rooms } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
 import { NotFoundError } from '../../shared/errors'
+import { readRosters } from './roster'
+import { lineupsOf } from './lineup'
 
 function r2Url(key: string | null | undefined): string | null {
   if (!key || !env.R2_PUBLIC_URL) return null
@@ -168,22 +170,14 @@ export async function listClassCards(filters: ClassListFilters): Promise<ClassCa
 }
 
 async function loadSupportingByClass(classIds: string[]): Promise<Map<string, string[]>> {
-  const map = new Map<string, string[]>()
-  if (!classIds.length) return map
-  const rows = await db
-    .select({
-      classId: classSupportingInstructors.classId,
-      instructorId: classSupportingInstructors.instructorId,
-    })
-    .from(classSupportingInstructors)
-    .where(inArray(classSupportingInstructors.classId, classIds))
-  for (const r of rows) {
-    const list = map.get(r.classId) ?? []
-    list.push(r.instructorId)
-    map.set(r.classId, list)
-  }
-  for (const list of map.values()) list.sort()
-  return map
+  // Classes with nobody supporting now get an empty entry rather than none —
+  // every caller reads through `?? []`, so the result is the same.
+  return new Map(
+    [...lineupsOf(await readRosters('class', classIds))].map(([id, l]) => [
+      id,
+      l.supportingInstructorIds,
+    ]),
+  )
 }
 
 export async function getClassDetail(id: string): Promise<ClassDetailPayload> {

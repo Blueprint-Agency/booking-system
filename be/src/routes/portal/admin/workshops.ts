@@ -186,10 +186,12 @@ const app = new Hono()
     const instructorMap = await publish.listInstructorsByWorkshop(rows.map(r => r.id))
     return c.json({
       workshops: rows.map(r => {
-        const m = instructorMap.get(r.id) ?? { mainInstructorId: null, supportingInstructorIds: [] }
-        const instructor_ids = m.mainInstructorId
-          ? [m.mainInstructorId, ...m.supportingInstructorIds]
-          : [...m.supportingInstructorIds]
+        const m = instructorMap.get(r.id) ?? {
+          mainInstructorId: null,
+          supportingInstructorIds: [],
+          instructorIds: [],
+        }
+        const instructor_ids = m.instructorIds
         return {
           ...workshopRow(r),
           main_instructor_id: m.mainInstructorId,

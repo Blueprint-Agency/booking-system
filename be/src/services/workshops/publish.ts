@@ -3,14 +3,14 @@ import { db } from '../../db'
 import { locations } from '../../db/schema/catalog'
 import {
   workshops,
-  workshopInstructors,
   workshopImages,
   workshopDays,
   workshopTiers,
   workshopTierDays,
 } from '../../db/schema/schedule'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
-import { replaceRoster, type RosterAssignment } from '../schedule/roster'
+import { readRoster, readRosters, replaceRoster, type RosterAssignment } from '../schedule/roster'
+import { lineupOf, lineupsOf, type Lineup } from '../schedule/lineup'
 
 export type WorkshopRow = typeof workshops.$inferSelect
 
@@ -192,28 +192,8 @@ export async function listWorkshops(opts: { lifecycle?: 'active' | 'cancelled' }
 
 export async function listInstructorsByWorkshop(
   workshopIds: string[],
-): Promise<Map<string, { mainInstructorId: string | null; supportingInstructorIds: string[] }>> {
-  const map = new Map<string, { mainInstructorId: string | null; supportingInstructorIds: string[] }>()
-  if (!workshopIds.length) return map
-  const rows = await db
-    .select({
-      workshopId: workshopInstructors.workshopId,
-      instructorId: workshopInstructors.instructorId,
-      role: workshopInstructors.role,
-    })
-    .from(workshopInstructors)
-    .where(inArray(workshopInstructors.workshopId, workshopIds))
-  for (const r of rows) {
-    let entry = map.get(r.workshopId)
-    if (!entry) {
-      entry = { mainInstructorId: null, supportingInstructorIds: [] }
-      map.set(r.workshopId, entry)
-    }
-    if (r.role === 'main') entry.mainInstructorId = r.instructorId
-    else entry.supportingInstructorIds.push(r.instructorId)
-  }
-  for (const entry of map.values()) entry.supportingInstructorIds.sort()
-  return map
+): Promise<Map<string, Lineup>> {
+  return lineupsOf(await readRosters('workshop', workshopIds))
 }
 
 export interface WorkshopDetailView {
@@ -262,33 +242,9 @@ export async function getWorkshopDetail(id: string): Promise<WorkshopDetailView>
     .where(eq(workshopImages.workshopId, id))
     .orderBy(workshopImages.ord)
 
-  const instructorRows = await db
-    .select({
-      id: workshopInstructors.instructorId,
-      role: workshopInstructors.role,
-      paySgd: workshopInstructors.paySgd,
-    })
-    .from(workshopInstructors)
-    .where(eq(workshopInstructors.workshopId, id))
-
-  let mainInstructorId: string | null = null
-  let mainInstructorPaySgd: number | null = null
-  const supportingInstructorIds: string[] = []
-  const supportingInstructors: { instructorId: string; paySgd: number | null }[] = []
-  for (const r of instructorRows) {
-    if (r.role === 'main') {
-      mainInstructorId = r.id
-      mainInstructorPaySgd = r.paySgd == null ? null : Number(r.paySgd)
-    } else {
-      supportingInstructorIds.push(r.id)
-      supportingInstructors.push({
-        instructorId: r.id,
-        paySgd: r.paySgd == null ? null : Number(r.paySgd),
-      })
-    }
-  }
-  supportingInstructorIds.sort()
-  supportingInstructors.sort((a, b) => a.instructorId.localeCompare(b.instructorId))
+  // Ordering (main first, then supporting by instructor id) is the roster's own.
+  const roster = await readRoster({ kind: 'workshop', id })
+  const { mainInstructorId, supportingInstructorIds, instructorIds } = lineupOf(roster)
 
   return {
     workshop,
@@ -297,11 +253,11 @@ export async function getWorkshopDetail(id: string): Promise<WorkshopDetailView>
     images,
     mainInstructorId,
     supportingInstructorIds,
-    instructorIds: mainInstructorId
-      ? [mainInstructorId, ...supportingInstructorIds]
-      : [...supportingInstructorIds],
-    mainInstructorPaySgd,
-    supportingInstructors,
+    instructorIds,
+    mainInstructorPaySgd: roster.find(r => r.role === 'main')?.paySgd ?? null,
+    supportingInstructors: roster
+      .filter(r => r.role === 'supporting')
+      .map(r => ({ instructorId: r.instructorId, paySgd: r.paySgd })),
   }
 }
 

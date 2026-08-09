@@ -16,6 +16,7 @@ import {
   workshops,
 } from '../../db/schema'
 import { computeEventState, type EventState } from '../policy/event-state'
+import { combinedInstructorIds } from './lineup'
 
 export type ScheduleKind = 'class' | 'workshop' | 'pt' | 'corporate'
 
@@ -241,7 +242,7 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
     for (const r of rows) {
       const main = mainByWorkshop.get(r.workshopId) ?? null
       const supporting = supportingByWorkshop.get(r.workshopId) ?? []
-      const ids = main ? [main, ...supporting] : [...supporting]
+      const ids = combinedInstructorIds(main, supporting)
       if (opts.instructorId && !ids.includes(opts.instructorId)) continue
       out.push({
         kind: 'workshop',
@@ -406,7 +407,7 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
         classTypeId: null,
         mainInstructorId: r.mainInstructorId,
         supportingInstructorIds: supporting,
-        instructorIds: [r.mainInstructorId, ...supporting],
+        instructorIds: combinedInstructorIds(r.mainInstructorId, supporting),
         locationId: r.locationId,
         roomId: r.roomId,
         startsAt: r.startsAt.toISOString(),
