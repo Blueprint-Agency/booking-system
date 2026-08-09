@@ -7,7 +7,6 @@ import {
   workshopTiers,
   workshopTierDays,
   workshopImages,
-  workshopInstructors,
 } from '../../db/schema/schedule'
 import { locations, instructors } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
@@ -17,6 +16,8 @@ import {
   serializePromotion,
 } from '../packages/promotions'
 import { NotFoundError } from '../../shared/errors'
+import { readRoster, readRosters } from '../schedule/roster'
+import { lineupOf, lineupsOf, type Lineup } from '../schedule/lineup'
 
 export type WorkshopRow = typeof workshops.$inferSelect
 
@@ -176,10 +177,7 @@ async function buildCard(
   days: DayPayload[],
   tiers: TierPayload[],
   loc: LocationLite | null,
-  instructorInfo: { mainInstructorId: string | null; supportingInstructorIds: string[] } = {
-    mainInstructorId: null,
-    supportingInstructorIds: [],
-  },
+  instructorInfo: Lineup = { mainInstructorId: null, supportingInstructorIds: [], instructorIds: [] },
 ): Promise<WorkshopCardPayload> {
   const startsAt = days.length ? days[0]!.starts_at : null
   const endsAt = days.length ? days[days.length - 1]!.ends_at : null
@@ -192,9 +190,7 @@ async function buildCard(
     if (min === null || tierMin < min) min = tierMin
     if (Number(t.effective_price_sgd) < Number(t.regular_price_sgd)) hasDiscount = true
   }
-  const instructor_ids = instructorInfo.mainInstructorId
-    ? [instructorInfo.mainInstructorId, ...instructorInfo.supportingInstructorIds]
-    : [...instructorInfo.supportingInstructorIds]
+  const instructor_ids = instructorInfo.instructorIds
   return {
     id: w.id,
     name: w.name,
@@ -216,28 +212,8 @@ async function buildCard(
 
 async function loadInstructorRolesByWorkshop(
   workshopIds: string[],
-): Promise<Map<string, { mainInstructorId: string | null; supportingInstructorIds: string[] }>> {
-  const map = new Map<string, { mainInstructorId: string | null; supportingInstructorIds: string[] }>()
-  if (!workshopIds.length) return map
-  const rows = await db
-    .select({
-      workshopId: workshopInstructors.workshopId,
-      instructorId: workshopInstructors.instructorId,
-      role: workshopInstructors.role,
-    })
-    .from(workshopInstructors)
-    .where(inArray(workshopInstructors.workshopId, workshopIds))
-  for (const r of rows) {
-    let entry = map.get(r.workshopId)
-    if (!entry) {
-      entry = { mainInstructorId: null, supportingInstructorIds: [] }
-      map.set(r.workshopId, entry)
-    }
-    if (r.role === 'main') entry.mainInstructorId = r.instructorId
-    else entry.supportingInstructorIds.push(r.instructorId)
-  }
-  for (const entry of map.values()) entry.supportingInstructorIds.sort()
-  return map
+): Promise<Map<string, Lineup>> {
+  return lineupsOf(await readRosters('workshop', workshopIds))
 }
 
 export async function listActiveWorkshopCards(): Promise<WorkshopCardPayload[]> {
@@ -299,20 +275,8 @@ export async function getWorkshopDetailPayload(id: string): Promise<WorkshopDeta
     .where(eq(workshopImages.workshopId, w.id))
     .orderBy(workshopImages.ord)
 
-  const instructorIdsRows = await db
-    .select({ id: workshopInstructors.instructorId, role: workshopInstructors.role })
-    .from(workshopInstructors)
-    .where(eq(workshopInstructors.workshopId, w.id))
-  let mainInstructorId: string | null = null
-  const supportingInstructorIds: string[] = []
-  for (const r of instructorIdsRows) {
-    if (r.role === 'main') mainInstructorId = r.id
-    else supportingInstructorIds.push(r.id)
-  }
-  supportingInstructorIds.sort()
-  const instructorIds = mainInstructorId
-    ? [mainInstructorId, ...supportingInstructorIds]
-    : [...supportingInstructorIds]
+  const lineup = lineupOf(await readRoster({ kind: 'workshop', id: w.id }))
+  const { instructorIds } = lineup
 
   let instructorPayload: InstructorLite[] = []
   if (instructorIds.length) {
@@ -349,7 +313,7 @@ export async function getWorkshopDetailPayload(id: string): Promise<WorkshopDeta
     days,
     tiers,
     locRow ? { id: locRow.id, name: locRow.name, address: locRow.address } : null,
-    { mainInstructorId, supportingInstructorIds },
+    lineup,
   )
 
   return {
@@ -358,8 +322,8 @@ export async function getWorkshopDetailPayload(id: string): Promise<WorkshopDeta
     days,
     tiers,
     instructors: instructorPayload,
-    main_instructor_id: mainInstructorId,
-    supporting_instructor_ids: supportingInstructorIds,
+    main_instructor_id: lineup.mainInstructorId,
+    supporting_instructor_ids: lineup.supportingInstructorIds,
     instructor_ids: instructorIds,
   }
 }
