@@ -21,11 +21,11 @@
  *   - Deduplication and the main-cannot-also-be-supporting rule are enforced in
  *     the merge, not by callers.
  *
- * All four event kinds are here.
- *
- * Still writes these columns outside this module, deliberately:
- *   - `payroll/list.ts` — `updatePayrollAmount`. Its per-instructor write is
- *     exactly `setInstructorPay`; it adopts this module with the payroll work.
+ * All four event kinds are here, and nothing outside this module writes an
+ * assignment row or a pay column — `payroll/list.ts` prices through
+ * `setInstructorPay`. Payroll still READS those tables directly; it needs the
+ * joins, the completed-window filter and the name lookups, which are its own
+ * business.
  */
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { db } from '../../db'

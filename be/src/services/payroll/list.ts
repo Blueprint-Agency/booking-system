@@ -15,6 +15,12 @@
  *
  * `id` on a row is the SESSION/workshop id (not a per-instructor id) — PATCH
  * targets a (kind, id, instructor_id) triple, see updatePayrollAmount below.
+ * Corporate sessions are absent on purpose: neither corporate table has a pay
+ * column, so there is nothing for payroll to list or price.
+ *
+ * Payroll READS those five sources directly (it needs the joins, the completed
+ * window and the filters); it WRITES none of them — a pay edit is a roster write
+ * and goes through services/schedule/roster.
  */
 import { and, eq, gte, lt, lte, sql } from 'drizzle-orm'
 import { db } from '../../db'
@@ -32,6 +38,7 @@ import {
 import { classTypes } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
 import { BadRequestError } from '../../shared/errors'
+import { readRoster, setInstructorPay, type RosterEventKind } from '../schedule/roster'
 import { summarizePayroll, type PayrollSummary } from './totals'
 
 export type PayrollKind = 'class' | 'pt' | 'workshop' | 'manual'
@@ -290,18 +297,27 @@ export interface UpdatePayrollResult {
   ok: boolean
 }
 
+/** Payroll's kind → the roster module's. Payroll has no corporate rows (corporate
+ *  sessions carry no pay columns), and 'manual' isn't an event at all. */
+const rosterKind: Record<Exclude<PayrollKind, 'manual'>, RosterEventKind> = {
+  class: 'class',
+  pt: 'pt_session',
+  workshop: 'workshop',
+}
+
 /**
  * Set (or clear, when amount is null) the pay for one (session, instructor) pair.
+ * `ok: false` means nothing was written — the event is gone, or that instructor
+ * isn't on it; the route turns that into a 404.
  *
- * `instructorId` omitted → back-compat: writes the session's own pay column
- * (classes.instructor_pay_sgd / pt_sessions.instructor_pay_sgd), exactly as
- * before this row could carry more than one instructor's pay. Not valid for
- * kind='workshop' (workshops have no single default-pay column — instructorId
- * is required).
+ * Everything except a manual entry is a roster write, so it goes through
+ * `setInstructorPay` — which storage shape holds the pay (event column vs join
+ * row vs a workshop's role='main' row) is the roster module's business, not
+ * payroll's.
  *
- * `instructorId` present → resolves to the specific row: the parent session's
- * own column when it matches the session's main instructor, otherwise the
- * matching supporting-instructor join row.
+ * `instructorId` omitted → back-compat: prices the event's MAIN instructor, which
+ * is what "the session's own pay column" always meant. Not valid for
+ * kind='workshop' (no single default-pay column there).
  */
 export async function updatePayrollAmount(
   kind: PayrollKind,
@@ -309,88 +325,22 @@ export async function updatePayrollAmount(
   amount: number | null,
   instructorId?: string,
 ): Promise<UpdatePayrollResult> {
-  const value = amount == null ? null : amount.toFixed(2)
-
   if (kind === 'manual') {
-    if (value == null) throw new BadRequestError('manual_amount_required')
+    if (amount == null) throw new BadRequestError('manual_amount_required')
     const rows = await db
       .update(manualPayrollEntries)
-      .set({ amountSgd: value })
+      .set({ amountSgd: amount.toFixed(2) })
       .where(eq(manualPayrollEntries.id, id))
       .returning({ id: manualPayrollEntries.id })
     return { ok: rows.length > 0 }
   }
 
-  if (kind === 'workshop') {
-    if (!instructorId) throw new BadRequestError('instructor_id_required')
-    const rows = await db
-      .update(workshopInstructors)
-      .set({ paySgd: value })
-      .where(
-        and(eq(workshopInstructors.workshopId, id), eq(workshopInstructors.instructorId, instructorId)),
-      )
-      .returning({ workshopId: workshopInstructors.workshopId })
-    return { ok: rows.length > 0 }
-  }
+  if (kind === 'workshop' && !instructorId) throw new BadRequestError('instructor_id_required')
 
-  if (kind === 'class') {
-    if (instructorId) {
-      const [row] = await db
-        .select({ mainInstructorId: classes.mainInstructorId })
-        .from(classes)
-        .where(eq(classes.id, id))
-        .limit(1)
-      if (!row) return { ok: false }
-      if (row.mainInstructorId !== instructorId) {
-        const rows = await db
-          .update(classSupportingInstructors)
-          .set({ paySgd: value })
-          .where(
-            and(
-              eq(classSupportingInstructors.classId, id),
-              eq(classSupportingInstructors.instructorId, instructorId),
-            ),
-          )
-          .returning({ classId: classSupportingInstructors.classId })
-        return { ok: rows.length > 0 }
-      }
-    }
-    const rows = await db
-      .update(classes)
-      .set({ instructorPaySgd: value })
-      .where(eq(classes.id, id))
-      .returning({ id: classes.id })
-    return { ok: rows.length > 0 }
-  }
-
-  // kind === 'pt'
-  if (instructorId) {
-    const [row] = await db
-      .select({ instructorId: ptSessions.instructorId })
-      .from(ptSessions)
-      .where(eq(ptSessions.id, id))
-      .limit(1)
-    if (!row) return { ok: false }
-    if (row.instructorId !== instructorId) {
-      const rows = await db
-        .update(ptSessionSupportingInstructors)
-        .set({ paySgd: value })
-        .where(
-          and(
-            eq(ptSessionSupportingInstructors.ptSessionId, id),
-            eq(ptSessionSupportingInstructors.instructorId, instructorId),
-          ),
-        )
-        .returning({ ptSessionId: ptSessionSupportingInstructors.ptSessionId })
-      return { ok: rows.length > 0 }
-    }
-  }
-  const rows = await db
-    .update(ptSessions)
-    .set({ instructorPaySgd: value })
-    .where(eq(ptSessions.id, id))
-    .returning({ id: ptSessions.id })
-  return { ok: rows.length > 0 }
+  const ref = { kind: rosterKind[kind], id }
+  const target = instructorId ?? (await readRoster(ref)).find(r => r.role === 'main')?.instructorId
+  if (!target) return { ok: false }
+  return { ok: await setInstructorPay(ref, target, amount) }
 }
 
 export interface CreateManualPayrollInput {
