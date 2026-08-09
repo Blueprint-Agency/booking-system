@@ -174,8 +174,6 @@ export interface Workshop {
   mainInstructorPaySgd?: number | null;
   /** Keyed by instructor id (supporting instructors only). */
   supportingInstructorPay?: Record<string, number | null>;
-  coverUrl: string | null;
-  additionalImages: string[];
   descriptionHtml: string;
   days: WorkshopDay[];
   tiers: WorkshopTier[];
@@ -198,42 +196,6 @@ export interface PtSession {
   lifecycle: Lifecycle;
   cancelledAt: string | null;
   cancelledByStaffId: string | null;
-}
-
-// --- PT Requests (admin-restructure.md §9) ---
-
-export type PtRequestStatus =
-  | "pending"
-  | "scheduled"
-  | "cancelled_before_scheduled"
-  | "cancelled_after_scheduled"
-  | "attended";
-
-export interface PtRequestSlot {
-  proposedDate: string; // YYYY-MM-DD
-  startTime: string;    // HH:mm
-  endTime: string;      // HH:mm
-}
-
-export interface PtRequest {
-  id: string;
-  clientId: string;
-  classTypeId: string;
-  /** Studio location the client requested the session at (set at request time). */
-  locationId: string;
-  sessionType: PtSessionType;
-  slots: PtRequestSlot[];
-  message: string;
-  /** Partner for 2on1: either coClientId (existing member) OR coClientName + coClientEmail (not yet a member). */
-  coClientId: string | null;
-  coClientName: string | null;
-  coClientEmail: string | null;
-  status: PtRequestStatus;
-  scheduledPtSessionId: string | null;
-  expiresAt: string;
-  resolvedByStaffId: string | null;
-  resolvedAt: string | null;
-  createdAt: string;
 }
 
 // --- Corporate Requests ---
@@ -296,32 +258,6 @@ export interface Booking {
   cancelledAt: string | null;
 }
 
-// --- Cancellations (drives §4 cap) ---
-
-export interface CancellationRecord {
-  id: string;
-  bookingId: string;
-  clientId: string;
-  kind: "class" | "pt";
-  source: "client" | "admin";
-  cancelledAt: string;
-  wasWithinWindow: boolean;
-  wasWithinCap: boolean;
-  refundFired: boolean;
-}
-
-// --- Manual adjustments (§16d) ---
-
-export interface ManualAdjustment {
-  id: string;
-  clientId: string;
-  clientPackageId: string;
-  delta: number;
-  reason: string;
-  actedByStaffId: string;
-  createdAt: string;
-}
-
 // --- Identity (§15, §16) ---
 
 export type StaffRole = "superadmin" | "admin" | "instructor";
@@ -347,33 +283,14 @@ export interface StaffUser {
    * superadmins.
    */
   isSeededSuperadmin: boolean;
-  archivedAt: string | null;
-  archivedByStaffId: string | null;
-  invitedAt: string | null;
-  acceptedAt: string | null;
-  createdAt: string;
 }
-
-export interface StaffInvitation {
-  id: string;
-  email: string;
-  role: "admin" | "instructor";
-  expiresAt: string;
-  status: "pending" | "accepted" | "revoked" | "expired";
-  invitedByStaffId: string;
-  createdAt: string;
-}
-
-export type ClientStatus = "active" | "suspended";
 
 export interface Client {
   id: string;
   name: string;
   email: string;
   phone: string;
-  status: ClientStatus;
   joinedAt: string;
-  suspendedAt: string | null;
   referredByClientId: string | null;
   waiverSignedAt: string;
 }

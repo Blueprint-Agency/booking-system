@@ -124,8 +124,6 @@ function fromApiWorkshop(d: ApiWorkshopDetail): Workshop {
       : supportingInstructorIds,
     mainInstructorPaySgd: d.main_instructor_pay_sgd ?? null,
     supportingInstructorPay,
-    coverUrl: null,
-    additionalImages: [],
     descriptionHtml: d.description_html ?? "",
     days: d.days
       .slice()

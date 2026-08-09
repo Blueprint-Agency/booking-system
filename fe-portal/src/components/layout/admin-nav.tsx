@@ -1,4 +1,5 @@
 "use client";
+// FIXTURE-BACKED: reads static mock data from `@/data`, not the live backend.
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";

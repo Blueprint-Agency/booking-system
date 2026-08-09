@@ -170,8 +170,6 @@ export const workshops: Workshop[] = [
   {
     id: "wsp-1",
     name: "Ashtanga Immersion Weekend",
-    coverUrl: null,
-    additionalImages: [],
     descriptionHtml:
       "<p>Two days of dedicated practice with senior teacher Ravi Kumar. Mornings cover the full primary series; afternoons explore pranayama and inversions.</p><p>Suitable for intermediate and above. Bring your own mat and a small towel.</p>",
     locationId: "loc-breadtalk",
@@ -212,8 +210,6 @@ export const workshops: Workshop[] = [
   {
     id: "wsp-2",
     name: "Yin & Sound Healing",
-    coverUrl: null,
-    additionalImages: [],
     descriptionHtml:
       "<p>An evening of long-held yin postures paired with crystal singing bowls and Tibetan chimes. Mei Lin guides the asana; sound therapist Naomi Khoo takes the second hour.</p>",
     locationId: "loc-outram",
@@ -243,8 +239,6 @@ export const workshops: Workshop[] = [
   {
     id: "wsp-3",
     name: "Weekend Aerial Intensive",
-    coverUrl: null,
-    additionalImages: [],
     descriptionHtml:
       "<p>Three consecutive Saturdays building from foundational hammock work to full inversions and short choreographies. Open to intermediate practitioners.</p>",
     locationId: "loc-breadtalk",

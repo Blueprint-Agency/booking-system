@@ -1,4 +1,5 @@
 "use client";
+// FIXTURE-BACKED: reads static mock data from `@/data`, not the live backend.
 import { useState } from "react";
 import { Save, FileCheck } from "lucide-react";
 import { Button, Label, PageHeader } from "@/components/ui";

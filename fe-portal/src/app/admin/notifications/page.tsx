@@ -1,3 +1,4 @@
+// FIXTURE-BACKED: reads static mock data from `@/data`, not the live backend.
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { Badge, PageHeader } from "@/components/ui";

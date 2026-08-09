@@ -1,4 +1,5 @@
 "use client";
+// FIXTURE-BACKED: reads static mock data from `@/data`, not the live backend.
 import { useEffect, useState } from "react";
 import { ChevronDown, MapPin } from "lucide-react";
 import { locations as seedLocations } from "@/data";

@@ -118,11 +118,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         status: me.status,
         isSeededSuperadmin: me.is_seeded_superadmin === true,
         grantedLocationIds: me.granted_location_ids,
-        archivedAt: null,
-        archivedByStaffId: null,
-        invitedAt: null,
-        acceptedAt: null,
-        createdAt: "",
       });
       setLocations(accessible);
     } catch (err) {
