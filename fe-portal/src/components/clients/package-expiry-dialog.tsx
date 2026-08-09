@@ -26,6 +26,11 @@ export function PackageExpiryDialog({
         onSubmit={(e) => {
           e.preventDefault();
           if (!reason.trim()) return;
+          // KNOWN DEFECT: this stamps end-of-day in UTC, so a package the admin
+          // set to expire "the 30th" dies at 07:59 on the 31st Singapore time.
+          // Same class as the local-day fix, but NOT the same fix — correcting
+          // it moves when existing packages actually expire, so it needs a call
+          // on the live rows, not just a code change. See lib/local-day.ts.
           onSave(date ? `${date}T23:59:59.000Z` : null, reason.trim());
         }}
       >

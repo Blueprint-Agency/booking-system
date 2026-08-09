@@ -816,6 +816,12 @@ function PtEditor({
     setErr(null);
     try {
       await patchPtSession(api, data.id, {
+        // KNOWN GAP: upgrading 1on1 -> 2on1 needs a partner, and this screen has
+        // no way to name one. The backend accepts an optional `co_client_id` and
+        // otherwise falls back to the request's existing co-client — so an
+        // upgrade on a session whose request names nobody fails with
+        // `partner_required` and the admin has no field to fix it with.
+        // Needs a client picker here, shown only when switching to 2on1.
         session_type: sessionType,
         instructor_id: mainInstructorId,
         instructor_pay_sgd: mainPay.trim() === "" ? null : Number(mainPay),
