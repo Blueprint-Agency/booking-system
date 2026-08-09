@@ -32,6 +32,23 @@ import {
 import { classTypes } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
 import { BadRequestError } from '../../shared/errors'
+import { summarizePayroll, type PayrollSummary } from './totals'
+
+export type PayrollKind = 'class' | 'pt' | 'workshop' | 'manual'
+
+/**
+ * Which table a payroll row of each kind is written to — the audit target for a
+ * pay edit. Lives next to updatePayrollAmount because that's the only code that
+ * knows it; routes must not re-derive it. ('class'/'pt' name the parent session
+ * table even when the write lands on the supporting-instructor join row — the
+ * session is the record being repriced.)
+ */
+export const payrollAuditTable: Record<PayrollKind, string> = {
+  class: 'classes',
+  pt: 'pt_sessions',
+  workshop: 'workshop_instructors',
+  manual: 'manual_payroll_entries',
+}
 
 export interface PayrollFilter {
   instructorId?: string
@@ -43,7 +60,7 @@ export interface PayrollFilter {
 }
 
 export interface PayrollRow {
-  kind: 'class' | 'pt' | 'workshop' | 'manual'
+  kind: PayrollKind
   /** The session/workshop id — shared by every instructor row for that event. */
   id: string
   instructorId: string
@@ -58,7 +75,11 @@ export interface PayrollRow {
   instructorPaySgd: string | null
 }
 
-export async function listPayroll(filter: PayrollFilter): Promise<PayrollRow[]> {
+/**
+ * The query half — unordered rows straight out of the five sources. Internal on
+ * purpose: callers go through getPayroll so ordering and totalling can't drift.
+ */
+async function listPayroll(filter: PayrollFilter): Promise<PayrollRow[]> {
   const now = new Date()
 
   // -- main class pay --------------------------------------------------------
@@ -252,8 +273,17 @@ export async function listPayroll(filter: PayrollFilter): Promise<PayrollRow[]> 
     ...workshopRows.map(r => ({ ...r, kind: 'workshop' as const, classTypeId: null, sessionType: null })),
     ...manualRows.map(r => ({ ...r, kind: 'manual' as const, classTypeId: null, sessionType: null })),
   ]
-  rows.sort((a, b) => b.startsAt.getTime() - a.startsAt.getTime())
   return rows
+}
+
+/**
+ * The one payroll read. Admin passes whatever filter the screen has; an
+ * instructor's own log is this same call with instructorId forced to them —
+ * not a second implementation. Returns serialized rows plus every total either
+ * screen needs; each route picks the fields its response shape has.
+ */
+export async function getPayroll(filter: PayrollFilter): Promise<PayrollSummary> {
+  return summarizePayroll(await listPayroll(filter))
 }
 
 export interface UpdatePayrollResult {
@@ -274,7 +304,7 @@ export interface UpdatePayrollResult {
  * matching supporting-instructor join row.
  */
 export async function updatePayrollAmount(
-  kind: 'class' | 'pt' | 'workshop' | 'manual',
+  kind: PayrollKind,
   id: string,
   amount: number | null,
   instructorId?: string,
