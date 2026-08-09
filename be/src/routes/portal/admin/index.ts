@@ -76,11 +76,6 @@ const app = new Hono()
   // ── Admin read-only; superadmin full ────────────────────────────────────
   .use('/clients/*', staffAny, adminReadOnly)
   .use('/workshops/*', staffAny, adminReadOnly)
-  // Workshop routes reachable from the scheduler (e.g. POST
-  // /schedule/workshops/:id/cancel) are workshop mutations, so they carry the
-  // workshop gate too — otherwise a read-only admin refused at /workshops/*
-  // just walks around it via /schedule/*. `staffAny` already ran above.
-  .use('/schedule/workshops/*', adminReadOnly)
   .use('/rooms/*', staffAny, adminReadOnly)
 
   // ── Route mounts ────────────────────────────────────────────────────────

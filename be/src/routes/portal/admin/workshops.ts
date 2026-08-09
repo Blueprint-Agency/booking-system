@@ -272,7 +272,7 @@ const app = new Hono()
   .post('/:id/cancel', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const staffId = c.get('staffUserId')
-    const row = await cancelSvc.cancelWorkshop(id, staffId)
+    const row = await cancelSvc.cancelWorkshop(id, staffId, c.get('staffRow').role)
     c.set('auditTarget' as any, { table: 'workshops', id })
     return c.json(workshopRow(row))
   })
