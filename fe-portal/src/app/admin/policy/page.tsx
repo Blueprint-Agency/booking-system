@@ -11,6 +11,8 @@ interface PolicyState {
   cancelCapCycleDays: number;
   classWindowHours: number;
   ptWindowHours: number;
+  annualLeaveDays: number;
+  medicalLeaveDays: number;
   bookInAdvanceDays: number;
   updatedAt: string | null;
 }
@@ -21,6 +23,8 @@ interface ApiPolicy {
     cancel_cap_cycle_days: number;
     class_window_hours: number;
     pt_window_hours: number;
+    annual_leave_days: number;
+    medical_leave_days: number;
     updated_at: string | null;
   };
   pt_booking_config: {
@@ -35,6 +39,8 @@ function emptyPolicy(): PolicyState {
     cancelCapCycleDays: 0,
     classWindowHours: 0,
     ptWindowHours: 0,
+    annualLeaveDays: 0,
+    medicalLeaveDays: 0,
     bookInAdvanceDays: 0,
     updatedAt: null,
   };
@@ -50,6 +56,10 @@ function diffGlobal(saved: PolicyState, draft: PolicyState) {
     out.class_window_hours = draft.classWindowHours;
   if (saved.ptWindowHours !== draft.ptWindowHours)
     out.pt_window_hours = draft.ptWindowHours;
+  if (saved.annualLeaveDays !== draft.annualLeaveDays)
+    out.annual_leave_days = draft.annualLeaveDays;
+  if (saved.medicalLeaveDays !== draft.medicalLeaveDays)
+    out.medical_leave_days = draft.medicalLeaveDays;
   return out;
 }
 
@@ -72,6 +82,8 @@ export default function PolicyPage() {
         cancelCapCycleDays: r.global_policy.cancel_cap_cycle_days,
         classWindowHours: r.global_policy.class_window_hours,
         ptWindowHours: r.global_policy.pt_window_hours,
+        annualLeaveDays: r.global_policy.annual_leave_days,
+        medicalLeaveDays: r.global_policy.medical_leave_days,
         bookInAdvanceDays: r.pt_booking_config.book_in_advance_days,
         updatedAt: r.global_policy.updated_at,
       };
@@ -93,6 +105,8 @@ export default function PolicyPage() {
     draft.cancelCapCycleDays !== policy.cancelCapCycleDays ||
     draft.classWindowHours !== policy.classWindowHours ||
     draft.ptWindowHours !== policy.ptWindowHours ||
+    draft.annualLeaveDays !== policy.annualLeaveDays ||
+    draft.medicalLeaveDays !== policy.medicalLeaveDays ||
     draft.bookInAdvanceDays !== policy.bookInAdvanceDays;
 
   async function handleSave(e: React.FormEvent) {
@@ -221,6 +235,43 @@ export default function PolicyPage() {
                 value={draft.ptWindowHours}
                 onChange={(e) =>
                   setDraft({ ...draft, ptWindowHours: Number(e.target.value) })
+                }
+              />
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-xl border border-border bg-card p-6 shadow-soft">
+          <header className="mb-4">
+            <h2 className="text-base font-semibold text-ink">Instructor leave allowance</h2>
+            <p className="mt-0.5 text-xs text-muted">
+              Days per calendar year, for every instructor. The two pools are separate. Balances reset on 1 January; changing a number here does not alter what past requests counted against.
+            </p>
+          </header>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="annual-leave">Annual leave (days/year)</Label>
+              <Input
+                id="annual-leave"
+                type="number"
+                min={0}
+                max={365}
+                value={draft.annualLeaveDays}
+                onChange={(e) =>
+                  setDraft({ ...draft, annualLeaveDays: Number(e.target.value) })
+                }
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="medical-leave">Medical leave (days/year)</Label>
+              <Input
+                id="medical-leave"
+                type="number"
+                min={0}
+                max={365}
+                value={draft.medicalLeaveDays}
+                onChange={(e) =>
+                  setDraft({ ...draft, medicalLeaveDays: Number(e.target.value) })
                 }
               />
             </div>

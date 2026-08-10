@@ -9,6 +9,10 @@ import {
   SupportingInstructorsField,
   type SupportingRow,
 } from "@/components/schedule/supporting-instructors-field";
+import {
+  InstructorOption,
+  useInstructorsOnLeave,
+} from "@/components/schedule/instructor-leave";
 import { useWorkspace } from "@/lib/workspace-context";
 import { todayIso, currentHourTime } from "@/lib/formatters";
 import { ApiError } from "@/lib/api";
@@ -52,6 +56,7 @@ export default function NewClassPage() {
   const [difficulty, setDifficulty] = useState<ClassTypeDifficulty>("general");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const onLeave = useInstructorsOnLeave(date);
 
   useEffect(() => {
     if (!api) return;
@@ -176,8 +181,11 @@ export default function NewClassPage() {
                 value={mainInstructorId}
                 onChange={setMainInstructorId}
                 placeholder="Select…"
-                options={instructors.map((i) => ({ val: i.id, label: i.name }))}
-              />
+              >
+                {instructors.map((i) => (
+                  <InstructorOption key={i.id} instructor={i} onLeave={onLeave} />
+                ))}
+              </SelectField>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="main-pay">Main instructor pay (S$)</Label>
@@ -197,6 +205,7 @@ export default function NewClassPage() {
               mainInstructorId={mainInstructorId}
               value={supporting}
               onChange={setSupporting}
+              onLeave={onLeave}
             />
             <div className="space-y-1.5">
               <Label htmlFor="room">Room</Label>
@@ -323,13 +332,16 @@ function SelectField({
   onChange,
   placeholder,
   options,
+  children,
   disabled,
 }: {
   id?: string;
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
-  options: { val: string; label: string }[];
+  options?: { val: string; label: string }[];
+  /** Pre-rendered `<option>`s, for callers that need more than a flat label. */
+  children?: React.ReactNode;
   disabled?: boolean;
 }) {
   return (
@@ -342,11 +354,12 @@ function SelectField({
       className="flex h-10 w-full rounded-lg border border-border bg-card px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
     >
       <option value="">{placeholder}</option>
-      {options.map((o) => (
-        <option key={o.val} value={o.val}>
-          {o.label}
-        </option>
-      ))}
+      {children ??
+        options?.map((o) => (
+          <option key={o.val} value={o.val}>
+            {o.label}
+          </option>
+        ))}
     </select>
   );
 }

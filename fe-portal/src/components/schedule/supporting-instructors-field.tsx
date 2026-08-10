@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo } from "react";
 import { Label } from "@/components/ui";
+import { InstructorOption, type InstructorLeave } from "@/components/schedule/instructor-leave";
 import type { CatalogInstructor } from "@/lib/catalog";
 
 /**
@@ -29,6 +30,7 @@ export function SupportingInstructorsField({
   mainInstructorId,
   value,
   onChange,
+  onLeave,
   disabled = false,
   saving = false,
 }: {
@@ -36,6 +38,9 @@ export function SupportingInstructorsField({
   mainInstructorId: string;
   value: SupportingRow[];
   onChange: (rows: SupportingRow[]) => void;
+  /** Who is away on the chosen date — greyed and labelled. A hint; see
+   *  `instructor-leave`. Omitted (or empty) before a date is picked. */
+  onLeave: InstructorLeave;
   /** The event can't be edited at all (cancelled) — the picker is hidden. */
   disabled?: boolean;
   /** A save is in flight — the fields are frozen but stay visible. */
@@ -116,9 +121,7 @@ export function SupportingInstructorsField({
               {value.length === 0 ? "+ Add supporting instructor" : "+ Add another"}
             </option>
             {available.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.name}
-              </option>
+              <InstructorOption key={i.id} instructor={i} onLeave={onLeave} />
             ))}
           </select>
         )}

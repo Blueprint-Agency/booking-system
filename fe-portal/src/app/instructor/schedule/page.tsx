@@ -2,7 +2,15 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { CalendarPlus, Loader2 } from "lucide-react";
-import { Button, EmptyState, PageHeader } from "@/components/ui";
+import {
+  Button,
+  Dialog,
+  DialogFooter,
+  EmptyState,
+  Label,
+  PageHeader,
+  Textarea,
+} from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { formatDate, formatTime, todayIso } from "@/lib/formatters";
@@ -13,6 +21,7 @@ interface ScheduleEntry {
   id: string;
   label: string;
   subtitle: string | null;
+  main_instructor_id: string | null;
   location_id: string | null;
   room_id: string | null;
   starts_at: string;
@@ -51,11 +60,16 @@ function plusDaysIso(days: number): string {
 const dayKey = localDay;
 
 export default function InstructorSchedulePage() {
-  const { api, accessibleLocations } = useWorkspace();
+  const { api, accessibleLocations, currentStaff } = useWorkspace();
   const [entries, setEntries] = useState<ScheduleEntry[]>([]);
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Cancel-own-class flow: only ever offered for a class this instructor leads.
+  const [cancelling, setCancelling] = useState<ScheduleEntry | null>(null);
+  const [reason, setReason] = useState("");
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!api) return;
@@ -105,6 +119,34 @@ export default function InstructorSchedulePage() {
   }, [entries]);
 
   const todayKey = todayIso();
+
+  const canCancel = (e: ScheduleEntry) =>
+    e.kind === "class" &&
+    !!currentStaff &&
+    e.main_instructor_id === currentStaff.id &&
+    e.event_state !== "cancelled" &&
+    e.event_state !== "completed";
+
+  async function submitCancel() {
+    if (!api || !cancelling) return;
+    setCancelBusy(true);
+    setCancelError(null);
+    try {
+      await api.post(
+        `/portal/instructor/schedule/classes/${cancelling.id}/cancel`,
+        { reason: reason.trim() },
+      );
+      setCancelling(null);
+      setReason("");
+      await load();
+    } catch (err) {
+      setCancelError(
+        err instanceof ApiError ? `HTTP ${err.status}` : "Network error",
+      );
+    } finally {
+      setCancelBusy(false);
+    }
+  }
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -174,6 +216,20 @@ export default function InstructorSchedulePage() {
                       <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted">
                         {KIND_LABEL[e.kind]}
                       </span>
+                      {canCancel(e) && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-error hover:bg-error/5"
+                          onClick={() => {
+                            setCancelling(e);
+                            setReason("");
+                            setCancelError(null);
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                      )}
                     </div>
                   </li>
                 ))}
@@ -182,6 +238,57 @@ export default function InstructorSchedulePage() {
           ))}
         </div>
       )}
+
+      <Dialog
+        open={cancelling !== null}
+        onOpenChange={(o) => {
+          if (!o) setCancelling(null);
+        }}
+        title="Cancel this class?"
+        description={
+          cancelling
+            ? `${cancelling.label} · ${formatDate(cancelling.starts_at, "EEE d MMM")} ${formatTime(cancelling.starts_at)}`
+            : undefined
+        }
+      >
+        <p className="text-sm text-ink">
+          {cancelling?.booked_count ?? 0} member
+          {(cancelling?.booked_count ?? 0) === 1 ? "" : "s"} will be refunded
+          their credit. This cannot be undone, and all admins are notified.
+        </p>
+        <div className="mt-4 space-y-1.5">
+          <Label htmlFor="cancel-reason">Reason (required)</Label>
+          <Textarea
+            id="cancel-reason"
+            value={reason}
+            maxLength={500}
+            onChange={(ev) => setReason(ev.target.value)}
+            placeholder="Why are you cancelling this class?"
+          />
+        </div>
+        {cancelError && (
+          <div className="mt-3 rounded-lg border border-error/30 bg-error/5 p-3 text-xs text-error">
+            Failed to cancel: {cancelError}
+          </div>
+        )}
+        <DialogFooter>
+          <Button
+            variant="secondary"
+            onClick={() => setCancelling(null)}
+            disabled={cancelBusy}
+          >
+            Keep class
+          </Button>
+          <Button
+            variant="danger"
+            onClick={() => void submitCancel()}
+            disabled={cancelBusy || reason.trim().length === 0}
+          >
+            {cancelBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+            Cancel class
+          </Button>
+        </DialogFooter>
+      </Dialog>
     </div>
   );
 }

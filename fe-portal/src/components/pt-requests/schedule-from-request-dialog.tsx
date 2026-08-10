@@ -12,6 +12,10 @@ import {
   type CatalogRoom,
 } from "@/lib/catalog";
 import { scheduleErrorMessage } from "@/lib/schedule";
+import {
+  InstructorOption,
+  useInstructorsOnLeave,
+} from "@/components/schedule/instructor-leave";
 import type { ApiPtRequest } from "@/lib/pt-requests";
 
 // Codes only this dialog raises. A room or instructor clash is NOT here — it
@@ -77,6 +81,7 @@ export function ScheduleFromRequestDialog({
   const [partnerEmail, setPartnerEmail] = useState(request.co_client?.email ?? "");
   const [partnerLinking, setPartnerLinking] = useState(false);
   const [partnerLinkError, setPartnerLinkError] = useState<string | null>(null);
+  const onLeave = useInstructorsOnLeave(date);
 
   // Partner must be a member before a 2on1 can be scheduled (BE enforces too).
   const partnerBlocked =
@@ -277,9 +282,7 @@ export function ScheduleFromRequestDialog({
             >
               <option value="">Select…</option>
               {instructors.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.name}
-                </option>
+                <InstructorOption key={i.id} instructor={i} onLeave={onLeave} />
               ))}
             </select>
           </div>

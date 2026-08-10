@@ -8,6 +8,8 @@ const globalPatch = z.object({
   cancel_cap_cycle_days: z.number().int().min(1).optional(),
   class_window_hours: z.number().int().min(0).optional(),
   pt_window_hours: z.number().int().min(0).optional(),
+  annual_leave_days: z.number().int().min(0).max(365).optional(),
+  medical_leave_days: z.number().int().min(0).max(365).optional(),
 })
 
 const ptPatch = z.object({
@@ -20,6 +22,8 @@ function serializeGlobal(r: svc.GlobalPolicyRow) {
     cancel_cap_cycle_days: r.cancelCapCycleDays,
     class_window_hours: r.classWindowHours,
     pt_window_hours: r.ptWindowHours,
+    annual_leave_days: r.annualLeaveDays,
+    medical_leave_days: r.medicalLeaveDays,
     updated_at: r.updatedAt,
     updated_by_staff_id: r.updatedByStaffId,
   }
@@ -52,6 +56,10 @@ const app = new Hono()
           : {}),
         ...(body.class_window_hours !== undefined ? { classWindowHours: body.class_window_hours } : {}),
         ...(body.pt_window_hours !== undefined ? { ptWindowHours: body.pt_window_hours } : {}),
+        ...(body.annual_leave_days !== undefined ? { annualLeaveDays: body.annual_leave_days } : {}),
+        ...(body.medical_leave_days !== undefined
+          ? { medicalLeaveDays: body.medical_leave_days }
+          : {}),
       },
       staffId,
     )

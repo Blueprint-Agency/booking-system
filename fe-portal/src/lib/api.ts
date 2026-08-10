@@ -55,7 +55,10 @@ export async function apiFetch<T = unknown>(
     Accept: "application/json",
   };
   if (token) headers.Authorization = `Bearer ${token}`;
-  if (opts.body !== undefined) headers["Content-Type"] = "application/json";
+  // A FormData body goes as-is: the browser has to set the multipart boundary,
+  // so declaring a Content-Type here would break the upload.
+  const isFormData = opts.body instanceof FormData;
+  if (opts.body !== undefined && !isFormData) headers["Content-Type"] = "application/json";
 
   const method = opts.method ?? "GET";
   let res: Response;
@@ -63,7 +66,12 @@ export async function apiFetch<T = unknown>(
     res = await fetch(buildUrl(path, opts.query), {
       method,
       headers,
-      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+      body:
+        opts.body === undefined
+          ? undefined
+          : isFormData
+            ? (opts.body as FormData)
+            : JSON.stringify(opts.body),
       signal: opts.signal,
       // This is an authenticated API client — auth/role responses must never be
       // served from the HTTP/bfcache. Always hit the network with the live token.
@@ -122,3 +130,20 @@ export function makeApi(getToken: TokenGetter) {
 }
 
 export type Api = ReturnType<typeof makeApi>;
+
+/**
+ * Open a short-lived signed URL the backend mints on demand (medical
+ * certificates). The tab is opened synchronously so the click's user gesture
+ * still counts — a `window.open` after an `await` is what popup blockers eat.
+ */
+export async function openSignedUrl(api: Api, path: string): Promise<void> {
+  const tab = window.open("about:blank", "_blank");
+  try {
+    const { url } = await api.get<{ url: string }>(path);
+    if (tab) tab.location.href = url;
+    else window.location.href = url;
+  } catch (err) {
+    tab?.close();
+    throw err;
+  }
+}

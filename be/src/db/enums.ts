@@ -75,8 +75,24 @@ export const refundOutcomeEnum = pgEnum('refund_outcome', [
 ])
 export const checkinStateEnum = pgEnum('checkin_state', ['pending', 'attended', 'no_show', 'n_a'])
 export const cancellationKindEnum = pgEnum('cancellation_kind', ['class', 'pt'])
-export const cancellationSourceEnum = pgEnum('cancellation_source', ['client', 'admin'])
+export const cancellationSourceEnum = pgEnum('cancellation_source', ['client', 'admin', 'instructor'])
 export const checkinMethodEnum = pgEnum('checkin_method', ['qr', 'code', 'manual'])
+
+// Instructor leave (docs/md/spec-instructor-leave.md)
+export const leaveTypeEnum = pgEnum('leave_type', ['annual', 'medical'])
+// withdrawn = instructor abandons a pending request; cancelled = instructor gives
+// back approved leave; revoked = an admin takes approved leave away.
+export const leaveStatusEnum = pgEnum('leave_status', [
+  'pending',
+  'approved',
+  'rejected',
+  'withdrawn',
+  'cancelled',
+  'revoked',
+])
+// 'none' = a full day. morning/afternoon are accepted by the schema but refused
+// at submission until half days land (ticket 05).
+export const leaveHalfDayEnum = pgEnum('leave_half_day', ['none', 'morning', 'afternoon'])
 
 // Ledger
 export const auditActorTypeEnum = pgEnum('audit_actor_type', ['staff', 'system'])
@@ -95,6 +111,7 @@ export const inboxItemTypeEnum = pgEnum('inbox_item_type', [
   'client_cancellation',
   'admin_cancel_class_pt',
   'admin_cancel_workshop',
+  'instructor_cancel_class',
 ])
 // `inbox_action` enum is no longer used — action_taken/action_at/action_by_staff_id columns
 // were removed from inbox_items per §4l. Enum left undeclared (drop in migration SQL).
@@ -111,4 +128,7 @@ export type CorporateRequestStatus = (typeof corporateRequestStatusEnum.enumValu
 export type BookingKind = (typeof bookingKindEnum.enumValues)[number]
 export type BookingState = (typeof bookingStateEnum.enumValues)[number]
 export type Lifecycle = (typeof lifecycleEnum.enumValues)[number]
+export type LeaveType = (typeof leaveTypeEnum.enumValues)[number]
+export type LeaveStatus = (typeof leaveStatusEnum.enumValues)[number]
+export type LeaveHalfDay = (typeof leaveHalfDayEnum.enumValues)[number]
 export type ClassDifficulty = (typeof classDifficultyEnum.enumValues)[number]

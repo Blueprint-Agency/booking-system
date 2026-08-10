@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as timetable from '../../../services/schedule/timetable'
 import * as classesSvc from '../../../services/schedule/classes'
+import { cancelClass } from '../../../services/bookings/cancel-class'
 
 /**
  * Instructor schedule surface.
@@ -15,6 +16,10 @@ import * as classesSvc from '../../../services/schedule/classes'
  *                           to the acting instructor, there are no supporting
  *                           instructors, and instructor_pay_sgd is left null
  *                           (an admin prices it later from Payroll).
+ *   POST /schedule/classes/:id/cancel — cancel a class the caller is the MAIN
+ *                           instructor of, with a reason. Same service (and so
+ *                           the same member refunds) as the admin path; the
+ *                           main-instructor check lives in the service.
  */
 
 const isoDate = z
@@ -136,5 +141,22 @@ const app = new Hono()
       201,
     )
   })
+  .post(
+    '/classes/:id/cancel',
+    zValidator('param', z.object({ id: z.string().uuid() })),
+    zValidator('json', z.object({ reason: z.string().trim().min(1).max(500) })),
+    async c => {
+      const { id } = c.req.valid('param')
+      const { reason } = c.req.valid('json')
+      const res = await cancelClass({
+        classId: id,
+        actorStaffId: c.get('staffUserId'), // never from the body
+        source: 'instructor',
+        reason,
+      })
+      c.set('auditTarget' as any, { table: 'classes', id })
+      return c.json({ total_bookings: res.totalBookings, refunded_count: res.refundedCount })
+    },
+  )
 
 export default app

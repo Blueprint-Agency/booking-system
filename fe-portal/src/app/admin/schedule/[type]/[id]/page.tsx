@@ -8,6 +8,10 @@ import {
   SupportingInstructorsField,
   type SupportingRow,
 } from "@/components/schedule/supporting-instructors-field";
+import {
+  InstructorOption,
+  useInstructorsOnLeave,
+} from "@/components/schedule/instructor-leave";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { computeEventState } from "@/lib/event-state";
@@ -414,6 +418,7 @@ function ClassEditor({
   const [endTime, setEndTime] = useState(toHHMM(data.ends_at));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const onLeave = useInstructorsOnLeave(date);
 
   // Re-sync when the parent reloads the class.
   useEffect(() => {
@@ -500,9 +505,7 @@ function ClassEditor({
           >
             <option value="">Select…</option>
             {instructors.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.name}
-              </option>
+              <InstructorOption key={i.id} instructor={i} onLeave={onLeave} />
             ))}
           </select>
         </div>
@@ -525,6 +528,7 @@ function ClassEditor({
           mainInstructorId={mainInstructorId}
           value={supporting}
           onChange={setSupporting}
+          onLeave={onLeave}
           disabled={disabled}
           saving={saving}
         />
@@ -783,6 +787,7 @@ function PtEditor({
   const [endTime, setEndTime] = useState(toHHMM(data.ends_at));
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const onLeave = useInstructorsOnLeave(date);
 
   // Re-sync when the parent reloads the session.
   useEffect(() => {
@@ -871,9 +876,7 @@ function PtEditor({
           >
             <option value="">Select…</option>
             {instructors.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.name}
-              </option>
+              <InstructorOption key={i.id} instructor={i} onLeave={onLeave} />
             ))}
           </select>
         </div>
@@ -896,6 +899,7 @@ function PtEditor({
           mainInstructorId={mainInstructorId}
           value={supporting}
           onChange={setSupporting}
+          onLeave={onLeave}
           disabled={disabled}
           saving={saving}
         />
@@ -1292,6 +1296,7 @@ function CorporateEditor({
   const [saving, setSaving] = useState(false);
   const [cancelBusy, setCancelBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const onLeave = useInstructorsOnLeave(date);
 
   useEffect(() => {
     setClientName(session.client_name);
@@ -1405,9 +1410,7 @@ function CorporateEditor({
           >
             <option value="">Select…</option>
             {instructors.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.name}
-              </option>
+              <InstructorOption key={i.id} instructor={i} onLeave={onLeave} />
             ))}
           </select>
         </div>
@@ -1454,9 +1457,7 @@ function CorporateEditor({
                     : "+ Add another"}
                 </option>
                 {availableForSupporting.map((i) => (
-                  <option key={i.id} value={i.id}>
-                    {i.name}
-                  </option>
+                  <InstructorOption key={i.id} instructor={i} onLeave={onLeave} />
                 ))}
               </select>
             )}

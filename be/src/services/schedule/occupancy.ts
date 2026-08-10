@@ -1,4 +1,4 @@
-import { and, eq, gt, lt, ne, type AnyColumn } from 'drizzle-orm'
+import { and, eq, gt, inArray, lt, ne, type AnyColumn } from 'drizzle-orm'
 import { db } from '../../db'
 import {
   classes,
@@ -9,6 +9,8 @@ import {
 } from '../../db/schema/schedule'
 import { rooms } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
+import { leaveRequests } from '../../db/schema/leave'
+import { leaveWindow, OCCUPYING_STATUSES, type LeaveHalfDay, type PlainDate } from '../leave/rules'
 import { ConflictError } from '../../shared/errors'
 import { mergeRoster } from './roster-merge'
 import { readRoster, readRosters, type RosterEventKind, type RosterPatch, type RosterRef } from './roster'
@@ -27,6 +29,11 @@ import { readRoster, readRosters, type RosterEventKind, type RosterPatch, type R
  * lead: the roster module is the authority on who that is (main AND supporting,
  * for all four kinds), so this module asks it rather than reading a
  * main-instructor column.
+ *
+ * An instructor is also occupied by their own LEAVE, which is not an event at
+ * all: it has no room and nothing schedules it. Expressing it here — rather than
+ * in each write path — is what gives class, private-session and corporate
+ * create/edit leave enforcement without any of them being touched.
  *
  * The database query only NARROWS candidates (right time, active row, right
  * room). The rule itself lives in the pure functions below, so it can be checked
@@ -63,10 +70,17 @@ export interface EventRef {
   id: string
 }
 
-/** A conflicting event: which one, and when. Serialised shape (snake_case) is
+/**
+ * What can take a subject's time. Every schedulable event, plus leave — which is
+ * NOT an EventKind: no scheduling path creates, edits or excludes a leave
+ * request, so it can occupy without being an `EventRef`.
+ */
+export type ConflictKind = EventKind | 'leave'
+
+/** A conflict: what has the subject, and when. Serialised shape (snake_case) is
  *  part of the `schedule_conflict` error payload — do not rename. */
 export interface OccupancyConflict {
-  kind: EventKind
+  kind: ConflictKind
   id: string
   starts_at: string
   ends_at: string
@@ -86,6 +100,37 @@ export function occupies(
 ): boolean {
   if (exclude && exclude.kind === candidate.kind && exclude.id === candidate.id) return false
   return overlaps(candidate, window)
+}
+
+/** A leave request as the schedule sees it: an instructor's run of plain days,
+ *  possibly only one half of a single day. */
+export interface LeaveRun {
+  id: string
+  startDate: PlainDate
+  endDate: PlainDate
+  halfDay?: LeaveHalfDay
+}
+
+/**
+ * Leave, as occupancy. Each run becomes the Singapore-time window it really is
+ * — `leaveWindow` is the one place that arithmetic lives, half days included —
+ * and then goes through the same overlap rule as every event, so a full day
+ * cannot bleed into the adjacent one and a half day leaves the other half of
+ * the day bookable. Pure: see occupancy.test.ts.
+ */
+export function leaveConflicts(runs: readonly LeaveRun[], window: TimeWindow): OccupancyConflict[] {
+  const found: OccupancyConflict[] = []
+  for (const run of runs) {
+    const w = leaveWindow(run.startDate, run.endDate, run.halfDay)
+    if (!overlaps(w, window)) continue
+    found.push({
+      kind: 'leave',
+      id: run.id,
+      starts_at: w.startsAt.toISOString(),
+      ends_at: w.endsAt.toISOString(),
+    })
+  }
+  return found
 }
 
 const KIND_LABEL: Record<EventKind, string> = {
@@ -109,9 +154,26 @@ const sgTime = new Intl.DateTimeFormat('en-GB', {
 })
 
 /**
- * The sentence the portal shows: who is taken, and by which event. `who` is the
+ * The days a leave conflict covers, as studio dates: "on 12 Aug", or "from 12
+ * Aug to 14 Aug". Exported because the leave submission path builds its own
+ * sentence around the same dates (services/leave/requests.ts).
+ */
+export function leaveDaysPhrase(conflict: Pick<OccupancyConflict, 'starts_at' | 'ends_at'>): string {
+  const from = new Date(conflict.starts_at)
+  // The window is half-open, so the last day it covers ends an instant before.
+  const last = new Date(Date.parse(conflict.ends_at) - 1)
+  return sgDate.format(from) === sgDate.format(last)
+    ? `on ${sgDate.format(from)}`
+    : `from ${sgDate.format(from)} to ${sgDate.format(last)}`
+}
+
+/**
+ * The sentence the portal shows: who is taken, and by what. `who` is the
  * instructor's name or `Room X` — already resolved, so this stays pure and
  * checkable (see occupancy.test.ts).
+ *
+ * Leave gets its own phrasing: somebody who is away is on leave, not booked, and
+ * a whole day has no clock time worth showing.
  */
 export function conflictMessage(who: string, conflicts: OccupancyConflict[]): string {
   const first = conflicts[0]
@@ -119,6 +181,9 @@ export function conflictMessage(who: string, conflicts: OccupancyConflict[]): st
   const from = new Date(first.starts_at)
   const to = new Date(first.ends_at)
   const more = conflicts.length > 1 ? ` (and ${conflicts.length - 1} more)` : ''
+  if (first.kind === 'leave') {
+    return `${who} is on leave ${leaveDaysPhrase(first)}${more}.`
+  }
   return (
     `${who} is already booked — a ${KIND_LABEL[first.kind]} on ${sgDate.format(from)}, ` +
     `${sgTime.format(from)}–${sgTime.format(to)}${more}.`
@@ -257,12 +322,35 @@ export async function findOccupancyConflicts(
   const strip = ({ rosterId: _rosterId, ...conflict }: Candidate): OccupancyConflict => conflict
   if (subject.kind === 'room') return found.map(strip)
 
+  // ---- leave ----
+  // Below the room short-circuit on purpose: leave has no room, so a room query
+  // can never reach it. Pending counts as well as approved, so a request cannot
+  // become impossible to approve in the gap before the decision.
+  // ponytail: reads one instructor's pending+approved rows and lets the pure
+  // rule decide — tens of rows. Narrow by date in SQL if that ever grows.
+  const occupied: OccupancyConflict[] = leaveConflicts(
+    await db
+      .select({
+        id: leaveRequests.id,
+        startDate: leaveRequests.startDate,
+        endDate: leaveRequests.endDate,
+        halfDay: leaveRequests.halfDay,
+      })
+      .from(leaveRequests)
+      .where(
+        and(
+          eq(leaveRequests.instructorId, subject.id),
+          inArray(leaveRequests.status, [...OCCUPYING_STATUSES]),
+        ),
+      ),
+    window,
+  )
+
   // An instructor's events aren't a column — ask the roster who is on each
   // candidate, main and supporting alike.
   // ponytail: candidates are narrowed by time only, so this reads the rosters of
   // every active event overlapping the window (a handful, for one studio hour).
   // Push the instructor filter into SQL if that ever stops being a handful.
-  const occupied: OccupancyConflict[] = []
   for (const kind of EVENT_KINDS) {
     const rows = found.filter(f => f.kind === kind)
     if (rows.length === 0) continue

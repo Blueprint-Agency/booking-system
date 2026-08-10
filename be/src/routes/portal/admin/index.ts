@@ -17,6 +17,7 @@ import corporateSessions from './corporate-sessions'
 import corporateRequests from './corporate-requests'
 import bookings from './bookings'
 import payroll from './payroll'
+import leave from './leave'
 import checkIn from './check-in'
 import inbox from './inbox'
 import clients from './clients'
@@ -72,6 +73,9 @@ const app = new Hono()
   .use('/inbox/*', staffAny)
   // Payroll: both roles view all records and edit pay (operations surface, not governance).
   .use('/payroll/*', staffAny)
+  // Leave: approve/reject/revoke are admin AND superadmin
+  // (spec-instructor-leave.md § Access and visibility).
+  .use('/leave/*', staffAny)
 
   // ── Admin read-only; superadmin full ────────────────────────────────────
   .use('/clients/*', staffAny, adminReadOnly)
@@ -94,6 +98,7 @@ const app = new Hono()
   .route('/corporate-requests', corporateRequests)
   .route('/bookings', bookings)
   .route('/payroll', payroll)
+  .route('/leave', leave)
   .route('/check-in', checkIn)
   .route('/inbox', inbox)
   .route('/clients', clients)

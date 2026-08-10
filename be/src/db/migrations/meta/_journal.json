@@ -57,6 +57,20 @@
       "when": 1783953149401,
       "tag": "0007_noisy_next_avengers",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786350412674,
+      "tag": "0008_yielding_blonde_phantom",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786351189126,
+      "tag": "0009_rapid_whiplash",
+      "breakpoints": true
     }
   ]
 }

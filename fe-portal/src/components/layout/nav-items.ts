@@ -8,6 +8,7 @@ import {
   Briefcase,
   GraduationCap,
   CalendarDays,
+  CalendarOff,
   QrCode,
   HandHeart,
   Users,
@@ -67,6 +68,9 @@ export const NAV_ITEMS: NavItem[] = [
   // Instructors are managed under Staff → Instructors tab (merged), not a separate item.
   { group: "People", label: "Clients", href: "/admin/clients", icon: Users, scope: "both" },
   { group: "People", label: "Staff", href: "/admin/staff", icon: UserCog, scope: "global" },
+  // Leave is instructor-wide and has no location, so it is not workspace-scoped.
+  // Both roles decide requests (spec-instructor-leave.md § Access and visibility).
+  { group: "People", label: "Leave", href: "/admin/leave", icon: CalendarOff, scope: "both" },
 
   // --- Finance (operations surface; both roles view records + edit pay) ---
   { group: "Finance", label: "Payroll", href: "/admin/payroll", icon: Wallet, scope: "both" },

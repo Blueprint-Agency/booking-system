@@ -3,6 +3,10 @@ import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
 import { LocationRoomFields } from "@/components/schedule/location-room-fields";
+import {
+  InstructorOption,
+  useInstructorsOnLeave,
+} from "@/components/schedule/instructor-leave";
 import { todayIso, currentHourTime } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -55,6 +59,7 @@ export function ScheduleFromCorporateRequestDialog({
   );
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const onLeave = useInstructorsOnLeave(date);
 
   useEffect(() => {
     if (!api) return;
@@ -182,9 +187,7 @@ export function ScheduleFromCorporateRequestDialog({
             >
               <option value="">Select…</option>
               {instructors.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.name}
-                </option>
+                <InstructorOption key={i.id} instructor={i} onLeave={onLeave} />
               ))}
             </select>
           </div>
@@ -307,9 +310,7 @@ export function ScheduleFromCorporateRequestDialog({
                     : "+ Add another"}
                 </option>
                 {availableForSupporting.map((i) => (
-                  <option key={i.id} value={i.id}>
-                    {i.name}
-                  </option>
+                  <InstructorOption key={i.id} instructor={i} onLeave={onLeave} />
                 ))}
               </select>
             )}

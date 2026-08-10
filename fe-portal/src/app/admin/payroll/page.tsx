@@ -33,7 +33,8 @@ import {
   presetRange,
   type DateRange,
 } from "@/components/date-range-filter";
-import { PayrollCalendar, monthGridDays } from "@/components/payroll-calendar";
+import { PayrollCalendar } from "@/components/payroll-calendar";
+import { monthGridDays } from "@/components/month-calendar";
 import { useWorkspace } from "@/lib/workspace-context";
 import type { Api } from "@/lib/api";
 import {

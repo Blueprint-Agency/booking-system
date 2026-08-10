@@ -165,6 +165,87 @@ const CLIENT_INVITE_BODY = `<!DOCTYPE html>
   </body>
 </html>`
 
+/**
+ * Sent to every active admin/superadmin when an instructor cancels their own
+ * class. Needs real copy (not the placeholder) because the whole point is that
+ * it names the class, the instructor and the reason.
+ */
+const INSTRUCTOR_CANCEL_CLASS_BODY = `<!DOCTYPE html>
+<html>
+  <body style="margin:0;padding:0;background:#f7f5f2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#1f1d1b;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f5f2;padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid #e9e4dd;border-radius:14px;padding:32px 36px;">
+            <tr>
+              <td>
+                <h1 style="margin:0 0 16px;font-size:20px;font-weight:600;letter-spacing:-0.01em;">A class was cancelled by its instructor</h1>
+                <p style="margin:0 0 14px;font-size:15px;line-height:1.55;color:#4a4742;">
+                  <strong>{{instructor_name}}</strong> cancelled <strong>{{class_name}}</strong> on <strong>{{date}}</strong>.
+                </p>
+                <p style="margin:0 0 14px;font-size:15px;line-height:1.55;color:#4a4742;">
+                  Reason given: {{reason}}
+                </p>
+                <p style="margin:0 0 14px;font-size:13px;line-height:1.55;color:#7a7670;">
+                  {{refunded_count}} member(s) were refunded automatically. The class no longer appears on the timetable.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`
+
+/**
+ * The three leave emails. They share a shape — a heading and a few lines — so
+ * they share a builder rather than three near-identical HTML blobs. The
+ * placeholder body is no use here: every one of them exists to carry the dates
+ * and (for a rejection) the reason.
+ */
+const leaveBody = (heading: string, lines: string[]) => `<!DOCTYPE html>
+<html>
+  <body style="margin:0;padding:0;background:#f7f5f2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#1f1d1b;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f5f2;padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid #e9e4dd;border-radius:14px;padding:32px 36px;">
+            <tr>
+              <td>
+                <h1 style="margin:0 0 16px;font-size:20px;font-weight:600;letter-spacing:-0.01em;">${heading}</h1>
+                ${lines
+                  .map(
+                    l =>
+                      `<p style="margin:0 0 14px;font-size:15px;line-height:1.55;color:#4a4742;">${l}</p>`,
+                  )
+                  .join('\n                ')}
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`
+
+const LEAVE_SUBMITTED_BODY = leaveBody('A leave request needs a decision', [
+  '<strong>{{instructor_name}}</strong> requested <strong>{{days}} day(s)</strong> of {{leave_type}} leave on <strong>{{dates}}</strong>.',
+  'Reason given: {{reason}}',
+  'Approve or reject it on the Leave page in the portal.',
+])
+
+const LEAVE_APPROVED_BODY = leaveBody('Your leave is approved', [
+  'Hi {{instructor_name}}, your {{leave_type}} leave on <strong>{{dates}}</strong> ({{days}} day(s)) has been approved.',
+  'You will not be scheduled for classes on those dates.',
+])
+
+const LEAVE_REJECTED_BODY = leaveBody('Your leave request was rejected', [
+  'Hi {{instructor_name}}, your {{leave_type}} leave request for <strong>{{dates}}</strong> ({{days}} day(s)) was not approved.',
+  'Reason: {{reason}}',
+  'Those days are back in your balance if you want to request different dates.',
+])
+
 const TEMPLATES: Array<{ slug: string; subject: string; bodyHtml?: string }> = [
   { slug: 'welcome',                            subject: 'Welcome to Yoga Sadhana' },
   {
@@ -187,6 +268,26 @@ const TEMPLATES: Array<{ slug: string; subject: string; bodyHtml?: string }> = [
   { slug: 'admin_cancel_class',                 subject: 'A class was cancelled by the studio' },
   { slug: 'admin_cancel_pt',                    subject: 'A private session was cancelled by the studio' },
   { slug: 'admin_cancel_workshop',              subject: 'A workshop was cancelled by the studio' },
+  {
+    slug: 'instructor_cancel_class',
+    subject: '{{instructor_name}} cancelled {{class_name}}',
+    bodyHtml: INSTRUCTOR_CANCEL_CLASS_BODY,
+  },
+  {
+    slug: 'leave_request_submitted',
+    subject: '{{instructor_name}} requested {{leave_type}} leave — {{dates}}',
+    bodyHtml: LEAVE_SUBMITTED_BODY,
+  },
+  {
+    slug: 'leave_approved',
+    subject: 'Your leave on {{dates}} is approved',
+    bodyHtml: LEAVE_APPROVED_BODY,
+  },
+  {
+    slug: 'leave_rejected',
+    subject: 'Your leave request for {{dates}} was rejected',
+    bodyHtml: LEAVE_REJECTED_BODY,
+  },
   { slug: 'package_purchase_confirmed',         subject: 'Your package purchase is confirmed' },
   { slug: 'credit_expiry_reminder',             subject: 'Your credits are expiring soon' },
   {
