@@ -14,7 +14,7 @@
  * (0 credits used) just release the seat — outcome `n_a`, no balance write. All in one
  * transaction; the class row is locked FOR UPDATE so it can't race in-flight bookings/cancels.
  */
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { classes } from '../../db/schema/schedule'
 import { classTypes } from '../../db/schema/catalog'
@@ -22,8 +22,8 @@ import { staffUsers } from '../../db/schema/identity'
 import { bookings, cancellations } from '../../db/schema/bookings'
 import { inboxItems } from '../../db/schema/inbox'
 import { refundCredits } from '../packages/ledger'
-import { sendTemplatedEmail } from '../notifications/send'
-import { logger } from '../../shared/logger'
+import { emailEveryAdmin } from '../notifications/send'
+import { sgFormat } from '../../lib/time'
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 
 export type CancelClassSource = 'admin' | 'instructor'
@@ -42,11 +42,7 @@ export interface CancelClassResult {
   refundedCount: number
 }
 
-const sgDateTime = new Intl.DateTimeFormat('en-GB', {
-  timeZone: 'Asia/Singapore',
-  dateStyle: 'medium',
-  timeStyle: 'short',
-})
+const sgDateTime = sgFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short' })
 
 export async function cancelClass(input: CancelClassInput): Promise<CancelClassResult> {
   const { classId, actorStaffId } = input
@@ -175,9 +171,9 @@ export async function cancelClass(input: CancelClassInput): Promise<CancelClassR
 }
 
 /**
- * Best-effort — runs after the transaction commits and never throws. A class
- * that is already cancelled must not 500 because SMTP (or a missing template
- * row on an unseeded database) misbehaved.
+ * Best-effort — runs after the transaction commits and never throws (the swallow
+ * lives in `emailEveryAdmin`). A class that is already cancelled must not 500
+ * because SMTP (or a missing template row on an unseeded database) misbehaved.
  */
 async function emailAdmins(args: {
   classTypeId: string
@@ -186,41 +182,27 @@ async function emailAdmins(args: {
   reason: string
   refundedCount: number
 }): Promise<void> {
-  try {
-    const [type] = await db
-      .select({ name: classTypes.name })
-      .from(classTypes)
-      .where(eq(classTypes.id, args.classTypeId))
-      .limit(1)
-    const [instructor] = await db
-      .select({ name: staffUsers.name })
-      .from(staffUsers)
-      .where(eq(staffUsers.id, args.instructorStaffId))
-      .limit(1)
-    const admins = await db
-      .select({ id: staffUsers.id, email: staffUsers.email })
-      .from(staffUsers)
-      .where(
-        and(inArray(staffUsers.role, ['admin', 'superadmin']), eq(staffUsers.status, 'active')),
-      )
-
-    for (const admin of admins) {
-      await sendTemplatedEmail({
-        slug: 'instructor_cancel_class',
-        recipient: { email: admin.email, userId: admin.id, userKind: 'staff' },
-        variables: {
-          class_name: type?.name ?? 'Class',
-          date: sgDateTime.format(args.startsAt),
-          instructor_name: instructor?.name ?? 'An instructor',
-          reason: args.reason,
-          refunded_count: String(args.refundedCount),
-        },
-      })
-    }
-  } catch (err) {
-    logger.error(
-      { err: err instanceof Error ? err.message : String(err) },
-      'instructor class cancellation: admin notification failed',
-    )
-  }
+  await emailEveryAdmin(
+    'instructor_cancel_class',
+    async () => {
+      const [type] = await db
+        .select({ name: classTypes.name })
+        .from(classTypes)
+        .where(eq(classTypes.id, args.classTypeId))
+        .limit(1)
+      const [instructor] = await db
+        .select({ name: staffUsers.name })
+        .from(staffUsers)
+        .where(eq(staffUsers.id, args.instructorStaffId))
+        .limit(1)
+      return {
+        class_name: type?.name ?? 'Class',
+        date: sgDateTime.format(args.startsAt),
+        instructor_name: instructor?.name ?? 'An instructor',
+        reason: args.reason,
+        refunded_count: String(args.refundedCount),
+      }
+    },
+    { classTypeId: args.classTypeId, instructorStaffId: args.instructorStaffId },
+  )
 }

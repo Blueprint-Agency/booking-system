@@ -11,6 +11,7 @@ import {
   checkOwnLeaveTransition,
   countLeaveDays,
   futureConflicts,
+  leaveCoversStart,
   leaveWindow,
   leaveYearOf,
   medicalCertKey,
@@ -91,6 +92,71 @@ import {
     w.startsAt < straddle.endsAt && w.endsAt > straddle.startsAt
   assert.ok(within(am), 'a class over the boundary is partly in the morning')
   assert.ok(within(pm), 'and partly in the afternoon')
+}
+
+// -- the picker's question: is this instructor free to take THIS class? -------
+{
+  // a morning-leave instructor is unavailable for a 09:00 class...
+  assert.strictEqual(leaveCoversStart('morning', '09:00'), true)
+  // ...and available for a 15:00 one
+  assert.strictEqual(leaveCoversStart('morning', '15:00'), false)
+  // an afternoon-leave instructor is the reverse
+  assert.strictEqual(leaveCoversStart('afternoon', '09:00'), false)
+  assert.strictEqual(leaveCoversStart('afternoon', '15:00'), true)
+
+  // the boundary itself belongs to the afternoon, the same half-open split
+  // leaveWindow makes: morning ends AT 13:00, so a class starting then is not
+  // in it
+  assert.strictEqual(leaveCoversStart('morning', '13:00'), false)
+  assert.strictEqual(leaveCoversStart('afternoon', '13:00'), true)
+  // and the minute before is still the morning
+  assert.strictEqual(leaveCoversStart('morning', '12:59'), true)
+  assert.strictEqual(leaveCoversStart('afternoon', '12:59'), false)
+
+  // a whole day off covers every class, whatever time it starts — and even when
+  // no time is known at all
+  for (const t of ['00:00', '09:00', '13:00', '23:30', '', undefined]) {
+    assert.strictEqual(leaveCoversStart('none', t), true)
+  }
+
+  // with no start time known, a half day is not a refusal: the screen has only a
+  // date, so the instructor is labelled and stays pickable
+  for (const halfDay of ['morning', 'afternoon'] as const) {
+    assert.strictEqual(leaveCoversStart(halfDay, undefined), false)
+    assert.strictEqual(leaveCoversStart(halfDay, ''), false)
+    assert.strictEqual(leaveCoversStart(halfDay, 'not a time'), false)
+  }
+
+  // The straddling class — 12:30 to 13:30 — sits in BOTH halves, so the server
+  // refuses it on either half day. This question reads the START only, so it
+  // says "away" for the morning and "free" for the afternoon: a hint may be
+  // laxer than the server, never stricter.
+  const straddle = {
+    startsAt: new Date('2026-08-12T12:30:00+08:00'),
+    endsAt: new Date('2026-08-12T13:30:00+08:00'),
+  }
+  const serverRefuses = (halfDay: 'morning' | 'afternoon') => {
+    const w = leaveWindow('2026-08-12', '2026-08-12', halfDay)
+    return w.startsAt < straddle.endsAt && w.endsAt > straddle.startsAt
+  }
+  assert.ok(serverRefuses('morning') && serverRefuses('afternoon'), 'the straddle clashes with both halves')
+  assert.strictEqual(leaveCoversStart('morning', '12:30'), true)
+  assert.strictEqual(leaveCoversStart('afternoon', '12:30'), false, 'the hint stays out of the server’s way')
+
+  // ...and never the other way round: everything this refuses, the server would
+  // have refused too — otherwise the picker would be hiding a bookable slot
+  for (const halfDay of ['none', 'morning', 'afternoon'] as const) {
+    for (const t of ['00:00', '08:00', '12:59', '13:00', '18:00', '23:00']) {
+      if (!leaveCoversStart(halfDay, t)) continue
+      const w = leaveWindow('2026-08-12', '2026-08-12', halfDay)
+      const startsAt = new Date(`2026-08-12T${t}:00+08:00`)
+      const endsAt = new Date(startsAt.getTime() + 3_600_000)
+      assert.ok(
+        w.startsAt < endsAt && w.endsAt > startsAt,
+        `${halfDay} leave must really clash with a class at ${t}`,
+      )
+    }
+  }
 }
 
 // -- "today" is a Singapore day, not a UTC one --------------------------------

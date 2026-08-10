@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
-import { listLeaveCalendar } from '../../services/leave/requests'
+import { leaveViewer, listLeaveCalendar } from '../../services/leave/requests'
 
 /**
  * GET /api/v1/portal/leave-calendar?from=YYYY-MM-DD&to=YYYY-MM-DD
@@ -24,8 +24,7 @@ const app = new Hono().get(
   zValidator('query', z.object({ from: plainDate, to: plainDate })),
   async c => {
     const { from, to } = c.req.valid('query')
-    const row = c.get('staffRow')
-    const leave = await listLeaveCalendar({ staffUserId: row.id, role: row.role }, from, to)
+    const leave = await listLeaveCalendar(leaveViewer(c.get('staffRow')), from, to)
     return c.json({ leave })
   },
 )

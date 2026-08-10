@@ -11,9 +11,18 @@ import { rooms } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
 import { leaveRequests } from '../../db/schema/leave'
 import { leaveWindow, OCCUPYING_STATUSES, type LeaveHalfDay, type PlainDate } from '../leave/rules'
+import { sgFormat } from '../../lib/time'
 import { ConflictError } from '../../shared/errors'
 import { mergeRoster } from './roster-merge'
-import { readRoster, readRosters, type RosterEventKind, type RosterPatch, type RosterRef } from './roster'
+import {
+  exec,
+  readRoster,
+  readRosters,
+  type RosterEventKind,
+  type RosterPatch,
+  type RosterRef,
+  type Tx,
+} from './roster'
 
 /**
  * Occupancy: is a subject (a room, or an instructor) already taken during a
@@ -141,17 +150,8 @@ const KIND_LABEL: Record<EventKind, string> = {
 }
 
 // Studio time — the only clock an admin reads a schedule in.
-const sgDate = new Intl.DateTimeFormat('en-GB', {
-  timeZone: 'Asia/Singapore',
-  day: 'numeric',
-  month: 'short',
-})
-const sgTime = new Intl.DateTimeFormat('en-GB', {
-  timeZone: 'Asia/Singapore',
-  hour: '2-digit',
-  minute: '2-digit',
-  hour12: false,
-})
+const sgDate = sgFormat('en-GB', { day: 'numeric', month: 'short' })
+const sgTime = sgFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })
 
 /**
  * The days a leave conflict covers, as studio dates: "on 12 Aug", or "from 12
@@ -205,6 +205,7 @@ export async function findOccupancyConflicts(
   subject: OccupancySubject,
   window: TimeWindow,
   exclude?: EventRef,
+  tx?: Tx,
 ): Promise<OccupancyConflict[]> {
   const excludeId = (kind: EventKind) => (exclude?.kind === kind ? exclude.id : undefined)
   // SQL-side narrowing only: right time-ish, not itself. The rule is `occupies`.
@@ -235,7 +236,7 @@ export async function findOccupancyConflicts(
   // ---- classes ----
   collect(
     'class',
-    await db
+    await exec(tx)
       .select({
         id: classes.id,
         startsAt: classes.startsAt,
@@ -255,7 +256,7 @@ export async function findOccupancyConflicts(
   // ---- workshop days (no lifecycle of their own — the parent workshop's) ----
   collect(
     'workshop_day',
-    await db
+    await exec(tx)
       .select({
         id: workshopDays.id,
         startsAt: workshopDays.startsAt,
@@ -277,7 +278,7 @@ export async function findOccupancyConflicts(
   // ---- pt sessions ----
   collect(
     'pt_session',
-    await db
+    await exec(tx)
       .select({
         id: ptSessions.id,
         startsAt: ptSessions.startsAt,
@@ -297,7 +298,7 @@ export async function findOccupancyConflicts(
   // ---- corporate sessions ----
   collect(
     'corporate_session',
-    await db
+    await exec(tx)
       .select({
         id: corporateSessions.id,
         startsAt: corporateSessions.startsAt,
@@ -329,7 +330,7 @@ export async function findOccupancyConflicts(
   // ponytail: reads one instructor's pending+approved rows and lets the pure
   // rule decide — tens of rows. Narrow by date in SQL if that ever grows.
   const occupied: OccupancyConflict[] = leaveConflicts(
-    await db
+    await exec(tx)
       .select({
         id: leaveRequests.id,
         startDate: leaveRequests.startDate,
@@ -354,7 +355,7 @@ export async function findOccupancyConflicts(
   for (const kind of EVENT_KINDS) {
     const rows = found.filter(f => f.kind === kind)
     if (rows.length === 0) continue
-    const rosters = await readRosters(rosterKindFor[kind], [...new Set(rows.map(r => r.rosterId))])
+    const rosters = await readRosters(rosterKindFor[kind], [...new Set(rows.map(r => r.rosterId))], tx)
     for (const row of rows) {
       if (rosters.get(row.rosterId)?.some(e => e.instructorId === subject.id)) {
         occupied.push(strip(row))

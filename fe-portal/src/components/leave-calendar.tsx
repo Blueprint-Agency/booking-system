@@ -7,6 +7,7 @@ import { Button } from "@/components/ui";
 import { MonthCalendar, calendarChipClass, monthGridDays } from "@/components/month-calendar";
 import { useWorkspace } from "@/lib/workspace-context";
 import { localDay } from "@/lib/local-day";
+import { LEAVE_HALF_DAY_SHORT, LEAVE_TYPE_LABEL } from "@/lib/leave";
 
 /**
  * Who is away, for everybody on staff — the same widget on the admin leave page
@@ -31,12 +32,9 @@ interface ApiLeaveCalendarEntry {
     reason: string;
     decision_reason: string | null;
     decided_by: string | null;
-    medical_cert_key: string | null;
+    has_certificate: boolean;
   } | null;
 }
-
-const TYPE_LABEL = { annual: "Annual", medical: "Medical" } as const;
-const HALF_DAY_LABEL = { none: "", morning: " (AM)", afternoon: " (PM)" } as const;
 
 /** Approved is a settled absence; pending is a signal, not a fact — but it still
  *  blocks scheduling, so it is drawn, just visibly unsettled. */
@@ -50,7 +48,11 @@ function tooltip(e: ApiLeaveCalendarEntry): string {
     `${e.instructor.name} — ${e.status === "pending" ? "pending" : "on leave"}` +
     (e.half_day === "morning" ? " (morning)" : e.half_day === "afternoon" ? " (afternoon)" : "");
   if (!e.detail) return head;
-  const bits = [`${TYPE_LABEL[e.detail.type]} leave`, `${e.detail.days} day(s)`, e.detail.reason];
+  const bits = [
+    `${LEAVE_TYPE_LABEL[e.detail.type]} leave`,
+    `${e.detail.days} day(s)`,
+    e.detail.reason,
+  ];
   if (e.detail.decision_reason) bits.push(`Decision: ${e.detail.decision_reason}`);
   if (e.detail.decided_by) bits.push(`Decided by ${e.detail.decided_by}`);
   return `${head}\n${bits.join("\n")}`;
@@ -146,8 +148,8 @@ export function LeaveCalendar() {
                         may see "(AM)" without seeing what kind of leave it is. */}
                     {(e.detail || e.half_day !== "none") && (
                       <span className="ml-auto shrink-0 text-[10px] opacity-80">
-                        {e.detail ? TYPE_LABEL[e.detail.type] : ""}
-                        {HALF_DAY_LABEL[e.half_day]}
+                        {e.detail ? LEAVE_TYPE_LABEL[e.detail.type] : ""}
+                        {LEAVE_HALF_DAY_SHORT[e.half_day]}
                       </span>
                     )}
                   </li>

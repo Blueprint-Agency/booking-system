@@ -22,6 +22,7 @@ import { ConflictError, NotFoundError } from '../../shared/errors'
 import { env } from '../../env'
 import { sendTemplatedEmail } from '../notifications/send'
 import { splitName, joinName } from '../../lib/name'
+import { sgFormat } from '../../lib/time'
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -87,14 +88,8 @@ export async function lookupInvitationByToken(token: string): Promise<Invitation
   return { status: 'valid', email: inv.email, role }
 }
 
-function formatExpiresAt(d: Date): string {
-  // Human-readable SGT-friendly format for the email body.
-  return d.toLocaleString('en-SG', {
-    timeZone: 'Asia/Singapore',
-    dateStyle: 'long',
-    timeStyle: 'short',
-  })
-}
+// Human-readable SGT-friendly format for the email body.
+const expiresAtFormat = sgFormat('en-SG', { dateStyle: 'long', timeStyle: 'short' })
 
 /**
  * Create a pending admin invitation + send the invite email.
@@ -194,7 +189,7 @@ export async function inviteAdmin(input: InviteAdminInput): Promise<StaffInvitat
       // Canonical variables from services/notifications/variables.ts
       name: emailLocalPart(email),
       invite_url: buildSignUpUrl(email, invitation.token),
-      expires_at: formatExpiresAt(expiresAt),
+      expires_at: expiresAtFormat.format(expiresAt),
       // Friendly extras — unknown {{}} are left as-is per spec, but the
       // seeded template uses these for richer copy.
       invitee_email: email,
@@ -344,7 +339,7 @@ export async function resendInvitation(
     variables: {
       name: emailLocalPart(inv.email),
       invite_url: buildSignUpUrl(inv.email, inv.token),
-      expires_at: formatExpiresAt(expiresAt),
+      expires_at: expiresAtFormat.format(expiresAt),
       invitee_email: inv.email,
       inviter_name: inviter?.name ?? 'Yoga Sadhana',
       sign_up_url: buildSignUpUrl(inv.email, inv.token),

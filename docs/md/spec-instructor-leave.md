@@ -74,7 +74,7 @@ No money is involved anywhere. Instructors are paid per class, so a leave day pa
 41. As an admin, I want an email when an instructor submits a request, so that requests do not sit unread.
 42. As an admin, I want an email when an instructor cancels one of his classes, so that a class disappearing from the timetable is never a surprise.
 43. As an admin, I want an instructor's cancellation recorded as an instructor cancellation and not an admin one, so that the audit trail says who actually did it.
-44. As an admin, I want to set the yearly annual and medical allowances once for everyone, so that I am not maintaining a number per instructor.
+44. As a superadmin, I want to set the yearly annual and medical allowances once for everyone, so that I am not maintaining a number per instructor.
 45. As an admin, I want balances to reset at the start of a calendar year without anyone running anything, so that January does not need an administrative ritual.
 46. As an admin, I want last year's leave counts to stay as they were when I change this year's allowance, so that history does not move.
 47. As an admin, I want backdated medical leave to record the absence without disturbing classes that already happened, so that filing an MC late does not rewrite the past.
@@ -105,7 +105,7 @@ No money is involved anywhere. Instructors are paid per class, so a leave day pa
 
 ### Allowance and balance
 
-- The yearly allowances are two integer columns on the existing global policy singleton — one for annual, one for medical — defaulting to 14 each and edited on the existing policy screen. They are global; there is deliberately no per-instructor allowance.
+- The yearly allowances are two integer columns on the existing global policy singleton — one for annual, one for medical — defaulting to 14 each and edited on the existing policy screen, which is superadmin-only like every other setting on it. They are global; there is deliberately no per-instructor allowance.
 - The singleton's existing columns are all non-null with no defaults, so the migration must backfill the two new columns for the existing row.
 - **The balance is derived, never stored.** Remaining for a type in a year is the allowance minus the sum of days on that instructor's approved requests for that type and year. There is no counter column, so nothing can drift, no restore-on-cancel logic is needed, and the new year resets itself without a scheduled job.
 - Submission is refused when the requested days exceed the allowance minus approved *and pending* days. Counting pending is what stops two simultaneous requests from together exceeding the allowance.
@@ -148,7 +148,7 @@ This is the load-bearing decision, and it reuses machinery that already exists.
 ### Medical certificate upload
 
 - Optional, medical requests only. jpg, png or pdf, up to 5MB.
-- **This is the first object-storage write path in the backend.** The storage client exists and the presigner package is already a dependency, but no code uploads or signs anything today, and instructor photo upload is explicitly deferred.
+- **This is the first object-storage write path in the backend** — before it, the storage client existed and the presigner package was already a dependency, but nothing uploaded or signed. It is now implemented: the file is POSTed to the API, validated server-side, and written to the private bucket, with retrieval as a short-lived signed GET (see `backend-architecture.md` §6c). Instructor photo upload remains deferred.
 - The certificate goes to a **private** bucket, separate from the existing public one whose public base URL is configured for instructor and workshop imagery. A medical certificate must not be reachable by URL guessing.
 - Admins and superadmins read it through a short-lived signed URL generated on demand. Nobody else — including the instructor's colleagues — can retrieve it.
 - A new environment variable names the private bucket. Per the repo convention this must land in the backend environment schema, the deploy workflow's required-settings comment block, the workflow's env-file writer, and the example env file, in the same change. The existing storage credentials are optional in the schema; the private bucket name follows that pattern, and upload degrades to unavailable rather than crashing boot when it is unset.
@@ -170,7 +170,7 @@ This is the load-bearing decision, and it reuses machinery that already exists.
 
 - An admin leave page: the pending queue plus a calendar, reusing the existing schedule calendar component rather than introducing a second calendar implementation.
 - An instructor leave page: the two balances, the submission form, the instructor's own request history, and the same all-staff read-only calendar.
-- The two allowance numbers are added to the existing admin policy screen.
+- The two allowance numbers are added to the existing policy screen, which is superadmin-only — an admin approves leave but does not set the allowances.
 - A cancel action on the instructor's schedule screen, with a required reason and a confirmation that states how many members will be refunded.
 - The instructor picker on scheduling screens greys out and labels an instructor who is on leave for the chosen date. Before a date is chosen, nobody is greyed. The picker is a hint; the server refusal is the enforcement.
 
@@ -202,6 +202,7 @@ This is the load-bearing decision, and it reuses machinery that already exists.
 - Public-holiday and working-pattern awareness. The system has no roster of who works which days and is not gaining one.
 - An in-app cover or reassignment flow. Because clashes hard-block submission, the instructor clears them by cancelling; finding a replacement happens outside the system. This is a known cost of the hard-block decision — see Further Notes.
 - Bringing the workshop write paths into the occupancy module. It is the right fix and it would extend leave enforcement to workshops, but it is a change to existing scheduling behaviour and belongs with the roster and occupancy work, not here.
+- **Folding the admin schedule page's hand-rolled month grid into the shared calendar component.** The leave calendar reuses the shared component, but that page keeps its own month grid, entangled with its day and week views and its own event model on a very large file (`fe-portal/src/app/admin/schedule/**`). No defect is traced to the duplication. Left as it is deliberately: the risk of disturbing three working views on that file outweighs the tidiness, and it is recorded here so the next reader knows it was decided rather than missed.
 - Instructor cancellation of private sessions, corporate sessions and workshops.
 - A notice window or cancellation cap on instructor class cancellations.
 - Medical certificate retention, expiry or deletion policy.

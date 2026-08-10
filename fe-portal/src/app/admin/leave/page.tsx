@@ -14,8 +14,18 @@ import {
 } from "@/components/ui";
 import { LeaveCalendar } from "@/components/leave-calendar";
 import { useWorkspace } from "@/lib/workspace-context";
-import { ApiError, openSignedUrl } from "@/lib/api";
-import { formatDate, todayIso } from "@/lib/formatters";
+import { openSignedUrl } from "@/lib/api";
+import { todayIso } from "@/lib/formatters";
+import {
+  formatLeaveDayRange,
+  leaveErrorMessage,
+  LEAVE_HALF_DAY_SUFFIX,
+  LEAVE_STATUS_LABEL,
+  LEAVE_STATUS_TONE,
+  LEAVE_TYPE_LABEL,
+  type LeaveStatus,
+  type LeaveType,
+} from "@/lib/leave";
 
 /**
  * The leave queue — every instructor's requests, and the decision on each.
@@ -25,15 +35,6 @@ import { formatDate, todayIso } from "@/lib/formatters";
  * revoked is the server's call — the buttons below mirror those rules so the
  * common mistake is hard to make, and the server refuses regardless.
  */
-
-type LeaveType = "annual" | "medical";
-type LeaveStatus =
-  | "pending"
-  | "approved"
-  | "rejected"
-  | "withdrawn"
-  | "cancelled"
-  | "revoked";
 
 interface ApiAdminLeaveRequest {
   id: string;
@@ -52,49 +53,11 @@ interface ApiAdminLeaveRequest {
   has_certificate: boolean;
 }
 
-/** A half day is 0.5 in the days column; this says which half of it. */
-const HALF_DAY_SUFFIX = { none: "", morning: " · morning", afternoon: " · afternoon" } as const;
-
 type Filter = LeaveStatus | "all";
 
 const FILTERS: Filter[] = ["pending", "approved", "rejected", "all"];
 
-const FILTER_LABEL: Record<Filter, string> = {
-  pending: "Pending",
-  approved: "Approved",
-  rejected: "Rejected",
-  withdrawn: "Withdrawn",
-  cancelled: "Cancelled",
-  revoked: "Revoked",
-  all: "All",
-};
-
-const STATUS_TONE: Record<LeaveStatus, "warning" | "sage" | "error" | "neutral"> = {
-  pending: "warning",
-  approved: "sage",
-  rejected: "error",
-  withdrawn: "neutral",
-  cancelled: "neutral",
-  revoked: "error",
-};
-
-const TYPE_LABEL: Record<LeaveType, string> = { annual: "Annual", medical: "Medical" };
-
-/** The backend's refusals carry the sentence to show; fall back only if one doesn't. */
-function leaveErrorMessage(err: unknown, fallback: string): string {
-  if (err instanceof ApiError) {
-    const body = err.body as { message?: string } | null;
-    if (body && typeof body.message === "string") return body.message;
-    return `${fallback} (HTTP ${err.status}).`;
-  }
-  return fallback;
-}
-
-/** A plain `YYYY-MM-DD` — never parsed as an instant, so no timezone shifting. */
-const formatDay = (day: string) => formatDate(`${day}T00:00:00`, "d MMM yyyy");
-
-const dayRange = (from: string, to: string) =>
-  from === to ? formatDay(from) : `${formatDay(from)} – ${formatDay(to)}`;
+const FILTER_LABEL: Record<Filter, string> = { ...LEAVE_STATUS_LABEL, all: "All" };
 
 export default function AdminLeavePage() {
   const { api } = useWorkspace();
@@ -139,7 +102,7 @@ export default function AdminLeavePage() {
     if (
       action === "revoke" &&
       !confirm(
-        `Revoke ${r.instructor.name}'s approved leave on ${dayRange(r.start_date, r.end_date)}? The days go back into their balance.`,
+        `Revoke ${r.instructor.name}'s approved leave on ${formatLeaveDayRange(r.start_date, r.end_date)}? The days go back into their balance.`,
       )
     )
       return;
@@ -258,8 +221,8 @@ export default function AdminLeavePage() {
                   </td>
                   <td className="px-3 py-2.5">
                     <span className="text-ink">
-                      {dayRange(r.start_date, r.end_date)}
-                      {HALF_DAY_SUFFIX[r.half_day]}
+                      {formatLeaveDayRange(r.start_date, r.end_date)}
+                      {LEAVE_HALF_DAY_SUFFIX[r.half_day]}
                     </span>
                     <p className="mt-0.5 max-w-xs text-xs text-muted">{r.reason}</p>
                     {r.decision_reason && (
@@ -269,7 +232,7 @@ export default function AdminLeavePage() {
                     )}
                   </td>
                   <td className="px-3 py-2.5 text-muted">
-                    {TYPE_LABEL[r.type]}
+                    {LEAVE_TYPE_LABEL[r.type]}
                     {r.has_certificate && (
                       <button
                         type="button"
@@ -282,8 +245,8 @@ export default function AdminLeavePage() {
                   </td>
                   <td className="px-3 py-2.5 tabular-nums text-muted">{r.days}</td>
                   <td className="px-3 py-2.5">
-                    <Badge tone={STATUS_TONE[r.status]}>
-                      {r.status[0].toUpperCase() + r.status.slice(1)}
+                    <Badge tone={LEAVE_STATUS_TONE[r.status]}>
+                      {LEAVE_STATUS_LABEL[r.status]}
                     </Badge>
                   </td>
                   <td className="px-3 py-2.5 text-right">
@@ -326,7 +289,7 @@ export default function AdminLeavePage() {
         title="Reject leave request"
         description={
           rejecting
-            ? `${rejecting.instructor.name} — ${dayRange(rejecting.start_date, rejecting.end_date)}`
+            ? `${rejecting.instructor.name} — ${formatLeaveDayRange(rejecting.start_date, rejecting.end_date)}`
             : undefined
         }
       >

@@ -14,8 +14,19 @@ import {
 } from "@/components/ui";
 import { LeaveCalendar } from "@/components/leave-calendar";
 import { useWorkspace } from "@/lib/workspace-context";
-import { ApiError, openSignedUrl } from "@/lib/api";
-import { formatDate, todayIso } from "@/lib/formatters";
+import { openSignedUrl } from "@/lib/api";
+import { todayIso } from "@/lib/formatters";
+import {
+  formatLeaveDayRange,
+  leaveErrorMessage,
+  LEAVE_HALF_DAY_SUFFIX,
+  LEAVE_STATUS_LABEL,
+  LEAVE_STATUS_TONE,
+  LEAVE_TYPE_LABEL,
+  type HalfDay,
+  type LeaveStatus,
+  type LeaveType,
+} from "@/lib/leave";
 
 /**
  * My leave — both balances, the submission form, and my own request history.
@@ -26,15 +37,6 @@ import { formatDate, todayIso } from "@/lib/formatters";
  * so the common mistake is hard to make, not the enforcement.
  */
 
-type LeaveType = "annual" | "medical";
-type LeaveStatus =
-  | "pending"
-  | "approved"
-  | "rejected"
-  | "withdrawn"
-  | "cancelled"
-  | "revoked";
-
 interface ApiBalance {
   type: LeaveType;
   allowance: number;
@@ -42,8 +44,6 @@ interface ApiBalance {
   pending_days: number;
   remaining_days: number;
 }
-
-type HalfDay = "none" | "morning" | "afternoon";
 
 interface ApiLeaveRequest {
   id: string;
@@ -71,51 +71,10 @@ interface ApiLeaveResponse {
   requests: ApiLeaveRequest[];
 }
 
-const TYPE_LABEL: Record<LeaveType, string> = {
-  annual: "Annual",
-  medical: "Medical",
-};
-
-/** Half days split the day at 1pm Singapore time — the same boundary the
- *  backend enforces when it decides what a booking clashes with. */
-const HALF_DAY_SUFFIX: Record<HalfDay, string> = {
-  none: "",
-  morning: " · morning",
-  afternoon: " · afternoon",
-};
-
-const STATUS_TONE: Record<LeaveStatus, "warning" | "sage" | "error" | "neutral"> = {
-  pending: "warning",
-  approved: "sage",
-  rejected: "error",
-  withdrawn: "neutral",
-  cancelled: "neutral",
-  revoked: "error",
-};
-
-/** The backend's refusals carry the sentence to show; fall back only if one doesn't. */
-function leaveErrorMessage(err: unknown, fallback: string): string {
-  if (err instanceof ApiError) {
-    const body = err.body as { message?: string } | null;
-    if (body && typeof body.message === "string") return body.message;
-    return `${fallback} (HTTP ${err.status}).`;
-  }
-  return fallback;
-}
-
-/** A plain `YYYY-MM-DD` — never parsed as an instant, so no timezone shifting. */
-function formatDay(day: string): string {
-  return formatDate(`${day}T00:00:00`, "d MMM yyyy");
-}
-
-function dayRange(from: string, to: string): string {
-  return from === to ? formatDay(from) : `${formatDay(from)} – ${formatDay(to)}`;
-}
-
 function BalanceCard({ balance }: { balance: ApiBalance }) {
   return (
     <div className="rounded-xl border border-border bg-card p-4 shadow-soft">
-      <div className="text-xs text-muted">{TYPE_LABEL[balance.type]} leave</div>
+      <div className="text-xs text-muted">{LEAVE_TYPE_LABEL[balance.type]} leave</div>
       <div className="mt-1 flex items-baseline gap-1.5">
         <span className="text-2xl font-semibold tabular-nums text-ink">
           {balance.remaining_days}
@@ -424,8 +383,8 @@ export default function InstructorLeavePage() {
                     <tr key={r.id} className="align-top hover:bg-warm/40">
                       <td className="px-3 py-2.5">
                         <span className="text-ink">
-                          {dayRange(r.start_date, r.end_date)}
-                          {HALF_DAY_SUFFIX[r.half_day]}
+                          {formatLeaveDayRange(r.start_date, r.end_date)}
+                          {LEAVE_HALF_DAY_SUFFIX[r.half_day]}
                         </span>
                         <p className="mt-0.5 max-w-xs truncate text-xs text-muted">{r.reason}</p>
                         {r.decision_reason && (
@@ -435,7 +394,7 @@ export default function InstructorLeavePage() {
                         )}
                       </td>
                       <td className="px-3 py-2.5 text-muted">
-                        {TYPE_LABEL[r.type]}
+                        {LEAVE_TYPE_LABEL[r.type]}
                         {r.type === "medical" && (
                           <button
                             type="button"
@@ -453,8 +412,8 @@ export default function InstructorLeavePage() {
                       </td>
                       <td className="px-3 py-2.5 tabular-nums text-muted">{r.days}</td>
                       <td className="px-3 py-2.5">
-                        <Badge tone={STATUS_TONE[r.status]}>
-                          {r.status[0].toUpperCase() + r.status.slice(1)}
+                        <Badge tone={LEAVE_STATUS_TONE[r.status]}>
+                          {LEAVE_STATUS_LABEL[r.status]}
                         </Badge>
                       </td>
                       <td className="px-3 py-2.5 text-right">

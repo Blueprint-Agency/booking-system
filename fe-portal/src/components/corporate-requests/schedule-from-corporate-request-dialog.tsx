@@ -187,7 +187,12 @@ export function ScheduleFromCorporateRequestDialog({
             >
               <option value="">Select…</option>
               {instructors.map((i) => (
-                <InstructorOption key={i.id} instructor={i} onLeave={onLeave} />
+                <InstructorOption
+                  key={i.id}
+                  instructor={i}
+                  onLeave={onLeave}
+                  startTime={startTime}
+                />
               ))}
             </select>
           </div>
@@ -310,7 +315,12 @@ export function ScheduleFromCorporateRequestDialog({
                     : "+ Add another"}
                 </option>
                 {availableForSupporting.map((i) => (
-                  <InstructorOption key={i.id} instructor={i} onLeave={onLeave} />
+                  <InstructorOption
+                    key={i.id}
+                    instructor={i}
+                    onLeave={onLeave}
+                    startTime={startTime}
+                  />
                 ))}
               </select>
             )}

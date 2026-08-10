@@ -22,11 +22,13 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   admin_cancel_workshop: ['client_name', 'workshop_name', 'refund_sgd'],
   // Goes to admins, not clients — the instructor cancelled their own class.
   instructor_cancel_class: ['class_name', 'date', 'instructor_name', 'reason', 'refunded_count'],
-  // Leave: the first goes to every admin, the other two back to the instructor.
+  // Leave: the first goes to every admin, the other three back to the instructor.
   // `reason` is the instructor's on submission and the admin's on rejection.
   leave_request_submitted: ['instructor_name', 'leave_type', 'dates', 'days', 'reason'],
   leave_approved: ['instructor_name', 'leave_type', 'dates', 'days'],
   leave_rejected: ['instructor_name', 'leave_type', 'dates', 'days', 'reason'],
+  // A revocation undoes an approval, so it names who did it and when.
+  leave_revoked: ['instructor_name', 'leave_type', 'dates', 'days', 'revoked_by', 'revoked_at'],
   package_purchase_confirmed: ['client_name', 'package_name', 'credits_or_sessions', 'expires_at', 'receipt_url'],
   credit_expiry_reminder: ['client_name', 'package_name', 'expires_at', 'credits_remaining'],
   instructor_invite: ['name', 'invite_url', 'expires_at'],

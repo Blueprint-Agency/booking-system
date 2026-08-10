@@ -31,6 +31,7 @@ export function SupportingInstructorsField({
   value,
   onChange,
   onLeave,
+  startTime,
   disabled = false,
   saving = false,
 }: {
@@ -41,6 +42,9 @@ export function SupportingInstructorsField({
   /** Who is away on the chosen date — greyed and labelled. A hint; see
    *  `instructor-leave`. Omitted (or empty) before a date is picked. */
   onLeave: InstructorLeave;
+  /** The class's intended start, `HH:MM` — sharpens a half-day absence from a
+   *  label into a greyed option. Omitted where the form has no time. */
+  startTime?: string;
   /** The event can't be edited at all (cancelled) — the picker is hidden. */
   disabled?: boolean;
   /** A save is in flight — the fields are frozen but stay visible. */
@@ -121,7 +125,12 @@ export function SupportingInstructorsField({
               {value.length === 0 ? "+ Add supporting instructor" : "+ Add another"}
             </option>
             {available.map((i) => (
-              <InstructorOption key={i.id} instructor={i} onLeave={onLeave} />
+              <InstructorOption
+                key={i.id}
+                instructor={i}
+                onLeave={onLeave}
+                startTime={startTime}
+              />
             ))}
           </select>
         )}

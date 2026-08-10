@@ -4,6 +4,7 @@ import { z } from 'zod'
 import * as timetable from '../../../services/schedule/timetable'
 import * as classesSvc from '../../../services/schedule/classes'
 import { cancelClass } from '../../../services/bookings/cancel-class'
+import { sgDayWindow, sgToday } from '../../../lib/time'
 
 /**
  * Instructor schedule surface.
@@ -76,15 +77,6 @@ function entryRow(e: timetable.ScheduleEntryRow) {
   }
 }
 
-// Today's [from, to) window in Asia/Singapore (UTC+8, no DST) as UTC instants.
-function sgtTodayRange(now: Date): { from: Date; to: Date } {
-  const sgt = new Date(now.getTime() + 8 * 3600_000)
-  const startUtc = new Date(
-    Date.UTC(sgt.getUTCFullYear(), sgt.getUTCMonth(), sgt.getUTCDate(), 0, 0, 0) - 8 * 3600_000,
-  )
-  return { from: startUtc, to: new Date(startUtc.getTime() + 24 * 3600_000) }
-}
-
 const app = new Hono()
   .get('/', zValidator('query', listQuery), async c => {
     const q = c.req.valid('query')
@@ -99,7 +91,8 @@ const app = new Hono()
   })
   .get('/today', async c => {
     const self = c.get('staffUserId')
-    const { from, to } = sgtTodayRange(new Date())
+    // Today's [from, to) window in studio time, as UTC instants.
+    const { startsAt: from, endsAt: to } = sgDayWindow(sgToday(new Date()))
     const entries = await timetable.listSchedule({ instructorId: self, from, to })
     return c.json({ entries: entries.map(entryRow) })
   })

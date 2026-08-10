@@ -23,7 +23,7 @@ The single backend serves **both** `fe-portal` and `fe-client`. `fe-portal` is t
 | Database | **Postgres** |
 | Validation | **Zod** |
 | Auth | **Clerk** — two applications: client app + staff app (per §15b session isolation) |
-| File storage | **Cloudflare R2** (S3-compatible via `@aws-sdk/client-s3` + presigned uploads) |
+| File storage | **Cloudflare R2** (S3-compatible via `@aws-sdk/client-s3`) — presigned PUT for public imagery, server-side upload + signed GET for private documents (§6c) |
 | Background jobs | **`node-cron`** for non-critical periodic jobs (reminders, expiry sweeps); **BullMQ** (Redis-backed) added when the durable refund flow lands. Until then, no Redis dependency. |
 | Email | **SMTP via Nodemailer** (transactional, 22 templates per §17). Provider-agnostic — host/port/credentials via env vars (e.g. AWS SES SMTP, Gmail relay, Mailgun SMTP, self-hosted Postfix). |
 | Payments | **Stripe** (Payment Intents + Refund API; no Subscriptions in v1) |
@@ -192,7 +192,7 @@ be/
     ├── lib/
     │   ├── clerk.ts                   # Two Clerk SDK instances (client + staff app keys)
     │   ├── stripe.ts                  # Stripe SDK + signed webhook verification
-    │   ├── r2.ts                      # S3 client + presigned URL helpers
+    │   ├── r2.ts                      # S3 client + private-bucket put + signed-GET helpers
     │   ├── mailer.ts                  # Nodemailer SMTP transport (host/port/auth from env) + send wrapper
     │   ├── time.ts                    # SGT (`Asia/Singapore`) conversions
     │   ├── richtext.ts                # Sanitise/render rich text bodies (waiver, workshop description, email)
@@ -931,8 +931,12 @@ Idempotency keys on `stripe-refund` jobs (booking_id) prevent double refund on r
 ### 6c. Cloudflare R2
 
 - S3-compatible. `@aws-sdk/client-s3` with R2 endpoint and credentials.
-- **Buckets:** `yoga-sadhana-public` (workshop covers, instructor photos — served via R2 public URL); `yoga-sadhana-private` (reserved, unused in v1).
-- **Upload flow:** backend issues presigned PUT URL with content-type and 5 MB cap → fe uploads directly → fe POSTs the returned key back to backend, backend stores in `instructors.photo_r2_key` / `workshops.cover_r2_key` / `workshop_images.r2_key`.
+- **Buckets:** `yoga-sadhana-public` (workshop covers, instructor photos — served via R2 public URL); `yoga-sadhana-private` (`R2_PRIVATE_BUCKET_NAME`, optional in env like the rest of the storage settings) — **in use**, holding instructor medical certificates and nothing else so far. It deliberately has no public base URL to pair with it.
+- **Two upload flows, and the bucket decides which one applies.** Public imagery may be uploaded straight from the browser; anything landing in the private bucket goes through the API. Neither flow is the general case — do not extend one to cover the other.
+- **Public imagery — presigned PUT (intended, not yet built).** Backend issues presigned PUT URL with content-type and 5 MB cap → fe uploads directly → fe POSTs the returned key back to backend, backend stores in `instructors.photo_r2_key` / `workshops.cover_r2_key` / `workshop_images.r2_key`. No code writes these keys yet; instructor photo upload is deferred (`spec-instructor-leave.md` Out of Scope).
+- **Private documents — server-side upload (implemented).** The file is POSTed to the API as multipart, field `file` (`POST /portal/instructor/leave/:id/certificate`) → Hono's `bodyLimit` refuses an oversized body before it is buffered at all → the service validates the declared content type and the *real* byte length against the allow-list (`image/jpeg`, `image/png`, `application/pdf`; 5 MB) → `lib/r2.ts#putPrivateObject` writes the object → the deterministic key `medical-certificates/{instructorId}/{requestId}.{ext}` is written to `leave_requests.medical_cert_r2_key` only once the object is safely in the bucket.
+  - **Why this one is not presigned.** Type and size are checked at a trust boundary the server controls rather than announced to a browser, and a bucket holding health documents then needs no cross-origin configuration.
+- **Private reads — short-lived signed GET.** `lib/r2.ts#signedPrivateUrl` mints a 5-minute signed URL per request, generated on demand and never stored, after the service has decided the caller may see the row (the owning instructor, or any admin/superadmin). The key itself is never serialised to any client — read paths report only whether a certificate exists.
 
 ### 6d. SMTP (Nodemailer)
 

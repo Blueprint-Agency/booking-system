@@ -199,7 +199,7 @@ const INSTRUCTOR_CANCEL_CLASS_BODY = `<!DOCTYPE html>
 </html>`
 
 /**
- * The three leave emails. They share a shape — a heading and a few lines — so
+ * The four leave emails. They share a shape — a heading and a few lines — so
  * they share a builder rather than three near-identical HTML blobs. The
  * placeholder body is no use here: every one of them exists to carry the dates
  * and (for a rejection) the reason.
@@ -246,6 +246,14 @@ const LEAVE_REJECTED_BODY = leaveBody('Your leave request was rejected', [
   'Those days are back in your balance if you want to request different dates.',
 ])
 
+/** The one that reverses an earlier email, so it says plainly that the leave no
+ *  longer stands, who took it back and when. */
+const LEAVE_REVOKED_BODY = leaveBody('Your approved leave has been revoked', [
+  'Hi {{instructor_name}}, your {{leave_type}} leave on <strong>{{dates}}</strong> ({{days}} day(s)) no longer stands.',
+  'It was revoked by <strong>{{revoked_by}}</strong> on {{revoked_at}}. Please treat those dates as normal working days — you may be scheduled for classes on them again.',
+  'Those days are back in your balance. Speak to {{revoked_by}} if this is not what you expected.',
+])
+
 const TEMPLATES: Array<{ slug: string; subject: string; bodyHtml?: string }> = [
   { slug: 'welcome',                            subject: 'Welcome to Yoga Sadhana' },
   {
@@ -287,6 +295,11 @@ const TEMPLATES: Array<{ slug: string; subject: string; bodyHtml?: string }> = [
     slug: 'leave_rejected',
     subject: 'Your leave request for {{dates}} was rejected',
     bodyHtml: LEAVE_REJECTED_BODY,
+  },
+  {
+    slug: 'leave_revoked',
+    subject: 'Your approved leave on {{dates}} was revoked',
+    bodyHtml: LEAVE_REVOKED_BODY,
   },
   { slug: 'package_purchase_confirmed',         subject: 'Your package purchase is confirmed' },
   { slug: 'credit_expiry_reminder',             subject: 'Your credits are expiring soon' },

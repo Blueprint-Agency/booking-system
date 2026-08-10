@@ -6,8 +6,8 @@ import { instructors } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
 import { readPolicy } from '../policy/update'
 import { conflictMessage, findOccupancyConflicts, leaveDaysPhrase } from '../schedule/occupancy'
-import { sendTemplatedEmail } from '../notifications/send'
-import { logger } from '../../shared/logger'
+import { emailEveryAdmin, sendTemplatedEmail } from '../notifications/send'
+import { reportError } from '../../shared/logger'
 import {
   AppError,
   BadRequestError,
@@ -16,10 +16,11 @@ import {
   NotFoundError,
 } from '../../shared/errors'
 import { R2_PRIVATE_BUCKET, putPrivateObject, signedPrivateUrl } from '../../lib/r2'
+import { sgFormat } from '../../lib/time'
 import * as rules from './rules'
 
 /**
- * Leave requests an instructor files for himself.
+ * Leave requests an instructor files for themselves.
  *
  * Every rule lives in `./rules.ts`; this module only fetches what those rules
  * need and writes the row. The one rule it can't ask a pure function for is the
@@ -78,10 +79,13 @@ function balances(
 }
 
 /** The instructor's own page: both balances for `leaveYear`, plus their whole
- *  history (all years — the balances are the year-scoped part). */
+ *  history (all years — the balances are the year-scoped part).
+ *
+ *  Which year "no year" means is a domain question, so it is answered here and
+ *  not in the route: the leave year the Singapore-local today falls in. */
 export async function getOwnLeave(
   instructorId: string,
-  leaveYear: number,
+  leaveYear = rules.leaveYearOf(rules.sgToday(new Date())),
 ): Promise<{ leave_year: number; balances: LeaveBalance[]; requests: LeaveRequestRow[] }> {
   const rows = await db
     .select()
@@ -105,84 +109,110 @@ export interface SubmitLeaveInput {
   reason: string
 }
 
+/**
+ * The balance read, the clash check and the insert are one transaction,
+ * serialised per instructor by locking that instructor's OWN row as the first
+ * statement in it. Without that, two requests that each fit the remaining
+ * balance can both read the same "before" and both be accepted — the very
+ * over-commitment "pending counts against your balance" exists to stop.
+ *
+ * The lock is on `instructors`, not on the leave rows: what has to be kept out
+ * is a row that does not exist yet, and an absent row cannot be locked. It is
+ * one row per instructor, so two instructors never wait on each other.
+ */
 export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<LeaveRequestRow> {
-  // Leave is an instructor thing: admins and superadmins have no instructors row
-  // and their absence has no effect on the schedule.
-  const [isInstructor] = await db
-    .select({ id: instructors.staffUserId })
-    .from(instructors)
-    .where(eq(instructors.staffUserId, input.instructorId))
-    .limit(1)
-  if (!isInstructor) throw new ForbiddenError('not_an_instructor')
-
   const now = new Date()
   const leaveYear = rules.leaveYearOf(input.startDate)
+  const halfDay = input.halfDay ?? 'none'
+  // Global policy, not this instructor's — read before the lock is taken so
+  // nothing but the instructor's own rows is held under it.
   const allowance = await allowances()
 
-  // The query narrows to this instructor and leave year; which statuses and
-  // which type count is the pure rule's business.
-  const existing = await db
-    .select()
-    .from(leaveRequests)
-    .where(and(eq(leaveRequests.instructorId, input.instructorId), eq(leaveRequests.leaveYear, leaveYear)))
+  const row = await db.transaction(async tx => {
+    // FIRST statement, and the reason there is a transaction at all. Leave is
+    // also an instructor thing: admins and superadmins have no instructors row
+    // and their absence has no effect on the schedule, so the same select is
+    // the permission check.
+    const [isInstructor] = await tx
+      .select({ id: instructors.staffUserId })
+      .from(instructors)
+      .where(eq(instructors.staffUserId, input.instructorId))
+      .for('update')
+      .limit(1)
+    if (!isInstructor) throw new ForbiddenError('not_an_instructor')
 
-  const halfDay = input.halfDay ?? 'none'
-  const check = rules.checkLeaveSubmission({
-    type: input.type,
-    startDate: input.startDate,
-    endDate: input.endDate,
-    halfDay,
-    today: rules.sgToday(now),
-    allowance: allowance[input.type],
-    committedDays: rules.sumLeaveDays(existing.map(toDaysRow), {
-      type: input.type,
-      leaveYear,
-      statuses: rules.COMMITTED_STATUSES,
-    }),
-  })
-  if (!check.ok) throw new BadRequestError(check.code, { message: check.message })
+    // The query narrows to this instructor and leave year; which statuses and
+    // which type count is the pure rule's business.
+    const existing = await tx
+      .select()
+      .from(leaveRequests)
+      .where(and(eq(leaveRequests.instructorId, input.instructorId), eq(leaveRequests.leaveYear, leaveYear)))
 
-  // The clash rule, in reverse: ask occupancy what this instructor is already on
-  // across the requested days (only the requested HALF, if it is a half day),
-  // and keep only what has yet to finish.
-  const conflicts = rules.futureConflicts(
-    await findOccupancyConflicts(
-      { kind: 'instructor', id: input.instructorId },
-      rules.leaveWindow(input.startDate, input.endDate, halfDay),
-    ),
-    now,
-  )
-  if (conflicts.length > 0) {
-    // Leave occupies an instructor, so his OWN pending/approved leave comes back
-    // here too. That is not a booking to cancel, so it gets its own sentence —
-    // and a real event, being the actionable one, wins when both turn up.
-    const events = conflicts.filter(c => c.kind !== 'leave')
-    const first = conflicts[0]!
-    throw new ConflictError('leave_clash', {
-      message:
-        events.length > 0
-          ? `${conflictMessage('Your schedule', events)} Cancel it before requesting leave.`
-          : `You already have leave ${leaveDaysPhrase(first)}. Withdraw or cancel that ` +
-            `request before filing another over the same dates.`,
-      conflicts,
-    })
-  }
-
-  const [row] = await db
-    .insert(leaveRequests)
-    .values({
-      instructorId: input.instructorId,
+    const check = rules.checkLeaveSubmission({
       type: input.type,
       startDate: input.startDate,
       endDate: input.endDate,
       halfDay,
-      days: check.days.toFixed(1),
-      leaveYear: check.leaveYear,
-      reason: input.reason,
+      today: rules.sgToday(now),
+      allowance: allowance[input.type],
+      committedDays: rules.sumLeaveDays(existing.map(toDaysRow), {
+        type: input.type,
+        leaveYear,
+        statuses: rules.COMMITTED_STATUSES,
+      }),
     })
-    .returning()
-  if (!row) throw new BadRequestError('leave_request_not_created')
+    if (!check.ok) throw new BadRequestError(check.code, { message: check.message })
 
+    // The clash rule, in reverse: ask occupancy what this instructor is already on
+    // across the requested days (only the requested HALF, if it is a half day),
+    // and keep only what has yet to finish.
+    // Runs on THIS transaction's connection, not the pool. A transaction that
+    // awaits a second connection deadlocks the pool once enough of them are in
+    // flight at once, and a wedged pool takes down every route, not just leave.
+    const conflicts = rules.futureConflicts(
+      await findOccupancyConflicts(
+        { kind: 'instructor', id: input.instructorId },
+        rules.leaveWindow(input.startDate, input.endDate, halfDay),
+        undefined,
+        tx,
+      ),
+      now,
+    )
+    if (conflicts.length > 0) {
+      // Leave occupies an instructor, so their OWN pending/approved leave comes back
+      // here too. That is not a booking to cancel, so it gets its own sentence —
+      // and a real event, being the actionable one, wins when both turn up.
+      const events = conflicts.filter(c => c.kind !== 'leave')
+      const first = conflicts[0]!
+      throw new ConflictError('leave_clash', {
+        message:
+          events.length > 0
+            ? `${conflictMessage('Your schedule', events)} Cancel it before requesting leave.`
+            : `You already have leave ${leaveDaysPhrase(first)}. Withdraw or cancel that ` +
+              `request before filing another over the same dates.`,
+        conflicts,
+      })
+    }
+
+    const [inserted] = await tx
+      .insert(leaveRequests)
+      .values({
+        instructorId: input.instructorId,
+        type: input.type,
+        startDate: input.startDate,
+        endDate: input.endDate,
+        halfDay,
+        days: check.days.toFixed(1),
+        leaveYear: check.leaveYear,
+        reason: input.reason,
+      })
+      .returning()
+    if (!inserted) throw new BadRequestError('leave_request_not_created')
+    return inserted
+  })
+
+  // Outside the transaction on purpose: the lock is released before anything
+  // touches SMTP.
   await emailAdminsOfSubmission(row)
   return row
 }
@@ -232,7 +262,7 @@ function requirePrivateBucket(): void {
 /**
  * Attach (or replace) the certificate on the instructor's OWN medical request.
  *
- * The row is fetched by id AND instructor, so there is no request but his own to
+ * The row is fetched by id AND instructor, so there is no request but their own to
  * attach to. What the file may be is `rules.checkMedicalCertificate`'s call, and
  * the key is written only after the object is safely in the bucket — a failed
  * upload leaves the row pointing at nothing rather than at a missing object.
@@ -274,7 +304,7 @@ export async function attachMedicalCertificate(input: {
  * A short-lived signed GET for one certificate.
  *
  * Same visibility rule as the calendar read (`listLeaveCalendar`): an admin or
- * superadmin sees any of them, an instructor only his own. The ownership check
+ * superadmin sees any of them, an instructor only their own. The ownership check
  * comes BEFORE the "is there one" check, so a colleague cannot even learn
  * whether a certificate exists.
  */
@@ -343,14 +373,16 @@ export interface LeaveCalendarEntry {
   half_day: LeaveRequestRow['halfDay']
   /** Only ever `pending` or `approved` — see the query below. */
   status: rules.LeaveStatus
-  /** Admins and superadmins on every row; an instructor on his own rows only. */
+  /** Admins and superadmins on every row; an instructor on their own rows only. */
   detail: {
     type: rules.LeaveType
     days: number
     reason: string
     decision_reason: string | null
     decided_by: string | null
-    medical_cert_key: string | null
+    /** Whether there is a certificate, never its key — same as the admin queue.
+     *  Reading one goes through `medicalCertificateUrl`, which checks ownership. */
+    has_certificate: boolean
   } | null
 }
 
@@ -358,6 +390,13 @@ export interface LeaveCalendarViewer {
   staffUserId: string
   role: 'superadmin' | 'admin' | 'instructor'
 }
+
+/** The caller as every leave read wants him. Assembled here, next to the type,
+ *  so the three leave routes don't each rebuild the same pair of fields. */
+export const leaveViewer = (staff: typeof staffUsers.$inferSelect): LeaveCalendarViewer => ({
+  staffUserId: staff.id,
+  role: staff.role,
+})
 
 /**
  * Who is away between `from` and `to`, inclusive.
@@ -408,7 +447,7 @@ export async function listLeaveCalendar(
             reason: row.reason,
             decision_reason: row.decisionReason,
             decided_by: deciderName,
-            medical_cert_key: row.medicalCertR2Key,
+            has_certificate: row.medicalCertR2Key !== null,
           }
         : null,
   }))
@@ -451,22 +490,37 @@ export async function decideLeaveRequest(input: DecideLeaveInput): Promise<Leave
   if (!check.ok) throw new ConflictError(check.code, { message: check.message })
 
   const now = new Date()
+  const revoking = input.action === 'revoke'
   const [updated] = await db
     .update(leaveRequests)
-    .set({
-      status: check.status,
-      decisionReason: reason || null,
-      decidedByStaffId: input.actorStaffId,
-      decidedAt: now,
-      updatedAt: now,
-    })
+    .set(
+      // A revocation reverses a decision; it does not replace it. Overwriting
+      // the decision columns would erase who approved the leave and when, which
+      // is the half of the story a reversal makes MORE worth keeping. Who
+      // revoked it is in the audit log, which already records every leave
+      // transition (middleware/audit.ts) — so no column, and no migration.
+      revoking
+        ? { status: check.status, updatedAt: now }
+        : {
+            status: check.status,
+            decisionReason: reason || null,
+            decidedByStaffId: input.actorStaffId,
+            decidedAt: now,
+            updatedAt: now,
+          },
+    )
     .where(eq(leaveRequests.id, input.id))
     .returning()
   if (!updated) throw new NotFoundError('leave_request_not_found')
 
-  // Approval and rejection are told to the instructor; a revoke is a correction
-  // an admin makes by hand and is not part of the spec's notification set.
-  if (input.action !== 'revoke') await emailInstructorOfDecision(updated, reason)
+  // All three transitions are told to the instructor. A silent revocation is the
+  // one way this feature can leave someone expecting a day off that no longer
+  // exists, so it names who took it back and when.
+  await emailInstructorOfDecision(
+    updated,
+    reason,
+    revoking ? { staffId: input.actorStaffId, at: now } : undefined,
+  )
   return updated
 }
 
@@ -474,7 +528,10 @@ export async function decideLeaveRequest(input: DecideLeaveInput): Promise<Leave
 //
 // Both senders run AFTER the row is written and never throw: a request that has
 // already been filed or decided must not fail because SMTP — or a missing
-// template row on an unseeded database — misbehaved.
+// template row on an unseeded database — misbehaved. What they DO do is report
+// the failure (shared/logger.ts), so a swallowed send is never a silent one. The
+// admin one gets both guarantees from `emailEveryAdmin`, which also owns who
+// "the admins" are.
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
@@ -488,53 +545,46 @@ const HALF_DAY_LABEL: Record<LeaveRequestRow['halfDay'], string> = {
   afternoon: ' (afternoon)',
 }
 
-/** A half day says which half, so an admin isn't approving a day he thinks is whole. */
+/** A half day says which half, so an admin isn't approving a day they think is whole. */
 const formatDates = (r: LeaveRequestRow) =>
   (r.startDate === r.endDate
     ? formatDay(r.startDate)
     : `${formatDay(r.startDate)} – ${formatDay(r.endDate)}`) + HALF_DAY_LABEL[r.halfDay]
 
-async function instructorName(instructorId: string): Promise<string> {
+async function staffName(staffUserId: string, fallback: string): Promise<string> {
   const [staff] = await db
     .select({ name: staffUsers.name })
     .from(staffUsers)
-    .where(eq(staffUsers.id, instructorId))
+    .where(eq(staffUsers.id, staffUserId))
     .limit(1)
-  return staff?.name ?? 'An instructor'
+  return staff?.name ?? fallback
 }
 
 async function emailAdminsOfSubmission(row: LeaveRequestRow): Promise<void> {
-  try {
-    const name = await instructorName(row.instructorId)
-    const admins = await db
-      .select({ id: staffUsers.id, email: staffUsers.email })
-      .from(staffUsers)
-      .where(
-        and(inArray(staffUsers.role, ['admin', 'superadmin']), eq(staffUsers.status, 'active')),
-      )
-
-    for (const admin of admins) {
-      await sendTemplatedEmail({
-        slug: 'leave_request_submitted',
-        recipient: { email: admin.email, userId: admin.id, userKind: 'staff' },
-        variables: {
-          instructor_name: name,
-          leave_type: row.type,
-          dates: formatDates(row),
-          days: String(Number(row.days)),
-          reason: row.reason,
-        },
-      })
-    }
-  } catch (err) {
-    logger.error(
-      { err: err instanceof Error ? err.message : String(err), leaveRequestId: row.id },
-      'leave request: admin notification failed',
-    )
-  }
+  await emailEveryAdmin(
+    'leave_request_submitted',
+    async () => ({
+      instructor_name: await staffName(row.instructorId, 'An instructor'),
+      leave_type: row.type,
+      dates: formatDates(row),
+      days: String(Number(row.days)),
+      reason: row.reason,
+    }),
+    { leaveRequestId: row.id },
+  )
 }
 
-async function emailInstructorOfDecision(row: LeaveRequestRow, reason: string): Promise<void> {
+/** "…on 10 August 2026 at 15:42" — a revocation is a moment, not just a day:
+ *  an instructor may lose and refile leave inside one afternoon. */
+const revokedAtFormat = sgFormat('en-GB', { dateStyle: 'long', timeStyle: 'short' })
+
+/** Approved, rejected or revoked — one recipient, one shape. `revokedBy` is set
+ *  on a revocation only, and is what that template's extra two lines render. */
+async function emailInstructorOfDecision(
+  row: LeaveRequestRow,
+  reason: string,
+  revokedBy?: { staffId: string; at: Date },
+): Promise<void> {
   try {
     const [staff] = await db
       .select({ id: staffUsers.id, name: staffUsers.name, email: staffUsers.email })
@@ -544,7 +594,12 @@ async function emailInstructorOfDecision(row: LeaveRequestRow, reason: string): 
     if (!staff) return
 
     await sendTemplatedEmail({
-      slug: row.status === 'approved' ? 'leave_approved' : 'leave_rejected',
+      slug:
+        row.status === 'approved'
+          ? 'leave_approved'
+          : row.status === 'revoked'
+            ? 'leave_revoked'
+            : 'leave_rejected',
       recipient: { email: staff.email, userId: staff.id, userKind: 'staff' },
       variables: {
         instructor_name: staff.name,
@@ -552,12 +607,15 @@ async function emailInstructorOfDecision(row: LeaveRequestRow, reason: string): 
         dates: formatDates(row),
         days: String(Number(row.days)),
         reason,
+        ...(revokedBy
+          ? {
+              revoked_by: await staffName(revokedBy.staffId, 'An admin'),
+              revoked_at: revokedAtFormat.format(revokedBy.at),
+            }
+          : {}),
       },
     })
   } catch (err) {
-    logger.error(
-      { err: err instanceof Error ? err.message : String(err), leaveRequestId: row.id },
-      'leave decision: instructor notification failed',
-    )
+    reportError(err, 'leave decision: instructor notification failed', { leaveRequestId: row.id })
   }
 }

@@ -183,7 +183,12 @@ export default function NewClassPage() {
                 placeholder="Select…"
               >
                 {instructors.map((i) => (
-                  <InstructorOption key={i.id} instructor={i} onLeave={onLeave} />
+                  <InstructorOption
+                    key={i.id}
+                    instructor={i}
+                    onLeave={onLeave}
+                    startTime={startTime}
+                  />
                 ))}
               </SelectField>
             </div>
@@ -206,6 +211,7 @@ export default function NewClassPage() {
               value={supporting}
               onChange={setSupporting}
               onLeave={onLeave}
+              startTime={startTime}
             />
             <div className="space-y-1.5">
               <Label htmlFor="room">Room</Label>

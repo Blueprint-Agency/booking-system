@@ -3,7 +3,7 @@ import { bodyLimit } from 'hono/body-limit'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as svc from '../../../services/leave/requests'
-import { MEDICAL_CERT_MAX_BYTES, sgToday, leaveYearOf } from '../../../services/leave/rules'
+import { MEDICAL_CERT_MAX_BYTES } from '../../../services/leave/rules'
 import { BadRequestError } from '../../../shared/errors'
 
 /**
@@ -48,11 +48,9 @@ function serialize(r: svc.LeaveRequestRow) {
 
 const app = new Hono()
   .get('/', zValidator('query', z.object({ year: z.coerce.number().int().optional() })), async c => {
-    const { year } = c.req.valid('query')
-    const res = await svc.getOwnLeave(
-      c.get('staffUserId'),
-      year ?? leaveYearOf(sgToday(new Date())),
-    )
+    // No year given means the current leave year — which year that is, is the
+    // service's call, so the route passes through what it was given or nothing.
+    const res = await svc.getOwnLeave(c.get('staffUserId'), c.req.valid('query').year)
     return c.json({
       leave_year: res.leave_year,
       balances: res.balances,
@@ -115,10 +113,14 @@ const app = new Hono()
   )
   // A signed GET, minted per click. The service refuses anyone but the owning
   // instructor (admins reach the same service through the admin route).
-  .get('/:id/certificate', zValidator('param', z.object({ id: z.string().uuid() })), async c => {
-    const row = c.get('staffRow')
-    return c.json(await svc.medicalCertificateUrl({ staffUserId: row.id, role: row.role }, c.req.valid('param').id))
-  })
+  .get('/:id/certificate', zValidator('param', z.object({ id: z.string().uuid() })), async c =>
+    c.json(
+      await svc.medicalCertificateUrl(
+        svc.leaveViewer(c.get('staffRow')),
+        c.req.valid('param').id,
+      ),
+    ),
+  )
   .post('/:id/withdraw', zValidator('param', z.object({ id: z.string().uuid() })), async c => {
     const { id } = c.req.valid('param')
     const row = await svc.transitionOwnLeaveRequest('withdraw', c.get('staffUserId'), id)

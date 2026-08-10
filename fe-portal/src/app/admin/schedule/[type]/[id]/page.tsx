@@ -505,7 +505,12 @@ function ClassEditor({
           >
             <option value="">Select…</option>
             {instructors.map((i) => (
-              <InstructorOption key={i.id} instructor={i} onLeave={onLeave} />
+              <InstructorOption
+                key={i.id}
+                instructor={i}
+                onLeave={onLeave}
+                startTime={startTime}
+              />
             ))}
           </select>
         </div>
@@ -529,6 +534,7 @@ function ClassEditor({
           value={supporting}
           onChange={setSupporting}
           onLeave={onLeave}
+          startTime={startTime}
           disabled={disabled}
           saving={saving}
         />
@@ -876,7 +882,12 @@ function PtEditor({
           >
             <option value="">Select…</option>
             {instructors.map((i) => (
-              <InstructorOption key={i.id} instructor={i} onLeave={onLeave} />
+              <InstructorOption
+                key={i.id}
+                instructor={i}
+                onLeave={onLeave}
+                startTime={startTime}
+              />
             ))}
           </select>
         </div>
@@ -900,6 +911,7 @@ function PtEditor({
           value={supporting}
           onChange={setSupporting}
           onLeave={onLeave}
+          startTime={startTime}
           disabled={disabled}
           saving={saving}
         />
@@ -1410,7 +1422,12 @@ function CorporateEditor({
           >
             <option value="">Select…</option>
             {instructors.map((i) => (
-              <InstructorOption key={i.id} instructor={i} onLeave={onLeave} />
+              <InstructorOption
+                key={i.id}
+                instructor={i}
+                onLeave={onLeave}
+                startTime={startTime}
+              />
             ))}
           </select>
         </div>
@@ -1457,7 +1474,12 @@ function CorporateEditor({
                     : "+ Add another"}
                 </option>
                 {availableForSupporting.map((i) => (
-                  <InstructorOption key={i.id} instructor={i} onLeave={onLeave} />
+                  <InstructorOption
+                    key={i.id}
+                    instructor={i}
+                    onLeave={onLeave}
+                    startTime={startTime}
+                  />
                 ))}
               </select>
             )}

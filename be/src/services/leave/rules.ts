@@ -1,9 +1,10 @@
 /**
  * Instructor leave — the rules, as pure functions.
  *
- * Kept free of imports so every rule below is decidable without a database, an
- * env or a clock (see rules.test.ts). `requests.ts` is the only thing that
- * queries; the queries NARROW candidates and these functions decide.
+ * Kept decidable without a database, an env or a clock (see rules.test.ts) — the
+ * one import is `lib/time`, which is the same kind of thing: pure arithmetic.
+ * `requests.ts` is the only thing that queries; the queries NARROW candidates
+ * and these functions decide.
  *
  * Two things to keep in mind while reading:
  *
@@ -17,33 +18,19 @@
  *    [start, end) window the occupancy module compares against.
  */
 
+import { daysBetween, sgDayWindow, sgToday, type PlainDate } from '../../lib/time'
+
+/** Singapore-time arithmetic lives in `lib/time`; re-exported so the leave rules
+ *  still read as one vocabulary. */
+export { daysBetween, sgToday, type PlainDate }
+
 export type LeaveType = 'annual' | 'medical'
 export type LeaveStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn' | 'cancelled' | 'revoked'
 /** Which half of the day, if it is a half day at all. */
 export type LeaveHalfDay = 'none' | 'morning' | 'afternoon'
 
-/** A calendar day in Singapore, `YYYY-MM-DD`. */
-export type PlainDate = string
-
-const MS_PER_DAY = 86_400_000
-const SG_OFFSET_MS = 8 * 3_600_000
-
 /** Morning ends and afternoon begins at 13:00 Singapore time. */
 export const HALF_DAY_BOUNDARY_HOUR = 13
-
-const asUtcMidnight = (d: PlainDate) => Date.parse(`${d}T00:00:00Z`)
-const asPlainDate = (msUtcMidnight: number): PlainDate =>
-  new Date(msUtcMidnight).toISOString().slice(0, 10)
-
-/** Today in Singapore, from any instant. */
-export function sgToday(now: Date): PlainDate {
-  return asPlainDate(now.getTime() + SG_OFFSET_MS)
-}
-
-/** Whole days between two plain dates; negative if `b` is before `a`. */
-export function daysBetween(a: PlainDate, b: PlainDate): number {
-  return Math.round((asUtcMidnight(b) - asUtcMidnight(a)) / MS_PER_DAY)
-}
 
 /**
  * Days a request consumes: one per calendar date, INCLUSIVE of both ends. There
@@ -88,13 +75,37 @@ export function leaveWindow(
   endDate: PlainDate,
   halfDay: LeaveHalfDay = 'none',
 ): { startsAt: Date; endsAt: Date } {
-  const dayStart = asUtcMidnight(startDate) - SG_OFFSET_MS
-  const dayEnd = asUtcMidnight(endDate) + MS_PER_DAY - SG_OFFSET_MS
-  const boundary = dayStart + HALF_DAY_BOUNDARY_HOUR * 3_600_000
+  const { startsAt, endsAt } = sgDayWindow(startDate, endDate)
+  const boundary = new Date(startsAt.getTime() + HALF_DAY_BOUNDARY_HOUR * 3_600_000)
   return {
-    startsAt: new Date(halfDay === 'afternoon' ? boundary : dayStart),
-    endsAt: new Date(halfDay === 'morning' ? boundary : dayEnd),
+    startsAt: halfDay === 'afternoon' ? boundary : startsAt,
+    endsAt: halfDay === 'morning' ? boundary : endsAt,
   }
+}
+
+/**
+ * Does leave of this shape take the instructor off a class that STARTS at this
+ * wall-clock time? `startTime` is `HH:MM` on the leave date read as Singapore
+ * time — exactly what the scheduling forms hold in their time input.
+ *
+ * This is the instructor PICKER's question, not the server's. Two consequences,
+ * both deliberate, both in the direction of "let it through and let the save
+ * decide":
+ *
+ *  - **No time known, no refusal.** A screen that has only a date passes
+ *    nothing, and a half day comes back `false`: the instructor is labelled with
+ *    the half and stays selectable.
+ *  - **Only the start is read.** A class straddling the boundary counts as the
+ *    half it begins in, where `leaveWindow` overlaps BOTH halves and the server
+ *    refuses it. So the picker can be laxer than the save — never stricter,
+ *    which would hide a slot the server would have taken.
+ */
+export function leaveCoversStart(halfDay: LeaveHalfDay, startTime?: string): boolean {
+  if (halfDay === 'none') return true
+  // The boundary is a whole hour, so the hour alone decides it.
+  const hour = Number(/^(\d{1,2}):/.exec(startTime ?? '')?.[1])
+  if (!Number.isInteger(hour)) return false
+  return halfDay === (hour < HALF_DAY_BOUNDARY_HOUR ? 'morning' : 'afternoon')
 }
 
 // ── Balance ────────────────────────────────────────────────────────────────

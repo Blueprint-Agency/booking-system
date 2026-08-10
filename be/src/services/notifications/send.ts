@@ -2,9 +2,9 @@ import { renderTemplate } from './render'
 import { sendMail } from '../../lib/mailer'
 import { db } from '../../db'
 import { emailTemplates, emailLog } from '../../db/schema/content'
-import { eq } from 'drizzle-orm'
-import { logger } from '../../shared/logger'
-import { captureException } from '../../instrument'
+import { staffUsers } from '../../db/schema/identity'
+import { and, eq, inArray } from 'drizzle-orm'
+import { reportError } from '../../shared/logger'
 
 export type TemplateSlug =
   | 'welcome'
@@ -25,6 +25,7 @@ export type TemplateSlug =
   | 'leave_request_submitted'
   | 'leave_approved'
   | 'leave_rejected'
+  | 'leave_revoked'
   | 'package_purchase_confirmed'
   | 'credit_expiry_reminder'
   | 'instructor_invite'
@@ -88,11 +89,14 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
       })
       .where(eq(emailLog.id, logRow.id))
   } catch (err) {
+    // The error OBJECT, so the stack survives — this is the catch an SMTP fault
+    // actually lands in, and callers swallow below it, so it is the last chance
+    // anyone has to hear about it. `msg` is for the email_log column only.
     const msg = err instanceof Error ? err.message : String(err)
-    logger.error({ template: slug, to: recipient.email, err: msg }, 'email send failed')
-    captureException(err, {
+    reportError(err, 'email send failed', {
       scope: 'email-send',
       template: slug,
+      to: recipient.email,
       recipientKind: recipient.userKind,
     })
     await db
@@ -100,6 +104,40 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
       .set({ status: 'failed', error: msg })
       .where(eq(emailLog.id, logRow.id))
     // Swallow — v1 emails are best-effort; failures show in email_log.
+  }
+}
+
+/**
+ * Email every active admin — the ONE definition of who "the admins" are.
+ *
+ * `variables` is a thunk because building them usually needs a query or two of
+ * its own (a class type's name, an instructor's name), and those reads have to
+ * sit inside the same swallow as the sends: every caller runs AFTER the row it
+ * announces is committed, so nothing here may undo — or fail — that work. A
+ * failure is reported (shared/logger.ts) rather than thrown, so a swallowed
+ * notification is never a silent one.
+ */
+export async function emailEveryAdmin(
+  slug: TemplateSlug,
+  variables: () => Promise<Record<string, string>>,
+  context?: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const vars = await variables()
+    const admins = await db
+      .select({ id: staffUsers.id, email: staffUsers.email })
+      .from(staffUsers)
+      .where(and(inArray(staffUsers.role, ['admin', 'superadmin']), eq(staffUsers.status, 'active')))
+
+    for (const admin of admins) {
+      await sendTemplatedEmail({
+        slug,
+        recipient: { email: admin.email, userId: admin.id, userKind: 'staff' },
+        variables: vars,
+      })
+    }
+  } catch (err) {
+    reportError(err, 'admin notification failed', { slug, ...context })
   }
 }
 
