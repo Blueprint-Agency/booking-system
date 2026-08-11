@@ -65,6 +65,10 @@ interface ApiLeaveRequest {
  *  convenience; the refusal that matters comes from the backend. */
 const CERT_ACCEPT = "image/jpeg,image/png,application/pdf";
 
+/** Spelled out rather than CSS-capitalised: "who's away" does not survive
+ *  `text-transform: capitalize` intact. */
+const VIEW_LABEL = { requests: "Requests", away: "Who's away" } as const;
+
 interface ApiLeaveResponse {
   leave_year: number;
   balances: ApiBalance[];
@@ -96,6 +100,10 @@ export default function InstructorLeavePage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  /** Requests is the default: this page is where an instructor asks for leave
+   *  and checks what happened to it. Who's away is for judging whether asking
+   *  for a given week is realistic at all. */
+  const [view, setView] = useState<"requests" | "away">("requests");
 
   const [type, setType] = useState<LeaveType>("annual");
   const [startDate, setStartDate] = useState("");
@@ -239,7 +247,29 @@ export default function InstructorLeavePage() {
         </div>
       )}
 
-      {loading ? (
+      <div className="mb-4 flex justify-end">
+        <div className="inline-flex items-center rounded-md border border-border bg-paper p-0.5">
+          {(["requests", "away"] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              aria-pressed={view === v}
+              onClick={() => setView(v)}
+              className={`h-7 rounded px-3 text-xs font-medium transition-colors ${
+                view === v ? "bg-card text-ink shadow-soft" : "text-muted hover:text-ink"
+              }`}
+            >
+              {VIEW_LABEL[v]}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* The studio's absences. Colleagues' rows arrive with no type or reason
+          on them — the backend never sends those to an instructor. */}
+      {view === "away" ? (
+        <LeaveCalendar />
+      ) : loading ? (
         <div className="flex items-center justify-center py-16 text-muted">
           <Loader2 className="h-5 w-5 animate-spin" />
         </div>
@@ -457,11 +487,6 @@ export default function InstructorLeavePage() {
         onChange={handleAttachPicked}
       />
 
-      {/* The studio's absences. Colleagues' rows arrive with no type or reason
-          on them — the backend never sends those to an instructor. */}
-      <div className="mt-6">
-        <LeaveCalendar />
-      </div>
     </div>
   );
 }
