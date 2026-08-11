@@ -107,7 +107,6 @@ jobs:
             #            IMPERSONATION_SECRET, SMTP_USER, SMTP_PASSWORD,
             #            STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
             #            R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, R2_PUBLIC_URL,
-            #            R2_PRIVATE_BUCKET_NAME,
             #            (optional) SENTRY_DSN
             {
               # NODE_ENV stays "production" on ANY server (build flag — enables
@@ -148,8 +147,6 @@ jobs:
               echo "R2_SECRET_ACCESS_KEY=${{ secrets.R2_SECRET_ACCESS_KEY }}"
               echo "R2_BUCKET_NAME=${{ secrets.R2_BUCKET_NAME }}"
               echo "R2_PUBLIC_URL=${{ secrets.R2_PUBLIC_URL }}"
-              # Private bucket — medical certificates. No public URL by design.
-              echo "R2_PRIVATE_BUCKET_NAME=${{ secrets.R2_PRIVATE_BUCKET_NAME }}"
               # Error monitoring (optional) — backend Sentry DSN; blank disables it
               echo "SENTRY_DSN=${{ secrets.SENTRY_DSN }}"
             } > .env.booking-be

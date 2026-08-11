@@ -15,7 +15,7 @@ import {
   ForbiddenError,
   NotFoundError,
 } from '../../shared/errors'
-import { R2_PRIVATE_BUCKET, putPrivateObject, signedPrivateUrl } from '../../lib/r2'
+import { R2_BUCKET, putObject, signedObjectUrl } from '../../lib/r2'
 import { sgFormat } from '../../lib/time'
 import * as rules from './rules'
 
@@ -249,10 +249,10 @@ export async function transitionOwnLeaveRequest(
  *  URL in a chat window is worthless by the time anyone tries it. */
 export const MEDICAL_CERT_URL_TTL_SECONDS = 300
 
-/** The private bucket is optional in env (see lib/r2.ts), so both paths say so
+/** The bucket is optional in env (see lib/r2.ts), so both paths say so
  *  plainly rather than failing as an unexplained 500. */
-function requirePrivateBucket(): void {
-  if (!R2_PRIVATE_BUCKET) {
+function requireBucket(): void {
+  if (!R2_BUCKET) {
     throw new AppError(422, 'certificate_storage_unavailable', {
       message: 'Certificate storage is not configured. Ask an admin to set it up.',
     })
@@ -286,10 +286,10 @@ export async function attachMedicalCertificate(input: {
     size: input.bytes.byteLength,
   })
   if (!check.ok) throw new BadRequestError(check.code, { message: check.message })
-  requirePrivateBucket()
+  requireBucket()
 
   const key = rules.medicalCertKey(row.instructorId, row.id, check.extension)
-  await putPrivateObject(key, input.bytes, input.contentType)
+  await putObject(key, input.bytes, input.contentType)
 
   const [updated] = await db
     .update(leaveRequests)
@@ -324,10 +324,10 @@ export async function medicalCertificateUrl(
     })
   }
   if (!row.key) throw new NotFoundError('certificate_not_found')
-  requirePrivateBucket()
+  requireBucket()
 
   return {
-    url: await signedPrivateUrl(row.key, MEDICAL_CERT_URL_TTL_SECONDS),
+    url: await signedObjectUrl(row.key, MEDICAL_CERT_URL_TTL_SECONDS),
     expires_in: MEDICAL_CERT_URL_TTL_SECONDS,
   }
 }

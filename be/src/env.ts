@@ -66,9 +66,6 @@ const schema = z.object({
   R2_SECRET_ACCESS_KEY: z.string().optional(),
   R2_BUCKET_NAME: z.string().optional(),
   R2_PUBLIC_URL: z.string().optional(),
-  // Private bucket — medical certificates. Separate from R2_BUCKET_NAME and
-  // deliberately has no public URL: read only via a short-lived signed GET.
-  R2_PRIVATE_BUCKET_NAME: z.string().optional(),
 
   // Error monitoring (optional). Set to a Sentry DSN to turn on error
   // reporting; leave blank and the app no-ops (see src/instrument.ts).

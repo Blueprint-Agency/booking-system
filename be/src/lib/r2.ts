@@ -10,30 +10,29 @@ export const r2 = new S3Client({
   },
 })
 
-export const R2_BUCKET = process.env.R2_BUCKET_NAME!
-export const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL!
-
 /**
- * The PRIVATE bucket — medical certificates and nothing else so far.
+ * The one bucket. Workshop covers, instructor photos and medical certificates
+ * all live here.
  *
- * Deliberately has no public base URL to pair with it: everything in here is
- * reachable only through a short-lived signed GET, so a leaked or guessed key is
- * not a leaked document. Never serve one of these through `R2_PUBLIC_URL`.
+ * It is served by `R2_PUBLIC_URL`, so ANYTHING written here is readable by
+ * anyone who holds the object key — including a certificate. The key is the
+ * only thing standing between a health document and the public, which is why
+ * `medicalCertKey` uses two UUIDs and why no read path serialises it. The
+ * signed URL below still expires, but it guards nothing an unsigned URL would
+ * not also reach.
  *
  * Optional, like the rest of the storage settings — an unconfigured deployment
- * refuses the upload at use-site rather than failing to boot. Callers check this
- * is set before calling either helper below.
+ * refuses the upload at use-site rather than failing to boot. Callers check
+ * this is set before calling either helper below.
  */
-export const R2_PRIVATE_BUCKET = process.env.R2_PRIVATE_BUCKET_NAME
+export const R2_BUCKET = process.env.R2_BUCKET_NAME
 
-export async function putPrivateObject(
-  key: string,
-  body: Uint8Array,
-  contentType: string,
-): Promise<void> {
+export const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL!
+
+export async function putObject(key: string, body: Uint8Array, contentType: string): Promise<void> {
   await r2.send(
     new PutObjectCommand({
-      Bucket: R2_PRIVATE_BUCKET,
+      Bucket: R2_BUCKET,
       Key: key,
       Body: body,
       ContentType: contentType,
@@ -41,10 +40,10 @@ export async function putPrivateObject(
   )
 }
 
-/** A signed GET, valid for `expiresIn` seconds — the only way to read a private
- *  object. Generated per request, never stored. */
-export function signedPrivateUrl(key: string, expiresIn: number): Promise<string> {
-  return getSignedUrl(r2, new GetObjectCommand({ Bucket: R2_PRIVATE_BUCKET, Key: key }), {
+/** A signed GET, valid for `expiresIn` seconds. Generated per request, never
+ *  stored. On a public bucket this is a courtesy, not a boundary — see above. */
+export function signedObjectUrl(key: string, expiresIn: number): Promise<string> {
+  return getSignedUrl(r2, new GetObjectCommand({ Bucket: R2_BUCKET, Key: key }), {
     expiresIn,
   })
 }

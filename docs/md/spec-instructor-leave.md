@@ -148,10 +148,10 @@ This is the load-bearing decision, and it reuses machinery that already exists.
 ### Medical certificate upload
 
 - Optional, medical requests only. jpg, png or pdf, up to 5MB.
-- **This is the first object-storage write path in the backend** — before it, the storage client existed and the presigner package was already a dependency, but nothing uploaded or signed. It is now implemented: the file is POSTed to the API, validated server-side, and written to the private bucket, with retrieval as a short-lived signed GET (see `backend-architecture.md` §6c). Instructor photo upload remains deferred.
-- The certificate goes to a **private** bucket, separate from the existing public one whose public base URL is configured for instructor and workshop imagery. A medical certificate must not be reachable by URL guessing.
+- **This is the first object-storage write path in the backend** — before it, the storage client existed and the presigner package was already a dependency, but nothing uploaded or signed. It is now implemented: the file is POSTed to the API, validated server-side, and written to the one R2 bucket, with retrieval as a signed GET (see `backend-architecture.md` §6c). Instructor photo upload remains deferred.
+- ~~The certificate goes to a **private** bucket, separate from the existing public one.~~ **Superseded (2026-08-11):** one bucket holds both. See §6c.
 - Admins and superadmins read it through a short-lived signed URL generated on demand. Nobody else — including the instructor's colleagues — can retrieve it.
-- A new environment variable names the private bucket. Per the repo convention this must land in the backend environment schema, the deploy workflow's required-settings comment block, the workflow's env-file writer, and the example env file, in the same change. The existing storage credentials are optional in the schema; the private bucket name follows that pattern, and upload degrades to unavailable rather than crashing boot when it is unset.
+- **Superseded (2026-08-11).** This section originally specified a separate private bucket, added as `R2_PRIVATE_BUCKET_NAME`. That variable was removed at the owner's direction: certificates now go in the same public bucket as imagery, named by `R2_BUCKET_NAME`. The consequence is recorded in `backend-architecture.md` §6c — a certificate is readable by anyone holding its key, and the two UUIDs in that key are the only protection. Upload still degrades to unavailable rather than crashing boot when the bucket is unset.
 
 ### Access and visibility
 
