@@ -65,6 +65,9 @@ export default function AdminLeavePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Filter>("pending");
+  /** List is the default: this page exists to clear the pending queue, and the
+   *  calendar answers a different question — who is away, and when. */
+  const [view, setView] = useState<"list" | "calendar">("list");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rejecting, setRejecting] = useState<ApiAdminLeaveRequest | null>(null);
   const [rejectReason, setRejectReason] = useState("");
@@ -157,35 +160,56 @@ export default function AdminLeavePage() {
         description="Instructor leave requests. Approving makes the absence binding — an instructor on approved leave can no longer be scheduled."
       />
 
-      <LeaveCalendar />
-
       {error && (
         <div className="mb-4 rounded-lg border border-error/30 bg-error/5 p-3 text-xs text-error">
           {error}
         </div>
       )}
 
-      <div className="mb-4 flex flex-wrap gap-2">
-        {FILTERS.map((f) => {
-          const count = requests.filter((r) => f === "all" || r.status === f).length;
-          return (
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        {/* Status filters belong to the list; the calendar shows every request
+            it is allowed to show, so they are hidden rather than left inert. */}
+        <div className="flex flex-wrap gap-2">
+          {view === "list" &&
+            FILTERS.map((f) => {
+              const count = requests.filter((r) => f === "all" || r.status === f).length;
+              return (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => setTab(f)}
+                  className={`rounded-full border px-3 py-1 text-xs transition ${
+                    tab === f
+                      ? "border-accent bg-accent/10 text-ink"
+                      : "border-border bg-card text-muted"
+                  }`}
+                >
+                  {FILTER_LABEL[f]} ({count})
+                </button>
+              );
+            })}
+        </div>
+
+        <div className="inline-flex items-center rounded-md border border-border bg-paper p-0.5">
+          {(["list", "calendar"] as const).map((v) => (
             <button
-              key={f}
+              key={v}
               type="button"
-              onClick={() => setTab(f)}
-              className={`rounded-full border px-3 py-1 text-xs transition ${
-                tab === f
-                  ? "border-accent bg-accent/10 text-ink"
-                  : "border-border bg-card text-muted"
+              aria-pressed={view === v}
+              onClick={() => setView(v)}
+              className={`h-7 rounded px-3 text-xs font-medium capitalize transition-colors ${
+                view === v ? "bg-card text-ink shadow-soft" : "text-muted hover:text-ink"
               }`}
             >
-              {FILTER_LABEL[f]} ({count})
+              {v}
             </button>
-          );
-        })}
+          ))}
+        </div>
       </div>
 
-      {loading ? (
+      {view === "calendar" ? (
+        <LeaveCalendar />
+      ) : loading ? (
         <div className="flex items-center justify-center py-16 text-muted">
           <Loader2 className="h-5 w-5 animate-spin" />
         </div>
