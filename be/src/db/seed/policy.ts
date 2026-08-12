@@ -13,6 +13,7 @@ export async function seedPolicy(db: PostgresJsDatabase<typeof schema>) {
       cancelCapCycleDays: 30,
       classWindowHours: 24,
       ptWindowHours: 24,
+      leaveCarryOverCapDays: 14,
     })
     .onConflictDoNothing()
 

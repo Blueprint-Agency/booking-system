@@ -113,9 +113,23 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 ## Conventions
 
 - Keep `fe-client/`, `fe-portal/`, and `be/` fully decoupled — no shared dependencies between them.
-- Docs go in `docs/md/` (markdown source) or `docs/html/` (rendered/static).
+- Docs go in `docs/md/` (markdown source) or `docs/html/` (rendered/static). Two exceptions, both deliberate: the **domain glossary** for a context lives at `<context>/CONTEXT.md` (indexed by the root `CONTEXT-MAP.md`), and **ADRs** live beside the code they govern at `<context>/docs/adr/NNNN-slug.md` — `be/docs/adr/` today. A decision spanning all three apps goes in a root `docs/adr/` instead. Specs stay in `docs/md/`; a glossary is not a spec and an ADR is not a spec.
 - Do not commit `.env` files or secrets.
 - Schema changes go through PR review by both backend devs (single `drizzle.config.ts`, single migration history).
 - No business logic in route files — routes do `auth → zod parse → call service → format response`. Domain rules live in `services/*` so admin and client paths can't drift.
 - **Env changes must update `.github/workflows/deploy-be.yml`** whenever a BE env var is added, renamed, or removed. The workflow's required-settings comment block AND the `echo "FOO=..."` lines that write `.env.booking-be` must both match `be/src/env.ts` exactly — and `be/.env.example` should reflect the same shape. Forgetting any of these makes prod boot fail Zod validation or silently miss a value. Same rule applies to fe-client/fe-portal env: if you add a `NEXT_PUBLIC_*` var, remember it also has to be set in the Vercel project dashboard.
 - **Commit messages**: do NOT include `Co-Authored-By: Claude …` trailers or `🤖 Generated with Claude Code` lines. Commits should be attributed solely to the human author.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues on `Blueprint-Agency/booking-system`, driven via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical roles, used verbatim: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Multi-context — root `CONTEXT-MAP.md` pointing at a `CONTEXT.md` per app (`fe-client/`, `fe-portal/`, `be/`). See `docs/agents/domain.md`.

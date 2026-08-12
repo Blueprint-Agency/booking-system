@@ -1,0 +1,1 @@
+ALTER TABLE "global_policy" ADD COLUMN "leave_carry_over_cap_days" integer DEFAULT 14 NOT NULL;

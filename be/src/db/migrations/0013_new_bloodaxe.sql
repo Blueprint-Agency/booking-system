@@ -1,0 +1,1 @@
+ALTER TABLE "leave_pools" ADD COLUMN "carried_days" numeric(4, 1) DEFAULT '0' NOT NULL;

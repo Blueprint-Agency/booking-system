@@ -355,6 +355,10 @@ id, name (text, not null), description (text, nullable — short blurb shown to 
 | photo_r2_key | text | nullable |
 | bio | text | nullable |
 | phone | text | nullable — overrides staff_users.phone if needed (admin doc §3 lists this) |
+| annual_leave_days | int | not null, default 14 — **Assigned Days**, annual. Per instructor, set on the staff profile by admin or superadmin. The input to next year's Pool, not a balance. |
+| medical_leave_days | int | not null, default 14 — Assigned Days, medical. |
+
+The leave tables themselves (`leave_requests`, `leave_pools`) are specified in `spec-instructor-leave.md` and `spec-instructor-leave-pools.md`, with `be/CONTEXT.md` binding on the vocabulary; `be/docs/adr/0001-per-instructor-leave-pools-with-carry-over.md` records why a Pool is stored.
 
 #### `instructor_class_types` — M:N eligibility (§3)
 
@@ -370,7 +374,7 @@ Both tables enforce single row at app layer. We use `id uuid PK` plus a `CHECK` 
 
 #### `global_policy` (§4)
 
-cancel_cap_count int, cancel_cap_cycle_days int, class_window_hours int, pt_window_hours int, updated_at, updated_by_staff_id (FK).
+cancel_cap_count int, cancel_cap_cycle_days int, class_window_hours int, pt_window_hours int, leave_carry_over_cap_days int (not null, default 14 — the studio-wide ceiling on unused **annual** days carrying into the next Leave Year; the only leave figure that is global), updated_at, updated_by_staff_id (FK).
 
 #### `pt_booking_config` (§6)
 

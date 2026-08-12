@@ -28,9 +28,7 @@ export interface UpdateGlobalPolicyInput {
   cancelCapCycleDays?: number
   classWindowHours?: number
   ptWindowHours?: number
-  /** Yearly instructor leave allowances, in days. Global — no per-instructor override. */
-  annualLeaveDays?: number
-  medicalLeaveDays?: number
+  leaveCarryOverCapDays?: number
 }
 
 export async function updateGlobalPolicy(

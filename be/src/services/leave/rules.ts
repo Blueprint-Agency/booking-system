@@ -8,10 +8,14 @@
  *
  * Two things to keep in mind while reading:
  *
- *  - **The balance is derived, never stored.** Remaining = allowance minus the
- *    days on that instructor's requests of that type and leave year. Cancelling
- *    therefore restores days with no code at all — the row simply leaves the
- *    counted set — and January resets itself with no scheduled job.
+ *  - **The Pool is a stored grant; everything drawn from it is derived.** The
+ *    Pool for one instructor, Leave Type and Leave Year is a row (carry-over
+ *    forces that — see docs/adr/0001). Taken and Committed are still summed from
+ *    the requests themselves, so Remaining = Pool − Committed and withdrawing,
+ *    cancelling, rejecting or revoking returns the days with no code at all: the
+ *    row simply leaves the counted set. Nothing is ever written back when a
+ *    request changes status, and a column holding Taken or Remaining would give
+ *    that property up.
  *  - **Dates here are plain dates**, `YYYY-MM-DD`, read as Asia/Singapore
  *    calendar days (UTC+8, no DST). They are not instants. The only place an
  *    instant appears is `leaveWindow`, which turns a run of days into the
@@ -108,9 +112,9 @@ export function leaveCoversStart(halfDay: LeaveHalfDay, startTime?: string): boo
   return halfDay === (hour < HALF_DAY_BOUNDARY_HOUR ? 'morning' : 'afternoon')
 }
 
-// ── Balance ────────────────────────────────────────────────────────────────
+// ── The Pool, and what is drawn from it ────────────────────────────────────
 
-/** What a row contributes to a balance. Nothing else about it matters here. */
+/** What a row contributes to a sum. Nothing else about it matters here. */
 export interface LeaveDaysRow {
   type: LeaveType
   leaveYear: number
@@ -123,7 +127,7 @@ export interface LeaveDaysRow {
  * Pending counts as well as approved, so a request cannot become impossible to
  * approve because someone was scheduled in the gap before the decision.
  *
- * Deliberately not COMMITTED_STATUSES: that one is about a balance, this one is
+ * Deliberately not COMMITTED_STATUSES: that one is about the Pool, this one is
  * about a calendar, and they are free to diverge.
  */
 export const OCCUPYING_STATUSES: readonly LeaveStatus[] = ['approved', 'pending']
@@ -131,17 +135,20 @@ export const OCCUPYING_STATUSES: readonly LeaveStatus[] = ['approved', 'pending'
 /** What has actually been taken — the number an instructor sees as "used". */
 export const TAKEN_STATUSES: readonly LeaveStatus[] = ['approved']
 /** What a NEW submission is measured against. Pending counts too: that is what
- *  stops two simultaneous requests from together exceeding the allowance. */
+ *  stops two simultaneous requests from together exceeding the Pool. */
 export const COMMITTED_STATUSES: readonly LeaveStatus[] = ['approved', 'pending']
 
-export interface BalanceScope {
+/** Which rows a sum counts: one Leave Type, one Leave Year, one set of statuses.
+ *  The two Leave Types and the two status sets are what keep Taken, Committed
+ *  and the two Pools from ever being the same number. */
+export interface LeaveDaysScope {
   type: LeaveType
   leaveYear: number
   statuses: readonly LeaveStatus[]
 }
 
 /** Days are 0.5-grained; sum in halves so 0.5 + 0.5 + 0.5 is exactly 1.5. */
-export function sumLeaveDays(rows: readonly LeaveDaysRow[], scope: BalanceScope): number {
+export function sumLeaveDays(rows: readonly LeaveDaysRow[], scope: LeaveDaysScope): number {
   let halves = 0
   for (const r of rows) {
     if (r.type !== scope.type) continue
@@ -152,14 +159,145 @@ export function sumLeaveDays(rows: readonly LeaveDaysRow[], scope: BalanceScope)
   return halves / 2
 }
 
-/** Allowance minus what the scope counts. Not clamped: a lowered allowance can
- *  legitimately leave someone negative, and hiding that would be a lie. */
-export function remainingLeaveDays(
-  allowance: number,
+/**
+ * **Carried Days** into a Leave Year: what is left of the previous one, capped
+ * by the studio-wide `cap` from Global Policy.
+ *
+ * Two rules live here rather than at the call sites, so that neither can be
+ * forgotten by a future one:
+ *
+ *  - **Medical never carries.** Banking sick days year on year is not something
+ *    the studio wants to owe, and making it a branch of this function means no
+ *    caller has to know that.
+ *  - **A negative previous Remaining carries 0, not a debt.** A Pool lowered
+ *    below what was already Committed shows an honest negative for that year
+ *    (`leavePoolFigures` does not clamp), but the year boundary wipes it: the
+ *    instructor starts January whole.
+ *
+ * Halves pass through exactly — `min`/`max` return one of their operands, so
+ * 3.5 carried is 3.5. Where the previous year has no stored Pool at all the
+ * caller passes nothing here and carries 0; this function never looks further
+ * back than the one figure it is given, which is what makes the chain finite.
+ */
+export function carriedDays(type: LeaveType, previousRemaining: number, cap: number): number {
+  if (type !== 'annual') return 0
+  return Math.min(cap, Math.max(0, previousRemaining))
+}
+
+/**
+ * A Leave Year's **Pool**: Assigned Days plus Carried Days.
+ *
+ * Trivial on purpose. It exists so that the materialisation wrapper in
+ * `requests.ts` — the one piece of this feature no test can reach, because
+ * there is no test database — performs no arithmetic of its own, and so that
+ * carry-over has exactly one place to arrive (`carriedDays`, above).
+ *
+ * Both figures are 0.5-grained, and halves are exact in binary floating point,
+ * so a half carried in comes out a half.
+ */
+export function poolDays(assigned: number, carried: number): number {
+  return assigned + carried
+}
+
+/** What one Pool and one set of request rows work out to — the COMPUTATION's
+ *  result, camelCase and internal. The snake_case API shapes built from it are
+ *  `LeaveBalance` and `LeaveFiguresResponse` in `requests.ts`; keeping them
+ *  apart is what lets a response field be renamed without touching a rule. */
+export interface LeavePoolFigures {
+  type: LeaveType
+  pool: number
+  /** Approved days only. */
+  taken: number
+  /** Awaiting a decision. Committed is `taken + pending`. */
+  pending: number
+  /** Pool − Committed. */
+  remaining: number
+}
+
+/**
+ * Every number for one instructor, one Leave Type, one Leave Year, from their
+ * Pool and their request rows. All the arithmetic of a Pool read lives here;
+ * `requests.ts` only fetches the rows and the Pool.
+ *
+ * Remaining subtracts **Committed** — pending as well as approved — so the
+ * figure an instructor is shown is the one `checkLeaveSubmission` measures a new
+ * request against. Taken stays approved-only alongside it, and the two are
+ * different numbers whenever anything is awaiting a decision.
+ *
+ * Not clamped: a Pool lowered below what is already Committed shows an honest
+ * negative, because hiding it would be a lie about where the instructor stands.
+ */
+export function leavePoolFigures(
+  type: LeaveType,
+  pool: number,
   rows: readonly LeaveDaysRow[],
-  scope: BalanceScope,
-): number {
-  return allowance - sumLeaveDays(rows, scope)
+  leaveYear: number,
+): LeavePoolFigures {
+  const scope = { type, leaveYear }
+  const taken = sumLeaveDays(rows, { ...scope, statuses: TAKEN_STATUSES })
+  const committed = sumLeaveDays(rows, { ...scope, statuses: COMMITTED_STATUSES })
+  return { type, pool, taken, pending: committed - taken, remaining: pool - committed }
+}
+
+// ── The admin's adjustment ─────────────────────────────────────────────────
+
+/**
+ * The Pool that yields `desiredRemaining` — the inverse of the `pool − committed`
+ * in `leavePoolFigures`, which is what makes the round trip exact: an admin types
+ * the Remaining, and that is the number the instructor then sees.
+ *
+ * `committedDays` is **Committed** — pending as well as approved — because that
+ * is what Remaining subtracts. Summed in halves for the same reason
+ * `sumLeaveDays` is: 3.5 days taken and 9 wanted is a Pool of 12.5 exactly.
+ *
+ * Only the CURRENT Leave Year is adjustable: a future year has no stored Pool to
+ * move and a past one is frozen history. That is the caller's business — this is
+ * arithmetic.
+ */
+export function poolForRemaining(desiredRemaining: number, committedDays: number): number {
+  return (Math.round(desiredRemaining * 2) + Math.round(committedDays * 2)) / 2
+}
+
+export type RemainingAdjustmentCode = 'remaining_above_pool' | 'remaining_below_zero'
+
+/**
+ * What an admin may set a Remaining to: anywhere from 0 up to `ceiling`, both
+ * ends included.
+ *
+ * The ceiling is **Assigned Days plus Carried Days** — what the year was worth
+ * before anyone touched it — and deliberately NOT the stored Pool. An adjustment back-solves the
+ * Pool from the Remaining that was typed, so bounding against the stored Pool
+ * would make every adjustment a one-way ratchet: a figure typed too low would
+ * lower the Pool, and restoring the original number would then be refused as a
+ * grant. Bounded against Assigned + Carried, a typo is correctable and giving
+ * MORE than was agreed still needs Assigned Days raised first.
+ *
+ * Both refusals name the number they are measured against; that message is what
+ * the admin is shown.
+ */
+export function checkRemainingAdjustment(
+  type: LeaveType,
+  desiredRemaining: number,
+  ceiling: number,
+): { ok: true } | { ok: false; code: RemainingAdjustmentCode; message: string } {
+  if (desiredRemaining < 0) {
+    return {
+      ok: false,
+      code: 'remaining_below_zero',
+      message: `Remaining ${type} days cannot be negative. The lowest you can set is 0.`,
+    }
+  }
+  if (desiredRemaining > ceiling) {
+    return {
+      ok: false,
+      code: 'remaining_above_pool',
+      message:
+        `That is more than their ${ceiling} ${type} ${plural(ceiling)} for this year — ` +
+        `their Assigned Days plus what they carried in — which is the most you can set. ` +
+        `Raising their Assigned Days raises that ceiling.`,
+    }
+  }
+  return { ok: true }
 }
 
 // ── Submission ─────────────────────────────────────────────────────────────
@@ -182,8 +320,9 @@ export interface LeaveSubmission {
   halfDay?: LeaveHalfDay
   /** Today in Singapore. */
   today: PlainDate
-  /** The global yearly allowance for this type. */
-  allowance: number
+  /** This instructor's **Pool** for this Leave Type and Leave Year — per person,
+   *  not a studio-wide figure, and the number this request is drawn from. */
+  pool: number
   /** This instructor's approved + pending days for this type and leave year. */
   committedDays: number
 }
@@ -233,15 +372,15 @@ export function checkLeaveSubmission(input: LeaveSubmission): LeaveCheck {
     }
   }
 
-  const remaining = input.allowance - input.committedDays
+  const remaining = input.pool - input.committedDays
   if (days > remaining) {
     return {
       ok: false,
       code: 'insufficient_leave_balance',
       message:
-        `That request is ${days} ${plural(days)}, but you have ${remaining} of your ` +
-        `${input.allowance} ${input.type} ${plural(input.allowance)} left this year ` +
-        `(approved and pending requests both count).`,
+        `That request is ${days} ${plural(days)}. Your ${input.type} Pool this year is ` +
+        `${input.pool} ${plural(input.pool)}, with ${remaining} remaining — approved and ` +
+        `pending requests both count.`,
     }
   }
 
@@ -340,7 +479,8 @@ export function medicalCertKey(
 /**
  * Withdraw abandons a request still awaiting a decision; cancel gives back
  * leave that was approved but has not started yet. Both return the days to the
- * balance automatically, because the balance is a sum over approved rows.
+ * Pool automatically: Committed is a sum over rows, so the row simply stops
+ * being counted.
  */
 export function checkOwnLeaveTransition(
   action: 'withdraw' | 'cancel',
@@ -389,8 +529,8 @@ const DECIDED = { approve: 'approved', reject: 'rejected' } as const
  * the first day arrives the absence has happened, so nobody — admin included —
  * can undo it.
  *
- * None of these need balance bookkeeping. The balance is a sum over approved
- * rows, so a rejected or revoked row simply stops counting.
+ * None of these need bookkeeping against the Pool. Taken and Committed are sums
+ * over rows, so a rejected or revoked row simply stops counting.
  */
 export function checkAdminLeaveDecision(
   action: AdminLeaveAction,

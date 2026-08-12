@@ -67,7 +67,10 @@ export const NAV_ITEMS: NavItem[] = [
   // --- People (members + staff accounts) ---
   // Instructors are managed under Staff → Instructors tab (merged), not a separate item.
   { group: "People", label: "Clients", href: "/admin/clients", icon: Users, scope: "both" },
-  { group: "People", label: "Staff", href: "/admin/staff", icon: UserCog, scope: "global" },
+  // Admins reach Staff too — they can edit profiles of their own rank and below.
+  // Invite/archive/unarchive/delete stay superadmin-only on the page and at the BE
+  // (spec-instructor-leave-pools.md § Permissions).
+  { group: "People", label: "Staff", href: "/admin/staff", icon: UserCog, scope: "both" },
   // Leave is instructor-wide and has no location, so it is not workspace-scoped.
   // Both roles decide requests (spec-instructor-leave.md § Access and visibility).
   { group: "People", label: "Leave", href: "/admin/leave", icon: CalendarOff, scope: "both" },

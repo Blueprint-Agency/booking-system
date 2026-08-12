@@ -24,14 +24,39 @@ was collapsed into it because no deployed database needed that history preserved
    ```
 
 3. **Data migration / backfill / non-trivial enum reshape** (anything needing custom
-   SQL — `USING` casts, `UPDATE … SET`, conditional logic): use `--custom` so Drizzle
-   writes the snapshot for you and the chain stays in sync:
+   SQL — `USING` casts, `UPDATE … SET`, conditional logic): use `--custom`, but know
+   exactly what it does.
    ```
    npx drizzle-kit generate --custom --name=describe_change
    ```
-   This emits an **empty** `NNNN_describe_change.sql` plus a snapshot reflecting the
-   current schema. Hand-write the SQL into that file. Do **not** create `.sql` files
-   by hand without a paired snapshot — that is what caused the 0008–0012 drift.
+   This emits an **empty** `NNNN_describe_change.sql` plus a snapshot that is the
+   **previous snapshot copied verbatim**, with only `id`/`prevId` changed. It does
+   **not** read `src/db/schema/`. So a `--custom` migration whose hand-written SQL
+   also changes the schema (adds/drops a column, table or enum value) leaves the
+   snapshot describing the *pre-change* database, and the next `npm run db:generate`
+   re-emits that same change as a phantom migration — exactly the 0008–0012 drift
+   this file exists to prevent. (Verified the hard way, 2026-08. The claim that
+   `--custom` "writes the snapshot for you" was wrong and used to live here.)
+
+   Two ways to keep the chain honest:
+
+   - **Preferred — split it.** Put the schema change in a normal `db:generate`
+     migration (which writes a true snapshot) and the data work in a separate
+     `--custom` one. A backfill that changes no schema is exactly the case where
+     copying the previous snapshot is correct. Where a backfill has to sit *between*
+     two DDL steps (add columns → copy data → drop old columns), that is three
+     migrations: generated, custom, generated.
+   - **One file anyway.** Write the custom SQL, then reconcile the snapshot by hand:
+     with `src/db/schema/` already at the end state, run `npm run db:generate`, keep
+     the snapshot it wrote as your migration's snapshot (fixing `id`/`prevId`), fold
+     any SQL it emitted into your custom file, and delete the generated pair.
+
+   **The gate, either way:** `npm run db:generate` must answer *"No schema changes,
+   nothing to migrate"* before you commit. If it wants to emit anything, the chain is
+   already out of sync — fix it on your branch, not on the next person's.
+
+   Do **not** create `.sql` files by hand without a paired snapshot — that is the
+   other half of what caused the 0008–0012 drift.
 
 4. **Review the generated SQL before committing.** Drizzle's auto-rename detection
    guesses (drop+add vs rename); when it asks, or when the diff looks wrong, fix it.

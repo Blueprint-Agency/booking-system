@@ -57,7 +57,6 @@ const app = new Hono()
   .use('/corporate-packages/*', superadminOnly)
   .use('/corporate-sessions/*', superadminOnly)
   .use('/bookings/*', superadminOnly)
-  .use('/staff/*', superadminOnly)
   .use('/notifications/*', superadminOnly)
   .use('/waiver/*', superadminOnly)
   .use('/marketing/*', superadminOnly)
@@ -76,6 +75,10 @@ const app = new Hono()
   // Leave: approve/reject/revoke are admin AND superadmin
   // (spec-instructor-leave.md § Access and visibility).
   .use('/leave/*', staffAny)
+  // Staff: list + profile edit are admin AND superadmin; invite, archive,
+  // unarchive and delete stay superadmin-only, gated per-route inside
+  // ./staff (spec-instructor-leave-pools.md § Permissions).
+  .use('/staff/*', staffAny)
 
   // ── Admin read-only; superadmin full ────────────────────────────────────
   .use('/clients/*', staffAny, adminReadOnly)

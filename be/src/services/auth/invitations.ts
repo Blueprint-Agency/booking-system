@@ -23,6 +23,8 @@ import { env } from '../../env'
 import { sendTemplatedEmail } from '../notifications/send'
 import { splitName, joinName } from '../../lib/name'
 import { sgFormat } from '../../lib/time'
+import { withLeaveFigures } from '../leave/requests'
+import type { StaffProfileRow } from './staff-archive'
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -202,7 +204,7 @@ export async function inviteAdmin(input: InviteAdminInput): Promise<StaffInvitat
 }
 
 export interface ListStaffResult {
-  staff: StaffUserRow[]
+  staff: StaffProfileRow[]
   invitations: Array<StaffInvitationRow & { invitedByStaffName: string | null }>
 }
 
@@ -216,9 +218,16 @@ export async function listStaffAndInvitations(opts?: {
 }): Promise<ListStaffResult> {
   const includeArchived = opts?.includeArchived ?? false
 
-  const staff = await db
-    .select()
+  // Left-joined so the Assigned Days ride along on the instructors and are
+  // simply absent on everyone else — see StaffProfileRow.
+  const staffRows = await db
+    .select({
+      staff: staffUsers,
+      annualLeaveDays: instructors.annualLeaveDays,
+      medicalLeaveDays: instructors.medicalLeaveDays,
+    })
     .from(staffUsers)
+    .leftJoin(instructors, eq(instructors.staffUserId, staffUsers.id))
     .where(
       and(
         isNull(staffUsers.deletedAt),
@@ -226,6 +235,14 @@ export async function listStaffAndInvitations(opts?: {
       ),
     )
     .orderBy(desc(staffUsers.createdAt))
+
+  const staff = await withLeaveFigures(
+    staffRows.map(r =>
+      r.annualLeaveDays === null || r.medicalLeaveDays === null
+        ? r.staff
+        : { ...r.staff, annualLeaveDays: r.annualLeaveDays, medicalLeaveDays: r.medicalLeaveDays },
+    ),
+  )
 
   // Denormalise inviter name via a correlated subquery.
   const invitations = await db

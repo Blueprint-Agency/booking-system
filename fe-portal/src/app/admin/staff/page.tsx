@@ -56,6 +56,17 @@ interface StaffApiRow {
   accepted_at: string | null;
   archived_at: string | null;
   is_seeded_superadmin: boolean;
+  /** Assigned Days — sent for instructors only, absent on everyone else. */
+  annual_leave_days?: number;
+  medical_leave_days?: number;
+  /** This Leave Year's figures, instructors only. Remaining is what an admin
+   *  edits; Carried and Pool are the context they edit against. */
+  annual_carried_days?: number;
+  annual_pool_days?: number;
+  annual_remaining_days?: number;
+  medical_carried_days?: number;
+  medical_pool_days?: number;
+  medical_remaining_days?: number;
 }
 
 interface InvitationApiRow {
@@ -119,6 +130,20 @@ export default function StaffPage() {
   const isSuperadmin = currentStaff?.role === "superadmin";
   const isSeededSuperadmin = currentStaff?.isSeededSuperadmin === true;
 
+  // Mirrors the backend rank rule (be/src/services/auth/staff-rank.ts): you may
+  // edit your own rank and below, never above. The BE is the enforcement point;
+  // this only keeps the button off rows that would 403.
+  const RANK: Record<StaffApiRow["role"], number> = {
+    superadmin: 3,
+    admin: 2,
+    instructor: 1,
+  };
+
+  function canEditTarget(target: StaffApiRow): boolean {
+    if (!currentStaff) return false;
+    return RANK[target.role] <= RANK[currentStaff.role];
+  }
+
   function canArchiveTarget(target: StaffApiRow): boolean {
     if (!isSuperadmin) return false;
     if (target.status === "archived") return false;
@@ -145,8 +170,8 @@ export default function StaffPage() {
       await refresh();
     } catch (err) {
       if (err instanceof ApiError) {
-        const body = err.body as { error?: string; details?: { message?: string } } | null;
-        toast.error(body?.details?.message ?? `Unarchive failed (HTTP ${err.status}).`);
+        const body = err.body as { error?: string; message?: string } | null;
+        toast.error(body?.message ?? body?.error ?? `Unarchive failed (HTTP ${err.status}).`);
       } else {
         toast.error("Unarchive failed.");
       }
@@ -171,8 +196,8 @@ export default function StaffPage() {
       setStaff((prev) => prev.filter((s) => s.id !== target.id));
     } catch (err) {
       if (err instanceof ApiError) {
-        const body = err.body as { error?: string; details?: { message?: string } } | null;
-        toast.error(body?.details?.message ?? `Delete failed (HTTP ${err.status}).`);
+        const body = err.body as { error?: string; message?: string } | null;
+        toast.error(body?.message ?? body?.error ?? `Delete failed (HTTP ${err.status}).`);
       } else {
         toast.error("Delete failed.");
       }
@@ -190,8 +215,8 @@ export default function StaffPage() {
       await refresh();
     } catch (err) {
       if (err instanceof ApiError) {
-        const body = err.body as { error?: string; details?: { message?: string } } | null;
-        toast.error(body?.details?.message ?? `Update failed (HTTP ${err.status}).`);
+        const body = err.body as { error?: string; message?: string } | null;
+        toast.error(body?.message ?? body?.error ?? `Update failed (HTTP ${err.status}).`);
       } else {
         toast.error("Update failed.");
       }
@@ -208,8 +233,8 @@ export default function StaffPage() {
       await refresh();
     } catch (err) {
       if (err instanceof ApiError) {
-        const body = err.body as { error?: string; details?: { message?: string } } | null;
-        toast.error(body?.details?.message ?? `Archive failed (HTTP ${err.status}).`);
+        const body = err.body as { error?: string; message?: string } | null;
+        toast.error(body?.message ?? body?.error ?? `Archive failed (HTTP ${err.status}).`);
       } else {
         toast.error("Archive failed.");
       }
@@ -254,7 +279,7 @@ export default function StaffPage() {
       await refresh();
     } catch (err) {
       if (err instanceof ApiError) {
-        const body = err.body as { error?: string; details?: { message?: string } } | null;
+        const body = err.body as { error?: string; message?: string } | null;
         const code = body?.error ?? "";
         if (code === "email_in_use") {
           toast.error("That email is already on the staff list.");
@@ -264,7 +289,7 @@ export default function StaffPage() {
           toast.error("That email was previously archived — restore it instead of re-inviting.");
           return;
         }
-        toast.error(body?.details?.message ?? `Invite failed (HTTP ${err.status}).`);
+        toast.error(body?.message ?? body?.error ?? `Invite failed (HTTP ${err.status}).`);
       } else {
         toast.error("Invite failed.");
       }
@@ -436,7 +461,7 @@ export default function StaffPage() {
                       isSelf={s.id === currentStaff?.id}
                       canArchive={canArchiveTarget(s)}
                       onArchive={() => setArchiveTarget(s)}
-                      canEdit={isSuperadmin}
+                      canEdit={canEditTarget(s)}
                       onEdit={() => setEditTarget(s)}
                     />
                   ))}
@@ -464,7 +489,7 @@ export default function StaffPage() {
                       isSelf={s.id === currentStaff?.id}
                       canArchive={canArchiveTarget(s)}
                       onArchive={() => setArchiveTarget(s)}
-                      canEdit={isSuperadmin}
+                      canEdit={canEditTarget(s)}
                       onEdit={() => setEditTarget(s)}
                       canManageArchived={canManageArchived(s)}
                       onUnarchive={() => handleUnarchive(s)}

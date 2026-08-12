@@ -1,11 +1,12 @@
 import { and, asc, desc, eq, gte, inArray, lte } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { db } from '../../db'
-import { leaveRequests } from '../../db/schema/leave'
+import { leavePools, leaveRequests } from '../../db/schema/leave'
 import { instructors } from '../../db/schema/catalog'
+import { globalPolicy } from '../../db/schema/policy'
 import { staffUsers } from '../../db/schema/identity'
-import { readPolicy } from '../policy/update'
 import { conflictMessage, findOccupancyConflicts, leaveDaysPhrase } from '../schedule/occupancy'
+import type { Tx } from '../schedule/roster'
 import { emailEveryAdmin, sendTemplatedEmail } from '../notifications/send'
 import { reportError } from '../../shared/logger'
 import {
@@ -35,14 +36,25 @@ import * as rules from './rules'
 
 export type LeaveRequestRow = typeof leaveRequests.$inferSelect
 
+/** One Leave Type's year as the instructor's own page reads it. The three grant
+ *  figures are shown apart so a one-off surplus is distinguishable from the
+ *  yearly figure: Assigned is what the profile says, Carried is what survived
+ *  last year, and Pool is what leave is actually drawn from — after an admin's
+ *  adjustment the Pool need not equal the other two summed. */
 export interface LeaveBalance {
   type: rules.LeaveType
-  allowance: number
-  /** Approved days — what has actually been taken. */
+  /** The yearly figure on the instructor's profile. */
+  assigned_days: number
+  /** Of the Pool, how much came from last year. Always 0 for medical. */
+  carried_days: number
+  /** This Leave Year's Pool for this type — what Remaining counts down from. */
+  pool_days: number
+  /** Taken — approved days only, what has actually been used. */
   taken_days: number
-  /** Awaiting a decision. Counted against a new submission, not against `taken`. */
+  /** Awaiting a decision. Part of Committed, not part of Taken. */
   pending_days: number
-  /** allowance − taken. */
+  /** Pool − Committed: what can still be applied for, pending included. May be
+   *  negative if the figure was lowered below what is already Committed. */
   remaining_days: number
 }
 
@@ -54,26 +66,348 @@ const toDaysRow = (r: LeaveRequestRow): rules.LeaveDaysRow => ({
   days: Number(r.days),
 })
 
-async function allowances(): Promise<Record<rules.LeaveType, number>> {
-  const { global_policy } = await readPolicy()
-  return { annual: global_policy.annualLeaveDays, medical: global_policy.medicalLeaveDays }
+const LEAVE_TYPES = ['annual', 'medical'] as const
+
+/** One Leave Type's grant for a year: the Pool, how much of it was carried, and
+ *  the Assigned Days it was composed from. Assigned is read live from the
+ *  profile rather than stored on the row — with Carried it is what the year was
+ *  worth untouched, which is the ceiling an admin's adjustment is bounded by. */
+interface LeavePool {
+  assigned: number
+  pool: number
+  carried: number
 }
 
+/**
+ * This instructor's Pool for `leaveYear`, both Leave Types — materialised on
+ * this read if the year has never been read before. There is no 1 January job;
+ * this IS the job, and it runs when someone first asks.
+ *
+ * Every caller that needs a Pool comes through here, and it reads, calls and
+ * writes — **no arithmetic**. Last year's Remaining is `rules.leavePoolFigures`,
+ * what survives the year boundary is `rules.carriedDays` (which is where medical
+ * is refused a carry, and where a negative Remaining is clamped), and composing
+ * the two is `rules.poolDays`.
+ *
+ * Carried comes from the previous year's **stored** Pool minus its Committed
+ * days. No stored Pool for that year — a new instructor, or a year nobody ever
+ * opened — carries 0 and looks no further back, which is what makes the chain
+ * finite rather than recursive to the beginning of time.
+ *
+ * A **future** Leave Year is computed and NOT written. Annual leave must start
+ * after today, so an instructor filing next January's leave in August would
+ * otherwise freeze next year's Pool at Carried = 0 and the real rollover could
+ * never apply their carry. The figure is honest to submit against; it becomes a
+ * row when the year arrives.
+ *
+ * Three things about the transaction:
+ *
+ *  - The locked select of the instructor row is the FIRST statement, and it is
+ *    the same lock the submission path already takes — not a second one. It is
+ *    one row per instructor, so two instructors never wait on each other.
+ *  - It doubles as the permission check: admins and superadmins have no
+ *    `instructors` row and no leave concept at all.
+ *  - Insert-ignoring-conflicts and re-reading (rather than trusting the insert)
+ *    means a concurrent first read cannot produce a second Pool or a failure —
+ *    whichever writer won, this returns the Pool that is actually stored.
+ */
+async function leavePoolsFor(
+  tx: Tx,
+  instructorId: string,
+  leaveYear: number,
+): Promise<Record<rules.LeaveType, LeavePool>> {
+  const [instructor] = await tx
+    .select({ annual: instructors.annualLeaveDays, medical: instructors.medicalLeaveDays })
+    .from(instructors)
+    .where(eq(instructors.staffUserId, instructorId))
+    .for('update')
+    .limit(1)
+  if (!instructor) throw new ForbiddenError('not_an_instructor')
+
+  const [policy] = await tx
+    .select({ carryOverCapDays: globalPolicy.leaveCarryOverCapDays })
+    .from(globalPolicy)
+    .limit(1)
+  if (!policy) throw new NotFoundError('policy_not_seeded')
+
+  // The year immediately before this one, and nothing before that.
+  const previousYear = leaveYear - 1
+  const previousPools = new Map(
+    (
+      await tx
+        .select({ type: leavePools.type, days: leavePools.days })
+        .from(leavePools)
+        .where(
+          and(eq(leavePools.instructorId, instructorId), eq(leavePools.leaveYear, previousYear)),
+        )
+    ).map(r => [r.type, Number(r.days)]),
+  )
+  // No Pool last year means nothing can carry, so the rows are not worth asking for.
+  const previousRows =
+    previousPools.size === 0
+      ? []
+      : (
+          await tx
+            .select()
+            .from(leaveRequests)
+            .where(
+              and(
+                eq(leaveRequests.instructorId, instructorId),
+                eq(leaveRequests.leaveYear, previousYear),
+              ),
+            )
+        ).map(toDaysRow)
+
+  const carriedInto = (type: rules.LeaveType): number => {
+    const previousPool = previousPools.get(type)
+    if (previousPool === undefined) return 0
+    return rules.carriedDays(
+      type,
+      rules.leavePoolFigures(type, previousPool, previousRows, previousYear).remaining,
+      policy.carryOverCapDays,
+    )
+  }
+  const carried = { annual: carriedInto('annual'), medical: carriedInto('medical') }
+  const fresh: Record<rules.LeaveType, LeavePool> = {
+    annual: {
+      assigned: instructor.annual,
+      pool: rules.poolDays(instructor.annual, carried.annual),
+      carried: carried.annual,
+    },
+    medical: {
+      assigned: instructor.medical,
+      pool: rules.poolDays(instructor.medical, carried.medical),
+      carried: carried.medical,
+    },
+  }
+
+  // A Leave Year that has not arrived is computed, never frozen. See above.
+  if (leaveYear > rules.leaveYearOf(rules.sgToday(new Date()))) return fresh
+
+  await tx
+    .insert(leavePools)
+    .values(
+      LEAVE_TYPES.map(type => ({
+        instructorId,
+        type,
+        leaveYear,
+        days: fresh[type].pool.toFixed(1),
+        carriedDays: fresh[type].carried.toFixed(1),
+      })),
+    )
+    .onConflictDoNothing()
+
+  // Pool and Carried both come back from the row, never recomputed. An admin's
+  // adjustment back-solves the Pool from a Remaining, so a stored Pool is
+  // deliberately NOT Assigned + Carried any more; recomputing Carried alongside
+  // it would report a number that contradicts the Pool it is meant to explain.
+  // Assigned is the profile's live figure either way — it is not part of the
+  // freeze, and it is what the adjustment ceiling is measured from.
+  const stored = new Map(
+    (
+      await tx
+        .select({
+          type: leavePools.type,
+          days: leavePools.days,
+          carriedDays: leavePools.carriedDays,
+        })
+        .from(leavePools)
+        .where(and(eq(leavePools.instructorId, instructorId), eq(leavePools.leaveYear, leaveYear)))
+    ).map(r => [
+      r.type,
+      { assigned: instructor[r.type], pool: Number(r.days), carried: Number(r.carriedDays) },
+    ]),
+  )
+  return {
+    annual: stored.get('annual') ?? fresh.annual,
+    medical: stored.get('medical') ?? fresh.medical,
+  }
+}
+
+// ── The admin's view of one instructor's year ──────────────────────────────
+
+/** One Leave Type's year as the admin staff profile RESPONSE carries it —
+ *  snake_case, a subset, and an API contract. `rules.LeavePoolFigures` is the
+ *  camelCase computation it is shaped from; this is not that type renamed, and
+ *  the two are free to diverge. Assigned Days are on the profile itself; these
+ *  three are the year in flight, and after an adjustment `pool_days` may exceed
+ *  Assigned + Carried — that is the adjustment, honestly reported, not a drift. */
+export interface LeaveFiguresResponse {
+  carried_days: number
+  pool_days: number
+  remaining_days: number
+}
+export type InstructorLeaveFigures = Record<rules.LeaveType, LeaveFiguresResponse>
+
+/** Which Leave Year "now" is. The only one an admin may adjust: a future year
+ *  has no stored Pool and a past one is frozen history. */
+const currentLeaveYear = () => rules.leaveYearOf(rules.sgToday(new Date()))
+
+async function yearRows(tx: Tx, instructorId: string, leaveYear: number) {
+  return (
+    await tx
+      .select()
+      .from(leaveRequests)
+      .where(
+        and(eq(leaveRequests.instructorId, instructorId), eq(leaveRequests.leaveYear, leaveYear)),
+      )
+  ).map(toDaysRow)
+}
+
+async function figuresFor(
+  tx: Tx,
+  instructorId: string,
+  leaveYear: number,
+): Promise<InstructorLeaveFigures> {
+  const pools = await leavePoolsFor(tx, instructorId, leaveYear)
+  const rows = await yearRows(tx, instructorId, leaveYear)
+  const of = (type: rules.LeaveType): LeaveFiguresResponse => {
+    const f = rules.leavePoolFigures(type, pools[type].pool, rows, leaveYear)
+    return { carried_days: pools[type].carried, pool_days: f.pool, remaining_days: f.remaining }
+  }
+  return { annual: of('annual'), medical: of('medical') }
+}
+
+/**
+ * This Leave Year's figures for each of these instructors — what the admin staff
+ * list shows so the edit form prefills without a second call.
+ *
+ * A read that writes, like every Pool read: it goes through `leavePoolsFor`,
+ * so the year is materialised under the usual per-instructor lock rather than
+ * being guessed at.
+ */
+async function currentLeaveFigures(
+  instructorIds: readonly string[],
+): Promise<Map<string, InstructorLeaveFigures>> {
+  if (instructorIds.length === 0) return new Map()
+  const leaveYear = currentLeaveYear()
+  return db.transaction(async tx => {
+    const out = new Map<string, InstructorLeaveFigures>()
+    // ponytail: one round trip per instructor. Batch the pool/request reads if
+    // the staff list ever gets long enough to notice.
+    for (const id of instructorIds) out.set(id, await figuresFor(tx, id, leaveYear))
+    return out
+  })
+}
+
+/**
+ * Attach this Leave Year's Carried / Pool / Remaining to every instructor in a
+ * list of staff rows, so the admin edit form prefills without a second call.
+ * A row with no Assigned Days is not an instructor and is passed through
+ * untouched — an admin has no leave concept to have figures for.
+ *
+ * Generic over the row rather than importing the staff profile type: leave knows
+ * what leave figures are, and nothing here needs to know what else a staff row
+ * carries.
+ */
+export async function withLeaveFigures<T extends { id: string; annualLeaveDays?: number }>(
+  rows: T[],
+): Promise<(T & { leave?: InstructorLeaveFigures })[]> {
+  const figures = await currentLeaveFigures(
+    rows.filter(r => r.annualLeaveDays !== undefined).map(r => r.id),
+  )
+  return rows.map(r => {
+    const leave = figures.get(r.id)
+    return leave ? { ...r, leave } : r
+  })
+}
+
+/** One instructor's **Assigned Days**, or nothing at all if this staff user is
+ *  not an instructor — the caller spreads it onto a staff row, so absent beats
+ *  null. */
+export async function assignedLeaveDays(
+  staffUserId: string,
+): Promise<{ annualLeaveDays?: number; medicalLeaveDays?: number }> {
+  const [row] = await db
+    .select({
+      annualLeaveDays: instructors.annualLeaveDays,
+      medicalLeaveDays: instructors.medicalLeaveDays,
+    })
+    .from(instructors)
+    .where(eq(instructors.staffUserId, staffUserId))
+    .limit(1)
+  return row ?? {}
+}
+
+export interface AdjustRemainingInput {
+  instructorId: string
+  /** The Remaining the instructor should have. Omitted types are left alone. */
+  annual?: number
+  medical?: number
+}
+
+/**
+ * An admin correcting a live Leave Year: they type the Remaining, and the Pool
+ * is back-solved from it (`rules.poolForRemaining`) so that the number they typed
+ * is the number the instructor then sees.
+ *
+ * Carried is left exactly as stored. Assigned, Carried and the new Pool are then
+ * three honest numbers whose sum no longer has to agree — which is the point of
+ * an adjustment, and why Carried is stored rather than recomputed.
+ *
+ * The ceiling is Assigned + Carried, NOT the stored Pool: a previous adjustment
+ * may have moved the Pool, and bounding against a number this same operation
+ * writes would make it a one-way ratchet — a figure typed too low could never be
+ * put back until January. See `rules.checkRemainingAdjustment`.
+ *
+ * Runs under the SAME per-instructor lock the submission path takes, taken by
+ * `leavePoolsFor` as the transaction's first statement: an adjustment and a
+ * submission cannot both read the same "before".
+ */
+export async function adjustRemainingDays(
+  input: AdjustRemainingInput,
+): Promise<InstructorLeaveFigures> {
+  const leaveYear = currentLeaveYear()
+  return db.transaction(async tx => {
+    const pools = await leavePoolsFor(tx, input.instructorId, leaveYear)
+    const rows = await yearRows(tx, input.instructorId, leaveYear)
+
+    for (const type of LEAVE_TYPES) {
+      const desired = input[type]
+      if (desired === undefined) continue
+      const check = rules.checkRemainingAdjustment(
+        type,
+        desired,
+        rules.poolDays(pools[type].assigned, pools[type].carried),
+      )
+      if (!check.ok) throw new BadRequestError(check.code, { message: check.message })
+      const committed = rules.sumLeaveDays(rows, {
+        type,
+        leaveYear,
+        statuses: rules.COMMITTED_STATUSES,
+      })
+      await tx
+        .update(leavePools)
+        .set({ days: rules.poolForRemaining(desired, committed).toFixed(1), updatedAt: new Date() })
+        .where(
+          and(
+            eq(leavePools.instructorId, input.instructorId),
+            eq(leavePools.type, type),
+            eq(leavePools.leaveYear, leaveYear),
+          ),
+        )
+    }
+    return figuresFor(tx, input.instructorId, leaveYear)
+  })
+}
+
+/** Nothing but naming: `rules.leavePoolFigures` does the counting, this maps its
+ *  figures onto the response fields. No arithmetic belongs in here. */
 function balances(
-  allowance: Record<rules.LeaveType, number>,
+  pool: Record<rules.LeaveType, LeavePool>,
   rows: rules.LeaveDaysRow[],
   leaveYear: number,
 ): LeaveBalance[] {
-  return (['annual', 'medical'] as const).map(type => {
-    const scope = { type, leaveYear }
-    const taken = rules.sumLeaveDays(rows, { ...scope, statuses: rules.TAKEN_STATUSES })
-    const committed = rules.sumLeaveDays(rows, { ...scope, statuses: rules.COMMITTED_STATUSES })
+  return LEAVE_TYPES.map(type => {
+    const f = rules.leavePoolFigures(type, pool[type].pool, rows, leaveYear)
     return {
-      type,
-      allowance: allowance[type],
-      taken_days: taken,
-      pending_days: committed - taken,
-      remaining_days: allowance[type] - taken,
+      type: f.type,
+      assigned_days: pool[type].assigned,
+      carried_days: pool[type].carried,
+      pool_days: f.pool,
+      taken_days: f.taken,
+      pending_days: f.pending,
+      remaining_days: f.remaining,
     }
   })
 }
@@ -82,21 +416,27 @@ function balances(
  *  history (all years — the balances are the year-scoped part).
  *
  *  Which year "no year" means is a domain question, so it is answered here and
- *  not in the route: the leave year the Singapore-local today falls in. */
+ *  not in the route: the leave year the Singapore-local today falls in.
+ *
+ *  A read that writes: this is where a Leave Year's Pool is first materialised,
+ *  so it runs in a transaction under the instructor's lock. */
 export async function getOwnLeave(
   instructorId: string,
   leaveYear = rules.leaveYearOf(rules.sgToday(new Date())),
 ): Promise<{ leave_year: number; balances: LeaveBalance[]; requests: LeaveRequestRow[] }> {
-  const rows = await db
-    .select()
-    .from(leaveRequests)
-    .where(eq(leaveRequests.instructorId, instructorId))
-    .orderBy(desc(leaveRequests.startDate), desc(leaveRequests.createdAt))
-  return {
-    leave_year: leaveYear,
-    balances: balances(await allowances(), rows.map(toDaysRow), leaveYear),
-    requests: rows,
-  }
+  return db.transaction(async tx => {
+    const pool = await leavePoolsFor(tx, instructorId, leaveYear)
+    const rows = await tx
+      .select()
+      .from(leaveRequests)
+      .where(eq(leaveRequests.instructorId, instructorId))
+      .orderBy(desc(leaveRequests.startDate), desc(leaveRequests.createdAt))
+    return {
+      leave_year: leaveYear,
+      balances: balances(pool, rows.map(toDaysRow), leaveYear),
+      requests: rows,
+    }
+  })
 }
 
 export interface SubmitLeaveInput {
@@ -110,11 +450,11 @@ export interface SubmitLeaveInput {
 }
 
 /**
- * The balance read, the clash check and the insert are one transaction,
+ * The Pool read, the clash check and the insert are one transaction,
  * serialised per instructor by locking that instructor's OWN row as the first
  * statement in it. Without that, two requests that each fit the remaining
- * balance can both read the same "before" and both be accepted — the very
- * over-commitment "pending counts against your balance" exists to stop.
+ * Remaining can both read the same "before" and both be accepted — the very
+ * over-commitment "pending counts against your Pool" exists to stop.
  *
  * The lock is on `instructors`, not on the leave rows: what has to be kept out
  * is a row that does not exist yet, and an absent row cannot be locked. It is
@@ -124,22 +464,14 @@ export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<Leave
   const now = new Date()
   const leaveYear = rules.leaveYearOf(input.startDate)
   const halfDay = input.halfDay ?? 'none'
-  // Global policy, not this instructor's — read before the lock is taken so
-  // nothing but the instructor's own rows is held under it.
-  const allowance = await allowances()
 
   const row = await db.transaction(async tx => {
-    // FIRST statement, and the reason there is a transaction at all. Leave is
-    // also an instructor thing: admins and superadmins have no instructors row
-    // and their absence has no effect on the schedule, so the same select is
-    // the permission check.
-    const [isInstructor] = await tx
-      .select({ id: instructors.staffUserId })
-      .from(instructors)
-      .where(eq(instructors.staffUserId, input.instructorId))
-      .for('update')
-      .limit(1)
-    if (!isInstructor) throw new ForbiddenError('not_an_instructor')
+    // FIRST statement, and the reason there is a transaction at all: its first
+    // statement takes this instructor's row lock, and it is also the permission
+    // check — admins and superadmins have no `instructors` row. It returns the
+    // Pool this submission is measured against, materialising it if this is the
+    // first anyone has touched `leaveYear`, all under that one lock.
+    const pool = await leavePoolsFor(tx, input.instructorId, leaveYear)
 
     // The query narrows to this instructor and leave year; which statuses and
     // which type count is the pure rule's business.
@@ -154,7 +486,7 @@ export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<Leave
       endDate: input.endDate,
       halfDay,
       today: rules.sgToday(now),
-      allowance: allowance[input.type],
+      pool: pool[input.type].pool,
       committedDays: rules.sumLeaveDays(existing.map(toDaysRow), {
         type: input.type,
         leaveYear,
@@ -218,7 +550,7 @@ export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<Leave
 }
 
 /** Withdraw a pending request, or cancel an approved one that hasn't started.
- *  Both give the days back with no arithmetic: the balance is a sum over rows. */
+ *  Both give the days back with no arithmetic: Committed is a sum over rows. */
 export async function transitionOwnLeaveRequest(
   action: 'withdraw' | 'cancel',
   instructorId: string,
@@ -402,7 +734,7 @@ export const leaveViewer = (staff: typeof staffUsers.$inferSelect): LeaveCalenda
  * Who is away between `from` and `to`, inclusive.
  *
  * Only leave that is an actual absence shows up: `COMMITTED_STATUSES` is the
- * same pending+approved pair the balance counts and the scheduler blocks on, so
+ * same pending+approved pair Remaining counts and the scheduler blocks on, so
  * rejected, withdrawn, cancelled and revoked rows can never render as absences.
  */
 export async function listLeaveCalendar(
@@ -467,7 +799,7 @@ export interface DecideLeaveInput {
  *
  * Whether the transition is allowed is `rules.checkAdminLeaveDecision`'s call;
  * this only fetches the row, writes the outcome and tells the instructor. No
- * balance is touched on any path — see the note on the rule.
+ * Pool is touched on any path — see the note on the rule.
  */
 export async function decideLeaveRequest(input: DecideLeaveInput): Promise<LeaveRequestRow> {
   const reason = input.reason?.trim() ?? ''

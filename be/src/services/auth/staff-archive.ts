@@ -19,6 +19,7 @@
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { staffUsers } from '../../db/schema/identity'
+import { instructors } from '../../db/schema/catalog'
 import { clerkStaffApp } from '../../lib/clerk'
 import { env } from '../../env'
 import { joinName } from '../../lib/name'
@@ -29,8 +30,27 @@ import {
   NotFoundError,
 } from '../../shared/errors'
 import { logger } from '../../shared/logger'
+import {
+  adjustRemainingDays,
+  assignedLeaveDays,
+  withLeaveFigures,
+  type InstructorLeaveFigures,
+} from '../leave/requests'
+import { STAFF_EDIT_REFUSAL_MESSAGE, staffEditRefusal } from './staff-rank'
 
 export type StaffUserRow = typeof staffUsers.$inferSelect
+
+/**
+ * A staff row as the portal reads it. Assigned Days live on `instructors`, so
+ * they are present for instructors and ABSENT — not null — for everyone else:
+ * an admin has no leave concept to have a figure for. `leave` is the same story
+ * for this Leave Year's Carried, Pool and Remaining.
+ */
+export type StaffProfileRow = StaffUserRow & {
+  annualLeaveDays?: number
+  medicalLeaveDays?: number
+  leave?: InstructorLeaveFigures
+}
 
 export function isSeededSuperadminEmail(email: string): boolean {
   return email.trim().toLowerCase() === env.SUPERADMIN_EMAIL.trim().toLowerCase()
@@ -209,7 +229,14 @@ export async function softDeleteStaff(input: {
 
 /**
  * Update a staff profile (name/contact/bio fields, role, location grants).
- * Guards mirror archiveStaff exactly, but scoped to *role changes* only —
+ * Reachable by admin as well as superadmin (spec-instructor-leave-pools.md
+ * § Permissions), so the rank rules are enforced HERE, not in the route:
+ *
+ *   - Editing a target of higher rank is refused; role and location grants are
+ *     superadmin-only and their mere presence refuses the request. Both live in
+ *     staffEditRefusal() so they stay testable.
+ *
+ * On top of that, the seeded-superadmin guards, scoped to *role changes* only —
  * editing your own or the seeded superadmin's non-role profile fields
  * (phone, bio, etc.) is fine; only a role change is locked down:
  *
@@ -232,10 +259,19 @@ export interface UpdateStaffProfileInput {
     languages?: string[]
     role?: StaffUserRow['role']
     grantedLocationIds?: string[]
+    /** Assigned Days. Deliberately NOT privilege fields — an admin may set
+     *  them — and they land on `instructors`, so an instructor target only. */
+    annualLeaveDays?: number
+    medicalLeaveDays?: number
+    /** The Remaining this instructor should have for the CURRENT Leave Year.
+     *  Not a privilege field either. Back-solves that year's Pool — see
+     *  services/leave/requests.ts. */
+    annualRemainingDays?: number
+    medicalRemainingDays?: number
   }
 }
 
-export async function updateStaffProfile(input: UpdateStaffProfileInput): Promise<StaffUserRow> {
+export async function updateStaffProfile(input: UpdateStaffProfileInput): Promise<StaffProfileRow> {
   const { targetStaffId, actorStaffId, patch } = input
 
   const [target] = await db
@@ -244,6 +280,23 @@ export async function updateStaffProfile(input: UpdateStaffProfileInput): Promis
     .where(and(eq(staffUsers.id, targetStaffId), isNull(staffUsers.deletedAt)))
     .limit(1)
   if (!target) throw new NotFoundError('staff_not_found')
+
+  const [actor] = await db
+    .select()
+    .from(staffUsers)
+    .where(and(eq(staffUsers.id, actorStaffId), isNull(staffUsers.deletedAt)))
+    .limit(1)
+  if (!actor) throw new ForbiddenError('actor_not_found')
+
+  const refusal = staffEditRefusal({
+    actorRole: actor.role,
+    targetRole: target.role,
+    touchesPrivilegeFields:
+      patch.role !== undefined || patch.grantedLocationIds !== undefined,
+  })
+  if (refusal) {
+    throw new ForbiddenError(refusal, { message: STAFF_EDIT_REFUSAL_MESSAGE[refusal] })
+  }
 
   const changingRole = patch.role !== undefined && patch.role !== target.role
   if (changingRole) {
@@ -258,18 +311,10 @@ export async function updateStaffProfile(input: UpdateStaffProfileInput): Promis
           'The main superadmin (set via SUPERADMIN_EMAIL) cannot have its role changed.',
       })
     }
-    if (target.role === 'superadmin') {
-      const [actor] = await db
-        .select()
-        .from(staffUsers)
-        .where(and(eq(staffUsers.id, actorStaffId), isNull(staffUsers.deletedAt)))
-        .limit(1)
-      if (!actor) throw new ForbiddenError('actor_not_found')
-      if (!isSeededSuperadminEmail(actor.email)) {
-        throw new ForbiddenError('only_seeded_can_edit_superadmin_role', {
-          message: "Only the main superadmin can change another superadmin's role.",
-        })
-      }
+    if (target.role === 'superadmin' && !isSeededSuperadminEmail(actor.email)) {
+      throw new ForbiddenError('only_seeded_can_edit_superadmin_role', {
+        message: "Only the main superadmin can change another superadmin's role.",
+      })
     }
   }
 
@@ -289,14 +334,43 @@ export async function updateStaffProfile(input: UpdateStaffProfileInput): Promis
   if (patch.role !== undefined) set.role = patch.role
   if (patch.grantedLocationIds !== undefined) set.grantedLocationIds = patch.grantedLocationIds
 
-  if (Object.keys(set).length === 0) return target
+  const assigned = {
+    ...(patch.annualLeaveDays !== undefined ? { annualLeaveDays: patch.annualLeaveDays } : {}),
+    ...(patch.medicalLeaveDays !== undefined ? { medicalLeaveDays: patch.medicalLeaveDays } : {}),
+  }
+  const remaining = {
+    ...(patch.annualRemainingDays !== undefined ? { annual: patch.annualRemainingDays } : {}),
+    ...(patch.medicalRemainingDays !== undefined ? { medical: patch.medicalRemainingDays } : {}),
+  }
+  const touchesLeave = Object.keys(assigned).length + Object.keys(remaining).length > 0
+  if (touchesLeave && target.role !== 'instructor') {
+    throw new BadRequestError('leave_days_instructor_only', {
+      message: 'Only an instructor has leave days.',
+    })
+  }
+  // The adjustment goes first because it is the only write here that can be
+  // refused (above the Pool, or below zero), and a refusal that has already
+  // written half the profile has nothing to roll it back with. Order is
+  // otherwise immaterial: Assigned Days apply from the NEXT Leave Year, the
+  // adjustment only to this one.
+  if (Object.keys(remaining).length > 0) {
+    await adjustRemainingDays({ instructorId: targetStaffId, ...remaining })
+  }
+  if (Object.keys(assigned).length > 0) {
+    await db.update(instructors).set(assigned).where(eq(instructors.staffUserId, targetStaffId))
+  }
 
-  set.updatedAt = new Date()
-  const [updated] = await db
-    .update(staffUsers)
-    .set(set)
-    .where(eq(staffUsers.id, targetStaffId))
-    .returning()
-  if (!updated) throw new ConflictError('staff_update_failed')
-  return updated
+  let row = target
+  if (Object.keys(set).length > 0) {
+    set.updatedAt = new Date()
+    const [updated] = await db
+      .update(staffUsers)
+      .set(set)
+      .where(eq(staffUsers.id, targetStaffId))
+      .returning()
+    if (!updated) throw new ConflictError('staff_update_failed')
+    row = updated
+  }
+  const [profile] = await withLeaveFigures([{ ...row, ...(await assignedLeaveDays(targetStaffId)) }])
+  return profile ?? row
 }

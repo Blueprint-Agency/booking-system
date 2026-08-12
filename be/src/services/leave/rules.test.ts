@@ -10,12 +10,16 @@ import {
   checkLeaveSubmission,
   checkOwnLeaveTransition,
   countLeaveDays,
+  carriedDays,
   futureConflicts,
   leaveCoversStart,
+  leavePoolFigures,
   leaveWindow,
   leaveYearOf,
   medicalCertKey,
-  remainingLeaveDays,
+  checkRemainingAdjustment,
+  poolDays,
+  poolForRemaining,
   sgToday,
   sumLeaveDays,
   type LeaveDaysRow,
@@ -166,7 +170,7 @@ import {
   assert.strictEqual(sgToday(new Date('2026-08-11T15:00:00.000Z')), '2026-08-11')
 }
 
-// -- remaining balance --------------------------------------------------------
+// -- what the sums count, and what a Pool is worth against them ---------------
 const rows: LeaveDaysRow[] = [
   { type: 'annual', leaveYear: 2026, status: 'approved', days: 3 },
   { type: 'annual', leaveYear: 2026, status: 'pending', days: 2 },
@@ -193,21 +197,22 @@ const annual2026 = { type: 'annual', leaveYear: 2026 } as const
     sumLeaveDays(rows, { type: 'annual', leaveYear: 2025, statuses: TAKEN_STATUSES }),
     9,
   )
-  assert.strictEqual(remainingLeaveDays(14, rows, { ...annual2026, statuses: TAKEN_STATUSES }), 11)
-  assert.strictEqual(
-    remainingLeaveDays(14, rows, { ...annual2026, statuses: COMMITTED_STATUSES }),
-    9,
-  )
+  // ...and what a 14-day Pool is worth against them: Taken leaves 11 unused,
+  // Committed leaves 9 — Remaining is the second, and the two differ whenever
+  // something is awaiting a decision
+  const against14 = leavePoolFigures('annual', 14, rows, 2026)
+  assert.strictEqual(against14.pool - against14.taken, 11)
+  assert.strictEqual(against14.remaining, 9)
   // cancelling gives the days back for free: drop the row, the sum changes
   const afterCancel = rows.map(r =>
     r.status === 'approved' && r.type === 'annual' && r.leaveYear === 2026
       ? { ...r, status: 'cancelled' as const }
       : r,
   )
-  assert.strictEqual(
-    remainingLeaveDays(14, afterCancel, { ...annual2026, statuses: TAKEN_STATUSES }),
-    14,
-  )
+  assert.strictEqual(sumLeaveDays(afterCancel, { ...annual2026, statuses: TAKEN_STATUSES }), 0)
+  assert.strictEqual(leavePoolFigures('annual', 14, afterCancel, 2026).taken, 0)
+  // the 2 pending days are all that is still Committed
+  assert.strictEqual(leavePoolFigures('annual', 14, afterCancel, 2026).remaining, 12)
   // half days accumulate exactly — no float drift
   const halves: LeaveDaysRow[] = [0.5, 0.5, 0.5].map(days => ({
     type: 'annual',
@@ -224,13 +229,251 @@ const annual2026 = { type: 'annual', leaveYear: 2026 } as const
     days,
   }))
   assert.strictEqual(sumLeaveDays(mixed, { ...annual2026, statuses: TAKEN_STATUSES }), 4.5)
-  assert.strictEqual(remainingLeaveDays(14, mixed, { ...annual2026, statuses: TAKEN_STATUSES }), 9.5)
-  // a lowered allowance shows an honest negative rather than a clamped zero
-  assert.strictEqual(remainingLeaveDays(2, rows, { ...annual2026, statuses: TAKEN_STATUSES }), -1)
+  assert.strictEqual(leavePoolFigures('annual', 14, mixed, 2026).remaining, 9.5)
+  // a Pool lowered below what is Committed shows an honest negative rather than
+  // a clamped zero
+  assert.strictEqual(leavePoolFigures('annual', 2, rows, 2026).remaining, -3)
 }
 
-// -- submission: balance ------------------------------------------------------
-const base = { today: '2026-08-10', allowance: 14, committedDays: 0 } as const
+// -- the figures an instructor is shown: Remaining is Pool minus COMMITTED -----
+{
+  // 14-day Pool, 3 approved and 2 pending: Remaining is 9, not 14. It has to
+  // agree with checkLeaveSubmission, which refuses anything over 9.
+  assert.deepStrictEqual(leavePoolFigures('annual', 14, rows, 2026), {
+    type: 'annual',
+    pool: 14,
+    taken: 3,
+    pending: 2,
+    remaining: 9,
+  })
+  // Taken stays approved-only — it is not the same number as 14 − remaining
+  assert.strictEqual(leavePoolFigures('annual', 14, rows, 2026).taken, 3)
+
+  // the four dead statuses (20 days of them in `rows`) count towards neither
+  const alive: LeaveDaysRow[] = rows.filter(
+    r => r.status === 'approved' || r.status === 'pending',
+  )
+  assert.deepStrictEqual(leavePoolFigures('annual', 14, alive, 2026), leavePoolFigures('annual', 14, rows, 2026))
+  for (const status of ['rejected', 'withdrawn', 'cancelled', 'revoked'] as const) {
+    const dead: LeaveDaysRow[] = [{ type: 'annual', leaveYear: 2026, status, days: 5 }]
+    assert.deepStrictEqual(leavePoolFigures('annual', 14, dead, 2026), {
+      type: 'annual',
+      pool: 14,
+      taken: 0,
+      pending: 0,
+      remaining: 14,
+    })
+  }
+
+  // types are separate Pools — annual's 5 committed days do not touch medical
+  assert.deepStrictEqual(leavePoolFigures('medical', 14, rows, 2026), {
+    type: 'medical',
+    pool: 14,
+    taken: 1,
+    pending: 0,
+    remaining: 13,
+  })
+  // and so are Leave Years
+  assert.deepStrictEqual(leavePoolFigures('annual', 14, rows, 2025), {
+    type: 'annual',
+    pool: 14,
+    taken: 9,
+    pending: 0,
+    remaining: 5,
+  })
+
+  // a Pool below what is already Committed reports the negative rather than
+  // clamping at zero — hiding it would be a lie
+  assert.strictEqual(leavePoolFigures('annual', 4, rows, 2026).remaining, -1)
+  assert.strictEqual(leavePoolFigures('annual', 0, rows, 2026).remaining, -5)
+
+  // halves sum exactly: three approved half days are 1.5, not 1.4999999999
+  const halves: LeaveDaysRow[] = [
+    ...[0.5, 0.5, 0.5].map(days => ({ type: 'annual' as const, leaveYear: 2026, status: 'approved' as const, days })),
+    { type: 'annual', leaveYear: 2026, status: 'pending', days: 0.5 },
+  ]
+  assert.deepStrictEqual(leavePoolFigures('annual', 14, halves, 2026), {
+    type: 'annual',
+    pool: 14,
+    taken: 1.5,
+    pending: 0.5,
+    remaining: 12,
+  })
+}
+
+// -- the Pool: Assigned plus Carried -------------------------------------------
+{
+  // carried 0 is every Pool in the system today — the Pool IS the Assigned Days
+  assert.strictEqual(poolDays(14, 0), 14)
+  assert.strictEqual(poolDays(0, 0), 0)
+  // with days carried in, they add
+  assert.strictEqual(poolDays(14, 3), 17)
+  // halves survive exactly, in either operand — a back-solved Pool can hold one
+  assert.strictEqual(poolDays(14, 0.5), 14.5)
+  assert.strictEqual(poolDays(10.5, 3.5), 14)
+  assert.strictEqual(poolDays(0.5, 0.5), 1)
+  // and what it composes is what the figures are drawn from
+  assert.strictEqual(leavePoolFigures('annual', poolDays(14, 0), rows, 2026).remaining, 9)
+  assert.strictEqual(leavePoolFigures('annual', poolDays(14, 3), rows, 2026).remaining, 12)
+}
+
+// -- Carried Days: what last year's Remaining is worth this year ---------------
+{
+  // the cap is the ceiling, and it is the only thing between the previous
+  // Remaining and this year's Pool
+  assert.strictEqual(carriedDays('annual', 14, 14), 14, 'exactly at the cap carries whole')
+  assert.strictEqual(carriedDays('annual', 13, 14), 13, 'one below the cap carries itself')
+  assert.strictEqual(carriedDays('annual', 15, 14), 14, 'one above the cap carries the cap')
+  assert.strictEqual(carriedDays('annual', 100, 14), 14)
+
+  // an untouched year carries nothing, and neither does a year spent exactly out
+  assert.strictEqual(carriedDays('annual', 0, 14), 0)
+
+  // a Pool lowered below what was Committed leaves a negative Remaining. It is
+  // shown negative (leavePoolFigures does not clamp) but it must NOT carry a
+  // debt into the next year — the instructor starts the year whole.
+  assert.strictEqual(carriedDays('annual', -1, 14), 0)
+  assert.strictEqual(carriedDays('annual', -20, 14), 0)
+  assert.strictEqual(carriedDays('annual', -0.5, 14), 0)
+
+  // medical never carries. It is a property of this function, so no call site
+  // can forget the branch — cap and previous Remaining are both irrelevant.
+  assert.strictEqual(carriedDays('medical', 14, 14), 0)
+  assert.strictEqual(carriedDays('medical', 3.5, 100), 0)
+  assert.strictEqual(carriedDays('medical', -5, 0), 0)
+
+  // halves carry as halves: 3.5 is 3.5, neither rounded down to 3 nor up to 4
+  assert.strictEqual(carriedDays('annual', 3.5, 14), 3.5)
+  assert.strictEqual(carriedDays('annual', 0.5, 14), 0.5)
+  assert.strictEqual(carriedDays('annual', 14.5, 14), 14)
+
+  // a cap of 0 turns carry-over off studio-wide
+  assert.strictEqual(carriedDays('annual', 14, 0), 0)
+  assert.strictEqual(carriedDays('annual', 0.5, 0), 0)
+
+  // and what carries is what the next year's Pool is composed from
+  assert.strictEqual(poolDays(14, carriedDays('annual', 3.5, 14)), 17.5)
+  assert.strictEqual(poolDays(14, carriedDays('medical', 3.5, 14)), 14)
+  // last year's Remaining comes from last year's figures, unclamped on the way in
+  const previous = leavePoolFigures('annual', 14, rows, 2025).remaining
+  assert.strictEqual(previous, 5)
+  assert.strictEqual(poolDays(14, carriedDays('annual', previous, 14)), 19)
+}
+
+// -- the admin's adjustment: back-solving a Pool from a desired Remaining ------
+{
+  // nothing committed: the Pool IS the Remaining being asked for
+  assert.strictEqual(poolForRemaining(14, 0), 14)
+  assert.strictEqual(poolForRemaining(0, 0), 0)
+  // whole days already committed push the Pool up by exactly what was spent
+  assert.strictEqual(poolForRemaining(9, 5), 14)
+  assert.strictEqual(poolForRemaining(1, 20), 21)
+  // half days survive — 3.5 taken and 9 wanted is a Pool of 12.5, not 12 or 13
+  assert.strictEqual(poolForRemaining(9, 3.5), 12.5)
+  assert.strictEqual(poolForRemaining(0.5, 0.5), 1)
+  assert.strictEqual(poolForRemaining(3.5, 3.5), 7)
+  // three half days summed in halves is exactly 1.5, not 1.4999999999999998
+  assert.strictEqual(poolForRemaining(0, 0.5 + 0.5 + 0.5), 1.5)
+
+  // pending counts as much as approved: Committed is both, so a Pool solved
+  // against 3 approved + 2 pending is solved against 5
+  const committed = sumLeaveDays(rows, { ...annual2026, statuses: COMMITTED_STATUSES })
+  assert.strictEqual(committed, 5)
+  assert.strictEqual(poolForRemaining(9, committed), 14)
+
+  // THE round trip: what the admin typed is what the instructor then sees.
+  for (const wanted of [0, 1, 7.5, 9, 12, 20]) {
+    assert.strictEqual(
+      leavePoolFigures('annual', poolForRemaining(wanted, committed), rows, 2026).remaining,
+      wanted,
+      `a Pool back-solved for ${wanted} must yield exactly ${wanted}`,
+    )
+  }
+  // ...including with halves on both sides, and with medical's separate rows
+  const halves: LeaveDaysRow[] = [
+    { type: 'annual', leaveYear: 2026, status: 'approved', days: 0.5 },
+    { type: 'annual', leaveYear: 2026, status: 'approved', days: 3 },
+    { type: 'annual', leaveYear: 2026, status: 'pending', days: 0.5 },
+    { type: 'medical', leaveYear: 2026, status: 'approved', days: 2 },
+  ]
+  const halfCommitted = sumLeaveDays(halves, { ...annual2026, statuses: COMMITTED_STATUSES })
+  assert.strictEqual(halfCommitted, 4)
+  assert.strictEqual(
+    leavePoolFigures('annual', poolForRemaining(9.5, halfCommitted), halves, 2026).remaining,
+    9.5,
+  )
+  const medicalCommitted = sumLeaveDays(halves, {
+    type: 'medical',
+    leaveYear: 2026,
+    statuses: COMMITTED_STATUSES,
+  })
+  assert.strictEqual(
+    leavePoolFigures('medical', poolForRemaining(3.5, medicalCommitted), halves, 2026).remaining,
+    3.5,
+  )
+}
+
+// -- the admin's adjustment: what may be asked for ----------------------------
+{
+  // the ceiling is ASSIGNED DAYS PLUS CARRIED DAYS, not the stored Pool.
+  // Granting more than that is a separate, deliberate act.
+  const ceiling = poolDays(14, 0)
+  assert.deepStrictEqual(checkRemainingAdjustment('annual', 10, ceiling), { ok: true })
+  assert.deepStrictEqual(checkRemainingAdjustment('annual', 14, ceiling), { ok: true }, 'at the ceiling is allowed')
+  assert.deepStrictEqual(checkRemainingAdjustment('annual', 0, ceiling), { ok: true }, 'zero is allowed')
+  assert.deepStrictEqual(checkRemainingAdjustment('annual', 12.5, poolDays(12.5, 0)), { ok: true })
+  // days carried in raise it, because they are part of what was agreed
+  assert.deepStrictEqual(checkRemainingAdjustment('annual', 17, poolDays(14, 3)), { ok: true })
+
+  const over = checkRemainingAdjustment('annual', 14.5, ceiling)
+  assert.strictEqual(over.ok, false)
+  assert.strictEqual(over.ok === false && over.code, 'remaining_above_pool')
+  // the refusal names the ceiling — an admin who overshoots is told the number
+  assert.match(over.ok === false ? over.message : '', /14/)
+  assert.match(over.ok === false ? over.message : '', /annual/)
+
+  const under = checkRemainingAdjustment('medical', -0.5, ceiling)
+  assert.strictEqual(under.ok, false)
+  assert.strictEqual(under.ok === false && under.code, 'remaining_below_zero')
+  assert.match(under.ok === false ? under.message : '', /medical/)
+
+  // a ceiling of 0 admits exactly one figure
+  assert.deepStrictEqual(checkRemainingAdjustment('annual', 0, 0), { ok: true })
+  assert.strictEqual(checkRemainingAdjustment('annual', 0.5, 0).ok, false)
+}
+
+// -- the adjustment is NOT a one-way ratchet ----------------------------------
+{
+  // 14 Assigned, nothing carried, nothing Committed. An admin typos 5.
+  const ceiling = poolDays(14, 0)
+  assert.deepStrictEqual(checkRemainingAdjustment('annual', 5, ceiling), { ok: true })
+  // that back-solved the stored Pool down to 5 ...
+  assert.strictEqual(poolForRemaining(5, 0), 5)
+  // ... and putting the original figure back must still be allowed. Bounded
+  // against the stored Pool it would not be, and the typo would stand until
+  // 1 January (spec user story 27).
+  assert.deepStrictEqual(
+    checkRemainingAdjustment('annual', 14, ceiling),
+    { ok: true },
+    'restoring a mistyped figure is a correction, not a grant',
+  )
+
+  // the other direction is unchanged: above Assigned + Carried is still refused
+  assert.strictEqual(checkRemainingAdjustment('annual', 14.5, ceiling).ok, false)
+  assert.strictEqual(checkRemainingAdjustment('annual', 18, poolDays(14, 3)).ok, false)
+
+  // and a Pool a previous adjustment RAISED does not raise the ceiling with it:
+  // 14 Remaining against 5 days Committed back-solves to a Pool of 19, but 19
+  // was never Assigned + Carried, so the next adjustment is still capped at 14.
+  const committedFive = sumLeaveDays(rows, { ...annual2026, statuses: COMMITTED_STATUSES })
+  assert.strictEqual(committedFive, 5)
+  assert.strictEqual(poolForRemaining(14, committedFive), 19)
+  assert.strictEqual(checkRemainingAdjustment('annual', 19, ceiling).ok, false)
+  assert.strictEqual(checkRemainingAdjustment('annual', 15, ceiling).ok, false)
+}
+
+// -- submission: what is left of the Pool -------------------------------------
+const base = { today: '2026-08-10', pool: 14, committedDays: 0 } as const
 {
   const over = checkLeaveSubmission({
     ...base,
@@ -241,11 +484,14 @@ const base = { today: '2026-08-10', allowance: 14, committedDays: 0 } as const
   })
   assert.strictEqual(over.ok, false)
   assert.strictEqual(over.ok === false && over.code, 'insufficient_leave_balance')
-  // the refusal has to say what is left, or the instructor can't fix it
+  // the refusal has to name the Pool and what remains of it, or the instructor
+  // can't fix it — and it says so in the glossary's terms, not "your allowance"
   assert.match(over.ok === false ? over.message : '', /5 days/)
-  assert.match(over.ok === false ? over.message : '', /2 of your 14 annual days/)
+  assert.match(over.ok === false ? over.message : '', /annual Pool this year is 14 days/)
+  assert.match(over.ok === false ? over.message : '', /2 remaining/)
+  assert.doesNotMatch(over.ok === false ? over.message : '', /allowance/i)
 
-  // exactly at the balance is allowed
+  // exactly at the Remaining is allowed
   const exact = checkLeaveSubmission({
     ...base,
     type: 'annual',
@@ -267,7 +513,7 @@ const base = { today: '2026-08-10', allowance: 14, committedDays: 0 } as const
     false,
   )
 
-  // medical draws on its own pool — a spent annual balance does not block it
+  // medical draws on its own Pool — a spent annual Pool does not block it
   const medical = checkLeaveSubmission({
     ...base,
     type: 'medical',
@@ -326,7 +572,7 @@ const base = { today: '2026-08-10', allowance: 14, committedDays: 0 } as const
     true,
   )
 
-  // an end before the start is refused as a range, not as a balance problem
+  // an end before the start is refused as a range, not as a Pool problem
   const backwards = checkLeaveSubmission({
     ...base,
     type: 'annual',
@@ -373,7 +619,7 @@ const base = { today: '2026-08-10', allowance: 14, committedDays: 0 } as const
   assert.strictEqual(checkLeaveSubmission({ ...halfLeft, committedDays: 13.5, halfDay: 'afternoon' }).ok, true)
   const wholeDay = checkLeaveSubmission({ ...halfLeft, committedDays: 13.5 })
   assert.strictEqual(wholeDay.ok === false && wholeDay.code, 'insufficient_leave_balance')
-  assert.match(wholeDay.ok === false ? wholeDay.message : '', /0\.5 of your 14 annual days/)
+  assert.match(wholeDay.ok === false ? wholeDay.message : '', /0\.5 remaining/)
   // and a half day with nothing left is still refused
   assert.strictEqual(checkLeaveSubmission({ ...halfLeft, committedDays: 14, halfDay: 'morning' }).ok, false)
 
@@ -500,25 +746,22 @@ const base = { today: '2026-08-10', allowance: 14, committedDays: 0 } as const
     { type: 'annual', leaveYear: 2026, status: 'approved', days: 4 },
     { type: 'annual', leaveYear: 2026, status: 'approved', days: 2 },
   ]
-  assert.strictEqual(remainingLeaveDays(14, approved, { ...annual2026, statuses: TAKEN_STATUSES }), 8)
+  assert.strictEqual(leavePoolFigures('annual', 14, approved, 2026).taken, 6)
+  assert.strictEqual(leavePoolFigures('annual', 14, approved, 2026).remaining, 8)
   // flip one to the status the admin's decision writes — the days come back
   const afterRevoke = approved.map((r, i) => (i === 0 ? { ...r, status: 'revoked' as const } : r))
-  assert.strictEqual(
-    remainingLeaveDays(14, afterRevoke, { ...annual2026, statuses: TAKEN_STATUSES }),
-    12,
-  )
+  assert.strictEqual(leavePoolFigures('annual', 14, afterRevoke, 2026).taken, 2)
+  assert.strictEqual(leavePoolFigures('annual', 14, afterRevoke, 2026).remaining, 12)
   // a rejected request never counted against the submission check either
   const pending: LeaveDaysRow[] = [{ type: 'annual', leaveYear: 2026, status: 'pending', days: 4 }]
+  assert.strictEqual(leavePoolFigures('annual', 14, pending, 2026).remaining, 10)
   assert.strictEqual(
-    remainingLeaveDays(14, pending, { ...annual2026, statuses: COMMITTED_STATUSES }),
-    10,
-  )
-  assert.strictEqual(
-    remainingLeaveDays(
+    leavePoolFigures(
+      'annual',
       14,
       pending.map(r => ({ ...r, status: 'rejected' as const })),
-      { ...annual2026, statuses: COMMITTED_STATUSES },
-    ),
+      2026,
+    ).remaining,
     14,
   )
 }

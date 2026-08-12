@@ -15,11 +15,12 @@ export const globalPolicy = pgTable(
     cancelCapCycleDays: integer('cancel_cap_cycle_days').notNull(),
     classWindowHours: integer('class_window_hours').notNull(),
     ptWindowHours: integer('pt_window_hours').notNull(),
-    // Yearly instructor leave allowances, in days. Global — deliberately no
-    // per-instructor override. The DB default is what backfills the existing
-    // singleton row when this migration runs.
-    annualLeaveDays: integer('annual_leave_days').notNull().default(14),
-    medicalLeaveDays: integer('medical_leave_days').notNull().default(14),
+    // The one studio-wide leave figure: the ceiling on unused ANNUAL days
+    // carrying into the next Leave Year. Assigned Days are NOT here — they live
+    // per instructor, on `instructors` (see db/schema/catalog.ts). Changing this
+    // affects Leave Years that have yet to be materialised; a Pool already
+    // stored is frozen and does not move.
+    leaveCarryOverCapDays: integer('leave_carry_over_cap_days').notNull().default(14),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     updatedByStaffId: uuid('updated_by_staff_id').references(() => staffUsers.id, {
       onDelete: 'restrict',

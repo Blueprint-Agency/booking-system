@@ -39,7 +39,13 @@ import {
 
 interface ApiBalance {
   type: LeaveType;
-  allowance: number;
+  /** The yearly figure on my profile. */
+  assigned_days: number;
+  /** Part of the Pool, brought in from last year. Never non-zero for medical. */
+  carried_days: number;
+  /** What leave is drawn from this year. Normally assigned + carried, but an
+   *  admin's adjustment can move it, so it is sent rather than added up here. */
+  pool_days: number;
   taken_days: number;
   pending_days: number;
   remaining_days: number;
@@ -83,12 +89,20 @@ function BalanceCard({ balance }: { balance: ApiBalance }) {
         <span className="text-2xl font-semibold tabular-nums text-ink">
           {balance.remaining_days}
         </span>
-        <span className="text-sm text-muted">of {balance.allowance} days left</span>
+        <span className="text-sm text-muted">of {balance.pool_days} days left</span>
       </div>
       <p className="mt-1 text-xs text-muted">
         {balance.taken_days} approved
         {balance.pending_days > 0 && `, ${balance.pending_days} awaiting a decision`}
       </p>
+      {/* Named only when there is some: an instructor should be able to tell a
+          one-off surplus from their yearly assigned days. Medical never carries. */}
+      {balance.carried_days > 0 && (
+        <p className="mt-0.5 text-xs text-muted">
+          {balance.assigned_days} assigned, plus {balance.carried_days}{" "}
+          {balance.carried_days === 1 ? "day" : "days"} carried over from last year.
+        </p>
+      )}
     </div>
   );
 }

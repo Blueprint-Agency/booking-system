@@ -4,6 +4,16 @@ Two features that only make sense together: instructors can apply for leave, and
 
 Status: ready for agent. Source: grilling session 2026-08-10.
 
+> **Partly superseded (2026-08-12).** The flat studio-wide allowance this spec was built
+> on is gone. The yearly figure is now **Assigned Days**, per instructor, and leave is
+> drawn from a stored per-year **Pool** — Assigned plus **Carried Days** — with unused
+> annual days carrying into the next Leave Year. `docs/md/spec-instructor-leave-pools.md`
+> and `be/docs/adr/0001-per-instructor-leave-pools-with-carry-over.md` are the authority
+> on that half, and `be/CONTEXT.md` is binding on the vocabulary: *allowance*,
+> *entitlement* and *balance* are retired words. The affected sections below have been
+> corrected and cross-reference rather than restate. Everything else here — the clash
+> rule, half days, certificates, instructor-initiated cancellation — is unchanged.
+
 ## Problem Statement
 
 Instructors have no way to tell the studio, inside the system, that they will be away.
@@ -16,18 +26,18 @@ Meanwhile the system already knows how to answer "is this instructor busy" — i
 
 ## Solution
 
-Instructors apply for leave in the portal. Two types, annual and medical, each with a yearly allowance in days. An admin or superadmin approves or rejects. Approved leave is not a note on a calendar — it makes the instructor genuinely unavailable, enforced by the same rule that already stops an instructor being booked into two places at once, so every scheduling screen refuses him for those dates without any screen having to know that leave exists.
+Instructors apply for leave in the portal. Two types, annual and medical, each drawn from that instructor's own **Pool** of days for the Leave Year. An admin or superadmin approves or rejects. Approved leave is not a note on a calendar — it makes the instructor genuinely unavailable, enforced by the same rule that already stops an instructor being booked into two places at once, so every scheduling screen refuses him for those dates without any screen having to know that leave exists.
 
 The guarantee runs both ways. Leave cannot be requested for a date the instructor is already assigned to teach — the request is refused and names the events in the way. To clear them he cancels his own classes, which he can now do.
 
 From each person's side:
 
-- **An instructor** sees his two balances, applies for leave over a date range or a single half-day, attaches a medical certificate if he has one, withdraws or cancels his own requests, and cancels his own classes when he must.
+- **An instructor** sees his Remaining days of each type, applies for leave over a date range or a single half-day, attaches a medical certificate if he has one, withdraws or cancels his own requests, and cancels his own classes when he must.
 - **An admin** works a pending-leave queue, approves or rejects with a reason, sees the whole studio's leave on a calendar, and cannot accidentally schedule someone who is away — the instructor is greyed out and labelled, and the save is refused regardless.
 - **Any staff member** can see who is away and when, and nothing more: leave type, the stated reason and any medical certificate are admin-only.
 - **A member** never sees any of it, and never turns up to a class whose instructor is on approved leave.
 
-No money is involved anywhere. Instructors are paid per class, so a leave day pays nothing; a balance is permission to be absent, not an entitlement to be paid.
+No money is involved anywhere. Instructors are paid per class, so a leave day pays nothing; a Pool is permission to be absent, not a right to be paid.
 
 ## User Stories
 
@@ -37,7 +47,7 @@ No money is involved anywhere. Instructors are paid per class, so a leave day pa
 4. As an instructor, I want to apply for a half day, morning or afternoon, so that a mid-day appointment does not cost me a whole day.
 5. As an instructor, I want to see how many annual and medical days I have left this year, so that I can plan before I ask.
 6. As an instructor, I want to be stopped at submission if I am asking for more days than I have left, so that I do not wait for a rejection I could have predicted.
-7. As an instructor, I want my pending requests counted against my remaining balance, so that I cannot accidentally over-commit by submitting twice.
+7. As an instructor, I want my pending requests counted against my Remaining, so that I cannot accidentally over-commit by submitting twice.
 8. As an instructor, I want to give a reason with my request, so that the admin has the context to decide.
 9. As an instructor, I want to attach a medical certificate to a medical leave request, so that I can evidence a sick day.
 10. As an instructor, I want the certificate to be optional, so that being ill at 6am does not block me from filing.
@@ -52,7 +62,7 @@ No money is involved anywhere. Instructors are paid per class, so a leave day pa
 19. As an instructor, I want cancelling my class to refund the members who booked it, so that nobody loses a credit because I could not teach.
 20. As an instructor, I want to withdraw a leave request that is still pending, so that a change of plan does not need an admin.
 21. As an instructor, I want to cancel leave that was already approved but has not started, so that returning early is possible.
-22. As an instructor, I want cancelling or withdrawing leave to give me those days back, so that my balance reflects what I actually took.
+22. As an instructor, I want cancelling or withdrawing leave to give me those days back, so that my Remaining reflects what I actually took.
 23. As an instructor, I want to see my colleagues' leave dates, so that I can judge whether asking for the same week is realistic.
 24. As an instructor, I want my colleagues to see only that I am away and not why, so that my medical absences stay private.
 25. As an instructor, I want an email when my request is approved or rejected, so that I am not refreshing the portal to find out.
@@ -74,17 +84,17 @@ No money is involved anywhere. Instructors are paid per class, so a leave day pa
 41. As an admin, I want an email when an instructor submits a request, so that requests do not sit unread.
 42. As an admin, I want an email when an instructor cancels one of his classes, so that a class disappearing from the timetable is never a surprise.
 43. As an admin, I want an instructor's cancellation recorded as an instructor cancellation and not an admin one, so that the audit trail says who actually did it.
-44. As a superadmin, I want to set the yearly annual and medical allowances once for everyone, so that I am not maintaining a number per instructor.
-45. As an admin, I want balances to reset at the start of a calendar year without anyone running anything, so that January does not need an administrative ritual.
-46. As an admin, I want last year's leave counts to stay as they were when I change this year's allowance, so that history does not move.
+44. As an admin or superadmin, I want to set an individual instructor's Assigned annual and medical days on their own profile, so that leave matches what was agreed with that person rather than one number standing for everyone. *(Reversed 2026-08-12 — this story previously said the opposite. See `spec-instructor-leave-pools.md` for the per-instructor model and the superadmin-only carry-over cap that replaced the two global figures.)*
+45. As an admin, I want a new Leave Year to open without anyone running anything, so that January does not need an administrative ritual.
+46. As an admin, I want last year's leave counts to stay as they were when I change an instructor's Assigned Days, so that history does not move.
 47. As an admin, I want backdated medical leave to record the absence without disturbing classes that already happened, so that filing an MC late does not rewrite the past.
 48. As an admin, I want cancelled classes ignored when checking clashes, so that a class nobody is teaching does not block leave.
 49. As a superadmin, I want the same leave powers as an admin, so that I am never the person who cannot act.
 50. As a member, I want the class I booked to have an instructor who is not on leave, so that the class actually runs.
 51. As a member, I want my credit returned when a class is cancelled by its instructor, so that I am not out of pocket for someone else's absence.
 52. As a developer, I want "instructor is unavailable" to be decided in one module whether the cause is a clash or leave, so that a new reason for unavailability does not have to be added to six write paths.
-53. As a developer, I want the date arithmetic — day counting, half-day windows, balance remaining — expressed as pure functions, so that the rules can be checked without a database.
-54. As a developer, I want a leave request to record the leave year it was counted against, so that changing an allowance cannot retroactively alter past balances.
+53. As a developer, I want the date arithmetic — day counting, half-day windows, Remaining — expressed as pure functions, so that the rules can be checked without a database.
+54. As a developer, I want a leave request to record the Leave Year it was counted against, so that changing an instructor's Assigned Days cannot retroactively alter a past year.
 55. As an agent working in this repo, I want one named module to read to learn how leave affects scheduling, so that I do not have to guess which write path enforces it.
 
 ## Implementation Decisions
@@ -100,16 +110,19 @@ No money is involved anywhere. Instructors are paid per class, so a leave day pa
 - One new table of leave requests, keyed to the instructor (the staff user id that the instructors table extends).
 - Columns carry: type (annual, medical); a start date and an end date, both plain dates in Asia/Singapore, not timestamps; a half-day marker (none, morning, afternoon); the number of days the request consumes, as a one-decimal numeric; the leave year it counts against; a status; the instructor's stated reason; the decision reason; the deciding staff user and the time of decision; and a nullable object key for a medical certificate.
 - Status values: pending, approved, rejected, withdrawn, cancelled, revoked. Withdrawn is the instructor abandoning a pending request; cancelled is the instructor giving back approved leave; revoked is an admin taking approved leave away.
-- The leave year is stored on the row, not derived at read time, so that changing an allowance or crossing a year boundary cannot alter what a past request counted against.
+- The leave year is stored on the row, not derived at read time, so that changing an instructor's Assigned Days, or crossing a year boundary, cannot alter what a past request counted against.
 - Two new enums for type and status. The half-day marker can be an enum or a nullable column; either is acceptable so long as "no half day" is representable.
 
-### Allowance and balance
+### The Pool, and Remaining
 
-- The yearly allowances are two integer columns on the existing global policy singleton — one for annual, one for medical — defaulting to 14 each and edited on the existing policy screen, which is superadmin-only like every other setting on it. They are global; there is deliberately no per-instructor allowance.
-- The singleton's existing columns are all non-null with no defaults, so the migration must backfill the two new columns for the existing row.
-- **The balance is derived, never stored.** Remaining for a type in a year is the allowance minus the sum of days on that instructor's approved requests for that type and year. There is no counter column, so nothing can drift, no restore-on-cancel logic is needed, and the new year resets itself without a scheduled job.
-- Submission is refused when the requested days exceed the allowance minus approved *and pending* days. Counting pending is what stops two simultaneous requests from together exceeding the allowance.
-- Medical draws from its own allowance, entirely separate from annual.
+**Rewritten 2026-08-12.** The detail lives in `spec-instructor-leave-pools.md`; what follows is only enough that this document is not misleading read on its own.
+
+- The yearly figure is **Assigned Days** — two integer columns on `instructors`, one annual, one medical, defaulting to 14 each and set per instructor on the staff profile by an admin or superadmin. It is not on the global policy singleton and it is not one number for everyone.
+- Each Leave Year an instructor is given a **Pool**: their Assigned Days plus any **Carried Days** from the year before, capped by the one studio-wide carry-over cap that *does* live on the policy singleton. The Pool is stored — one row per instructor, per Leave Type, per Leave Year — and frozen the first time that year is read. Medical never carries.
+- **The Pool is a stored grant, not a stored balance.** **Taken** (approved days) and **Committed** (approved plus pending) are still derived by summing requests. No counter can drift, no restore-on-cancel logic is needed, and a new year opens on first read rather than by a scheduled job.
+- **Remaining is Pool minus Committed** — pending counts, which is what an instructor is shown and what a new request is measured against. It is not clamped: a figure lowered below what is already Committed shows an honest negative.
+- Submission is refused when the requested days exceed Remaining. Counting pending is what stops two simultaneous requests from together exceeding the Pool.
+- Medical draws from its own Pool, entirely separate from annual.
 
 ### Days and half days
 
@@ -129,7 +142,7 @@ This is the load-bearing decision, and it reuses machinery that already exists.
 - A leave day is converted into a time window in Singapore time — the whole day, or the half indicated — and compared with the existing overlap rule. The rule stays a pure function over two windows; only the source of one of the windows is new.
 - The conflict payload gains a leave variant, and the refusal sentence gains a leave phrasing: an instructor on leave should read as "on leave on 12 Aug", not as "already booked".
 - **The reverse direction uses the same function.** When an instructor submits a leave request, the system asks occupancy for that instructor's conflicts across the requested window and refuses the submission if any are found, naming them. Because occupancy already excludes cancelled and non-active events, a cancelled class correctly does not block leave.
-- Only conflicts that end in the future block a submission. Backdated medical leave therefore records the absence and consumes balance without being obstructed by classes that already happened, and without disturbing them.
+- Only conflicts that end in the future block a submission. Backdated medical leave therefore records the absence and draws down the Pool without being obstructed by classes that already happened, and without disturbing them.
 - **Known gap, inherited:** the workshop write paths never adopted the occupancy module — they do not call it today for double-booking either. Leave will therefore not block assigning an instructor to a workshop until those paths adopt the seam. Bringing workshops into occupancy is the natural fix and is called out in Out of Scope; if it is done, leave enforcement follows for free.
 
 ### Instructor-initiated class cancellation
@@ -169,8 +182,9 @@ This is the load-bearing decision, and it reuses machinery that already exists.
 ### Portal surfaces
 
 - An admin leave page: the pending queue plus a calendar, reusing the existing schedule calendar component rather than introducing a second calendar implementation.
-- An instructor leave page: the two balances, the submission form, the instructor's own request history, and the same all-staff read-only calendar.
-- The two allowance numbers are added to the existing policy screen, which is superadmin-only — an admin approves leave but does not set the allowances.
+- An instructor leave page: the two Pools with their Remaining figures, the submission form, the instructor's own request history, and the same all-staff read-only calendar.
+- Assigned Days are set per instructor on the staff profile, which an admin can open as well as a superadmin — the person who approves the leave is the person who sets the number. That profile also shows the Leave Year's Carried, Pool and Remaining, and Remaining is directly editable for the current year, bounded by that year's Pool.
+- The policy screen keeps exactly one leave field, the studio-wide carry-over cap, and stays superadmin-only like every other setting on it.
 - A cancel action on the instructor's schedule screen, with a required reason and a confirmation that states how many members will be refunded.
 - The instructor picker on scheduling screens greys out and labels an instructor who is on leave for the chosen date. Before a date is chosen, nobody is greyed. The picker is a hint; the server refusal is the enforcement.
 
@@ -183,8 +197,8 @@ This is the load-bearing decision, and it reuses machinery that already exists.
   - the half-day-only-on-a-single-date restriction;
   - the half-day window in Singapore time — a morning request and an afternoon request produce the expected windows, and an event straddling 13:00 collides with both;
   - a full-day leave window covering the whole Singapore day, including that it does not bleed into the adjacent day at the UTC boundary;
-  - remaining balance — allowance minus approved, pending included for the submission check, other statuses excluded, types kept separate, years kept separate;
-  - the submission eligibility rule — over-balance refused, exactly-at-balance allowed;
+  - Remaining — Pool minus Committed (approved *and* pending), with Taken counting approved only, other statuses excluded, and Leave Types and Leave Years kept separate;
+  - the submission eligibility rule — over-Remaining refused, exactly-at-Remaining allowed;
   - the backdating rule — annual must start in the future, medical allowed up to seven days back, beyond that refused;
   - the future-only filter on clashes — a past event does not block, a future event does.
 - The overlap predicate itself is already covered; the new checks feed it leave-derived windows rather than re-testing it.
@@ -195,8 +209,9 @@ This is the load-bearing decision, and it reuses machinery that already exists.
 ## Out of Scope
 
 - Leave for admins, superadmins or any non-instructor staff.
-- Accrual, carry-forward, pro-rating for mid-year joiners, and year-end rollover. The allowance is a flat yearly number and unused days expire.
-- Per-instructor allowances. One global pair covers everyone; an exception is handled by an admin's judgement at approval, not by data.
+- Accrual, and pro-rating for mid-year joiners. An instructor gets their full Assigned figure on day one and on every 1 January.
+- ~~Carry-forward and year-end rollover. The allowance is a flat yearly number and unused days expire.~~ **Shipped 2026-08-12.** Unused *annual* days now carry into the next Leave Year up to a studio-wide cap; medical still does not carry. See `spec-instructor-leave-pools.md`.
+- ~~Per-instructor allowances. One global pair covers everyone; an exception is handled by an admin's judgement at approval, not by data.~~ **Shipped 2026-08-12.** Assigned Days are per instructor and set on the staff profile; an exception is now data rather than judgement. `be/docs/adr/0001-per-instructor-leave-pools-with-carry-over.md` records why both non-goals were reversed.
 - Any link to pay or payroll. Leave days generate no payroll entries and no money is computed. If instructors ever become salaried, paid leave is a separate spec that must first introduce a rate.
 - Half days at the ends of a multi-day range.
 - Public-holiday and working-pattern awareness. The system has no roster of who works which days and is not gaining one.
@@ -213,8 +228,8 @@ This is the load-bearing decision, and it reuses machinery that already exists.
 
 - **The hard-block decision has a cost, and it was taken deliberately.** Requiring an instructor to clear his own clashes means the only way to take a day off that already has a class on it is to cancel that class — which refunds every booked member and loses the studio that session. Reassigning the class to another qualified instructor would usually be the better outcome, and the qualification data to support it already exists. The alternative considered was allowing submission with clashes attached and making the admin resolve each one at approval, which would have permitted reassignment. It was rejected in favour of the stronger invariant that approved leave and an assignment can never coexist. If cancellations start costing real revenue, that is the decision to revisit first, and it is a change to the submission path only — the occupancy enforcement is unaffected either way.
 - The two guarantees together are airtight and worth stating explicitly: no leave request can be submitted while a future assignment exists on those dates, and no assignment can be created while a pending or approved leave request exists on those dates. Neither alone is sufficient — the first without the second leaves a window between submission and approval in which an admin could schedule the instructor and make his own pending request un-approvable.
-- Because the balance is derived, cancelling or revoking leave restores days with no code: the row leaves the approved set and the sum changes. This is the main reason to resist a stored counter later.
+- Because Taken and Committed are derived, cancelling or revoking leave restores days with no code: the row simply stops matching the filter and the sum changes. Storing the Pool did not give that up — a Pool is a stored *grant*, and nothing is ever written to it when a request changes status. This remains the main reason to resist a stored counter later, and the ADR restates it as the property the Pool was designed to preserve.
 - Backdated medical leave is the only path that records leave over dates with completed classes. It intentionally changes nothing about those classes — attendance, check-ins and pay all stand.
 - The instructor cancel endpoint is independently useful and has no dependency on the leave work. It can land first, and probably should, since it is small and it is the only thing a sick instructor can currently do nothing about.
 - Adding the private bucket is the moment to decide whether the existing storage configuration should be non-optional in deployed environments. Today every storage variable is optional, which means a misconfigured deploy fails at upload time rather than at boot. Out of scope here, but it will be felt the first time a certificate upload fails in staging.
-- No ADRs exist in this repo, so nothing here contradicts a recorded decision. The hard-block rule is the candidate worth recording if the project ever starts keeping them.
+- ~~No ADRs exist in this repo, so nothing here contradicts a recorded decision.~~ The repo keeps ADRs now, in `be/docs/adr/`, and the first of them reverses two of this spec's non-goals. The hard-block rule is still unrecorded and remains the next candidate.

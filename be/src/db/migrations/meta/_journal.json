@@ -71,6 +71,34 @@
       "when": 1786351189126,
       "tag": "0009_rapid_whiplash",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786551011417,
+      "tag": "0010_per_instructor_assigned_leave_days",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1786551761754,
+      "tag": "0011_stormy_wolfpack",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1786552157172,
+      "tag": "0012_icy_silk_fever",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1786552769885,
+      "tag": "0013_new_bloodaxe",
+      "breakpoints": true
     }
   ]
 }

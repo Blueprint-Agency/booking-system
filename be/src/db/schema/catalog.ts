@@ -90,6 +90,11 @@ export const instructors = pgTable('instructors', {
     .primaryKey()
     .references(() => staffUsers.id, { onDelete: 'cascade' }),
   photoR2Key: text('photo_r2_key'),
+  // Assigned Days: this instructor's yearly leave figures, set on their own
+  // profile. Not a balance — the input to a Leave Year's Pool. 14/14 unless an
+  // admin says otherwise, which is why the default lives on the column.
+  annualLeaveDays: integer('annual_leave_days').notNull().default(14),
+  medicalLeaveDays: integer('medical_leave_days').notNull().default(14),
 })
 
 export const instructorClassTypes = pgTable(

@@ -1,19 +1,31 @@
-import { pgTable, uuid, text, date, integer, numeric, timestamp, index } from 'drizzle-orm/pg-core'
+import {
+  pgTable,
+  uuid,
+  text,
+  date,
+  integer,
+  numeric,
+  timestamp,
+  index,
+  primaryKey,
+} from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { staffUsers } from './identity'
 import { instructors } from './catalog'
 import { leaveTypeEnum, leaveStatusEnum, leaveHalfDayEnum } from '../enums'
 
 /**
- * Instructor leave requests — see docs/md/spec-instructor-leave.md.
+ * Instructor leave requests — see docs/md/spec-instructor-leave-pools.md.
  *
- * There is deliberately NO balance counter anywhere. Remaining days are derived
- * by summing `days` over this table (see services/leave/rules.ts), so cancelling
- * restores days for free and a new year resets itself with no job.
+ * There is deliberately NO counter of days used anywhere. Taken and Committed
+ * are derived by summing `days` over this table (see services/leave/rules.ts),
+ * so cancelling restores days for free. The one number that IS stored is the
+ * yearly grant — see `leavePools` below — and storing a grant is not storing a
+ * balance: nothing has to be written back when a request ends.
  *
  * `leaveYear` is stored rather than derived at read time so that changing an
- * allowance, or crossing a year boundary, cannot alter what a past request
- * counted against.
+ * instructor's Assigned Days or adjusting a Pool, or crossing a year boundary,
+ * cannot alter what a past request counted against.
  *
  * Dates are plain `date` — Asia/Singapore calendar days, not instants.
  */
@@ -50,5 +62,50 @@ export const leaveRequests = pgTable(
     // The calendar / clash queries: everything overlapping a date window.
     datesIdx: index('leave_requests_dates_idx').on(table.startDate, table.endDate),
     statusIdx: index('leave_requests_status_idx').on(table.status),
+  }),
+)
+
+/**
+ * The **Pool** for one instructor, one Leave Type, one Leave Year — Assigned
+ * Days plus Carried Days, frozen the first time that year is read.
+ *
+ * A stored **grant**, NOT a stored balance. Taken and Committed stay derived by
+ * summing `leave_requests`, so withdraw, cancel, reject and revoke still give
+ * the days back with no code at all — the row simply stops matching the filter.
+ * Nothing is ever written here when a request changes status; a future column
+ * holding Taken or Remaining would give that property up and should be refused.
+ *
+ * Stored rather than derived because carry-over makes a year's Pool depend on
+ * the previous year's Remaining: derived, editing an instructor's Assigned Days
+ * would reach backwards through every year they have worked. See
+ * docs/adr/0001-per-instructor-leave-pools-with-carry-over.md.
+ *
+ * The primary key is the (instructor, type, year) triple, which is what makes
+ * lazy materialisation idempotent: two concurrent first-reads on 1 January
+ * conflict on it instead of writing two Pools.
+ */
+export const leavePools = pgTable(
+  'leave_pools',
+  {
+    instructorId: uuid('instructor_id')
+      .notNull()
+      .references(() => instructors.staffUserId, { onDelete: 'cascade' }),
+    type: leaveTypeEnum('type').notNull(),
+    leaveYear: integer('leave_year').notNull(),
+    /** Days granted, one decimal — NOT an integer. Back-solving a Pool from a
+     *  Remaining figure when half days have been taken produces halves, and an
+     *  integer column would silently round someone's leave away. */
+    days: numeric('days', { precision: 4, scale: 1 }).notNull(),
+    /** How much of `days` came from last year. Stored, not recomputed on read:
+     *  an admin's adjustment back-solves `days` from a Remaining figure, so the
+     *  Pool deliberately stops equalling Assigned + Carried and a recomputed
+     *  Carried would start contradicting it. Still not a balance — nothing
+     *  writes here when a request changes status. */
+    carriedDays: numeric('carried_days', { precision: 4, scale: 1 }).notNull().default('0'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  table => ({
+    pk: primaryKey({ columns: [table.instructorId, table.type, table.leaveYear] }),
   }),
 )
