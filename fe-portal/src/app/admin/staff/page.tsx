@@ -11,7 +11,7 @@ import {
   Sparkles,
   RotateCcw,
   Trash2,
-  Pencil,
+  Eye,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -206,13 +206,19 @@ export default function StaffPage() {
     }
   }
 
-  async function handleEdit(id: string, patch: StaffEditPatch) {
-    if (!api) return;
+  // The PATCH echoes the whole updated row, leave figures included. Patch the
+  // list with it and hand it back to the dialog, so both show the server's
+  // fresh numbers without a full refetch (and reopening shows them too).
+  async function handleEdit(
+    id: string,
+    patch: StaffEditPatch,
+  ): Promise<StaffApiRow | null> {
+    if (!api) return null;
     try {
-      await api.patch(`/portal/admin/staff/${id}`, patch);
+      const updated = await api.patch<StaffApiRow>(`/portal/admin/staff/${id}`, patch);
+      setStaff(prev => prev.map(s => (s.id === updated.id ? updated : s)));
       toast.success("Profile updated.");
-      setEditTarget(null);
-      await refresh();
+      return updated;
     } catch (err) {
       if (err instanceof ApiError) {
         const body = err.body as { error?: string; message?: string } | null;
@@ -220,6 +226,7 @@ export default function StaffPage() {
       } else {
         toast.error("Update failed.");
       }
+      return null;
     }
   }
 
@@ -461,8 +468,7 @@ export default function StaffPage() {
                       isSelf={s.id === currentStaff?.id}
                       canArchive={canArchiveTarget(s)}
                       onArchive={() => setArchiveTarget(s)}
-                      canEdit={canEditTarget(s)}
-                      onEdit={() => setEditTarget(s)}
+                      onOpen={() => setEditTarget(s)}
                     />
                   ))}
                 </ul>
@@ -489,8 +495,7 @@ export default function StaffPage() {
                       isSelf={s.id === currentStaff?.id}
                       canArchive={canArchiveTarget(s)}
                       onArchive={() => setArchiveTarget(s)}
-                      canEdit={canEditTarget(s)}
-                      onEdit={() => setEditTarget(s)}
+                      onOpen={() => setEditTarget(s)}
                       canManageArchived={canManageArchived(s)}
                       onUnarchive={() => handleUnarchive(s)}
                       onDelete={() => handleDelete(s)}
@@ -549,6 +554,7 @@ export default function StaffPage() {
       {editTarget && (
         <StaffEditDialog
           staff={editTarget}
+          canEdit={canEditTarget(editTarget)}
           onSubmit={handleEdit}
           onClose={() => setEditTarget(null)}
         />
@@ -586,8 +592,7 @@ function StaffRow({
   isSelf,
   canArchive,
   onArchive,
-  canEdit,
-  onEdit,
+  onOpen,
   canManageArchived,
   onUnarchive,
   onDelete,
@@ -598,8 +603,7 @@ function StaffRow({
   isSelf: boolean;
   canArchive?: boolean;
   onArchive?: () => void;
-  canEdit?: boolean;
-  onEdit?: () => void;
+  onOpen: () => void;
   canManageArchived?: boolean;
   onUnarchive?: () => void;
   onDelete?: () => void;
@@ -653,11 +657,11 @@ function StaffRow({
     <li className="flex items-center gap-4 px-5 py-3">
       {identity}
       {meta}
-      {canEdit && onEdit && (
-        <Button size="sm" variant="ghost" onClick={onEdit}>
-          <Pencil className="h-3.5 w-3.5" /> Edit
-        </Button>
-      )}
+      {/* Opens read-only; the Edit button lives inside the dialog and appears
+          only for a viewer who outranks this person. */}
+      <Button size="sm" variant="ghost" onClick={onOpen}>
+        <Eye className="h-3.5 w-3.5" /> View
+      </Button>
       {canArchive && onArchive && (
         <Button size="sm" variant="ghost" onClick={onArchive}>
           <Archive className="h-3.5 w-3.5" /> Archive
