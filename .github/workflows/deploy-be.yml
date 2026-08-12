@@ -27,6 +27,9 @@ jobs:
     runs-on: ubuntu-latest
     # GitHub environment names are case-sensitive: "staging" vs "Production".
     environment: ${{ github.ref_name == 'main' && 'Production' || 'staging' }}
+    # Replaces the action's command_timeout: 20m. Plain ssh has no such guard,
+    # and the job default is 6h -- a hung deploy would burn runner minutes.
+    timeout-minutes: 25
 
     env:
       APP_ENV:      ${{ github.ref_name == 'main' && 'production'      || 'staging' }}
@@ -64,17 +67,27 @@ jobs:
           tags: tag:ci
           ping: ${{ vars.BPVPS2_TAILSCALE_HOST }}
 
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" | tr -d '\r' > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+
+      # Plain ssh, not appleboy/ssh-action. That action ships no SSH code -- it
+      # curls the drone-ssh binary from GitHub release assets on every run, and
+      # its cache branch is dead on an ephemeral runner. One CDN blip failed a
+      # deploy before it ever reached the host (run 62, 2026-08-12). ssh is
+      # already on the runner. Same pattern as infra's deploy-infra.yml.
+      #
+      # The script goes over as a heredoc and runs from a temp file -- NOT piped
+      # to `bash -s`. `docker compose run -T` below inherits stdin and would
+      # swallow the rest of this script mid-deploy; `cat` drains it first.
+      # mktemp because staging and prod deploys can run at the same moment.
       - name: Deploy to bpvps2 (${{ env.STACK_DIR }})
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ vars.BPVPS2_TAILSCALE_HOST }}
-          port: 22
-          username: deploy
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          timeout: 90s
-          command_timeout: 20m
-          debug: true
-          script: |
+        run: |
+          ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking=accept-new -o ConnectTimeout=90 \
+            "deploy@${{ vars.BPVPS2_TAILSCALE_HOST }}" \
+            'umask 077; f=$(mktemp); cat > "$f" && bash "$f"; rc=$?; rm -f "$f"; exit $rc' <<'REMOTE'
             set -euo pipefail
             STACK=/root/stacks/${{ env.STACK_DIR }}
             mkdir -p "$STACK"
@@ -213,3 +226,4 @@ jobs:
             docker compose up -d --remove-orphans --wait --wait-timeout 90
 
             docker image prune -f
+          REMOTE
