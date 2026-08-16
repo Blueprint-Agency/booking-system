@@ -117,6 +117,8 @@ export async function cancelBooking(input: CancelInput): Promise<CancelResult> {
     const wantsRefund = source === 'admin' || evaluation!.refund === 'full'
 
     // Unlimited bookings used 0 credits → nothing to return; record n_a, not credit_returned.
+    // Nothing here touches `expires_at`: Activation is one-way (§3), from any actor.
+    // Staff return a plan to Dormant by hand through the portal expiry dialog.
     let refundOutcome: RefundOutcome
     let refundFired: boolean
     if (wantsRefund && used > 0 && bk.clientPackageId) {

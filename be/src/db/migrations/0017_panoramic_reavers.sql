@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "client_packages_one_activated_unlimited_per_client" ON "client_packages" USING btree ("client_id") WHERE "client_packages"."kind" = 'unlimited' AND "client_packages"."active" AND "client_packages"."expires_at" IS NOT NULL;

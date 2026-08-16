@@ -51,7 +51,7 @@ export function ClassFeed() {
   });
   const { data: locations } = useLocations();
   const { isSignedIn } = useUser();
-  const { canBook, loaded: canBookLoaded } = useCanBookClass();
+  const { canBook, loaded: canBookLoaded, entitlements } = useCanBookClass();
 
   const all = useMemo(() => classes ?? [], [classes]);
   const showLocationBadge = !selectedLocation;
@@ -120,6 +120,7 @@ export function ClassFeed() {
                     canBook={canBook}
                     canBookLoaded={canBookLoaded}
                     isSignedIn={!!isSignedIn}
+                    entitlements={entitlements}
                   />
                 ))}
               </div>

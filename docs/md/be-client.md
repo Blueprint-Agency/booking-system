@@ -107,7 +107,7 @@ Same shape as `routes/public/catalog.ts` but adds:
 | GET | `/bookings/past` | Same but `starts_at < now()`, includes `check_in_state` |
 | GET | `/bookings/:id` | Detail incl. QR URL + code |
 | GET | `/bookings/:id/qr` | Returns the QR image (PNG bytes) — no signed URL needed since the token is the auth |
-| POST | `/bookings/class` | `{ class_id, client_package_id }` — see §4a class booking flow |
+| POST | `/bookings/class` | `{ class_id, use_credits? }` — see §4a class booking flow. The server picks the package; `use_credits: true` is the one exception (spec §2), asking to pay with credits for a class the member's Unlimited Plan does not cover. |
 | POST | `/bookings/workshop` | `{ workshop_id, workshop_tier_id }` — initiates Stripe checkout; see §4b |
 | DELETE | `/bookings/:id` | Self-cancel — see §4c |
 
@@ -126,7 +126,7 @@ Per `admin-restructure.md` §9 and `fe-client-features.md` §5.2, the client-fac
 ### `purchases.ts` (verification gate applies)
 | Method | Path | Effect |
 |---|---|---|
-| POST | `/checkout/package` | `{ package_kind: 'class' \| 'pt' \| 'corporate', package_id, promo_code?, location_id? }` — creates Stripe checkout, returns `{ url }`. `location_id` is the Home Location the member picked on the review page: **required** for `class_packages.kind='unlimited'` (400 `unlimited_requires_location`), refused for every other kind (400 `location_only_applies_to_unlimited`), and 409 `unlimited_renewal_location_mismatch` when the client holds a live Unlimited Plan at another Location (§6). The same rules run again in the grant; running them here is what stops a member being charged for a purchase the webhook would refuse. It rides the intent metadata as `location_id` so the webhook can freeze it onto `client_packages`. **Server resolves the best-price-wins promotion and the intent amount is derived from `effective_price_sgd`** — client-supplied price is never trusted. For `class_packages.kind='trial'`: pre-check the `(client_id) WHERE kind='trial'` partial unique index — 409 `trial_already_used` if the client already holds one. The intent metadata carries `applied_promotion_id` so the webhook can freeze it onto `client_packages`. **`package_kind='corporate'`** is paid (no promotions); on success the webhook records a `stripe_payments` row (kind `corporate_package`) and auto-creates ONE pending `corporate_requests` row — it does **not** insert a `client_packages` row (no credits; the request is the entitlement). See §4e. |
+| POST | `/checkout/package` | `{ package_kind: 'class' \| 'pt' \| 'corporate', package_id, promo_code?, location_id? }` — creates Stripe checkout, returns `{ url }`. `location_id` is the Home Location the member picked on the review page: **required** for `class_packages.kind='unlimited'` (400 `unlimited_requires_location`), refused for every other kind (400 `location_only_applies_to_unlimited`), and 409 `unlimited_renewal_location_mismatch` when the client holds a live Unlimited Plan at another Location (§6). A member holds one Activated plan plus at most one Dormant, so a third live plan is refused with 409 `unlimited_limit_reached` (§6) — the other Location is the Add-On, not another plan. The same rules run again in the grant; running them here is what stops a member being charged for a purchase the webhook would refuse. It rides the intent metadata as `location_id` so the webhook can freeze it onto `client_packages`. **Server resolves the best-price-wins promotion and the intent amount is derived from `effective_price_sgd`** — client-supplied price is never trusted. For `class_packages.kind='trial'`: pre-check the `(client_id) WHERE kind='trial'` partial unique index — 409 `trial_already_used` if the client already holds one. The intent metadata carries `applied_promotion_id` so the webhook can freeze it onto `client_packages`. **`package_kind='corporate'`** is paid (no promotions); on success the webhook records a `stripe_payments` row (kind `corporate_package`) and auto-creates ONE pending `corporate_requests` row — it does **not** insert a `client_packages` row (no credits; the request is the entitlement). See §4e. |
 | POST | `/checkout/workshop` | `{ workshop_id, workshop_tier_id }` — same. Server resolves the workshop's best-price-wins promotion plus tier-level early-bird (early_bird wins over regular, then promotion further reduces if applicable — see §4b for the ordering). Free workshops (effective_price = 0) **bypass Stripe entirely** and route through `/workshops/:id/register` semantics inline. |
 | POST | `/workshops/:id/register` | `{ workshop_tier_id }` — explicit free-workshop registration endpoint. Returns 409 if the resolved effective price is non-zero (client must use `/checkout/workshop`). Inserts a `bookings` row with `kind='workshop'`, `state='confirmed'`, `stripe_payment_intent_id=NULL` directly. Convenience: idempotent on `(client_id, workshop_tier_id)` — re-call returns the existing booking instead of erroring. |
 
@@ -156,23 +156,30 @@ Per `admin-restructure.md` §9 and `fe-client-features.md` §5.2, the client-fac
 `POST /me/bookings/class`:
 
 ```
-services/bookings/book.ts:bookClass({ client_id, class_id, client_package_id })
+services/bookings/book.ts:bookClass({ client_id, class_id, use_credits? })
   ↓
 tx start
 1. Verify waiver_signatures exists for client_id → else 403 waiver_unsigned
 2. SELECT class FOR UPDATE (lock for capacity check)
    - lifecycle='active', starts_at > now() + 0  (no past bookings)
 3. SELECT bookings count WHERE class_id=X AND state='confirmed' → if >= class.capacity: 409 class_full
-4. SELECT client_packages FOR UPDATE WHERE id=client_package_id AND client_id=me
-   - kind in ('credit_bundle', 'unlimited')
-   - expires_at > now() OR expires_at IS NULL
-   - if kind='credit_bundle': credits_or_sessions_remaining >= class.credit_cost else 422 insufficient_credits
-   - if kind='unlimited': always allow (no decrement)
+4. SELECT client_packages FOR UPDATE WHERE client_id=me AND active
+   → services/packages/selection.ts:selectPackage (pure; spec §2)
+   - an Unlimited Plan whose location_id is the class's Location, Activated before
+     Dormant, soonest-expiring first, and valid when the class actually RUNS
+     (a Dormant plan's test is prospective: now + duration_months >= class start)
+   - a live plan that covers nothing here → 409 location_not_covered. NOT a silent
+     fall-through to credits, unless the caller passed use_credits
+   - else the soonest-expiring credit_bundle/trial with enough credits, else
+     409 insufficient_credits
 5. Insert bookings row: kind='class', class_id, client_package_id, state='confirmed',
    credits_or_sessions_used = (credit_bundle ? credit_cost : NULL),
    refund_outcome='n_a', check_in_state='pending'
 6. Generate qr_token + code via services/bookings/qr.ts
 7. If credit_bundle: UPDATE client_packages SET credits_or_sessions_remaining -= credit_cost
+7b. Activation (§3): if the chosen plan was Dormant, UPDATE client_packages
+   SET expires_at = booking moment + duration_months. One-way — no cancellation
+   un-stamps it, and paying with credits leaves the plan Dormant.
 8. enqueueEmail('class_booking_confirmed', client.email, { class_name, date, instructor, location, qr_url, code, credits_remaining })
 tx commit
 

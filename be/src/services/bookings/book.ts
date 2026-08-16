@@ -2,15 +2,14 @@
  * Class booking: capacity check + credit deduct in a single transaction.
  * See be-client.md §4a.
  *
- * Package selection (server-side, no client input):
- *   1. An active, non-expired UNLIMITED package — books for free (no debit).
- *   2. Else the soonest-expiring active credit_bundle/trial package with enough
- *      credits — debited by the class credit_cost.
- *   3. Else → 409 insufficient_credits.
+ * Which package pays is `services/packages/selection` — a pure module, so the
+ * Location, ordering and prospective-expiry rules are testable without a
+ * database. This file loads rows, locks them, and writes what it is told.
  *
  * Concurrency: the class row is locked FOR UPDATE so concurrent bookings for the
  * same class serialise (capacity + double-book checks are race-safe); the
- * client's package rows are locked too so a double-click can't double-debit.
+ * client's package rows are locked too so a double-click can't double-debit —
+ * and so a Dormant plan has exactly one writer at Activation.
  */
 import { and, eq, sql } from 'drizzle-orm'
 import { db } from '../../db'
@@ -19,11 +18,17 @@ import { bookings } from '../../db/schema/bookings'
 import { clientPackages } from '../../db/schema/packages'
 import { generateBookingCodes } from './qr'
 import { debitCredits } from '../packages/ledger'
+import { selectPackage } from '../packages/selection'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 
 export interface BookClassInput {
   clientId: string
   classId: string
+  /**
+   * Pay with credits for a class the member's Unlimited Plan does not cover
+   * (§2). The one piece of client input selection accepts.
+   */
+  useCredits?: boolean
 }
 
 export interface BookClassResult {
@@ -40,6 +45,7 @@ export async function bookClass(input: BookClassInput): Promise<BookClassResult>
     const [cls] = await tx
       .select({
         id: classes.id,
+        locationId: classes.locationId,
         startsAt: classes.startsAt,
         capacityOnline: classes.capacityOnline,
         creditCost: classes.creditCost,
@@ -81,55 +87,48 @@ export async function bookClass(input: BookClassInput): Promise<BookClassResult>
       .select({
         id: clientPackages.id,
         kind: clientPackages.kind,
-        remaining: clientPackages.creditsOrSessionsRemaining,
+        creditsOrSessionsRemaining: clientPackages.creditsOrSessionsRemaining,
         expiresAt: clientPackages.expiresAt,
+        locationId: clientPackages.locationId,
+        durationMonths: clientPackages.durationMonths,
       })
       .from(clientPackages)
       .where(and(eq(clientPackages.clientId, clientId), eq(clientPackages.active, true)))
       .for('update')
 
-    // Usable now AND still valid when the class actually runs — a package that expires
-    // before the class can't pay for it (G1: validity is checked against the class date,
-    // not just `now`). Applies to both unlimited and credit packages.
-    const consumable = pkgs.filter(
-      p =>
-        (p.expiresAt === null || p.expiresAt > now) &&
-        (p.expiresAt === null || p.expiresAt >= cls.startsAt),
-    )
+    const choice = selectPackage({
+      packages: pkgs,
+      classLocationId: cls.locationId,
+      classStartsAt: cls.startsAt,
+      creditCost: cls.creditCost,
+      useCredits: input.useCredits ?? false,
+      now,
+    })
+    if (!choice.ok) throw new ConflictError(choice.refusal)
 
-    let clientPackageId: string
-    let creditsUsed: number
+    const { clientPackageId, creditsUsed } = choice
 
-    const unlimited = consumable.find(p => p.kind === 'unlimited')
-    if (unlimited) {
-      clientPackageId = unlimited.id
-      creditsUsed = 0
-    } else {
-      const credit = consumable
-        .filter(
-          p =>
-            (p.kind === 'credit_bundle' || p.kind === 'trial') &&
-            (p.remaining ?? 0) >= cls.creditCost,
-        )
-        .sort((a, b) => {
-          const ax = a.expiresAt ? a.expiresAt.getTime() : Infinity
-          const bx = b.expiresAt ? b.expiresAt.getTime() : Infinity
-          return ax - bx
-        })[0]
-      if (!credit) throw new ConflictError('insufficient_credits')
-
+    if (creditsUsed > 0) {
       // The ledger re-derives `active` — a bundle spent to exactly zero stops
       // being a booking candidate immediately, not at the nightly sweep.
       await debitCredits(tx, {
         clientId,
-        clientPackageId: credit.id,
-        amount: cls.creditCost,
+        clientPackageId,
+        amount: creditsUsed,
         reason: 'class_booking_debit',
         // See ledger.ts — booking debits stay out of the admin adjustments panel.
         audit: false,
       })
-      clientPackageId = credit.id
-      creditsUsed = cls.creditCost
+    }
+
+    // Activation (§3): the first confirmed class booking a Dormant plan pays for
+    // starts its clock, stamped here because this transaction already holds the
+    // row locked — one writer, no race. One-way: no cancellation un-stamps it.
+    if (choice.activateUntil) {
+      await tx
+        .update(clientPackages)
+        .set({ expiresAt: choice.activateUntil })
+        .where(eq(clientPackages.id, clientPackageId))
     }
 
     // 5. Create the booking.

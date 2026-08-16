@@ -46,11 +46,14 @@ const app = new Hono()
   })
   .post(
     '/class',
-    zValidator('json', z.object({ class_id: z.string().uuid() })),
+    zValidator(
+      'json',
+      z.object({ class_id: z.string().uuid(), use_credits: z.boolean().optional() }),
+    ),
     async c => {
       const clientId = c.get('clientId')
-      const { class_id } = c.req.valid('json')
-      const res = await bookClass({ clientId, classId: class_id })
+      const { class_id, use_credits } = c.req.valid('json')
+      const res = await bookClass({ clientId, classId: class_id, useCredits: use_credits })
       return c.json({ booking_id: res.bookingId, qr_token: res.qrToken, code: res.code }, 201)
     },
   )

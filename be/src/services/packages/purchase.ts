@@ -36,7 +36,8 @@ type PackageKind = 'credit_bundle' | 'unlimited' | 'trial' | 'pt'
 /**
  * The Home Location this purchase lands on — null for every kind that has none.
  * Pure, so the grant and the checkout that precedes it apply exactly the same
- * rules (§1, §6).
+ * rules (§1, §6). `livePlanLocations` carries one entry per live Unlimited Plan,
+ * so its length is the plan count the §6 limit is checked against.
  *
  * A renewal must sit at the Home Location of the plan it renews. That is what
  * keeps a member's two plans at one Location, which is in turn what stops
@@ -47,14 +48,19 @@ type PackageKind = 'credit_bundle' | 'unlimited' | 'trial' | 'pt'
 export function locationForPurchase(
   kind: PackageKind,
   locationId: string | null | undefined,
-  liveUnlimitedLocations: (string | null)[],
+  livePlanLocations: (string | null)[],
 ): string | null {
   if (kind !== 'unlimited') {
     if (locationId) throw new BadRequestError('location_only_applies_to_unlimited')
     return null
   }
   if (!locationId) throw new BadRequestError('unlimited_requires_location')
-  if (liveUnlimitedLocations.some(l => l !== null && l !== locationId)) {
+  // One Activated plan plus at most one Dormant (§6). The partial unique index
+  // holds the Activated half; an index cannot usefully count to two, so the
+  // Dormant half is this. Wanting the other Location means the Add-On, not a
+  // third plan.
+  if (livePlanLocations.length >= 2) throw new ConflictError('unlimited_limit_reached')
+  if (livePlanLocations.some(l => l !== null && l !== locationId)) {
     throw new ConflictError('unlimited_renewal_location_mismatch')
   }
   return locationId

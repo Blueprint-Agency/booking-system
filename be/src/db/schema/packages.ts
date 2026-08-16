@@ -320,6 +320,17 @@ export const clientPackages = pgTable(
     trialUniquePerClient: uniqueIndex('client_packages_trial_unique_per_client')
       .on(table.clientId)
       .where(sql`${table.kind} = 'trial'`),
+    // One Activated Unlimited Plan per client (§6). A Dormant plan (null expiry)
+    // sits outside the predicate, which is what lets a renewal wait beside the
+    // running one. The renewal rule in the purchase path is the enforcement;
+    // this index is the backstop that catches a race or a bug.
+    activatedUnlimitedUniquePerClient: uniqueIndex(
+      'client_packages_one_activated_unlimited_per_client',
+    )
+      .on(table.clientId)
+      .where(
+        sql`${table.kind} = 'unlimited' AND ${table.active} AND ${table.expiresAt} IS NOT NULL`,
+      ),
     nonNegBalance: check(
       'client_packages_non_negative_balance',
       sql`${table.creditsOrSessionsRemaining} IS NULL OR ${table.creditsOrSessionsRemaining} >= 0`,

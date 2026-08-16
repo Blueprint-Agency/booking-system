@@ -145,10 +145,21 @@ export interface ClassEntitlements {
   trial_used: boolean;
   has_active_unlimited: boolean;
   has_active_bundle_credits: boolean;
+  /**
+   * The one studio the member's Unlimited Plan covers, or null when they hold
+   * none. The backend decides which plan this is; the schedule only compares it
+   * against the Location already on every class card, so the class list stays
+   * anonymous and cacheable. Presentation only — booking is the enforcement.
+   */
+  unlimited_location: { id: string; name: string } | null;
 }
 
 /** Whether the signed-in client currently holds something that can pay for a class. */
-export function useCanBookClass(): { canBook: boolean; loaded: boolean } {
+export function useCanBookClass(): {
+  canBook: boolean;
+  loaded: boolean;
+  entitlements: ClassEntitlements | null;
+} {
   const { isLoaded, isSignedIn } = useUser();
   const api = useApi();
   const [ent, setEnt] = useState<ClassEntitlements | null>(null);
@@ -178,7 +189,7 @@ export function useCanBookClass(): { canBook: boolean; loaded: boolean } {
   }, [isLoaded, isSignedIn, api]);
 
   const canBook = !!ent && (ent.has_active_unlimited || ent.has_active_bundle_credits);
-  return { canBook, loaded };
+  return { canBook, loaded, entitlements: ent };
 }
 
 export function toLocalDateStr(iso: string): string {

@@ -31,3 +31,11 @@ test('a renewal may only sit at the live plan’s Home Location', () => {
 test('a live plan with no Home Location constrains nothing', () => {
   assert.equal(locationForPurchase('unlimited', LOC_B, [null]), LOC_B)
 })
+
+test('a third Unlimited Plan is refused — one Activated plus at most one Dormant', () => {
+  assert.equal(locationForPurchase('unlimited', LOC_A, [LOC_A]), LOC_A)
+  assert.throws(
+    () => locationForPurchase('unlimited', LOC_A, [LOC_A, LOC_A]),
+    /unlimited_limit_reached/,
+  )
+})
