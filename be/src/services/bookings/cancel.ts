@@ -53,6 +53,7 @@ export async function cancelBooking(input: CancelInput): Promise<CancelResult> {
         ptSessionId: bookings.ptSessionId,
         clientPackageId: bookings.clientPackageId,
         state: bookings.state,
+        checkInState: bookings.checkInState,
         used: bookings.creditsOrSessionsUsed,
       })
       .from(bookings)
@@ -66,6 +67,10 @@ export async function cancelBooking(input: CancelInput): Promise<CancelResult> {
     }
     if (bk.state !== 'confirmed') throw new ConflictError('not_cancellable')
     if (bk.kind === 'workshop') throw new BadRequestError('workshop_cancel_unsupported')
+    // Attendance keeps state='confirmed', so the check above lets an admin refund
+    // someone who was demonstrably in the room. Untick the roster first if the
+    // attendance was a mistake — then this cancel is allowed.
+    if (bk.checkInState === 'attended') throw new ConflictError('booking_attended')
 
     const cancelKind: 'class' | 'pt' = bk.kind === 'class' ? 'class' : 'pt'
 

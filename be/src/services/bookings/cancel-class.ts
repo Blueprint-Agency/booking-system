@@ -22,6 +22,7 @@ import { staffUsers } from '../../db/schema/identity'
 import { bookings, cancellations } from '../../db/schema/bookings'
 import { inboxItems } from '../../db/schema/inbox'
 import { refundCredits } from '../packages/ledger'
+import { computeEventState } from '../policy/event-state'
 import { emailEveryAdmin } from '../notifications/send'
 import { sgFormat } from '../../lib/time'
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
@@ -59,6 +60,7 @@ export async function cancelClass(input: CancelClassInput): Promise<CancelClassR
         lifecycle: classes.lifecycle,
         mainInstructorId: classes.mainInstructorId,
         startsAt: classes.startsAt,
+        endsAt: classes.endsAt,
         classTypeId: classes.classTypeId,
       })
       .from(classes)
@@ -72,6 +74,17 @@ export async function cancelClass(input: CancelClassInput): Promise<CancelClassR
     if (cls.lifecycle !== 'active') throw new ConflictError('class_not_active')
 
     const now = new Date()
+
+    // A class that has already finished can't be "cancelled" — that would refund
+    // every attendee for a class they sat through. Mid-session cancellation (state
+    // `ongoing`) stays allowed: the aircon really does break 10 minutes in.
+    const state = computeEventState({
+      startsAt: cls.startsAt,
+      endsAt: cls.endsAt,
+      lifecycle: cls.lifecycle,
+      now,
+    })
+    if (state === 'completed') throw new ConflictError('class_completed')
 
     // Flip the class.
     await tx

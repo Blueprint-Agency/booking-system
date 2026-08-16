@@ -1,9 +1,11 @@
-import { eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { classes } from '../../db/schema'
+import { bookings } from '../../db/schema/bookings'
 import { assertRoomAvailable, assertRoomInLocation } from './room-conflicts'
 import { assertInstructorsAvailable, plannedInstructorIds } from './occupancy'
-import { NotFoundError } from '../../shared/errors'
+import { computeEventState } from '../policy/event-state'
+import { ConflictError, NotFoundError } from '../../shared/errors'
 import {
   ensureInstructors,
   readRoster,
@@ -116,6 +118,29 @@ export interface UpdateClassInput {
 export async function updateClass(id: string, patch: UpdateClassInput): Promise<ClassRow> {
   const [existing] = await db.select().from(classes).where(eq(classes.id, id)).limit(1)
   if (!existing) throw new NotFoundError('class_not_found')
+
+  // Once a class has started it is a record of what happened, not a plan — moving,
+  // repricing or resizing it rewrites history under the people who already sat in it.
+  // Same predicate every read path uses (policy/event-state.ts).
+  const state = computeEventState({
+    startsAt: existing.startsAt,
+    endsAt: existing.endsAt,
+    lifecycle: existing.lifecycle,
+    now: new Date(),
+  })
+  if (state !== 'scheduled') throw new ConflictError(`class_${state}`)
+
+  // Capacity can't drop below the people already holding a seat.
+  if (patch.capacityOnline !== undefined) {
+    const [seats] = await db
+      .select({ cnt: sql<number>`count(*)::int` })
+      .from(bookings)
+      .where(and(eq(bookings.classId, id), eq(bookings.state, 'confirmed')))
+    const confirmed = Number(seats?.cnt ?? 0)
+    if (patch.capacityOnline < confirmed) {
+      throw new ConflictError('capacity_below_bookings', { confirmed })
+    }
+  }
 
   const newRoomId = patch.roomId ?? existing.roomId
   const newLocationId = patch.locationId ?? existing.locationId
