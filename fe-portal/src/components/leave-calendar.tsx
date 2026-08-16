@@ -7,7 +7,7 @@ import { Button } from "@/components/ui";
 import { MonthCalendar, calendarChipClass, monthGridDays } from "@/components/month-calendar";
 import { useWorkspace } from "@/lib/workspace-context";
 import { localDay } from "@/lib/local-day";
-import { LEAVE_HALF_DAY_SHORT, LEAVE_TYPE_LABEL } from "@/lib/leave";
+import { LEAVE_HALF_DAY_SHORT, LEAVE_TYPE_LABEL, type LeaveType } from "@/lib/leave";
 
 /**
  * Who is away, for everybody on staff — the same widget on the admin leave page
@@ -27,7 +27,7 @@ interface ApiLeaveCalendarEntry {
   half_day: "none" | "morning" | "afternoon";
   status: "pending" | "approved";
   detail: {
-    type: "annual" | "medical";
+    type: LeaveType;
     days: number;
     reason: string;
     decision_reason: string | null;

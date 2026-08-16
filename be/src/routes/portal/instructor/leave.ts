@@ -18,7 +18,9 @@ import { BadRequestError } from '../../../shared/errors'
 const plainDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'expected YYYY-MM-DD')
 
 const submitSchema = z.object({
-  type: z.enum(['annual', 'medical']),
+  // The one place a new Leave Type fails at runtime instead of at compile time
+  // — every other per-type structure is a Record keyed by the union.
+  type: z.enum(['annual', 'medical', 'study']),
   start_date: plainDate,
   end_date: plainDate,
   // Only valid on a single date — the service refuses it on a range.

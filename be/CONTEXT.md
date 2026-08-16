@@ -85,19 +85,19 @@ An instructor's application to be absent for one or more dates, of one Leave Typ
 _Avoid_: leave, absence, time off, holiday
 
 **Leave Type**:
-Annual or medical. The two are entirely separate — days never move between them.
-_Avoid_: leave category, leave kind
+Annual, medical or study. The three are entirely separate — days never move between them, and each has its own Assigned Days on the instructor's profile.
+_Avoid_: leave category, leave kind, study leave allowance
 
 **Leave Year**:
 The calendar year a Leave Request counts against, fixed at submission from its first date. Recorded on the request so that changing a number later cannot rewrite a past year.
 _Avoid_: leave period, entitlement year
 
 **Assigned Days**:
-The yearly figure set on an instructor's own profile — 14 by default, changeable per instructor. It is the input to next year's Pool, not the Pool itself.
+The yearly figure set on an instructor's own profile, one per Leave Type — 14 annual, 14 medical, 7 study by default, changeable per instructor. It is the input to next year's Pool, not the Pool itself.
 _Avoid_: allowance, entitlement, quota, allocation
 
 **Carried Days**:
-Unused annual days moved into the following Leave Year, capped by a studio-wide limit. Annual leave carries; medical leave never does.
+Unused annual days moved into the following Leave Year, capped by a studio-wide limit. Only annual leave carries; medical and study days are use-it-or-lose-it.
 _Avoid_: rollover, accrual, carry-forward, banked days
 
 **Pool**:

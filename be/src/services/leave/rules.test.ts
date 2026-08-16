@@ -532,7 +532,7 @@ const base = { today: '2026-08-10', pool: 14, committedDays: 0 } as const
     startDate: '2026-08-10',
     endDate: '2026-08-10',
   })
-  assert.strictEqual(startsToday.ok === false && startsToday.code, 'annual_leave_must_start_in_future')
+  assert.strictEqual(startsToday.ok === false && startsToday.code, 'leave_must_start_in_future')
 
   const yesterday = checkLeaveSubmission({
     ...base,
@@ -540,7 +540,7 @@ const base = { today: '2026-08-10', pool: 14, committedDays: 0 } as const
     startDate: '2026-08-09',
     endDate: '2026-08-09',
   })
-  assert.strictEqual(yesterday.ok === false && yesterday.code, 'annual_leave_must_start_in_future')
+  assert.strictEqual(yesterday.ok === false && yesterday.code, 'leave_must_start_in_future')
 
   // tomorrow is fine
   assert.strictEqual(
@@ -629,6 +629,60 @@ const base = { today: '2026-08-10', pool: 14, committedDays: 0 } as const
       .ok,
     false,
   )
+}
+
+// -- study leave: the third type ----------------------------------------------
+{
+  // it may not reach back: the medical backdate window is medical's alone
+  const backdated = checkLeaveSubmission({
+    ...base,
+    type: 'study',
+    startDate: '2026-08-09',
+    endDate: '2026-08-09',
+  })
+  assert.strictEqual(backdated.ok === false && backdated.code, 'leave_must_start_in_future')
+  assert.match(backdated.ok === false ? backdated.message : '', /Study leave must start after today/)
+
+  // nor start today — and there is deliberately no minimum notice beyond that,
+  // so tomorrow is fine
+  assert.strictEqual(
+    checkLeaveSubmission({ ...base, type: 'study', startDate: base.today, endDate: base.today }).ok,
+    false,
+  )
+  assert.deepStrictEqual(
+    checkLeaveSubmission({ ...base, type: 'study', startDate: '2026-08-11', endDate: '2026-08-11' }),
+    { ok: true, days: 1, leaveYear: 2026 },
+  )
+
+  // half days are permitted, exactly as they are for annual — a morning exam
+  assert.deepStrictEqual(
+    checkLeaveSubmission({
+      ...base,
+      type: 'study',
+      startDate: '2026-08-20',
+      endDate: '2026-08-20',
+      halfDay: 'morning',
+      pool: 7,
+    }),
+    { ok: true, days: 0.5, leaveYear: 2026 },
+  )
+
+  // and 7 days is the whole of it: the Pool is its own, not annual's
+  const overSeven = checkLeaveSubmission({
+    ...base,
+    type: 'study',
+    startDate: '2026-08-20',
+    endDate: '2026-08-27',
+    pool: 7,
+  })
+  assert.strictEqual(overSeven.ok === false && overSeven.code, 'insufficient_leave_balance')
+
+  // study never carries: unused days die at the year boundary, whatever the cap
+  assert.strictEqual(carriedDays('study', 7, 14), 0)
+  assert.strictEqual(carriedDays('study', 3.5, 100), 0)
+  assert.strictEqual(carriedDays('study', -2, 0), 0)
+  // so next year's Pool is the Assigned figure and nothing more
+  assert.strictEqual(poolDays(7, carriedDays('study', 7, 14)), 7)
 }
 
 // -- clashes: only what ends in the future blocks -----------------------------

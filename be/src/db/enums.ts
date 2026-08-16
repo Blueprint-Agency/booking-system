@@ -79,7 +79,7 @@ export const cancellationSourceEnum = pgEnum('cancellation_source', ['client', '
 export const checkinMethodEnum = pgEnum('checkin_method', ['qr', 'code', 'manual'])
 
 // Instructor leave (docs/md/spec-instructor-leave.md)
-export const leaveTypeEnum = pgEnum('leave_type', ['annual', 'medical'])
+export const leaveTypeEnum = pgEnum('leave_type', ['annual', 'medical', 'study'])
 // withdrawn = instructor abandons a pending request; cancelled = instructor gives
 // back approved leave; revoked = an admin takes approved leave away.
 export const leaveStatusEnum = pgEnum('leave_status', [

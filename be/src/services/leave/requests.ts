@@ -45,7 +45,7 @@ export interface LeaveBalance {
   type: rules.LeaveType
   /** The yearly figure on the instructor's profile. */
   assigned_days: number
-  /** Of the Pool, how much came from last year. Always 0 for medical. */
+  /** Of the Pool, how much came from last year. Only annual ever carries. */
   carried_days: number
   /** This Leave Year's Pool for this type — what Remaining counts down from. */
   pool_days: number
@@ -66,7 +66,7 @@ const toDaysRow = (r: LeaveRequestRow): rules.LeaveDaysRow => ({
   days: Number(r.days),
 })
 
-const LEAVE_TYPES = ['annual', 'medical'] as const
+const LEAVE_TYPES = ['annual', 'medical', 'study'] as const
 
 /** One Leave Type's grant for a year: the Pool, how much of it was carried, and
  *  the Assigned Days it was composed from. Assigned is read live from the
@@ -79,9 +79,11 @@ interface LeavePool {
 }
 
 /**
- * This instructor's Pool for `leaveYear`, both Leave Types — materialised on
+ * This instructor's Pool for `leaveYear`, every Leave Type — materialised on
  * this read if the year has never been read before. There is no 1 January job;
- * this IS the job, and it runs when someone first asks.
+ * this IS the job, and it runs when someone first asks, which is also why a new
+ * Leave Type needs no backfill: the missing row is written the first time
+ * anyone reads the year, carrying the same 0 a backfill would have written.
  *
  * Every caller that needs a Pool comes through here, and it reads, calls and
  * writes — **no arithmetic**. Last year's Remaining is `rules.leavePoolFigures`,
@@ -117,7 +119,11 @@ async function leavePoolsFor(
   leaveYear: number,
 ): Promise<Record<rules.LeaveType, LeavePool>> {
   const [instructor] = await tx
-    .select({ annual: instructors.annualLeaveDays, medical: instructors.medicalLeaveDays })
+    .select({
+      annual: instructors.annualLeaveDays,
+      medical: instructors.medicalLeaveDays,
+      study: instructors.studyLeaveDays,
+    })
     .from(instructors)
     .where(eq(instructors.staffUserId, instructorId))
     .for('update')
@@ -167,18 +173,17 @@ async function leavePoolsFor(
       policy.carryOverCapDays,
     )
   }
-  const carried = { annual: carriedInto('annual'), medical: carriedInto('medical') }
+  // One shape per type, off the instructor row — the Assigned figure for every
+  // type is a column on that row, which is what keeps this uniform.
+  const freshFor = (type: rules.LeaveType): LeavePool => {
+    const carried = carriedInto(type)
+    const assigned = instructor[type]
+    return { assigned, pool: rules.poolDays(assigned, carried), carried }
+  }
   const fresh: Record<rules.LeaveType, LeavePool> = {
-    annual: {
-      assigned: instructor.annual,
-      pool: rules.poolDays(instructor.annual, carried.annual),
-      carried: carried.annual,
-    },
-    medical: {
-      assigned: instructor.medical,
-      pool: rules.poolDays(instructor.medical, carried.medical),
-      carried: carried.medical,
-    },
+    annual: freshFor('annual'),
+    medical: freshFor('medical'),
+    study: freshFor('study'),
   }
 
   // A Leave Year that has not arrived is computed, never frozen. See above.
@@ -221,6 +226,7 @@ async function leavePoolsFor(
   return {
     annual: stored.get('annual') ?? fresh.annual,
     medical: stored.get('medical') ?? fresh.medical,
+    study: stored.get('study') ?? fresh.study,
   }
 }
 
@@ -265,7 +271,7 @@ async function figuresFor(
     const f = rules.leavePoolFigures(type, pools[type].pool, rows, leaveYear)
     return { carried_days: pools[type].carried, pool_days: f.pool, remaining_days: f.remaining }
   }
-  return { annual: of('annual'), medical: of('medical') }
+  return { annual: of('annual'), medical: of('medical'), study: of('study') }
 }
 
 /**
@@ -317,11 +323,12 @@ export async function withLeaveFigures<T extends { id: string; annualLeaveDays?:
  *  null. */
 export async function assignedLeaveDays(
   staffUserId: string,
-): Promise<{ annualLeaveDays?: number; medicalLeaveDays?: number }> {
+): Promise<{ annualLeaveDays?: number; medicalLeaveDays?: number; studyLeaveDays?: number }> {
   const [row] = await db
     .select({
       annualLeaveDays: instructors.annualLeaveDays,
       medicalLeaveDays: instructors.medicalLeaveDays,
+      studyLeaveDays: instructors.studyLeaveDays,
     })
     .from(instructors)
     .where(eq(instructors.staffUserId, staffUserId))
@@ -334,6 +341,7 @@ export interface AdjustRemainingInput {
   /** The Remaining the instructor should have. Omitted types are left alone. */
   annual?: number
   medical?: number
+  study?: number
 }
 
 /**
@@ -412,7 +420,7 @@ function balances(
   })
 }
 
-/** The instructor's own page: both balances for `leaveYear`, plus their whole
+/** The instructor's own page: every type's balance for `leaveYear`, plus their whole
  *  history (all years — the balances are the year-scoped part).
  *
  *  Which year "no year" means is a domain question, so it is answered here and

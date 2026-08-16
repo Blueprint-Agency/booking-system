@@ -41,7 +41,7 @@ interface ApiBalance {
   type: LeaveType;
   /** The yearly figure on my profile. */
   assigned_days: number;
-  /** Part of the Pool, brought in from last year. Never non-zero for medical. */
+  /** Part of the Pool, brought in from last year. Only annual ever carries. */
   carried_days: number;
   /** What leave is drawn from this year. Normally assigned + carried, but an
    *  admin's adjustment can move it, so it is sent rather than added up here. */
@@ -252,7 +252,7 @@ export default function InstructorLeavePage() {
     <div className="mx-auto max-w-3xl">
       <PageHeader
         title="My leave"
-        description="Annual and medical leave, and what you have left this year. An admin approves or rejects each request."
+        description="Annual, medical and study leave, and what you have left this year. An admin approves or rejects each request."
       />
 
       {error && (
@@ -289,7 +289,7 @@ export default function InstructorLeavePage() {
         </div>
       ) : !data ? null : (
         <>
-          <div className="mb-4 grid gap-3 sm:grid-cols-2">
+          <div className="mb-4 grid gap-3 sm:grid-cols-3">
             {data.balances.map((b) => (
               <BalanceCard key={b.type} balance={b} />
             ))}
@@ -303,8 +303,8 @@ export default function InstructorLeavePage() {
               <h2 className="text-base font-semibold text-ink">Request leave</h2>
               <p className="mt-0.5 text-xs text-muted">
                 A single date can be a half day, morning or afternoon — a range is full days
-                only. Annual leave must start after today; medical leave can be backdated up
-                to 7 days. Every day in the range counts, weekends included.
+                only. Annual and study leave must start after today; medical leave can be
+                backdated up to 7 days. Every day in the range counts, weekends included.
               </p>
             </header>
 
@@ -318,6 +318,7 @@ export default function InstructorLeavePage() {
                 >
                   <option value="annual">Annual</option>
                   <option value="medical">Medical</option>
+                  <option value="study">Study</option>
                 </Select>
               </div>
               <div className="space-y-1.5">

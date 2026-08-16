@@ -6,7 +6,7 @@
 import { formatDate } from "./formatters";
 import { ApiError } from "./api";
 
-export type LeaveType = "annual" | "medical";
+export type LeaveType = "annual" | "medical" | "study";
 
 export type LeaveStatus =
   | "pending"
@@ -21,6 +21,7 @@ export type HalfDay = "none" | "morning" | "afternoon";
 export const LEAVE_TYPE_LABEL: Record<LeaveType, string> = {
   annual: "Annual",
   medical: "Medical",
+  study: "Study",
 };
 
 export const LEAVE_STATUS_LABEL: Record<LeaveStatus, string> = {

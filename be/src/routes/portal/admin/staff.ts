@@ -33,12 +33,14 @@ const updateStaffSchema = z.object({
   // Assigned Days — instructors only; the service refuses them on anyone else.
   annual_leave_days: z.number().int().min(0).max(365).optional(),
   medical_leave_days: z.number().int().min(0).max(365).optional(),
+  study_leave_days: z.number().int().min(0).max(365).optional(),
   // The Remaining for the current Leave Year, which back-solves that year's
   // Pool. Half-grained like every leave day count. Negatives are let through
   // the schema so the domain refusal — which names the floor and the ceiling —
   // is what the admin is shown.
   annual_remaining_days: z.number().multipleOf(0.5).min(-365).max(365).optional(),
   medical_remaining_days: z.number().multipleOf(0.5).min(-365).max(365).optional(),
+  study_remaining_days: z.number().multipleOf(0.5).min(-365).max(365).optional(),
 })
 
 const idParam = z.object({ id: z.string().uuid() })
@@ -64,7 +66,11 @@ function serializeStaff(row: StaffProfileRow) {
     // Assigned Days: present on instructors, absent on everyone else rather
     // than null — a non-instructor has no leave figure to report.
     ...(row.annualLeaveDays !== undefined
-      ? { annual_leave_days: row.annualLeaveDays, medical_leave_days: row.medicalLeaveDays }
+      ? {
+          annual_leave_days: row.annualLeaveDays,
+          medical_leave_days: row.medicalLeaveDays,
+          study_leave_days: row.studyLeaveDays,
+        }
       : {}),
     // This Leave Year's Carried, Pool and Remaining, so the edit form prefills
     // the Remaining fields and can show what they are bounded by.
@@ -76,6 +82,9 @@ function serializeStaff(row: StaffProfileRow) {
           medical_carried_days: row.leave.medical.carried_days,
           medical_pool_days: row.leave.medical.pool_days,
           medical_remaining_days: row.leave.medical.remaining_days,
+          study_carried_days: row.leave.study.carried_days,
+          study_pool_days: row.leave.study.pool_days,
+          study_remaining_days: row.leave.study.remaining_days,
         }
       : {}),
     is_seeded_superadmin:
@@ -165,11 +174,17 @@ const app = new Hono()
         ...(body.medical_leave_days !== undefined
           ? { medicalLeaveDays: body.medical_leave_days }
           : {}),
+        ...(body.study_leave_days !== undefined
+          ? { studyLeaveDays: body.study_leave_days }
+          : {}),
         ...(body.annual_remaining_days !== undefined
           ? { annualRemainingDays: body.annual_remaining_days }
           : {}),
         ...(body.medical_remaining_days !== undefined
           ? { medicalRemainingDays: body.medical_remaining_days }
+          : {}),
+        ...(body.study_remaining_days !== undefined
+          ? { studyRemainingDays: body.study_remaining_days }
           : {}),
       },
     })

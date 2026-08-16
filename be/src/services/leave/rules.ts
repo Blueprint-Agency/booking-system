@@ -28,7 +28,7 @@ import { daysBetween, sgDayWindow, sgToday, type PlainDate } from '../../lib/tim
  *  still read as one vocabulary. */
 export { daysBetween, sgToday, type PlainDate }
 
-export type LeaveType = 'annual' | 'medical'
+export type LeaveType = 'annual' | 'medical' | 'study'
 export type LeaveStatus = 'pending' | 'approved' | 'rejected' | 'withdrawn' | 'cancelled' | 'revoked'
 /** Which half of the day, if it is a half day at all. */
 export type LeaveHalfDay = 'none' | 'morning' | 'afternoon'
@@ -139,8 +139,8 @@ export const TAKEN_STATUSES: readonly LeaveStatus[] = ['approved']
 export const COMMITTED_STATUSES: readonly LeaveStatus[] = ['approved', 'pending']
 
 /** Which rows a sum counts: one Leave Type, one Leave Year, one set of statuses.
- *  The two Leave Types and the two status sets are what keep Taken, Committed
- *  and the two Pools from ever being the same number. */
+ *  The Leave Types and the two status sets are what keep Taken, Committed and
+ *  each type's Pool from ever being the same number. */
 export interface LeaveDaysScope {
   type: LeaveType
   leaveYear: number
@@ -166,9 +166,10 @@ export function sumLeaveDays(rows: readonly LeaveDaysRow[], scope: LeaveDaysScop
  * Two rules live here rather than at the call sites, so that neither can be
  * forgotten by a future one:
  *
- *  - **Medical never carries.** Banking sick days year on year is not something
- *    the studio wants to owe, and making it a branch of this function means no
- *    caller has to know that.
+ *  - **Only annual carries.** Banking sick days year on year is not something
+ *    the studio wants to owe, and study leave is use-it-or-lose-it for the same
+ *    reason. Making it a branch of this function means no caller has to know
+ *    that — a third Leave Type cost nothing here.
  *  - **A negative previous Remaining carries 0, not a debt.** A Pool lowered
  *    below what was already Committed shows an honest negative for that year
  *    (`leavePoolFigures` does not clamp), but the year boundary wipes it: the
@@ -302,13 +303,14 @@ export function checkRemainingAdjustment(
 
 // ── Submission ─────────────────────────────────────────────────────────────
 
-/** How far back a medical request may reach. Annual may not reach back at all. */
+/** How far back a medical request may reach. It is the only type that may reach
+ *  back at all — annual and study must both start after today. */
 export const MEDICAL_BACKDATE_DAYS = 7
 
 export type LeaveRefusalCode =
   | 'invalid_date_range'
   | 'half_day_requires_single_date'
-  | 'annual_leave_must_start_in_future'
+  | 'leave_must_start_in_future'
   | 'medical_leave_backdated_too_far'
   | 'insufficient_leave_balance'
 
@@ -332,6 +334,8 @@ export type LeaveCheck =
   | { ok: false; code: LeaveRefusalCode; message: string }
 
 const plural = (n: number) => (n === 1 ? 'day' : 'days')
+/** A Leave Type at the start of a sentence. */
+const titleCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
 /**
  * Everything about a submission that can be decided without touching the
@@ -357,11 +361,15 @@ export function checkLeaveSubmission(input: LeaveSubmission): LeaveCheck {
   const days = countLeaveDays(input.startDate, input.endDate, halfDay)
 
   const startOffset = daysBetween(input.today, input.startDate)
-  if (input.type === 'annual' && startOffset < 1) {
+  // Everything that is not medical must start after today: only an illness is
+  // filed after the fact. There is deliberately no minimum notice on top of
+  // this — an admin who thinks a request came too late rejects it, with a
+  // reason, which is a rule the pending queue already enforces.
+  if (input.type !== 'medical' && startOffset < 1) {
     return {
       ok: false,
-      code: 'annual_leave_must_start_in_future',
-      message: 'Annual leave must start after today. Pick a later start date.',
+      code: 'leave_must_start_in_future',
+      message: `${titleCase(input.type)} leave must start after today. Pick a later start date.`,
     }
   }
   if (input.type === 'medical' && startOffset < -MEDICAL_BACKDATE_DAYS) {

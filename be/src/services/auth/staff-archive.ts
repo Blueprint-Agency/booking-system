@@ -49,6 +49,7 @@ export type StaffUserRow = typeof staffUsers.$inferSelect
 export type StaffProfileRow = StaffUserRow & {
   annualLeaveDays?: number
   medicalLeaveDays?: number
+  studyLeaveDays?: number
   leave?: InstructorLeaveFigures
 }
 
@@ -263,11 +264,13 @@ export interface UpdateStaffProfileInput {
      *  them — and they land on `instructors`, so an instructor target only. */
     annualLeaveDays?: number
     medicalLeaveDays?: number
+    studyLeaveDays?: number
     /** The Remaining this instructor should have for the CURRENT Leave Year.
      *  Not a privilege field either. Back-solves that year's Pool — see
      *  services/leave/requests.ts. */
     annualRemainingDays?: number
     medicalRemainingDays?: number
+    studyRemainingDays?: number
   }
 }
 
@@ -337,10 +340,12 @@ export async function updateStaffProfile(input: UpdateStaffProfileInput): Promis
   const assigned = {
     ...(patch.annualLeaveDays !== undefined ? { annualLeaveDays: patch.annualLeaveDays } : {}),
     ...(patch.medicalLeaveDays !== undefined ? { medicalLeaveDays: patch.medicalLeaveDays } : {}),
+    ...(patch.studyLeaveDays !== undefined ? { studyLeaveDays: patch.studyLeaveDays } : {}),
   }
   const remaining = {
     ...(patch.annualRemainingDays !== undefined ? { annual: patch.annualRemainingDays } : {}),
     ...(patch.medicalRemainingDays !== undefined ? { medical: patch.medicalRemainingDays } : {}),
+    ...(patch.studyRemainingDays !== undefined ? { study: patch.studyRemainingDays } : {}),
   }
   const touchesLeave = Object.keys(assigned).length + Object.keys(remaining).length > 0
   if (touchesLeave && target.role !== 'instructor') {

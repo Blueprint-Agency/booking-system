@@ -59,6 +59,7 @@ interface StaffApiRow {
   /** Assigned Days — sent for instructors only, absent on everyone else. */
   annual_leave_days?: number;
   medical_leave_days?: number;
+  study_leave_days?: number;
   /** This Leave Year's figures, instructors only. Remaining is what an admin
    *  edits; Carried and Pool are the context they edit against. */
   annual_carried_days?: number;
@@ -67,6 +68,9 @@ interface StaffApiRow {
   medical_carried_days?: number;
   medical_pool_days?: number;
   medical_remaining_days?: number;
+  study_carried_days?: number;
+  study_pool_days?: number;
+  study_remaining_days?: number;
 }
 
 interface InvitationApiRow {

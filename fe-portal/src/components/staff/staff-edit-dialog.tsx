@@ -59,6 +59,7 @@ export interface StaffEditableFields {
   /** Assigned Days — sent by the API for instructors only. */
   annual_leave_days?: number;
   medical_leave_days?: number;
+  study_leave_days?: number;
   /** This Leave Year's figures — instructors only. Remaining is editable;
    *  Carried and Pool are shown as the context it is bounded by. */
   annual_carried_days?: number;
@@ -67,6 +68,9 @@ export interface StaffEditableFields {
   medical_carried_days?: number;
   medical_pool_days?: number;
   medical_remaining_days?: number;
+  study_carried_days?: number;
+  study_pool_days?: number;
+  study_remaining_days?: number;
 }
 
 export interface StaffEditPatch {
@@ -79,8 +83,10 @@ export interface StaffEditPatch {
   languages?: string[];
   annual_leave_days?: number;
   medical_leave_days?: number;
+  study_leave_days?: number;
   annual_remaining_days?: number;
   medical_remaining_days?: number;
+  study_remaining_days?: number;
 }
 
 /** Assigned Days arrive together or not at all (one spread in the API
@@ -88,11 +94,17 @@ export interface StaffEditPatch {
  *  not report them — never a stand-in number, because a fabricated 14 is
  *  indistinguishable from a real one once it is on screen. */
 function hasAssigned(s: StaffEditableFields) {
-  return s.annual_leave_days !== undefined && s.medical_leave_days !== undefined;
+  return (
+    s.annual_leave_days !== undefined &&
+    s.medical_leave_days !== undefined &&
+    s.study_leave_days !== undefined
+  );
 }
 function hasLeaveYear(s: StaffEditableFields) {
   return (
-    s.annual_remaining_days !== undefined && s.medical_remaining_days !== undefined
+    s.annual_remaining_days !== undefined &&
+    s.medical_remaining_days !== undefined &&
+    s.study_remaining_days !== undefined
   );
 }
 
@@ -259,7 +271,7 @@ function LeaveView({ staff }: { staff: StaffEditableFields }) {
         </p>
       ) : (
         <>
-          <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 gap-y-1.5 text-sm">
+          <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 gap-y-1.5 text-sm">
             <div />
             <div className="text-right text-xs uppercase tracking-wider text-muted">
               Annual
@@ -267,31 +279,39 @@ function LeaveView({ staff }: { staff: StaffEditableFields }) {
             <div className="text-right text-xs uppercase tracking-wider text-muted">
               Medical
             </div>
+            <div className="text-right text-xs uppercase tracking-wider text-muted">
+              Study
+            </div>
             <LeaveRow
               label="Assigned"
               annual={staff.annual_leave_days}
               medical={staff.medical_leave_days}
+              study={staff.study_leave_days}
               strong
             />
             <LeaveRow
               label="Carried"
               annual={staff.annual_carried_days}
               medical={staff.medical_carried_days}
+              study={staff.study_carried_days}
             />
             <LeaveRow
               label="Pool"
               annual={staff.annual_pool_days}
               medical={staff.medical_pool_days}
+              study={staff.study_pool_days}
             />
             <LeaveRow
               label="Remaining"
               annual={staff.annual_remaining_days}
               medical={staff.medical_remaining_days}
+              study={staff.study_remaining_days}
               strong
             />
           </div>
           <p className="text-xs text-muted">
-            Days. The two types are separate — medical never eats into annual.
+            Days. The three types are separate — none eats into another, and only
+            annual days carry into the next year.
           </p>
           {!year && (
             <p className="text-xs text-muted">
@@ -311,11 +331,13 @@ function LeaveRow({
   label,
   annual,
   medical,
+  study,
   strong,
 }: {
   label: string;
   annual?: number;
   medical?: number;
+  study?: number;
   strong?: boolean;
 }) {
   // `undefined` is "the API did not send it" and shows as an em dash; 0 and 14
@@ -330,6 +352,9 @@ function LeaveRow({
       </div>
       <div className={`text-right ${strong ? "font-medium text-ink" : "text-ink"}`}>
         {cell(medical)}
+      </div>
+      <div className={`text-right ${strong ? "font-medium text-ink" : "text-ink"}`}>
+        {cell(study)}
       </div>
     </>
   );
@@ -365,6 +390,7 @@ function StaffProfileForm({
   const year = isInstructor && hasLeaveYear(staff);
   const [annualLeave, setAnnualLeave] = useState(staff.annual_leave_days ?? 0);
   const [medicalLeave, setMedicalLeave] = useState(staff.medical_leave_days ?? 0);
+  const [studyLeave, setStudyLeave] = useState(staff.study_leave_days ?? 0);
   // This Leave Year's Remaining. Editable, and sent only when actually changed:
   // saving the figure back unchanged would back-solve a Pool against whatever is
   // Committed *now*, silently granting days if leave was filed since it loaded.
@@ -374,12 +400,17 @@ function StaffProfileForm({
   const [medicalRemaining, setMedicalRemaining] = useState(
     staff.medical_remaining_days ?? 0,
   );
+  const [studyRemaining, setStudyRemaining] = useState(
+    staff.study_remaining_days ?? 0,
+  );
   // What the server will accept: Assigned + Carried, the same ceiling as
   // checkRemainingAdjustment. The saved figures on `staff` are last year's
   // Assigned, not the ones being typed above — raising Assigned raises the
   // ceiling on the next save, not this one.
   const annualCeiling = (staff.annual_leave_days ?? 0) + (staff.annual_carried_days ?? 0);
   const medicalCeiling = (staff.medical_leave_days ?? 0) + (staff.medical_carried_days ?? 0);
+  // Study never carries, so this is the Assigned figure — 7 unless it was raised.
+  const studyCeiling = (staff.study_leave_days ?? 0) + (staff.study_carried_days ?? 0);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -403,11 +434,17 @@ function StaffProfileForm({
       ...(assigned && medicalLeave !== staff.medical_leave_days
         ? { medical_leave_days: medicalLeave }
         : {}),
+      ...(assigned && studyLeave !== staff.study_leave_days
+        ? { study_leave_days: studyLeave }
+        : {}),
       ...(year && annualRemaining !== staff.annual_remaining_days
         ? { annual_remaining_days: annualRemaining }
         : {}),
       ...(year && medicalRemaining !== staff.medical_remaining_days
         ? { medical_remaining_days: medicalRemaining }
+        : {}),
+      ...(year && studyRemaining !== staff.study_remaining_days
+        ? { study_remaining_days: studyRemaining }
         : {}),
     });
   }
@@ -501,8 +538,7 @@ function StaffProfileForm({
             <h3 className="text-sm font-medium text-ink">Leave</h3>
             <p className="mt-0.5 text-xs text-muted">
               Assigned days apply from the next leave year. Remaining corrects
-              this one. The two types are separate — medical never eats into
-              annual.
+              this one. The three types are separate — none eats into another.
             </p>
           </div>
           {!assigned && !year ? (
@@ -511,7 +547,7 @@ function StaffProfileForm({
               instructor, so there is nothing to edit here.
             </p>
           ) : (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               {assigned && (
                 <>
                   <div className="space-y-1.5">
@@ -534,6 +570,17 @@ function StaffProfileForm({
                       max={365}
                       value={medicalLeave}
                       onChange={e => setMedicalLeave(Number(e.target.value))}
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-study-leave">Assigned study (days)</Label>
+                    <Input
+                      id="edit-study-leave"
+                      type="number"
+                      min={0}
+                      max={365}
+                      value={studyLeave}
+                      onChange={e => setStudyLeave(Number(e.target.value))}
                     />
                   </div>
                 </>
@@ -575,6 +622,25 @@ function StaffProfileForm({
                         staff.medical_pool_days,
                         staff.medical_carried_days,
                         medicalCeiling,
+                      )}
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="edit-study-remaining">Remaining study (days)</Label>
+                    <Input
+                      id="edit-study-remaining"
+                      type="number"
+                      step={0.5}
+                      min={0}
+                      max={studyCeiling}
+                      value={studyRemaining}
+                      onChange={e => setStudyRemaining(Number(e.target.value))}
+                    />
+                    <p className="text-xs text-muted">
+                      {poolNote(
+                        staff.study_pool_days,
+                        staff.study_carried_days,
+                        studyCeiling,
                       )}
                     </p>
                   </div>

@@ -225,6 +225,7 @@ export async function listStaffAndInvitations(opts?: {
       staff: staffUsers,
       annualLeaveDays: instructors.annualLeaveDays,
       medicalLeaveDays: instructors.medicalLeaveDays,
+      studyLeaveDays: instructors.studyLeaveDays,
     })
     .from(staffUsers)
     .leftJoin(instructors, eq(instructors.staffUserId, staffUsers.id))
@@ -238,9 +239,14 @@ export async function listStaffAndInvitations(opts?: {
 
   const staff = await withLeaveFigures(
     staffRows.map(r =>
-      r.annualLeaveDays === null || r.medicalLeaveDays === null
+      r.annualLeaveDays === null || r.medicalLeaveDays === null || r.studyLeaveDays === null
         ? r.staff
-        : { ...r.staff, annualLeaveDays: r.annualLeaveDays, medicalLeaveDays: r.medicalLeaveDays },
+        : {
+            ...r.staff,
+            annualLeaveDays: r.annualLeaveDays,
+            medicalLeaveDays: r.medicalLeaveDays,
+            studyLeaveDays: r.studyLeaveDays,
+          },
     ),
   )
 
