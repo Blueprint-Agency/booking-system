@@ -301,8 +301,8 @@ export const clientPackages = pgTable(
     purchasedAt: timestamp('purchased_at', { withTimezone: true }).notNull().defaultNow(),
     amountPaidSgd: numeric('amount_paid_sgd', { precision: 10, scale: 2 }).notNull(),
     // List Price frozen at purchase (§15) — NOT NULL on every row including free
-    // ones, so a comp grant or $0 trial reads as a 100% discount rather than
-    // vanishing. Discount is derived (list minus paid); there is no stored discount.
+    // ones, so a comp grant or $0 trial reads as 100% off rather than vanishing.
+    // The money off is derived (list minus paid) and never stored.
     listPriceSgd: numeric('list_price_sgd', { precision: 10, scale: 2 }).notNull(),
     // Nullable per §4d — null for admin-issued grants (§16) and free trial passes at 0 SGD.
     stripePaymentIntentId: text('stripe_payment_intent_id'),

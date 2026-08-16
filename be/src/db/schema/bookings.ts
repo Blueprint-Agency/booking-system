@@ -37,7 +37,7 @@ export const bookings = pgTable(
     // Workshop money, frozen at purchase (§15). Required for kind = 'workshop',
     // null for every other kind — class and PT bookings are paid for by a package
     // and their money stays on the client_packages row. A free workshop records a
-    // list price with zero paid, same as a comp grant. Discount is derived.
+    // list price with zero paid, same as a comp grant. Money off is derived.
     listPriceSgd: numeric('list_price_sgd', { precision: 10, scale: 2 }),
     amountPaidSgd: numeric('amount_paid_sgd', { precision: 10, scale: 2 }),
     creditsOrSessionsUsed: integer('credits_or_sessions_used'),

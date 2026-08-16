@@ -2,7 +2,6 @@ import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as svc from '../../../services/packages/promo-code-admin'
-import { BadRequestError } from '../../../shared/errors'
 
 const productTypeEnum = z.enum(['class_package', 'pt_package', 'workshop'])
 const statusEnum = z.enum(['active', 'archived'])
@@ -100,12 +99,6 @@ const app = new Hono()
   })
   .post('/', zValidator('json', createSchema), async c => {
     const body = c.req.valid('json')
-    if (body.kind === 'percent' && body.percent_off == null) {
-      throw new BadRequestError('percent_off_required')
-    }
-    if (body.kind === 'amount' && body.amount_off_sgd == null) {
-      throw new BadRequestError('amount_off_sgd_required')
-    }
     const detail = await svc.createPromoCode(
       {
         code: body.code ?? null,
@@ -121,17 +114,11 @@ const app = new Hono()
       c.get('staffUserId'),
     )
     c.set('auditTarget' as any, { table: 'promo_codes', id: detail.code.id })
-    return c.json(serialize(await svc.getPromoCode(detail.code.id)), 201)
+    return c.json(serialize(detail), 201)
   })
   .patch('/:id', zValidator('param', idParam), zValidator('json', updateSchema), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
-    if (body.kind === 'percent' && body.percent_off == null) {
-      throw new BadRequestError('percent_off_required')
-    }
-    if (body.kind === 'amount' && body.amount_off_sgd == null) {
-      throw new BadRequestError('amount_off_sgd_required')
-    }
     const detail = await svc.updatePromoCode(id, {
       ...(body.code !== undefined ? { code: body.code } : {}),
       ...(body.kind !== undefined
@@ -154,15 +141,10 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'promo_codes', id })
     return c.json(serialize(detail))
   })
+  // Archive only — §11 gives one direction. There is no un-archive.
   .post('/:id/archive', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    const detail = await svc.setPromoCodeStatus(id, 'archived')
-    c.set('auditTarget' as any, { table: 'promo_codes', id })
-    return c.json(serialize(detail))
-  })
-  .post('/:id/unarchive', zValidator('param', idParam), async c => {
-    const { id } = c.req.valid('param')
-    const detail = await svc.setPromoCodeStatus(id, 'active')
+    const detail = await svc.archivePromoCode(id)
     c.set('auditTarget' as any, { table: 'promo_codes', id })
     return c.json(serialize(detail))
   })

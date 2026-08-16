@@ -205,13 +205,13 @@ export function PromoCodeEditor({ codeId }: { codeId?: string }) {
     }
   };
 
-  const onToggleArchive = async () => {
+  // One direction only (§11): to stop a code, archive it. There is no un-archive.
+  const onArchive = async () => {
     if (!api || !row) return;
     setActionError(null);
     setArchiveBusy(true);
     try {
-      const verb = row.status === "archived" ? "unarchive" : "archive";
-      setRow(await api.post<ApiPromoCode>(`/portal/admin/promo-codes/${row.id}/${verb}`));
+      setRow(await api.post<ApiPromoCode>(`/portal/admin/promo-codes/${row.id}/archive`));
     } catch (err) {
       setActionError(apiMessage(err));
     } finally {
@@ -264,16 +264,16 @@ export function PromoCodeEditor({ codeId }: { codeId?: string }) {
               ) : (
                 <Badge tone="sage">Active</Badge>
               ))}
-            {!isNew && (
+            {!isNew && row!.status !== "archived" && (
               <Button
                 type="button"
                 variant="secondary"
                 size="sm"
-                onClick={onToggleArchive}
+                onClick={onArchive}
                 disabled={archiveBusy}
               >
                 {archiveBusy && <Loader2 className="h-4 w-4 animate-spin" />}
-                {row!.status === "archived" ? "Unarchive" : "Archive"}
+                Archive
               </Button>
             )}
             <Link href={LIST_HREF}>

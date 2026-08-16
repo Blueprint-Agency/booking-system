@@ -135,7 +135,7 @@ async function insertWorkshopBooking(
   // headline figure an early-bird or a Promotion is cut from — read here so BOTH
   // the paid and the free path record it. A free workshop stores that price
   // against zero paid, same as a comp grant; a zero would hide the giveaway.
-  // Discount is derived (list minus paid) and never stored.
+  // The money off is derived (list minus paid) and never stored.
   const [tierRow] = await db
     .select({ regularPriceSgd: workshopTiers.regularPriceSgd })
     .from(workshopTiers)

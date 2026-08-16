@@ -17,8 +17,8 @@ type AuthGateContext = "buy a package" | "book a workshop";
 
 /**
  * Purchase button. Gates on auth, then branches on the effective price:
- * above zero it pushes to the /checkout review page (order summary, promo
- * code, Pay); at zero it POSTs straight to the checkout endpoint, which the
+ * above zero it pushes to the /checkout review page (order summary, Promo
+ * Code, Pay); at zero it POSTs straight to the checkout endpoint, which the
  * BE grants immediately (free trial / free workshop / a package a Promotion
  * drives to $0) and lands on the confirmation page.
  *

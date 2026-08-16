@@ -33,7 +33,7 @@ interface ApiPackage {
   expires_at: string | null;
   purchased_at: string;
   amount_paid_sgd: string;
-  /** Catalogue price frozen at purchase. The discount is derived from these two. */
+  /** Catalogue price frozen at purchase. The money off is derived from these two. */
   list_price_sgd: string;
   /** Backend-derived — never re-tested here as "unlimited and no end date". */
   dormant: boolean;
@@ -356,7 +356,7 @@ export default function ClientProfilePage({
                             : "No expiry"}
                         {p.unlimited_location ? ` · ${p.unlimited_location.name}` : ""}
                       </div>
-                      {/* List Price and the discount derived from it. The discount is
+                      {/* List Price and the money off derived from it. That figure is
                           NOT stored and NOT sent — a third number would be free to
                           disagree with the two that matter. */}
                       <div className="text-xs text-muted">

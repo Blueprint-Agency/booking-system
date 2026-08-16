@@ -27,6 +27,7 @@ import { BadRequestError, ConflictError, NotFoundError } from '../../shared/erro
 import {
   generateCode,
   isValidCode,
+  missingMoneyField,
   normaliseCode,
   type ProductRef,
   type PromoCodeProductRow,
@@ -157,11 +158,18 @@ export interface CreatePromoCodeInput {
   products: ProductRef[]
 }
 
+/**
+ * The kind↔money-field pairing (§9), refused here rather than nulled away, so a
+ * caller that skips the route cannot write a row the check constraint then
+ * rejects with a 500.
+ */
 function moneyFields(input: {
   kind: PromoCodeKind
   percentOff?: number | null
   amountOffSgd?: string | null
 }) {
+  const missing = missingMoneyField(input)
+  if (missing) throw new BadRequestError(missing)
   return {
     kind: input.kind,
     percentOff: input.kind === 'percent' ? input.percentOff ?? null : null,
@@ -173,11 +181,14 @@ async function insertScope(
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
   promoCodeId: string,
   products: ProductRef[],
-): Promise<void> {
-  if (products.length === 0) return
-  await tx.insert(promoCodeProducts).values(
-    products.map(p => ({ promoCodeId, productType: p.productType, productId: p.productId })),
-  )
+): Promise<PromoCodeProductRow[]> {
+  if (products.length === 0) return []
+  return tx
+    .insert(promoCodeProducts)
+    .values(
+      products.map(p => ({ promoCodeId, productType: p.productType, productId: p.productId })),
+    )
+    .returning()
 }
 
 export async function createPromoCode(
@@ -212,8 +223,8 @@ export async function createPromoCode(
             createdByStaffId: actorStaffId,
           })
           .returning()
-        await insertScope(tx, row!.id, input.products)
-        return { code: row!, products: [], redemptionCount: 0 }
+        const products = await insertScope(tx, row!.id, input.products)
+        return { code: row!, products, redemptionCount: 0 }
       })
     } catch (err: unknown) {
       if (!isCodeCollision(err)) throw err
@@ -310,20 +321,19 @@ export async function updatePromoCode(
 /**
  * Archiving refuses new Redemptions and leaves held places to lapse. The row
  * is never deleted — the record of what the code did outlives the campaign.
+ *
+ * One direction only (§11): to stop a code, archive it. There is no un-archive,
+ * because a code's terms are frozen once a member has accepted them and
+ * reviving one would put those terms back on sale under the same text.
  */
-export async function setPromoCodeStatus(
-  id: string,
-  status: PromoCodeStatus,
-): Promise<PromoCodeDetail> {
+export async function archivePromoCode(id: string): Promise<PromoCodeDetail> {
   const existing = await getPromoCode(id)
-  if (existing.code.status === status) {
-    throw new BadRequestError(
-      status === 'archived' ? 'promo_code_already_archived' : 'promo_code_not_archived',
-    )
+  if (existing.code.status === 'archived') {
+    throw new BadRequestError('promo_code_already_archived')
   }
   await db
     .update(promoCodes)
-    .set({ status, updatedAt: new Date() })
+    .set({ status: 'archived', updatedAt: new Date() })
     .where(eq(promoCodes.id, id))
   return getPromoCode(id)
 }

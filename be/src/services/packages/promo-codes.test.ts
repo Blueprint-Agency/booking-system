@@ -7,6 +7,7 @@ import {
   evaluatePromoCode,
   generateCode,
   isValidCode,
+  missingMoneyField,
   normaliseCode,
   occupiesPlace,
   usedPlaces,
@@ -316,5 +317,13 @@ assert.deepStrictEqual(
   evaluate({ code: promoCode({ kind: 'percent', percentOff: 10, amountOffSgd: null }) }),
   { ok: true, discountSgd: '10.00', effectivePriceSgd: '90.00' },
 )
+
+// ---------- a kind names exactly one money field, and it must be there ----------
+assert.strictEqual(missingMoneyField({ kind: 'percent', percentOff: 10 }), null)
+assert.strictEqual(missingMoneyField({ kind: 'amount', amountOffSgd: '20.00' }), null)
+assert.strictEqual(missingMoneyField({ kind: 'percent', amountOffSgd: '20.00' }), 'percent_off_required')
+assert.strictEqual(missingMoneyField({ kind: 'amount', percentOff: 10 }), 'amount_off_sgd_required')
+// An explicit null is as absent as an omission.
+assert.strictEqual(missingMoneyField({ kind: 'percent', percentOff: null }), 'percent_off_required')
 
 console.log('promo-codes.test ok')

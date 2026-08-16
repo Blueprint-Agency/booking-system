@@ -16,7 +16,7 @@ import type {
   promoCodeProducts,
   promoCodeRedemptions,
 } from '../../db/schema/packages'
-import type { PromoCodeProduct } from '../../db/enums'
+import type { PromoCodeKind, PromoCodeProduct } from '../../db/enums'
 
 export type PromoCodeRow = typeof promoCodes.$inferSelect
 export type PromoCodeProductRow = typeof promoCodeProducts.$inferSelect
@@ -30,13 +30,6 @@ export const GENERATED_CODE_LENGTH = 8
 
 /** Custom codes: 3–24 of [A-Z0-9-]. Mirrors the promo_codes_code_format check. */
 export const CODE_FORMAT = /^[A-Z0-9-]{3,24}$/
-
-/**
- * How long a Hold lasts. The payment session's expiry is set to the same
- * moment, which is why a member who has paid can never be told the code ran
- * out. The provider's 30-minute minimum is where the number comes from.
- */
-export const HOLD_MINUTES = 30
 
 /** Entry is case- and whitespace-insensitive; the normalised form is stored and compared. */
 export function normaliseCode(input: string): string {
@@ -116,6 +109,24 @@ export function coversProduct(
   return scope.some(
     s => s.productType === product.productType && s.productId === product.productId,
   )
+}
+
+/**
+ * A `kind` names exactly one money field, and that field must be present. The
+ * `promo_codes_kind_fields` check holds the same pairing in the database; this
+ * is the same rule stated where a caller can be refused cleanly instead of
+ * meeting a constraint violation.
+ *
+ * Returns the refusal rather than throwing, like everything else in this module.
+ */
+export function missingMoneyField(input: {
+  kind: PromoCodeKind
+  percentOff?: number | null
+  amountOffSgd?: string | null
+}): 'percent_off_required' | 'amount_off_sgd_required' | null {
+  if (input.kind === 'percent' && input.percentOff == null) return 'percent_off_required'
+  if (input.kind === 'amount' && input.amountOffSgd == null) return 'amount_off_sgd_required'
+  return null
 }
 
 /**
