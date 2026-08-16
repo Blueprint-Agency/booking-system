@@ -1,6 +1,7 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import { db } from '../../db'
 import { clientPackages, classPackages, ptPackages } from '../../db/schema/packages'
+import { isUniqueViolation } from '../../db/unique-violation'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { bestPrice, listActivePromotionsFor } from './promotions'
 import { PT_VALIDITY_DAYS, addMonths, computeActive } from './validity'
@@ -187,12 +188,7 @@ export async function grantPackage(
       .returning({ id: clientPackages.id })
     return { clientPackageId: row!.id }
   } catch (err: unknown) {
-    const e = err as { message?: string; code?: string }
-    const msg = e.message ?? ''
-    if (
-      msg.includes('client_packages_trial_unique_per_client') ||
-      (e.code === '23505' && kind === 'trial')
-    ) {
+    if (kind === 'trial' && isUniqueViolation(err, 'client_packages_trial_unique_per_client')) {
       throw new ConflictError('trial_already_used')
     }
     throw err

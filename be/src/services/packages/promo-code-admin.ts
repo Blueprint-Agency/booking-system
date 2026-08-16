@@ -14,6 +14,7 @@
  */
 import { and, count, eq, inArray, isNull } from 'drizzle-orm'
 import { db } from '../../db'
+import { isUniqueViolation } from '../../db/unique-violation'
 import {
   classPackages,
   promoCodeProducts,
@@ -83,21 +84,9 @@ function assertScopeShape(appliesToAll: boolean, products: ProductRef[]): void {
   }
 }
 
-/**
- * Did this write lose the race for the code's one unique index?
- *
- * Drizzle wraps the driver error, so the Postgres `23505` sits on `.cause`
- * rather than on the error we catch — reading `err.code` alone silently misses
- * every collision and leaks the raw query text to the caller.
- */
-function isCodeCollision(err: unknown): boolean {
-  for (let e: unknown = err, depth = 0; e && depth < 5; depth++) {
-    const cand = e as { code?: string; constraint_name?: string; cause?: unknown }
-    if (cand.code === '23505' || cand.constraint_name === 'promo_codes_code_unique') return true
-    e = cand.cause
-  }
-  return false
-}
+/** Did this write lose the race for the code's one unique index? */
+const isCodeCollision = (err: unknown): boolean =>
+  isUniqueViolation(err, 'promo_codes_code_unique')
 
 async function redemptionCountFor(promoCodeId: string): Promise<number> {
   const [row] = await db
@@ -188,6 +177,10 @@ async function insertScope(
     .values(
       products.map(p => ({ promoCodeId, productType: p.productType, productId: p.productId })),
     )
+    // The same product named twice is one scope row, not an error — the composite
+    // PK collapses it. Without this the duplicate raises a 23505 that reads like
+    // a lost race for the code text.
+    .onConflictDoNothing()
     .returning()
 }
 
