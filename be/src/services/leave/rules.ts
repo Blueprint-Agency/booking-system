@@ -407,6 +407,120 @@ export function futureConflicts<T extends { ends_at: string }>(
   return conflicts.filter(c => Date.parse(c.ends_at) > now.getTime())
 }
 
+// ── Leave Caps ─────────────────────────────────────────────────────────────
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+/** "18 Aug 2026". A plain date read as itself — never parsed as an instant, so
+ *  nothing shifts a day either way. */
+export function formatLeaveDate(d: PlainDate): string {
+  return `${Number(d.slice(8, 10))} ${MONTHS[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}`
+}
+
+export interface LeaveInstantWindow {
+  startsAt: Date
+  endsAt: Date
+}
+
+/** One colleague's occupying leave, as a **Leave Cap** counts it: an instant
+ *  window (from `leaveWindow`, so half days are already exact), plus the two
+ *  facts that decide which cap counts it. */
+export interface LeaveCapPeer extends LeaveInstantWindow {
+  instructorName: string
+  type: LeaveType
+  inCoverGroup: boolean
+}
+
+/**
+ * The **peak**: the greatest number of peers away at any single instant inside
+ * `window`, and who they are.
+ *
+ * A headcount of overlapping people is the wrong number and refuses leave that
+ * is fine — cap 2, Alice away Monday, Cara away Wednesday, Bob asking for
+ * Monday–Wednesday: two people overlap Bob, but at no instant are more than two
+ * away. The count can only RISE at a window's start, so the boundary instants
+ * (the requested window's own start, plus every peer start inside it) are the
+ * only ones worth sampling. Windows are half-open, so a morning and an afternoon
+ * on the same date never share an instant.
+ */
+export function peakLeaveAway(
+  window: LeaveInstantWindow,
+  peers: readonly LeaveCapPeer[],
+): { at: Date; away: LeaveCapPeer[] } {
+  const instants = [
+    window.startsAt,
+    ...peers.map(p => p.startsAt).filter(t => t > window.startsAt && t < window.endsAt),
+  ]
+  let best = { at: window.startsAt, away: [] as LeaveCapPeer[] }
+  for (const at of instants) {
+    const away = peers.filter(p => p.startsAt <= at && p.endsAt > at)
+    if (away.length > best.away.length) best = { at, away }
+  }
+  return best
+}
+
+/** "Alice", "Alice and Cara", "Alice, Bob and Cara". */
+const nameList = (names: readonly string[]): string =>
+  names.length < 2 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`
+
+export interface LeaveCapInput {
+  type: LeaveType
+  /** Is the APPLICANT in the Cover Group? Nobody else's membership decides this. */
+  inCoverGroup: boolean
+  /** The requested window, from `leaveWindow`. */
+  window: LeaveInstantWindow
+  /** Every OTHER instructor's occupying leave overlapping the window. Which of
+   *  them each cap counts is decided here, not by the query. */
+  peers: readonly LeaveCapPeer[]
+  coverGroupCap: number
+  studyCap: number
+}
+
+/**
+ * Both **Leave Caps**, in one place so the asymmetry between them cannot drift.
+ *
+ *  - **Medical is never refused**, whoever files it. It still sits in `peers`
+ *    for everybody else, because the studio has lost that instructor whatever
+ *    the reason.
+ *  - The **Cover Group cap counts every Leave Type**, and only applies when the
+ *    applicant is in the group.
+ *  - The **Study Leave cap counts study leave only**, over every instructor —
+ *    counting all leave would make study leave nearly unobtainable.
+ *  - A Cover Group member's study request must clear BOTH.
+ *
+ * The refusal names the colleagues and never says why they are away: the leave
+ * calendar already shows every staff member the name, dates and status of a
+ * colleague's leave, and redacts only the detail.
+ */
+export function checkLeaveCaps(
+  input: LeaveCapInput,
+): { ok: true } | { ok: false; code: 'leave_cap_reached'; message: string } {
+  if (input.type === 'medical') return { ok: true }
+
+  const counted: { peers: LeaveCapPeer[]; cap: number }[] = []
+  if (input.inCoverGroup) {
+    counted.push({ peers: input.peers.filter(p => p.inCoverGroup), cap: input.coverGroupCap })
+  }
+  if (input.type === 'study') {
+    counted.push({ peers: input.peers.filter(p => p.type === 'study'), cap: input.studyCap })
+  }
+
+  for (const { peers, cap } of counted) {
+    const { at, away } = peakLeaveAway(input.window, peers)
+    // The applicant counts themselves.
+    if (away.length + 1 <= cap) continue
+    return {
+      ok: false,
+      code: 'leave_cap_reached',
+      message:
+        `${nameList(away.map(p => p.instructorName))} ${away.length === 1 ? 'is' : 'are'} ` +
+        `already on leave on ${formatLeaveDate(sgToday(at))}. At most ${cap} ` +
+        `${cap === 1 ? 'instructor' : 'instructors'} can be away at once.`,
+    }
+  }
+  return { ok: true }
+}
+
 // ── Supporting Document ────────────────────────────────────────────────────
 
 /** 5MB. Refused before a single byte reaches storage. */

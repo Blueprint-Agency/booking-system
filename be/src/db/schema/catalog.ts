@@ -4,6 +4,7 @@ import {
   text,
   timestamp,
   integer,
+  boolean,
   index,
   uniqueIndex,
   primaryKey,
@@ -98,6 +99,10 @@ export const instructors = pgTable('instructors', {
   annualLeaveDays: integer('annual_leave_days').notNull().default(14),
   medicalLeaveDays: integer('medical_leave_days').notNull().default(14),
   studyLeaveDays: integer('study_leave_days').notNull().default(7),
+  // **Cover Group** membership: the instructors an admin has ticked as covering
+  // each other. One studio-wide set, false for everyone until somebody is
+  // ticked — which is what makes the Leave Cap inert on an untouched studio.
+  inCoverGroup: boolean('in_cover_group').notNull().default(false),
 })
 
 export const instructorClassTypes = pgTable(

@@ -6,6 +6,7 @@ import {
   SUPPORTING_DOCUMENT_MAX_BYTES,
   TAKEN_STATUSES,
   checkAdminLeaveDecision,
+  checkLeaveCaps,
   checkSupportingDocument,
   checkLeaveSubmission,
   checkOwnLeaveTransition,
@@ -16,13 +17,16 @@ import {
   leavePoolFigures,
   leaveWindow,
   leaveYearOf,
+  peakLeaveAway,
   supportingDocumentKey,
   checkRemainingAdjustment,
   poolDays,
   poolForRemaining,
   sgToday,
   sumLeaveDays,
+  type LeaveCapPeer,
   type LeaveDaysRow,
+  type LeaveType,
 } from './rules'
 
 // -- day counting: inclusive of both ends ------------------------------------
@@ -818,6 +822,145 @@ const base = { today: '2026-08-10', pool: 14, committedDays: 0 } as const
     ).remaining,
     14,
   )
+}
+
+// -- the Leave Caps: a peak across instants, not a headcount over dates -------
+{
+  // Mon 17 Aug 2026, Tue 18, Wed 19.
+  const MON = '2026-08-17'
+  const TUE = '2026-08-18'
+  const WED = '2026-08-19'
+  const peer = (
+    instructorName: string,
+    from: string,
+    to: string,
+    o: { type?: LeaveType; inCoverGroup?: boolean; halfDay?: 'morning' | 'afternoon' } = {},
+  ): LeaveCapPeer => ({
+    instructorName,
+    type: o.type ?? 'annual',
+    inCoverGroup: o.inCoverGroup ?? true,
+    ...leaveWindow(from, to, o.halfDay ?? 'none'),
+  })
+  const ask = (
+    type: LeaveType,
+    from: string,
+    to: string,
+    peers: LeaveCapPeer[],
+    o: { inCoverGroup?: boolean; coverGroupCap?: number; studyCap?: number; halfDay?: 'morning' | 'afternoon' } = {},
+  ) =>
+    checkLeaveCaps({
+      type,
+      inCoverGroup: o.inCoverGroup ?? true,
+      window: leaveWindow(from, to, o.halfDay ?? 'none'),
+      peers,
+      coverGroupCap: o.coverGroupCap ?? 1,
+      studyCap: o.studyCap ?? 1,
+    })
+
+  // THE canonical case. Cap 2. Alice is away Monday, Cara is away Wednesday, Bob
+  // asks for Monday–Wednesday. Two people overlap his request, so a headcount
+  // refuses him — but at no instant are more than two instructors away.
+  const aliceAndCara = [peer('Alice', MON, MON), peer('Cara', WED, WED)]
+  assert.deepStrictEqual(ask('annual', MON, WED, aliceAndCara, { coverGroupCap: 2 }), { ok: true })
+  // the peak itself: one peer away at a time, on their own day
+  assert.strictEqual(peakLeaveAway(leaveWindow(MON, WED), aliceAndCara).away.length, 1)
+  // ...and a third person away on the Monday DOES make it three at one instant
+  const alsoMonday = [...aliceAndCara, peer('Dan', MON, TUE)]
+  assert.strictEqual(peakLeaveAway(leaveWindow(MON, WED), alsoMonday).away.length, 2)
+  const refused = ask('annual', MON, WED, alsoMonday, { coverGroupCap: 2 })
+  assert.strictEqual(refused.ok, false)
+  if (!refused.ok) {
+    assert.strictEqual(refused.code, 'leave_cap_reached')
+    // it names the colleagues and the day, and never says why they are away
+    assert.match(refused.message, /Alice and Dan/)
+    assert.match(refused.message, /17 Aug 2026/)
+    assert.match(refused.message, /At most 2 instructors can be away at once/)
+    for (const leak of [/annual/i, /medical/i, /study/i, /reason/i]) {
+      assert.doesNotMatch(refused.message, leak)
+    }
+  }
+
+  // a cap of 1 behaves identically to the naive rule: any overlap at all refuses
+  assert.strictEqual(ask('annual', MON, WED, [peer('Alice', MON, MON)]).ok, false)
+  assert.strictEqual(ask('annual', MON, WED, [peer('Cara', WED, WED)]).ok, false)
+  assert.strictEqual(ask('annual', MON, MON, [peer('Cara', WED, WED)]).ok, true)
+
+  // half days on the same date do not collide — morning and afternoon are never
+  // the same instant, so the studio keeps cover all day with a cap of 1
+  assert.deepStrictEqual(
+    ask('annual', TUE, TUE, [peer('Alice', TUE, TUE, { halfDay: 'morning' })], {
+      halfDay: 'afternoon',
+    }),
+    { ok: true },
+  )
+  // ...and the same half IS a collision
+  assert.strictEqual(
+    ask('annual', TUE, TUE, [peer('Alice', TUE, TUE, { halfDay: 'morning' })], {
+      halfDay: 'morning',
+    }).ok,
+    false,
+  )
+  // a whole day covers both halves
+  assert.strictEqual(
+    ask('annual', TUE, TUE, [peer('Alice', TUE, TUE)], { halfDay: 'afternoon' }).ok,
+    false,
+  )
+
+  // an instructor outside the Cover Group is refused nothing by that cap...
+  assert.deepStrictEqual(
+    ask('annual', MON, WED, [peer('Alice', MON, MON)], { inCoverGroup: false }),
+    { ok: true },
+  )
+  // ...and neither do colleagues outside it count toward it
+  assert.deepStrictEqual(
+    ask('annual', MON, WED, [peer('Alice', MON, MON, { inCoverGroup: false })]),
+    { ok: true },
+  )
+
+  // medical is NEVER refused by a cap, however full the day is
+  assert.deepStrictEqual(
+    ask('medical', MON, WED, [peer('Alice', MON, WED), peer('Dan', MON, WED)]),
+    { ok: true },
+  )
+  // ...and it still counts toward the Cover Group cap for everybody else
+  assert.strictEqual(ask('annual', MON, MON, [peer('Alice', MON, MON, { type: 'medical' })]).ok, false)
+
+  // the study cap counts STUDY only: a colleague's holiday does not block a
+  // course for an instructor outside the Cover Group
+  assert.deepStrictEqual(
+    ask('study', MON, WED, [peer('Alice', MON, WED, { type: 'annual', inCoverGroup: false })], {
+      inCoverGroup: false,
+    }),
+    { ok: true },
+  )
+  // but another instructor's study leave does, wherever either of them sits
+  assert.strictEqual(
+    ask('study', MON, MON, [peer('Alice', MON, MON, { type: 'study', inCoverGroup: false })], {
+      inCoverGroup: false,
+    }).ok,
+    false,
+  )
+
+  // a Cover Group member's study request must clear BOTH caps — the study cap is
+  // clear here, and the group's annual leave still refuses it
+  assert.strictEqual(ask('study', MON, MON, [peer('Alice', MON, MON, { type: 'annual' })]).ok, false)
+  // and the other way round: the group is clear, the studio-wide study cap is not
+  assert.strictEqual(
+    ask('study', MON, MON, [peer('Alice', MON, MON, { type: 'study', inCoverGroup: false })], {
+      coverGroupCap: 5,
+    }).ok,
+    false,
+  )
+  // with both clear it passes
+  assert.deepStrictEqual(
+    ask('study', MON, MON, [peer('Alice', WED, WED, { type: 'study' })]),
+    { ok: true },
+  )
+
+  // nobody away at all is always fine, whatever the type
+  for (const type of ['annual', 'medical', 'study'] as const) {
+    assert.deepStrictEqual(ask(type, MON, WED, []), { ok: true })
+  }
 }
 
 // -- the Supporting Document rule ---------------------------------------------

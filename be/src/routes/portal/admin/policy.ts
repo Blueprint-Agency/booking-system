@@ -9,6 +9,11 @@ const globalPatch = z.object({
   class_window_hours: z.number().int().min(0).optional(),
   pt_window_hours: z.number().int().min(0).optional(),
   leave_carry_over_cap_days: z.number().int().min(0).max(365).optional(),
+  // Both Leave Caps are at least 1: zero would freeze annual leave studio-wide.
+  cover_group_leave_cap: z.number().int().min(1).max(365).optional(),
+  study_leave_cap: z.number().int().min(1).max(365).optional(),
+  // The whole Cover Group, as one ticked set of instructor staff user ids.
+  cover_group_staff_ids: z.array(z.string().uuid()).optional(),
 })
 
 const ptPatch = z.object({
@@ -22,6 +27,8 @@ function serializeGlobal(r: svc.GlobalPolicyRow) {
     class_window_hours: r.classWindowHours,
     pt_window_hours: r.ptWindowHours,
     leave_carry_over_cap_days: r.leaveCarryOverCapDays,
+    cover_group_leave_cap: r.coverGroupLeaveCap,
+    study_leave_cap: r.studyLeaveCap,
     updated_at: r.updatedAt,
     updated_by_staff_id: r.updatedByStaffId,
   }
@@ -41,6 +48,7 @@ const app = new Hono()
     return c.json({
       global_policy: serializeGlobal(global_policy),
       pt_booking_config: serializePt(pt_booking_config),
+      cover_group_staff_ids: await svc.readCoverGroup(),
     })
   })
   .patch('/global', zValidator('json', globalPatch), async c => {
@@ -57,11 +65,16 @@ const app = new Hono()
         ...(body.leave_carry_over_cap_days !== undefined
           ? { leaveCarryOverCapDays: body.leave_carry_over_cap_days }
           : {}),
+        ...(body.cover_group_leave_cap !== undefined
+          ? { coverGroupLeaveCap: body.cover_group_leave_cap }
+          : {}),
+        ...(body.study_leave_cap !== undefined ? { studyLeaveCap: body.study_leave_cap } : {}),
       },
       staffId,
     )
+    if (body.cover_group_staff_ids !== undefined) await svc.setCoverGroup(body.cover_group_staff_ids)
     c.set('auditTarget' as any, { table: 'global_policy', id: row.id })
-    return c.json(serializeGlobal(row))
+    return c.json({ ...serializeGlobal(row), cover_group_staff_ids: await svc.readCoverGroup() })
   })
   .patch('/pt', zValidator('json', ptPatch), async c => {
     const body = c.req.valid('json')

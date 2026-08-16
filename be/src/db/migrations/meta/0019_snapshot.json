@@ -1,5 +1,5 @@
 {
-  "id": "323bc2d8-fa31-4bbb-be62-e1b7ce3c0c63",
+  "id": "2c67df56-3698-4ee9-a3ca-21138452f454",
   "prevId": "27fba052-71ac-4d86-8168-fc1c2a0d1a54",
   "version": "7",
   "dialect": "postgresql",
@@ -831,6 +831,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": 7
+        },
+        "in_cover_group": {
+          "name": "in_cover_group",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {},
@@ -1111,6 +1118,20 @@
           "notNull": true,
           "default": 14
         },
+        "cover_group_leave_cap": {
+          "name": "cover_group_leave_cap",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "study_leave_cap": {
+          "name": "study_leave_cap",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
@@ -1148,6 +1169,10 @@
         "global_policy_singleton": {
           "name": "global_policy_singleton",
           "value": "\"global_policy\".\"id\" = '00000000-0000-0000-0000-000000000001'::uuid"
+        },
+        "global_policy_leave_caps_min_1": {
+          "name": "global_policy_leave_caps_min_1",
+          "value": "\"global_policy\".\"cover_group_leave_cap\" >= 1 AND \"global_policy\".\"study_leave_cap\" >= 1"
         }
       },
       "isRLSEnabled": false
@@ -1377,12 +1402,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "applied_promo_code_id": {
-          "name": "applied_promo_code_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "location_id": {
           "name": "location_id",
           "type": "uuid",
@@ -1578,19 +1597,6 @@
           "tableTo": "promotions",
           "columnsFrom": [
             "applied_promotion_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "client_packages_applied_promo_code_id_promo_codes_id_fk": {
-          "name": "client_packages_applied_promo_code_id_promo_codes_id_fk",
-          "tableFrom": "client_packages",
-          "tableTo": "promo_codes",
-          "columnsFrom": [
-            "applied_promo_code_id"
           ],
           "columnsTo": [
             "id"
@@ -4939,12 +4945,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "applied_promo_code_id": {
-          "name": "applied_promo_code_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "state": {
           "name": "state",
           "type": "booking_state",
@@ -5245,19 +5245,6 @@
           "tableTo": "promotions",
           "columnsFrom": [
             "applied_promotion_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "bookings_applied_promo_code_id_promo_codes_id_fk": {
-          "name": "bookings_applied_promo_code_id_promo_codes_id_fk",
-          "tableFrom": "bookings",
-          "tableTo": "promo_codes",
-          "columnsFrom": [
-            "applied_promo_code_id"
           ],
           "columnsTo": [
             "id"

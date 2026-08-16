@@ -1,6 +1,7 @@
-import { eq } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import { db } from '../../db'
 import { globalPolicy, ptBookingConfig } from '../../db/schema/policy'
+import { instructors } from '../../db/schema/catalog'
 import { NotFoundError } from '../../shared/errors'
 
 const POLICY_SINGLETON_ID = '00000000-0000-0000-0000-000000000001'
@@ -29,6 +30,8 @@ export interface UpdateGlobalPolicyInput {
   classWindowHours?: number
   ptWindowHours?: number
   leaveCarryOverCapDays?: number
+  coverGroupLeaveCap?: number
+  studyLeaveCap?: number
 }
 
 export async function updateGlobalPolicy(
@@ -42,6 +45,33 @@ export async function updateGlobalPolicy(
     .returning()
   if (!row) throw new NotFoundError('policy_not_seeded')
   return row
+}
+
+/** Who is in the **Cover Group** — the staff user ids of every instructor in it. */
+export async function readCoverGroup(): Promise<string[]> {
+  return (
+    await db
+      .select({ id: instructors.staffUserId })
+      .from(instructors)
+      .where(eq(instructors.inCoverGroup, true))
+  ).map(r => r.id)
+}
+
+/**
+ * The Cover Group is ONE ticked set, so an admin sends the whole set and every
+ * instructor outside it is unticked in the same statement — there is no add and
+ * no remove to get out of step with each other.
+ */
+export async function setCoverGroup(staffUserIds: readonly string[]): Promise<void> {
+  await db.transaction(async tx => {
+    await tx.update(instructors).set({ inCoverGroup: false })
+    if (staffUserIds.length > 0) {
+      await tx
+        .update(instructors)
+        .set({ inCoverGroup: true })
+        .where(inArray(instructors.staffUserId, [...staffUserIds]))
+    }
+  })
 }
 
 export async function updatePtBookingConfig(

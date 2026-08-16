@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, lte } from 'drizzle-orm'
+import { and, asc, desc, eq, gte, inArray, lte, ne, or } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { db } from '../../db'
 import { leavePools, leaveRequests } from '../../db/schema/leave'
@@ -474,6 +474,25 @@ export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<Leave
   const halfDay = input.halfDay ?? 'none'
 
   const row = await db.transaction(async tx => {
+    // THE FIRST statement: the **Leave Cap** lock. Locking only the applicant's
+    // own instructor row is not enough — two Cover Group members submitting the
+    // same dates take two different locks, both read a clear calendar and both
+    // pass. So every row of the counted set is locked, in staff-user-id order so
+    // two transactions cannot deadlock. A study request serialises study
+    // submissions studio-wide, which at this scale is cheaper than any correct
+    // alternative. The applicant's own row is always inside the set, so the
+    // narrower lock `leavePoolsFor` takes next is already held.
+    await tx
+      .select({ id: instructors.staffUserId })
+      .from(instructors)
+      .where(
+        input.type === 'study'
+          ? undefined
+          : or(eq(instructors.inCoverGroup, true), eq(instructors.staffUserId, input.instructorId)),
+      )
+      .orderBy(asc(instructors.staffUserId))
+      .for('update')
+
     // FIRST statement, and the reason there is a transaction at all: its first
     // statement takes this instructor's row lock, and it is also the permission
     // check — admins and superadmins have no `instructors` row. It returns the
@@ -502,6 +521,62 @@ export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<Leave
       }),
     })
     if (!check.ok) throw new BadRequestError(check.code, { message: check.message })
+
+    // The **Leave Caps**. The queries narrow — this instructor's Cover Group
+    // membership, the two caps, and every OTHER instructor's occupying leave
+    // overlapping the requested dates — and `rules.checkLeaveCaps` decides which
+    // of those rows each cap counts, and whether the peak clears it.
+    const [me] = await tx
+      .select({ inCoverGroup: instructors.inCoverGroup })
+      .from(instructors)
+      .where(eq(instructors.staffUserId, input.instructorId))
+      .limit(1)
+    const [caps] = await tx
+      .select({
+        coverGroup: globalPolicy.coverGroupLeaveCap,
+        study: globalPolicy.studyLeaveCap,
+      })
+      .from(globalPolicy)
+      .limit(1)
+    if (!caps) throw new NotFoundError('policy_not_seeded')
+    const peers = (
+      await tx
+        .select({
+          name: staffUsers.name,
+          type: leaveRequests.type,
+          startDate: leaveRequests.startDate,
+          endDate: leaveRequests.endDate,
+          halfDay: leaveRequests.halfDay,
+          inCoverGroup: instructors.inCoverGroup,
+        })
+        .from(leaveRequests)
+        .innerJoin(staffUsers, eq(staffUsers.id, leaveRequests.instructorId))
+        .innerJoin(instructors, eq(instructors.staffUserId, leaveRequests.instructorId))
+        .where(
+          and(
+            ne(leaveRequests.instructorId, input.instructorId),
+            // Pending counts, exactly as it does for the Pool: the first to
+            // submit holds the day. A rejection frees it at that moment.
+            inArray(leaveRequests.status, [...rules.OCCUPYING_STATUSES]),
+            lte(leaveRequests.startDate, input.endDate),
+            gte(leaveRequests.endDate, input.startDate),
+          ),
+        )
+    ).map(p => ({
+      instructorName: p.name,
+      type: p.type,
+      inCoverGroup: p.inCoverGroup,
+      ...rules.leaveWindow(p.startDate, p.endDate, p.halfDay),
+    }))
+    const capped = rules.checkLeaveCaps({
+      type: input.type,
+      inCoverGroup: me?.inCoverGroup ?? false,
+      window: rules.leaveWindow(input.startDate, input.endDate, halfDay),
+      peers,
+      coverGroupCap: caps.coverGroup,
+      studyCap: caps.study,
+    })
+    if (!capped.ok) throw new ConflictError(capped.code, { message: capped.message })
 
     // The clash rule, in reverse: ask occupancy what this instructor is already on
     // across the requested days (only the requested HALF, if it is a half day),

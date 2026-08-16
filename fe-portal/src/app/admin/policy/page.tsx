@@ -12,6 +12,8 @@ interface PolicyState {
   classWindowHours: number;
   ptWindowHours: number;
   leaveCarryOverCapDays: number;
+  coverGroupLeaveCap: number;
+  studyLeaveCap: number;
   bookInAdvanceDays: number;
   updatedAt: string | null;
 }
@@ -23,12 +25,23 @@ interface ApiPolicy {
     class_window_hours: number;
     pt_window_hours: number;
     leave_carry_over_cap_days: number;
+    cover_group_leave_cap: number;
+    study_leave_cap: number;
     updated_at: string | null;
   };
   pt_booking_config: {
     book_in_advance_days: number;
     updated_at: string | null;
   };
+  /** The Cover Group, as one ticked set of instructor staff user ids. */
+  cover_group_staff_ids: string[];
+}
+
+interface StaffRow {
+  id: string;
+  name: string;
+  role: "superadmin" | "admin" | "instructor";
+  status: "pending" | "active" | "archived";
 }
 
 function emptyPolicy(): PolicyState {
@@ -38,6 +51,8 @@ function emptyPolicy(): PolicyState {
     classWindowHours: 0,
     ptWindowHours: 0,
     leaveCarryOverCapDays: 0,
+    coverGroupLeaveCap: 1,
+    studyLeaveCap: 1,
     bookInAdvanceDays: 0,
     updatedAt: null,
   };
@@ -55,6 +70,9 @@ function diffGlobal(saved: PolicyState, draft: PolicyState) {
     out.pt_window_hours = draft.ptWindowHours;
   if (saved.leaveCarryOverCapDays !== draft.leaveCarryOverCapDays)
     out.leave_carry_over_cap_days = draft.leaveCarryOverCapDays;
+  if (saved.coverGroupLeaveCap !== draft.coverGroupLeaveCap)
+    out.cover_group_leave_cap = draft.coverGroupLeaveCap;
+  if (saved.studyLeaveCap !== draft.studyLeaveCap) out.study_leave_cap = draft.studyLeaveCap;
   return out;
 }
 
@@ -65,19 +83,34 @@ export default function PolicyPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // The Cover Group is a set, so it is held apart from the numeric policy state
+  // and compared as a set — order carries no meaning.
+  const [instructors, setInstructors] = useState<StaffRow[]>([]);
+  const [coverGroup, setCoverGroup] = useState<string[]>([]);
+  const [savedCoverGroup, setSavedCoverGroup] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     if (!api) return;
     setLoading(true);
     setError(null);
     try {
-      const r = await api.get<ApiPolicy>("/portal/admin/policy");
+      const [r, staff] = await Promise.all([
+        api.get<ApiPolicy>("/portal/admin/policy"),
+        api.get<{ staff: StaffRow[] }>("/portal/admin/staff"),
+      ]);
+      setInstructors(
+        staff.staff.filter((m) => m.role === "instructor" && m.status !== "archived"),
+      );
+      setCoverGroup(r.cover_group_staff_ids);
+      setSavedCoverGroup(r.cover_group_staff_ids);
       const next: PolicyState = {
         cancelCapCount: r.global_policy.cancel_cap_count,
         cancelCapCycleDays: r.global_policy.cancel_cap_cycle_days,
         classWindowHours: r.global_policy.class_window_hours,
         ptWindowHours: r.global_policy.pt_window_hours,
         leaveCarryOverCapDays: r.global_policy.leave_carry_over_cap_days,
+        coverGroupLeaveCap: r.global_policy.cover_group_leave_cap,
+        studyLeaveCap: r.global_policy.study_leave_cap,
         bookInAdvanceDays: r.pt_booking_config.book_in_advance_days,
         updatedAt: r.global_policy.updated_at,
       };
@@ -94,7 +127,13 @@ export default function PolicyPage() {
     void load();
   }, [load]);
 
+  const sameSet = (a: string[], b: string[]) =>
+    a.length === b.length && a.every((id) => b.includes(id));
+
   const dirty =
+    !sameSet(coverGroup, savedCoverGroup) ||
+    draft.coverGroupLeaveCap !== policy.coverGroupLeaveCap ||
+    draft.studyLeaveCap !== policy.studyLeaveCap ||
     draft.cancelCapCount !== policy.cancelCapCount ||
     draft.cancelCapCycleDays !== policy.cancelCapCycleDays ||
     draft.classWindowHours !== policy.classWindowHours ||
@@ -107,7 +146,8 @@ export default function PolicyPage() {
     if (!api) return;
     setSaving(true);
     try {
-      const globalDelta = diffGlobal(policy, draft);
+      const globalDelta: Record<string, unknown> = diffGlobal(policy, draft);
+      if (!sameSet(coverGroup, savedCoverGroup)) globalDelta.cover_group_staff_ids = coverGroup;
       const ops: Array<Promise<unknown>> = [];
       if (Object.keys(globalDelta).length > 0) {
         ops.push(api.patch("/portal/admin/policy/global", globalDelta));
@@ -285,6 +325,71 @@ export default function PolicyPage() {
           </p>
         </section>
 
+        <section className="rounded-xl border border-border bg-card p-6 shadow-soft">
+          <header className="mb-4">
+            <h2 className="text-base font-semibold text-ink">Leave caps</h2>
+            <p className="mt-0.5 text-xs text-muted">
+              The most instructors who may be away at the same moment. Measured as a peak across
+              the requested dates, so leave that never coincides never reaches a cap. Medical
+              leave counts toward a cap and is never refused by one.
+            </p>
+          </header>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="cover-group-cap">Cover Group cap (instructors)</Label>
+              <Input
+                id="cover-group-cap"
+                type="number"
+                min={1}
+                max={365}
+                value={draft.coverGroupLeaveCap}
+                onChange={(e) =>
+                  setDraft({ ...draft, coverGroupLeaveCap: Number(e.target.value) })
+                }
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="study-cap">Study leave cap (instructors)</Label>
+              <Input
+                id="study-cap"
+                type="number"
+                min={1}
+                max={365}
+                value={draft.studyLeaveCap}
+                onChange={(e) => setDraft({ ...draft, studyLeaveCap: Number(e.target.value) })}
+              />
+            </div>
+          </div>
+          <div className="mt-5 space-y-1.5">
+            <Label htmlFor="cover-group">Cover Group</Label>
+            <p className="text-xs text-muted">
+              The instructors who cover each other. Tick nobody and the Cover Group cap refuses
+              nothing. The study cap counts every instructor either way.
+            </p>
+            <select
+              id="cover-group"
+              multiple
+              size={Math.min(Math.max(instructors.length, 3), 8)}
+              className="w-full rounded-md border border-border bg-card p-2 text-sm text-ink"
+              value={coverGroup}
+              onChange={(e) =>
+                setCoverGroup(Array.from(e.target.selectedOptions, (o) => o.value))
+              }
+            >
+              {instructors.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-muted">
+              {coverGroup.length === 0
+                ? "Nobody is in the Cover Group."
+                : `${coverGroup.length} in the Cover Group.`}
+            </p>
+          </div>
+        </section>
+
         <div className="flex items-center justify-between">
           <span className="text-xs text-muted">
             {policy.updatedAt
@@ -296,7 +401,10 @@ export default function PolicyPage() {
               type="button"
               variant="ghost"
               disabled={!dirty || saving}
-              onClick={() => setDraft(policy)}
+              onClick={() => {
+                setDraft(policy);
+                setCoverGroup(savedCoverGroup);
+              }}
             >
               Reset
             </Button>
