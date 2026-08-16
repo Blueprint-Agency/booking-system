@@ -23,7 +23,7 @@ function serializeClassPackage(
     kind: r.kind,
     credits: r.credits,
     validity_days: r.validityDays,
-    duration_days: r.durationDays,
+    duration_months: r.durationMonths,
     price_sgd: r.priceSgd,
     effective_price_sgd: effective.effectivePriceSgd,
     applied_promotion_id: effective.appliedPromotionId,

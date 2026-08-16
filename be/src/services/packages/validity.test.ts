@@ -1,5 +1,5 @@
 import assert from 'node:assert'
-import { applyMovement, computeActive, type PackageValidity } from './validity'
+import { addMonths, applyMovement, computeActive, isDormant, type PackageValidity } from './validity'
 
 const NOW = new Date('2026-06-01T00:00:00Z')
 const LATER = new Date('2026-12-01T00:00:00Z')
@@ -101,6 +101,60 @@ assert.strictEqual(
 assert.strictEqual(
   computeActive({ kind: 'unlimited', expiresAt: EARLIER, creditsOrSessionsRemaining: null }, NOW),
   false,
+)
+
+// --- calendar-month Duration ------------------------------------------------
+// The defect this arithmetic exists to prevent: a naive `setMonth` rolls 31 August
+// plus six months forward into 3 March, handing the member three free days and
+// landing the plan in the wrong month.
+{
+  const end = addMonths(new Date('2026-08-31T00:00:00Z'), 6)
+  assert.strictEqual(
+    end.toISOString(),
+    '2027-02-28T00:00:00.000Z',
+    '31 August plus six months must clamp to 28 February, not spill into March',
+  )
+}
+
+// A leap February clamps to the 29th rather than the 28th.
+assert.strictEqual(
+  addMonths(new Date('2027-08-31T00:00:00Z'), 6).toISOString(),
+  '2028-02-29T00:00:00.000Z',
+)
+
+// A day that exists in the target month is kept exactly — 15 Jan + 6 = 15 Jul.
+assert.strictEqual(
+  addMonths(new Date('2026-01-15T09:30:00Z'), 6).toISOString(),
+  '2026-07-15T09:30:00.000Z',
+)
+
+// Crossing a year boundary.
+assert.strictEqual(
+  addMonths(new Date('2026-11-30T00:00:00Z'), 3).toISOString(),
+  '2027-02-28T00:00:00.000Z',
+)
+
+// --- Dormant ----------------------------------------------------------------
+const dormantPlan: PackageValidity = {
+  kind: 'unlimited',
+  expiresAt: null,
+  creditsOrSessionsRemaining: null,
+}
+
+assert.strictEqual(isDormant(dormantPlan), true)
+assert.strictEqual(
+  isDormant({ kind: 'unlimited', expiresAt: LATER, creditsOrSessionsRemaining: null }),
+  false,
+  'an Activated plan carries an expiry and is not Dormant',
+)
+
+// A Dormant plan is active. It is bought and paid for and waiting for its first
+// booking — flagging it inactive would make it unspendable and unactivatable, so
+// nothing would ever start its clock.
+assert.strictEqual(
+  computeActive(dormantPlan, NOW),
+  true,
+  'a Dormant Unlimited Plan must be active — nothing is expired that has not started',
 )
 
 console.log('packages/validity.test ok')

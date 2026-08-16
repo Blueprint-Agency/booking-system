@@ -56,6 +56,9 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         amountSgd,
         packageKind: kind === 'class_package' ? 'class' : 'pt',
         packageId,
+        // Home Location for an Unlimited Plan (§1). The checkout that puts it on
+        // the session is #23; this only carries it through.
+        locationId: meta.location_id || null,
       })
 
       // Mark the payment succeeded + link the granted package so a second

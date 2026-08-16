@@ -3,7 +3,7 @@
 import { useState, Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Lock, ShoppingCart, Tag, Check, AlertCircle } from "lucide-react";
-import { cn, formatCurrency, formatDurationDays } from "@/lib/utils";
+import { cn, formatCurrency, formatDurationMonths } from "@/lib/utils";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useAuth } from "@clerk/nextjs";
@@ -25,7 +25,7 @@ function subtitleForPackage(pkg: PackageInfo): string {
     const validity = days === 1 ? "1 day" : `${days} days`;
     return `${pkg.credits} credit${pkg.credits === 1 ? "" : "s"} · valid ${validity}`;
   }
-  const duration = pkg.duration_days != null ? formatDurationDays(pkg.duration_days) : "?";
+  const duration = pkg.duration_months != null ? formatDurationMonths(pkg.duration_months) : "?";
   return `Unlimited classes · ${duration}`;
 }
 

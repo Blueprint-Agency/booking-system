@@ -258,7 +258,7 @@ A standalone, quota-based pack that any client may purchase **once only** — en
 
 ### 5c. Unlimited package fields
 - `name` (e.g. "Monthly Unlimited")
-- `duration_days` (e.g. 30, 90, 180)
+- `duration_months` (e.g. 3, 6, 12) — whole calendar months
 - `price_sgd`
 - Active / Archived toggle
 - `promotions: Promotion[]` (see §5d)

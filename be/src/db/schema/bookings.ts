@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, integer, boolean, index, uniqueIndex, check } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, timestamp, integer, numeric, boolean, index, uniqueIndex, check } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { clients, staffUsers } from './identity'
 import { classes, workshops, workshopTiers, ptSessions } from './schedule'
@@ -34,6 +34,12 @@ export const bookings = pgTable(
       onDelete: 'restrict',
     }),
     state: bookingStateEnum('state').notNull().default('confirmed'),
+    // Workshop money, frozen at purchase (§15). Required for kind = 'workshop',
+    // null for every other kind — class and PT bookings are paid for by a package
+    // and their money stays on the client_packages row. A free workshop records a
+    // list price with zero paid, same as a comp grant. Discount is derived.
+    listPriceSgd: numeric('list_price_sgd', { precision: 10, scale: 2 }),
+    amountPaidSgd: numeric('amount_paid_sgd', { precision: 10, scale: 2 }),
     creditsOrSessionsUsed: integer('credits_or_sessions_used'),
     refundOutcome: refundOutcomeEnum('refund_outcome').notNull().default('n_a'),
     checkInState: checkinStateEnum('check_in_state').notNull().default('pending'),
@@ -66,6 +72,11 @@ export const bookings = pgTable(
     kindFkPt: check(
       'bookings_kind_pt_fk',
       sql`${table.kind} <> 'pt' OR (${table.ptSessionId} IS NOT NULL AND ${table.classId} IS NULL AND ${table.workshopId} IS NULL)`,
+    ),
+    kindMoney: check(
+      'bookings_kind_money',
+      sql`(${table.kind} = 'workshop' AND ${table.listPriceSgd} IS NOT NULL AND ${table.amountPaidSgd} IS NOT NULL)
+        OR (${table.kind} <> 'workshop' AND ${table.listPriceSgd} IS NULL AND ${table.amountPaidSgd} IS NULL)`,
     ),
   }),
 )

@@ -3,15 +3,36 @@ import { db } from '../../db'
 import { clientPackages, classPackages, ptPackages } from '../../db/schema/packages'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { bestPrice, listActivePromotionsFor } from './promotions'
-import { PT_VALIDITY_DAYS, computeActive } from './validity'
+import { PT_VALIDITY_DAYS, addMonths, computeActive } from './validity'
 
 type ClassPackageRow = typeof classPackages.$inferSelect
 type PtPackageRow = typeof ptPackages.$inferSelect
 
 /**
+ * Does the client already hold a live Unlimited Plan? Live means active and
+ * either Activated with an expiry still ahead, or Dormant and waiting — both are
+ * plans the member owns, so a purchase on top of either is a renewal (§3).
+ */
+async function hasLiveUnlimited(clientId: string, now: Date): Promise<boolean> {
+  const rows = await db
+    .select({ expiresAt: clientPackages.expiresAt })
+    .from(clientPackages)
+    .where(
+      and(
+        eq(clientPackages.clientId, clientId),
+        eq(clientPackages.kind, 'unlimited'),
+        eq(clientPackages.active, true),
+      ),
+    )
+  return rows.some(r => r.expiresAt === null || r.expiresAt > now)
+}
+
+/**
  *  - credit_bundle: now + validity_days
- *  - unlimited:     now + duration_days
- *  - trial:         now + validity_days (null if validity_days is null)
+ *  - unlimited:     null — a Duration is calendar months, not days, and whether the
+ *                   clock starts now or at Activation is a rule this helper cannot
+ *                   see (§3/§4). `grantPackage` decides and stamps it.
+ *  - trial:         now + validity_days (now required by the catalogue check)
  *  - pt:            now + PT_VALIDITY_DAYS (365)
  */
 function computeExpiry(
@@ -24,11 +45,8 @@ function computeExpiry(
     d.setDate(d.getDate() + PT_VALIDITY_DAYS)
     return d
   }
-  const cs = src as ClassPackageRow
-  let days: number | null = null
-  if (kind === 'credit_bundle') days = cs.validityDays
-  else if (kind === 'unlimited') days = cs.durationDays
-  else if (kind === 'trial') days = cs.validityDays
+  if (kind === 'unlimited') return null
+  const days = (src as ClassPackageRow).validityDays
   if (days == null) return null
   const d = new Date(now)
   d.setDate(d.getDate() + days)
@@ -46,6 +64,12 @@ export interface GrantPackageInput {
   packageId: string
   /** frozen promotion id (computed from best-price-wins). null if none applied. */
   appliedPromotionId?: string | null
+  /**
+   * Home Location — the one Location an Unlimited Plan Covers (§1). Required for
+   * `unlimited` and refused for every other kind. Picking it at checkout is #23;
+   * this is the grant path that stores whatever was picked.
+   */
+  locationId?: string | null
 }
 
 /**
@@ -105,7 +129,27 @@ export async function grantPackage(
     creditsOrSessionsRemaining = row.numSessions
   }
 
-  const expiresAt = computeExpiry(kind, source, now)
+  let expiresAt = computeExpiry(kind, source, now)
+  let locationId: string | null = null
+  let durationMonths: number | null = null
+
+  if (kind === 'unlimited') {
+    const cs = source as ClassPackageRow
+    if (!input.locationId) throw new BadRequestError('unlimited_requires_location')
+    if (cs.durationMonths == null) throw new BadRequestError('unlimited_requires_duration_months')
+    locationId = input.locationId
+    // Frozen at purchase (§4). The live catalogue row is admin-editable, so
+    // re-reading it at Activation would silently relengthen every plan sold.
+    durationMonths = cs.durationMonths
+    // §3: the clock starts at purchase only when nothing is already live.
+    // Otherwise the plan is stored Dormant (null expiry) and the first confirmed
+    // class booking it pays for starts it — that stamping is #25's booking path.
+    expiresAt = (await hasLiveUnlimited(input.clientId, now))
+      ? null
+      : addMonths(now, durationMonths)
+  } else if (input.locationId) {
+    throw new BadRequestError('location_only_applies_to_unlimited')
+  }
 
   try {
     const [row] = await db
@@ -116,10 +160,17 @@ export async function grantPackage(
         sourceClassPackageId,
         sourcePtPackageId,
         appliedPromotionId: input.appliedPromotionId ?? null,
+        locationId,
+        durationMonths,
         creditsOrSessionsRemaining,
         expiresAt,
         active: computeActive({ kind, expiresAt, creditsOrSessionsRemaining }, now),
         amountPaidSgd: input.amountSgd,
+        // Frozen List Price (§15) — the catalogue price at purchase, NOT NULL on
+        // every row. A comp grant or a $0 trial records the real price against
+        // zero paid so it reads as a 100% discount instead of vanishing.
+        // Discount is always derived (list minus paid); nothing stores it.
+        listPriceSgd: source.priceSgd,
         stripePaymentIntentId: input.paymentIntentId,
       })
       .returning({ id: clientPackages.id })

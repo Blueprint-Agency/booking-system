@@ -13,6 +13,7 @@ import {
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { clients, staffUsers } from './identity'
+import { locations } from './catalog'
 import {
   classPackageKindEnum,
   ptSessionTypeEnum,
@@ -34,7 +35,9 @@ export const classPackages = pgTable(
     kind: classPackageKindEnum('kind').notNull(),
     credits: integer('credits'),
     validityDays: integer('validity_days'),
-    durationDays: integer('duration_days'),
+    // Duration is whole calendar months (spec §4). A 6-month plan activated on
+    // 15 Jan ends 15 Jul, not 180 days later.
+    durationMonths: integer('duration_months'),
     priceSgd: numeric('price_sgd', { precision: 10, scale: 2 }).notNull(),
     status: packageStatusEnum('status').notNull().default('active'),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
@@ -44,25 +47,28 @@ export const classPackages = pgTable(
     statusKindIdx: index('class_packages_status_kind_idx').on(table.status, table.kind),
     deletedIdx: index('class_packages_deleted_idx').on(table.deletedAt),
     // Kind-specific column requirements per §4d:
-    //  - credit_bundle → credits NOT NULL, validity_days NOT NULL, duration_days NULL
-    //  - unlimited     → credits NULL, validity_days NULL, duration_days NOT NULL
-    //  - trial         → credits NOT NULL, duration_days NULL (validity_days nullable)
+    //  - credit_bundle → credits NOT NULL, validity_days NOT NULL, duration_months NULL
+    //  - unlimited     → credits NULL, validity_days NULL, duration_months NOT NULL
+    //  - trial         → credits NOT NULL, validity_days NOT NULL, duration_months NULL
+    // Trial validity is REQUIRED (spec §3): "never expires" leaves the domain —
+    // a null expiry now means Dormant, which only an Unlimited Plan can be.
     kindFields: check(
       'class_packages_kind_fields',
       sql`
         (${table.kind} = 'credit_bundle'
           AND ${table.credits} IS NOT NULL
           AND ${table.validityDays} IS NOT NULL
-          AND ${table.durationDays} IS NULL)
+          AND ${table.durationMonths} IS NULL)
         OR
         (${table.kind} = 'unlimited'
           AND ${table.credits} IS NULL
           AND ${table.validityDays} IS NULL
-          AND ${table.durationDays} IS NOT NULL)
+          AND ${table.durationMonths} IS NOT NULL)
         OR
         (${table.kind} = 'trial'
           AND ${table.credits} IS NOT NULL
-          AND ${table.durationDays} IS NULL)
+          AND ${table.validityDays} IS NOT NULL
+          AND ${table.durationMonths} IS NULL)
       `,
     ),
   }),
@@ -159,11 +165,23 @@ export const clientPackages = pgTable(
     appliedPromotionId: uuid('applied_promotion_id').references(() => promotions.id, {
       onDelete: 'restrict',
     }),
+    // Home Location — the one Location an Unlimited Plan covers (§1). Only an
+    // Unlimited Plan carries one; every other kind is Location-agnostic.
+    locationId: uuid('location_id').references(() => locations.id, { onDelete: 'restrict' }),
+    // Frozen copy of the catalogue Duration in calendar months (§4). Frozen because
+    // activation reads it later, and the live catalogue row is admin-editable.
+    durationMonths: integer('duration_months'),
     creditsOrSessionsRemaining: integer('credits_or_sessions_remaining'),
+    // Null ONLY for a Dormant Unlimited Plan — a plan bought while another was
+    // still live, whose clock starts at Activation (§3). It never means "never expires".
     expiresAt: timestamp('expires_at', { withTimezone: true }),
     active: boolean('active').notNull().default(true),
     purchasedAt: timestamp('purchased_at', { withTimezone: true }).notNull().defaultNow(),
     amountPaidSgd: numeric('amount_paid_sgd', { precision: 10, scale: 2 }).notNull(),
+    // List Price frozen at purchase (§15) — NOT NULL on every row including free
+    // ones, so a comp grant or $0 trial reads as a 100% discount rather than
+    // vanishing. Discount is derived (list minus paid); there is no stored discount.
+    listPriceSgd: numeric('list_price_sgd', { precision: 10, scale: 2 }).notNull(),
     // Nullable per §4d — null for admin-issued grants (§16) and free trial passes at 0 SGD.
     stripePaymentIntentId: text('stripe_payment_intent_id'),
   },
@@ -183,6 +201,23 @@ export const clientPackages = pgTable(
     nonNegBalance: check(
       'client_packages_non_negative_balance',
       sql`${table.creditsOrSessionsRemaining} IS NULL OR ${table.creditsOrSessionsRemaining} >= 0`,
+    ),
+    // The folded check (§1 + §3). Strict, no grandfathering: an unusable plan is
+    // impossible at the database level rather than something booking has to detect.
+    // Only an Unlimited Plan carries a Location and a Duration, and only an
+    // Unlimited Plan may have a null expiry (which means Dormant).
+    kindFields: check(
+      'client_packages_kind_fields',
+      sql`
+        (${table.kind} = 'unlimited'
+          AND ${table.locationId} IS NOT NULL
+          AND ${table.durationMonths} IS NOT NULL)
+        OR
+        (${table.kind} <> 'unlimited'
+          AND ${table.locationId} IS NULL
+          AND ${table.durationMonths} IS NULL
+          AND ${table.expiresAt} IS NOT NULL)
+      `,
     ),
   }),
 )

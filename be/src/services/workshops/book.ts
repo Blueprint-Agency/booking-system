@@ -131,6 +131,18 @@ async function insertWorkshopBooking(
     if (existing) return { bookingId: existing.id, qrToken: existing.qrToken, code: existing.code }
   }
 
+  // Frozen workshop money (§15). List Price is the tier's regular price — the
+  // headline figure an early-bird or a Promotion is cut from — read here so BOTH
+  // the paid and the free path record it. A free workshop stores that price
+  // against zero paid, same as a comp grant; a zero would hide the giveaway.
+  // Discount is derived (list minus paid) and never stored.
+  const [tierRow] = await db
+    .select({ regularPriceSgd: workshopTiers.regularPriceSgd })
+    .from(workshopTiers)
+    .where(eq(workshopTiers.id, input.workshopTierId))
+    .limit(1)
+  if (!tierRow) throw new NotFoundError('workshop_tier_not_found')
+
   const [row] = await db
     .insert(bookings)
     .values({
@@ -139,6 +151,8 @@ async function insertWorkshopBooking(
       workshopId: input.workshopId,
       workshopTierId: input.workshopTierId,
       appliedPromotionId: input.appliedPromotionId ?? null,
+      listPriceSgd: tierRow.regularPriceSgd,
+      amountPaidSgd: input.amountSgd,
       state: 'confirmed',
       qrToken,
       code,

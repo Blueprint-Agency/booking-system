@@ -101,7 +101,7 @@ Same CRUD shape as locations. Archive is blocked if any non-archived `instructor
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/class-packages` | List with `?status`, `?kind=credit_bundle\|unlimited\|trial`. Default sort: trial first, then credit_bundle, then unlimited (matches fe-client `/packages` ordering). |
-| POST | `/class-packages` | Insert `class_packages` row. CHECK constraint enforces kind-specific column requirements (credits + validity_days for `credit_bundle`; duration_days for `unlimited`; credits + nullable validity_days for `trial`). |
+| POST | `/class-packages` | Insert `class_packages` row. CHECK constraint enforces kind-specific column requirements (credits + validity_days for `credit_bundle`; duration_months for `unlimited`; credits + validity_days for `trial`). |
 | PATCH | `/class-packages/:id` | Edit name, description, status. Price changes apply to **future** purchases only — existing `client_packages` rows are immutable. |
 | POST | `/class-packages/:id/archive` | Soft delete; existing client_packages remain valid until `expires_at`. |
 

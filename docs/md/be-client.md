@@ -371,7 +371,7 @@ tx start
    credits_or_sessions_remaining = (credit_bundle | trial ? credits : pt ? num_sessions : NULL),
    expires_at = (credit_bundle ? now + validity_days
                 : trial ? (validity_days IS NULL ? NULL : now + validity_days)
-                : unlimited ? now + duration_days
+                : unlimited ? now + duration_months (or null while Dormant)
                 : NULL),
    purchased_at = now(),
    amount_paid_sgd = stripe_payments.amount_sgd,

@@ -48,7 +48,7 @@ function serializeClassPackage(
     kind: r.kind,
     credits: r.credits,
     validity_days: r.validityDays,
-    duration_days: r.durationDays,
+    duration_months: r.durationMonths,
     price_sgd: r.priceSgd,
     effective_price_sgd: effective.effectivePriceSgd,
     applied_promotion_id: effective.appliedPromotionId,
@@ -118,6 +118,8 @@ const app = new Hono()
         trial_used: ent.trialUsed,
         trial_eligible: ent.trialEligible,
         has_active_unlimited: ent.hasActiveUnlimited,
+        unlimited_location: ent.unlimitedLocation,
+        dormant: ent.dormant,
         has_active_bundle_credits: ent.hasActiveBundleCredits,
       },
     })

@@ -1,12 +1,26 @@
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { clientPackages, classPackages, ptPackages } from '../../db/schema/packages'
+import { locations } from '../../db/schema/catalog'
+import { isDormant } from './validity'
 
 export interface ClientEntitlements {
   trialUsed: boolean
   /** Trial is for brand-new members only: true iff the client owns NO packages yet. */
   trialEligible: boolean
   hasActiveUnlimited: boolean
+  /**
+   * Home Location of the Unlimited Plan that would pay for a booking today (§8).
+   * Null when the client holds none. The renewal rule keeps a member's two plans
+   * at one Location, so this is unambiguous.
+   */
+  unlimitedLocation: { id: string; name: string } | null
+  /**
+   * True when the client holds a Dormant Unlimited Plan — bought, paid for, clock
+   * not yet started. Derived HERE and nowhere else: neither frontend gets to test
+   * "unlimited and no end date" for itself (§8).
+   */
+  dormant: boolean
   hasActiveBundleCredits: boolean
   pt1on1Remaining: number
   pt2on1Remaining: number
@@ -28,13 +42,18 @@ export async function getClientEntitlements(clientId: string): Promise<ClientEnt
       expiresAt: clientPackages.expiresAt,
       remaining: clientPackages.creditsOrSessionsRemaining,
       ptSessionType: ptPackages.sessionType,
+      locationId: clientPackages.locationId,
+      locationName: locations.name,
     })
     .from(clientPackages)
     .leftJoin(ptPackages, eq(ptPackages.id, clientPackages.sourcePtPackageId))
+    .leftJoin(locations, eq(locations.id, clientPackages.locationId))
     .where(eq(clientPackages.clientId, clientId))
 
   let trialUsed = false
   let hasActiveUnlimited = false
+  let unlimitedLocation: ClientEntitlements['unlimitedLocation'] = null
+  let dormant = false
   let hasActiveBundleCredits = false
   let pt1on1Remaining = 0
   let pt2on1Remaining = 0
@@ -47,7 +66,17 @@ export async function getClientEntitlements(clientId: string): Promise<ClientEnt
       trialUsed = true // any trial ever (active or expired) counts as used
       if (consumable && balance > 0) hasActiveBundleCredits = true
     } else if (r.kind === 'unlimited') {
-      if (consumable) hasActiveUnlimited = true
+      if (consumable) {
+        hasActiveUnlimited = true
+        if (isDormant({ kind: 'unlimited', expiresAt: r.expiresAt, creditsOrSessionsRemaining: null })) {
+          dormant = true
+        }
+        // Both of a member's plans always share a Location (the renewal rule),
+        // so whichever live plan we see first answers this.
+        if (unlimitedLocation === null && r.locationId && r.locationName) {
+          unlimitedLocation = { id: r.locationId, name: r.locationName }
+        }
+      }
     } else if (r.kind === 'credit_bundle') {
       if (consumable && balance > 0) hasActiveBundleCredits = true
     } else if (r.kind === 'pt') {
@@ -65,6 +94,8 @@ export async function getClientEntitlements(clientId: string): Promise<ClientEnt
     trialUsed,
     trialEligible,
     hasActiveUnlimited,
+    unlimitedLocation,
+    dormant,
     hasActiveBundleCredits,
     pt1on1Remaining,
     pt2on1Remaining,
@@ -82,7 +113,15 @@ export interface ClientPackageWithSource {
   expiresAt: Date | null
   purchasedAt: Date
   amountPaidSgd: string
+  /** Catalogue price frozen at purchase (§15). Discount is derived: list minus paid. */
+  listPriceSgd: string
   active: boolean
+  /** Backend-derived (§8) — a null expiry means Dormant and the frontends never test for it. */
+  dormant: boolean
+  /** Home Location of an Unlimited Plan (§1); null for every other kind. */
+  location: { id: string; name: string } | null
+  /** Frozen Duration in calendar months for an Unlimited Plan; null otherwise. */
+  durationMonths: number | null
   /** '1on1' | '2on1' for PT packages; null otherwise. */
   sessionType: '1on1' | '2on1' | null
 }
@@ -109,6 +148,10 @@ export async function listClientPackages(
       expiresAt: clientPackages.expiresAt,
       purchasedAt: clientPackages.purchasedAt,
       amountPaidSgd: clientPackages.amountPaidSgd,
+      listPriceSgd: clientPackages.listPriceSgd,
+      durationMonths: clientPackages.durationMonths,
+      locationId: clientPackages.locationId,
+      locationName: locations.name,
       classPackageName: classPackages.name,
       ptPackageName: ptPackages.name,
       classPackageCredits: classPackages.credits,
@@ -119,6 +162,7 @@ export async function listClientPackages(
     .from(clientPackages)
     .leftJoin(classPackages, eq(classPackages.id, clientPackages.sourceClassPackageId))
     .leftJoin(ptPackages, eq(ptPackages.id, clientPackages.sourcePtPackageId))
+    .leftJoin(locations, eq(locations.id, clientPackages.locationId))
     .where(and(...baseConds))
 
   return rows.map(r => ({
@@ -131,7 +175,15 @@ export async function listClientPackages(
     expiresAt: r.expiresAt,
     purchasedAt: r.purchasedAt,
     amountPaidSgd: r.amountPaidSgd,
+    listPriceSgd: r.listPriceSgd,
     active: r.active,
+    dormant: isDormant({
+      kind: r.kind as ClientPackageWithSource['kind'],
+      expiresAt: r.expiresAt,
+      creditsOrSessionsRemaining: r.creditsOrSessionsRemaining,
+    }),
+    location: r.locationId && r.locationName ? { id: r.locationId, name: r.locationName } : null,
+    durationMonths: r.durationMonths,
     sessionType: (r.ptSessionType ?? null) as '1on1' | '2on1' | null,
   }))
 }

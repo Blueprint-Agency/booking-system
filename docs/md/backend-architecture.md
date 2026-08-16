@@ -392,7 +392,7 @@ book_in_advance_days int, updated_at, updated_by_staff_id (FK).
 | kind | enum `class_package_kind` | `credit_bundle`, `unlimited`, `trial` |
 | credits | int | nullable — required when kind in (`credit_bundle`, `trial`) |
 | validity_days | int | nullable — optional when kind=`trial` (null = no expiry), required when kind=`credit_bundle` |
-| duration_days | int | nullable — required when kind=`unlimited` |
+| duration_months | int | nullable — required when kind=`unlimited`; whole calendar months |
 | price_sgd | numeric(10, 2) | not null |
 | status | enum `package_status` | `active`, `archived` |
 | archived_at | timestamptz | nullable |
@@ -400,9 +400,9 @@ book_in_advance_days int, updated_at, updated_by_staff_id (FK).
 **Indexes:** `(status, kind)`. Partial unique index `(kind) WHERE kind='trial' AND status='active'` is **not** applied — multiple active Trial Pass definitions are allowed at the catalogue level; the one-per-client gate is enforced on `client_packages`, not here.
 
 **CHECK:** kind-specific column requirements (Postgres CHECK constraint):
-- `credit_bundle` → credits NOT NULL, validity_days NOT NULL, duration_days NULL
-- `unlimited` → credits NULL, validity_days NULL, duration_days NOT NULL
-- `trial` → credits NOT NULL, duration_days NULL (validity_days nullable)
+- `credit_bundle` → credits NOT NULL, validity_days NOT NULL, duration_months NULL
+- `unlimited` → credits NULL, validity_days NULL, duration_months NOT NULL
+- `trial` → credits NOT NULL, validity_days NOT NULL, duration_months NULL
 
 #### `pt_packages` (§6)
 

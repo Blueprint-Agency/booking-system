@@ -33,6 +33,12 @@ interface ApiPackage {
   expires_at: string | null;
   purchased_at: string;
   amount_paid_sgd: string;
+  /** Catalogue price frozen at purchase. The discount is derived from these two. */
+  list_price_sgd: string;
+  /** Backend-derived — never re-tested here as "unlimited and no end date". */
+  dormant: boolean;
+  unlimited_location: { id: string; name: string } | null;
+  duration_months: number | null;
 }
 
 interface ApiAdjustment {
@@ -343,7 +349,27 @@ export default function ClientProfilePage({
                         <div className="font-mono text-sm text-ink">Unlimited</div>
                       )}
                       <div className="text-xs text-muted">
-                        {p.expires_at ? `Valid until ${formatDate(p.expires_at)}` : "No expiry"}
+                        {p.expires_at
+                          ? `Valid until ${formatDate(p.expires_at)}`
+                          : p.dormant
+                            ? "Dormant — starts at first booking"
+                            : "No expiry"}
+                        {p.unlimited_location ? ` · ${p.unlimited_location.name}` : ""}
+                      </div>
+                      {/* List Price and the discount derived from it. The discount is
+                          NOT stored and NOT sent — a third number would be free to
+                          disagree with the two that matter. */}
+                      <div className="text-xs text-muted">
+                        List S${p.list_price_sgd} · paid S${p.amount_paid_sgd}
+                        {Number(p.list_price_sgd) - Number(p.amount_paid_sgd) > 0 && (
+                          <span className="text-ink">
+                            {" "}
+                            · S${(
+                              Number(p.list_price_sgd) - Number(p.amount_paid_sgd)
+                            ).toFixed(2)}{" "}
+                            off
+                          </span>
+                        )}
                       </div>
                     </div>
                   );

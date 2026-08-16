@@ -30,15 +30,12 @@ export function formatSgd(price: string | number): string {
 }
 
 /**
- * Human label for a package duration. Whole months read as "N months";
- * anything else stays in days so 45 days never misleads as "2 months".
+ * Human label for a package Duration, which is whole calendar months. The
+ * days-based version this replaces guessed at months by dividing by 30, so the
+ * catalogue's 365-day "12-Month Unlimited" rendered as "365 days".
  */
-export function formatDurationDays(days: number): string {
-  if (days > 0 && days % 30 === 0) {
-    const months = days / 30;
-    return `${months} month${months === 1 ? "" : "s"}`;
-  }
-  return `${days} day${days === 1 ? "" : "s"}`;
+export function formatDurationMonths(months: number): string {
+  return `${months} month${months === 1 ? "" : "s"}`;
 }
 
 /** "Thu, 12 Jun" in studio time — both studios are in Singapore. */

@@ -26,7 +26,7 @@ export interface ApiClassPackage {
   kind: ApiClassPackageKind;
   credits: number | null;
   validity_days: number | null;
-  duration_days: number | null;
+  duration_months: number | null;
   price_sgd: string;
   effective_price_sgd: string;
   applied_promotion_id: string | null;

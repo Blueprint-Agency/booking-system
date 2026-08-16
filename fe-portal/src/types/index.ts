@@ -83,8 +83,8 @@ export interface ClassPackage {
   description: string;
   kind: ClassPackageKind;
   credits: number | null;       // credit_bundle + trial
-  validityDays: number | null;  // credit_bundle + trial (optional for trial; null = no expiry)
-  durationDays: number | null;  // unlimited only
+  validityDays: number | null;  // credit_bundle + trial (required for both)
+  durationMonths: number | null;  // unlimited only — whole calendar months
   priceSgd: number;
   status: "active" | "archived";
   promotions: Promotion[];

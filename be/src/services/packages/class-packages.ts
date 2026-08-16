@@ -35,7 +35,7 @@ export interface CreateClassPackageInput {
   kind: ClassPackageKind
   credits?: number | null
   validityDays?: number | null
-  durationDays?: number | null
+  durationMonths?: number | null
   priceSgd: string // numeric, formatted "120.00"
 }
 
@@ -44,22 +44,24 @@ function validateKindFields(input: CreateClassPackageInput | UpdateClassPackageI
     if (input.credits == null || input.validityDays == null) {
       throw new BadRequestError('credit_bundle_requires_credits_and_validity')
     }
-    if (input.durationDays != null) {
-      throw new BadRequestError('credit_bundle_disallows_duration_days')
+    if (input.durationMonths != null) {
+      throw new BadRequestError('credit_bundle_disallows_duration_months')
     }
   } else if (kind === 'unlimited') {
-    if (input.durationDays == null) {
-      throw new BadRequestError('unlimited_requires_duration_days')
+    if (input.durationMonths == null) {
+      throw new BadRequestError('unlimited_requires_duration_months')
     }
     if (input.credits != null || input.validityDays != null) {
       throw new BadRequestError('unlimited_disallows_credits_or_validity')
     }
   } else if (kind === 'trial') {
-    if (input.credits == null) {
-      throw new BadRequestError('trial_requires_credits')
+    // Validity is REQUIRED for a trial (spec §3). "Never expires" has left the
+    // domain: a null expiry now means Dormant, which only an Unlimited Plan can be.
+    if (input.credits == null || input.validityDays == null) {
+      throw new BadRequestError('trial_requires_credits_and_validity')
     }
-    if (input.durationDays != null) {
-      throw new BadRequestError('trial_disallows_duration_days')
+    if (input.durationMonths != null) {
+      throw new BadRequestError('trial_disallows_duration_months')
     }
   }
 }
@@ -74,7 +76,7 @@ export async function createClassPackage(input: CreateClassPackageInput): Promis
       kind: input.kind,
       credits: input.credits ?? null,
       validityDays: input.validityDays ?? null,
-      durationDays: input.durationDays ?? null,
+      durationMonths: input.durationMonths ?? null,
       priceSgd: input.priceSgd,
       status: 'active',
     })
@@ -88,7 +90,7 @@ export interface UpdateClassPackageInput {
   priceSgd?: string
   credits?: number | null
   validityDays?: number | null
-  durationDays?: number | null
+  durationMonths?: number | null
   status?: 'active' | 'archived'
 }
 
@@ -103,7 +105,7 @@ export async function updateClassPackage(
     kind: current.kind,
     credits: patch.credits !== undefined ? patch.credits : current.credits,
     validityDays: patch.validityDays !== undefined ? patch.validityDays : current.validityDays,
-    durationDays: patch.durationDays !== undefined ? patch.durationDays : current.durationDays,
+    durationMonths: patch.durationMonths !== undefined ? patch.durationMonths : current.durationMonths,
     priceSgd: patch.priceSgd ?? current.priceSgd,
   }
   validateKindFields(merged, current.kind)
@@ -116,7 +118,7 @@ export async function updateClassPackage(
       ...(patch.priceSgd !== undefined ? { priceSgd: patch.priceSgd } : {}),
       ...(patch.credits !== undefined ? { credits: patch.credits } : {}),
       ...(patch.validityDays !== undefined ? { validityDays: patch.validityDays } : {}),
-      ...(patch.durationDays !== undefined ? { durationDays: patch.durationDays } : {}),
+      ...(patch.durationMonths !== undefined ? { durationMonths: patch.durationMonths } : {}),
       ...(patch.status !== undefined ? { status: patch.status } : {}),
     })
     .where(eq(classPackages.id, id))

@@ -69,6 +69,12 @@ function packageView(p: ClientPackageWithSource) {
     expires_at: p.expiresAt,
     purchased_at: p.purchasedAt,
     amount_paid_sgd: p.amountPaidSgd,
+    // Frozen List Price (§15). The discount is derived on the client as list
+    // minus paid — deliberately not stored and not sent as a third number.
+    list_price_sgd: p.listPriceSgd,
+    dormant: p.dormant,
+    unlimited_location: p.location,
+    duration_months: p.durationMonths,
   }
 }
 

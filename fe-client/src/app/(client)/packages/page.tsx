@@ -7,7 +7,7 @@ import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useAuthGate } from "@/components/auth/auth-gate";
 import { BuyButton } from "@/components/checkout/buy-button";
-import { cn, formatDurationDays } from "@/lib/utils";
+import { cn, formatDurationMonths } from "@/lib/utils";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { SectionHeading } from "@/components/booking/section-heading";
 import { useApi } from "@/lib/api";
@@ -660,8 +660,8 @@ function UnlimitedCard({
   disabledReason?: string;
 }) {
   const months =
-    pkg.duration_days != null
-      ? formatDurationDays(pkg.duration_days)
+    pkg.duration_months != null
+      ? formatDurationMonths(pkg.duration_months)
       : "unlimited";
   return (
     <div className="relative rounded-2xl bg-paper border border-ink/10 p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all">

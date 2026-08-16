@@ -21,7 +21,7 @@ interface ApiClassPackage {
   kind: ClassPackageKind;
   credits: number | null;
   validity_days: number | null;
-  duration_days: number | null;
+  duration_months: number | null;
   price_sgd: string;
   status: "active" | "archived";
   archived_at: string | null;
@@ -36,7 +36,7 @@ function fromApi(r: ApiClassPackage): ClassPackage {
     kind: r.kind,
     credits: r.credits,
     validityDays: r.validity_days,
-    durationDays: r.duration_days,
+    durationMonths: r.duration_months,
     priceSgd: Number(r.price_sgd),
     status: r.status,
     promotions: (r.promotions ?? []).map(promotionFromApi),
@@ -84,7 +84,7 @@ export default function ClassPackagesPage() {
       description: pkg.description || null,
       credits: pkg.credits ?? null,
       validity_days: pkg.validityDays ?? null,
-      duration_days: pkg.durationDays ?? null,
+      duration_months: pkg.durationMonths ?? null,
       price_sgd: String(pkg.priceSgd),
       promotions: pkg.promotions.map(promotionToApiPayload),
     };
@@ -328,7 +328,7 @@ function PackageCard({
     pkg.kind === "credit_bundle"
       ? [pkg.name, `${pkg.validityDays}-day validity`]
       : pkg.kind === "unlimited"
-      ? [`${pkg.durationDays}-day pass`]
+      ? [`${pkg.durationMonths}-month pass`]
       : pkg.kind === "trial"
       ? [
           `${pkg.credits} class${(pkg.credits ?? 0) === 1 ? "" : "es"}`,

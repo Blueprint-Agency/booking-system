@@ -25,7 +25,7 @@ export function ClassPackageDialog({
   const [kind, setKind] = useState<ClassPackageKind>(pkg?.kind ?? "credit_bundle");
   const [credits, setCredits] = useState<string>(pkg?.credits?.toString() ?? "");
   const [validityDays, setValidityDays] = useState<string>(pkg?.validityDays?.toString() ?? "");
-  const [durationDays, setDurationDays] = useState<string>(pkg?.durationDays?.toString() ?? "");
+  const [durationMonths, setDurationMonths] = useState<string>(pkg?.durationMonths?.toString() ?? "");
   const [priceSgd, setPriceSgd] = useState<string>(pkg?.priceSgd.toString() ?? "");
   const [promotions, setPromotions] = useState<Promotion[]>(pkg?.promotions ?? []);
   const promosOverlap = hasPromotionOverlap(promotions);
@@ -39,15 +39,11 @@ export function ClassPackageDialog({
       description: description.trim(),
       kind,
       credits: kind === "credit_bundle" || kind === "trial" ? Number(credits) : null,
+      // A trial validity is now required, not optional — "never expires" has left
+      // the domain and a null expiry means Dormant, which only Unlimited can be.
       validityDays:
-        kind === "credit_bundle"
-          ? Number(validityDays)
-          : kind === "trial"
-          ? validityDays
-            ? Number(validityDays)
-            : null
-          : null,
-      durationDays: kind === "unlimited" ? Number(durationDays) : null,
+        kind === "credit_bundle" || kind === "trial" ? Number(validityDays) : null,
+      durationMonths: kind === "unlimited" ? Number(durationMonths) : null,
       priceSgd: Number(priceSgd),
       status: pkg?.status ?? "active",
       promotions,
@@ -143,14 +139,14 @@ export function ClassPackageDialog({
 
         {kind === "unlimited" && (
           <div className="space-y-1.5">
-            <Label htmlFor="pkg-duration">Duration (days)</Label>
+            <Label htmlFor="pkg-duration">Duration (months)</Label>
             <Input
               id="pkg-duration"
               required
               type="number"
               min={1}
-              value={durationDays}
-              onChange={(e) => setDurationDays(e.target.value)}
+              value={durationMonths}
+              onChange={(e) => setDurationMonths(e.target.value)}
             />
           </div>
         )}
@@ -170,9 +166,10 @@ export function ClassPackageDialog({
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="pkg-trial-validity">Validity (days, optional)</Label>
+              <Label htmlFor="pkg-trial-validity">Validity (days)</Label>
               <Input
                 id="pkg-trial-validity"
+                required
                 type="number"
                 min={1}
                 value={validityDays}

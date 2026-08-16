@@ -57,7 +57,7 @@ const createSchema = z.object({
   kind: kindEnum,
   credits: z.number().int().min(1).nullish(),
   validity_days: z.number().int().min(1).nullish(),
-  duration_days: z.number().int().min(1).nullish(),
+  duration_months: z.number().int().min(1).nullish(),
   price_sgd: priceField,
   promotions: z.array(promotionInputSchema).optional(),
 })
@@ -67,7 +67,7 @@ const updateSchema = z.object({
   description: z.string().max(2000).nullish().optional(),
   credits: z.number().int().min(1).nullish().optional(),
   validity_days: z.number().int().min(1).nullish().optional(),
-  duration_days: z.number().int().min(1).nullish().optional(),
+  duration_months: z.number().int().min(1).nullish().optional(),
   price_sgd: priceField.optional(),
   status: statusEnum.optional(),
   promotions: z.array(promotionInputSchema).optional(),
@@ -88,7 +88,7 @@ function serialize(
     kind: r.kind,
     credits: r.credits,
     validity_days: r.validityDays,
-    duration_days: r.durationDays,
+    duration_months: r.durationMonths,
     price_sgd: r.priceSgd,
     effective_price_sgd: effective.effectivePriceSgd,
     applied_promotion_id: effective.appliedPromotionId,
@@ -134,7 +134,7 @@ const app = new Hono()
       kind: body.kind,
       credits: body.credits ?? null,
       validityDays: body.validity_days ?? null,
-      durationDays: body.duration_days ?? null,
+      durationMonths: body.duration_months ?? null,
       priceSgd: body.price_sgd,
     })
     if (body.promotions && body.promotions.length) {
@@ -157,7 +157,7 @@ const app = new Hono()
       ...(body.description !== undefined ? { description: body.description ?? null } : {}),
       ...(body.credits !== undefined ? { credits: body.credits ?? null } : {}),
       ...(body.validity_days !== undefined ? { validityDays: body.validity_days ?? null } : {}),
-      ...(body.duration_days !== undefined ? { durationDays: body.duration_days ?? null } : {}),
+      ...(body.duration_months !== undefined ? { durationMonths: body.duration_months ?? null } : {}),
       ...(body.price_sgd !== undefined ? { priceSgd: body.price_sgd } : {}),
       ...(body.status !== undefined ? { status: body.status } : {}),
     })
