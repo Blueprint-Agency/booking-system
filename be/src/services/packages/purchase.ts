@@ -31,6 +31,49 @@ async function liveUnlimited(
   return rows.filter(r => r.expiresAt === null || r.expiresAt > now)
 }
 
+type PackageKind = 'credit_bundle' | 'unlimited' | 'trial' | 'pt'
+
+/**
+ * The Home Location this purchase lands on — null for every kind that has none.
+ * Pure, so the grant and the checkout that precedes it apply exactly the same
+ * rules (§1, §6).
+ *
+ * A renewal must sit at the Home Location of the plan it renews. That is what
+ * keeps a member's two plans at one Location, which is in turn what stops
+ * booking from reaching past an Activated plan to a Dormant one and running two
+ * Activated plans into the partial unique index. A plan bought after the old one
+ * has ended is a fresh purchase and picks freely.
+ */
+export function locationForPurchase(
+  kind: PackageKind,
+  locationId: string | null | undefined,
+  liveUnlimitedLocations: (string | null)[],
+): string | null {
+  if (kind !== 'unlimited') {
+    if (locationId) throw new BadRequestError('location_only_applies_to_unlimited')
+    return null
+  }
+  if (!locationId) throw new BadRequestError('unlimited_requires_location')
+  if (liveUnlimitedLocations.some(l => l !== null && l !== locationId)) {
+    throw new ConflictError('unlimited_renewal_location_mismatch')
+  }
+  return locationId
+}
+
+/**
+ * `locationForPurchase` against the client's live plans. Checkout calls this
+ * BEFORE Stripe: the grant applies the same rules, but only once the webhook
+ * fires, and a refusal there charges a member for nothing.
+ */
+export async function assertPurchasableLocation(
+  clientId: string,
+  kind: PackageKind,
+  locationId: string | null | undefined,
+): Promise<void> {
+  const live = kind === 'unlimited' ? await liveUnlimited(clientId, new Date()) : []
+  locationForPurchase(kind, locationId, live.map(r => r.locationId))
+}
+
 /**
  *  - credit_bundle: now + validity_days
  *  - unlimited:     null — a Duration is calendar months, not days, and whether the
@@ -40,7 +83,7 @@ async function liveUnlimited(
  *  - pt:            now + PT_VALIDITY_DAYS (365)
  */
 function computeExpiry(
-  kind: 'credit_bundle' | 'unlimited' | 'trial' | 'pt',
+  kind: PackageKind,
   src: ClassPackageRow | PtPackageRow,
   now: Date,
 ): Date | null {
@@ -101,7 +144,7 @@ export async function grantPackage(
     if (existing) return { clientPackageId: existing.id }
   }
 
-  let kind: 'credit_bundle' | 'unlimited' | 'trial' | 'pt'
+  let kind: PackageKind
   let sourceClassPackageId: string | null = null
   let sourcePtPackageId: string | null = null
   let creditsOrSessionsRemaining: number | null = null
@@ -134,33 +177,21 @@ export async function grantPackage(
   }
 
   let expiresAt = computeExpiry(kind, source, now)
-  let locationId: string | null = null
   let durationMonths: number | null = null
+
+  const live = kind === 'unlimited' ? await liveUnlimited(input.clientId, now) : []
+  const locationId = locationForPurchase(kind, input.locationId, live.map(r => r.locationId))
 
   if (kind === 'unlimited') {
     const cs = source as ClassPackageRow
-    if (!input.locationId) throw new BadRequestError('unlimited_requires_location')
     if (cs.durationMonths == null) throw new BadRequestError('unlimited_requires_duration_months')
-    locationId = input.locationId
     // Frozen at purchase (§4). The live catalogue row is admin-editable, so
     // re-reading it at Activation would silently relengthen every plan sold.
     durationMonths = cs.durationMonths
-
-    const live = await liveUnlimited(input.clientId, now)
-    // §6: a renewal must sit at the Home Location of the plan it renews. Refusing
-    // it here is what keeps a member's two plans at one Location, which is in turn
-    // what stops booking from reaching past an Activated plan to a Dormant one and
-    // running two Activated plans into the partial unique index. A plan bought
-    // after the old one has ended is a fresh purchase and picks freely.
-    if (live.some(r => r.locationId !== null && r.locationId !== locationId)) {
-      throw new ConflictError('unlimited_renewal_location_mismatch')
-    }
     // §3: the clock starts at purchase only when nothing is already live.
     // Otherwise the plan is stored Dormant (null expiry) and the first confirmed
     // class booking it pays for starts it — that stamping is #25's booking path.
     expiresAt = live.length > 0 ? null : addMonths(now, durationMonths)
-  } else if (input.locationId) {
-    throw new BadRequestError('location_only_applies_to_unlimited')
   }
 
   try {

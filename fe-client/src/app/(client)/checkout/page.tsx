@@ -2,12 +2,14 @@
 
 import { useState, Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Lock, ShoppingCart, Tag, Check, AlertCircle } from "lucide-react";
+import { Lock, ShoppingCart, Tag, Check, AlertCircle, MapPin } from "lucide-react";
 import { cn, formatCurrency, formatDurationMonths } from "@/lib/utils";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useAuth } from "@clerk/nextjs";
 import { getApiBaseUrl } from "@/lib/api-url";
+import { useLocations } from "@/lib/classes";
+import { useClientPackages } from "@/lib/use-client-packages";
 import { tierEffectivePrice, type ApiWorkshopDetail, type ApiWorkshopTier } from "@/lib/workshops";
 import type { ApiClassPackage, ApiPtPackage } from "@/lib/packages";
 
@@ -54,6 +56,17 @@ function CheckoutContent() {
 
   const [redirecting, setRedirecting] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+
+  // Home studio (§12). Only an Unlimited Plan carries one; a member already
+  // holding a live plan renews at that plan's Location and gets no choice.
+  const [homeLocationId, setHomeLocationId] = useState<string | null>(null);
+  const { data: locations, loading: locationsLoading } = useLocations();
+  const { unlimitedLocation, loading: packagesLoading } = useClientPackages();
+  const isUnlimited = pkg?._kind === "class" && pkg.kind === "unlimited";
+  const chosenLocation = isUnlimited
+    ? unlimitedLocation ?? locations?.find((l) => l.id === homeLocationId) ?? null
+    : null;
+  const needsHomeStudio = isUnlimited && !unlimitedLocation && !homeLocationId;
 
   // Fetch package or workshop details from the catalogue
   useEffect(() => {
@@ -134,7 +147,12 @@ function CheckoutContent() {
       const endpoint = mode === "workshop" ? "/me/checkout/workshop" : "/me/checkout/package";
       const body = mode === "workshop"
         ? { workshop_id: workshopId, workshop_tier_id: selectedTier?.id, promo_code: promoApplied?.code }
-        : { package_kind: packageKind, package_id: packageId, promo_code: promoApplied?.code };
+        : {
+            package_kind: packageKind,
+            package_id: packageId,
+            promo_code: promoApplied?.code,
+            location_id: chosenLocation?.id,
+          };
       const res = await fetch(`${getApiBaseUrl()}${endpoint}`, {
         method: "POST",
         headers: {
@@ -272,6 +290,68 @@ function CheckoutContent() {
               <p className="text-sm font-semibold shrink-0">{formatCurrency(price)}</p>
             </div>
 
+            {/* Home studio — an Unlimited Plan covers one Location, chosen here. */}
+            {isUnlimited && (
+              <div className="mt-4 pb-4 border-b border-ink/5">
+                <p className="text-sm font-medium text-ink mb-1">Home studio</p>
+                {packagesLoading || locationsLoading ? (
+                  <p className="text-xs text-muted py-3">Loading…</p>
+                ) : unlimitedLocation ? (
+                  <div className="flex items-start gap-2.5 rounded-xl border border-ink/10 bg-warm px-4 py-3">
+                    <Lock className="h-4 w-4 text-muted shrink-0 mt-0.5" />
+                    <p className="text-sm text-ink">
+                      Your renewal continues at{" "}
+                      <span className="font-medium">{unlimitedLocation.name}</span>. Ask us if you
+                      need to move it.
+                    </p>
+                  </div>
+                ) : !locations?.length ? (
+                  // useLocations swallows a failed fetch into an empty list. Without
+                  // this, Pay sits disabled above a picker with nothing to click.
+                  <p className="text-sm text-error py-2">
+                    We couldn&apos;t load the studios. Refresh the page and try again.
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-xs text-muted mb-3">
+                      This plan covers one studio. Pick the one you&apos;ll practise at.
+                    </p>
+                    <div className="space-y-2">
+                      {locations.map((loc) => (
+                        <label
+                          key={loc.id}
+                          className={cn(
+                            "flex items-start gap-3 rounded-xl border px-4 py-3 cursor-pointer transition-colors",
+                            homeLocationId === loc.id
+                              ? "border-accent-deep bg-accent/10"
+                              : "border-ink/10 hover:border-accent",
+                          )}
+                        >
+                          <input
+                            type="radio"
+                            name="home-studio"
+                            value={loc.id}
+                            checked={homeLocationId === loc.id}
+                            onChange={() => setHomeLocationId(loc.id)}
+                            className="mt-0.5 h-4 w-4 border-ink/30 text-accent focus:ring-accent"
+                          />
+                          <span className="min-w-0">
+                            <span className="block text-sm font-medium text-ink">{loc.name}</span>
+                            {loc.address && (
+                              <span className="mt-0.5 flex items-start gap-1 text-xs text-muted">
+                                <MapPin className="h-3 w-3 shrink-0 mt-0.5" />
+                                {loc.address}
+                              </span>
+                            )}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
             {/* Promo code */}
             <div className="mt-4">
               {promoApplied ? (
@@ -347,13 +427,28 @@ function CheckoutContent() {
             </div>
           )}
 
+          {/* The choice restated, so the member passes it twice before paying. */}
+          {chosenLocation && (
+            <p className="text-sm text-ink text-center">
+              Your home studio is{" "}
+              <span className="font-medium">{chosenLocation.name}</span>
+              {pkg?._kind === "class" && pkg.duration_months != null
+                ? // A renewal waits for the running plan to end, so "the next N
+                  // months" would name a stretch of time that hasn't started.
+                  unlimitedLocation
+                  ? ` for the ${formatDurationMonths(pkg.duration_months)} of this plan.`
+                  : ` for the next ${formatDurationMonths(pkg.duration_months)}.`
+                : "."}
+            </p>
+          )}
+
           <button
             type="button"
             onClick={handleProceed}
-            disabled={redirecting}
+            disabled={redirecting || needsHomeStudio}
             className={cn(
               "w-full rounded-full bg-ink text-paper py-4 text-sm font-semibold transition-colors",
-              redirecting ? "opacity-60 cursor-not-allowed" : "hover:bg-ink/90"
+              redirecting || needsHomeStudio ? "opacity-60 cursor-not-allowed" : "hover:bg-ink/90"
             )}
           >
             {redirecting ? (
@@ -364,6 +459,8 @@ function CheckoutContent() {
                 </svg>
                 Redirecting to payment…
               </span>
+            ) : needsHomeStudio ? (
+              "Choose your home studio to continue"
             ) : (
               `Pay ${formatCurrency(grandTotal)} with Stripe`
             )}

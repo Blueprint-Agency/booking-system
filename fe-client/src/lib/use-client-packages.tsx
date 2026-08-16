@@ -26,11 +26,18 @@ export interface LivePackage {
   sessionType: "1on1" | "2on1" | null;
 }
 
+/** The one Location a live Unlimited Plan Covers. Null when there is no live plan. */
+export interface UnlimitedLocation {
+  id: string;
+  name: string;
+}
+
 export interface ClientPackagesData {
   classCredits: {
     total: number;
     isUnlimited: boolean;
     unlimitedExpiresAt: string | null;
+    unlimitedLocation: UnlimitedLocation | null;
   };
   ptSessions: { oneOnOne: number; twoOnOne: number };
   packages: LivePackage[];
@@ -40,6 +47,7 @@ export interface ClientPackagesValue {
   classCredits: number;
   isUnlimited: boolean;
   unlimitedExpiresAt: string | null;
+  unlimitedLocation: UnlimitedLocation | null;
   pt1on1: number;
   pt2on1: number;
   packages: LivePackage[];
@@ -66,6 +74,7 @@ interface RawPackagesResponse {
   entitlements: {
     trial_used: boolean;
     has_active_unlimited: boolean;
+    unlimited_location: UnlimitedLocation | null;
     has_active_bundle_credits: boolean;
     pt_1on1_remaining: number;
     pt_2on1_remaining: number;
@@ -83,6 +92,7 @@ function mapPackagesResponse(raw: RawPackagesResponse): ClientPackagesData {
   const ent = raw.entitlements ?? {
     trial_used: false,
     has_active_unlimited: false,
+    unlimited_location: null,
     has_active_bundle_credits: false,
     pt_1on1_remaining: 0,
     pt_2on1_remaining: 0,
@@ -122,6 +132,7 @@ function mapPackagesResponse(raw: RawPackagesResponse): ClientPackagesData {
       total: classTotal,
       isUnlimited: Boolean(ent.has_active_unlimited),
       unlimitedExpiresAt,
+      unlimitedLocation: ent.unlimited_location ?? null,
     },
     ptSessions: { oneOnOne: ent.pt_1on1_remaining ?? 0, twoOnOne: ent.pt_2on1_remaining ?? 0 },
     packages,
@@ -141,11 +152,15 @@ export function ClientPackagesProvider({ children }: { children: ReactNode }) {
   const { getToken, isSignedIn, isLoaded, userId } = useAuth();
   const pathname = usePathname();
   const [data, setData] = useState<ClientPackagesData | null>(null);
-  const [loading, setLoading] = useState(false);
+  // Starts true: on the first paint nothing has been fetched yet, and a consumer
+  // that branches on what the member owns (the checkout Home studio picker) must
+  // not read "no live plan" out of an empty context and offer the wrong control.
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     if (!isSignedIn || !userId) {
       setData(null);
+      setLoading(false);
       return;
     }
     setLoading(true);
@@ -176,6 +191,7 @@ export function ClientPackagesProvider({ children }: { children: ReactNode }) {
     if (!isLoaded) return;
     if (!isSignedIn) {
       setData(null);
+      setLoading(false);
       return;
     }
     load();
@@ -198,6 +214,7 @@ export function ClientPackagesProvider({ children }: { children: ReactNode }) {
     classCredits: data?.classCredits?.total ?? 0,
     isUnlimited: data?.classCredits?.isUnlimited ?? false,
     unlimitedExpiresAt: data?.classCredits?.unlimitedExpiresAt ?? null,
+    unlimitedLocation: data?.classCredits?.unlimitedLocation ?? null,
     pt1on1: data?.ptSessions?.oneOnOne ?? 0,
     pt2on1: data?.ptSessions?.twoOnOne ?? 0,
     packages: data?.packages ?? [],

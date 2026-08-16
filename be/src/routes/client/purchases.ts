@@ -6,7 +6,11 @@ import { stripe } from '../../lib/stripe'
 import { db } from '../../db'
 import { classPackages, ptPackages } from '../../db/schema/packages'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
-import { purchaseFreeTrial, assertTrialEligible } from '../../services/packages/purchase'
+import {
+  purchaseFreeTrial,
+  assertTrialEligible,
+  assertPurchasableLocation,
+} from '../../services/packages/purchase'
 import {
   bestPrice,
   listActivePromotionsFor,
@@ -26,6 +30,8 @@ const checkoutPackageSchema = z.object({
   package_kind: z.enum(['class', 'pt']),
   package_id: z.string().uuid(),
   promo_code: z.string().optional(),
+  /** Home Location — required for an Unlimited Plan, refused for anything else (§1). */
+  location_id: z.string().uuid().optional(),
 })
 
 const validatePromoSchema = z.object({
@@ -50,7 +56,7 @@ const app = new Hono()
   .post('/checkout/package', zValidator('json', checkoutPackageSchema), async c => {
     const clientId = c.get('clientId')
     const clientRow = c.get('clientRow')
-    const { package_kind, package_id, promo_code } = c.req.valid('json')
+    const { package_kind, package_id, promo_code, location_id } = c.req.valid('json')
 
     let packageName: string
     let priceSgd: string
@@ -65,6 +71,11 @@ const app = new Hono()
         .limit(1)
       if (!pkg) throw new NotFoundError('class_package_not_found')
       if (pkg.status !== 'active') throw new BadRequestError('class_package_not_active')
+
+      // The grant applies these same rules, but only once the webhook fires —
+      // by then the member has paid, and a refusal there charges them for
+      // nothing. Same rule, run before Stripe.
+      await assertPurchasableLocation(clientId, pkg.kind, location_id)
 
       const promos = await listActivePromotionsFor('class_package', [pkg.id])
       const eff = bestPrice(pkg.priceSgd, promos[pkg.id] ?? [])
@@ -99,6 +110,7 @@ const app = new Hono()
         .limit(1)
       if (!pkg) throw new NotFoundError('pt_package_not_found')
       if (pkg.status !== 'active') throw new BadRequestError('pt_package_not_active')
+      await assertPurchasableLocation(clientId, 'pt', location_id)
 
       const promos = await listActivePromotionsFor('pt_package', [pkg.id])
       const eff = bestPrice(pkg.priceSgd, promos[pkg.id] ?? [])
@@ -147,6 +159,7 @@ const app = new Hono()
         promo_discount_sgd: (promoDiscountCents / 100).toFixed(2),
         applied_promotion_id: appliedPromotionId ?? '',
         list_price_sgd: priceSgd,
+        location_id: location_id ?? '',
         amount_sgd: (totalCents / 100).toFixed(2),
       },
       success_url: `${CLIENT_URL}/booking/confirmation?type=package&package_id=${package_id}&package_kind=${package_kind}&session_id={CHECKOUT_SESSION_ID}`,

@@ -388,7 +388,8 @@ function ClassCreditsSection({
           )}
           {hasUnlimited && (
             <div className="rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3 text-center">
-              You already have an active Unlimited pass. You can purchase a new one after it expires.
+              You already have an Unlimited pass. Buy another and it waits — it starts when you book
+              your first class after this one ends, at the same home studio.
             </div>
           )}
           {unlimited.length === 0 ? (
@@ -399,10 +400,11 @@ function ClassCreditsSection({
                 <UnlimitedCard
                   key={p.id}
                   pkg={p}
-                  disabled={hasBundle || hasUnlimited}
-                  disabledReason={
-                    hasUnlimited ? "Unlimited pass already active" : "Credit Bundle still active"
-                  }
+                  // A live plan does NOT block the card: buying on top of one is
+                  // a renewal, which the backend accepts and stores Dormant (§3).
+                  // Only a live Credit Bundle conflicts.
+                  disabled={hasBundle}
+                  disabledReason="Credit Bundle still active"
                 />
               ))}
             </div>
@@ -675,7 +677,7 @@ function UnlimitedCard({
         <li>Unlimited classes for {months}</li>
         <li>All group classes included</li>
         <li>No class limit per week</li>
-        <li>Valid across both locations</li>
+        <li>Covers one studio — you choose at checkout</li>
       </ul>
       {disabled ? (
         <span
