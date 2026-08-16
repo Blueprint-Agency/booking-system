@@ -4,6 +4,36 @@ The domain. Every rule in the platform lives here — booking, credits, scheduli
 
 ## Language
 
+### Packages and locations
+
+**Location**:
+One of the studio's two physical premises — Breadtalk IHQ or Outram Park. A class runs at exactly one Location.
+_Avoid_: branch, studio, venue, outlet, site
+
+**Unlimited Plan**:
+A purchased plan that pays for any class at its Home Location, as often as the member likes, until it expires. Distinct from a Credit Bundle, which pays per class.
+_Avoid_: membership, subscription, unlimited package
+
+**Credit Bundle**:
+A purchased balance of credits, each booking deducting the class's cost. Location-agnostic — credits work at either Location.
+_Avoid_: pack, class pack, points
+
+**Home Location**:
+The one Location an Unlimited Plan covers, chosen by the member at purchase. Only an Unlimited Plan has one; no other kind of plan carries a Location.
+_Avoid_: home branch, primary location, base studio
+
+**Covers**:
+The relation between a plan and a Location — the plan permits a free booking there. An Unlimited Plan covers its Home Location and no other.
+_Avoid_: includes, allows, valid at
+
+**Dormant**:
+An Unlimited Plan that is paid for but has not started counting down, because the member has not yet booked a class with it. A renewal bought before the current plan expires waits dormant behind it. Only an Unlimited Plan can be Dormant — every other kind of plan starts counting down at purchase. Contrast **Activated** — clock running, end date fixed.
+_Avoid_: pending, inactive, unused, scheduled, queued
+
+**Activation**:
+The moment a Dormant Plan becomes Activated: the first confirmed class booking the plan pays for. It happens once and never reverses on its own; only staff can return a plan to Dormant. The plan's end date is fixed at that moment, counted from that day.
+_Avoid_: start, redemption, kick-off, going live
+
 ### Instructor leave
 
 **Leave Request**:
