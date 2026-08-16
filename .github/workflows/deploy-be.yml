@@ -127,6 +127,9 @@ jobs:
               echo "NODE_ENV=production"
               echo "APP_ENV=${{ env.APP_ENV }}"
               echo "PORT=${{ vars.PORT }}"
+              # Background cron jobs (be/src/jobs/index.ts). Off means pending PT
+              # requests never expire and members' credits are never auto-refunded.
+              echo "ENABLE_JOBS=true"
               echo "TZ=Asia/Kuala_Lumpur"
               echo "DATABASE_URL=postgres://${{ secrets.DB_USER }}:${{ secrets.DB_PASSWORD }}@db-booking:5432/${{ secrets.DB_NAME }}"
               # Superadmin bootstrap — passwordless. Seed creates the Clerk user
