@@ -53,6 +53,7 @@ export async function getClientEntitlements(clientId: string): Promise<ClientEnt
   let trialUsed = false
   let hasActiveUnlimited = false
   let unlimitedLocation: ClientEntitlements['unlimitedLocation'] = null
+  let locationIsDormant = false
   let dormant = false
   let hasActiveBundleCredits = false
   let pt1on1Remaining = 0
@@ -68,13 +69,13 @@ export async function getClientEntitlements(clientId: string): Promise<ClientEnt
     } else if (r.kind === 'unlimited') {
       if (consumable) {
         hasActiveUnlimited = true
-        if (isDormant({ kind: 'unlimited', expiresAt: r.expiresAt, creditsOrSessionsRemaining: null })) {
-          dormant = true
-        }
-        // Both of a member's plans always share a Location (the renewal rule),
-        // so whichever live plan we see first answers this.
-        if (unlimitedLocation === null && r.locationId && r.locationName) {
+        if (isDormant({ kind: 'unlimited', expiresAt: r.expiresAt })) dormant = true
+        // §3 orders Activated first, Dormant last — the plan paying today is the
+        // one with a running clock. The §6 renewal rule keeps a member's two plans
+        // at one Location anyway, so this only settles the tie-break.
+        if (r.locationId && r.locationName && (unlimitedLocation === null || locationIsDormant)) {
           unlimitedLocation = { id: r.locationId, name: r.locationName }
+          locationIsDormant = r.expiresAt === null
         }
       }
     } else if (r.kind === 'credit_bundle') {
@@ -113,7 +114,7 @@ export interface ClientPackageWithSource {
   expiresAt: Date | null
   purchasedAt: Date
   amountPaidSgd: string
-  /** Catalogue price frozen at purchase (§15). Discount is derived: list minus paid. */
+  /** Catalogue price frozen at purchase (§15). Money off is derived: list minus paid. */
   listPriceSgd: string
   active: boolean
   /** Backend-derived (§8) — a null expiry means Dormant and the frontends never test for it. */
@@ -177,11 +178,7 @@ export async function listClientPackages(
     amountPaidSgd: r.amountPaidSgd,
     listPriceSgd: r.listPriceSgd,
     active: r.active,
-    dormant: isDormant({
-      kind: r.kind as ClientPackageWithSource['kind'],
-      expiresAt: r.expiresAt,
-      creditsOrSessionsRemaining: r.creditsOrSessionsRemaining,
-    }),
+    dormant: isDormant({ kind: r.kind as ClientPackageWithSource['kind'], expiresAt: r.expiresAt }),
     location: r.locationId && r.locationName ? { id: r.locationId, name: r.locationName } : null,
     durationMonths: r.durationMonths,
     sessionType: (r.ptSessionType ?? null) as '1on1' | '2on1' | null,

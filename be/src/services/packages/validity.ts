@@ -34,7 +34,7 @@ export function addMonths(from: Date, months: number): Date {
  * else — "never expires" has left the domain, and the `client_packages_kind_fields`
  * check makes an absent expiry impossible for every other kind.
  */
-export function isDormant(p: PackageValidity): boolean {
+export function isDormant(p: Pick<PackageValidity, 'kind' | 'expiresAt'>): boolean {
   return p.kind === 'unlimited' && p.expiresAt === null
 }
 

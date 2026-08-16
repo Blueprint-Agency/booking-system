@@ -9,13 +9,16 @@ type ClassPackageRow = typeof classPackages.$inferSelect
 type PtPackageRow = typeof ptPackages.$inferSelect
 
 /**
- * Does the client already hold a live Unlimited Plan? Live means active and
- * either Activated with an expiry still ahead, or Dormant and waiting — both are
- * plans the member owns, so a purchase on top of either is a renewal (§3).
+ * The client's live Unlimited Plans. Live means active and either Activated with
+ * an expiry still ahead, or Dormant and waiting — both are plans the member owns,
+ * so a purchase on top of either is a renewal (§3).
  */
-async function hasLiveUnlimited(clientId: string, now: Date): Promise<boolean> {
+async function liveUnlimited(
+  clientId: string,
+  now: Date,
+): Promise<{ expiresAt: Date | null; locationId: string | null }[]> {
   const rows = await db
-    .select({ expiresAt: clientPackages.expiresAt })
+    .select({ expiresAt: clientPackages.expiresAt, locationId: clientPackages.locationId })
     .from(clientPackages)
     .where(
       and(
@@ -24,7 +27,7 @@ async function hasLiveUnlimited(clientId: string, now: Date): Promise<boolean> {
         eq(clientPackages.active, true),
       ),
     )
-  return rows.some(r => r.expiresAt === null || r.expiresAt > now)
+  return rows.filter(r => r.expiresAt === null || r.expiresAt > now)
 }
 
 /**
@@ -141,12 +144,20 @@ export async function grantPackage(
     // Frozen at purchase (§4). The live catalogue row is admin-editable, so
     // re-reading it at Activation would silently relengthen every plan sold.
     durationMonths = cs.durationMonths
+
+    const live = await liveUnlimited(input.clientId, now)
+    // §6: a renewal must sit at the Home Location of the plan it renews. Refusing
+    // it here is what keeps a member's two plans at one Location, which is in turn
+    // what stops booking from reaching past an Activated plan to a Dormant one and
+    // running two Activated plans into the partial unique index. A plan bought
+    // after the old one has ended is a fresh purchase and picks freely.
+    if (live.some(r => r.locationId !== null && r.locationId !== locationId)) {
+      throw new ConflictError('unlimited_renewal_location_mismatch')
+    }
     // §3: the clock starts at purchase only when nothing is already live.
     // Otherwise the plan is stored Dormant (null expiry) and the first confirmed
     // class booking it pays for starts it — that stamping is #25's booking path.
-    expiresAt = (await hasLiveUnlimited(input.clientId, now))
-      ? null
-      : addMonths(now, durationMonths)
+    expiresAt = live.length > 0 ? null : addMonths(now, durationMonths)
   } else if (input.locationId) {
     throw new BadRequestError('location_only_applies_to_unlimited')
   }

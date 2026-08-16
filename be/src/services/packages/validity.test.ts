@@ -143,7 +143,7 @@ const dormantPlan: PackageValidity = {
 
 assert.strictEqual(isDormant(dormantPlan), true)
 assert.strictEqual(
-  isDormant({ kind: 'unlimited', expiresAt: LATER, creditsOrSessionsRemaining: null }),
+  isDormant({ kind: 'unlimited', expiresAt: LATER }),
   false,
   'an Activated plan carries an expiry and is not Dormant',
 )
