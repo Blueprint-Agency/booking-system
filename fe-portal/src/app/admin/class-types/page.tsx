@@ -434,7 +434,7 @@ function ClassTypeDialog({
             rows={3}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Short blurb shown to clients on /classes and workshop cards."
+            placeholder="Short blurb shown to customers on /classes and workshop cards."
           />
           <p className="text-xs text-muted">Optional. Up to ~500 characters.</p>
         </div>
@@ -454,7 +454,7 @@ function ClassTypeDialog({
             ))}
           </select>
           <p className="text-xs text-muted">
-            Shown to clients and on the schedule detail. “All levels” is the default.
+            Shown to customers and on the schedule detail. “All levels” is the default.
           </p>
         </div>
 

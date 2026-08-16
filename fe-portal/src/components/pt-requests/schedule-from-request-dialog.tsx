@@ -28,7 +28,7 @@ const SCHEDULE_ERROR: Record<string, string> = {
 };
 
 const PARTNER_LINK_ERROR: Record<string, string> = {
-  partner_client_not_found: "No active client account was found for that email.",
+  partner_client_not_found: "No active customer account was found for that email.",
   partner_cannot_be_requester: "The requester cannot also be the partner.",
   partner_not_active: "That partner account is not active.",
   partner_already_linked: "This request already has a linked partner.",

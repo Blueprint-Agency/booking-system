@@ -650,7 +650,7 @@ export function WorkshopEditor({
             rows={4}
             value={descriptionHtml}
             onChange={(e) => setDescriptionHtml(e.target.value)}
-            placeholder="<p>What clients will experience…</p>"
+            placeholder="<p>What customers will experience…</p>"
             className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
           />
         </div>

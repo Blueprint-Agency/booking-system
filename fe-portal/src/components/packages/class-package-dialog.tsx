@@ -109,7 +109,7 @@ export function ClassPackageDialog({
             maxLength={280}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Short marketing blurb shown to clients."
+            placeholder="Short marketing blurb shown to customers."
             className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
           />
         </div>

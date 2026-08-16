@@ -152,7 +152,7 @@ export default function PolicyPage() {
     <div className="mx-auto max-w-3xl">
       <PageHeader
         title="Global Policy"
-        description="Single source of truth for client-initiated class and PT cancellation. Workshops are non-refundable; package purchases are non-cancellable."
+        description="Single source of truth for customer-initiated class and PT cancellation. Workshops are non-refundable; package purchases are non-cancellable."
       />
 
       <form onSubmit={handleSave} className="space-y-6">
@@ -160,7 +160,7 @@ export default function PolicyPage() {
           <header className="mb-4">
             <h2 className="text-base font-semibold text-ink">Cancellation cap</h2>
             <p className="mt-0.5 text-xs text-muted">
-              How many cancellations a client gets per cycle. Applies universally — no per-client overrides. Counts class + PT together.
+              How many cancellations a customer gets per cycle. Applies universally — no per-customer overrides. Counts class + PT together.
             </p>
           </header>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -203,7 +203,7 @@ export default function PolicyPage() {
           <header className="mb-4">
             <h2 className="text-base font-semibold text-ink">Cancellation windows</h2>
             <p className="mt-0.5 text-xs text-muted">
-              How far in advance clients must cancel for a refund. Cancellation itself is always allowed; the window only gates whether credits/sessions are returned.
+              How far in advance customers must cancel for a refund. Cancellation itself is always allowed; the window only gates whether credits/sessions are returned.
             </p>
           </header>
           <div className="grid gap-4 sm:grid-cols-2">
@@ -238,7 +238,7 @@ export default function PolicyPage() {
           <header className="mb-4">
             <h2 className="text-base font-semibold text-ink">PT booking horizon</h2>
             <p className="mt-0.5 text-xs text-muted">
-              How far in advance clients can request a Private Training session.
+              How far in advance customers can request a Private Training session.
             </p>
           </header>
           <div className="space-y-1.5 max-w-xs">

@@ -15,7 +15,7 @@ export default function WaiverPage() {
     e.preventDefault();
     setWaiver({ bodyHtml: draftHtml, updatedAt: new Date().toISOString() });
     alert(
-      "Waiver updated (mock).\n\nExisting signed clients are NOT required to re-sign — their original acceptance timestamp stands."
+      "Waiver updated (mock).\n\nExisting signed customers are NOT required to re-sign — their original acceptance timestamp stands."
     );
   }
 
@@ -25,7 +25,7 @@ export default function WaiverPage() {
     <div className="mx-auto max-w-5xl">
       <PageHeader
         title="Waiver"
-        description="Single studio-wide liability waiver. Presented at registration as a hard block — clients must accept to complete sign-up."
+        description="Single studio-wide liability waiver. Presented at registration as a hard block — customers must accept to complete sign-up."
       />
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -73,7 +73,7 @@ export default function WaiverPage() {
             </div>
             <div className="font-mono text-3xl font-semibold text-ink">{signedCount}</div>
             <p className="mt-1 text-xs text-muted">
-              Individual signed dates surface on each client profile.
+              Individual signed dates surface on each customer profile.
             </p>
           </section>
 
@@ -88,7 +88,7 @@ export default function WaiverPage() {
           <section className="rounded-xl border border-border bg-card p-5 shadow-soft">
             <h3 className="mb-2 text-sm font-semibold text-ink">Update behaviour</h3>
             <p className="text-xs text-muted">
-              Saving replaces the current waiver body. Existing signed clients are not required
+              Saving replaces the current waiver body. Existing signed customers are not required
               to re-sign — their original timestamp stands.
             </p>
           </section>

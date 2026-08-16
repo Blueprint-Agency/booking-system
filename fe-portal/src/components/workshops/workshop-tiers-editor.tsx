@@ -86,7 +86,7 @@ export function WorkshopTiersEditor({
               value={t.description}
               onChange={(e) => update(t.id, { description: e.target.value })}
               rows={2}
-              placeholder="One-line description shown on the client purchase card."
+              placeholder="One-line description shown on the customer purchase card."
               className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm"
             />
             <div>

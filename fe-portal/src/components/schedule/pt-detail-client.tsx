@@ -26,7 +26,7 @@ export function PtDetailClient({
 
   function handleCancel() {
     alert(
-      `PT session cancelled (mock).\n\nFull session returned to ${roster.length} client${roster.length === 1 ? "'s" : "s'"} package automatically. Inbox notification generated.`
+      `PT session cancelled (mock).\n\nFull session returned to ${roster.length} customer${roster.length === 1 ? "'s" : "s'"} package automatically. Inbox notification generated.`
     );
     setConfirm(false);
     router.push("/admin/schedule");
@@ -39,7 +39,7 @@ export function PtDetailClient({
       <section className="rounded-xl border border-border bg-card shadow-soft">
         <header className="flex items-center justify-between border-b border-border px-5 py-3">
           <h2 className="text-sm font-semibold text-ink">
-            Client{roster.length > 1 ? "s" : ""}
+            Customer{roster.length > 1 ? "s" : ""}
           </h2>
           {isCancellable && (
             <Button variant="secondary" size="sm" onClick={() => setConfirm(true)}>
@@ -68,7 +68,7 @@ export function PtDetailClient({
         open={confirm}
         onOpenChange={setConfirm}
         title="Cancel this private session?"
-        description={`Full session will be returned to ${roster.length === 1 ? "the client's" : "each client's"} PT package automatically.`}
+        description={`Full session will be returned to ${roster.length === 1 ? "the customer's" : "each customer's"} PT package automatically.`}
       >
         <DialogFooter>
           <Button variant="ghost" onClick={() => setConfirm(false)}>

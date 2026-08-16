@@ -247,11 +247,11 @@ export function ScheduleFromCorporateRequestDialog({
               <Input
                 value={customLocation}
                 onChange={(e) => setCustomLocation(e.target.value)}
-                placeholder="Client office / venue address"
+                placeholder="Customer office / venue address"
               />
               {request.preferredLocation && (
                 <p className="text-xs text-muted">
-                  Client suggested:{" "}
+                  Customer suggested:{" "}
                   <span className="text-ink">{request.preferredLocation}</span>
                 </p>
               )}

@@ -193,7 +193,7 @@ export default function PrivateSessionsPage() {
     <div className="mx-auto max-w-5xl space-y-8">
       <PageHeader
         title="Private Sessions"
-        description="PT packages clients can purchase. PT is request-driven — clients submit preferred slots in the app; triage and schedule them under PT Requests. Cancellation policy lives in Global Policy."
+        description="PT packages customers can purchase. PT is request-driven — customers submit preferred slots in the app; triage and schedule them under PT Requests. Cancellation policy lives in Global Policy."
         actions={
           <Button onClick={() => setDialog({ kind: "create" })}>
             <Plus className="h-4 w-4" /> Add package
@@ -221,7 +221,7 @@ export default function PrivateSessionsPage() {
               />
             </div>
             <div className="flex-1 text-xs text-muted">
-              Maximum number of days ahead a client can submit a private session request.
+              Maximum number of days ahead a customer can submit a private session request.
             </div>
             <Button type="submit" disabled={!configDirty || savingConfig}>
               {savingConfig ? (

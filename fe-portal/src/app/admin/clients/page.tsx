@@ -72,7 +72,7 @@ export default function ClientsPage() {
       window.open(res.fe_client_url, "_blank", "noopener");
     } catch (err) {
       if (err instanceof ApiError && err.status === 422) {
-        toast.error("This client hasn't activated their account yet.");
+        toast.error("This customer hasn't activated their account yet.");
       } else if (err instanceof ApiError && err.status === 403) {
         toast.error("Only superadmins can impersonate.");
       } else {
@@ -101,11 +101,11 @@ export default function ClientsPage() {
   return (
     <div>
       <PageHeader
-        title="Clients"
-        description="Members who self-registered via the client app or were added here. Adjustments and blocking live on the profile."
+        title="Customers"
+        description="Members who self-registered via the customer app or were added here. Adjustments and blocking live on the profile."
         actions={
           <Button onClick={() => setAddOpen(true)}>
-            <Plus className="h-4 w-4" /> Client
+            <Plus className="h-4 w-4" /> Customer
           </Button>
         }
       />
@@ -146,7 +146,7 @@ export default function ClientsPage() {
       <div className="rounded-xl border border-border bg-card shadow-soft">
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted">
-            <Loader2 className="h-4 w-4 animate-spin" /> Loading clients…
+            <Loader2 className="h-4 w-4 animate-spin" /> Loading customers…
           </div>
         ) : error ? (
           <div className="py-12 text-center">
@@ -205,7 +205,7 @@ export default function ClientsPage() {
               <table className="w-full">
                 <thead className="bg-paper">
                   <tr className="text-left text-xs uppercase tracking-wider text-muted">
-                    <th className="px-5 py-3 font-medium">Client</th>
+                    <th className="px-5 py-3 font-medium">Customer</th>
                     <th className="px-5 py-3 font-medium">Phone</th>
                     <th className="px-5 py-3 font-medium">Joined</th>
                     <th className="px-5 py-3 font-medium">Status</th>
@@ -260,7 +260,7 @@ export default function ClientsPage() {
               </table>
             </div>
             {filtered.length === 0 && (
-              <div className="py-12 text-center text-sm text-muted">No clients match.</div>
+              <div className="py-12 text-center text-sm text-muted">No customers match.</div>
             )}
           </>
         )}
@@ -317,15 +317,15 @@ function AddClientDialog({
         email: email.trim(),
         phone: phone.trim(),
       });
-      toast.success("Client created — an invite email has been sent.");
+      toast.success("Customer created — an invite email has been sent.");
       onCreated();
     } catch (err) {
       const msg =
         err instanceof ApiError && err.status === 409
-          ? "A client with this email already exists."
+          ? "A customer with this email already exists."
           : err instanceof ApiError
-            ? `Could not create client (HTTP ${err.status}).`
-            : "Could not create client.";
+            ? `Could not create customer (HTTP ${err.status}).`
+            : "Could not create customer.";
       setError(msg);
       toast.error(msg);
     } finally {
@@ -337,7 +337,7 @@ function AddClientDialog({
     <Dialog
       open={open}
       onOpenChange={onOpenChange}
-      title="Add client"
+      title="Add customer"
       description="Creates the member's account and emails them an invite to sign in."
     >
       <div className="space-y-4">
@@ -387,7 +387,7 @@ function AddClientDialog({
             </>
           ) : (
             <>
-              <Plus className="h-4 w-4" /> Add client
+              <Plus className="h-4 w-4" /> Add customer
             </>
           )}
         </Button>

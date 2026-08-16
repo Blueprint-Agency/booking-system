@@ -305,7 +305,7 @@ function ClassRoster({
   return (
     <section className="mt-6 rounded-xl border border-border bg-card p-5 shadow-soft">
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-ink">Booked clients ({rows.length})</h2>
+        <h2 className="text-sm font-semibold text-ink">Booked customers ({rows.length})</h2>
         {rows.length > 0 && (
           <span className="text-xs text-muted">{attendedCount} checked in</span>
         )}
@@ -643,7 +643,7 @@ function PtDetail({ id }: { id: string }) {
     if (!api || !data) return;
     if (
       !confirm(
-        "Cancel this private session? Client bookings will be cancelled and credits returned.",
+        "Cancel this private session? Customer bookings will be cancelled and credits returned.",
       )
     ) {
       return;
@@ -730,10 +730,10 @@ function PtDetail({ id }: { id: string }) {
 
       <section className="rounded-xl border border-border bg-card p-5 shadow-soft">
         <h2 className="mb-3 text-sm font-semibold text-ink">
-          Clients ({data.clients.length})
+          Customers ({data.clients.length})
         </h2>
         {data.clients.length === 0 ? (
-          <p className="text-sm text-muted">No clients assigned.</p>
+          <p className="text-sm text-muted">No customers assigned.</p>
         ) : (
           <ul className="divide-y divide-border">
             {data.clients.map((cl) => (
@@ -1249,7 +1249,7 @@ function CorporateDetail({ id }: { id: string }) {
         }
       />
       <div className="grid gap-3 sm:grid-cols-3">
-        <Stat label="Client" value={data.client_name} />
+        <Stat label="Customer" value={data.client_name} />
         <Stat
           label="Supporting instructors"
           value={
@@ -1403,7 +1403,7 @@ function CorporateEditor({
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="space-y-1.5 sm:col-span-2">
-          <Label htmlFor="cor-client">Client name</Label>
+          <Label htmlFor="cor-client">Customer name</Label>
           <Input
             id="cor-client"
             value={clientName}

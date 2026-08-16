@@ -88,7 +88,7 @@ export default function PtRequestsPage() {
     <div className="mx-auto max-w-4xl space-y-6">
       <PageHeader
         title="PT Requests"
-        description="Triage client-submitted private session requests. Negotiate on WhatsApp, then schedule (or cancel)."
+        description="Triage customer-submitted private session requests. Negotiate on WhatsApp, then schedule (or cancel)."
       />
 
       <div className="rounded-lg border border-border bg-paper/60 px-3 py-2 text-xs text-muted">

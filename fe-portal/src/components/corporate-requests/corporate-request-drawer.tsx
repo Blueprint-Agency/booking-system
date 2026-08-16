@@ -59,7 +59,7 @@ export function CorporateRequestDrawer({
           </div>
         </div>
         <dl className="space-y-3 border-y border-border py-4 text-sm">
-          <Row label="Client email">{client.email}</Row>
+          <Row label="Customer email">{client.email}</Row>
           <Row label="Package">{pkg.name}</Row>
           {session && (
             <>

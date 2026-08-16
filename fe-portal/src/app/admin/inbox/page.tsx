@@ -27,7 +27,7 @@ function resolveItemLocationId(item: InboxItem): string | null {
 }
 
 const TYPE_LABELS: Record<InboxType, { label: string; tone: "accent" | "warning" | "cyan" | "neutral" }> = {
-  client_cancellation: { label: "Client cancellation", tone: "neutral" },
+  client_cancellation: { label: "Customer cancellation", tone: "neutral" },
   admin_cancel_class_pt: { label: "Admin cancel — class/PT", tone: "warning" },
   admin_cancel_workshop: { label: "Admin cancel — workshop", tone: "warning" },
 };

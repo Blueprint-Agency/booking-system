@@ -31,7 +31,7 @@ export function ClassDetailClient({
 
   function handleCancel() {
     alert(
-      `Class cancelled (mock).\n\n${confirmed.length} clients refunded automatically. Inbox notification generated.`
+      `Class cancelled (mock).\n\n${confirmed.length} customers refunded automatically. Inbox notification generated.`
     );
     setConfirmCancel(false);
     router.push("/admin/schedule");
@@ -102,14 +102,14 @@ export function ClassDetailClient({
         open={confirmCancel}
         onOpenChange={setConfirmCancel}
         title="Cancel this class?"
-        description="All confirmed clients will be automatically credited back. An Inbox notification will be generated for each refund."
+        description="All confirmed customers will be automatically credited back. An Inbox notification will be generated for each refund."
       >
         <DialogFooter>
           <Button variant="ghost" onClick={() => setConfirmCancel(false)}>
             Keep class
           </Button>
           <Button variant="danger" onClick={handleCancel}>
-            Cancel class & refund {confirmed.length} clients
+            Cancel class & refund {confirmed.length} customers
           </Button>
         </DialogFooter>
       </Dialog>

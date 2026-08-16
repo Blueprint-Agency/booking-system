@@ -152,7 +152,7 @@ export default function ClassPackagesPage() {
     <div className="mx-auto max-w-5xl">
       <PageHeader
         title="Classes"
-        description="Class packages clients can purchase. Trial Pass is one-time-only per client. Class scheduling happens on the Schedule page; cancellation policy lives in Global Policy."
+        description="Class packages customers can purchase. Trial Pass is one-time-only per customer. Class scheduling happens on the Schedule page; cancellation policy lives in Global Policy."
         actions={
           <Button onClick={() => setDialog({ kind: "create" })}>
             <Plus className="h-4 w-4" /> Add package
@@ -195,13 +195,13 @@ export default function ClassPackagesPage() {
             <div className="space-y-6">
               <PackageGroup
                 title="Trial Pass"
-                description="A one-time-only introductory pass. Each client can purchase at most one."
+                description="A one-time-only introductory pass. Each customer can purchase at most one."
                 packages={active.filter((p) => p.kind === "trial")}
                 onEdit={(pkg) => setDialog({ kind: "edit", pkg })}
                 onArchive={archive}
                 warning={
                   activeTrials.length > 1
-                    ? "Multiple active trial passes — clients will see the first."
+                    ? "Multiple active trial passes — customers will see the first."
                     : null
                 }
               />

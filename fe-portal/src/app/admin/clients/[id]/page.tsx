@@ -105,7 +105,7 @@ export default function ClientProfilePage({
     } catch (err) {
       setError(
         err instanceof ApiError && err.status === 404
-          ? "Client not found."
+          ? "Customer not found."
           : err instanceof ApiError
             ? `HTTP ${err.status}`
             : "Network error",
@@ -142,16 +142,16 @@ export default function ClientProfilePage({
         href="/admin/clients"
         className="mb-2 inline-flex items-center gap-1 text-sm text-muted hover:text-ink"
       >
-        <ArrowLeft className="h-3.5 w-3.5" /> All clients
+        <ArrowLeft className="h-3.5 w-3.5" /> All customers
       </Link>
 
       {loading ? (
         <div className="flex items-center justify-center gap-2 py-20 text-sm text-muted">
-          <Loader2 className="h-4 w-4 animate-spin" /> Loading client…
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading customer…
         </div>
       ) : error || !profile ? (
         <div className="rounded-xl border border-error/30 bg-error/5 p-8 text-center">
-          <p className="text-sm text-error">{error ?? "Could not load client."}</p>
+          <p className="text-sm text-error">{error ?? "Could not load customer."}</p>
           <Button size="sm" variant="ghost" onClick={load} className="mt-2">
             Retry
           </Button>
@@ -160,7 +160,7 @@ export default function ClientProfilePage({
         <div className="space-y-6">
           {!canEdit && (
             <div className="rounded-lg border border-border bg-paper/60 px-3 py-2 text-xs text-muted">
-              Read-only view — only admins can modify client packages and credits.
+              Read-only view — only admins can modify customer packages and credits.
             </div>
           )}
 
@@ -172,7 +172,7 @@ export default function ClientProfilePage({
                   Blocked {formatRelative(profile.deleted_at)}
                 </div>
                 <div className="mt-0.5 text-xs text-muted">
-                  This client cannot sign in. Bookings, packages, and credit
+                  This customer cannot sign in. Bookings, packages, and credit
                   history are preserved. Superadmins can unblock them.
                 </div>
               </div>
@@ -186,7 +186,7 @@ export default function ClientProfilePage({
                     setRestoring(true);
                     try {
                       await api.post(`/portal/admin/clients/${id}/restore`, {});
-                      toast.success("Client unblocked.");
+                      toast.success("Customer unblocked.");
                       await load();
                     } catch (err) {
                       toast.error(
@@ -451,7 +451,7 @@ export default function ClientProfilePage({
             if (!api) return;
             try {
               await api.del(`/portal/admin/clients/${id}`);
-              toast.success("Client blocked.");
+              toast.success("Customer blocked.");
               setDeleteOpen(false);
               await load();
             } catch (err) {
@@ -487,7 +487,7 @@ function BlockClientDialog({
       open
       onOpenChange={(o) => !o && onClose()}
       title={`Block ${name}?`}
-      description="The client will be locked out of the booking app and hidden from the directory. Bookings, packages, and credit history are kept. A superadmin can unblock them later."
+      description="The customer will be locked out of the booking app and hidden from the directory. Bookings, packages, and credit history are kept. A superadmin can unblock them later."
     >
       <form
         className="space-y-4"
@@ -530,7 +530,7 @@ function BlockClientDialog({
               </>
             ) : (
               <>
-                <ShieldOff className="h-4 w-4" /> Block client
+                <ShieldOff className="h-4 w-4" /> Block customer
               </>
             )}
           </Button>

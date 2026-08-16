@@ -76,7 +76,7 @@ function LocationScopeInfo() {
           </div>
           <div className="border-t border-border" />
           <p className="mt-2.5 text-xs leading-relaxed text-muted">
-            Everything else — packages, clients, staff, payroll &amp; policies — is{" "}
+            Everything else — packages, customers, staff, payroll &amp; policies — is{" "}
             <span className="font-medium text-ink">shared across all locations</span>.
           </p>
         </div>

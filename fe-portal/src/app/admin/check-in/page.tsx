@@ -107,11 +107,11 @@ export default function CheckInPage() {
     }
     if (match.checkInState === "attended") {
       const c = clients.find((x) => x.id === match.clientId);
-      setLastResult({ ok: false, msg: `${c?.name ?? "Client"} already checked in.` });
+      setLastResult({ ok: false, msg: `${c?.name ?? "Customer"} already checked in.` });
     } else {
       flipCheckIn(match.id, "attended");
       const c = clients.find((x) => x.id === match.clientId);
-      setLastResult({ ok: true, msg: `${c?.name ?? "Client"} checked in.` });
+      setLastResult({ ok: true, msg: `${c?.name ?? "Customer"} checked in.` });
     }
     setCode("");
   }
@@ -120,7 +120,7 @@ export default function CheckInPage() {
     <div>
       <PageHeader
         title="Check-in"
-        description="Front-desk daily driver. Scan QR codes or type the booking code (YS-XXXXXX). Both resolve client + session in one lookup."
+        description="Front-desk daily driver. Scan QR codes or type the booking code (YS-XXXXXX). Both resolve customer + session in one lookup."
       />
 
       {activeLocation && (
@@ -272,7 +272,7 @@ export default function CheckInPage() {
               </div>
             )}
             <div className="mt-3 text-[11px] text-muted">
-              Codes are case-insensitive. The system resolves both client and session — no
+              Codes are case-insensitive. The system resolves both customer and session — no
               "wrong session" error possible.
             </div>
           </div>

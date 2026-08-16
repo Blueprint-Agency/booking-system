@@ -86,7 +86,7 @@ export default function LocationsPage() {
       <div className="mx-auto max-w-5xl">
         <PageHeader
           title="Locations"
-          description="Studio addresses surfaced in the schedule, session detail pages, and on the client app."
+          description="Studio addresses surfaced in the schedule, session detail pages, and on the customer app."
         />
         <div className="rounded-xl border border-border bg-card px-6 py-12 text-center shadow-soft">
           <h2 className="text-sm font-semibold text-ink">Superadmin only</h2>
@@ -102,7 +102,7 @@ export default function LocationsPage() {
     <div className="mx-auto max-w-5xl">
       <PageHeader
         title="Locations"
-        description="Studio addresses surfaced in the schedule, session detail pages, and on the client app."
+        description="Studio addresses surfaced in the schedule, session detail pages, and on the customer app."
         actions={
           <Button onClick={() => setCreating(true)}>
             <Plus className="h-4 w-4" /> Add location

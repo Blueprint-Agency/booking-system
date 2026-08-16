@@ -66,7 +66,7 @@ export const NAV_ITEMS: NavItem[] = [
 
   // --- People (members + staff accounts) ---
   // Instructors are managed under Staff → Instructors tab (merged), not a separate item.
-  { group: "People", label: "Clients", href: "/admin/clients", icon: Users, scope: "both" },
+  { group: "People", label: "Customers", href: "/admin/clients", icon: Users, scope: "both" },
   // Admins reach Staff too — they can edit profiles of their own rank and below.
   // Invite/archive/unarchive/delete stay superadmin-only on the page and at the BE
   // (spec-instructor-leave-pools.md § Permissions).

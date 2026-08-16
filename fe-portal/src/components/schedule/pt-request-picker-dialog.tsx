@@ -64,7 +64,7 @@ export function PtRequestPickerDialog({
       ) : pending.length === 0 ? (
         <div className="space-y-3">
           <p className="text-sm text-muted">
-            No pending PT requests. Clients submit requests from their app.
+            No pending PT requests. Customers submit requests from their app.
           </p>
           <div className="flex justify-end">
             <Button variant="ghost" onClick={onClose}>
