@@ -43,9 +43,9 @@ function serialize(v: svc.AdminLeaveRequest) {
     decision_reason: r.decisionReason,
     decided_at: r.decidedAt,
     created_at: r.createdAt,
-    // Whether there is a certificate, never the key — reading it goes through
+    // Whether there is a Supporting Document, never the key — reading it goes through
     // the signed-URL route below.
-    has_certificate: r.medicalCertR2Key !== null,
+    has_supporting_document: r.supportingDocumentR2Key !== null,
   }
 }
 
@@ -56,12 +56,12 @@ const app = new Hono()
     const rows = await svc.listLeaveRequestsForAdmin(status === 'all' ? undefined : status)
     return c.json({ leave_requests: rows.map(serialize) })
   })
-  // A short-lived signed GET for the medical certificate. Same service the
+  // A short-lived signed GET for the Supporting Document. Same service the
   // instructor's own route calls — an admin caller passes its ownership check,
   // so there is one rule and no second copy of it.
-  .get('/:id/certificate', zValidator('param', idParam), async c =>
+  .get('/:id/document', zValidator('param', idParam), async c =>
     c.json(
-      await svc.medicalCertificateUrl(
+      await svc.supportingDocumentUrl(
         svc.leaveViewer(c.get('staffRow')),
         c.req.valid('param').id,
       ),

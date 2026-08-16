@@ -15,7 +15,7 @@ import { LEAVE_HALF_DAY_SHORT, LEAVE_TYPE_LABEL, type LeaveType } from "@/lib/le
  *
  * The backend decides what this can show: `detail` arrives null for a
  * colleague's leave when an instructor is looking, so the type, the reason, the
- * decision and the certificate are simply not in the response. This component
+ * decision and the Supporting Document are simply not in the response. This component
  * renders what it was given and hides nothing of its own.
  */
 
@@ -32,7 +32,7 @@ interface ApiLeaveCalendarEntry {
     reason: string;
     decision_reason: string | null;
     decided_by: string | null;
-    has_certificate: boolean;
+    has_supporting_document: boolean;
   } | null;
 }
 

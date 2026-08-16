@@ -49,8 +49,8 @@ interface ApiAdminLeaveRequest {
   reason: string;
   decision_reason: string | null;
   created_at: string;
-  /** Whether there is a medical certificate to ask the server for. */
-  has_certificate: boolean;
+  /** Whether there is a Supporting Document to ask the server for. */
+  has_supporting_document: boolean;
 }
 
 type Filter = LeaveStatus | "all";
@@ -139,14 +139,14 @@ export default function AdminLeavePage() {
     }
   }
 
-  /** The certificate is never in this payload — the server mints a short-lived
+  /** The document is never in this payload — the server mints a short-lived
    *  signed URL per click, and the object is unreachable without one. */
-  async function openCertificate(id: string) {
+  async function openDocument(id: string) {
     if (!api) return;
     try {
-      await openSignedUrl(api, `/portal/admin/leave/${id}/certificate`);
+      await openSignedUrl(api, `/portal/admin/leave/${id}/document`);
     } catch (err) {
-      toast.error(leaveErrorMessage(err, "Couldn't open that certificate"));
+      toast.error(leaveErrorMessage(err, "Couldn't open that document"));
     }
   }
 
@@ -257,13 +257,13 @@ export default function AdminLeavePage() {
                   </td>
                   <td className="px-3 py-2.5 text-muted">
                     {LEAVE_TYPE_LABEL[r.type]}
-                    {r.has_certificate && (
+                    {r.has_supporting_document && (
                       <button
                         type="button"
                         className="mt-0.5 flex items-center gap-1 text-xs text-accent hover:underline"
-                        onClick={() => void openCertificate(r.id)}
+                        onClick={() => void openDocument(r.id)}
                       >
-                        <Paperclip className="h-3 w-3" /> Certificate
+                        <Paperclip className="h-3 w-3" /> Document
                       </button>
                     )}
                   </td>

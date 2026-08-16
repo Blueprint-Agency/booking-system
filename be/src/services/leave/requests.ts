@@ -583,31 +583,31 @@ export async function transitionOwnLeaveRequest(
   return updated
 }
 
-// ── The medical certificate ────────────────────────────────────────────────
+// ── The Supporting Document ────────────────────────────────────────────────
 
 /** How long a signed link lives. Long enough to open, short enough that a copied
  *  URL in a chat window is worthless by the time anyone tries it. */
-export const MEDICAL_CERT_URL_TTL_SECONDS = 300
+export const SUPPORTING_DOCUMENT_URL_TTL_SECONDS = 300
 
 /** The bucket is optional in env (see lib/r2.ts), so both paths say so
  *  plainly rather than failing as an unexplained 500. */
 function requireBucket(): void {
   if (!R2_BUCKET) {
-    throw new AppError(422, 'certificate_storage_unavailable', {
-      message: 'Certificate storage is not configured. Ask an admin to set it up.',
+    throw new AppError(422, 'document_storage_unavailable', {
+      message: 'Document storage is not configured. Ask an admin to set it up.',
     })
   }
 }
 
 /**
- * Attach (or replace) the certificate on the instructor's OWN medical request.
+ * Attach (or replace) the Supporting Document on the instructor's OWN request.
  *
  * The row is fetched by id AND instructor, so there is no request but their own to
- * attach to. What the file may be is `rules.checkMedicalCertificate`'s call, and
+ * attach to. What the file may be is `rules.checkSupportingDocument`'s call, and
  * the key is written only after the object is safely in the bucket — a failed
  * upload leaves the row pointing at nothing rather than at a missing object.
  */
-export async function attachMedicalCertificate(input: {
+export async function attachSupportingDocument(input: {
   instructorId: string
   id: string
   contentType: string
@@ -620,7 +620,7 @@ export async function attachMedicalCertificate(input: {
     .limit(1)
   if (!row) throw new NotFoundError('leave_request_not_found')
 
-  const check = rules.checkMedicalCertificate({
+  const check = rules.checkSupportingDocument({
     leaveType: row.type,
     contentType: input.contentType,
     size: input.bytes.byteLength,
@@ -628,12 +628,12 @@ export async function attachMedicalCertificate(input: {
   if (!check.ok) throw new BadRequestError(check.code, { message: check.message })
   requireBucket()
 
-  const key = rules.medicalCertKey(row.instructorId, row.id, check.extension)
+  const key = rules.supportingDocumentKey(row.instructorId, row.id, check.extension)
   await putObject(key, input.bytes, input.contentType)
 
   const [updated] = await db
     .update(leaveRequests)
-    .set({ medicalCertR2Key: key, updatedAt: new Date() })
+    .set({ supportingDocumentR2Key: key, updatedAt: new Date() })
     .where(eq(leaveRequests.id, row.id))
     .returning()
   if (!updated) throw new NotFoundError('leave_request_not_found')
@@ -641,34 +641,34 @@ export async function attachMedicalCertificate(input: {
 }
 
 /**
- * A short-lived signed GET for one certificate.
+ * A short-lived signed GET for one Supporting Document.
  *
  * Same visibility rule as the calendar read (`listLeaveCalendar`): an admin or
  * superadmin sees any of them, an instructor only their own. The ownership check
  * comes BEFORE the "is there one" check, so a colleague cannot even learn
- * whether a certificate exists.
+ * whether a Supporting Document exists.
  */
-export async function medicalCertificateUrl(
+export async function supportingDocumentUrl(
   viewer: LeaveCalendarViewer,
   id: string,
 ): Promise<{ url: string; expires_in: number }> {
   const [row] = await db
-    .select({ instructorId: leaveRequests.instructorId, key: leaveRequests.medicalCertR2Key })
+    .select({ instructorId: leaveRequests.instructorId, key: leaveRequests.supportingDocumentR2Key })
     .from(leaveRequests)
     .where(eq(leaveRequests.id, id))
     .limit(1)
   if (!row) throw new NotFoundError('leave_request_not_found')
   if (viewer.role === 'instructor' && row.instructorId !== viewer.staffUserId) {
     throw new ForbiddenError('leave_not_yours', {
-      message: 'A medical certificate is visible to its own instructor and to admins only.',
+      message: 'A Supporting Document is visible to its own instructor and to admins only.',
     })
   }
-  if (!row.key) throw new NotFoundError('certificate_not_found')
+  if (!row.key) throw new NotFoundError('document_not_found')
   requireBucket()
 
   return {
-    url: await signedObjectUrl(row.key, MEDICAL_CERT_URL_TTL_SECONDS),
-    expires_in: MEDICAL_CERT_URL_TTL_SECONDS,
+    url: await signedObjectUrl(row.key, SUPPORTING_DOCUMENT_URL_TTL_SECONDS),
+    expires_in: SUPPORTING_DOCUMENT_URL_TTL_SECONDS,
   }
 }
 
@@ -720,9 +720,9 @@ export interface LeaveCalendarEntry {
     reason: string
     decision_reason: string | null
     decided_by: string | null
-    /** Whether there is a certificate, never its key — same as the admin queue.
-     *  Reading one goes through `medicalCertificateUrl`, which checks ownership. */
-    has_certificate: boolean
+    /** Whether there is a Supporting Document, never its key — as the admin queue.
+     *  Reading one goes through `supportingDocumentUrl`, which checks ownership. */
+    has_supporting_document: boolean
   } | null
 }
 
@@ -787,7 +787,7 @@ export async function listLeaveCalendar(
             reason: row.reason,
             decision_reason: row.decisionReason,
             decided_by: deciderName,
-            has_certificate: row.medicalCertR2Key !== null,
+            has_supporting_document: row.supportingDocumentR2Key !== null,
           }
         : null,
   }))

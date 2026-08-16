@@ -407,79 +407,90 @@ export function futureConflicts<T extends { ends_at: string }>(
   return conflicts.filter(c => Date.parse(c.ends_at) > now.getTime())
 }
 
-// ── Medical certificate ────────────────────────────────────────────────────
+// ── Supporting Document ────────────────────────────────────────────────────
 
 /** 5MB. Refused before a single byte reaches storage. */
-export const MEDICAL_CERT_MAX_BYTES = 5 * 1024 * 1024
+export const SUPPORTING_DOCUMENT_MAX_BYTES = 5 * 1024 * 1024
 
-/** The only three things a certificate may be, and the extension each is kept as. */
-export const MEDICAL_CERT_TYPES: Readonly<Record<string, string>> = {
+/** The only three things a Supporting Document may be, and the extension each is
+ *  kept as. */
+export const SUPPORTING_DOCUMENT_TYPES: Readonly<Record<string, string>> = {
   'image/jpeg': 'jpg',
   'image/png': 'png',
   'application/pdf': 'pdf',
 }
 
-export type MedicalCertRefusalCode =
-  | 'certificate_not_medical_leave'
-  | 'certificate_type_not_allowed'
-  | 'certificate_empty'
-  | 'certificate_too_large'
+export type SupportingDocumentRefusalCode =
+  | 'document_not_allowed_on_annual_leave'
+  | 'document_type_not_allowed'
+  | 'document_empty'
+  | 'document_too_large'
 
-export type MedicalCertCheck =
+export type SupportingDocumentCheck =
   | { ok: true; extension: string }
-  | { ok: false; code: MedicalCertRefusalCode; message: string }
+  | { ok: false; code: SupportingDocumentRefusalCode; message: string }
 
 /**
  * Whether this upload may be attached at all — the whole of the file rule, and
  * therefore the whole of what the route has to trust. The browser's `accept`
  * attribute is a convenience; this is the check.
  *
+ * A **medical or a study** request takes one — both have something to evidence,
+ * a certificate on one and a course confirmation on the other. Annual leave has
+ * nothing to show, so the document is refused there and only there. It is always
+ * OPTIONAL: the key derives from the request id, so the file can only arrive
+ * after the row exists.
+ *
  * The content type is what the client declared, which is why the object is put
  * in a bucket nothing can read without a signed URL: a mislabelled file is then
  * only ever shown back to the two people already allowed to see it.
  */
-export function checkMedicalCertificate(input: {
+export function checkSupportingDocument(input: {
   leaveType: LeaveType
   contentType: string
   size: number
-}): MedicalCertCheck {
-  if (input.leaveType !== 'medical') {
+}): SupportingDocumentCheck {
+  if (input.leaveType === 'annual') {
     return {
       ok: false,
-      code: 'certificate_not_medical_leave',
-      message: 'Only a medical leave request takes a certificate.',
+      code: 'document_not_allowed_on_annual_leave',
+      message: 'Only a medical or study leave request takes a Supporting Document.',
     }
   }
   // `image/png; charset=binary` is still image/png.
-  const extension = MEDICAL_CERT_TYPES[(input.contentType.split(';')[0] ?? '').trim().toLowerCase()]
+  const extension =
+    SUPPORTING_DOCUMENT_TYPES[(input.contentType.split(';')[0] ?? '').trim().toLowerCase()]
   if (!extension) {
     return {
       ok: false,
-      code: 'certificate_type_not_allowed',
-      message: 'A certificate has to be a JPG, PNG or PDF.',
+      code: 'document_type_not_allowed',
+      message: 'A Supporting Document has to be a JPG, PNG or PDF.',
     }
   }
   if (input.size < 1) {
-    return { ok: false, code: 'certificate_empty', message: 'That file is empty.' }
+    return { ok: false, code: 'document_empty', message: 'That file is empty.' }
   }
-  if (input.size > MEDICAL_CERT_MAX_BYTES) {
+  if (input.size > SUPPORTING_DOCUMENT_MAX_BYTES) {
     return {
       ok: false,
-      code: 'certificate_too_large',
-      message: `A certificate can be at most ${MEDICAL_CERT_MAX_BYTES / (1024 * 1024)}MB.`,
+      code: 'document_too_large',
+      message: `A Supporting Document can be at most ${SUPPORTING_DOCUMENT_MAX_BYTES / (1024 * 1024)}MB.`,
     }
   }
   return { ok: true, extension }
 }
 
 /** Where the object lives. Deterministic, so re-uploading replaces rather than
- *  orphans — and guessable on purpose is fine: the bucket is private. */
-export function medicalCertKey(
+ *  orphans — and guessable on purpose is fine: the bucket is private.
+ *
+ *  The key is STORED on the request, never recomputed, so objects written under
+ *  the old prefix keep resolving and only new uploads take this one. */
+export function supportingDocumentKey(
   instructorId: string,
   requestId: string,
   extension: string,
 ): string {
-  return `medical-certificates/${instructorId}/${requestId}.${extension}`
+  return `supporting-documents/${instructorId}/${requestId}.${extension}`
 }
 
 // ── The instructor's own transitions ───────────────────────────────────────

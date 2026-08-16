@@ -51,8 +51,10 @@ export const leaveRequests = pgTable(
       onDelete: 'restrict',
     }),
     decidedAt: timestamp('decided_at', { withTimezone: true }),
-    /** Private-bucket object key for a medical certificate (upload lands later). */
-    medicalCertR2Key: text('medical_cert_r2_key'),
+    /** Private-bucket object key for the Supporting Document (upload lands later,
+     *  and only on a medical or study request). Stored rather than recomputed, so
+     *  objects written under the old prefix keep resolving. */
+    supportingDocumentR2Key: text('supporting_document_r2_key'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

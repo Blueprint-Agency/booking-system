@@ -63,13 +63,13 @@ interface ApiLeaveRequest {
   reason: string;
   decision_reason: string | null;
   created_at: string;
-  /** The key is never sent — only whether there is a certificate to ask for. */
-  has_certificate: boolean;
+  /** The key is never sent — only whether there is a Supporting Document. */
+  has_supporting_document: boolean;
 }
 
 /** What the server accepts. The `accept` attribute below is the same list as a
  *  convenience; the refusal that matters comes from the backend. */
-const CERT_ACCEPT = "image/jpeg,image/png,application/pdf";
+const DOCUMENT_ACCEPT = "image/jpeg,image/png,application/pdf";
 
 /** Spelled out rather than CSS-capitalised: "who's away" does not survive
  *  `text-transform: capitalize` intact. */
@@ -124,9 +124,9 @@ export default function InstructorLeavePage() {
   const [endDate, setEndDate] = useState("");
   const [halfDay, setHalfDay] = useState<HalfDay>("none");
   const [reason, setReason] = useState("");
-  // Optional, always: a medical request with no certificate is still filed. The
-  // second input is the "I'll bring the MC later" path from the history table.
-  const certInput = useRef<HTMLInputElement>(null);
+  // Optional, always: a request with no Supporting Document is still filed. The
+  // second input is the "I'll bring the document later" path from the history table.
+  const documentInput = useRef<HTMLInputElement>(null);
   const attachInput = useRef<HTMLInputElement>(null);
   const [attachTo, setAttachTo] = useState<string | null>(null);
 
@@ -152,20 +152,20 @@ export default function InstructorLeavePage() {
     void load();
   }, [load]);
 
-  /** The upload is its own call, so a certificate that is refused (wrong type,
+  /** The upload is its own call, so a document that is refused (wrong type,
    *  too big) never costs the request that was already filed. */
-  async function uploadCertificate(id: string, file: File) {
+  async function uploadDocument(id: string, file: File) {
     if (!api) return;
     const form = new FormData();
     form.append("file", file);
-    await api.post(`/portal/instructor/leave/${id}/certificate`, form);
+    await api.post(`/portal/instructor/leave/${id}/document`, form);
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!api) return;
     setSubmitting(true);
-    const certificate = type === "medical" ? (certInput.current?.files?.[0] ?? null) : null;
+    const file = type === "annual" ? null : (documentInput.current?.files?.[0] ?? null);
     try {
       const created = await api.post<{ id: string }>("/portal/instructor/leave", {
         type,
@@ -175,15 +175,15 @@ export default function InstructorLeavePage() {
         half_day: requestedHalf,
         reason: reason.trim(),
       });
-      if (certificate) {
+      if (file) {
         try {
-          await uploadCertificate(created.id, certificate);
-          toast.success("Leave request submitted with your certificate.");
+          await uploadDocument(created.id, file);
+          toast.success("Leave request submitted with your Supporting Document.");
         } catch (err) {
           // The request stands; only the file failed. Say so, and leave the
           // "Attach" action in the history row to try again with.
           toast.error(
-            leaveErrorMessage(err, "Request submitted, but the certificate didn't upload"),
+            leaveErrorMessage(err, "Request submitted, but the document didn't upload"),
           );
         }
       } else {
@@ -193,7 +193,7 @@ export default function InstructorLeavePage() {
       setEndDate("");
       setHalfDay("none");
       setReason("");
-      if (certInput.current) certInput.current.value = "";
+      if (documentInput.current) documentInput.current.value = "";
       await load();
     } catch (err) {
       toast.error(leaveErrorMessage(err, "Couldn't submit that request"));
@@ -202,7 +202,7 @@ export default function InstructorLeavePage() {
     }
   }
 
-  /** Attach after the fact — file the leave at 6am, produce the MC later. */
+  /** Attach after the fact — file the leave at 6am, produce the document later. */
   async function handleAttachPicked(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     const id = attachTo;
@@ -211,22 +211,22 @@ export default function InstructorLeavePage() {
     if (!file || !id) return;
     setBusyId(id);
     try {
-      await uploadCertificate(id, file);
-      toast.success("Certificate attached.");
+      await uploadDocument(id, file);
+      toast.success("Supporting Document attached.");
       await load();
     } catch (err) {
-      toast.error(leaveErrorMessage(err, "Couldn't attach that certificate"));
+      toast.error(leaveErrorMessage(err, "Couldn't attach that document"));
     } finally {
       setBusyId(null);
     }
   }
 
-  async function openCertificate(id: string) {
+  async function openDocument(id: string) {
     if (!api) return;
     try {
-      await openSignedUrl(api, `/portal/instructor/leave/${id}/certificate`);
+      await openSignedUrl(api, `/portal/instructor/leave/${id}/document`);
     } catch (err) {
-      toast.error(leaveErrorMessage(err, "Couldn't open that certificate"));
+      toast.error(leaveErrorMessage(err, "Couldn't open that document"));
     }
   }
 
@@ -371,16 +371,16 @@ export default function InstructorLeavePage() {
               />
             </div>
 
-            {/* Medical only — annual leave has nothing to evidence. Optional:
-                file the request now and attach the MC from the list later. */}
-            {type === "medical" && (
+            {/* Medical and study only — annual leave has nothing to evidence.
+                Optional: file the request now and attach the document later. */}
+            {type !== "annual" && (
               <div className="space-y-1.5">
-                <Label htmlFor="leave-certificate">Medical certificate (optional)</Label>
+                <Label htmlFor="leave-document">Supporting Document (optional)</Label>
                 <Input
-                  id="leave-certificate"
-                  ref={certInput}
+                  id="leave-document"
+                  ref={documentInput}
                   type="file"
-                  accept={CERT_ACCEPT}
+                  accept={DOCUMENT_ACCEPT}
                   className="h-auto py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-warm file:px-2.5 file:py-1 file:text-xs file:text-ink"
                 />
                 <p className="text-xs text-muted">
@@ -440,18 +440,18 @@ export default function InstructorLeavePage() {
                       </td>
                       <td className="px-3 py-2.5 text-muted">
                         {LEAVE_TYPE_LABEL[r.type]}
-                        {r.type === "medical" && (
+                        {r.type !== "annual" && (
                           <button
                             type="button"
                             className="mt-0.5 flex items-center gap-1 text-xs text-accent hover:underline"
                             onClick={() =>
-                              r.has_certificate
-                                ? void openCertificate(r.id)
+                              r.has_supporting_document
+                                ? void openDocument(r.id)
                                 : (setAttachTo(r.id), attachInput.current?.click())
                             }
                           >
                             <Paperclip className="h-3 w-3" />
-                            {r.has_certificate ? "Certificate" : "Attach MC"}
+                            {r.has_supporting_document ? "Document" : "Attach document"}
                           </button>
                         )}
                       </td>
@@ -492,12 +492,12 @@ export default function InstructorLeavePage() {
         </>
       )}
 
-      {/* One picker for every "Attach MC" in the table above — the row it
+      {/* One picker for every "Attach document" in the table above — the row it
           belongs to is `attachTo`, set just before it is clicked. */}
       <input
         ref={attachInput}
         type="file"
-        accept={CERT_ACCEPT}
+        accept={DOCUMENT_ACCEPT}
         hidden
         onChange={handleAttachPicked}
       />

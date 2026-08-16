@@ -3,10 +3,10 @@ import {
   COMMITTED_STATUSES,
   HALF_DAY_BOUNDARY_HOUR,
   MEDICAL_BACKDATE_DAYS,
-  MEDICAL_CERT_MAX_BYTES,
+  SUPPORTING_DOCUMENT_MAX_BYTES,
   TAKEN_STATUSES,
   checkAdminLeaveDecision,
-  checkMedicalCertificate,
+  checkSupportingDocument,
   checkLeaveSubmission,
   checkOwnLeaveTransition,
   countLeaveDays,
@@ -16,7 +16,7 @@ import {
   leavePoolFigures,
   leaveWindow,
   leaveYearOf,
-  medicalCertKey,
+  supportingDocumentKey,
   checkRemainingAdjustment,
   poolDays,
   poolForRemaining,
@@ -820,10 +820,10 @@ const base = { today: '2026-08-10', pool: 14, committedDays: 0 } as const
   )
 }
 
-// -- the medical certificate rule --------------------------------------------
+// -- the Supporting Document rule ---------------------------------------------
 {
   const ok = (contentType: string, size = 1024) =>
-    checkMedicalCertificate({ leaveType: 'medical', contentType, size })
+    checkSupportingDocument({ leaveType: 'medical', contentType, size })
 
   // the three allowed types, and the extension each is stored as
   assert.deepStrictEqual(ok('image/jpeg'), { ok: true, extension: 'jpg' })
@@ -836,34 +836,50 @@ const base = { today: '2026-08-10', pool: 14, committedDays: 0 } as const
   for (const type of ['image/gif', 'text/html', 'image/svg+xml', 'application/zip', '']) {
     const res = ok(type)
     assert.strictEqual(res.ok, false, `${type} must be refused`)
-    if (!res.ok) assert.strictEqual(res.code, 'certificate_type_not_allowed')
+    if (!res.ok) assert.strictEqual(res.code, 'document_type_not_allowed')
   }
 
+  // a study request takes one too — a course confirmation is the whole point of
+  // the rename, and the rule accepts it on exactly the two types with a reason
+  assert.deepStrictEqual(
+    checkSupportingDocument({ leaveType: 'study', contentType: 'application/pdf', size: 10 }),
+    { ok: true, extension: 'pdf' },
+  )
+  assert.deepStrictEqual(
+    checkSupportingDocument({ leaveType: 'medical', contentType: 'image/jpeg', size: 10 }),
+    { ok: true, extension: 'jpg' },
+  )
+
   // annual leave has nothing to evidence — the type gate is in the rule, not the UI
-  const annual = checkMedicalCertificate({
+  const annual = checkSupportingDocument({
     leaveType: 'annual',
     contentType: 'application/pdf',
     size: 10,
   })
   assert.strictEqual(annual.ok, false)
-  if (!annual.ok) assert.strictEqual(annual.code, 'certificate_not_medical_leave')
+  if (!annual.ok) {
+    assert.strictEqual(annual.code, 'document_not_allowed_on_annual_leave')
+    // the refusal carries the new name, not the old one
+    assert.match(annual.message, /Supporting Document/)
+    assert.doesNotMatch(annual.message, /certificate/i)
+  }
 
   // 5MB exactly is fine; one byte more is not
-  assert.strictEqual(MEDICAL_CERT_MAX_BYTES, 5 * 1024 * 1024)
-  assert.strictEqual(ok('image/jpeg', MEDICAL_CERT_MAX_BYTES).ok, true)
-  const tooBig = ok('image/jpeg', MEDICAL_CERT_MAX_BYTES + 1)
+  assert.strictEqual(SUPPORTING_DOCUMENT_MAX_BYTES, 5 * 1024 * 1024)
+  assert.strictEqual(ok('image/jpeg', SUPPORTING_DOCUMENT_MAX_BYTES).ok, true)
+  const tooBig = ok('image/jpeg', SUPPORTING_DOCUMENT_MAX_BYTES + 1)
   assert.strictEqual(tooBig.ok, false)
-  if (!tooBig.ok) assert.strictEqual(tooBig.code, 'certificate_too_large')
+  if (!tooBig.ok) assert.strictEqual(tooBig.code, 'document_too_large')
 
   const empty = ok('image/jpeg', 0)
   assert.strictEqual(empty.ok, false)
-  if (!empty.ok) assert.strictEqual(empty.code, 'certificate_empty')
+  if (!empty.ok) assert.strictEqual(empty.code, 'document_empty')
 
   // the key is deterministic — a second upload replaces the first
-  const key = medicalCertKey('instr-1', 'req-1', 'pdf')
-  assert.strictEqual(key, 'medical-certificates/instr-1/req-1.pdf')
-  assert.strictEqual(medicalCertKey('instr-1', 'req-1', 'pdf'), key)
-  assert.notStrictEqual(medicalCertKey('instr-2', 'req-1', 'pdf'), key)
+  const key = supportingDocumentKey('instr-1', 'req-1', 'pdf')
+  assert.strictEqual(key, 'supporting-documents/instr-1/req-1.pdf')
+  assert.strictEqual(supportingDocumentKey('instr-1', 'req-1', 'pdf'), key)
+  assert.notStrictEqual(supportingDocumentKey('instr-2', 'req-1', 'pdf'), key)
 }
 
 console.log('leave rules.test ok')

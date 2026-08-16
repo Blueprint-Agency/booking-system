@@ -133,7 +133,7 @@ export type Api = ReturnType<typeof makeApi>;
 
 /**
  * Open a short-lived signed URL the backend mints on demand (medical
- * certificates). The tab is opened synchronously so the click's user gesture
+ * Supporting Documents). The tab is opened synchronously so the click's user gesture
  * still counts — a `window.open` after an `await` is what popup blockers eat.
  */
 export async function openSignedUrl(api: Api, path: string): Promise<void> {

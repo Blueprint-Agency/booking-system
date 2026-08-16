@@ -120,6 +120,10 @@ _Avoid_: balance, available, left, unused
 Morning or afternoon, costing 0.5 days, permitted only on a Leave Request covering a single date. The boundary is 13:00 Singapore time.
 _Avoid_: partial day, AM/PM leave
 
+**Supporting Document**:
+One optional file an instructor attaches to a medical or study Leave Request — never to an annual one, which has nothing to evidence. JPG, PNG or PDF up to 5MB, kept in a private bucket and read back only through a short-lived signed link. One request holds one; a second upload replaces the first.
+_Avoid_: medical certificate, MC, attachment, proof
+
 **Occupying**:
 The property that makes an instructor unschedulable on a date. Pending and approved Leave Requests both occupy; everything else does not. Leave occupies a person, never a room.
 _Avoid_: blocking, unavailable, busy

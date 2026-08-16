@@ -11,13 +11,13 @@ export const r2 = new S3Client({
 })
 
 /**
- * The one bucket. Workshop covers, instructor photos and medical certificates
+ * The one bucket. Workshop covers, instructor photos and Supporting Documents
  * all live here.
  *
  * It is served by `R2_PUBLIC_URL`, so ANYTHING written here is readable by
- * anyone who holds the object key — including a certificate. The key is the
- * only thing standing between a health document and the public, which is why
- * `medicalCertKey` uses two UUIDs and why no read path serialises it. The
+ * anyone who holds the object key — including a Supporting Document. The key is
+ * the only thing standing between a health document and the public, which is why
+ * `supportingDocumentKey` uses two UUIDs and why no read path serialises it. The
  * signed URL below still expires, but it guards nothing an unsigned URL would
  * not also reach.
  *

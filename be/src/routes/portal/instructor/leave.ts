@@ -3,7 +3,7 @@ import { bodyLimit } from 'hono/body-limit'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as svc from '../../../services/leave/requests'
-import { MEDICAL_CERT_MAX_BYTES } from '../../../services/leave/rules'
+import { SUPPORTING_DOCUMENT_MAX_BYTES } from '../../../services/leave/rules'
 import { BadRequestError } from '../../../shared/errors'
 
 /**
@@ -44,7 +44,7 @@ function serialize(r: svc.LeaveRequestRow) {
     created_at: r.createdAt,
     // The key itself is never sent anywhere — only whether there is one, so the
     // portal knows to offer the link that mints a signed URL.
-    has_certificate: r.medicalCertR2Key !== null,
+    has_supporting_document: r.supportingDocumentR2Key !== null,
   }
 }
 
@@ -73,7 +73,7 @@ const app = new Hono()
     return c.json(serialize(row), 201)
   })
   /**
-   * Attach a medical certificate — multipart, field name `file`.
+   * Attach a Supporting Document — multipart, field name `file`.
    *
    * The upload comes THROUGH the API rather than straight to storage from the
    * browser: type and size are then checked on the server, and the private
@@ -82,14 +82,14 @@ const app = new Hono()
    * content-length header is only a claim.
    */
   .post(
-    '/:id/certificate',
+    '/:id/document',
     bodyLimit({
-      maxSize: MEDICAL_CERT_MAX_BYTES,
+      maxSize: SUPPORTING_DOCUMENT_MAX_BYTES,
       onError: c =>
         c.json(
           {
-            error: 'certificate_too_large',
-            message: `A certificate can be at most ${MEDICAL_CERT_MAX_BYTES / (1024 * 1024)}MB.`,
+            error: 'document_too_large',
+            message: `A Supporting Document can be at most ${SUPPORTING_DOCUMENT_MAX_BYTES / (1024 * 1024)}MB.`,
           },
           413,
         ),
@@ -99,11 +99,11 @@ const app = new Hono()
       const { id } = c.req.valid('param')
       const file = (await c.req.formData()).get('file')
       if (!file || typeof file === 'string') {
-        throw new BadRequestError('certificate_required', {
+        throw new BadRequestError('document_required', {
           message: 'Attach a JPG, PNG or PDF file.',
         })
       }
-      const row = await svc.attachMedicalCertificate({
+      const row = await svc.attachSupportingDocument({
         instructorId: c.get('staffUserId'), // forced — his own request only
         id,
         contentType: file.type,
@@ -115,9 +115,9 @@ const app = new Hono()
   )
   // A signed GET, minted per click. The service refuses anyone but the owning
   // instructor (admins reach the same service through the admin route).
-  .get('/:id/certificate', zValidator('param', z.object({ id: z.string().uuid() })), async c =>
+  .get('/:id/document', zValidator('param', z.object({ id: z.string().uuid() })), async c =>
     c.json(
-      await svc.medicalCertificateUrl(
+      await svc.supportingDocumentUrl(
         svc.leaveViewer(c.get('staffRow')),
         c.req.valid('param').id,
       ),
