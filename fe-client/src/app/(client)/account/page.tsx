@@ -22,6 +22,9 @@ import type { ApiBooking } from "@/components/account/class-bookings";
 
 const PAGE_SIZE = 5;
 
+/** What a Dormant plan says on both member surfaces (spec §8). */
+const ACTIVATION_LINE = "Starts when you book your first class";
+
 export default function AccountOverview() {
   const { user } = useUser();
   const api = useApi();
@@ -29,6 +32,7 @@ export default function AccountOverview() {
     classCredits,
     isUnlimited: unlimited,
     unlimitedExpiresAt,
+    unlimitedDormant,
     pt1on1,
     pt2on1,
     packages: livePackages,
@@ -82,11 +86,13 @@ export default function AccountOverview() {
           <p className="text-xs uppercase tracking-wider text-muted mt-1">
             Class credits
           </p>
-          {unlimited && unlimitedExpiresAt && (
+          {unlimited && (unlimitedExpiresAt ? (
             <p className="text-xs text-muted mt-1">
               Valid until {formatDate(unlimitedExpiresAt)}
             </p>
-          )}
+          ) : unlimitedDormant ? (
+            <p className="text-xs text-muted mt-1">{ACTIVATION_LINE}</p>
+          ) : null)}
         </div>
         <div className="rounded-2xl bg-paper border border-ink/10 p-6">
           <UserRound className="w-5 h-5 text-accent-deep mb-3" />
@@ -228,7 +234,9 @@ function PackageCard({
         <div className="min-w-0">
           <p className="font-medium text-ink truncate">{pkg.name}</p>
           <p className="text-xs text-muted mt-1">
-            {pkg.expiresAt ? `Expires ${formatDate(pkg.expiresAt)}` : "No expiry"}
+            {pkg.dormant
+              ? ACTIVATION_LINE
+              : `Expires ${formatDate(pkg.expiresAt!)}`}
           </p>
         </div>
         <div className="text-right shrink-0">

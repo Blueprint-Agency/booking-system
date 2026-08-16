@@ -39,6 +39,20 @@ export function isDormant(p: Pick<PackageValidity, 'kind' | 'expiresAt'>): boole
 }
 
 /**
+ * The expiry dialog's blank field means **return this plan to Dormant** (§8) —
+ * the escape hatch the one-way activation rule depends on, the way an admin
+ * undoes an activation caused by a class the studio itself cancelled. Only an
+ * Unlimited Plan can ever be Dormant, so a blank expiry is refused for every
+ * other kind. Returned rather than thrown so this stays pure; `adjust.ts` maps it.
+ */
+export function setExpiryRefusal(
+  kind: PackageValidity['kind'],
+  expiresAt: Date | null,
+): 'only_unlimited_can_be_dormant' | null {
+  return expiresAt === null && kind !== 'unlimited' ? 'only_unlimited_can_be_dormant' : null
+}
+
+/**
  * A package is consumable (active) when not expired AND (unlimited OR balance > 0).
  *
  * A Dormant plan is active: it is bought, paid for and waiting, and its first

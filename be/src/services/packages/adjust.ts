@@ -8,7 +8,7 @@ import { db } from '../../db'
 import { clientPackages } from '../../db/schema/packages'
 import { manualAdjustments } from '../../db/schema/ledger'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
-import { computeActive } from './validity'
+import { computeActive, setExpiryRefusal } from './validity'
 
 export type ClientPackageRow = typeof clientPackages.$inferSelect
 
@@ -192,7 +192,14 @@ export async function setPackageExpiry(input: SetExpiryInput): Promise<ClientPac
       .limit(1)
     if (!pkg) throw new NotFoundError('client_package_not_found')
 
-    const fmt = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : 'no expiry')
+    // A blank expiry returns the plan to Dormant, and only an Unlimited Plan
+    // can be Dormant (§8). The rule lives in ./validity so the dialog and the
+    // route stay presentation and plumbing.
+    const refusal = setExpiryRefusal(pkg.kind, input.expiresAt)
+    if (refusal) throw new BadRequestError(refusal)
+
+    // A null expiry means Dormant and nothing else — "no expiry" has left the domain.
+    const fmt = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : 'Dormant')
     const reason = `Expiry changed from ${fmt(pkg.expiresAt)} to ${fmt(input.expiresAt)}: ${input.reason.trim()}`
 
     // Extending an expired package's expiry must make its credits usable again

@@ -6,6 +6,7 @@ import {
   crossLocationMonths,
   crossLocationPriceSgd,
   isDormant,
+  setExpiryRefusal,
   type PackageValidity,
 } from './validity'
 
@@ -219,5 +220,39 @@ assert.strictEqual(crossLocationPriceSgd(6, '30.00'), '180.00', 'six months at $
 assert.strictEqual(crossLocationPriceSgd(3, '30.00'), '90.00', 'three months at $30 is $90')
 assert.strictEqual(crossLocationPriceSgd(3, '29.90'), '89.70', 'a cent-precise rate stays exact')
 assert.strictEqual(crossLocationPriceSgd(0, '30.00'), '0.00', 'no months left is no charge')
+
+// --- returning a plan to Dormant (§8) ---------------------------------------
+// A blank expiry means "return this plan to Dormant", which only an Unlimited
+// Plan can ever be. It is the escape hatch the one-way activation rule depends on.
+assert.strictEqual(
+  setExpiryRefusal('unlimited', null),
+  null,
+  'an Unlimited Plan may be returned to Dormant',
+)
+assert.strictEqual(
+  setExpiryRefusal('credit_bundle', null),
+  'only_unlimited_can_be_dormant',
+  'a Credit Bundle cannot be Dormant, so a blank expiry is refused',
+)
+assert.strictEqual(
+  setExpiryRefusal('trial', null),
+  'only_unlimited_can_be_dormant',
+  'a trial cannot be Dormant',
+)
+assert.strictEqual(
+  setExpiryRefusal('pt', null),
+  'only_unlimited_can_be_dormant',
+  'a PT package cannot be Dormant',
+)
+assert.strictEqual(
+  setExpiryRefusal('credit_bundle', LATER),
+  null,
+  'a dated expiry is accepted on every kind',
+)
+assert.strictEqual(
+  setExpiryRefusal('unlimited', LATER),
+  null,
+  'the common path — a plan given an end date',
+)
 
 console.log('packages/validity.test ok')

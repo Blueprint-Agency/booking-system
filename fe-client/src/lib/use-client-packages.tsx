@@ -23,6 +23,8 @@ export interface LivePackage {
   purchasedAt: string;
   amountPaidSgd: string;
   active: boolean;
+  /** Backend-derived. Never re-tested here as "unlimited and no end date". */
+  dormant: boolean;
   sessionType: "1on1" | "2on1" | null;
 }
 
@@ -37,6 +39,7 @@ export interface ClientPackagesData {
     total: number;
     isUnlimited: boolean;
     unlimitedExpiresAt: string | null;
+    unlimitedDormant: boolean;
     unlimitedLocation: UnlimitedLocation | null;
   };
   ptSessions: { oneOnOne: number; twoOnOne: number };
@@ -47,6 +50,8 @@ export interface ClientPackagesValue {
   classCredits: number;
   isUnlimited: boolean;
   unlimitedExpiresAt: string | null;
+  /** The member holds a Dormant plan — backend-derived, never re-tested here. */
+  unlimitedDormant: boolean;
   unlimitedLocation: UnlimitedLocation | null;
   pt1on1: number;
   pt2on1: number;
@@ -67,6 +72,7 @@ interface RawClientPackage {
   purchased_at: string;
   amount_paid_sgd: string;
   active: boolean;
+  dormant: boolean;
   session_type: "1on1" | "2on1" | null;
 }
 interface RawPackagesResponse {
@@ -75,6 +81,7 @@ interface RawPackagesResponse {
     trial_used: boolean;
     has_active_unlimited: boolean;
     unlimited_location: UnlimitedLocation | null;
+    dormant: boolean;
     has_active_bundle_credits: boolean;
     pt_1on1_remaining: number;
     pt_2on1_remaining: number;
@@ -93,6 +100,7 @@ function mapPackagesResponse(raw: RawPackagesResponse): ClientPackagesData {
     trial_used: false,
     has_active_unlimited: false,
     unlimited_location: null,
+    dormant: false,
     has_active_bundle_credits: false,
     pt_1on1_remaining: 0,
     pt_2on1_remaining: 0,
@@ -107,7 +115,9 @@ function mapPackagesResponse(raw: RawPackagesResponse): ClientPackagesData {
     if (!isActive(p)) continue;
     if (p.kind === "credit_bundle" || p.kind === "trial") {
       classTotal += p.credits_or_sessions_remaining ?? 0;
-    } else if (p.kind === "unlimited") {
+    } else if (p.kind === "unlimited" && p.expires_at) {
+      // Only an Activated plan has a date to show. A member holding an Activated
+      // plan plus a Dormant renewal must not have the date overwritten by the null.
       unlimitedExpiresAt = p.expires_at;
     }
   }
@@ -124,6 +134,7 @@ function mapPackagesResponse(raw: RawPackagesResponse): ClientPackagesData {
       purchasedAt: p.purchased_at,
       amountPaidSgd: p.amount_paid_sgd,
       active: p.active,
+      dormant: p.dormant,
       sessionType: p.session_type,
     }));
 
@@ -132,6 +143,7 @@ function mapPackagesResponse(raw: RawPackagesResponse): ClientPackagesData {
       total: classTotal,
       isUnlimited: Boolean(ent.has_active_unlimited),
       unlimitedExpiresAt,
+      unlimitedDormant: Boolean(ent.dormant),
       unlimitedLocation: ent.unlimited_location ?? null,
     },
     ptSessions: { oneOnOne: ent.pt_1on1_remaining ?? 0, twoOnOne: ent.pt_2on1_remaining ?? 0 },
@@ -214,6 +226,7 @@ export function ClientPackagesProvider({ children }: { children: ReactNode }) {
     classCredits: data?.classCredits?.total ?? 0,
     isUnlimited: data?.classCredits?.isUnlimited ?? false,
     unlimitedExpiresAt: data?.classCredits?.unlimitedExpiresAt ?? null,
+    unlimitedDormant: data?.classCredits?.unlimitedDormant ?? false,
     unlimitedLocation: data?.classCredits?.unlimitedLocation ?? null,
     pt1on1: data?.ptSessions?.oneOnOne ?? 0,
     pt2on1: data?.ptSessions?.twoOnOne ?? 0,
