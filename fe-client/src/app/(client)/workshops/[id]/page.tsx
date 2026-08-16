@@ -345,6 +345,7 @@ export default function WorkshopDetailPage() {
                     }}
                     context="book a workshop"
                     gateHref={`/workshops/${workshop.id}`}
+                    priceSgd={priceForSelected?.amount ?? 0}
                     className="block rounded-full bg-ink text-paper w-full py-3 text-sm font-medium mt-1 hover:bg-ink/90 transition-colors text-center"
                     loadingLabel="Redirecting…"
                   >

@@ -640,6 +640,7 @@ function BundleCard({
           target={{ kind: "package", packageKind: "class", packageId: pkg.id }}
           context="buy a package"
           gateHref="/packages"
+          priceSgd={pkg.effective_price_sgd}
           className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
         >
           Purchase
@@ -688,6 +689,7 @@ function UnlimitedCard({
           target={{ kind: "package", packageKind: "class", packageId: pkg.id }}
           context="buy a package"
           gateHref="/packages"
+          priceSgd={pkg.effective_price_sgd}
           className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
         >
           Purchase
@@ -875,6 +877,7 @@ function PtCard({ pkg }: { pkg: ApiPtPackage }) {
         target={{ kind: "package", packageKind: "pt", packageId: pkg.id }}
         context="buy a package"
         gateHref="/packages"
+        priceSgd={pkg.effective_price_sgd}
         className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
       >
         Purchase

@@ -226,7 +226,7 @@ const app = new Hono()
         amount_sgd: (totalCents / 100).toFixed(2),
       },
       success_url: `${CLIENT_URL}/booking/confirmation?type=workshop&workshop_id=${workshop_id}&workshop_tier_id=${workshop_tier_id}&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${CLIENT_URL}/workshops/${workshop_id}?cancelled=1`,
+      cancel_url: `${CLIENT_URL}/checkout?workshop=${workshop_id}&tier=${workshop_tier_id}&cancelled=1`,
     })
 
     return c.json({ url: session.url })

@@ -16,10 +16,11 @@ type BuyTarget =
 type AuthGateContext = "buy a package" | "book a workshop";
 
 /**
- * One-click purchase button. Skips the cart/review page entirely:
- * gates on auth, POSTs straight to the checkout endpoint, then either
- * redirects to Stripe Checkout (paid) or jumps to the confirmation page
- * (free trial / free workshop, which the BE grants immediately).
+ * Purchase button. Gates on auth, then branches on the effective price:
+ * above zero it pushes to the /checkout review page (order summary, promo
+ * code, Pay); at zero it POSTs straight to the checkout endpoint, which the
+ * BE grants immediately (free trial / free workshop / a package a Promotion
+ * drives to $0) and lands on the confirmation page.
  *
  * `gateHref` is where the login modal sends the user to come back after
  * signing in (the original page they were on).
@@ -28,6 +29,7 @@ export function BuyButton({
   target,
   context,
   gateHref,
+  priceSgd,
   className,
   children,
   loadingLabel = "Redirecting…",
@@ -35,6 +37,8 @@ export function BuyButton({
   target: BuyTarget;
   context: AuthGateContext;
   gateHref: string;
+  /** Effective price — what the member actually pays. Decides the branch. */
+  priceSgd: string | number;
   className?: string;
   children: React.ReactNode;
   loadingLabel?: string;
@@ -121,7 +125,19 @@ export function BuyButton({
             requireAuth(gateHref);
             return;
           }
-          if (!busy) void start();
+          if (busy) return;
+          // A NaN price reads as paid on purpose — bad catalogue data must never
+          // grant something for free.
+          if (!(Number(priceSgd) <= 0)) {
+            setBusy(true);
+            router.push(
+              target.kind === "workshop"
+                ? `/checkout?workshop=${target.workshopId}${target.tierId ? `&tier=${target.tierId}` : ""}`
+                : `/checkout?package=${target.packageId}&kind=${target.packageKind}`,
+            );
+            return;
+          }
+          void start();
         }}
         className={cn(
           className,
