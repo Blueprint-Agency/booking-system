@@ -10,8 +10,8 @@ const globalPatch = z.object({
   pt_window_hours: z.number().int().min(0).optional(),
   leave_carry_over_cap_days: z.number().int().min(0).max(365).optional(),
   // Both Leave Caps are at least 1: zero would freeze annual leave studio-wide.
-  cover_group_leave_cap: z.number().int().min(1).max(365).optional(),
-  study_leave_cap: z.number().int().min(1).max(365).optional(),
+  cover_group_leave_cap: z.number().int().min(1).max(99).optional(),
+  study_leave_cap: z.number().int().min(1).max(99).optional(),
   // The whole Cover Group, as one ticked set of instructor staff user ids.
   cover_group_staff_ids: z.array(z.string().uuid()).optional(),
 })
@@ -69,10 +69,12 @@ const app = new Hono()
           ? { coverGroupLeaveCap: body.cover_group_leave_cap }
           : {}),
         ...(body.study_leave_cap !== undefined ? { studyLeaveCap: body.study_leave_cap } : {}),
+        ...(body.cover_group_staff_ids !== undefined
+          ? { coverGroupStaffIds: body.cover_group_staff_ids }
+          : {}),
       },
       staffId,
     )
-    if (body.cover_group_staff_ids !== undefined) await svc.setCoverGroup(body.cover_group_staff_ids)
     c.set('auditTarget' as any, { table: 'global_policy', id: row.id })
     return c.json({ ...serializeGlobal(row), cover_group_staff_ids: await svc.readCoverGroup() })
   })

@@ -482,8 +482,12 @@ export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<Leave
     // submissions studio-wide, which at this scale is cheaper than any correct
     // alternative. The applicant's own row is always inside the set, so the
     // narrower lock `leavePoolsFor` takes next is already held.
-    await tx
-      .select({ id: instructors.staffUserId })
+    // ponytail: an annual request from a NON-member locks the group's rows for
+    // nothing — deciding otherwise needs the applicant's membership before the
+    // lock. Fold it into the where clause as an EXISTS if submissions ever
+    // contend.
+    const locked = await tx
+      .select({ id: instructors.staffUserId, inCoverGroup: instructors.inCoverGroup })
       .from(instructors)
       .where(
         input.type === 'study'
@@ -526,11 +530,6 @@ export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<Leave
     // membership, the two caps, and every OTHER instructor's occupying leave
     // overlapping the requested dates — and `rules.checkLeaveCaps` decides which
     // of those rows each cap counts, and whether the peak clears it.
-    const [me] = await tx
-      .select({ inCoverGroup: instructors.inCoverGroup })
-      .from(instructors)
-      .where(eq(instructors.staffUserId, input.instructorId))
-      .limit(1)
     const [caps] = await tx
       .select({
         coverGroup: globalPolicy.coverGroupLeaveCap,
@@ -570,7 +569,9 @@ export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<Leave
     }))
     const capped = rules.checkLeaveCaps({
       type: input.type,
-      inCoverGroup: me?.inCoverGroup ?? false,
+      // The applicant's row is always inside the locked set, so their Cover
+      // Group membership is already read — no second query for it.
+      inCoverGroup: locked.find(r => r.id === input.instructorId)?.inCoverGroup ?? false,
       window: rules.leaveWindow(input.startDate, input.endDate, halfDay),
       peers,
       coverGroupCap: caps.coverGroup,
@@ -948,12 +949,6 @@ export async function decideLeaveRequest(input: DecideLeaveInput): Promise<Leave
 // admin one gets both guarantees from `emailEveryAdmin`, which also owns who
 // "the admins" are.
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-
-/** A plain date read as itself. Never parsed as an instant, so nothing shifts. */
-const formatDay = (d: rules.PlainDate) =>
-  `${Number(d.slice(8, 10))} ${MONTHS[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}`
-
 const HALF_DAY_LABEL: Record<LeaveRequestRow['halfDay'], string> = {
   none: '',
   morning: ' (morning)',
@@ -963,8 +958,8 @@ const HALF_DAY_LABEL: Record<LeaveRequestRow['halfDay'], string> = {
 /** A half day says which half, so an admin isn't approving a day they think is whole. */
 const formatDates = (r: LeaveRequestRow) =>
   (r.startDate === r.endDate
-    ? formatDay(r.startDate)
-    : `${formatDay(r.startDate)} – ${formatDay(r.endDate)}`) + HALF_DAY_LABEL[r.halfDay]
+    ? rules.formatLeaveDate(r.startDate)
+    : `${rules.formatLeaveDate(r.startDate)} – ${rules.formatLeaveDate(r.endDate)}`) + HALF_DAY_LABEL[r.halfDay]
 
 async function staffName(staffUserId: string, fallback: string): Promise<string> {
   const [staff] = await db

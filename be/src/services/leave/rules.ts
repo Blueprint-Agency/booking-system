@@ -460,8 +460,7 @@ export function peakLeaveAway(
 }
 
 /** "Alice", "Alice and Cara", "Alice, Bob and Cara". */
-const nameList = (names: readonly string[]): string =>
-  names.length < 2 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`
+const nameList = new Intl.ListFormat('en', { type: 'conjunction' })
 
 export interface LeaveCapInput {
   type: LeaveType
@@ -497,6 +496,9 @@ export function checkLeaveCaps(
 ): { ok: true } | { ok: false; code: 'leave_cap_reached'; message: string } {
   if (input.type === 'medical') return { ok: true }
 
+  // Which cap was reached is deliberately NOT in the message: naming the study
+  // cap would say the named colleagues are on study leave, and the leave
+  // calendar redacts a colleague's Leave Type from every instructor.
   const counted: { peers: LeaveCapPeer[]; cap: number }[] = []
   if (input.inCoverGroup) {
     counted.push({ peers: input.peers.filter(p => p.inCoverGroup), cap: input.coverGroupCap })
@@ -513,7 +515,7 @@ export function checkLeaveCaps(
       ok: false,
       code: 'leave_cap_reached',
       message:
-        `${nameList(away.map(p => p.instructorName))} ${away.length === 1 ? 'is' : 'are'} ` +
+        `${nameList.format(away.map(p => p.instructorName))} ${away.length === 1 ? 'is' : 'are'} ` +
         `already on leave on ${formatLeaveDate(sgToday(at))}. At most ${cap} ` +
         `${cap === 1 ? 'instructor' : 'instructors'} can be away at once.`,
     }
