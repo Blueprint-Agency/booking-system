@@ -22,17 +22,61 @@ _Avoid_: pack, class pack, points
 The one Location an Unlimited Plan covers, chosen by the member at purchase. Only an Unlimited Plan has one; no other kind of plan carries a Location.
 _Avoid_: home branch, primary location, base studio
 
+**Cross-Location Add-On**:
+A paid extension to one Unlimited Plan that makes it Cover the other Location as well as its Home Location. Priced per month of the plan it extends, rounded up to a whole month. It belongs to that one plan, not to the member: it expires with the plan, waits Dormant with the plan, and a member holding two plans buys one per plan.
+_Avoid_: cross-branch top-up, second branch unlock, upgrade, dual-location pass
+
 **Covers**:
-The relation between a plan and a Location — the plan permits a free booking there. An Unlimited Plan covers its Home Location and no other.
+The relation between a plan and a Location — the plan permits a free booking there. An Unlimited Plan covers its Home Location; it also covers the other Location while it carries a Cross-Location Add-On.
 _Avoid_: includes, allows, valid at
 
+**Duration**:
+How long an Unlimited Plan runs, counted in whole calendar months. A 6-month plan Activated on 15 January ends on 15 July, not 180 days later. Where a month has no matching day the end date falls on the last day of that month — 31 August plus 6 months ends 28 February.
+_Avoid_: length, term, validity, duration days
+
 **Dormant**:
-An Unlimited Plan that is paid for but has not started counting down, because the member has not yet booked a class with it. A renewal bought before the current plan expires waits dormant behind it. Only an Unlimited Plan can be Dormant — every other kind of plan starts counting down at purchase. Contrast **Activated** — clock running, end date fixed.
+An Unlimited Plan bought while the member already holds a live one. It is paid for, but its clock has not started — it waits behind the plan in front. A plan bought when the member holds no live plan is **not** Dormant; its clock starts at purchase. Only an Unlimited Plan can ever be Dormant. Contrast **Activated** — clock running, end date fixed.
 _Avoid_: pending, inactive, unused, scheduled, queued
 
 **Activation**:
-The moment a Dormant Plan becomes Activated: the first confirmed class booking the plan pays for. It happens once and never reverses on its own; only staff can return a plan to Dormant. The plan's end date is fixed at that moment, counted from that day.
+The moment a Dormant Plan starts its clock: the first confirmed class booking that plan pays for, which can only happen once the plan in front has expired. The end date is fixed at that moment, one Duration forward from that day. A member who stops attending keeps the plan waiting and loses none of it. Activation happens once and never reverses on its own; only staff can return a plan to Dormant.
 _Avoid_: start, redemption, kick-off, going live
+
+### Discounts
+
+**List Price**:
+What a product cost on the day it was bought, before any Promotion or Promo Code. Recorded on the purchase itself and never rewritten, so a later change to the catalogue cannot restate what a member was charged last year. List Price minus Promotion minus Promo Code is the amount paid.
+_Avoid_: original price, full price, RRP, catalogue price, price
+
+**Promotion**:
+A price cut the studio publishes on one product. It applies itself at purchase while its window is open, and the member types nothing. Contrast a **Promo Code**, which the member must type.
+_Avoid_: promo, sale, offer, deal, discount
+
+**Promo Code**:
+A price cut the member must type at checkout to receive. One code reaches across products, and it may be capped in total and is always capped at one use per member. Contrast a **Promotion**, which applies itself.
+_Avoid_: promo, coupon, voucher, discount code
+
+**Redemption**:
+One member's single use of one Promo Code. It is Held when their checkout begins and Consumed when their payment succeeds. A member never holds two on the same code.
+_Avoid_: use, usage, claim, application
+
+**Hold**:
+The claim a Redemption places on a Promo Code while a checkout is in progress. It occupies one of the code's places, and it lapses by itself when the checkout is abandoned. Nothing releases it by hand.
+_Avoid_: reservation, lock, pending, soft-booked
+
+### Refunds
+
+**Refund**:
+Money returned to a member for one purchase, always the whole amount — there is no such thing as a partial one. It never describes a credit going back to a wallet: a cancelled booking returns a credit or a session, and calling that a refund confuses money with entitlement.
+_Avoid_: partial refund, refund a credit, reimbursement, chargeback, revoke
+
+**Void**:
+What a Refund does to the purchase it paid for — the entitlement ends at that moment and every booking on it that has not yet happened is cancelled. Contrast **Expired**, the clock running out, and **Dormant**, the clock not yet started. Only a Refund voids; nothing else does.
+_Avoid_: cancel, revoke, deactivate, reverse, nullify
+
+**Untouched**:
+The property that makes a purchase refundable without a warning: no class it paid for has been attended or no-showed. A booked class that has not yet been held leaves a purchase Untouched, because refunding simply cancels it. A no-show does not — the class ran and the seat was held. A purchase that is no longer Untouched can still be refunded, but only by an admin who has been told and chosen to anyway.
+_Avoid_: unused, unconsumed, clean, fresh, pristine
 
 ### Instructor leave
 
@@ -79,6 +123,14 @@ _Avoid_: partial day, AM/PM leave
 **Occupying**:
 The property that makes an instructor unschedulable on a date. Pending and approved Leave Requests both occupy; everything else does not. Leave occupies a person, never a room.
 _Avoid_: blocking, unavailable, busy
+
+**Cover Group**:
+The instructors an admin has marked as covering each other, so that they must not all be away at the same time. One studio-wide set, and an instructor is either in it or not. It is the set a Leave Cap counts over; it grants nothing and takes nothing away.
+_Avoid_: box, no-overlap box, team, pod, squad
+
+**Leave Cap**:
+The greatest number of instructors from one set who may be away at the same moment. The studio sets it. It is measured as a peak across instants, not a headcount over dates, so leave that never coincides never reaches it. Two exist: one over the Cover Group, counting every Leave Type, and one over all instructors, counting study leave only. Medical leave counts toward a cap and is never refused by one.
+_Avoid_: limit, quota, threshold, max concurrent leave
 
 ### The four ways a Leave Request ends
 
