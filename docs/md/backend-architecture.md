@@ -848,7 +848,7 @@ Lets us dark-launch deferred features (e.g. waitlist) and toggle non-critical su
 | updated_at | timestamptz | not null, default now() |
 | updated_by_staff_id | uuid | FK → staff_users.id |
 
-The prior `promo_codes_enabled` flag is **removed**. Promotions (per `fe-client-features.md` §6.1, `admin-restructure.md` §5d, §19) are launch-day functionality modelled directly in the `promotions` table (§4d). The fe-client checkout's typed-code input remains non-functional in v1 — see §8 for the deferred typed-promo-code surface (separate feature from the curated promotions table).
+The prior `promo_codes_enabled` flag is **removed**. Promotions (per `fe-client-features.md` §6.1, `admin-restructure.md` §5d, §19) are launch-day functionality modelled directly in the `promotions` table (§4d). Promo Codes — the surface where a member types a code — are their own tables and their own service (`spec-pre-launch-batch.md` §9–§11, migration `0016`), and are a distinct mechanism from the `promotions` table rather than a variant of it.
 
 **Read pattern:** `lib/feature-flags-cache.ts` loads all rows at boot into an in-memory map; admin toggle (`PATCH /api/v1/portal/admin/feature-flags/:key`) updates DB + invalidates cache (process-local — multi-instance deploys would need a pub/sub trigger, deferred).
 
@@ -1042,7 +1042,7 @@ Run idempotently on fresh deployment:
 - All routes in §2: `routes/portal/admin/*`, `routes/portal/instructor/*` (read-only views), `routes/client/*`, `routes/public/*`, `routes/webhooks/*`.
 - All cron handlers in §5 (run via `node-cron`), including the new **`pt-request-expiry`** hourly sweep.
 - Referral chain populated AND reward-grant logic wired (see §7 Referral conversion crediting).
-- **Curated promotions** (admin-published, best-price-wins resolved at purchase) — see §4d `promotions`. Typed promo codes remain deferred (out of scope below).
+- **Promotions** (admin-published, best-price-wins resolved at purchase) — see §4d `promotions`. **Promo Codes** (typed by the member, crossing products, capped) ship separately in migration `0016` — see `spec-pre-launch-batch.md` §9–§11.
 - **Trial Pass** as a first-class `class_packages.kind` with server-enforced one-per-client.
 - **Multi-day workshops** with derived tier capacity and per-day waitlist scaffolding (waitlist *promotion* behaviour itself remains deferred).
 - **Workspace scoping** — `granted_location_ids` filter on all workspace-scoped portal reads.
@@ -1056,7 +1056,7 @@ Run idempotently on fresh deployment:
 - BullMQ + Redis for durable Stripe refund retries — `node-cron` handles non-critical jobs in v1; the refund queue lands when refund automation is fully wired.
 
 **Out of scope for v1 (gated by `feature_flags` if needed):**
-- **Typed promo codes at checkout.** v1 ships **curated promotions** (admin-published per package/workshop, auto-applied best-price-wins) via the `promotions` table (§4d) — these are launch-day functionality. What remains deferred is the **typed promo-code** surface in the fe-client checkout (`SADHANA20`, `FRIEND10` style codes that a client types). Treat the input as non-functional in v1. If kept later: add `promo_codes (code unique, kind=fixed_sgd|percent, amount, valid_from, valid_to, max_uses, used_count, status)` and a `promo_redemptions` ledger; resolution would compose with the curated `promotions` table (best-of-both or stacked — TBD).
+- ~~Typed promo codes at checkout.~~ **Superseded — Promo Codes ship.** See `spec-pre-launch-batch.md` §9–§11 and migration `0016`. The model built is **not** the one sketched here: there is no used-count on the code row (a second source of truth that drifts) and no valid-from window (a code does nothing until someone hands it out; `archived` covers "made, not yet running"). Three tables — `promo_codes`, `promo_code_products` (scope, no FK on `product_id`), `promo_code_redemptions` (the ledger, one row per member per code) — with the rules in `services/packages/promo-codes.ts` and admin CRUD in `services/packages/promo-code-admin.ts`. A Promo Code is typed and crosses products; a **Promotion** (§4d) applies itself to one product inside a window. The two are distinct mechanisms and `be/CONTEXT.md` § Discounts is the glossary. Redeeming a code at checkout is wired separately.
 - **Class waitlist.** `fe-client-features.md` §Booking Rules mentions "Full → Join Waitlist" with seat-available email + time-bound claim CTA. v1 UI shows "Full" with no waitlist CTA. If kept later: add `waitlist_entries (client_id, class_id|workshop_tier_id, joined_at, offered_at, offer_expires_at, status=waiting|offered|claimed|expired|cancelled)`.
 - **WhatsApp / SMS / push notifications.** Email-only in v1.
 - **Multi-tenant SaaS surface.** This backend serves Yoga Sadhana exclusively; no tenant scoping.

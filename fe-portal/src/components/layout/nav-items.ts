@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Tag,
+  Ticket,
   DoorOpen,
   Shield,
   Layers,
@@ -59,6 +60,10 @@ export const NAV_ITEMS: NavItem[] = [
   { group: "Packages", label: "Workshops", href: "/admin/packages/workshops", icon: GraduationCap, scope: "global" },
   { group: "Packages", label: "Private Sessions", href: "/admin/private-sessions", icon: UserRound, scope: "global" },
   { group: "Packages", label: "Corporate", href: "/admin/packages/corporate", icon: Briefcase, scope: "global" },
+  // A Promo Code crosses products, so it gets a page of its own rather than a
+  // tab inside one package's editor — unlike a Promotion, which belongs to
+  // exactly one product and is edited there (spec-pre-launch-batch.md §11).
+  { group: "Packages", label: "Promo Codes", href: "/admin/packages/promo-codes", icon: Ticket, scope: "global" },
 
   // --- Corporate (workspace-AGNOSTIC; no location_id until scheduled, so NOT
   // filtered by the workspace switcher — lives in its own group, not the location zone) ---

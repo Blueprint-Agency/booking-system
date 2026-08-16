@@ -22,6 +22,23 @@ export const promotionParentEnum = pgEnum('promotion_parent', ['class_package', 
 export const promotionKindEnum = pgEnum('promotion_kind', ['percent', 'special_price'])
 export const promotionStatusEnum = pgEnum('promotion_status', ['active', 'archived'])
 
+// Promo Codes (spec-pre-launch-batch.md §9–§11). A Promo Code is typed by the
+// member, reaches across products and is capped; a Promotion applies itself to
+// one product inside a window. Distinct mechanisms, distinct tables, distinct
+// enums — see be/CONTEXT.md § Discounts.
+// No `special_price` kind: a code spans many products, so "this costs $89
+// instead" cannot mean anything across them.
+export const promoCodeKindEnum = pgEnum('promo_code_kind', ['percent', 'amount'])
+export const promoCodeStatusEnum = pgEnum('promo_code_status', ['active', 'archived'])
+export const promoCodeProductEnum = pgEnum('promo_code_product', ['class_package', 'pt_package', 'workshop'])
+// held → the checkout claimed a place; consumed → payment succeeded;
+// refunded → the money went back and the place is free again.
+export const promoCodeRedemptionStatusEnum = pgEnum('promo_code_redemption_status', [
+  'held',
+  'consumed',
+  'refunded',
+])
+
 // Schedule
 export const lifecycleEnum = pgEnum('lifecycle', ['active', 'cancelled'])
 // Class-type difficulty (§ catalog). Values mirror the fe-portal `ClassTypeDifficulty`
@@ -123,6 +140,10 @@ export type ClientPackageKind = (typeof clientPackageKindEnum.enumValues)[number
 export type ClassPackageKind = (typeof classPackageKindEnum.enumValues)[number]
 export type PromotionParent = (typeof promotionParentEnum.enumValues)[number]
 export type PromotionKind = (typeof promotionKindEnum.enumValues)[number]
+export type PromoCodeKind = (typeof promoCodeKindEnum.enumValues)[number]
+export type PromoCodeStatus = (typeof promoCodeStatusEnum.enumValues)[number]
+export type PromoCodeProduct = (typeof promoCodeProductEnum.enumValues)[number]
+export type PromoCodeRedemptionStatus = (typeof promoCodeRedemptionStatusEnum.enumValues)[number]
 export type PtRequestStatus = (typeof ptRequestStatusEnum.enumValues)[number]
 export type CorporateRequestStatus = (typeof corporateRequestStatusEnum.enumValues)[number]
 export type BookingKind = (typeof bookingKindEnum.enumValues)[number]

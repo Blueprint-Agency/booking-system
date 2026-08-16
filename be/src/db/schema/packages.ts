@@ -10,6 +10,7 @@ import {
   uniqueIndex,
   check,
   boolean,
+  primaryKey,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { clients, staffUsers } from './identity'
@@ -22,6 +23,10 @@ import {
   promotionParentEnum,
   promotionKindEnum,
   promotionStatusEnum,
+  promoCodeKindEnum,
+  promoCodeStatusEnum,
+  promoCodeProductEnum,
+  promoCodeRedemptionStatusEnum,
 } from '../enums'
 
 // ---------- class_packages (admin catalogue, §4d, §5) ----------
@@ -141,6 +146,123 @@ export const promotions = pgTable(
           AND ${table.specialPriceSgd} IS NOT NULL
           AND ${table.percentOff} IS NULL)
       `,
+    ),
+  }),
+)
+
+// ---------- promo_codes (spec-pre-launch-batch.md §9) ----------
+// A Promo Code is typed by the member, reaches across products and is capped.
+// A Promotion (above) applies itself to one product inside a window. The two
+// share a shape and nothing else, so they get separate tables rather than one
+// table with a nullable code column every query would have to filter on.
+//
+// No `starts_at`: a code does nothing until someone hands it out, and
+// `archived` already covers "made, not yet running".
+export const promoCodes = pgTable(
+  'promo_codes',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    // Stored normalised — trimmed and upper-cased. Generated and custom codes
+    // share this one namespace behind this one unique index, so a custom code
+    // cannot collide with a generated one by construction.
+    code: text('code').notNull(),
+    label: text('label').notNull(),
+    kind: promoCodeKindEnum('kind').notNull(),
+    percentOff: integer('percent_off'),
+    amountOffSgd: numeric('amount_off_sgd', { precision: 10, scale: 2 }),
+    /** null means uncapped. */
+    maxRedemptions: integer('max_redemptions'),
+    /** null means never expires. */
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    /** true means no promo_code_products rows — enforced in the service, not here. */
+    appliesToAll: boolean('applies_to_all').notNull().default(false),
+    status: promoCodeStatusEnum('status').notNull().default('active'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    createdByStaffId: uuid('created_by_staff_id')
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: 'restrict' }),
+  },
+  table => ({
+    codeUnique: uniqueIndex('promo_codes_code_unique').on(table.code),
+    kindFields: check(
+      'promo_codes_kind_fields',
+      sql`
+        (${table.kind} = 'percent'
+          AND ${table.percentOff} IS NOT NULL
+          AND ${table.percentOff} BETWEEN 1 AND 99
+          AND ${table.amountOffSgd} IS NULL)
+        OR
+        (${table.kind} = 'amount'
+          AND ${table.amountOffSgd} IS NOT NULL
+          AND ${table.amountOffSgd} > 0
+          AND ${table.percentOff} IS NULL)
+      `,
+    ),
+    codeFormat: check('promo_codes_code_format', sql`${table.code} ~ '^[A-Z0-9-]{3,24}$'`),
+    maxPositive: check(
+      'promo_codes_max_positive',
+      sql`${table.maxRedemptions} IS NULL OR ${table.maxRedemptions} > 0`,
+    ),
+  }),
+)
+
+// ---------- promo_code_products (scope rows) ----------
+// `product_id` carries NO foreign key, exactly like promotions.parent_id — the
+// parent table varies, so referential integrity sits in the service layer.
+// Scoping is at workshop level, never workshop tier. Corporate packages are
+// absent from the enum entirely: corporate is direct-pay and not scopable.
+export const promoCodeProducts = pgTable(
+  'promo_code_products',
+  {
+    promoCodeId: uuid('promo_code_id')
+      .notNull()
+      .references(() => promoCodes.id, { onDelete: 'cascade' }),
+    productType: promoCodeProductEnum('product_type').notNull(),
+    productId: uuid('product_id').notNull(),
+  },
+  table => ({
+    pk: primaryKey({
+      name: 'promo_code_products_pkey',
+      columns: [table.promoCodeId, table.productType, table.productId],
+    }),
+  }),
+)
+
+// ---------- promo_code_redemptions ----------
+// One member's single use of one Promo Code. Held when their checkout begins,
+// Consumed when payment succeeds. A used place is
+// `status = 'consumed' OR held_until > now()`, so an abandoned Hold stops
+// counting on its own — nothing sweeps it.
+export const promoCodeRedemptions = pgTable(
+  'promo_code_redemptions',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    promoCodeId: uuid('promo_code_id')
+      .notNull()
+      .references(() => promoCodes.id, { onDelete: 'restrict' }),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id, { onDelete: 'restrict' }),
+    status: promoCodeRedemptionStatusEnum('status').notNull(),
+    /** When the Hold lapses. Set to the payment session's own expiry. */
+    heldUntil: timestamp('held_until', { withTimezone: true }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    /** null on a $0 grant, which skips the payment provider entirely. */
+    stripePaymentIntentId: text('stripe_payment_intent_id'),
+    /** The money actually taken off, frozen. */
+    discountSgd: numeric('discount_sgd', { precision: 10, scale: 2 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  table => ({
+    // The one-use-per-member rule. It also makes the Hold idempotent: a member
+    // who abandons and retries updates their own row. This takes its partial
+    // form (WHERE status <> 'refunded') in the refunds ticket, which is what
+    // lets a refunded use be returned without deleting the evidence.
+    oncePerClient: uniqueIndex('promo_code_redemptions_code_client_unique').on(
+      table.promoCodeId,
+      table.clientId,
     ),
   }),
 )

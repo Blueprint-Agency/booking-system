@@ -35,7 +35,7 @@ Per `admin-restructure.md` Overview + §15a, admin surfaces partition into three
 
 | Bucket | Surfaces | Gate |
 |---|---|---|
-| **Global (superadmin-only)** | Locations, Rooms, Class Types, Class Packages, Workshops, PT Packages, Promotions, Global Policy, Notifications, Waiver, Staff | `requireRole('superadmin')` on the entire router |
+| **Global (superadmin-only)** | Locations, Rooms, Class Types, Class Packages, Workshops, PT Packages, Promotions, Promo Codes, Global Policy, Notifications, Waiver, Staff | `requireRole('superadmin')` on the entire router |
 | **Workspace-scoped** | Schedule, Check-in, Inbox | `requireRole('admin', 'superadmin')` **+ `requireWorkspaceScope`** middleware (below). Reads filter by `granted_location_ids`; writes reject if the target `location_id` is not in the set. |
 | **Workspace-agnostic** | PT Requests, Clients (read-only for admin) | `requireRole('admin', 'superadmin')`. No location filter. |
 
@@ -126,6 +126,22 @@ Promotions are nested under their parent (class package, PT package, or workshop
 **Best-price-wins is server-side at purchase.** Admin does not pick "the active" promotion — every windowed `status='active'` row is a candidate. See `services/promotions/resolve.ts:bestPriceFor(parent_type, parent_id)`.
 
 **Validation warnings (non-blocking).** When a promotion's effective price is higher than the parent's regular price, the API returns `200` with a `warnings: ['promotion_higher_than_regular']` field so the fe surfaces it but allows the write — best-price-wins simply ignores the row at purchase.
+
+### `promo-codes.ts` (superadmin-only — `spec-pre-launch-batch.md` §9–§11)
+
+**Not nested, unlike `promotions.ts` above.** A Promotion belongs to exactly one product so its editor lives inside that product's dialog; a Promo Code crosses products and cannot, so it gets a top-level router and a page of its own under Packages. Rules live in `services/packages/promo-codes.ts` (pure — refusals returned, not thrown); the database half is `services/packages/promo-code-admin.ts`.
+
+| Method | Path | Effect |
+|---|---|---|
+| GET | `/promo-codes` | List, `?status=active\|archived`. Each row carries `redemption_count` and `terms_frozen`. |
+| GET | `/promo-codes/products` | The products a code may be scoped to. **Corporate packages are absent entirely** — not an unchecked box. Workshops appear at workshop level, never tier. |
+| GET | `/promo-codes/:id` | One code with its scope rows |
+| POST | `/promo-codes` | `{ code?, label, kind: 'percent'\|'amount', percent_off?, amount_off_sgd?, max_redemptions?, expires_at?, applies_to_all, products[] }`. Omit `code` and one is generated from `ABCDEFGHJKMNPQRSTUVWXYZ23456789` (8 chars, no `0`/`O`/`1`/`I`/`L`), retrying on the unique violation. Custom text is normalised (trimmed, upper-cased) and must match `^[A-Z0-9-]{3,24}$`. `max_redemptions` and `expires_at` are independently nullable — all four combinations are legal. |
+| PATCH | `/promo-codes/:id` | Label, expiry, cap and product list are editable for the code's whole life. `code` / `kind` / `percent_off` / `amount_off_sgd` are accepted **only until the first Redemption**, then `409 promo_code_terms_frozen` — changing either rewrites terms a member has accepted. |
+| POST | `/promo-codes/:id/archive` | Refuses new Redemptions and leaves held places to lapse. The row is never deleted. |
+| POST | `/promo-codes/:id/unarchive` | Back to `active` |
+
+**Two invariants the database cannot hold, enforced in the service.** `applies_to_all = true` means *no* scope rows (`400 promo_code_scope_conflict` / `promo_code_scope_empty`) — it spans rows. And `promo_code_products.product_id` carries no foreign key, exactly like `promotions.parent_id`, so existence is checked at write (`400 promo_code_product_not_found`).
 
 ### `schedule.ts` (workspace-scoped)
 | Method | Path | Effect |

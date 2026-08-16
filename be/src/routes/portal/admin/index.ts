@@ -10,6 +10,7 @@ import policy from './policy'
 import classPackages from './class-packages'
 import ptPackages from './pt-packages'
 import corporatePackages from './corporate-packages'
+import promoCodes from './promo-codes'
 import workshops from './workshops'
 import schedule from './schedule'
 import ptSessions from './pt-sessions'
@@ -55,6 +56,8 @@ const app = new Hono()
   .use('/class-packages/*', superadminOnly)
   .use('/pt-packages/*', superadminOnly)
   .use('/corporate-packages/*', superadminOnly)
+  // Promo Codes are catalogue governance, like the products they cut the price of.
+  .use('/promo-codes/*', superadminOnly)
   .use('/corporate-sessions/*', superadminOnly)
   .use('/bookings/*', superadminOnly)
   .use('/notifications/*', superadminOnly)
@@ -94,6 +97,7 @@ const app = new Hono()
   .route('/class-packages', classPackages)
   .route('/pt-packages', ptPackages)
   .route('/corporate-packages', corporatePackages)
+  .route('/promo-codes', promoCodes)
   .route('/workshops', workshops)
   .route('/schedule', schedule)
   .route('/pt-sessions', ptSessions)
