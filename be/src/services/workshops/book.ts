@@ -105,6 +105,8 @@ export interface BookWorkshopInput {
   amountSgd: string
   /** frozen promotion applied at purchase; null if none. */
   appliedPromotionId?: string | null
+  /** frozen Promo Code the member typed at purchase (§11); null if none. */
+  appliedPromoCodeId?: string | null
 }
 
 /**
@@ -151,6 +153,7 @@ async function insertWorkshopBooking(
       workshopId: input.workshopId,
       workshopTierId: input.workshopTierId,
       appliedPromotionId: input.appliedPromotionId ?? null,
+      appliedPromoCodeId: input.appliedPromoCodeId ?? null,
       listPriceSgd: tierRow.regularPriceSgd,
       amountPaidSgd: input.amountSgd,
       state: 'confirmed',
@@ -182,6 +185,12 @@ export async function bookWorkshopFree(args: {
   clientId: string
   workshopId: string
   workshopTierId: string
+  /**
+   * A Promo Code whose discount took the total to zero (§10). Such a purchase
+   * skips the payment provider entirely and grants here, so the tier's own
+   * price is allowed to be above zero when one is present.
+   */
+  appliedPromoCodeId?: string | null
 }): Promise<{ bookingId: string; qrToken: string; code: string }> {
   const [tier] = await db
     .select()
@@ -196,7 +205,7 @@ export async function bookWorkshopFree(args: {
 
   const promos = await listActivePromotionsFor('workshop', [args.workshopId])
   const eff = tierEffectivePrice(tier, promos[args.workshopId] ?? [])
-  if (Number(eff.baseSgd) > 0) {
+  if (Number(eff.baseSgd) > 0 && !args.appliedPromoCodeId) {
     throw new BadRequestError('workshop_is_not_free')
   }
 
@@ -211,5 +220,6 @@ export async function bookWorkshopFree(args: {
     paymentIntentId: null,
     amountSgd: '0.00',
     appliedPromotionId: eff.appliedPromotionId,
+    appliedPromoCodeId: args.appliedPromoCodeId ?? null,
   })
 }

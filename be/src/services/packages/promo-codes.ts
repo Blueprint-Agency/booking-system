@@ -70,6 +70,46 @@ export type PromoCodeRefusal =
   | 'out_of_scope'
   | 'not_recognised'
 
+/**
+ * How long a Hold lives, and therefore how long the payment session lives — the
+ * two end at the same moment, so a member who has paid can never be told the
+ * code ran out. 30 is the provider's minimum session length, which is what sets
+ * it. Applies only to a capped code; an uncapped checkout keeps 24 hours.
+ */
+export const HOLD_MINUTES = 30
+
+/**
+ * The provider measures its 30-minute minimum from the moment IT receives the
+ * session, which is a few database round-trips after the Hold is taken. Without
+ * this cushion the session creation is refused for being a second short. It is
+ * added to the Hold as well as the session, so the two still end at the same
+ * instant — which is the property that matters.
+ */
+export const HOLD_CUSHION_SECONDS = 60
+
+export function holdExpiryFrom(now: Date): Date {
+  return new Date(now.getTime() + HOLD_MINUTES * 60_000 + HOLD_CUSHION_SECONDS * 1000)
+}
+
+/**
+ * What the member is told. Unknown and archived share `not_recognised`'s
+ * sentence for the same reason they share the refusal.
+ */
+export function refusalMessage(refusal: PromoCodeRefusal, productName: string): string {
+  switch (refusal) {
+    case 'expired':
+      return 'This code has expired'
+    case 'fully_claimed':
+      return 'This code has been fully claimed'
+    case 'already_redeemed':
+      return "You've already used this code"
+    case 'out_of_scope':
+      return `This code doesn't apply to ${productName}`
+    case 'not_recognised':
+      return "We don't recognise that code"
+  }
+}
+
 export type PromoCodeEvaluation =
   | { ok: true; discountSgd: string; effectivePriceSgd: string }
   | { ok: false; refusal: PromoCodeRefusal }

@@ -39,6 +39,8 @@ interface ApiPackage {
   dormant: boolean;
   unlimited_location: { id: string; name: string } | null;
   duration_months: number | null;
+  /** The Promo Code the member typed at purchase; null if none. */
+  promo_code: string | null;
 }
 
 interface ApiAdjustment {
@@ -369,6 +371,9 @@ export default function ClientProfilePage({
                             ).toFixed(2)}{" "}
                             off
                           </span>
+                        )}
+                        {p.promo_code && (
+                          <span> · code <span className="font-mono text-ink">{p.promo_code}</span></span>
                         )}
                       </div>
                     </div>

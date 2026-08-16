@@ -14,6 +14,7 @@ import { db } from '../../db'
 import { stripePayments } from '../../db/schema/ledger'
 import { eq } from 'drizzle-orm'
 import { grantPackage } from '../packages/purchase'
+import { consumePromoHold } from '../packages/promo-redemption'
 import { bookWorkshopPaid } from '../workshops/book'
 
 export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
@@ -50,12 +51,21 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         }).onConflictDoNothing()
       }
 
+      // Payment succeeded, so the Hold becomes a Consumed Redemption, stamped
+      // with the moment and the payment intent (§10 step 3).
+      const promoCodeId = meta.promo_code_id || null
+      if (promoCodeId) {
+        await consumePromoHold({ promoCodeId, clientId, paymentIntentId })
+      }
+
       const granted = await grantPackage({
         clientId,
         paymentIntentId,
         amountSgd,
         packageKind: kind === 'class_package' ? 'class' : 'pt',
         packageId,
+        appliedPromotionId: meta.applied_promotion_id || null,
+        appliedPromoCodeId: promoCodeId,
         // Home Location for an Unlimited Plan (§1). The checkout that puts it on
         // the session is #23; this only carries it through.
         locationId: meta.location_id || null,
@@ -101,6 +111,11 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
           .onConflictDoNothing()
       }
 
+      const promoCodeId = meta.promo_code_id || null
+      if (promoCodeId) {
+        await consumePromoHold({ promoCodeId, clientId, paymentIntentId })
+      }
+
       await bookWorkshopPaid({
         clientId,
         workshopId,
@@ -108,6 +123,7 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         paymentIntentId,
         amountSgd,
         appliedPromotionId,
+        appliedPromoCodeId: promoCodeId,
       })
       return
     }

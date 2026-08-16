@@ -5,17 +5,23 @@ import { and, eq, isNull } from 'drizzle-orm'
 import { stripe } from '../../lib/stripe'
 import { db } from '../../db'
 import { classPackages, ptPackages } from '../../db/schema/packages'
-import { BadRequestError, NotFoundError } from '../../shared/errors'
+import { AppError, BadRequestError, NotFoundError } from '../../shared/errors'
 import {
   purchaseFreeTrial,
   assertTrialEligible,
   assertPurchasableLocation,
+  grantPackage,
 } from '../../services/packages/purchase'
 import {
   bestPrice,
   listActivePromotionsFor,
 } from '../../services/packages/promotions'
-import { validatePromoCode } from '../../lib/promo-codes'
+import {
+  describeDiscountable,
+  holdPromoCode,
+  previewPromoCode,
+  type AppliedPromoCode,
+} from '../../services/packages/promo-redemption'
 import {
   assertWorkshopBookable,
   bookWorkshopFree,
@@ -34,9 +40,20 @@ const checkoutPackageSchema = z.object({
   location_id: z.string().uuid().optional(),
 })
 
-const validatePromoSchema = z.object({
-  code: z.string().min(1),
-})
+// The product travels with the code (§11) — without it the endpoint cannot
+// answer the scope case. Either a package or a workshop tier, never both.
+const validatePromoSchema = z
+  .object({
+    code: z.string().min(1),
+    package_kind: z.enum(['class', 'pt']).optional(),
+    package_id: z.string().uuid().optional(),
+    workshop_id: z.string().uuid().optional(),
+    workshop_tier_id: z.string().uuid().optional(),
+  })
+  .refine(
+    v => (v.package_id != null) !== (v.workshop_id != null && v.workshop_tier_id != null),
+    { message: 'name exactly one product' },
+  )
 
 const checkoutWorkshopSchema = z.object({
   workshop_id: z.string().uuid(),
@@ -45,13 +62,39 @@ const checkoutWorkshopSchema = z.object({
 })
 
 const app = new Hono()
-  .post('/checkout/validate-promo', zValidator('json', validatePromoSchema), c => {
-    const { code } = c.req.valid('json')
-    const result = validatePromoCode(code)
-    if (!result.valid) {
-      return c.json({ valid: false, error: 'Invalid promo code' }, 200)
+  // A preview, not a claim: the place is claimed when checkout starts. A refusal
+  // is an answer rather than an error, so it comes back 200 with the member's
+  // own sentence — the same sentence the checkout refusal carries.
+  .post('/checkout/validate-promo', zValidator('json', validatePromoSchema), async c => {
+    const clientId = c.get('clientId')
+    const body = c.req.valid('json')
+    const item = await describeDiscountable(
+      body.package_id
+        ? { packageKind: body.package_kind ?? 'class', packageId: body.package_id }
+        : { workshopId: body.workshop_id!, workshopTierId: body.workshop_tier_id! },
+    )
+    try {
+      const applied = await previewPromoCode({
+        codeText: body.code,
+        clientId,
+        product: item.product,
+        productName: item.name,
+        basePriceSgd: item.basePriceSgd,
+      })
+      return c.json({
+        valid: true,
+        promo_code_id: applied.promoCodeId,
+        code: applied.code,
+        label: applied.label,
+        discount_sgd: applied.discountSgd,
+        effective_price_sgd: applied.effectivePriceSgd,
+      })
+    } catch (err) {
+      if (err instanceof AppError && err.code === 'promo_code_invalid') {
+        return c.json({ valid: false, ...(err.details ?? {}) }, 200)
+      }
+      throw err
     }
-    return c.json({ valid: true, discountSgd: result.discountSgd, description: result.description })
   })
   .post('/checkout/package', zValidator('json', checkoutPackageSchema), async c => {
     const clientId = c.get('clientId')
@@ -62,6 +105,7 @@ const app = new Hono()
     let priceSgd: string
     let appliedPromotionId: string | null = null
     let effectivePriceSgd: string
+    let productType: 'class_package' | 'pt_package'
 
     if (package_kind === 'class') {
       const [pkg] = await db
@@ -102,6 +146,7 @@ const app = new Hono()
       priceSgd = pkg.priceSgd
       appliedPromotionId = eff.appliedPromotionId
       effectivePriceSgd = eff.effectivePriceSgd
+      productType = 'class_package'
     } else {
       const [pkg] = await db
         .select()
@@ -118,22 +163,50 @@ const app = new Hono()
       priceSgd = pkg.priceSgd
       appliedPromotionId = eff.appliedPromotionId
       effectivePriceSgd = eff.effectivePriceSgd
+      productType = 'pt_package'
     }
 
-    // Apply user-entered promo code on top of any automatic promotion.
+    // The Promo Code stacks on top of the automatic Promotion, which is already
+    // baked into `effectivePriceSgd`. This claims the place under a row lock, so
+    // a code that has run out is refused HERE rather than after payment; a bad
+    // code is refused too, never ignored into a full-price charge.
     // All money math in integer cents — float arithmetic drifts on edge cases.
     const baseCents = Math.round(parseFloat(effectivePriceSgd) * 100)
-    let promoDiscountCents = 0
-    if (promo_code) {
-      const promo = validatePromoCode(promo_code)
-      if (promo.valid) {
-        promoDiscountCents = Math.min(Math.round(promo.discountSgd * 100), baseCents)
-      }
+    let applied: AppliedPromoCode | null = null
+    if (promo_code && baseCents > 0) {
+      applied = await holdPromoCode({
+        codeText: promo_code,
+        clientId,
+        product: { productType, productId: package_id },
+        productName: packageName,
+        basePriceSgd: effectivePriceSgd,
+      })
     }
     // Catalogue prices are GST-inclusive (SG consumer pricing / IRAS). The amount
     // charged IS the listed price; the "includes 9% GST" line reflects the embedded
     // GST rather than adding it on top.
-    const totalCents = baseCents - promoDiscountCents
+    const totalCents = baseCents - Math.round(Number(applied?.discountSgd ?? 0) * 100)
+
+    // A discount that takes the total to zero skips the payment provider
+    // entirely and grants immediately — the same path a free trial pass takes.
+    // The Redemption was already written straight to `consumed`, because there
+    // is no webhook coming to flip it.
+    if (totalCents <= 0) {
+      const granted = await grantPackage({
+        clientId,
+        paymentIntentId: null,
+        amountSgd: '0.00',
+        packageKind: package_kind,
+        packageId: package_id,
+        appliedPromotionId,
+        appliedPromoCodeId: applied?.promoCodeId ?? null,
+        locationId: location_id ?? null,
+      })
+      return c.json(
+        { outcome: 'granted', client_package_id: granted.clientPackageId, free: true },
+        201,
+      )
+    }
 
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
@@ -145,18 +218,25 @@ const app = new Hono()
             unit_amount: totalCents,
             product_data: {
               name: packageName,
-              description: `Yoga Sadhana · includes 9% GST${promo_code ? ` · promo ${promo_code.toUpperCase()} applied` : ''}`,
+              description: `Yoga Sadhana · includes 9% GST${applied ? ` · promo ${applied.code} applied` : ''}`,
             },
           },
           quantity: 1,
         },
       ],
+      // A capped code's session dies at the same moment its Hold does, so a
+      // member can never pay for a place that has already gone back in the pool.
+      // An uncapped or code-free checkout keeps the standard 24 hours.
+      ...(applied?.holdExpiresAt
+        ? { expires_at: Math.floor(applied.holdExpiresAt.getTime() / 1000) }
+        : {}),
       metadata: {
         kind: package_kind === 'class' ? 'class_package' : 'pt_package',
         package_id,
         client_id: clientId,
-        promo_code: promo_code ?? '',
-        promo_discount_sgd: (promoDiscountCents / 100).toFixed(2),
+        promo_code: applied?.code ?? '',
+        promo_code_id: applied?.promoCodeId ?? '',
+        promo_discount_sgd: applied?.discountSgd ?? '0.00',
         applied_promotion_id: appliedPromotionId ?? '',
         list_price_sgd: priceSgd,
         location_id: location_id ?? '',
@@ -200,16 +280,33 @@ const app = new Hono()
     // refund flow yet, so an unbookable spot must never reach Stripe.
     await assertWorkshopBookable({ clientId, workshopId: workshop_id, workshopTierId: workshop_tier_id })
 
-    // Apply user-entered promo code on top, in integer cents.
-    let promoDiscountCents = 0
+    // The code stacks on top of the automatic Promotion / early bird, claims its
+    // place under a row lock, and is refused outright when it does not apply.
+    // Scoping is at workshop level, never workshop tier.
+    let applied: AppliedPromoCode | null = null
     if (promo_code) {
-      const promo = validatePromoCode(promo_code)
-      if (promo.valid) {
-        promoDiscountCents = Math.min(Math.round(promo.discountSgd * 100), baseCents)
-      }
+      applied = await holdPromoCode({
+        codeText: promo_code,
+        clientId,
+        product: { productType: 'workshop', productId: workshop_id },
+        productName: `${ws.name} — ${tier.name}`,
+        basePriceSgd: eff.baseSgd,
+      })
     }
     // GST-inclusive (see package checkout above) — charge the listed price.
-    const totalCents = baseCents - promoDiscountCents
+    const totalCents = baseCents - Math.round(Number(applied?.discountSgd ?? 0) * 100)
+
+    // Taken to zero by the code: skip the payment provider and book now. The
+    // Redemption is already `consumed`; no webhook is coming.
+    if (totalCents <= 0) {
+      const result = await bookWorkshopFree({
+        clientId,
+        workshopId: workshop_id,
+        workshopTierId: workshop_tier_id,
+        appliedPromoCodeId: applied?.promoCodeId ?? null,
+      })
+      return c.json({ outcome: 'granted', booking_id: result.bookingId, free: true }, 201)
+    }
 
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',
@@ -221,19 +318,24 @@ const app = new Hono()
             unit_amount: totalCents,
             product_data: {
               name: `${ws.name} — ${tier.name}`,
-              description: `Yoga Sadhana · includes 9% GST${promo_code ? ` · promo ${promo_code.toUpperCase()} applied` : ''}`,
+              description: `Yoga Sadhana · includes 9% GST${applied ? ` · promo ${applied.code} applied` : ''}`,
             },
           },
           quantity: 1,
         },
       ],
+      // The Hold and the session end together for a capped code (see above).
+      ...(applied?.holdExpiresAt
+        ? { expires_at: Math.floor(applied.holdExpiresAt.getTime() / 1000) }
+        : {}),
       metadata: {
         kind: 'workshop',
         workshop_id,
         workshop_tier_id,
         client_id: clientId,
-        promo_code: promo_code ?? '',
-        promo_discount_sgd: (promoDiscountCents / 100).toFixed(2),
+        promo_code: applied?.code ?? '',
+        promo_code_id: applied?.promoCodeId ?? '',
+        promo_discount_sgd: applied?.discountSgd ?? '0.00',
         applied_promotion_id: eff.appliedPromotionId ?? '',
         list_price_sgd: tier.regularPriceSgd,
         amount_sgd: (totalCents / 100).toFixed(2),

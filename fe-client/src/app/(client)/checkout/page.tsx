@@ -50,7 +50,7 @@ function CheckoutContent() {
   const [pkgError, setPkgError] = useState<string | null>(null);
 
   const [promoInput, setPromoInput] = useState("");
-  const [promoApplied, setPromoApplied] = useState<{ code: string; discountSgd: number; description: string } | null>(null);
+  const [promoApplied, setPromoApplied] = useState<{ code: string; discountSgd: number; label: string } | null>(null);
   const [promoError, setPromoError] = useState<string | null>(null);
   const [promoLoading, setPromoLoading] = useState(false);
 
@@ -123,14 +123,28 @@ function CheckoutContent() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ code }),
+        // The product travels with the code — the server cannot answer the
+        // scope case without it, and a green tick it would contradict seconds
+        // later at checkout is worse than no tick.
+        body: JSON.stringify({
+          code,
+          ...(mode === "workshop"
+            ? { workshop_id: workshopId, workshop_tier_id: selectedTier?.id }
+            : { package_kind: packageKind, package_id: packageId }),
+        }),
       });
       const data = await res.json();
-      if (!res.ok || !data.valid || typeof data.discountSgd !== "number" || data.discountSgd <= 0) {
-        setPromoError("Invalid promo code");
+      if (!res.ok || !data.valid) {
+        // Four of the five reasons are specific; the server writes the sentence
+        // and this never derives one. Unknown and archived share theirs.
+        setPromoError(data.message ?? "Could not validate code. Try again.");
         setPromoApplied(null);
       } else {
-        setPromoApplied({ code: code.toUpperCase(), discountSgd: data.discountSgd, description: data.description });
+        setPromoApplied({
+          code: data.code,
+          discountSgd: Number(data.discount_sgd),
+          label: data.label,
+        });
       }
     } catch {
       setPromoError("Could not validate code. Try again.");
@@ -163,7 +177,15 @@ function CheckoutContent() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setCheckoutError(data.error ?? "Could not start checkout. Please try again.");
+        // The server refuses a bad code rather than charging full price. Drop
+        // the code from the screen at the same time, so the interface can never
+        // show it accepted while the purchase was refused for it.
+        if (data.error === "promo_code_invalid") {
+          setPromoApplied(null);
+          setPromoError(data.message ?? "That code can't be used on this purchase.");
+        } else {
+          setCheckoutError(data.error ?? "Could not start checkout. Please try again.");
+        }
         setRedirecting(false);
         return;
       }

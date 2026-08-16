@@ -2,6 +2,9 @@ import assert from 'node:assert'
 import {
   CODE_ALPHABET,
   GENERATED_CODE_LENGTH,
+  HOLD_MINUTES,
+  holdExpiryFrom,
+  refusalMessage,
   coversProduct,
   moneyOffFor,
   evaluatePromoCode,
@@ -71,9 +74,9 @@ function redemption(over: Partial<PromoCodeRedemptionRow> = {}): PromoCodeRedemp
 const CLASS_PRODUCT = { productType: 'class_package' as const, productId: 'product-1' }
 
 // ---------- code text: normalisation, format, generation ----------
-assert.strictEqual(normaliseCode('  sadhana20 '), 'SADHANA20')
+assert.strictEqual(normaliseCode('  summer25 '), 'SUMMER25')
 assert.strictEqual(normaliseCode('\tSummer-25\n'), 'SUMMER-25')
-assert.strictEqual(normaliseCode('SADHANA20'), 'SADHANA20')
+assert.strictEqual(normaliseCode('SUMMER25'), 'SUMMER25')
 // Whitespace INSIDE is not stripped — it makes the text invalid, which is the
 // honest answer rather than silently inventing a different code.
 assert.strictEqual(normaliseCode(' sad hana '), 'SAD HANA')
@@ -325,5 +328,40 @@ assert.strictEqual(missingMoneyField({ kind: 'percent', amountOffSgd: '20.00' })
 assert.strictEqual(missingMoneyField({ kind: 'amount', percentOff: 10 }), 'amount_off_sgd_required')
 // An explicit null is as absent as an omission.
 assert.strictEqual(missingMoneyField({ kind: 'percent', percentOff: null }), 'percent_off_required')
+
+// ---------- the member-facing sentence for each refusal ----------
+// Four are specific; unknown and archived deliberately share one, or the
+// validation endpoint becomes a code-guessing oracle.
+assert.strictEqual(refusalMessage('expired', 'Unlimited 6 months'), 'This code has expired')
+assert.strictEqual(refusalMessage('fully_claimed', 'Unlimited 6 months'), 'This code has been fully claimed')
+assert.strictEqual(refusalMessage('already_redeemed', 'Unlimited 6 months'), "You've already used this code")
+assert.strictEqual(
+  refusalMessage('out_of_scope', 'Unlimited 6 months'),
+  "This code doesn't apply to Unlimited 6 months",
+)
+assert.strictEqual(refusalMessage('not_recognised', 'Unlimited 6 months'), "We don't recognise that code")
+// Only the scope case names the product; the other four read the same whatever
+// is being bought.
+assert.strictEqual(
+  new Set(
+    (['expired', 'fully_claimed', 'already_redeemed', 'out_of_scope', 'not_recognised'] as const).map(r =>
+      refusalMessage(r, 'A'),
+    ),
+  ).size,
+  5,
+)
+
+// ---------- the Hold and the payment session end at the same moment ----------
+assert.strictEqual(HOLD_MINUTES, 30)
+// 30 minutes plus the round-trip cushion, which the payment session gets too so
+// the two end at the same instant.
+assert.strictEqual(holdExpiryFrom(NOW).toISOString(), '2026-06-01T12:31:00.000Z')
+// A Hold taken now still occupies its place; the same Hold does not once its
+// moment has passed. Nothing sweeps it — this predicate is the whole mechanism.
+{
+  const held = redemption({ status: 'held', heldUntil: holdExpiryFrom(NOW), consumedAt: null })
+  assert.strictEqual(occupiesPlace(held, NOW), true)
+  assert.strictEqual(occupiesPlace(held, new Date('2026-06-01T12:32:00Z')), false)
+}
 
 console.log('promo-codes.test ok')

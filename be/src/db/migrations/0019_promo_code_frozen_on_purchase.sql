@@ -1,0 +1,4 @@
+ALTER TABLE "client_packages" ADD COLUMN "applied_promo_code_id" uuid;--> statement-breakpoint
+ALTER TABLE "bookings" ADD COLUMN "applied_promo_code_id" uuid;--> statement-breakpoint
+ALTER TABLE "client_packages" ADD CONSTRAINT "client_packages_applied_promo_code_id_promo_codes_id_fk" FOREIGN KEY ("applied_promo_code_id") REFERENCES "public"."promo_codes"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "bookings" ADD CONSTRAINT "bookings_applied_promo_code_id_promo_codes_id_fk" FOREIGN KEY ("applied_promo_code_id") REFERENCES "public"."promo_codes"("id") ON DELETE restrict ON UPDATE no action;

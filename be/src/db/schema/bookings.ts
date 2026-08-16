@@ -2,7 +2,7 @@ import { pgTable, uuid, text, timestamp, integer, numeric, boolean, index, uniqu
 import { sql } from 'drizzle-orm'
 import { clients, staffUsers } from './identity'
 import { classes, workshops, workshopTiers, ptSessions } from './schedule'
-import { clientPackages, promotions } from './packages'
+import { clientPackages, promoCodes, promotions } from './packages'
 import {
   bookingKindEnum,
   bookingStateEnum,
@@ -31,6 +31,12 @@ export const bookings = pgTable(
     // Frozen at purchase when a workshop promotion resolved. Null for class/PT bookings
     // (where the promotion already froze onto the client_packages row used to book).
     appliedPromotionId: uuid('applied_promotion_id').references(() => promotions.id, {
+      onDelete: 'restrict',
+    }),
+    // The Promo Code the member typed, frozen beside the Promotion (§11). The
+    // money taken off is frozen on the Redemption row; only the identifier lands
+    // here, because staff may edit the label later.
+    appliedPromoCodeId: uuid('applied_promo_code_id').references(() => promoCodes.id, {
       onDelete: 'restrict',
     }),
     state: bookingStateEnum('state').notNull().default('confirmed'),

@@ -117,6 +117,8 @@ export interface GrantPackageInput {
   packageId: string
   /** frozen promotion id (computed from best-price-wins). null if none applied. */
   appliedPromotionId?: string | null
+  /** frozen Promo Code the member typed (§11). null if none. */
+  appliedPromoCodeId?: string | null
   /**
    * Home Location — the one Location an Unlimited Plan Covers (§1). Required for
    * `unlimited` and refused for every other kind. Picking it at checkout is #23;
@@ -209,6 +211,7 @@ export async function grantPackage(
         sourceClassPackageId,
         sourcePtPackageId,
         appliedPromotionId: input.appliedPromotionId ?? null,
+        appliedPromoCodeId: input.appliedPromoCodeId ?? null,
         locationId,
         durationMonths,
         creditsOrSessionsRemaining,

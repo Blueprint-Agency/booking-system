@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
-import { clientPackages, classPackages, ptPackages } from '../../db/schema/packages'
+import { clientPackages, classPackages, promoCodes, ptPackages } from '../../db/schema/packages'
 import { locations } from '../../db/schema/catalog'
 import { isDormant } from './validity'
 
@@ -125,6 +125,8 @@ export interface ClientPackageWithSource {
   durationMonths: number | null
   /** '1on1' | '2on1' for PT packages; null otherwise. */
   sessionType: '1on1' | '2on1' | null
+  /** The Promo Code the member typed at purchase, as text; null if none (§11). */
+  promoCode: string | null
 }
 
 /**
@@ -159,11 +161,13 @@ export async function listClientPackages(
       ptPackageSessions: ptPackages.numSessions,
       active: clientPackages.active,
       ptSessionType: ptPackages.sessionType,
+      promoCode: promoCodes.code,
     })
     .from(clientPackages)
     .leftJoin(classPackages, eq(classPackages.id, clientPackages.sourceClassPackageId))
     .leftJoin(ptPackages, eq(ptPackages.id, clientPackages.sourcePtPackageId))
     .leftJoin(locations, eq(locations.id, clientPackages.locationId))
+    .leftJoin(promoCodes, eq(promoCodes.id, clientPackages.appliedPromoCodeId))
     .where(and(...baseConds))
 
   return rows.map(r => ({
@@ -182,5 +186,6 @@ export async function listClientPackages(
     location: r.locationId && r.locationName ? { id: r.locationId, name: r.locationName } : null,
     durationMonths: r.durationMonths,
     sessionType: (r.ptSessionType ?? null) as '1on1' | '2on1' | null,
+    promoCode: r.promoCode ?? null,
   }))
 }

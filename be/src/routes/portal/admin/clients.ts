@@ -75,6 +75,9 @@ function packageView(p: ClientPackageWithSource) {
     dormant: p.dormant,
     unlimited_location: p.location,
     duration_months: p.durationMonths,
+    // Which Promo Code the member typed, frozen at purchase (§11). The text is
+    // read through the id, so a later relabelling of the code cannot restate it.
+    promo_code: p.promoCode,
   }
 }
 

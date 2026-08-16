@@ -287,6 +287,14 @@ export const clientPackages = pgTable(
     appliedPromotionId: uuid('applied_promotion_id').references(() => promotions.id, {
       onDelete: 'restrict',
     }),
+    // The Promo Code the member typed, frozen beside the Promotion (§11). The
+    // identifier and not the label, because staff may edit the label later; the
+    // money taken off is frozen on the Redemption row. A denormalisation of the
+    // ledger that earns its place — the payment intent is null on a $0 grant, so
+    // the ledger cannot be joined back to the purchase in every case.
+    appliedPromoCodeId: uuid('applied_promo_code_id').references(() => promoCodes.id, {
+      onDelete: 'restrict',
+    }),
     // Home Location — the one Location an Unlimited Plan covers (§1). Only an
     // Unlimited Plan carries one; every other kind is Location-agnostic.
     locationId: uuid('location_id').references(() => locations.id, { onDelete: 'restrict' }),
