@@ -30,6 +30,7 @@ export function BuyButton({
   context,
   gateHref,
   priceSgd,
+  requiresReview = false,
   className,
   children,
   loadingLabel = "Redirecting…",
@@ -39,6 +40,13 @@ export function BuyButton({
   gateHref: string;
   /** Effective price — what the member actually pays. Decides the branch. */
   priceSgd: string | number;
+  /**
+   * The purchase needs a choice only the review page can take — an Unlimited
+   * Plan's Home studio. The price no longer decides: a Promotion that drives the
+   * plan to $0 would otherwise post straight to the grant with no Location and be
+   * refused, leaving a free plan nobody can buy.
+   */
+  requiresReview?: boolean;
   className?: string;
   children: React.ReactNode;
   loadingLabel?: string;
@@ -128,7 +136,7 @@ export function BuyButton({
           if (busy) return;
           // A NaN price reads as paid on purpose — bad catalogue data must never
           // grant something for free.
-          if (!(Number(priceSgd) <= 0)) {
+          if (requiresReview || !(Number(priceSgd) <= 0)) {
             setBusy(true);
             router.push(
               target.kind === "workshop"

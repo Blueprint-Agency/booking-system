@@ -692,6 +692,9 @@ function UnlimitedCard({
           context="buy a package"
           gateHref="/packages"
           priceSgd={pkg.effective_price_sgd}
+          // A plan has a Home studio to pick, at every price — including one a
+          // Promotion took to zero.
+          requiresReview
           className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 mt-6 w-full text-center transition-colors"
         >
           Purchase
