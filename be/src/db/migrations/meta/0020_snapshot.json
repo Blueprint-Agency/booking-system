@@ -1,6 +1,6 @@
 {
-  "id": "323bc2d8-fa31-4bbb-be62-e1b7ce3c0c63",
-  "prevId": "27fba052-71ac-4d86-8168-fc1c2a0d1a54",
+  "id": "8ea56df6-f262-4710-bb78-7df24ab14204",
+  "prevId": "323bc2d8-fa31-4bbb-be62-e1b7ce3c0c63",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -831,6 +831,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": 7
+        },
+        "in_cover_group": {
+          "name": "in_cover_group",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {},
@@ -1111,6 +1118,20 @@
           "notNull": true,
           "default": 14
         },
+        "cover_group_leave_cap": {
+          "name": "cover_group_leave_cap",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "study_leave_cap": {
+          "name": "study_leave_cap",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
         "updated_at": {
           "name": "updated_at",
           "type": "timestamp with time zone",
@@ -1148,6 +1169,10 @@
         "global_policy_singleton": {
           "name": "global_policy_singleton",
           "value": "\"global_policy\".\"id\" = '00000000-0000-0000-0000-000000000001'::uuid"
+        },
+        "global_policy_leave_caps_min_1": {
+          "name": "global_policy_leave_caps_min_1",
+          "value": "\"global_policy\".\"cover_group_leave_cap\" >= 1 AND \"global_policy\".\"study_leave_cap\" >= 1"
         }
       },
       "isRLSEnabled": false
