@@ -3,8 +3,15 @@ import { db } from '../../db'
 import { clientPackages, classPackages, ptPackages } from '../../db/schema/packages'
 import { isUniqueViolation } from '../../db/unique-violation'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
+import { globalPolicy } from '../../db/schema/policy'
 import { bestPrice, listActivePromotionsFor } from './promotions'
-import { PT_VALIDITY_DAYS, addMonths, computeActive } from './validity'
+import {
+  PT_VALIDITY_DAYS,
+  addMonths,
+  computeActive,
+  crossLocationMonths,
+  crossLocationPriceSgd,
+} from './validity'
 
 type ClassPackageRow = typeof classPackages.$inferSelect
 type PtPackageRow = typeof ptPackages.$inferSelect
@@ -81,6 +88,105 @@ export async function assertPurchasableLocation(
 }
 
 /**
+ * The **Cross-Location Add-On** rate as it stands right now (§5). Read once, at
+ * checkout — the price charged is frozen onto the plan, so a later repricing
+ * moves future purchases only and never restates what was sold.
+ */
+export async function readCrossLocationRateSgd(): Promise<string> {
+  const [row] = await db.select({ rate: globalPolicy.crossLocationRateSgd }).from(globalPolicy).limit(1)
+  if (!row) throw new NotFoundError('policy_not_seeded')
+  return row.rate
+}
+
+/**
+ * The Add-On's price on a plan being bought right now (§5). A new plan has its
+ * whole Duration ahead of it whether its clock starts today or it waits Dormant,
+ * so it prices at the stored Duration with no arithmetic.
+ *
+ * Here rather than in the checkout route so the rule cannot drift from the one
+ * `quoteCrossLocationAddOn` applies to a plan the member already holds.
+ */
+export async function priceCrossLocationForNewPlan(
+  kind: PackageKind,
+  durationMonths: number | null,
+): Promise<string> {
+  if (kind !== 'unlimited') throw new BadRequestError('cross_location_requires_unlimited')
+  if (durationMonths == null) throw new BadRequestError('unlimited_requires_duration_months')
+  return crossLocationPriceSgd(durationMonths, await readCrossLocationRateSgd())
+}
+
+export interface CrossLocationQuote {
+  clientPackageId: string
+  months: number
+  rateSgd: string
+  priceSgd: string
+}
+
+/**
+ * Price an Add-On against a plan the member already holds, and refuse everything
+ * that cannot carry one. Run BEFORE Stripe: a refusal after payment charges a
+ * member for nothing.
+ *
+ * The plan must be the member's own, an Unlimited Plan, still live, and without
+ * an Add-On already — one per plan, never two (§5).
+ */
+export async function quoteCrossLocationAddOn(
+  clientId: string,
+  clientPackageId: string,
+  now: Date = new Date(),
+): Promise<CrossLocationQuote> {
+  const [plan] = await db
+    .select()
+    .from(clientPackages)
+    .where(and(eq(clientPackages.id, clientPackageId), eq(clientPackages.clientId, clientId)))
+    .limit(1)
+  if (!plan) throw new NotFoundError('client_package_not_found')
+  if (plan.kind !== 'unlimited') throw new BadRequestError('cross_location_requires_unlimited')
+  if (!plan.active || (plan.expiresAt !== null && plan.expiresAt <= now)) {
+    throw new BadRequestError('cross_location_plan_not_live')
+  }
+  if (plan.crossLocationPaidSgd !== null) {
+    throw new ConflictError('cross_location_already_added')
+  }
+  const rateSgd = await readCrossLocationRateSgd()
+  // A Dormant plan prices at its full stored Duration; an Activated one at the
+  // whole months it has left, part months rounded up.
+  const months = crossLocationMonths(plan, now)
+  return { clientPackageId: plan.id, months, rateSgd, priceSgd: crossLocationPriceSgd(months, rateSgd) }
+}
+
+/**
+ * Fill the Add-On column on a plan that has just been paid for. Guarded on the
+ * column still being null, so a redelivered webhook cannot overwrite a price
+ * with a second one — the same idempotency `grantPackage` gets from the payment
+ * intent, which a standalone Add-On has nowhere to store.
+ *
+ * Returns false when the plan already carried one. Checkout refuses a second
+ * Add-On, but two sessions opened at once both pass that check, and only one of
+ * them can land — the caller must not report the loser as delivered.
+ */
+export async function applyCrossLocationAddOn(
+  clientId: string,
+  clientPackageId: string,
+  amountSgd: string,
+): Promise<boolean> {
+  const rows = await db
+    .update(clientPackages)
+    .set({ crossLocationPaidSgd: amountSgd })
+    .where(
+      and(
+        eq(clientPackages.id, clientPackageId),
+        // Scoped to the payer, exactly as every other package write is — the id
+        // arrives off session metadata and is never trusted on its own.
+        eq(clientPackages.clientId, clientId),
+        isNull(clientPackages.crossLocationPaidSgd),
+      ),
+    )
+    .returning({ id: clientPackages.id })
+  return rows.length > 0
+}
+
+/**
  *  - credit_bundle: now + validity_days
  *  - unlimited:     null — a Duration is calendar months, not days, and whether the
  *                   clock starts now or at Activation is a rule this helper cannot
@@ -125,6 +231,12 @@ export interface GrantPackageInput {
    * this is the grant path that stores whatever was picked.
    */
   locationId?: string | null
+  /**
+   * The Cross-Location Add-On bought in the same session as the plan (§5) — the
+   * amount paid for it, written in this same insert. Null means Home Location
+   * only. Refused for every kind that has no Home Location to extend.
+   */
+  crossLocationPaidSgd?: string | null
 }
 
 /**
@@ -184,6 +296,12 @@ export async function grantPackage(
     creditsOrSessionsRemaining = row.numSessions
   }
 
+  // Only an Unlimited Plan has a Home Location to extend, so only it can carry
+  // an Add-On. The DB check backs this; refusing here names the mistake.
+  if (kind !== 'unlimited' && input.crossLocationPaidSgd != null) {
+    throw new BadRequestError('cross_location_requires_unlimited')
+  }
+
   let expiresAt = computeExpiry(kind, source, now)
   let durationMonths: number | null = null
 
@@ -214,6 +332,7 @@ export async function grantPackage(
         appliedPromoCodeId: input.appliedPromoCodeId ?? null,
         locationId,
         durationMonths,
+        crossLocationPaidSgd: input.crossLocationPaidSgd ?? null,
         creditsOrSessionsRemaining,
         expiresAt,
         active: computeActive({ kind, expiresAt, creditsOrSessionsRemaining }, now),

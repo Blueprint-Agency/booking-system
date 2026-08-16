@@ -32,6 +32,8 @@ export interface UpdateGlobalPolicyInput {
   leaveCarryOverCapDays?: number
   coverGroupLeaveCap?: number
   studyLeaveCap?: number
+  /** The Cross-Location Add-On's monthly rate (§5), as "30.00". */
+  crossLocationRateSgd?: string
   /** The whole **Cover Group**, as one ticked set of instructor staff user ids.
    *  Absent leaves membership alone; present replaces it entirely. */
   coverGroupStaffIds?: readonly string[]

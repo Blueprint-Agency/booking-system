@@ -14,6 +14,7 @@ interface PolicyState {
   leaveCarryOverCapDays: number;
   coverGroupLeaveCap: number;
   studyLeaveCap: number;
+  crossLocationRateSgd: number;
   bookInAdvanceDays: number;
   updatedAt: string | null;
 }
@@ -27,6 +28,7 @@ interface ApiPolicy {
     leave_carry_over_cap_days: number;
     cover_group_leave_cap: number;
     study_leave_cap: number;
+    cross_location_rate_sgd: string;
     updated_at: string | null;
   };
   pt_booking_config: {
@@ -53,6 +55,7 @@ function emptyPolicy(): PolicyState {
     leaveCarryOverCapDays: 0,
     coverGroupLeaveCap: 1,
     studyLeaveCap: 1,
+    crossLocationRateSgd: 0,
     bookInAdvanceDays: 0,
     updatedAt: null,
   };
@@ -73,6 +76,8 @@ function diffGlobal(saved: PolicyState, draft: PolicyState) {
   if (saved.coverGroupLeaveCap !== draft.coverGroupLeaveCap)
     out.cover_group_leave_cap = draft.coverGroupLeaveCap;
   if (saved.studyLeaveCap !== draft.studyLeaveCap) out.study_leave_cap = draft.studyLeaveCap;
+  if (saved.crossLocationRateSgd !== draft.crossLocationRateSgd)
+    out.cross_location_rate_sgd = draft.crossLocationRateSgd;
   return out;
 }
 
@@ -111,6 +116,7 @@ export default function PolicyPage() {
         leaveCarryOverCapDays: r.global_policy.leave_carry_over_cap_days,
         coverGroupLeaveCap: r.global_policy.cover_group_leave_cap,
         studyLeaveCap: r.global_policy.study_leave_cap,
+        crossLocationRateSgd: Number(r.global_policy.cross_location_rate_sgd),
         bookInAdvanceDays: r.pt_booking_config.book_in_advance_days,
         updatedAt: r.global_policy.updated_at,
       };
@@ -134,6 +140,7 @@ export default function PolicyPage() {
     !sameSet(coverGroup, savedCoverGroup) ||
     draft.coverGroupLeaveCap !== policy.coverGroupLeaveCap ||
     draft.studyLeaveCap !== policy.studyLeaveCap ||
+    draft.crossLocationRateSgd !== policy.crossLocationRateSgd ||
     draft.cancelCapCount !== policy.cancelCapCount ||
     draft.cancelCapCycleDays !== policy.cancelCapCycleDays ||
     draft.classWindowHours !== policy.classWindowHours ||
@@ -237,6 +244,32 @@ export default function PolicyPage() {
             </span>
             . No-shows do not count toward this cap.
           </p>
+        </section>
+
+        <section className="rounded-xl border border-border bg-card p-6 shadow-soft">
+          <header className="mb-4">
+            <h2 className="text-base font-semibold text-ink">Cross-Location Add-On</h2>
+            <p className="mt-0.5 text-xs text-muted">
+              The monthly rate for adding the second studio to an Unlimited Plan. A plan is
+              charged this rate for every month it has left, part months rounded up. Repricing
+              affects future purchases only — every Add-On already sold keeps what its member paid.
+            </p>
+          </header>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="xloc-rate">Rate per month (SGD)</Label>
+              <Input
+                id="xloc-rate"
+                type="number"
+                min={0}
+                step="0.01"
+                value={draft.crossLocationRateSgd}
+                onChange={(e) =>
+                  setDraft({ ...draft, crossLocationRateSgd: Number(e.target.value) })
+                }
+              />
+            </div>
+          </div>
         </section>
 
         <section className="rounded-xl border border-border bg-card p-6 shadow-soft">

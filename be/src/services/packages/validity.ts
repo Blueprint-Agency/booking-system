@@ -51,6 +51,37 @@ export function computeActive(p: PackageValidity, now: Date = new Date()): boole
   return (p.creditsOrSessionsRemaining ?? 0) > 0
 }
 
+/**
+ * Whole months of cover left on a plan, which is what a **Cross-Location Add-On**
+ * is priced by (§5). A part month is charged as a whole one — the member is told
+ * so before they see the total.
+ *
+ * A **Dormant** plan needs no arithmetic at all: its clock has not started, so it
+ * has its full stored Duration ahead of it whenever it eventually starts.
+ */
+export function crossLocationMonths(
+  p: Pick<PackageValidity, 'kind' | 'expiresAt'> & { durationMonths: number | null },
+  now: Date,
+): number {
+  if (isDormant(p)) return p.durationMonths ?? 0
+  if (p.expiresAt === null || p.expiresAt <= now) return 0
+  // Count whole calendar months with the same clamping arithmetic the Duration
+  // uses, then round any remainder up to a whole month.
+  let months = 0
+  while (addMonths(now, months + 1) <= p.expiresAt) months++
+  return addMonths(now, months).getTime() === p.expiresAt.getTime() ? months : months + 1
+}
+
+/**
+ * Months times the rate, in cents so the arithmetic cannot drift. The rate is
+ * read once, at checkout, and frozen as the amount paid onto the plan — a later
+ * repricing moves future purchases only (§5).
+ */
+export function crossLocationPriceSgd(months: number, rateSgd: string | number): string {
+  const cents = Math.round(Number(rateSgd) * 100) * months
+  return (cents / 100).toFixed(2)
+}
+
 export type MovementRefusal = 'overdraw' | 'unlimited_has_no_balance' | 'invalid_amount'
 
 export type MovementResult =

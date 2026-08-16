@@ -34,6 +34,10 @@ function serializeClientPackage(r: Awaited<ReturnType<typeof listClientPackages>
     dormant: r.dormant,
     unlimited_location: r.location,
     duration_months: r.durationMonths,
+    // What this plan paid for the Cross-Location Add-On (§5). Null means it
+    // Covers its Home Location only — the member surface reads the null, never
+    // re-derives coverage.
+    cross_location_paid_sgd: r.crossLocationPaidSgd,
     session_type: r.sessionType,
   }
 }

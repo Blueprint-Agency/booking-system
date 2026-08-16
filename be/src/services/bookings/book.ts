@@ -91,6 +91,7 @@ export async function bookClass(input: BookClassInput): Promise<BookClassResult>
         expiresAt: clientPackages.expiresAt,
         locationId: clientPackages.locationId,
         durationMonths: clientPackages.durationMonths,
+        crossLocationPaidSgd: clientPackages.crossLocationPaidSgd,
       })
       .from(clientPackages)
       .where(and(eq(clientPackages.clientId, clientId), eq(clientPackages.active, true)))

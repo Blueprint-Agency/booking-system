@@ -112,6 +112,60 @@ export async function setBalance(input: SetBalanceInput): Promise<ClientPackageR
   })
 }
 
+export interface SetCrossLocationInput {
+  clientId: string
+  clientPackageId: string
+  /** The amount the Add-On is recorded at, or null to remove it. */
+  paidSgd: string | null
+  reason: string
+  actedByStaffId: string
+}
+
+/**
+ * Staff attach or remove a **Cross-Location Add-On** (§5). Logged as a delta-0
+ * manual_adjustment carrying the reason, exactly how an expiry-only edit is
+ * already recorded — the correction path for a member who paid at the counter or
+ * was charged in error.
+ */
+export async function setCrossLocationAddOn(
+  input: SetCrossLocationInput,
+): Promise<ClientPackageRow> {
+  if (!input.reason.trim()) throw new BadRequestError('reason_required')
+
+  return db.transaction(async tx => {
+    const [pkg] = await tx
+      .select()
+      .from(clientPackages)
+      .where(
+        and(eq(clientPackages.id, input.clientPackageId), eq(clientPackages.clientId, input.clientId)),
+      )
+      .limit(1)
+    if (!pkg) throw new NotFoundError('client_package_not_found')
+    // Only an Unlimited Plan has a Home Location to extend.
+    if (pkg.kind !== 'unlimited') throw new BadRequestError('cross_location_requires_unlimited')
+
+    const reason =
+      input.paidSgd === null
+        ? `Cross-Location Add-On removed: ${input.reason.trim()}`
+        : `Cross-Location Add-On added at $${input.paidSgd}: ${input.reason.trim()}`
+
+    await tx
+      .update(clientPackages)
+      .set({ crossLocationPaidSgd: input.paidSgd })
+      .where(eq(clientPackages.id, pkg.id))
+
+    await tx.insert(manualAdjustments).values({
+      clientId: input.clientId,
+      clientPackageId: pkg.id,
+      delta: 0,
+      reason,
+      actedByStaffId: input.actedByStaffId,
+    })
+
+    return { ...pkg, crossLocationPaidSgd: input.paidSgd }
+  })
+}
+
 export interface SetExpiryInput {
   clientId: string
   clientPackageId: string

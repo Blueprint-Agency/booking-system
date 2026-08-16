@@ -1,5 +1,13 @@
 import assert from 'node:assert'
-import { addMonths, applyMovement, computeActive, isDormant, type PackageValidity } from './validity'
+import {
+  addMonths,
+  applyMovement,
+  computeActive,
+  crossLocationMonths,
+  crossLocationPriceSgd,
+  isDormant,
+  type PackageValidity,
+} from './validity'
 
 const NOW = new Date('2026-06-01T00:00:00Z')
 const LATER = new Date('2026-12-01T00:00:00Z')
@@ -156,5 +164,60 @@ assert.strictEqual(
   true,
   'a Dormant Unlimited Plan must be active — nothing is expired that has not started',
 )
+
+// --- the Cross-Location Add-On's months and price ---------------------------
+// A Dormant plan prices at its full stored Duration with no arithmetic: its
+// clock has not started, so there is nothing to count from.
+assert.strictEqual(
+  crossLocationMonths({ kind: 'unlimited', expiresAt: null, durationMonths: 6 }, NOW),
+  6,
+  'a Dormant plan’s months remaining is its stored Duration',
+)
+
+// An Activated plan counts from today to its expiry, and a part month is
+// charged as a whole one: 20 Apr to 15 Jul is 2 months 25 days → 3.
+assert.strictEqual(
+  crossLocationMonths(
+    { kind: 'unlimited', expiresAt: new Date('2026-07-15T00:00:00Z'), durationMonths: 6 },
+    new Date('2026-04-20T00:00:00Z'),
+  ),
+  3,
+  'a part month rounds up',
+)
+
+// A whole number of months stays whole — rounding up must not add a free month
+// to a plan that ends exactly three months out.
+assert.strictEqual(
+  crossLocationMonths(
+    { kind: 'unlimited', expiresAt: new Date('2026-09-01T00:00:00Z'), durationMonths: 6 },
+    NOW,
+  ),
+  3,
+  'an exact three months is three, not four',
+)
+
+// Days alone still cost a month — the Add-On is never sold for nothing.
+assert.strictEqual(
+  crossLocationMonths(
+    { kind: 'unlimited', expiresAt: new Date('2026-06-10T00:00:00Z'), durationMonths: 6 },
+    NOW,
+  ),
+  1,
+  'ten days left is one whole month',
+)
+
+// A plan already past its expiry has no months left to sell.
+assert.strictEqual(
+  crossLocationMonths({ kind: 'unlimited', expiresAt: EARLIER, durationMonths: 6 }, NOW),
+  0,
+  'an expired plan has no months remaining',
+)
+
+// The price is months times the rate as it stood at checkout, in cents so the
+// arithmetic cannot drift.
+assert.strictEqual(crossLocationPriceSgd(6, '30.00'), '180.00', 'six months at $30 is $180')
+assert.strictEqual(crossLocationPriceSgd(3, '30.00'), '90.00', 'three months at $30 is $90')
+assert.strictEqual(crossLocationPriceSgd(3, '29.90'), '89.70', 'a cent-precise rate stays exact')
+assert.strictEqual(crossLocationPriceSgd(0, '30.00'), '0.00', 'no months left is no charge')
 
 console.log('packages/validity.test ok')

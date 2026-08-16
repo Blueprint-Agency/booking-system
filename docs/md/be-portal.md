@@ -277,6 +277,7 @@ There is no separate suspend/unsuspend surface — blocking is the single mechan
 | POST | `/clients/:id/credits/adjust` | superadmin | `{ client_package_id, delta, reason }` — manual credit adjust. Valid for `kind in ('credit_bundle', 'unlimited', 'trial')`. See §3d. |
 | POST | `/clients/:id/sessions/adjust` | superadmin | Same shape, for PT session balance (`kind='pt'`) |
 | POST | `/clients/:id/packages/:client_package_id/expiry` | superadmin | `{ expires_at, reason }` — edit expiry on `client_packages` (per `admin-restructure.md` §16 "Edit expiry" action, applies to `credit_bundle`, `unlimited`, `trial`). Writes a `manual_adjustments` row with `delta=0` and the reason note. |
+| POST | `/clients/:id/packages/:client_package_id/cross-location` | superadmin | `{ paid_sgd: number \| null, reason }` — attach (amount) or remove (`null`) the **Cross-Location Add-On** on one Unlimited Plan (spec-pre-launch-batch.md §5). 400 `cross_location_requires_unlimited` for every other kind. Writes a `manual_adjustments` row with `delta=0` and the reason, exactly as the expiry edit does. |
 | POST | `/clients/:id/packages/issue` | superadmin | Admin grants a complimentary package (any kind). Inserts `client_packages` row with `amount_paid_sgd=0`, `stripe_payment_intent_id=NULL`. **Trial issue is gated by the `(client_id) WHERE kind='trial'` unique partial index** — returns `409 trial_already_used` if the client already holds a trial. |
 
 ### `staff.ts` (superadmin-only)

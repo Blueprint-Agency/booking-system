@@ -13,7 +13,7 @@ import Stripe from 'stripe'
 import { db } from '../../db'
 import { stripePayments } from '../../db/schema/ledger'
 import { eq } from 'drizzle-orm'
-import { grantPackage } from '../packages/purchase'
+import { applyCrossLocationAddOn, grantPackage } from '../packages/purchase'
 import { consumePromoCodeHold } from '../packages/promo-redemption'
 import { bookWorkshopPaid } from '../workshops/book'
 
@@ -32,6 +32,14 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       if (!packageId || !clientId) return
 
       const amountSgd = meta.amount_sgd ?? String(((session.amount_total ?? 0) / 100).toFixed(2))
+      // The Add-On bought in the same session (§5): its own money, written into
+      // its own column on the plan in the same insert. The plan's amount and the
+      // Add-On's amount together are the charge, with no overlap.
+      const crossLocationSgd = meta.cross_location_sgd || null
+      const chargedSgd = (
+        (Math.round(Number(amountSgd) * 100) + Math.round(Number(crossLocationSgd ?? 0) * 100)) /
+        100
+      ).toFixed(2)
 
       // Idempotency — skip if we already processed this payment intent
       const [existing] = await db.select({ status: stripePayments.status })
@@ -44,7 +52,8 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       if (!existing) {
         await db.insert(stripePayments).values({
           paymentIntentId,
-          amountSgd,
+          // The ledger records what was charged; the split lives on the plan.
+          amountSgd: chargedSgd,
           kind: kind === 'class_package' ? 'class_package' : 'pt_package',
           clientId,
           status: 'pending',
@@ -69,6 +78,7 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         // Home Location for an Unlimited Plan (§1). The checkout that puts it on
         // the session is #23; this only carries it through.
         locationId: meta.location_id || null,
+        crossLocationPaidSgd: crossLocationSgd,
       })
 
       // Mark the payment succeeded + link the granted package so a second
@@ -77,6 +87,61 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       await db
         .update(stripePayments)
         .set({ status: 'succeeded', clientPackageId: granted.clientPackageId })
+        .where(eq(stripePayments.paymentIntentId, paymentIntentId))
+      return
+    }
+
+    // A Cross-Location Add-On bought on its own, against a plan the member
+    // already holds (§5). No package is granted: the money fills a column on the
+    // named plan. The plan's `stripe_payment_intent_id` is already taken by the
+    // plan's own purchase, so this payment sits in the ledger pointing at the
+    // plan instead — `client_package_id` is what makes it findable.
+    if (kind === 'cross_location_add_on') {
+      const clientPackageId = meta.client_package_id
+      const clientId = meta.client_id
+      if (!clientPackageId || !clientId) return
+
+      const amountSgd = meta.amount_sgd ?? String(((session.amount_total ?? 0) / 100).toFixed(2))
+
+      const [existing] = await db
+        .select({ status: stripePayments.status })
+        .from(stripePayments)
+        .where(eq(stripePayments.paymentIntentId, paymentIntentId))
+        .limit(1)
+      if (existing?.status === 'succeeded') return
+
+      if (!existing) {
+        await db
+          .insert(stripePayments)
+          .values({
+            paymentIntentId,
+            amountSgd,
+            // The Add-On extends an Unlimited Plan, which is a class package.
+            // The enum gains no fourth arm for it — Add-On revenue is read off
+            // `client_packages.cross_location_paid_sgd`, not off this row (§15).
+            kind: 'class_package',
+            clientId,
+            clientPackageId,
+            status: 'pending',
+          })
+          .onConflictDoNothing()
+      }
+
+      const applied = await applyCrossLocationAddOn(clientId, clientPackageId, amountSgd)
+      if (!applied) {
+        // The plan already carried an Add-On by the time this payment landed —
+        // two sessions were open at once and this one lost. The money was taken
+        // and nothing was delivered, so it is named here rather than swallowed.
+        // ponytail: a log line, because there is no automated refund path yet;
+        // route it into the refunds flow when that ticket lands.
+        console.error(
+          `[billing] duplicate cross-location add-on payment ${paymentIntentId} on plan ${clientPackageId} — refund owed`,
+        )
+      }
+
+      await db
+        .update(stripePayments)
+        .set({ status: 'succeeded', clientPackageId })
         .where(eq(stripePayments.paymentIntentId, paymentIntentId))
       return
     }

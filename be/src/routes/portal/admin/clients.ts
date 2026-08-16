@@ -13,7 +13,7 @@ import {
   type ManualAdjustmentRow,
 } from '../../../services/clients/manage'
 import { listClientPackages, type ClientPackageWithSource } from '../../../services/packages/entitlements'
-import { adjustBalance, setBalance, setPackageExpiry, type ClientPackageRow } from '../../../services/packages/adjust'
+import { adjustBalance, setBalance, setCrossLocationAddOn, setPackageExpiry, type ClientPackageRow } from '../../../services/packages/adjust'
 
 const idParam = z.object({ id: z.string().uuid() })
 const idPkgParam = z.object({ id: z.string().uuid(), pid: z.string().uuid() })
@@ -37,6 +37,12 @@ const adjustSchema = z.object({
 })
 const balanceSchema = z.object({
   balance: z.number().int().min(0),
+  reason: z.string().min(1).max(2000),
+})
+// Attach at an amount, or remove with null. Zero is a legitimate amount — a
+// comped Add-On is recorded as $0, never as absent.
+const crossLocationSchema = z.object({
+  paid_sgd: z.number().min(0).max(99999).nullable(),
   reason: z.string().min(1).max(2000),
 })
 const expirySchema = z.object({
@@ -75,6 +81,9 @@ function packageView(p: ClientPackageWithSource) {
     dormant: p.dormant,
     unlimited_location: p.location,
     duration_months: p.durationMonths,
+    // The Cross-Location Add-On and what was paid for it (§5, §15) — null means
+    // this plan Covers its Home Location only.
+    cross_location_paid_sgd: p.crossLocationPaidSgd,
     // Which Promo Code the member typed, frozen at purchase (§11). The text is
     // read through the id, so a later relabelling of the code cannot restate it.
     promo_code: p.promoCode,
@@ -101,6 +110,7 @@ function editedPackageView(p: ClientPackageRow) {
     kind: p.kind,
     credits_or_sessions_remaining: p.creditsOrSessionsRemaining,
     expires_at: p.expiresAt,
+    cross_location_paid_sgd: p.crossLocationPaidSgd,
   }
 }
 
@@ -173,6 +183,19 @@ const app = new Hono()
       clientId: id,
       clientPackageId: pid,
       expiresAt: body.expires_at ? new Date(body.expires_at) : null,
+      reason: body.reason,
+      actedByStaffId: c.get('staffUserId'),
+    })
+    c.set('auditTarget' as any, { table: 'client_packages', id: pid })
+    return c.json(editedPackageView(row))
+  })
+  .post('/:id/packages/:pid/cross-location', zValidator('param', idPkgParam), zValidator('json', crossLocationSchema), async c => {
+    const { id, pid } = c.req.valid('param')
+    const body = c.req.valid('json')
+    const row = await setCrossLocationAddOn({
+      clientId: id,
+      clientPackageId: pid,
+      paidSgd: body.paid_sgd === null ? null : body.paid_sgd.toFixed(2),
       reason: body.reason,
       actedByStaffId: c.get('staffUserId'),
     })

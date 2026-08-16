@@ -1,4 +1,4 @@
-import { pgTable, uuid, integer, timestamp, check } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, integer, numeric, timestamp, check } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { staffUsers } from './identity'
 
@@ -28,6 +28,13 @@ export const globalPolicy = pgTable(
     // retroactive: lowering one leaves approved leave exactly where it is.
     coverGroupLeaveCap: integer('cover_group_leave_cap').notNull().default(1),
     studyLeaveCap: integer('study_leave_cap').notNull().default(1),
+    // The **Cross-Location Add-On** rate, per month of the plan it extends (§5).
+    // A rate rather than a price, which is why it lives here and not on the
+    // catalogue. Read once at checkout and frozen onto the plan as the amount
+    // paid, so repricing moves future purchases only.
+    crossLocationRateSgd: numeric('cross_location_rate_sgd', { precision: 10, scale: 2 })
+      .notNull()
+      .default('30.00'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     updatedByStaffId: uuid('updated_by_staff_id').references(() => staffUsers.id, {
       onDelete: 'restrict',
@@ -38,6 +45,10 @@ export const globalPolicy = pgTable(
     leaveCaps: check(
       'global_policy_leave_caps_min_1',
       sql`${table.coverGroupLeaveCap} >= 1 AND ${table.studyLeaveCap} >= 1`,
+    ),
+    crossLocationRateNonNegative: check(
+      'global_policy_cross_location_rate_non_negative',
+      sql`${table.crossLocationRateSgd} >= 0`,
     ),
   }),
 )

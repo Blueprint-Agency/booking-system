@@ -15,6 +15,7 @@ import {
 import { toast } from "sonner";
 import { Avatar, Badge, Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
 import { PackageExpiryDialog } from "@/components/clients/package-expiry-dialog";
+import { CrossLocationDialog } from "@/components/clients/cross-location-dialog";
 import { PackageSetBalanceDialog } from "@/components/clients/package-set-balance-dialog";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
@@ -39,6 +40,8 @@ interface ApiPackage {
   dormant: boolean;
   unlimited_location: { id: string; name: string } | null;
   duration_months: number | null;
+  /** What the member paid for the Cross-Location Add-On; null means Home Location only. */
+  cross_location_paid_sgd: string | null;
   /** The Promo Code the member typed at purchase; null if none. */
   promo_code: string | null;
 }
@@ -100,6 +103,7 @@ export default function ClientProfilePage({
   const [adjustFor, setAdjustFor] = useState<ApiPackage | null>(null);
   const [balanceFor, setBalanceFor] = useState<ApiPackage | null>(null);
   const [expiryFor, setExpiryFor] = useState<ApiPackage | null>(null);
+  const [crossLocationFor, setCrossLocationFor] = useState<ApiPackage | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [restoring, setRestoring] = useState(false);
 
@@ -134,6 +138,7 @@ export default function ClientProfilePage({
       setAdjustFor(null);
       setBalanceFor(null);
       setExpiryFor(null);
+      setCrossLocationFor(null);
       await load();
     } catch (err) {
       const msg =
@@ -287,7 +292,11 @@ export default function ClientProfilePage({
                     p.kind === "credit_bundle" || p.kind === "unlimited" || p.kind === "trial";
                   const canSetBalance = p.kind === "credit_bundle" || p.kind === "trial";
                   const canAdjustDelta = p.kind !== "unlimited";
-                  const showMenu = canEdit && (canEditExpiry || canSetBalance || canAdjustDelta);
+                  // Only an Unlimited Plan has a Home Location to extend.
+                  const canEditCrossLocation = p.kind === "unlimited";
+                  const showMenu =
+                    canEdit &&
+                    (canEditExpiry || canSetBalance || canAdjustDelta || canEditCrossLocation);
                   return (
                     <div
                       key={p.id}
@@ -328,6 +337,19 @@ export default function ClientProfilePage({
                               }}
                             />
                           )}
+                          {canEditCrossLocation && (
+                            <MenuButton
+                              label={
+                                p.cross_location_paid_sgd !== null
+                                  ? "Edit Cross-Location Add-On"
+                                  : "Add Cross-Location Add-On"
+                              }
+                              onClick={() => {
+                                setCrossLocationFor(p);
+                                setOpenMenuId(null);
+                              }}
+                            />
+                          )}
                           {canAdjustDelta && (
                             <MenuButton
                               label="Manual adjustment"
@@ -357,6 +379,9 @@ export default function ClientProfilePage({
                             ? "Dormant — starts at first booking"
                             : "No expiry"}
                         {p.unlimited_location ? ` · ${p.unlimited_location.name}` : ""}
+                        {p.cross_location_paid_sgd !== null
+                          ? ` · both studios (Add-On S$${p.cross_location_paid_sgd})`
+                          : ""}
                       </div>
                       {/* List Price and the money off derived from it. That figure is
                           NOT stored and NOT sent — a third number would be free to
@@ -470,6 +495,24 @@ export default function ClientProfilePage({
             )
           }
           onClose={() => setExpiryFor(null)}
+        />
+      )}
+
+      {canEdit && crossLocationFor && (
+        <CrossLocationDialog
+          packageName={crossLocationFor.package_name}
+          currentPaidSgd={crossLocationFor.cross_location_paid_sgd}
+          onSave={(paidSgd, reason) =>
+            runEdit(
+              () =>
+                api!.post(
+                  `/portal/admin/clients/${id}/packages/${crossLocationFor.id}/cross-location`,
+                  { paid_sgd: paidSgd, reason },
+                ),
+              "Cross-Location Add-On updated.",
+            )
+          }
+          onClose={() => setCrossLocationFor(null)}
         />
       )}
 

@@ -23,6 +23,11 @@ export interface CandidatePackage {
   /** Frozen Duration, Unlimited only (§4). Read when a Dormant plan activates. */
   durationMonths: number | null
   creditsOrSessionsRemaining: number | null
+  /**
+   * The **Cross-Location Add-On** (§5) — what the member paid to have this plan
+   * Cover the other Location as well. Null means Home Location only.
+   */
+  crossLocationPaidSgd: string | null
 }
 
 export interface SelectionInput {
@@ -79,6 +84,14 @@ function coverEnd(p: CandidatePackage, now: Date): Date | null {
   return addMonths(now, p.durationMonths)
 }
 
+/**
+ * Which Locations this plan Covers: its Home Location always, and the other one
+ * too while it carries a Cross-Location Add-On (§5).
+ */
+function covers(p: CandidatePackage, classLocationId: string): boolean {
+  return p.locationId === classLocationId || p.crossLocationPaidSgd !== null
+}
+
 export function selectPackage(input: SelectionInput): SelectionResult {
   const { packages, classLocationId, classStartsAt, creditCost, useCredits, now } = input
 
@@ -93,7 +106,7 @@ export function selectPackage(input: SelectionInput): SelectionResult {
     // lapses before this class does — activating the one behind it would put two
     // Activated plans on the member and hit the partial unique index in their face.
     const anyActivated = plans.some(p => !isDormant(p))
-    for (const plan of plans.filter(p => p.locationId === classLocationId).sort(bySoonestExpiry)) {
+    for (const plan of plans.filter(p => covers(p, classLocationId)).sort(bySoonestExpiry)) {
       if (isDormant(plan) && anyActivated) continue
       const end = coverEnd(plan, now)
       if (!end || end < classStartsAt) continue

@@ -14,6 +14,7 @@ const plan = (over: Partial<CandidatePackage> = {}): CandidatePackage => ({
   locationId: HOME,
   durationMonths: 6,
   creditsOrSessionsRemaining: null,
+  crossLocationPaidSgd: null,
   ...over,
 })
 
@@ -27,6 +28,7 @@ const bundle = (over: Partial<CandidatePackage> = {}): CandidatePackage => ({
   locationId: null,
   durationMonths: null,
   creditsOrSessionsRemaining: 10,
+  crossLocationPaidSgd: null,
   ...over,
 })
 
@@ -108,6 +110,34 @@ const ok = (r: ReturnType<typeof selectPackage>) => {
 {
   const r = select([bundle({ creditsOrSessionsRemaining: 0 })])
   assert.strictEqual(r.ok === false && r.refusal, 'insufficient_credits')
+}
+
+// --- the Cross-Location Add-On ----------------------------------------------
+
+// A plan carrying an Add-On Covers the other Location too, so it is chosen at
+// either — the Add-On is exactly the thing the member paid for.
+{
+  const p = plan({ locationId: OTHER, crossLocationPaidSgd: '180.00' })
+  const b = bundle()
+  const r = ok(select([p, b]))
+  assert.strictEqual(
+    r.clientPackageId,
+    p.id,
+    'a plan carrying an Add-On pays at the Location away from home',
+  )
+  assert.strictEqual(r.creditsUsed, 0, 'covered by the Add-On means no credit is spent')
+}
+
+// And still at its own Home Location — the Add-On adds cover, never moves it.
+{
+  const p = plan({ crossLocationPaidSgd: '180.00' })
+  assert.strictEqual(ok(select([p, bundle()])).clientPackageId, p.id)
+}
+
+// A Dormant plan carrying an Add-On activates on a class at the other Location.
+{
+  const r = ok(select([dormant({ locationId: OTHER, crossLocationPaidSgd: '180.00' })]))
+  assert.strictEqual(r.activateUntil?.toISOString(), '2026-12-01T00:00:00.000Z')
 }
 
 // --- ordering ---------------------------------------------------------------

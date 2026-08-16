@@ -11,6 +11,8 @@ import {
   assertTrialEligible,
   assertPurchasableLocation,
   grantPackage,
+  priceCrossLocationForNewPlan,
+  quoteCrossLocationAddOn,
 } from '../../services/packages/purchase'
 import {
   bestPrice,
@@ -38,6 +40,13 @@ const checkoutPackageSchema = z.object({
   promo_code: z.string().optional(),
   /** Home Location — required for an Unlimited Plan, refused for anything else (§1). */
   location_id: z.string().uuid().optional(),
+  /** Buy the Cross-Location Add-On with the plan — one session, two line items (§5). */
+  cross_location_add_on: z.boolean().optional(),
+})
+
+const crossLocationSchema = z.object({
+  /** The plan the Add-On attaches to. It belongs to one plan, never to a member. */
+  client_package_id: z.string().uuid(),
 })
 
 // The product travels with the code (§11) — without it the endpoint cannot
@@ -100,13 +109,16 @@ const app = new Hono()
   .post('/checkout/package', zValidator('json', checkoutPackageSchema), async c => {
     const clientId = c.get('clientId')
     const clientRow = c.get('clientRow')
-    const { package_kind, package_id, promo_code, location_id } = c.req.valid('json')
+    const { package_kind, package_id, promo_code, location_id, cross_location_add_on } =
+      c.req.valid('json')
 
     let packageName: string
     let priceSgd: string
     let appliedPromotionId: string | null = null
     let effectivePriceSgd: string
     let productType: 'class_package' | 'pt_package'
+    /** The Add-On bought alongside the plan — its own line item and its own money. */
+    let crossLocationSgd: string | null = null
 
     if (package_kind === 'class') {
       const [pkg] = await db
@@ -121,6 +133,13 @@ const app = new Hono()
       // by then the member has paid, and a refusal there charges them for
       // nothing. Same rule, run before Stripe.
       await assertPurchasableLocation(clientId, pkg.kind, location_id)
+
+      // The Add-On on a plan being bought now (§5). A new plan has its whole
+      // Duration ahead of it whether it starts today or waits Dormant, so it
+      // prices at the stored Duration with no arithmetic.
+      if (cross_location_add_on) {
+        crossLocationSgd = await priceCrossLocationForNewPlan(pkg.kind, pkg.durationMonths)
+      }
 
       const promos = await listActivePromotionsFor('class_package', [pkg.id])
       const eff = bestPrice(pkg.priceSgd, promos[pkg.id] ?? [])
@@ -157,6 +176,7 @@ const app = new Hono()
       if (!pkg) throw new NotFoundError('pt_package_not_found')
       if (pkg.status !== 'active') throw new BadRequestError('pt_package_not_active')
       await assertPurchasableLocation(clientId, 'pt', location_id)
+      if (cross_location_add_on) await priceCrossLocationForNewPlan('pt', null)
 
       const promos = await listActivePromotionsFor('pt_package', [pkg.id])
       const eff = bestPrice(pkg.priceSgd, promos[pkg.id] ?? [])
@@ -195,9 +215,14 @@ const app = new Hono()
     // The effective price comes from the pure module, which already floored the
     // discount at zero — re-deriving it here would be a second opinion free to
     // disagree with the one frozen onto the Redemption.
-    const totalCents = applied
+    const planCents = applied
       ? Math.round(Number(applied.effectivePriceSgd) * 100)
       : baseCents
+    // The Add-On is a Global Policy rate, not a product — `promo_code_products`
+    // has nothing to attach to, so a code discounts the plan line only and the
+    // rate is never quietly shaved (§5). Plan plus Add-On IS the charge.
+    const crossLocationCents = crossLocationSgd ? Math.round(Number(crossLocationSgd) * 100) : 0
+    const totalCents = planCents + crossLocationCents
 
     // A discount that takes the total to zero skips the payment provider
     // entirely and grants immediately — the same path a free trial pass takes.
@@ -213,6 +238,7 @@ const app = new Hono()
         appliedPromotionId,
         appliedPromoCodeId: applied?.promoCodeId ?? null,
         locationId: location_id ?? null,
+        crossLocationPaidSgd: crossLocationSgd,
       })
       return c.json(
         { outcome: 'granted', client_package_id: granted.clientPackageId, free: true },
@@ -224,17 +250,40 @@ const app = new Hono()
       mode: 'payment',
       customer_email: clientRow.email,
       line_items: [
-        {
-          price_data: {
-            currency: 'sgd',
-            unit_amount: totalCents,
-            product_data: {
-              name: packageName,
-              description: `Yoga Sadhana · includes 9% GST${applied ? ` · promo ${applied.code} applied` : ''}`,
-            },
-          },
-          quantity: 1,
-        },
+        // A plan a discount took to zero beside a paid Add-On still charges: the
+        // plan line is dropped rather than sent at zero, which Stripe refuses.
+        ...(planCents > 0
+          ? [
+              {
+                price_data: {
+                  currency: 'sgd' as const,
+                  unit_amount: planCents,
+                  product_data: {
+                    name: packageName,
+                    description: `Yoga Sadhana · includes 9% GST${applied ? ` · promo ${applied.code} applied` : ''}`,
+                  },
+                },
+                quantity: 1,
+              },
+            ]
+          : []),
+        // Its own line, never folded into the plan — that fold is what would
+        // make "is the Add-On selling?" unanswerable (§15).
+        ...(crossLocationCents > 0
+          ? [
+              {
+                price_data: {
+                  currency: 'sgd' as const,
+                  unit_amount: crossLocationCents,
+                  product_data: {
+                    name: 'Cross-Location Add-On',
+                    description: 'Covers both studios for the length of this plan · includes 9% GST',
+                  },
+                },
+                quantity: 1,
+              },
+            ]
+          : []),
       ],
       // A capped code's session dies at the same moment its Hold does, so a
       // member can never pay for a place that has already gone back in the pool.
@@ -252,10 +301,65 @@ const app = new Hono()
         applied_promotion_id: appliedPromotionId ?? '',
         list_price_sgd: priceSgd,
         location_id: location_id ?? '',
-        amount_sgd: (totalCents / 100).toFixed(2),
+        // The plan's money and the Add-On's money, split without overlap: the
+        // two together are the charge, and each stays separately reportable.
+        amount_sgd: (planCents / 100).toFixed(2),
+        cross_location_sgd: crossLocationSgd ?? '',
       },
       success_url: `${CLIENT_URL}/booking/confirmation?type=package&package_id=${package_id}&package_kind=${package_kind}&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${CLIENT_URL}/checkout?package=${package_id}&kind=${package_kind}&cancelled=1`,
+    })
+
+    return c.json({ url: session.url })
+  })
+  // The Add-On bought later against a plan the member already holds (§5). Its
+  // own session, told apart by the `kind` metadata, which names the plan the
+  // webhook must fill the column on. A quote first, so the member sees the
+  // months-times-rate arithmetic before they are asked to pay it.
+  .post('/checkout/cross-location/quote', zValidator('json', crossLocationSchema), async c => {
+    const q = await quoteCrossLocationAddOn(c.get('clientId'), c.req.valid('json').client_package_id)
+    return c.json({
+      client_package_id: q.clientPackageId,
+      months: q.months,
+      rate_sgd: q.rateSgd,
+      price_sgd: q.priceSgd,
+    })
+  })
+  .post('/checkout/cross-location', zValidator('json', crossLocationSchema), async c => {
+    const clientId = c.get('clientId')
+    const clientRow = c.get('clientRow')
+    const { client_package_id } = c.req.valid('json')
+
+    // Refuses a plan that is not the member's, not Unlimited, not live, or
+    // already carrying one — before Stripe, never after.
+    const quote = await quoteCrossLocationAddOn(clientId, client_package_id)
+    const totalCents = Math.round(Number(quote.priceSgd) * 100)
+    if (totalCents <= 0) throw new BadRequestError('cross_location_nothing_to_charge')
+
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      customer_email: clientRow.email,
+      line_items: [
+        {
+          price_data: {
+            currency: 'sgd',
+            unit_amount: totalCents,
+            product_data: {
+              name: 'Cross-Location Add-On',
+              description: `${quote.months} month${quote.months === 1 ? '' : 's'} × $${quote.rateSgd} · includes 9% GST`,
+            },
+          },
+          quantity: 1,
+        },
+      ],
+      metadata: {
+        kind: 'cross_location_add_on',
+        client_id: clientId,
+        client_package_id,
+        amount_sgd: quote.priceSgd,
+      },
+      success_url: `${CLIENT_URL}/booking/confirmation?type=cross_location&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${CLIENT_URL}/account?cancelled=1`,
     })
 
     return c.json({ url: session.url })

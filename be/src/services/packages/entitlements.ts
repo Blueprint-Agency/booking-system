@@ -123,6 +123,8 @@ export interface ClientPackageWithSource {
   location: { id: string; name: string } | null
   /** Frozen Duration in calendar months for an Unlimited Plan; null otherwise. */
   durationMonths: number | null
+  /** What the member paid for the Cross-Location Add-On (§5); null means Home Location only. */
+  crossLocationPaidSgd: string | null
   /** '1on1' | '2on1' for PT packages; null otherwise. */
   sessionType: '1on1' | '2on1' | null
   /** The Promo Code the member typed at purchase, as text; null if none (§11). */
@@ -153,6 +155,7 @@ export async function listClientPackages(
       amountPaidSgd: clientPackages.amountPaidSgd,
       listPriceSgd: clientPackages.listPriceSgd,
       durationMonths: clientPackages.durationMonths,
+      crossLocationPaidSgd: clientPackages.crossLocationPaidSgd,
       locationId: clientPackages.locationId,
       locationName: locations.name,
       classPackageName: classPackages.name,
@@ -185,6 +188,7 @@ export async function listClientPackages(
     dormant: isDormant({ kind: r.kind as ClientPackageWithSource['kind'], expiresAt: r.expiresAt }),
     location: r.locationId && r.locationName ? { id: r.locationId, name: r.locationName } : null,
     durationMonths: r.durationMonths,
+    crossLocationPaidSgd: r.crossLocationPaidSgd,
     sessionType: (r.ptSessionType ?? null) as '1on1' | '2on1' | null,
     promoCode: r.promoCode ?? null,
   }))

@@ -301,6 +301,12 @@ export const clientPackages = pgTable(
     // Frozen copy of the catalogue Duration in calendar months (§4). Frozen because
     // activation reads it later, and the live catalogue row is admin-editable.
     durationMonths: integer('duration_months'),
+    // The **Cross-Location Add-On** (§5): null means this plan Covers its Home
+    // Location only; non-null means it Covers both, and the value IS what the
+    // member paid. A column rather than a product, because the Add-On cannot
+    // exist without a plan, booking needs no join to see it, and Add-On revenue
+    // separates from plan revenue for free.
+    crossLocationPaidSgd: numeric('cross_location_paid_sgd', { precision: 10, scale: 2 }),
     creditsOrSessionsRemaining: integer('credits_or_sessions_remaining'),
     // Null ONLY for a Dormant Unlimited Plan — a plan bought while another was
     // still live, whose clock starts at Activation (§3). It never means "never expires".
@@ -357,6 +363,7 @@ export const clientPackages = pgTable(
         (${table.kind} <> 'unlimited'
           AND ${table.locationId} IS NULL
           AND ${table.durationMonths} IS NULL
+          AND ${table.crossLocationPaidSgd} IS NULL
           AND ${table.expiresAt} IS NOT NULL)
       `,
     ),
