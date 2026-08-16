@@ -14,7 +14,7 @@ import { db } from '../../db'
 import { stripePayments } from '../../db/schema/ledger'
 import { eq } from 'drizzle-orm'
 import { grantPackage } from '../packages/purchase'
-import { consumePromoHold } from '../packages/promo-redemption'
+import { consumePromoCodeHold } from '../packages/promo-redemption'
 import { bookWorkshopPaid } from '../workshops/book'
 
 export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
@@ -55,7 +55,7 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       // with the moment and the payment intent (§10 step 3).
       const promoCodeId = meta.promo_code_id || null
       if (promoCodeId) {
-        await consumePromoHold({ promoCodeId, clientId, paymentIntentId })
+        await consumePromoCodeHold({ promoCodeId, clientId, paymentIntentId })
       }
 
       const granted = await grantPackage({
@@ -113,7 +113,7 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
 
       const promoCodeId = meta.promo_code_id || null
       if (promoCodeId) {
-        await consumePromoHold({ promoCodeId, clientId, paymentIntentId })
+        await consumePromoCodeHold({ promoCodeId, clientId, paymentIntentId })
       }
 
       await bookWorkshopPaid({

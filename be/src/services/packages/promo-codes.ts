@@ -218,14 +218,19 @@ export function evaluatePromoCode(input: EvaluateInput): PromoCodeEvaluation {
     return { ok: false, refusal: 'out_of_scope' }
   }
 
+  // One use per member, counted on what they have actually taken: a Consumed
+  // Redemption of their own is the rule. Their own live Hold is NOT — it is the
+  // place they are standing in, and refusing it would lock a member out of their
+  // own abandoned checkout for the length of the Hold. The upsert re-takes that
+  // row rather than adding one, which is what makes the retry idempotent.
   const mine = input.redemptions.filter(r => r.clientId === input.clientId)
-  if (mine.some(r => occupiesPlace(r, now))) {
+  if (mine.some(r => r.status === 'consumed')) {
     return { ok: false, refusal: 'already_redeemed' }
   }
-  if (
-    code.maxRedemptions != null &&
-    usedPlaces(input.redemptions, now) >= code.maxRedemptions
-  ) {
+  // Their own Hold is excluded from the count for the same reason: re-taking a
+  // place they already occupy cannot exhaust the cap.
+  const others = input.redemptions.filter(r => r.clientId !== input.clientId)
+  if (code.maxRedemptions != null && usedPlaces(others, now) >= code.maxRedemptions) {
     return { ok: false, refusal: 'fully_claimed' }
   }
 

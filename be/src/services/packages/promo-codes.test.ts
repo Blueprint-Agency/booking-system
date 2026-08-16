@@ -277,16 +277,28 @@ assert.strictEqual(
 )
 
 // ---------- refusal ordering the member can feel ----------
-// The member's own live Hold is reported as theirs, not as "fully claimed" —
-// otherwise abandoning and retrying the last place reads as someone else took it.
-assert.deepStrictEqual(
+// A member's own live Hold does NOT refuse them. They abandoned a checkout and
+// came back: they are standing in that place already, so the retry re-takes
+// their own row. Refusing here would lock them out of their own purchase for
+// the length of the Hold, on the last place AND on an uncapped code.
+assert.strictEqual(
   evaluate({
     code: promoCode({ maxRedemptions: 1 }),
     redemptions: [
       redemption({ clientId: 'client-me', status: 'held', heldUntil: new Date('2026-06-01T12:30:00Z'), consumedAt: null }),
     ],
+  }).ok,
+  true,
+)
+// Someone else's live Hold on the last place is what "fully claimed" is for.
+assert.deepStrictEqual(
+  evaluate({
+    code: promoCode({ maxRedemptions: 1 }),
+    redemptions: [
+      redemption({ clientId: 'client-other', status: 'held', heldUntil: new Date('2026-06-01T12:30:00Z'), consumedAt: null }),
+    ],
   }),
-  { ok: false, refusal: 'already_redeemed' },
+  { ok: false, refusal: 'fully_claimed' },
 )
 // ...and once their own Hold has lapsed they get the place back.
 assert.strictEqual(

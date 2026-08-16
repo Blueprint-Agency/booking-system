@@ -91,7 +91,7 @@ async function readCode(
  * A workshop is identified by its workshop id, never its tier: scoping is at
  * workshop level. The tier only sets the price.
  */
-export async function describeDiscountable(
+export async function describeProduct(
   input:
     | { packageKind: 'class' | 'pt'; packageId: string }
     | { workshopId: string; workshopTierId: string },
@@ -235,7 +235,7 @@ export async function holdPromoCode(input: RedemptionInput): Promise<AppliedProm
  * payment intent. Only a `held` row moves, so a redelivered webhook cannot
  * rewrite a Redemption that is already Consumed.
  */
-export async function consumePromoHold(args: {
+export async function consumePromoCodeHold(args: {
   promoCodeId: string
   clientId: string
   paymentIntentId: string

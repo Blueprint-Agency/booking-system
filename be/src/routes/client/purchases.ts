@@ -17,7 +17,7 @@ import {
   listActivePromotionsFor,
 } from '../../services/packages/promotions'
 import {
-  describeDiscountable,
+  describeProduct,
   holdPromoCode,
   previewPromoCode,
   type AppliedPromoCode,
@@ -42,18 +42,19 @@ const checkoutPackageSchema = z.object({
 
 // The product travels with the code (§11) — without it the endpoint cannot
 // answer the scope case. Either a package or a workshop tier, never both.
-const validatePromoSchema = z
-  .object({
-    code: z.string().min(1),
-    package_kind: z.enum(['class', 'pt']).optional(),
-    package_id: z.string().uuid().optional(),
-    workshop_id: z.string().uuid().optional(),
-    workshop_tier_id: z.string().uuid().optional(),
-  })
-  .refine(
-    v => (v.package_id != null) !== (v.workshop_id != null && v.workshop_tier_id != null),
-    { message: 'name exactly one product' },
-  )
+const validatePromoSchema = z.intersection(
+  z.object({ code: z.string().min(1) }),
+  z.union([
+    z.object({
+      package_kind: z.enum(['class', 'pt']),
+      package_id: z.string().uuid(),
+    }),
+    z.object({
+      workshop_id: z.string().uuid(),
+      workshop_tier_id: z.string().uuid(),
+    }),
+  ]),
+)
 
 const checkoutWorkshopSchema = z.object({
   workshop_id: z.string().uuid(),
@@ -68,10 +69,10 @@ const app = new Hono()
   .post('/checkout/validate-promo', zValidator('json', validatePromoSchema), async c => {
     const clientId = c.get('clientId')
     const body = c.req.valid('json')
-    const item = await describeDiscountable(
-      body.package_id
-        ? { packageKind: body.package_kind ?? 'class', packageId: body.package_id }
-        : { workshopId: body.workshop_id!, workshopTierId: body.workshop_tier_id! },
+    const item = await describeProduct(
+      'package_id' in body
+        ? { packageKind: body.package_kind, packageId: body.package_id }
+        : { workshopId: body.workshop_id, workshopTierId: body.workshop_tier_id },
     )
     try {
       const applied = await previewPromoCode({
@@ -173,19 +174,30 @@ const app = new Hono()
     // All money math in integer cents — float arithmetic drifts on edge cases.
     const baseCents = Math.round(parseFloat(effectivePriceSgd) * 100)
     let applied: AppliedPromoCode | null = null
-    if (promo_code && baseCents > 0) {
-      applied = await holdPromoCode({
+    if (promo_code) {
+      const args = {
         codeText: promo_code,
         clientId,
         product: { productType, productId: package_id },
         productName: packageName,
         basePriceSgd: effectivePriceSgd,
-      })
+      }
+      // A line a Promotion already took to zero has nothing left to discount, so
+      // the code is checked but no place is claimed and nothing is frozen onto
+      // the purchase — a member does not spend their one use on something it
+      // cannot reduce. A bad code is refused either way, never silently accepted.
+      if (baseCents > 0) applied = await holdPromoCode(args)
+      else await previewPromoCode(args)
     }
     // Catalogue prices are GST-inclusive (SG consumer pricing / IRAS). The amount
     // charged IS the listed price; the "includes 9% GST" line reflects the embedded
     // GST rather than adding it on top.
-    const totalCents = baseCents - Math.round(Number(applied?.discountSgd ?? 0) * 100)
+    // The effective price comes from the pure module, which already floored the
+    // discount at zero — re-deriving it here would be a second opinion free to
+    // disagree with the one frozen onto the Redemption.
+    const totalCents = applied
+      ? Math.round(Number(applied.effectivePriceSgd) * 100)
+      : baseCents
 
     // A discount that takes the total to zero skips the payment provider
     // entirely and grants immediately — the same path a free trial pass takes.
@@ -271,7 +283,18 @@ const app = new Hono()
     const baseCents = Math.round(parseFloat(eff.baseSgd) * 100)
 
     // Free workshop (price 0 after promotion) → book immediately, skip Stripe.
+    // A code typed on it is still checked, so a bad one is refused rather than
+    // shown accepted; there is nothing left to discount, so no place is claimed.
     if (baseCents === 0) {
+      if (promo_code) {
+        await previewPromoCode({
+          codeText: promo_code,
+          clientId,
+          product: { productType: 'workshop', productId: workshop_id },
+          productName: `${ws.name} — ${tier.name}`,
+          basePriceSgd: eff.baseSgd,
+        })
+      }
       const result = await bookWorkshopFree({ clientId, workshopId: workshop_id, workshopTierId: workshop_tier_id })
       return c.json({ outcome: 'granted', booking_id: result.bookingId, free: true }, 201)
     }
@@ -294,7 +317,12 @@ const app = new Hono()
       })
     }
     // GST-inclusive (see package checkout above) — charge the listed price.
-    const totalCents = baseCents - Math.round(Number(applied?.discountSgd ?? 0) * 100)
+    // The effective price comes from the pure module, which already floored the
+    // discount at zero — re-deriving it here would be a second opinion free to
+    // disagree with the one frozen onto the Redemption.
+    const totalCents = applied
+      ? Math.round(Number(applied.effectivePriceSgd) * 100)
+      : baseCents
 
     // Taken to zero by the code: skip the payment provider and book now. The
     // Redemption is already `consumed`; no webhook is coming.
