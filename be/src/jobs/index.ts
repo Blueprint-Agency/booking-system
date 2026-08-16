@@ -2,7 +2,6 @@ import cron from 'node-cron'
 import { logger } from '../shared/logger'
 import { captureException } from '../instrument'
 import { expireStaleSessions, completeEndedPtSessions } from '../services/pt-sessions/cancel'
-import { flipNoShows } from '../services/bookings/check-in'
 import { expirePackages, sendLapsingAlerts, sendExpiredNotifications } from '../services/packages/expire'
 import { flagExpiredWaivers } from '../services/waiver'
 import { loadFeatureFlags } from '../services/feature-flags'
@@ -35,8 +34,8 @@ export async function registerJobs() {
   // not in-app, so there's nothing to escalate inside the system.
   cron.schedule('*/5 * * * *', safeJob('expireStaleSessions', expireStaleSessions))
 
-  // Every 1 min — no-show flip on bookings whose session has ended
-  cron.schedule('* * * * *', safeJob('flipNoShows', flipNoShows))
+  // No no-show job by design — admin-restructure.md §11: forfeits only fire when
+  // admin/instructor manually marks the row `no-show`.
 
   // Every 5 min — advance scheduled PT requests whose session has ended to `attended`
   cron.schedule('*/5 * * * *', safeJob('completeEndedPtSessions', completeEndedPtSessions))
