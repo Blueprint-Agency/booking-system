@@ -30,6 +30,9 @@ export type TemplateSlug =
   // A first-timer's welcome and a $150 receipt are not the same email, and the
   // renderer has no conditionals, so the trial pass needs its own slug (§13).
   | 'trial_pass_purchase_confirmed'
+  // §14: the provider sends its own money receipt; this is the one that says the
+  // plan has ended and names the classes the Refund cancelled.
+  | 'purchase_refunded'
   | 'credit_expiry_reminder'
   | 'instructor_invite'
   | 'admin_invite'

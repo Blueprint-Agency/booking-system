@@ -6,8 +6,8 @@
  *   - grant client_package (class or pt) OR insert workshop booking
  *   - trigger referral conversion check if applicable
  *
- * charge.refunded:
- *   - mark stripe_payments.status='refunded', refunded_at
+ * charge.refunded (full refunds only — see §14 on partials):
+ *   - the entire unwind, in ./refunds.ts
  */
 import Stripe from 'stripe'
 import { db } from '../../db'
@@ -16,6 +16,7 @@ import { eq } from 'drizzle-orm'
 import { stripe } from '../../lib/stripe'
 import { applyCrossLocationAddOn, grantPackage } from '../packages/purchase'
 import { consumePromoCodeHold } from '../packages/promo-redemption'
+import { unwindRefund } from './refunds'
 import { bookWorkshopPaid } from '../workshops/book'
 import {
   sendPackagePurchaseEmail,
@@ -171,8 +172,12 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         // The plan already carried an Add-On by the time this payment landed —
         // two sessions were open at once and this one lost. The money was taken
         // and nothing was delivered, so it is named here rather than swallowed.
-        // ponytail: a log line, because there is no automated refund path yet;
-        // route it into the refunds flow when that ticket lands.
+        // ponytail: still a log line. §14's refunds are admin-issued — the
+        // button calls the provider and the webhook only unwinds — so an
+        // automatic refund from inside this handler is a different decision
+        // from the one that ticket made, and it is not one of its acceptance
+        // criteria. Upgrade path: a follow-up that lets the webhook issue the
+        // provider call for a payment that delivered nothing.
         console.error(
           `[billing] duplicate cross-location add-on payment ${paymentIntentId} on plan ${clientPackageId} — refund owed`,
         )
@@ -255,16 +260,18 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       : null
     if (!paymentIntentId) return
 
-    // Only flip the payment to 'refunded' on a FULL refund. A partial refund (e.g. a
-    // manual goodwill refund issued from the Stripe dashboard while automated refunds
-    // are still deferred) must not mark the whole payment refunded.
-    // TODO(refunds slice): record partial refund amounts once the ledger supports it.
+    // Partials are ignored, and that is **settled, not deferred** (§14). There is
+    // no partial refund as a concept: a part-refund issued from the dashboard is
+    // a pure money event that touches no entitlement — the member's plan keeps
+    // running and their bookings stand — so there is nothing here to unwind and
+    // no amount to record. Only a full refund voids anything.
     const captured = charge.amount_captured ?? charge.amount ?? 0
     const fullyRefunded = captured > 0 && (charge.amount_refunded ?? 0) >= captured
     if (!fullyRefunded) return
 
-    await db.update(stripePayments)
-      .set({ status: 'refunded', refundedAt: new Date() })
-      .where(eq(stripePayments.paymentIntentId, paymentIntentId))
+    // The whole unwind lives on this event, so a refund issued from the portal
+    // and one issued from the provider's dashboard are the same operation. It is
+    // idempotent — the provider retries.
+    await unwindRefund(paymentIntentId)
   }
 }

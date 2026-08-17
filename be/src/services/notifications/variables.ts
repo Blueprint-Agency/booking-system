@@ -39,6 +39,10 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   // allow-list would leave that footgun loaded for the portal template editor.
   package_purchase_confirmed: ['client_name', 'package_name', 'contents_line', 'validity_line', 'receipt_url'],
   trial_pass_purchase_confirmed: ['client_name', 'package_name', 'contents_line', 'validity_line', 'receipt_url'],
+  // §14: same composed-sentence rule. `cancelled_line` names the classes the
+  // Refund cancelled and states plainly when there were none — cancelling
+  // someone's booked classes silently is not acceptable.
+  purchase_refunded: ['client_name', 'package_name', 'refund_line', 'cancelled_line', 'account_url'],
   credit_expiry_reminder: ['client_name', 'package_name', 'expires_at', 'credits_remaining'],
   instructor_invite: ['name', 'invite_url', 'expires_at'],
   admin_invite: ['name', 'invite_url', 'expires_at'],

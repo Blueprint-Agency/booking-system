@@ -32,6 +32,15 @@ export interface CancelInput {
   clientId?: string
   /** Staff actor for admin cancels (also written to the credit-adjustment ledger). */
   actorStaffId?: string
+  /**
+   * The package that paid for this booking has been **Voided** by a Refund
+   * (§14). The seat is released and the waitlist promotes as usual, but nothing
+   * is returned: putting a credit back into a package that no longer exists is
+   * meaningless, and a `credit_returned` outcome would falsely read as the
+   * member being made whole twice on top of their money back. The outcome is
+   * `n_a`, the same one an Unlimited booking already takes.
+   */
+  packageVoided?: boolean
 }
 
 export interface CancelResult {
@@ -40,7 +49,7 @@ export interface CancelResult {
 }
 
 export async function cancelBooking(input: CancelInput): Promise<CancelResult> {
-  const { bookingId, source, clientId, actorStaffId } = input
+  const { bookingId, source, clientId, actorStaffId, packageVoided } = input
 
   return db.transaction(async tx => {
     // 1. Lock the booking row.
@@ -116,12 +125,14 @@ export async function cancelBooking(input: CancelInput): Promise<CancelResult> {
     const used = bk.used ?? 0
     const wantsRefund = source === 'admin' || evaluation!.refund === 'full'
 
-    // Unlimited bookings used 0 credits → nothing to return; record n_a, not credit_returned.
+    // Unlimited bookings used 0 credits → nothing to return; record n_a, not
+    // credit_returned. A Voided package takes the same arm for the same reason:
+    // there is no longer anything to return the credit to.
     // Nothing here touches `expires_at`: Activation is one-way (§3), from any actor.
     // Staff return a plan to Dormant by hand through the portal expiry dialog.
     let refundOutcome: RefundOutcome
     let refundFired: boolean
-    if (wantsRefund && used > 0 && bk.clientPackageId) {
+    if (wantsRefund && used > 0 && bk.clientPackageId && !packageVoided) {
       refundOutcome = decideOutcome(bk.kind, source, evaluation)
       refundFired = true
     } else if (wantsRefund) {

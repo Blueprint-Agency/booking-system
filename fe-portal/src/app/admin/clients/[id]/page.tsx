@@ -17,6 +17,7 @@ import { Avatar, Badge, Button, Dialog, DialogFooter, Input, Label } from "@/com
 import { PackageExpiryDialog } from "@/components/clients/package-expiry-dialog";
 import { CrossLocationDialog } from "@/components/clients/cross-location-dialog";
 import { PackageSetBalanceDialog } from "@/components/clients/package-set-balance-dialog";
+import { RefundDialog } from "@/components/clients/refund-dialog";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { formatDate, formatRelative } from "@/lib/formatters";
@@ -44,6 +45,13 @@ interface ApiPackage {
   cross_location_paid_sgd: string | null;
   /** The Promo Code the member typed at purchase; null if none. */
   promo_code: string | null;
+  /** There is money at the payment provider to give back (§14). */
+  refundable: boolean;
+  /**
+   * Backend-composed — "3 classes attended since 12 Jun 2026", or null when the
+   * purchase is Untouched. A notice, never a gate: the refund is still allowed.
+   */
+  refund_notice: string | null;
 }
 
 interface ApiAdjustment {
@@ -104,6 +112,7 @@ export default function ClientProfilePage({
   const [balanceFor, setBalanceFor] = useState<ApiPackage | null>(null);
   const [expiryFor, setExpiryFor] = useState<ApiPackage | null>(null);
   const [crossLocationFor, setCrossLocationFor] = useState<ApiPackage | null>(null);
+  const [refundFor, setRefundFor] = useState<ApiPackage | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [restoring, setRestoring] = useState(false);
 
@@ -139,6 +148,7 @@ export default function ClientProfilePage({
       setBalanceFor(null);
       setExpiryFor(null);
       setCrossLocationFor(null);
+      setRefundFor(null);
       await load();
     } catch (err) {
       const msg =
@@ -296,7 +306,11 @@ export default function ClientProfilePage({
                   const canEditCrossLocation = p.kind === "unlimited";
                   const showMenu =
                     canEdit &&
-                    (canEditExpiry || canSetBalance || canAdjustDelta || canEditCrossLocation);
+                    (canEditExpiry ||
+                      canSetBalance ||
+                      canAdjustDelta ||
+                      canEditCrossLocation ||
+                      p.refundable);
                   return (
                     <div
                       key={p.id}
@@ -359,6 +373,18 @@ export default function ClientProfilePage({
                               }}
                             />
                           )}
+                          {/* Always offered on a purchase that reached the payment
+                              provider — attendance is a notice inside the dialog,
+                              never a reason to hide the button (§14). */}
+                          {p.refundable && (
+                            <MenuButton
+                              label="Refund purchase…"
+                              onClick={() => {
+                                setRefundFor(p);
+                                setOpenMenuId(null);
+                              }}
+                            />
+                          )}
                         </div>
                       )}
                       {p.credits_or_sessions_remaining !== null ? (
@@ -401,6 +427,14 @@ export default function ClientProfilePage({
                           <span> · code <span className="font-mono text-ink">{p.promo_code}</span></span>
                         )}
                       </div>
+                      {/* The attended notice sits on the row itself, above the
+                          Refund action, and again in the dialog. It is a notice
+                          and not a gate — the refund stays available (§14). */}
+                      {p.refundable && p.refund_notice && (
+                        <div className="mt-1 inline-flex items-center gap-1 text-xs text-warning">
+                          <AlertTriangle className="h-3 w-3" /> {p.refund_notice}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -513,6 +547,23 @@ export default function ClientProfilePage({
             )
           }
           onClose={() => setCrossLocationFor(null)}
+        />
+      )}
+
+      {canEdit && refundFor && (
+        <RefundDialog
+          packageName={refundFor.package_name}
+          notice={refundFor.refund_notice}
+          onConfirm={(reason) =>
+            runEdit(
+              () =>
+                api!.post(`/portal/admin/clients/${id}/packages/${refundFor.id}/refund`, {
+                  reason,
+                }),
+              "Refund issued. The package is voided once the provider confirms.",
+            )
+          }
+          onClose={() => setRefundFor(null)}
         />
       )}
 

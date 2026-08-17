@@ -14,6 +14,7 @@ import {
 } from '../../../services/clients/manage'
 import { listClientPackages, type ClientPackageWithSource } from '../../../services/packages/entitlements'
 import { adjustBalance, setBalance, setCrossLocationAddOn, setPackageExpiry, type ClientPackageRow } from '../../../services/packages/adjust'
+import { issueRefund, refundStatesFor, type RefundState } from '../../../services/billing/refunds'
 
 const idParam = z.object({ id: z.string().uuid() })
 const idPkgParam = z.object({ id: z.string().uuid(), pid: z.string().uuid() })
@@ -45,6 +46,12 @@ const crossLocationSchema = z.object({
   paid_sgd: z.number().min(0).max(99999).nullable(),
   reason: z.string().min(1).max(2000),
 })
+// A Refund is always the full amount, so there is deliberately no amount field.
+// The reason is mandatory — it is the only record of why an admin refunded, and
+// the only one that survives a purchase that was not Untouched.
+const refundSchema = z.object({
+  reason: z.string().min(1).max(2000),
+})
 const expirySchema = z.object({
   expires_at: z.string().datetime({ offset: true }).nullable(),
   reason: z.string().min(1).max(2000),
@@ -64,8 +71,13 @@ function clientRow(c: ClientRow) {
   }
 }
 
-function packageView(p: ClientPackageWithSource) {
+function packageView(p: ClientPackageWithSource, refund?: RefundState) {
   return {
+    // The Refund button and the notice above it (§14). `refund_notice` is null
+    // when the purchase is **Untouched**; the portal renders the sentence and
+    // works nothing out for itself.
+    refundable: refund?.refundable ?? false,
+    refund_notice: refund?.notice ?? null,
     id: p.id,
     kind: p.kind,
     source_package_id: p.sourcePackageId,
@@ -138,14 +150,15 @@ const app = new Hono()
   })
   .get('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    const [client, packages, adjustments] = await Promise.all([
+    const [client, packages, adjustments, refunds] = await Promise.all([
       getClientById(id),
       listClientPackages(id, true),
       listRecentAdjustments(id),
+      refundStatesFor(id),
     ])
     return c.json({
       ...clientRow(client),
-      packages: packages.map(packageView),
+      packages: packages.map(p => packageView(p, refunds[p.id])),
       adjustments: adjustments.map(adjustmentView),
     })
   })
@@ -201,6 +214,26 @@ const app = new Hono()
     })
     c.set('auditTarget' as any, { table: 'client_packages', id: pid })
     return c.json(editedPackageView(row))
+  })
+  // A Refund (§14). The handler calls the payment provider and returns — the
+  // `charge.refunded` webhook voids the purchase, cancels its future bookings
+  // and hands the Promo Code back, so a refund issued from the provider's
+  // dashboard produces the identical unwind.
+  .post('/:id/packages/:pid/refund', zValidator('param', idPkgParam), zValidator('json', refundSchema), async c => {
+    const { id, pid } = c.req.valid('param')
+    const body = c.req.valid('json')
+    const result = await issueRefund({
+      clientId: id,
+      clientPackageId: pid,
+      reason: body.reason,
+      actorStaffId: c.get('staffUserId'),
+    })
+    c.set('auditTarget' as any, { table: 'client_packages', id: pid })
+    return c.json({
+      refunded: true,
+      attended_count: result.attendedCount,
+      override: result.override,
+    })
   })
   // Blocking is DELETE /:id + POST /:id/restore below — there is deliberately no
   // separate suspend mechanism.

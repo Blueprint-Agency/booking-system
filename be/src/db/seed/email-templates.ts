@@ -291,6 +291,18 @@ const WORKSHOP_PURCHASE_BODY = proseBody('Your workshop place is confirmed', [
   '<a href="{{qr_url}}" style="color:#c97a4a;font-weight:600;text-decoration:none;">Show your QR code →</a><br /><a href="{{receipt_url}}" style="color:#7a7670;text-decoration:none;">View your purchase</a>',
 ])
 
+/**
+ * The Refund (§14). The provider sends the money receipt; this one says the
+ * entitlement has ended and names the classes that were cancelled with it —
+ * both whole composed sentences, for the same reason the purchase emails are.
+ */
+const PURCHASE_REFUNDED_BODY = proseBody('Your purchase has been refunded', [
+  'Hi {{client_name}},',
+  '{{refund_line}}',
+  '{{cancelled_line}}',
+  '<a href="{{account_url}}" style="color:#c97a4a;font-weight:600;text-decoration:none;">View your account →</a>',
+])
+
 const TEMPLATES: Array<{ slug: string; subject: string; bodyHtml?: string }> = [
   { slug: 'welcome',                            subject: 'Welcome to Yoga Sadhana' },
   {
@@ -346,6 +358,11 @@ const TEMPLATES: Array<{ slug: string; subject: string; bodyHtml?: string }> = [
     slug: 'package_purchase_confirmed',
     subject: 'Your package is confirmed',
     bodyHtml: PACKAGE_PURCHASE_BODY,
+  },
+  {
+    slug: 'purchase_refunded',
+    subject: 'Your purchase has been refunded',
+    bodyHtml: PURCHASE_REFUNDED_BODY,
   },
   { slug: 'credit_expiry_reminder',             subject: 'Your credits are expiring soon' },
   {

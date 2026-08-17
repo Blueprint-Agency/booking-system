@@ -257,13 +257,13 @@ export const promoCodeRedemptions = pgTable(
   },
   table => ({
     // The one-use-per-member rule. It also makes the Hold idempotent: a member
-    // who abandons and retries updates their own row. This takes its partial
-    // form (WHERE status <> 'refunded') in the refunds ticket, which is what
-    // lets a refunded use be returned without deleting the evidence.
-    oncePerClient: uniqueIndex('promo_code_redemptions_code_client_unique').on(
-      table.promoCodeId,
-      table.clientId,
-    ),
+    // who abandons and retries updates their own row. It is **partial** (§14):
+    // a refunded Redemption is not deleted — the ledger is the only evidence of
+    // a buy-refund-buy loop — so it must sit outside the index for the member to
+    // be able to use the code again.
+    oncePerClient: uniqueIndex('promo_code_redemptions_code_client_unique')
+      .on(table.promoCodeId, table.clientId)
+      .where(sql`${table.status} <> 'refunded'`),
   }),
 )
 

@@ -14,7 +14,7 @@
  * Nothing sweeps a lapsed Hold. A used place is `consumed OR held_until > now()`
  * and `occupiesPlace` is the whole of that mechanism.
  */
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import {
   classPackages,
@@ -205,15 +205,16 @@ export async function holdPromoCode(input: RedemptionInput): Promise<AppliedProm
     }
     // Upsert, not insert: a member who abandoned a checkout and came back owns
     // this row already, and the one-use-per-member index is what makes the
-    // retry update it rather than collide.
-    // ponytail: while that index is total rather than partial, this also
-    // overwrites a `refunded` row instead of writing a second one. The refunds
-    // ticket makes the index partial, at which point the evidence survives.
+    // retry update it rather than collide. The index is partial (§14), so the
+    // conflict target carries its predicate — a `refunded` row is outside it and
+    // survives as the evidence of a buy-refund-buy loop rather than being
+    // overwritten by the next attempt.
     await tx
       .insert(promoCodeRedemptions)
       .values({ promoCodeId: code.id, clientId: input.clientId, ...row })
       .onConflictDoUpdate({
         target: [promoCodeRedemptions.promoCodeId, promoCodeRedemptions.clientId],
+        targetWhere: sql`${promoCodeRedemptions.status} <> 'refunded'`,
         set: { ...row, stripePaymentIntentId: null, updatedAt: now },
       })
 
@@ -254,6 +255,30 @@ export async function consumePromoCodeHold(args: {
         eq(promoCodeRedemptions.promoCodeId, args.promoCodeId),
         eq(promoCodeRedemptions.clientId, args.clientId),
         eq(promoCodeRedemptions.status, 'held'),
+      ),
+    )
+}
+
+/**
+ * The Refund hands the Promo Code back (§14) — to the member's one-use limit and
+ * to the code's pool at once.
+ *
+ * The row is **not** deleted: the ledger is the only evidence of a
+ * buy-refund-buy loop, and deleting it would hide exactly the abuse this makes
+ * possible. Nothing else changes — `occupiesPlace` already reads a refunded row
+ * as neither Consumed nor still Held, so the place returns to the pool on its
+ * own, and the member's limit only counts their own Consumed rows.
+ *
+ * Only a `consumed` row moves, so a redelivered `charge.refunded` is a no-op.
+ */
+export async function refundPromoCodeRedemption(paymentIntentId: string): Promise<void> {
+  await db
+    .update(promoCodeRedemptions)
+    .set({ status: 'refunded', updatedAt: new Date() })
+    .where(
+      and(
+        eq(promoCodeRedemptions.stripePaymentIntentId, paymentIntentId),
+        eq(promoCodeRedemptions.status, 'consumed'),
       ),
     )
 }

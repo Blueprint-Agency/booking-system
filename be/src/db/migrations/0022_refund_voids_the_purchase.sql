@@ -1,0 +1,2 @@
+DROP INDEX "promo_code_redemptions_code_client_unique";--> statement-breakpoint
+CREATE UNIQUE INDEX "promo_code_redemptions_code_client_unique" ON "promo_code_redemptions" USING btree ("promo_code_id","client_id") WHERE "promo_code_redemptions"."status" <> 'refunded';
