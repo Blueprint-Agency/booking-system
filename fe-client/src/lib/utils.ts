@@ -6,15 +6,6 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /** Full currency formatting — whole dollars stay whole, cents show when present. */
-/**
- * The GST already inside a GST-inclusive price, in dollars — for the disclosure
- * line only. Every price this app shows is inclusive, so this never builds a
- * total; it takes one apart.
- */
-export function gstIncludedIn(cents: number): number {
-  return (cents - Math.round(cents / 1.09)) / 100;
-}
-
 export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("en-SG", {
     style: "currency",

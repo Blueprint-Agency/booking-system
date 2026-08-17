@@ -12,7 +12,6 @@ import { classPackages, ptPackages } from '../../db/schema/packages'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
 import { toCents } from '../../shared/money'
 import {
-  GST_NOTE,
   grantsWithoutPaying,
   saleDescription,
   type CheckoutLine,
@@ -61,7 +60,7 @@ export function purchaseLines(args: {
   if (crossLocationCents > 0) {
     lines.push({
       name: 'Cross-Location Add-On',
-      description: `Covers both studios for the length of this plan · ${GST_NOTE}`,
+      description: 'Covers both studios for the length of this plan',
       amountCents: crossLocationCents,
     })
   }
@@ -238,7 +237,7 @@ export async function beginCrossLocationCheckout(
     lines: [
       {
         name: 'Cross-Location Add-On',
-        description: `${quote.months} month${quote.months === 1 ? '' : 's'} × $${quote.rateSgd} · ${GST_NOTE}`,
+        description: `${quote.months} month${quote.months === 1 ? '' : 's'} × $${quote.rateSgd}`,
         amountCents: totalCents,
       },
     ],

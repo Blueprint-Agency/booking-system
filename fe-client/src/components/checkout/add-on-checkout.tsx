@@ -5,7 +5,7 @@ import Link from "next/link";
 import { addMonths, differenceInDays } from "date-fns";
 import { AlertCircle } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
-import { formatCurrency, formatDate, gstIncludedIn } from "@/lib/utils";
+import { formatCurrency, formatDate } from "@/lib/utils";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { getApiBaseUrl } from "@/lib/api-url";
 import { useLocations } from "@/lib/classes";
@@ -134,8 +134,6 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
   // stored Duration, so there is nothing to explain and no sentence to show.
   const remainder =
     quote && plan?.expiresAt ? remainderSentence(plan.expiresAt, quote.months) : null;
-  const quoteCents = quote ? Math.round(Number(quote.price_sgd) * 100) : 0;
-  const includedGst = gstIncludedIn(quoteCents);
 
   if (packagesLoading || loadingQuote) {
     return (
@@ -172,16 +170,6 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
               remainder={remainder}
               totalSgd={quote?.price_sgd}
             />
-
-            {/* Not the deleted total restated — the block already shows that.
-                This is the disclosure the review page carries and every price
-                on both pages is quoted inclusive of. */}
-            {quote && (
-              <p className="mt-4 flex justify-between text-sm text-muted">
-                <span>Includes GST (9%)</span>
-                <span>{formatCurrency(includedGst)}</span>
-              </p>
-            )}
           </div>
 
           {error && (

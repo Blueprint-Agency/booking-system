@@ -36,9 +36,8 @@ export function CrossLocationBlock({
   onChange?: (next: boolean) => void;
   disabledReason?: AddOnDisabledReason | null;
   /**
-   * The total the server quoted, where a surface has one. Passed so the sum
-   * shown and the GST disclosed beside it come from a single number — the
-   * review page has no per-Add-On quote and falls back to the multiplication.
+   * The total the server quoted, where a surface has one — the review page has
+   * no per-Add-On quote and falls back to the multiplication.
    */
   totalSgd?: string | null;
   /**

@@ -1,20 +1,13 @@
 /**
  * The one place a Stripe Checkout session is built. Every purchase — a plan, a
  * standalone Cross-Location Add-On, a workshop — is the same session with
- * different lines, so the currency, the GST copy, the Hold expiry and the
+ * different lines, so the currency, the line copy, the Hold expiry and the
  * one-quantity-per-line shape are settled here rather than three times over.
  *
  * What a purchase *costs* is not decided here: the caller's service prices it
  * and hands the lines over already priced.
  */
 import { stripe } from '../../lib/stripe'
-
-/**
- * Catalogue prices are GST-inclusive (SG consumer pricing / IRAS). The amount
- * charged IS the listed price; this line reflects the embedded GST rather than
- * adding it on top.
- */
-export const GST_NOTE = 'includes 9% GST'
 
 export interface CheckoutLine {
   name: string
@@ -24,7 +17,7 @@ export interface CheckoutLine {
 
 /** The line copy every Yoga Sadhana product carries, and the code that cut it. */
 export const saleDescription = (promoCode?: string | null): string =>
-  `Yoga Sadhana · ${GST_NOTE}${promoCode ? ` · promo ${promoCode} applied` : ''}`
+  `Yoga Sadhana${promoCode ? ` · promo ${promoCode} applied` : ''}`
 
 /**
  * Nothing left to charge: the purchase skips the payment provider entirely and
