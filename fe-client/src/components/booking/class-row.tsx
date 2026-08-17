@@ -28,7 +28,6 @@ export function ClassRow({
   const api = useApi();
   const [showNoPackage, setShowNoPackage] = useState(false);
   const [bookError, setBookError] = useState<string | null>(null);
-  const [planRefused, setPlanRefused] = useState(false);
   const [booked, setBooked] = useState(cls.is_booked ?? false);
   const [spotsLeft, setSpotsLeft] = useState(cls.spots_left);
   const [booking, setBooking] = useState(false);
@@ -73,7 +72,6 @@ export function ClassRow({
     if (booking || booked) return;
     setBooking(true);
     setBookError(null);
-    setPlanRefused(false);
     try {
       await api.post("/me/bookings/class", {
         class_id: cls.id,
@@ -102,7 +100,6 @@ export function ClassRow({
         // Genuinely the wrong studio. The lock chip below catches this before
         // the click in the normal case; what lands here is entitlements the
         // client read too early or too late.
-        setPlanRefused(true);
         setBookError(
           planLocation
             ? `Your plan covers ${planLocation.name} only.`
@@ -276,20 +273,8 @@ export function ClassRow({
           <div ref={bookErrorTrapRef} role="dialog" aria-modal="true" aria-label="Couldn't book" tabIndex={-1} className="bg-paper rounded-2xl p-8 max-w-sm w-full shadow-modal text-center outline-none" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-serif text-xl text-ink leading-snug">Couldn&apos;t book</h3>
             <p className="text-sm text-muted mt-2 leading-relaxed">{bookError}</p>
-            {/* The plan refused this class — a member holding credits still has a
-                way through, which is the whole point of use_credits. */}
-            {planRefused && entitlements?.has_active_bundle_credits && (
-              <button
-                onClick={(e) => handleBookClick(e, true)}
-                disabled={booking}
-                className="mt-6 w-full rounded-full bg-accent text-white py-3 text-sm font-semibold hover:bg-accent-deep transition-colors disabled:cursor-wait"
-              >
-                {booking
-                  ? "Booking…"
-                  : `Use ${cls.credit_cost} credit${cls.credit_cost === 1 ? "" : "s"} instead`}
-              </button>
-            )}
-            <button onClick={() => setBookError(null)} className="mt-2 w-full rounded-full border border-ink/10 py-2.5 text-sm text-muted hover:text-ink transition-colors">Got it</button>
+            {/* No credits offer here — stories 25-27 keep that to the row nudge. */}
+            <button onClick={() => setBookError(null)} className="mt-6 w-full rounded-full border border-ink/10 py-2.5 text-sm text-muted hover:text-ink transition-colors">Got it</button>
           </div>
         </div>
       )}
