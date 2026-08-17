@@ -13,9 +13,41 @@ import Stripe from 'stripe'
 import { db } from '../../db'
 import { stripePayments } from '../../db/schema/ledger'
 import { eq } from 'drizzle-orm'
+import { stripe } from '../../lib/stripe'
 import { applyCrossLocationAddOn, grantPackage } from '../packages/purchase'
 import { consumePromoCodeHold } from '../packages/promo-redemption'
 import { bookWorkshopPaid } from '../workshops/book'
+import {
+  sendPackagePurchaseEmail,
+  sendWorkshopPurchaseEmail,
+} from '../notifications/send-purchase-email'
+import { reportError } from '../../shared/logger'
+
+/**
+ * The provider's own receipt for a payment (§13). `checkout.session.completed`
+ * carries no charge object, so the intent is retrieved with its latest charge
+ * expanded — that is the only place the receipt URL exists.
+ *
+ * Returns null rather than throwing: the confirmation email falls back to the
+ * account page, and a receipt lookup must never fail a delivered purchase.
+ */
+async function receiptUrlPatch(
+  paymentIntentId: string,
+): Promise<{ receiptUrl?: string }> {
+  try {
+    const intent = await stripe.paymentIntents.retrieve(paymentIntentId, {
+      expand: ['latest_charge'],
+    })
+    const charge = intent.latest_charge
+    const url = typeof charge === 'object' && charge !== null ? charge.receipt_url : null
+    // Absent rather than null, so a redelivery that comes back empty leaves the
+    // receipt an earlier delivery already wrote.
+    return url ? { receiptUrl: url } : {}
+  } catch (err) {
+    reportError(err, 'receipt url lookup failed', { scope: 'billing-webhook', paymentIntentId })
+    return {}
+  }
+}
 
 export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
   if (event.type === 'checkout.session.completed') {
@@ -84,10 +116,17 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       // Mark the payment succeeded + link the granted package so a second
       // delivery (webhook AND sync-session both fire in local dev) short-circuits
       // at the `status === 'succeeded'` guard above instead of double-granting.
+      // The receipt URL lands in the same write — the column the confirmation
+      // email reads (§13).
+      const receipt = await receiptUrlPatch(paymentIntentId)
       await db
         .update(stripePayments)
-        .set({ status: 'succeeded', clientPackageId: granted.clientPackageId })
+        .set({ status: 'succeeded', clientPackageId: granted.clientPackageId, ...receipt })
         .where(eq(stripePayments.paymentIntentId, paymentIntentId))
+
+      // One confirmation per purchase, however many times the provider retries:
+      // only the delivery that inserted the row sends. The helper cannot throw.
+      if (granted.created) await sendPackagePurchaseEmail(granted.clientPackageId)
       return
     }
 
@@ -139,10 +178,13 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         )
       }
 
+      const receipt = await receiptUrlPatch(paymentIntentId)
       await db
         .update(stripePayments)
-        .set({ status: 'succeeded', clientPackageId })
+        .set({ status: 'succeeded', clientPackageId, ...receipt })
         .where(eq(stripePayments.paymentIntentId, paymentIntentId))
+      // No confirmation email: an Add-On grants no package, and §13 names four
+      // sending paths, none of them this one.
       return
     }
 
@@ -181,7 +223,7 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         await consumePromoCodeHold({ promoCodeId, clientId, paymentIntentId })
       }
 
-      await bookWorkshopPaid({
+      const booked = await bookWorkshopPaid({
         clientId,
         workshopId,
         workshopTierId,
@@ -190,6 +232,18 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         appliedPromotionId,
         appliedPromoCodeId: promoCodeId,
       })
+
+      // Written before the email is composed — it is where `receipt_url` comes
+      // from (§13).
+      const receipt = await receiptUrlPatch(paymentIntentId)
+      if (receipt.receiptUrl) {
+        await db
+          .update(stripePayments)
+          .set(receipt)
+          .where(eq(stripePayments.paymentIntentId, paymentIntentId))
+      }
+
+      if (booked.created) await sendWorkshopPurchaseEmail(booked.bookingId)
       return
     }
   }

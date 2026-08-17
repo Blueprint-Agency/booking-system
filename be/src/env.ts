@@ -81,3 +81,12 @@ if (!parsed.success) {
 
 export const env = parsed.data
 export type Env = typeof env
+
+/**
+ * The member-facing app's base URL, trailing slash trimmed — the one place any
+ * link mailed or redirected to a member is built from. Optional in env because
+ * the client app is deployed separately; the dev default keeps local runs
+ * working. Paths that must REFUSE when it is unset (impersonation) read
+ * `env.CLIENT_ORIGIN` directly instead.
+ */
+export const CLIENT_URL = (env.CLIENT_ORIGIN ?? 'http://localhost:3000').replace(/\/+$/, '')

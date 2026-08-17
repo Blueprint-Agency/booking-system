@@ -10,7 +10,7 @@ import {
   purchaseFreeTrial,
   assertTrialEligible,
   assertPurchasableLocation,
-  grantPackage,
+  grantFreePurchase,
   priceCrossLocationForNewPlan,
   quoteCrossLocationAddOn,
 } from '../../services/packages/purchase'
@@ -30,9 +30,7 @@ import {
   tierEffectivePrice,
 } from '../../services/workshops/book'
 import { workshops, workshopTiers } from '../../db/schema/schedule'
-import { env } from '../../env'
-
-const CLIENT_URL = env.CLIENT_ORIGIN ?? 'http://localhost:3000'
+import { CLIENT_URL } from '../../env'
 
 const checkoutPackageSchema = z.object({
   package_kind: z.enum(['class', 'pt']),
@@ -229,7 +227,7 @@ const app = new Hono()
     // The Redemption was already written straight to `consumed`, because there
     // is no webhook coming to flip it.
     if (totalCents <= 0) {
-      const granted = await grantPackage({
+      const granted = await grantFreePurchase({
         clientId,
         paymentIntentId: null,
         amountSgd: '0.00',

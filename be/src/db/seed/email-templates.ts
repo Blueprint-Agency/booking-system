@@ -199,12 +199,12 @@ const INSTRUCTOR_CANCEL_CLASS_BODY = `<!DOCTYPE html>
 </html>`
 
 /**
- * The four leave emails. They share a shape — a heading and a few lines — so
- * they share a builder rather than three near-identical HTML blobs. The
- * placeholder body is no use here: every one of them exists to carry the dates
- * and (for a rejection) the reason.
+ * The plain-prose emails — the four leave ones and the three purchase
+ * confirmations. They share a shape (a heading and a few lines), so they share
+ * a builder rather than seven near-identical HTML blobs. The placeholder body
+ * is no use to any of them: every one exists to carry something specific.
  */
-const leaveBody = (heading: string, lines: string[]) => `<!DOCTYPE html>
+const proseBody = (heading: string, lines: string[]) => `<!DOCTYPE html>
 <html>
   <body style="margin:0;padding:0;background:#f7f5f2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#1f1d1b;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f5f2;padding:32px 16px;">
@@ -229,18 +229,18 @@ const leaveBody = (heading: string, lines: string[]) => `<!DOCTYPE html>
   </body>
 </html>`
 
-const LEAVE_SUBMITTED_BODY = leaveBody('A leave request needs a decision', [
+const LEAVE_SUBMITTED_BODY = proseBody('A leave request needs a decision', [
   '<strong>{{instructor_name}}</strong> requested <strong>{{days}} day(s)</strong> of {{leave_type}} leave on <strong>{{dates}}</strong>.',
   'Reason given: {{reason}}',
   'Approve or reject it on the Leave page in the portal.',
 ])
 
-const LEAVE_APPROVED_BODY = leaveBody('Your leave is approved', [
+const LEAVE_APPROVED_BODY = proseBody('Your leave is approved', [
   'Hi {{instructor_name}}, your {{leave_type}} leave on <strong>{{dates}}</strong> ({{days}} day(s)) has been approved.',
   'You will not be scheduled for classes on those dates.',
 ])
 
-const LEAVE_REJECTED_BODY = leaveBody('Your leave request was rejected', [
+const LEAVE_REJECTED_BODY = proseBody('Your leave request was rejected', [
   'Hi {{instructor_name}}, your {{leave_type}} leave request for <strong>{{dates}}</strong> ({{days}} day(s)) was not approved.',
   'Reason: {{reason}}',
   'Those days are back in your balance if you want to request different dates.',
@@ -248,10 +248,42 @@ const LEAVE_REJECTED_BODY = leaveBody('Your leave request was rejected', [
 
 /** The one that reverses an earlier email, so it says plainly that the leave no
  *  longer stands, who took it back and when. */
-const LEAVE_REVOKED_BODY = leaveBody('Your approved leave has been revoked', [
+const LEAVE_REVOKED_BODY = proseBody('Your approved leave has been revoked', [
   'Hi {{instructor_name}}, your {{leave_type}} leave on <strong>{{dates}}</strong> ({{days}} day(s)) no longer stands.',
   'It was revoked by <strong>{{revoked_by}}</strong> on {{revoked_at}}. Please treat those dates as normal working days — you may be scheduled for classes on them again.',
   'Those days are back in your balance. Speak to {{revoked_by}} if this is not what you expected.',
+])
+
+/**
+ * The three purchase confirmations (§13). Every variable below is a WHOLE
+ * composed sentence built in code — the renderer has no conditionals, so a
+ * fragment would be a wrong sentence for some package kind. That is why one
+ * template serves a Credit Bundle, an Unlimited Plan and a PT package without
+ * ever mentioning Activation to the first two.
+ *
+ * The anchor text is neutral on purpose: `receipt_url` is the provider's
+ * receipt on a paid purchase and the account page on a free one.
+ */
+const PACKAGE_PURCHASE_BODY = proseBody('Your package is confirmed', [
+  'Hi {{client_name}},',
+  '<strong>{{package_name}}</strong><br />{{contents_line}}<br />{{validity_line}}',
+  '<a href="{{receipt_url}}" style="color:#c97a4a;font-weight:600;text-decoration:none;">View your purchase →</a>',
+])
+
+/** A first-timer's welcome, which is not the same email as a $150 receipt. */
+const TRIAL_PASS_PURCHASE_BODY = proseBody('Welcome to Yoga Sadhana', [
+  'Hi {{client_name}},',
+  'Your trial pass is ready — <strong>{{contents_line}}</strong>.<br />{{validity_line}}',
+  'Book your first class whenever you are ready.',
+  '<a href="{{receipt_url}}" style="color:#c97a4a;font-weight:600;text-decoration:none;">View your account →</a>',
+])
+
+/** Paid and free alike. The code and the QR page are what gets them in. */
+const WORKSHOP_PURCHASE_BODY = proseBody('Your workshop place is confirmed', [
+  'Hi {{client_name}},',
+  '<strong>{{workshop_name}}</strong><br />{{date}}',
+  'Your check-in code is <strong>{{code}}</strong>.',
+  '<a href="{{qr_url}}" style="color:#c97a4a;font-weight:600;text-decoration:none;">Show your QR code →</a><br /><a href="{{receipt_url}}" style="color:#7a7670;text-decoration:none;">View your purchase</a>',
 ])
 
 const TEMPLATES: Array<{ slug: string; subject: string; bodyHtml?: string }> = [
@@ -267,7 +299,11 @@ const TEMPLATES: Array<{ slug: string; subject: string; bodyHtml?: string }> = [
   { slug: 'pt_session_approved',                subject: 'Your private session is scheduled' },
   { slug: 'pt_session_declined',                subject: 'Your private session request was declined' },
   { slug: 'pt_request_expired',                 subject: 'Your private session request expired' },
-  { slug: 'workshop_purchase_confirmed',        subject: 'Your workshop purchase is confirmed' },
+  {
+    slug: 'workshop_purchase_confirmed',
+    subject: 'Your workshop purchase is confirmed',
+    bodyHtml: WORKSHOP_PURCHASE_BODY,
+  },
   { slug: 'workshop_waitlist_promoted',         subject: "You're off the waitlist" },
   { slug: 'class_cancelled_credit_returned',    subject: 'Your class was cancelled — credit returned' },
   { slug: 'class_cancelled_forfeited',          subject: 'Your class booking was cancelled' },
@@ -301,7 +337,11 @@ const TEMPLATES: Array<{ slug: string; subject: string; bodyHtml?: string }> = [
     subject: 'Your approved leave on {{dates}} was revoked',
     bodyHtml: LEAVE_REVOKED_BODY,
   },
-  { slug: 'package_purchase_confirmed',         subject: 'Your package purchase is confirmed' },
+  {
+    slug: 'package_purchase_confirmed',
+    subject: 'Your package is confirmed',
+    bodyHtml: PACKAGE_PURCHASE_BODY,
+  },
   { slug: 'credit_expiry_reminder',             subject: 'Your credits are expiring soon' },
   {
     slug: 'instructor_invite',
@@ -315,7 +355,11 @@ const TEMPLATES: Array<{ slug: string; subject: string; bodyHtml?: string }> = [
   },
   { slug: 'checkin_nag',                        subject: 'Please complete check-in for your session' },
   { slug: 'referral_credited',                  subject: 'You earned a referral credit' },
-  { slug: 'trial_pass_purchase_confirmed',      subject: 'Your trial pass is ready' },
+  {
+    slug: 'trial_pass_purchase_confirmed',
+    subject: 'Welcome to Yoga Sadhana',
+    bodyHtml: TRIAL_PASS_PURCHASE_BODY,
+  },
 ]
 
 export async function seedEmailTemplates(db: PostgresJsDatabase<typeof schema>) {

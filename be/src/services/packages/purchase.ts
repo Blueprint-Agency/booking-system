@@ -3,6 +3,7 @@ import { db } from '../../db'
 import { clientPackages, classPackages, ptPackages } from '../../db/schema/packages'
 import { isUniqueViolation } from '../../db/unique-violation'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
+import { sendPackagePurchaseEmail } from '../notifications/send-purchase-email'
 import { globalPolicy } from '../../db/schema/policy'
 import { bestPrice, listActivePromotionsFor } from './promotions'
 import {
@@ -246,10 +247,16 @@ export interface GrantPackageInput {
  *  - admin complimentary grants
  *
  * Throws ConflictError('trial_already_used') on partial-unique violation.
+ *
+ * `created` says whether THIS call inserted the row (§13). It is what the
+ * confirmation email is gated on: the payment-intent unique index already
+ * decides who wins a redelivery, and this merely surfaces a fact the function
+ * already knows and used to throw away. Using the email log instead would mean
+ * a new column, a migration and an index to answer the same question.
  */
 export async function grantPackage(
   input: GrantPackageInput,
-): Promise<{ clientPackageId: string }> {
+): Promise<{ clientPackageId: string; created: boolean }> {
   const now = new Date()
 
   // Idempotency — if a package was already granted for this Stripe payment
@@ -261,7 +268,7 @@ export async function grantPackage(
       .from(clientPackages)
       .where(eq(clientPackages.stripePaymentIntentId, input.paymentIntentId))
       .limit(1)
-    if (existing) return { clientPackageId: existing.id }
+    if (existing) return { clientPackageId: existing.id, created: false }
   }
 
   let kind: PackageKind
@@ -345,13 +352,31 @@ export async function grantPackage(
         stripePaymentIntentId: input.paymentIntentId,
       })
       .returning({ id: clientPackages.id })
-    return { clientPackageId: row!.id }
+    return { clientPackageId: row!.id, created: true }
   } catch (err: unknown) {
     if (kind === 'trial' && isUniqueViolation(err, 'client_packages_trial_unique_per_client')) {
       throw new ConflictError('trial_already_used')
     }
     throw err
   }
+}
+
+/**
+ * A purchase a discount took to zero (§10): granted here rather than through
+ * the payment provider, and confirmed like any other purchase (§13).
+ *
+ * It lives beside `purchaseFreeTrial` so that "a completed purchase confirms
+ * itself" stays one rule in one place — a route deciding it for one path is how
+ * the client and webhook paths drift apart.
+ */
+export async function grantFreePurchase(
+  input: GrantPackageInput,
+): Promise<{ clientPackageId: string; created: boolean }> {
+  const granted = await grantPackage(input)
+  // The slug comes off the granted kind, so a Promo Code that zeroes a trial
+  // gets the trial email and one that zeroes a bundle does not.
+  if (granted.created) await sendPackagePurchaseEmail(granted.clientPackageId)
+  return granted
 }
 
 /**
@@ -386,7 +411,7 @@ export async function assertTrialEligible(clientId: string): Promise<void> {
 export async function purchaseFreeTrial(
   clientId: string,
   classPackageId: string,
-): Promise<{ clientPackageId: string }> {
+): Promise<{ clientPackageId: string; created: boolean }> {
   const [pkg] = await db
     .select()
     .from(classPackages)
@@ -403,7 +428,7 @@ export async function purchaseFreeTrial(
     throw new BadRequestError('trial_is_not_free')
   }
 
-  return grantPackage({
+  const granted = await grantPackage({
     clientId,
     paymentIntentId: null,
     amountSgd: '0.00',
@@ -411,4 +436,10 @@ export async function purchaseFreeTrial(
     packageId: pkg.id,
     appliedPromotionId: eff.appliedPromotionId,
   })
+
+  // A free trial has no payment intent to be idempotent on, so it reaches here
+  // once or not at all — the eligibility gate and the partial unique index see
+  // to that. It sends unconditionally, and the helper cannot throw (§13).
+  await sendPackagePurchaseEmail(granted.clientPackageId)
+  return granted
 }

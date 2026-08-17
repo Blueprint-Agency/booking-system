@@ -29,7 +29,13 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   leave_rejected: ['instructor_name', 'leave_type', 'dates', 'days', 'reason'],
   // A revocation undoes an approval, so it names who did it and when.
   leave_revoked: ['instructor_name', 'leave_type', 'dates', 'days', 'revoked_by', 'revoked_at'],
-  package_purchase_confirmed: ['client_name', 'package_name', 'credits_or_sessions', 'expires_at', 'receipt_url'],
+  // §13: `contents_line` and `validity_line` REPLACE `credits_or_sessions` and
+  // `expires_at`. Each is a whole composed sentence, built by kind in
+  // ./purchase-email.ts — the fragment-shaped pair produced a wrong sentence for
+  // some kind whatever the template said around them, and leaving them in the
+  // allow-list would leave that footgun loaded for the portal template editor.
+  package_purchase_confirmed: ['client_name', 'package_name', 'contents_line', 'validity_line', 'receipt_url'],
+  trial_pass_purchase_confirmed: ['client_name', 'package_name', 'contents_line', 'validity_line', 'receipt_url'],
   credit_expiry_reminder: ['client_name', 'package_name', 'expires_at', 'credits_remaining'],
   instructor_invite: ['name', 'invite_url', 'expires_at'],
   admin_invite: ['name', 'invite_url', 'expires_at'],

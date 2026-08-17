@@ -27,6 +27,9 @@ export type TemplateSlug =
   | 'leave_rejected'
   | 'leave_revoked'
   | 'package_purchase_confirmed'
+  // A first-timer's welcome and a $150 receipt are not the same email, and the
+  // renderer has no conditionals, so the trial pass needs its own slug (§13).
+  | 'trial_pass_purchase_confirmed'
   | 'credit_expiry_reminder'
   | 'instructor_invite'
   | 'admin_invite'

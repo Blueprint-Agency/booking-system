@@ -11,6 +11,7 @@ import { stripePayments } from '../../db/schema/ledger'
 import { generateBookingCodes } from '../bookings/qr'
 import { bestPrice, listActivePromotionsFor } from '../packages/promotions'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
+import { sendWorkshopPurchaseEmail } from '../notifications/send-purchase-email'
 
 type WorkshopTierRow = typeof workshopTiers.$inferSelect
 
@@ -117,10 +118,13 @@ export interface BookWorkshopInput {
  * Idempotent on paymentIntentId via the partial unique index
  * `bookings_stripe_intent_unique`. Inserts/updates the matching
  * stripe_payments row so refunds can find it.
+ *
+ * `created` says whether THIS call inserted the booking (§13) — the flag the
+ * confirmation email is gated on, so a redelivered webhook confirms once.
  */
 async function insertWorkshopBooking(
   input: BookWorkshopInput,
-): Promise<{ bookingId: string; qrToken: string; code: string }> {
+): Promise<{ bookingId: string; qrToken: string; code: string; created: boolean }> {
   const { qrToken, code } = generateBookingCodes()
 
   // Idempotency: if a booking already exists for this payment intent, return it.
@@ -130,7 +134,14 @@ async function insertWorkshopBooking(
       .from(bookings)
       .where(eq(bookings.stripePaymentIntentId, input.paymentIntentId))
       .limit(1)
-    if (existing) return { bookingId: existing.id, qrToken: existing.qrToken, code: existing.code }
+    if (existing) {
+      return {
+        bookingId: existing.id,
+        qrToken: existing.qrToken,
+        code: existing.code,
+        created: false,
+      }
+    }
   }
 
   // Frozen workshop money (§15). List Price is the tier's regular price — the
@@ -172,12 +183,12 @@ async function insertWorkshopBooking(
       .where(eq(stripePayments.paymentIntentId, input.paymentIntentId))
   }
 
-  return { bookingId, qrToken, code }
+  return { bookingId, qrToken, code, created: true }
 }
 
 export async function bookWorkshopPaid(
   input: BookWorkshopInput & { paymentIntentId: string },
-): Promise<{ bookingId: string; qrToken: string; code: string }> {
+): Promise<{ bookingId: string; qrToken: string; code: string; created: boolean }> {
   return insertWorkshopBooking(input)
 }
 
@@ -213,7 +224,7 @@ export async function bookWorkshopFree(args: {
   // (and capacity) explicitly.
   await assertWorkshopBookable(args)
 
-  return insertWorkshopBooking({
+  const booked = await insertWorkshopBooking({
     clientId: args.clientId,
     workshopId: args.workshopId,
     workshopTierId: args.workshopTierId,
@@ -222,4 +233,11 @@ export async function bookWorkshopFree(args: {
     appliedPromotionId: eff.appliedPromotionId,
     appliedPromoCodeId: args.appliedPromoCodeId ?? null,
   })
+
+  // The worst case in the set (§13): a confirmed booking with a QR code and a
+  // date that used to send nothing at all. No payment intent means nothing to
+  // be idempotent on — `assertWorkshopBookable` above is the duplicate gate —
+  // so it sends every time it gets here. The helper cannot throw.
+  await sendWorkshopPurchaseEmail(booked.bookingId)
+  return booked
 }
