@@ -148,9 +148,18 @@ export default function PolicyPage() {
     draft.leaveCarryOverCapDays !== policy.leaveCarryOverCapDays ||
     draft.bookInAdvanceDays !== policy.bookInAdvanceDays;
 
+  // A Leave Cap is a headcount of instructors away at once, so the backend
+  // accepts 1–99. Say so here rather than letting the save come back refused.
+  const capError =
+    [draft.coverGroupLeaveCap, draft.studyLeaveCap].some(
+      (n) => !Number.isInteger(n) || n < 1 || n > 99,
+    )
+      ? "A Leave Cap must be a whole number between 1 and 99 instructors."
+      : null;
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    if (!api) return;
+    if (!api || capError) return;
     setSaving(true);
     try {
       const globalDelta: Record<string, unknown> = diffGlobal(policy, draft);
@@ -170,7 +179,14 @@ export default function PolicyPage() {
       toast.success("Policy saved.");
       await load();
     } catch (err) {
-      toast.error(err instanceof ApiError ? `Save failed (HTTP ${err.status}).` : "Save failed.");
+      // A refused save carries its own reason ({ error, message }); show that
+      // sentence rather than a status code the admin cannot act on.
+      const reason =
+        err instanceof ApiError
+          ? ((err.body as { message?: string } | null)?.message ??
+            `Save failed (HTTP ${err.status}).`)
+          : "Save failed.";
+      toast.error(reason);
     } finally {
       setSaving(false);
     }
@@ -374,7 +390,7 @@ export default function PolicyPage() {
                 id="cover-group-cap"
                 type="number"
                 min={1}
-                max={365}
+                max={99}
                 value={draft.coverGroupLeaveCap}
                 onChange={(e) =>
                   setDraft({ ...draft, coverGroupLeaveCap: Number(e.target.value) })
@@ -387,12 +403,17 @@ export default function PolicyPage() {
                 id="study-cap"
                 type="number"
                 min={1}
-                max={365}
+                max={99}
                 value={draft.studyLeaveCap}
                 onChange={(e) => setDraft({ ...draft, studyLeaveCap: Number(e.target.value) })}
               />
             </div>
           </div>
+          {capError && (
+            <p role="alert" className="mt-2 text-xs text-error">
+              {capError}
+            </p>
+          )}
           <div className="mt-5 space-y-1.5">
             <Label htmlFor="cover-group">Cover Group</Label>
             <p className="text-xs text-muted">
@@ -441,7 +462,7 @@ export default function PolicyPage() {
             >
               Reset
             </Button>
-            <Button type="submit" disabled={!dirty || saving}>
+            <Button type="submit" disabled={!dirty || saving || capError !== null}>
               {saving ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" /> Saving…
