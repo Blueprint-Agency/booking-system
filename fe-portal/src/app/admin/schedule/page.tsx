@@ -36,7 +36,7 @@ import { useSchedule, type ScheduleEntry } from "@/lib/use-schedule";
 import type { Slot } from "@/lib/schedule";
 
 type View = "day" | "week" | "month";
-type AddKind = "class" | "corporate" | "pt";
+type AddKind = "class" | "workshop" | "corporate" | "pt";
 type FilterType = "all" | "class" | "workshop" | "pt" | "corporate";
 type Entry = ScheduleEntry;
 type Resolver = {
@@ -62,9 +62,16 @@ const TOTAL_HEIGHT = (HOUR_END - HOUR_START) * HOUR_HEIGHT;
 
 const ADD_KINDS: { kind: AddKind; label: string }[] = [
   { kind: "class", label: "Class" },
+  { kind: "workshop", label: "Workshop" },
   { kind: "corporate", label: "Corporate" },
   { kind: "pt", label: "PT Session" },
 ];
+
+/** Kinds created on their own page; the rest open a picker over the grid. */
+const NEW_PAGE: Partial<Record<AddKind, string>> = {
+  class: "/admin/schedule/new/class",
+  workshop: "/admin/packages/workshops/new",
+};
 
 export default function SchedulePage() {
   const router = useRouter();
@@ -169,13 +176,15 @@ export default function SchedulePage() {
     setPickedSlot(null);
   };
 
-  // A class is created on its own page; PT and corporate sessions are scheduled
-  // from an existing request, so the slot seeds their picker dialog instead.
+  // Classes and workshops are created on their own page; PT and corporate
+  // sessions are scheduled from an existing request, so the slot seeds their
+  // picker dialog instead.
   const pickSlot = (slot: Slot) => {
-    if (addMode === "class") {
+    const page = addMode && NEW_PAGE[addMode];
+    if (page) {
       clearAdd();
       router.push(
-        `/admin/schedule/new/class?date=${slot.date}&start=${slot.start}&end=${slot.end}`,
+        `${page}?date=${slot.date}&start=${slot.start}&end=${slot.end}`,
       );
       return;
     }

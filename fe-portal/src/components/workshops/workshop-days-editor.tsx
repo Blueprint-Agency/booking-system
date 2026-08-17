@@ -17,7 +17,7 @@ function defaultCapacity(): Capacity {
   return { waitlist: 0, onlineBooking: 12, buffer: 0 };
 }
 
-function newDay(date: string): WorkshopDay {
+export function newDay(date: string): WorkshopDay {
   return {
     id: `wd-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
     date,

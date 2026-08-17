@@ -5,7 +5,7 @@ import { ArrowLeft, Save, Ban, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import { Button, Input, Label, PageHeader, Badge } from "@/components/ui";
-import { WorkshopDaysEditor } from "./workshop-days-editor";
+import { WorkshopDaysEditor, newDay } from "./workshop-days-editor";
 import { WorkshopTiersEditor } from "./workshop-tiers-editor";
 import { PromotionsEditor } from "@/components/packages/promotions-editor";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -19,7 +19,7 @@ import {
   type CatalogRoom,
 } from "@/lib/catalog";
 import { atLocalTime, localDay } from "@/lib/local-day";
-import { scheduleErrorMessage } from "@/lib/schedule";
+import { scheduleErrorMessage, type Slot } from "@/lib/schedule";
 import {
   hasPromotionOverlap,
   promotionFromApi,
@@ -288,10 +288,13 @@ function parsePay(v: string): number | null {
 
 export function WorkshopEditor({
   initial,
+  slot,
   onSave,
   onCancel,
 }: {
   initial: Workshop | null;
+  /** Slot picked off the timetable grid — seeds the workshop's first day. */
+  slot?: Slot;
   onSave: (id: string) => void;
   onCancel: () => void;
 }) {
@@ -322,13 +325,20 @@ export function WorkshopEditor({
     return map;
   });
   const [descriptionHtml, setDescriptionHtml] = useState(initial?.descriptionHtml ?? "");
-  const [days, setDays] = useState<WorkshopDay[]>(initial?.days ?? []);
+  const [days, setDays] = useState<WorkshopDay[]>(
+    initial?.days ??
+      (slot
+        ? [{ ...newDay(slot.date), startTime: slot.start, endTime: slot.end }]
+        : []),
+  );
   const [tiers, setTiers] = useState<WorkshopTier[]>(initial?.tiers ?? []);
   const [promotions, setPromotions] = useState<Promotion[]>(initial?.promotions ?? []);
   const [mode, setMode] = useState<Mode>(initial ? inferMode(initial.days) : "range");
-  const [rangeStart, setRangeStart] = useState(initial?.days[0]?.date ?? "");
+  const [rangeStart, setRangeStart] = useState(
+    initial?.days[0]?.date ?? slot?.date ?? "",
+  );
   const [rangeEnd, setRangeEnd] = useState(
-    initial?.days[initial.days.length - 1]?.date ?? "",
+    initial?.days[initial.days.length - 1]?.date ?? slot?.date ?? "",
   );
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
