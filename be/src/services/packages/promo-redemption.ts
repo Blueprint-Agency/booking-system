@@ -25,6 +25,7 @@ import {
 } from '../../db/schema/packages'
 import { workshopTiers, workshops } from '../../db/schema/schedule'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
+import { toCents } from '../../shared/money'
 import { bestPrice, listActivePromotionsFor } from './promotions'
 import { tierEffectivePrice } from '../workshops/book'
 import {
@@ -169,6 +170,23 @@ export async function previewPromoCode(input: RedemptionInput): Promise<AppliedP
     effectivePriceSgd: evaluated.effectivePriceSgd,
     holdExpiresAt: null,
   }
+}
+
+/**
+ * The code as checkout should apply it. A line a Promotion (or an early bird)
+ * already took to zero has nothing left to discount, so the code is checked but
+ * no place is claimed and nothing is frozen onto the purchase — a member does
+ * not spend their one use on something it cannot reduce, and gets back null. A
+ * bad code is refused either way, never silently accepted into a full-price
+ * charge.
+ *
+ * Which of the two it is, is read off the price rather than chosen by the
+ * caller: choosing it twice is how the two checkout paths would come to disagree.
+ */
+export async function applyPromoCode(input: RedemptionInput): Promise<AppliedPromoCode | null> {
+  if (toCents(input.basePriceSgd) > 0) return holdPromoCode(input)
+  await previewPromoCode(input)
+  return null
 }
 
 /**
