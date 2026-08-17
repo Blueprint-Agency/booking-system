@@ -1,12 +1,13 @@
 "use client";
 import { useEffect, useMemo } from "react";
-import { Label } from "@/components/ui";
+import { Input, Label, Select } from "@/components/ui";
 import { InstructorOption, type InstructorLeave } from "@/components/schedule/instructor-leave";
 import type { CatalogInstructor } from "@/lib/catalog";
 
 /**
- * Supporting instructors with their per-session pay: a removable chip each, plus
- * a picker for the next one. Serves class edit, PT edit and the new-class form.
+ * Supporting instructors with their per-session pay: one row each, laid out like
+ * the main instructor / main pay pair above it, plus a picker for the next one.
+ * Serves class edit, PT edit and the new-class form.
  *
  * The one rule it exists to hold: an instructor can never be both main and
  * supporting. The main pick is dropped from the options AND from the rows —
@@ -69,70 +70,104 @@ export function SupportingInstructorsField({
   return (
     <div className="space-y-1.5 sm:col-span-2">
       <Label>Supporting instructors</Label>
-      <div className="flex flex-wrap items-center gap-2">
-        {value.map((s) => {
-          const name = instructors.find((i) => i.id === s.instructorId)?.name ?? "Unknown";
+      <div className="space-y-3">
+        {value.map((s, idx) => {
+          const picked = instructors.find((i) => i.id === s.instructorId);
+          const name = picked?.name ?? "Unknown";
           return (
-            <span
-              key={s.instructorId}
-              className="inline-flex items-center gap-1.5 rounded-full border border-accent/40 bg-accent/10 py-1 pl-2.5 pr-1.5 text-xs text-ink"
-            >
-              {name}
-              <input
-                type="number"
-                min={0}
-                step="0.01"
-                inputMode="decimal"
-                placeholder="S$"
-                value={s.pay}
+            <div key={s.instructorId} className="grid gap-4 sm:grid-cols-2">
+              <Select
+                value={s.instructorId}
+                aria-label={`Supporting instructor ${idx + 1}`}
                 disabled={disabled || saving}
                 onChange={(e) =>
                   onChange(
                     value.map((row) =>
                       row.instructorId === s.instructorId
-                        ? { ...row, pay: e.target.value }
+                        ? { ...row, instructorId: e.target.value }
                         : row,
                     ),
                   )
                 }
-                className="h-6 w-16 rounded border border-border bg-card px-1.5 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
-              />
-              <button
-                type="button"
-                disabled={disabled || saving}
-                onClick={() =>
-                  onChange(value.filter((row) => row.instructorId !== s.instructorId))
-                }
-                className="text-muted hover:text-ink disabled:opacity-50"
-                aria-label={`Remove ${name}`}
               >
-                ×
-              </button>
-            </span>
+                {picked ? (
+                  <InstructorOption
+                    instructor={picked}
+                    onLeave={onLeave}
+                    startTime={startTime}
+                  />
+                ) : (
+                  <option value={s.instructorId}>{name}</option>
+                )}
+                {available.map((i) => (
+                  <InstructorOption
+                    key={i.id}
+                    instructor={i}
+                    onLeave={onLeave}
+                    startTime={startTime}
+                  />
+                ))}
+              </Select>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  inputMode="decimal"
+                  placeholder="Optional"
+                  aria-label={`${name} pay (S$)`}
+                  value={s.pay}
+                  disabled={disabled || saving}
+                  onChange={(e) =>
+                    onChange(
+                      value.map((row) =>
+                        row.instructorId === s.instructorId
+                          ? { ...row, pay: e.target.value }
+                          : row,
+                      ),
+                    )
+                  }
+                />
+                <button
+                  type="button"
+                  disabled={disabled || saving}
+                  onClick={() =>
+                    onChange(value.filter((row) => row.instructorId !== s.instructorId))
+                  }
+                  className="shrink-0 text-muted hover:text-ink disabled:opacity-50"
+                  aria-label={`Remove ${name}`}
+                >
+                  ×
+                </button>
+              </div>
+            </div>
           );
         })}
         {!disabled && available.length > 0 && (
-          <select
-            value=""
-            disabled={saving}
-            onChange={(e) => {
-              const v = e.target.value;
-              if (v) onChange([...value, { instructorId: v, pay: "" }]);
-            }}
-            className="flex h-9 rounded-lg border border-border bg-card px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
-          >
-            <option value="">
-              {value.length === 0 ? "+ Add supporting instructor" : "+ Add another"}
-            </option>
-            {available.map((i) => (
-              <InstructorOption
-                key={i.id}
-                instructor={i}
-                onLeave={onLeave}
-                startTime={startTime}
-              />
-            ))}
-          </select>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Select
+              value=""
+              aria-label="Add supporting instructor"
+              disabled={saving}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v) onChange([...value, { instructorId: v, pay: "" }]);
+              }}
+              className="text-muted"
+            >
+              <option value="">
+                {value.length === 0 ? "+ Add supporting instructor" : "+ Add another"}
+              </option>
+              {available.map((i) => (
+                <InstructorOption
+                  key={i.id}
+                  instructor={i}
+                  onLeave={onLeave}
+                  startTime={startTime}
+                />
+              ))}
+            </Select>
+          </div>
         )}
         {value.length === 0 && available.length === 0 && (
           <span className="text-xs text-muted">No additional instructors available.</span>

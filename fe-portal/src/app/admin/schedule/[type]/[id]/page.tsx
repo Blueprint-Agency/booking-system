@@ -177,25 +177,6 @@ function ClassDetail({ id }: { id: string }) {
           formatDate(data.starts_at),
           `${formatTime(data.starts_at)} – ${formatTime(data.ends_at)}`,
         ]}
-        action={
-          data.lifecycle === "active" ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={handleCancelClass}
-              disabled={cancelBusy}
-              className="text-error hover:text-error"
-            >
-              {cancelBusy ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Ban className="h-4 w-4" />
-              )}
-              Cancel class
-            </Button>
-          ) : undefined
-        }
       />
 
       {actionError && (
@@ -243,6 +224,8 @@ function ClassDetail({ id }: { id: string }) {
         classTypes={classTypes}
         rooms={rooms}
         onSaved={load}
+        onCancelClass={data.lifecycle === "active" ? handleCancelClass : undefined}
+        cancelBusy={cancelBusy}
       />
     </DetailFrame>
   );
@@ -390,12 +373,17 @@ function ClassEditor({
   classTypes,
   rooms,
   onSaved,
+  onCancelClass,
+  cancelBusy = false,
 }: {
   data: ScheduleClassDetail;
   instructors: CatalogInstructor[];
   classTypes: CatalogClassType[];
   rooms: CatalogRoom[];
   onSaved: () => void | Promise<void>;
+  /** Cancels the whole class — omitted once it is no longer active. */
+  onCancelClass?: () => void | Promise<void>;
+  cancelBusy?: boolean;
 }) {
   const { api } = useWorkspace();
   const disabled = data.lifecycle === "cancelled";
@@ -584,7 +572,24 @@ function ClassEditor({
         </p>
       )}
       {!disabled && (
-        <div className="mt-4 flex justify-end">
+        <div className="mt-4 flex justify-end gap-2">
+          {onCancelClass && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={onCancelClass}
+              disabled={cancelBusy || saving}
+              className="text-error hover:text-error"
+            >
+              {cancelBusy ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Ban className="h-4 w-4" />
+              )}
+              Cancel class
+            </Button>
+          )}
           <Button
             size="sm"
             onClick={handleSave}
@@ -1140,7 +1145,7 @@ function WorkshopDetail({ id }: { id: string }) {
               <li key={t.id} className="py-3 text-sm">
                 <div className="flex items-center justify-between">
                   <div className="font-medium text-ink">{t.name}</div>
-                  <div className="font-mono text-ink">
+                  <div className="text-ink">
                     {formatSgd(Number(t.regular_price_sgd))}
                   </div>
                 </div>
@@ -1599,7 +1604,7 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
   return (
     <div className="rounded-xl border border-border bg-card p-4 shadow-soft">
       <div className="text-xs font-medium uppercase tracking-wide text-muted">{label}</div>
-      <div className="mt-1 font-mono text-lg font-semibold text-ink">{value}</div>
+      <div className="mt-1 text-lg font-semibold tabular-nums text-ink">{value}</div>
       {sub && <div className="text-xs text-muted">{sub}</div>}
     </div>
   );
