@@ -702,13 +702,14 @@ No hard delete — client records are never permanently removed (preserves booki
 
 **Superadmin-only.** Admin sees the read-only banner on every client profile and cannot trigger any of the kebab actions below.
 
-Three actions on a client's active-package kebab, all written into the same immutable `manual_adjustments` audit ledger:
+The actions on a client's active-package kebab, all written into the same immutable `manual_adjustments` audit ledger:
 
 | Action | Available on | Ledger row |
 |---|---|---|
 | **Adjust balance** (`+N` / `−N`) | `credit_bundle`, PT pack | `delta: signed integer`, `reason: "+N: <reason>"` or `"−N: <reason>"` |
 | **Set credit balance** | `credit_bundle`, `trial` | `delta: target − current` (computed), `reason: "Set <N>: <reason>"` |
 | **Edit expiry** | `credit_bundle`, `unlimited`, `trial` | `delta: 0`, `reason: "Expiry changed from <X> to <Y>: <reason>"` |
+| **Change home studio** | `unlimited` | `delta: 0`, `reason: "Home Location changed from <X> to <Y>: <reason>"` — one row per plan moved, because the Activated plan and any Dormant renewal move together (spec-pre-launch-batch.md §7). Bookings are untouched. |
 
 **Fields:**
 - Package — dropdown of the client's active packages.

@@ -1,5 +1,5 @@
 import assert from 'node:assert'
-import { locationForPurchase } from './purchase'
+import { locationForPurchase, homeLocationMove } from './purchase'
 
 // The rule this module exists to hold: checkout and the grant must refuse the
 // same purchases, because a refusal that only fires in the webhook has already
@@ -58,6 +58,70 @@ assert.throws(
   () => locationForPurchase('unlimited', LOC_A, [LOC_A, LOC_A]),
   /unlimited_limit_reached/,
   'a third Unlimited Plan is refused — one Activated plus at most one Dormant',
+)
+
+// --- an admin moves a Home Location (§7) ---
+
+const PKG_ACTIVATED = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+const PKG_DORMANT = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+
+const bothAtA = [
+  { id: PKG_ACTIVATED, locationId: LOC_A },
+  { id: PKG_DORMANT, locationId: LOC_A },
+]
+
+assert.deepStrictEqual(
+  homeLocationMove('unlimited', PKG_ACTIVATED, bothAtA, LOC_B),
+  { ok: true, moveIds: [PKG_ACTIVATED, PKG_DORMANT] },
+  'the Activated plan and the Dormant renewal move together, never one without the other',
+)
+assert.deepStrictEqual(
+  homeLocationMove('unlimited', PKG_DORMANT, bothAtA, LOC_B),
+  { ok: true, moveIds: [PKG_ACTIVATED, PKG_DORMANT] },
+  'the same move whichever of the two plans staff aimed at',
+)
+assert.deepStrictEqual(
+  homeLocationMove('unlimited', PKG_ACTIVATED, [{ id: PKG_ACTIVATED, locationId: LOC_A }], LOC_B),
+  { ok: true, moveIds: [PKG_ACTIVATED] },
+  'a member holding one plan moves that one',
+)
+
+for (const kind of ['credit_bundle', 'trial', 'pt'] as const) {
+  assert.deepStrictEqual(
+    homeLocationMove(kind, PKG_ACTIVATED, bothAtA, LOC_B),
+    { ok: false, refusal: 'home_location_requires_unlimited' },
+    `a ${kind} has no Home Location to move`,
+  )
+}
+
+assert.deepStrictEqual(
+  homeLocationMove('unlimited', PKG_ACTIVATED, bothAtA, LOC_A),
+  { ok: false, refusal: 'home_location_unchanged' },
+  'a move to the Location the plans already sit at is refused, not audited as a change',
+)
+
+assert.deepStrictEqual(
+  homeLocationMove('unlimited', PKG_ACTIVATED, [{ id: PKG_DORMANT, locationId: LOC_A }], LOC_B),
+  { ok: false, refusal: 'home_location_plan_not_live' },
+  'an expired plan is history — moving it would restate what the member held',
+)
+
+// Two live plans that already disagree — rows predating the renewal rule, or a
+// half-finished fix. Aiming at the one already at the destination must still
+// bring the other along, or the disagreement §7 exists to prevent is unfixable
+// through the only route that can fix it.
+assert.deepStrictEqual(
+  homeLocationMove(
+    'unlimited',
+    PKG_DORMANT,
+    [
+      { id: PKG_ACTIVATED, locationId: LOC_A },
+      { id: PKG_DORMANT, locationId: LOC_B },
+    ],
+    LOC_B,
+  ),
+  { ok: true, moveIds: [PKG_ACTIVATED, PKG_DORMANT] },
+  'unchanged means every live plan already sits there, not just the one staff clicked',
 )
 
 console.log('packages/purchase.test ok')

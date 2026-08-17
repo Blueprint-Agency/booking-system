@@ -13,7 +13,14 @@ import {
   type ManualAdjustmentRow,
 } from '../../../services/clients/manage'
 import { listClientPackages, type ClientPackageWithSource } from '../../../services/packages/entitlements'
-import { adjustBalance, setBalance, setCrossLocationAddOn, setPackageExpiry, type ClientPackageRow } from '../../../services/packages/adjust'
+import {
+  adjustBalance,
+  setBalance,
+  setCrossLocationAddOn,
+  setHomeLocation,
+  setPackageExpiry,
+  type ClientPackageRow,
+} from '../../../services/packages/adjust'
 import {
   issueRefund,
   issueWorkshopRefund,
@@ -58,6 +65,12 @@ const crossLocationSchema = z.object({
 // The reason is mandatory — it is the only record of why an admin refunded, and
 // the only one that survives a purchase that was not Untouched.
 const refundSchema = z.object({
+  reason: z.string().min(1).max(2000),
+})
+// Moving a member's Home Location (§7). The reason is mandatory and there is no
+// "clear it" — an Unlimited Plan always Covers exactly one Location.
+const homeLocationSchema = z.object({
+  location_id: z.string().uuid(),
   reason: z.string().min(1).max(2000),
 })
 const expirySchema = z.object({
@@ -235,6 +248,22 @@ const app = new Hono()
       clientId: id,
       clientPackageId: pid,
       paidSgd: body.paid_sgd === null ? null : body.paid_sgd.toFixed(2),
+      reason: body.reason,
+      actedByStaffId: c.get('staffUserId'),
+    })
+    c.set('auditTarget' as any, { table: 'client_packages', id: pid })
+    return c.json(editedPackageView(row))
+  })
+  // Moving a member's Home Location (§7) — the correction for a Location picked
+  // wrong at checkout. The service moves the Activated plan and any Dormant
+  // renewal together and leaves every booking standing.
+  .post('/:id/packages/:pid/location', zValidator('param', idPkgParam), zValidator('json', homeLocationSchema), async c => {
+    const { id, pid } = c.req.valid('param')
+    const body = c.req.valid('json')
+    const row = await setHomeLocation({
+      clientId: id,
+      clientPackageId: pid,
+      locationId: body.location_id,
       reason: body.reason,
       actedByStaffId: c.get('staffUserId'),
     })

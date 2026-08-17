@@ -6,6 +6,7 @@ import { BadRequestError, ConflictError, NotFoundError } from '../../shared/erro
 import { sendPackagePurchaseEmail } from '../notifications/send-purchase-email'
 import { globalPolicy } from '../../db/schema/policy'
 import { bestPrice, listActivePromotionsFor } from './promotions'
+import type { Tx } from './ledger'
 import {
   PT_VALIDITY_DAYS,
   addMonths,
@@ -21,13 +22,22 @@ type PtPackageRow = typeof ptPackages.$inferSelect
  * The client's live Unlimited Plans. Live means active and either Activated with
  * an expiry still ahead, or Dormant and waiting — both are plans the member owns,
  * so a purchase on top of either is a renewal (§3).
+ *
+ * Exported because an admin's Home Location change (§7) moves exactly this set —
+ * a second copy of "which plans are live" is drift the §6 rule cannot afford.
+ * Takes the handle so a caller inside a transaction sees its own writes.
  */
-async function liveUnlimited(
+export async function liveUnlimited(
   clientId: string,
   now: Date,
-): Promise<{ expiresAt: Date | null; locationId: string | null }[]> {
-  const rows = await db
-    .select({ expiresAt: clientPackages.expiresAt, locationId: clientPackages.locationId })
+  handle: typeof db | Tx = db,
+): Promise<{ id: string; expiresAt: Date | null; locationId: string | null }[]> {
+  const rows = await handle
+    .select({
+      id: clientPackages.id,
+      expiresAt: clientPackages.expiresAt,
+      locationId: clientPackages.locationId,
+    })
     .from(clientPackages)
     .where(
       and(
@@ -72,6 +82,52 @@ export function locationForPurchase(
     throw new ConflictError('unlimited_renewal_location_mismatch')
   }
   return locationId
+}
+
+export type HomeLocationRefusal =
+  | 'home_location_requires_unlimited'
+  | 'home_location_unchanged'
+  | 'home_location_plan_not_live'
+
+export type HomeLocationMove =
+  | { ok: true; moveIds: string[] }
+  | { ok: false; refusal: HomeLocationRefusal }
+
+/**
+ * Which of a member's plans an admin's Home Location change moves (§7). Here
+ * beside `locationForPurchase` because it is the same rule read backwards: a
+ * purchase may not leave two live plans disagreeing about their Location, so a
+ * correction may not either. Move only the Activated plan and the Dormant
+ * renewal keeps the old Location, and the next booking there activates the
+ * second plan — the hole §6 closes, re-opened from the other side.
+ *
+ * `livePlans` carries the member's live Unlimited Plans (active, and either
+ * Activated with an expiry ahead or Dormant) — the same set the renewal rule
+ * counts. A plan outside it is history and is refused rather than rewritten.
+ *
+ * Bookings are not this function's business and are not the service's either:
+ * a plan's Location moving leaves every booking made against it standing,
+ * including the ones at the Location being left (story 130).
+ *
+ * Pure, and refusals are returned rather than thrown, so the rule is checkable
+ * without a database; `adjust.ts` maps them to the project's typed errors.
+ */
+export function homeLocationMove(
+  kind: PackageKind,
+  clientPackageId: string,
+  livePlans: { id: string; locationId: string | null }[],
+  toLocationId: string,
+): HomeLocationMove {
+  if (kind !== 'unlimited') return { ok: false, refusal: 'home_location_requires_unlimited' }
+  const target = livePlans.find(p => p.id === clientPackageId)
+  if (!target) return { ok: false, refusal: 'home_location_plan_not_live' }
+  // Unchanged means *every* live plan already sits there. Testing the aimed-at
+  // plan alone would refuse the one case this route has to be able to fix: two
+  // live plans that disagree, aimed at the one already at the destination.
+  if (livePlans.every(p => p.locationId === toLocationId)) {
+    return { ok: false, refusal: 'home_location_unchanged' }
+  }
+  return { ok: true, moveIds: livePlans.map(p => p.id) }
 }
 
 /**

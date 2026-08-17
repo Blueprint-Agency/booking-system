@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { Avatar, Badge, Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
 import { PackageExpiryDialog } from "@/components/clients/package-expiry-dialog";
 import { CrossLocationDialog } from "@/components/clients/cross-location-dialog";
+import { HomeLocationDialog } from "@/components/clients/home-location-dialog";
 import { PackageSetBalanceDialog } from "@/components/clients/package-set-balance-dialog";
 import { RefundDialog } from "@/components/clients/refund-dialog";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -130,6 +131,7 @@ export default function ClientProfilePage({
   const [balanceFor, setBalanceFor] = useState<ApiPackage | null>(null);
   const [expiryFor, setExpiryFor] = useState<ApiPackage | null>(null);
   const [crossLocationFor, setCrossLocationFor] = useState<ApiPackage | null>(null);
+  const [homeLocationFor, setHomeLocationFor] = useState<ApiPackage | null>(null);
   const [refundFor, setRefundFor] = useState<ApiPackage | null>(null);
   const [workshopRefundFor, setWorkshopRefundFor] = useState<ApiWorkshopPurchase | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -167,6 +169,7 @@ export default function ClientProfilePage({
       setBalanceFor(null);
       setExpiryFor(null);
       setCrossLocationFor(null);
+      setHomeLocationFor(null);
       setRefundFor(null);
       setWorkshopRefundFor(null);
       await load();
@@ -324,12 +327,17 @@ export default function ClientProfilePage({
                   const canAdjustDelta = p.kind !== "unlimited";
                   // Only an Unlimited Plan has a Home Location to extend.
                   const canEditCrossLocation = p.kind === "unlimited";
+                  // Moving a Home Location needs the studio list, which is
+                  // superadmin-only — so is the write itself. Offering it to an
+                  // admin would open a dialog with nothing to pick.
+                  const canMoveHomeLocation = p.kind === "unlimited" && isSuperadmin;
                   const showMenu =
                     canEdit &&
                     (canEditExpiry ||
                       canSetBalance ||
                       canAdjustDelta ||
                       canEditCrossLocation ||
+                      canMoveHomeLocation ||
                       p.refundable);
                   return (
                     <div
@@ -380,6 +388,15 @@ export default function ClientProfilePage({
                               }
                               onClick={() => {
                                 setCrossLocationFor(p);
+                                setOpenMenuId(null);
+                              }}
+                            />
+                          )}
+                          {canMoveHomeLocation && (
+                            <MenuButton
+                              label="Change home studio"
+                              onClick={() => {
+                                setHomeLocationFor(p);
                                 setOpenMenuId(null);
                               }}
                             />
@@ -614,6 +631,24 @@ export default function ClientProfilePage({
             )
           }
           onClose={() => setCrossLocationFor(null)}
+        />
+      )}
+
+      {isSuperadmin && homeLocationFor && (
+        <HomeLocationDialog
+          packageName={homeLocationFor.package_name}
+          currentLocation={homeLocationFor.unlimited_location}
+          onSave={(locationId, reason) =>
+            runEdit(
+              () =>
+                api!.post(
+                  `/portal/admin/clients/${id}/packages/${homeLocationFor.id}/location`,
+                  { location_id: locationId, reason },
+                ),
+              "Home studio moved. Existing bookings are unchanged.",
+            )
+          }
+          onClose={() => setHomeLocationFor(null)}
         />
       )}
 

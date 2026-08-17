@@ -1,14 +1,17 @@
 /**
  * Admin edits to a client's package wallet — manual credit/session adjustments,
- * absolute balance sets, and expiry changes. Every change writes a
- * manual_adjustments ledger row (delta=0 for expiry-only edits). See be-portal.md §3d.
+ * absolute balance sets, expiry changes, the Cross-Location Add-On and Home
+ * Location moves. Every change writes a manual_adjustments ledger row (delta=0
+ * for every edit that moves no credits). See be-portal.md §3d.
  */
-import { and, eq } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { db } from '../../db'
 import { clientPackages } from '../../db/schema/packages'
+import { locations } from '../../db/schema/catalog'
 import { manualAdjustments } from '../../db/schema/ledger'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
 import { computeActive, setExpiryRefusal } from './validity'
+import { homeLocationMove, liveUnlimited } from './purchase'
 
 export type ClientPackageRow = typeof clientPackages.$inferSelect
 
@@ -163,6 +166,90 @@ export async function setCrossLocationAddOn(
     })
 
     return { ...pkg, crossLocationPaidSgd: input.paidSgd }
+  })
+}
+
+export interface SetHomeLocationInput {
+  clientId: string
+  clientPackageId: string
+  /** The Location the member is moved to. */
+  locationId: string
+  reason: string
+  actedByStaffId: string
+}
+
+/**
+ * Move a member's **Home Location** (§7). Admin only, audited, no frequency
+ * limit — the correction for a member who picked the wrong Location at checkout,
+ * whose only other route out is a refund and a repurchase.
+ *
+ * The move takes the member's Activated plan **and** any Dormant renewal in one
+ * transaction: `homeLocationMove` decides which, so the rule that keeps two live
+ * plans agreeing sits beside the purchase rule it mirrors.
+ *
+ * Bookings are deliberately untouched, including bookings at the Location being
+ * left — correcting a record does not cancel a member's classes.
+ */
+export async function setHomeLocation(input: SetHomeLocationInput): Promise<ClientPackageRow> {
+  if (!input.reason.trim()) throw new BadRequestError('reason_required')
+
+  return db.transaction(async tx => {
+    const [pkg] = await tx
+      .select()
+      .from(clientPackages)
+      .where(
+        and(eq(clientPackages.id, input.clientPackageId), eq(clientPackages.clientId, input.clientId)),
+      )
+      .limit(1)
+    if (!pkg) throw new NotFoundError('client_package_not_found')
+
+    // Somewhere real, and somewhere classes can still be scheduled — moving a
+    // member onto an archived Location strands them exactly as the wrong
+    // Location already has.
+    const [to] = await tx
+      .select({ id: locations.id, name: locations.name, archivedAt: locations.archivedAt })
+      .from(locations)
+      .where(and(eq(locations.id, input.locationId), isNull(locations.deletedAt)))
+      .limit(1)
+    if (!to) throw new NotFoundError('location_not_found')
+    if (to.archivedAt) throw new BadRequestError('location_archived')
+
+    // The same set a renewal is counted against (§6) — read through the
+    // transaction's own handle, and never re-derived here.
+    const live = await liveUnlimited(input.clientId, new Date(), tx)
+
+    const move = homeLocationMove(pkg.kind, pkg.id, live, input.locationId)
+    if (!move.ok) throw new BadRequestError(move.refusal)
+
+    // Both Locations by name, per plan. There are two studios, so reading the
+    // lot costs nothing — and each row states where *that* plan was, which is
+    // the whole point on the day two plans disagree.
+    const names = new Map(
+      (await tx.select({ id: locations.id, name: locations.name }).from(locations)).map(l => [
+        l.id,
+        l.name,
+      ]),
+    )
+    const wasAt = new Map(live.map(p => [p.id, p.locationId]))
+
+    await tx
+      .update(clientPackages)
+      .set({ locationId: input.locationId })
+      .where(inArray(clientPackages.id, move.moveIds))
+
+    // One ledger row per plan moved — the Dormant renewal moved too, and an
+    // audit trail that only names one of them hides half the change.
+    await tx.insert(manualAdjustments).values(
+      move.moveIds.map(id => ({
+        clientId: input.clientId,
+        clientPackageId: id,
+        delta: 0,
+        reason: `Home Location changed from ${names.get(wasAt.get(id) ?? '') ?? 'unknown'} to ${to.name}: ${input.reason.trim()}`,
+        actedByStaffId: input.actedByStaffId,
+      })),
+    )
+
+    return { ...pkg, locationId: input.locationId }
   })
 }
 
