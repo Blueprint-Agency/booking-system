@@ -87,7 +87,8 @@ The query half — call it `getFinance(filter)` — unions the money-in sources 
 | Package purchase (class pack, PT pack, Unlimited Plan, trial) | `client_packages` — `list_price_sgd`, `amount_paid_sgd`, `purchased_at`, `applied_promo_code_id`, `location_id` |
 | Cross-Location Add-On | `client_packages.cross_location_paid_sgd`, as its own row |
 | Workshop ticket | the booking that paid for it, joined to `stripe_payments` |
-| Corporate package | `stripe_payments` where kind is `corporate_package`, priced from the corporate package's own price; List Price equals amount paid |
+| Corporate package | `stripe_payments` where kind is `corporate_package`, at status `succeeded` **or** `refunded` — the refund webhook flips the status, and filtering to succeeded would drop the sale out of Gross while its Refund row stayed. List Price equals amount paid |
+| Merch Order | `merch_orders` — the order row, not the payment row, so a free item still counts. List Price equals amount paid |
 | Refund | `stripe_payments.refunded_at` with the amount negated |
 
 `promo_code_redemptions.discount_sgd` is **not** the source of the discount figure. List Price minus amount paid is, because it is correct for a stacked Promotion and Promo Code, for a comp grant with no payment intent, and for a $0 trial — all cases where a Redemption row is absent or tells only part of the story.
@@ -161,7 +162,7 @@ Not tested: the query layer, which has no arithmetic; the CSV serializer, which 
 - **What the payment provider keeps.** Fees are not recorded and are not being captured. Net is before them.
 - **Per-Location revenue attribution by consumption.** A package's revenue is never spread across the Locations where its credits were burned.
 - **Payout runs / cash basis.** The platform does not record when an instructor was actually paid.
-- ~~**Merch.**~~ Now in scope: a Merch Order is paid online and only collected in person, so it is money in. No Promo Code, no Location, discount always zero.
+- ~~**Merch.**~~ Now in scope and implemented: a Merch Order is paid online and only collected in person, so it is money in. Read from `merch_orders` so free items (no payment row) still count. No Promo Code, no Location, discount always zero.
 - **Partial refunds.** A Refund is the whole amount, as it is everywhere else in the platform.
 - **Backfilling existing Unpriced sessions.**
 - **The other four PRD reports** — attendance, membership, inbox throughput, referral attribution. This spec builds the reports surface's first page; those remain unbuilt.

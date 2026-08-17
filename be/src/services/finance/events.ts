@@ -16,11 +16,6 @@
  * `merch` is a Merch Order — paid online, collected in person. It takes no Promo
  * Code and has no catalogue price frozen on it, so its List Price is what was
  * paid and its discount is always zero, same as `corporate`.
- *
- * NOTE: the kind is defined and totalled here, but nothing FEEDS it yet — the
- * `merch_orders` table lands with the merch feature, which is a separate change.
- * Wiring it up is a query in ./list.ts and nothing else; the arithmetic already
- * handles it and is already tested.
  */
 export const MONEY_IN_KINDS = [
   'purchase',

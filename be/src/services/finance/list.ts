@@ -13,10 +13,8 @@
  *   - client_packages                  → purchase (and its Cross-Location Add-On)
  *   - bookings (kind = 'workshop')     → workshop_ticket
  *   - stripe_payments (corporate)      → corporate
+ *   - merch_orders                     → merch
  *   - stripe_payments (refunded)       → refund
- * A sixth, `merch_orders` → merch, is not read yet: the table arrives with the
- * merch feature. The kind and its arithmetic already exist in ./totals.ts, so
- * adding it here is one query and no change to any figure's definition.
  * There is no finance_events table and there should not be one: these rows ARE
  * the ledger, and a copy of them would be a second thing to keep true.
  */
@@ -25,7 +23,7 @@ import { db } from '../../db'
 import { clientPackages, classPackages, ptPackages, promoCodes } from '../../db/schema/packages'
 import { bookings } from '../../db/schema/bookings'
 import { stripePayments } from '../../db/schema/ledger'
-import { locations } from '../../db/schema/catalog'
+import { locations, merchOrders } from '../../db/schema/catalog'
 import { workshops } from '../../db/schema/schedule'
 import { clients } from '../../db/schema/identity'
 import { listPayroll, type PayrollRow } from '../payroll/list'
@@ -185,6 +183,29 @@ async function listMoneyIn(filter: FinanceFilter): Promise<MoneyEvent[]> {
       ),
     )
 
+  // -- merch orders -----------------------------------------------------------
+  // Read from `merch_orders`, NOT from `stripe_payments` where kind = 'merch'.
+  // The order row is the purchase: it exists for a free item too (which never
+  // reaches the payment provider and so has no payment row at all), and it keeps
+  // its own frozen copy of the title and the amount, so renaming, repricing or
+  // deleting the catalogue item never rewrites what the member bought.
+  //
+  // A Merch Order takes no Promo Code and has no Location — one shelf, both
+  // studios hand it over — so its List Price is what was paid, its discount is
+  // always zero, and it reports as Unattributed.
+  const merchRows = await db
+    .select({
+      id: merchOrders.id,
+      createdAt: merchOrders.createdAt,
+      title: merchOrders.title,
+      amountSgd: merchOrders.amountSgd,
+      clientName: clients.name,
+      paymentIntentId: merchOrders.stripePaymentIntentId,
+    })
+    .from(merchOrders)
+    .innerJoin(clients, eq(clients.id, merchOrders.clientId))
+    .where(and(...within(merchOrders.createdAt, filter)))
+
   // -- refunds ----------------------------------------------------------------
   // A Refund is the whole purchase back. It lands on its OWN date so a closed
   // month never restates itself, and the purchase row it reverses stays in the
@@ -280,6 +301,19 @@ async function listMoneyIn(filter: FinanceFilter): Promise<MoneyEvent[]> {
       id: r.id,
       occurredAt: r.createdAt,
       label: `Corporate package — ${r.clientName}`,
+      listPriceSgd: r.amountSgd,
+      paidSgd: r.amountSgd,
+      refunded: isRefunded(r.paymentIntentId),
+    })
+  }
+
+  for (const r of merchRows) {
+    events.push({
+      ...base,
+      kind: 'merch',
+      id: r.id,
+      occurredAt: r.createdAt,
+      label: `${r.title} — ${r.clientName}`,
       listPriceSgd: r.amountSgd,
       paidSgd: r.amountSgd,
       refunded: isRefunded(r.paymentIntentId),

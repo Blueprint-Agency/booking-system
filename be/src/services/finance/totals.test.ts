@@ -73,6 +73,35 @@ const pay = (p: Partial<MoneyEvent> = {}) =>
   assert.strictEqual(s.totals.net_sgd, 45)
 }
 
+// -- a free Merch item is an order too, and reads as given away ---------------
+// It never reaches the payment provider, so there is no payment row behind it —
+// the order is the only record, and it must not vanish from the month.
+{
+  const s = summarizeFinance([ev({ kind: 'merch', listPriceSgd: '0.00', paidSgd: '0.00' })])
+  assert.strictEqual(s.rows.length, 1)
+  assert.strictEqual(s.totals.gross_sgd, 0)
+  assert.strictEqual(s.totals.net_sgd, 0)
+}
+
+// -- a Merch Order carries no Location, so it lands in Unattributed -----------
+{
+  const s = summarizeFinance([ev({ kind: 'merch', listPriceSgd: '45.00', paidSgd: '45.00' })])
+  assert.strictEqual(s.rows[0]?.unattributed, true)
+  assert.strictEqual(s.rows[0]?.editable, false, 'merch is a payment record, not ours to restate')
+}
+
+// -- a refunded Merch Order keeps its row and nets to zero -------------------
+{
+  const s = summarizeFinance([
+    ev({ kind: 'merch', id: 'm-1', listPriceSgd: '45.00', paidSgd: '45.00', refunded: true }),
+    ev({ kind: 'refund', id: 'm-1', paidSgd: '-45.00' }),
+  ])
+  assert.strictEqual(s.totals.gross_sgd, 45)
+  assert.strictEqual(s.totals.refunds_sgd, 45)
+  assert.strictEqual(s.totals.net_sgd, 0)
+  assert.strictEqual(s.rows.find(r => r.kind === 'merch')?.refunded, true)
+}
+
 // -- a Refund subtracts from Net and leaves the original purchase in the set --
 {
   const s = summarizeFinance([
