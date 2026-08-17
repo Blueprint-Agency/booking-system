@@ -869,6 +869,25 @@ const base = { today: '2026-08-10', pool: 14, committedDays: 0 } as const
   // ...and a third person away on the Monday DOES make it three at one instant
   const alsoMonday = [...aliceAndCara, peer('Dan', MON, TUE)]
   assert.strictEqual(peakLeaveAway(leaveWindow(MON, WED), alsoMonday).away.length, 2)
+  // The leave CALENDAR's flag (§17, listLeaveCalendar): a colleague whose leave
+  // began before the window opened and is still running inside it is counted on
+  // the days in view, and the entry is measured over its own window CLIPPED to
+  // the calendar window — a peak outside [from, to] is off an incomplete count.
+  const startedEarlier = peer('Erin', '2026-08-10', TUE)
+  const view = leaveWindow(MON, WED)
+  const clipped = (from: string, to: string) => {
+    const w = leaveWindow(from, to)
+    return {
+      startsAt: new Date(Math.max(w.startsAt.getTime(), view.startsAt.getTime())),
+      endsAt: new Date(Math.min(w.endsAt.getTime(), view.endsAt.getTime())),
+    }
+  }
+  // The entry being measured is away Tuesday only; Erin's run started a week
+  // before the window opened and is still going, so she counts on the Tuesday.
+  assert.strictEqual(peakLeaveAway(clipped(TUE, TUE), [startedEarlier]).away.length, 1)
+  // ...and the day the calendar is NOT showing does not drag the peak up.
+  assert.strictEqual(peakLeaveAway(clipped('2026-08-10', MON), [peer('Gus', '2026-08-10', '2026-08-10')]).away.length, 0)
+
   const refused = ask('annual', MON, WED, alsoMonday, { coverGroupCap: 2 })
   assert.strictEqual(refused.ok, false)
   if (!refused.ok) {

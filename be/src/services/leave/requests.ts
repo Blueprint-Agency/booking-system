@@ -862,14 +862,20 @@ export async function listLeaveCalendar(
   const seesEverything = viewer.role !== 'instructor'
 
   // The §17 flag. The rows above are the same pending+approved set a Leave Cap
-  // counts, so each entry is measured against the others by the same pure peak
-  // function — no second query for peers, only the two caps. An absence
-  // reaching outside [from, to] is measured against the peers inside it, which
-  // is what the calendar is showing anyway.
+  // counts — every absence OVERLAPPING [from, to], including one that began
+  // before the window opened and is still running inside it — so each entry is
+  // measured against the others by the same pure peak function, with no second
+  // query for peers, only the two caps.
+  //
+  // The measured window is the entry clipped to [from, to]: inside it every
+  // overlapping absence is present, so the peak is exact, while outside it the
+  // rows are whatever happened to also reach into view, which would flag a day
+  // the calendar is not showing off an incomplete count.
   const [caps] = await db
     .select({ coverGroup: globalPolicy.coverGroupLeaveCap, study: globalPolicy.studyLeaveCap })
     .from(globalPolicy)
     .limit(1)
+  const view = rules.leaveWindow(from, to)
   const peers = rows.map(({ row, instructorName, inCoverGroup }) => ({
     instructorId: row.instructorId,
     instructorName,
@@ -884,7 +890,10 @@ export async function listLeaveCalendar(
       ? rules.leaveCapExceedance({
           type: self.type,
           inCoverGroup: self.inCoverGroup,
-          window: self,
+          window: {
+            startsAt: new Date(Math.max(self.startsAt.getTime(), view.startsAt.getTime())),
+            endsAt: new Date(Math.min(self.endsAt.getTime(), view.endsAt.getTime())),
+          },
           // Excluded by INSTRUCTOR, as the submission path excludes them — one
           // person's own overlapping rows (a backdated medical over leave that
           // has already ended) are one instructor away, not two.
