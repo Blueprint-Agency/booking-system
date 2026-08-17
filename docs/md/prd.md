@@ -48,7 +48,7 @@ Three flows where the system owns the **request inbox** but a human handles the 
 
 1. **Refund requests.** Member submits → admin notified → admin acts in WhatsApp → admin marks resolved/declined in app (with notes). No "Refund" button that calls a payment provider.
 2. **Membership cancellation / pause.** "Contact Sales Team" CTA on the client side → admin inbox → handled in WhatsApp → admin marks resolved.
-3. **Instructor pay.** The system records what each instructor is owed per session and totals it per period on the Finance report (§8); the admin hands the money over externally. No pay *rate* field and no payout run — the platform never records when an instructor was actually paid, which is why every figure it reports is accrual, not cash. See `docs/adr/0001-finance-replaces-payroll.md`.
+3. **Instructor pay.** The system records what each instructor is owed per session and totals it per period on the Finance report (§8); the admin hands the money over externally. No pay *rate* field and no payout run — the platform never records when an instructor was actually paid, which is why every figure it reports is accrual, not cash. See `be/docs/adr/0002-finance-replaces-payroll.md`.
 
 Anywhere the PRD specifies an "inbox" surface, this is the underlying pattern: a queue with state machine + admin notes + audit, **never** an in-app financial action.
 
@@ -497,7 +497,7 @@ An instructor's own **Teaching log** (`/instructor/payroll`) is not a report and
 ### 8.4 Principles
 
 1. **Instructors never see aggregates.** Even own teaching log shows their rows, not "performance vs. studio average." Studio admin can share insights manually if useful.
-2. **Super-admin reports are diagnostic, not actionable — except Finance.** No edit affordances on a report surface, and no PII export unless impersonating. Finance is the deliberate exception: it absorbed the Payroll page's inline pay editing, and a super-admin correcting a figure should not have to impersonate to do it. Within Finance, only Instructor Pay and Manual Entries are editable by anyone — purchases and Refunds carry no edit affordance for either role, because they are the payment provider's record. Reversed in `docs/adr/0001-finance-replaces-payroll.md`.
+2. **Super-admin reports are diagnostic, not actionable — except Finance.** No edit affordances on a report surface, and no PII export unless impersonating. Finance is the deliberate exception: it absorbed the Payroll page's inline pay editing, and a super-admin correcting a figure should not have to impersonate to do it. Within Finance, only Instructor Pay and Manual Entries are editable by anyone — purchases and Refunds carry no edit affordance for either role, because they are the payment provider's record. Reversed in `be/docs/adr/0002-finance-replaces-payroll.md`.
 
 ---
 

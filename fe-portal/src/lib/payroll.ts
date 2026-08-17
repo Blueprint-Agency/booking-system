@@ -3,7 +3,7 @@
 // human reads. Mirrors be/src/routes/portal/instructor/payroll.ts.
 //
 // The admin half of this module moved to ./finance when the Payroll page was
-// replaced by Finance (docs/adr/0001-finance-replaces-payroll.md). What stayed:
+// replaced by Finance (be/docs/adr/0002-finance-replaces-payroll.md). What stayed:
 //
 //   - The instructor read. It is deliberately NOT the Finance read scoped down.
 //     An instructor gets one flat total for themselves and never a studio

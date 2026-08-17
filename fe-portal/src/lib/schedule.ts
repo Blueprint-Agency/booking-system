@@ -264,7 +264,7 @@ const SCHEDULE_ERROR_COPY: Record<string, string> = {
   // The roster module refuses these for all four event kinds.
   supporting_instructor_duplicates_main: "An instructor can't be both main and supporting.",
   // Pay is required of anyone joining a roster, so Net on Finance is never
-  // flattered by a session nobody has priced (docs/adr/0001-finance-replaces-payroll.md).
+  // flattered by a session nobody has priced (be/docs/adr/0002-finance-replaces-payroll.md).
   instructor_pay_required:
     "Enter the pay for every instructor on this session before saving.",
   invalid_instructor_id: "One of those instructors is no longer available. Reload and pick again.",

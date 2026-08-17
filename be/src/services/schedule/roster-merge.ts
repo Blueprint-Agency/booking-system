@@ -71,7 +71,7 @@ export type RosterRefusal = 'supporting_instructor_duplicates_main'
  *
  * Instructor Pay is required the moment someone joins a roster — at scheduling,
  * or on a later supporting add — because Net on the Finance page is only as
- * true as the pay behind it (docs/adr/0001-finance-replaces-payroll.md).
+ * true as the pay behind it (be/docs/adr/0002-finance-replaces-payroll.md).
  *
  * Reported here rather than refused here, because whether it MATTERS depends on
  * the event kind, which this pure merge deliberately doesn't know: a corporate
