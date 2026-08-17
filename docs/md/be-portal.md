@@ -249,9 +249,13 @@ The old "+ corporate" package dropdown and the `/admin/schedule/new/corporate` d
 
 ### `finance.ts` (gated `staffAny` — admin + superadmin)
 
-Every **Money Event** in a period, money in and money out, with the studio's five figures over it. Replaces the admin `payroll.ts` surface; the instructor's own Teaching log (`portal/instructor/payroll.ts`) is unchanged. See `docs/md/spec-finance.md` and `docs/adr/0001-finance-replaces-payroll.md`.
+Every **Money Event** in a period, money in and money out, with the studio's five figures over it. Replaces the admin `payroll.ts` surface; the instructor's own Teaching log (`portal/instructor/payroll.ts`) is unchanged. See `docs/md/spec-finance.md` and `be/docs/adr/0002-finance-replaces-payroll.md`.
 
-Money **in** is unioned from `client_packages` (purchases, plus a separate row per Cross-Location Add-On), `bookings` where `kind = 'workshop'`, `stripe_payments` where `kind = 'corporate_package'`, `merch_orders`, and `stripe_payments` with `status = 'refunded'` (as negative Refund rows). Money **out** is `services/payroll`'s existing five-source union, unchanged — Finance does not re-derive what "a completed session that owes pay" means.
+Money **in** is unioned from `client_packages` (purchases, plus a separate row per Cross-Location Add-On), `bookings` where `kind = 'workshop'`, `stripe_payments` where `kind = 'corporate_package'`, and `stripe_payments` with `status = 'refunded'` (as negative Refund rows). Money **out** is `services/payroll`'s existing five-source union, unchanged — Finance does not re-derive what "a completed session that owes pay" means.
+
+A `merch` Money Event kind exists and is already totalled, but nothing feeds it yet: `merch_orders` arrives with the merch feature, which ships separately. Wiring it up is one query in `services/finance/list.ts` and no change to any figure's definition.
+
+Corporate rows are read at `status IN ('succeeded', 'refunded')`, **not** `succeeded` alone. The refund webhook flips the status, so filtering to succeeded would drop the sale out of Gross while leaving its negative Refund row standing — Net wrong by twice the amount. Every other money-in source reads its own table and is immune; corporate is the only kind that reads the payment row itself.
 
 Discount is **derived** as List Price minus amount paid, never read from `promo_code_redemptions.discount_sgd`: that row is absent on a comp grant and tells only part of the story when a Promotion and a Promo Code stack.
 
@@ -269,7 +273,12 @@ Only Instructor Pay and Manual Entries are writable. There is deliberately no en
 | DELETE | `/finance/manual/:id` | Remove a stray Manual Entry. |
 | PATCH | `/finance/pay/:kind/:id` | `kind ∈ {class, pt, workshop, manual}`. Body `{ instructor_pay_sgd: number\|null, instructor_id? }` — sets or (with `null`) clears one instructor's pay on that session. `instructor_id` is required for workshops and needed wherever a session has supporting instructors. |
 
-**Instructor Pay is required** when anyone joins a roster — at scheduling, and when a supporting instructor is added later. Enforced once in `services/schedule/roster.replaceRoster`, which every scheduling and roster-edit path passes through, and refused as `instructor_pay_required`. Corporate sessions are exempt: neither corporate table has a pay column. Sessions that predate the rule are left alone and cleared by hand through Finance's `?needs_pay=true` filter.
+**Instructor Pay is required**, in two places for two different reasons:
+
+- **Joining a roster** (a supporting instructor, a swapped main) is refused as `instructor_pay_required` by `services/schedule/roster.replaceRoster` — the one write path every scheduling and roster-edit route passes through. Corporate sessions are exempt: neither corporate table has a pay column. Instructors already on the event are never "arrivals", so a session that predates the rule can still have its roster edited.
+- **The main instructor at creation** is written onto the session row at insert and so is invisible to that rule. It is required by the zod schema on the **admin** create routes (`POST /schedule/classes`, `POST /pt-requests/:id/schedule`, `POST /workshops`) and deliberately NOT on the instructor equivalents — an instructor scheduling their own session must never see pay rates, so that session is created Unpriced.
+
+Unpriced sessions therefore still occur by design. They are cleared by hand through Finance's `?needs_pay=true` filter, and Net says so while any remain.
 
 ### `check-in.ts`
 | Method | Path | Effect |

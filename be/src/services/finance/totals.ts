@@ -5,7 +5,7 @@
  * export all come out of this function, so they cannot disagree about a period.
  * Routes pick fields from what it returns; they do no arithmetic of their own.
  *
- * Rules encoded here (see docs/adr/0001-finance-replaces-payroll.md):
+ * Rules encoded here (see be/docs/adr/0002-finance-replaces-payroll.md):
  *   - discount is derived, List Price minus amount paid — never read from a
  *     Redemption, which is absent on a comp grant and partial when a Promotion
  *     and a Promo Code stack;

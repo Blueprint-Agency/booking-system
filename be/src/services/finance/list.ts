@@ -13,17 +13,19 @@
  *   - client_packages                  → purchase (and its Cross-Location Add-On)
  *   - bookings (kind = 'workshop')     → workshop_ticket
  *   - stripe_payments (corporate)      → corporate
- *   - merch_orders                     → merch
  *   - stripe_payments (refunded)       → refund
+ * A sixth, `merch_orders` → merch, is not read yet: the table arrives with the
+ * merch feature. The kind and its arithmetic already exist in ./totals.ts, so
+ * adding it here is one query and no change to any figure's definition.
  * There is no finance_events table and there should not be one: these rows ARE
  * the ledger, and a copy of them would be a second thing to keep true.
  */
-import { and, eq, gte, isNotNull, lte, sql } from 'drizzle-orm'
+import { and, eq, gte, inArray, isNotNull, lte } from 'drizzle-orm'
 import { db } from '../../db'
 import { clientPackages, classPackages, ptPackages, promoCodes } from '../../db/schema/packages'
 import { bookings } from '../../db/schema/bookings'
 import { stripePayments } from '../../db/schema/ledger'
-import { merchOrders, locations } from '../../db/schema/catalog'
+import { locations } from '../../db/schema/catalog'
 import { workshops } from '../../db/schema/schedule'
 import { clients } from '../../db/schema/identity'
 import { listPayroll, type PayrollRow } from '../payroll/list'
@@ -158,6 +160,13 @@ async function listMoneyIn(filter: FinanceFilter): Promise<MoneyEvent[]> {
   // No client_packages row exists for these, so there is no List Price to
   // compare against and no Promo Code that could have applied — the price is
   // negotiated off-platform. List equals paid, and the discount is always zero.
+  //
+  // `succeeded` OR `refunded`, NOT `succeeded` alone: the refund webhook flips
+  // the status, so filtering to succeeded would delete the sale from Gross while
+  // leaving its negative Refund row standing — Net understated by twice the
+  // amount, and a purchase that visibly happened missing from the month it
+  // happened in. Every other money-in source reads its own table and is immune;
+  // corporate is the only kind that reads the payment row itself.
   const corporateRows = await db
     .select({
       id: stripePayments.id,
@@ -171,30 +180,15 @@ async function listMoneyIn(filter: FinanceFilter): Promise<MoneyEvent[]> {
     .where(
       and(
         eq(stripePayments.kind, 'corporate_package'),
-        eq(stripePayments.status, 'succeeded'),
+        inArray(stripePayments.status, ['succeeded', 'refunded']),
         ...within(stripePayments.createdAt, filter),
       ),
     )
 
-  // -- merch orders -----------------------------------------------------------
-  // Paid online, collected in person. No Promo Codes and no Location.
-  const merchRows = await db
-    .select({
-      id: merchOrders.id,
-      createdAt: merchOrders.createdAt,
-      title: merchOrders.title,
-      amountSgd: merchOrders.amountSgd,
-      clientName: clients.name,
-      paymentIntentId: merchOrders.stripePaymentIntentId,
-    })
-    .from(merchOrders)
-    .innerJoin(clients, eq(clients.id, merchOrders.clientId))
-    .where(and(...within(merchOrders.createdAt, filter)))
-
   // -- refunds ----------------------------------------------------------------
   // A Refund is the whole purchase back. It lands on its OWN date so a closed
   // month never restates itself, and the purchase row it reverses stays in the
-  // set, tagged — see docs/adr/0001-finance-replaces-payroll.md.
+  // set, tagged — see be/docs/adr/0002-finance-replaces-payroll.md.
   const refundRows = await db
     .select({
       id: stripePayments.id,
@@ -292,19 +286,6 @@ async function listMoneyIn(filter: FinanceFilter): Promise<MoneyEvent[]> {
     })
   }
 
-  for (const r of merchRows) {
-    events.push({
-      ...base,
-      kind: 'merch',
-      id: r.id,
-      occurredAt: r.createdAt,
-      label: `${r.title} — ${r.clientName}`,
-      listPriceSgd: r.amountSgd,
-      paidSgd: r.amountSgd,
-      refunded: isRefunded(r.paymentIntentId),
-    })
-  }
-
   for (const r of refundRows) {
     events.push({
       ...base,
@@ -356,47 +337,4 @@ export async function getFinance(filter: FinanceFilter): Promise<FinanceSummary>
   }
 
   return summarizeFinance(events)
-}
-
-/**
- * The CSV, from the same rows the screen got. Not a second query and not a
- * second shape — a projection, so the file and the table cannot disagree.
- */
-export function financeCsv(summary: FinanceSummary): string {
-  const header = [
-    'date',
-    'type',
-    'description',
-    'location',
-    'member_or_instructor',
-    'list_price_sgd',
-    'discount_sgd',
-    'paid_sgd',
-    'promo_code',
-    'instructor_pay_sgd',
-    'refunded',
-  ]
-  const cell = (v: string | number | boolean | null) => {
-    if (v == null) return ''
-    const s = String(v)
-    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
-  }
-  const lines = summary.rows.map(r =>
-    [
-      r.occurred_at,
-      r.kind,
-      r.label,
-      r.unattributed ? 'Unattributed' : r.location_name,
-      r.instructor_name,
-      r.list_price_sgd,
-      r.discount_sgd,
-      r.paid_sgd,
-      r.promo_code,
-      r.pay_sgd,
-      r.refunded ? 'yes' : '',
-    ]
-      .map(cell)
-      .join(','),
-  )
-  return [header.join(','), ...lines].join('\r\n')
 }

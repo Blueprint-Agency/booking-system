@@ -22,7 +22,7 @@ Above the table, five tiles over the whole filtered range: **Gross**, discounts 
 
 Filters: date range (defaulting to the current month), Location, instructor, class type. One button exports exactly the filtered rows as CSV.
 
-Instructor Pay becomes required when a session is scheduled and when a supporting instructor is added to a roster, so new Unpriced sessions stop appearing. Existing ones are surfaced through a "Needs pay" filter and cleared by hand.
+Instructor Pay becomes required when an **admin** schedules a session and when anyone is added to a roster, so Unpriced sessions become rare. They do not stop entirely: an instructor scheduling their own class or PT session must never see pay rates, so that path still creates the session Unpriced. Those, and the ones that predate the rule, are surfaced through a "Needs pay" filter and cleared by hand.
 
 ## User Stories
 
@@ -57,7 +57,8 @@ Instructor Pay becomes required when a session is scheduled and when a supportin
 29. As a studio owner, I want Net to warn me when any session in the range is Unpriced, so that I do not trust a figure that is still incomplete.
 30. As a studio owner, I want Unpriced sessions excluded from the pay total rather than counted as zero, so that the total never understates what I owe.
 31. As an admin, I want a "Needs pay" filter, so that I can find and clear the Unpriced sessions that predate the new rule.
-32. As an admin, I want to be required to enter pay when I schedule a class, PT session or workshop, so that no new session can go Unpriced.
+32. As an admin, I want to be required to enter pay when I schedule a class, PT session or workshop, so that a session I create never goes Unpriced.
+32a. As an instructor, I want to schedule my own class without being asked for pay, so that I am never shown or asked to decide a rate — the session lands on the admin's "Needs pay" list instead.
 33. As an admin, I want to be required to enter pay when I add a supporting instructor to a roster, so that the requirement cannot be sidestepped by editing the roster afterwards.
 34. As an admin, I want an existing session's pay to survive a roster edit, so that a figure I entered is never silently lost.
 35. As an instructor, I want to see my own sessions and my own pay, so that I can check my month against what I am paid.
@@ -131,7 +132,7 @@ The instructor route keeps its current shape: the same underlying read with the 
 
 ### Docs to update in the same change
 
-`prd.md` §8 (Revenue and Teaching log collapse into one Finance report), §8.3 (strike the principle that super-admin report surfaces carry no edit affordances), §2 (drop "no payout report"); `admin-restructure.md` (nav and page); `be-portal.md` §Payroll (replaced by §Finance). `CONTEXT.md` and `docs/adr/0001-finance-replaces-payroll.md` are already written.
+`prd.md` §8 (Revenue and Teaching log collapse into one Finance report), §8.3 (strike the principle that super-admin report surfaces carry no edit affordances), §2 (drop "no payout report"); `admin-restructure.md` (nav and page); `be-portal.md` §Payroll (replaced by §Finance). `CONTEXT.md` and `be/docs/adr/0002-finance-replaces-payroll.md` are already written.
 
 ## Testing Decisions
 

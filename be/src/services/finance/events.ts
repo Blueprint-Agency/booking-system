@@ -1,6 +1,6 @@
 /**
  * The Money Event — one thing that moved money, or that owes money, on the day
- * it happened. See be/CONTEXT.md §Money and docs/adr/0001-finance-replaces-payroll.md.
+ * it happened. See be/CONTEXT.md §Money and be/docs/adr/0002-finance-replaces-payroll.md.
  *
  * Deliberately ONE flat shape rather than a union per kind. Finance's whole job
  * is to total across kinds and hand the same rows to a table and a CSV; a union
@@ -16,6 +16,11 @@
  * `merch` is a Merch Order — paid online, collected in person. It takes no Promo
  * Code and has no catalogue price frozen on it, so its List Price is what was
  * paid and its discount is always zero, same as `corporate`.
+ *
+ * NOTE: the kind is defined and totalled here, but nothing FEEDS it yet — the
+ * `merch_orders` table lands with the merch feature, which is a separate change.
+ * Wiring it up is a query in ./list.ts and nothing else; the arithmetic already
+ * handles it and is already tested.
  */
 export const MONEY_IN_KINDS = [
   'purchase',

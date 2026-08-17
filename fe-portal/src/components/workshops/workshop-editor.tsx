@@ -183,18 +183,21 @@ async function createWorkshopWithChildren(
     locationId: string;
     descriptionHtml: string;
     mainInstructorId: string;
-    supportingInstructorIds: string[];
+    mainInstructorPaySgd: number;
+    supportingInstructors: { instructor_id: string; pay_sgd: number }[];
     days: WorkshopDay[];
     tiers: WorkshopTier[];
   },
 ) {
-  // 1. POST basics
+  // 1. POST basics. Pay goes in the CREATE now rather than a follow-up PATCH:
+  // the backend refuses a roster whose instructors arrive with no price on them.
   const basics = await api.post<{ id: string }>("/portal/admin/workshops", {
     name: args.name,
     location_id: args.locationId,
     description_html: args.descriptionHtml || null,
     main_instructor_id: args.mainInstructorId,
-    supporting_instructor_ids: args.supportingInstructorIds,
+    main_instructor_pay_sgd: args.mainInstructorPaySgd,
+    supporting_instructors: args.supportingInstructors,
     image_r2_keys: [],
   });
 
@@ -424,6 +427,16 @@ export function WorkshopEditor({
     if (hasPromotionOverlap(promotions)) {
       return setError("Promotions overlap in time — each day can have at most one active promotion.");
     }
+    // Pay is required of everyone joining a roster (the backend refuses
+    // otherwise), and on a NEW workshop everyone is joining.
+    if (!isEdit) {
+      if (mainPay.trim() === "") {
+        return setError("Enter the main instructor's pay.");
+      }
+      if (supportingInstructorIds.some((iid) => (supportingPay[iid] ?? "").trim() === "")) {
+        return setError("Enter the pay for every supporting instructor.");
+      }
+    }
     setError(null);
     setSaving(true);
     try {
@@ -458,22 +471,14 @@ export function WorkshopEditor({
           locationId,
           descriptionHtml,
           mainInstructorId,
-          supportingInstructorIds,
+          mainInstructorPaySgd: Number(mainPay),
+          supportingInstructors: supportingInstructorIds.map((iid) => ({
+            instructor_id: iid,
+            pay_sgd: Number(supportingPay[iid] ?? ""),
+          })),
           days: [...days].sort((a, b) => a.date.localeCompare(b.date)),
           tiers: prunedTiers,
         });
-        const hasPay =
-          mainPay.trim() !== "" ||
-          supportingInstructorIds.some((iid) => (supportingPay[iid] ?? "").trim() !== "");
-        if (hasPay) {
-          await api.patch(`/portal/admin/workshops/${id}`, {
-            main_instructor_pay_sgd: parsePay(mainPay),
-            supporting_instructors: supportingInstructorIds.map((iid) => ({
-              instructor_id: iid,
-              pay_sgd: parsePay(supportingPay[iid] ?? ""),
-            })),
-          });
-        }
         if (promotions.length) {
           await api.put(`/portal/admin/workshops/${id}/promotions`, {
             promotions: promotions.map(promotionToApiPayload),

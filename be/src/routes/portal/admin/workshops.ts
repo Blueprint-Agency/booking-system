@@ -36,7 +36,15 @@ const createBasicsSchema = z.object({
   description_html: z.string().max(20000).nullish(),
   cover_r2_key: z.string().max(500).nullish(),
   main_instructor_id: z.string().uuid(),
-  supporting_instructor_ids: z.array(z.string().uuid()).default([]),
+  // Required, not optional: every instructor joining a roster arrives with a
+  // price on them, so Finance's Net is never flattered by an unpriced session
+  // (be/docs/adr/0002-finance-replaces-payroll.md).
+  main_instructor_pay_sgd: z.number().min(0),
+  // Bare ids would mean "leave pay alone", which on a brand-new workshop means
+  // "unpriced" — so creation takes the per-instructor shape with pay required.
+  supporting_instructors: z
+    .array(z.object({ instructor_id: z.string().uuid(), pay_sgd: z.number().min(0) }))
+    .default([]),
   image_r2_keys: z.array(z.string().max(500)).default([]),
 })
 
@@ -230,7 +238,11 @@ const app = new Hono()
       descriptionHtml: body.description_html ?? null,
       coverR2Key: body.cover_r2_key ?? null,
       mainInstructorId: body.main_instructor_id,
-      supportingInstructorIds: body.supporting_instructor_ids,
+      mainInstructorPaySgd: body.main_instructor_pay_sgd,
+      supportingInstructors: body.supporting_instructors.map(s => ({
+        instructorId: s.instructor_id,
+        paySgd: s.pay_sgd,
+      })),
       imageR2Keys: body.image_r2_keys,
       createdByStaffId: staffId,
     })

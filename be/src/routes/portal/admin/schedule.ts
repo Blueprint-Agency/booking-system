@@ -58,7 +58,11 @@ const createClassSchema = z
     capacity_waitlist: z.number().int().min(0).default(0),
     capacity_buffer: z.number().int().min(0).default(0),
     credit_cost: z.number().int().min(0),
-    instructor_pay_sgd: z.number().min(0).optional(),
+    // Required on the ADMIN path only. An instructor scheduling their own class
+    // creates it Unpriced — they must never see pay rates — and an admin prices
+    // it later from Finance's "Needs pay" filter. See
+    // be/docs/adr/0002-finance-replaces-payroll.md.
+    instructor_pay_sgd: z.number().min(0),
   })
   .refine(v => v.capacity_online + v.capacity_waitlist + v.capacity_buffer > 0, {
     message: 'capacity must be positive',

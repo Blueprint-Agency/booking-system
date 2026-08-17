@@ -12,7 +12,6 @@ import ptPackages from './pt-packages'
 import corporatePackages from './corporate-packages'
 import promoCodes from './promo-codes'
 import workshops from './workshops'
-import merch from './merch'
 import schedule from './schedule'
 import ptSessions from './pt-sessions'
 import corporateSessions from './corporate-sessions'
@@ -73,12 +72,10 @@ const app = new Hono()
   // operate the queue — unlike corporate-packages/-sessions (superadmin-only).
   .use('/corporate-requests/*', staffAny)
   .use('/check-in/*', staffAny)
-  // Merch is shop-floor stock, not catalogue governance — either role adds it.
-  .use('/merch/*', staffAny)
   .use('/inbox/*', staffAny)
   // Finance: both roles read every Money Event and edit Instructor Pay. Deliberately
   // NOT superadmin-only and deliberately not read-only for superadmin — see
-  // docs/adr/0001-finance-replaces-payroll.md, which strikes the PRD's
+  // be/docs/adr/0002-finance-replaces-payroll.md, which strikes the PRD's
   // "no edit affordances on a superadmin report surface" principle.
   .use('/finance/*', staffAny)
   // Leave: approve/reject/revoke are admin AND superadmin
@@ -105,7 +102,6 @@ const app = new Hono()
   .route('/corporate-packages', corporatePackages)
   .route('/promo-codes', promoCodes)
   .route('/workshops', workshops)
-  .route('/merch', merch)
   .route('/schedule', schedule)
   .route('/pt-sessions', ptSessions)
   .route('/corporate-sessions', corporateSessions)

@@ -26,9 +26,18 @@ The tempting fix is to attribute a package's revenue to the Locations where its 
 
 ## Instructor Pay becomes required
 
-Pay is optional today at scheduling time and on a roster edit, which is why Unpriced sessions exist at all. Because Net is now a headline figure, an Unpriced session makes the studio look more profitable than it is. Pay becomes required both when a session is scheduled and when a supporting instructor is added.
+Pay is optional today at scheduling time and on a roster edit, which is why Unpriced sessions exist at all. Because Net is now a headline figure, an Unpriced session makes the studio look more profitable than it is. Pay becomes required when a session is scheduled and when anyone is added to a roster.
 
 This puts whoever knows the pay rates in the scheduling path, which is a real operational cost and was weighed against leaving pay optional with a "Needs pay" filter to clear the backlog at month-end. Required won because a warning that must be actioned later is a warning that gets ignored.
+
+**It cannot be required of everyone, and the exceptions matter more than the rule.** Instructors schedule their own classes and PT sessions, and instructors must never see pay rates — so that path still creates the session Unpriced and an admin prices it afterwards. Corporate sessions are exempt outright: neither corporate table has a pay column, so every entry on one is unpriced by construction and none of it is money the studio owes.
+
+That splits the enforcement in two, deliberately:
+
+- **Joining an existing roster** — supporting instructors, a swapped main — is a domain invariant and lives in the roster module's single write path, so both audiences and every future scheduling surface inherit it.
+- **The main instructor at creation** is written onto the session row at insert, so they are never an "arrival" that rule can see. Who must supply a figure there depends on *who is asking*, which makes it an audience rule rather than a domain one — so it sits on the admin routes, and the instructor routes are silent about it by design.
+
+The consequence to keep in view: new Unpriced sessions are rarer, not impossible. The Unpriced warning on Net therefore stays load-bearing rather than becoming decorative.
 
 ## Consequences
 
@@ -36,7 +45,7 @@ This puts whoever knows the pay rates in the scheduling path, which is a real op
 - The payroll module is **not** renamed. It stays the owner of what "a completed session that owes pay" means, and Finance consumes it as its cost-side source. Renaming it would have been churn across the instructor's Teaching log for no behavioural gain.
 - The required-pay rule is enforced in the roster merge's one write path rather than in each scheduling route, so a future scheduling surface inherits it instead of forgetting it.
 - Existing Unpriced sessions are **not** backfilled. Setting them to zero would invent numbers; they are surfaced through a filter and cleared by hand.
-- The Unpriced warning on Net stays even though the new rule should make it unreachable. It is how a bypass — a migration, a seed, a bug — would announce itself.
+- The Unpriced warning on Net stays, and is genuinely reachable: an instructor scheduling their own session creates it Unpriced by design. It is also how a bypass — a migration, a seed, a bug — would announce itself.
 - Super-admin gets edit rights on Finance, contradicting the PRD's principle that super-admin report surfaces carry no edit affordances. That principle is struck rather than worked around.
 - Merch **is** included. It was out of scope when this decision was drafted — merch was browse-only — but a Merch Order is now paid for online and only *collected* in person, so it is money in like any other. It carries no Promo Code and no Location, so its discount is always zero and it reports as Unattributed.
 - What the payment provider keeps is absent. Capturing it means a new webhook field and a backfill, for a figure the provider's own dashboard already reports.

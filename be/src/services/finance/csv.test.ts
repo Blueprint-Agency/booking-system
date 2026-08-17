@@ -1,5 +1,5 @@
 import assert from 'node:assert'
-import { financeCsv } from './list'
+import { financeCsv } from './csv'
 import { summarizeFinance } from './totals'
 import type { MoneyEvent } from './events'
 

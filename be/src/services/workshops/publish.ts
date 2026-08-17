@@ -20,7 +20,10 @@ export interface CreateWorkshopInput {
   descriptionHtml?: string | null
   coverR2Key?: string | null
   mainInstructorId: string
-  supportingInstructorIds?: string[]
+  /** Required at creation — see replaceRoster's instructor_pay_required rule. */
+  mainInstructorPaySgd: number
+  /** Each with their pay; bare ids would mean "unpriced" on a new workshop. */
+  supportingInstructors?: { instructorId: string; paySgd: number }[]
   imageR2Keys?: string[]
   createdByStaffId: string
 }
@@ -71,8 +74,8 @@ export async function createWorkshop(input: CreateWorkshopInput): Promise<Worksh
       tx,
       { kind: 'workshop', id: row!.id },
       {
-        main: { instructorId: input.mainInstructorId },
-        supportingInstructorIds: input.supportingInstructorIds ?? [],
+        main: { instructorId: input.mainInstructorId, paySgd: input.mainInstructorPaySgd },
+        supporting: input.supportingInstructors ?? [],
       },
     )
 

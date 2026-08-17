@@ -1,7 +1,8 @@
 import { Hono, type Context } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
-import { getFinance, financeCsv, UNATTRIBUTED } from '../../../services/finance/list'
+import { getFinance, UNATTRIBUTED } from '../../../services/finance/list'
+import { financeCsv } from '../../../services/finance/csv'
 import {
   updatePayrollAmount,
   createManualPayroll,
@@ -18,7 +19,7 @@ import {
 // Finance: every Money Event in a period — money in and money out — with the
 // studio's five figures over it. Replaces the admin Payroll surface; the
 // instructor's own Teaching log stays where it is.
-// See docs/md/spec-finance.md and docs/adr/0001-finance-replaces-payroll.md.
+// See docs/md/spec-finance.md and be/docs/adr/0002-finance-replaces-payroll.md.
 //
 // Shared read/write for superadmin + admin (gated in routes/portal/admin/index.ts).
 // Only Instructor Pay and Manual Entries are writable — there is deliberately no

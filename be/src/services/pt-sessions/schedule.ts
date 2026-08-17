@@ -44,7 +44,12 @@ export interface SchedulePtRequestInput {
   /** Final agreed start/end (timezone-aware). Need not match any proposed slot. */
   startsAt: Date
   endsAt: Date
-  /** Gross pay to the instructor for this session, in SGD. null/undefined = unpriced. */
+  /**
+   * Gross pay to the instructor for this session, in SGD. null = Unpriced.
+   * Nullable for the same reason as `CreateClassInput.instructorPaySgd`: an
+   * admin must supply it (enforced on the admin route), an instructor
+   * self-scheduling cannot and must not.
+   */
   instructorPaySgd?: number | null
   actorStaffId: string
 }

@@ -101,6 +101,25 @@ const pay = (p: Partial<MoneyEvent> = {}) =>
   assert.strictEqual(s.totals.discounts_sgd, 0)
 }
 
+// -- a refunded sale still counts in Gross for the month it happened in ------
+// Regression: the corporate query once filtered to status 'succeeded', but the
+// refund webhook flips the status — so the sale vanished from Gross while its
+// negative Refund row stayed, understating Net by twice the amount.
+{
+  const s = summarizeFinance([
+    ev({ kind: 'corporate', id: 'c-1', listPriceSgd: '500.00', paidSgd: '500.00', refunded: true }),
+    ev({
+      kind: 'refund',
+      id: 'c-1',
+      paidSgd: '-500.00',
+      occurredAt: at('2026-06-20T00:00:00.000Z'),
+    }),
+  ])
+  assert.strictEqual(s.totals.gross_sgd, 500)
+  assert.strictEqual(s.totals.refunds_sgd, 500)
+  assert.strictEqual(s.totals.net_sgd, 0, 'not -500')
+}
+
 // -- an Unpriced session is excluded from the total and counted --------------
 {
   const s = summarizeFinance([pay({ paySgd: '50.00' }), pay({ id: 'x-2', paySgd: null })])
