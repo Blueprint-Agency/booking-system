@@ -115,6 +115,16 @@ function NewClassForm() {
     if (!api) return;
     if (!classTypeId || !mainInstructorId || !locationId || !roomId) return;
     if (!date || !startTime || !endTime) return;
+    // Every instructor joining this class arrives with a price on them — the
+    // backend refuses otherwise, and saying so here beats a round-trip 400.
+    if (mainPay.trim() === "") {
+      setSubmitError("Enter the main instructor's pay.");
+      return;
+    }
+    if (supporting.some((s) => s.pay.trim() === "")) {
+      setSubmitError("Enter the pay for every supporting instructor.");
+      return;
+    }
     void difficulty;
 
     const startsAt = new Date(`${date}T${startTime}:00`);
@@ -142,7 +152,7 @@ function NewClassForm() {
         capacity_waitlist: capacity.waitlist,
         capacity_buffer: capacity.buffer,
         credit_cost: Number(creditCost),
-        instructor_pay_sgd: mainPay.trim() === "" ? undefined : Number(mainPay),
+        instructor_pay_sgd: Number(mainPay),
       });
       router.push("/admin/schedule");
     } catch (err) {
@@ -204,6 +214,8 @@ function NewClassForm() {
               </SelectField>
             </div>
             <div className="space-y-1.5">
+              {/* Required since Finance shipped: an unpriced session makes Net
+                  read better than the studio actually did. */}
               <Label htmlFor="main-pay">Main instructor pay (S$)</Label>
               <Input
                 id="main-pay"
@@ -211,7 +223,7 @@ function NewClassForm() {
                 min={0}
                 step="0.01"
                 inputMode="decimal"
-                placeholder="Optional"
+                required
                 value={mainPay}
                 onChange={(e) => setMainPay(e.target.value)}
               />

@@ -45,7 +45,7 @@ export default function InstructorPayrollPage() {
   return (
     <div className="mx-auto max-w-3xl">
       <PageHeader
-        title="My payroll"
+        title="Teaching log"
         description="Your completed classes and private sessions, and the pay recorded for each. Amounts are set by an admin."
       />
 

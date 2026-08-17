@@ -126,7 +126,7 @@ function useInstructorNavItems(): InstructorNavItem[] {
     { label: "My Schedule", href: "/instructor/schedule", icon: CalendarDays },
     { label: "PT Requests", href: "/instructor/pt-requests", icon: HandHeart, badge: ptPending },
     { label: "My Leave", href: "/instructor/leave", icon: CalendarOff },
-    { label: "Payroll", href: "/instructor/payroll", icon: Wallet },
+    { label: "Teaching log", href: "/instructor/payroll", icon: Wallet },
     { label: "Profile", href: "/instructor/profile", icon: UserRound },
   ];
 }

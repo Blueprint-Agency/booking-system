@@ -154,6 +154,18 @@ Promotions are nested under their parent (class package, PT package, or workshop
 | POST | `/schedule/workshops/:id/cancel` | Admin cancellation of an entire workshop (all days, all tiers) + Stripe refund fanout to attendees — see §3b. **No** workshop create/edit here; those live in `workshops.ts`. |
 | GET | `/schedule/workshops/picker` | Lists workshops in the active workspace that have at least one future `workshop_day`. Powers the "+ Workshop" picker in the scheduler per `admin-restructure.md` §7c — selecting from this list **does not create anything**; it just navigates to the workshop's days. |
 
+### `merch.ts` (global — both roles)
+
+Studio goods the member pays for online and collects in person. No stock count, no location, no fulfilment state: the `merch_orders` row IS the purchase history line the front desk hands the item over against. Both `admin` and `superadmin` manage it — shop-floor stock, not catalogue governance.
+
+| Method | Path | Effect |
+|---|---|---|
+| GET | `/merch` | List merch, title-ordered. `?include_archived=true` to include archived rows (the page shows both). |
+| POST | `/merch` | `{ title, description?, price_sgd }`. Returns the row; the photo is a follow-up call. |
+| PATCH | `/merch/:id` | Edit any of the above, plus `{ archived: boolean }` — archiving hides the item from `/public/merch` and refuses new checkouts. |
+| POST | `/merch/:id/image` | Multipart, field name `file`. JPG/PNG/WebP, max 5MB — checked server-side after `bodyLimit` refuses an oversized body (413 `image_too_large`, 400 `image_type_not_allowed`, 400 `image_empty`, 422 `image_storage_unavailable` when R2 is unconfigured). Key is deterministic (`merch/<id>.<ext>`), so re-uploading replaces rather than orphans, and it is written only after the object is in the bucket. |
+| DELETE | `/merch/:id` | Hard delete — nothing references a merch row (`merch_orders.merch_id` is `ON DELETE SET NULL`, and the order keeps its frozen `title`/`amount_sgd`). |
+
 ### `workshops.ts` (workspace-scoped — `admin-restructure.md` §19, `fe-client-features.md` §4.1)
 
 Workshops are configured under Packages (not Schedule). Three-stage editor: **Basics → Days → Tiers**. Workshop's `location_id` is fixed at creation; admin sees only their workspace's workshops.
@@ -235,16 +247,29 @@ The old "+ corporate" package dropdown and the `/admin/schedule/new/corporate` d
 | POST | `/bookings/:id/cancel` | Admin force-cancel (always full refund, bypasses cap — see §3b client-vs-admin path table) |
 | POST | `/bookings/:id/no-show` | Mark `state='no_show'`, `check_in_state='no_show'`, fire forfeit logic |
 
-### `payroll.ts` (gated `staffAny` — admin + superadmin)
+### `finance.ts` (gated `staffAny` — admin + superadmin)
 
-Instructor payroll. The pay owed for a session is stored per-session on `classes.instructor_pay_sgd` / `pt_sessions.instructor_pay_sgd` (`numeric(10,2)`, nullable), coupled to that session's **main** instructor (`main_instructor_id` / `instructor_id`). Supporting instructors are **not** paid via this surface in v1. The amount is set optionally when scheduling (see `schedule.ts:POST /schedule/classes` and `pt-requests.ts:POST /pt-requests/:id/schedule`, both now accepting `instructor_pay_sgd?`) and is editable inline from the Payroll page.
+Every **Money Event** in a period, money in and money out, with the studio's five figures over it. Replaces the admin `payroll.ts` surface; the instructor's own Teaching log (`portal/instructor/payroll.ts`) is unchanged. See `docs/md/spec-finance.md` and `docs/adr/0001-finance-replaces-payroll.md`.
 
-A session is **completed** (and thus on payroll) when `lifecycle = 'active' AND ends_at < now()` — cancelled sessions never owe pay; future sessions haven't happened yet even if pre-priced.
+Money **in** is unioned from `client_packages` (purchases, plus a separate row per Cross-Location Add-On), `bookings` where `kind = 'workshop'`, `stripe_payments` where `kind = 'corporate_package'`, `merch_orders`, and `stripe_payments` with `status = 'refunded'` (as negative Refund rows). Money **out** is `services/payroll`'s existing five-source union, unchanged — Finance does not re-derive what "a completed session that owes pay" means.
+
+Discount is **derived** as List Price minus amount paid, never read from `promo_code_redemptions.discount_sgd`: that row is absent on a comp grant and tells only part of the story when a Promotion and a Promo Code stack.
+
+Dates are **accrual** — a purchase on its payment date, a Refund on its refund date, Instructor Pay on the session's date. There is no payout-run record and no cash-basis view.
+
+Location attributes cleanly on the cost side (every class, PT session and workshop has one) and almost never on the money-in side (`client_packages.location_id` is the Home Location of an Unlimited Plan and null for everything else). Those rows report as **Unattributed**, which is a filter value rather than a null hole.
+
+Only Instructor Pay and Manual Entries are writable. There is deliberately no endpoint that edits a purchase or a Refund.
 
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/payroll` | Completed classes **and** PT sessions, merged, sorted `starts_at desc`. Optional filters: `?instructor_id`, `?class_type_id` (PT matched via its originating `pt_requests.class_type_id`), `?from`, `?to` (ISO, bound on `starts_at`). Each row: `{ kind: 'class'\|'pt', id, instructor_id, instructor_name, class_type_id, label, session_type, starts_at, ends_at, duration_minutes, instructor_pay_sgd }`. Response also carries `totals[]` (`{ instructor_id, instructor_name, total_sgd, session_count }`, priced rows only — the "pay by end of month" view) and `unpriced_count` (completed sessions with no amount yet). |
-| PATCH | `/payroll/:kind/:id` | `kind ∈ {class, pt}`. Body `{ instructor_pay_sgd: number\|null }` — sets or (with `null`) clears the pay on that one session. `404 not_found` if the id doesn't exist. |
+| GET | `/finance` | Every Money Event, newest first. Optional filters: `?instructor_id`, `?class_type_id`, `?location` (a Location id or the literal `unattributed`), `?needs_pay=true`, `?from`, `?to`. An instructor or class-type filter is a question about teaching, so it excludes every money-in row. Response: `{ rows, totals, instructor_totals, unpriced_count }` where `totals` is `{ gross_sgd, discounts_sgd, refunds_sgd, instructor_pay_sgd, net_sgd }` over the WHOLE filtered range. |
+| GET | `/finance/export` | The same read, same filters, as `text/csv`. A projection of the rows above — not a second query. |
+| POST | `/finance/manual` | Create a Manual Entry. `{ instructor_id, amount_sgd, label, entry_date? }`. |
+| DELETE | `/finance/manual/:id` | Remove a stray Manual Entry. |
+| PATCH | `/finance/pay/:kind/:id` | `kind ∈ {class, pt, workshop, manual}`. Body `{ instructor_pay_sgd: number\|null, instructor_id? }` — sets or (with `null`) clears one instructor's pay on that session. `instructor_id` is required for workshops and needed wherever a session has supporting instructors. |
+
+**Instructor Pay is required** when anyone joins a roster — at scheduling, and when a supporting instructor is added later. Enforced once in `services/schedule/roster.replaceRoster`, which every scheduling and roster-edit path passes through, and refused as `instructor_pay_required`. Corporate sessions are exempt: neither corporate table has a pay column. Sessions that predate the rule are left alone and cleared by hand through Finance's `?needs_pay=true` filter.
 
 ### `check-in.ts`
 | Method | Path | Effect |

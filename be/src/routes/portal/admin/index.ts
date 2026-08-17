@@ -12,12 +12,13 @@ import ptPackages from './pt-packages'
 import corporatePackages from './corporate-packages'
 import promoCodes from './promo-codes'
 import workshops from './workshops'
+import merch from './merch'
 import schedule from './schedule'
 import ptSessions from './pt-sessions'
 import corporateSessions from './corporate-sessions'
 import corporateRequests from './corporate-requests'
 import bookings from './bookings'
-import payroll from './payroll'
+import finance from './finance'
 import leave from './leave'
 import checkIn from './check-in'
 import inbox from './inbox'
@@ -72,9 +73,14 @@ const app = new Hono()
   // operate the queue — unlike corporate-packages/-sessions (superadmin-only).
   .use('/corporate-requests/*', staffAny)
   .use('/check-in/*', staffAny)
+  // Merch is shop-floor stock, not catalogue governance — either role adds it.
+  .use('/merch/*', staffAny)
   .use('/inbox/*', staffAny)
-  // Payroll: both roles view all records and edit pay (operations surface, not governance).
-  .use('/payroll/*', staffAny)
+  // Finance: both roles read every Money Event and edit Instructor Pay. Deliberately
+  // NOT superadmin-only and deliberately not read-only for superadmin — see
+  // docs/adr/0001-finance-replaces-payroll.md, which strikes the PRD's
+  // "no edit affordances on a superadmin report surface" principle.
+  .use('/finance/*', staffAny)
   // Leave: approve/reject/revoke are admin AND superadmin
   // (spec-instructor-leave.md § Access and visibility).
   .use('/leave/*', staffAny)
@@ -99,12 +105,13 @@ const app = new Hono()
   .route('/corporate-packages', corporatePackages)
   .route('/promo-codes', promoCodes)
   .route('/workshops', workshops)
+  .route('/merch', merch)
   .route('/schedule', schedule)
   .route('/pt-sessions', ptSessions)
   .route('/corporate-sessions', corporateSessions)
   .route('/corporate-requests', corporateRequests)
   .route('/bookings', bookings)
-  .route('/payroll', payroll)
+  .route('/finance', finance)
   .route('/leave', leave)
   .route('/check-in', checkIn)
   .route('/inbox', inbox)

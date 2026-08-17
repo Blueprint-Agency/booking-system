@@ -17,6 +17,7 @@ import {
   FileText,
   UserCog,
   Wallet,
+  ShoppingBag,
 } from "lucide-react";
 
 export type NavScope = "global" | "workspace" | "both";
@@ -64,6 +65,9 @@ export const NAV_ITEMS: NavItem[] = [
   // tab inside one package's editor — unlike a Promotion, which belongs to
   // exactly one product and is edited there (spec-pre-launch-batch.md §11).
   { group: "Packages", label: "Promo Codes", href: "/admin/packages/promo-codes", icon: Ticket, scope: "global" },
+  // Merch is shop-floor stock, not a schedulable product — both roles manage it,
+  // and it has no location (one shelf, both studios hand it over).
+  { group: "Packages", label: "Merch", href: "/admin/merch", icon: ShoppingBag, scope: "both" },
 
   // --- Corporate (workspace-AGNOSTIC; no location_id until scheduled, so NOT
   // filtered by the workspace switcher — lives in its own group, not the location zone) ---
@@ -81,7 +85,7 @@ export const NAV_ITEMS: NavItem[] = [
   { group: "People", label: "Leave", href: "/admin/leave", icon: CalendarOff, scope: "both" },
 
   // --- Finance (operations surface; both roles view records + edit pay) ---
-  { group: "Finance", label: "Payroll", href: "/admin/payroll", icon: Wallet, scope: "both" },
+  { group: "Finance", label: "Finance", href: "/admin/finance", icon: Wallet, scope: "both" },
 
   // --- Settings (location-independent policy + config) ---
   { group: "Settings", label: "Global Policy", href: "/admin/policy", icon: Shield, scope: "global" },

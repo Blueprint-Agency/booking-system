@@ -1,5 +1,5 @@
 import assert from 'node:assert'
-import { mergeRoster, type RosterEntry, type RosterPatch } from './roster-merge'
+import { mergeRoster, unpricedArrivals, type RosterEntry, type RosterPatch } from './roster-merge'
 
 /** `roster('A:main=50', 'B=30', 'C')` — main first, `=` gives pay, bare = unpriced. */
 const roster = (...spec: string[]): RosterEntry[] =>
@@ -204,6 +204,60 @@ assert.deepStrictEqual(
 assert.strictEqual(
   refusal(roster('A:main', 'B'), { main: { instructorId: 'B' } }),
   'supporting_instructor_duplicates_main',
+)
+
+// --- who arrived unpriced ---------------------------------------------------
+// The merge stays permissive; `replaceRoster` refuses on what this reports, and
+// only for the kinds that actually record pay. See docs/adr/0001.
+const arrivals = (existing: RosterEntry[], patch: RosterPatch): string[] =>
+  unpricedArrivals(existing, merged(existing, patch)).map(r => r.instructorId)
+
+// a new supporting instructor with no pay is the case the rule exists for
+assert.deepStrictEqual(arrivals(roster('A:main=100'), { supporting: [{ instructorId: 'B' }] }), ['B'])
+// ...priced, and there is nothing to report
+assert.deepStrictEqual(
+  arrivals(roster('A:main=100'), { supporting: [{ instructorId: 'B', paySgd: 30 }] }),
+  [],
+)
+// zero is a price
+assert.deepStrictEqual(
+  arrivals(roster('A:main=100'), { supporting: [{ instructorId: 'B', paySgd: 0 }] }),
+  [],
+)
+// a new main with no pay counts too
+assert.deepStrictEqual(arrivals(roster('A:main=100'), { main: { instructorId: 'Z' } }), ['Z'])
+// scheduling from nothing: everyone is an arrival
+assert.deepStrictEqual(
+  arrivals([], { main: { instructorId: 'A' }, supportingInstructorIds: ['B'] }).sort(),
+  ['A', 'B'],
+)
+
+// An instructor ALREADY on the event is never an arrival, so a session that
+// predates the rule can still have its roster edited — that backlog is cleared
+// through Finance's "Needs pay" filter, not by blocking the edit.
+assert.deepStrictEqual(arrivals(roster('A:main', 'B'), { main: { paySgd: 50 } }), [])
+assert.deepStrictEqual(
+  arrivals(roster('A:main=100', 'B'), { supportingInstructorIds: ['B'] }),
+  [],
+)
+// ...but adding someone NEW to that legacy roster still has to name a price
+assert.deepStrictEqual(
+  arrivals(roster('A:main', 'B'), { supportingInstructorIds: ['B', 'C'] }),
+  ['C'],
+)
+
+// Explicitly clearing a sitting instructor's pay is not an arrival — it is the
+// admin deliberately putting a session back to Unpriced, which stays possible.
+assert.deepStrictEqual(
+  arrivals(roster('A:main=100', 'B=30'), { supporting: [{ instructorId: 'B', paySgd: null }] }),
+  [],
+)
+
+// A corporate session's whole roster is unpriced by construction; the report is
+// non-empty and `replaceRoster` is what declines to act on it for that kind.
+assert.deepStrictEqual(
+  arrivals([], { main: { instructorId: 'A' }, supportingInstructorIds: ['B'] }).length,
+  2,
 )
 
 console.log('roster-merge.test ok')

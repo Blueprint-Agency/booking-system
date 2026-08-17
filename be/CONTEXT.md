@@ -42,6 +42,16 @@ _Avoid_: pending, inactive, unused, scheduled, queued
 The moment a Dormant Plan starts its clock: the first confirmed class booking that plan pays for, which can only happen once the plan in front has expired. The end date is fixed at that moment, one Duration forward from that day. A member who stops attending keeps the plan waiting and loses none of it. Activation happens once and never reverses on its own; only staff can return a plan to Dormant.
 _Avoid_: start, redemption, kick-off, going live
 
+### Merch
+
+**Merch**:
+A physical item the studio sells — a mat, a prop, apparel. It has a Title, a Description, a Price and a photo, and nothing else: no stock count, no Location, no expiry. It is not a product a member is *entitled* to anything by, which is why it grants no credits and books no session.
+_Avoid_: product, SKU, inventory, stock item, store item, merchandise line
+
+**Merch Order**:
+One member's purchase of one Merch item, paid for online and **collected in person**. The order row is the receipt the front desk hands the item over against — there is no shipping, no fulfilment state and nothing to mark done. It keeps its own copy of the Title and the amount paid, so renaming, repricing or deleting the item never rewrites what the member bought.
+_Avoid_: cart, basket, shipment, delivery, fulfilment, sale
+
 ### Discounts
 
 **List Price**:
@@ -77,6 +87,36 @@ _Avoid_: cancel, revoke, deactivate, reverse, nullify
 **Untouched**:
 The property that makes a purchase refundable without a warning: no class it paid for has been attended or no-showed. A booked class that has not yet been held leaves a purchase Untouched, because refunding simply cancels it. A no-show does not — the class ran and the seat was held. A purchase that is no longer Untouched can still be refunded, but only by an admin who has been told and chosen to anyway.
 _Avoid_: unused, unconsumed, clean, fresh, pristine
+
+### Money
+
+**Money Event**:
+One thing that moved money, or that owes money, on the day it happened. A purchase, a Refund, a session's Instructor Pay, or a Manual Entry. Every figure the studio reports is a sum over Money Events; there is no separate stored total.
+_Avoid_: transaction, ledger entry, line item, record
+
+**Instructor Pay**:
+What one instructor is owed for one session they taught, main or supporting. It belongs to the session's date, not to the date the studio hands over the money — the platform does not know when that happens.
+_Avoid_: salary, wage, payroll, fee, rate
+
+**Manual Entry**:
+An amount owed to an instructor that no session accounts for — a bonus, a correction, a one-off. It carries its own date and its own words, and it totals exactly like Instructor Pay.
+_Avoid_: adjustment, bonus, ad-hoc pay, override
+
+**Unpriced**:
+A session whose Instructor Pay has not been decided. It is not pay of zero, so it is excluded from every total and counted separately — a total that quietly treated it as free would understate what the studio owes.
+_Avoid_: unset, empty, zero, null, missing pay
+
+**Unattributed**:
+A Money Event the platform cannot place at a Location, because nothing about it records one. Every class pack, PT pack and trial is bought without a Location; only an Unlimited Plan carries its Home Location. Naming the gap keeps it visible instead of silently dropping the money from a Location's figures.
+_Avoid_: unknown, other, global, studio-wide, n/a
+
+**Gross**:
+The sum of List Price across every purchase in a period, before any Promotion or Promo Code. What the studio would have taken at catalogue prices.
+_Avoid_: revenue, sales, turnover, top line
+
+**Net**:
+Gross, less the money taken off by Promotions and Promo Codes, less Refunds, less Instructor Pay. It is not profit — it excludes rent, wages other than instructors', and what the payment provider keeps.
+_Avoid_: profit, margin, bottom line, earnings, take-home
 
 ### Instructor leave
 

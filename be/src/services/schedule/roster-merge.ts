@@ -66,6 +66,32 @@ export interface RosterPatch {
 
 export type RosterRefusal = 'supporting_instructor_duplicates_main'
 
+/**
+ * Who on this merged roster has newly arrived with no pay on them.
+ *
+ * Instructor Pay is required the moment someone joins a roster — at scheduling,
+ * or on a later supporting add — because Net on the Finance page is only as
+ * true as the pay behind it (docs/adr/0001-finance-replaces-payroll.md).
+ *
+ * Reported here rather than refused here, because whether it MATTERS depends on
+ * the event kind, which this pure merge deliberately doesn't know: a corporate
+ * session has no pay column on either of its tables, so every entry on one is
+ * unpriced by construction and nothing is owed. `replaceRoster` knows the kind
+ * and makes the call.
+ *
+ * It names ONLY instructors newly joining. Someone already on the event keeps
+ * whatever is recorded for them, Unpriced included, so a roster edit on a
+ * session scheduled before this rule still saves — those get cleared through
+ * Finance's "Needs pay" filter, never by inventing a figure here.
+ */
+export function unpricedArrivals(
+  existing: RosterEntry[],
+  roster: RosterEntry[],
+): RosterEntry[] {
+  const already = new Set(existing.map(e => e.instructorId))
+  return roster.filter(r => r.paySgd == null && !already.has(r.instructorId))
+}
+
 export type RosterMergeResult =
   | { ok: true; roster: RosterEntry[] }
   | { ok: false; refusal: RosterRefusal }
@@ -116,5 +142,6 @@ export function mergeRoster(existing: RosterEntry[], patch: RosterPatch): Roster
   for (const [instructorId, paySgd] of [...bySupporting].sort(([a], [b]) => a.localeCompare(b))) {
     roster.push({ instructorId, role: 'supporting', paySgd: payFor(instructorId, paySgd) })
   }
+
   return { ok: true, roster }
 }

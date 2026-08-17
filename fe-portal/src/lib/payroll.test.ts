@@ -1,7 +1,6 @@
 import test from "node:test";
 import assert from "node:assert";
 import {
-  fetchAdminPayroll,
   fetchInstructorPayroll,
   payrollErrorMessage,
   payrollNeedsReload,
@@ -19,33 +18,13 @@ function spyApi(seen: { path?: string; query?: unknown }): Api {
   } as unknown as Api;
 }
 
-// The period is the whole reason the reads live in the module: both screens
-// hand over the same DateRange and must end up asking for the same span, or a
-// total lands next to rows from a different period.
-test("both payroll reads turn one period into the same from/to", async () => {
-  const range = { from: "2026-03-01", to: "2026-03-31" };
-  const admin: { query?: unknown } = {};
-  const instructor: { query?: unknown } = {};
-  await fetchAdminPayroll(spyApi(admin), { range });
-  await fetchInstructorPayroll(spyApi(instructor), range);
-  const a = admin.query as { from: string; to: string };
-  const i = instructor.query as { from: string; to: string };
-  assert.strictEqual(a.from, i.from);
-  assert.strictEqual(a.to, i.to);
-  assert.ok(a.from < a.to);
-});
-
-// "All instructors" is an empty string in the picker; sending it as a filter is
-// a 400 from the uuid validator, not an unfiltered list.
-test("unset filters are omitted, not sent blank", async () => {
-  const seen: { query?: unknown } = {};
-  await fetchAdminPayroll(spyApi(seen), { instructorId: "", classTypeId: "", range: null });
-  assert.deepStrictEqual(seen.query, {
-    instructor_id: undefined,
-    class_type_id: undefined,
-    from: undefined,
-    to: undefined,
-  });
+// An instructor's identity is the backend's to decide. If this screen ever sent
+// one, an instructor could ask for somebody else's pay.
+test("the instructor read carries no instructor_id", async () => {
+  const seen: { path?: string; query?: unknown } = {};
+  await fetchInstructorPayroll(spyApi(seen), { from: "2026-03-01", to: "2026-03-31" });
+  assert.strictEqual(seen.path, "/portal/instructor/payroll");
+  assert.ok(!Object.keys(seen.query as object).includes("instructor_id"));
 });
 
 // The backend names which KIND of record vanished; that beats the local copy.

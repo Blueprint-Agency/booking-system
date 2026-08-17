@@ -24,7 +24,7 @@ This is **not a multi-tenant SaaS**. There is no tenant entity, no slug routing,
 - Schedule + roster + check-in + private-session inbox + member ops on admin side
 - Refund-request inbox, cancellation/membership-pause inbox (admin acts out-of-app)
 - Email-only outbound notifications, with admin-editable templates
-- v1 report set: attendance, revenue, membership, teaching log, inbox throughput, referral attribution
+- v1 report set: attendance, finance (money in and out, netted), membership, inbox throughput, referral attribution
 - Audit trail across credit adjustments, refunds, session cancellations, waiver resets, impersonation
 - Two-location data model (cross-location packages, per-page location filter)
 
@@ -48,7 +48,7 @@ Three flows where the system owns the **request inbox** but a human handles the 
 
 1. **Refund requests.** Member submits → admin notified → admin acts in WhatsApp → admin marks resolved/declined in app (with notes). No "Refund" button that calls a payment provider.
 2. **Membership cancellation / pause.** "Contact Sales Team" CTA on the client side → admin inbox → handled in WhatsApp → admin marks resolved.
-3. **Instructor pay.** System tracks classes scheduled/completed (teaching log) → admin computes pay externally → admin pays externally. No pay rate field, no statement page, no payout report.
+3. **Instructor pay.** The system records what each instructor is owed per session and totals it per period on the Finance report (§8); the admin hands the money over externally. No pay *rate* field and no payout run — the platform never records when an instructor was actually paid, which is why every figure it reports is accrual, not cash. See `docs/adr/0001-finance-replaces-payroll.md`.
 
 Anywhere the PRD specifies an "inbox" surface, this is the underlying pattern: a queue with state machine + admin notes + audit, **never** an in-app financial action.
 
@@ -88,7 +88,7 @@ Anywhere the PRD specifies an "inbox" surface, this is the underlying pattern: a
 | Edit own availability + working-hours blocks | n/a | ✓ (any instructor) | ✓ own only |
 | Manage instructor accounts (create / archive / set rate metadata) | ✗ | ✓ | ✗ |
 | Manage studio admin accounts (peer-add) | ✓ | ✓ | ✗ |
-| View revenue / attendance / membership reports | ✓ read-only | ✓ | ✗ |
+| View finance / attendance / membership reports | ✓ read-only | ✓ | ✗ |
 | View own teaching log | ✓ read-only | ✓ all instructors | ✓ own only |
 | Edit notification templates (factory / override) | ✓ factory only | ✓ override only | ✗ |
 | Resend a notification (support recovery) | via impersonation | ✓ | ✗ |
@@ -310,7 +310,7 @@ Instructors do not see: any client profile beyond roster row, any other instruct
 | **Audit (read-only, including impersonation events)** | Read-only mirror of studio-admin audit log + super-admin own action log. | Super-admin |
 | **Impersonate** | Pick a studio admin account → enter their session with persistent banner. | Super-admin |
 | **Bulk waiver reset** | Single-action mass waiver reset with reason. | Super-admin |
-| **Reports (read-only)** | Read-only mirror of the v1 report set (§8) for diagnostics. No CSV export of PII unless impersonating. | Super-admin |
+| **Reports** | Mirror of the v1 report set (§8) for diagnostics — read-only except Finance, where pay editing carries over from the Payroll page it replaced (§8.4 principle 2). No CSV export of PII unless impersonating. | Super-admin |
 
 Super-admin does not see (without impersonating): a "Refund" button, a credit-adjust control, schedule editing, package editing, or any other business action surface.
 
@@ -347,9 +347,9 @@ Super-admin does not see (without impersonating): a "Refund" button, a credit-ad
 
 #### 6.1.4 Monthly close
 
-1. Opens **Reports** → Revenue report → filters to last calendar month → exports CSV.
-2. Same for Attendance, Membership, Teaching log (used to compute external instructor pay).
-3. Computes instructor pay externally based on Teaching log → disburses via PayNow / bank transfer.
+1. Opens **Finance** → filters to last calendar month → reads Gross, discounts, Refunds, Instructor Pay and Net → exports CSV for the bookkeeper.
+2. Same for Attendance and Membership.
+3. Reads the per-instructor pay breakdown on Finance → disburses via PayNow / bank transfer. The platform does not record that the money went out.
 4. Reviews **Audit log** for the month: sanity-checks credit grants, refund decisions, schedule cancellations.
 
 ### 6.2 Instructor
@@ -471,33 +471,33 @@ Admin-side **inbox surfaces** (refund / cancellation / private-session) are dash
 | Report | Detail |
 |---|---|
 | **Attendance** | Class fill rate (booked / capacity), no-show rate, by class type / location / time-of-day / instructor. Trend over period. |
-| **Revenue** | Package sales by type / location / period; payment method mix; outstanding balances; workshop ticket revenue (separate line). |
+| **Finance** | Every **Money Event** in the period, money in and money out, in one table: package sales, Cross-Location Add-Ons, workshop tickets, corporate packages, Merch Orders, Refunds (negative, on their own date), Instructor Pay and Manual Entries. Five figures over the whole filtered range: Gross, discounts given, Refunds, Instructor Pay, and **Net**. Replaces the separate Revenue and Teaching log reports — Net cannot be computed on either alone. See `docs/md/spec-finance.md`. |
 | **Membership** | Active / expired / lapsing-soon clients; bundle vs unlimited mix; signed-waiver vs lapsed-waiver counts; churn signals (no booking in 30/60/90d). |
-| **Teaching log** | Classes scheduled / completed / cancelled per instructor per period. Powers external pay calc. |
 | **Inbox throughput** | Refund / cancellation / private-session request counts and time-to-resolution by state. |
 | **Referral attribution** | Who referred whom, referral → first-purchase conversion rate. |
 
 ### 8.2 Standard filter set
 
 - Date range (presets: 7d / 30d / 90d / current month / last month / custom).
-- Location (All / Breadtalk / Outram).
-- Export to CSV.
+- Location (All / Breadtalk / Outram / **Unattributed**). The Unattributed bucket is not an error state: only an Unlimited Plan records a Location at purchase, so most revenue genuinely has none. Naming it keeps the gap visible instead of dropping that money out of both studios' figures.
+- Export to CSV — exactly the filtered rows, from the same read the screen used.
 
 ### 8.3 Visibility
 
 | Report | Studio admin | Instructor | Super-admin |
 |---|:---:|:---:|:---:|
 | Attendance | ✓ full | ✗ | ✓ read-only |
-| Revenue | ✓ full | ✗ | ✓ read-only |
+| Finance | ✓ full | ✗ | ✓ **full** (see principle 2) |
 | Membership | ✓ full | ✗ | ✓ read-only |
-| Teaching log | ✓ all instructors | ✓ own only | ✓ read-only |
 | Inbox throughput | ✓ full | ✗ | ✓ read-only |
 | Referral attribution | ✓ full | ✗ | ✓ read-only |
+
+An instructor's own **Teaching log** (`/instructor/payroll`) is not a report and is not on this table: it shows that instructor their own sessions and their own pay, never a studio total. It is the surface principle 1 exists to protect.
 
 ### 8.4 Principles
 
 1. **Instructors never see aggregates.** Even own teaching log shows their rows, not "performance vs. studio average." Studio admin can share insights manually if useful.
-2. **Super-admin reports are diagnostic, not actionable.** No edit affordances on the report surface; no PII export unless impersonating.
+2. **Super-admin reports are diagnostic, not actionable — except Finance.** No edit affordances on a report surface, and no PII export unless impersonating. Finance is the deliberate exception: it absorbed the Payroll page's inline pay editing, and a super-admin correcting a figure should not have to impersonate to do it. Within Finance, only Instructor Pay and Manual Entries are editable by anyone — purchases and Refunds carry no edit affordance for either role, because they are the payment provider's record. Reversed in `docs/adr/0001-finance-replaces-payroll.md`.
 
 ---
 

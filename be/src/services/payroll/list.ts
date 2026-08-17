@@ -35,7 +35,7 @@ import {
   workshopInstructors,
   manualPayrollEntries,
 } from '../../db/schema/schedule'
-import { classTypes } from '../../db/schema/catalog'
+import { classTypes, locations } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
 import { readRoster, readRosters, setInstructorPay, type RosterEventKind } from '../schedule/roster'
 import { summarizePayroll, type PayrollSummary } from './totals'
@@ -82,13 +82,24 @@ export interface PayrollRow {
   endsAt: Date
   /** numeric(10,2) — postgres returns it as a string; null when unpriced. */
   instructorPaySgd: string | null
+  /**
+   * Where the session ran. Null ONLY on a manual entry, which is money owed for
+   * no particular session and so belongs to no Location — Finance reports those
+   * as Unattributed (be/CONTEXT.md §Money). Classes, PT sessions and workshops
+   * all carry a NOT NULL location.
+   */
+  locationId: string | null
+  locationName: string | null
 }
 
 /**
- * The query half — unordered rows straight out of the five sources. Internal on
- * purpose: callers go through getPayroll so ordering and totalling can't drift.
+ * The query half — unordered rows straight out of the five sources.
+ *
+ * Exported for ONE caller: `services/finance`, which unions these with the
+ * money-in sources and totals the lot itself. Every other caller goes through
+ * `getPayroll` so ordering and totalling can't drift.
  */
-async function listPayroll(filter: PayrollFilter): Promise<PayrollRow[]> {
+export async function listPayroll(filter: PayrollFilter): Promise<PayrollRow[]> {
   const now = new Date()
 
   // -- main class pay --------------------------------------------------------
@@ -108,10 +119,13 @@ async function listPayroll(filter: PayrollFilter): Promise<PayrollRow[]> {
       startsAt: classes.startsAt,
       endsAt: classes.endsAt,
       instructorPaySgd: classes.instructorPaySgd,
+      locationId: classes.locationId,
+      locationName: locations.name,
     })
     .from(classes)
     .innerJoin(staffUsers, eq(staffUsers.id, classes.mainInstructorId))
     .innerJoin(classTypes, eq(classTypes.id, classes.classTypeId))
+    .innerJoin(locations, eq(locations.id, classes.locationId))
     .where(and(...classConds))
 
   // -- supporting class pay ---------------------------------------------------
@@ -132,11 +146,14 @@ async function listPayroll(filter: PayrollFilter): Promise<PayrollRow[]> {
       startsAt: classes.startsAt,
       endsAt: classes.endsAt,
       instructorPaySgd: classSupportingInstructors.paySgd,
+      locationId: classes.locationId,
+      locationName: locations.name,
     })
     .from(classSupportingInstructors)
     .innerJoin(classes, eq(classes.id, classSupportingInstructors.classId))
     .innerJoin(staffUsers, eq(staffUsers.id, classSupportingInstructors.instructorId))
     .innerJoin(classTypes, eq(classTypes.id, classes.classTypeId))
+    .innerJoin(locations, eq(locations.id, classes.locationId))
     .where(and(...classSupportingConds))
 
   // -- main PT pay --------------------------------------------------------
@@ -157,11 +174,14 @@ async function listPayroll(filter: PayrollFilter): Promise<PayrollRow[]> {
       startsAt: ptSessions.startsAt,
       endsAt: ptSessions.endsAt,
       instructorPaySgd: ptSessions.instructorPaySgd,
+      locationId: ptSessions.locationId,
+      locationName: locations.name,
     })
     .from(ptSessions)
     .innerJoin(staffUsers, eq(staffUsers.id, ptSessions.instructorId))
     .innerJoin(ptRequests, eq(ptRequests.id, ptSessions.ptRequestId))
     .innerJoin(classTypes, eq(classTypes.id, ptRequests.classTypeId))
+    .innerJoin(locations, eq(locations.id, ptSessions.locationId))
     .where(and(...ptConds))
 
   // -- supporting PT pay ----------------------------------------------------
@@ -183,12 +203,15 @@ async function listPayroll(filter: PayrollFilter): Promise<PayrollRow[]> {
       startsAt: ptSessions.startsAt,
       endsAt: ptSessions.endsAt,
       instructorPaySgd: ptSessionSupportingInstructors.paySgd,
+      locationId: ptSessions.locationId,
+      locationName: locations.name,
     })
     .from(ptSessionSupportingInstructors)
     .innerJoin(ptSessions, eq(ptSessions.id, ptSessionSupportingInstructors.ptSessionId))
     .innerJoin(staffUsers, eq(staffUsers.id, ptSessionSupportingInstructors.instructorId))
     .innerJoin(ptRequests, eq(ptRequests.id, ptSessions.ptRequestId))
     .innerJoin(classTypes, eq(classTypes.id, ptRequests.classTypeId))
+    .innerJoin(locations, eq(locations.id, ptSessions.locationId))
     .where(and(...ptSupportingConds))
 
   // -- workshop pay (NEW payroll source) --------------------------------------
@@ -203,6 +226,8 @@ async function listPayroll(filter: PayrollFilter): Promise<PayrollRow[]> {
     instructorPaySgd: string | null
     startsAt: Date
     endsAt: Date
+    locationId: string | null
+    locationName: string | null
   }[] = []
   if (!filter.classTypeId) {
     const workshopConds = [eq(workshops.lifecycle, 'active')]
@@ -224,11 +249,14 @@ async function listPayroll(filter: PayrollFilter): Promise<PayrollRow[]> {
         instructorPaySgd: workshopInstructors.paySgd,
         startsAt: sql<Date>`min(${workshopDays.startsAt})`,
         endsAt: sql<Date>`max(${workshopDays.endsAt})`,
+        locationId: workshops.locationId,
+        locationName: locations.name,
       })
       .from(workshopInstructors)
       .innerJoin(workshops, eq(workshops.id, workshopInstructors.workshopId))
       .innerJoin(staffUsers, eq(staffUsers.id, workshopInstructors.instructorId))
       .innerJoin(workshopDays, eq(workshopDays.workshopId, workshops.id))
+      .innerJoin(locations, eq(locations.id, workshops.locationId))
       .where(and(...workshopConds))
       .groupBy(
         workshopInstructors.workshopId,
@@ -236,6 +264,8 @@ async function listPayroll(filter: PayrollFilter): Promise<PayrollRow[]> {
         staffUsers.name,
         workshops.name,
         workshopInstructors.paySgd,
+        workshops.locationId,
+        locations.name,
       )
       .having(sql.join(havingParts, sql` AND `))
   }
@@ -244,6 +274,8 @@ async function listPayroll(filter: PayrollFilter): Promise<PayrollRow[]> {
   // Ad-hoc bonus/adjustment/one-off lines, not tied to a class/PT/workshop —
   // like workshops, they have no class_type, so a class_type_id filter simply
   // excludes them. entry_date stands in for both starts_at and ends_at.
+  // A manual entry belongs to no session and so to no Location — it is the one
+  // payroll source Finance reports as Unattributed.
   let manualRows: {
     id: string
     instructorId: string
@@ -280,7 +312,14 @@ async function listPayroll(filter: PayrollFilter): Promise<PayrollRow[]> {
     ...ptRows.map(r => ({ ...r, kind: 'pt' as const })),
     ...ptSupportingRows.map(r => ({ ...r, kind: 'pt' as const })),
     ...workshopRows.map(r => ({ ...r, kind: 'workshop' as const, classTypeId: null, sessionType: null })),
-    ...manualRows.map(r => ({ ...r, kind: 'manual' as const, classTypeId: null, sessionType: null })),
+    ...manualRows.map(r => ({
+      ...r,
+      kind: 'manual' as const,
+      classTypeId: null,
+      sessionType: null,
+      locationId: null,
+      locationName: null,
+    })),
   ]
   return rows
 }
