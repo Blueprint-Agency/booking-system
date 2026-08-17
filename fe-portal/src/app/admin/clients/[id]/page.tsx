@@ -637,6 +637,7 @@ export default function ClientProfilePage({
       {canEdit && workshopRefundFor && (
         <RefundDialog
           packageName={workshopRefundFor.workshop_name}
+          kind="workshop"
           notice={workshopRefundFor.refund_notice}
           onConfirm={(reason) =>
             runEdit(

@@ -14,15 +14,20 @@ import { Button, Dialog, DialogFooter, Label } from "@/components/ui";
  */
 export function RefundDialog({
   packageName,
+  kind = "package",
   notice,
   onConfirm,
   onClose,
 }: {
   packageName: string;
+  /** What is being refunded, so the copy names it. The unwind is the same
+   *  operation either way — only the sentence differs. */
+  kind?: "package" | "workshop";
   notice: string | null;
   onConfirm: (reason: string) => Promise<void>;
   onClose: () => void;
 }) {
+  const isWorkshop = kind === "workshop";
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   return (
@@ -30,7 +35,11 @@ export function RefundDialog({
       open
       onOpenChange={(o) => !o && onClose()}
       title={`Refund ${packageName}?`}
-      description="The full amount goes back to the customer. The package stops covering bookings and every class still ahead of them on it is cancelled."
+      description={
+        isWorkshop
+          ? "The full amount goes back to the customer. Their place on the workshop is cancelled."
+          : "The full amount goes back to the customer. The package stops covering bookings and every class still ahead of them on it is cancelled."
+      }
     >
       <form
         className="space-y-4"
@@ -51,8 +60,8 @@ export function RefundDialog({
             <div>
               <div className="font-medium text-ink">{notice}</div>
               <div className="text-xs text-muted">
-                The studio does not normally refund a package once a class has been
-                attended. You can still refund it — say why below.
+                The studio does not normally refund a {isWorkshop ? "workshop" : "package"} once a
+                class has been attended. You can still refund it — say why below.
               </div>
             </div>
           </div>
