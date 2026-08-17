@@ -134,9 +134,10 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
   // stored Duration, so there is nothing to explain and no sentence to show.
   const remainder =
     quote && plan?.expiresAt ? remainderSentence(plan.expiresAt, quote.months) : null;
-  // GST-inclusive, exactly as every other price on this page is.
-  const totalCents = quote ? Math.round(Number(quote.price_sgd) * 100) : 0;
-  const includedGst = (totalCents - Math.round(totalCents / 1.09)) / 100;
+  // The GST already inside the quoted price — the server's number, taken apart
+  // for the disclosure only, never to build a total from.
+  const quoteCents = quote ? Math.round(Number(quote.price_sgd) * 100) : 0;
+  const includedGst = (quoteCents - Math.round(quoteCents / 1.09)) / 100;
 
   if (packagesLoading || loadingQuote) {
     return (
@@ -152,23 +153,18 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
         <div className="max-w-lg mx-auto space-y-6">
 
           <div className="rounded-2xl border border-ink/10 bg-paper p-6">
-            <p className="text-xs uppercase tracking-wider text-muted mb-4">Order summary</p>
+            <p className="text-xs uppercase tracking-wider text-muted">Order summary</p>
+            {/* The page is entered with a plan's id, so name the plan the
+                Add-On attaches to — the block says "expires with the plan it's
+                attached to" without saying which one. */}
+            {plan && <p className="text-xs text-muted mt-1">Attaching to {plan.name}</p>}
 
-            <div className="flex gap-3 items-start pb-4 border-b border-ink/5">
-              <div className="h-12 w-12 rounded-lg bg-warm shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-ink">Cross-Location Add-On</p>
-                <p className="text-xs text-muted mt-0.5">
-                  {plan ? plan.name : "Attaches to an Unlimited plan"}
-                </p>
-              </div>
-              {quote && (
-                <p className="text-sm font-semibold shrink-0">
-                  {formatCurrency(Number(quote.price_sgd))}
-                </p>
-              )}
-            </div>
-
+            {/* The Add-On IS the order here — one line, no plan beside it and
+                nothing a Promo Code can discount — so the shared block is the
+                whole summary. It already names the item, the rate, the months
+                and the total; a second item row and a second total beside it
+                were a copy of the review page's summary that could only drift
+                from it (§494, #47). */}
             <CrossLocationBlock
               rateSgd={quote?.rate_sgd ?? crossLocation.rateSgd}
               months={quote?.months ?? 0}
@@ -178,17 +174,14 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
               remainder={remainder}
             />
 
+            {/* Not the deleted total restated — the block already shows that.
+                This is the disclosure the review page carries and every price
+                on both pages is quoted inclusive of. */}
             {quote && (
-              <div className="mt-4 space-y-1">
-                <div className="flex justify-between py-1.5 text-sm text-muted">
-                  <span>Includes GST (9%)</span>
-                  <span>{formatCurrency(includedGst)}</span>
-                </div>
-                <div className="flex justify-between text-base font-bold text-ink mt-2 pt-2 border-t border-ink/10">
-                  <span>Total</span>
-                  <span>{formatCurrency(Number(quote.price_sgd))}</span>
-                </div>
-              </div>
+              <p className="mt-4 flex justify-between text-sm text-muted">
+                <span>Includes GST (9%)</span>
+                <span>{formatCurrency(includedGst)}</span>
+              </p>
             )}
           </div>
 
