@@ -66,10 +66,11 @@ Locations are workspaces. Surfaces are partitioned as follows:
 **Schedule:**
 8. Schedule
    - **Timetable** — unified calendar view of all sessions (classes + workshops + confirmed PT) scoped to the active workspace
-   - **Create Schedule** — two creation flows:
+   - **Create Schedule** — every flow starts by arming the grid and clicking a slot (§7f):
      - Class instance (class type, instructor, date/time, duration, capacity, credit cost, difficulty)
+     - Workshop — the slot becomes the first day of a new workshop in the Packages editor (§7c)
+     - Corporate session (via corporate request picker — see §9b)
      - PT session (via PT Request triage — see §9)
-   - **"+ Workshop"** is a dropdown of existing workshops (one tile per `WorkshopDay`); workshop *creation* is no longer in the scheduler.
 
 **Operations:**
 9. PT Requests (replaces Instructor Availability — see §8/§9)
@@ -319,7 +320,7 @@ No validity period on PT packages.
 
 **What influences the timetable:**
 - Admin creates a class instance → immediately appears on the Schedule timetable AND occupies that slot on the assigned instructor's calendar.
-- Admin creates a workshop in `/admin/packages/workshops` → each `WorkshopDay` auto-renders on the Schedule timetable as one tile with a `Day N/M` chip. Workshops are no longer created from the scheduler.
+- Admin creates a workshop in `/admin/packages/workshops` → each `WorkshopDay` auto-renders on the Schedule timetable as one tile with a `Day N/M` chip. The scheduler can *start* that creation (§7c) but the workshop is still configured and saved in the Packages editor.
 - Admin (or assigned instructor in a later phase) schedules a PT session from a PT Request (§9) → confirmed session appears on the Schedule timetable AND occupies that slot on the instructor's calendar.
 
 **Admin-initiated cancellation:**
@@ -345,10 +346,10 @@ Fields:
 
 ### 7c. Workshops on the Schedule
 
-Workshop creation is no longer in the scheduler — see §7e.
+Workshops are still *configured* under Packages (§7e) — the scheduler only picks when one starts.
 
-- The scheduler's **"+ Workshop"** button opens a dropdown of existing workshops scoped to the active workspace.
-- Selecting a workshop **does not create anything** — its `WorkshopDay` tiles already render on the timetable automatically (one tile per day, `Day N/M` chip).
+- The scheduler's **"+ Workshop"** button arms the timetable grid (§7f). Clicking a slot opens the Packages workshop editor at `/admin/packages/workshops/new` with that slot as the workshop's **first day** — date, start and end pre-filled, range mode ready to extend across further days. Nothing is saved until the admin completes the editor.
+- Existing workshops are never re-picked from the scheduler: their `WorkshopDay` tiles already render on the timetable automatically (one tile per day, `Day N/M` chip).
 - Cancelling a workshop still happens from the Schedule detail page (cancellation rules unchanged — full automatic Stripe refund to all attendees per §7a).
 
 **"+ Corporate" picker (replaces the old direct-create).** The scheduler's **"+ Corporate"** button opens a picker of **pending corporate requests** — selecting one opens the schedule dialog (instructor, location, room, date/time). The old "+ corporate" package dropdown and the `/admin/schedule/new/corporate` direct-create page (which took a freeform client name) are **removed**: a `corporate_session` is now created **only** by scheduling a corporate request, and its client name is derived from the member record. See §9b.
@@ -875,7 +876,7 @@ A tier can never sell more than the smallest constituent day's room. This handle
 
 ### 18d. Schedule rendering
 
-In the scheduler, each `WorkshopDay` auto-renders as one tile with a `Day N/M` chip — there is no separate "workshop instance" record. The scheduler's "+ Workshop" button is a *picker* of existing workshops, not a creation flow.
+In the scheduler, each `WorkshopDay` auto-renders as one tile with a `Day N/M` chip — there is no separate "workshop instance" record. The scheduler's "+ Workshop" button starts a *new* workshop (§7c): it hands the picked slot to this editor as the first day. Existing workshops are not re-picked from the scheduler.
 
 ### 18e. Cancellation
 

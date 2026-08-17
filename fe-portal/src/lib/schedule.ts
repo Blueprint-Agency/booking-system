@@ -5,6 +5,29 @@
  */
 export type Slot = { date: string; start: string; end: string };
 
+/** A creation page's URL carrying the slot the admin picked. */
+export function slotHref(page: string, slot: Slot): string {
+  return `${page}?date=${slot.date}&start=${slot.start}&end=${slot.end}`;
+}
+
+/**
+ * The slot a creation page was opened with, if any. Query strings are user
+ * input, so a malformed one reads as "no slot" rather than reaching a date
+ * input that would silently render blank.
+ */
+export function slotFromParams(params: URLSearchParams): Slot | null {
+  const date = params.get("date");
+  const start = params.get("start");
+  const end = params.get("end");
+  if (!date || !start || !end) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  // A real wall clock, not just two digits either side of a colon: `24:30`
+  // passes the loose shape and then renders as an empty `<input type="time">`.
+  const clock = /^([01]\d|2[0-3]):[0-5]\d$/;
+  if (!clock.test(start) || !clock.test(end)) return null;
+  return { date, start, end };
+}
+
 // The portal's schedule surface: reading, editing and cancelling a scheduled
 // event, plus the one mapping from a backend error code to the sentence an
 // admin reads. Shapes mirror be/src/routes/portal/admin/{schedule,pt-sessions,

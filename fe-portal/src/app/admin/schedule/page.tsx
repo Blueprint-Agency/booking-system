@@ -33,7 +33,7 @@ import { PtRequestPickerDialog } from "@/components/schedule/pt-request-picker-d
 import { CorporateRequestPickerDialog } from "@/components/schedule/corporate-request-picker-dialog";
 import { useWorkspace } from "@/lib/workspace-context";
 import { useSchedule, type ScheduleEntry } from "@/lib/use-schedule";
-import type { Slot } from "@/lib/schedule";
+import { slotHref, type Slot } from "@/lib/schedule";
 
 type View = "day" | "week" | "month";
 type AddKind = "class" | "workshop" | "corporate" | "pt";
@@ -183,9 +183,7 @@ export default function SchedulePage() {
     const page = addMode && NEW_PAGE[addMode];
     if (page) {
       clearAdd();
-      router.push(
-        `${page}?date=${slot.date}&start=${slot.start}&end=${slot.end}`,
-      );
+      router.push(slotHref(page, slot));
       return;
     }
     setPickedSlot(slot);
@@ -710,10 +708,10 @@ function SlotLayer({ day, onPick }: { day: Date; onPick: (slot: Slot) => void })
         const minutes = HOUR_START * 60 + i * SLOT_MINUTES;
         const slot: Slot = {
           date: dateIso,
-          start: hhmm(minutes),
+          start: minutesToHhmm(minutes),
           // The late slots would run past midnight — clamp so the prefilled end
           // stays a real `HH:MM` the form's time input accepts.
-          end: hhmm(Math.min(minutes + 60, 24 * 60 - 1)),
+          end: minutesToHhmm(Math.min(minutes + 60, 24 * 60 - 1)),
         };
         return (
           <button
@@ -735,12 +733,13 @@ function SlotLayer({ day, onPick }: { day: Date; onPick: (slot: Slot) => void })
   );
 }
 
-function pad(n: number): string {
-  return String(n).padStart(2, "0");
+/** Minutes from midnight as the `HH:MM` a `<input type="time">` accepts. */
+function minutesToHhmm(minutes: number): string {
+  return `${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}`;
 }
 
-function hhmm(minutes: number): string {
-  return `${pad(Math.floor(minutes / 60))}:${pad(minutes % 60)}`;
+function pad(n: number): string {
+  return String(n).padStart(2, "0");
 }
 
 /** A day picked from month view carries no time — seed a mid-morning hour. */
@@ -838,7 +837,8 @@ function EventLayer({
 }) {
   const positioned = layoutEvents(entries);
   return (
-    // Transparent to the pointer so the empty-slot links underneath stay clickable.
+    // Transparent to the pointer: the chips take their own clicks, and an armed
+    // SlotLayer sits above this to claim the gaps between them.
     <div className="pointer-events-none absolute inset-0">
       {positioned.map(({ entry, top, height, left, width }) => (
         <EventBlock
@@ -933,12 +933,15 @@ function EventBlock({
         ? resolver.instructorName(entry.mainInstructorId)
         : ""
       : entry.instructorIds.map(resolver.instructorName).join(" & ");
-  const subtitle =
-    entry.kind === "pt"
-      ? instructors
-      : entry.kind === "corporate"
-        ? `${entry.subtitle} · ${resolver.locationName(entry.locationId)}`
-        : `${instructors} · ${resolver.locationName(entry.locationId)}`;
+  // Whoever teaches it comes first — a corporate booking's company name would
+  // otherwise crowd the instructor out of the only row that carries them.
+  const subtitle = [
+    instructors,
+    entry.kind === "corporate" ? entry.subtitle : null,
+    entry.kind === "pt" ? null : resolver.locationName(entry.locationId),
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   // Row budget at 72px/hour: a 30 min block fits the title alone, 45 min adds
   // the time row, and an hour is enough for the footer and the subtitle.
@@ -1103,7 +1106,7 @@ function Legend() {
         Now
       </div>
       <div className="ml-auto text-[11px] text-muted">
-        Tip: hit “+ Class”, “+ Corporate”, or “+ PT Session”, then click the slot it belongs in.
+        Tip: hit a “+” button above, then click the slot it belongs in.
       </div>
     </div>
   );

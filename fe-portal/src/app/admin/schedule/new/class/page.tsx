@@ -16,7 +16,7 @@ import {
 import { useWorkspace } from "@/lib/workspace-context";
 import { todayIso, currentHourTime } from "@/lib/formatters";
 import { ApiError } from "@/lib/api";
-import { scheduleErrorMessage } from "@/lib/schedule";
+import { scheduleErrorMessage, slotFromParams } from "@/lib/schedule";
 import {
   fetchActiveClassTypes,
   fetchActiveInstructors,
@@ -40,13 +40,9 @@ export default function NewClassPage() {
 function NewClassForm() {
   const router = useRouter();
   const { api, activeLocationId } = useWorkspace();
-  // Clicking an empty slot on the timetable links here with that slot's date
-  // and time, so the form opens pre-filled.
-  const params = useSearchParams();
-  const slot = (key: string, pattern: RegExp, fallback: string) => {
-    const v = params.get(key);
-    return v && pattern.test(v) ? v : fallback;
-  };
+  // Picking a slot on the timetable links here with that slot, so the form
+  // opens on the day and time the admin already chose.
+  const slot = slotFromParams(useSearchParams());
 
   const [classTypes, setClassTypes] = useState<CatalogClassType[]>([]);
   const [instructors, setInstructors] = useState<CatalogInstructor[]>([]);
@@ -59,13 +55,9 @@ function NewClassForm() {
   const [supporting, setSupporting] = useState<SupportingRow[]>([]);
   const [locationId, setLocationId] = useState(activeLocationId ?? "");
   const [roomId, setRoomId] = useState("");
-  const [date, setDate] = useState(() => slot("date", /^\d{4}-\d{2}-\d{2}$/, ""));
-  const [startTime, setStartTime] = useState(() =>
-    slot("start", /^\d{2}:\d{2}$/, currentHourTime()),
-  );
-  const [endTime, setEndTime] = useState(() =>
-    slot("end", /^\d{2}:\d{2}$/, currentHourTime(1)),
-  );
+  const [date, setDate] = useState(slot?.date ?? "");
+  const [startTime, setStartTime] = useState(slot?.start ?? currentHourTime());
+  const [endTime, setEndTime] = useState(slot?.end ?? currentHourTime(1));
   const [capacity, setCapacity] = useState<Capacity>({
     waitlist: 0,
     onlineBooking: 18,
