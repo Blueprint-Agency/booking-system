@@ -1,6 +1,15 @@
 import type { EmailTemplate } from "@/types";
 
-const updatedAt = "2026-04-15T08:00:00.000Z";
+/**
+ * Static fixture for the notifications screens. The enforcing allow-list is
+ * `TEMPLATE_VARIABLES` in `be/src/services/notifications/variables.ts` — every
+ * `variables` array below is copied from it by hand, and every `{{var}}` in a
+ * subject or body is drawn only from that entry's array, because
+ * `PATCH /portal/admin/notifications/templates/:slug` rejects anything else.
+ * Reconcile against that file whenever it changes.
+ */
+
+const updatedAt = "2026-08-17T08:00:00.000Z";
 
 export const emailTemplates: EmailTemplate[] = [
   // --- Auth ---
@@ -24,10 +33,10 @@ export const emailTemplates: EmailTemplate[] = [
     description: "Sent when a customer requests a password reset.",
     trigger: "Customer requests password reset",
     recipient: "Customer",
-    variables: ["client_name", "reset_link", "expiry_time"],
-    subject: "Reset your {{studio_name}} password",
+    variables: ["client_name", "reset_url"],
+    subject: "Reset your password",
     bodyHtml:
-      "<p>Hi {{client_name}},</p><p>Tap the link below to set a new password. It expires {{expiry_time}}.</p><p><a href=\"{{reset_link}}\">Reset password</a></p>",
+      "<p>Hi {{client_name}},</p><p>Tap the link below to set a new password.</p><p><a href=\"{{reset_url}}\">Reset password</a></p>",
     updatedAt,
   },
   // --- Bookings ---
@@ -41,16 +50,16 @@ export const emailTemplates: EmailTemplate[] = [
     variables: [
       "client_name",
       "class_name",
-      "instructor_name",
       "date",
-      "time",
+      "instructor_name",
       "location",
-      "credits_used",
+      "qr_url",
+      "code",
       "credits_remaining",
     ],
     subject: "Booked: {{class_name}} on {{date}}",
     bodyHtml:
-      "<p>Hi {{client_name}},</p><p>You're confirmed for <strong>{{class_name}}</strong> with {{instructor_name}} on {{date}} at {{time}}, {{location}}.</p><p>Credits used: {{credits_used}}. Credits remaining: {{credits_remaining}}.</p>",
+      "<p>Hi {{client_name}},</p><p>You're confirmed for <strong>{{class_name}}</strong> with {{instructor_name}} on {{date}}, {{location}}.</p><p>Show this at the door — check-in code <strong>{{code}}</strong>.</p><p><img src=\"{{qr_url}}\" alt=\"Check-in QR code\" width=\"160\" height=\"160\" /></p><p>Credits remaining: {{credits_remaining}}.</p>",
     updatedAt,
   },
   {
@@ -60,10 +69,10 @@ export const emailTemplates: EmailTemplate[] = [
     description: "Confirms receipt of a private session request.",
     trigger: "Customer submits PT request (§9)",
     recipient: "Customer",
-    variables: ["client_name", "instructor_name", "requested_date", "requested_time"],
-    subject: "We received your request — {{instructor_name}}, {{requested_date}}",
+    variables: ["client_name", "instructor_name", "starts_at"],
+    subject: "We received your request — {{instructor_name}}, {{starts_at}}",
     bodyHtml:
-      "<p>Hi {{client_name}},</p><p>Your private session request with {{instructor_name}} on {{requested_date}} at {{requested_time}} has been received. We'll confirm shortly.</p>",
+      "<p>Hi {{client_name}},</p><p>Your private session request with {{instructor_name}} on {{starts_at}} has been received. We'll confirm shortly.</p>",
     updatedAt,
   },
   {
@@ -73,10 +82,10 @@ export const emailTemplates: EmailTemplate[] = [
     description: "Sent when a PT request is approved.",
     trigger: "Admin/instructor approves PT request",
     recipient: "Customer",
-    variables: ["client_name", "instructor_name", "date", "time", "location"],
+    variables: ["client_name", "instructor_name", "starts_at", "location", "qr_url"],
     subject: "Confirmed: private session with {{instructor_name}}",
     bodyHtml:
-      "<p>Hi {{client_name}},</p><p>Your private session with {{instructor_name}} is confirmed for {{date}} at {{time}}, {{location}}. See you there.</p>",
+      "<p>Hi {{client_name}},</p><p>Your private session with {{instructor_name}} is confirmed for {{starts_at}}, {{location}}. See you there.</p><p><img src=\"{{qr_url}}\" alt=\"Check-in QR code\" width=\"160\" height=\"160\" /></p>",
     updatedAt,
   },
   {
@@ -86,10 +95,10 @@ export const emailTemplates: EmailTemplate[] = [
     description: "Sent when a PT request is declined.",
     trigger: "Admin/instructor declines PT request",
     recipient: "Customer",
-    variables: ["client_name", "instructor_name", "requested_date", "requested_time", "decline_note"],
+    variables: ["client_name", "instructor_name", "decline_note"],
     subject: "Update on your private session request",
     bodyHtml:
-      "<p>Hi {{client_name}},</p><p>Unfortunately we can't take your request with {{instructor_name}} on {{requested_date}} at {{requested_time}}.</p><p>{{decline_note}}</p>",
+      "<p>Hi {{client_name}},</p><p>Unfortunately we can't take your request with {{instructor_name}}.</p><p>{{decline_note}}</p>",
     updatedAt,
   },
   {
@@ -99,10 +108,10 @@ export const emailTemplates: EmailTemplate[] = [
     description: "Sent immediately after Stripe checkout for a workshop.",
     trigger: "Customer purchases a workshop tier",
     recipient: "Customer",
-    variables: ["client_name", "workshop_name", "tier_name", "date", "location", "amount_paid"],
+    variables: ["client_name", "workshop_name", "date", "qr_url", "code", "receipt_url"],
     subject: "Your spot at {{workshop_name}} is reserved",
     bodyHtml:
-      "<p>Hi {{client_name}},</p><p>You're booked for <strong>{{workshop_name}}</strong> ({{tier_name}}) on {{date}} at {{location}}. Amount paid: SGD {{amount_paid}}.</p>",
+      "<p>Hi {{client_name}},</p><p>You're booked for <strong>{{workshop_name}}</strong> on {{date}}.</p><p>Show this at the door — check-in code <strong>{{code}}</strong>.</p><p><img src=\"{{qr_url}}\" alt=\"Check-in QR code\" width=\"160\" height=\"160\" /></p><p><a href=\"{{receipt_url}}\">View your receipt</a></p>",
     updatedAt,
   },
   // --- Client cancellations ---
@@ -126,10 +135,10 @@ export const emailTemplates: EmailTemplate[] = [
     description: "Sent when a customer cancels late or has hit the cap.",
     trigger: "Customer cancels late or over cap",
     recipient: "Customer",
-    variables: ["client_name", "class_name", "date", "forfeit_reason"],
+    variables: ["client_name", "class_name", "date"],
     subject: "Cancellation noted — credit forfeited",
     bodyHtml:
-      "<p>Hi {{client_name}},</p><p>Your booking for {{class_name}} on {{date}} has been cancelled. The credit has been forfeited ({{forfeit_reason}}).</p>",
+      "<p>Hi {{client_name}},</p><p>Your booking for {{class_name}} on {{date}} has been cancelled. The credit has been forfeited.</p>",
     updatedAt,
   },
   {
@@ -139,10 +148,10 @@ export const emailTemplates: EmailTemplate[] = [
     description: "Sent when a customer cancels a PT session within cap and window.",
     trigger: "Customer cancels within cap + within window",
     recipient: "Customer",
-    variables: ["client_name", "instructor_name", "date", "sessions_returned"],
-    subject: "Private session cancelled — {{sessions_returned}} session returned",
+    variables: ["client_name", "instructor_name", "starts_at"],
+    subject: "Private session cancelled — session returned",
     bodyHtml:
-      "<p>Hi {{client_name}},</p><p>Your private session with {{instructor_name}} on {{date}} has been cancelled. {{sessions_returned}} session has been returned to your PT package.</p>",
+      "<p>Hi {{client_name}},</p><p>Your private session with {{instructor_name}} on {{starts_at}} has been cancelled. The session has been returned to your PT package.</p>",
     updatedAt,
   },
   {
@@ -152,10 +161,10 @@ export const emailTemplates: EmailTemplate[] = [
     description: "Sent when a PT cancellation is too late or over cap.",
     trigger: "Customer cancels late or over cap",
     recipient: "Customer",
-    variables: ["client_name", "instructor_name", "date", "forfeit_reason"],
+    variables: ["client_name", "instructor_name", "starts_at"],
     subject: "Private session cancelled — session forfeited",
     bodyHtml:
-      "<p>Hi {{client_name}},</p><p>Your private session with {{instructor_name}} on {{date}} has been cancelled. The session has been forfeited ({{forfeit_reason}}).</p>",
+      "<p>Hi {{client_name}},</p><p>Your private session with {{instructor_name}} on {{starts_at}} has been cancelled. The session has been forfeited.</p>",
     updatedAt,
   },
   // --- Admin-initiated cancellations ---
@@ -179,10 +188,10 @@ export const emailTemplates: EmailTemplate[] = [
     description: "Sent when admin or instructor cancels a private session.",
     trigger: "Admin/instructor cancels PT session (§7a)",
     recipient: "Customer",
-    variables: ["client_name", "instructor_name", "date", "sessions_returned"],
+    variables: ["client_name", "instructor_name", "starts_at"],
     subject: "Your private session has been cancelled",
     bodyHtml:
-      "<p>Hi {{client_name}},</p><p>Your private session with {{instructor_name}} on {{date}} has been cancelled. {{sessions_returned}} session has been returned to your package.</p>",
+      "<p>Hi {{client_name}},</p><p>Your private session with {{instructor_name}} on {{starts_at}} has been cancelled. The session has been returned to your package.</p>",
     updatedAt,
   },
   {
@@ -192,10 +201,10 @@ export const emailTemplates: EmailTemplate[] = [
     description: "Sent to all attendees on workshop cancellation. Payment handling is reviewed by the studio.",
     trigger: "Admin cancels a workshop (§7a)",
     recipient: "All attendees",
-    variables: ["client_name", "workshop_name"],
+    variables: ["client_name", "workshop_name", "refund_sgd"],
     subject: "Workshop cancelled",
     bodyHtml:
-      "<p>Hi {{client_name}},</p><p>We've had to cancel {{workshop_name}}. The studio will contact you about payment handling or next steps.</p>",
+      "<p>Hi {{client_name}},</p><p>We've had to cancel {{workshop_name}}. SGD {{refund_sgd}} has been refunded to you.</p>",
     updatedAt,
   },
   // --- Packages ---
@@ -203,13 +212,14 @@ export const emailTemplates: EmailTemplate[] = [
     slug: "package_purchase_confirmed",
     category: "Packages",
     label: "Package purchase confirmed",
-    description: "Sent on successful Stripe charge for a package.",
+    description:
+      "Sent on successful Stripe charge for a package. {{contents_line}} and {{validity_line}} are whole composed sentences built per package kind — do not wrap them in copy that assumes credits or an expiry date.",
     trigger: "Customer purchases any package",
     recipient: "Customer",
-    variables: ["client_name", "package_name", "amount_paid", "credits_or_sessions", "expiry_date"],
+    variables: ["client_name", "package_name", "contents_line", "validity_line", "receipt_url"],
     subject: "Receipt: {{package_name}}",
     bodyHtml:
-      "<p>Hi {{client_name}},</p><p>Thanks for your purchase of <strong>{{package_name}}</strong> ({{credits_or_sessions}}). Amount paid: SGD {{amount_paid}}. Valid until: {{expiry_date}}.</p>",
+      "<p>Hi {{client_name}},</p><p>Thanks for your purchase of <strong>{{package_name}}</strong>.</p><p>{{contents_line}}</p><p>{{validity_line}}</p><p><a href=\"{{receipt_url}}\">View your receipt</a></p>",
     updatedAt,
   },
   {
@@ -219,10 +229,10 @@ export const emailTemplates: EmailTemplate[] = [
     description: "Sent 7 days before a credit bundle expires.",
     trigger: "7 days before credit bundle expiry (hardcoded)",
     recipient: "Customer",
-    variables: ["client_name", "package_name", "credits_remaining", "expiry_date", "days_until_expiry"],
-    subject: "{{credits_remaining}} credits expire in {{days_until_expiry}} days",
+    variables: ["client_name", "package_name", "expires_at", "credits_remaining"],
+    subject: "{{credits_remaining}} credits expire on {{expires_at}}",
     bodyHtml:
-      "<p>Hi {{client_name}},</p><p>Your {{package_name}} expires on {{expiry_date}} — {{credits_remaining}} credits remaining. Book a class to use them up.</p>",
+      "<p>Hi {{client_name}},</p><p>Your {{package_name}} expires on {{expires_at}} — {{credits_remaining}} credits remaining. Book a class to use them up.</p>",
     updatedAt,
   },
   // --- Staff ---
@@ -233,10 +243,10 @@ export const emailTemplates: EmailTemplate[] = [
     description: "Auto-fired when an instructor profile is saved.",
     trigger: "Admin creates instructor profile (§15b)",
     recipient: "New instructor",
-    variables: ["instructor_name", "studio_name", "invite_link", "expiry_days"],
-    subject: "You've been invited to teach at {{studio_name}}",
+    variables: ["name", "invite_url", "expires_at"],
+    subject: "You've been invited to teach at Yoga Sadhana",
     bodyHtml:
-      "<p>Hi {{instructor_name}},</p><p>You've been added to {{studio_name}} as an instructor. Set up your account using the link below — it expires in {{expiry_days}} days.</p><p><a href=\"{{invite_link}}\">Accept invitation</a></p>",
+      "<p>Hi {{name}},</p><p>You've been added to Yoga Sadhana as an instructor. Set up your account using the link below — it expires on {{expires_at}}.</p><p><a href=\"{{invite_url}}\">Accept invitation</a></p>",
     updatedAt,
   },
   {
@@ -246,10 +256,10 @@ export const emailTemplates: EmailTemplate[] = [
     description: "Magic-link invite sent to a new admin.",
     trigger: "Admin sends admin invite (§15b)",
     recipient: "Invitee",
-    variables: ["studio_name", "invite_link", "expiry_days"],
-    subject: "Admin access invitation — {{studio_name}}",
+    variables: ["name", "invite_url", "expires_at"],
+    subject: "Admin access invitation — Yoga Sadhana",
     bodyHtml:
-      "<p>Hello,</p><p>You've been invited to manage {{studio_name}}. Tap the link to set up your password — it expires in {{expiry_days}} days.</p><p><a href=\"{{invite_link}}\">Accept invitation</a></p>",
+      "<p>Hi {{name}},</p><p>You've been invited to manage Yoga Sadhana. Tap the link to set up your account — it expires on {{expires_at}}.</p><p><a href=\"{{invite_url}}\">Accept invitation</a></p>",
     updatedAt,
   },
   {
@@ -259,10 +269,10 @@ export const emailTemplates: EmailTemplate[] = [
     description: "Reminds the instructor to finalise check-in 24h after a session ends.",
     trigger: "Check-in still `pending` 24h after event end (§11)",
     recipient: "Assigned instructor (cc admin)",
-    variables: ["instructor_name", "session_name", "date", "pending_count", "checkin_link"],
+    variables: ["instructor_name", "session_label", "pending_count"],
     subject: "{{pending_count}} attendees still need check-in finalised",
     bodyHtml:
-      "<p>Hi {{instructor_name}},</p><p>{{pending_count}} attendees from {{session_name}} on {{date}} still need to be marked attended or no-show.</p><p><a href=\"{{checkin_link}}\">Finalise check-in</a></p>",
+      "<p>Hi {{instructor_name}},</p><p>{{pending_count}} attendees from {{session_label}} still need to be marked attended or no-show. Finalise check-in in the portal.</p>",
     updatedAt,
   },
 ];
