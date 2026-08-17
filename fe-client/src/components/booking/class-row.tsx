@@ -27,7 +27,11 @@ export function ClassRow({
   const router = useRouter();
   const api = useApi();
   const [showNoPackage, setShowNoPackage] = useState(false);
-  const [bookError, setBookError] = useState<string | null>(null);
+  // One state, so the message and its offer can't drift apart. `offersCredit` is
+  // set only on the expiry refusal, where credits are the one way through (§3).
+  const [bookError, setBookError] = useState<
+    { msg: string; offersCredit?: boolean } | null
+  >(null);
   const [booked, setBooked] = useState(cls.is_booked ?? false);
   const [spotsLeft, setSpotsLeft] = useState(cls.spots_left);
   const [booking, setBooking] = useState(false);
@@ -49,7 +53,8 @@ export function ClassRow({
     !entitlements?.unlimited_covers_both &&
     !!cls.location &&
     cls.location.id !== planLocation.id;
-  const canUseCredit = notCovered && !!entitlements?.has_active_bundle_credits;
+  const hasCredits = !!entitlements?.has_active_bundle_credits;
+  const canUseCredit = notCovered && hasCredits;
   // The upsell: the Add-On on the plan that would pay, at the rate the server states.
   const addOn =
     notCovered && entitlements?.unlimited_plan_id && cls.location
@@ -71,12 +76,12 @@ export function ClassRow({
     }
     if (booking || booked) return;
     setBooking(true);
-    setBookError(null);
     try {
       await api.post("/me/bookings/class", {
         class_id: cls.id,
         ...(useCredits ? { use_credits: true } : {}),
       });
+      setBookError(null);
       setBooked(true);
       setSpotsLeft((s) => Math.max(0, s - 1));
     } catch (err) {
@@ -88,34 +93,40 @@ export function ClassRow({
           ? String((err.body as { error: unknown }).error)
           : "";
       if (code === "insufficient_credits") {
+        setBookError(null);
         setShowNoPackage(true);
       } else if (code === "already_booked") {
+        setBookError(null);
         setBooked(true);
       } else if (code === "class_full") {
         setSpotsLeft(0);
-        setBookError("Sorry, this class just filled up.");
+        setBookError({ msg: "Sorry, this class just filled up." });
       } else if (code === "class_already_started") {
-        setBookError("This class has already started.");
+        setBookError({ msg: "This class has already started." });
       } else if (code === "location_not_covered") {
         // Genuinely the wrong studio. The lock chip below catches this before
         // the click in the normal case; what lands here is entitlements the
         // client read too early or too late.
-        setBookError(
-          planLocation
+        setBookError({
+          msg: planLocation
             ? `Your plan covers ${planLocation.name} only.`
             : "Your plan doesn't cover this studio.",
-        );
+        });
       } else if (code === "plan_expires_before_class") {
-        // Not a coverage problem (§3): the plan does cover this studio, it just
-        // runs out first. The Cross-Location Add-On sells Locations, not time,
-        // so it is the wrong remedy here — and a queued renewal starts itself on
-        // the first booking after the current plan ends, which the client has no
-        // field to see. So: state it, offer nothing.
-        setBookError(
-          "Your plan runs out before this class starts, so it can't cover it. Try again once your next plan is running.",
-        );
+        // Not a coverage problem: the plan does cover this studio, it just runs
+        // out first. The Cross-Location Add-On sells Locations, not time, so it
+        // is the wrong remedy here — and a queued renewal starts itself on the
+        // first booking after the current plan ends, which the client has no
+        // field to see. Credits are the one remedy that fits: the same request
+        // with use_credits skips the plan and spends the Bundle instead.
+        setBookError({
+          msg:
+            "Your plan runs out before this class starts, so it can't cover it." +
+            (hasCredits ? "" : " Try again once your next plan is running."),
+          offersCredit: hasCredits,
+        });
       } else {
-        setBookError("Couldn't book this class. Please try again.");
+        setBookError({ msg: "Couldn't book this class. Please try again." });
       }
     } finally {
       setBooking(false);
@@ -272,9 +283,21 @@ export function ClassRow({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4" onClick={() => setBookError(null)}>
           <div ref={bookErrorTrapRef} role="dialog" aria-modal="true" aria-label="Couldn't book" tabIndex={-1} className="bg-paper rounded-2xl p-8 max-w-sm w-full shadow-modal text-center outline-none" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-serif text-xl text-ink leading-snug">Couldn&apos;t book</h3>
-            <p className="text-sm text-muted mt-2 leading-relaxed">{bookError}</p>
-            {/* No credits offer here — stories 25-27 keep that to the row nudge. */}
-            <button onClick={() => setBookError(null)} className="mt-6 w-full rounded-full border border-ink/10 py-2.5 text-sm text-muted hover:text-ink transition-colors">Got it</button>
+            <p className="text-sm text-muted mt-2 leading-relaxed">{bookError.msg}</p>
+            {/* Only the expiry refusal offers credits here — the wrong-studio case
+                keeps its offer in the row nudge, per stories 25-27. */}
+            {bookError.offersCredit && (
+              <button
+                onClick={(e) => handleBookClick(e, true)}
+                disabled={booking}
+                className="mt-6 w-full rounded-full bg-accent text-white py-3 text-sm font-semibold hover:bg-accent-deep transition-colors disabled:opacity-70 disabled:cursor-wait"
+              >
+                {booking
+                  ? "Booking…"
+                  : `Use ${cls.credit_cost} credit${cls.credit_cost === 1 ? "" : "s"} instead`}
+              </button>
+            )}
+            <button onClick={() => setBookError(null)} className={cn("w-full rounded-full border border-ink/10 py-2.5 text-sm text-muted hover:text-ink transition-colors", bookError.offersCredit ? "mt-2" : "mt-6")}>{bookError.offersCredit ? "Not now" : "Got it"}</button>
           </div>
         </div>
       )}
