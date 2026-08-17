@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ChevronRight, UserRound, MapPin, Ticket, Loader2, Lock } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatSgd } from "@/lib/utils";
 import { ApiError, useApi } from "@/lib/api";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { formatClassTime, type ApiClassCard, type ClassEntitlements } from "@/lib/classes";
@@ -40,9 +41,24 @@ export function ClassRow({
   // Shown rather than hidden, and quietly — this state repeats on every class at
   // the other studio, and at that density a louder offer reads as an ad break.
   const planLocation = entitlements?.unlimited_location ?? null;
+  // A commented mirror of `covers()` in be/src/services/packages/selection.ts —
+  // a plan carrying the Add-On Covers both Locations, so nothing is blocked and
+  // there is nothing left to sell. The server refusal stays the enforcement.
   const notCovered =
-    !booked && !!planLocation && !!cls.location && cls.location.id !== planLocation.id;
+    !booked &&
+    !!planLocation &&
+    !entitlements?.unlimited_covers_both &&
+    !!cls.location &&
+    cls.location.id !== planLocation.id;
   const canUseCredit = notCovered && !!entitlements?.has_active_bundle_credits;
+  // The upsell: the Add-On on the plan that would pay, at the rate the server states.
+  const addOn =
+    notCovered && entitlements?.unlimited_plan_id && cls.location
+      ? {
+          href: `/checkout?add_on=${entitlements.unlimited_plan_id}`,
+          label: `Add ${cls.location.name} for ${formatSgd(entitlements.cross_location_rate_sgd)}/month`,
+        }
+      : null;
 
   const handleBookClick = async (e: React.MouseEvent, useCredits = false) => {
     e.preventDefault();
@@ -200,9 +216,21 @@ export function ClassRow({
       {notCovered && planLocation && (
         <div className="mt-3 border-t border-ink/10 pt-2.5 text-xs text-muted">
           Your plan covers <span className="font-medium text-ink">{planLocation.name}</span> only.
+          {addOn && (
+            <>
+              <span aria-hidden className="text-ink/20"> · </span>
+              <Link
+                href={addOn.href}
+                className="underline underline-offset-2 hover:text-ink transition-colors"
+              >
+                {addOn.label}
+              </Link>
+            </>
+          )}
           {canUseCredit && (
             <>
               <span aria-hidden className="text-ink/20"> · </span>
+              {addOn && "or "}
               <button
                 onClick={(e) => handleBookClick(e, true)}
                 disabled={booking}

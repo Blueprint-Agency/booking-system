@@ -119,6 +119,11 @@ const app = new Hono()
         trial_eligible: ent.trialEligible,
         has_active_unlimited: ent.hasActiveUnlimited,
         unlimited_location: ent.unlimitedLocation,
+        // The schedule's blocked-class nudge offers the Add-On on the plan that
+        // would pay, at the current rate — and stays quiet once it Covers both.
+        unlimited_plan_id: ent.unlimitedPlanId,
+        unlimited_covers_both: ent.unlimitedCoversBoth,
+        cross_location_rate_sgd: ent.crossLocationRateSgd,
         dormant: ent.dormant,
         has_active_bundle_credits: ent.hasActiveBundleCredits,
       },

@@ -25,6 +25,10 @@ export interface LivePackage {
   active: boolean;
   /** Backend-derived. Never re-tested here as "unlimited and no end date". */
   dormant: boolean;
+  /** What this plan paid for its Cross-Location Add-On; null means Home Location only. */
+  crossLocationPaidSgd: string | null;
+  /** The plan's Home Location; null for every kind but an Unlimited Plan. */
+  location: UnlimitedLocation | null;
   sessionType: "1on1" | "2on1" | null;
 }
 
@@ -44,6 +48,14 @@ export interface ClientPackagesData {
   };
   ptSessions: { oneOnOne: number; twoOnOne: number };
   packages: LivePackage[];
+  /** The Cross-Location Add-On, as the backend states it (§5). */
+  crossLocation: {
+    /** The plan an Add-On would attach to — the same plan `unlimitedLocation` names. */
+    planId: string | null;
+    /** That plan already Covers both studios. Backend-derived, never re-tested here. */
+    coversBoth: boolean;
+    rateSgd: string;
+  };
 }
 
 export interface ClientPackagesValue {
@@ -53,6 +65,8 @@ export interface ClientPackagesValue {
   /** The member holds a Dormant plan — backend-derived, never re-tested here. */
   unlimitedDormant: boolean;
   unlimitedLocation: UnlimitedLocation | null;
+  /** The Cross-Location Add-On, as the backend states it (§5). */
+  crossLocation: ClientPackagesData["crossLocation"];
   pt1on1: number;
   pt2on1: number;
   packages: LivePackage[];
@@ -73,6 +87,8 @@ interface RawClientPackage {
   amount_paid_sgd: string;
   active: boolean;
   dormant: boolean;
+  cross_location_paid_sgd: string | null;
+  unlimited_location: UnlimitedLocation | null;
   session_type: "1on1" | "2on1" | null;
 }
 interface RawPackagesResponse {
@@ -81,6 +97,9 @@ interface RawPackagesResponse {
     trial_used: boolean;
     has_active_unlimited: boolean;
     unlimited_location: UnlimitedLocation | null;
+    unlimited_plan_id: string | null;
+    unlimited_covers_both: boolean;
+    cross_location_rate_sgd: string;
     dormant: boolean;
     has_active_bundle_credits: boolean;
     pt_1on1_remaining: number;
@@ -100,6 +119,9 @@ function mapPackagesResponse(raw: RawPackagesResponse): ClientPackagesData {
     trial_used: false,
     has_active_unlimited: false,
     unlimited_location: null,
+    unlimited_plan_id: null,
+    unlimited_covers_both: false,
+    cross_location_rate_sgd: "0.00",
     dormant: false,
     has_active_bundle_credits: false,
     pt_1on1_remaining: 0,
@@ -135,6 +157,8 @@ function mapPackagesResponse(raw: RawPackagesResponse): ClientPackagesData {
       amountPaidSgd: p.amount_paid_sgd,
       active: p.active,
       dormant: p.dormant,
+      crossLocationPaidSgd: p.cross_location_paid_sgd,
+      location: p.unlimited_location ?? null,
       sessionType: p.session_type,
     }));
 
@@ -148,6 +172,11 @@ function mapPackagesResponse(raw: RawPackagesResponse): ClientPackagesData {
     },
     ptSessions: { oneOnOne: ent.pt_1on1_remaining ?? 0, twoOnOne: ent.pt_2on1_remaining ?? 0 },
     packages,
+    crossLocation: {
+      planId: ent.unlimited_plan_id ?? null,
+      coversBoth: Boolean(ent.unlimited_covers_both),
+      rateSgd: ent.cross_location_rate_sgd ?? "0.00",
+    },
   };
 }
 
@@ -228,6 +257,7 @@ export function ClientPackagesProvider({ children }: { children: ReactNode }) {
     unlimitedExpiresAt: data?.classCredits?.unlimitedExpiresAt ?? null,
     unlimitedDormant: data?.classCredits?.unlimitedDormant ?? false,
     unlimitedLocation: data?.classCredits?.unlimitedLocation ?? null,
+    crossLocation: data?.crossLocation ?? { planId: null, coversBoth: false, rateSgd: "0.00" },
     pt1on1: data?.ptSessions?.oneOnOne ?? 0,
     pt2on1: data?.ptSessions?.twoOnOne ?? 0,
     packages: data?.packages ?? [],

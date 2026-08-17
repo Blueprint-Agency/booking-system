@@ -9,6 +9,9 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { useAuth } from "@clerk/nextjs";
 import { getApiBaseUrl } from "@/lib/api-url";
 import { useLocations } from "@/lib/classes";
+import { CrossLocationBlock } from "@/components/checkout/cross-location-block";
+import { AddOnCheckout } from "@/components/checkout/add-on-checkout";
+import { PayButton, StripeFootnote } from "@/components/checkout/pay-button";
 import { useClientPackages } from "@/lib/use-client-packages";
 import { tierEffectivePrice, type ApiWorkshopDetail, type ApiWorkshopTier } from "@/lib/workshops";
 import type { ApiClassPackage, ApiPtPackage } from "@/lib/packages";
@@ -41,7 +44,16 @@ function CheckoutContent() {
   const workshopId = searchParams.get("workshop");
   const tierId = searchParams.get("tier");
   const cancelled = searchParams.get("cancelled") === "1";
-  const mode: "package" | "workshop" = workshopId ? "workshop" : "package";
+  // The standalone Add-On purchase is this same page, entered with the target
+  // plan's id (§12). Entered without one — a member who holds no plan followed
+  // the link anyway — the block states the precondition rather than 404ing.
+  const isAddOnOnly = searchParams.has("add_on");
+  const addOnPlanId = searchParams.get("add_on") || null;
+  const mode: "package" | "workshop" | "add_on" = isAddOnOnly
+    ? "add_on"
+    : workshopId
+      ? "workshop"
+      : "package";
 
   const [pkg, setPkg] = useState<PackageInfo | null>(null);
   const [workshop, setWorkshop] = useState<ApiWorkshopDetail | null>(null);
@@ -61,7 +73,12 @@ function CheckoutContent() {
   // holding a live plan renews at that plan's Location and gets no choice.
   const [homeLocationId, setHomeLocationId] = useState<string | null>(null);
   const { data: locations, loading: locationsLoading } = useLocations();
-  const { unlimitedLocation, loading: packagesLoading } = useClientPackages();
+  const { unlimitedLocation, crossLocation, loading: packagesLoading } = useClientPackages();
+  // The Add-On taken with the plan (§5). A plan bought now has its whole
+  // Duration ahead of it whether its clock starts today or it waits Dormant, so
+  // it prices at the stored Duration with no remainder — a commented mirror of
+  // `priceCrossLocationForNewPlan`, which is what the charge is actually built from.
+  const [addOn, setAddOn] = useState(false);
   const isUnlimited = pkg?._kind === "class" && pkg.kind === "unlimited";
   const chosenLocation = isUnlimited
     ? unlimitedLocation ?? locations?.find((l) => l.id === homeLocationId) ?? null
@@ -166,6 +183,7 @@ function CheckoutContent() {
             package_id: packageId,
             promo_code: promoApplied?.code,
             location_id: chosenLocation?.id,
+            cross_location_add_on: isUnlimited && addOn,
           };
       const res = await fetch(`${getApiBaseUrl()}${endpoint}`, {
         method: "POST",
@@ -220,7 +238,12 @@ function CheckoutContent() {
     );
   }
 
-  const hasItem = mode === "workshop" ? Boolean(workshop && selectedTier) : Boolean(pkg);
+  const hasItem =
+    mode === "add_on"
+      ? true
+      : mode === "workshop"
+        ? Boolean(workshop && selectedTier)
+        : Boolean(pkg);
   if (pkgError || !hasItem) {
     return (
       <BookingSurface maxWidth="lg" padding="default">
@@ -263,6 +286,11 @@ function CheckoutContent() {
     );
   }
 
+  // Same page, different item: an Add-On bought against a plan already held has
+  // no catalogue entry, no Home studio to pick and nothing a Promo Code can
+  // discount (§5), so it renders its own body below the shared gates.
+  if (mode === "add_on") return <AddOnCheckout planId={addOnPlanId} />;
+
   const itemName = mode === "workshop"
     ? `${workshop!.name} — ${selectedTier!.name}`
     : pkg!.name;
@@ -281,7 +309,14 @@ function CheckoutContent() {
   const discountCents = promoApplied
     ? Math.min(Math.round(promoApplied.discountSgd * 100), baseCents)
     : 0;
-  const totalCents = baseCents - discountCents;
+  const addOnMonths = pkg?._kind === "class" ? pkg.duration_months ?? 0 : 0;
+  // A commented mirror of `crossLocationPriceSgd`, so the breakdown adds up to
+  // what the server will charge. The server still prices the session.
+  const addOnCents =
+    isUnlimited && addOn ? Math.round(Number(crossLocation.rateSgd) * 100) * addOnMonths : 0;
+  // The Add-On is its own money beside the plan's, never folded into it — a
+  // Promo Code discounts the plan line only (§5).
+  const totalCents = baseCents - discountCents + addOnCents;
   const price = baseCents / 100;
   const discount = discountCents / 100;
   const includedGst = (totalCents - Math.round(totalCents / 1.09)) / 100;
@@ -374,6 +409,21 @@ function CheckoutContent() {
               </div>
             )}
 
+            {/* Cross-Location Add-On — disabled until a studio is picked (§12).
+                Held back until the rate has loaded, so it never quotes S$0. */}
+            {isUnlimited && !packagesLoading && (
+              <CrossLocationBlock
+                rateSgd={crossLocation.rateSgd}
+                months={addOnMonths}
+                otherLocations={(locations ?? [])
+                  .filter((l) => l.id !== chosenLocation?.id)
+                  .map((l) => l.name)}
+                checked={addOn}
+                onChange={setAddOn}
+                disabledReason={chosenLocation ? null : "no_home_location"}
+              />
+            )}
+
             {/* Promo code */}
             <div className="mt-4">
               {promoApplied ? (
@@ -431,6 +481,12 @@ function CheckoutContent() {
                   <span>−{formatCurrency(discount)}</span>
                 </div>
               )}
+              {addOnCents > 0 && (
+                <div className="flex justify-between py-1.5 text-sm">
+                  <span>Cross-Location Add-On</span>
+                  <span>{formatCurrency(addOnCents / 100)}</span>
+                </div>
+              )}
               <div className="flex justify-between py-1.5 text-sm text-muted">
                 <span>Includes GST (9%)</span>
                 <span>{formatCurrency(includedGst)}</span>
@@ -464,34 +520,18 @@ function CheckoutContent() {
             </p>
           )}
 
-          <button
-            type="button"
+          <PayButton
             onClick={handleProceed}
-            disabled={redirecting || needsHomeStudio}
-            className={cn(
-              "w-full rounded-full bg-ink text-paper py-4 text-sm font-semibold transition-colors",
-              redirecting || needsHomeStudio ? "opacity-60 cursor-not-allowed" : "hover:bg-ink/90"
-            )}
-          >
-            {redirecting ? (
-              <span className="inline-flex items-center gap-2 justify-center">
-                <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-                Redirecting to payment…
-              </span>
-            ) : needsHomeStudio ? (
-              "Choose your home studio to continue"
-            ) : (
-              `Pay ${formatCurrency(grandTotal)} with Stripe`
-            )}
-          </button>
+            busy={redirecting}
+            disabled={needsHomeStudio}
+            label={
+              needsHomeStudio
+                ? "Choose your home studio to continue"
+                : `Pay ${formatCurrency(grandTotal)} with Stripe`
+            }
+          />
 
-          <p className="text-xs text-muted text-center flex items-center justify-center gap-1.5">
-            <Lock className="h-3 w-3" />
-            Secured by Stripe · All prices in SGD
-          </p>
+          <StripeFootnote />
         </div>
       </BookingSurface>
     </div>

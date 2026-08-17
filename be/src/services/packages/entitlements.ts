@@ -3,6 +3,7 @@ import { db } from '../../db'
 import { clientPackages, classPackages, promoCodes, ptPackages } from '../../db/schema/packages'
 import { locations } from '../../db/schema/catalog'
 import { isDormant } from './validity'
+import { readCrossLocationRateSgd } from './purchase'
 
 export interface ClientEntitlements {
   trialUsed: boolean
@@ -15,6 +16,20 @@ export interface ClientEntitlements {
    * at one Location, so this is unambiguous.
    */
   unlimitedLocation: { id: string; name: string } | null
+  /**
+   * The plan a **Cross-Location Add-On** would attach to — the same plan
+   * `unlimitedLocation` names. Null when the client holds none. An Add-On belongs
+   * to one plan, so the member surfaces need the plan's id to buy one (§5).
+   */
+  unlimitedPlanId: string | null
+  /**
+   * That plan already carries an Add-On, so it **Covers** both Locations. Derived
+   * here and nowhere else — the schedule's coverage check is a commented mirror,
+   * and `covers()` in `selection.ts` stays the enforcement.
+   */
+  unlimitedCoversBoth: boolean
+  /** The Add-On rate as it stands right now, so the member surfaces can quote it (§5). */
+  crossLocationRateSgd: string
   /**
    * True when the client holds a Dormant Unlimited Plan — bought, paid for, clock
    * not yet started. Derived HERE and nowhere else: neither frontend gets to test
@@ -37,6 +52,7 @@ export async function getClientEntitlements(clientId: string): Promise<ClientEnt
 
   const rows = await db
     .select({
+      id: clientPackages.id,
       kind: clientPackages.kind,
       active: clientPackages.active,
       expiresAt: clientPackages.expiresAt,
@@ -44,6 +60,7 @@ export async function getClientEntitlements(clientId: string): Promise<ClientEnt
       ptSessionType: ptPackages.sessionType,
       locationId: clientPackages.locationId,
       locationName: locations.name,
+      crossLocationPaidSgd: clientPackages.crossLocationPaidSgd,
     })
     .from(clientPackages)
     .leftJoin(ptPackages, eq(ptPackages.id, clientPackages.sourcePtPackageId))
@@ -53,6 +70,8 @@ export async function getClientEntitlements(clientId: string): Promise<ClientEnt
   let trialUsed = false
   let hasActiveUnlimited = false
   let unlimitedLocation: ClientEntitlements['unlimitedLocation'] = null
+  let unlimitedPlanId: string | null = null
+  let unlimitedCoversBoth = false
   let locationIsDormant = false
   let dormant = false
   let hasActiveBundleCredits = false
@@ -75,6 +94,8 @@ export async function getClientEntitlements(clientId: string): Promise<ClientEnt
         // at one Location anyway, so this only settles the tie-break.
         if (r.locationId && r.locationName && (unlimitedLocation === null || locationIsDormant)) {
           unlimitedLocation = { id: r.locationId, name: r.locationName }
+          unlimitedPlanId = r.id
+          unlimitedCoversBoth = r.crossLocationPaidSgd !== null
           locationIsDormant = r.expiresAt === null
         }
       }
@@ -96,6 +117,9 @@ export async function getClientEntitlements(clientId: string): Promise<ClientEnt
     trialEligible,
     hasActiveUnlimited,
     unlimitedLocation,
+    unlimitedPlanId,
+    unlimitedCoversBoth,
+    crossLocationRateSgd: await readCrossLocationRateSgd(),
     dormant,
     hasActiveBundleCredits,
     pt1on1Remaining,

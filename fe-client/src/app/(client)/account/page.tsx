@@ -8,8 +8,8 @@ import {
   CalendarX,
   Package,
 } from "lucide-react";
-import { formatDate } from "@/lib/utils";
-import { formatClassTime } from "@/lib/classes";
+import { formatDate, formatSgd } from "@/lib/utils";
+import { formatClassTime, useLocations } from "@/lib/classes";
 import { SectionHeading } from "@/components/booking/section-heading";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -36,8 +36,10 @@ export default function AccountOverview() {
     pt1on1,
     pt2on1,
     packages: livePackages,
+    crossLocation,
     loading: pkgLoading,
   } = useClientPackages();
+  const { data: locations } = useLocations();
   const ptSessionsRemaining = pt1on1 + pt2on1;
   const firstName = user?.firstName || "there";
   const [nextUpVisible, setNextUpVisible] = useState(PAGE_SIZE);
@@ -190,7 +192,18 @@ export default function AccountOverview() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {classPackages.map((p) => (
-              <PackageCard key={p.id} pkg={p} unitLabel="credits" />
+              <PackageCard
+                key={p.id}
+                pkg={p}
+                unitLabel="credits"
+                // The studio has exactly two Locations, so the one this plan
+                // does not Cover is simply the other row. Presentation only —
+                // `covers()` in the backend stays the enforcement.
+                otherLocationName={
+                  locations?.find((l) => l.id !== p.location?.id)?.name ?? null
+                }
+                rateSgd={crossLocation.rateSgd}
+              />
             ))}
           </div>
         )}
@@ -223,11 +236,18 @@ export default function AccountOverview() {
 function PackageCard({
   pkg,
   unitLabel,
+  otherLocationName,
+  rateSgd,
 }: {
   pkg: LivePackage;
   unitLabel: string;
+  /** The Location this plan does not already Cover, for the Add-On offer. */
+  otherLocationName?: string | null;
+  rateSgd?: string;
 }) {
   const isUnlimited = pkg.kind === "unlimited";
+  // Held back until the rate has loaded, so the card never offers it at S$0.
+  const offerAddOn = otherLocationName && Number(rateSgd) > 0;
   return (
     <div className="rounded-2xl bg-paper border border-ink/10 p-5">
       <div className="flex items-start justify-between gap-4">
@@ -238,6 +258,37 @@ function PackageCard({
               ? ACTIVATION_LINE
               : `Expires ${formatDate(pkg.expiresAt!)}`}
           </p>
+          {/* What this plan Covers, and when cross-location coverage ends —
+              losing it is never silent (§5). */}
+          {isUnlimited && pkg.location && (
+            <p className="text-xs text-muted mt-1">
+              {pkg.crossLocationPaidSgd !== null ? (
+                pkg.expiresAt ? (
+                  <>
+                    Both studios until {formatDate(pkg.expiresAt)}, then{" "}
+                    <span className="text-ink">{pkg.location.name}</span> only.
+                  </>
+                ) : (
+                  <>Both studios, for the length of this plan.</>
+                )
+              ) : (
+                <>
+                  <span className="text-ink">{pkg.location.name}</span> only.
+                  {offerAddOn && (
+                    <>
+                      {" "}
+                      <Link
+                        href={`/checkout?add_on=${pkg.id}`}
+                        className="underline underline-offset-2 hover:text-ink transition-colors"
+                      >
+                        Add {otherLocationName} for {formatSgd(rateSgd!)}/month
+                      </Link>
+                    </>
+                  )}
+                </>
+              )}
+            </p>
+          )}
         </div>
         <div className="text-right shrink-0">
           <p className="text-2xl font-extrabold text-ink">

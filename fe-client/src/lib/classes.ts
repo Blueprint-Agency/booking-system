@@ -152,6 +152,15 @@ export interface ClassEntitlements {
    * anonymous and cacheable. Presentation only — booking is the enforcement.
    */
   unlimited_location: { id: string; name: string } | null;
+  /**
+   * The Cross-Location Add-On the nudge on a blocked class offers (§5): the plan
+   * it would attach to, whether that plan already Covers both Locations, and the
+   * rate to quote. All three are decided by the backend — the schedule only
+   * renders them.
+   */
+  unlimited_plan_id: string | null;
+  unlimited_covers_both: boolean;
+  cross_location_rate_sgd: string;
 }
 
 /** Whether the signed-in client currently holds something that can pay for a class. */

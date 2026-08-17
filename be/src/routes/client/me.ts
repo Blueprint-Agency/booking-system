@@ -86,6 +86,11 @@ const app = new Hono()
         trial_used: ent.trialUsed,
         has_active_unlimited: ent.hasActiveUnlimited,
         unlimited_location: ent.unlimitedLocation,
+        // The plan a Cross-Location Add-On would attach to, whether it already
+        // carries one, and the rate it prices at (§5).
+        unlimited_plan_id: ent.unlimitedPlanId,
+        unlimited_covers_both: ent.unlimitedCoversBoth,
+        cross_location_rate_sgd: ent.crossLocationRateSgd,
         dormant: ent.dormant,
         has_active_bundle_credits: ent.hasActiveBundleCredits,
         pt_1on1_remaining: ent.pt1on1Remaining,
