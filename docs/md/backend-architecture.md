@@ -358,7 +358,21 @@ id, name (text, not null), description (text, nullable — short blurb shown to 
 | annual_leave_days | int | not null, default 14 — **Assigned Days**, annual. Per instructor, set on the staff profile by admin or superadmin. The input to next year's Pool, not a balance. |
 | medical_leave_days | int | not null, default 14 — Assigned Days, medical. |
 | study_leave_days | int | not null, default 7 — Assigned Days, study. The third Leave Type; backfilled on every existing row rather than granted per instructor, because study leave is for everyone. |
-| in_cover_group | boolean | not null, default false — whether this instructor is in the studio's one **Cover Group**. Every row backfills false, so the Cover Group Leave Cap is inert until an admin ticks somebody. |
+
+#### `leave_conflicts` — declared **Leave Conflicts** (§17)
+
+Two instructors an admin has declared cannot be away at the same time. Replaced `instructors.in_cover_group` and `global_policy.cover_group_leave_cap`, both dropped in `0024_retire_cover_group.sql`; the survey behind that decision is `docs/md/research-cover-group-ux.md`.
+
+| Column | Type | Constraints |
+|---|---|---|
+| instructor_a_id | uuid | FK → instructors.staff_user_id, on delete cascade |
+| instructor_b_id | uuid | FK → instructors.staff_user_id, on delete cascade |
+| **PK** (instructor_a_id, instructor_b_id) | | uniqueness over the pair |
+| **CHECK** `instructor_a_id < instructor_b_id` | | canonical ordering |
+
+The two constraints together are what make symmetry a **database guarantee rather than an application convention**: the CHECK forces the lower id into the first column, so the reversed row cannot exist, and the primary key stops the same pair being declared twice. The CHECK also rules out a self-pair. Callers normalise before writing; these are the backstop. Rows cascade on instructor deletion, and an archived instructor's declarations refuse nothing (the rule input is filtered to active instructors, so archiving is reversible without touching the table).
+
+The list is saved as **one replacement set** in the same transaction as the numeric Global Policy fields — `PATCH /portal/admin/policy/global` carries `leave_conflicts` — so a half-applied save cannot leave a cap raised over a set that never changed. That transaction takes every `instructors` row lock in staff-user-id order first, matching the order a leave submission takes its locks in, so the two cannot deadlock.
 
 The leave tables themselves (`leave_requests`, `leave_pools`) are specified in `spec-instructor-leave.md` and `spec-instructor-leave-pools.md`, with `be/CONTEXT.md` binding on the vocabulary; `be/docs/adr/0001-per-instructor-leave-pools-with-carry-over.md` records why a Pool is stored.
 
@@ -376,7 +390,7 @@ Both tables enforce single row at app layer. We use `id uuid PK` plus a `CHECK` 
 
 #### `global_policy` (§4)
 
-cancel_cap_count int, cancel_cap_cycle_days int, class_window_hours int, pt_window_hours int, leave_carry_over_cap_days int (not null, default 14 — the studio-wide ceiling on unused **annual** days carrying into the next Leave Year; the only leave figure that is global), cross_location_rate_sgd numeric(10,2) (the Cross-Location Add-On's monthly rate — read once, at checkout, so repricing moves future purchases only; `spec-pre-launch-batch.md` §5), cover_group_leave_cap int (not null, default 1, minimum 1 — the greatest number of **Cover Group** members who may be away at once, counting every Leave Type), study_leave_cap int (not null, default 1, minimum 1 — the greatest number of instructors studio-wide who may be on study leave at once, counting study leave only; `spec-pre-launch-batch.md` §17), updated_at, updated_by_staff_id (FK).
+cancel_cap_count int, cancel_cap_cycle_days int, class_window_hours int, pt_window_hours int, leave_carry_over_cap_days int (not null, default 14 — the studio-wide ceiling on unused **annual** days carrying into the next Leave Year; the only leave figure that is global), cross_location_rate_sgd numeric(10,2) (the Cross-Location Add-On's monthly rate — read once, at checkout, so repricing moves future purchases only; `spec-pre-launch-batch.md` §5), study_leave_cap int (not null, default 1, minimum 1 — the **Leave Cap**: the greatest number of instructors studio-wide who may be on study leave at once, counting study leave only; `spec-pre-launch-batch.md` §17. Who may not be away *with whom* is not a number and lives in `leave_conflicts`), updated_at, updated_by_staff_id (FK).
 
 #### `pt_booking_config` (§6)
 

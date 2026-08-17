@@ -44,7 +44,7 @@ Nine changes, shipped as one batch before launch, while production is still empt
 
 **Study leave becomes a third Leave Type**, deliberately the least exceptional of the three — seven days a year, no carry-over, and the medical certificate generalises into a **Supporting Document**.
 
-**A Leave Cap** — one pure rule used twice — refuses leave that would put too many instructors away at the same instant. One cap over a **Cover Group** counting every Leave Type, one studio-wide cap counting study leave only. Medical leave counts toward a cap and is never refused by one.
+**A Leave Cap** — one pure rule used twice — refuses leave that would put too many instructors away at the same instant. One studio-wide cap counting study leave only, and a **Leave Conflict**: a pair of instructors an admin has declared cannot be away together, counting every Leave Type. Medical leave counts toward both and is never refused by either. *(The second of those shipped first as a **Cover Group** — one ticked set with its own cap — and was replaced by declared pairs the same day; see §17.)*
 
 ---
 
@@ -190,9 +190,9 @@ Nine changes, shipped as one batch before launch, while production is still empt
 
 ### Leave caps
 
-109. As an admin, I want to mark which instructors cover each other, so that the system knows who must not all be away at once.
-110. As an admin, I want the cover rule inert until I mark somebody, so that the studio does not wake up to refusals it did not ask for.
-111. As an admin, I want to set how many of that group may be away at once, so that the rule is a number I control rather than a hardcoded "one".
+109. As an admin, I want to declare which two instructors cannot be away at the same time, so that the system knows who must not both be off.
+110. As an admin, I want the rule inert until I declare a pair, so that the studio does not wake up to refusals it did not ask for.
+111. ~~As an admin, I want to set how many of that group may be away at once.~~ **Withdrawn 2026-08-17** with the Cover Group: a declared pair has a fixed cap of 1, and a cap over a *set* is deliberately no longer sayable (§17).
 112. As an admin, I want a separate studio-wide cap on how many instructors may be on study leave at once, so that courses are staggered without freezing ordinary leave.
 113. As an admin, I want the study cap to count study leave only, so that one person's holiday does not block everybody's courses.
 114. As an admin, I want the cover cap to count every kind of leave, so that the group's cover is measured by who is actually absent.
@@ -638,28 +638,34 @@ The file rules do not change: JPG, PNG or PDF, 5MB, validated server-side before
 
 **What did not change**: occupancy (the module never sees the Leave Type), the hard block against the instructor's own teaching schedule, the four ways a request ends, carry-over, and the studio-wide carry-over cap, which stays annual-only in effect.
 
-### 17. Leave Caps
+### 17. Leave Caps and Leave Conflicts
 
-**The rule is a cap the studio sets, not "no two instructors on the same day".** One concept, **Leave Cap**, used twice:
+> **Revised 2026-08-17, after shipping.** This section originally specified a **Cover Group** — one flat, studio-wide ticked set of instructors with its own cap counting every Leave Type. It shipped and was replaced the same day by the **Leave Conflict**: explicit pairs. The survey behind that decision, including the option it recommended and the reason pairs were taken instead, is `docs/md/research-cover-group-ux.md` — linked rather than restated. What follows describes what is in the code. The peak rule, the half-day handling, the pending-counts trade and the no-override stance below are unchanged by the swap.
+
+**Two rules, one pure measurement.** Neither is "no two instructors on the same day":
 
 | | Who is counted | The number | What it refuses |
 |---|---|---|---|
-| **Cover Group** | The instructors an admin ticks | `cover_group_leave_cap`, default 1 | Annual and study requests from a Cover Group member |
-| **Study Leave** | Every instructor | `study_leave_cap`, default 1 | Study requests from anyone |
+| **Leave Conflict** | The applicant's declared partners | fixed at 1 | Annual and study requests from either instructor in a declared pair |
+| **Study Leave cap** | Every instructor | `study_leave_cap`, default 1 | Study requests from anyone |
 
-Both live on Global Policy beside the carry-over cap, both set by an admin, **minimum 1** — zero would freeze annual leave studio-wide, which is not what this control is for.
+The cap lives on Global Policy beside the carry-over cap, set by an admin, **minimum 1** — zero would make study leave unobtainable, which is not what this control is for. Declared pairs live beside it on the same screen, but they are a list rather than a number.
 
-**The Cover Group is one ticked set, not named groups.** `instructors` gains `in_cover_group`, boolean, not null, **default false**, so every existing row backfills to false and **the rule is inert until an admin ticks somebody** — no migration risk, and no studio wakes up to refusals it did not ask for. A table of named groups was rejected: it is a second concept — name it, CRUD it, decide what membership of two groups means — bought for a requirement nobody stated. Deriving the group from the instructor-to-class-type mapping was rejected harder: it makes an invisible rule out of a scheduling table, so an admin editing a class type would silently change who may take leave. The admin panel is a **multi-select** of instructors labelled **Cover Group** — the panel and the glossary say the same word, and a multi-select works on mobile and with a keyboard where drag-and-drop does not.
+**A Leave Conflict is a pair, and the pair is a database fact.** `leave_conflicts` holds one row per pair of instructor staff user ids, with a `CHECK` forcing the lower id into the first column and a primary key over the pair. Symmetry is therefore a **database guarantee, not an application convention**: a pair declared either way round is the same row, the reversed row cannot exist, and the same pair cannot be declared twice. The CHECK also rules out a self-pair. Callers normalise before writing; the constraints are the backstop. Rows cascade on instructor deletion, and an **archived instructor's declarations refuse nothing**, so archiving is reversible without touching the table. The table is empty until an admin declares something, so **the rule is inert on an untouched studio** — no migration risk, and no studio wakes up to refusals it did not ask for.
 
-**What each cap counts is not symmetric.** The **Cover Group cap counts every Leave Type**, medical included — the purpose of the group is cover, and the studio has lost that instructor whatever the reason. This refuses no medical request; it only tells the *next* annual applicant to pick another day. The **Study Leave cap counts study leave only** — the requirement is study-against-study, and counting all leave would make study leave nearly unobtainable, since with a cap of 1 one person's holiday anywhere in the studio would block courses for everyone.
+**The knowing narrowing.** A cap over a *set* — "at most 2 of these 6 away at once" — is permanently unsayable now. That is accepted, not overlooked: the stated requirement was always about specific people who cover each other, and a pair says exactly that without a second concept to name, CRUD and reason about. Deriving the pairs from the instructor-to-class-type mapping was rejected harder still: it makes an invisible rule out of a scheduling table, so an admin editing a class type would silently change who may take leave.
+
+**What each rule counts is not symmetric.** A **Leave Conflict counts every Leave Type**, medical included — the purpose of the pair is cover, and the studio has lost that instructor whatever the reason. This refuses no medical request; it only tells the *next* annual applicant to pick another day. The **Study Leave cap counts study leave only** — the requirement is study-against-study, and counting all leave would make study leave nearly unobtainable, since with a cap of 1 one person's holiday anywhere in the studio would block courses for everyone.
 
 | Request | Refused by |
 |---|---|
-| Annual, from a Cover Group member | The Cover Group cap |
+| Annual, from someone with a declared partner away | The conflict |
 | Annual, from anyone else | Nothing |
-| Study, from a Cover Group member | Both caps — both must clear |
+| Study, from someone with a declared partner | Both rules — both must clear |
 | Study, from anyone else | The Study Leave cap |
-| Medical, from anyone | **Nothing, ever.** It still counts toward the Cover Group cap for everybody else |
+| Medical, from anyone | **Nothing, ever.** It still counts for everybody else |
+
+**The conflict is one more entry in the counted-set list.** The exceedance function already loops over a list of `{counted peers, cap}` pairs; the conflict rule is one more entry, whose counted peers are the applicant's declared partners and whose cap is **fixed at 1** — the applicant plus any one partner is already one too many. The peak function, the half-day windows and the occupying-status set are untouched by it. What the result gained is a **discriminator naming which rule produced it**, and that is load-bearing rather than decoration: the refusal copy below depends on it.
 
 **The cap is a peak measured in instants, not a count of overlapping people.** The naive reading — count the other instructors whose leave overlaps mine, refuse if that reaches the cap — is one line and it is wrong:
 
@@ -671,23 +677,25 @@ The rule is: over the requested window, find the **peak** number of instructors 
 
 **Pending counts**, exactly as it does for the Pool — the occupying-statuses set is reused verbatim, so the first instructor to *submit* holds the day before an admin has looked at it. Approved-only does not remove the refusal, it moves it: both file, both wait, the admin can approve one, and the disappointment arrives later and lands on the admin. Pending-counts is also the trade the Pool already makes, so it is behaviour instructors have already learned. A request later rejected frees the day at that moment; nothing is written back.
 
-**Refused at submission, and the lock must widen.** The refusal sits beside the existing submission check. **It does not work without widening the lock**: submission opens by locking *the applicant's* instructor row, so two different instructors take two different locks and two Cover Group members submitting the same dates concurrently both read a clear calendar and both pass. The fix is in the where clause of a query that already exists — lock every row of the counted set, **ordered by staff user id** so two transactions cannot deadlock. For a Cover Group annual request that is the group's rows; for a study request it is every instructor, which serialises study submissions studio-wide — irrelevant at this scale and cheaper than any correct alternative.
+**Refused at submission, and the lock set is the applicant plus their partners.** The refusal sits beside the existing submission check. **It does not work on the applicant's own lock alone**: submission opens by locking *the applicant's* instructor row, so two instructors take two different locks and a declared pair submitting the same dates concurrently both read a clear calendar and both pass. The fix is in the where clause of a query that already exists — lock **the applicant's row and their declared partners' rows**, **ordered by staff user id** so two transactions cannot deadlock, which is also the order the policy save takes its instructor locks in. For a study request it is every instructor, which serialises study submissions studio-wide — irrelevant at this scale and cheaper than any correct alternative. The set is narrower than the Cover Group's was, and **empty for an instructor with no declared conflicts**, who now locks nothing but themselves.
 
-**There is no admin override, and none is needed.** Refusing at submission means the clashing request never exists, so there is nothing at approval time to override, and the decision function re-checks nothing — it stays a pure status transition. **The escape hatch already exists and costs no code**: raise the cap, have the instructor resubmit, lower it back — clunky, deliberate, and audited by the policy change itself. If exceptions turn out routine rather than rare, that is the signal to build a real override, and it is a smaller change to make then than to carry an unused one now. **Raising or lowering a cap is never retroactive**; approved leave stays approved when the cap drops.
+**There is no admin override, and none is needed.** Refusing at submission means the clashing request never exists, so there is nothing at approval time to override, and the decision function re-checks nothing — it stays a pure status transition. **The escape hatch already exists and costs no code**: remove the declaration or raise the cap, have the instructor resubmit, put it back — clunky, deliberate, and audited by the policy change itself. If exceptions turn out routine rather than rare, that is the signal to build a real override, and it is a smaller change to make then than to carry an unused one now. **Neither is retroactive**: approved leave stays approved when the cap drops, and declaring a pair never revokes leave either of them already has.
 
-**The refusal names the colleagues, never the reason.**
+**The two refusals diverged, and the Cover Group's removal is what forced it.** The old wording named the colleagues but never said which cap was reached, because naming the study cap would have said the named colleagues are on study leave — the one detail the leave calendar redacts from an instructor. **The Cover Group cap is what made that ambiguity possible.** With it gone, every non-conflict refusal is necessarily the study cap, so the shared wording would leak the Leave Type by elimination. So the two say different things:
 
-> "Alice and Cara are already on leave on 18 Aug. At most 2 instructors can be away at once."
+> **Conflict:** "Instructor Two is already on leave on 18 Aug 2026. You and Instructor Two cannot be away at the same time."
+>
+> **Study cap:** "The most instructors who can be on study leave at once is already reached on 18 Aug 2026."
 
-Naming leaks nothing — the leave calendar already shows every staff member the name, dates and status of every colleague's leave, and redacts only the detail (type, reason, document). The refusal stays on the same side of that line. A vague refusal sends the instructor to an admin to ask who; naming lets the two settle it directly, which is the whole point of the who's-away view.
+The conflict refusal **names the partner** and leaks nothing: the admin declared that pair, the applicant is in it, and the calendar already shows every staff member the name, dates and status of a colleague's leave. It lets the two settle it directly, which is the whole point of the who's-away view. The study-cap refusal **names nobody** — a vague refusal sends the instructor to an admin to ask who, and that cost is paid deliberately to keep the Leave Type redacted.
 
-**A medical request over the cap tells the admins twice.** Medical is never refused, so the studio has to find out another way, in time to arrange cover. **In the submission email** admins already receive: one new variable, empty unless the cap is exceeded — "⚠️ This puts 3 instructors away on 18 Aug, above the cap of 2." One variable, one template line, one reseed. **On the leave calendar**, as a flag **inside the entry's detail object**, which is already null for an instructor viewing a colleague's row — so the redaction is structural and free, and the flag is only ever shown to people who can see the cap it refers to. It is computed from rows the calendar query already fetches, by the same pure peak function. The email is what actually reaches an admin; the calendar only works if someone opens it.
+**A medical request that breaches either rule tells the admins twice.** Medical is never refused, so the studio has to find out another way, in time to arrange cover. **In the submission email** admins already receive: one variable, empty unless something is breached — "⚠️ This breaches a declared leave conflict: Bob is also away on 18 Aug 2026. Cover has to be arranged." One variable, one template line, one reseed. The admin's copy names the partner because an admin sees a colleague's Leave Type on the calendar anyway, so the instructor's redaction does not apply to them. **On the leave calendar**, as a flag **inside the entry's detail object**, which is already null for an instructor viewing a colleague's row — so the redaction is structural and free. It is computed from rows the calendar query already fetches, by the **same measurement function** the refusal and the email use, so the three reports cannot disagree. The email is what actually reaches an admin; the calendar only works if someone opens it.
 
 **What did not change**: the Pool and every number drawn from it (a cap refusal happens before anything is written, so it takes no days and returns none), the clash rule against the instructor's own schedule, and the four ways a request ends.
 
 ### 18. Glossary and documentation owed
 
-`be/CONTEXT.md` already carries Location, Unlimited Plan, Home Location, Cross-Location Add-On, Covers, Duration, Dormant, Activation, List Price, Promotion, Promo Code, Redemption, Hold, Refund, Void, Untouched, Cover Group and Leave Cap. Two entries are still owed and land with this work:
+`be/CONTEXT.md` already carries Location, Unlimited Plan, Home Location, Cross-Location Add-On, Covers, Duration, Dormant, Activation, List Price, Promotion, Promo Code, Redemption, Hold, Refund, Void, Untouched, Leave Conflict and Leave Cap. (Cover Group and Cover Group Leave Cap are there too, **marked as removed** rather than deleted, so a reader who meets either term in an old commit or issue can find out what replaced it.) Two entries are still owed and land with this work:
 
 - **Leave Type** currently reads "Annual or medical" and must widen to the three types.
 - **Supporting Document** is new (*avoid*: medical certificate, MC, attachment, proof).
@@ -697,7 +705,7 @@ Documentation that is now wrong and must be **replaced, not extended**:
 - `backend-architecture.md` §8 describes typed promo codes as deferred and sketches a different model — a used-count on the code row and a valid-from window. Both are wrong. The `promo_codes_enabled` flag note in the same document is stale.
 - `fe-client-features.md` and `be-client.md` need the checkout review step, the Location picker, the Add-On, and the four confirmation emails.
 - `class-booking-lifecycle.md` needs the Location filter, the activation stamp and the `use_credits` escape.
-- `spec-instructor-leave.md` and `spec-instructor-leave-pools.md` need the third type, the Supporting Document rename and the two caps.
+- `spec-instructor-leave.md` and `spec-instructor-leave-pools.md` need the third type, the Supporting Document rename, the Leave Cap and the Leave Conflict.
 
 ---
 
@@ -717,7 +725,7 @@ Refusals are **returned, not thrown**, so the pure layer stays pure and the call
 
 | Module | New? | Owns |
 |---|---|---|
-| `services/leave/rules` | existing | Study leave rules, the peak-overlap function, the two Leave Cap checks |
+| `services/leave/rules` | existing | Study leave rules, the peak-overlap function, the Leave Cap and Leave Conflict checks |
 | `services/packages/validity` | existing | Dormant semantics, calendar-month Duration arithmetic, the activation date, Add-On months-remaining and price |
 | `services/packages/selection` | **new** | Which package pays for a booking — Location coverage, Add-On coverage, Activated-before-Dormant order, the prospective-expiry test, the `use_credits` escape |
 | `services/packages/promo-codes` | **new** | Normalisation, validation against code and scope rows, discount arithmetic, which failure reason applies (replaces the deleted hardcoded module) |
@@ -736,7 +744,7 @@ Add-On pricing and calendar-month arithmetic ride in the validity module rather 
 
 ### What each module must cover
 
-**`leave/rules`** — study leave refused a backdate and refused a start of today; study permitted a half day; study carrying zero across a year boundary; a Supporting Document accepted on study, accepted on medical, refused on annual. Then the caps: **the peak is a peak and not a headcount** (the Monday/Wednesday case above is the canonical test); half days on the same date do not collide; medical counts toward the Cover Group cap but is never refused by it; the study cap counts study only; a Cover Group member's study request must clear both caps; a cap of 1 behaves identically to the naive rule.
+**`leave/rules`** — study leave refused a backdate and refused a start of today; study permitted a half day; study carrying zero across a year boundary; a Supporting Document accepted on study, accepted on medical, refused on annual. Then the caps: **the peak is a peak and not a headcount** (the Monday/Wednesday case above is the canonical test); half days on the same date do not collide; medical is never refused but still counts for everybody else; the study cap counts study only; a study request from someone with a declared partner must clear both rules; a cap of 1 behaves identically to the naive rule. Then the conflicts: a declared partner overlapping on a full day or the same half day is refused, opposite halves of one date are not; a non-partner never refuses whatever their leave type; an instructor with no declarations is unaffected; either order of the pair produces the same refusal; medical breaching a pair is permitted and warns instead; **both refusal sentences asserted verbatim**.
 
 **`packages/validity`** — a calendar-month Duration clamps a month-end (31 August plus six months is 28 February); a Dormant plan's months remaining is its stored Duration with no arithmetic; a part month rounds up; the Add-On price is months times rate; `computeActive` for a Dormant plan.
 

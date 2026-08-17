@@ -128,13 +128,19 @@ _Avoid_: medical certificate, MC, attachment, proof
 The property that makes an instructor unschedulable on a date. Pending and approved Leave Requests both occupy; everything else does not. Leave occupies a person, never a room.
 _Avoid_: blocking, unavailable, busy
 
-**Cover Group**:
-The instructors an admin has marked as covering each other, so that they must not all be away at the same time. One studio-wide set, and an instructor is either in it or not. It is the set a Leave Cap counts over; it grants nothing and takes nothing away.
-_Avoid_: box, no-overlap box, team, pod, squad
+**Leave Conflict**:
+Two instructors an admin has declared cannot be away at the same time. Unordered — naming them either way round is the same declaration, and the database enforces that rather than trusting a caller to normalise. It counts every Leave Type, because the point of the pair is cover and the studio has lost that instructor whatever the reason. It grants nothing and takes nothing away, and it is never retroactive: declaring a pair refuses their next overlapping request and leaves approved leave exactly where it is.
+_Avoid_: cover group, pairing, no-overlap rule, blackout
 
 **Leave Cap**:
-The greatest number of instructors from one set who may be away at the same moment. The studio sets it. It is measured as a peak across instants, not a headcount over dates, so leave that never coincides never reaches it. Two exist: one over the Cover Group, counting every Leave Type, and one over all instructors, counting study leave only. Medical leave counts toward a cap and is never refused by one.
+The greatest number of instructors who may be on **study** leave at the same moment. The studio sets it. It is measured as a peak across instants, not a headcount over dates, so leave that never coincides never reaches it. It counts study leave only, across every instructor — counting all leave would make study leave nearly unobtainable. Medical leave counts toward it and is never refused by it. Who may not be away *with whom* is not a headcount and is not this: that is a Leave Conflict.
 _Avoid_: limit, quota, threshold, max concurrent leave
+
+**Cover Group** — _removed 2026-08-17_:
+Was one flat, studio-wide ticked set of instructors who covered each other. **Replaced by Leave Conflict**, which names specific pairs instead of one anonymous set. Do not use the term for new work; it survives here only so that a reader who meets it in an old commit or issue can find out what became of it. The survey behind the decision, including the option that was recommended and not taken, is `docs/md/research-cover-group-ux.md`.
+
+**Cover Group Leave Cap** — _removed 2026-08-17_:
+Was the greatest number of Cover Group members who could be away at once, counting every Leave Type. **Removed with the Cover Group and not replaced**: a Leave Conflict is a pair, so "at most 2 of these 6 away at once" is deliberately no longer sayable. Leave Cap now means the Study Leave cap alone.
 
 ### The four ways a Leave Request ends
 
