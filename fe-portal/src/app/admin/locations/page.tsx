@@ -49,8 +49,7 @@ export default function LocationsPage() {
       if (loc.archivedAt) {
         await restoreLocation(loc.id);
         toast.success("Location restored.");
-      } else {
-        await archiveLocation(loc.id);
+      } else if (await archiveLocation(loc.id)) {
         toast.success("Location archived.");
       }
     } catch (err) {

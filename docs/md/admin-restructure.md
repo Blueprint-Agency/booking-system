@@ -123,6 +123,7 @@ Locations are the workspace boundary — every scoped surface (Schedule, Worksho
 - **Hard delete** — only if zero linked data exists across all tables (location has never been used).
 - **Soft delete (archive)** — if past data exists but no upcoming or ongoing sessions. Archived locations appear at bottom of list with Restore option.
 - **Blocked** — if the location has any upcoming or ongoing classes, workshops, or private sessions.
+- **Warned, not blocked** — if live Unlimited Plans call the location home, archiving asks for confirmation naming how many members it strands (`GET /locations/:id/live-unlimited-count`). Both archive buttons — the Locations page and this modal — warn identically, because the check sits in `archiveLocation` in the workspace context.
 
 ---
 

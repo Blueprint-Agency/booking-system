@@ -59,7 +59,8 @@ interface WorkspaceContextValue {
   // Location CRUD passthroughs — call backend then refresh.
   addLocation: (loc: Location) => Promise<void> | void;
   updateLocation: (loc: Location) => Promise<void> | void;
-  archiveLocation: (id: string) => Promise<void> | void;
+  // false when the admin backed out of the strand warning.
+  archiveLocation: (id: string) => Promise<boolean>;
   restoreLocation: (id: string) => Promise<void> | void;
   // Kept for compat with DevRoleSwitcher (now a no-op — real auth via Clerk).
   switchStaff: (id: string) => void;
@@ -235,13 +236,34 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [api, refreshAllLocations],
   );
 
+  // Story 133: name what archiving strands before it happens. Here rather than
+  // in the pages so both archive buttons (this dialog and the Locations page)
+  // warn identically. Returns false when the admin backs out.
   const archiveLocation = useCallback(
     async (id: string) => {
-      if (!api) return;
+      if (!api) return false;
+      const loc = locations.find(l => l.id === id);
+      // The warning is informational — if the count can't be read, archiving
+      // still goes ahead rather than being blocked by it.
+      const count = await api
+        .get<{ count: number }>(`/portal/admin/locations/${id}/live-unlimited-count`)
+        .then(r => r.count)
+        .catch(() => 0);
+      if (
+        count > 0 &&
+        !window.confirm(
+          `${count} live Unlimited ${count === 1 ? "Plan calls" : "Plans call"} ` +
+            `${loc?.name ?? "this location"} home. Archiving it strands ` +
+            `${count === 1 ? "that member" : "those members"}. Archive anyway?`,
+        )
+      ) {
+        return false;
+      }
       await api.post(`/portal/admin/locations/${id}/archive`);
       await refreshAllLocations();
+      return true;
     },
-    [api, refreshAllLocations],
+    [api, locations, refreshAllLocations],
   );
 
   const restoreLocation = useCallback(

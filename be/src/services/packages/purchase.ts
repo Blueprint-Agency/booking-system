@@ -1,4 +1,4 @@
-import { and, eq, isNull } from 'drizzle-orm'
+import { and, eq, gt, isNull, or, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { clientPackages, classPackages, ptPackages } from '../../db/schema/packages'
 import { isUniqueViolation } from '../../db/unique-violation'
@@ -32,21 +32,40 @@ export async function liveUnlimited(
   now: Date,
   handle: typeof db | Tx = db,
 ): Promise<{ id: string; expiresAt: Date | null; locationId: string | null }[]> {
-  const rows = await handle
+  return handle
     .select({
       id: clientPackages.id,
       expiresAt: clientPackages.expiresAt,
       locationId: clientPackages.locationId,
     })
     .from(clientPackages)
-    .where(
-      and(
-        eq(clientPackages.clientId, clientId),
-        eq(clientPackages.kind, 'unlimited'),
-        eq(clientPackages.active, true),
-      ),
-    )
-  return rows.filter(r => r.expiresAt === null || r.expiresAt > now)
+    .where(and(eq(clientPackages.clientId, clientId), isLiveUnlimited(now)))
+}
+
+/** The one reading of "live Unlimited Plan" — Activated and unexpired, or Dormant. */
+function isLiveUnlimited(now: Date) {
+  return and(
+    eq(clientPackages.kind, 'unlimited'),
+    eq(clientPackages.active, true),
+    or(isNull(clientPackages.expiresAt), gt(clientPackages.expiresAt, now)),
+  )
+}
+
+/**
+ * How many live Unlimited Plans call this Location home (story 133 of #17).
+ * Informational only — the admin archiving the Location sees what it strands,
+ * archiving is never blocked by it. Same reading of "live" as `liveUnlimited`,
+ * because a second one is exactly the drift §6 cannot afford.
+ */
+export async function countLiveUnlimitedAtLocation(
+  locationId: string,
+  now: Date,
+): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(clientPackages)
+    .where(and(eq(clientPackages.locationId, locationId), isLiveUnlimited(now)))
+  return row?.count ?? 0
 }
 
 type PackageKind = 'credit_bundle' | 'unlimited' | 'trial' | 'pt'
