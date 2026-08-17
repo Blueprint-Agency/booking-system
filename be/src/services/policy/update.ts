@@ -93,9 +93,10 @@ export async function updateGlobalPolicy(
 }
 
 /**
- * The arriving set, canonicalised and checked: two DIFFERENT people, both of
- * them active instructors, and no pair declared twice once the ordering is
- * normalised. Each refusal says what an admin can do about it.
+ * The arriving set, canonicalised and checked: two DIFFERENT people, no pair
+ * declared twice once the ordering is normalised, and — for a pair not already
+ * stored — both of them active instructors. Each refusal says what an admin can
+ * do about it.
  *
  * The table's CHECK and primary key say the same three things, but a constraint
  * violation reaches an admin as a 500 — these run first so it reaches them as a
@@ -120,7 +121,26 @@ async function validatedConflictPairs(
     }
     seen.add(pairKey(p))
   }
-  const ids = [...new Set(pairs.flatMap(p => [p.instructorAId, p.instructorBId]))]
+  // Only NEWLY declared pairs are checked against active instructors. A pair
+  // already stored survives an archiving — an archived instructor's conflicts
+  // refuse no leave, but the declaration is kept so that un-archiving restores
+  // it — and re-checking it here would refuse every later save of the screen
+  // over a row the admin never touched, with a message they could not act on.
+  const stored = new Set(
+    (
+      await tx
+        .select({
+          instructorAId: leaveConflicts.instructorAId,
+          instructorBId: leaveConflicts.instructorBId,
+        })
+        .from(leaveConflicts)
+    ).map(pairKey),
+  )
+  const ids = [
+    ...new Set(
+      pairs.filter(p => !stored.has(pairKey(p))).flatMap(p => [p.instructorAId, p.instructorBId]),
+    ),
+  ]
   if (ids.length > 0) {
     const active = await tx
       .select({ id: instructors.staffUserId })

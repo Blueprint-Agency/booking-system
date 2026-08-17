@@ -478,6 +478,12 @@ export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<Leave
     // partner is not in the set — their conflicts refuse nothing — which the
     // join to an active staff row is what enforces. Read before the lock,
     // because it is what decides which rows the lock has to cover.
+    // ponytail: unlocked, so a pair declared by a policy save running RIGHT NOW
+    // can be missed by a submission already in flight — the same window in which
+    // "declaring a conflict never revokes leave already approved" applies, one
+    // request wide. Closing it needs the lock before the read, which cannot be
+    // ordered by staff user id and so trades this for a deadlock. Take a table
+    // lock on `leave_conflicts` here if it ever matters.
     const partnerIds = (
       await tx
         .select({ id: staffUsers.id })

@@ -157,6 +157,9 @@ export default function PolicyPage() {
     instructors.filter(
       (m) => m.id !== id && !conflicts.some((c) => pairKey(c) === pairKey(canonical(id, m.id))),
     );
+  // Anyone who still has somebody left to be paired with. Empty once every
+  // combination is declared, which is a different empty than "no instructors".
+  const pairable = instructors.filter((m) => pairableWith(m.id).length > 0);
 
   const dirty =
     conflictsChanged ||
@@ -470,6 +473,11 @@ export default function PolicyPage() {
               A conflict needs two active instructors, and the studio has{" "}
               {instructors.length === 0 ? "none" : "only one"} — there is nobody to pair yet.
             </p>
+          ) : pairable.length === 0 ? (
+            <p className="mt-4 text-xs text-muted">
+              Every combination of instructors is already declared — there is no pair left to
+              add.
+            </p>
           ) : (
             <div className="mt-4 flex flex-wrap items-end gap-3">
               <div className="space-y-1.5">
@@ -484,7 +492,7 @@ export default function PolicyPage() {
                   }}
                 >
                   <option value="">Choose…</option>
-                  {instructors.map((m) => (
+                  {pairable.map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.name}
                     </option>

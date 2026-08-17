@@ -4,7 +4,6 @@ import {
   text,
   timestamp,
   integer,
-  boolean,
   index,
   uniqueIndex,
   primaryKey,
