@@ -54,6 +54,17 @@ interface ApiPackage {
   refund_notice: string | null;
 }
 
+interface ApiWorkshopPurchase {
+  booking_id: string;
+  workshop_name: string;
+  tier_name: string | null;
+  amount_paid_sgd: string;
+  list_price_sgd: string;
+  purchased_at: string;
+  refundable: boolean;
+  refund_notice: string | null;
+}
+
 interface ApiAdjustment {
   id: string;
   client_package_id: string;
@@ -74,7 +85,14 @@ interface ApiProfile {
   deleted_at: string | null;
   deleted_by_staff_id: string | null;
   packages: ApiPackage[];
+  workshop_purchases: ApiWorkshopPurchase[];
   adjustments: ApiAdjustment[];
+}
+
+/** List Price minus what was paid, as "S$12.34", or null when there's no discount. */
+function discountOff(listPriceSgd: string, amountPaidSgd: string): string | null {
+  const off = Number(listPriceSgd) - Number(amountPaidSgd);
+  return off > 0 ? `S$${off.toFixed(2)}` : null;
 }
 
 /** Build the ClientPackage shape the shared edit dialogs expect. */
@@ -113,6 +131,7 @@ export default function ClientProfilePage({
   const [expiryFor, setExpiryFor] = useState<ApiPackage | null>(null);
   const [crossLocationFor, setCrossLocationFor] = useState<ApiPackage | null>(null);
   const [refundFor, setRefundFor] = useState<ApiPackage | null>(null);
+  const [workshopRefundFor, setWorkshopRefundFor] = useState<ApiWorkshopPurchase | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [restoring, setRestoring] = useState(false);
 
@@ -149,6 +168,7 @@ export default function ClientProfilePage({
       setExpiryFor(null);
       setCrossLocationFor(null);
       setRefundFor(null);
+      setWorkshopRefundFor(null);
       await load();
     } catch (err) {
       const msg =
@@ -414,13 +434,10 @@ export default function ClientProfilePage({
                           disagree with the two that matter. */}
                       <div className="text-xs text-muted">
                         List S${p.list_price_sgd} · paid S${p.amount_paid_sgd}
-                        {Number(p.list_price_sgd) - Number(p.amount_paid_sgd) > 0 && (
+                        {discountOff(p.list_price_sgd, p.amount_paid_sgd) && (
                           <span className="text-ink">
                             {" "}
-                            · S${(
-                              Number(p.list_price_sgd) - Number(p.amount_paid_sgd)
-                            ).toFixed(2)}{" "}
-                            off
+                            · {discountOff(p.list_price_sgd, p.amount_paid_sgd)} off
                           </span>
                         )}
                         {p.promo_code && (
@@ -441,6 +458,56 @@ export default function ClientProfilePage({
               </div>
             )}
           </section>
+
+          {profile.workshop_purchases.length > 0 && (
+            <section>
+              <header className="mb-3 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-ink">Workshop purchases</h2>
+                <span className="text-xs text-muted">{profile.workshop_purchases.length}</span>
+              </header>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {profile.workshop_purchases.map((w) => (
+                  <div
+                    key={w.booking_id}
+                    className="rounded-xl border border-border bg-card p-4 shadow-soft"
+                  >
+                    <div className="mb-1 flex items-center gap-2">
+                      <span className="font-medium text-ink">{w.workshop_name}</span>
+                      <Badge tone="cyan">Workshop</Badge>
+                      {w.tier_name && <span className="text-xs text-muted">{w.tier_name}</span>}
+                    </div>
+                    <div className="text-xs text-muted">
+                      List S${w.list_price_sgd} · paid S${w.amount_paid_sgd}
+                      {discountOff(w.list_price_sgd, w.amount_paid_sgd) && (
+                        <span className="text-ink">
+                          {" "}
+                          · {discountOff(w.list_price_sgd, w.amount_paid_sgd)} off
+                        </span>
+                      )}
+                    </div>
+                    {/* Same notice-not-gate treatment as the package rows (§14). */}
+                    {w.refundable && w.refund_notice && (
+                      <div className="mt-1 inline-flex items-center gap-1 text-xs text-warning">
+                        <AlertTriangle className="h-3 w-3" /> {w.refund_notice}
+                      </div>
+                    )}
+                    {canEdit && w.refundable && (
+                      <div className="mt-2">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-error hover:bg-error/10 hover:text-error"
+                          onClick={() => setWorkshopRefundFor(w)}
+                        >
+                          Refund purchase…
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           {profile.adjustments.length > 0 && (
             <section>
@@ -564,6 +631,24 @@ export default function ClientProfilePage({
             )
           }
           onClose={() => setRefundFor(null)}
+        />
+      )}
+
+      {canEdit && workshopRefundFor && (
+        <RefundDialog
+          packageName={workshopRefundFor.workshop_name}
+          notice={workshopRefundFor.refund_notice}
+          onConfirm={(reason) =>
+            runEdit(
+              () =>
+                api!.post(
+                  `/portal/admin/clients/${id}/workshop-bookings/${workshopRefundFor.booking_id}/refund`,
+                  { reason },
+                ),
+              "Refund issued. The booking is cancelled once the provider confirms.",
+            )
+          }
+          onClose={() => setWorkshopRefundFor(null)}
         />
       )}
 

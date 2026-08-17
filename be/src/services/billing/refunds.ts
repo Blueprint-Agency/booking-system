@@ -18,7 +18,7 @@ import { db } from '../../db'
 import { auditLog, stripePayments } from '../../db/schema/ledger'
 import { bookings } from '../../db/schema/bookings'
 import { classPackages, clientPackages, ptPackages } from '../../db/schema/packages'
-import { classes, ptSessions } from '../../db/schema/schedule'
+import { classes, ptSessions, workshops, workshopTiers, workshopTierDays, workshopDays } from '../../db/schema/schedule'
 import { classTypes } from '../../db/schema/catalog'
 import { clients } from '../../db/schema/identity'
 import { CLIENT_URL } from '../../env'
@@ -143,44 +143,194 @@ export async function issueRefund(args: {
   const count = (await refundStatesFor(args.clientId))[args.clientPackageId]?.attendedCount ?? 0
   const override = !isUntouched(count)
 
-  // Keyed on the payment intent, which is the money path's only real guard: the
-  // `already_refunded` check above reads a status the webhook flips
-  // asynchronously, so a double-click or a client retry would otherwise reach
-  // the provider twice. One purchase can only ever be refunded once, so the
-  // purchase's own intent is the natural key.
-  await stripe.refunds.create(
-    { payment_intent: pkg.paymentIntentId },
-    { idempotencyKey: `refund:${pkg.paymentIntentId}` },
-  )
+  await refundAtProviderAndAudit({
+    paymentIntentId: pkg.paymentIntentId,
+    targetTable: 'client_packages',
+    targetId: args.clientPackageId,
+    actorStaffId: args.actorStaffId,
+    reason: args.reason,
+    attendedCount: count,
+    override,
+  })
 
-  // Written after the provider has taken it, so the log records refunds that
-  // actually happened. The generic audit middleware records the request; this
-  // row records the decision, which is the part nobody can reconstruct — but the
-  // money has already moved, so a failure to write it is reported rather than
-  // thrown back at an admin whose refund did go through.
+  return { paymentIntentId: pkg.paymentIntentId, attendedCount: count, override }
+}
+
+/**
+ * Every workshop purchase this member holds, with what the portal shows beside
+ * its Refund button (§14, issue #36). A workshop's booking **is** the purchase —
+ * there is no `client_packages` row for it — so `refundable`/`notice` are
+ * computed straight off the one booking rather than via `refundStatesFor`.
+ *
+ * Only `confirmed` bookings are listed: a refunded workshop booking is flipped
+ * to `cancelled` by `unwindRefund`, and a Voided package disappears from the
+ * portal the same way — there is nothing left here to hang a second refund on.
+ */
+export interface WorkshopPurchase {
+  bookingId: string
+  workshopName: string
+  tierName: string | null
+  amountPaidSgd: string
+  listPriceSgd: string
+  purchasedAt: Date
+  refundable: boolean
+  refundNotice: string | null
+}
+
+export async function listWorkshopPurchases(clientId: string): Promise<WorkshopPurchase[]> {
+  const rows = await db
+    .select({
+      bookingId: bookings.id,
+      workshopName: workshops.name,
+      tierId: bookings.workshopTierId,
+      tierName: workshopTiers.name,
+      amountPaidSgd: bookings.amountPaidSgd,
+      listPriceSgd: bookings.listPriceSgd,
+      purchasedAt: bookings.bookedAt,
+      checkInState: bookings.checkInState,
+      paymentIntentId: bookings.stripePaymentIntentId,
+    })
+    .from(bookings)
+    .innerJoin(workshops, eq(workshops.id, bookings.workshopId))
+    .leftJoin(workshopTiers, eq(workshopTiers.id, bookings.workshopTierId))
+    .where(and(eq(bookings.clientId, clientId), eq(bookings.kind, 'workshop'), eq(bookings.state, 'confirmed')))
+  if (rows.length === 0) return []
+
+  // The date the notice quotes — the earliest day the booked tier covers —
+  // batched per tier rather than per row, mirroring `listMyWorkshopBookings`.
+  const tierIds = Array.from(new Set(rows.map(r => r.tierId).filter((v): v is string => Boolean(v))))
+  const sinceByTier = new Map<string, Date>()
+  if (tierIds.length) {
+    const dayRows = await db
+      .select({ tierId: workshopTierDays.workshopTierId, startsAt: workshopDays.startsAt })
+      .from(workshopTierDays)
+      .innerJoin(workshopDays, eq(workshopDays.id, workshopTierDays.workshopDayId))
+      .where(inArray(workshopTierDays.workshopTierId, tierIds))
+    for (const d of dayRows) {
+      const cur = sinceByTier.get(d.tierId)
+      if (!cur || d.startsAt < cur) sinceByTier.set(d.tierId, d.startsAt)
+    }
+  }
+
+  return rows.map(r => {
+    const count = r.checkInState === 'attended' || r.checkInState === 'no_show' ? 1 : 0
+    return {
+      bookingId: r.bookingId,
+      workshopName: r.workshopName,
+      tierName: r.tierName,
+      amountPaidSgd: r.amountPaidSgd ?? '0.00',
+      listPriceSgd: r.listPriceSgd ?? '0.00',
+      purchasedAt: r.purchasedAt,
+      refundable: r.paymentIntentId != null,
+      refundNotice: attendedNotice(count, r.tierId ? sinceByTier.get(r.tierId) ?? null : null),
+    }
+  })
+}
+
+/**
+ * Issue the Refund for a workshop purchase — the same operation as
+ * `issueRefund`, aimed at a booking instead of a `client_packages` row since a
+ * workshop purchase has none. Calls the provider and returns; `unwindRefund`
+ * (already workshop-aware) does the rest, so this button and a dashboard refund
+ * are indistinguishable by construction, same as for packages.
+ */
+export async function issueWorkshopRefund(args: {
+  clientId: string
+  bookingId: string
+  reason: string
+  actorStaffId: string
+}): Promise<{ paymentIntentId: string; attendedCount: number; override: boolean }> {
+  const [booking] = await db
+    .select({
+      id: bookings.id,
+      paymentIntentId: bookings.stripePaymentIntentId,
+      checkInState: bookings.checkInState,
+    })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.id, args.bookingId),
+        eq(bookings.clientId, args.clientId),
+        eq(bookings.kind, 'workshop'),
+      ),
+    )
+    .limit(1)
+  if (!booking) throw new NotFoundError('workshop_booking_not_found')
+  // A free workshop never reached the payment provider, so there is no money to
+  // give back — same rule as a comp grant on a package.
+  if (!booking.paymentIntentId) throw new BadRequestError('purchase_not_refundable')
+
+  const [payment] = await db
+    .select({ status: stripePayments.status })
+    .from(stripePayments)
+    .where(eq(stripePayments.paymentIntentId, booking.paymentIntentId))
+    .limit(1)
+  if (payment?.status === 'refunded') throw new ConflictError('already_refunded')
+
+  const count = booking.checkInState === 'attended' || booking.checkInState === 'no_show' ? 1 : 0
+  const override = !isUntouched(count)
+
+  await refundAtProviderAndAudit({
+    paymentIntentId: booking.paymentIntentId,
+    targetTable: 'bookings',
+    targetId: args.bookingId,
+    actorStaffId: args.actorStaffId,
+    reason: args.reason,
+    attendedCount: count,
+    override,
+  })
+
+  return { paymentIntentId: booking.paymentIntentId, attendedCount: count, override }
+}
+
+/**
+ * The part `issueRefund` and `issueWorkshopRefund` share: call the provider,
+ * then write the one record of why an admin refunded against the studio's rule.
+ * Keyed on the payment intent, which is the money path's only real guard — the
+ * caller's `already_refunded` check reads a status the webhook flips
+ * asynchronously, so a double-click or a client retry would otherwise reach the
+ * provider twice.
+ *
+ * Written after the provider has taken it, so the log records refunds that
+ * actually happened. The generic audit middleware records the request; this row
+ * records the decision — but the money has already moved, so a failure to write
+ * it is reported rather than thrown back at an admin whose refund did go through.
+ */
+async function refundAtProviderAndAudit(args: {
+  paymentIntentId: string
+  targetTable: 'client_packages' | 'bookings'
+  targetId: string
+  actorStaffId: string
+  reason: string
+  attendedCount: number
+  override: boolean
+}): Promise<void> {
+  await stripe.refunds.create(
+    { payment_intent: args.paymentIntentId },
+    { idempotencyKey: `refund:${args.paymentIntentId}` },
+  )
   try {
     await db.insert(auditLog).values({
       actorStaffId: args.actorStaffId,
       actorType: 'staff',
       action: 'purchase_refunded',
-      targetTable: 'client_packages',
-      targetId: args.clientPackageId,
+      targetTable: args.targetTable,
+      targetId: args.targetId,
       payload: {
         reason: args.reason,
-        override,
-        attendedCount: count,
-        paymentIntentId: pkg.paymentIntentId,
+        override: args.override,
+        attendedCount: args.attendedCount,
+        paymentIntentId: args.paymentIntentId,
       },
     })
   } catch (err) {
     reportError(err, 'refund audit row failed', {
       scope: 'refunds',
-      clientPackageId: args.clientPackageId,
+      targetTable: args.targetTable,
+      targetId: args.targetId,
       reason: args.reason,
     })
   }
-
-  return { paymentIntentId: pkg.paymentIntentId, attendedCount: count, override }
 }
 
 /**

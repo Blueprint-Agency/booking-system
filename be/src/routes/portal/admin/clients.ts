@@ -14,10 +14,18 @@ import {
 } from '../../../services/clients/manage'
 import { listClientPackages, type ClientPackageWithSource } from '../../../services/packages/entitlements'
 import { adjustBalance, setBalance, setCrossLocationAddOn, setPackageExpiry, type ClientPackageRow } from '../../../services/packages/adjust'
-import { issueRefund, refundStatesFor, type RefundState } from '../../../services/billing/refunds'
+import {
+  issueRefund,
+  issueWorkshopRefund,
+  listWorkshopPurchases,
+  refundStatesFor,
+  type RefundState,
+  type WorkshopPurchase,
+} from '../../../services/billing/refunds'
 
 const idParam = z.object({ id: z.string().uuid() })
 const idPkgParam = z.object({ id: z.string().uuid(), pid: z.string().uuid() })
+const idBookingParam = z.object({ id: z.string().uuid(), bid: z.string().uuid() })
 
 const listQuery = z.object({
   q: z.string().max(200).optional(),
@@ -102,6 +110,22 @@ function packageView(p: ClientPackageWithSource, refund?: RefundState) {
   }
 }
 
+// A workshop purchase's row on the client detail page, beside the package rows
+// (§14 / issue #36). The booking IS the purchase, so there is no source-package
+// id or expiry to show — only what the Refund button and its notice need.
+function workshopPurchaseView(w: WorkshopPurchase) {
+  return {
+    booking_id: w.bookingId,
+    workshop_name: w.workshopName,
+    tier_name: w.tierName,
+    amount_paid_sgd: w.amountPaidSgd,
+    list_price_sgd: w.listPriceSgd,
+    purchased_at: w.purchasedAt,
+    refundable: w.refundable,
+    refund_notice: w.refundNotice,
+  }
+}
+
 function adjustmentView(a: ManualAdjustmentRow) {
   return {
     id: a.id,
@@ -150,16 +174,18 @@ const app = new Hono()
   })
   .get('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    const [client, packages, adjustments, refunds] = await Promise.all([
+    const [client, packages, adjustments, refunds, workshopPurchases] = await Promise.all([
       getClientById(id),
       listClientPackages(id, true),
       listRecentAdjustments(id),
       refundStatesFor(id),
+      listWorkshopPurchases(id),
     ])
     return c.json({
       ...clientRow(client),
       packages: packages.map(p => packageView(p, refunds[p.id])),
       adjustments: adjustments.map(adjustmentView),
+      workshop_purchases: workshopPurchases.map(workshopPurchaseView),
     })
   })
   // ---- package wallet edits (admin/superadmin) ----
@@ -235,6 +261,30 @@ const app = new Hono()
       override: result.override,
     })
   })
+  // A Refund on a workshop purchase (§14, issue #36) — the same operation as
+  // above, aimed at the booking that IS the purchase. `unwindRefund` is already
+  // workshop-aware, so this reuses it unchanged.
+  .post(
+    '/:id/workshop-bookings/:bid/refund',
+    zValidator('param', idBookingParam),
+    zValidator('json', refundSchema),
+    async c => {
+      const { id, bid } = c.req.valid('param')
+      const body = c.req.valid('json')
+      const result = await issueWorkshopRefund({
+        clientId: id,
+        bookingId: bid,
+        reason: body.reason,
+        actorStaffId: c.get('staffUserId'),
+      })
+      c.set('auditTarget' as any, { table: 'bookings', id: bid })
+      return c.json({
+        refunded: true,
+        attended_count: result.attendedCount,
+        override: result.override,
+      })
+    },
+  )
   // Blocking is DELETE /:id + POST /:id/restore below — there is deliberately no
   // separate suspend mechanism.
   .post('/:id/packages/issue', c => c.json({ todo: 'admin grants complimentary package' }, 501))
