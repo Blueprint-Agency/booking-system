@@ -2,6 +2,8 @@
 
 Supersedes the allowance model in `spec-instructor-leave.md`. See `be/docs/adr/0001-per-instructor-leave-pools-with-carry-over.md` for why the Pool is stored, and `be/CONTEXT.md` for the vocabulary used throughout — **Assigned Days**, **Carried Days**, **Pool**, **Committed**, **Taken**, **Remaining** are all defined there and are not interchangeable with the words they replaced.
 
+> **Partly superseded (2026-08-17).** This document was written when there were two Leave Types, annual and medical. A third, **study**, has shipped — one more Assigned figure (`instructors.study_leave_days`, default 7), one more row in the Pool triple per instructor per Leave Year, drawn from and Committed against by exactly the machinery this document describes. Study never carries, same as medical. Nothing about *how* a Pool is built, materialised or spent changed — the carry function, the lazy-open-on-first-read, the per-instructor row lock and the derived Committed/Taken/Remaining are all unchanged and apply to study as a third row rather than a special case. Everywhere below that names "annual and medical" as the two types, read it as "the type list", now three long. Full detail on study leave and the two Leave Caps it ships alongside is `docs/md/spec-pre-launch-batch.md` §16–§17.
+
 ## Problem Statement
 
 Leave at Yoga Sadhana is a term of an individual instructor's engagement, not a studio-wide policy. Today it is the opposite: one pair of numbers on the global policy singleton gives every instructor the same 14 annual and 14 medical days, and the only way to give one person a different figure is for an admin to exercise judgement at approval time and let them go over. That is invisible, unauditable, and it means the number an instructor sees is not the number they actually have.
@@ -14,7 +16,7 @@ Three further things are wrong with the current model:
 
 ## Solution
 
-Assigned Days move onto each instructor's own profile, defaulting to 14 for annual and 14 for medical, editable by any admin or superadmin. Each Leave Year an instructor is given a **Pool** — their Assigned Days plus any Carried Days from the previous year — and every Leave Request draws from that Pool. Unused annual days carry into the following year up to a studio-wide cap; medical days do not carry and reset flat each year.
+Assigned Days move onto each instructor's own profile, defaulting to 14 for annual, 14 for medical, and (added with the third Leave Type — see the banner above) 7 for study, editable by any admin or superadmin. Each Leave Year an instructor is given a **Pool** — their Assigned Days plus any Carried Days from the previous year — and every Leave Request draws from that Pool. Unused annual days carry into the following year up to a studio-wide cap; medical and study days do not carry and reset flat each year.
 
 Because a live year's Pool is already part-spent, editing Assigned Days applies from the next 1 January rather than moving a balance mid-flight. When an admin needs to change a live year they edit the instructor's **Remaining** figure directly, which is bounded by that year's Pool.
 
@@ -105,7 +107,7 @@ The glossary in `be/CONTEXT.md` is binding on identifiers, API fields and UI cop
 
 ### Schema
 
-- The `instructors` table gains `annual_leave_days` and `medical_leave_days`, integer, not null, default 14, validated 0–365 in line with the existing policy validation. These are the Assigned Days. They live on `instructors` rather than `staff_users` because leave is keyed to instructors throughout and a non-instructor staff member has no leave concept at all.
+- The `instructors` table gains `annual_leave_days` and `medical_leave_days`, integer, not null, default 14, validated 0–365 in line with the existing policy validation. These are the Assigned Days. They live on `instructors` rather than `staff_users` because leave is keyed to instructors throughout and a non-instructor staff member has no leave concept at all. (A third column, `study_leave_days`, default 7, landed alongside the same validation when the third Leave Type shipped — see the banner above.)
 - A new table holds one Pool per instructor, per Leave Type, per Leave Year, with a uniqueness constraint on that triple. Its day count is **numeric with one decimal place**, not an integer: back-solving a Pool from a Remaining figure when half days have been taken produces halves.
 - `global_policy` gains a carry-over cap in days, integer, not null, default 14, and loses `annual_leave_days` and `medical_leave_days`.
 - No column stores Taken, Committed or Remaining. The Pool is a stored *grant*, not a stored balance.
@@ -120,7 +122,7 @@ The Pool table is **not** backfilled. Lazy materialisation reaches the identical
 
 Every calculation is a pure function in the leave rules module. The additions are: capping and clamping Carried Days from a previous year's Remaining; composing a Pool from Assigned and Carried; shaping the balance figures an instructor sees; back-solving a Pool from a desired Remaining and the days already Committed; and validating an admin's Remaining adjustment against that year's Pool.
 
-Medical Leave Type carries zero, always. That is a property of the carry function, not a branch at its call sites.
+Medical and study Leave Types carry zero, always. That is a property of the carry function, not a branch at its call sites.
 
 `Remaining` changes meaning: it is Pool minus **Committed**, where Committed is pending plus approved. The submission check already measured against Committed and is unchanged in substance — what changes is that the displayed figure now agrees with it. Taken remains approved-only and is surfaced separately.
 
@@ -151,7 +153,7 @@ Where no previous year's Pool exists — a newly onboarded instructor, or the fi
 
 ### Portal surfaces
 
-- The staff profile edit gains a leave section, rendered only for instructors: Assigned annual, Remaining annual, Assigned medical, Remaining medical, with Pool and Carried shown as read-only context so an admin can see the ceiling they are editing against.
+- The staff profile edit gains a leave section, rendered only for instructors: Assigned and Remaining for each of the three Leave Types (annual, medical, study), with Pool and Carried shown as read-only context so an admin can see the ceiling they are editing against.
 - The Global Policy screen's "Instructor leave allowance" section becomes a carry-over section with a single day-count field. The two allowance inputs are removed.
 - The instructor balance card keeps its shape and corrects its numbers, reading as "9 of 24 days left" over "3 approved, 2 awaiting a decision", with carried days named when non-zero. The existing shared leave presentation module remains the only place the portal formats leave, and nothing is calculated there.
 
@@ -164,7 +166,7 @@ Everything new is testable because everything new is pure. The only untested cod
 Cases that must be covered:
 
 - Carried Days at the cap, one below it and one above it; a previous Remaining of zero; a negative previous Remaining clamping to zero rather than carrying a debt.
-- Medical carrying zero regardless of previous Remaining or cap.
+- Medical and study carrying zero regardless of previous Remaining or cap.
 - A Pool composed from Assigned plus Carried, and from Assigned alone when no previous year exists.
 - Remaining subtracting pending as well as approved, kept separate from Taken which subtracts only approved.
 - Remaining going negative when a Pool is below what is Committed, and being reported negative rather than clamped.
@@ -179,8 +181,9 @@ The portal is verified as the repo already verifies it: `tsc --noEmit`, a produc
 
 - Leave for admins, superadmins or any non-instructor staff.
 - Accrual, and pro-rating for mid-year joiners. An instructor gets their full Assigned figure on day one and on every 1 January.
-- Carry-over for medical leave.
+- Carry-over for medical or study leave.
 - A per-instructor carry-over cap. One studio-wide cap covers everyone; an exception is handled by adjusting that person's Remaining.
+- **The two Leave Caps** (`cover_group_leave_cap`, `study_leave_cap`) that ship alongside study leave. They live on Global Policy beside the carry-over cap this document adds, and share its "studio-wide, admin-set, minimum-bounded" shape, but they refuse a *submission* on a peak-across-instructors rule rather than governing what one instructor's own Pool holds — a different axis entirely. Not this document's concern; see `spec-instructor-leave.md` "Study leave, and the two Leave Caps" and `spec-pre-launch-batch.md` §17.
 - Editing a closed Leave Year's Pool. History is frozen once the year has passed.
 - Any link to pay or payroll. Leave days generate no payroll entries and no money is computed anywhere.
 - Public-holiday and working-pattern awareness. Every calendar date in a range still consumes a day, weekends included.

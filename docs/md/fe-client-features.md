@@ -367,7 +367,7 @@ Fields, in order:
 - Four-section catalogue:
   1. **Trial Pass** — quota-based intro pack (e.g. 3 trial classes / 30 days / S$30). **One purchase per client, ever** — enforced server-side at purchase time. A previously-purchased trial (active or expired) blocks further trial purchases and the section renders a "You've already used your Trial Pass" disabled state.
   2. **Credit Bundles** — N credits, validity in days, fixed SGD price. Examples: Bundle of 10 (S$300 / 90d), Bundle of 20 (S$550 / 180d), Bundle of 30/50/100.
-  3. **Unlimited** — duration-based (1 / 3 / 6 months) at a fixed price; lets the holder book unlimited group classes.
+  3. **Unlimited** — duration-based (1 / 3 / 6 months) at a fixed price; lets the holder book unlimited group classes **at one Home Location, chosen at checkout** (§7) — never both, unless the plan also carries a paid Cross-Location Add-On. The card reads "Covers one studio — you choose at checkout," not "Valid across both locations."
   4. **VIP Private Sessions** — 1-on-1 or 2-on-1 packs with a session count.
 - A user holding a Bundle cannot purchase Unlimited (and vice versa) until the existing one expires or is exhausted. UI flags this and blocks purchase with copy. Trial Pass and VIP are independent and can co-exist with any other holding.
 - Trial sits at the top of the page above the Credits / Unlimited toggle. VIP sits as an independent fourth section.
@@ -376,6 +376,8 @@ Fields, in order:
 - Any package may carry one or more **promotions** configured in admin (percent off or explicit special price, with start/end windows).
 - At purchase time the system evaluates every promotion whose window contains `now` and applies the one yielding the lowest effective price (deterministic tie-break on lowest promotion id).
 - The card surface shows: original price (struck through if a promo is active) + effective price + promo pill (label, e.g. "May Day -25%"). Tooltip lists all active promos for transparency.
+
+**Promo Codes are a separate mechanism, typed at checkout, not shown on the catalogue.** A Promotion applies itself and needs no input; a **Promo Code** must be typed and is entered on the review step (§7), which is why the catalogue cards never show a code field. The two stack — a code takes its cut of the price a Promotion has already reduced. See `be/CONTEXT.md` § Discounts for the exact vocabulary; never call a code a "promo", "coupon" or "discount code" in copy.
 
 **User journey**
 1. User reviews tiers. **Highlight badge** marks the recommended bundle (e.g., "Best value" on Bundle of 20). Each card shows credit count / session count, validity in days, price (with best-promo applied if any), and any "pending purchase" indicator.
@@ -410,24 +412,59 @@ Fields, in order:
 
 ## 7. Checkout `/checkout`
 
-**Business logic**
-- Simulated Stripe Checkout for package and workshop purchases.
-- Always preceded by a **review/confirmation step** (`/checkout/confirmation` or an inline one): shows item, validity / event date, price, applicable promo, and a Confirm button. This is the last stop before the payment form takes over — gives the user a clean cancel point with no card details exposed.
+**Business logic — the review step is live, and every paid purchase routes through it.**
+
+The dead `/checkout` page from the earlier spec is gone. `/checkout` is now a real review step, and it is the **only** surface in the member app with a code input anywhere — a Promo Code can be scoped to any product, so the picker's page and the code's page have to be the same page. A package or workshop tier priced above zero keeps its existing auth gate (login modal, return-to-page) and then pushes here; at zero it keeps the old post-and-grant, so a Promotion that drives a package to $0 falls into the free branch for free — the branch is decided by price, not by kind. The Trial card never used the buy button and is untouched.
+
+**What the page carries, top to bottom** — rows marked *(unlimited)* render only when the item being bought is an Unlimited Plan:
+
+1. **Order summary** — item, validity / event date, price.
+2. **Home studio** *(unlimited)* — two radios, one per Location, address shown on each, **no pre-selected default**. Pay stays disabled and reads "Choose your home studio to continue" until one is picked. **A renewal** — bought while the member already holds a live Unlimited Plan — replaces the radios with a locked row: "Your renewal continues at Breadtalk IHQ. Ask us if you need to move it." A member may only renew at their existing plan's Home Location; changing it is a portal-only, admin-audited action.
+3. **Cross-Location Add-On** *(unlimited)* — a checkbox block, **disabled until a studio is picked**, showing the rate even while disabled so it advertises rather than reads as broken. Live, it names the other studio and shows the arithmetic — months (rounded up) × rate = total — and closes with "Expires with the plan it's attached to." Greyed copy is always a precondition, never "Unavailable": the three disabled reasons are *no studio picked yet*, *this plan already carries one*, and *nothing to attach to* (no Unlimited Plan held at all, worded away from "nothing chosen yet" and routed to the plans). A Dormant plan's Add-On prices at its full stored Duration with no remainder wording; an Activated plan's remainder sentence comes **before** the arithmetic — "Your plan runs to 26 Nov 2026 — 3 months, 10 days left. Part months are charged as whole months, so that's 4." — so the surprising part is answered before the number that provokes it.
+4. **Promo code** — a text input, case- and whitespace-insensitive. A code is checked against the specific item being bought, so a green tick is never contradicted by a refusal seconds later. Five distinct outcomes, four of them specific:
+
+   | Case | Member sees |
+   |---|---|
+   | Expired | "This code has expired" |
+   | Cap reached | "This code has been fully claimed" |
+   | Already redeemed by this member | "You've already used this code" |
+   | Out of scope | "This code doesn't apply to *{product name}*" |
+   | Unknown or archived | "We don't recognise that code" |
+
+   Unknown and archived deliberately share one message so the field can't be used to fish for valid codes. **Checkout refuses a bad code outright** — a mistyped or expired code can never silently fall through to a full-price charge while the screen still shows it as accepted, which is the live defect this closes.
+5. **Breakdown** — the Add-On is its own line, never folded into the plan; a Promo Code discounts the plan line only and can never touch the Add-On, which is a rate on Global Policy rather than a discountable product.
+6. **Home studio, restated** *(unlimited)* — "Your home studio is Breadtalk IHQ for the next 6 months." directly above Pay, so the member passes the irreversible choice twice before money moves.
+7. **Pay.** A discount that takes the total to $0 skips the payment step entirely and grants immediately, the same free path packages and free workshop tiers already use.
+
+**Two entry points for a standalone Add-On purchase** against a plan the member already holds — no new Unlimited purchase involved: the nudge on a blocked class (below), and the plan card on the account page. Same review page, entered with the target plan's id instead of a catalogue item.
+
+**The blocked class is a nudge, not an ad.** On `/classes`, a class outside a member's plan coverage is shown, not hidden — the row dims, takes a "Not in your plan" lock chip where the Book button was, and carries one line under a hairline: "Your plan covers **Breadtalk IHQ** only. [Add Outram Park for $30/month] · or [use 1 credit]" if the member also holds credits. Both are links, weighted below the class itself — a louder treatment was tried and rejected because this state repeats on every wrong-Location class in the week's schedule, and at that density an accent border and a filled button read as an ad break. A blocked class never silently spends a credit; a member choosing to pay with credits does so explicitly through the "use 1 credit" link.
+
+**Four confirmation emails**, one per completed purchase, none for an admin's complimentary grant:
+
+| Purchase | Slug |
+|---|---|
+| Paid class / PT package | `package_purchase_confirmed` |
+| Paid workshop | `workshop_purchase_confirmed` |
+| Free trial pass | `trial_pass_purchase_confirmed` |
+| Free workshop tier | `workshop_purchase_confirmed` |
+
+Every purchase succeeds even if the email fails to send — the send is a fire-and-forget step after the entitlement is already granted. An Unlimited Plan's confirmation reads "Valid 6 months from your first class — your plan activates when you make your first booking" only when the purchase is actually Dormant; a plan bought with no live plan in front is **not** Dormant, gets a real end date immediately, and its email carries that date like any other kind's does — see `be-client.md` §4e for the exact branch. The receipt link never points nowhere: a paid purchase links to the Stripe receipt, a free one falls back to the account page.
+
 - Two-column layout on the payment step: **order summary** (left) — item, qty, subtotal, GST line, promo line, total; **payment form** (right) — card number, expiry, CVC, name on card, "Pay S$XX".
-- On success → `/booking/confirmation` (success variant) + invoice generated + entitlement issued + receipt emailed.
 - Failure → inline error, retry without losing form state.
 - Phase 1: card only. PayNow / GrabPay are slated for a later phase but the layout reserves space for alternative payment buttons.
 
 **User journey**
-1. User arrives from a Buy Now (packages) or Purchase (workshops) flow.
-2. **Review step**: confirms item details → Confirm Purchase.
-3. **Payment step**: enters card details (mocked) → "Pay S$XX".
-4. Loading state → success → confirmation page with QR and receipt link.
+1. User arrives from a Buy Now (packages) or Purchase (workshops) flow, or from an Add-On nudge on a blocked class / a plan card.
+2. **Review step** (this page, above) → Pay.
+3. **Payment step**: enters card details (mocked) → "Pay S$XX". Skipped entirely when a Promo Code takes the total to $0.
+4. Loading state → success → confirmation page with QR (bookings) or receipt link, and a confirmation email lands separately.
 
 **Where admin comes in**
-- Admin sees all transactions, can refund/void.
+- Admin sees every transaction — package purchases and workshop purchases both have their own row on the client detail page — and issues a Refund from either, always the full amount, always the same operation whether triggered from the portal button or from the payment provider's own dashboard (`backend-architecture.md` § Purchase Refunds). Refunding cancels every future booking the purchase paid for and hands any Promo Code back to the member and the code's pool; classes already attended stand as history.
 - Admin manages payment provider settings (PayNow/GrabPay/Card per Phase 1 differentiator), tax (GST), receipt branding.
-- Admin must handle disputes and edge cases (chargebacks, partial refunds).
+- Admin must handle disputes and edge cases (chargebacks). There is no partial refund anywhere in the system, so there is nothing to calculate.
 
 ---
 

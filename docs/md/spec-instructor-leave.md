@@ -13,6 +13,17 @@ Status: ready for agent. Source: grilling session 2026-08-10.
 > *entitlement* and *balance* are retired words. The affected sections below have been
 > corrected and cross-reference rather than restate. Everything else here — the clash
 > rule, half days, certificates, instructor-initiated cancellation — is unchanged.
+>
+> **Further superseded (2026-08-17).** Two more things this spec was built on are gone.
+> Leave is no longer two types — a third, **study**, has shipped, deliberately the least
+> exceptional of the three (below). And leave is no longer refused purely on the
+> requesting instructor's own clashes: two **Leave Caps** now refuse a request that would
+> put too many instructors away from the *studio* at the same instant, regardless of
+> whether it clashes with anything the applicant is personally teaching. The medical
+> certificate is also renamed **Supporting Document** throughout — `be/CONTEXT.md` is
+> binding on both. `docs/md/spec-pre-launch-batch.md` §16–§17 is the authority on the
+> detail; what follows is only enough that this document is not misleading read on its
+> own.
 
 ## Problem Statement
 
@@ -102,7 +113,7 @@ No money is involved anywhere. Instructors are paid per class, so a leave day pa
 ### Scope
 
 - Instructors only. Admins and superadmins do not apply for leave in this system; their absence has no effect on the schedule.
-- Two leave types: annual and medical. No unpaid type, no compassionate type.
+- ~~Two leave types: annual and medical.~~ **Superseded (2026-08-17).** A third Leave Type, **study**, has shipped — see "Study leave, and the two Leave Caps" below. No unpaid type, no compassionate type.
 - Quota only. Nothing in this feature reads or writes pay, payroll entries, or any money field. An instructor on leave simply has no classes, and per-class pay already handles that by producing nothing.
 
 ### Leave request model
@@ -145,6 +156,24 @@ This is the load-bearing decision, and it reuses machinery that already exists.
 - Only conflicts that end in the future block a submission. Backdated medical leave therefore records the absence and draws down the Pool without being obstructed by classes that already happened, and without disturbing them.
 - **Known gap, inherited:** the workshop write paths never adopted the occupancy module — they do not call it today for double-booking either. Leave will therefore not block assigning an instructor to a workshop until those paths adopt the seam. Bringing workshops into occupancy is the natural fix and is called out in Out of Scope; if it is done, leave enforcement follows for free.
 
+### Study leave, and the two Leave Caps
+
+**Superseded content (2026-08-17).** Full detail and rationale live in `docs/md/spec-pre-launch-batch.md` §16–§17; this is the summary needed so the rest of this document reads correctly.
+
+- **Study is a third Leave Type**, deliberately the least exceptional of the three. `instructors` gains `study_leave_days`, defaulting to 7, validated 0–365 like its two neighbours — one more row in the Pool triple, drawn from and Committed against exactly like annual and medical. It never carries.
+- **Study must start after today**, same as annual — the "annual must start in the future" rule above widens to "not medical", rather than gaining a separate minimum-notice rule. Medical keeps its own backdate window, unchanged.
+- Half days are permitted on study leave, on the existing 13:00 boundary, unchanged from annual and medical.
+- **A Supporting Document** — the medical certificate, renamed and widened (see below) — may be attached to a medical **or** a study request, never an annual one.
+- **A Leave Cap refuses a request that would put too many instructors away from the studio at one instant**, independently of whether it clashes with the applicant's own teaching schedule. Two exist, both on Global Policy, both minimum 1:
+  - the **Cover Group cap** — counts every Leave Type, refuses an annual or study request from an instructor an admin has ticked into the **Cover Group**;
+  - the **Study Leave cap** — counts study leave only, refuses a study request from anyone, Cover Group or not.
+  - **Medical is never refused by either cap** — being ill is never rationed — but a medical absence still counts toward the Cover Group cap for everybody else's annual and study requests.
+- The cap is a **peak over instants**, not a headcount of instructors whose leave windows overlap the request. Cap 2, Alice away Monday, Cara away Wednesday, Bob requests Monday–Wednesday: the naive overlap count sees two other people and refuses him, but at no single instant are more than two instructors away (Monday: Alice + Bob; Wednesday: Cara + Bob), so the peak rule approves him. Half days on the same date are counted exactly on the same 13:00 boundary the clash rule already uses, so a morning-leave and an afternoon-leave instructor are never counted as away at the same instant.
+- **Refused at submission, exactly like the clash rule above**, and for the same reason: a Cover Group member's own row lock is not enough, because two different Cover Group members submitting overlapping dates concurrently would each read a clear calendar. Submission locks every instructor row the applicable cap counts over — the Cover Group's rows for an annual/study request from a member, every instructor's rows for a study request — ordered by staff user id so two transactions cannot deadlock.
+- **There is no admin override.** A cap refusal means the clashing request never exists, so there is nothing to override at approval. The escape hatch is raising the cap, having the instructor resubmit, and lowering it back — clunky and deliberate, audited by the policy change itself. Lowering a cap is never retroactive; leave already approved stands.
+- **A refusal names the colleagues already away, never the reason** — the leave calendar already shows every staff member the same names and dates, so naming leaks nothing the calendar does not.
+- **A medical request that pushes the studio over a cap tells admins twice**, because medical is never refused and so the studio has to learn some other way: one new variable in the submission email, empty unless the cap is exceeded, and a flag inside the leave calendar entry's detail object — already null for a colleague's row, so the redaction is structural and free.
+
 ### Instructor-initiated class cancellation
 
 - A new instructor endpoint cancels a single class, plus the corresponding action on the instructor's schedule screen in the portal.
@@ -158,33 +187,37 @@ This is the load-bearing decision, and it reuses machinery that already exists.
   - the ledger refund reason is free text, so it simply takes a distinct instructor-cancellation string — no enum change needed there.
 - Every instructor cancellation emails all admins, and writes to the audit log. Visibility, not a time lock, is the control on this action.
 
-### Medical certificate upload
+### Supporting Document upload
 
-- Optional, medical requests only. jpg, png or pdf, up to 5MB.
+~~Medical certificate upload~~ — **renamed (2026-08-17)**, and widened. The rename is not cosmetic: a column called `medical_cert_key` holding course confirmations for a study request reads as a bug to every future reader, and `be/CONTEXT.md` is binding here. It covers the column, the refusal codes, the type and size constants, the key helper, the storage key prefix, the upload and signed-URL routes, and the portal copy.
+
+- Optional, on a **medical or a study** request — never an annual one, which has nothing to evidence. jpg, png or pdf, up to 5MB. One request holds one document; a second upload replaces the first.
 - **This is the first object-storage write path in the backend** — before it, the storage client existed and the presigner package was already a dependency, but nothing uploaded or signed. It is now implemented: the file is POSTed to the API, validated server-side, and written to the one R2 bucket, with retrieval as a signed GET (see `backend-architecture.md` §6c). Instructor photo upload remains deferred.
-- ~~The certificate goes to a **private** bucket, separate from the existing public one.~~ **Superseded (2026-08-11):** one bucket holds both. See §6c.
+- ~~The certificate goes to a **private** bucket, separate from the existing public one.~~ **Superseded (2026-08-11), and confirmed by the owner again on 2026-08-17: this is staying as is.** One bucket holds both, and it is public. See §6c and `spec-instructor-leave-remediation.md`.
 - Admins and superadmins read it through a short-lived signed URL generated on demand. Nobody else — including the instructor's colleagues — can retrieve it.
+- **Objects already in the bucket from before the rename are not moved.** The key is stored per request rather than recomputed, so old rows keep their existing paths and resolve exactly as before; only new uploads take the new prefix.
 - **Superseded (2026-08-11).** This section originally specified a separate private bucket, added as `R2_PRIVATE_BUCKET_NAME`. That variable was removed at the owner's direction: certificates now go in the same public bucket as imagery, named by `R2_BUCKET_NAME`. The consequence is recorded in `backend-architecture.md` §6c — a certificate is readable by anyone holding its key, and the two UUIDs in that key are the only protection. Upload still degrades to unavailable rather than crashing boot when the bucket is unset.
 
 ### Access and visibility
 
 - Every staff member — admin, superadmin, instructor — can see the leave calendar, showing who is away on which dates.
-- Colleagues see the person and the dates only. The leave type, the instructor's reason, the decision reason and the medical certificate are visible to admins and superadmins only, and to the instructor for his own requests.
+- Colleagues see the person and the dates only. The leave type, the instructor's reason, the decision reason and the Supporting Document are visible to admins and superadmins only, and to the instructor for his own requests. A cap-exceeded flag on a medical entry is visible to the same audience — the redaction is the same object, so it costs nothing extra to withhold.
 - Approve, reject and revoke are admin and superadmin. Withdraw and cancel are the owning instructor.
 - Read paths must not leak the restricted fields to instructor callers — this is a serialisation decision in the read module, not something the frontend hides.
 
 ### Notifications and audit
 
-- Email admins when a request is submitted. Email the instructor when it is approved or rejected. Email admins when an instructor cancels a class. All of these go through the existing email template and send infrastructure; no new transport.
+- Email admins when a request is submitted — the submission email carries an extra, otherwise-empty line naming the Leave Cap a medical request has pushed the studio over. Email the instructor when it is approved or rejected. Email admins when an instructor cancels a class. All of these go through the existing email template and send infrastructure; no new transport.
 - A rejection reason is mandatory and is included in the instructor's email.
 - Every state transition on a leave request, and every instructor class cancellation, writes an audit log entry.
 
 ### Portal surfaces
 
 - An admin leave page: the pending queue plus a calendar, reusing the existing schedule calendar component rather than introducing a second calendar implementation.
-- An instructor leave page: the two Pools with their Remaining figures, the submission form, the instructor's own request history, and the same all-staff read-only calendar.
+- An instructor leave page: the **three** Pools with their Remaining figures (annual, medical, study), the submission form, the instructor's own request history, and the same all-staff read-only calendar.
 - Assigned Days are set per instructor on the staff profile, which an admin can open as well as a superadmin — the person who approves the leave is the person who sets the number. That profile also shows the Leave Year's Carried, Pool and Remaining, and Remaining is directly editable for the current year, bounded by that year's Pool.
-- The policy screen keeps exactly one leave field, the studio-wide carry-over cap, and stays superadmin-only like every other setting on it.
+- The policy screen keeps the studio-wide carry-over cap, and gains the two Leave Cap fields — `cover_group_leave_cap` and `study_leave_cap` — plus a **Cover Group** multi-select of instructors. All superadmin-only like every other setting on it.
+- The leave calendar marks an over-cap medical entry so an admin can see the pressure as well as be told about it in the submission email.
 - A cancel action on the instructor's schedule screen, with a required reason and a confirmation that states how many members will be refunded.
 - The instructor picker on scheduling screens greys out and labels an instructor who is on leave for the chosen date. Before a date is chosen, nobody is greyed. The picker is a hint; the server refusal is the enforcement.
 
@@ -199,7 +232,8 @@ This is the load-bearing decision, and it reuses machinery that already exists.
   - a full-day leave window covering the whole Singapore day, including that it does not bleed into the adjacent day at the UTC boundary;
   - Remaining — Pool minus Committed (approved *and* pending), with Taken counting approved only, other statuses excluded, and Leave Types and Leave Years kept separate;
   - the submission eligibility rule — over-Remaining refused, exactly-at-Remaining allowed;
-  - the backdating rule — annual must start in the future, medical allowed up to seven days back, beyond that refused;
+  - the backdating rule — annual and study must start in the future, medical allowed up to seven days back, beyond that refused;
+  - the Leave Cap peak function — the Monday/Wednesday case above is the canonical test that a peak is not a headcount; half days on the same date do not collide; medical counts toward the Cover Group cap but is never refused by it; the study cap counts study only; a Cover Group member's study request must clear both caps; a cap of 1 behaves identically to the naive rule;
   - the future-only filter on clashes — a past event does not block, a future event does.
 - The overlap predicate itself is already covered; the new checks feed it leave-derived windows rather than re-testing it.
 - **What is deliberately not unit-checked:** the database queries, the object-storage upload and signing, the email sends, and the portal screens. These are covered by typecheck and by exercising the flows in the running app, consistent with the existing backend stance. The design requirement is that no *rule* lives only inside a query — the query narrows candidates, the pure function decides.
@@ -220,9 +254,11 @@ This is the load-bearing decision, and it reuses machinery that already exists.
 - **Folding the admin schedule page's hand-rolled month grid into the shared calendar component.** The leave calendar reuses the shared component, but that page keeps its own month grid, entangled with its day and week views and its own event model on a very large file (`fe-portal/src/app/admin/schedule/**`). No defect is traced to the duplication. Left as it is deliberately: the risk of disturbing three working views on that file outweighs the tidiness, and it is recorded here so the next reader knows it was decided rather than missed.
 - Instructor cancellation of private sessions, corporate sessions and workshops.
 - A notice window or cancellation cap on instructor class cancellations.
-- Medical certificate retention, expiry or deletion policy.
+- Supporting Document retention, expiry or deletion policy.
 - Instructor photo upload, even though this spec builds the first upload path it would need.
 - Any member-facing surface. Members see nothing about leave.
+- ~~Per-instructor allowances~~ / a named-groups model for who covers whom. **Shipped 2026-08-17 as the Leave Cap.** The Cover Group is one studio-wide ticked set, not named groups — see "Study leave, and the two Leave Caps" above and `spec-pre-launch-batch.md` §17 for why a table of named groups was rejected.
+- An admin override on a Leave Cap refusal. The escape hatch is raising the cap and having the instructor resubmit — see above.
 
 ## Further Notes
 
@@ -231,5 +267,5 @@ This is the load-bearing decision, and it reuses machinery that already exists.
 - Because Taken and Committed are derived, cancelling or revoking leave restores days with no code: the row simply stops matching the filter and the sum changes. Storing the Pool did not give that up — a Pool is a stored *grant*, and nothing is ever written to it when a request changes status. This remains the main reason to resist a stored counter later, and the ADR restates it as the property the Pool was designed to preserve.
 - Backdated medical leave is the only path that records leave over dates with completed classes. It intentionally changes nothing about those classes — attendance, check-ins and pay all stand.
 - The instructor cancel endpoint is independently useful and has no dependency on the leave work. It can land first, and probably should, since it is small and it is the only thing a sick instructor can currently do nothing about.
-- Adding the private bucket is the moment to decide whether the existing storage configuration should be non-optional in deployed environments. Today every storage variable is optional, which means a misconfigured deploy fails at upload time rather than at boot. Out of scope here, but it will be felt the first time a certificate upload fails in staging.
+- ~~Adding the private bucket is the moment to decide whether the existing storage configuration should be non-optional in deployed environments.~~ **Moot (2026-08-17).** The private bucket was never added — see "Supporting Document upload" above. Every storage variable is still optional today, which means a misconfigured deploy fails at upload time rather than at boot; that is unchanged and remains a live risk, just not one a private bucket was ever going to introduce.
 - ~~No ADRs exist in this repo, so nothing here contradicts a recorded decision.~~ The repo keeps ADRs now, in `be/docs/adr/`, and the first of them reverses two of this spec's non-goals. The hard-block rule is still unrecorded and remains the next candidate.

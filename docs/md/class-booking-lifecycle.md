@@ -30,7 +30,8 @@ always allowed and forfeits past the window.
 Verified with `npx tsc --noEmit` in `be/` (no test infra per project convention).
 
 Sources of truth: `be-client.md §4`, `be-portal.md`, `admin-restructure.md §4/§10/§13`,
-`backend-architecture.md §5/§8`. This doc records the current implementation, the gaps,
+`backend-architecture.md §5/§8`, `spec-pre-launch-batch.md §1–§3` (Location filter,
+Activation, `use_credits`). This doc records the current implementation, the gaps,
 and the build order to complete the lifecycle.
 
 ---
@@ -54,15 +55,45 @@ and the build order to complete the lifecycle.
 1. Locks the `classes` row `FOR UPDATE`; rejects non-active, already-started.
 2. Rejects double-book (one `confirmed` booking per client per class).
 3. Capacity check against `capacity_online` only.
-4. Server-side package selection (no client input): **unlimited first → debit 0**;
-   else **soonest-expiring `credit_bundle`/`trial` with `remaining >= credit_cost` → debit `credit_cost`**;
-   else `409 insufficient_credits`.
-5. Inserts `bookings` row with `state='confirmed'`, `creditsOrSessionsUsed`, `qrToken`, `code`.
+4. Server-side package selection, via `services/packages/selection` (see §1a below):
+   candidate Unlimited Plans are filtered to the class's Location, Activated preferred over
+   Dormant, soonest-expiring first → debit 0; no covering plan and no `use_credits: true` →
+   `409 location_not_covered`; else **soonest-expiring `credit_bundle`/`trial` with
+   `remaining >= credit_cost` → debit `credit_cost`**; else `409 insufficient_credits`.
+5. If the chosen package is a Dormant Unlimited Plan, stamps Activation on it (§1a).
+6. Inserts `bookings` row with `state='confirmed'`, `creditsOrSessionsUsed`, `qrToken`, `code`.
 
 Schema is already refund-ready: `bookings.clientPackageId` (which package paid),
 `bookings.creditsOrSessionsUsed` (how much to return), `cancellations`
 (`source`, `wasWithinWindow`, `wasWithinCap`, `refundFired`), and singleton `global_policy`
 (`classWindowHours=2`, `ptWindowHours=24`, `cancelCapCount=3`, `cancelCapCycleDays=30`).
+
+### 1a. Home Location, Activation and the `use_credits` escape (landed later, `spec-pre-launch-batch.md` §1–§3)
+
+Package selection was pulled out of `book.ts` into a pure module,
+`services/packages/selection`. `book.ts` loads and locks rows and calls in; the module
+returns which package pays and why, or a refusal.
+
+- **Location filter.** A candidate Unlimited Plan is one whose `location_id` equals the
+  class's Location **or** whose `cross_location_paid_sgd` is non-null (it Covers both
+  Locations via a Cross-Location Add-On). No covering Unlimited Plan → refuse
+  `409 location_not_covered` — **not** a silent fall-through to credits.
+- **Order.** Candidates sort Activated first (soonest-expiring), Dormant last. A Dormant
+  candidate must also pass a *prospective* test — `now + duration_months >= class.startsAt`
+  — or it is skipped; otherwise a member could book far enough out to activate a plan that
+  the same booking would instantly invalidate.
+- **The `use_credits` escape.** Selection only falls through to the credit/trial branch
+  when the caller passes `use_credits: true`. This is the one place a client input
+  overrides server-only package selection, so a member holding both a plan and credits can
+  spend a credit on a class outside their plan's coverage instead of being blocked.
+- **Activation.** The first confirmed booking a Dormant Unlimited Plan pays for stamps its
+  `expires_at` — `now + duration_months` from the booking moment, not the class date —
+  inside the same transaction that already locks the package rows. Activation is one-way;
+  nothing un-stamps it automatically, only staff by hand. A member who pays with
+  `use_credits: true` leaves their Dormant plan Dormant.
+- **Coverage is tested once, at booking, and never re-tested.** A confirmed booking was
+  paid for by the plan that covered it at the time; renewing without an Add-On does not
+  retroactively strand an existing booking at the other Location.
 
 ---
 

@@ -357,6 +357,8 @@ id, name (text, not null), description (text, nullable — short blurb shown to 
 | phone | text | nullable — overrides staff_users.phone if needed (admin doc §3 lists this) |
 | annual_leave_days | int | not null, default 14 — **Assigned Days**, annual. Per instructor, set on the staff profile by admin or superadmin. The input to next year's Pool, not a balance. |
 | medical_leave_days | int | not null, default 14 — Assigned Days, medical. |
+| study_leave_days | int | not null, default 7 — Assigned Days, study. The third Leave Type; backfilled on every existing row rather than granted per instructor, because study leave is for everyone. |
+| in_cover_group | boolean | not null, default false — whether this instructor is in the studio's one **Cover Group**. Every row backfills false, so the Cover Group Leave Cap is inert until an admin ticks somebody. |
 
 The leave tables themselves (`leave_requests`, `leave_pools`) are specified in `spec-instructor-leave.md` and `spec-instructor-leave-pools.md`, with `be/CONTEXT.md` binding on the vocabulary; `be/docs/adr/0001-per-instructor-leave-pools-with-carry-over.md` records why a Pool is stored.
 
@@ -374,7 +376,7 @@ Both tables enforce single row at app layer. We use `id uuid PK` plus a `CHECK` 
 
 #### `global_policy` (§4)
 
-cancel_cap_count int, cancel_cap_cycle_days int, class_window_hours int, pt_window_hours int, leave_carry_over_cap_days int (not null, default 14 — the studio-wide ceiling on unused **annual** days carrying into the next Leave Year; the only leave figure that is global), updated_at, updated_by_staff_id (FK).
+cancel_cap_count int, cancel_cap_cycle_days int, class_window_hours int, pt_window_hours int, leave_carry_over_cap_days int (not null, default 14 — the studio-wide ceiling on unused **annual** days carrying into the next Leave Year; the only leave figure that is global), cross_location_rate_sgd numeric(10,2) (the Cross-Location Add-On's monthly rate — read once, at checkout, so repricing moves future purchases only; `spec-pre-launch-batch.md` §5), cover_group_leave_cap int (not null, default 1, minimum 1 — the greatest number of **Cover Group** members who may be away at once, counting every Leave Type), study_leave_cap int (not null, default 1, minimum 1 — the greatest number of instructors studio-wide who may be on study leave at once, counting study leave only; `spec-pre-launch-batch.md` §17), updated_at, updated_by_staff_id (FK).
 
 #### `pt_booking_config` (§6)
 
@@ -446,13 +448,23 @@ Polymorphic — a promotion belongs to exactly one parent (`class_package`, `pt_
 | source_class_package_id | uuid | FK → class_packages.id, nullable (set when kind in {credit_bundle, unlimited, trial}) |
 | source_pt_package_id | uuid | FK → pt_packages.id, nullable (set when kind=`pt`) |
 | applied_promotion_id | uuid | FK → promotions.id, nullable — set when a promotion resolved at purchase (best-price-wins, §4d Promotions). Frozen at purchase so a later change to the promotion row doesn't rewrite history. |
+| applied_promo_code_id | uuid | FK → promo_codes.id, restrict, nullable — frozen the same way (`spec-pre-launch-batch.md` §9–§11). The identifier is frozen rather than the label, because staff may edit the label later; the money taken off is frozen on the redemption row, not here. |
+| location_id | uuid | FK → locations.id, restrict — **the Home Location.** Required when kind=`unlimited`, null for every other kind (folded into `client_packages_kind_fields` below). |
+| duration_months | int | nullable — the Unlimited Plan's Duration, frozen from the catalogue at purchase so a later catalogue edit can't lengthen a plan already sold. Required when kind=`unlimited`, null otherwise. |
+| cross_location_paid_sgd | numeric(10, 2) | nullable, kind=`unlimited` only — null means the plan Covers its Home Location only; non-null is what the member paid for the Cross-Location Add-On, and the plan Covers both Locations. |
+| list_price_sgd | numeric(10, 2) | not null, **including free purchases** — what the product was listed at before any Promotion or Promo Code, so a later catalogue change can't restate what a member was charged. Total discount is `list_price_sgd - amount_paid_sgd`, derived rather than stored a second time. |
 | credits_or_sessions_remaining | int | nullable — null when kind=`unlimited` |
-| expires_at | timestamptz | nullable — set for credit_bundle + unlimited + trial (when validity_days set); null for pt and trial-without-expiry |
+| expires_at | timestamptz | nullable — null means **Dormant** for an Unlimited Plan (waiting behind a plan still running); set for credit_bundle + unlimited-with-no-live-plan-in-front + trial (when validity_days set); null for pt and trial-without-expiry |
 | purchased_at | timestamptz | not null |
 | amount_paid_sgd | numeric(10, 2) | not null — effective price actually charged (may be 0 for admin-issued grants) |
 | stripe_payment_intent_id | text | unique, **nullable** — null for admin-issued grants (§16 manual issue) and free trial passes priced at 0 SGD |
+| active | boolean | not null, default true — the lever both the nightly expiry sweep and a Refund's Void pull; `false` means expired or refunded, and the payment row records which |
 
-**Indexes:** `(client_id, kind)`, `(client_id, expires_at)` for upcoming-expiry sweep, `(stripe_payment_intent_id) unique where not null`, and a **unique partial index `(client_id) WHERE kind='trial'`** — enforces the one-trial-per-client-ever invariant from `fe-client-features.md` §6.1. A previously-purchased trial (active OR expired) blocks any further trial purchase via this constraint; the purchase service catches the unique-violation and returns `409 trial_already_used`.
+**`client_packages_kind_fields` CHECK** (`spec-pre-launch-batch.md` §1): `kind='unlimited'` requires `location_id` and `duration_months` NOT NULL; every other kind requires both NULL and `expires_at` NOT NULL. Strict, no grandfathering — the backfill probe found zero Unlimited Plans in either database before this shipped.
+
+**Indexes:** `(client_id, kind)`, `(client_id, expires_at)` for upcoming-expiry sweep, `(stripe_payment_intent_id) unique where not null`, a **unique partial index `(client_id) WHERE kind='trial'`** — enforces the one-trial-per-client-ever invariant from `fe-client-features.md` §6.1 (a previously-purchased trial, active OR expired, blocks any further trial purchase; the purchase service catches the unique-violation and returns `409 trial_already_used`) — and a **unique partial index `(client_id) WHERE kind='unlimited' AND active AND expires_at IS NOT NULL`**, capping a client at one Activated Unlimited Plan (plus, enforced in the purchase path rather than an index, at most one Dormant one).
+
+Promo Code tables (`promo_codes`, `promo_code_products`, `promo_code_redemptions`) live beside this table and are documented in full in `spec-pre-launch-batch.md` §9–§11 rather than repeated here — the model is the shipped one, not the used-count-plus-valid-from-window model an earlier draft of this document sketched.
 
 ### 4e. Schedule
 
@@ -700,6 +712,9 @@ The previously-specified `instructor_availability_recurring` and `instructor_ava
 | pt_session_id | uuid | FK → pt_sessions.id, nullable — set when kind=`pt` |
 | client_package_id | uuid | FK → client_packages.id, nullable — null for workshops (paid via Stripe directly) |
 | applied_promotion_id | uuid | FK → promotions.id, nullable — frozen at purchase when a workshop promotion resolved; null for class/PT bookings (where the promotion already froze onto the `client_packages` row used to book) |
+| applied_promo_code_id | uuid | FK → promo_codes.id, restrict, nullable — same freeze as `client_packages.applied_promo_code_id`, for a workshop booking bought with a code |
+| list_price_sgd | numeric(10, 2) | required for kind=`workshop`, null otherwise — the tier's price at purchase, frozen (`spec-pre-launch-batch.md` §15). Class and PT bookings are paid for by a package and their money stays on that row. |
+| amount_paid_sgd | numeric(10, 2) | required for kind=`workshop`, null otherwise — what was actually charged, including 0 for a free tier or a comp grant read as a 100% discount |
 | state | enum `booking_state` | `confirmed`, `cancelled`, `no_show` |
 | credits_or_sessions_used | int | nullable — null for workshops + unlimited |
 | refund_outcome | enum `refund_outcome` | `credit_returned`, `session_returned`, `stripe_refunded`, `forfeited`, `n_a` |
@@ -803,6 +818,8 @@ checkin_nag
 referral_credited
 trial_pass_purchase_confirmed          # NEW — distinct from package_purchase_confirmed; trial copy is friendlier ("welcome to your first 3 classes")
 ```
+
+**Known gap, observed but not fixed by `spec-pre-launch-batch.md`:** `db/seed/email-templates.ts` seeds `pt_request_expired` and `workshop_waitlist_promoted` — both rows exist in the table, but neither slug is a member of `TemplateSlug` (`services/notifications/send.ts`), so `sendTemplatedEmail` can never be called with either and both are unreachable — the exact class of spec-versus-code gap that already left the purchase templates unsent for months before this batch. Worth a grep-and-fix pass before launch rather than folklore for the next person who wonders why a template never fires.
 
 #### `email_log`
 
@@ -931,6 +948,7 @@ Idempotency keys on `stripe-refund` jobs (booking_id) prevent double refund on r
 - **Workshop admin-cancel** (§7a) → enqueue one `stripe-refund` job per booking in workshop. Worker calls Stripe Refund API. `charge.refunded` webhook closes the loop.
 - **Free workshops** (`workshop_tiers.regular_price_sgd = 0`) skip Stripe entirely. Booking flow inserts a `bookings` row with `kind='workshop'`, `state='confirmed'`, `stripe_payment_intent_id = null`, and **no** `stripe_payments` row is created. The receipt UI on fe-client suppresses the Download link when `receipt_url` is null.
 - **Idempotency.** Stripe's event IDs are deduplicated against `stripe_payments.payment_intent_id` (and a separate `stripe_webhook_events` table for raw event de-dupe — minor, can add later).
+- **Known gap, observed but not fixed by `spec-pre-launch-batch.md`:** if the payment provider's own automatic receipt emails are switched on in the dashboard, a paid purchase produces two emails — ours, the branded one carrying the QR code and the activation sentence, and theirs, a bare payment record. Confirm this setting is off before go-live; nothing in the code prevents it either way.
 
 ### 6c. Cloudflare R2
 
@@ -974,6 +992,22 @@ output: { allowed: true,            // always true per §4
 ```
 
 Used by `services/bookings/cancel.ts` (client path). Admin path bypasses this — always full refund.
+
+**This is a credit/session refund, not a Refund.** The word means two different things in this codebase and the glossary (`be/CONTEXT.md` § Refunds) is binding: what this function returns is a cancelled booking's credit or session going back to a package that still exists. The money-back **Refund** below is a different action entirely.
+
+### Purchase Refunds (§14)
+
+`services/billing/refunds.ts` — a Refund voids the purchase it paid for, cancels every future booking on it, and hands any Promo Code redemption back. There is no partial refund and no separate admin revoke; the full amount is the only amount.
+
+`issueRefund()` is the portal button (`routes/portal/admin/clients.ts POST /clients/:id/packages/:packageId/refund`, superadmin, mandatory typed reason): it calls `stripe.refunds.create` and returns — nothing is unwound here. `unwindRefund()`, driven entirely by the `charge.refunded` webhook, does all of it: stamps `stripe_payments.status='refunded'`, sets `client_packages.active=false` (the same lever the nightly expiry sweep already pulls), cancels every future booking the purchase paid for through the existing cancel service (`source: 'admin'`, so waitlist promotion comes free), and returns the redemption row to `refunded` (not deleted — the ledger is the only record of a buy-refund-buy loop). Because the dashboard route and the button route both resolve to the same webhook, **a refund issued from Stripe's own dashboard unwinds identically to one issued from the portal** — the two are indistinguishable by construction, and every step is a no-op on a second delivery.
+
+Eligibility is a notice, not a gate: `refundStatesFor()` computes whether a purchase is **Untouched** (no booking on it attended or no-showed) and the portal shows a warning above the button when it is not, but the button stays clickable — the override is recorded on the audit row rather than blocked by the database.
+
+Scope: class packages, PT packages and workshops. A refunded workshop payment cancels its booking via the payments ledger's existing booking link — `unwindRefund` branches on whether the payment row has a `bookingId` (workshop) or a `clientPackages` row (everything else); corporate creates neither, so a corporate payment refunded from the dashboard is recorded and nothing else moves. The Cross-Location Add-On has no independent refund — it dies with the plan it's a column on.
+
+**A workshop purchase has its own portal button, reusing the same path.** A workshop's booking IS the purchase, so it carries no `client_packages` row and — before this shipped — never appeared beside the package rows the button lived on. `issueWorkshopRefund()` (`services/billing/refunds.ts`) shares its provider call with `issueRefund()` and stops there, same as the package path; the already-workshop-aware `unwindRefund()` does the rest, so a workshop refund from the portal and one from the provider's dashboard stay indistinguishable by construction. The client detail page now lists workshop purchases as their own rows with the same button, dialog and attended notice as a package row.
+
+The member is told with a new `purchase_refunded` slug, composed the same way the four purchase-confirmation emails are (`be-client.md` §4e) — the provider's own receipt says money moved; this one names the classes that were cancelled.
 
 ### Audit middleware
 

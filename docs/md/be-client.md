@@ -339,34 +339,51 @@ Pending requests past `expires_at` are swept by the `pt-request-expiry` cron (ev
 
 ### 4e. Package purchase flow
 
-`POST /me/checkout/package`:
+The dead `/checkout` page is live: every paid purchase — class/PT package, workshop tier, standalone Cross-Location Add-On — routes through the review step (`fe-client-features.md` §7) before Stripe. Routes live in `routes/client/purchases.ts`.
+
+`POST /me/checkout/validate-promo` — `{ code, package_kind + package_id | workshop_id + workshop_tier_id }`. A **preview, not a claim**: the code's place is claimed when checkout actually starts, not here. `services/packages/promo-redemption.ts:previewPromoCode()` normalises the code (trim, upper-case), matches it against the named product (the product travels with the code because the endpoint can't answer the scope case otherwise), and returns `{ valid: true, promo_code_id, discount_sgd, effective_price_sgd }` or `{ valid: false, reason }` — always `200`, never a thrown error, with the same one of five reasons checkout itself refuses on (`promo-codes.ts`: expired, cap reached, already redeemed, out of scope, unknown-or-archived — the last two share one message on purpose).
+
+`POST /me/checkout/package` — `{ package_kind, package_id, promo_code?, location_id?, cross_location_add_on? }`:
 
 ```
-services/billing/create-intent.ts:packageIntent({ client_id, package_kind, package_id })
+services/packages/purchase.ts
   ↓
 1. Load class_packages or pt_packages, validate status='active'
 2. Eligibility gates (mirror /me/packages/eligibility):
    - class_packages.kind='trial' → reject 409 trial_already_used if client_packages row with kind='trial'
      exists for this client (active OR expired). Defence-in-depth: the partial unique index will also catch.
-   - class_packages.kind='credit_bundle' → reject 409 conflicting_active_package if client holds active 'unlimited'
-   - class_packages.kind='unlimited' → reject 409 conflicting_active_package if client holds active 'credit_bundle'
-   (trial + bundle/unlimited can coexist; PT is independent of all three)
-3. Promotion resolution:
-   promotion = services/promotions/resolve.ts:bestPriceFor(
-     package_kind === 'class' ? 'class_package' : 'pt_package', package_id
-   )
-   effective_price = min(package.price_sgd, promotion_effective_price) if promotion else package.price_sgd
-4. If effective_price = 0 AND package_kind='class' AND kind='trial':
-   skip Stripe, insert client_packages row directly (free Trial Pass), enqueue confirmation email
-5. Stripe.paymentIntents.create({
-     amount: effective_price * 100,
+   - class_packages.kind='unlimited' → assertPurchasableLocation(): location_id is REQUIRED
+     (409 unlimited_requires_location), one Activated plus at most one Dormant plan per client
+     (409 unlimited_limit_reached on a third), and a renewal bought while a live plan exists may only pick
+     that plan's own Home Location (409 unlimited_renewal_location_mismatch otherwise) — see
+     `class-booking-lifecycle.md` §1a and `spec-pre-launch-batch.md` §6
+   (a Credit Bundle and an Unlimited Plan may now be held together — the old mutual-exclusion gate this
+    section described is gone, superseded by user story 25's "spend a credit outside my plan's coverage
+    instead of being blocked"; PT is independent of all three)
+3. Promotion resolution — unchanged: services/promotions/resolve.ts:bestPriceFor(...), best-price-wins.
+4. Promo Code: if promo_code is present, holdPromoCode() locks the code row, counts used slots
+   (`status='consumed' OR held_until > now()`), and upserts a `held` redemption row
+   (`held_until = now() + 30min` when the code is capped — otherwise the standard 24h session applies).
+   A bad code refuses the whole checkout with 400 promo_code_invalid — never a silent full-price charge.
+   effective_price = promotion price, minus the code's discount, floored at zero.
+5. Cross-Location Add-On, if cross_location_add_on=true: priceCrossLocationForNewPlan() prices at the plan's
+   full stored Duration × the Global Policy rate (a Dormant plan has no partial month to round). Carried as
+   its own metadata field and its own money — never inside the plan's price, never discounted by the code.
+6. If effective_price = 0 (a $0 trial, or a code/promotion that drives any package to zero):
+   skip Stripe, grantPackage() directly, redemption row (if any) written straight to `consumed`,
+   send the purchase confirmation synchronously (§13, below) — the free path this batch added.
+7. Stripe.paymentIntents.create({
+     amount: (effective_price + cross_location_sgd) * 100,
      currency: 'sgd',
      metadata: { kind: package_kind === 'class' ? 'class_package' : 'pt_package',
-                 client_id, package_id, applied_promotion_id: promotion?.id ?? null }
-   })
-6. Insert stripe_payments: status='pending', kind, client_id, payment_intent_id
-7. Return { client_secret, effective_price_sgd, applied_promotion }
+                 client_id, package_id, location_id, cross_location_sgd,
+                 applied_promotion_id, applied_promo_code_id }
+   }, { expires_at: matches the redemption hold when the code is capped, else the standard 24h })
+8. Insert stripe_payments: status='pending', kind, client_id, payment_intent_id
+9. Return { client_secret, effective_price_sgd, applied_promotion, applied_promo_code }
 ```
+
+`POST /me/checkout/cross-location/quote` and `POST /me/checkout/cross-location` — the **standalone** Add-On purchase against a plan the member already holds, entered from the account page or a blocked-class nudge (`fe-client-features.md` §7). The quote reads `quoteCrossLocationAddOn()` (months remaining, rounded up, × the Global Policy rate — the remainder sentence renders from this before the arithmetic); the purchase mints its own Stripe session tagged `kind: 'cross_location_add_on'` in metadata rather than reusing the plan's payment-intent column, which the plan's own purchase already owns. Refused with `409 cross_location_already_added` when the target plan already carries one, `400 cross_location_plan_not_live` when it's not the member's own live plan, and `400 cross_location_requires_unlimited` when the target isn't an Unlimited Plan at all.
 
 Webhook on success (`services/billing/webhook-handler.ts`):
 
@@ -376,25 +393,61 @@ tx start
    - If status='succeeded': retry, no-op
 2. Insert client_packages: kind matches source package's kind (credit_bundle | unlimited | trial | pt),
    source_class_package_id or source_pt_package_id,
-   applied_promotion_id = intent.metadata.applied_promotion_id (frozen — promotion edits won't rewrite),
+   applied_promotion_id / applied_promo_code_id = intent.metadata (frozen — later edits won't rewrite),
+   location_id = intent.metadata.location_id (unlimited only),
+   duration_months = the catalogue's duration, frozen (unlimited only),
+   cross_location_paid_sgd = intent.metadata.cross_location_sgd (unlimited only, nullable),
    credits_or_sessions_remaining = (credit_bundle | trial ? credits : pt ? num_sessions : NULL),
    expires_at = (credit_bundle ? now + validity_days
                 : trial ? (validity_days IS NULL ? NULL : now + validity_days)
-                : unlimited ? now + duration_months (or null while Dormant)
+                : unlimited, no live plan in front ? now + duration_months  — NOT Dormant, real end date
+                : unlimited, a live plan already running ? NULL             — Dormant, clock waits
                 : NULL),
    purchased_at = now(),
    amount_paid_sgd = stripe_payments.amount_sgd,
    stripe_payment_intent_id = X
    (Trial unique partial index catches any race — if a concurrent purchase already inserted a trial
     for this client, this INSERT raises 23505 and the webhook handler logs it then no-ops.)
-3. Update stripe_payments: status='succeeded', client_package_id, receipt_url
-4. enqueueEmail — branches on package kind:
-   - kind='trial' → 'trial_pass_purchase_confirmed' (friendlier intro copy)
-   - kind in (credit_bundle, unlimited, pt) → 'package_purchase_confirmed'
-   Both receive { package_name, credits_or_sessions, expires_at, receipt_url, applied_promotion_label? }
-5. Referral conversion check (same as workshop §4b)
+
+   A standalone Cross-Location Add-On payment (metadata kind='cross_location_add_on') takes a different
+   branch: it loads the named plan and writes cross_location_paid_sgd onto the EXISTING row rather than
+   inserting a new one. ponytail gap, left open by #26 and reviewed at #30: two concurrent standalone
+   Add-On sessions against the same plan can both reach this branch, since the check for "does it already
+   carry one" happens at checkout, before either payment lands. The loser's write is a no-op — the column
+   is already set — and it is logged as a refund owed rather than silently swallowed. Upgrade path: let the
+   webhook issue the provider refund itself; not built here because it is not this ticket's decision to make
+   (an admin issues refunds, per §14).
+3. Redemption row, if any, flips 'held' → 'consumed' (stamped time + payment intent) — the hold and the
+   payment session share an expiry, so a member who has paid can never be told afterwards the code ran out.
+4. Update stripe_payments: status='succeeded', client_package_id, receipt_url (payment intent retrieved with
+   the latest charge expanded — the completed-session event itself carries no charge object)
+5. enqueueEmail — the purchase confirmation (§13, below), fired only when this insert actually created the
+   row (`created: boolean` returned by the grant, not a webhook-retry guard — the two payment-intent unique
+   indexes are the real lock)
+6. Referral conversion check (same as workshop §4b)
 tx commit
 ```
+
+#### Purchase confirmation emails (§13)
+
+Four paths send, one deliberately does not:
+
+| Path | Slug | Condition |
+|---|---|---|
+| Paid class / PT package | branches on granted `kind` → `package_purchase_confirmed` | `created` |
+| Paid workshop | `workshop_purchase_confirmed` | `created` |
+| $0 trial pass | `trial_pass_purchase_confirmed` | always |
+| $0 workshop tier | `workshop_purchase_confirmed` | always — this closed a real gap: a free workshop booking produced a QR and a date and no email at all before this batch |
+| Admin comp grant | — | **never** — a comp grant is not a purchase, and announcing an admin's action to someone who did not ask is the wrong default |
+
+The slug is decided by the granted package's **kind**, not by which code path granted it — a *priced* trial still goes through Stripe and the webhook, so branching on the path would send it the paid-package copy. `services/notifications/purchase-email.ts:composePurchaseEmail()` builds two whole composed sentences per send (the renderer is substitution-only with no conditionals, so a fragment-shaped variable produces a wrong sentence for some kind):
+
+- `contents_line` — "Unlimited classes" · "10 class credits" · "5 private sessions" · "3 classes" (trial, which counts classes rather than credits — a first-timer has never heard of a credit).
+- `validity_line` — **reads `isDormant`, not the package kind.** A Dormant Unlimited Plan (bought while a live plan is still running) is the only purchase with no date, so it alone gets "Valid 6 months from your first class — your plan activates when you make your first booking," reading the frozen `duration_months`. **An Unlimited Plan bought with no live plan in front is not Dormant** — its clock started at purchase, it has a real end date already stamped on the row, and its email prints that date exactly like a Credit Bundle's does. This is a deliberate deviation from an earlier reading of the spec that branched on package kind alone; the shipped code branches on `isDormant` because the promise "activates on your first booking" would otherwise be printed on a plan that had already started.
+
+`receipt_url` is never empty: a paid purchase gets the Stripe receipt (retrieved with the latest charge expanded, since the webhook's own event carries none), a free one falls back to the account page with neutral anchor text — an escaped empty string in an href is a visible link to nowhere, which is not a safe default here.
+
+The helper (`services/notifications/send-purchase-email.ts`) wraps its entire body in try/catch: `sendTemplatedEmail` throws on an unknown slug, and thrown from inside a webhook after the grant already committed, the delivery is lost permanently while the purchase looks fine. Swallowing here is what makes the `created` flag a safe guard against double-sending on a provider retry.
 
 #### Corporate branch (`package_kind='corporate'`)
 
