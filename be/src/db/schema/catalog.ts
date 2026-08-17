@@ -105,6 +105,33 @@ export const instructors = pgTable('instructors', {
   inCoverGroup: boolean('in_cover_group').notNull().default(false),
 })
 
+/**
+ * A **Leave Conflict**: two instructors an admin has declared cannot be away at
+ * the same time. Unordered — "Alice and Bob" is the same fact as "Bob and
+ * Alice" — and that symmetry is a DATABASE guarantee, not a convention callers
+ * remember: the CHECK forces the lower id into `instructor_a_id`, so the
+ * reversed row cannot exist, and the primary key makes the pair unique.
+ * Callers normalise before writing; these two constraints are the backstop.
+ */
+export const leaveConflicts = pgTable(
+  'leave_conflicts',
+  {
+    instructorAId: uuid('instructor_a_id')
+      .notNull()
+      .references(() => instructors.staffUserId, { onDelete: 'cascade' }),
+    instructorBId: uuid('instructor_b_id')
+      .notNull()
+      .references(() => instructors.staffUserId, { onDelete: 'cascade' }),
+  },
+  table => ({
+    pk: primaryKey({ columns: [table.instructorAId, table.instructorBId] }),
+    canonicalOrder: check(
+      'leave_conflicts_canonical_order',
+      sql`${table.instructorAId} < ${table.instructorBId}`,
+    ),
+  }),
+)
+
 export const instructorClassTypes = pgTable(
   'instructor_class_types',
   {

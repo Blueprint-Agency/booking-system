@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { Save, Info, Loader2 } from "lucide-react";
+import { Save, Info, Loader2, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button, Input, Label, PageHeader } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -37,7 +37,24 @@ interface ApiPolicy {
   };
   /** The Cover Group, as one ticked set of instructor staff user ids. */
   cover_group_staff_ids: string[];
+  /** Every declared leave conflict, lower id first. */
+  leave_conflicts: ConflictPair[];
 }
+
+/** Two instructors who cannot be away at the same time. Unordered — the backend
+ *  stores the lower id first and refuses the reversed row, so the screen holds
+ *  them the same way and a pair compares as one string. */
+interface ConflictPair {
+  instructor_a_id: string;
+  instructor_b_id: string;
+}
+
+const canonical = (a: string, b: string): ConflictPair =>
+  a < b
+    ? { instructor_a_id: a, instructor_b_id: b }
+    : { instructor_a_id: b, instructor_b_id: a };
+
+const pairKey = (p: ConflictPair) => `${p.instructor_a_id}:${p.instructor_b_id}`;
 
 interface StaffRow {
   id: string;
@@ -93,6 +110,12 @@ export default function PolicyPage() {
   const [instructors, setInstructors] = useState<StaffRow[]>([]);
   const [coverGroup, setCoverGroup] = useState<string[]>([]);
   const [savedCoverGroup, setSavedCoverGroup] = useState<string[]>([]);
+  // Declared leave conflicts, held apart for the same reason and compared the
+  // same way: a set of pairs, where order carries no meaning.
+  const [conflicts, setConflicts] = useState<ConflictPair[]>([]);
+  const [savedConflicts, setSavedConflicts] = useState<ConflictPair[]>([]);
+  const [pickA, setPickA] = useState("");
+  const [pickB, setPickB] = useState("");
 
   const load = useCallback(async () => {
     if (!api) return;
@@ -103,11 +126,13 @@ export default function PolicyPage() {
         api.get<ApiPolicy>("/portal/admin/policy"),
         api.get<{ staff: StaffRow[] }>("/portal/admin/staff"),
       ]);
-      setInstructors(
-        staff.staff.filter((m) => m.role === "instructor" && m.status !== "archived"),
-      );
+      setInstructors(staff.staff.filter((m) => m.role === "instructor" && m.status === "active"));
       setCoverGroup(r.cover_group_staff_ids);
       setSavedCoverGroup(r.cover_group_staff_ids);
+      setConflicts(r.leave_conflicts);
+      setSavedConflicts(r.leave_conflicts);
+      setPickA("");
+      setPickB("");
       const next: PolicyState = {
         cancelCapCount: r.global_policy.cancel_cap_count,
         cancelCapCycleDays: r.global_policy.cancel_cap_cycle_days,
@@ -136,7 +161,19 @@ export default function PolicyPage() {
   const sameSet = (a: string[], b: string[]) =>
     a.length === b.length && a.every((id) => b.includes(id));
 
+  const conflictsChanged = !sameSet(conflicts.map(pairKey), savedConflicts.map(pairKey));
+
+  const nameOf = (id: string) =>
+    instructors.find((m) => m.id === id)?.name ?? "A former instructor";
+  // The other side of the pair: never the same person, and never a combination
+  // already declared — so an invalid pair cannot be built in the first place.
+  const pairableWith = (id: string) =>
+    instructors.filter(
+      (m) => m.id !== id && !conflicts.some((c) => pairKey(c) === pairKey(canonical(id, m.id))),
+    );
+
   const dirty =
+    conflictsChanged ||
     !sameSet(coverGroup, savedCoverGroup) ||
     draft.coverGroupLeaveCap !== policy.coverGroupLeaveCap ||
     draft.studyLeaveCap !== policy.studyLeaveCap ||
@@ -164,6 +201,7 @@ export default function PolicyPage() {
     try {
       const globalDelta: Record<string, unknown> = diffGlobal(policy, draft);
       if (!sameSet(coverGroup, savedCoverGroup)) globalDelta.cover_group_staff_ids = coverGroup;
+      if (conflictsChanged) globalDelta.leave_conflicts = conflicts;
       const ops: Array<Promise<unknown>> = [];
       if (Object.keys(globalDelta).length > 0) {
         ops.push(api.patch("/portal/admin/policy/global", globalDelta));
@@ -444,6 +482,110 @@ export default function PolicyPage() {
           </div>
         </section>
 
+        <section className="rounded-xl border border-border bg-card p-6 shadow-soft">
+          <header className="mb-4">
+            <h2 className="text-base font-semibold text-ink">Leave conflicts</h2>
+            <p className="mt-0.5 text-xs text-muted">
+              Pairs of instructors who cannot be away at the same time. Declaring a pair refuses
+              new leave that overlaps the other&apos;s; leave already approved is never revoked.
+            </p>
+          </header>
+
+          {conflicts.length === 0 ? (
+            <p className="text-xs text-muted">
+              No conflicts declared — no leave is being refused on these grounds.
+            </p>
+          ) : (
+            <>
+              <ul className="max-h-64 space-y-1 overflow-y-auto rounded-lg border border-border bg-paper p-2">
+                {conflicts.map((p) => {
+                  const pair = `${nameOf(p.instructor_a_id)} and ${nameOf(p.instructor_b_id)}`;
+                  return (
+                    <li
+                      key={pairKey(p)}
+                      className="flex items-center justify-between gap-2 rounded px-2 py-1.5 text-sm text-ink"
+                    >
+                      <span>{pair}</span>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        aria-label={`Remove the conflict between ${pair}`}
+                        onClick={() =>
+                          setConflicts(conflicts.filter((c) => pairKey(c) !== pairKey(p)))
+                        }
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </li>
+                  );
+                })}
+              </ul>
+              <p className="mt-1.5 text-xs text-muted">
+                {conflicts.length} {conflicts.length === 1 ? "conflict" : "conflicts"} declared.
+              </p>
+            </>
+          )}
+
+          {instructors.length < 2 ? (
+            <p className="mt-4 text-xs text-muted">
+              A conflict needs two active instructors, and the studio has{" "}
+              {instructors.length === 0 ? "none" : "only one"} — there is nobody to pair yet.
+            </p>
+          ) : (
+            <div className="mt-4 flex flex-wrap items-end gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="conflict-a">Instructor</Label>
+                <select
+                  id="conflict-a"
+                  className="w-48 rounded-md border border-border bg-card p-2 text-sm text-ink"
+                  value={pickA}
+                  onChange={(e) => {
+                    setPickA(e.target.value);
+                    setPickB("");
+                  }}
+                >
+                  <option value="">Choose…</option>
+                  {instructors.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="conflict-b">Cannot be away with</Label>
+                <select
+                  id="conflict-b"
+                  className="w-48 rounded-md border border-border bg-card p-2 text-sm text-ink"
+                  value={pickB}
+                  disabled={pickA === ""}
+                  onChange={(e) => setPickB(e.target.value)}
+                >
+                  <option value="">Choose…</option>
+                  {pairableWith(pickA).map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={pickA === "" || pickB === ""}
+                onClick={() => {
+                  setConflicts([...conflicts, canonical(pickA, pickB)]);
+                  setPickA("");
+                  setPickB("");
+                }}
+              >
+                <Plus className="h-4 w-4" /> Add
+              </Button>
+            </div>
+          )}
+        </section>
+
         <div className="flex items-center justify-between">
           <span className="text-xs text-muted">
             {policy.updatedAt
@@ -458,6 +600,9 @@ export default function PolicyPage() {
               onClick={() => {
                 setDraft(policy);
                 setCoverGroup(savedCoverGroup);
+                setConflicts(savedConflicts);
+                setPickA("");
+                setPickB("");
               }}
             >
               Reset

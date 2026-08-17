@@ -1,8 +1,9 @@
-import { asc, eq, inArray } from 'drizzle-orm'
+import { and, asc, eq, inArray } from 'drizzle-orm'
 import { db } from '../../db'
 import { globalPolicy, ptBookingConfig } from '../../db/schema/policy'
-import { instructors } from '../../db/schema/catalog'
-import { NotFoundError } from '../../shared/errors'
+import { instructors, leaveConflicts } from '../../db/schema/catalog'
+import { staffUsers } from '../../db/schema/identity'
+import { BadRequestError, NotFoundError } from '../../shared/errors'
 
 const POLICY_SINGLETON_ID = '00000000-0000-0000-0000-000000000001'
 const PT_CONFIG_SINGLETON_ID = '00000000-0000-0000-0000-000000000002'
@@ -37,18 +38,37 @@ export interface UpdateGlobalPolicyInput {
   /** The whole **Cover Group**, as one ticked set of instructor staff user ids.
    *  Absent leaves membership alone; present replaces it entirely. */
   coverGroupStaffIds?: readonly string[]
+  /** Every declared **Leave Conflict**, as one replacement set. Absent leaves
+   *  the declared pairs alone; present replaces them entirely. */
+  leaveConflictPairs?: readonly LeaveConflictPair[]
 }
 
+/** One declared pair, in whatever order the admin picked the two. */
+export interface LeaveConflictPair {
+  instructorAId: string
+  instructorBId: string
+}
+
+/** The pair as it is stored: lower id first, which is what the table's CHECK
+ *  enforces and what makes "Alice and Bob" and "Bob and Alice" one row. */
+const canonical = (p: LeaveConflictPair): LeaveConflictPair =>
+  p.instructorAId < p.instructorBId
+    ? p
+    : { instructorAId: p.instructorBId, instructorBId: p.instructorAId }
+
+const pairKey = (p: LeaveConflictPair) => `${p.instructorAId}:${p.instructorBId}`
+
 /**
- * One PATCH, one transaction: the caps and the Cover Group are saved together or
- * not at all. They are one screen and one decision — a half-applied save would
- * leave a cap raised over a set that never changed.
+ * One PATCH, one transaction: the caps, the Cover Group and the declared Leave
+ * Conflicts are saved together or not at all. They are one screen and one
+ * decision — a half-applied save would leave a cap raised over a set that never
+ * changed.
  */
 export async function updateGlobalPolicy(
   patch: UpdateGlobalPolicyInput,
   staffId: string,
 ): Promise<GlobalPolicyRow> {
-  const { coverGroupStaffIds, ...columns } = patch
+  const { coverGroupStaffIds, leaveConflictPairs, ...columns } = patch
   return db.transaction(async tx => {
     const [row] = await tx
       .update(globalPolicy)
@@ -77,8 +97,80 @@ export async function updateGlobalPolicy(
           .where(inArray(instructors.staffUserId, [...coverGroupStaffIds]))
       }
     }
+    if (leaveConflictPairs !== undefined) {
+      // Same reason as above: the whole-table lock in staff-user-id order, taken
+      // before anything is written, is what keeps this save and a leave
+      // submission (services/leave/requests.ts) from deadlocking.
+      await tx
+        .select({ id: instructors.staffUserId })
+        .from(instructors)
+        .orderBy(asc(instructors.staffUserId))
+        .for('update')
+      const pairs = await validatedConflictPairs(tx, leaveConflictPairs)
+      // One replacement set, so the old declarations go and the new ones arrive
+      // in the same transaction — there is no add and no remove to drift apart.
+      await tx.delete(leaveConflicts)
+      if (pairs.length > 0) await tx.insert(leaveConflicts).values(pairs)
+    }
     return row
   })
+}
+
+/**
+ * The arriving set, canonicalised and checked: two DIFFERENT people, both of
+ * them active instructors, and no pair declared twice once the ordering is
+ * normalised. Each refusal says what an admin can do about it.
+ *
+ * The table's CHECK and primary key say the same three things, but a constraint
+ * violation reaches an admin as a 500 — these run first so it reaches them as a
+ * sentence.
+ */
+async function validatedConflictPairs(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  arriving: readonly LeaveConflictPair[],
+): Promise<LeaveConflictPair[]> {
+  const pairs = arriving.map(canonical)
+  if (pairs.some(p => p.instructorAId === p.instructorBId)) {
+    throw new BadRequestError('invalid_leave_conflict', {
+      message: 'An instructor cannot be in a leave conflict with themselves. Pick two different people.',
+    })
+  }
+  const seen = new Set<string>()
+  for (const p of pairs) {
+    if (seen.has(pairKey(p))) {
+      throw new BadRequestError('duplicate_leave_conflict', {
+        message: 'That pair is already declared. A pair counts once, whichever way round it was picked.',
+      })
+    }
+    seen.add(pairKey(p))
+  }
+  const ids = [...new Set(pairs.flatMap(p => [p.instructorAId, p.instructorBId]))]
+  if (ids.length > 0) {
+    const active = await tx
+      .select({ id: instructors.staffUserId })
+      .from(instructors)
+      .innerJoin(staffUsers, eq(staffUsers.id, instructors.staffUserId))
+      .where(and(inArray(instructors.staffUserId, ids), eq(staffUsers.status, 'active')))
+    if (active.length !== ids.length) {
+      throw new BadRequestError('leave_conflict_instructor_not_active', {
+        message:
+          'One of those people is not an active instructor. Reload the screen and declare the pair again.',
+      })
+    }
+  }
+  return pairs
+}
+
+/** Every declared **Leave Conflict**, lower id first — the pairs exactly as the
+ *  table holds them. */
+export async function readLeaveConflicts(): Promise<LeaveConflictPair[]> {
+  return db
+    .select({
+      instructorAId: leaveConflicts.instructorAId,
+      instructorBId: leaveConflicts.instructorBId,
+    })
+    .from(leaveConflicts)
+    .orderBy(asc(leaveConflicts.instructorAId), asc(leaveConflicts.instructorBId))
 }
 
 /** Who is in the **Cover Group** — the staff user ids of every instructor in it. */

@@ -16,6 +16,8 @@ const bounded = (message: string, min: number, max?: number) => {
 
 const leaveCap = z.number().int(LEAVE_CAP_MESSAGE).min(1, LEAVE_CAP_MESSAGE).max(99, LEAVE_CAP_MESSAGE)
 
+const LEAVE_CONFLICT_MESSAGE = 'A leave conflict must be a pair of instructors.'
+
 /** A rejected body answers with a reason an admin can read, not a raw zod dump. */
 const explainInvalid = (result: { success: boolean; error?: unknown }) => {
   if (result.success) return
@@ -47,6 +49,18 @@ const globalPatch = z.object({
   cover_group_staff_ids: z
     .array(z.string().uuid('The Cover Group must be a set of instructors.'))
     .optional(),
+  // Every declared Leave Conflict, as one replacement set. Which pairs are
+  // allowed — two different, active instructors, each pair once — is the
+  // service's call; this only says what the shape has to be.
+  leave_conflicts: z
+    .array(
+      z.object({
+        instructor_a_id: z.string().uuid(LEAVE_CONFLICT_MESSAGE),
+        instructor_b_id: z.string().uuid(LEAVE_CONFLICT_MESSAGE),
+      }),
+      { message: LEAVE_CONFLICT_MESSAGE },
+    )
+    .optional(),
 })
 
 const ptPatch = z.object({
@@ -68,6 +82,14 @@ function serializeGlobal(r: svc.GlobalPolicyRow) {
   }
 }
 
+/** The declared pairs, lower id first, exactly as the table holds them. */
+async function serializeConflicts() {
+  return (await svc.readLeaveConflicts()).map(p => ({
+    instructor_a_id: p.instructorAId,
+    instructor_b_id: p.instructorBId,
+  }))
+}
+
 function serializePt(r: svc.PtBookingConfigRow) {
   return {
     book_in_advance_days: r.bookInAdvanceDays,
@@ -83,6 +105,7 @@ const app = new Hono()
       global_policy: serializeGlobal(global_policy),
       pt_booking_config: serializePt(pt_booking_config),
       cover_group_staff_ids: await svc.readCoverGroup(),
+      leave_conflicts: await serializeConflicts(),
     })
   })
   .patch('/global', zValidator('json', globalPatch, explainInvalid), async c => {
@@ -109,11 +132,23 @@ const app = new Hono()
         ...(body.cover_group_staff_ids !== undefined
           ? { coverGroupStaffIds: body.cover_group_staff_ids }
           : {}),
+        ...(body.leave_conflicts !== undefined
+          ? {
+              leaveConflictPairs: body.leave_conflicts.map(p => ({
+                instructorAId: p.instructor_a_id,
+                instructorBId: p.instructor_b_id,
+              })),
+            }
+          : {}),
       },
       staffId,
     )
     c.set('auditTarget' as any, { table: 'global_policy', id: row.id })
-    return c.json({ ...serializeGlobal(row), cover_group_staff_ids: await svc.readCoverGroup() })
+    return c.json({
+      ...serializeGlobal(row),
+      cover_group_staff_ids: await svc.readCoverGroup(),
+      leave_conflicts: await serializeConflicts(),
+    })
   })
   .patch('/pt', zValidator('json', ptPatch), async c => {
     const body = c.req.valid('json')
