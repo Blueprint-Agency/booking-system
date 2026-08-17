@@ -73,7 +73,8 @@
       "mcp__plugin_playwright_playwright__browser_click",
       "PowerShell(head *)",
       "Bash(docker exec *)",
-      "PowerShell(docker exec yoga-sadhana-db *)"
+      "PowerShell(docker exec yoga-sadhana-db *)",
+      "PowerShell(gh issue *)"
     ]
   }
 }
