@@ -371,7 +371,7 @@ function ClassCreditsSection({
                   key={p.id}
                   pkg={p}
                   disabled={hasUnlimited}
-                  disabledReason={hasUnlimited ? "Unlimited pass already active" : undefined}
+                  disabledReason="Available once your Unlimited pass ends"
                 />
               ))}
             </div>
@@ -404,7 +404,7 @@ function ClassCreditsSection({
                   // a renewal, which the backend accepts and stores Dormant (§3).
                   // Only a live Credit Bundle conflicts.
                   disabled={hasBundle}
-                  disabledReason="Credit Bundle still active"
+                  disabledReason="Available once your Credit Bundle credits are used up"
                 />
               ))}
             </div>
@@ -446,11 +446,9 @@ function TrialSection({
   }
   // Greyed out unless the client owns nothing yet. Distinguish "already used"
   // from "not a new member" so the reason is clear.
-  const disabledReason = !trialEligible
-    ? trialUsed
-      ? "Trial already used"
-      : "New members only"
-    : undefined;
+  const disabledReason = trialUsed
+    ? "Trial already used"
+    : "New members only";
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted text-center max-w-xl mx-auto">
@@ -613,7 +611,7 @@ function BundleCard({
 }: {
   pkg: ApiClassPackage;
   disabled: boolean;
-  disabledReason?: string;
+  disabledReason: string;
 }) {
   const credits = pkg.credits ?? 0;
   const validity =
@@ -631,12 +629,13 @@ function BundleCard({
       <PriceBlock pkg={pkg} />
       <div className="mt-6 flex-1" />
       {disabled ? (
-        <span
-          title={disabledReason}
+        <button
+          type="button"
+          disabled
           className="mt-6 w-full text-center rounded-full bg-ink/10 text-muted px-5 py-3 text-sm font-medium cursor-not-allowed"
         >
-          Unavailable
-        </span>
+          {disabledReason}
+        </button>
       ) : (
         <BuyButton
           target={{ kind: "package", packageKind: "class", packageId: pkg.id }}
@@ -659,7 +658,7 @@ function UnlimitedCard({
 }: {
   pkg: ApiClassPackage;
   disabled: boolean;
-  disabledReason?: string;
+  disabledReason: string;
 }) {
   const months =
     pkg.duration_months != null
@@ -680,12 +679,13 @@ function UnlimitedCard({
         <li>Covers one studio — you choose at checkout</li>
       </ul>
       {disabled ? (
-        <span
-          title={disabledReason}
+        <button
+          type="button"
+          disabled
           className="mt-6 w-full text-center rounded-full bg-ink/10 text-muted px-5 py-3 text-sm font-medium cursor-not-allowed"
         >
-          Unavailable
-        </span>
+          {disabledReason}
+        </button>
       ) : (
         <BuyButton
           target={{ kind: "package", packageKind: "class", packageId: pkg.id }}
@@ -713,7 +713,7 @@ function TrialCard({
 }: {
   pkg: ApiClassPackage;
   disabled: boolean;
-  disabledReason?: string;
+  disabledReason: string;
   isClaiming: boolean;
   onRequestPurchase: () => void;
 }) {
@@ -747,12 +747,13 @@ function TrialCard({
         <li>Any group class, any location</li>
       </ul>
       {disabled ? (
-        <span
-          title={disabledReason}
+        <button
+          type="button"
+          disabled
           className="mt-6 w-full text-center rounded-full bg-ink/10 text-muted px-5 py-3 text-sm font-medium cursor-not-allowed"
         >
-          {disabledReason ?? "Unavailable"}
-        </span>
+          {disabledReason}
+        </button>
       ) : (
         <>
           <button
