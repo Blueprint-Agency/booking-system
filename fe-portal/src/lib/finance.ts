@@ -32,15 +32,63 @@ export type MoneyEventKind =
   | "instructor_pay"
   | "manual";
 
+/**
+ * What the transaction was, in the studio's words. Mirrors `MoneyEventType` in
+ * be/src/services/finance/events.ts — NOT the same axis as `kind`, which says
+ * where the row came from and whether it can be edited.
+ */
+export type FinanceType =
+  | "credit"
+  | "unlimited"
+  | "trial"
+  | "pt_package"
+  | "addon"
+  | "workshop"
+  | "corporate"
+  | "merch"
+  | "refund"
+  | "class"
+  | "pt_session"
+  | "manual";
+
+/**
+ * Display names for the type column and the type filter — one source, so a
+ * filter option can never read differently from the rows it selects.
+ *
+ * Insertion order IS the filter's order: what the studio sells first, then what
+ * it pays for, then Refunds. The dropdown maps over this rather than keeping a
+ * second list of the same twelve in a different order.
+ */
+export const FINANCE_TYPE_LABEL: Record<FinanceType, string> = {
+  credit: "Credit",
+  unlimited: "Unlimited",
+  trial: "Trial",
+  pt_package: "PT Package",
+  addon: "Add-on",
+  workshop: "Workshop",
+  corporate: "Corporate",
+  merch: "Merch",
+  class: "Class",
+  pt_session: "PT Session",
+  manual: "Manual",
+  refund: "Refund",
+};
+
+export const FINANCE_TYPES = Object.keys(FINANCE_TYPE_LABEL) as FinanceType[];
+
 /** The Location filter value for rows that record no Location at all. */
 export const UNATTRIBUTED = "unattributed";
 
 export interface FinanceRow {
   kind: MoneyEventKind;
+  type: FinanceType;
   id: string;
   occurred_at: string;
   ends_at: string | null;
-  label: string;
+  /** Which one of the type — "Bundle of 10", the class's name. */
+  variant: string | null;
+  /** The member who paid, or the instructor being paid. */
+  user_name: string | null;
   location_id: string | null;
   location_name: string | null;
   unattributed: boolean;
@@ -93,8 +141,10 @@ export interface FinanceResponse {
 }
 
 export interface FinanceFilters {
-  instructorId?: string;
-  classTypeId?: string;
+  /** One transaction type, or empty for every type. */
+  type?: string;
+  /** Free text over the member's or the instructor's name. */
+  q?: string;
   /** A Location id, or UNATTRIBUTED. Empty means every Location. */
   location?: string;
   needsPay?: boolean;
@@ -103,8 +153,8 @@ export interface FinanceFilters {
 
 /** Empty strings mean "no filter" — that is what a picker's "All" option is. */
 const toParams = (f: FinanceFilters) => ({
-  instructor_id: f.instructorId || undefined,
-  class_type_id: f.classTypeId || undefined,
+  type: f.type || undefined,
+  q: f.q?.trim() || undefined,
   location: f.location || undefined,
   needs_pay: f.needsPay ? "true" : undefined,
   ...rangeToParams(f.range),
@@ -112,6 +162,55 @@ const toParams = (f: FinanceFilters) => ({
 
 export function fetchFinance(api: Api, filters: FinanceFilters): Promise<FinanceResponse> {
   return api.get<FinanceResponse>("/portal/admin/finance", toParams(filters));
+}
+
+/* -------------------------------- Overview -------------------------------- */
+
+export type SaleCategory = "classes" | "pt" | "workshops" | "corporate" | "merch";
+
+export const SALE_CATEGORY_LABEL: Record<SaleCategory, string> = {
+  classes: "Classes",
+  pt: "Personal training",
+  workshops: "Workshops",
+  corporate: "Corporate",
+  merch: "Merch",
+};
+
+export interface CategorySales {
+  category: SaleCategory;
+  /** Sums to the Gross tile across all categories. */
+  gross_sgd: number;
+  collected_sgd: number;
+  count: number;
+}
+
+export interface ClassPopularity {
+  class_type_id: string;
+  name: string;
+  /** Check-ins, not bookings. */
+  attended: number;
+  /** The same count over the equally-long window before. Null on All time. */
+  previous: number | null;
+}
+
+export interface FinanceOverview {
+  totals: FinanceTotals;
+  /** Sessions with no pay set. Excluded from Net, so Net says so. */
+  unpriced_count: number;
+  sales_by_category: CategorySales[];
+  by_instructor: FinanceInstructorTotal[];
+  members: { active: number; joined: number };
+  classes: ClassPopularity[];
+}
+
+/**
+ * The overview reads ONLY a period — it deliberately ignores the ledger's
+ * type/user/location filters. A "total sales" figure narrowed to one instructor
+ * is not an overview, and a reader who scrolled past the filters would have no
+ * way to tell that the number above them had moved.
+ */
+export function fetchFinanceOverview(api: Api, range: DateRange): Promise<FinanceOverview> {
+  return api.get<FinanceOverview>("/portal/admin/finance/overview", rangeToParams(range));
 }
 
 /**

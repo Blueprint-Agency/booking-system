@@ -249,7 +249,9 @@ The old "+ corporate" package dropdown and the `/admin/schedule/new/corporate` d
 
 ### `finance.ts` (gated `staffAny` — admin + superadmin)
 
-Every **Money Event** in a period, money in and money out, with the studio's five figures over it. Replaces the admin `payroll.ts` surface; the instructor's own Teaching log (`portal/instructor/payroll.ts`) is unchanged. See `docs/md/spec-finance.md` and `be/docs/adr/0002-finance-replaces-payroll.md`.
+Every **Money Event** in a period, money in and money out, with the studio's five figures over it. Replaces the admin `payroll.ts` surface; the instructor's own Teaching log (`portal/instructor/payroll.ts`) is unchanged. See `docs/md/spec-finance.md`, `be/docs/adr/0002-finance-replaces-payroll.md` and `be/docs/adr/0003-finance-reads-as-a-general-ledger.md`.
+
+Every event carries a **Type** and a **Variant** — what it was, and which one of it — alongside the `kind` that says which source table it came from and whether it may be edited. The two axes do not map one-to-one: a `purchase` splits into Credit, Unlimited, Trial and PT Package, while a Workshop ticket and the instructor paid to teach that workshop share one Type across two kinds. Type is set by the query that read the row, never inferred from the row's other fields. The member who paid and the instructor being paid collapse into one `user_name` — a ledger has one counterparty per line, and which side of the studio they stand on is what Type says.
 
 Money **in** is unioned from `client_packages` (purchases, plus a separate row per Cross-Location Add-On), `bookings` where `kind = 'workshop'`, `stripe_payments` where `kind = 'corporate_package'`, `merch_orders`, and `stripe_payments` with `status = 'refunded'` (as negative Refund rows). Money **out** is `services/payroll`'s existing five-source union, unchanged — Finance does not re-derive what "a completed session that owes pay" means.
 
@@ -267,8 +269,9 @@ Only Instructor Pay and Manual Entries are writable. There is deliberately no en
 
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/finance` | Every Money Event, newest first. Optional filters: `?instructor_id`, `?class_type_id`, `?location` (a Location id or the literal `unattributed`), `?needs_pay=true`, `?from`, `?to`. An instructor or class-type filter is a question about teaching, so it excludes every money-in row. Response: `{ rows, totals, instructor_totals, unpriced_count }` where `totals` is `{ gross_sgd, discounts_sgd, refunds_sgd, instructor_pay_sgd, net_sgd }` over the WHOLE filtered range. |
-| GET | `/finance/export` | The same read, same filters, as `text/csv`. A projection of the rows above — not a second query. |
+| GET | `/finance` | Every Money Event, newest first. Optional filters: `?type` (one Type), `?q` (substring of the member's or instructor's name), `?location` (a Location id or the literal `unattributed`), `?needs_pay=true`, `?from`, `?to`, plus `?instructor_id` and `?class_type_id`, which the portal no longer sends but the route still honours. An instructor or class-type filter is a question about teaching, so it excludes every money-in row. Response: `{ rows, totals, instructor_totals, unpriced_count }` where `totals` is `{ gross_sgd, discounts_sgd, refunds_sgd, instructor_pay_sgd, net_sgd }` over the WHOLE filtered range. |
+| GET | `/finance/overview` | The period's headline figures. Takes `?from` and `?to` and **nothing else** — an overview narrowed to one instructor is not an overview, and a figure that moved because of a filter the reader has scrolled past reads as a fact. Response: `{ totals, unpriced_count, sales_by_category, by_instructor, members, classes }`. `sales_by_category` regroups the same rows `/finance` returns (Classes / PT / Workshops / Corporate / Merch) so its gross sums to the Gross tile; `members` is `{ active, joined }` where `joined` is period-scoped and `active` is a stock read **today**, ignoring the range (`client_packages.active` has no history to date it back with — see ADR 0003); `classes` is attendance per class type with the same count over the equally-long, half-open window immediately before (`null` when the period is unbounded). |
+| GET | `/finance/export` | The same read, same filters, as `text/csv`, with the columns in the order the screen shows them: date, time, user, type, variant, price, location, discount, promo code, money in, money out, refunded. Date and time are split and rendered in studio time so a spreadsheet can sort and group them. A projection of the rows above — not a second query. |
 | POST | `/finance/manual` | Create a Manual Entry. `{ instructor_id, amount_sgd, label, entry_date? }`. |
 | DELETE | `/finance/manual/:id` | Remove a stray Manual Entry. |
 | PATCH | `/finance/pay/:kind/:id` | `kind ∈ {class, pt, workshop, manual}`. Body `{ instructor_pay_sgd: number\|null, instructor_id? }` — sets or (with `null`) clears one instructor's pay on that session. `instructor_id` is required for workshops and needed wherever a session has supporting instructors. |
@@ -303,7 +306,7 @@ Per `admin-restructure.md` §15a, **admin role is read-only on Clients**. Mutati
 
 | Method | Path | Role | Effect |
 |---|---|---|---|
-| GET | `/clients` | admin+superadmin | List with search, status filter |
+| GET | `/clients` | admin+superadmin | List with search, status filter. Each row also carries the trial funnel — `trial_started_at` (first trial purchase, `null` = never bought one), `attended` (classes turned up to, all time) and `converted` (bought anything that isn't another trial) — which is what the portal's **Trials** filter counts. |
 | GET | `/clients/:id` | admin+superadmin | Profile incl. packages (including any trial pass + active promotion frozen at purchase), booking history, cancellation count, attendance, referrals, waiver. Admin views are workspace-agnostic — Clients is global. |
 | DELETE | `/clients/:id` | superadmin | **Block** — sets `deleted_at`, bans the user in Clerk and revokes sessions. Nothing is erased; bookings/packages/ledger are preserved. |
 | POST | `/clients/:id/restore` | superadmin | **Unblock** — clears `deleted_at`, unbans in Clerk. |

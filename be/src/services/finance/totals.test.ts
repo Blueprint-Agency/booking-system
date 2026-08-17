@@ -8,7 +8,9 @@ function ev(p: Partial<MoneyEvent> & { kind: MoneyEvent['kind'] }): MoneyEvent {
   return {
     id: 'x-1',
     occurredAt: at('2026-06-01T02:00:00.000Z'),
-    label: 'Something',
+    type: 'credit',
+    variant: 'Something',
+    party: null,
     locationId: null,
     locationName: null,
     listPriceSgd: null,

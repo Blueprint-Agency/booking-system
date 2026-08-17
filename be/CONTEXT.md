@@ -94,6 +94,26 @@ _Avoid_: unused, unconsumed, clean, fresh, pristine
 One thing that moved money, or that owes money, on the day it happened. A purchase, a Refund, a session's Instructor Pay, or a Manual Entry. Every figure the studio reports is a sum over Money Events; there is no separate stored total.
 _Avoid_: transaction, ledger entry, line item, record
 
+**Type**:
+What a Money Event was, in the studio's own words — Credit, Unlimited, Trial, PT Package, Add-on, Workshop, Corporate, Merch, Class, PT Session, Manual, Refund. A different axis from the event's `kind`, which says which table the row came from and whether an admin may edit it: two kinds can share a Type (a Workshop ticket sold and the instructor paid to teach it), and one kind splits across several (a purchase is a Credit, an Unlimited, a Trial or a PT Package). Carried on the event, because only the query that read the row knows it.
+_Avoid_: category, product type, kind
+
+**Counterparty**:
+The one person a Money Event is with — the member who paid, or the instructor being paid. One per event, never both: which side of the studio they stand on is what Type says, so the two never need their own columns. Called `party` on the event, `user_name` on the wire, and shown as **User**.
+_Avoid_: client, customer, payee, recipient, both parties
+
+**Variant**:
+Which one of the Type — "Bundle of 10", the workshop's name, the merch item's title, the class's name. Null where the Type is the whole story: a Refund, a Corporate package, a Cross-Location Add-On.
+_Avoid_: description, label, item, product name, SKU
+
+**Sale Category**:
+What the studio sells, grouped as an owner groups it: Classes, Personal training, Workshops, Corporate, Merch. Coarser than Type on purpose — Credit, Unlimited, Trial and the Add-On are four products and one question. Only money-in events have one.
+_Avoid_: revenue stream, segment, product line, bucket
+
+**Active Member**:
+A member holding a live entitlement — an active, unexpired package — **today**. A stock, not a flow: unlike every other overview figure, a longer period does not make it bigger, and it does not move with the period at all. A Dormant Unlimited Plan counts; its clock has not started, but the member holds it. Not datable to a past instant: `client_packages.active` carries no history, so "Active Members at the end of June" is a figure this schema cannot produce — see ADR 0003.
+_Avoid_: subscriber, current member, paying member, retained member
+
 **Instructor Pay**:
 What one instructor is owed for one session they taught, main or supporting. It belongs to the session's date, not to the date the studio hands over the money — the platform does not know when that happens.
 _Avoid_: salary, wage, payroll, fee, rate
@@ -117,6 +137,26 @@ _Avoid_: revenue, sales, turnover, top line
 **Net**:
 Gross, less the money taken off by Promotions and Promo Codes, less Refunds, less Instructor Pay. It is not profit — it excludes rent, wages other than instructors', and what the payment provider keeps.
 _Avoid_: profit, margin, bottom line, earnings, take-home
+
+**Class Popularity**:
+How many people turned up to each Class Type over a period — check-ins, never bookings, because a booked no-show is not popularity. Carries one comparison: the same count over the equally-long window immediately before, which is absent (not zero) when the period has no start.
+_Avoid_: attendance rate, demand, bookings, utilisation, trend line
+
+### The trial funnel
+
+Three questions about the same person, read on Customers rather than on Finance: it is a question about a client, not about a period.
+
+**Trial Funnel**:
+Of the members who bought a Trial Pass: how many attended, and how many went on to pay. Lives behind the Customers page's Trials filter and is counted from the rows that filter shows.
+_Avoid_: trial report, conversion funnel, trial pipeline, leads
+
+**Trial Attendance**:
+Classes a member attended **on their trial** — bookings paid for by the trial package itself. Attendance on any later package is somebody else's number: a member who skipped their trial and came back months later on a bundle turned up zero times, and zero is the follow-up signal.
+_Avoid_: attendance, visits, check-ins, sessions used
+
+**Converted**:
+A member who has paid for a package that is not another trial — ever, not "after the trial". A second trial is not a conversion, a comped grant is not a conversion (nothing was paid), and someone who bought a bundle before trying a new class is already converted.
+_Avoid_: upgraded, retained, activated, signed up, won
 
 ### Instructor leave
 

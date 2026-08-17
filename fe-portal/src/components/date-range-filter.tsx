@@ -12,14 +12,25 @@ import { localDay, localDayRange } from "@/lib/local-day";
 
 export type DateRange = { from: string; to: string } | null;
 
-export type PresetKey = "today" | "7d" | "14d" | "30d" | "month" | "year" | "all";
+export type PresetKey =
+  | "today"
+  | "week"
+  | "7d"
+  | "14d"
+  | "30d"
+  | "month"
+  | "lastmonth"
+  | "year"
+  | "all";
 
 const PRESETS: { key: PresetKey; label: string }[] = [
   { key: "today", label: "Today" },
+  { key: "week", label: "This week" },
   { key: "7d", label: "Last 7 days" },
   { key: "14d", label: "Last 14 days" },
   { key: "30d", label: "Last 30 days" },
   { key: "month", label: "This month" },
+  { key: "lastmonth", label: "Last month" },
   { key: "year", label: "This year" },
   { key: "all", label: "All time" },
 ];
@@ -30,6 +41,13 @@ export function presetRange(key: PresetKey): DateRange {
   switch (key) {
     case "today":
       return { from: today, to: today };
+    case "week": {
+      // Weeks start Monday — the studio's timetable does, and a Sunday start
+      // would put a Sunday class in "last week" the morning after it ran.
+      const start = new Date(now);
+      start.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+      return { from: localDay(start), to: today };
+    }
     case "7d":
     case "14d":
     case "30d": {
@@ -42,6 +60,13 @@ export function presetRange(key: PresetKey): DateRange {
       // Payroll is past-only, so ending "today" rather than end-of-month is
       // equivalent and reads more honestly.
       return { from: localDay(new Date(now.getFullYear(), now.getMonth(), 1)), to: today };
+    case "lastmonth":
+      // A closed month, so it runs to its own last day rather than to today —
+      // day 0 of this month IS the last day of last month.
+      return {
+        from: localDay(new Date(now.getFullYear(), now.getMonth() - 1, 1)),
+        to: localDay(new Date(now.getFullYear(), now.getMonth(), 0)),
+      };
     case "year":
       return { from: localDay(new Date(now.getFullYear(), 0, 1)), to: today };
     case "all":

@@ -43,9 +43,11 @@ Locations are workspaces. Surfaces are partitioned as follows:
 
 **Visual layout** (top to bottom):
 
-- **Settings**: Class Types, Global Policy, Notifications, Waiver (location-independent building blocks + config).
-- **Packages**: Classes, Workshops, Private Sessions, Corporate, Promo Codes, Merch (global, shared across locations). **Merch is the one Packages item both roles manage** — it is shop-floor stock (mats, props, apparel) rather than catalogue governance.
-- **People**: Clients, Staff (members + staff accounts). **Instructors are merged into Staff** — the Staff page has **Admin** and **Instructors** tabs. "+ Invite staff" (Admin tab) invites admin/superadmin; "+ Add instructor" (Instructors tab) routes to the instructor creation flow (which still captures bio, photo, and eligible class types). Instructor rows link to their detail page. There is no separate "Instructors" sidebar item.
+- **Finance**: Finance (§20) — first, because it is the surface an owner opens most and the one every other page eventually reports into.
+- **Config**: Class Types, Promo Codes. **A Promo Code sits in Config, not Packages**: it crosses products, so it belongs with the building blocks rather than inside any one catalogue (contrast a Promotion, which belongs to exactly one product and is edited there).
+- **Packages**: Classes, Workshops, Private Sessions, Corporate, Merch (global, shared across locations). **Merch is the one Packages item both roles manage** — it is shop-floor stock (mats, props, apparel) rather than catalogue governance.
+- **People**: Customers, Corporate Requests, Staff, Leave (members + staff accounts). **Corporate Requests sits here, not in the workspace zone** — a request records no `location_id` until it is scheduled, so there is nothing for the switcher to filter it by; it is a person asking, which is what People is.
+- **Settings**: Global Policy, Notifications, Waiver (location-independent policy + config). **Instructors are merged into Staff** — the Staff page has **Admin** and **Instructors** tabs. "+ Invite staff" (Admin tab) invites admin/superadmin; "+ Add instructor" (Instructors tab) routes to the instructor creation flow (which still captures bio, photo, and eligible class types). Instructor rows link to their detail page. There is no separate "Instructors" sidebar item.
 - **Workspace zone** (bottom, separated by a divider, under a header showing the active location's name): **Schedule, Rooms, Check-in, Inbox, PT Requests**. All are filtered by `activeLocationId`; flipping the switcher reloads them. **PT Requests is workspace-scoped** — clients pick a `location_id` at request time, so the triage queue shows only the active location's requests.
 
 `NavItem.workspaceScoped` marks the workspace-zone items; it is distinct from `NavItem.scope`, which only governs role visibility (admin vs superadmin). The build-order below is the recommended *setup* sequence, not the visual order.
@@ -666,8 +668,15 @@ Two staff role types in the system. (The `instructor` role is reserved in the sc
 ### 15a. Client List (`/admin/clients`)
 
 - Searchable by name or email.
-- Filterable by status (All / Active / Blocked — the Blocked pill is superadmin-only).
+- Filterable by status (All / Active / **Trials** / Blocked — the Blocked pill is superadmin-only).
 - Each row shows: name, email, join date, active package count, upcoming booking count, status chip.
+
+**Trials filter — the trial funnel.** Selecting **Trials** narrows the list to members who bought a Trial Pass and answers the three questions about them in one screen: how many bought a trial, how many attended it, how many converted. Three tiles sit above the list (each with its share of trials), and the table swaps Joined for **Trial started**, adds **Attended**, and reads the status column as **Converted** / **Follow up**.
+
+- **Attended** is attendance *on the trial package*, never the member's attendance overall — someone who skipped their trial and returned later on a bundle reads zero, and zero is the follow-up signal.
+- **Converted** means they paid for a package that is not another trial. A comped grant is not a conversion; a second trial is not one either.
+- The tiles count the rows currently shown, so a search narrows the figures with the list rather than contradicting it.
+- The funnel lives here rather than on Finance because it is a question about a client, not about a period (`be/docs/adr/0003-finance-reads-as-a-general-ledger.md`).
 - "Add client" is not present — clients self-register via the client app. This list is read-only at the list level.
 
 ### 15b. Client Profile (`/admin/clients/[id]`)
@@ -902,9 +911,23 @@ The following sections are out of scope for this phase and will be defined in th
 | Section | Description |
 |---|---|
 | **Dashboard** | Admin landing page — key metrics (bookings, revenue, attendance), unread inbox count, pending check-in alerts, upcoming sessions snapshot. |
-| **Reports** | Aggregate analytics across instructors, class types, and locations — revenue, attendance rates, package sales, cancellation rates. |
+| **Reports** | Aggregate analytics across instructors, class types, and locations — attendance rates, cancellation rates. *(Partly shipped: the money half and class popularity now live on Finance §20.)* |
 | **Audit log** | Immutable system-wide log of all admin actions — credit adjustments, cancellations, invites, status changes, role changes. Referenced throughout this doc as the record-keeping layer. |
 | **Referrals** | Referral program mechanics — reward type, trigger (registration vs. first purchase), admin-configurable reward amount, referral link or code generation. |
 | **Instructor portal** | Instructor-scoped admin view — own upcoming schedule, teaching log, self-service profile edit. |
+
+---
+
+---
+
+## 20. Finance (`/admin/finance`)
+
+The studio's money in one place, replacing the admin Payroll surface. Full behaviour, and the reasoning behind the layout, live in `docs/md/spec-finance.md` and `be/docs/adr/0003-finance-reads-as-a-general-ledger.md`; what matters for the nav is:
+
+- **Its own sidebar group, at the top.** Not Packages (it is not a catalogue) and not Settings (it is not config).
+- **Both roles.** Admin and superadmin both read the records; both edit instructor pay.
+- **Workspace-agnostic.** Most purchases record no Location at all, so filtering the ledger by the switcher would silently drop them; the Location filter on the page carries an explicit **Unattributed** bucket instead.
+- **The overview reads a period and nothing else.** The other filters narrow the table below them and never the figures above — a headline that moved because of a control the reader has scrolled past reads as a fact.
+- The trial funnel is **not** here; it is the Customers page's Trials filter (§15a).
 
 ---

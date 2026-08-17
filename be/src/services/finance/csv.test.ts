@@ -9,7 +9,9 @@ function ev(p: Partial<MoneyEvent> & { kind: MoneyEvent['kind'] }): MoneyEvent {
   return {
     id: 'x-1',
     occurredAt: at('2026-06-01T02:00:00.000Z'),
-    label: 'Something',
+    type: 'credit',
+    variant: 'Something',
+    party: null,
     locationId: null,
     locationName: null,
     listPriceSgd: null,
@@ -29,30 +31,32 @@ function ev(p: Partial<MoneyEvent> & { kind: MoneyEvent['kind'] }): MoneyEvent {
 
 const lines = (csv: string) => csv.split('\r\n')
 
-// -- a label containing a comma cannot shift every later column --------------
+// -- a variant containing a comma cannot shift every later column ------------
 {
   const csv = financeCsv(
     summarizeFinance([
       ev({
         kind: 'purchase',
-        label: '10-Class Pack, 6 months — Tan, Wei Ming',
+        variant: '10-Class Pack, 6 months',
+        party: 'Tan, Wei Ming',
         listPriceSgd: '300.00',
         paidSgd: '270.00',
       }),
     ]),
   )
   const [header, row] = lines(csv)
-  assert.strictEqual(header?.split(',').length, 11)
-  assert.ok(row?.includes('"10-Class Pack, 6 months — Tan, Wei Ming"'))
-  // The quoted field is one cell, so the row still has 11 columns' worth of commas
-  // outside it — check the figures landed in the right places rather than counting.
-  assert.ok(row?.endsWith('300,30,270,,,'), row)
+  assert.strictEqual(header?.split(',').length, 12)
+  assert.ok(row?.includes('"10-Class Pack, 6 months"'))
+  assert.ok(row?.includes('"Tan, Wei Ming"'))
+  // The quoted fields are one cell each, so the figures still land in the right
+  // places — check those rather than counting commas.
+  assert.ok(row?.endsWith('300,Unattributed,30,,270,,'), row)
 }
 
-// -- a quote in a label is doubled, not left to break the field --------------
+// -- a quote in a variant is doubled, not left to break the field ------------
 {
   const csv = financeCsv(
-    summarizeFinance([ev({ kind: 'merch', label: 'The "Grip" Mat', listPriceSgd: '45.00', paidSgd: '45.00' })]),
+    summarizeFinance([ev({ kind: 'merch', type: 'merch', variant: 'The "Grip" Mat', listPriceSgd: '45.00', paidSgd: '45.00' })]),
   )
   assert.ok(lines(csv)[1]?.includes('"The ""Grip"" Mat"'), lines(csv)[1])
 }

@@ -28,7 +28,7 @@ import { workshops } from '../../db/schema/schedule'
 import { clients } from '../../db/schema/identity'
 import { listPayroll, type PayrollRow } from '../payroll/list'
 import { summarizeFinance, type FinanceSummary } from './totals'
-import type { MoneyEvent } from './events'
+import type { MoneyEvent, MoneyEventType } from './events'
 
 /**
  * The Location filter. A Location id narrows to that studio; the literal
@@ -48,9 +48,15 @@ export interface FinanceFilter {
   classTypeId?: string
   /** Only sessions whose pay has not been set yet. */
   needsPayOnly?: boolean
+  /** Narrow to these transaction types. Empty/absent means every type. */
+  types?: readonly MoneyEventType[]
+  /** Case-insensitive substring of the member's or the instructor's name. */
+  q?: string
 }
 
 const base = {
+  variant: null,
+  party: null,
   locationId: null,
   locationName: null,
   listPriceSgd: null,
@@ -64,17 +70,36 @@ const base = {
   classTypeId: null,
   endsAt: null,
   sessionType: null,
-} satisfies Omit<MoneyEvent, 'kind' | 'id' | 'occurredAt' | 'label'>
+} satisfies Omit<MoneyEvent, 'kind' | 'type' | 'id' | 'occurredAt'>
+
+/** What a pay row is a payment *for*, in the type column's vocabulary. */
+const PAYROLL_TYPE: Record<PayrollRow['kind'], MoneyEventType> = {
+  class: 'class',
+  pt: 'pt_session',
+  workshop: 'workshop',
+  manual: 'manual',
+}
+
+/** What a package purchase was, in the type column's vocabulary. */
+const PACKAGE_TYPE: Record<'credit_bundle' | 'unlimited' | 'trial' | 'pt', MoneyEventType> = {
+  credit_bundle: 'credit',
+  unlimited: 'unlimited',
+  trial: 'trial',
+  pt: 'pt_package',
+}
 
 /** Payroll's row shape → a Money Event. Pay rows are the money-out side. */
 function payrollToEvent(r: PayrollRow): MoneyEvent {
   return {
     ...base,
     kind: r.kind === 'manual' ? 'manual' : 'instructor_pay',
+    type: PAYROLL_TYPE[r.kind],
     id: r.id,
     occurredAt: r.startsAt,
     endsAt: r.endsAt,
-    label: r.label,
+    // Payroll's label is the class type, the workshop's name or the entry's own
+    // wording — the "which one" of the type, which is exactly the variant.
+    variant: r.label,
     locationId: r.locationId,
     locationName: r.locationName,
     instructorId: r.instructorId,
@@ -245,13 +270,16 @@ async function listMoneyIn(filter: FinanceFilter): Promise<MoneyEvent[]> {
   const events: MoneyEvent[] = []
 
   for (const r of packageRows) {
-    const name = r.classPackageName ?? r.ptPackageName ?? r.kind
     events.push({
       ...base,
       kind: 'purchase',
+      type: PACKAGE_TYPE[r.kind],
       id: r.id,
       occurredAt: r.purchasedAt,
-      label: `${name} — ${r.clientName}`,
+      // The catalogue item bought — "Bundle of 10". Null where the source
+      // package has been deleted: the type still says what it was.
+      variant: r.classPackageName ?? r.ptPackageName,
+      party: r.clientName,
       locationId: r.locationId,
       locationName: r.locationName,
       listPriceSgd: r.listPriceSgd,
@@ -266,9 +294,10 @@ async function listMoneyIn(filter: FinanceFilter): Promise<MoneyEvent[]> {
       events.push({
         ...base,
         kind: 'addon',
+        type: 'addon',
         id: r.id,
         occurredAt: r.purchasedAt,
-        label: `Cross-Location Add-On — ${r.clientName}`,
+        party: r.clientName,
         locationId: r.locationId,
         locationName: r.locationName,
         listPriceSgd: r.crossLocationPaidSgd,
@@ -282,9 +311,11 @@ async function listMoneyIn(filter: FinanceFilter): Promise<MoneyEvent[]> {
     events.push({
       ...base,
       kind: 'workshop_ticket',
+      type: 'workshop',
       id: r.id,
       occurredAt: r.bookedAt,
-      label: `${r.workshopName} — ${r.clientName}`,
+      variant: r.workshopName,
+      party: r.clientName,
       locationId: r.locationId,
       locationName: r.locationName,
       listPriceSgd: r.listPriceSgd,
@@ -298,9 +329,12 @@ async function listMoneyIn(filter: FinanceFilter): Promise<MoneyEvent[]> {
     events.push({
       ...base,
       kind: 'corporate',
+      type: 'corporate',
       id: r.id,
       occurredAt: r.createdAt,
-      label: `Corporate package — ${r.clientName}`,
+      // No variant: a corporate package is negotiated off-platform and has no
+      // catalogue item behind it to name.
+      party: r.clientName,
       listPriceSgd: r.amountSgd,
       paidSgd: r.amountSgd,
       refunded: isRefunded(r.paymentIntentId),
@@ -311,9 +345,12 @@ async function listMoneyIn(filter: FinanceFilter): Promise<MoneyEvent[]> {
     events.push({
       ...base,
       kind: 'merch',
+      type: 'merch',
       id: r.id,
       occurredAt: r.createdAt,
-      label: `${r.title} — ${r.clientName}`,
+      // The title frozen on the order, not the catalogue's current one.
+      variant: r.title,
+      party: r.clientName,
       listPriceSgd: r.amountSgd,
       paidSgd: r.amountSgd,
       refunded: isRefunded(r.paymentIntentId),
@@ -324,10 +361,11 @@ async function listMoneyIn(filter: FinanceFilter): Promise<MoneyEvent[]> {
     events.push({
       ...base,
       kind: 'refund',
+      type: 'refund',
       id: r.id,
       // Guarded by isNotNull above; the cast is the query's shape, not a guess.
       occurredAt: r.refundedAt as Date,
-      label: `Refund — ${r.clientName}`,
+      party: r.clientName,
       paidSgd: `-${r.amountSgd}`,
       refunded: true,
     })
@@ -362,6 +400,21 @@ export async function getFinance(filter: FinanceFilter): Promise<FinanceSummary>
       filter.location === UNATTRIBUTED
         ? events.filter(e => e.locationId == null)
         : events.filter(e => e.locationId === filter.location)
+  }
+
+  if (filter.types?.length) {
+    const wanted = new Set<string>(filter.types)
+    events = events.filter(e => wanted.has(e.type))
+  }
+
+  // One search box over both sides of the ledger: a member on a purchase, an
+  // instructor on a pay row. Which of the two a name is doesn't have to be known
+  // before typing it, which is the point of not having an Instructor picker.
+  if (filter.q?.trim()) {
+    const needle = filter.q.trim().toLowerCase()
+    events = events.filter(e =>
+      `${e.party ?? ''} ${e.instructorName ?? ''}`.toLowerCase().includes(needle),
+    )
   }
 
   // "Needs pay" is the backlog of sessions priced before pay was required.

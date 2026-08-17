@@ -17,15 +17,30 @@
  *     so no frontend re-derives which rows may be edited;
  *   - rows are newest-first; per-instructor totals are by instructor name.
  */
-import { isEditable, isMoneyIn, type MoneyEvent, type MoneyEventKind } from './events'
+import {
+  isEditable,
+  isMoneyIn,
+  type MoneyEvent,
+  type MoneyEventKind,
+  type MoneyEventType,
+} from './events'
 
 /** A Money Event as the endpoints serialize it (snake_case, JSON-ready). */
 export interface FinanceLine {
   kind: MoneyEventKind
+  /** What this transaction was — the column an owner reads. See MoneyEventType. */
+  type: MoneyEventType
   id: string
   occurred_at: string
   ends_at: string | null
-  label: string
+  /** Which one of the type — "Bundle of 10", the class's name. */
+  variant: string | null
+  /**
+   * The person this row is with: the member who paid, or the instructor being
+   * paid. Collapsed to one column deliberately — a ledger has one counterparty
+   * per line, and which side of the studio they stand on is what `type` says.
+   */
+  user_name: string | null
   location_id: string | null
   location_name: string | null
   /** True where the platform records no Location for this row at all. */
@@ -80,7 +95,7 @@ export interface FinanceSummary {
 }
 
 /** Money is numeric(10,2); accumulate in cents so 0.10 + 0.20 stays 0.30. */
-const toCents = (v: string) => Math.round(Number(v) * 100)
+export const toCents = (v: string | number) => Math.round(Number(v) * 100)
 const fromCents = (c: number) => c / 100
 const num = (v: string | null) => (v == null ? null : Number(v))
 
@@ -96,10 +111,12 @@ function serialize(e: MoneyEvent): FinanceLine {
   const paid = e.paidSgd == null ? null : toCents(e.paidSgd)
   return {
     kind: e.kind,
+    type: e.type,
     id: e.id,
     occurred_at: e.occurredAt.toISOString(),
     ends_at: e.endsAt?.toISOString() ?? null,
-    label: e.label,
+    variant: e.variant,
+    user_name: e.party ?? e.instructorName,
     location_id: e.locationId,
     location_name: e.locationName,
     unattributed: e.locationId == null,

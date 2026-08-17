@@ -17,7 +17,12 @@ import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { formatDate } from "@/lib/formatters";
 
-type StatusFilter = "all" | "active" | "blocked";
+type StatusFilter = "all" | "active" | "trials" | "blocked";
+
+/** Nothing outside the Trials filter has a trial date, so nothing else asks. */
+function trialStarted(c: ApiClient): string {
+  return c.trial_started_at ? formatDate(c.trial_started_at) : "—";
+}
 
 interface ApiClient {
   id: string;
@@ -27,6 +32,12 @@ interface ApiClient {
   joined_at: string;
   /** Set = blocked. Only returned when the caller asked to include them. */
   deleted_at: string | null;
+  /** First trial purchase. Null = never bought a trial. */
+  trial_started_at: string | null;
+  /** Classes turned up to ON the trial — not attendance overall. Zero is the follow-up signal. */
+  attended: number;
+  /** Paid for something that isn't another trial. A comped grant doesn't count. */
+  converted: boolean;
 }
 
 export default function ClientsPage() {
@@ -87,6 +98,7 @@ export default function ClientsPage() {
         const blocked = c.deleted_at !== null;
         if (status === "active" && blocked) return false;
         if (status === "blocked" && !blocked) return false;
+        if (status === "trials" && !c.trial_started_at) return false;
         if (query.trim()) {
           const q = query.toLowerCase();
           return (
@@ -97,6 +109,8 @@ export default function ClientsPage() {
       }),
     [clients, status, query],
   );
+
+  const showTrials = status === "trials";
 
   return (
     <div>
@@ -122,8 +136,8 @@ export default function ClientsPage() {
         </div>
         <div className="flex gap-1.5 text-xs">
           {((isSuperadmin
-            ? ["all", "active", "blocked"]
-            : ["all", "active"]) as StatusFilter[]).map((s) => (
+            ? ["all", "active", "trials", "blocked"]
+            : ["all", "active", "trials"]) as StatusFilter[]).map((s) => (
             <button
               key={s}
               type="button"
@@ -142,6 +156,8 @@ export default function ClientsPage() {
           {filtered.length} of {clients.length}
         </span>
       </div>
+
+      {showTrials && !loading && !error && <TrialFunnel rows={filtered} />}
 
       <div className="rounded-xl border border-border bg-card shadow-soft">
         {loading ? (
@@ -171,6 +187,10 @@ export default function ClientsPage() {
                         <span className="truncate font-medium text-ink">{c.name}</span>
                         {c.deleted_at ? (
                           <Badge tone="error">Blocked</Badge>
+                        ) : showTrials ? (
+                          <Badge tone={c.converted ? "sage" : "warning"}>
+                            {c.converted ? "Converted" : "Follow up"}
+                          </Badge>
                         ) : (
                           <Badge tone="sage">Active</Badge>
                         )}
@@ -178,7 +198,10 @@ export default function ClientsPage() {
                       <div className="truncate text-xs text-muted">{c.email}</div>
                       <div className="mt-2 flex items-center gap-4 text-[11px] text-muted">
                         <span>{c.phone || "—"}</span>
-                        <span className="ml-auto">{formatDate(c.joined_at)}</span>
+                        {showTrials && <span>{c.attended} attended</span>}
+                        <span className="ml-auto">
+                          {showTrials ? trialStarted(c) : formatDate(c.joined_at)}
+                        </span>
                       </div>
                     </div>
                     {isSuperadmin && !c.deleted_at && (
@@ -207,7 +230,10 @@ export default function ClientsPage() {
                   <tr className="text-left text-xs uppercase tracking-wider text-muted">
                     <th className="px-5 py-3 font-medium">Customer</th>
                     <th className="px-5 py-3 font-medium">Phone</th>
-                    <th className="px-5 py-3 font-medium">Joined</th>
+                    <th className="px-5 py-3 font-medium">
+                      {showTrials ? "Trial started" : "Joined"}
+                    </th>
+                    {showTrials && <th className="px-5 py-3 font-medium">Attended</th>}
                     <th className="px-5 py-3 font-medium">Status</th>
                     {isSuperadmin && <th className="px-5 py-3 font-medium" />}
                   </tr>
@@ -228,10 +254,25 @@ export default function ClientsPage() {
                         </Link>
                       </td>
                       <td className="px-5 py-3 text-sm text-muted">{c.phone || "—"}</td>
-                      <td className="px-5 py-3 text-sm text-muted">{formatDate(c.joined_at)}</td>
+                      <td className="px-5 py-3 text-sm text-muted">
+                        {showTrials ? trialStarted(c) : formatDate(c.joined_at)}
+                      </td>
+                      {showTrials && (
+                        <td
+                          className={`px-5 py-3 text-sm tabular-nums ${
+                            c.attended === 0 ? "text-warning" : "text-ink"
+                          }`}
+                        >
+                          {c.attended}
+                        </td>
+                      )}
                       <td className="px-5 py-3">
                         {c.deleted_at ? (
                           <Badge tone="error">Blocked</Badge>
+                        ) : showTrials ? (
+                          <Badge tone={c.converted ? "sage" : "warning"}>
+                            {c.converted ? "Converted" : "Follow up"}
+                          </Badge>
                         ) : (
                           <Badge tone="sage">Active</Badge>
                         )}
@@ -274,6 +315,42 @@ export default function ClientsPage() {
           void load();
         }}
       />
+    </div>
+  );
+}
+
+/**
+ * The trial funnel over whatever the Trials filter is currently showing —
+ * bought, turned up, converted. Counted from the same rows the table lists, so a
+ * number here can't disagree with the list under it.
+ */
+function TrialFunnel({ rows }: { rows: ApiClient[] }) {
+  const attended = rows.filter((c) => c.attended > 0).length;
+  const converted = rows.filter((c) => c.converted).length;
+  const steps = [
+    { label: "Bought a trial", value: rows.length },
+    { label: "Attended their trial", value: attended },
+    { label: "Converted", value: converted, hint: "Went on to pay for a package" },
+  ];
+  return (
+    <div className="mb-4 grid gap-2 sm:grid-cols-3">
+      {steps.map((s) => (
+        <div key={s.label} className="rounded-xl border border-border bg-card p-3 shadow-soft">
+          <div className="text-xs text-muted">{s.label}</div>
+          <div className="mt-0.5 flex items-baseline gap-2">
+            <span className="text-lg font-semibold tabular-nums text-ink">{s.value}</span>
+            {/* Share of trials, not of the previous step — an owner asks "how
+                many of the people who tried", never "how many of the ones who
+                turned up". */}
+            {rows.length > 0 && s.value !== rows.length && (
+              <span className="text-xs text-muted tabular-nums">
+                {Math.round((s.value / rows.length) * 100)}%
+              </span>
+            )}
+          </div>
+          {s.hint && <div className="mt-0.5 text-[10px] leading-tight text-muted">{s.hint}</div>}
+        </div>
+      ))}
     </div>
   );
 }

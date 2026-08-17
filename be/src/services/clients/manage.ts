@@ -1,6 +1,8 @@
-import { and, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm'
+import { and, desc, eq, getTableColumns, ilike, isNull, or, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { clients } from '../../db/schema/identity'
+import { clientPackages } from '../../db/schema/packages'
+import { bookings } from '../../db/schema/bookings'
 import { manualAdjustments } from '../../db/schema/ledger'
 import { getClerkClientApp } from '../../lib/clerk'
 import { env } from '../../env'
@@ -19,11 +21,33 @@ export interface ListClientsOptions {
 }
 
 /**
+ * A directory row, plus the three facts the trial funnel is read from: did they
+ * start a trial, did they turn up, and did they then buy something real.
+ */
+export type ClientListRow = ClientRow & {
+  /** First trial purchase. Null = never bought a trial. */
+  trialStartedAt: Date | null
+  /**
+   * Classes they turned up to ON the trial — not their attendance overall.
+   * Someone who skipped the trial and came later on a pack has zero here, which
+   * is the whole point: zero is the follow-up signal.
+   */
+  attended: number
+  /**
+   * Paid for something that isn't another trial. A second trial is not a
+   * conversion, and neither is a comped grant — the question is who turned into
+   * paying business. Ever, not "after the trial": someone who bought a pack
+   * before trying a new class is already converted.
+   */
+  converted: boolean
+}
+
+/**
  * Admin client directory. Self-registered members (via the client app webhook)
  * and admin-invited members both land here. Soft-deleted clients (deletedAt
  * set) are filtered out unless includeDeleted is true.
  */
-export async function listClients(opts: ListClientsOptions): Promise<ClientRow[]> {
+export async function listClients(opts: ListClientsOptions): Promise<ClientListRow[]> {
   const conds = []
   if (!opts.includeDeleted) conds.push(isNull(clients.deletedAt))
   if (opts.status) conds.push(eq(clients.status, opts.status))
@@ -31,11 +55,35 @@ export async function listClients(opts: ListClientsOptions): Promise<ClientRow[]
     const term = `%${opts.q.trim()}%`
     conds.push(or(ilike(clients.name, term), ilike(clients.email, term)))
   }
-  return db
-    .select()
+  // Correlated rather than joined: each is per-client over all time, and joining
+  // them would multiply a client's row by its own matches.
+  // ponytail: three subqueries per row — fine at directory size (low thousands);
+  // move to a grouped CTE if the list ever pages.
+  const rows = await db
+    .select({
+      ...getTableColumns(clients),
+      trialStartedAt: sql<Date | null>`(
+        select min(cp.purchased_at) from ${clientPackages} cp
+        where cp.client_id = ${clients.id} and cp.kind = 'trial'
+      )`,
+      attended: sql<number>`(
+        select count(*) from ${bookings} b
+        join ${clientPackages} cp on cp.id = b.client_package_id
+        where b.client_id = ${clients.id}
+          and b.check_in_state = 'attended'
+          and cp.kind = 'trial'
+      )`,
+      converted: sql<boolean>`exists (
+        select 1 from ${clientPackages} cp
+        where cp.client_id = ${clients.id}
+          and cp.kind <> 'trial'
+          and cp.amount_paid_sgd > 0
+      )`,
+    })
     .from(clients)
     .where(conds.length ? and(...conds) : undefined)
     .orderBy(desc(clients.joinedAt))
+  return rows.map(r => ({ ...r, attended: Number(r.attended) }))
 }
 
 /**

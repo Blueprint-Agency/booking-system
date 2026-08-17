@@ -21,10 +21,12 @@ function spyApi(seen: { path?: string; query?: unknown; body?: unknown }): Api {
 
 const row = (p: Partial<FinanceRow>): FinanceRow => ({
   kind: "instructor_pay",
+  type: "class",
   id: "sess-1",
   occurred_at: "2026-06-01T02:00:00.000Z",
   ends_at: null,
-  label: "Hatha",
+  variant: "Hatha",
+  user_name: "Anya",
   location_id: null,
   location_name: null,
   unattributed: true,
@@ -45,19 +47,20 @@ const row = (p: Partial<FinanceRow>): FinanceRow => ({
   ...p,
 });
 
-// "All locations" / "All instructors" are empty strings in the pickers; sending
-// one as a filter is a 400 from the uuid validator, not an unfiltered list.
+// "All types" / "All locations" are empty strings in the pickers; sending one as
+// a filter is a 400 from the enum/uuid validators, not an unfiltered list. The
+// search box is trimmed for the same reason — a box holding only spaces is empty.
 test("unset filters are omitted, not sent blank", async () => {
   const seen: { query?: unknown } = {};
   await fetchFinance(spyApi(seen), {
-    instructorId: "",
-    classTypeId: "",
+    type: "",
+    q: "   ",
     location: "",
     range: null,
   });
   assert.deepStrictEqual(seen.query, {
-    instructor_id: undefined,
-    class_type_id: undefined,
+    type: undefined,
+    q: undefined,
     location: undefined,
     needs_pay: undefined,
     from: undefined,

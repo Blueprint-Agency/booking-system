@@ -34,6 +34,35 @@ export type MoneyEventKind =
   /** A Manual Entry: money owed an instructor that no session accounts for. */
   | 'manual'
 
+/**
+ * What kind of thing this transaction was, in the studio's own words — the
+ * column an owner scans down. Distinct from `kind`, which is a plumbing
+ * distinction (which table the row came from, whether it is editable); two
+ * kinds can share a type (`workshop_ticket` sold and `instructor_pay` for
+ * teaching it are both a Workshop) and one kind splits into several types (a
+ * `purchase` is a Credit, an Unlimited, a Trial or a PT Package).
+ *
+ * Carried on the event, never inferred downstream: only the query that read the
+ * row knows which package kind it was.
+ */
+export const MONEY_EVENT_TYPES = [
+  'credit',
+  'unlimited',
+  'trial',
+  'pt_package',
+  'addon',
+  'workshop',
+  'corporate',
+  'merch',
+  'refund',
+  'class',
+  'pt_session',
+  'manual',
+] as const
+
+/** A list rather than a union so the route's filter enum is the same twelve. */
+export type MoneyEventType = (typeof MONEY_EVENT_TYPES)[number]
+
 const MONEY_IN: ReadonlySet<string> = new Set(MONEY_IN_KINDS)
 
 export const isMoneyIn = (kind: MoneyEventKind): boolean => MONEY_IN.has(kind)
@@ -44,6 +73,7 @@ export const isEditable = (kind: MoneyEventKind): boolean =>
 
 export interface MoneyEvent {
   kind: MoneyEventKind
+  type: MoneyEventType
   /**
    * The source row's id. NOT unique across a result set on its own — a session
    * with two instructors yields two `instructor_pay` events sharing one id, and
@@ -52,7 +82,18 @@ export interface MoneyEvent {
   id: string
   /** The date this belongs to: payment date, refund date, session date, entry date. */
   occurredAt: Date
-  label: string
+  /**
+   * Which one of the type — "Bundle of 10", "Vinyasa Flow", the merch item's
+   * title. Null where the type is the whole story (a Refund, a Corporate
+   * package, an Add-On).
+   */
+  variant: string | null
+  /**
+   * The person on the other side of the money: the member who paid on a
+   * money-in row. Null on money-out rows, where `instructorName` is the person
+   * — the two are kept apart because only one of them is payable.
+   */
+  party: string | null
 
   /** Null means **Unattributed** — see CONTEXT.md. Not "unknown"; "not recorded". */
   locationId: string | null

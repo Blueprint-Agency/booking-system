@@ -2,7 +2,9 @@ import { Hono, type Context } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { getFinance, UNATTRIBUTED } from '../../../services/finance/list'
+import { getFinanceOverview } from '../../../services/finance/overview'
 import { financeCsv } from '../../../services/finance/csv'
+import { MONEY_EVENT_TYPES } from '../../../services/finance/events'
 import {
   updatePayrollAmount,
   createManualPayroll,
@@ -34,15 +36,25 @@ const isoDate = z
   .string()
   .refine(v => !Number.isNaN(Date.parse(v)), { message: 'invalid iso datetime' })
 
+// The filter accepts exactly the Types that exist — adding one to the service
+// adds it here, and a stale copy can no longer drift out of the enum.
+const financeType = z.enum(MONEY_EVENT_TYPES)
+
 const listQuery = z.object({
   instructor_id: z.string().uuid().optional(),
   class_type_id: z.string().uuid().optional(),
+  /** What kind of transaction, in the studio's words. */
+  type: financeType.optional(),
+  /** Free-text over the member's or the instructor's name. */
+  q: z.string().trim().min(1).optional(),
   // A Location id, or the Unattributed bucket — the rows that record no Location.
   location: z.union([z.string().uuid(), z.literal(UNATTRIBUTED)]).optional(),
   needs_pay: z.enum(['true', 'false']).optional(),
   from: isoDate.optional(),
   to: isoDate.optional(),
 })
+
+const overviewQuery = z.object({ from: isoDate.optional(), to: isoDate.optional() })
 
 const patchParam = z.object({
   kind: z.enum(['class', 'pt', 'workshop', 'manual']),
@@ -70,6 +82,8 @@ const saveFailure = (c: Context, kind: PayrollKind, reason: PayrollSaveReason) =
 const filterFrom = (q: z.infer<typeof listQuery>) => ({
   instructorId: q.instructor_id,
   classTypeId: q.class_type_id,
+  types: q.type ? [q.type] : undefined,
+  q: q.q,
   location: q.location,
   needsPayOnly: q.needs_pay === 'true',
   from: q.from ? new Date(q.from) : undefined,
@@ -84,6 +98,18 @@ const app = new Hono()
       filterFrom(c.req.valid('query')),
     )
     return c.json({ rows, totals, instructor_totals, unpriced_count })
+  })
+  // The period's headline figures: sales by category, members and class
+  // popularity. Its own period, independent of the ledger's filters — an
+  // "overview" narrowed to one instructor is not an overview.
+  .get('/overview', zValidator('query', overviewQuery), async c => {
+    const { from, to } = c.req.valid('query')
+    return c.json(
+      await getFinanceOverview({
+        from: from ? new Date(from) : undefined,
+        to: to ? new Date(to) : undefined,
+      }),
+    )
   })
   // The same rows the table got, as a file. Same filters, same read — so the
   // bookkeeper's CSV can never disagree with what the admin was looking at.

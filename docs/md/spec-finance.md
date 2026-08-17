@@ -18,9 +18,13 @@ It replaces the admin Payroll page entirely. Pay editing and Manual Entries move
 
 A Money Event is one row. Purchases, Cross-Location Add-Ons, workshop tickets and corporate packages are money in; Refunds are money in with a negative sign; Instructor Pay and Manual Entries are money out. Each row sits on the date the thing happened — a purchase on its payment date, a session's pay on the session's date.
 
-Above the table, five tiles over the whole filtered range: **Gross**, discounts given, Refunds, Instructor Pay, and **Net**. Each purchase row shows List Price, the money off, what was actually paid, and which Promo Code did it.
+Above the table, an **overview** for the period: the five figures — **Gross**, discounts given, Refunds, Instructor Pay, and **Net** — plus members joined, sales by Sale Category, pay by instructor, and class popularity by attendance. Active Members sits with them but is read as of **today** rather than over the period — the schema keeps no history for it, and the tile says so. The trial funnel is read on **Customers** (its Trials filter), not here. See `be/docs/adr/0003-finance-reads-as-a-general-ledger.md`.
 
-Filters: date range (defaulting to the current month), Location, instructor, class type. One button exports exactly the filtered rows as CSV.
+The **period** control sits with the overview and drives both halves of the page. Every other filter narrows the table alone and the overview ignores it — a headline figure that moved because of a control the reader has already scrolled past is a lie that reads as a fact.
+
+The table is a general transaction ledger, not a payroll sheet: Date, Time, User, **Type**, **Variant**, Price, Location, Discount, Code, Money in, Money out. Type is what the transaction was in the studio's words (Credit, Unlimited, Trial, PT Package, Add-on, Workshop, Corporate, Merch, Class, PT Session, Manual, Refund); Variant is which one of it ("Bundle of 10"); User is the member who paid *or* the instructor being paid, since a ledger line has one counterparty. Instructor Pay is one Type among many rather than the shape of the whole table.
+
+Ledger filters: Type, User (one search box over members and instructors both), Location, and "Needs pay only". One button exports exactly the filtered rows as CSV.
 
 Instructor Pay becomes required when an **admin** schedules a session and when anyone is added to a roster, so Unpriced sessions become rare. They do not stop entirely: an instructor scheduling their own class or PT session must never see pay rates, so that path still creates the session Unpriced. Those, and the ones that predate the rule, are surfaced through a "Needs pay" filter and cleared by hand.
 
@@ -47,8 +51,8 @@ Instructor Pay becomes required when an **admin** schedules a session and when a
 19. As a studio owner, I want to filter by Location, so that I can compare how the two studios are doing.
 20. As a studio owner, I want money the platform cannot place at a Location grouped as Unattributed, so that the gap is visible rather than silently missing from both studios.
 21. As a studio owner, I want to understand at a glance why a purchase is Unattributed, so that I do not read it as a bug.
-22. As a studio owner, I want to filter by instructor, so that I can review one instructor's cost for a period.
-23. As a studio owner, I want to filter by class type, so that I can see what a particular class costs to run.
+22. As a studio owner, I want to find one person's rows — a member or an instructor — by typing their name, so that I can review what they cost or spent without hunting through pickers. *(One search box replaced the instructor and class-type pickers on screen; the route still accepts `instructor_id` and `class_type_id`, so a control is one component away if the search box proves too blunt. See `be/docs/adr/0003-finance-reads-as-a-general-ledger.md`.)*
+23. As a studio owner, I want to narrow to one kind of transaction, so that I can see what a class costs to run or what a category sold, without a picker per dimension.
 24. As a studio owner, I want a date range with presets and a custom option, so that "last month" is one click and an odd period is still possible.
 25. As a studio owner, I want the page to open on the current month, so that the common case needs no input.
 26. As a studio owner, I want the tiles to total the whole filtered range rather than the visible page, so that paging through rows never changes the headline figures.
@@ -125,7 +129,7 @@ The DB column stays nullable. Making it NOT NULL would require inventing values 
 
 ### API
 
-One admin route surface replacing `/portal/admin/payroll`, taking date range, Location, instructor and class type as optional filters, and returning rows, tiles, per-instructor pay totals and the Unpriced count. Pay edit, Manual Entry create and Manual Entry delete move across unchanged in shape. Both admin and super-admin get full read and write.
+One admin route surface replacing `/portal/admin/payroll`, taking date range, Type, user search and Location as optional filters, and returning rows, tiles, per-instructor pay totals and the Unpriced count. A sibling `/finance/overview` takes a date range and **nothing else**, and returns the period's headline block; its money half regroups the same rows rather than re-querying them, so a category breakdown cannot disagree with the Gross tile above it. Pay edit, Manual Entry create and Manual Entry delete move across unchanged in shape. Both admin and super-admin get full read and write.
 
 CSV is the same endpoint's rows serialized, not a second query — the file and the screen come from one read.
 
@@ -165,8 +169,8 @@ Not tested: the query layer, which has no arithmetic; the CSV serializer, which 
 - ~~**Merch.**~~ Now in scope and implemented: a Merch Order is paid online and only collected in person, so it is money in. Read from `merch_orders` so free items (no payment row) still count. No Promo Code, no Location, discount always zero.
 - **Partial refunds.** A Refund is the whole amount, as it is everywhere else in the platform.
 - **Backfilling existing Unpriced sessions.**
-- **The other four PRD reports** — attendance, membership, inbox throughput, referral attribution. This spec builds the reports surface's first page; those remain unbuilt.
-- **Charts and trends.** Five tiles and a table. No sparklines, no period-over-period comparison.
+- ~~**The other four PRD reports** — attendance, membership, inbox throughput, referral attribution.~~ Partly in scope now: the Finance overview reports class attendance and Active Members. Inbox throughput and referral attribution remain unbuilt.
+- ~~**Charts and trends.** Five tiles and a table. No sparklines, no period-over-period comparison.~~ Class popularity carries a period-over-period delta against the equally-long window immediately before. Still no sparklines and no stored aggregate: a delta answers "is this class growing or dying" without a bucketing decision.
 - **Corporate session pay.** No pay columns exist on the corporate tables.
 
 ## Further Notes

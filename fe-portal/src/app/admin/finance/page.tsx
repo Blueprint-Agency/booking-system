@@ -19,39 +19,53 @@ import {
 import { useWorkspace } from "@/lib/workspace-context";
 import type { Api } from "@/lib/api";
 import {
-  fetchActiveClassTypes,
   fetchActiveInstructors,
   fetchActiveLocations,
-  type CatalogClassType,
   type CatalogInstructor,
   type CatalogLocation,
 } from "@/lib/catalog";
-import { formatDate, formatSgd } from "@/lib/formatters";
+import { formatDate, formatSgd, formatTime } from "@/lib/formatters";
 import { localDay } from "@/lib/local-day";
 import { toast } from "sonner";
 import {
+  FINANCE_TYPE_LABEL,
+  FINANCE_TYPES,
   UNATTRIBUTED,
   createManualEntry,
   deleteManualEntry,
   downloadFinanceCsv,
   fetchFinance,
+  fetchFinanceOverview,
   financeErrorMessage,
   financeNeedsReload,
   saveInstructorPay,
   type FinanceFilters,
+  type FinanceOverview,
   type FinanceResponse,
   type FinanceRow,
 } from "@/lib/finance";
+import { OverviewPanel } from "./overview";
 
 /**
- * Finance — every Money Event in a period, money in and money out.
+ * Finance — every transaction in a period, money in and money out.
+ *
+ * The page reads top-down as one period: the period control sits with the
+ * overview at the top and drives BOTH halves, and the filters below it narrow
+ * only the ledger. That split is the point — a headline figure that moved
+ * because of a filter the reader has already scrolled past is a lie, so the
+ * narrowing controls are downstream of the figures they cannot change.
+ *
+ * The ledger is a general transaction list, not a payroll sheet: one row per
+ * transaction, with the person on one side (member OR instructor) and what they
+ * transacted on the other (type, then which one of it). Instructor Pay is one
+ * type among many rather than the shape of the whole table.
  *
  * Two things this screen must never do, both of which it would be easy to do by
  * accident:
  *
- *   1. Total anything. The tiles come from the backend and cover the whole
- *      filtered range; the table is paginated, and page totals would quietly
- *      answer a different question than the one the admin asked.
+ *   1. Total anything. Every figure comes from the backend and covers the whole
+ *      period; the table is paginated, and page totals would quietly answer a
+ *      different question than the one the admin asked.
  *   2. Decide which rows are editable. `row.editable` says so. A purchase or a
  *      Refund is the payment provider's record, and an edit box on one would be
  *      an invitation to make our books disagree with theirs.
@@ -63,15 +77,17 @@ export default function FinancePage() {
   const { api } = useWorkspace();
 
   const [instructors, setInstructors] = useState<CatalogInstructor[]>([]);
-  const [classTypes, setClassTypes] = useState<CatalogClassType[]>([]);
   const [locations, setLocations] = useState<CatalogLocation[]>([]);
 
-  const [instructorId, setInstructorId] = useState("");
-  const [classTypeId, setClassTypeId] = useState("");
+  // The period is shared by both halves of the page; everything else narrows
+  // the ledger alone.
+  const [range, setRange] = useState<DateRange>(() => presetRange("month"));
+  const [type, setType] = useState("");
+  const [q, setQ] = useState("");
   const [location, setLocation] = useState("");
   const [needsPay, setNeedsPay] = useState(false);
-  const [range, setRange] = useState<DateRange>(() => presetRange("month"));
 
+  const [overview, setOverview] = useState<FinanceOverview | null>(null);
   const [data, setData] = useState<FinanceResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -85,8 +101,8 @@ export default function FinancePage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const filters: FinanceFilters = useMemo(
-    () => ({ instructorId, classTypeId, location, needsPay, range }),
-    [instructorId, classTypeId, location, needsPay, range],
+    () => ({ type, q, location, needsPay, range }),
+    [type, q, location, needsPay, range],
   );
 
   useEffect(() => {
@@ -94,14 +110,12 @@ export default function FinancePage() {
     let cancelled = false;
     void (async () => {
       try {
-        const [ins, ct, loc] = await Promise.all([
+        const [ins, loc] = await Promise.all([
           fetchActiveInstructors(api),
-          fetchActiveClassTypes(api),
           fetchActiveLocations(api),
         ]);
         if (cancelled) return;
         setInstructors(ins);
-        setClassTypes(ct);
         setLocations(loc);
       } catch {
         /* filters degrade gracefully — the table still loads */
@@ -112,12 +126,27 @@ export default function FinancePage() {
     };
   }, [api]);
 
+  // The overview reloads on the period alone. Kept separate from the ledger's
+  // effect so typing in the search box doesn't re-run four analytics queries.
+  const loadOverview = useCallback(async () => {
+    if (!api) return;
+    setOverview(null);
+    try {
+      setOverview(await fetchFinanceOverview(api, range));
+    } catch {
+      /* the ledger below is the load-bearing half; it reports its own errors */
+    }
+  }, [api, range]);
+
+  useEffect(() => {
+    void loadOverview();
+  }, [loadOverview]);
+
   const load = useCallback(async () => {
     if (!api) return;
     setLoading(true);
     setError(null);
-    // Drop the old period's figures before asking for the new one's — totals
-    // sitting above a loading table are totals for a period you can't see.
+    // Drop the old period's rows before asking for the new one's.
     setData(null);
     try {
       setData(await fetchFinance(api, filters));
@@ -138,6 +167,11 @@ export default function FinancePage() {
   useEffect(() => {
     setPage(0);
   }, [filters]);
+
+  /** Both halves read the same period, so a write has to refresh both. */
+  const reload = useCallback(async () => {
+    await Promise.all([load(), loadOverview()]);
+  }, [load, loadOverview]);
 
   const rows = data?.rows ?? [];
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
@@ -167,12 +201,12 @@ export default function FinancePage() {
     try {
       await saveInstructorPay(api, row, next);
       toast.success("Pay updated");
-      await load();
+      await reload();
     } catch (err) {
       toast.error(financeErrorMessage(err));
       // The session or the assignment is gone: reload so the stale row (and the
       // draft still sitting in its box, looking saved) is replaced by the truth.
-      if (financeNeedsReload(err)) await load();
+      if (financeNeedsReload(err)) await reload();
     } finally {
       setSavingKey(null);
     }
@@ -185,10 +219,10 @@ export default function FinancePage() {
     try {
       await deleteManualEntry(api, row.id);
       toast.success("Entry deleted");
-      await load();
+      await reload();
     } catch (err) {
       toast.error(financeErrorMessage(err, "Couldn't delete"));
-      if (financeNeedsReload(err)) await load();
+      if (financeNeedsReload(err)) await reload();
     } finally {
       setDeletingId(null);
     }
@@ -210,7 +244,7 @@ export default function FinancePage() {
     <div>
       <PageHeader
         title="Finance"
-        description="Every purchase, refund and instructor payment for the period. Amounts on pay rows are editable inline; purchases and refunds are the payment record and can't be changed here."
+        description="Every transaction for the period — purchases, refunds and instructor pay. Pay rows are editable inline; purchases and refunds are the payment record and can't be changed here."
         actions={
           <div className="flex gap-2">
             <Button
@@ -233,73 +267,70 @@ export default function FinancePage() {
         }
       />
 
-      {/* Filters — who/what/where above the rule, when below it. */}
+      {/* The period. Drives the overview AND the ledger, so it sits above both
+          rather than inside either. */}
       <div className="mb-4 rounded-xl border border-border bg-card p-3 shadow-soft">
-        <div className="flex flex-wrap items-end gap-3">
-          <FilterSelect
-            label="Location"
-            value={location}
-            onChange={setLocation}
-            allLabel="All locations"
-            options={[
-              ...locations.map((l) => ({ val: l.id, label: l.name })),
-              // Not a null hole: most purchases record no Location at all, and
-              // the bucket is how that stays visible instead of vanishing.
-              { val: UNATTRIBUTED, label: "Unattributed" },
-            ]}
-          />
-          <FilterSelect
-            label="Instructor"
-            value={instructorId}
-            onChange={setInstructorId}
-            allLabel="All instructors"
-            options={instructors.map((i) => ({ val: i.id, label: i.name }))}
-          />
-          <FilterSelect
-            label="Class"
-            value={classTypeId}
-            onChange={setClassTypeId}
-            allLabel="All classes"
-            options={classTypes.map((c) => ({ val: c.id, label: c.name }))}
-          />
-          <label className="flex h-9 items-center gap-2 text-xs font-medium text-muted">
-            <input
-              type="checkbox"
-              checked={needsPay}
-              onChange={(e) => setNeedsPay(e.target.checked)}
-              className="h-4 w-4 rounded border-border"
-            />
-            Needs pay only
-          </label>
-        </div>
-        <div className="mt-3 border-t border-border pt-3">
-          <DateRangeFilter value={range} onChange={setRange} />
-        </div>
+        <DateRangeFilter value={range} onChange={setRange} />
       </div>
 
-      {/* The five figures. Over the whole filtered range, never this page. */}
-      {data && (
-        <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-          <Tile label="Gross sales" value={data.totals.gross_sgd} />
-          <Tile label="Discounts" value={data.totals.discounts_sgd} />
-          <Tile label="Refunds" value={data.totals.refunds_sgd} />
-          <Tile label="Instructor pay" value={data.totals.instructor_pay_sgd} />
-          <Tile
-            label="Net"
-            value={data.totals.net_sgd}
-            emphasis
-            // Kept even though pay is now required when scheduling: if this ever
-            // fires, the rule was bypassed and Net is understating the cost.
-            note={
-              data.unpriced_count > 0
-                ? `Excludes ${data.unpriced_count} unpriced ${
-                    data.unpriced_count === 1 ? "session" : "sessions"
-                  }`
-                : undefined
-            }
-          />
+      {overview ? (
+        <OverviewPanel data={overview} unpricedCount={overview.unpriced_count} />
+      ) : (
+        <div className="flex items-center justify-center py-10 text-muted">
+          <Loader2 className="h-5 w-5 animate-spin" />
         </div>
       )}
+
+      <h2 className="mt-8 mb-2 text-sm font-semibold text-ink">Transactions</h2>
+
+      {/* Filters — these narrow the table only, never the figures above. */}
+      <div className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-border bg-card p-3 shadow-soft">
+        <div className="space-y-1.5">
+          <label htmlFor="fin-user" className="block text-xs font-medium text-muted">
+            User
+          </label>
+          {/* One box for members and instructors both: which side of the studio
+              a name is on is what the Type column says, and needing to know it
+              before you can search is the instructor-shaped assumption this
+              screen is getting rid of. */}
+          <input
+            id="fin-user"
+            type="search"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Customer or instructor…"
+            className="h-9 min-w-[12rem] rounded-lg border border-border bg-paper px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+          />
+        </div>
+        <FilterSelect
+          label="Type"
+          value={type}
+          onChange={setType}
+          allLabel="All types"
+          options={FINANCE_TYPES.map((t) => ({ val: t, label: FINANCE_TYPE_LABEL[t] }))}
+        />
+        <FilterSelect
+          label="Location"
+          value={location}
+          onChange={setLocation}
+          allLabel="All locations"
+          options={[
+            ...locations.map((l) => ({ val: l.id, label: l.name })),
+            // Not a null hole: most purchases record no Location at all, and
+            // the bucket is how that stays visible instead of vanishing.
+            { val: UNATTRIBUTED, label: "Unattributed" },
+          ]}
+        />
+        <label className="flex h-9 items-center gap-2 text-xs font-medium text-muted">
+          <input
+            type="checkbox"
+            checked={needsPay}
+            onChange={(e) => setNeedsPay(e.target.checked)}
+            className="h-4 w-4 rounded border-border"
+          />
+          Needs pay only
+        </label>
+      </div>
 
       {data && data.unpriced_count > 0 && !needsPay && (
         <button
@@ -336,9 +367,12 @@ export default function FinancePage() {
               <thead>
                 <tr className="border-b border-border text-left text-xs text-muted">
                   <th className="px-3 py-2.5 font-medium">Date</th>
-                  <th className="px-3 py-2.5 font-medium">Description</th>
+                  <th className="px-3 py-2.5 font-medium">Time</th>
+                  <th className="px-3 py-2.5 font-medium">User</th>
+                  <th className="px-3 py-2.5 font-medium">Type</th>
+                  <th className="px-3 py-2.5 font-medium">Variant</th>
+                  <th className="px-3 py-2.5 text-right font-medium">Price</th>
                   <th className="px-3 py-2.5 font-medium">Location</th>
-                  <th className="px-3 py-2.5 text-right font-medium">List</th>
                   <th className="px-3 py-2.5 text-right font-medium">Discount</th>
                   <th className="px-3 py-2.5 font-medium">Code</th>
                   <th className="px-3 py-2.5 text-right font-medium">Money in</th>
@@ -355,14 +389,25 @@ export default function FinancePage() {
                       <td className="whitespace-nowrap px-3 py-2.5 text-muted">
                         {formatDate(row.occurred_at)}
                       </td>
-                      <td className="px-3 py-2.5">
-                        <span className="text-ink">{row.label}</span>
-                        <KindTag row={row} />
+                      <td className="whitespace-nowrap px-3 py-2.5 text-muted">
+                        {formatTime(row.occurred_at)}
+                      </td>
+                      <td className="px-3 py-2.5 text-ink">
+                        {row.user_name ?? <span className="text-muted">—</span>}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2.5">
+                        <TypeTag row={row} />
                         {row.refunded && row.kind !== "refund" && (
-                          <span className="ml-2 rounded-full border border-error/40 bg-error/10 px-1.5 py-0.5 text-[10px] text-error">
+                          <span className="ml-1.5 rounded-full border border-error/40 bg-error/10 px-1.5 py-0.5 text-[10px] text-error">
                             Refunded
                           </span>
                         )}
+                      </td>
+                      <td className="px-3 py-2.5 text-ink">
+                        {row.variant ?? <span className="text-muted">—</span>}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-muted">
+                        {row.list_price_sgd == null ? "—" : formatSgd(row.list_price_sgd)}
                       </td>
                       <td className="px-3 py-2.5 text-muted">
                         {row.unattributed ? (
@@ -370,9 +415,6 @@ export default function FinancePage() {
                         ) : (
                           row.location_name
                         )}
-                      </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums text-muted">
-                        {row.list_price_sgd == null ? "—" : formatSgd(row.list_price_sgd)}
                       </td>
                       <td className="px-3 py-2.5 text-right tabular-nums">
                         {row.discount_sgd == null || row.discount_sgd === 0 ? (
@@ -385,7 +427,7 @@ export default function FinancePage() {
                       </td>
                       <td className="px-3 py-2.5">
                         {row.promo_code ? (
-                          <span className="rounded border border-border bg-paper px-1.5 py-0.5 font-mono text-[10px] text-ink">
+                          <span className="rounded border border-border bg-paper px-1.5 py-0.5 text-[10px] text-ink">
                             {row.promo_code}
                           </span>
                         ) : (
@@ -417,7 +459,9 @@ export default function FinancePage() {
                                 step="0.01"
                                 inputMode="decimal"
                                 placeholder="—"
-                                aria-label={`Pay for ${row.label}`}
+                                aria-label={`Pay for ${row.variant ?? FINANCE_TYPE_LABEL[row.type]}${
+                                  row.user_name ? ` — ${row.user_name}` : ""
+                                }`}
                                 value={draft}
                                 onChange={(e) =>
                                   setDrafts((d) => ({ ...d, [key]: e.target.value }))
@@ -489,33 +533,6 @@ export default function FinancePage() {
         </>
       )}
 
-      {/* Per-instructor pay — what to hand over at month end. */}
-      {data && data.instructor_totals.length > 0 && (
-        <div className="mt-6">
-          <h2 className="mb-2 text-sm font-semibold text-ink">Pay by instructor</h2>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {data.instructor_totals.map((t) => (
-              <div
-                key={t.instructor_id}
-                className="rounded-xl border border-border bg-card p-3 shadow-soft"
-              >
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="truncate text-sm font-medium text-ink">
-                    {t.instructor_name}
-                  </span>
-                  <span className="text-sm font-semibold tabular-nums text-ink">
-                    {formatSgd(t.total_sgd)}
-                  </span>
-                </div>
-                <div className="text-xs text-muted">
-                  {t.session_count} {t.session_count === 1 ? "session" : "sessions"}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {showCreate && (
         <ManualEntryDialog
           api={api}
@@ -523,7 +540,7 @@ export default function FinancePage() {
           onClose={() => setShowCreate(false)}
           onCreated={async () => {
             setShowCreate(false);
-            await load();
+            await reload();
           }}
         />
       )}
@@ -531,62 +548,19 @@ export default function FinancePage() {
   );
 }
 
-function Tile({
-  label,
-  value,
-  emphasis = false,
-  note,
-}: {
-  label: string;
-  value: number;
-  emphasis?: boolean;
-  note?: string;
-}) {
-  return (
-    <div
-      className={`rounded-xl border p-3 shadow-soft ${
-        emphasis ? "border-accent/40 bg-accent/5" : "border-border bg-card"
-      }`}
-    >
-      <div className="text-xs text-muted">{label}</div>
-      <div
-        className={`mt-0.5 text-lg font-semibold tabular-nums ${
-          emphasis ? "text-accent" : "text-ink"
-        }`}
-      >
-        {formatSgd(value)}
-      </div>
-      {note && (
-        <div className="mt-1 flex items-start gap-1 text-[10px] leading-tight text-warning">
-          <AlertCircle className="mt-px h-3 w-3 shrink-0" />
-          {note}
-        </div>
-      )}
-    </div>
-  );
-}
-
-const KIND_TAG: Partial<Record<FinanceRow["kind"], string>> = {
-  addon: "Add-on",
-  workshop_ticket: "Workshop",
-  corporate: "Corporate",
-  merch: "Merch",
-  refund: "Refund",
-  manual: "Manual",
-};
-
-function KindTag({ row }: { row: FinanceRow }) {
+/**
+ * The Type cell. A PT Session says which shape it was, because 1-on-1 and 2-on-1
+ * cost the studio different amounts and reading them as one line hides that.
+ */
+function TypeTag({ row }: { row: FinanceRow }) {
   const label =
-    row.kind === "instructor_pay"
-      ? row.session_type
-        ? `Private · ${row.session_type === "2on1" ? "2-on-1" : "1-on-1"}`
-        : null
-      : KIND_TAG[row.kind];
-  if (!label) return null;
-  const danger = row.kind === "refund";
+    row.type === "pt_session" && row.session_type
+      ? `PT Session · ${row.session_type === "2on1" ? "2-on-1" : "1-on-1"}`
+      : FINANCE_TYPE_LABEL[row.type];
+  const danger = row.type === "refund";
   return (
     <span
-      className={`ml-2 rounded-full border px-1.5 py-0.5 text-[10px] ${
+      className={`rounded-full border px-1.5 py-0.5 text-[10px] ${
         danger
           ? "border-error/40 bg-error/10 text-error"
           : "border-accent/40 bg-accent/10 text-accent"

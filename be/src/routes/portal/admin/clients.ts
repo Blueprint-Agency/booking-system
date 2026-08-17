@@ -10,6 +10,7 @@ import {
   softDeleteClient,
   restoreClient,
   type ClientRow,
+  type ClientListRow,
   type ManualAdjustmentRow,
 } from '../../../services/clients/manage'
 import { listClientPackages, type ClientPackageWithSource } from '../../../services/packages/entitlements'
@@ -77,6 +78,18 @@ const expirySchema = z.object({
   expires_at: z.string().datetime({ offset: true }).nullable(),
   reason: z.string().min(1).max(2000),
 })
+
+// The directory row carries the trial funnel with it (started / attended /
+// converted) so the Customers page answers "how did trials do" from the list it
+// already loads, rather than from a second read.
+function clientListRow(c: ClientListRow) {
+  return {
+    ...clientRow(c),
+    trial_started_at: c.trialStartedAt,
+    attended: c.attended,
+    converted: c.converted,
+  }
+}
 
 function clientRow(c: ClientRow) {
   return {
@@ -171,7 +184,7 @@ const app = new Hono()
     const role = c.get('staffRow')?.role
     const includeDeleted = q.include_deleted === 'true' && role === 'superadmin'
     const rows = await listClients({ q: q.q, status: q.status, includeDeleted })
-    return c.json({ clients: rows.map(clientRow) })
+    return c.json({ clients: rows.map(clientListRow) })
   })
   .post('/', zValidator('json', createSchema), async c => {
     const body = c.req.valid('json')
