@@ -495,10 +495,39 @@ export function checkLeaveCaps(
   input: LeaveCapInput,
 ): { ok: true } | { ok: false; code: 'leave_cap_reached'; message: string } {
   if (input.type === 'medical') return { ok: true }
-
+  const over = leaveCapExceedance(input)
+  if (!over) return { ok: true }
   // Which cap was reached is deliberately NOT in the message: naming the study
   // cap would say the named colleagues are on study leave, and the leave
   // calendar redacts a colleague's Leave Type from every instructor.
+  return {
+    ok: false,
+    code: 'leave_cap_reached',
+    message:
+      `${nameList.format(over.away.map(p => p.instructorName))} ${over.away.length === 1 ? 'is' : 'are'} ` +
+      `already on leave on ${formatLeaveDate(sgToday(over.at))}. At most ${over.cap} ` +
+      `${over.cap === 1 ? 'instructor' : 'instructors'} can be away at once.`,
+  }
+}
+
+/** The moment a cap is exceeded, who else is away then, and the cap it is over. */
+export interface LeaveCapExceedance {
+  at: Date
+  away: LeaveCapPeer[]
+  cap: number
+}
+
+/**
+ * Whether this leave puts the studio over a **Leave Cap**, counting the
+ * applicant — the measurement `checkLeaveCaps` refuses on, without the refusal.
+ *
+ * Medical is NOT exempt here, and that is the whole point: it is never refused,
+ * so an over-cap medical absence is a fact the studio has to be told rather than
+ * a request to turn down (§17). Everything else that exceeds a cap was refused
+ * at submission and never reaches this, except where an admin lowered a cap
+ * afterwards — never retroactive — which is equally worth reporting.
+ */
+export function leaveCapExceedance(input: LeaveCapInput): LeaveCapExceedance | null {
   const counted: { peers: LeaveCapPeer[]; cap: number }[] = []
   if (input.inCoverGroup) {
     counted.push({ peers: input.peers.filter(p => p.inCoverGroup), cap: input.coverGroupCap })
@@ -510,17 +539,30 @@ export function checkLeaveCaps(
   for (const { peers, cap } of counted) {
     const { at, away } = peakLeaveAway(input.window, peers)
     // The applicant counts themselves.
-    if (away.length + 1 <= cap) continue
-    return {
-      ok: false,
-      code: 'leave_cap_reached',
-      message:
-        `${nameList.format(away.map(p => p.instructorName))} ${away.length === 1 ? 'is' : 'are'} ` +
-        `already on leave on ${formatLeaveDate(sgToday(at))}. At most ${cap} ` +
-        `${cap === 1 ? 'instructor' : 'instructors'} can be away at once.`,
-    }
+    if (away.length + 1 > cap) return { at, away, cap }
   }
-  return { ok: true }
+  return null
+}
+
+/**
+ * The sentence the admins' submission email carries — empty unless a cap is
+ * exceeded, because the renderer has no conditionals and an empty variable is
+ * how a template says nothing.
+ *
+ * The headcount is always at least 2 (it is over a cap of at least 1), so the
+ * plural needs no branch.
+ *
+ * It names a number and a day, never a colleague — the leave calendar's flag is
+ * the same measurement (`leaveCapExceedance`) reduced to a boolean, so the two
+ * reports can never disagree about what is over a cap.
+ */
+export function leaveCapWarning(input: LeaveCapInput): string {
+  const over = leaveCapExceedance(input)
+  if (!over) return ''
+  return (
+    `⚠️ This puts ${over.away.length + 1} instructors away on ` +
+    `${formatLeaveDate(sgToday(over.at))}, above the cap of ${over.cap}.`
+  )
 }
 
 // ── Supporting Document ────────────────────────────────────────────────────

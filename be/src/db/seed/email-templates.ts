@@ -229,8 +229,13 @@ const proseBody = (heading: string, lines: string[]) => `<!DOCTYPE html>
   </body>
 </html>`
 
+/** `{{cap_warning}}` is the §17 sentence: this request puts the studio over a
+ *  Leave Cap, and medical is never refused by one, so this is the admins' only
+ *  warning in time to arrange cover. It sits at the END of a line rather than on
+ *  one of its own: it is empty on almost every submission, and a paragraph of
+ *  its own would then render as a blank gap in every ordinary email. */
 const LEAVE_SUBMITTED_BODY = proseBody('A leave request needs a decision', [
-  '<strong>{{instructor_name}}</strong> requested <strong>{{days}} day(s)</strong> of {{leave_type}} leave on <strong>{{dates}}</strong>.',
+  '<strong>{{instructor_name}}</strong> requested <strong>{{days}} day(s)</strong> of {{leave_type}} leave on <strong>{{dates}}</strong>. <strong>{{cap_warning}}</strong>',
   'Reason given: {{reason}}',
   'Approve or reject it on the Leave page in the portal.',
 ])

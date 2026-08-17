@@ -24,7 +24,10 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   instructor_cancel_class: ['class_name', 'date', 'instructor_name', 'reason', 'refunded_count'],
   // Leave: the first goes to every admin, the other three back to the instructor.
   // `reason` is the instructor's on submission and the admin's on rejection.
-  leave_request_submitted: ['instructor_name', 'leave_type', 'dates', 'days', 'reason'],
+  // §17: `cap_warning` is a whole sentence built in ./leave rules, empty unless
+  // the request puts the studio over a Leave Cap — which only medical ever does,
+  // because every other type is refused at submission.
+  leave_request_submitted: ['instructor_name', 'leave_type', 'dates', 'days', 'reason', 'cap_warning'],
   leave_approved: ['instructor_name', 'leave_type', 'dates', 'days'],
   leave_rejected: ['instructor_name', 'leave_type', 'dates', 'days', 'reason'],
   // A revocation undoes an approval, so it names who did it and when.

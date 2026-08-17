@@ -473,7 +473,7 @@ export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<Leave
   const leaveYear = rules.leaveYearOf(input.startDate)
   const halfDay = input.halfDay ?? 'none'
 
-  const row = await db.transaction(async tx => {
+  const filed = await db.transaction(async tx => {
     // THE FIRST statement: the **Leave Cap** lock. Locking only the applicant's
     // own instructor row is not enough — two Cover Group members submitting the
     // same dates take two different locks, both read a clear calendar and both
@@ -567,7 +567,7 @@ export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<Leave
       inCoverGroup: p.inCoverGroup,
       ...rules.leaveWindow(p.startDate, p.endDate, p.halfDay),
     }))
-    const capped = rules.checkLeaveCaps({
+    const capInput = {
       type: input.type,
       // The applicant's row is always inside the locked set, so their Cover
       // Group membership is already read — no second query for it.
@@ -576,8 +576,13 @@ export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<Leave
       peers,
       coverGroupCap: caps.coverGroup,
       studyCap: caps.study,
-    })
+    }
+    const capped = rules.checkLeaveCaps(capInput)
     if (!capped.ok) throw new ConflictError(capped.code, { message: capped.message })
+    // Medical is never refused, so an over-cap medical absence has to reach the
+    // admins another way, in time to arrange cover (§17). The same measurement
+    // the refusal above uses, as a sentence — empty for everything that cleared.
+    const capWarning = rules.leaveCapWarning(capInput)
 
     // The clash rule, in reverse: ask occupancy what this instructor is already on
     // across the requested days (only the requested HALF, if it is a half day),
@@ -624,13 +629,13 @@ export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<Leave
       })
       .returning()
     if (!inserted) throw new BadRequestError('leave_request_not_created')
-    return inserted
+    return { inserted, capWarning }
   })
 
   // Outside the transaction on purpose: the lock is released before anything
   // touches SMTP.
-  await emailAdminsOfSubmission(row)
-  return row
+  await emailAdminsOfSubmission(filed.inserted, filed.capWarning)
+  return filed.inserted
 }
 
 /** Withdraw a pending request, or cancel an approved one that hasn't started.
@@ -799,6 +804,12 @@ export interface LeaveCalendarEntry {
     /** Whether there is a Supporting Document, never its key — as the admin queue.
      *  Reading one goes through `supportingDocumentUrl`, which checks ownership. */
     has_supporting_document: boolean
+    /** This absence puts the studio over a **Leave Cap** (§17). Only medical ever
+     *  gets here by being filed — every other type is refused at submission —
+     *  but a cap lowered afterwards is never retroactive, so an approved row can
+     *  become over-cap too, and that is equally worth seeing. Inside `detail`
+     *  because it refers to a cap, so it is redacted exactly as the rest is. */
+    over_cap: boolean
   } | null
 }
 
@@ -832,9 +843,11 @@ export async function listLeaveCalendar(
       row: leaveRequests,
       instructorName: staffUsers.name,
       deciderName: decider.name,
+      inCoverGroup: instructors.inCoverGroup,
     })
     .from(leaveRequests)
     .innerJoin(staffUsers, eq(staffUsers.id, leaveRequests.instructorId))
+    .leftJoin(instructors, eq(instructors.staffUserId, leaveRequests.instructorId))
     .leftJoin(decider, eq(decider.id, leaveRequests.decidedByStaffId))
     .where(
       and(
@@ -848,7 +861,41 @@ export async function listLeaveCalendar(
 
   const seesEverything = viewer.role !== 'instructor'
 
-  return rows.map(({ row, instructorName, deciderName }) => ({
+  // The §17 flag. The rows above are the same pending+approved set a Leave Cap
+  // counts, so each entry is measured against the others by the same pure peak
+  // function — no second query for peers, only the two caps. An absence
+  // reaching outside [from, to] is measured against the peers inside it, which
+  // is what the calendar is showing anyway.
+  const [caps] = await db
+    .select({ coverGroup: globalPolicy.coverGroupLeaveCap, study: globalPolicy.studyLeaveCap })
+    .from(globalPolicy)
+    .limit(1)
+  const peers = rows.map(({ row, instructorName, inCoverGroup }) => ({
+    instructorId: row.instructorId,
+    instructorName,
+    type: row.type,
+    inCoverGroup: inCoverGroup ?? false,
+    ...rules.leaveWindow(row.startDate, row.endDate, row.halfDay),
+  }))
+  // ponytail: O(n²) over one calendar window's rows, which is a handful of
+  // instructors' leave in a month. Bucket by day if a studio ever grows into it.
+  const overCap = peers.map(self =>
+    caps
+      ? rules.leaveCapExceedance({
+          type: self.type,
+          inCoverGroup: self.inCoverGroup,
+          window: self,
+          // Excluded by INSTRUCTOR, as the submission path excludes them — one
+          // person's own overlapping rows (a backdated medical over leave that
+          // has already ended) are one instructor away, not two.
+          peers: peers.filter(p => p.instructorId !== self.instructorId),
+          coverGroupCap: caps.coverGroup,
+          studyCap: caps.study,
+        }) !== null
+      : false,
+  )
+
+  return rows.map(({ row, instructorName, deciderName }, i) => ({
     id: row.id,
     instructor: { id: row.instructorId, name: instructorName },
     start_date: row.startDate,
@@ -864,6 +911,7 @@ export async function listLeaveCalendar(
             decision_reason: row.decisionReason,
             decided_by: deciderName,
             has_supporting_document: row.supportingDocumentR2Key !== null,
+            over_cap: overCap[i] ?? false,
           }
         : null,
   }))
@@ -970,7 +1018,9 @@ async function staffName(staffUserId: string, fallback: string): Promise<string>
   return staff?.name ?? fallback
 }
 
-async function emailAdminsOfSubmission(row: LeaveRequestRow): Promise<void> {
+/** `capWarning` is the §17 line: empty unless this request puts the studio over
+ *  a **Leave Cap**, which only medical ever does — everything else was refused. */
+async function emailAdminsOfSubmission(row: LeaveRequestRow, capWarning: string): Promise<void> {
   await emailEveryAdmin(
     'leave_request_submitted',
     async () => ({
@@ -979,6 +1029,7 @@ async function emailAdminsOfSubmission(row: LeaveRequestRow): Promise<void> {
       dates: formatDates(row),
       days: String(Number(row.days)),
       reason: row.reason,
+      cap_warning: capWarning,
     }),
     { leaveRequestId: row.id },
   )

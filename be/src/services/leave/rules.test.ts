@@ -13,6 +13,8 @@ import {
   countLeaveDays,
   carriedDays,
   futureConflicts,
+  leaveCapExceedance,
+  leaveCapWarning,
   leaveCoversStart,
   leavePoolFigures,
   leaveWindow,
@@ -1023,6 +1025,92 @@ const base = { today: '2026-08-10', pool: 14, committedDays: 0 } as const
   assert.strictEqual(key, 'supporting-documents/instr-1/req-1.pdf')
   assert.strictEqual(supportingDocumentKey('instr-1', 'req-1', 'pdf'), key)
   assert.notStrictEqual(supportingDocumentKey('instr-2', 'req-1', 'pdf'), key)
+}
+
+// -- over-cap medical: never refused, always reported (§17) -------------------
+{
+  const MON = '2026-08-17'
+  const TUE = '2026-08-18'
+  const peer = (
+    instructorName: string,
+    from: string,
+    to: string,
+    o: { type?: LeaveType; inCoverGroup?: boolean } = {},
+  ): LeaveCapPeer => ({
+    instructorName,
+    type: o.type ?? 'annual',
+    inCoverGroup: o.inCoverGroup ?? true,
+    ...leaveWindow(from, to, 'none'),
+  })
+  const ask = (
+    type: LeaveType,
+    from: string,
+    to: string,
+    peers: LeaveCapPeer[],
+    o: { inCoverGroup?: boolean; coverGroupCap?: number; studyCap?: number } = {},
+  ) => ({
+    type,
+    inCoverGroup: o.inCoverGroup ?? true,
+    window: leaveWindow(from, to, 'none'),
+    peers,
+    coverGroupCap: o.coverGroupCap ?? 1,
+    studyCap: o.studyCap ?? 1,
+  })
+
+  // THE case this exists for: medical over the Cover Group cap. It is accepted…
+  const overCap = ask('medical', TUE, TUE, [peer('Alice', TUE, TUE), peer('Cara', TUE, TUE)], {
+    coverGroupCap: 2,
+  })
+  assert.deepStrictEqual(checkLeaveCaps(overCap), { ok: true }, 'medical is never refused')
+  // …and reported, with the day, the headcount including the applicant, and the cap
+  assert.strictEqual(
+    leaveCapWarning(overCap),
+    '⚠️ This puts 3 instructors away on 18 Aug 2026, above the cap of 2.',
+    'the admins are told what the cap refusal would have said',
+  )
+  const over = leaveCapExceedance(overCap)
+  assert.strictEqual(over?.cap, 2, 'the exceedance names the cap it is over')
+  assert.strictEqual(over?.away.length, 2, 'and who else is away at the peak')
+
+  // nothing to report when the cap holds — the variable is empty, not absent
+  assert.strictEqual(
+    leaveCapWarning(ask('medical', TUE, TUE, [peer('Alice', TUE, TUE)], { coverGroupCap: 2 })),
+    '',
+    'a request inside the cap carries no warning line',
+  )
+  assert.strictEqual(leaveCapWarning(ask('medical', MON, TUE, [])), '', 'nobody away, nothing said')
+
+  // an applicant outside the Cover Group is counted by no cap medical touches,
+  // however full the day is — the Study Leave cap counts study leave only
+  assert.strictEqual(
+    leaveCapWarning(ask('medical', TUE, TUE, [peer('Alice', TUE, TUE), peer('Cara', TUE, TUE)], {
+      inCoverGroup: false,
+    })),
+    '',
+    'the Cover Group cap only measures a Cover Group member',
+  )
+
+  // the warning is the same measurement the refusal uses: whatever a non-medical
+  // request would be refused for, is what gets reported
+  const refusable = ask('annual', TUE, TUE, [peer('Alice', TUE, TUE)])
+  assert.strictEqual(checkLeaveCaps(refusable).ok, false, 'annual over the cap is still refused')
+  assert.match(
+    leaveCapWarning(refusable),
+    /2 instructors away on 18 Aug 2026, above the cap of 1/,
+    'the report and the refusal measure the same thing',
+  )
+
+  // the peak is still a peak, not a headcount: Alice Monday, Cara Tuesday, a
+  // medical request across both — two away at once, which a cap of 2 allows
+  assert.strictEqual(
+    leaveCapWarning(
+      ask('medical', MON, TUE, [peer('Alice', MON, MON), peer('Cara', TUE, TUE)], {
+        coverGroupCap: 2,
+      }),
+    ),
+    '',
+    'overlapping colleagues are not the number the cap measures',
+  )
 }
 
 console.log('leave rules.test ok')
