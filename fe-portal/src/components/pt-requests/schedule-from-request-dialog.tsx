@@ -11,7 +11,7 @@ import {
   type CatalogInstructor,
   type CatalogRoom,
 } from "@/lib/catalog";
-import { scheduleErrorMessage } from "@/lib/schedule";
+import { scheduleErrorMessage, type Slot } from "@/lib/schedule";
 import {
   InstructorOption,
   useInstructorsOnLeave,
@@ -47,11 +47,14 @@ function apiErrorCode(e: unknown): string {
 
 export function ScheduleFromRequestDialog({
   request,
+  slot,
   onScheduled,
   onRequestUpdated,
   onClose,
 }: {
   request: ApiPtRequest;
+  /** Slot picked off the timetable grid; overrides the request's own proposal. */
+  slot?: Slot;
   onScheduled: () => void;
   onRequestUpdated?: (request: ApiPtRequest) => void;
   onClose: () => void;
@@ -64,9 +67,13 @@ export function ScheduleFromRequestDialog({
   // datetime construction expect HH:MM, so normalise.
   const hhmm = (t: string) => t.slice(0, 5);
   const first = request.slots[0];
-  const [date, setDate] = useState(first?.proposed_date ?? todayIso());
-  const [startTime, setStartTime] = useState(first ? hhmm(first.start_time) : "09:00");
-  const [endTime, setEndTime] = useState(first ? hhmm(first.end_time) : "10:00");
+  const [date, setDate] = useState(slot?.date ?? first?.proposed_date ?? todayIso());
+  const [startTime, setStartTime] = useState(
+    slot?.start ?? (first ? hhmm(first.start_time) : "09:00"),
+  );
+  const [endTime, setEndTime] = useState(
+    slot?.end ?? (first ? hhmm(first.end_time) : "10:00"),
+  );
 
   const [instructors, setInstructors] = useState<CatalogInstructor[]>([]);
   const [rooms, setRooms] = useState<CatalogRoom[]>([]);

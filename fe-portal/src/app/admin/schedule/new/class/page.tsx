@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Loader2, Save } from "lucide-react";
 import { Button, Input, Label, PageHeader } from "@/components/ui";
 import { CapacityFields } from "@/components/schedule/capacity-fields";
@@ -30,8 +30,23 @@ import type { Capacity, ClassTypeDifficulty } from "@/types";
 const DIFFICULTIES: ClassTypeDifficulty[] = ["general", "beginner", "intermediate", "advanced"];
 
 export default function NewClassPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-paper" />}>
+      <NewClassForm />
+    </Suspense>
+  );
+}
+
+function NewClassForm() {
   const router = useRouter();
   const { api, activeLocationId } = useWorkspace();
+  // Clicking an empty slot on the timetable links here with that slot's date
+  // and time, so the form opens pre-filled.
+  const params = useSearchParams();
+  const slot = (key: string, pattern: RegExp, fallback: string) => {
+    const v = params.get(key);
+    return v && pattern.test(v) ? v : fallback;
+  };
 
   const [classTypes, setClassTypes] = useState<CatalogClassType[]>([]);
   const [instructors, setInstructors] = useState<CatalogInstructor[]>([]);
@@ -44,9 +59,13 @@ export default function NewClassPage() {
   const [supporting, setSupporting] = useState<SupportingRow[]>([]);
   const [locationId, setLocationId] = useState(activeLocationId ?? "");
   const [roomId, setRoomId] = useState("");
-  const [date, setDate] = useState("");
-  const [startTime, setStartTime] = useState(currentHourTime());
-  const [endTime, setEndTime] = useState(currentHourTime(1));
+  const [date, setDate] = useState(() => slot("date", /^\d{4}-\d{2}-\d{2}$/, ""));
+  const [startTime, setStartTime] = useState(() =>
+    slot("start", /^\d{2}:\d{2}$/, currentHourTime()),
+  );
+  const [endTime, setEndTime] = useState(() =>
+    slot("end", /^\d{2}:\d{2}$/, currentHourTime(1)),
+  );
   const [capacity, setCapacity] = useState<Capacity>({
     waitlist: 0,
     onlineBooking: 18,

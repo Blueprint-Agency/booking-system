@@ -4,11 +4,15 @@ import { Button, Dialog } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ScheduleFromRequestDialog } from "@/components/pt-requests/schedule-from-request-dialog";
 import type { ApiPtRequest } from "@/lib/pt-requests";
+import type { Slot } from "@/lib/schedule";
 
 export function PtRequestPickerDialog({
+  slot,
   onClose,
   onScheduled,
 }: {
+  /** Slot picked off the timetable grid, seeding the scheduling form. */
+  slot?: Slot;
   onClose: () => void;
   onScheduled: () => void;
 }) {
@@ -47,6 +51,7 @@ export function PtRequestPickerDialog({
     return (
       <ScheduleFromRequestDialog
         request={picked}
+        slot={slot}
         onClose={() => setPicked(null)}
         onScheduled={onScheduled}
       />

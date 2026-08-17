@@ -5,6 +5,7 @@ import { Button, Dialog } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ScheduleFromCorporateRequestDialog } from "@/components/corporate-requests/schedule-from-corporate-request-dialog";
 import type { CorporateRequest, CorporateRequestStatus } from "@/types";
+import type { Slot } from "@/lib/schedule";
 
 interface ApiCorporateRequest {
   id: string;
@@ -33,9 +34,12 @@ function fromApi(r: ApiCorporateRequest): CorporateRequest {
 }
 
 export function CorporateRequestPickerDialog({
+  slot,
   onClose,
   onScheduled,
 }: {
+  /** Slot picked off the timetable grid, seeding the scheduling form. */
+  slot?: Slot;
   onClose: () => void;
   onScheduled: () => void;
 }) {
@@ -70,6 +74,7 @@ export function CorporateRequestPickerDialog({
     return (
       <ScheduleFromCorporateRequestDialog
         request={picked}
+        slot={slot}
         onClose={() => setPicked(null)}
         onScheduled={onScheduled}
       />

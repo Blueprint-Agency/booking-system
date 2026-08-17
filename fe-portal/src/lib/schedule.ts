@@ -1,3 +1,10 @@
+/**
+ * A slot the admin picked off the timetable grid: a local calendar day plus
+ * wall-clock bounds, the shape both the new-class form and the "schedule this
+ * request" dialogs seed themselves from.
+ */
+export type Slot = { date: string; start: string; end: string };
+
 // The portal's schedule surface: reading, editing and cancelling a scheduled
 // event, plus the one mapping from a backend error code to the sentence an
 // admin reads. Shapes mirror be/src/routes/portal/admin/{schedule,pt-sessions,

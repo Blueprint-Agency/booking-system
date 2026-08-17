@@ -10,7 +10,7 @@ import {
 import { todayIso, currentHourTime } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
 import { useWorkspace } from "@/lib/workspace-context";
-import { scheduleErrorMessage } from "@/lib/schedule";
+import { scheduleErrorMessage, type Slot } from "@/lib/schedule";
 import {
   fetchActiveInstructors,
   fetchActiveRooms,
@@ -28,10 +28,13 @@ import type { CorporateRequest } from "@/types";
  */
 export function ScheduleFromCorporateRequestDialog({
   request,
+  slot,
   onClose,
   onScheduled,
 }: {
   request: CorporateRequest;
+  /** Slot picked off the timetable grid, seeding date and time. */
+  slot?: Slot;
   onClose: () => void;
   onScheduled: () => void;
 }) {
@@ -41,9 +44,9 @@ export function ScheduleFromCorporateRequestDialog({
   const [rooms, setRooms] = useState<CatalogRoom[]>([]);
   const [catalogError, setCatalogError] = useState<string | null>(null);
 
-  const [date, setDate] = useState("");
-  const [startTime, setStartTime] = useState(currentHourTime());
-  const [endTime, setEndTime] = useState(currentHourTime(1));
+  const [date, setDate] = useState(slot?.date ?? "");
+  const [startTime, setStartTime] = useState(slot?.start ?? currentHourTime());
+  const [endTime, setEndTime] = useState(slot?.end ?? currentHourTime(1));
   const [mainInstructorId, setMainInstructorId] = useState("");
   const [supportingInstructorIds, setSupportingInstructorIds] = useState<
     string[]
