@@ -121,6 +121,75 @@ function WorkshopSuccess({
   );
 }
 
+// ── Merch post-payment success ────────────────────────────────────────────────
+function MerchSuccess({ stripeSessionId }: { stripeSessionId: string | null }) {
+  const { getToken } = useAuth();
+  const [synced, setSynced] = useState(false);
+
+  // Same sync as the other flows: record the order immediately rather than
+  // waiting on webhook delivery (no CLI listener in local dev).
+  useEffect(() => {
+    if (!stripeSessionId) { setSynced(true); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        await fetch(`${getApiBaseUrl()}/me/checkout/sync-session`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ session_id: stripeSessionId }),
+        });
+      } catch { /* non-fatal — webhook delivery still records the order */ }
+      if (!cancelled) setSynced(true);
+    })();
+    return () => { cancelled = true; };
+  }, [stripeSessionId, getToken]);
+
+  return (
+    <div id="summary">
+      <BookingSurface maxWidth="md" padding="loose">
+        <div className="text-center mb-6">
+          <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-4">
+            {synced ? <Check className="w-8 h-8 text-accent" /> : <Spinner />}
+          </div>
+          <p className="text-sm uppercase tracking-wider text-muted mb-1">Payment successful</p>
+          <h1 className="font-serif text-3xl text-ink">
+            {synced ? "Thank you!" : "Recording your order…"}
+          </h1>
+        </div>
+
+        {synced && (
+          <>
+            <div className="text-center">
+              <p className="text-lg text-muted">
+                We&apos;ll hand your merch over to you physically at the studio — just ask
+                at the front desk on your next visit. Nothing is shipped.
+              </p>
+            </div>
+            <div className="mt-10 flex gap-3 justify-center">
+              <Link
+                href="/account/merch"
+                className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 transition-colors"
+              >
+                View my purchases
+              </Link>
+              <Link
+                href="/merch"
+                className="rounded-full border border-ink/10 px-5 py-3 text-sm font-medium hover:border-accent transition-colors"
+              >
+                Browse more
+              </Link>
+            </div>
+          </>
+        )}
+      </BookingSurface>
+    </div>
+  );
+}
+
 // ── Package post-payment success ──────────────────────────────────────────────
 type PackageKind = "class" | "pt";
 
@@ -278,6 +347,12 @@ function ConfirmationContent() {
   const workshopId = searchParams.get("workshop_id");
   if (type === "workshop" && workshopId) {
     return <WorkshopSuccess workshopId={workshopId} stripeSessionId={stripeSessionId} />;
+  }
+
+  // Merch success — Stripe success_url redirect (paid) or BuyButton (free item):
+  //   type=merch [, session_id=cs_...]
+  if (type === "merch") {
+    return <MerchSuccess stripeSessionId={stripeSessionId} />;
   }
 
   // Package success — Stripe success_url redirect (paid) or BuyButton (free trial):

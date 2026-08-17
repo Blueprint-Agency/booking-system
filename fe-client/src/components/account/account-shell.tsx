@@ -11,6 +11,7 @@ import {
   GraduationCap,
   UserCircle,
   Building2,
+  ShoppingBag,
   LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -23,6 +24,7 @@ const navItems = [
   { href: "/account/private-sessions", label: "Private Sessions", icon: UserRound, match: "prefix" as const },
   { href: "/account/corporate", label: "Corporate", icon: Building2, match: "prefix" as const },
   { href: "/account/workshops", label: "My Workshops", icon: GraduationCap, match: "prefix" as const },
+  { href: "/account/merch", label: "My Merch", icon: ShoppingBag, match: "prefix" as const },
   { href: "/account/profile", label: "Profile", icon: UserCircle, match: "prefix" as const },
 ];
 

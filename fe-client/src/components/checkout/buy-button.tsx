@@ -11,9 +11,10 @@ import { reportError } from "@/lib/report-error";
 
 type BuyTarget =
   | { kind: "package"; packageKind: "class" | "pt"; packageId: string }
-  | { kind: "workshop"; workshopId: string; tierId: string | null };
+  | { kind: "workshop"; workshopId: string; tierId: string | null }
+  | { kind: "merch"; merchId: string };
 
-type AuthGateContext = "buy a package" | "book a workshop";
+type AuthGateContext = "buy a package" | "book a workshop" | "buy merch";
 
 /**
  * Purchase button. Gates on auth, then branches on the effective price:
@@ -63,14 +64,13 @@ export function BuyButton({
     setError(null);
     try {
       const token = await getToken();
-      const endpoint =
-        target.kind === "workshop"
-          ? "/me/checkout/workshop"
-          : "/me/checkout/package";
+      const endpoint = `/me/checkout/${target.kind}`;
       const body =
         target.kind === "workshop"
           ? { workshop_id: target.workshopId, workshop_tier_id: target.tierId }
-          : { package_kind: target.packageKind, package_id: target.packageId };
+          : target.kind === "merch"
+            ? { merch_id: target.merchId }
+            : { package_kind: target.packageKind, package_id: target.packageId };
 
       const res = await fetch(`${getApiBaseUrl()}${endpoint}`, {
         method: "POST",
@@ -100,6 +100,8 @@ export function BuyButton({
           router.push(
             `/booking/confirmation?type=workshop&workshop_id=${target.workshopId}&booking_id=${data.booking_id}`,
           );
+        } else if (target.kind === "merch") {
+          router.push("/booking/confirmation?type=merch");
         } else if (target.kind === "package" && data.client_package_id) {
           router.push(
             `/booking/confirmation?type=package&package_id=${target.packageId}&package_kind=${target.packageKind}`,
@@ -134,9 +136,12 @@ export function BuyButton({
             return;
           }
           if (busy) return;
+          // Merch has no order-summary page to review: one item, no Promo Code,
+          // no choices — straight to the provider (or straight to the order, if
+          // the studio priced it at zero).
           // A NaN price reads as paid on purpose — bad catalogue data must never
           // grant something for free.
-          if (requiresReview || !(Number(priceSgd) <= 0)) {
+          if (target.kind !== "merch" && (requiresReview || !(Number(priceSgd) <= 0))) {
             setBusy(true);
             router.push(
               target.kind === "workshop"

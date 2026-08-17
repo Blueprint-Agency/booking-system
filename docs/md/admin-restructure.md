@@ -44,7 +44,7 @@ Locations are workspaces. Surfaces are partitioned as follows:
 **Visual layout** (top to bottom):
 
 - **Settings**: Class Types, Global Policy, Notifications, Waiver (location-independent building blocks + config).
-- **Packages**: Classes, Workshops, Private Sessions (global, shared across locations).
+- **Packages**: Classes, Workshops, Private Sessions, Corporate, Promo Codes, Merch (global, shared across locations). **Merch is the one Packages item both roles manage** — it is shop-floor stock (mats, props, apparel) rather than catalogue governance.
 - **People**: Clients, Staff (members + staff accounts). **Instructors are merged into Staff** — the Staff page has **Admin** and **Instructors** tabs. "+ Invite staff" (Admin tab) invites admin/superadmin; "+ Add instructor" (Instructors tab) routes to the instructor creation flow (which still captures bio, photo, and eligible class types). Instructor rows link to their detail page. There is no separate "Instructors" sidebar item.
 - **Workspace zone** (bottom, separated by a divider, under a header showing the active location's name): **Schedule, Rooms, Check-in, Inbox, PT Requests**. All are filtered by `activeLocationId`; flipping the switcher reloads them. **PT Requests is workspace-scoped** — clients pick a `location_id` at request time, so the triage queue shows only the active location's requests.
 
@@ -303,6 +303,17 @@ No validity period on PT packages.
 
 **Booking config:**
 - `book_in_advance_days` — how many days ahead a client can submit a PT request.
+
+---
+
+## 6b. Merch (Config Page — Packages)
+
+Studio goods surfaced in the member app at `/merch`. **Both `admin` and `superadmin`** manage them — see `be-portal.md` §`merch.ts` for the route surface.
+
+- Fields: **Title, Description, Price (SGD), Photo** (JPG/PNG/WebP, max 5MB, stored in R2). Nothing else: no stock count, no location, no promotions, no Promo Code scope.
+- **Archive** hides an item from the member app and refuses new checkouts; **Delete** is permanent and stays available because nothing references a merch row — a member's purchase history keeps its own frozen title and amount.
+- Members pay online via Stripe and **collect the item in person**; the member app says so above the grid. There is no fulfilment state to tick off — the front desk works off the member's `/account/merch` purchase history.
+- Not in this page: who bought what. A staff-side orders view is deliberately out of scope for now.
 
 ---
 

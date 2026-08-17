@@ -7,7 +7,7 @@ import { createPortal } from "react-dom";
 import { useUser } from "@clerk/nextjs";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 
-type AuthGateContext = "buy a package" | "book a class" | "book a workshop" | "book a private session" | "continue";
+type AuthGateContext = "buy a package" | "buy merch" | "book a class" | "book a workshop" | "book a private session" | "continue";
 
 function LoginRequiredModal({
   open,

@@ -410,6 +410,23 @@ Fields, in order:
 
 ---
 
+## 6b. Merch `/merch`
+
+**Business logic**
+- Grid of the studio's merch (`GET /public/merch`): photo, title, description, price. Signed-in or not — merch is priced the same for everyone, so there is no authenticated variant of the list.
+- A **notice sits above the grid**: merch is paid for online and **handed over physically at the studio**. Nothing is shipped. The same sentence repeats on the confirmation page and in `/account/merch`, because it is the one thing a member could otherwise get wrong.
+- **Buy** goes straight to Stripe — one item, no quantity, no Promo Code, and **no `/checkout` review step**: there is nothing to review. Unauthenticated taps hit the auth gate first (context "buy merch"), returning to `/merch` after sign-in.
+- An item the studio priced at 0 skips Stripe and writes the order immediately, same as a free workshop.
+- Archived items simply stop appearing; a checkout against one is refused (`400 merch_not_available`).
+
+**User journey**
+- Sidebar → Merch → reads the collect-in-person notice → Buy → Stripe → confirmation ("we'll hand it over at the studio") → `/account/merch`.
+
+**Where admin comes in**
+- Admin or superadmin adds items (title, description, price, photo) under Packages → Merch in the portal — see `be-portal.md` §`merch.ts`. There is no stock count and no fulfilment state: the front desk works off the member's purchase history.
+
+---
+
 ## 7. Checkout `/checkout`
 
 **Business logic — the review step is live, and every paid purchase routes through it.**
@@ -490,6 +507,16 @@ The account section is a sticky sidebar (desktop) / tab bar (mobile). All sub-pa
 **Where admin comes in**
 - Admin needs to issue / extend / pause / cancel memberships from a user-detail page (already partly built — D.4 commit).
 - Admin sees the same expiry milestones to drive comms (auto reminders).
+
+### 8.1b My Merch `/account/merch`
+
+**Business logic**
+- Purchase history for merch (`GET /me/merch-orders`), newest first: title, amount paid, purchase date. Read-only — collection is arranged at the front desk, not in-app.
+- `title` and `amount_sgd` are frozen at purchase, so renaming or repricing an item never rewrites what a member sees they bought.
+- Empty state → "Browse merch" CTA to `/merch`.
+
+**Where admin comes in**
+- The front desk hands the item over against this list on the member's next visit.
 
 ### 8.2 Profile `/account/profile`
 
