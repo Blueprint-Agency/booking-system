@@ -31,13 +31,9 @@ export interface UpdateGlobalPolicyInput {
   classWindowHours?: number
   ptWindowHours?: number
   leaveCarryOverCapDays?: number
-  coverGroupLeaveCap?: number
   studyLeaveCap?: number
   /** The Cross-Location Add-On's monthly rate (§5), as "30.00". */
   crossLocationRateSgd?: string
-  /** The whole **Cover Group**, as one ticked set of instructor staff user ids.
-   *  Absent leaves membership alone; present replaces it entirely. */
-  coverGroupStaffIds?: readonly string[]
   /** Every declared **Leave Conflict**, as one replacement set. Absent leaves
    *  the declared pairs alone; present replaces them entirely. */
   leaveConflictPairs?: readonly LeaveConflictPair[]
@@ -59,16 +55,15 @@ const canonical = (p: LeaveConflictPair): LeaveConflictPair =>
 const pairKey = (p: LeaveConflictPair) => `${p.instructorAId}:${p.instructorBId}`
 
 /**
- * One PATCH, one transaction: the caps, the Cover Group and the declared Leave
- * Conflicts are saved together or not at all. They are one screen and one
- * decision — a half-applied save would leave a cap raised over a set that never
- * changed.
+ * One PATCH, one transaction: the caps and the declared Leave Conflicts are
+ * saved together or not at all. They are one screen and one decision — a
+ * half-applied save would leave a cap raised over a set that never changed.
  */
 export async function updateGlobalPolicy(
   patch: UpdateGlobalPolicyInput,
   staffId: string,
 ): Promise<GlobalPolicyRow> {
-  const { coverGroupStaffIds, leaveConflictPairs, ...columns } = patch
+  const { leaveConflictPairs, ...columns } = patch
   return db.transaction(async tx => {
     const [row] = await tx
       .update(globalPolicy)
@@ -76,31 +71,12 @@ export async function updateGlobalPolicy(
       .where(eq(globalPolicy.id, POLICY_SINGLETON_ID))
       .returning()
     if (!row) throw new NotFoundError('policy_not_seeded')
-    if (coverGroupStaffIds !== undefined) {
-      // Every instructor row, locked in staff-user-id order FIRST: a leave
-      // submission locks the same rows in that order (services/leave/requests.ts),
-      // and an unordered whole-table UPDATE here would deadlock against it —
-      // which is the very thing the ordering was bought to prevent.
-      await tx
-        .select({ id: instructors.staffUserId })
-        .from(instructors)
-        .orderBy(asc(instructors.staffUserId))
-        .for('update')
-      // The Cover Group is ONE ticked set, so the whole set arrives and every
-      // instructor outside it is unticked in the same breath — there is no add
-      // and no remove to get out of step with each other.
-      await tx.update(instructors).set({ inCoverGroup: false })
-      if (coverGroupStaffIds.length > 0) {
-        await tx
-          .update(instructors)
-          .set({ inCoverGroup: true })
-          .where(inArray(instructors.staffUserId, [...coverGroupStaffIds]))
-      }
-    }
     if (leaveConflictPairs !== undefined) {
-      // Same reason as above: the whole-table lock in staff-user-id order, taken
-      // before anything is written, is what keeps this save and a leave
-      // submission (services/leave/requests.ts) from deadlocking.
+      // Every instructor row, locked in staff-user-id order FIRST: a leave
+      // submission locks the applicant and their partners in that same order
+      // (services/leave/requests.ts), and taking these locks unordered would
+      // deadlock against it — which is the very thing the ordering was bought to
+      // prevent.
       await tx
         .select({ id: instructors.staffUserId })
         .from(instructors)
@@ -171,16 +147,6 @@ export async function readLeaveConflicts(): Promise<LeaveConflictPair[]> {
     })
     .from(leaveConflicts)
     .orderBy(asc(leaveConflicts.instructorAId), asc(leaveConflicts.instructorBId))
-}
-
-/** Who is in the **Cover Group** — the staff user ids of every instructor in it. */
-export async function readCoverGroup(): Promise<string[]> {
-  return (
-    await db
-      .select({ id: instructors.staffUserId })
-      .from(instructors)
-      .where(eq(instructors.inCoverGroup, true))
-  ).map(r => r.id)
 }
 
 export async function updatePtBookingConfig(

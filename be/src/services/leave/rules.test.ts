@@ -827,21 +827,23 @@ const base = { today: '2026-08-10', pool: 14, committedDays: 0 } as const
   )
 }
 
-// -- the Leave Caps: a peak across instants, not a headcount over dates -------
+// -- Leave Conflicts and the Leave Cap: a peak across instants, not a headcount
 {
   // Mon 17 Aug 2026, Tue 18, Wed 19.
   const MON = '2026-08-17'
   const TUE = '2026-08-18'
   const WED = '2026-08-19'
+  // A peer's id is their name here: the rules treat it as an opaque string, and
+  // it is what a declared conflict names them by.
   const peer = (
     instructorName: string,
     from: string,
     to: string,
-    o: { type?: LeaveType; inCoverGroup?: boolean; halfDay?: 'morning' | 'afternoon' } = {},
+    o: { type?: LeaveType; halfDay?: 'morning' | 'afternoon' } = {},
   ): LeaveCapPeer => ({
+    instructorId: instructorName,
     instructorName,
     type: o.type ?? 'annual',
-    inCoverGroup: o.inCoverGroup ?? true,
     ...leaveWindow(from, to, o.halfDay ?? 'none'),
   })
   const ask = (
@@ -849,26 +851,28 @@ const base = { today: '2026-08-10', pool: 14, committedDays: 0 } as const
     from: string,
     to: string,
     peers: LeaveCapPeer[],
-    o: { inCoverGroup?: boolean; coverGroupCap?: number; studyCap?: number; halfDay?: 'morning' | 'afternoon' } = {},
+    o: { conflictsWith?: string[]; studyCap?: number; halfDay?: 'morning' | 'afternoon' } = {},
   ) =>
     checkLeaveCaps({
       type,
-      inCoverGroup: o.inCoverGroup ?? true,
+      conflictPartnerIds: o.conflictsWith ?? [],
       window: leaveWindow(from, to, o.halfDay ?? 'none'),
       peers,
-      coverGroupCap: o.coverGroupCap ?? 1,
       studyCap: o.studyCap ?? 1,
     })
 
-  // THE canonical case. Cap 2. Alice is away Monday, Cara is away Wednesday, Bob
-  // asks for Monday–Wednesday. Two people overlap his request, so a headcount
-  // refuses him — but at no instant are more than two instructors away.
-  const aliceAndCara = [peer('Alice', MON, MON), peer('Cara', WED, WED)]
-  assert.deepStrictEqual(ask('annual', MON, WED, aliceAndCara, { coverGroupCap: 2 }), { ok: true })
+  // THE canonical case. Study cap 2. Alice is away Monday, Cara is away
+  // Wednesday, Bob asks for Monday–Wednesday. Two people overlap his request, so
+  // a headcount refuses him — but at no instant are more than two away.
+  const aliceAndCara = [
+    peer('Alice', MON, MON, { type: 'study' }),
+    peer('Cara', WED, WED, { type: 'study' }),
+  ]
+  assert.deepStrictEqual(ask('study', MON, WED, aliceAndCara, { studyCap: 2 }), { ok: true })
   // the peak itself: one peer away at a time, on their own day
   assert.strictEqual(peakLeaveAway(leaveWindow(MON, WED), aliceAndCara).away.length, 1)
   // ...and a third person away on the Monday DOES make it three at one instant
-  const alsoMonday = [...aliceAndCara, peer('Dan', MON, TUE)]
+  const alsoMonday = [...aliceAndCara, peer('Dan', MON, TUE, { type: 'study' })]
   assert.strictEqual(peakLeaveAway(leaveWindow(MON, WED), alsoMonday).away.length, 2)
   // The leave CALENDAR's flag (§17, listLeaveCalendar): a colleague whose leave
   // began before the window opened and is still running inside it is counted on
@@ -884,99 +888,143 @@ const base = { today: '2026-08-10', pool: 14, committedDays: 0 } as const
   // ...and the day the calendar is NOT showing does not drag the peak up.
   assert.strictEqual(peakLeaveAway(clipped('2026-08-10', MON), [peer('Gus', '2026-08-10', '2026-08-10')]).away.length, 0)
 
-  const refused = ask('annual', MON, WED, alsoMonday, { coverGroupCap: 2 })
+  const refused = ask('study', MON, WED, alsoMonday, { studyCap: 2 })
   assert.strictEqual(refused.ok, false)
   if (!refused.ok) {
     assert.strictEqual(refused.code, 'leave_cap_reached')
-    // it names the colleagues and the day, and never says why they are away
-    assert.match(refused.message, /Alice and Dan/)
-    assert.match(refused.message, /17 Aug 2026/)
-    assert.match(refused.message, /At most 2 instructors can be away at once/)
-    for (const leak of [/annual/i, /medical/i, /study/i, /reason/i]) {
-      assert.doesNotMatch(refused.message, leak)
+    // THE study-cap sentence, verbatim. It names the cap and the day and NOBODY:
+    // the study cap is the only headcount rule left, so naming the colleagues
+    // would say they are on study leave — the one detail the leave calendar
+    // redacts from an instructor.
+    assert.strictEqual(
+      refused.message,
+      'The most instructors who can be on study leave at once is already reached on 17 Aug 2026.',
+    )
+    for (const name of [/Alice/, /Dan/, /Cara/]) assert.doesNotMatch(refused.message, name)
+  }
+
+  // -- the Leave Conflict --------------------------------------------------
+  // A declared pair overlapping on a full day is refused, and THE conflict
+  // sentence, verbatim: it names the partner and the date, and says the reason
+  // is the pair rather than a headcount.
+  const clash = ask('annual', TUE, TUE, [peer('Instructor Two', TUE, TUE)], {
+    conflictsWith: ['Instructor Two'],
+  })
+  assert.strictEqual(clash.ok, false)
+  if (!clash.ok) {
+    assert.strictEqual(clash.code, 'leave_conflict')
+    assert.strictEqual(
+      clash.message,
+      'Instructor Two is already on leave on 18 Aug 2026. ' +
+        'You and Instructor Two cannot be away at the same time.',
+    )
+    // and it never reveals what kind of leave the partner is on
+    for (const leak of [/annual/i, /medical/i, /study/i, /cap/i]) {
+      assert.doesNotMatch(clash.message, leak)
     }
   }
 
-  // a cap of 1 behaves identically to the naive rule: any overlap at all refuses
-  assert.strictEqual(ask('annual', MON, WED, [peer('Alice', MON, MON)]).ok, false)
-  assert.strictEqual(ask('annual', MON, WED, [peer('Cara', WED, WED)]).ok, false)
-  assert.strictEqual(ask('annual', MON, MON, [peer('Cara', WED, WED)]).ok, true)
+  // a pair is symmetric: declared either way round, each side refuses the other
+  // with the same sentence about the other
+  const forward = ask('annual', TUE, TUE, [peer('Bob', TUE, TUE)], { conflictsWith: ['Bob'] })
+  const backward = ask('annual', TUE, TUE, [peer('Alice', TUE, TUE)], { conflictsWith: ['Alice'] })
+  assert.strictEqual(forward.ok, false)
+  assert.strictEqual(backward.ok, false)
+  if (!forward.ok && !backward.ok) {
+    assert.strictEqual(forward.message.replace(/Bob/g, 'X'), backward.message.replace(/Alice/g, 'X'))
+  }
 
-  // half days on the same date do not collide — morning and afternoon are never
-  // the same instant, so the studio keeps cover all day with a cap of 1
-  assert.deepStrictEqual(
-    ask('annual', TUE, TUE, [peer('Alice', TUE, TUE, { halfDay: 'morning' })], {
-      halfDay: 'afternoon',
-    }),
-    { ok: true },
-  )
-  // ...and the same half IS a collision
+  // the same half day is a collision...
   assert.strictEqual(
-    ask('annual', TUE, TUE, [peer('Alice', TUE, TUE, { halfDay: 'morning' })], {
+    ask('annual', TUE, TUE, [peer('Bob', TUE, TUE, { halfDay: 'morning' })], {
+      conflictsWith: ['Bob'],
       halfDay: 'morning',
     }).ok,
     false,
   )
-  // a whole day covers both halves
-  assert.strictEqual(
-    ask('annual', TUE, TUE, [peer('Alice', TUE, TUE)], { halfDay: 'afternoon' }).ok,
-    false,
-  )
-
-  // an instructor outside the Cover Group is refused nothing by that cap...
+  // ...opposite halves on one date are not — morning and afternoon are never the
+  // same instant, so the pair is never away together
   assert.deepStrictEqual(
-    ask('annual', MON, WED, [peer('Alice', MON, MON)], { inCoverGroup: false }),
-    { ok: true },
-  )
-  // ...and neither do colleagues outside it count toward it
-  assert.deepStrictEqual(
-    ask('annual', MON, WED, [peer('Alice', MON, MON, { inCoverGroup: false })]),
-    { ok: true },
-  )
-
-  // medical is NEVER refused by a cap, however full the day is
-  assert.deepStrictEqual(
-    ask('medical', MON, WED, [peer('Alice', MON, WED), peer('Dan', MON, WED)]),
-    { ok: true },
-  )
-  // ...and it still counts toward the Cover Group cap for everybody else
-  assert.strictEqual(ask('annual', MON, MON, [peer('Alice', MON, MON, { type: 'medical' })]).ok, false)
-
-  // the study cap counts STUDY only: a colleague's holiday does not block a
-  // course for an instructor outside the Cover Group
-  assert.deepStrictEqual(
-    ask('study', MON, WED, [peer('Alice', MON, WED, { type: 'annual', inCoverGroup: false })], {
-      inCoverGroup: false,
+    ask('annual', TUE, TUE, [peer('Bob', TUE, TUE, { halfDay: 'morning' })], {
+      conflictsWith: ['Bob'],
+      halfDay: 'afternoon',
     }),
     { ok: true },
   )
-  // but another instructor's study leave does, wherever either of them sits
+  // ...and a whole day covers both halves
   assert.strictEqual(
-    ask('study', MON, MON, [peer('Alice', MON, MON, { type: 'study', inCoverGroup: false })], {
-      inCoverGroup: false,
+    ask('annual', TUE, TUE, [peer('Bob', TUE, TUE)], {
+      conflictsWith: ['Bob'],
+      halfDay: 'afternoon',
     }).ok,
     false,
   )
 
-  // a Cover Group member's study request must clear BOTH caps — the study cap is
-  // clear here, and the group's annual leave still refuses it
-  assert.strictEqual(ask('study', MON, MON, [peer('Alice', MON, MON, { type: 'annual' })]).ok, false)
-  // and the other way round: the group is clear, the studio-wide study cap is not
+  // a colleague who is not a declared partner never refuses, whatever their type
+  for (const type of ['annual', 'medical', 'study'] as const) {
+    assert.deepStrictEqual(
+      ask('annual', MON, WED, [peer('Cara', MON, WED, { type })], { conflictsWith: ['Bob'] }),
+      { ok: true },
+      `${type} leave from a non-partner refuses nothing`,
+    )
+  }
+  // an instructor with no declared conflicts at all is unaffected entirely
+  assert.deepStrictEqual(ask('annual', MON, WED, [peer('Alice', MON, WED)]), { ok: true })
+  // ...and a partner's leave of ANY type does refuse, because a pair is about
+  // people, not about why they are away
+  for (const type of ['annual', 'medical', 'study'] as const) {
+    assert.strictEqual(
+      ask('annual', TUE, TUE, [peer('Bob', TUE, TUE, { type })], { conflictsWith: ['Bob'] }).ok,
+      false,
+      `a partner on ${type} leave refuses`,
+    )
+  }
+  // only the days they actually overlap
+  assert.deepStrictEqual(ask('annual', MON, MON, [peer('Bob', WED, WED)], { conflictsWith: ['Bob'] }), {
+    ok: true,
+  })
+
+  // medical is NEVER refused, by either rule, however full the day is
+  assert.deepStrictEqual(
+    ask('medical', MON, WED, [peer('Bob', MON, WED), peer('Dan', MON, WED)], {
+      conflictsWith: ['Bob', 'Dan'],
+    }),
+    { ok: true },
+  )
+
+  // -- the Study Leave cap, exactly as before ------------------------------
+  // it counts STUDY only: a colleague's holiday does not block a course
+  assert.deepStrictEqual(
+    ask('study', MON, WED, [peer('Alice', MON, WED, { type: 'annual' })]),
+    { ok: true },
+  )
+  // but another instructor's study leave does
   assert.strictEqual(
-    ask('study', MON, MON, [peer('Alice', MON, MON, { type: 'study', inCoverGroup: false })], {
-      coverGroupCap: 5,
-    }).ok,
+    ask('study', MON, MON, [peer('Alice', MON, MON, { type: 'study' })]).ok,
     false,
   )
+  // a study request from someone with a declared partner must clear BOTH — the
+  // study cap is clear here, and the partner's annual leave still refuses it
+  const both = ask('study', MON, MON, [peer('Bob', MON, MON, { type: 'annual' })], {
+    conflictsWith: ['Bob'],
+  })
+  assert.strictEqual(both.ok, false)
+  if (!both.ok) assert.strictEqual(both.code, 'leave_conflict')
+  // and the other way round: no partner is away, the studio-wide study cap is not
+  const capped = ask('study', MON, MON, [peer('Alice', MON, MON, { type: 'study' })], {
+    conflictsWith: ['Bob'],
+  })
+  assert.strictEqual(capped.ok, false)
+  if (!capped.ok) assert.strictEqual(capped.code, 'leave_cap_reached')
   // with both clear it passes
   assert.deepStrictEqual(
-    ask('study', MON, MON, [peer('Alice', WED, WED, { type: 'study' })]),
+    ask('study', MON, MON, [peer('Bob', WED, WED, { type: 'study' })], { conflictsWith: ['Bob'] }),
     { ok: true },
   )
 
   // nobody away at all is always fine, whatever the type
   for (const type of ['annual', 'medical', 'study'] as const) {
-    assert.deepStrictEqual(ask(type, MON, WED, []), { ok: true })
+    assert.deepStrictEqual(ask(type, MON, WED, [], { conflictsWith: ['Bob'] }), { ok: true })
   }
 }
 
@@ -1042,7 +1090,7 @@ const base = { today: '2026-08-10', pool: 14, committedDays: 0 } as const
   assert.notStrictEqual(supportingDocumentKey('instr-2', 'req-1', 'pdf'), key)
 }
 
-// -- over-cap medical: never refused, always reported (§17) -------------------
+// -- medical over a rule: never refused, always reported (§17) ----------------
 {
   const MON = '2026-08-17'
   const TUE = '2026-08-18'
@@ -1050,11 +1098,11 @@ const base = { today: '2026-08-10', pool: 14, committedDays: 0 } as const
     instructorName: string,
     from: string,
     to: string,
-    o: { type?: LeaveType; inCoverGroup?: boolean } = {},
+    o: { type?: LeaveType } = {},
   ): LeaveCapPeer => ({
+    instructorId: instructorName,
     instructorName,
     type: o.type ?? 'annual',
-    inCoverGroup: o.inCoverGroup ?? true,
     ...leaveWindow(from, to, 'none'),
   })
   const ask = (
@@ -1062,66 +1110,79 @@ const base = { today: '2026-08-10', pool: 14, committedDays: 0 } as const
     from: string,
     to: string,
     peers: LeaveCapPeer[],
-    o: { inCoverGroup?: boolean; coverGroupCap?: number; studyCap?: number } = {},
+    o: { conflictsWith?: string[]; studyCap?: number } = {},
   ) => ({
     type,
-    inCoverGroup: o.inCoverGroup ?? true,
+    conflictPartnerIds: o.conflictsWith ?? [],
     window: leaveWindow(from, to, 'none'),
     peers,
-    coverGroupCap: o.coverGroupCap ?? 1,
     studyCap: o.studyCap ?? 1,
   })
 
-  // THE case this exists for: medical over the Cover Group cap. It is accepted…
-  const overCap = ask('medical', TUE, TUE, [peer('Alice', TUE, TUE), peer('Cara', TUE, TUE)], {
-    coverGroupCap: 2,
-  })
-  assert.deepStrictEqual(checkLeaveCaps(overCap), { ok: true }, 'medical is never refused')
-  // …and reported, with the day, the headcount including the applicant, and the cap
+  // THE case this exists for: medical breaching a declared conflict. It is
+  // accepted…
+  const breach = ask('medical', TUE, TUE, [peer('Bob', TUE, TUE)], { conflictsWith: ['Bob'] })
+  assert.deepStrictEqual(checkLeaveCaps(breach), { ok: true }, 'medical is never refused')
+  // …and reported to the admins, who see a colleague's Leave Type anyway, so the
+  // refusal's redaction does not apply: the partner is named and cover is asked for
   assert.strictEqual(
-    leaveCapWarning(overCap),
-    '⚠️ This puts 3 instructors away on 18 Aug 2026, above the cap of 2.',
-    'the admins are told what the cap refusal would have said',
+    leaveCapWarning(breach),
+    '⚠️ This breaches a declared leave conflict: Bob is also away on 18 Aug 2026. ' +
+      'Cover has to be arranged.',
+    'the admins are told the pair is away together',
   )
-  const over = leaveCapExceedance(overCap)
-  assert.strictEqual(over?.cap, 2, 'the exceedance names the cap it is over')
-  assert.strictEqual(over?.away.length, 2, 'and who else is away at the peak')
+  const over = leaveCapExceedance(breach)
+  assert.strictEqual(over?.rule, 'conflict', 'the exceedance names the rule that produced it')
+  assert.strictEqual(over?.cap, 1, 'a declared pair is a counted set with a cap of 1')
+  assert.strictEqual(over?.away.length, 1, 'and who else is away at the peak')
 
-  // nothing to report when the cap holds — the variable is empty, not absent
+  // the study cap's warning is the other sentence, and names the type rather
+  // than the people
+  const overStudy = ask('study', TUE, TUE, [peer('Alice', TUE, TUE, { type: 'study' })])
   assert.strictEqual(
-    leaveCapWarning(ask('medical', TUE, TUE, [peer('Alice', TUE, TUE)], { coverGroupCap: 2 })),
+    leaveCapWarning(overStudy),
+    '⚠️ This puts 2 instructors on study leave on 18 Aug 2026, above the cap of 1.',
+  )
+  assert.strictEqual(leaveCapExceedance(overStudy)?.rule, 'study_cap')
+
+  // nothing to report when nothing is breached — the variable is empty, not absent
+  assert.strictEqual(
+    leaveCapWarning(ask('medical', TUE, TUE, [peer('Alice', TUE, TUE)], { conflictsWith: ['Bob'] })),
     '',
-    'a request inside the cap carries no warning line',
+    'a colleague who is not a declared partner carries no warning line',
   )
   assert.strictEqual(leaveCapWarning(ask('medical', MON, TUE, [])), '', 'nobody away, nothing said')
 
-  // an applicant outside the Cover Group is counted by no cap medical touches,
-  // however full the day is — the Study Leave cap counts study leave only
+  // an instructor with no declared conflicts is measured by nothing medical
+  // touches, however full the day is — the Study Leave cap counts study only
   assert.strictEqual(
-    leaveCapWarning(ask('medical', TUE, TUE, [peer('Alice', TUE, TUE), peer('Cara', TUE, TUE)], {
-      inCoverGroup: false,
-    })),
+    leaveCapWarning(ask('medical', TUE, TUE, [peer('Alice', TUE, TUE), peer('Cara', TUE, TUE)])),
     '',
-    'the Cover Group cap only measures a Cover Group member',
+    'no declarations, nothing to breach',
   )
 
   // the warning is the same measurement the refusal uses: whatever a non-medical
   // request would be refused for, is what gets reported
-  const refusable = ask('annual', TUE, TUE, [peer('Alice', TUE, TUE)])
-  assert.strictEqual(checkLeaveCaps(refusable).ok, false, 'annual over the cap is still refused')
+  const refusable = ask('annual', TUE, TUE, [peer('Bob', TUE, TUE)], { conflictsWith: ['Bob'] })
+  assert.strictEqual(checkLeaveCaps(refusable).ok, false, 'annual over a conflict is still refused')
   assert.match(
     leaveCapWarning(refusable),
-    /2 instructors away on 18 Aug 2026, above the cap of 1/,
+    /Bob is also away on 18 Aug 2026/,
     'the report and the refusal measure the same thing',
   )
 
   // the peak is still a peak, not a headcount: Alice Monday, Cara Tuesday, a
-  // medical request across both — two away at once, which a cap of 2 allows
+  // medical study-capped request across both — two away at once, which a cap of
+  // 2 allows
   assert.strictEqual(
     leaveCapWarning(
-      ask('medical', MON, TUE, [peer('Alice', MON, MON), peer('Cara', TUE, TUE)], {
-        coverGroupCap: 2,
-      }),
+      ask(
+        'study',
+        MON,
+        TUE,
+        [peer('Alice', MON, MON, { type: 'study' }), peer('Cara', TUE, TUE, { type: 'study' })],
+        { studyCap: 2 },
+      ),
     ),
     '',
     'overlapping colleagues are not the number the cap measures',

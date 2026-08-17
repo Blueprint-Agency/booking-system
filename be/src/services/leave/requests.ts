@@ -2,7 +2,7 @@ import { and, asc, desc, eq, gte, inArray, lte, ne, or } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { db } from '../../db'
 import { leavePools, leaveRequests } from '../../db/schema/leave'
-import { instructors } from '../../db/schema/catalog'
+import { instructors, leaveConflicts } from '../../db/schema/catalog'
 import { globalPolicy } from '../../db/schema/policy'
 import { staffUsers } from '../../db/schema/identity'
 import { conflictMessage, findOccupancyConflicts, leaveDaysPhrase } from '../schedule/occupancy'
@@ -474,25 +474,48 @@ export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<Leave
   const halfDay = input.halfDay ?? 'none'
 
   const filed = await db.transaction(async tx => {
-    // THE FIRST statement: the **Leave Cap** lock. Locking only the applicant's
-    // own instructor row is not enough — two Cover Group members submitting the
-    // same dates take two different locks, both read a clear calendar and both
-    // pass. So every row of the counted set is locked, in staff-user-id order so
-    // two transactions cannot deadlock. A study request serialises study
-    // submissions studio-wide, which at this scale is cheaper than any correct
-    // alternative. The applicant's own row is always inside the set, so the
-    // narrower lock `leavePoolsFor` takes next is already held.
-    // ponytail: an annual request from a NON-member locks the group's rows for
-    // nothing — deciding otherwise needs the applicant's membership before the
-    // lock. Fold it into the where clause as an EXISTS if submissions ever
-    // contend.
-    const locked = await tx
-      .select({ id: instructors.staffUserId, inCoverGroup: instructors.inCoverGroup })
+    // Who this instructor is in a declared **Leave Conflict** with. An ARCHIVED
+    // partner is not in the set — their conflicts refuse nothing — which the
+    // join to an active staff row is what enforces. Read before the lock,
+    // because it is what decides which rows the lock has to cover.
+    const partnerIds = (
+      await tx
+        .select({ id: staffUsers.id })
+        .from(leaveConflicts)
+        .innerJoin(
+          staffUsers,
+          or(
+            and(
+              eq(leaveConflicts.instructorAId, input.instructorId),
+              eq(staffUsers.id, leaveConflicts.instructorBId),
+            ),
+            and(
+              eq(leaveConflicts.instructorBId, input.instructorId),
+              eq(staffUsers.id, leaveConflicts.instructorAId),
+            ),
+          ),
+        )
+        .where(eq(staffUsers.status, 'active'))
+    ).map(r => r.id)
+
+    // THE FIRST write-blocking statement: the rule lock. Locking only the
+    // applicant's own instructor row is not enough — two instructors in a
+    // declared pair submitting the same dates take two different locks, both
+    // read a clear calendar and both pass. So the applicant AND their partners
+    // are locked, in staff-user-id order so two transactions cannot deadlock —
+    // the same order the policy save takes its instructor locks in
+    // (services/policy/update.ts). A study request serialises study submissions
+    // studio-wide, because that cap counts every instructor. The applicant's own
+    // row is always inside the set, so the narrower lock `leavePoolsFor` takes
+    // next is already held, and an instructor with no declared conflicts locks
+    // nothing but themselves.
+    await tx
+      .select({ id: instructors.staffUserId })
       .from(instructors)
       .where(
         input.type === 'study'
           ? undefined
-          : or(eq(instructors.inCoverGroup, true), eq(instructors.staffUserId, input.instructorId)),
+          : inArray(instructors.staffUserId, [input.instructorId, ...partnerIds]),
       )
       .orderBy(asc(instructors.staffUserId))
       .for('update')
@@ -526,31 +549,28 @@ export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<Leave
     })
     if (!check.ok) throw new BadRequestError(check.code, { message: check.message })
 
-    // The **Leave Caps**. The queries narrow — this instructor's Cover Group
-    // membership, the two caps, and every OTHER instructor's occupying leave
-    // overlapping the requested dates — and `rules.checkLeaveCaps` decides which
-    // of those rows each cap counts, and whether the peak clears it.
+    // The **Leave Conflicts** and the **Leave Cap**. The queries narrow — this
+    // instructor's declared partners, the study cap, and every OTHER
+    // instructor's occupying leave overlapping the requested dates — and
+    // `rules.checkLeaveCaps` decides which of those rows each rule counts, and
+    // whether the peak clears it.
     const [caps] = await tx
-      .select({
-        coverGroup: globalPolicy.coverGroupLeaveCap,
-        study: globalPolicy.studyLeaveCap,
-      })
+      .select({ study: globalPolicy.studyLeaveCap })
       .from(globalPolicy)
       .limit(1)
     if (!caps) throw new NotFoundError('policy_not_seeded')
     const peers = (
       await tx
         .select({
+          instructorId: leaveRequests.instructorId,
           name: staffUsers.name,
           type: leaveRequests.type,
           startDate: leaveRequests.startDate,
           endDate: leaveRequests.endDate,
           halfDay: leaveRequests.halfDay,
-          inCoverGroup: instructors.inCoverGroup,
         })
         .from(leaveRequests)
         .innerJoin(staffUsers, eq(staffUsers.id, leaveRequests.instructorId))
-        .innerJoin(instructors, eq(instructors.staffUserId, leaveRequests.instructorId))
         .where(
           and(
             ne(leaveRequests.instructorId, input.instructorId),
@@ -562,26 +582,24 @@ export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<Leave
           ),
         )
     ).map(p => ({
+      instructorId: p.instructorId,
       instructorName: p.name,
       type: p.type,
-      inCoverGroup: p.inCoverGroup,
       ...rules.leaveWindow(p.startDate, p.endDate, p.halfDay),
     }))
     const capInput = {
       type: input.type,
-      // The applicant's row is always inside the locked set, so their Cover
-      // Group membership is already read — no second query for it.
-      inCoverGroup: locked.find(r => r.id === input.instructorId)?.inCoverGroup ?? false,
+      conflictPartnerIds: partnerIds,
       window: rules.leaveWindow(input.startDate, input.endDate, halfDay),
       peers,
-      coverGroupCap: caps.coverGroup,
       studyCap: caps.study,
     }
     const capped = rules.checkLeaveCaps(capInput)
     if (!capped.ok) throw new ConflictError(capped.code, { message: capped.message })
-    // Medical is never refused, so an over-cap medical absence has to reach the
-    // admins another way, in time to arrange cover (§17). The same measurement
-    // the refusal above uses, as a sentence — empty for everything that cleared.
+    // Medical is never refused, so a breached Leave Conflict — or an over-cap
+    // medical absence — has to reach the admins another way, in time to arrange
+    // cover (§17). The same measurement the refusal above uses, as a sentence —
+    // empty for everything that cleared.
     const capWarning = rules.leaveCapWarning(capInput)
 
     // The clash rule, in reverse: ask occupancy what this instructor is already on
@@ -804,11 +822,12 @@ export interface LeaveCalendarEntry {
     /** Whether there is a Supporting Document, never its key — as the admin queue.
      *  Reading one goes through `supportingDocumentUrl`, which checks ownership. */
     has_supporting_document: boolean
-    /** This absence puts the studio over a **Leave Cap** (§17). Only medical ever
-     *  gets here by being filed — every other type is refused at submission —
-     *  but a cap lowered afterwards is never retroactive, so an approved row can
-     *  become over-cap too, and that is equally worth seeing. Inside `detail`
-     *  because it refers to a cap, so it is redacted exactly as the rest is. */
+    /** This absence breaches a declared **Leave Conflict** or the study **Leave
+     *  Cap** (§17). Only medical ever gets here by being filed — every other type
+     *  is refused at submission — but a cap lowered or a pair declared afterwards
+     *  is never retroactive, so an approved row can become breaching too, and
+     *  that is equally worth seeing. Inside `detail` because it refers to a cap,
+     *  so it is redacted exactly as the rest is. */
     over_cap: boolean
   } | null
 }
@@ -843,11 +862,9 @@ export async function listLeaveCalendar(
       row: leaveRequests,
       instructorName: staffUsers.name,
       deciderName: decider.name,
-      inCoverGroup: instructors.inCoverGroup,
     })
     .from(leaveRequests)
     .innerJoin(staffUsers, eq(staffUsers.id, leaveRequests.instructorId))
-    .leftJoin(instructors, eq(instructors.staffUserId, leaveRequests.instructorId))
     .leftJoin(decider, eq(decider.id, leaveRequests.decidedByStaffId))
     .where(
       and(
@@ -861,26 +878,37 @@ export async function listLeaveCalendar(
 
   const seesEverything = viewer.role !== 'instructor'
 
-  // The §17 flag. The rows above are the same pending+approved set a Leave Cap
-  // counts — every absence OVERLAPPING [from, to], including one that began
+  // The §17 flag. The rows above are the same pending+approved set the rules
+  // count — every absence OVERLAPPING [from, to], including one that began
   // before the window opened and is still running inside it — so each entry is
-  // measured against the others by the same pure peak function, with no second
-  // query for peers, only the two caps.
+  // measured against the others by the same pure peak function the refusal uses,
+  // with no second query for peers, only the cap and the declared pairs.
   //
   // The measured window is the entry clipped to [from, to]: inside it every
   // overlapping absence is present, so the peak is exact, while outside it the
   // rows are whatever happened to also reach into view, which would flag a day
   // the calendar is not showing off an incomplete count.
-  const [caps] = await db
-    .select({ coverGroup: globalPolicy.coverGroupLeaveCap, study: globalPolicy.studyLeaveCap })
-    .from(globalPolicy)
-    .limit(1)
+  const [caps] = await db.select({ study: globalPolicy.studyLeaveCap }).from(globalPolicy).limit(1)
+  // Every declared **Leave Conflict** between two ACTIVE instructors, as the map
+  // the rule wants: an archived instructor's conflicts refuse nothing at
+  // submission, so they flag nothing here either.
+  const conflictA = alias(staffUsers, 'conflict_a')
+  const conflictB = alias(staffUsers, 'conflict_b')
+  const partners = new Map<string, string[]>()
+  for (const p of await db
+    .select({ a: leaveConflicts.instructorAId, b: leaveConflicts.instructorBId })
+    .from(leaveConflicts)
+    .innerJoin(conflictA, eq(conflictA.id, leaveConflicts.instructorAId))
+    .innerJoin(conflictB, eq(conflictB.id, leaveConflicts.instructorBId))
+    .where(and(eq(conflictA.status, 'active'), eq(conflictB.status, 'active')))) {
+    partners.set(p.a, [...(partners.get(p.a) ?? []), p.b])
+    partners.set(p.b, [...(partners.get(p.b) ?? []), p.a])
+  }
   const view = rules.leaveWindow(from, to)
-  const peers = rows.map(({ row, instructorName, inCoverGroup }) => ({
+  const peers = rows.map(({ row, instructorName }) => ({
     instructorId: row.instructorId,
     instructorName,
     type: row.type,
-    inCoverGroup: inCoverGroup ?? false,
     ...rules.leaveWindow(row.startDate, row.endDate, row.halfDay),
   }))
   // ponytail: O(n²) over one calendar window's rows, which is a handful of
@@ -889,13 +917,12 @@ export async function listLeaveCalendar(
     caps
       ? rules.leaveCapExceedance({
           type: self.type,
-          inCoverGroup: self.inCoverGroup,
+          conflictPartnerIds: partners.get(self.instructorId) ?? [],
           window: rules.clipWindow(self, view),
           // Excluded by INSTRUCTOR, as the submission path excludes them — one
           // person's own overlapping rows (a backdated medical over leave that
           // has already ended) are one instructor away, not two.
           peers: peers.filter(p => p.instructorId !== self.instructorId),
-          coverGroupCap: caps.coverGroup,
           studyCap: caps.study,
         }) !== null
       : false,
@@ -1024,8 +1051,9 @@ async function staffName(staffUserId: string, fallback: string): Promise<string>
   return staff?.name ?? fallback
 }
 
-/** `capWarning` is the §17 line: empty unless this request puts the studio over
- *  a **Leave Cap**, which only medical ever does — everything else was refused. */
+/** `capWarning` is the §17 line: empty unless this request breaches a declared
+ *  **Leave Conflict** or the study **Leave Cap**, which only medical ever does —
+ *  everything else was refused at submission. */
 async function emailAdminsOfSubmission(row: LeaveRequestRow, capWarning: string): Promise<void> {
   await emailEveryAdmin(
     'leave_request_submitted',

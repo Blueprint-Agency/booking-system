@@ -399,9 +399,12 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
     { cta: { href: `${portalUrl}/instructor/classes`, label: 'Complete check-in' } },
   )
 
-  /** `{{cap_warning}}` is the §17 sentence: this request puts the studio over a
-   *  Leave Cap, and medical is never refused by one, so this is the admins' only
-   *  warning in time to arrange cover. It sits at the END of a line rather than on
+  /** `{{cap_warning}}` is the §17 sentence: this request breaches a declared
+   *  Leave Conflict or the study Leave Cap, and medical is never refused by
+   *  either, so this is the admins' only warning in time to arrange cover. It
+   *  names the partner where a conflict is what was breached — an admin sees a
+   *  colleague's Leave Type on the calendar anyway, so the redaction that shapes
+   *  the instructor's refusal does not apply. It sits at the END of a line rather than on
    *  one of its own: it is empty on almost every submission, and a paragraph of
    *  its own would then render as a blank gap in every ordinary email. */
   const LEAVE_SUBMITTED_BODY = body(

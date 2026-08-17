@@ -440,13 +440,13 @@ export interface LeaveInstantWindow {
   endsAt: Date
 }
 
-/** One colleague's occupying leave, as a **Leave Cap** counts it: an instant
- *  window (from `leaveWindow`, so half days are already exact), plus the two
- *  facts that decide which cap counts it. */
+/** One colleague's occupying leave, as a **Leave Cap** or a **Leave Conflict**
+ *  counts it: an instant window (from `leaveWindow`, so half days are already
+ *  exact), plus the two facts that decide which rule counts it. */
 export interface LeaveCapPeer extends LeaveInstantWindow {
+  instructorId: string
   instructorName: string
   type: LeaveType
-  inCoverGroup: boolean
 }
 
 /**
@@ -482,57 +482,73 @@ const nameList = new Intl.ListFormat('en', { type: 'conjunction' })
 
 export interface LeaveCapInput {
   type: LeaveType
-  /** Is the APPLICANT in the Cover Group? Nobody else's membership decides this. */
-  inCoverGroup: boolean
+  /** The instructors the APPLICANT is in a declared **Leave Conflict** with —
+   *  nobody else's declarations decide this, and an archived partner is not in
+   *  the set, so their conflicts refuse nothing. */
+  conflictPartnerIds: readonly string[]
   /** The requested window, from `leaveWindow`. */
   window: LeaveInstantWindow
   /** Every OTHER instructor's occupying leave overlapping the window. Which of
-   *  them each cap counts is decided here, not by the query. */
+   *  them each rule counts is decided here, not by the query. */
   peers: readonly LeaveCapPeer[]
-  coverGroupCap: number
   studyCap: number
 }
 
 /**
- * Both **Leave Caps**, in one place so the asymmetry between them cannot drift.
+ * The **Leave Conflict** rule and the **Leave Cap**, in one place so the
+ * asymmetry between them cannot drift.
  *
  *  - **Medical is never refused**, whoever files it. It still sits in `peers`
  *    for everybody else, because the studio has lost that instructor whatever
  *    the reason.
- *  - The **Cover Group cap counts every Leave Type**, and only applies when the
- *    applicant is in the group.
+ *  - A **Leave Conflict counts every Leave Type**, and only the applicant's own
+ *    declared partners: two people the admin named cannot both be away.
  *  - The **Study Leave cap counts study leave only**, over every instructor —
  *    counting all leave would make study leave nearly unobtainable.
- *  - A Cover Group member's study request must clear BOTH.
+ *  - A study request from someone with declared partners must clear BOTH.
  *
- * The refusal names the colleagues and never says why they are away: the leave
- * calendar already shows every staff member the name, dates and status of a
- * colleague's leave, and redacts only the detail.
+ * The two refusals say different things, and the difference is forced:
+ *
+ *  - A **conflict refusal names the partner**. The admin declared that pair and
+ *    the applicant is in it, so nothing the applicant did not already know is
+ *    disclosed.
+ *  - A **study-cap refusal names nobody**. Naming the colleagues would say they
+ *    are on study leave — the one detail the leave calendar redacts from an
+ *    instructor — because the study cap is now the only headcount rule left, so
+ *    a shared wording would give the Leave Type away by elimination.
  */
 export function checkLeaveCaps(
   input: LeaveCapInput,
-): { ok: true } | { ok: false; code: 'leave_cap_reached'; message: string } {
+): { ok: true } | { ok: false; code: 'leave_conflict' | 'leave_cap_reached'; message: string } {
   if (input.type === 'medical') return { ok: true }
   const over = leaveCapExceedance(input)
   if (!over) return { ok: true }
-  // Which cap was reached is deliberately NOT in the message: naming the study
-  // cap would say the named colleagues are on study leave, and the leave
-  // calendar redacts a colleague's Leave Type from every instructor.
+  const on = formatLeaveDate(sgToday(over.at))
+  if (over.rule === 'study_cap') {
+    return {
+      ok: false,
+      code: 'leave_cap_reached',
+      message: `The most instructors who can be on study leave at once is already reached on ${on}.`,
+    }
+  }
+  const names = nameList.format(over.away.map(p => p.instructorName))
   return {
     ok: false,
-    code: 'leave_cap_reached',
+    code: 'leave_conflict',
     message:
-      `${nameList.format(over.away.map(p => p.instructorName))} ${over.away.length === 1 ? 'is' : 'are'} ` +
-      `already on leave on ${formatLeaveDate(sgToday(over.at))}. At most ${over.cap} ` +
-      `${over.cap === 1 ? 'instructor' : 'instructors'} can be away at once.`,
+      `${names} ${over.away.length === 1 ? 'is' : 'are'} already on leave on ${on}. ` +
+      `You and ${names} cannot be away at the same time.`,
   }
 }
 
-/** The moment a cap is exceeded, who else is away then, and the cap it is over. */
+/** The moment a rule is exceeded, who else is away then, the cap it is over, and
+ *  WHICH rule produced it — the last of those is what decides how much the
+ *  refusal, the warning and the calendar flag may say. */
 export interface LeaveCapExceedance {
   at: Date
   away: LeaveCapPeer[]
   cap: number
+  rule: 'conflict' | 'study_cap'
 }
 
 /**
@@ -546,40 +562,61 @@ export interface LeaveCapExceedance {
  * afterwards — never retroactive — which is equally worth reporting.
  */
 export function leaveCapExceedance(input: LeaveCapInput): LeaveCapExceedance | null {
-  const counted: { peers: LeaveCapPeer[]; cap: number }[] = []
-  if (input.inCoverGroup) {
-    counted.push({ peers: input.peers.filter(p => p.inCoverGroup), cap: input.coverGroupCap })
+  const counted: { peers: LeaveCapPeer[]; cap: number; rule: LeaveCapExceedance['rule'] }[] = []
+  if (input.conflictPartnerIds.length > 0) {
+    // A declared pair is just a counted set with a cap of 1: the applicant plus
+    // any one partner is already two, which is one too many.
+    counted.push({
+      peers: input.peers.filter(p => input.conflictPartnerIds.includes(p.instructorId)),
+      cap: 1,
+      rule: 'conflict',
+    })
   }
   if (input.type === 'study') {
-    counted.push({ peers: input.peers.filter(p => p.type === 'study'), cap: input.studyCap })
+    counted.push({
+      peers: input.peers.filter(p => p.type === 'study'),
+      cap: input.studyCap,
+      rule: 'study_cap',
+    })
   }
 
-  for (const { peers, cap } of counted) {
+  for (const { peers, cap, rule } of counted) {
     const { at, away } = peakLeaveAway(input.window, peers)
     // The applicant counts themselves.
-    if (away.length + 1 > cap) return { at, away, cap }
+    if (away.length + 1 > cap) return { at, away, cap, rule }
   }
   return null
 }
 
 /**
- * The sentence the admins' submission email carries — empty unless a cap is
+ * The sentence the admins' submission email carries — empty unless a rule is
  * exceeded, because the renderer has no conditionals and an empty variable is
  * how a template says nothing.
  *
- * The headcount is always at least 2 (it is over a cap of at least 1), so the
- * plural needs no branch.
+ * This is what a breached **Leave Conflict** looks like in practice: medical
+ * leave is never refused, so the pair the admin declared can still end up away
+ * together, and the admins have to be told in time to arrange cover.
  *
- * It names a number and a day, never a colleague — the leave calendar's flag is
- * the same measurement (`leaveCapExceedance`) reduced to a boolean, so the two
- * reports can never disagree about what is over a cap.
+ * The redaction that shapes the refusal does not apply here — an admin sees
+ * every colleague's Leave Type on the calendar already — so the conflict
+ * warning names the partner and the study warning names the leave type. Both
+ * come from the same measurement (`leaveCapExceedance`) as the refusal and the
+ * calendar's flag, so the three reports can never disagree.
+ *
+ * The study headcount is always at least 2 (it is over a cap of at least 1), so
+ * its plural needs no branch.
  */
 export function leaveCapWarning(input: LeaveCapInput): string {
   const over = leaveCapExceedance(input)
   if (!over) return ''
+  const on = formatLeaveDate(sgToday(over.at))
+  if (over.rule === 'study_cap') {
+    return `⚠️ This puts ${over.away.length + 1} instructors on study leave on ${on}, above the cap of ${over.cap}.`
+  }
+  const names = nameList.format(over.away.map(p => p.instructorName))
   return (
-    `⚠️ This puts ${over.away.length + 1} instructors away on ` +
-    `${formatLeaveDate(sgToday(over.at))}, above the cap of ${over.cap}.`
+    `⚠️ This breaches a declared leave conflict: ${names} ${over.away.length === 1 ? 'is' : 'are'} ` +
+    `also away on ${on}. Cover has to be arranged.`
   )
 }
 

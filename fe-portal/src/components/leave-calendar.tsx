@@ -33,8 +33,9 @@ interface ApiLeaveCalendarEntry {
     decision_reason: string | null;
     decided_by: string | null;
     has_supporting_document: boolean;
-    /** The studio is over a Leave Cap on this absence — the backend measures it,
-     *  and it arrives inside `detail`, so a colleague never sees it. */
+    /** This absence breaches a declared leave conflict or the study leave cap —
+     *  the backend measures it with the same function the refusal uses, and it
+     *  arrives inside `detail`, so a colleague never sees it. */
     over_cap: boolean;
   } | null;
 }
@@ -56,7 +57,8 @@ function tooltip(e: ApiLeaveCalendarEntry): string {
     `${e.detail.days} day(s)`,
     e.detail.reason,
   ];
-  if (e.detail.over_cap) bits.push("⚠️ Over the leave cap — cover needs arranging");
+  if (e.detail.over_cap)
+    bits.push("⚠️ Breaches a leave conflict or the study leave cap — cover needs arranging");
   if (e.detail.decision_reason) bits.push(`Decision: ${e.detail.decision_reason}`);
   if (e.detail.decided_by) bits.push(`Decided by ${e.detail.decided_by}`);
   return `${head}\n${bits.join("\n")}`;
@@ -148,7 +150,7 @@ export function LeaveCalendar() {
                     className={`${calendarChipClass} ${CHIP_TONE[e.status]}`}
                   >
                     {/* Only ever on a row whose detail this viewer may see. */}
-                    {e.detail?.over_cap && <span aria-label="Over the leave cap">⚠️</span>}
+                    {e.detail?.over_cap && <span aria-label="Breaches a leave conflict or the study leave cap">⚠️</span>}
                     <span className="truncate">{e.instructor.name}</span>
                     {/* The type is restricted; which half is not — a colleague
                         may see "(AM)" without seeing what kind of leave it is. */}

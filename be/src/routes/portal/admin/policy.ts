@@ -4,9 +4,9 @@ import { z } from 'zod'
 import * as svc from '../../../services/policy/update'
 import { BadRequestError } from '../../../shared/errors'
 
-// A Leave Cap is a headcount of instructors away at once, not a number of days:
-// at least 1 (zero would freeze annual leave studio-wide) and at most 99, which
-// is more instructors than the studio will ever have.
+// A Leave Cap is a headcount of instructors on study leave at once, not a number
+// of days: at least 1 (zero would make study leave unobtainable) and at most 99,
+// which is more instructors than the studio will ever have.
 const LEAVE_CAP_MESSAGE = 'A Leave Cap must be between 1 and 99 instructors.'
 /** A whole number in a range, refused with one sentence whichever bound it broke. */
 const bounded = (message: string, min: number, max?: number) => {
@@ -36,7 +36,6 @@ const globalPatch = z.object({
   class_window_hours: bounded('A class booking window must be 0 hours or more.', 0),
   pt_window_hours: bounded('A PT booking window must be 0 hours or more.', 0),
   leave_carry_over_cap_days: bounded('Carry-over must be between 0 and 365 days.', 0, 365),
-  cover_group_leave_cap: leaveCap.optional(),
   study_leave_cap: leaveCap.optional(),
   // The Cross-Location Add-On rate, per month. Repricing moves future purchases
   // only — every Add-On already sold is frozen at what its member paid (§5).
@@ -44,10 +43,6 @@ const globalPatch = z.object({
     .number({ message: 'The Add-On rate must be a number.' })
     .min(0, 'The Add-On rate must be between $0 and $9999.')
     .max(9999, 'The Add-On rate must be between $0 and $9999.')
-    .optional(),
-  // The whole Cover Group, as one ticked set of instructor staff user ids.
-  cover_group_staff_ids: z
-    .array(z.string().uuid('The Cover Group must be a set of instructors.'))
     .optional(),
   // Every declared Leave Conflict, as one replacement set. Which pairs are
   // allowed — two different, active instructors, each pair once — is the
@@ -74,7 +69,6 @@ function serializeGlobal(r: svc.GlobalPolicyRow) {
     class_window_hours: r.classWindowHours,
     pt_window_hours: r.ptWindowHours,
     leave_carry_over_cap_days: r.leaveCarryOverCapDays,
-    cover_group_leave_cap: r.coverGroupLeaveCap,
     study_leave_cap: r.studyLeaveCap,
     cross_location_rate_sgd: r.crossLocationRateSgd,
     updated_at: r.updatedAt,
@@ -104,7 +98,6 @@ const app = new Hono()
     return c.json({
       global_policy: serializeGlobal(global_policy),
       pt_booking_config: serializePt(pt_booking_config),
-      cover_group_staff_ids: await svc.readCoverGroup(),
       leave_conflicts: await serializeConflicts(),
     })
   })
@@ -122,15 +115,9 @@ const app = new Hono()
         ...(body.leave_carry_over_cap_days !== undefined
           ? { leaveCarryOverCapDays: body.leave_carry_over_cap_days }
           : {}),
-        ...(body.cover_group_leave_cap !== undefined
-          ? { coverGroupLeaveCap: body.cover_group_leave_cap }
-          : {}),
         ...(body.study_leave_cap !== undefined ? { studyLeaveCap: body.study_leave_cap } : {}),
         ...(body.cross_location_rate_sgd !== undefined
           ? { crossLocationRateSgd: body.cross_location_rate_sgd.toFixed(2) }
-          : {}),
-        ...(body.cover_group_staff_ids !== undefined
-          ? { coverGroupStaffIds: body.cover_group_staff_ids }
           : {}),
         ...(body.leave_conflicts !== undefined
           ? {
@@ -146,7 +133,6 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'global_policy', id: row.id })
     return c.json({
       ...serializeGlobal(row),
-      cover_group_staff_ids: await svc.readCoverGroup(),
       leave_conflicts: await serializeConflicts(),
     })
   })
