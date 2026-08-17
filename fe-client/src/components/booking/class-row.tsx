@@ -99,11 +99,24 @@ export function ClassRow({
       } else if (code === "class_already_started") {
         setBookError("This class has already started.");
       } else if (code === "location_not_covered") {
-        // The lock chip below already covers the wrong-studio case, so what
-        // lands here is a plan that can't reach this class's date — it runs out
-        // first, or it is waiting behind one that does.
+        // Genuinely the wrong studio. The lock chip below catches this before
+        // the click in the normal case; what lands here is entitlements the
+        // client read too early or too late.
         setPlanRefused(true);
-        setBookError("Your plan doesn't run long enough to cover this class.");
+        setBookError(
+          planLocation
+            ? `Your plan covers ${planLocation.name} only.`
+            : "Your plan doesn't cover this studio.",
+        );
+      } else if (code === "plan_expires_before_class") {
+        // Not a coverage problem (§3): the plan does cover this studio, it just
+        // runs out first. The Cross-Location Add-On sells Locations, not time,
+        // so it is the wrong remedy here — and a queued renewal starts itself on
+        // the first booking after the current plan ends, which the client has no
+        // field to see. So: state it, offer nothing.
+        setBookError(
+          "Your plan runs out before this class starts, so it can't cover it. Try again once your next plan is running.",
+        );
       } else {
         setBookError("Couldn't book this class. Please try again.");
       }
