@@ -4,6 +4,12 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 export const r2 = new S3Client({
   region: 'auto',
   endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  // R2 does not implement the SDK's flexible checksums. From @aws-sdk v3.729 the
+  // default is `WHEN_SUPPORTED`, which signs the request and then adds
+  // `x-amz-checksum-crc32` + `x-amz-sdk-checksum-algorithm` — R2 answers 403
+  // SignatureDoesNotMatch. Cloudflare's documented setting for the S3 SDK.
+  requestChecksumCalculation: 'WHEN_REQUIRED',
+  responseChecksumValidation: 'WHEN_REQUIRED',
   credentials: {
     accessKeyId: process.env.R2_ACCESS_KEY_ID!,
     secretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
@@ -28,6 +34,14 @@ export const r2 = new S3Client({
 export const R2_BUCKET = process.env.R2_BUCKET_NAME
 
 export const R2_PUBLIC_URL = process.env.R2_PUBLIC_URL!
+
+/** The unsigned, public URL of an object — null when there is no key or no
+ *  configured public host. Every read path that serialises an R2 key to a
+ *  client goes through this. */
+export function publicObjectUrl(key: string | null | undefined): string | null {
+  if (!key || !R2_PUBLIC_URL) return null
+  return `${R2_PUBLIC_URL.replace(/\/$/, '')}/${key.replace(/^\//, '')}`
+}
 
 export async function putObject(key: string, body: Uint8Array, contentType: string): Promise<void> {
   await r2.send(

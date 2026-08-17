@@ -53,7 +53,7 @@ be/
     │   ├── schema/
     │   │   ├── index.ts               # Re-exports tables
     │   │   ├── identity.ts            # clients, staff_users, staff_invitations
-    │   │   ├── catalog.ts             # locations, class_types, instructors, instructor_class_types
+    │   │   ├── catalog.ts             # locations, class_types, instructors, instructor_class_types, merch, merch_orders
     │   │   ├── policy.ts              # global_policy, pt_booking_config (singletons)
     │   │   ├── packages.ts            # class_packages, pt_packages, client_packages, promotions
     │   │   ├── schedule.ts            # classes, workshops, workshop_days, workshop_tiers,
@@ -383,6 +383,34 @@ The leave tables themselves (`leave_requests`, `leave_pools`) are specified in `
 | instructor_id | uuid | FK → instructors.staff_user_id, on delete cascade |
 | class_type_id | uuid | FK → class_types.id, on delete restrict |
 | **PK** (instructor_id, class_type_id) |
+
+#### `merch` — studio goods (mats, props, apparel)
+
+| Column | Type | Constraints |
+|---|---|---|
+| id | uuid | PK, default gen_random_uuid() |
+| title | text | not null |
+| description | text | nullable |
+| price_sgd | numeric(10,2) | not null, CHECK >= 0 |
+| image_r2_key | text | nullable — `merch/<id>.<ext>`, served via `R2_PUBLIC_URL` |
+| archived_at | timestamptz | nullable — hides the item from `/public/merch` and refuses new checkouts |
+| created_at | timestamptz | not null, default now() |
+
+Index on `archived_at`. **No stock count and no location**: merch is paid for online and handed over physically at the studio. Delete is a real `DELETE` — nothing references a merch row.
+
+#### `merch_orders` — a merch purchase
+
+| Column | Type | Constraints |
+|---|---|---|
+| id | uuid | PK, default gen_random_uuid() |
+| client_id | uuid | FK → clients.id, on delete restrict, not null |
+| merch_id | uuid | FK → merch.id, **on delete set null**, nullable |
+| title | text | not null — frozen at purchase |
+| amount_sgd | numeric(10,2) | not null — frozen at purchase |
+| stripe_payment_intent_id | text | nullable (a free item never reaches Stripe), UNIQUE |
+| created_at | timestamptz | not null, default now() |
+
+Index on `(client_id, created_at)`. There is no fulfilment state: the row IS the purchase-history line the front desk hands the item over against. `title`/`amount_sgd` are frozen and `merch_id` goes null on delete so history reads as what was actually bought however the catalogue changes afterwards. The unique intent is what makes a second webhook delivery (or the confirmation page's `sync-session`) a no-op.
 
 ### 4c. Policy (singletons)
 
@@ -792,7 +820,9 @@ UI surfacing is next phase (§19) but the table is populated this phase.
 
 #### `stripe_payments`
 
-id, payment_intent_id (text unique), amount_sgd, kind enum (`workshop`, `class_package`, `pt_package`, `corporate_package`), client_id (FK), booking_id (FK, nullable), client_package_id (FK, nullable), status enum (`pending`, `succeeded`, `refunded`, `failed`), receipt_url (text, nullable — Stripe-hosted receipt; populated by `payment_intent.succeeded` webhook handler from `latest_charge.receipt_url`), refunded_at (nullable), created_at.
+id, payment_intent_id (text unique), amount_sgd, kind enum (`workshop`, `class_package`, `pt_package`, `corporate_package`, `merch`), client_id (FK), booking_id (FK, nullable), client_package_id (FK, nullable), status enum (`pending`, `succeeded`, `refunded`, `failed`), receipt_url (text, nullable — Stripe-hosted receipt; populated by `payment_intent.succeeded` webhook handler from `latest_charge.receipt_url`), refunded_at (nullable), created_at.
+
+**Merch purchases.** A `kind='merch'` payment records the money and nothing else: no `client_packages` row and no booking — the delivered thing is the `merch_orders` row (§4b) and the item is handed over at the studio. `booking_id` and `client_package_id` stay NULL, so a refund of one unwinds to `stampRefunded` alone.
 
 **Corporate purchases.** A `kind='corporate_package'` payment is recorded on `checkout.session.completed` like any other, but unlike `class_package` / `pt_package` it does **not** insert a `client_packages` row (corporate buys grant no credits — the resulting `corporate_requests` row is the entitlement). `client_package_id` stays NULL. See §4e `corporate_requests` and the webhook flow in §6b.
 

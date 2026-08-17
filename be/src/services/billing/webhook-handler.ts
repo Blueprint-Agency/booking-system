@@ -18,6 +18,7 @@ import { applyCrossLocationAddOn, grantPackage } from '../packages/purchase'
 import { consumePromoCodeHold } from '../packages/promo-redemption'
 import { unwindRefund } from './refunds'
 import { bookWorkshopPaid } from '../workshops/book'
+import { recordMerchOrder } from '../catalog/merch-orders'
 import {
   sendPackagePurchaseEmail,
   sendWorkshopPurchaseEmail,
@@ -190,6 +191,46 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         .where(eq(stripePayments.paymentIntentId, paymentIntentId))
       // No confirmation email: an Add-On grants no package, and §13 names four
       // sending paths, none of them this one.
+      return
+    }
+
+    // Merch. Nothing is granted and nothing is booked: the money is recorded and
+    // the order becomes the line in the member's purchase history that the studio
+    // hands the item over against.
+    if (kind === 'merch') {
+      const merchId = meta.merch_id
+      const clientId = meta.client_id
+      if (!merchId || !clientId) return
+
+      const amountSgd = meta.amount_sgd ?? String(((session.amount_total ?? 0) / 100).toFixed(2))
+
+      const [existing] = await db
+        .select({ status: stripePayments.status })
+        .from(stripePayments)
+        .where(eq(stripePayments.paymentIntentId, paymentIntentId))
+        .limit(1)
+      if (existing?.status === 'succeeded') return
+
+      if (!existing) {
+        await db
+          .insert(stripePayments)
+          .values({ paymentIntentId, amountSgd, kind: 'merch', clientId, status: 'pending' })
+          .onConflictDoNothing()
+      }
+
+      await recordMerchOrder({
+        clientId,
+        merchId,
+        title: meta.merch_title || 'Merch',
+        amountSgd,
+        paymentIntentId,
+      })
+
+      const receipt = await receiptUrlPatch(paymentIntentId)
+      await db
+        .update(stripePayments)
+        .set({ status: 'succeeded', ...receipt })
+        .where(eq(stripePayments.paymentIntentId, paymentIntentId))
       return
     }
 

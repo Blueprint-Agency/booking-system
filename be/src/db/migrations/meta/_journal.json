@@ -176,6 +176,13 @@
       "when": 1786963540492,
       "tag": "0024_retire_cover_group",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1787000400000,
+      "tag": "0025_merch",
+      "breakpoints": true
     }
   ]
 }

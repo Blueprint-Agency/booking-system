@@ -113,7 +113,7 @@ export const leaveHalfDayEnum = pgEnum('leave_half_day', ['none', 'morning', 'af
 
 // Ledger
 export const auditActorTypeEnum = pgEnum('audit_actor_type', ['staff', 'system'])
-export const stripePaymentKindEnum = pgEnum('stripe_payment_kind', ['workshop', 'class_package', 'pt_package', 'corporate_package'])
+export const stripePaymentKindEnum = pgEnum('stripe_payment_kind', ['workshop', 'class_package', 'pt_package', 'corporate_package', 'merch'])
 export const stripePaymentStatusEnum = pgEnum('stripe_payment_status', ['pending', 'succeeded', 'refunded', 'failed'])
 
 // Content

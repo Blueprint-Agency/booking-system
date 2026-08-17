@@ -9,6 +9,7 @@ import {
   serializePromotion,
 } from '../../services/packages/promotions'
 import * as workshopsSvc from '../../services/workshops/catalog'
+import * as merchSvc from '../../services/catalog/merch'
 import { listCorporatePackages } from '../../services/packages/corporate-packages'
 
 function serializeClassPackage(
@@ -71,6 +72,11 @@ const app = new Hono()
     const id = c.req.param('id')
     const detail = await workshopsSvc.getWorkshopDetailPayload(id)
     return c.json(detail)
+  })
+  // Merch is browse-only and priced the same for everyone — no signed-in variant.
+  .get('/merch', async c => {
+    const rows = await merchSvc.listMerch({ includeArchived: false })
+    return c.json({ merch: rows.map(merchSvc.serializeMerch) })
   })
   .get('/instructors', async c => {
     const instructors = await classCatalog.listActiveInstructors()

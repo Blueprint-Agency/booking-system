@@ -9,6 +9,11 @@ import {
   beginPackageCheckout,
 } from '../../services/packages/checkout'
 import { beginWorkshopCheckout } from '../../services/workshops/checkout'
+import {
+  beginMerchCheckout,
+  listMerchOrders,
+  serializeMerchOrder,
+} from '../../services/catalog/merch-orders'
 import { createCheckoutSession } from '../../services/billing/checkout-session'
 import { describeProduct, previewPromoCode } from '../../services/packages/promo-redemption'
 import { CLIENT_URL } from '../../env'
@@ -135,6 +140,29 @@ const app = new Hono()
       cancelUrl: `${CLIENT_URL}/account?cancelled=1`,
     })
     return c.json({ url })
+  })
+  // Merch: one item, no Promo Code, no review page. Paid for online and handed
+  // over at the studio, which is what the client app's notice says.
+  .post('/checkout/merch', zValidator('json', z.object({ merch_id: z.string().uuid() })), async c => {
+    const { merch_id } = c.req.valid('json')
+    const quote = await beginMerchCheckout({ clientId: c.get('clientId'), merchId: merch_id })
+    if (quote.outcome === 'granted') {
+      return c.json({ outcome: 'granted', order_id: quote.orderId, free: true }, 201)
+    }
+    const url = await createCheckoutSession({
+      email: c.get('clientRow').email,
+      lines: quote.lines,
+      expiresAt: quote.expiresAt,
+      metadata: quote.metadata,
+      successUrl: `${CLIENT_URL}/booking/confirmation?type=merch&session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: `${CLIENT_URL}/merch?cancelled=1`,
+    })
+    return c.json({ url })
+  })
+  // Purchase history: what the member bought and is collecting at the studio.
+  .get('/merch-orders', async c => {
+    const rows = await listMerchOrders(c.get('clientId'))
+    return c.json({ orders: rows.map(serializeMerchOrder) })
   })
   .post('/checkout/workshop', zValidator('json', checkoutWorkshopSchema), async c => {
     const body = c.req.valid('json')

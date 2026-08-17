@@ -4,13 +4,14 @@ import {
   text,
   timestamp,
   integer,
+  numeric,
   index,
   uniqueIndex,
   primaryKey,
   check,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
-import { staffUsers } from './identity'
+import { clients, staffUsers } from './identity'
 import { classDifficultyEnum } from '../enums'
 
 export const locations = pgTable(
@@ -59,6 +60,62 @@ export const rooms = pgTable(
       sql`lower(${table.name})`,
     ),
     capacityPositive: check('rooms_capacity_positive', sql`${table.capacity} > 0`),
+  }),
+)
+
+// ============================================================================
+// merch — studio goods (mats, props, apparel). No stock count, no online
+// payment: the client browses, the studio hands the item over in person. Archive
+// hides it from the client app; nothing references a row, so delete is a real
+// DELETE rather than the soft-delete the schedulable tables need.
+// ============================================================================
+
+export const merch = pgTable(
+  'merch',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    title: text('title').notNull(),
+    description: text('description'),
+    priceSgd: numeric('price_sgd', { precision: 10, scale: 2 }).notNull(),
+    imageR2Key: text('image_r2_key'),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  table => ({
+    archivedIdx: index('merch_archived_idx').on(table.archivedAt),
+    priceNonNegative: check('merch_price_non_negative', sql`${table.priceSgd} >= 0`),
+  }),
+)
+
+/**
+ * A merch purchase. The item is handed over at the studio, so there is no
+ * fulfilment state to track — the row IS the purchase history line.
+ *
+ * `title` and `amount_sgd` are frozen at purchase: the catalogue row can be
+ * renamed, repriced or deleted afterwards and the member's history still reads
+ * as what they actually bought. `merch_id` goes null on delete for the same
+ * reason. A free item (price 0) is granted without the payment provider, so the
+ * intent is nullable.
+ */
+export const merchOrders = pgTable(
+  'merch_orders',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id, { onDelete: 'restrict' }),
+    merchId: uuid('merch_id').references(() => merch.id, { onDelete: 'set null' }),
+    title: text('title').notNull(),
+    amountSgd: numeric('amount_sgd', { precision: 10, scale: 2 }).notNull(),
+    stripePaymentIntentId: text('stripe_payment_intent_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  table => ({
+    clientCreatedIdx: index('merch_orders_client_created_idx').on(table.clientId, table.createdAt),
+    // One order per payment. Both the webhook and the confirmation page's
+    // sync-session deliver the same purchase, so this is what makes the second
+    // one a no-op. Postgres allows many NULLs, which is what free items want.
+    intentUnique: uniqueIndex('merch_orders_intent_unique').on(table.stripePaymentIntentId),
   }),
 )
 
