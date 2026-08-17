@@ -176,7 +176,7 @@ export default function ClientsPage() {
                         )}
                       </div>
                       <div className="truncate text-xs text-muted">{c.email}</div>
-                      <div className="mt-2 flex items-center gap-4 text-[11px] font-mono text-muted">
+                      <div className="mt-2 flex items-center gap-4 text-[11px] text-muted">
                         <span>{c.phone || "—"}</span>
                         <span className="ml-auto">{formatDate(c.joined_at)}</span>
                       </div>

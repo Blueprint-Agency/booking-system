@@ -233,7 +233,7 @@ function LocationCard({
         {location.phone && (
           <li className="flex items-center gap-2">
             <Phone className="h-3.5 w-3.5 shrink-0" />
-            <span className="font-mono text-xs">{location.phone}</span>
+            <span className="text-xs">{location.phone}</span>
           </li>
         )}
         {location.gmapsUrl && (

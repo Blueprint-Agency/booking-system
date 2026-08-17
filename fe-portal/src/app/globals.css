@@ -2,8 +2,10 @@
 
 @theme {
   /* Typography — single family for Phase A */
+  /* Mono is the plain system stack — it exists only for the markdown/template
+     editors, never for numbers or labels. */
   --font-sans: "Manrope", system-ui, -apple-system, sans-serif;
-  --font-mono: "JetBrains Mono", monospace;
+  --font-mono: ui-monospace, "SFMono-Regular", "Menlo", monospace;
 
   /* Neutral foundation — cool off-white paired with navy brand */
   --color-paper: #f5f6fa;

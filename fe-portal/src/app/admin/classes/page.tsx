@@ -355,7 +355,7 @@ function PackageCard({
       {pkg.description && (
         <p className="mb-3 line-clamp-2 text-xs text-muted">{pkg.description}</p>
       )}
-      <div className="mb-3 font-mono text-2xl font-semibold text-ink">
+      <div className="mb-3 text-2xl font-semibold tabular-nums text-ink">
         {formatSgd(pkg.priceSgd)}
       </div>
       <div className="flex justify-end gap-1">

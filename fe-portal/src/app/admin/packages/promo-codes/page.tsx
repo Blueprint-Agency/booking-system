@@ -89,7 +89,7 @@ export default function PromoCodesListPage() {
                 className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-paper"
               >
                 <div className="min-w-0 flex-1">
-                  <div className="font-mono font-medium text-ink">{c.code}</div>
+                  <div className="font-medium text-ink">{c.code}</div>
                   <div className="mt-1 text-xs text-muted">
                     {c.label} · {c.applies_to_all ? "Everything" : `${c.products.length} product${c.products.length === 1 ? "" : "s"}`}
                     {c.expires_at ? ` · Expires ${formatDate(c.expires_at)}` : " · Never expires"}

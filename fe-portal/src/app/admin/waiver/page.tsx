@@ -71,7 +71,7 @@ export default function WaiverPage() {
               <FileCheck className="h-4 w-4 text-sage" />
               <h3 className="text-sm font-semibold text-ink">Signed</h3>
             </div>
-            <div className="font-mono text-3xl font-semibold text-ink">{signedCount}</div>
+            <div className="text-3xl font-semibold tabular-nums text-ink">{signedCount}</div>
             <p className="mt-1 text-xs text-muted">
               Individual signed dates surface on each customer profile.
             </p>

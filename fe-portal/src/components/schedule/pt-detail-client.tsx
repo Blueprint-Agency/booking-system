@@ -53,7 +53,7 @@ export function PtDetailClient({
               <Avatar name={client.name} size={36} />
               <div className="min-w-0 flex-1">
                 <div className="font-medium text-ink">{client.name}</div>
-                <div className="font-mono text-xs text-muted">{booking.code}</div>
+                <div className="text-xs text-muted">{booking.code}</div>
               </div>
               <CheckInControl
                 state={booking.checkInState}

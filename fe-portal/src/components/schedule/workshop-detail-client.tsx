@@ -63,7 +63,7 @@ export function WorkshopDetailClient({
                   <div className="font-medium text-ink">{t.name}</div>
                   <div className="text-xs text-muted">{t.description}</div>
                   <div className="mt-1 flex flex-wrap gap-1.5 text-xs">
-                    <span className="font-mono text-ink">{formatSgd(t.priceSgd)}</span>
+                    <span className="tabular-nums text-ink">{formatSgd(t.priceSgd)}</span>
                     {t.earlyBirdPriceSgd && (
                       <span className="text-muted">
                         early bird {formatSgd(t.earlyBirdPriceSgd)}
@@ -72,7 +72,7 @@ export function WorkshopDetailClient({
                   </div>
                 </div>
                 <div className="text-right text-xs">
-                  <div className="font-mono font-semibold text-ink">
+                  <div className="font-semibold tabular-nums text-ink">
                     {s.booked} / {s.capacity}
                   </div>
                   {s.soldOut && <Badge tone="error">Sold out</Badge>}

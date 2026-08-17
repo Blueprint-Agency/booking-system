@@ -275,7 +275,7 @@ export default function ClientProfilePage({
                 <span className="inline-flex items-center gap-1.5">
                   <Mail className="h-3 w-3" /> {profile.email}
                 </span>
-                <span className="inline-flex items-center gap-1.5 font-mono">
+                <span className="inline-flex items-center gap-1.5">
                   <Phone className="h-3 w-3" /> {profile.phone || "—"}
                 </span>
                 <span>Joined {formatDate(profile.joined_at)}</span>
@@ -425,7 +425,7 @@ export default function ClientProfilePage({
                         </div>
                       )}
                       {p.credits_or_sessions_remaining !== null ? (
-                        <div className="font-mono text-sm text-ink">
+                        <div className="text-sm text-ink">
                           {p.credits_or_sessions_remaining}
                           {p.credits_or_sessions_total !== null
                             ? ` / ${p.credits_or_sessions_total}`
@@ -433,7 +433,7 @@ export default function ClientProfilePage({
                           {p.kind === "pt" ? "sessions" : "credits"}
                         </div>
                       ) : (
-                        <div className="font-mono text-sm text-ink">Unlimited</div>
+                        <div className="text-sm text-ink">Unlimited</div>
                       )}
                       <div className="text-xs text-muted">
                         {p.expires_at
@@ -458,7 +458,7 @@ export default function ClientProfilePage({
                           </span>
                         )}
                         {p.promo_code && (
-                          <span> · code <span className="font-mono text-ink">{p.promo_code}</span></span>
+                          <span> · code <span className="text-ink">{p.promo_code}</span></span>
                         )}
                       </div>
                       {/* The attended notice sits on the row itself, above the
@@ -750,7 +750,7 @@ function BlockClientDialog({
       >
         <div className="space-y-1.5">
           <Label htmlFor="confirm-email">
-            Type <span className="font-mono text-ink">{email}</span> to confirm
+            Type <span className="text-ink">{email}</span> to confirm
           </Label>
           <Input
             id="confirm-email"

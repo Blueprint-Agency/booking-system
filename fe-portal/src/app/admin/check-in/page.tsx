@@ -189,7 +189,7 @@ export default function CheckInPage() {
                     <Avatar name={client.name} size={32} />
                     <div className="min-w-0 flex-1">
                       <div className="text-sm font-medium text-ink">{client.name}</div>
-                      <div className="font-mono text-xs text-muted">{booking.code}</div>
+                      <div className="text-xs text-muted">{booking.code}</div>
                     </div>
                     {booking.checkInState === "attended" ? (
                       <Badge tone="sage">
@@ -254,7 +254,7 @@ export default function CheckInPage() {
                 placeholder="YS-XXXXXX"
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
-                className="font-mono uppercase"
+                className="uppercase"
               />
               <Button type="submit" className="w-full">
                 Check in

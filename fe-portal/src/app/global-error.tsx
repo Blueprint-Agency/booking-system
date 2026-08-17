@@ -30,7 +30,7 @@ export default function GlobalError({
               The console hit an unexpected error. Please try again.
             </p>
             {error.digest && (
-              <p className="mt-3 font-mono text-xs text-muted">Reference: {error.digest}</p>
+              <p className="mt-3 text-xs text-muted">Reference: {error.digest}</p>
             )}
             <button
               type="button"
