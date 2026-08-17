@@ -136,6 +136,23 @@ export function usedPlaces(
 }
 
 /**
+ * How many members have actually used this code — the count that freezes its
+ * text and its money off (§9, story 63: "frozen once someone has **used** it").
+ *
+ * Deliberately not `usedPlaces`. A place can be taken by a live Hold, which is
+ * an in-flight checkout that may never complete; freezing a live campaign's
+ * terms on one abandoned checkout is not a rule anyone asked for. A refunded
+ * Redemption keeps its row (story 89) but is a sale that was undone, so it
+ * stops freezing too — there is no longer a member standing on those terms.
+ *
+ * Unlike a place, this needs no `now`: consumed is permanent, and nothing here
+ * lapses.
+ */
+export function consumedCount(redemptions: PromoCodeRedemptionRow[]): number {
+  return redemptions.reduce((n, r) => (r.status === 'consumed' ? n + 1 : n), 0)
+}
+
+/**
  * A code either applies to everything or names its products explicitly.
  * `appliesToAll` means no scope rows at all, so the rows are not consulted.
  * Workshops match at workshop level — a tier is never a scope row.

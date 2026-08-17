@@ -38,8 +38,12 @@ import {
 export interface PromoCodeDetail {
   code: PromoCodeRow
   products: PromoCodeProductRow[]
-  /** Total Redemption rows of any status. Non-zero freezes the code text and the money off. */
-  redemptionCount: number
+  /**
+   * Redemptions a member actually took — `consumed` only, per `consumedCount`
+   * in ./promo-codes. Non-zero freezes the code text and the money off. A held
+   * or refunded row is deliberately not counted; see that function for why.
+   */
+  consumedCount: number
 }
 
 const PRODUCT_TABLES = {
@@ -88,11 +92,21 @@ function assertScopeShape(appliesToAll: boolean, products: ProductRef[]): void {
 const isCodeCollision = (err: unknown): boolean =>
   isUniqueViolation(err, 'promo_codes_code_unique')
 
-async function redemptionCountFor(promoCodeId: string): Promise<number> {
+/**
+ * The SQL half of `consumedCount` — same rule, counted in the database because
+ * loading every Redemption row to count them here would be the only reason to
+ * load them at all. Keep the two in step.
+ */
+async function consumedCountFor(promoCodeId: string): Promise<number> {
   const [row] = await db
     .select({ n: count() })
     .from(promoCodeRedemptions)
-    .where(eq(promoCodeRedemptions.promoCodeId, promoCodeId))
+    .where(
+      and(
+        eq(promoCodeRedemptions.promoCodeId, promoCodeId),
+        eq(promoCodeRedemptions.status, 'consumed'),
+      ),
+    )
   return Number(row?.n ?? 0)
 }
 
@@ -114,13 +128,18 @@ export async function listPromoCodes(opts: { status?: PromoCodeStatus } = {}): P
   const counts = await db
     .select({ id: promoCodeRedemptions.promoCodeId, n: count() })
     .from(promoCodeRedemptions)
-    .where(inArray(promoCodeRedemptions.promoCodeId, ids))
+    .where(
+      and(
+        inArray(promoCodeRedemptions.promoCodeId, ids),
+        eq(promoCodeRedemptions.status, 'consumed'),
+      ),
+    )
     .groupBy(promoCodeRedemptions.promoCodeId)
 
   return rows.map(code => ({
     code,
     products: scope.filter(s => s.promoCodeId === code.id),
-    redemptionCount: Number(counts.find(c => c.id === code.id)?.n ?? 0),
+    consumedCount: Number(counts.find(c => c.id === code.id)?.n ?? 0),
   }))
 }
 
@@ -131,7 +150,7 @@ export async function getPromoCode(id: string): Promise<PromoCodeDetail> {
     .select()
     .from(promoCodeProducts)
     .where(eq(promoCodeProducts.promoCodeId, id))
-  return { code, products, redemptionCount: await redemptionCountFor(id) }
+  return { code, products, consumedCount: await consumedCountFor(id) }
 }
 
 export interface CreatePromoCodeInput {
@@ -217,7 +236,7 @@ export async function createPromoCode(
           })
           .returning()
         const products = await insertScope(tx, row!.id, input.products)
-        return { code: row!, products, redemptionCount: 0 }
+        return { code: row!, products, consumedCount: 0 }
       })
     } catch (err: unknown) {
       if (!isCodeCollision(err)) throw err
@@ -259,7 +278,7 @@ export async function updatePromoCode(
     patch.kind !== undefined ||
     patch.percentOff !== undefined ||
     patch.amountOffSgd !== undefined
-  if (rewritesTerms && existing.redemptionCount > 0) {
+  if (rewritesTerms && existing.consumedCount > 0) {
     throw new ConflictError('promo_code_terms_frozen')
   }
 

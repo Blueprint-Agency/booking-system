@@ -68,10 +68,13 @@ function serialize(d: svc.PromoCodeDetail) {
       product_type: p.productType,
       product_id: p.productId,
     })),
-    redemption_count: d.redemptionCount,
+    // Redemptions a member actually took. A live Hold is not one of them, so a
+    // code being claimed right now can read one short of its places — that
+    // settles itself when the checkout completes or the Hold lapses.
+    redemption_count: d.consumedCount,
     // Once a member has accepted these terms the code text and the money off
     // stop being editable.
-    terms_frozen: d.redemptionCount > 0,
+    terms_frozen: d.consumedCount > 0,
     created_at: d.code.createdAt,
     updated_at: d.code.updatedAt,
   }

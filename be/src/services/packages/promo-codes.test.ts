@@ -13,6 +13,7 @@ import {
   missingMoneyField,
   normaliseCode,
   occupiesPlace,
+  consumedCount,
   usedPlaces,
   type PromoCodeProductRow,
   type PromoCodeRedemptionRow,
@@ -211,6 +212,44 @@ assert.strictEqual(moneyOffFor(promoCode({ amountOffSgd: '30.00' }), '0.00'), '0
     occupiesPlace(redemption({ status: 'held', heldUntil: NOW, consumedAt: null }), NOW),
     false,
   )
+}
+
+// ---------- consumed uses: what freezes the terms, and only that ----------
+// A place taken and a member who accepted the terms are different questions.
+// `usedPlaces` answers the first and counts a live Hold; this answers the
+// second and does not — an abandoned checkout must never freeze a live code.
+{
+  const consumed = redemption({ status: 'consumed' })
+  const liveHold = redemption({
+    status: 'held',
+    heldUntil: new Date('2026-06-01T12:30:00Z'),
+    consumedAt: null,
+  })
+  const lapsedHold = redemption({
+    status: 'held',
+    heldUntil: new Date('2026-06-01T11:30:00Z'),
+    consumedAt: null,
+  })
+  const refunded = redemption({ status: 'refunded' })
+
+  assert.strictEqual(consumedCount([]), 0)
+  assert.strictEqual(consumedCount([consumed]), 1)
+  // The whole point of the ticket: neither of these is a use.
+  assert.strictEqual(consumedCount([liveHold]), 0)
+  assert.strictEqual(consumedCount([lapsedHold]), 0)
+  assert.strictEqual(consumedCount([refunded]), 0)
+  assert.strictEqual(consumedCount([liveHold, lapsedHold, refunded]), 0)
+  assert.strictEqual(consumedCount([consumed, liveHold, lapsedHold, refunded]), 1)
+
+  // A live Hold takes a place without freezing anything — the two counts
+  // disagree here on purpose, and that disagreement is the bug being fixed.
+  assert.strictEqual(usedPlaces([liveHold], NOW), 1)
+  assert.strictEqual(consumedCount([liveHold]), 0)
+
+  // A refunded use keeps its row (story 89) but hands its place back (88) and
+  // takes its freeze with it — the sale it recorded no longer stands.
+  assert.strictEqual(usedPlaces([refunded], NOW), 0)
+  assert.strictEqual(consumedCount([refunded]), 0)
 }
 
 // ---------- the five refusals, each returned distinctly ----------
