@@ -527,11 +527,15 @@ function CheckoutContent() {
             label={
               needsHomeStudio
                 ? "Choose your home studio to continue"
-                : `Pay ${formatCurrency(grandTotal)} with Stripe`
+                : // A discount that clears the total skips Stripe entirely, so the
+                  // button names the confirmation rather than a charge of nothing.
+                  totalCents === 0
+                  ? "Confirm your free purchase"
+                  : `Pay ${formatCurrency(grandTotal)} with Stripe`
             }
           />
 
-          <StripeFootnote />
+          {totalCents > 0 && <StripeFootnote />}
         </div>
       </BookingSurface>
     </div>
