@@ -338,12 +338,8 @@ export async function grantPackage(
   // intent, return it instead of inserting a duplicate. The webhook and the
   // confirmation-page sync-session fallback can both fire for one purchase.
   if (input.paymentIntentId) {
-    const [existing] = await db
-      .select({ id: clientPackages.id })
-      .from(clientPackages)
-      .where(eq(clientPackages.stripePaymentIntentId, input.paymentIntentId))
-      .limit(1)
-    if (existing) return { clientPackageId: existing.id, created: false }
+    const existingId = await packageForIntent(input.paymentIntentId)
+    if (existingId) return { clientPackageId: existingId, created: false }
   }
 
   let kind: PackageKind
@@ -429,11 +425,33 @@ export async function grantPackage(
       .returning({ id: clientPackages.id })
     return { clientPackageId: row!.id, created: true }
   } catch (err: unknown) {
+    // The pre-check above lost a race — the webhook and the confirmation page's
+    // sync-session both grant one purchase, and concurrently both read "no row".
+    // The index decides the winner; the loser reads the winner's row, which is
+    // the same answer the pre-check would have given a moment later. Any unique
+    // violation qualifies, not just the intent index: a priced trial racing
+    // itself trips whichever of the two indexes Postgres checks first, and an
+    // already-granted intent means the same thing either way. Ordered ahead of
+    // the trial branch so that race answers "granted", not 409.
+    if (input.paymentIntentId && isUniqueViolation(err)) {
+      const existingId = await packageForIntent(input.paymentIntentId)
+      if (existingId) return { clientPackageId: existingId, created: false }
+    }
     if (kind === 'trial' && isUniqueViolation(err, 'client_packages_trial_unique_per_client')) {
       throw new ConflictError('trial_already_used')
     }
     throw err
   }
+}
+
+/** The package already granted for a payment intent, if any (§13 idempotency). */
+async function packageForIntent(paymentIntentId: string): Promise<string | undefined> {
+  const [row] = await db
+    .select({ id: clientPackages.id })
+    .from(clientPackages)
+    .where(eq(clientPackages.stripePaymentIntentId, paymentIntentId))
+    .limit(1)
+  return row?.id
 }
 
 /**

@@ -8,6 +8,7 @@ import {
   workshopDays,
 } from '../../db/schema/schedule'
 import { stripePayments } from '../../db/schema/ledger'
+import { isUniqueViolation } from '../../db/unique-violation'
 import { generateBookingCodes } from '../bookings/qr'
 import { bestPrice, listActivePromotionsFor } from '../packages/promotions'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
@@ -129,19 +130,8 @@ async function insertWorkshopBooking(
 
   // Idempotency: if a booking already exists for this payment intent, return it.
   if (input.paymentIntentId) {
-    const [existing] = await db
-      .select({ id: bookings.id, qrToken: bookings.qrToken, code: bookings.code })
-      .from(bookings)
-      .where(eq(bookings.stripePaymentIntentId, input.paymentIntentId))
-      .limit(1)
-    if (existing) {
-      return {
-        bookingId: existing.id,
-        qrToken: existing.qrToken,
-        code: existing.code,
-        created: false,
-      }
-    }
+    const existing = await bookingForIntent(input.paymentIntentId)
+    if (existing) return { ...existing, created: false }
   }
 
   // Frozen workshop money (§15). List Price is the tier's regular price — the
@@ -156,34 +146,60 @@ async function insertWorkshopBooking(
     .limit(1)
   if (!tierRow) throw new NotFoundError('workshop_tier_not_found')
 
-  const [row] = await db
-    .insert(bookings)
-    .values({
-      clientId: input.clientId,
-      kind: 'workshop',
-      workshopId: input.workshopId,
-      workshopTierId: input.workshopTierId,
-      appliedPromotionId: input.appliedPromotionId ?? null,
-      appliedPromoCodeId: input.appliedPromoCodeId ?? null,
-      listPriceSgd: tierRow.regularPriceSgd,
-      amountPaidSgd: input.amountSgd,
-      state: 'confirmed',
-      qrToken,
-      code,
-      stripePaymentIntentId: input.paymentIntentId,
-    })
-    .returning({ id: bookings.id })
+  try {
+    const [row] = await db
+      .insert(bookings)
+      .values({
+        clientId: input.clientId,
+        kind: 'workshop',
+        workshopId: input.workshopId,
+        workshopTierId: input.workshopTierId,
+        appliedPromotionId: input.appliedPromotionId ?? null,
+        appliedPromoCodeId: input.appliedPromoCodeId ?? null,
+        listPriceSgd: tierRow.regularPriceSgd,
+        amountPaidSgd: input.amountSgd,
+        state: 'confirmed',
+        qrToken,
+        code,
+        stripePaymentIntentId: input.paymentIntentId,
+      })
+      .returning({ id: bookings.id })
 
-  const bookingId = row!.id
+    const bookingId = row!.id
 
-  if (input.paymentIntentId) {
-    await db
-      .update(stripePayments)
-      .set({ status: 'succeeded', bookingId })
-      .where(eq(stripePayments.paymentIntentId, input.paymentIntentId))
+    // Only the delivery that inserted writes this, and it is the only writer of
+    // `succeeded` for a workshop — the race loser below returns before it,
+    // because the winner has already done it.
+    if (input.paymentIntentId) {
+      await db
+        .update(stripePayments)
+        .set({ status: 'succeeded', bookingId })
+        .where(eq(stripePayments.paymentIntentId, input.paymentIntentId))
+    }
+
+    return { bookingId, qrToken, code, created: true }
+  } catch (err: unknown) {
+    // The idempotency read above lost a race — the webhook and the confirmation
+    // page's sync-session both deliver one purchase. The index picks the winner;
+    // the loser returns the winner's booking rather than failing the member.
+    if (input.paymentIntentId && isUniqueViolation(err, 'bookings_stripe_intent_unique')) {
+      const existing = await bookingForIntent(input.paymentIntentId)
+      if (existing) return { ...existing, created: false }
+    }
+    throw err
   }
+}
 
-  return { bookingId, qrToken, code, created: true }
+/** The booking already made for a payment intent, if any (§13 idempotency). */
+async function bookingForIntent(
+  paymentIntentId: string,
+): Promise<{ bookingId: string; qrToken: string; code: string } | undefined> {
+  const [row] = await db
+    .select({ id: bookings.id, qrToken: bookings.qrToken, code: bookings.code })
+    .from(bookings)
+    .where(eq(bookings.stripePaymentIntentId, paymentIntentId))
+    .limit(1)
+  return row ? { bookingId: row.id, qrToken: row.qrToken, code: row.code } : undefined
 }
 
 export async function bookWorkshopPaid(
