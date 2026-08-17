@@ -19,6 +19,7 @@ export function CrossLocationBlock({
   onChange,
   disabledReason,
   remainder,
+  totalSgd,
 }: {
   /** The Global Policy rate, as the server states it. Never derived here. */
   rateSgd: string;
@@ -35,6 +36,12 @@ export function CrossLocationBlock({
   onChange?: (next: boolean) => void;
   disabledReason?: AddOnDisabledReason | null;
   /**
+   * The total the server quoted, where a surface has one. Passed so the sum
+   * shown and the GST disclosed beside it come from a single number — the
+   * review page has no per-Add-On quote and falls back to the multiplication.
+   */
+  totalSgd?: string | null;
+  /**
    * The part-months sentence, shown BEFORE the arithmetic so the surprising part
    * is answered before the number that provokes the question (§12). Absent on a
    * Dormant plan, which prices at its full stored Duration with nothing to round.
@@ -42,10 +49,13 @@ export function CrossLocationBlock({
   remainder?: string | null;
 }) {
   const where = otherLocations.length ? otherLocations.join(" and ") : "the other studio";
-  // A commented mirror of `crossLocationPriceSgd` in
-  // `be/src/services/packages/validity.ts` — cents, so the arithmetic cannot
-  // drift. It only shows the member the sum; the server prices the charge.
-  const total = (Math.round(Number(rateSgd) * 100) * months) / 100;
+  // The server's figure where there is one. Otherwise a commented mirror of
+  // `crossLocationPriceSgd` in `be/src/services/packages/validity.ts` — cents,
+  // so the arithmetic cannot drift. Either way the server prices the charge.
+  const total =
+    totalSgd != null
+      ? Number(totalSgd)
+      : (Math.round(Number(rateSgd) * 100) * months) / 100;
   const disabled = Boolean(disabledReason);
   // A label only where there is a control to label.
   const Wrapper = onChange ? "label" : "div";

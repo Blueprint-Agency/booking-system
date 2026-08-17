@@ -5,7 +5,7 @@ import Link from "next/link";
 import { addMonths, differenceInDays } from "date-fns";
 import { AlertCircle } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, gstIncludedIn } from "@/lib/utils";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { getApiBaseUrl } from "@/lib/api-url";
 import { useLocations } from "@/lib/classes";
@@ -134,10 +134,8 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
   // stored Duration, so there is nothing to explain and no sentence to show.
   const remainder =
     quote && plan?.expiresAt ? remainderSentence(plan.expiresAt, quote.months) : null;
-  // The GST already inside the quoted price — the server's number, taken apart
-  // for the disclosure only, never to build a total from.
   const quoteCents = quote ? Math.round(Number(quote.price_sgd) * 100) : 0;
-  const includedGst = (quoteCents - Math.round(quoteCents / 1.09)) / 100;
+  const includedGst = gstIncludedIn(quoteCents);
 
   if (packagesLoading || loadingQuote) {
     return (
@@ -172,6 +170,7 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
               checked={Boolean(quote)}
               disabledReason={reason}
               remainder={remainder}
+              totalSgd={quote?.price_sgd}
             />
 
             {/* Not the deleted total restated — the block already shows that.

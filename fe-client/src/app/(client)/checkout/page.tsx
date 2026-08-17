@@ -3,7 +3,7 @@
 import { useState, Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Lock, ShoppingCart, Tag, Check, AlertCircle, MapPin } from "lucide-react";
-import { cn, formatCurrency, formatDurationMonths } from "@/lib/utils";
+import { cn, formatCurrency, formatDurationMonths, gstIncludedIn } from "@/lib/utils";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useAuth } from "@clerk/nextjs";
@@ -319,7 +319,7 @@ function CheckoutContent() {
   const totalCents = baseCents - discountCents + addOnCents;
   const price = baseCents / 100;
   const discount = discountCents / 100;
-  const includedGst = (totalCents - Math.round(totalCents / 1.09)) / 100;
+  const includedGst = gstIncludedIn(totalCents);
   const grandTotal = totalCents / 100;
 
   return (

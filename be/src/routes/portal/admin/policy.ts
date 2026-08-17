@@ -8,7 +8,13 @@ import { BadRequestError } from '../../../shared/errors'
 // at least 1 (zero would freeze annual leave studio-wide) and at most 99, which
 // is more instructors than the studio will ever have.
 const LEAVE_CAP_MESSAGE = 'A Leave Cap must be between 1 and 99 instructors.'
-const leaveCap = z.number().int().min(1, LEAVE_CAP_MESSAGE).max(99, LEAVE_CAP_MESSAGE)
+/** A whole number in a range, refused with one sentence whichever bound it broke. */
+const bounded = (message: string, min: number, max?: number) => {
+  const n = z.number({ message }).int(message).min(min, message)
+  return (max === undefined ? n : n.max(max, message)).optional()
+}
+
+const leaveCap = z.number().int(LEAVE_CAP_MESSAGE).min(1, LEAVE_CAP_MESSAGE).max(99, LEAVE_CAP_MESSAGE)
 
 /** A rejected body answers with a reason an admin can read, not a raw zod dump. */
 const explainInvalid = (result: { success: boolean; error?: unknown }) => {
@@ -19,19 +25,28 @@ const explainInvalid = (result: { success: boolean; error?: unknown }) => {
   })
 }
 
+// Every field carries its own sentence, because `explainInvalid` below hands
+// the first issue's message straight to an admin — a field left with zod's
+// default would answer them with "Number must be less than or equal to 365".
 const globalPatch = z.object({
-  cancel_cap_count: z.number().int().min(0).optional(),
-  cancel_cap_cycle_days: z.number().int().min(1).optional(),
-  class_window_hours: z.number().int().min(0).optional(),
-  pt_window_hours: z.number().int().min(0).optional(),
-  leave_carry_over_cap_days: z.number().int().min(0).max(365).optional(),
+  cancel_cap_count: bounded('A cancellation cap must be 0 or more.', 0),
+  cancel_cap_cycle_days: bounded('A cancellation cycle must be at least 1 day.', 1),
+  class_window_hours: bounded('A class booking window must be 0 hours or more.', 0),
+  pt_window_hours: bounded('A PT booking window must be 0 hours or more.', 0),
+  leave_carry_over_cap_days: bounded('Carry-over must be between 0 and 365 days.', 0, 365),
   cover_group_leave_cap: leaveCap.optional(),
   study_leave_cap: leaveCap.optional(),
   // The Cross-Location Add-On rate, per month. Repricing moves future purchases
   // only — every Add-On already sold is frozen at what its member paid (§5).
-  cross_location_rate_sgd: z.number().min(0).max(9999).optional(),
+  cross_location_rate_sgd: z
+    .number({ message: 'The Add-On rate must be a number.' })
+    .min(0, 'The Add-On rate must be between $0 and $9999.')
+    .max(9999, 'The Add-On rate must be between $0 and $9999.')
+    .optional(),
   // The whole Cover Group, as one ticked set of instructor staff user ids.
-  cover_group_staff_ids: z.array(z.string().uuid()).optional(),
+  cover_group_staff_ids: z
+    .array(z.string().uuid('The Cover Group must be a set of instructors.'))
+    .optional(),
 })
 
 const ptPatch = z.object({

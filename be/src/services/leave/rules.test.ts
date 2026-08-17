@@ -12,6 +12,7 @@ import {
   checkOwnLeaveTransition,
   countLeaveDays,
   carriedDays,
+  clipWindow,
   futureConflicts,
   leaveCapExceedance,
   leaveCapWarning,
@@ -875,13 +876,8 @@ const base = { today: '2026-08-10', pool: 14, committedDays: 0 } as const
   // the calendar window — a peak outside [from, to] is off an incomplete count.
   const startedEarlier = peer('Erin', '2026-08-10', TUE)
   const view = leaveWindow(MON, WED)
-  const clipped = (from: string, to: string) => {
-    const w = leaveWindow(from, to)
-    return {
-      startsAt: new Date(Math.max(w.startsAt.getTime(), view.startsAt.getTime())),
-      endsAt: new Date(Math.min(w.endsAt.getTime(), view.endsAt.getTime())),
-    }
-  }
+  // The calendar's own clip, not a copy of it — so this fails if it changes.
+  const clipped = (from: string, to: string) => clipWindow(leaveWindow(from, to), view)
   // The entry being measured is away Tuesday only; Erin's run started a week
   // before the window opened and is still going, so she counts on the Tuesday.
   assert.strictEqual(peakLeaveAway(clipped(TUE, TUE), [startedEarlier]).away.length, 1)

@@ -88,6 +88,24 @@ export function leaveWindow(
 }
 
 /**
+ * A window trimmed to the part of it a view actually covers. The leave calendar
+ * measures its over-cap peak on this: inside the view every overlapping absence
+ * has been fetched and the peak is exact, while outside it the rows are only
+ * whatever else happened to reach in, so a peak taken there is off a partial
+ * count. Callers pass windows that already overlap, so the result is never
+ * inverted.
+ */
+export function clipWindow(
+  window: { startsAt: Date; endsAt: Date },
+  view: { startsAt: Date; endsAt: Date },
+): { startsAt: Date; endsAt: Date } {
+  return {
+    startsAt: new Date(Math.max(window.startsAt.getTime(), view.startsAt.getTime())),
+    endsAt: new Date(Math.min(window.endsAt.getTime(), view.endsAt.getTime())),
+  }
+}
+
+/**
  * Does leave of this shape take the instructor off a class that STARTS at this
  * wall-clock time? `startTime` is `HH:MM` on the leave date read as Singapore
  * time — exactly what the scheduling forms hold in their time input.

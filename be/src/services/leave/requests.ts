@@ -890,10 +890,7 @@ export async function listLeaveCalendar(
       ? rules.leaveCapExceedance({
           type: self.type,
           inCoverGroup: self.inCoverGroup,
-          window: {
-            startsAt: new Date(Math.max(self.startsAt.getTime(), view.startsAt.getTime())),
-            endsAt: new Date(Math.min(self.endsAt.getTime(), view.endsAt.getTime())),
-          },
+          window: rules.clipWindow(self, view),
           // Excluded by INSTRUCTOR, as the submission path excludes them — one
           // person's own overlapping rows (a backdated medical over leave that
           // has already ended) are one instructor away, not two.
