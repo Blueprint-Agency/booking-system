@@ -177,6 +177,18 @@ const ok = (r: ReturnType<typeof selectPackage>) => {
 {
   const r = select([plan({ expiresAt: new Date('2026-06-05T00:00:00Z') }), dormant()])
   assert.strictEqual(r.ok, false, 'a Dormant plan must not activate beside a running one')
+  assert.strictEqual(
+    r.ok === false && r.refusal,
+    'plan_expires_before_class',
+    'the running plan Covers this Location — it just runs out first, and the member is told so',
+  )
+}
+
+// A member holding a plan for the OTHER Location and a Dormant one for this one
+// is still refused on coverage: nothing that Covers the class ran out, the
+// renewal is merely queued behind a plan that does not cover it.
+{
+  const r = select([plan({ locationId: OTHER }), dormant()])
   assert.strictEqual(r.ok === false && r.refusal, 'location_not_covered')
 }
 
@@ -196,13 +208,17 @@ const ok = (r: ReturnType<typeof selectPackage>) => {
     classStartsAt: new Date('2026-10-01T09:00:00Z'),
   })
   assert.strictEqual(r.ok, false)
-  assert.strictEqual(r.ok === false && r.refusal, 'location_not_covered')
+  assert.strictEqual(r.ok === false && r.refusal, 'plan_expires_before_class')
 }
 
 // Same for an Activated plan that lapses between today and the class.
 {
   const r = select([plan({ expiresAt: new Date('2026-06-05T00:00:00Z') })])
-  assert.strictEqual(r.ok === false && r.refusal, 'location_not_covered')
+  assert.strictEqual(
+    r.ok === false && r.refusal,
+    'plan_expires_before_class',
+    'expiry is not a coverage problem, and buying the Add-On would not fix it',
+  )
 }
 
 // A credit bundle that lapses before the class cannot pay for it either.

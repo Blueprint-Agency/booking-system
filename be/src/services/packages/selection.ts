@@ -49,7 +49,16 @@ export interface SelectionInput {
   now: Date
 }
 
-export type SelectionRefusal = 'location_not_covered' | 'insufficient_credits'
+/**
+ * `plan_expires_before_class` is NOT a coverage problem: the plan does cover the
+ * class's Location, it simply runs out before the class runs (§3). Told the
+ * coverage refusal instead, a member buys the Cross-Location Add-On to fix a
+ * problem the Add-On cannot touch.
+ */
+export type SelectionRefusal =
+  | 'location_not_covered'
+  | 'plan_expires_before_class'
+  | 'insufficient_credits'
 
 export type SelectionResult =
   | {
@@ -106,10 +115,16 @@ export function selectPackage(input: SelectionInput): SelectionResult {
     // lapses before this class does — activating the one behind it would put two
     // Activated plans on the member and hit the partial unique index in their face.
     const anyActivated = plans.some(p => !isDormant(p))
+    // Set when a plan that DOES cover this Location was passed over for running
+    // out first — the difference between the two refusals below.
+    let ranOutFirst = false
     for (const plan of plans.filter(p => covers(p, classLocationId)).sort(bySoonestExpiry)) {
       if (isDormant(plan) && anyActivated) continue
       const end = coverEnd(plan, now)
-      if (!end || end < classStartsAt) continue
+      if (!end || end < classStartsAt) {
+        ranOutFirst = true
+        continue
+      }
       return {
         ok: true,
         clientPackageId: plan.id,
@@ -118,8 +133,9 @@ export function selectPackage(input: SelectionInput): SelectionResult {
       }
     }
     // No plan covers this class at the Location AND on the day. Refuse — a
-    // silent fall-through here is the whole defect.
-    return { ok: false, refusal: 'location_not_covered' }
+    // silent fall-through here is the whole defect — with the reason that
+    // actually happened, so the member is not sold the wrong remedy.
+    return { ok: false, refusal: ranOutFirst ? 'plan_expires_before_class' : 'location_not_covered' }
   }
 
   const credit = live
