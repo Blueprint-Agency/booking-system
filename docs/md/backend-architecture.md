@@ -790,11 +790,12 @@ The fe-client `/account/invoices` "Download" link points directly to `receipt_ur
 
 #### `email_templates` (§17)
 
-id, slug (text unique — 25 seeded values), subject (text), body_html (text), updated_at, updated_by_staff_id (FK).
+id, slug (text unique — 30 seeded values), subject (text), body_html (text), updated_at, updated_by_staff_id (FK).
 
-**Slug list (25):**
+**Slug list (30)** — the seed (`db/seed/email-copy.ts`) and the `TemplateSlug` union (`services/notifications/send.ts`) must agree on every entry, and `db/seed/email-copy.test.ts` fails the build if they drift:
 ```
 welcome
+client_invite
 password_reset
 class_booking_confirmed
 pt_request_submitted
@@ -810,8 +811,14 @@ pt_cancelled_forfeited
 admin_cancel_class
 admin_cancel_pt
 admin_cancel_workshop
-package_purchase_confirmed             # also fires for trial pass purchases — copy must read for both
-credit_expiry_reminder                 # also fires for trial pass expiry — template renderer branches on package kind to avoid "credits expiring" copy for trial
+instructor_cancel_class                # goes to every active admin, not to a member
+leave_request_submitted                # goes to every active admin
+leave_approved
+leave_rejected
+leave_revoked
+package_purchase_confirmed             # every paid/comped package EXCEPT a trial, which has its own slug below
+purchase_refunded
+credit_expiry_reminder                 # also fires for trial pass expiry — `remaining_line` is composed per kind so a trial is never told about "credits"
 instructor_invite
 admin_invite
 checkin_nag
@@ -819,7 +826,21 @@ referral_credited
 trial_pass_purchase_confirmed          # NEW — distinct from package_purchase_confirmed; trial copy is friendlier ("welcome to your first 3 classes")
 ```
 
-**Known gap, observed but not fixed by `spec-pre-launch-batch.md`:** `db/seed/email-templates.ts` seeds `pt_request_expired` and `workshop_waitlist_promoted` — both rows exist in the table, but neither slug is a member of `TemplateSlug` (`services/notifications/send.ts`), so `sendTemplatedEmail` can never be called with either and both are unreachable — the exact class of spec-versus-code gap that already left the purchase templates unsent for months before this batch. Worth a grep-and-fix pass before launch rather than folklore for the next person who wonders why a template never fires.
+**The unreachable-slug gap is closed.** `pt_request_expired` and `workshop_waitlist_promoted` are now members of `TemplateSlug`, are declared in `TEMPLATE_VARIABLES`, and `db/seed/email-copy.test.ts` asserts slug-for-slug parity in both directions, so the class of gap that left the purchase templates unsent for months cannot reopen silently.
+
+**Templates with no sender (copy ready, wiring outstanding).** Every row now carries real copy, but a template only reaches a member when some service calls it. These have no caller in `be/src`, and the copy is written not to promise otherwise:
+
+| Slug | Where the sender belongs |
+|---|---|
+| `welcome`, `password_reset` | Clerk owns both flows today; wire only if the studio wants its own. |
+| `class_booking_confirmed` | `services/bookings/book.ts`, after commit. |
+| `class_cancelled_*`, `pt_cancelled_*` | `services/bookings/cancel.ts` — the forfeited pair needs `reason_line` from `policy/evaluate-cancellation.ts:forfeitLine`. |
+| `admin_cancel_class`, `admin_cancel_pt`, `admin_cancel_workshop` | the admin cancel services. `admin_cancel_workshop` must not claim an automatic refund — `services/workshops/cancel.ts` marks bookings `refund_outcome='n_a'`. |
+| `pt_session_approved`, `pt_session_declined`, `pt_request_expired` | `services/pt-sessions/schedule.ts` and `cancel.ts:expireStaleSessions`. |
+| `credit_expiry_reminder` | `services/packages/expire.ts:sendLapsingAlerts` (still a TODO); compose `remaining_line` with `notifications/purchase-email.ts:contentsLine`. |
+| `checkin_nag` | the `checkin-nag` cron. |
+| `referral_credited` | `services/referrals.ts`. |
+| `workshop_waitlist_promoted` | deferred with waitlist behaviour itself. |
 
 #### `email_log`
 
@@ -904,7 +925,7 @@ The prior `promo_codes_enabled` flag is **removed**. Promotions (per `fe-client-
 |---|---|---|
 | `email` send | Triggered (not scheduled) — invoked by any service via `services/notifications/send.ts:enqueueEmail()`, executed inline against the SMTP transport | Render template + variables → `lib/mailer.ts` (Nodemailer) → write `email_log`. In v1 this is synchronous (no queue); failures are logged and surfaced in `email_log.status='failed'` with `error` populated from the Nodemailer rejection |
 | `checkin-nag` | Daily 03:00 SGT (`node-cron`) | Find sessions where `ends_at` between now-25h and now-23h AND any booking has `check_in_state='pending'` → send `checkin_nag` email to assigned instructor (cc admin), one per session |
-| `credit-expiry` | Daily 03:00 SGT (`node-cron`) | Find `client_packages` where `expires_at` between now+6.5d and now+7.5d → send `credit_expiry_reminder` email. Renderer branches on `kind` — `trial` rows get trial-pass-specific copy (no "credits expiring" language). |
+| `credit-expiry` | Daily 03:00 SGT (`node-cron`) | Find `client_packages` where `expires_at` between now+6.5d and now+7.5d → send `credit_expiry_reminder` email. The renderer has no conditionals, so the kind branch happens in code: `remaining_line` is composed with `notifications/purchase-email.ts:contentsLine`, which says "2 classes" for a trial and "2 class credits" for a bundle. |
 | `pt-request-expiry` | Hourly (`node-cron`) | Find `pt_requests WHERE status='pending' AND expires_at < now()` → update `status='expired'`, set `resolved_at=now()`, `resolved_by_staff_id=NULL`, then `enqueueEmail('pt_request_expired', client.email, …)`. Stale requests must not linger in the admin queue. |
 | `promotion-status` | Not a cron — **query-time derivation**. A `promotions` row is "active right now" iff `status='active' AND now() BETWEEN starts_at AND ends_at`. Computed in `services/promotions/resolve.ts:bestPriceFor(parent_type, parent_id)`. No background sweep needed; the windowed predicate is cheap given the `(parent_type, parent_id, status, starts_at, ends_at)` index. | — |
 | Workshop admin-cancel refunds | Triggered (not scheduled) by admin route | For each booking in workshop: call Stripe Refund API → on success, update booking `state='cancelled'`, `refund_outcome='stripe_refunded'`; emit one inbox item for the workshop. **v1: synchronous.** **Future: BullMQ with idempotency key = booking_id.** |

@@ -6,17 +6,25 @@ import type { TemplateSlug } from './send'
  * any {{var}} not in this list.
  */
 export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
-  welcome: ['client_name', 'studio_name'],
+  welcome: ['client_name'],
   password_reset: ['client_name', 'reset_url'],
   class_booking_confirmed: ['client_name', 'class_name', 'date', 'instructor_name', 'location', 'qr_url', 'code', 'credits_remaining'],
   pt_request_submitted: ['client_name', 'instructor_name', 'starts_at'],
   pt_session_approved: ['client_name', 'instructor_name', 'starts_at', 'location', 'qr_url'],
   pt_session_declined: ['client_name', 'instructor_name', 'decline_note'],
+  pt_request_expired: ['client_name', 'instructor_name', 'starts_at'],
   workshop_purchase_confirmed: ['client_name', 'workshop_name', 'date', 'qr_url', 'code', 'receipt_url'],
+  // The waitlist offer is time-bound (fe-client §4.1): the place goes to the
+  // next person if it is not claimed, so the deadline is part of the email.
+  workshop_waitlist_promoted: ['client_name', 'workshop_name', 'date', 'claim_url', 'claim_deadline'],
   class_cancelled_credit_returned: ['client_name', 'class_name', 'date', 'credits_returned'],
-  class_cancelled_forfeited: ['client_name', 'class_name', 'date'],
+  // `reason_line` is a whole composed sentence (policy/evaluate-cancellation.ts:
+  // `forfeitLine`): a forfeit has four causes and only two are lateness, so a
+  // fixed sentence is false for the member who cancelled in good time and
+  // merely ran past the cap.
+  class_cancelled_forfeited: ['client_name', 'class_name', 'date', 'reason_line'],
   pt_cancelled_session_returned: ['client_name', 'instructor_name', 'starts_at'],
-  pt_cancelled_forfeited: ['client_name', 'instructor_name', 'starts_at'],
+  pt_cancelled_forfeited: ['client_name', 'instructor_name', 'starts_at', 'reason_line'],
   admin_cancel_class: ['client_name', 'class_name', 'date', 'credits_returned'],
   admin_cancel_pt: ['client_name', 'instructor_name', 'starts_at'],
   admin_cancel_workshop: ['client_name', 'workshop_name', 'refund_sgd'],
@@ -43,7 +51,11 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   // Refund cancelled and states plainly when there were none — cancelling
   // someone's booked classes silently is not acceptable.
   purchase_refunded: ['client_name', 'package_name', 'refund_line', 'cancelled_line', 'account_url'],
-  credit_expiry_reminder: ['client_name', 'package_name', 'expires_at', 'credits_remaining'],
+  // `remaining_line` rather than a bare count: this one reminder also serves a
+  // trial pass, and a trial holds classes — it has never heard of a credit.
+  // Compose it with `./purchase-email.ts:contentsLine`, which already speaks
+  // every kind.
+  credit_expiry_reminder: ['client_name', 'package_name', 'expires_at', 'remaining_line'],
   instructor_invite: ['name', 'invite_url', 'expires_at'],
   admin_invite: ['name', 'invite_url', 'expires_at'],
   client_invite: ['name', 'invitee_email', 'login_url'],

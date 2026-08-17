@@ -20,10 +20,10 @@ export const emailTemplates: EmailTemplate[] = [
     description: "Sent when a customer completes registration.",
     trigger: "Customer completes registration",
     recipient: "New customer",
-    variables: ["client_name", "studio_name"],
-    subject: "Welcome to {{studio_name}}, {{client_name}} 🙏",
+    variables: ["client_name"],
+    subject: "Welcome to Yoga Sadhana, {{client_name}} 🙏",
     bodyHtml:
-      "<p>Hello {{client_name}},</p><p>We're delighted to welcome you to {{studio_name}}. Your account is ready — log in any time to browse our schedule and book your first class.</p><p>See you on the mat,<br/>The {{studio_name}} team</p>",
+      "<p>Hello {{client_name}},</p><p>We're delighted to welcome you to Yoga Sadhana. Your account is ready — log in any time to browse our schedule and book your first class.</p><p>See you on the mat,<br/>The Yoga Sadhana team</p>",
     updatedAt,
   },
   {
@@ -102,6 +102,19 @@ export const emailTemplates: EmailTemplate[] = [
     updatedAt,
   },
   {
+    slug: "pt_request_expired",
+    category: "Bookings",
+    label: "PT request expired",
+    description: "Sent when a pending request goes unanswered past its expiry.",
+    trigger: "Hourly pt-request-expiry job flips the request to `expired`",
+    recipient: "Customer",
+    variables: ["client_name", "instructor_name", "starts_at"],
+    subject: "Your private session request expired",
+    bodyHtml:
+      "<p>Hi {{client_name}},</p><p>Your request to {{instructor_name}} for {{starts_at}} was not answered in time, so it has expired. Nothing was deducted.</p>",
+    updatedAt,
+  },
+  {
     slug: "workshop_purchase_confirmed",
     category: "Bookings",
     label: "Workshop purchase confirmed",
@@ -135,10 +148,10 @@ export const emailTemplates: EmailTemplate[] = [
     description: "Sent when a customer cancels late or has hit the cap.",
     trigger: "Customer cancels late or over cap",
     recipient: "Customer",
-    variables: ["client_name", "class_name", "date"],
+    variables: ["client_name", "class_name", "date", "reason_line"],
     subject: "Cancellation noted — credit forfeited",
     bodyHtml:
-      "<p>Hi {{client_name}},</p><p>Your booking for {{class_name}} on {{date}} has been cancelled. The credit has been forfeited.</p>",
+      "<p>Hi {{client_name}},</p><p>Your booking for {{class_name}} on {{date}} has been cancelled.</p><p>{{reason_line}}</p>",
     updatedAt,
   },
   {
@@ -161,10 +174,24 @@ export const emailTemplates: EmailTemplate[] = [
     description: "Sent when a PT cancellation is too late or over cap.",
     trigger: "Customer cancels late or over cap",
     recipient: "Customer",
-    variables: ["client_name", "instructor_name", "starts_at"],
+    variables: ["client_name", "instructor_name", "starts_at", "reason_line"],
     subject: "Private session cancelled — session forfeited",
     bodyHtml:
-      "<p>Hi {{client_name}},</p><p>Your private session with {{instructor_name}} on {{starts_at}} has been cancelled. The session has been forfeited.</p>",
+      "<p>Hi {{client_name}},</p><p>Your private session with {{instructor_name}} on {{starts_at}} has been cancelled.</p><p>{{reason_line}}</p>",
+    updatedAt,
+  },
+  {
+    slug: "workshop_waitlist_promoted",
+    category: "Bookings",
+    label: "Workshop waitlist promoted",
+    description:
+      "Offers a freed place to the next person on the waitlist. Deferred — no sender exists yet, so the row is here for editing only.",
+    trigger: "A cancellation frees a place (not implemented in v1)",
+    recipient: "Customer on the waitlist",
+    variables: ["client_name", "workshop_name", "date", "claim_url", "claim_deadline"],
+    subject: "You're off the waitlist — {{workshop_name}}",
+    bodyHtml:
+      "<p>Hi {{client_name}},</p><p>A place has come free in {{workshop_name}}, starting {{date}}, and it is offered to you first.</p><p>Confirm and pay by {{claim_deadline}} to take it — after that it goes to the next person on the waitlist.</p><p><a href=\"{{claim_url}}\">Confirm and pay</a></p>",
     updatedAt,
   },
   // --- Admin-initiated cancellations ---
@@ -204,7 +231,7 @@ export const emailTemplates: EmailTemplate[] = [
     variables: ["client_name", "workshop_name", "refund_sgd"],
     subject: "Workshop cancelled",
     bodyHtml:
-      "<p>Hi {{client_name}},</p><p>We've had to cancel {{workshop_name}}. SGD {{refund_sgd}} has been refunded to you.</p>",
+      "<p>Hi {{client_name}},</p><p>We've had to cancel {{workshop_name}}. You paid SGD {{refund_sgd}} for your place — the studio is arranging your refund and will contact you to settle it.</p>",
     updatedAt,
   },
   // --- Packages ---
@@ -226,13 +253,13 @@ export const emailTemplates: EmailTemplate[] = [
     slug: "credit_expiry_reminder",
     category: "Packages",
     label: "Credit expiry reminder",
-    description: "Sent 7 days before a credit bundle expires.",
-    trigger: "7 days before credit bundle expiry (hardcoded)",
+    description: "Sent 7 days before a package expires — a trial pass included, which is why what is left is a composed sentence and not a credit count.",
+    trigger: "7 days before package expiry (hardcoded)",
     recipient: "Customer",
-    variables: ["client_name", "package_name", "expires_at", "credits_remaining"],
-    subject: "{{credits_remaining}} credits expire on {{expires_at}}",
+    variables: ["client_name", "package_name", "expires_at", "remaining_line"],
+    subject: "Your {{package_name}} expires on {{expires_at}}",
     bodyHtml:
-      "<p>Hi {{client_name}},</p><p>Your {{package_name}} expires on {{expires_at}} — {{credits_remaining}} credits remaining. Book a class to use them up.</p>",
+      "<p>Hi {{client_name}},</p><p>Your {{package_name}} expires on {{expires_at}} — {{remaining_line}} left. Book a class to use it up.</p>",
     updatedAt,
   },
   // --- Staff ---

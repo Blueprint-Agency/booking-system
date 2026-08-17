@@ -79,3 +79,29 @@ export async function evaluateCancellation(input: EvaluateInput): Promise<Evalua
 
   return { allowed: true, refund, reason, wasWithinWindow, wasWithinCap, windowHours }
 }
+
+/**
+ * Why a forfeited cancellation forfeited, as a whole sentence — the
+ * `reason_line` the two `*_cancelled_forfeited` email templates render.
+ *
+ * It lives beside the union it reads because the union is defined here: a
+ * forfeit has FOUR causes and only two of them are lateness, so a template that
+ * hardcodes "you cancelled inside the window" tells the member who cancelled in
+ * good time and merely ran out of allowance something that is simply untrue.
+ * The renderer has no conditionals, so the choice has to be made in code (the
+ * same rule §13 applies to the purchase confirmations).
+ */
+export function forfeitLine(reason: EvaluateResult['reason'], windowHours: number): string {
+  switch (reason) {
+    case 'late':
+      return `This cancellation came inside the ${windowHours}-hour cancellation window, so the credit for it was not returned.`
+    case 'over_cap':
+      return 'You cancelled in good time, but this is past the number of cancellations the studio allows in one cycle, so the credit for it was not returned.'
+    case 'late_and_over_cap':
+      return `This cancellation came inside the ${windowHours}-hour cancellation window, and is past the number of cancellations the studio allows in one cycle. The credit for it was not returned.`
+    // Not a forfeit at all — the caller sends the credit-returned template. The
+    // sentence exists so an exhaustive switch stays exhaustive.
+    case 'within_window_within_cap':
+      return 'The credit for it has been returned to your account.'
+  }
+}
