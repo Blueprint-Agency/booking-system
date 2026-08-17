@@ -7,7 +7,9 @@
     "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "check": "node --test \"src/**/*.test.ts\""
   },
   "keywords": [],
   "author": "",

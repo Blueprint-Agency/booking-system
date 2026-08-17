@@ -10,6 +10,7 @@ import { BookingSurface } from "@/components/booking/booking-surface";
 import { getApiBaseUrl } from "@/lib/api-url";
 import { useLocations } from "@/lib/classes";
 import { useClientPackages, type LivePackage } from "@/lib/use-client-packages";
+import { roundsUpAPartMonth } from "@/lib/add-on-months";
 import { CrossLocationBlock, type AddOnDisabledReason } from "./cross-location-block";
 import { PayButton, StripeFootnote } from "./pay-button";
 
@@ -26,8 +27,7 @@ function remainderSentence(expiresAt: string, months: number, now: Date = new Da
   // this app's own, so the breakdown can never contradict the number charged:
   // the server rounded up, so all but the last month is whole and the days are
   // what is left over on top of them.
-  const exact = addMonths(now, months).getTime() === end.getTime();
-  if (exact || months < 1) {
+  if (!roundsUpAPartMonth(end, months, now)) {
     return `${runsTo} — ${months} month${months === 1 ? "" : "s"} left.`;
   }
   const whole = months - 1;
