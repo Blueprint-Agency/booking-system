@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useClerk, useSignIn } from "@clerk/nextjs";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -199,6 +199,32 @@ function LoginContent() {
     return true;
   }
 
+  // Impersonation (/impersonate) lands here with a Clerk one-shot ticket.
+  // The prebuilt <SignIn /> used to consume it; the custom form must do it
+  // explicitly: drop whatever session this browser holds, then sign in with
+  // the ticket.
+  const ticket = searchParams.get("__clerk_ticket");
+  const ticketRan = useRef(false);
+  useEffect(() => {
+    if (!ticket || !signIn || ticketRan.current) return;
+    ticketRan.current = true;
+    void (async () => {
+      try {
+        await setActive({ session: null });
+        const { error: ticketErr } = await signIn.ticket({ ticket });
+        if (ticketErr) {
+          setError(clerkApiError(ticketErr) ?? "This sign-in link is invalid or expired.");
+          return;
+        }
+        await completeSignIn();
+      } catch (err) {
+        setError(clerkErrorMessage(err));
+      }
+    })();
+    // completeSignIn/setActive are stable enough for a run-once effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ticket, signIn]);
+
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -347,6 +373,23 @@ function LoginContent() {
     setMfaTarget(factor.safeIdentifier ?? null);
     setMfaCode("");
     setError(null);
+  }
+
+  // Ticket sign-in in flight — hide the form so nobody types into it while
+  // the session swap happens. Falls through to the form on error so the
+  // person can sign in manually.
+  if (ticket && !error && view === "signin") {
+    return (
+      <AuthSplitShell
+        imageKey="hero-yoga-01"
+        quote="The pose you avoid is the one you need most."
+      >
+        <h1 className="text-3xl font-extrabold tracking-tight text-ink mb-2">
+          Signing you in…
+        </h1>
+        <p className="text-sm text-muted">One moment while we set up the session.</p>
+      </AuthSplitShell>
+    );
   }
 
   if (view === "mfa") {
