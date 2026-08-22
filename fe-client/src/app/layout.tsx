@@ -1,7 +1,12 @@
 import type { Metadata } from "next";
+import { Manrope } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Toaster } from "sonner";
 import "./globals.css";
+
+// Self-hosted via next/font (same pattern as fe-portal) — no render-blocking
+// request to fonts.googleapis.com on first paint.
+const sans = Manrope({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
   title: "Yoga Sadhana — Singapore Yoga Studio",
@@ -24,15 +29,7 @@ export default function RootLayout({
       signInFallbackRedirectUrl="/"
       signUpFallbackRedirectUrl="/"
     >
-    <html lang="en">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
-          rel="stylesheet"
-        />
-      </head>
+    <html lang="en" className={sans.variable}>
       <body className="antialiased">
         {children}
         <Toaster position="top-center" richColors />

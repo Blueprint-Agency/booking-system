@@ -3,7 +3,7 @@
 @theme {
   /* Typography — single family for Phase A */
   --font-sans: "Manrope", system-ui, -apple-system, sans-serif;
-  --font-mono: "JetBrains Mono", monospace;
+  --font-mono: ui-monospace, "SFMono-Regular", "Menlo", monospace;
   /* Serif headings render in the system serif on purpose (no webfont loaded);
      pinned here so `font-serif` is deliberate and consistent across platforms. */
   --font-serif: Georgia, "Times New Roman", serif;

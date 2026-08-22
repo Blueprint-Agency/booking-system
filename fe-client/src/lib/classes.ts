@@ -59,9 +59,13 @@ export function useClasses(filters: ClassFilters): {
   const [error, setError] = useState<ApiError | Error | null>(null);
 
   const key = JSON.stringify(filters);
+  // Fetch the public feed immediately instead of waiting for Clerk to boot —
+  // anonymous visitors get classes ~a second sooner. When Clerk resolves a
+  // session this flips false→true and the effect re-fetches /me/classes for
+  // booked-state; for anonymous visitors it stays false, so no double fetch.
+  const signedIn = isLoaded && isSignedIn === true;
 
   useEffect(() => {
-    if (!isLoaded) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -69,7 +73,7 @@ export function useClasses(filters: ClassFilters): {
     for (const [k, v] of Object.entries(filters)) if (v) query[k] = v;
     (async () => {
       try {
-        const res = isSignedIn
+        const res = signedIn
           ? await api.get<{ classes: ApiClassCard[] }>("/me/classes", query)
           : await publicApi.get<{ classes: ApiClassCard[] }>("/public/classes", query);
         if (!cancelled) setData(res.classes);
@@ -83,10 +87,35 @@ export function useClasses(filters: ClassFilters): {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoaded, isSignedIn, api, key]);
+  }, [signedIn, api, key]);
 
   return { data, loading, error };
 }
+
+/**
+ * Locations and class types are effectively immutable within a member's visit,
+ * so the promise is cached at module level: concurrent mounts share one request
+ * and later navigations don't refetch. A failed fetch clears the cache so the
+ * next mount retries.
+ */
+function cacheOnce<T>(fn: () => Promise<T>): () => Promise<T> {
+  let p: Promise<T> | null = null;
+  return () =>
+    (p ??= fn().catch((err) => {
+      p = null;
+      throw err;
+    }));
+}
+
+const getLocations = cacheOnce(async () => {
+  const res = await publicApi.get<{ locations: ApiLocationFull[] }>("/public/locations");
+  return res.locations;
+});
+
+const getClassTypes = cacheOnce(async () => {
+  const res = await publicApi.get<{ class_types: ApiClassType[] }>("/public/class-types");
+  return res.class_types;
+});
 
 export function useLocations(): {
   data: ApiLocationFull[] | null;
@@ -98,8 +127,8 @@ export function useLocations(): {
     let cancelled = false;
     (async () => {
       try {
-        const res = await publicApi.get<{ locations: ApiLocationFull[] }>("/public/locations");
-        if (!cancelled) setData(res.locations);
+        const locations = await getLocations();
+        if (!cancelled) setData(locations);
       } catch {
         if (!cancelled) setData([]);
       } finally {
@@ -126,8 +155,8 @@ export function useClassTypes(): { data: ApiClassType[] | null; loading: boolean
     let cancelled = false;
     (async () => {
       try {
-        const res = await publicApi.get<{ class_types: ApiClassType[] }>("/public/class-types");
-        if (!cancelled) setData(res.class_types);
+        const classTypes = await getClassTypes();
+        if (!cancelled) setData(classTypes);
       } catch {
         if (!cancelled) setData([]);
       } finally {

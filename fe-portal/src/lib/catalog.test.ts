@@ -1,7 +1,10 @@
-import test from "node:test";
+import test, { beforeEach } from "node:test";
 import assert from "node:assert";
-import { fetchActiveInstructors } from "./catalog";
+import { clearCatalogCache, fetchActiveInstructors } from "./catalog";
 import type { Api } from "./api";
+
+// The module caches responses per path; isolate each test from the last.
+beforeEach(() => clearCatalogCache());
 
 // The module takes the backend handle as a parameter, so a stub handle is all
 // this needs — no Clerk session, no React.
@@ -36,4 +39,22 @@ test("pending invitees are kept", async () => {
     stubApi([{ id: "p", name: "Pia", status: "pending", archived_at: null }]),
   );
   assert.strictEqual(rows.length, 1);
+});
+
+// Within the TTL, repeat reads reuse the first response instead of refetching.
+test("responses are cached per path", async () => {
+  let calls = 0;
+  const api = {
+    get: async () => {
+      calls += 1;
+      return { instructors: [{ id: "a", name: "Asha", archived_at: null }] };
+    },
+  } as unknown as Api;
+  const [first, second] = await Promise.all([
+    fetchActiveInstructors(api),
+    fetchActiveInstructors(api),
+  ]);
+  await fetchActiveInstructors(api);
+  assert.strictEqual(calls, 1);
+  assert.deepStrictEqual(first, second);
 });
