@@ -1,4 +1,4 @@
-import 'dotenv/config'
+import './db/url'
 import { z } from 'zod'
 
 const booleanEnv = z.preprocess(value => {
