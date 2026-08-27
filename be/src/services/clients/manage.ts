@@ -64,18 +64,18 @@ export async function listClients(opts: ListClientsOptions): Promise<ClientListR
       ...getTableColumns(clients),
       trialStartedAt: sql<Date | null>`(
         select min(cp.purchased_at) from ${clientPackages} cp
-        where cp.client_id = ${clients.id} and cp.kind = 'trial'
+        where cp.client_id = "clients"."id" and cp.kind = 'trial'
       )`,
       attended: sql<number>`(
         select count(*) from ${bookings} b
         join ${clientPackages} cp on cp.id = b.client_package_id
-        where b.client_id = ${clients.id}
+        where b.client_id = "clients"."id"
           and b.check_in_state = 'attended'
           and cp.kind = 'trial'
       )`,
       converted: sql<boolean>`exists (
         select 1 from ${clientPackages} cp
-        where cp.client_id = ${clients.id}
+        where cp.client_id = "clients"."id"
           and cp.kind <> 'trial'
           and cp.amount_paid_sgd > 0
       )`,
