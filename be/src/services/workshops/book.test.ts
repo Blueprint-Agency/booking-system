@@ -12,6 +12,7 @@ const AFTER = new Date('2026-07-01T00:00:00Z')
 function tier(over: Partial<WorkshopTierRow> = {}): WorkshopTierRow {
   return {
     id: 'tier-1',
+    tenantId: null,
     workshopId: 'ws-1',
     name: 'Full pass',
     description: null,
@@ -29,6 +30,7 @@ function promo(over: Partial<PromotionRow> & Pick<PromotionRow, 'kind'>): Promot
   seq += 1n
   return {
     id: `promo-${seq}`,
+    tenantId: null,
     parentType: 'workshop',
     parentId: 'ws-1',
     label: 'test promo',

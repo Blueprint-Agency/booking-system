@@ -9,6 +9,7 @@ import {
   foreignKey,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
+import { tenantIdColumn } from './tenancy'
 import {
   clientStatusEnum,
   clientGenderEnum,
@@ -20,6 +21,7 @@ import {
 export const clients = pgTable(
   'clients',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     clerkUserId: text('clerk_user_id').notNull().unique(),
     email: text('email').notNull().unique(),
@@ -57,6 +59,7 @@ export const clients = pgTable(
 export const staffUsers = pgTable(
   'staff_users',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     clerkUserId: text('clerk_user_id').unique(),
     email: text('email').notNull().unique(),
@@ -102,6 +105,7 @@ export const staffUsers = pgTable(
 export const staffInvitations = pgTable(
   'staff_invitations',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     email: text('email').notNull(),
     // Role is enforced at the app layer to `admin` only in v1 — superadmin is seeded and

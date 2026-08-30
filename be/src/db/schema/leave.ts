@@ -10,6 +10,7 @@ import {
   primaryKey,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
+import { tenantIdColumn } from './tenancy'
 import { staffUsers } from './identity'
 import { instructors } from './catalog'
 import { leaveTypeEnum, leaveStatusEnum, leaveHalfDayEnum } from '../enums'
@@ -32,6 +33,7 @@ import { leaveTypeEnum, leaveStatusEnum, leaveHalfDayEnum } from '../enums'
 export const leaveRequests = pgTable(
   'leave_requests',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     // Keyed to the instructor extension table: only instructors take leave.
     instructorId: uuid('instructor_id')
@@ -89,6 +91,7 @@ export const leaveRequests = pgTable(
 export const leavePools = pgTable(
   'leave_pools',
   {
+    tenantId: tenantIdColumn(),
     instructorId: uuid('instructor_id')
       .notNull()
       .references(() => instructors.staffUserId, { onDelete: 'cascade' }),

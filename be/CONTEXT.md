@@ -4,6 +4,19 @@ The domain. Every rule in the platform lives here — booking, credits, scheduli
 
 ## Language
 
+### Tenancy
+
+**Tenant**:
+One studio business on the platform, and one row in `tenants`. Creating a Tenant is that insert — never infrastructure — and its subdomains resolve the moment the row exists. Yoga Sadhana is Tenant #1 (`slug = 'yogasadhana'`, id `10000000-…-0001`); every row that predates tenancy was backfilled to it.
+_Avoid_: account, org, workspace, customer, client (a Client is a member — see below)
+
+**Slug**:
+A Tenant's leftmost DNS label, and the only thing the frontends can read a Tenant from — the API's own hostname never carries one. Validated as a hostname label and checked against the reserved list (`admin`, `api`, `portal`, `www`, `dev`, `staging`, `app`, `mail`, `clerk`, `assets`) at creation, because a Tenant that took the slug `admin` would take over the super portal's hostname. See `services/tenants/slug.ts`.
+_Avoid_: subdomain, handle, tenant name
+
+**`tenant_id`**:
+The column on all 53 domain tables recording which Tenant a row belongs to — including pure join tables, because Row-Level Security needs a column on every table to key a policy on. Currently **nullable and backfilled**: the expand step of expand-migrate-contract, so nothing enforces it yet and behaviour is unchanged. `NOT NULL`, query scoping and RLS land in later work.
+
 ### Packages and locations
 
 **Location**:

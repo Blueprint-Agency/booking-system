@@ -1,5 +1,6 @@
 import { pgTable, uuid, jsonb, timestamp, index } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
+import { tenantIdColumn } from './tenancy'
 import { staffUsers } from './identity'
 import { inboxItemTypeEnum } from '../enums'
 
@@ -10,6 +11,7 @@ import { inboxItemTypeEnum } from '../enums'
 export const inboxItems = pgTable(
   'inbox_items',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     type: inboxItemTypeEnum('type').notNull(),
     payload: jsonb('payload').notNull(),

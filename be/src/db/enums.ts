@@ -1,5 +1,9 @@
 import { pgEnum } from 'drizzle-orm/pg-core'
 
+// Tenancy — `suspended` still resolves (the frontends render a "paused" page from it);
+// `archived` does not, so slug resolution treats it exactly like an unknown slug.
+export const tenantStatusEnum = pgEnum('tenant_status', ['active', 'suspended', 'archived'])
+
 // Identity
 export const clientStatusEnum = pgEnum('client_status', ['active', 'suspended'])
 export const clientGenderEnum = pgEnum('client_gender', ['female', 'male', 'non_binary', 'prefer_not_to_say'])
@@ -134,6 +138,7 @@ export const inboxItemTypeEnum = pgEnum('inbox_item_type', [
 // were removed from inbox_items per §4l. Enum left undeclared (drop in migration SQL).
 
 // TS type aliases (handy for service layer)
+export type TenantStatus = (typeof tenantStatusEnum.enumValues)[number]
 export type StaffRole = (typeof staffRoleEnum.enumValues)[number]
 export type StaffStatus = (typeof staffStatusEnum.enumValues)[number]
 export type ClientPackageKind = (typeof clientPackageKindEnum.enumValues)[number]

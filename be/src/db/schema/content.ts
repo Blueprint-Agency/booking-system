@@ -1,9 +1,11 @@
 import { pgTable, uuid, text, timestamp, jsonb, index, uniqueIndex, check } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
+import { tenantIdColumn } from './tenancy'
 import { clients, staffUsers } from './identity'
 import { emailRecipientKindEnum, emailLogStatusEnum } from '../enums'
 
 export const emailTemplates = pgTable('email_templates', {
+  tenantId: tenantIdColumn(),
   id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
   slug: text('slug').notNull().unique(),
   subject: text('subject').notNull(),
@@ -17,6 +19,7 @@ export const emailTemplates = pgTable('email_templates', {
 export const emailLog = pgTable(
   'email_log',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     templateSlug: text('template_slug').notNull(),
     recipientEmail: text('recipient_email').notNull(),
@@ -43,6 +46,7 @@ const WAIVER_SINGLETON_ID = '00000000-0000-0000-0000-000000000003'
 export const waiver = pgTable(
   'waiver',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id')
       .primaryKey()
       .default(sql`'${sql.raw(WAIVER_SINGLETON_ID)}'::uuid`),
@@ -60,6 +64,7 @@ export const waiver = pgTable(
 export const waiverSignatures = pgTable(
   'waiver_signatures',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     clientId: uuid('client_id')
       .notNull()
@@ -76,6 +81,7 @@ const MARKETING_SINGLETON_ID = '00000000-0000-0000-0000-000000000004'
 export const marketingContent = pgTable(
   'marketing_content',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id')
       .primaryKey()
       .default(sql`'${sql.raw(MARKETING_SINGLETON_ID)}'::uuid`),

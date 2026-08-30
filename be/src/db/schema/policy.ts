@@ -1,5 +1,6 @@
 import { pgTable, uuid, integer, numeric, timestamp, check } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
+import { tenantIdColumn } from './tenancy'
 import { staffUsers } from './identity'
 
 const POLICY_SINGLETON_ID = '00000000-0000-0000-0000-000000000001'
@@ -8,6 +9,7 @@ const PT_CONFIG_SINGLETON_ID = '00000000-0000-0000-0000-000000000002'
 export const globalPolicy = pgTable(
   'global_policy',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id')
       .primaryKey()
       .default(sql`'${sql.raw(POLICY_SINGLETON_ID)}'::uuid`),
@@ -52,6 +54,7 @@ export const globalPolicy = pgTable(
 export const ptBookingConfig = pgTable(
   'pt_booking_config',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id')
       .primaryKey()
       .default(sql`'${sql.raw(PT_CONFIG_SINGLETON_ID)}'::uuid`),

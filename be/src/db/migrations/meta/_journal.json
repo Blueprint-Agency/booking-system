@@ -183,6 +183,20 @@
       "when": 1787000400000,
       "tag": "0025_merch",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1788117984231,
+      "tag": "0026_tenancy_expand",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1788118004196,
+      "tag": "0027_backfill_tenant_one",
+      "breakpoints": true
     }
   ]
 }

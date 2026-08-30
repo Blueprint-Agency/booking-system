@@ -3,6 +3,8 @@ import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
 import * as schema from '../schema'
 
+import { seedTenants } from './tenants'
+import { claimSeededRowsForTenantOne } from './claim-tenant-one'
 import { seedSuperadmin } from './superadmin'
 import { seedLocations } from './locations'
 import { seedRooms } from './rooms'
@@ -23,6 +25,8 @@ async function main() {
   const db = drizzle(client, { schema })
 
   try {
+    console.log('[seed] tenants…')
+    await seedTenants(db)
     console.log('[seed] superadmin…')
     await seedSuperadmin(db)
     console.log('[seed] locations…')
@@ -45,6 +49,10 @@ async function main() {
     await seedWaiver(db)
     console.log('[seed] marketing singleton…')
     await seedMarketing(db)
+    // Last: the seeders above write explicit column lists that know nothing
+    // about tenancy, so anything they just inserted is still unclaimed.
+    console.log('[seed] claiming seeded rows for tenant #1…')
+    await claimSeededRowsForTenantOne(db)
     console.log('[seed] done')
   } finally {
     await client.end()

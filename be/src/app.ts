@@ -81,7 +81,23 @@ const authedLimiter = rateLimiter({
     c.get('clientId') ?? c.get('staffUserId') ?? c.req.header('x-forwarded-for') ?? 'global',
 })
 
-app.use('/api/v1/public/*', publicLimiter)
+// Tenant slug resolution is the one public route on *every* request path — the
+// frontend proxies call it per incoming Host header, server-side, so those calls
+// carry no `x-forwarded-for` and would all collapse into the single 'global'
+// bucket and 429 the whole platform under ordinary traffic. It gets its own,
+// much larger budget instead of an exemption.
+const TENANT_LOOKUP_PREFIX = '/api/v1/public/tenants/by-slug/'
+const tenantLookupLimiter = rateLimiter({
+  windowMs: 60_000,
+  limit: 6_000,
+  keyGenerator: c => c.req.header('x-forwarded-for') ?? 'global',
+})
+
+app.use('/api/v1/public/*', (c, next) =>
+  c.req.path.startsWith(TENANT_LOOKUP_PREFIX)
+    ? tenantLookupLimiter(c, next)
+    : publicLimiter(c, next),
+)
 app.use('/api/v1/me/*', authedLimiter)
 app.use('/api/v1/portal/*', authedLimiter)
 

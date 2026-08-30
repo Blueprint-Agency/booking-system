@@ -14,6 +14,7 @@ import {
   time,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
+import { tenantIdColumn } from './tenancy'
 import { staffUsers, clients } from './identity'
 import { instructors, classTypes, locations, rooms } from './catalog'
 import { clientPackages, corporatePackages } from './packages'
@@ -32,6 +33,7 @@ import {
 export const classes = pgTable(
   'classes',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     classTypeId: uuid('class_type_id')
       .notNull()
@@ -101,6 +103,7 @@ export const classes = pgTable(
 export const classSupportingInstructors = pgTable(
   'class_supporting_instructors',
   {
+    tenantId: tenantIdColumn(),
     classId: uuid('class_id')
       .notNull()
       .references(() => classes.id, { onDelete: 'cascade' }),
@@ -124,6 +127,7 @@ export const classSupportingInstructors = pgTable(
 export const workshops = pgTable(
   'workshops',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     name: text('name').notNull(),
     coverR2Key: text('cover_r2_key'),
@@ -158,6 +162,7 @@ export const workshops = pgTable(
 export const workshopDays = pgTable(
   'workshop_days',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     workshopId: uuid('workshop_id')
       .notNull()
@@ -210,6 +215,7 @@ export const workshopDays = pgTable(
 export const workshopImages = pgTable(
   'workshop_images',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     workshopId: uuid('workshop_id')
       .notNull()
@@ -229,6 +235,7 @@ export const workshopImages = pgTable(
 export const workshopInstructors = pgTable(
   'workshop_instructors',
   {
+    tenantId: tenantIdColumn(),
     workshopId: uuid('workshop_id')
       .notNull()
       .references(() => workshops.id, { onDelete: 'cascade' }),
@@ -257,6 +264,7 @@ export const workshopInstructors = pgTable(
 export const workshopTiers = pgTable(
   'workshop_tiers',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     workshopId: uuid('workshop_id')
       .notNull()
@@ -282,6 +290,7 @@ export const workshopTiers = pgTable(
 export const workshopTierDays = pgTable(
   'workshop_tier_days',
   {
+    tenantId: tenantIdColumn(),
     workshopTierId: uuid('workshop_tier_id')
       .notNull()
       .references(() => workshopTiers.id, { onDelete: 'cascade' }),
@@ -319,6 +328,7 @@ export const workshopTierDays = pgTable(
 export const ptRequests = pgTable(
   'pt_requests',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     clientId: uuid('client_id')
       .notNull()
@@ -378,6 +388,7 @@ export const ptRequests = pgTable(
 export const ptRequestSlots = pgTable(
   'pt_request_slots',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     ptRequestId: uuid('pt_request_id')
       .notNull()
@@ -404,6 +415,7 @@ export const ptRequestSlots = pgTable(
 export const ptSessions = pgTable(
   'pt_sessions',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     // NOT NULL, UNIQUE — every session traces back to a request. No DB FK declared here to
     // avoid the circular FK at create time; the FK is added below via foreignKey().
@@ -500,6 +512,7 @@ export const ptSessions = pgTable(
 export const ptSessionClients = pgTable(
   'pt_session_clients',
   {
+    tenantId: tenantIdColumn(),
     ptSessionId: uuid('pt_session_id')
       .notNull()
       .references(() => ptSessions.id, { onDelete: 'cascade' }),
@@ -520,6 +533,7 @@ export const ptSessionClients = pgTable(
 export const ptSessionSupportingInstructors = pgTable(
   'pt_session_supporting_instructors',
   {
+    tenantId: tenantIdColumn(),
     ptSessionId: uuid('pt_session_id')
       .notNull()
       .references(() => ptSessions.id, { onDelete: 'cascade' }),
@@ -543,6 +557,7 @@ export const ptSessionSupportingInstructors = pgTable(
 export const corporateSessions = pgTable(
   'corporate_sessions',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     corporatePackageId: uuid('corporate_package_id')
       .notNull()
@@ -603,6 +618,7 @@ export const corporateSessions = pgTable(
 export const corporateSessionSupportingInstructors = pgTable(
   'corporate_session_supporting_instructors',
   {
+    tenantId: tenantIdColumn(),
     corporateSessionId: uuid('corporate_session_id')
       .notNull()
       .references(() => corporateSessions.id, { onDelete: 'cascade' }),
@@ -627,6 +643,7 @@ export const corporateSessionSupportingInstructors = pgTable(
 export const corporateRequests = pgTable(
   'corporate_requests',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     clientId: uuid('client_id')
       .notNull()
@@ -684,6 +701,7 @@ export const corporateRequests = pgTable(
 export const manualPayrollEntries = pgTable(
   'manual_payroll_entries',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     instructorId: uuid('instructor_id')
       .notNull()

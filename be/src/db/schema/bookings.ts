@@ -1,5 +1,6 @@
 import { pgTable, uuid, text, timestamp, integer, numeric, boolean, index, uniqueIndex, check } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
+import { tenantIdColumn } from './tenancy'
 import { clients, staffUsers } from './identity'
 import { classes, workshops, workshopTiers, ptSessions } from './schedule'
 import { clientPackages, promoCodes, promotions } from './packages'
@@ -16,6 +17,7 @@ import {
 export const bookings = pgTable(
   'bookings',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     clientId: uuid('client_id')
       .notNull()
@@ -90,6 +92,7 @@ export const bookings = pgTable(
 export const cancellations = pgTable(
   'cancellations',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     bookingId: uuid('booking_id')
       .notNull()
@@ -112,6 +115,7 @@ export const cancellations = pgTable(
 export const checkIns = pgTable(
   'check_ins',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     bookingId: uuid('booking_id')
       .notNull()

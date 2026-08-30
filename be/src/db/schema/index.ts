@@ -1,4 +1,5 @@
 export * from '../enums'
+export * from './tenancy'
 export * from './identity'
 export * from './catalog'
 export * from './policy'

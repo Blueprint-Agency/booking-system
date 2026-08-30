@@ -11,12 +11,14 @@ import {
   check,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
+import { tenantIdColumn } from './tenancy'
 import { clients, staffUsers } from './identity'
 import { classDifficultyEnum } from '../enums'
 
 export const locations = pgTable(
   'locations',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     name: text('name').notNull(),
     address: text('address'),
@@ -40,6 +42,7 @@ export const locations = pgTable(
 export const rooms = pgTable(
   'rooms',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     locationId: uuid('location_id')
       .notNull()
@@ -73,6 +76,7 @@ export const rooms = pgTable(
 export const merch = pgTable(
   'merch',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     title: text('title').notNull(),
     description: text('description'),
@@ -100,6 +104,7 @@ export const merch = pgTable(
 export const merchOrders = pgTable(
   'merch_orders',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     clientId: uuid('client_id')
       .notNull()
@@ -122,6 +127,7 @@ export const merchOrders = pgTable(
 export const classTypes: any = pgTable(
   'class_types',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     name: text('name').notNull(),
     description: text('description'),
@@ -143,6 +149,7 @@ export const classTypes: any = pgTable(
 )
 
 export const instructors = pgTable('instructors', {
+  tenantId: tenantIdColumn(),
   staffUserId: uuid('staff_user_id')
     .primaryKey()
     .references(() => staffUsers.id, { onDelete: 'cascade' }),
@@ -168,6 +175,7 @@ export const instructors = pgTable('instructors', {
 export const leaveConflicts = pgTable(
   'leave_conflicts',
   {
+    tenantId: tenantIdColumn(),
     instructorAId: uuid('instructor_a_id')
       .notNull()
       .references(() => instructors.staffUserId, { onDelete: 'cascade' }),
@@ -187,6 +195,7 @@ export const leaveConflicts = pgTable(
 export const instructorClassTypes = pgTable(
   'instructor_class_types',
   {
+    tenantId: tenantIdColumn(),
     instructorId: uuid('instructor_id')
       .notNull()
       .references(() => instructors.staffUserId, { onDelete: 'cascade' }),

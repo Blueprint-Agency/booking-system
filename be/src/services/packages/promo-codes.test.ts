@@ -29,6 +29,7 @@ function promoCode(over: Partial<PromoCodeRow> = {}): PromoCodeRow {
   seq += 1
   return {
     id: `code-${seq}`,
+    tenantId: null,
     code: `SAVE${seq}`,
     label: 'S$20 off',
     kind: 'amount',
@@ -47,6 +48,7 @@ function promoCode(over: Partial<PromoCodeRow> = {}): PromoCodeRow {
 
 function scopeRow(over: Partial<PromoCodeProductRow> = {}): PromoCodeProductRow {
   return {
+    tenantId: null,
     promoCodeId: 'code-1',
     productType: 'class_package',
     productId: 'product-1',
@@ -59,6 +61,7 @@ function redemption(over: Partial<PromoCodeRedemptionRow> = {}): PromoCodeRedemp
   redemptionSeq += 1
   return {
     id: `redemption-${redemptionSeq}`,
+    tenantId: null,
     promoCodeId: 'code-1',
     clientId: `client-${redemptionSeq}`,
     status: 'consumed',

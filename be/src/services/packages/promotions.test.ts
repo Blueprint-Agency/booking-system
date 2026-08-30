@@ -9,6 +9,7 @@ function promo(over: Partial<PromotionRow> & Pick<PromotionRow, 'kind'>): Promot
   seq += 1n
   return {
     id: `promo-${seq}`,
+    tenantId: null,
     parentType: 'class_package',
     parentId: 'parent-1',
     label: 'test promo',

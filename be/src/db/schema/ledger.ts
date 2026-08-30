@@ -1,5 +1,6 @@
 import { pgTable, uuid, text, timestamp, integer, numeric, jsonb, index, uniqueIndex } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
+import { tenantIdColumn } from './tenancy'
 import { clients, staffUsers } from './identity'
 import { clientPackages } from './packages'
 import { bookings } from './bookings'
@@ -8,6 +9,7 @@ import { auditActorTypeEnum, stripePaymentKindEnum, stripePaymentStatusEnum } fr
 export const manualAdjustments = pgTable(
   'manual_adjustments',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     clientId: uuid('client_id')
       .notNull()
@@ -31,6 +33,7 @@ export const manualAdjustments = pgTable(
 export const auditLog = pgTable(
   'audit_log',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     actorStaffId: uuid('actor_staff_id').references(() => staffUsers.id, { onDelete: 'restrict' }),
     actorType: auditActorTypeEnum('actor_type').notNull(),
@@ -50,6 +53,7 @@ export const auditLog = pgTable(
 export const stripePayments = pgTable(
   'stripe_payments',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     paymentIntentId: text('payment_intent_id').notNull().unique(),
     amountSgd: numeric('amount_sgd', { precision: 10, scale: 2 }).notNull(),

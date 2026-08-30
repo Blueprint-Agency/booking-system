@@ -74,6 +74,11 @@ Resolution is server-side via `services/promotions/resolve.ts:bestPriceFor(paren
 |---|---|---|
 | GET | `/marketing` | Singleton `marketing_content` row |
 
+### `tenants.ts`
+| Method | Path | Effect |
+|---|---|---|
+| GET | `/tenants/by-slug/:slug` | Resolve a subdomain slug to the tenant's identity + display settings: `{ tenant: { id, slug, name, timezone, status }, settings: { display_name, logo_url, favicon_url, og_image_url, tagline, theme, copy } }`. Unauthenticated and cacheable (`Cache-Control: public, max-age=60, stale-while-revalidate=300`) because it sits on **every** request path — the frontend proxies call it for each incoming Host header, since the three apps stay decoupled and the frontends may not query the database. Unknown, archived and malformed slugs all return the standard `404 { "error": "not_found" }`, byte for byte, so the response cannot be used to enumerate tenants. Mail-from identity and waiver text are deliberately not in the payload. |
+
 ### `referral.ts`
 | Method | Path | Effect |
 |---|---|---|

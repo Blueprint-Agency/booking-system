@@ -248,8 +248,18 @@ environment is undocumented**, and multi-tenant *preview* URLs are Enterprise-on
 - [ ] ⚠️ **Connect as a dedicated non-superuser role that does not own the tables.** Without this
       RLS is inert (owners bypass policies; superusers bypass even `FORCE`) and every test still
       passes. Migrations keep running as the owner. New env var + GitHub Environment secret.
+- [ ] **Five singleton constraints block the contract step** (found while implementing the
+      expand step, #59). `waiver`, `marketing_content`, `global_policy` and `pt_booking_config`
+      each carry a `CHECK (id = '<fixed uuid>')` singleton constraint, and `feature_flags` has
+      `key` as its sole primary key. All five now have a `tenant_id` column, but no second
+      tenant can ever own a row in them — so today `acme` would render Yoga Sadhana's waiver,
+      marketing content and policy. Each needs its primary key / check widened to include
+      `tenant_id` before per-tenant settings mean anything.
 - [ ] Move seeds (`locations.ts`, `waiver.ts`, `email-copy.ts`, `corporate-packages.ts`)
-      to per-tenant provisioning data.
+      to per-tenant provisioning data. Until then `db:seed` finishes with
+      `claim-tenant-one.ts`, which claims anything a seeder wrote for tenant #1 — every
+      seeder writes an explicit column list that knows nothing about tenancy, and `db:seed`
+      runs after `db:migrate` on every deploy.
 - [ ] Seed a second synthetic tenant (`acme`) in local + staging — isolation bugs are
       invisible with one tenant.
 

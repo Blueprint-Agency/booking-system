@@ -13,6 +13,7 @@ import {
   primaryKey,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
+import { tenantIdColumn } from './tenancy'
 import { clients, staffUsers } from './identity'
 import { locations } from './catalog'
 import {
@@ -34,6 +35,7 @@ import {
 export const classPackages = pgTable(
   'class_packages',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     name: text('name').notNull(),
     description: text('description'),
@@ -82,6 +84,7 @@ export const classPackages = pgTable(
 // ---------- pt_packages (§6) ----------
 
 export const ptPackages = pgTable('pt_packages', {
+  tenantId: tenantIdColumn(),
   id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
   name: text('name').notNull(),
   description: text('description'),
@@ -101,6 +104,7 @@ export const ptPackages = pgTable('pt_packages', {
 export const promotions = pgTable(
   'promotions',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     parentType: promotionParentEnum('parent_type').notNull(),
     parentId: uuid('parent_id').notNull(),
@@ -161,6 +165,7 @@ export const promotions = pgTable(
 export const promoCodes = pgTable(
   'promo_codes',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     // Stored normalised — trimmed and upper-cased. Generated and custom codes
     // share this one namespace behind this one unique index, so a custom code
@@ -215,6 +220,7 @@ export const promoCodes = pgTable(
 export const promoCodeProducts = pgTable(
   'promo_code_products',
   {
+    tenantId: tenantIdColumn(),
     promoCodeId: uuid('promo_code_id')
       .notNull()
       .references(() => promoCodes.id, { onDelete: 'cascade' }),
@@ -237,6 +243,7 @@ export const promoCodeProducts = pgTable(
 export const promoCodeRedemptions = pgTable(
   'promo_code_redemptions',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     promoCodeId: uuid('promo_code_id')
       .notNull()
@@ -272,6 +279,7 @@ export const promoCodeRedemptions = pgTable(
 export const clientPackages = pgTable(
   'client_packages',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     clientId: uuid('client_id')
       .notNull()
@@ -375,6 +383,7 @@ export const clientPackages = pgTable(
 export const corporatePackages = pgTable(
   'corporate_packages',
   {
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     name: text('name').notNull(),
     description: text('description'),
