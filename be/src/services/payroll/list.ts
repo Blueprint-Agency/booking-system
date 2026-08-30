@@ -357,6 +357,7 @@ const rosterKind: Record<Exclude<PayrollKind, 'manual'>, RosterEventKind> = {
  * kind='workshop' (no single default-pay column there).
  */
 export async function updatePayrollAmount(
+  tenantId: string,
   kind: PayrollKind,
   id: string,
   amount: number | null,
@@ -374,7 +375,9 @@ export async function updatePayrollAmount(
     const rows = await db
       .update(manualPayrollEntries)
       .set({ amountSgd: amount.toFixed(2) })
-      .where(eq(manualPayrollEntries.id, id))
+      .where(
+        and(eq(manualPayrollEntries.tenantId, tenantId), eq(manualPayrollEntries.id, id)),
+      )
       .returning({ id: manualPayrollEntries.id })
     return rows.length > 0 ? { ok: true } : payrollSaveFailed('record_not_found')
   }
@@ -386,16 +389,17 @@ export async function updatePayrollAmount(
   // sessions keep their main instructor ON the row, so a roster without one is a
   // roster with no event behind it (workshops, whose main is just another row,
   // were required to name an instructor above).
-  const target = instructorId ?? (await readRoster(ref)).find(r => r.role === 'main')?.instructorId
+  const target =
+    instructorId ?? (await readRoster(tenantId, ref)).find(r => r.role === 'main')?.instructorId
   if (!target) return payrollSaveFailed('record_not_found')
 
-  if (await setInstructorPay(ref, target, amount)) return { ok: true }
+  if (await setInstructorPay(tenantId, ref, target, amount)) return { ok: true }
 
   // `setInstructorPay` answers false for two different situations — no event, or
   // an event this instructor isn't on. Only the failing path pays for the extra
   // read that tells them apart; `readRosters` keys events it FOUND, so a missing
   // key is a missing event (an empty roster is a real state for a workshop).
-  const exists = (await readRosters(ref.kind, [ref.id])).has(ref.id)
+  const exists = (await readRosters(tenantId, ref.kind, [ref.id])).has(ref.id)
   return payrollSaveFailed(exists ? 'instructor_not_assigned' : 'record_not_found')
 }
 

@@ -34,6 +34,7 @@ export type StaffInvitationRow = typeof staffInvitations.$inferSelect
 export type InvitableRole = 'admin' | 'superadmin' | 'instructor'
 
 export interface InviteAdminInput {
+  tenantId: string
   email: string
   role?: InvitableRole
   grantedLocationIds?: string[]
@@ -68,6 +69,11 @@ export interface InvitationLookup {
  * the row stays `pending` so it remains visible in the admin invitation list and
  * a resend (which extends `expires_at`) revives the link. This also keeps the
  * public endpoint read-only.
+ *
+ * Not tenant-scoped, deliberately: the token IS the credential and is unique
+ * across the platform, so holding one already identifies exactly one tenant's
+ * invitation. There is also no trustworthy tenant on this route — it is called
+ * before anybody has signed in.
  */
 export async function lookupInvitationByToken(token: string): Promise<InvitationLookup> {
   const [inv] = await db
@@ -110,6 +116,10 @@ export async function inviteAdmin(input: InviteAdminInput): Promise<StaffInvitat
     // Existing staff with this email blocks invitation. Active or pending = already in use;
     // archived = explicitly refuse re-use (audit log integrity — superadmin should restore
     // archived accounts via a separate path, not by re-inviting).
+    //
+    // Platform-wide rather than per-tenant, for the same reason as
+    // `createInstructor`: `staff_users.email` still carries a global unique
+    // index, so a scoped check would trade a clean 409 for a constraint error.
     const [existing] = await tx
       .select()
       .from(staffUsers)
@@ -135,6 +145,7 @@ export async function inviteAdmin(input: InviteAdminInput): Promise<StaffInvitat
     const [staffRow] = await tx
       .insert(staffUsers)
       .values({
+        tenantId: input.tenantId,
         email,
         name: joinName(firstName, lastName),
         firstName,
@@ -152,6 +163,7 @@ export async function inviteAdmin(input: InviteAdminInput): Promise<StaffInvitat
     // when the instructor edits their bio/photo.
     if (role === 'instructor') {
       await tx.insert(instructors).values({
+        tenantId: input.tenantId,
         staffUserId: staffRow.id,
         photoR2Key: null,
       })
@@ -160,6 +172,7 @@ export async function inviteAdmin(input: InviteAdminInput): Promise<StaffInvitat
     const [inv] = await tx
       .insert(staffInvitations)
       .values({
+        tenantId: input.tenantId,
         email,
         role,
         grantedLocationIds: grants,
@@ -176,7 +189,9 @@ export async function inviteAdmin(input: InviteAdminInput): Promise<StaffInvitat
     const [inviter] = await tx
       .select({ name: staffUsers.name })
       .from(staffUsers)
-      .where(eq(staffUsers.id, input.invitedByStaffId))
+      .where(
+        and(eq(staffUsers.tenantId, input.tenantId), eq(staffUsers.id, input.invitedByStaffId)),
+      )
       .limit(1)
 
     return { invitation: inv, inviterName: inviter?.name ?? 'Yoga Sadhana' }
@@ -213,9 +228,12 @@ export interface ListStaffResult {
  * are reflected by the corresponding staff row's status flipping to 'active', so
  * we filter them out of the invitations list to avoid double-display.
  */
-export async function listStaffAndInvitations(opts?: {
-  includeArchived?: boolean
-}): Promise<ListStaffResult> {
+export async function listStaffAndInvitations(
+  tenantId: string,
+  opts?: {
+    includeArchived?: boolean
+  },
+): Promise<ListStaffResult> {
   const includeArchived = opts?.includeArchived ?? false
 
   // Left-joined so the Assigned Days ride along on the instructors and are
@@ -231,6 +249,7 @@ export async function listStaffAndInvitations(opts?: {
     .leftJoin(instructors, eq(instructors.staffUserId, staffUsers.id))
     .where(
       and(
+        eq(staffUsers.tenantId, tenantId),
         isNull(staffUsers.deletedAt),
         includeArchived ? sql`true` : sql`${staffUsers.status} <> 'archived'`,
       ),
@@ -268,7 +287,9 @@ export async function listStaffAndInvitations(opts?: {
       invitedByStaffName: sql<string | null>`(SELECT name FROM staff_users WHERE id = ${staffInvitations.invitedByStaffId})`,
     })
     .from(staffInvitations)
-    .where(eq(staffInvitations.status, 'pending'))
+    .where(
+      and(eq(staffInvitations.tenantId, tenantId), eq(staffInvitations.status, 'pending')),
+    )
     .orderBy(desc(staffInvitations.createdAt))
 
   return { staff, invitations: invitations as ListStaffResult['invitations'] }
@@ -280,6 +301,7 @@ export async function listStaffAndInvitations(opts?: {
  * invitation has already been accepted, return 409.
  */
 export async function revokeInvitation(
+  tenantId: string,
   invitationId: string,
   _actorStaffId: string,
 ): Promise<StaffInvitationRow> {
@@ -287,7 +309,9 @@ export async function revokeInvitation(
     const [inv] = await tx
       .select()
       .from(staffInvitations)
-      .where(eq(staffInvitations.id, invitationId))
+      .where(
+        and(eq(staffInvitations.tenantId, tenantId), eq(staffInvitations.id, invitationId)),
+      )
       .limit(1)
     if (!inv) throw new NotFoundError('invitation_not_found')
     if (inv.status === 'accepted') throw new ConflictError('already_accepted')
@@ -300,7 +324,9 @@ export async function revokeInvitation(
     const [updated] = await tx
       .update(staffInvitations)
       .set({ status: 'revoked', revokedAt: now })
-      .where(eq(staffInvitations.id, invitationId))
+      .where(
+        and(eq(staffInvitations.tenantId, tenantId), eq(staffInvitations.id, invitationId)),
+      )
       .returning()
 
     if (inv.staffUserId) {
@@ -310,6 +336,7 @@ export async function revokeInvitation(
         .delete(staffUsers)
         .where(
           and(
+            eq(staffUsers.tenantId, tenantId),
             eq(staffUsers.id, inv.staffUserId),
             eq(staffUsers.status, 'pending'),
             isNull(staffUsers.clerkUserId),
@@ -326,13 +353,14 @@ export async function revokeInvitation(
  * to now + 7d so the sign-up link works again.
  */
 export async function resendInvitation(
+  tenantId: string,
   invitationId: string,
   _actorStaffId: string,
 ): Promise<StaffInvitationRow> {
   const [inv] = await db
     .select()
     .from(staffInvitations)
-    .where(eq(staffInvitations.id, invitationId))
+    .where(and(eq(staffInvitations.tenantId, tenantId), eq(staffInvitations.id, invitationId)))
     .limit(1)
   if (!inv) throw new NotFoundError('invitation_not_found')
   if (inv.status !== 'pending') {
@@ -345,7 +373,7 @@ export async function resendInvitation(
   const [updated] = await db
     .update(staffInvitations)
     .set({ createdAt: now, expiresAt })
-    .where(eq(staffInvitations.id, invitationId))
+    .where(and(eq(staffInvitations.tenantId, tenantId), eq(staffInvitations.id, invitationId)))
     .returning()
   if (!updated) throw new Error('staff_invitations_update_failed')
 
@@ -353,7 +381,7 @@ export async function resendInvitation(
   const [inviter] = await db
     .select({ name: staffUsers.name })
     .from(staffUsers)
-    .where(eq(staffUsers.id, inv.invitedByStaffId))
+    .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, inv.invitedByStaffId)))
     .limit(1)
 
   await sendTemplatedEmail({

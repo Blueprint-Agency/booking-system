@@ -88,8 +88,21 @@ export async function startTestApp(): Promise<TestApp> {
 
   // Dynamic: the seed validates `env.APP_ENV`, so it must not be imported
   // before the environment above is in place.
-  const { seedTenants } = await import('../db/seed/tenants')
+  const { seedTenants, seededTenants } = await import('../db/seed/tenants')
   await seedTenants(db)
+
+  // The per-tenant provisioning seeds, so both tenants own the fixtures an
+  // isolation test compares: their own premises, their own rooms and their own
+  // policy row. Without them the second tenant is an empty shell and "one tenant
+  // cannot read another's rows" passes for the wrong reason.
+  const { seedLocations } = await import('../db/seed/locations')
+  const { seedRooms } = await import('../db/seed/rooms')
+  const { seedPolicy } = await import('../db/seed/policy')
+  for (const tenant of seededTenants()) {
+    await seedLocations(db, tenant)
+    await seedRooms(db, tenant)
+    await seedPolicy(db, tenant)
+  }
 
   const { default: app } = await import('../app')
   const { closeDb } = await import('../db')

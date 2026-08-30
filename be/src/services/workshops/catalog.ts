@@ -211,18 +211,22 @@ async function buildCard(
 }
 
 async function loadInstructorRolesByWorkshop(
+  tenantId: string,
   workshopIds: string[],
 ): Promise<Map<string, Lineup>> {
-  return lineupsOf(await readRosters('workshop', workshopIds))
+  return lineupsOf(await readRosters(tenantId, 'workshop', workshopIds))
 }
 
-export async function listActiveWorkshopCards(): Promise<WorkshopCardPayload[]> {
-  const ws = await db.select().from(workshops).where(eq(workshops.lifecycle, 'active'))
+export async function listActiveWorkshopCards(tenantId: string): Promise<WorkshopCardPayload[]> {
+  const ws = await db
+    .select()
+    .from(workshops)
+    .where(and(eq(workshops.tenantId, tenantId), eq(workshops.lifecycle, 'active')))
   if (ws.length === 0) return []
 
   const workshopIds = ws.map(w => w.id)
   const { daysByWorkshop, tiersByWorkshop } = await loadCommon(workshopIds)
-  const instructorMap = await loadInstructorRolesByWorkshop(workshopIds)
+  const instructorMap = await loadInstructorRolesByWorkshop(tenantId, workshopIds)
 
   // Resolve location for all in one round-trip.
   const locIds = Array.from(new Set(ws.map(w => w.locationId)))
@@ -255,8 +259,17 @@ export async function listActiveWorkshopCards(): Promise<WorkshopCardPayload[]> 
   return cards
 }
 
-export async function getWorkshopDetailPayload(id: string): Promise<WorkshopDetailPayload> {
-  const [w] = await db.select().from(workshops).where(eq(workshops.id, id)).limit(1)
+export async function getWorkshopDetailPayload(
+  tenantId: string,
+  id: string,
+): Promise<WorkshopDetailPayload> {
+  // The card list is tenant-scoped, so the detail behind it has to be too — a
+  // scoped list beside an unscoped detail just moves the leak one click away.
+  const [w] = await db
+    .select()
+    .from(workshops)
+    .where(and(eq(workshops.tenantId, tenantId), eq(workshops.id, id)))
+    .limit(1)
   if (!w) throw new NotFoundError('workshop_not_found')
 
   const { daysByWorkshop, tiersByWorkshop } = await loadCommon([w.id])
@@ -275,7 +288,7 @@ export async function getWorkshopDetailPayload(id: string): Promise<WorkshopDeta
     .where(eq(workshopImages.workshopId, w.id))
     .orderBy(workshopImages.ord)
 
-  const lineup = lineupOf(await readRoster({ kind: 'workshop', id: w.id }))
+  const lineup = lineupOf(await readRoster(w.tenantId!, { kind: 'workshop', id: w.id }))
   const { instructorIds } = lineup
 
   let instructorPayload: InstructorLite[] = []

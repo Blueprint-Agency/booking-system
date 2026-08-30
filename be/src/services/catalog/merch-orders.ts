@@ -7,7 +7,7 @@
  * Nothing is shipped, so there is nothing to fulfil: the order row is the
  * receipt the studio hands the item over against.
  */
-import { desc, eq } from 'drizzle-orm'
+import { and, desc, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { merch, merchOrders } from '../../db/schema/catalog'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
@@ -22,10 +22,18 @@ export type MerchOrderRow = typeof merchOrders.$inferSelect
 export type MerchCheckout = CheckoutQuote<{ orderId: string }>
 
 export async function beginMerchCheckout(input: {
+  tenantId: string
   clientId: string
   merchId: string
 }): Promise<MerchCheckout> {
-  const [item] = await db.select().from(merch).where(eq(merch.id, input.merchId)).limit(1)
+  // The catalogue read is tenant-scoped here; the order rows themselves are
+  // written from the Stripe webhook, which cannot resolve a tenant yet — that
+  // is the transactional batch (#61).
+  const [item] = await db
+    .select()
+    .from(merch)
+    .where(and(eq(merch.tenantId, input.tenantId), eq(merch.id, input.merchId)))
+    .limit(1)
   if (!item) throw new NotFoundError('merch_not_found')
   if (item.archivedAt) throw new BadRequestError('merch_not_available')
 

@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { requireRole } from '../../../middleware/require-role'
+import { tenantId } from '../../../middleware/tenant'
 import * as svc from '../../../services/auth/invitations'
 import {
   archiveStaff,
@@ -117,7 +118,7 @@ const app = new Hono()
   // live in the service — this gate is coarse on purpose.
   .use('*', requireRole('superadmin', 'admin'))
   .get('/', async c => {
-    const { staff, invitations } = await svc.listStaffAndInvitations()
+    const { staff, invitations } = await svc.listStaffAndInvitations(tenantId(c))
     return c.json({
       staff: staff.map(serializeStaff),
       invitations: invitations.map(serializeInvitation),
@@ -127,6 +128,7 @@ const app = new Hono()
     const body = c.req.valid('json')
     const actor = c.get('staffUserId')
     const inv = await svc.inviteAdmin({
+      tenantId: tenantId(c),
       email: body.email,
       role: body.role,
       grantedLocationIds: body.granted_location_ids,
@@ -138,14 +140,14 @@ const app = new Hono()
   .post('/invitations/:id/revoke', superadminOnly, zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const actor = c.get('staffUserId')
-    const inv = await svc.revokeInvitation(id, actor)
+    const inv = await svc.revokeInvitation(tenantId(c), id, actor)
     c.set('auditTarget' as any, { table: 'staff_invitations', id })
     return c.json(serializeInvitation({ ...inv, invitedByStaffName: null }))
   })
   .post('/invitations/:id/resend', superadminOnly, zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const actor = c.get('staffUserId')
-    const inv = await svc.resendInvitation(id, actor)
+    const inv = await svc.resendInvitation(tenantId(c), id, actor)
     c.set('auditTarget' as any, { table: 'staff_invitations', id })
     return c.json(serializeInvitation({ ...inv, invitedByStaffName: null }))
   })
@@ -154,6 +156,7 @@ const app = new Hono()
     const body = c.req.valid('json')
     const actor = c.get('staffUserId')
     const row = await updateStaffProfile({
+      tenantId: tenantId(c),
       targetStaffId: id,
       actorStaffId: actor,
       patch: {
@@ -194,21 +197,33 @@ const app = new Hono()
   .post('/:id/archive', superadminOnly, zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const actor = c.get('staffUserId')
-    const row = await archiveStaff({ targetStaffId: id, actorStaffId: actor })
+    const row = await archiveStaff({
+      tenantId: tenantId(c),
+      targetStaffId: id,
+      actorStaffId: actor,
+    })
     c.set('auditTarget' as any, { table: 'staff_users', id })
     return c.json(serializeStaff(row))
   })
   .post('/:id/unarchive', superadminOnly, zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const actor = c.get('staffUserId')
-    const row = await unarchiveStaff({ targetStaffId: id, actorStaffId: actor })
+    const row = await unarchiveStaff({
+      tenantId: tenantId(c),
+      targetStaffId: id,
+      actorStaffId: actor,
+    })
     c.set('auditTarget' as any, { table: 'staff_users', id })
     return c.json(serializeStaff(row))
   })
   .delete('/:id', superadminOnly, zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const actor = c.get('staffUserId')
-    await softDeleteStaff({ targetStaffId: id, actorStaffId: actor })
+    await softDeleteStaff({
+      tenantId: tenantId(c),
+      targetStaffId: id,
+      actorStaffId: actor,
+    })
     c.set('auditTarget' as any, { table: 'staff_users', id })
     return c.body(null, 204)
   })

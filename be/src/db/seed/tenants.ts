@@ -24,36 +24,52 @@ import { env } from '../../env'
  * moment it lands — so a missing or misspelled value must fail at boot rather
  * than quietly publish `acme` on a real deployment.
  */
+export type SeededTenant = {
+  id: string
+  slug: string
+  name: string
+  timezone: string
+}
+
+const TENANT_ONE: SeededTenant = {
+  id: TENANT_ONE_ID,
+  slug: TENANT_ONE_SLUG,
+  name: 'Yoga Sadhana',
+  timezone: 'Asia/Singapore',
+}
+
+const SECOND_TENANT: SeededTenant = {
+  id: SECOND_TENANT_ID,
+  slug: SECOND_TENANT_SLUG,
+  name: 'Acme Yoga',
+  timezone: 'Australia/Sydney',
+}
+
+/**
+ * The tenants this environment provisions — and therefore the list every
+ * per-tenant seeder (locations, rooms, policy) runs once for each of. Production
+ * has exactly one; everywhere else has two, so that a missing
+ * `WHERE tenant_id = ?` has something to be visibly wrong about.
+ */
+export function seededTenants(): SeededTenant[] {
+  return env.APP_ENV === 'production' ? [TENANT_ONE] : [TENANT_ONE, SECOND_TENANT]
+}
+
 export async function seedTenants(db: PostgresJsDatabase<typeof schema>) {
-  await db
-    .insert(schema.tenants)
-    .values({
-      id: TENANT_ONE_ID,
-      slug: TENANT_ONE_SLUG,
-      name: 'Yoga Sadhana',
-      timezone: 'Asia/Singapore',
-    })
-    .onConflictDoNothing()
+  for (const tenant of seededTenants()) {
+    await db
+      .insert(schema.tenants)
+      .values({
+        id: tenant.id,
+        slug: tenant.slug,
+        name: tenant.name,
+        timezone: tenant.timezone,
+      })
+      .onConflictDoNothing()
 
-  await db
-    .insert(schema.tenantSettings)
-    .values({ tenantId: TENANT_ONE_ID, displayName: 'Yoga Sadhana' })
-    .onConflictDoNothing()
-
-  if (env.APP_ENV === 'production') return
-
-  await db
-    .insert(schema.tenants)
-    .values({
-      id: SECOND_TENANT_ID,
-      slug: SECOND_TENANT_SLUG,
-      name: 'Acme Yoga',
-      timezone: 'Australia/Sydney',
-    })
-    .onConflictDoNothing()
-
-  await db
-    .insert(schema.tenantSettings)
-    .values({ tenantId: SECOND_TENANT_ID, displayName: 'Acme Yoga' })
-    .onConflictDoNothing()
+    await db
+      .insert(schema.tenantSettings)
+      .values({ tenantId: tenant.id, displayName: tenant.name })
+      .onConflictDoNothing()
+  }
 }

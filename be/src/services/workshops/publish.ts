@@ -36,7 +36,7 @@ export type WorkshopInstructorInput = RosterAssignment
 
 async function ensureLocation(id: string) {
   const [r] = await db
-    .select({ id: locations.id })
+    .select({ id: locations.id, tenantId: locations.tenantId })
     .from(locations)
     .where(
       and(
@@ -47,18 +47,22 @@ async function ensureLocation(id: string) {
     )
     .limit(1)
   if (!r) throw new BadRequestError('invalid_location_id')
+  return r
 }
 
 export async function createWorkshop(input: CreateWorkshopInput): Promise<WorkshopRow> {
   if (!input.mainInstructorId) {
     throw new BadRequestError('main_instructor_id_required')
   }
-  await ensureLocation(input.locationId)
+  // The premises a workshop runs at decide whose workshop it is. (Scoping the
+  // rest of this service is the workshops/PT batch, #62.)
+  const tenantId = (await ensureLocation(input.locationId)).tenantId!
 
   return db.transaction(async tx => {
     const [row] = await tx
       .insert(workshops)
       .values({
+        tenantId,
         name: input.name,
         locationId: input.locationId,
         descriptionHtml: input.descriptionHtml ?? null,
@@ -72,6 +76,7 @@ export async function createWorkshop(input: CreateWorkshopInput): Promise<Worksh
     // live in the roster module — nothing to pre-check here.
     await replaceRoster(
       tx,
+      tenantId,
       { kind: 'workshop', id: row!.id },
       {
         main: { instructorId: input.mainInstructorId, paySgd: input.mainInstructorPaySgd },
@@ -141,6 +146,7 @@ export async function updateWorkshop(id: string, patch: UpdateWorkshopInput): Pr
     if (touchesRoster) {
       const roster = await replaceRoster(
         tx,
+        existing.tenantId!,
         { kind: 'workshop', id },
         {
           ...(touchesMain
@@ -186,17 +192,26 @@ export async function updateWorkshop(id: string, patch: UpdateWorkshopInput): Pr
   return getWorkshop(id)
 }
 
-export async function listWorkshops(opts: { lifecycle?: 'active' | 'cancelled' }): Promise<WorkshopRow[]> {
-  if (opts.lifecycle) {
-    return db.select().from(workshops).where(eq(workshops.lifecycle, opts.lifecycle))
-  }
-  return db.select().from(workshops)
+export async function listWorkshops(
+  tenantId: string,
+  opts: { lifecycle?: 'active' | 'cancelled' },
+): Promise<WorkshopRow[]> {
+  // Scoped alongside `listInstructorsByWorkshop`, its companion on the admin
+  // list: leaving one filtered and the other not would render every other
+  // tenant's workshops with a blank lineup rather than not at all.
+  const conds = [eq(workshops.tenantId, tenantId)]
+  if (opts.lifecycle) conds.push(eq(workshops.lifecycle, opts.lifecycle))
+  return db
+    .select()
+    .from(workshops)
+    .where(and(...conds))
 }
 
 export async function listInstructorsByWorkshop(
+  tenantId: string,
   workshopIds: string[],
 ): Promise<Map<string, Lineup>> {
-  return lineupsOf(await readRosters('workshop', workshopIds))
+  return lineupsOf(await readRosters(tenantId, 'workshop', workshopIds))
 }
 
 export interface WorkshopDetailView {
@@ -246,7 +261,7 @@ export async function getWorkshopDetail(id: string): Promise<WorkshopDetailView>
     .orderBy(workshopImages.ord)
 
   // Ordering (main first, then supporting by instructor id) is the roster's own.
-  const roster = await readRoster({ kind: 'workshop', id })
+  const roster = await readRoster(workshop.tenantId!, { kind: 'workshop', id })
   const { mainInstructorId, supportingInstructorIds, instructorIds } = lineupOf(roster)
 
   return {

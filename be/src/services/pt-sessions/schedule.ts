@@ -82,13 +82,17 @@ export async function schedulePtRequest(input: SchedulePtRequestInput): Promise<
     return { ok: false, error: 'partner_account_required' }
   }
 
+  // The request is what this session belongs to, so its tenant is the session's.
+  // (Scoping the rest of this service is the workshops/PT batch, #62.)
+  const tenantId = req.tenantId!
+
   // Room must belong to the location (throws AppError on mismatch — surfaces 4xx).
-  await assertRoomInLocation(input.roomId, input.locationId)
+  await assertRoomInLocation(tenantId, input.roomId, input.locationId)
 
   // Room and instructor clashes both throw ConflictError('schedule_conflict') —
   // one identity, one 409, whichever subject was taken.
-  await assertRoomAvailable(input.roomId, input.startsAt, input.endsAt)
-  await assertInstructorsAvailable([input.instructorId], {
+  await assertRoomAvailable(tenantId, input.roomId, input.startsAt, input.endsAt)
+  await assertInstructorsAvailable(tenantId, [input.instructorId], {
     startsAt: input.startsAt,
     endsAt: input.endsAt,
   })
@@ -99,10 +103,11 @@ export async function schedulePtRequest(input: SchedulePtRequestInput): Promise<
   const ptSessionId = await db.transaction(async tx => {
     // The session row's own instructor_id FK points at instructors.staff_user_id,
     // so the profile row has to exist before there is a session to hang it on.
-    await ensureInstructors([input.instructorId], tx)
+    await ensureInstructors(tenantId, [input.instructorId], tx)
     const [session] = await tx
       .insert(ptSessions)
       .values({
+        tenantId,
         ptRequestId: req.id,
         instructorId: input.instructorId,
         locationId: input.locationId,
@@ -346,6 +351,7 @@ export async function updatePtSession(id: string, patch: UpdatePtSessionInput): 
   const [existing] = await db.select().from(ptSessions).where(eq(ptSessions.id, id)).limit(1)
   if (!existing) throw new NotFoundError('pt_session_not_found')
   if (existing.lifecycle !== 'active') throw new ConflictError('session_cancelled')
+  const tenantId = existing.tenantId!
 
   const newRoomId = patch.roomId ?? existing.roomId
   const newLocationId = patch.locationId ?? existing.locationId
@@ -361,8 +367,11 @@ export async function updatePtSession(id: string, patch: UpdatePtSessionInput): 
     patch.endsAt !== undefined
   ) {
     if (newRoomId) {
-      await assertRoomInLocation(newRoomId, newLocationId)
-      await assertRoomAvailable(newRoomId, newStartsAt, newEndsAt, { kind: 'pt_session', id })
+      await assertRoomInLocation(tenantId, newRoomId, newLocationId)
+      await assertRoomAvailable(tenantId, newRoomId, newStartsAt, newEndsAt, {
+        kind: 'pt_session',
+        id,
+      })
     }
   }
 
@@ -389,7 +398,8 @@ export async function updatePtSession(id: string, patch: UpdatePtSessionInput): 
   // places at once. Ask about whoever the session will END UP with.
   if (touchesRoster || patch.startsAt !== undefined || patch.endsAt !== undefined) {
     await assertInstructorsAvailable(
-      await plannedInstructorIds({ kind: 'pt_session', id }, rosterPatch),
+      tenantId,
+      await plannedInstructorIds(tenantId, { kind: 'pt_session', id }, rosterPatch),
       { startsAt: newStartsAt, endsAt: newEndsAt },
       { kind: 'pt_session', id },
     )
@@ -440,7 +450,7 @@ export async function updatePtSession(id: string, patch: UpdatePtSessionInput): 
     }
 
     if (touchesRoster) {
-      await replaceRoster(tx, { kind: 'pt_session', id }, rosterPatch)
+      await replaceRoster(tx, tenantId, { kind: 'pt_session', id }, rosterPatch)
       // instructor_id / instructor_pay_sgd may have moved under us.
       const [fresh] = await tx.select().from(ptSessions).where(eq(ptSessions.id, id)).limit(1)
       if (fresh) row = fresh

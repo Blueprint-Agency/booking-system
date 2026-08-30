@@ -1,6 +1,7 @@
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { staffUsers, staffInvitations, clients } from '../../db/schema/identity'
+import { TENANT_ONE_ID } from '../../db/schema/tenancy'
 import { logger } from '../../shared/logger'
 import { splitName } from '../../lib/name'
 
@@ -268,9 +269,18 @@ export async function syncClientFromClerk(
   }
 
   // Self-registration: create the client row from the Clerk profile.
+  //
+  // The tenant is hardcoded to #1 on purpose. A `user.created` payload carries
+  // no organization, so this endpoint genuinely cannot tell which studio someone
+  // is joining — picking an approach (organization events, sign-up metadata, or
+  // an endpoint per tenant) is the backend-resolution ticket's decision to make
+  // and record (#65). Until then this writes what has always been true, rather
+  // than a null the future NOT NULL step would have to guess at. The lookups
+  // above need no scoping: `clerk_user_id` and `email` are unique platform-wide.
   const [row] = await db
     .insert(clients)
     .values({
+      tenantId: TENANT_ONE_ID,
       clerkUserId: clerkUser.id,
       email: normalized,
       name: displayName(clerkUser) ?? normalized.split('@')[0]!,

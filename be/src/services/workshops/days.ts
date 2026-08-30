@@ -41,11 +41,12 @@ export async function listDays(workshopId: string): Promise<WorkshopDayRow[]> {
 export async function createDay(workshopId: string, input: CreateDayInput): Promise<WorkshopDayRow> {
   const w = await ensureWorkshop(workshopId)
   if (input.endsAt <= input.startsAt) throw new BadRequestError('ends_at_must_be_after_starts_at')
-  await assertRoomInLocation(input.roomId, w.locationId)
-  await assertRoomAvailable(input.roomId, input.startsAt, input.endsAt)
+  await assertRoomInLocation(w.tenantId!, input.roomId, w.locationId)
+  await assertRoomAvailable(w.tenantId!, input.roomId, input.startsAt, input.endsAt)
   const [row] = await db
     .insert(workshopDays)
     .values({
+      tenantId: w.tenantId,
       workshopId,
       ord: input.ord,
       roomId: input.roomId,
@@ -85,8 +86,11 @@ export async function updateDay(
   const roomChanged = patch.roomId !== undefined && patch.roomId !== existing.roomId
   const timeChanged = patch.startsAt !== undefined || patch.endsAt !== undefined
   if (nextRoomId && (roomChanged || timeChanged)) {
-    await assertRoomInLocation(nextRoomId, w.locationId)
-    await assertRoomAvailable(nextRoomId, nextStarts, nextEnds, { kind: 'workshop_day', id: dayId })
+    await assertRoomInLocation(w.tenantId!, nextRoomId, w.locationId)
+    await assertRoomAvailable(w.tenantId!, nextRoomId, nextStarts, nextEnds, {
+      kind: 'workshop_day',
+      id: dayId,
+    })
   }
 
   const [row] = await db

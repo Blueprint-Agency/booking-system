@@ -73,6 +73,10 @@ export async function createCorporateSession(
     .limit(1)
   if (!pkg) return { ok: false, error: 'package_not_found' }
   if (pkg.status !== 'active') return { ok: false, error: 'package_archived' }
+  // The corporate package the session is sold against is the only tenant this
+  // session can belong to. Scoping the rest of this service is the workshops/PT
+  // batch (#62); the shared schedule primitives below need a tenant now.
+  const tenantId = pkg.tenantId!
 
   // 3. Location: a studio location_id OR a free-text off-site venue is required.
   const locationText = input.locationText?.trim() || null
@@ -86,12 +90,13 @@ export async function createCorporateSession(
     if (!input.locationId) return { ok: false, error: 'location_required' }
     // Room must belong to location (throws on mismatch — let the AppError propagate
     // so misconfigured requests still surface 400, consistent with sister-services).
-    await assertRoomInLocation(input.roomId, input.locationId)
-    await assertRoomAvailable(input.roomId, input.startsAt, input.endsAt)
+    await assertRoomInLocation(tenantId, input.roomId, input.locationId)
+    await assertRoomAvailable(tenantId, input.roomId, input.startsAt, input.endsAt)
   }
 
   // 5. Nobody on the session may already be booked then — supporting included.
   await assertInstructorsAvailable(
+    tenantId,
     [input.mainInstructorId, ...input.supportingInstructorIds],
     { startsAt: input.startsAt, endsAt: input.endsAt },
   )
@@ -100,10 +105,11 @@ export async function createCorporateSession(
   const session = await db.transaction(async tx => {
     // The session row's own main_instructor_id FK points at
     // instructors.staff_user_id, so the profile row has to exist first.
-    await ensureInstructors([input.mainInstructorId], tx)
+    await ensureInstructors(tenantId, [input.mainInstructorId], tx)
     const rows = await tx
       .insert(corporateSessions)
       .values({
+        tenantId,
         corporatePackageId: input.corporatePackageId,
         clientName: input.clientName,
         mainInstructorId: input.mainInstructorId,
@@ -123,6 +129,7 @@ export async function createCorporateSession(
     // live in the roster module — nothing to pre-check here.
     await replaceRoster(
       tx,
+      tenantId,
       { kind: 'corporate_session', id: row.id },
       { supportingInstructorIds: input.supportingInstructorIds },
     )
@@ -141,14 +148,18 @@ export async function getCorporateSession(
     .where(eq(corporateSessions.id, id))
     .limit(1)
   if (!row) return null
-  const supports = await listSupportingInstructorIds(id)
+  const supports = await listSupportingInstructorIds(row.tenantId!, id)
   return { ...row, supportingInstructorIds: supports }
 }
 
 export async function listSupportingInstructorIds(
+  tenantId: string,
   corporateSessionId: string,
 ): Promise<string[]> {
-  const roster = await readRoster({ kind: 'corporate_session', id: corporateSessionId })
+  const roster = await readRoster(tenantId, {
+    kind: 'corporate_session',
+    id: corporateSessionId,
+  })
   return roster.filter(r => r.role === 'supporting').map(r => r.instructorId)
 }
 
@@ -225,6 +236,8 @@ export async function rescheduleCorporateSession(
     .where(eq(corporateSessions.id, id))
     .limit(1)
   if (!existing) return { ok: false, error: 'not_found' }
+  // The session's own tenant — see the note in `createCorporateSession`.
+  const tenantId = existing.tenantId!
 
   // Compose the proposed state by overlaying the patch.
   const nextCorporatePackageId = patch.corporatePackageId ?? existing.corporatePackageId
@@ -271,8 +284,8 @@ export async function rescheduleCorporateSession(
   // and availability only when both are present.
   if (nextRoomId) {
     if (!nextLocationId) return { ok: false, error: 'location_required' }
-    await assertRoomInLocation(nextRoomId, nextLocationId)
-    await assertRoomAvailable(nextRoomId, nextStartsAt, nextEndsAt, {
+    await assertRoomInLocation(tenantId, nextRoomId, nextLocationId)
+    await assertRoomAvailable(tenantId, nextRoomId, nextStartsAt, nextEndsAt, {
       kind: 'corporate_session',
       id,
     })
@@ -281,7 +294,9 @@ export async function rescheduleCorporateSession(
   // 4. Whoever the session will END UP with has to be free then — the merge
   //    below is the same one the write performs, so the two can't disagree.
   await assertInstructorsAvailable(
+    tenantId,
     await plannedInstructorIds(
+      tenantId,
       { kind: 'corporate_session', id },
       {
         ...(patch.mainInstructorId !== undefined
@@ -329,6 +344,7 @@ export async function rescheduleCorporateSession(
     if (patch.mainInstructorId !== undefined || patch.supportingInstructorIds !== undefined) {
       await replaceRoster(
         tx,
+        tenantId,
         { kind: 'corporate_session', id },
         {
           ...(patch.mainInstructorId !== undefined

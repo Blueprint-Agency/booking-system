@@ -17,6 +17,7 @@ import {
   payrollSaveStatus,
   type PayrollSaveReason,
 } from '../../../services/payroll/save-reasons'
+import { tenantId } from '../../../middleware/tenant'
 
 // Finance: every Money Event in a period — money in and money out — with the
 // studio's five figures over it. Replaces the admin Payroll surface; the
@@ -148,7 +149,13 @@ const app = new Hono()
   .patch('/pay/:kind/:id', zValidator('param', patchParam), zValidator('json', patchBody), async c => {
     const { kind, id } = c.req.valid('param')
     const { instructor_pay_sgd, instructor_id } = c.req.valid('json')
-    const res = await updatePayrollAmount(kind, id, instructor_pay_sgd, instructor_id)
+    const res = await updatePayrollAmount(
+      tenantId(c),
+      kind,
+      id,
+      instructor_pay_sgd,
+      instructor_id,
+    )
     if (!res.ok) return saveFailure(c, kind, res.reason)
     c.set('auditTarget' as any, { table: payrollAuditTable[kind], id })
     return c.json({ ok: true })

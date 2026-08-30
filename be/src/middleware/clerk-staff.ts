@@ -6,6 +6,7 @@ import { staffUsers } from '../db/schema/identity'
 import { syncStaffFromClerk } from '../services/auth/webhook-sync'
 import { logger } from '../shared/logger'
 import { captureException } from '../instrument'
+import { tenantMatches } from './tenant'
 
 export interface ClerkStaffClaims {
   sub: string
@@ -92,6 +93,17 @@ export const clerkStaffAuth: MiddlewareHandler = async (c, next) => {
   }
 
   if (!row) return c.json({ error: 'staff_not_provisioned', reason: syncReason }, 403)
+
+  // The `X-Tenant-Slug` header is resolved before any of this, and nothing has
+  // checked it yet — so on its own it would let a signed-in member of one studio
+  // name another studio and reach every service this batch scoped. Here is the
+  // first point where the caller's real tenant is known, so here is where the
+  // claim is checked. Mapping Clerk Organizations onto tenants, and doing the
+  // same for public routes against `Origin`, is still #65's work; this only
+  // closes the forged-header hole for authenticated staff in the meantime.
+  if (!tenantMatches(c, row.tenantId)) {
+    return c.json({ error: 'tenant_mismatch' }, 403)
+  }
 
   c.set('staffClaims', { sub: payload.sub })
   c.set('staffUserId', row.id)

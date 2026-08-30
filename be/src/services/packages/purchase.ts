@@ -168,8 +168,14 @@ export async function assertPurchasableLocation(
  * checkout — the price charged is frozen onto the plan, so a later repricing
  * moves future purchases only and never restates what was sold.
  */
-export async function readCrossLocationRateSgd(): Promise<string> {
-  const [row] = await db.select({ rate: globalPolicy.crossLocationRateSgd }).from(globalPolicy).limit(1)
+export async function readCrossLocationRateSgd(tenantId: string): Promise<string> {
+  // `global_policy` holds one row per tenant now, so an unqualified `limit(1)`
+  // would price this against whichever studio's row came back first.
+  const [row] = await db
+    .select({ rate: globalPolicy.crossLocationRateSgd })
+    .from(globalPolicy)
+    .where(eq(globalPolicy.tenantId, tenantId))
+    .limit(1)
   if (!row) throw new NotFoundError('policy_not_seeded')
   return row.rate
 }
@@ -183,12 +189,13 @@ export async function readCrossLocationRateSgd(): Promise<string> {
  * `quoteCrossLocationAddOn` applies to a plan the member already holds.
  */
 export async function priceCrossLocationForNewPlan(
+  tenantId: string,
   kind: PackageKind,
   durationMonths: number | null,
 ): Promise<string> {
   if (kind !== 'unlimited') throw new BadRequestError('cross_location_requires_unlimited')
   if (durationMonths == null) throw new BadRequestError('unlimited_requires_duration_months')
-  return crossLocationPriceSgd(durationMonths, await readCrossLocationRateSgd())
+  return crossLocationPriceSgd(durationMonths, await readCrossLocationRateSgd(tenantId))
 }
 
 export interface CrossLocationQuote {
@@ -224,7 +231,7 @@ export async function quoteCrossLocationAddOn(
   if (plan.crossLocationPaidSgd !== null) {
     throw new ConflictError('cross_location_already_added')
   }
-  const rateSgd = await readCrossLocationRateSgd()
+  const rateSgd = await readCrossLocationRateSgd(plan.tenantId!)
   // A Dormant plan prices at its full stored Duration; an Activated one at the
   // whole months it has left, part months rounded up.
   const months = crossLocationMonths(plan, now)

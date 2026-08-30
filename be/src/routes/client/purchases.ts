@@ -17,6 +17,7 @@ import {
 import { createCheckoutSession } from '../../services/billing/checkout-session'
 import { describeProduct, previewPromoCode } from '../../services/packages/promo-redemption'
 import { CLIENT_URL } from '../../env'
+import { tenantId } from '../../middleware/tenant'
 
 const checkoutPackageSchema = z.object({
   package_kind: z.enum(['class', 'pt']),
@@ -145,7 +146,11 @@ const app = new Hono()
   // over at the studio, which is what the client app's notice says.
   .post('/checkout/merch', zValidator('json', z.object({ merch_id: z.string().uuid() })), async c => {
     const { merch_id } = c.req.valid('json')
-    const quote = await beginMerchCheckout({ clientId: c.get('clientId'), merchId: merch_id })
+    const quote = await beginMerchCheckout({
+      tenantId: tenantId(c),
+      clientId: c.get('clientId'),
+      merchId: merch_id,
+    })
     if (quote.outcome === 'granted') {
       return c.json({ outcome: 'granted', order_id: quote.orderId, free: true }, 201)
     }

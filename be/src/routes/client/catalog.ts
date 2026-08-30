@@ -10,6 +10,7 @@ import {
   serializePromotion,
 } from '../../services/packages/promotions'
 import { getClientEntitlements } from '../../services/packages/entitlements'
+import { tenantId } from '../../middleware/tenant'
 import * as workshopsSvc from '../../services/workshops/catalog'
 import { listMyWorkshopBookings } from '../../services/workshops/my-bookings'
 import { listCorporatePackages } from '../../services/packages/corporate-packages'
@@ -78,8 +79,9 @@ const app = new Hono()
   .get('/classes', async c => {
     const clientId = c.get('clientId')
     const filters = classCatalog.parseClassFilters(c.req.query())
-    const cards = await classCatalog.listClassCards(filters)
+    const cards = await classCatalog.listClassCards(tenantId(c), filters)
     const bookedIds = await classCatalog.myBookedClassIds(
+      tenantId(c),
       clientId,
       cards.map(card => card.id),
     )
@@ -88,12 +90,12 @@ const app = new Hono()
     })
   })
   .get('/workshops', async c => {
-    const cards = await workshopsSvc.listActiveWorkshopCards()
+    const cards = await workshopsSvc.listActiveWorkshopCards(tenantId(c))
     return c.json({ workshops: cards })
   })
   .get('/workshops/:id', async c => {
     const id = c.req.param('id')
-    const detail = await workshopsSvc.getWorkshopDetailPayload(id)
+    const detail = await workshopsSvc.getWorkshopDetailPayload(tenantId(c), id)
     return c.json(detail)
   })
   .get('/workshop-bookings', async c => {
@@ -108,7 +110,7 @@ const app = new Hono()
       'class_package',
       rows.map(r => r.id),
     )
-    const ent = await getClientEntitlements(clientId)
+    const ent = await getClientEntitlements(tenantId(c), clientId)
     return c.json({
       class_packages: rows.map(r => {
         const ps = promos[r.id] ?? []

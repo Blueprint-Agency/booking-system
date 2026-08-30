@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { requireRole } from '../../../middleware/require-role'
+import { tenantId } from '../../../middleware/tenant'
 import {
   listClients,
   createClientWithInvite,
@@ -183,13 +184,14 @@ const app = new Hono()
     // the default filtered list regardless of the query param.
     const role = c.get('staffRow')?.role
     const includeDeleted = q.include_deleted === 'true' && role === 'superadmin'
-    const rows = await listClients({ q: q.q, status: q.status, includeDeleted })
+    const rows = await listClients(tenantId(c), { q: q.q, status: q.status, includeDeleted })
     return c.json({ clients: rows.map(clientListRow) })
   })
   .post('/', zValidator('json', createSchema), async c => {
     const body = c.req.valid('json')
     const staffId = c.get('staffUserId')
     const row = await createClientWithInvite({
+      tenantId: tenantId(c),
       name: body.name,
       email: body.email,
       phone: body.phone,
@@ -201,9 +203,9 @@ const app = new Hono()
   .get('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const [client, packages, adjustments, refunds, workshopPurchases] = await Promise.all([
-      getClientById(id),
+      getClientById(tenantId(c), id),
       listClientPackages(id, true),
-      listRecentAdjustments(id),
+      listRecentAdjustments(tenantId(c), id),
       refundStatesFor(id),
       listWorkshopPurchases(id),
     ])
@@ -334,6 +336,7 @@ const app = new Hono()
   .delete('/:id', requireRole('superadmin'), zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const row = await softDeleteClient({
+      tenantId: tenantId(c),
       targetClientId: id,
       actorStaffId: c.get('staffUserId'),
     })
@@ -343,6 +346,7 @@ const app = new Hono()
   .post('/:id/restore', requireRole('superadmin'), zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const row = await restoreClient({
+      tenantId: tenantId(c),
       targetClientId: id,
       actorStaffId: c.get('staffUserId'),
     })

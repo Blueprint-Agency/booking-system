@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as svc from '../../../services/catalog/locations'
+import { tenantId } from '../../../middleware/tenant'
 import { countLiveUnlimitedAtLocation } from '../../../services/packages/purchase'
 
 const createSchema = z.object({
@@ -36,17 +37,17 @@ const app = new Hono()
   .get('/', zValidator('query', listQuery), async c => {
     const q = c.req.valid('query')
     const includeArchived = q.include_archived === 'true' || q.include_archived === '1'
-    const rows = await svc.listLocations({ includeArchived })
+    const rows = await svc.listLocations(tenantId(c), { includeArchived })
     return c.json({ locations: rows.map(serialize) })
   })
   .get('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    const row = await svc.getLocation(id)
+    const row = await svc.getLocation(tenantId(c), id)
     return c.json(serialize(row))
   })
   .post('/', zValidator('json', createSchema), async c => {
     const body = c.req.valid('json')
-    const row = await svc.createLocation({
+    const row = await svc.createLocation(tenantId(c), {
       name: body.name,
       address: body.address ?? null,
       gmapsUrl: body.gmaps_url ?? null,
@@ -58,7 +59,7 @@ const app = new Hono()
   .patch('/:id', zValidator('param', idParam), zValidator('json', updateSchema), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
-    const row = await svc.updateLocation(id, {
+    const row = await svc.updateLocation(tenantId(c), id, {
       ...(body.name !== undefined ? { name: body.name } : {}),
       ...(body.address !== undefined ? { address: body.address ?? null } : {}),
       ...(body.gmaps_url !== undefined ? { gmapsUrl: body.gmaps_url ?? null } : {}),
@@ -73,19 +74,19 @@ const app = new Hono()
   })
   .post('/:id/archive', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    const row = await svc.archiveLocation(id)
+    const row = await svc.archiveLocation(tenantId(c), id)
     c.set('auditTarget' as any, { table: 'locations', id })
     return c.json(serialize(row))
   })
   .post('/:id/unarchive', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    const row = await svc.unarchiveLocation(id)
+    const row = await svc.unarchiveLocation(tenantId(c), id)
     c.set('auditTarget' as any, { table: 'locations', id })
     return c.json(serialize(row))
   })
   .delete('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    await svc.softDeleteLocation(id)
+    await svc.softDeleteLocation(tenantId(c), id)
     c.set('auditTarget' as any, { table: 'locations', id })
     return c.body(null, 204)
   })

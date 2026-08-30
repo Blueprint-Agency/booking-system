@@ -14,6 +14,7 @@ import { cancellations } from '../../db/schema/bookings'
 export type CancellationKind = 'class' | 'pt'
 
 export interface EvaluateInput {
+  tenantId: string
   clientId: string
   kind: CancellationKind
   sessionStartsAt: Date
@@ -34,7 +35,7 @@ const HOUR_MS = 3_600_000
 const DAY_MS = 86_400_000
 
 export async function evaluateCancellation(input: EvaluateInput): Promise<EvaluateResult> {
-  const { clientId, kind, sessionStartsAt, now } = input
+  const { tenantId, clientId, kind, sessionStartsAt, now } = input
 
   const [policy] = await db
     .select({
@@ -44,6 +45,7 @@ export async function evaluateCancellation(input: EvaluateInput): Promise<Evalua
       ptWindowHours: globalPolicy.ptWindowHours,
     })
     .from(globalPolicy)
+    .where(eq(globalPolicy.tenantId, tenantId))
     .limit(1)
   if (!policy) throw new Error('global_policy_missing')
 
@@ -59,6 +61,7 @@ export async function evaluateCancellation(input: EvaluateInput): Promise<Evalua
     .from(cancellations)
     .where(
       and(
+        eq(cancellations.tenantId, tenantId),
         eq(cancellations.clientId, clientId),
         eq(cancellations.source, 'client'),
         gte(cancellations.cancelledAt, cycleStart),

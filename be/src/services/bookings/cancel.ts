@@ -56,6 +56,10 @@ export async function cancelBooking(input: CancelInput): Promise<CancelResult> {
     const [bk] = await tx
       .select({
         id: bookings.id,
+        // Read off the row rather than passed in: this service is scoped to the
+        // Tenant in the transactional batch (#61), and until then the booking
+        // itself is the only honest answer to "whose policy applies".
+        tenantId: bookings.tenantId,
         clientId: bookings.clientId,
         kind: bookings.kind,
         classId: bookings.classId,
@@ -110,7 +114,13 @@ export async function cancelBooking(input: CancelInput): Promise<CancelResult> {
     const evaluation =
       source === 'admin'
         ? undefined
-        : await evaluateCancellation({ clientId: bk.clientId, kind: cancelKind, sessionStartsAt, now })
+        : await evaluateCancellation({
+            tenantId: bk.tenantId!,
+            clientId: bk.clientId,
+            kind: cancelKind,
+            sessionStartsAt,
+            now,
+          })
 
     // Client self-cancel is a HARD deadline: a member can only cancel up to
     // `windowHours` (24h for classes) before the session starts. Inside that window

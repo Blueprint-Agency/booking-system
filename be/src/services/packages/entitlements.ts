@@ -47,7 +47,10 @@ export interface ClientEntitlements {
  *
  * "Active" means: not expired AND (for credit/pt) credits_or_sessions_remaining > 0.
  */
-export async function getClientEntitlements(clientId: string): Promise<ClientEntitlements> {
+export async function getClientEntitlements(
+  tenantId: string,
+  clientId: string,
+): Promise<ClientEntitlements> {
   const now = new Date()
 
   const rows = await db
@@ -119,7 +122,9 @@ export async function getClientEntitlements(clientId: string): Promise<ClientEnt
     unlimitedLocation,
     unlimitedPlanId,
     unlimitedCoversBoth,
-    crossLocationRateSgd: await readCrossLocationRateSgd(),
+    // The rate is a per-tenant policy figure; the rest of this read is scoped
+    // with the transactional batch (#61).
+    crossLocationRateSgd: await readCrossLocationRateSgd(tenantId),
     dormant,
     hasActiveBundleCredits,
     pt1on1Remaining,

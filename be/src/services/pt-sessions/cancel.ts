@@ -124,6 +124,9 @@ export async function cancelPtRequest(input: CancelPtRequestInput): Promise<Canc
     const [session] = await tx
       .select({
         id: ptSessions.id,
+        // See bookings/cancel.ts: the session row is where the tenant comes from
+        // until this service is scoped in its own batch (#62).
+        tenantId: ptSessions.tenantId,
         startsAt: ptSessions.startsAt,
         lifecycle: ptSessions.lifecycle,
         instructorId: ptSessions.instructorId,
@@ -150,6 +153,7 @@ export async function cancelPtRequest(input: CancelPtRequestInput): Promise<Canc
       refundSessions = cost
     } else {
       const evaluation = await evaluateCancellation({
+        tenantId: session.tenantId!,
         clientId: req.clientId,
         kind: 'pt',
         sessionStartsAt: session.startsAt,

@@ -99,9 +99,24 @@ export const tenantSettings = pgTable('tenant_settings', {
  * still behaves exactly as it did single-tenant. `NOT NULL` and the composite
  * indexes arrive with the contract step, and Row-Level Security needs a column
  * on every table — including pure join tables — to key a policy on.
+ *
+ * ⚠️ **The default is scaffolding, and the contract step must drop it.**
+ * Services are scoped one batch at a time, so at any moment some reads filter on
+ * `tenant_id` while the inserts feeding them have not been touched yet. A
+ * booking written by an un-migrated path would land `NULL` and then be invisible
+ * to the migrated read beside it — a class that fills up while every surface
+ * reports it empty — which is worse than not scoping at all. Defaulting to
+ * tenant #1 keeps every un-migrated write behaving exactly as it did.
+ *
+ * It is also a footgun the moment tenant #2 is real: a forgotten insert files
+ * somebody else's row under Yoga Sadhana instead of failing. That is precisely
+ * why it must not outlive the remaining migrate batches (#61, #62), which make
+ * every insert name its tenant, and why #63's `NOT NULL` step drops it.
  */
 export const tenantIdColumn = () =>
-  uuid('tenant_id').references(() => tenants.id, { onDelete: 'restrict' })
+  uuid('tenant_id')
+    .references(() => tenants.id, { onDelete: 'restrict' })
+    .default(sql`'${sql.raw(TENANT_ONE_ID)}'::uuid`)
 
 export type TenantRow = typeof tenants.$inferSelect
 export type TenantSettingsRow = typeof tenantSettings.$inferSelect

@@ -8,6 +8,7 @@ import {
   getClientEntitlements,
   listClientPackages,
 } from '../../services/packages/entitlements'
+import { tenantId } from '../../middleware/tenant'
 
 function serializeProfile(row: typeof clients.$inferSelect) {
   return {
@@ -78,7 +79,7 @@ const app = new Hono()
     const onlyActive = c.req.query('only_active') === '1'
     const [packages, ent] = await Promise.all([
       listClientPackages(clientId, onlyActive),
-      getClientEntitlements(clientId),
+      getClientEntitlements(tenantId(c), clientId),
     ])
     return c.json({
       client_packages: packages.map(serializeClientPackage),

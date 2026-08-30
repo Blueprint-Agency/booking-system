@@ -60,7 +60,10 @@ function firstNameOf(full: string): string {
   return full.trim().split(/\s+/)[0] ?? full
 }
 
-export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleEntryRow[]> {
+export async function listSchedule(
+  tenantId: string,
+  opts: ListScheduleOptions,
+): Promise<ScheduleEntryRow[]> {
   const now = new Date()
   const out: ScheduleEntryRow[] = []
   const wantClass = !opts.type || opts.type === 'class'
@@ -72,7 +75,7 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
 
   // ---- classes ----------------------------------------------------------------
   if (wantClass) {
-    const conds = []
+    const conds = [eq(classes.tenantId, tenantId)]
     if (opts.from) conds.push(gte(classes.endsAt, opts.from))
     if (opts.to) conds.push(lt(classes.startsAt, opts.to))
     if (opts.instructorId) {
@@ -104,14 +107,20 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
       })
       .from(classes)
       .innerJoin(classTypes, eq(classes.classTypeId, classTypes.id))
-      .where(conds.length ? and(...conds) : undefined)
+      .where(and(...conds))
 
     const ids = rows.map(r => r.id)
     const counts = ids.length
       ? await db
           .select({ classId: bookings.classId, cnt: sql<number>`count(*)::int` })
           .from(bookings)
-          .where(and(inArray(bookings.classId, ids), eq(bookings.state, 'confirmed')))
+          .where(
+            and(
+              eq(bookings.tenantId, tenantId),
+              inArray(bookings.classId, ids),
+              eq(bookings.state, 'confirmed'),
+            ),
+          )
           .groupBy(bookings.classId)
       : []
     const bookedByClass = new Map<string, number>()
@@ -125,7 +134,12 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
           instructorId: classSupportingInstructors.instructorId,
         })
         .from(classSupportingInstructors)
-        .where(inArray(classSupportingInstructors.classId, ids))
+        .where(
+          and(
+            eq(classSupportingInstructors.tenantId, tenantId),
+            inArray(classSupportingInstructors.classId, ids),
+          ),
+        )
       for (const r of supportingRows) {
         const list = supportingByClass.get(r.classId) ?? []
         list.push(r.instructorId)
@@ -165,7 +179,7 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
 
   // ---- workshop days ---------------------------------------------------------
   if (wantWorkshop) {
-    const conds = []
+    const conds = [eq(workshopDays.tenantId, tenantId)]
     if (opts.from) conds.push(gte(workshopDays.endsAt, opts.from))
     if (opts.to) conds.push(lt(workshopDays.startsAt, opts.to))
     if (opts.locationId) conds.push(eq(workshops.locationId, opts.locationId))
@@ -187,7 +201,7 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
       })
       .from(workshopDays)
       .innerJoin(workshops, eq(workshopDays.workshopId, workshops.id))
-      .where(conds.length ? and(...conds) : undefined)
+      .where(and(...conds))
 
     const workshopIds = Array.from(new Set(rows.map(r => r.workshopId)))
 
@@ -198,7 +212,12 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
             cnt: sql<number>`count(*)::int`,
           })
           .from(workshopDays)
-          .where(inArray(workshopDays.workshopId, workshopIds))
+          .where(
+            and(
+              eq(workshopDays.tenantId, tenantId),
+              inArray(workshopDays.workshopId, workshopIds),
+            ),
+          )
           .groupBy(workshopDays.workshopId)
       : []
     const dayCountMap = new Map<string, number>()
@@ -212,7 +231,12 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
             role: workshopInstructors.role,
           })
           .from(workshopInstructors)
-          .where(inArray(workshopInstructors.workshopId, workshopIds))
+          .where(
+            and(
+              eq(workshopInstructors.tenantId, tenantId),
+              inArray(workshopInstructors.workshopId, workshopIds),
+            ),
+          )
       : []
     const mainByWorkshop = new Map<string, string>()
     const supportingByWorkshop = new Map<string, string[]>()
@@ -232,7 +256,11 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
           .select({ workshopId: bookings.workshopId, cnt: sql<number>`count(*)::int` })
           .from(bookings)
           .where(
-            and(inArray(bookings.workshopId, workshopIds), eq(bookings.state, 'confirmed')),
+            and(
+              eq(bookings.tenantId, tenantId),
+              inArray(bookings.workshopId, workshopIds),
+              eq(bookings.state, 'confirmed'),
+            ),
           )
           .groupBy(bookings.workshopId)
       : []
@@ -273,7 +301,7 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
 
   // ---- pt sessions -----------------------------------------------------------
   if (wantPt) {
-    const conds = [eq(ptSessions.lifecycle, 'active')]
+    const conds = [eq(ptSessions.tenantId, tenantId), eq(ptSessions.lifecycle, 'active')]
     if (opts.from) conds.push(gte(ptSessions.endsAt, opts.from))
     if (opts.to) conds.push(lt(ptSessions.startsAt, opts.to))
     if (opts.instructorId) conds.push(eq(ptSessions.instructorId, opts.instructorId))
@@ -304,7 +332,12 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
           })
           .from(ptSessionClients)
           .innerJoin(clients, eq(ptSessionClients.clientId, clients.id))
-          .where(inArray(ptSessionClients.ptSessionId, ids))
+          .where(
+            and(
+              eq(ptSessionClients.tenantId, tenantId),
+              inArray(ptSessionClients.ptSessionId, ids),
+            ),
+          )
       : []
     const namesBySession = new Map<string, string[]>()
     for (const r of clientLinks) {
@@ -344,7 +377,7 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
 
   // ---- corporate sessions ----------------------------------------------------
   if (wantCorporate) {
-    const conds = []
+    const conds = [eq(corporateSessions.tenantId, tenantId)]
     if (opts.from) conds.push(gte(corporateSessions.endsAt, opts.from))
     if (opts.to) conds.push(lt(corporateSessions.startsAt, opts.to))
     if (opts.locationId) conds.push(eq(corporateSessions.locationId, opts.locationId))
@@ -376,7 +409,7 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
         corporatePackages,
         eq(corporatePackages.id, corporateSessions.corporatePackageId),
       )
-      .where(conds.length ? and(...conds) : undefined)
+      .where(and(...conds))
 
     const ids = rows.map(r => r.id)
     const supportingBySession = new Map<string, string[]>()
@@ -387,7 +420,12 @@ export async function listSchedule(opts: ListScheduleOptions): Promise<ScheduleE
           instructorId: corporateSessionSupportingInstructors.instructorId,
         })
         .from(corporateSessionSupportingInstructors)
-        .where(inArray(corporateSessionSupportingInstructors.corporateSessionId, ids))
+        .where(
+          and(
+            eq(corporateSessionSupportingInstructors.tenantId, tenantId),
+            inArray(corporateSessionSupportingInstructors.corporateSessionId, ids),
+          ),
+        )
       for (const r of supportingRows) {
         const list = supportingBySession.get(r.corporateSessionId) ?? []
         list.push(r.instructorId)

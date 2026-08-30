@@ -1,4 +1,4 @@
-import { and, desc, eq, getTableColumns, ilike, isNull, or, sql } from 'drizzle-orm'
+import { and, desc, eq, getTableColumns, ilike, isNull, or, sql, type SQL } from 'drizzle-orm'
 import { db } from '../../db'
 import { clients } from '../../db/schema/identity'
 import { clientPackages } from '../../db/schema/packages'
@@ -47,13 +47,16 @@ export type ClientListRow = ClientRow & {
  * and admin-invited members both land here. Soft-deleted clients (deletedAt
  * set) are filtered out unless includeDeleted is true.
  */
-export async function listClients(opts: ListClientsOptions): Promise<ClientListRow[]> {
-  const conds = []
+export async function listClients(
+  tenantId: string,
+  opts: ListClientsOptions,
+): Promise<ClientListRow[]> {
+  const conds: SQL[] = [eq(clients.tenantId, tenantId)]
   if (!opts.includeDeleted) conds.push(isNull(clients.deletedAt))
   if (opts.status) conds.push(eq(clients.status, opts.status))
   if (opts.q?.trim()) {
     const term = `%${opts.q.trim()}%`
-    conds.push(or(ilike(clients.name, term), ilike(clients.email, term)))
+    conds.push(or(ilike(clients.name, term), ilike(clients.email, term))!)
   }
   // Correlated rather than joined: each is per-client over all time, and joining
   // them would multiply a client's row by its own matches.
@@ -81,7 +84,7 @@ export async function listClients(opts: ListClientsOptions): Promise<ClientListR
       )`,
     })
     .from(clients)
-    .where(conds.length ? and(...conds) : undefined)
+    .where(and(...conds))
     .orderBy(desc(clients.joinedAt))
   return rows.map(r => ({ ...r, attended: Number(r.attended) }))
 }
@@ -90,26 +93,34 @@ export async function listClients(opts: ListClientsOptions): Promise<ClientListR
  * Fetch by id. Soft-deleted rows are still returned (so the profile page can
  * render the "Deleted" state + Restore button); the caller decides what to do.
  */
-export async function getClientById(id: string): Promise<ClientRow> {
-  const [row] = await db.select().from(clients).where(eq(clients.id, id)).limit(1)
+export async function getClientById(tenantId: string, id: string): Promise<ClientRow> {
+  const [row] = await db
+    .select()
+    .from(clients)
+    .where(and(eq(clients.tenantId, tenantId), eq(clients.id, id)))
+    .limit(1)
   if (!row) throw new NotFoundError('client_not_found')
   return row
 }
 
 /** Recent manual adjustments for a client, newest first (audit trail). */
 export async function listRecentAdjustments(
+  tenantId: string,
   clientId: string,
   limit = 50,
 ): Promise<ManualAdjustmentRow[]> {
   return db
     .select()
     .from(manualAdjustments)
-    .where(eq(manualAdjustments.clientId, clientId))
+    .where(
+      and(eq(manualAdjustments.tenantId, tenantId), eq(manualAdjustments.clientId, clientId)),
+    )
     .orderBy(desc(manualAdjustments.createdAt))
     .limit(limit)
 }
 
 export interface CreateClientInput {
+  tenantId: string
   name: string
   email: string
   phone: string
@@ -145,6 +156,10 @@ export async function createClientWithInvite(input: CreateClientInput): Promise<
   if (!phone) throw new BadRequestError('phone_required')
 
   // Reject duplicates before touching Clerk so we don't orphan a Clerk user.
+  // Deliberately platform-wide, not per-tenant: `clients.email` still carries a
+  // global unique index, so scoping this would only turn a clean 409 into a
+  // unique violation. One person as a member of two studios is a schema change
+  // that belongs with the Clerk organization work (#65).
   const [existing] = await db
     .select({ id: clients.id })
     .from(clients)
@@ -182,6 +197,7 @@ export async function createClientWithInvite(input: CreateClientInput): Promise<
     const [inserted] = await db
       .insert(clients)
       .values({
+        tenantId: input.tenantId,
         clerkUserId,
         email,
         name,
@@ -211,6 +227,7 @@ export async function createClientWithInvite(input: CreateClientInput): Promise<
 }
 
 export interface SoftDeleteClientInput {
+  tenantId: string
   targetClientId: string
   actorStaffId: string
 }
@@ -229,12 +246,12 @@ export interface SoftDeleteClientInput {
  * Idempotent: already-deleted target returns the existing row unchanged.
  */
 export async function softDeleteClient(input: SoftDeleteClientInput): Promise<ClientRow> {
-  const { targetClientId, actorStaffId } = input
+  const { tenantId, targetClientId, actorStaffId } = input
 
   const [target] = await db
     .select()
     .from(clients)
-    .where(eq(clients.id, targetClientId))
+    .where(and(eq(clients.tenantId, tenantId), eq(clients.id, targetClientId)))
     .limit(1)
   if (!target) throw new NotFoundError('client_not_found')
   if (target.deletedAt) return target
@@ -247,7 +264,7 @@ export async function softDeleteClient(input: SoftDeleteClientInput): Promise<Cl
       deletedByStaffId: actorStaffId,
       updatedAt: now,
     })
-    .where(eq(clients.id, targetClientId))
+    .where(and(eq(clients.tenantId, tenantId), eq(clients.id, targetClientId)))
     .returning()
   if (!updated) throw new ConflictError('client_delete_failed')
 
@@ -280,6 +297,7 @@ export async function softDeleteClient(input: SoftDeleteClientInput): Promise<Cl
 }
 
 export interface RestoreClientInput {
+  tenantId: string
   targetClientId: string
   actorStaffId: string
 }
@@ -292,12 +310,12 @@ export interface RestoreClientInput {
  * captures the actor).
  */
 export async function restoreClient(input: RestoreClientInput): Promise<ClientRow> {
-  const { targetClientId } = input
+  const { tenantId, targetClientId } = input
 
   const [target] = await db
     .select()
     .from(clients)
-    .where(eq(clients.id, targetClientId))
+    .where(and(eq(clients.tenantId, tenantId), eq(clients.id, targetClientId)))
     .limit(1)
   if (!target) throw new NotFoundError('client_not_found')
   if (!target.deletedAt) return target
@@ -310,7 +328,7 @@ export async function restoreClient(input: RestoreClientInput): Promise<ClientRo
       deletedByStaffId: null,
       updatedAt: now,
     })
-    .where(eq(clients.id, targetClientId))
+    .where(and(eq(clients.tenantId, tenantId), eq(clients.id, targetClientId)))
     .returning()
   if (!updated) throw new ConflictError('client_restore_failed')
 

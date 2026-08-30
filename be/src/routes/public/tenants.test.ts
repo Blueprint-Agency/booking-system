@@ -110,9 +110,12 @@ describe('public slug resolution', { skip: integrationTestsEnabled ? false : SKI
     const { claimSeededRowsForTenantOne } = await import('../../db/seed/claim-tenant-one')
     const { classTypes } = await import('../../db/schema/catalog')
 
+    // `tenant_id` now defaults to tenant #1 (migration 0029), so an unclaimed
+    // row has to be written as an explicit null — which is what a row inserted
+    // before that migration, or by anything bypassing the default, looks like.
     const [row] = await harness.db
       .insert(classTypes)
-      .values({ name: 'Unclaimed Test Type' })
+      .values({ name: 'Unclaimed Test Type', tenantId: null })
       .returning()
     assert.ok(row)
     assert.equal(row.tenantId, null)

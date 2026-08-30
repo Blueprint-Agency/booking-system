@@ -5,21 +5,27 @@ import { instructors, leaveConflicts } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
 
-const POLICY_SINGLETON_ID = '00000000-0000-0000-0000-000000000001'
-const PT_CONFIG_SINGLETON_ID = '00000000-0000-0000-0000-000000000002'
-
 export type GlobalPolicyRow = typeof globalPolicy.$inferSelect
 export type PtBookingConfigRow = typeof ptBookingConfig.$inferSelect
 
-export async function readPolicy(): Promise<{
+/**
+ * Both rows are singletons *per tenant* — one policy row and one PT config row
+ * each, held to one by a unique index on `tenant_id` (db/schema/policy.ts). So
+ * the tenant is the whole of the lookup key; there is no id to pass.
+ */
+export async function readPolicy(tenantId: string): Promise<{
   global_policy: GlobalPolicyRow
   pt_booking_config: PtBookingConfigRow
 }> {
-  const [gp] = await db.select().from(globalPolicy).where(eq(globalPolicy.id, POLICY_SINGLETON_ID)).limit(1)
+  const [gp] = await db
+    .select()
+    .from(globalPolicy)
+    .where(eq(globalPolicy.tenantId, tenantId))
+    .limit(1)
   const [pt] = await db
     .select()
     .from(ptBookingConfig)
-    .where(eq(ptBookingConfig.id, PT_CONFIG_SINGLETON_ID))
+    .where(eq(ptBookingConfig.tenantId, tenantId))
     .limit(1)
   if (!gp || !pt) throw new NotFoundError('policy_not_seeded')
   return { global_policy: gp, pt_booking_config: pt }
@@ -60,6 +66,7 @@ const pairKey = (p: LeaveConflictPair) => `${p.instructorAId}:${p.instructorBId}
  * half-applied save would leave a cap raised over a set that never changed.
  */
 export async function updateGlobalPolicy(
+  tenantId: string,
   patch: UpdateGlobalPolicyInput,
   staffId: string,
 ): Promise<GlobalPolicyRow> {
@@ -68,7 +75,7 @@ export async function updateGlobalPolicy(
     const [row] = await tx
       .update(globalPolicy)
       .set({ ...columns, updatedAt: new Date(), updatedByStaffId: staffId })
-      .where(eq(globalPolicy.id, POLICY_SINGLETON_ID))
+      .where(eq(globalPolicy.tenantId, tenantId))
       .returning()
     if (!row) throw new NotFoundError('policy_not_seeded')
     if (leaveConflictPairs !== undefined) {
@@ -80,13 +87,16 @@ export async function updateGlobalPolicy(
       await tx
         .select({ id: instructors.staffUserId })
         .from(instructors)
+        .where(eq(instructors.tenantId, tenantId))
         .orderBy(asc(instructors.staffUserId))
         .for('update')
-      const pairs = await validatedConflictPairs(tx, leaveConflictPairs)
+      const pairs = await validatedConflictPairs(tx, tenantId, leaveConflictPairs)
       // One replacement set, so the old declarations go and the new ones arrive
       // in the same transaction — there is no add and no remove to drift apart.
-      await tx.delete(leaveConflicts)
-      if (pairs.length > 0) await tx.insert(leaveConflicts).values(pairs)
+      // Scoped: replacing this tenant's set must not clear anyone else's.
+      await tx.delete(leaveConflicts).where(eq(leaveConflicts.tenantId, tenantId))
+      if (pairs.length > 0)
+        await tx.insert(leaveConflicts).values(pairs.map(p => ({ ...p, tenantId })))
     }
     return row
   })
@@ -104,6 +114,7 @@ export async function updateGlobalPolicy(
  */
 async function validatedConflictPairs(
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  tenantId: string,
   arriving: readonly LeaveConflictPair[],
 ): Promise<LeaveConflictPair[]> {
   const pairs = arriving.map(canonical)
@@ -134,6 +145,7 @@ async function validatedConflictPairs(
           instructorBId: leaveConflicts.instructorBId,
         })
         .from(leaveConflicts)
+        .where(eq(leaveConflicts.tenantId, tenantId))
     ).map(pairKey),
   )
   const ids = [
@@ -146,7 +158,13 @@ async function validatedConflictPairs(
       .select({ id: instructors.staffUserId })
       .from(instructors)
       .innerJoin(staffUsers, eq(staffUsers.id, instructors.staffUserId))
-      .where(and(inArray(instructors.staffUserId, ids), eq(staffUsers.status, 'active')))
+      .where(
+        and(
+          eq(instructors.tenantId, tenantId),
+          inArray(instructors.staffUserId, ids),
+          eq(staffUsers.status, 'active'),
+        ),
+      )
     if (active.length !== ids.length) {
       throw new BadRequestError('leave_conflict_instructor_not_active', {
         message:
@@ -159,24 +177,26 @@ async function validatedConflictPairs(
 
 /** Every declared **Leave Conflict**, lower id first — the pairs exactly as the
  *  table holds them. */
-export async function readLeaveConflicts(): Promise<LeaveConflictPair[]> {
+export async function readLeaveConflicts(tenantId: string): Promise<LeaveConflictPair[]> {
   return db
     .select({
       instructorAId: leaveConflicts.instructorAId,
       instructorBId: leaveConflicts.instructorBId,
     })
     .from(leaveConflicts)
+    .where(eq(leaveConflicts.tenantId, tenantId))
     .orderBy(asc(leaveConflicts.instructorAId), asc(leaveConflicts.instructorBId))
 }
 
 export async function updatePtBookingConfig(
+  tenantId: string,
   patch: { bookInAdvanceDays?: number },
   staffId: string,
 ): Promise<PtBookingConfigRow> {
   const [row] = await db
     .update(ptBookingConfig)
     .set({ ...patch, updatedAt: new Date(), updatedByStaffId: staffId })
-    .where(eq(ptBookingConfig.id, PT_CONFIG_SINGLETON_ID))
+    .where(eq(ptBookingConfig.tenantId, tenantId))
     .returning()
   if (!row) throw new NotFoundError('pt_booking_config_not_seeded')
   return row

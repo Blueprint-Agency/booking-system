@@ -202,6 +202,7 @@ type Candidate = OccupancyConflict & { rosterId: string }
  * and inherit it from the parent workshop.
  */
 export async function findOccupancyConflicts(
+  tenantId: string,
   subject: OccupancySubject,
   window: TimeWindow,
   exclude?: EventRef,
@@ -246,6 +247,9 @@ export async function findOccupancyConflicts(
       .from(classes)
       .where(
         and(
+          // Occupancy is a fact about one studio's premises and people: another
+          // tenant's class in another tenant's room takes nothing from this one.
+          eq(classes.tenantId, tenantId),
           ...inRoom(classes.roomId),
           eq(classes.lifecycle, 'active'),
           ...narrow('class', classes.startsAt, classes.endsAt, classes.id),
@@ -268,6 +272,7 @@ export async function findOccupancyConflicts(
       .innerJoin(workshops, eq(workshops.id, workshopDays.workshopId))
       .where(
         and(
+          eq(workshopDays.tenantId, tenantId),
           ...inRoom(workshopDays.roomId),
           eq(workshops.lifecycle, 'active'),
           ...narrow('workshop_day', workshopDays.startsAt, workshopDays.endsAt, workshopDays.id),
@@ -288,6 +293,7 @@ export async function findOccupancyConflicts(
       .from(ptSessions)
       .where(
         and(
+          eq(ptSessions.tenantId, tenantId),
           ...inRoom(ptSessions.roomId),
           eq(ptSessions.lifecycle, 'active'),
           ...narrow('pt_session', ptSessions.startsAt, ptSessions.endsAt, ptSessions.id),
@@ -308,6 +314,7 @@ export async function findOccupancyConflicts(
       .from(corporateSessions)
       .where(
         and(
+          eq(corporateSessions.tenantId, tenantId),
           ...inRoom(corporateSessions.roomId),
           eq(corporateSessions.lifecycle, 'active'),
           ...narrow(
@@ -340,6 +347,7 @@ export async function findOccupancyConflicts(
       .from(leaveRequests)
       .where(
         and(
+          eq(leaveRequests.tenantId, tenantId),
           eq(leaveRequests.instructorId, subject.id),
           inArray(leaveRequests.status, [...OCCUPYING_STATUSES]),
         ),
@@ -355,7 +363,12 @@ export async function findOccupancyConflicts(
   for (const kind of EVENT_KINDS) {
     const rows = found.filter(f => f.kind === kind)
     if (rows.length === 0) continue
-    const rosters = await readRosters(rosterKindFor[kind], [...new Set(rows.map(r => r.rosterId))], tx)
+    const rosters = await readRosters(
+      tenantId,
+      rosterKindFor[kind],
+      [...new Set(rows.map(r => r.rosterId))],
+      tx,
+    )
     for (const row of rows) {
       if (rosters.get(row.rosterId)?.some(e => e.instructorId === subject.id)) {
         occupied.push(strip(row))
@@ -366,19 +379,19 @@ export async function findOccupancyConflicts(
 }
 
 /** Room name / instructor name for the refusal message. Failure path only. */
-async function subjectLabel(subject: OccupancySubject): Promise<string> {
+async function subjectLabel(tenantId: string, subject: OccupancySubject): Promise<string> {
   if (subject.kind === 'room') {
     const [room] = await db
       .select({ name: rooms.name })
       .from(rooms)
-      .where(eq(rooms.id, subject.id))
+      .where(and(eq(rooms.tenantId, tenantId), eq(rooms.id, subject.id)))
       .limit(1)
     return room ? `Room ${room.name}` : 'That room'
   }
   const [staff] = await db
     .select({ name: staffUsers.name })
     .from(staffUsers)
-    .where(eq(staffUsers.id, subject.id))
+    .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, subject.id)))
     .limit(1)
   return staff?.name ?? 'That instructor'
 }
@@ -391,22 +404,24 @@ async function subjectLabel(subject: OccupancySubject): Promise<string> {
  * Pass `exclude` when rescheduling so a row doesn't clash with itself.
  */
 export async function assertAvailable(
+  tenantId: string,
   subject: OccupancySubject,
   window: TimeWindow,
   exclude?: EventRef,
 ): Promise<void> {
-  const conflicts = await findOccupancyConflicts(subject, window, exclude)
+  const conflicts = await findOccupancyConflicts(tenantId, subject, window, exclude)
   if (conflicts.length === 0) return
   throw new ConflictError('schedule_conflict', {
     subject: subject.kind,
     subject_id: subject.id,
-    message: conflictMessage(await subjectLabel(subject), conflicts),
+    message: conflictMessage(await subjectLabel(tenantId, subject), conflicts),
     conflicts,
   })
 }
 
 /** Everyone being put on the event has to be free, not just whoever leads it. */
 export async function assertInstructorsAvailable(
+  tenantId: string,
   instructorIds: string[],
   window: TimeWindow,
   exclude?: EventRef,
@@ -414,7 +429,7 @@ export async function assertInstructorsAvailable(
   // ponytail: one scan per instructor — a roster is one to three people. Batch
   // by instructor id if a roster ever gets long.
   for (const id of new Set(instructorIds)) {
-    await assertAvailable({ kind: 'instructor', id }, window, exclude)
+    await assertAvailable(tenantId, { kind: 'instructor', id }, window, exclude)
   }
 }
 
@@ -427,9 +442,10 @@ export async function assertInstructorsAvailable(
  * belongs, and there is nothing coherent to check in the meantime.
  */
 export async function plannedInstructorIds(
+  tenantId: string,
   ref: RosterRef,
   patch: RosterPatch = {},
 ): Promise<string[]> {
-  const merged = mergeRoster(await readRoster(ref), patch)
+  const merged = mergeRoster(await readRoster(tenantId, ref), patch)
   return merged.ok ? merged.roster.map(r => r.instructorId) : []
 }

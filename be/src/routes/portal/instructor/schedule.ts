@@ -5,6 +5,7 @@ import * as timetable from '../../../services/schedule/timetable'
 import * as classesSvc from '../../../services/schedule/classes'
 import { cancelClass } from '../../../services/bookings/cancel-class'
 import { sgDayWindow, sgToday } from '../../../lib/time'
+import { tenantId } from '../../../middleware/tenant'
 
 /**
  * Instructor schedule surface.
@@ -81,7 +82,7 @@ const app = new Hono()
   .get('/', zValidator('query', listQuery), async c => {
     const q = c.req.valid('query')
     const self = c.get('staffUserId')
-    const entries = await timetable.listSchedule({
+    const entries = await timetable.listSchedule(tenantId(c), {
       instructorId: self,
       from: q.from ? new Date(q.from) : undefined,
       to: q.to ? new Date(q.to) : undefined,
@@ -93,13 +94,13 @@ const app = new Hono()
     const self = c.get('staffUserId')
     // Today's [from, to) window in studio time, as UTC instants.
     const { startsAt: from, endsAt: to } = sgDayWindow(sgToday(new Date()))
-    const entries = await timetable.listSchedule({ instructorId: self, from, to })
+    const entries = await timetable.listSchedule(tenantId(c), { instructorId: self, from, to })
     return c.json({ entries: entries.map(entryRow) })
   })
   .post('/classes', zValidator('json', createClassSchema), async c => {
     const body = c.req.valid('json')
     const self = c.get('staffUserId')
-    const row = await classesSvc.createClass({
+    const row = await classesSvc.createClass(tenantId(c), {
       classTypeId: body.class_type_id,
       mainInstructorId: self, // forced: instructors can only schedule themselves
       supportingInstructorIds: [], // instructors can't assign other instructors

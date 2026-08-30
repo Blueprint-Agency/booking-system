@@ -8,6 +8,7 @@ import { db } from './db'
 import { errorBoundary } from './middleware/error'
 import { requestId } from './middleware/request-id'
 import { requestLogger } from './middleware/logger'
+import { resolveTenant } from './middleware/tenant'
 
 import publicRoutes from './routes/public'
 import clientRoutes from './routes/client'
@@ -65,6 +66,7 @@ app.use(
       'X-Impersonate-Staff-Id',
       'X-Impersonation-Grant',
       'X-Request-Id',
+      'X-Tenant-Slug',
     ],
   }),
 )
@@ -100,6 +102,11 @@ app.use('/api/v1/public/*', (c, next) =>
 )
 app.use('/api/v1/me/*', authedLimiter)
 app.use('/api/v1/portal/*', authedLimiter)
+
+// Which tenant is this request about? After the rate limiters, so a flood of
+// forged slugs is throttled before it reaches the lookup, and before the routes,
+// which all read `c.get('tenantId')`.
+app.use('/api/v1/*', resolveTenant)
 
 app.get('/', c =>
   c.json({

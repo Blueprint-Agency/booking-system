@@ -17,8 +17,6 @@ import { BadRequestError, ConflictError, NotFoundError } from '../../shared/erro
 import { debitCredits } from '../packages/ledger'
 import { ptSessionCost } from './cost'
 
-const PT_CONFIG_SINGLETON_ID = '00000000-0000-0000-0000-000000000002'
-
 export interface PtRequestSlotInput {
   /** YYYY-MM-DD (local Singapore date). */
   proposedDate: string
@@ -63,6 +61,7 @@ export async function submitPtRequest(input: PtRequestInput): Promise<{ ptReques
     const [pkg] = await tx
       .select({
         id: clientPackages.id,
+        tenantId: clientPackages.tenantId,
         kind: clientPackages.kind,
         active: clientPackages.active,
         expiresAt: clientPackages.expiresAt,
@@ -91,7 +90,9 @@ export async function submitPtRequest(input: PtRequestInput): Promise<{ ptReques
     const [cfg] = await tx
       .select({ days: ptBookingConfig.bookInAdvanceDays })
       .from(ptBookingConfig)
-      .where(eq(ptBookingConfig.id, PT_CONFIG_SINGLETON_ID))
+      // One row per tenant, keyed on the tenant rather than a fixed singleton id
+      // — the package being spent says whose config applies.
+      .where(eq(ptBookingConfig.tenantId, pkg.tenantId!))
       .limit(1)
     const expiresAt = new Date(now)
     expiresAt.setDate(expiresAt.getDate() + (cfg?.days ?? 14))

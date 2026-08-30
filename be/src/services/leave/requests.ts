@@ -120,6 +120,7 @@ async function leavePoolsFor(
 ): Promise<Record<rules.LeaveType, LeavePool>> {
   const [instructor] = await tx
     .select({
+      tenantId: instructors.tenantId,
       annual: instructors.annualLeaveDays,
       medical: instructors.medicalLeaveDays,
       study: instructors.studyLeaveDays,
@@ -130,9 +131,13 @@ async function leavePoolsFor(
     .limit(1)
   if (!instructor) throw new ForbiddenError('not_an_instructor')
 
+  // `global_policy` is one row per tenant, so the caps have to be read for the
+  // instructor's own studio; an unqualified `limit(1)` would apply whichever
+  // studio's row came back first. (Scoping the rest of this service is #62.)
   const [policy] = await tx
     .select({ carryOverCapDays: globalPolicy.leaveCarryOverCapDays })
     .from(globalPolicy)
+    .where(eq(globalPolicy.tenantId, instructor.tenantId!))
     .limit(1)
   if (!policy) throw new NotFoundError('policy_not_seeded')
 
@@ -474,6 +479,18 @@ export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<Leave
   const halfDay = input.halfDay ?? 'none'
 
   const filed = await db.transaction(async tx => {
+    // Whose studio this submission belongs to. Read first because the caps, the
+    // declared pairs and the study-leave lock below are all per-tenant, and a
+    // study request that locked *every* instructor row on the platform would
+    // serialise submissions across studios that share nothing.
+    const [applicant] = await tx
+      .select({ tenantId: instructors.tenantId })
+      .from(instructors)
+      .where(eq(instructors.staffUserId, input.instructorId))
+      .limit(1)
+    if (!applicant) throw new ForbiddenError('not_an_instructor')
+    const applicantTenantId = applicant.tenantId!
+
     // Who this instructor is in a declared **Leave Conflict** with. An ARCHIVED
     // partner is not in the set — their conflicts refuse nothing — which the
     // join to an active staff row is what enforces. Read before the lock,
@@ -501,7 +518,7 @@ export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<Leave
             ),
           ),
         )
-        .where(eq(staffUsers.status, 'active'))
+        .where(and(eq(leaveConflicts.tenantId, applicantTenantId), eq(staffUsers.status, 'active')))
     ).map(r => r.id)
 
     // THE FIRST write-blocking statement: the rule lock. Locking only the
@@ -520,8 +537,11 @@ export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<Leave
       .from(instructors)
       .where(
         input.type === 'study'
-          ? undefined
-          : inArray(instructors.staffUserId, [input.instructorId, ...partnerIds]),
+          ? eq(instructors.tenantId, applicantTenantId)
+          : and(
+              eq(instructors.tenantId, applicantTenantId),
+              inArray(instructors.staffUserId, [input.instructorId, ...partnerIds]),
+            ),
       )
       .orderBy(asc(instructors.staffUserId))
       .for('update')
@@ -563,6 +583,7 @@ export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<Leave
     const [caps] = await tx
       .select({ study: globalPolicy.studyLeaveCap })
       .from(globalPolicy)
+      .where(eq(globalPolicy.tenantId, applicantTenantId))
       .limit(1)
     if (!caps) throw new NotFoundError('policy_not_seeded')
     const peers = (
@@ -616,6 +637,7 @@ export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<Leave
     // flight at once, and a wedged pool takes down every route, not just leave.
     const conflicts = rules.futureConflicts(
       await findOccupancyConflicts(
+        applicantTenantId,
         { kind: 'instructor', id: input.instructorId },
         rules.leaveWindow(input.startDate, input.endDate, halfDay),
         undefined,
@@ -841,6 +863,9 @@ export interface LeaveCalendarEntry {
 export interface LeaveCalendarViewer {
   staffUserId: string
   role: 'superadmin' | 'admin' | 'instructor'
+  /** The studio the caller belongs to — the cap and the declared pairs are both
+   *  per-tenant, so the over-cap flag has to be measured against their own. */
+  tenantId: string
 }
 
 /** The caller as every leave read wants him. Assembled here, next to the type,
@@ -848,6 +873,7 @@ export interface LeaveCalendarViewer {
 export const leaveViewer = (staff: typeof staffUsers.$inferSelect): LeaveCalendarViewer => ({
   staffUserId: staff.id,
   role: staff.role,
+  tenantId: staff.tenantId!,
 })
 
 /**
@@ -894,7 +920,11 @@ export async function listLeaveCalendar(
   // overlapping absence is present, so the peak is exact, while outside it the
   // rows are whatever happened to also reach into view, which would flag a day
   // the calendar is not showing off an incomplete count.
-  const [caps] = await db.select({ study: globalPolicy.studyLeaveCap }).from(globalPolicy).limit(1)
+  const [caps] = await db
+    .select({ study: globalPolicy.studyLeaveCap })
+    .from(globalPolicy)
+    .where(eq(globalPolicy.tenantId, viewer.tenantId))
+    .limit(1)
   // Every declared **Leave Conflict** between two ACTIVE instructors, as the map
   // the rule wants: an archived instructor's conflicts refuse nothing at
   // submission, so they flag nothing here either.
@@ -906,7 +936,13 @@ export async function listLeaveCalendar(
     .from(leaveConflicts)
     .innerJoin(conflictA, eq(conflictA.id, leaveConflicts.instructorAId))
     .innerJoin(conflictB, eq(conflictB.id, leaveConflicts.instructorBId))
-    .where(and(eq(conflictA.status, 'active'), eq(conflictB.status, 'active')))) {
+    .where(
+      and(
+        eq(leaveConflicts.tenantId, viewer.tenantId),
+        eq(conflictA.status, 'active'),
+        eq(conflictB.status, 'active'),
+      ),
+    )) {
     partners.set(p.a, [...(partners.get(p.a) ?? []), p.b])
     partners.set(p.b, [...(partners.get(p.b) ?? []), p.a])
   }

@@ -197,6 +197,20 @@
       "when": 1788118004196,
       "tag": "0027_backfill_tenant_one",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1788120299595,
+      "tag": "0028_policy_per_tenant",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1788122971104,
+      "tag": "0029_tenant_id_default",
+      "breakpoints": true
     }
   ]
 }

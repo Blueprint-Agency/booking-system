@@ -23,7 +23,7 @@ export interface InstructorView {
   photoR2Key: string | null
 }
 
-async function loadById(id: string): Promise<InstructorView> {
+async function loadById(tenantId: string, id: string): Promise<InstructorView> {
   const [row] = await db
     .select({
       staff: staffUsers,
@@ -33,6 +33,7 @@ async function loadById(id: string): Promise<InstructorView> {
     .leftJoin(instructors, eq(instructors.staffUserId, staffUsers.id))
     .where(
       and(
+        eq(staffUsers.tenantId, tenantId),
         eq(staffUsers.id, id),
         eq(staffUsers.role, 'instructor'),
         isNull(staffUsers.deletedAt),
@@ -55,10 +56,17 @@ async function loadById(id: string): Promise<InstructorView> {
   }
 }
 
-export async function listInstructors(opts: {
-  status?: 'pending' | 'active' | 'archived'
-}): Promise<InstructorView[]> {
-  const filters = [eq(staffUsers.role, 'instructor'), isNull(staffUsers.deletedAt)]
+export async function listInstructors(
+  tenantId: string,
+  opts: {
+    status?: 'pending' | 'active' | 'archived'
+  },
+): Promise<InstructorView[]> {
+  const filters = [
+    eq(staffUsers.tenantId, tenantId),
+    eq(staffUsers.role, 'instructor'),
+    isNull(staffUsers.deletedAt),
+  ]
   if (opts.status) filters.push(eq(staffUsers.status, opts.status))
 
   const rows = await db
@@ -104,12 +112,18 @@ export interface CreateInstructorInput {
  * Class-type eligibility (instructor_class_types) is no longer modelled in the
  * UI — instructors are assignable to any class type at scheduling time.
  */
-export async function createInstructor(input: CreateInstructorInput): Promise<InstructorView> {
+export async function createInstructor(
+  tenantId: string,
+  input: CreateInstructorInput,
+): Promise<InstructorView> {
   const email = input.email.trim().toLowerCase()
   if (!email) throw new BadRequestError('email_required')
 
   const view = await db.transaction(async tx => {
-    // Reject if email already exists across staff_users (case-insensitive).
+    // Deliberately *not* tenant-scoped: `staff_users.email` still carries a
+    // platform-wide unique index, so scoping this check would only trade a
+    // clean 409 for a unique violation. Making one person staff at two tenants
+    // is a schema change, and it belongs with the Clerk organization work (#65).
     const existing = await tx
       .select({ id: staffUsers.id })
       .from(staffUsers)
@@ -120,6 +134,7 @@ export async function createInstructor(input: CreateInstructorInput): Promise<In
     const [staffRow] = await tx
       .insert(staffUsers)
       .values({
+        tenantId,
         email,
         name: input.name,
         role: 'instructor',
@@ -132,6 +147,7 @@ export async function createInstructor(input: CreateInstructorInput): Promise<In
       .returning()
 
     await tx.insert(instructors).values({
+      tenantId,
       staffUserId: staffRow!.id,
       photoR2Key: input.photoR2Key ?? null,
     })
@@ -173,8 +189,12 @@ export interface UpdateInstructorInput {
   photoR2Key?: string | null
 }
 
-export async function updateInstructor(id: string, patch: UpdateInstructorInput): Promise<InstructorView> {
-  await loadById(id) // 404 if missing
+export async function updateInstructor(
+  tenantId: string,
+  id: string,
+  patch: UpdateInstructorInput,
+): Promise<InstructorView> {
+  await loadById(tenantId, id) // 404 if missing
 
   await db.transaction(async tx => {
     const staffPatch: Partial<StaffRow> = {}
@@ -185,22 +205,22 @@ export async function updateInstructor(id: string, patch: UpdateInstructorInput)
       await tx
         .update(staffUsers)
         .set({ ...staffPatch, updatedAt: new Date() })
-        .where(eq(staffUsers.id, id))
+        .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, id)))
     }
 
     if (patch.photoR2Key !== undefined) {
       await tx
         .update(instructors)
         .set({ photoR2Key: patch.photoR2Key })
-        .where(eq(instructors.staffUserId, id))
+        .where(and(eq(instructors.tenantId, tenantId), eq(instructors.staffUserId, id)))
     }
   })
 
-  return loadById(id)
+  return loadById(tenantId, id)
 }
 
-export async function archiveInstructor(id: string): Promise<InstructorView> {
-  const existing = await loadById(id)
+export async function archiveInstructor(tenantId: string, id: string): Promise<InstructorView> {
+  const existing = await loadById(tenantId, id)
   if (existing.status === 'archived') {
     throw new BadRequestError('instructor_already_archived')
   }
@@ -210,7 +230,12 @@ export async function archiveInstructor(id: string): Promise<InstructorView> {
     .select({ id: classes.id })
     .from(classes)
     .where(
-      and(eq(classes.mainInstructorId, id), eq(classes.lifecycle, 'active'), gt(classes.endsAt, now)),
+      and(
+        eq(classes.tenantId, tenantId),
+        eq(classes.mainInstructorId, id),
+        eq(classes.lifecycle, 'active'),
+        gt(classes.endsAt, now),
+      ),
     )
 
   const futurePtSessions = await db
@@ -218,6 +243,7 @@ export async function archiveInstructor(id: string): Promise<InstructorView> {
     .from(ptSessions)
     .where(
       and(
+        eq(ptSessions.tenantId, tenantId),
         eq(ptSessions.instructorId, id),
         eq(ptSessions.lifecycle, 'active'),
         gt(ptSessions.endsAt, now),
@@ -228,7 +254,13 @@ export async function archiveInstructor(id: string): Promise<InstructorView> {
     .select({ id: workshops.id })
     .from(workshops)
     .innerJoin(workshopInstructors, eq(workshopInstructors.workshopId, workshops.id))
-    .where(and(eq(workshopInstructors.instructorId, id), eq(workshops.lifecycle, 'active')))
+    .where(
+      and(
+        eq(workshops.tenantId, tenantId),
+        eq(workshopInstructors.instructorId, id),
+        eq(workshops.lifecycle, 'active'),
+      ),
+    )
 
   if (futureClasses.length || futurePtSessions.length || futureWorkshops.length) {
     throw new ConflictError('instructor_in_use', {
@@ -241,13 +273,13 @@ export async function archiveInstructor(id: string): Promise<InstructorView> {
   await db
     .update(staffUsers)
     .set({ status: 'archived', archivedAt: now, updatedAt: now })
-    .where(eq(staffUsers.id, id))
+    .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, id)))
 
-  return loadById(id)
+  return loadById(tenantId, id)
 }
 
-export async function unarchiveInstructor(id: string): Promise<InstructorView> {
-  const existing = await loadById(id)
+export async function unarchiveInstructor(tenantId: string, id: string): Promise<InstructorView> {
+  const existing = await loadById(tenantId, id)
   if (existing.status !== 'archived') {
     throw new BadRequestError('instructor_not_archived')
   }
@@ -255,21 +287,21 @@ export async function unarchiveInstructor(id: string): Promise<InstructorView> {
   await db
     .update(staffUsers)
     .set({ status: 'active', archivedAt: null, updatedAt: now })
-    .where(eq(staffUsers.id, id))
-  return loadById(id)
+    .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, id)))
+  return loadById(tenantId, id)
 }
 
 /**
  * Soft-delete an instructor. Must be currently archived; row remains in
  * staff_users with deleted_at=now() so audit/FK references keep resolving.
  */
-export async function softDeleteInstructor(id: string): Promise<void> {
-  const existing = await loadById(id)
+export async function softDeleteInstructor(tenantId: string, id: string): Promise<void> {
+  const existing = await loadById(tenantId, id)
   if (existing.status !== 'archived') {
     throw new BadRequestError('instructor_not_archived')
   }
   await db
     .update(staffUsers)
     .set({ deletedAt: sql`now()`, updatedAt: new Date() })
-    .where(eq(staffUsers.id, id))
+    .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, id)))
 }

@@ -48,11 +48,14 @@ export interface CreateClassInput {
 
 export type ClassRow = typeof classes.$inferSelect
 
-export async function createClass(input: CreateClassInput): Promise<ClassRow> {
-  await assertRoomInLocation(input.roomId, input.locationId)
-  await assertRoomAvailable(input.roomId, input.startsAt, input.endsAt)
+export async function createClass(tenantId: string, input: CreateClassInput): Promise<ClassRow> {
+  // The room gate doubles as the location gate: a room only passes if it is this
+  // tenant's and sits in the location named, so neither can be borrowed.
+  await assertRoomInLocation(tenantId, input.roomId, input.locationId)
+  await assertRoomAvailable(tenantId, input.roomId, input.startsAt, input.endsAt)
   // Nobody on the roster may already be teaching then — supporting included.
   await assertInstructorsAvailable(
+    tenantId,
     [
       input.mainInstructorId,
       ...(input.supportingInstructors?.map(s => s.instructorId) ??
@@ -65,10 +68,11 @@ export async function createClass(input: CreateClassInput): Promise<ClassRow> {
   return db.transaction(async tx => {
     // The class row's own main_instructor_id FK points at instructors.staff_user_id,
     // so the profile row has to exist before there is a class to hang a roster on.
-    await ensureInstructors([input.mainInstructorId], tx)
+    await ensureInstructors(tenantId, [input.mainInstructorId], tx)
     const rows = await tx
       .insert(classes)
       .values({
+        tenantId,
         classTypeId: input.classTypeId,
         mainInstructorId: input.mainInstructorId,
         locationId: input.locationId,
@@ -94,6 +98,7 @@ export async function createClass(input: CreateClassInput): Promise<ClassRow> {
     if (input.supportingInstructors !== undefined || input.supportingInstructorIds !== undefined) {
       await replaceRoster(
         tx,
+        tenantId,
         { kind: 'class', id: row.id },
         {
           ...(input.supportingInstructors !== undefined
@@ -126,8 +131,16 @@ export interface UpdateClassInput {
   instructorPaySgd?: number | null
 }
 
-export async function updateClass(id: string, patch: UpdateClassInput): Promise<ClassRow> {
-  const [existing] = await db.select().from(classes).where(eq(classes.id, id)).limit(1)
+export async function updateClass(
+  tenantId: string,
+  id: string,
+  patch: UpdateClassInput,
+): Promise<ClassRow> {
+  const [existing] = await db
+    .select()
+    .from(classes)
+    .where(and(eq(classes.tenantId, tenantId), eq(classes.id, id)))
+    .limit(1)
   if (!existing) throw new NotFoundError('class_not_found')
 
   // Once a class has started it is a record of what happened, not a plan — moving,
@@ -146,7 +159,13 @@ export async function updateClass(id: string, patch: UpdateClassInput): Promise<
     const [seats] = await db
       .select({ cnt: sql<number>`count(*)::int` })
       .from(bookings)
-      .where(and(eq(bookings.classId, id), eq(bookings.state, 'confirmed')))
+      .where(
+        and(
+          eq(bookings.tenantId, tenantId),
+          eq(bookings.classId, id),
+          eq(bookings.state, 'confirmed'),
+        ),
+      )
     const confirmed = Number(seats?.cnt ?? 0)
     if (patch.capacityOnline < confirmed) {
       throw new ConflictError('capacity_below_bookings', { confirmed })
@@ -165,8 +184,8 @@ export async function updateClass(id: string, patch: UpdateClassInput): Promise<
     patch.endsAt !== undefined
   ) {
     if (newRoomId) {
-      await assertRoomInLocation(newRoomId, newLocationId)
-      await assertRoomAvailable(newRoomId, newStartsAt, newEndsAt, { kind: 'class', id })
+      await assertRoomInLocation(tenantId, newRoomId, newLocationId)
+      await assertRoomAvailable(tenantId, newRoomId, newStartsAt, newEndsAt, { kind: 'class', id })
     }
   }
 
@@ -201,7 +220,8 @@ export async function updateClass(id: string, patch: UpdateClassInput): Promise<
   // places at once. Ask about whoever the class will END UP with.
   if (touchesRoster || patch.startsAt !== undefined || patch.endsAt !== undefined) {
     await assertInstructorsAvailable(
-      await plannedInstructorIds({ kind: 'class', id }, rosterPatch),
+      tenantId,
+      await plannedInstructorIds(tenantId, { kind: 'class', id }, rosterPatch),
       { startsAt: newStartsAt, endsAt: newEndsAt },
       { kind: 'class', id },
     )
@@ -221,16 +241,24 @@ export async function updateClass(id: string, patch: UpdateClassInput): Promise<
 
     let row = existing
     if (Object.keys(set).length) {
-      const rows = await tx.update(classes).set(set).where(eq(classes.id, id)).returning()
+      const rows = await tx
+        .update(classes)
+        .set(set)
+        .where(and(eq(classes.tenantId, tenantId), eq(classes.id, id)))
+        .returning()
       // Unreachable DB invariant (row existence checked above) — see note above.
       if (!rows[0]) throw new Error('update returned no rows')
       row = rows[0]
     }
 
     if (touchesRoster) {
-      await replaceRoster(tx, { kind: 'class', id }, rosterPatch)
+      await replaceRoster(tx, tenantId, { kind: 'class', id }, rosterPatch)
       // main_instructor_id / instructor_pay_sgd may have moved under us.
-      const [fresh] = await tx.select().from(classes).where(eq(classes.id, id)).limit(1)
+      const [fresh] = await tx
+        .select()
+        .from(classes)
+        .where(and(eq(classes.tenantId, tenantId), eq(classes.id, id)))
+        .limit(1)
       if (fresh) row = fresh
     }
     return row
@@ -238,9 +266,10 @@ export async function updateClass(id: string, patch: UpdateClassInput): Promise<
 }
 
 export async function listSupportingInstructors(
+  tenantId: string,
   classId: string,
 ): Promise<{ instructorId: string; paySgd: number | null }[]> {
-  const roster = await readRoster({ kind: 'class', id: classId })
+  const roster = await readRoster(tenantId, { kind: 'class', id: classId })
   return roster
     .filter(r => r.role === 'supporting')
     .map(r => ({ instructorId: r.instructorId, paySgd: r.paySgd }))

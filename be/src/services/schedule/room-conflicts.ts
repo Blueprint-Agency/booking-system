@@ -5,14 +5,21 @@ import { BadRequestError, NotFoundError } from '../../shared/errors'
 import { assertAvailable, type EventRef } from './occupancy'
 
 /**
- * Verify the room exists, is active, and belongs to `locationId`.
- * Throws NotFoundError / BadRequestError otherwise.
+ * Verify the room exists, is active, belongs to this tenant, and sits in
+ * `locationId`. Throws NotFoundError / BadRequestError otherwise.
+ *
+ * Another tenant's room is `room_not_found` — this is the gate that stops a
+ * session being scheduled into somebody else's premises.
  */
-export async function assertRoomInLocation(roomId: string, locationId: string): Promise<void> {
+export async function assertRoomInLocation(
+  tenantId: string,
+  roomId: string,
+  locationId: string,
+): Promise<void> {
   const [room] = await db
     .select()
     .from(rooms)
-    .where(and(eq(rooms.id, roomId), isNull(rooms.deletedAt)))
+    .where(and(eq(rooms.tenantId, tenantId), eq(rooms.id, roomId), isNull(rooms.deletedAt)))
     .limit(1)
   if (!room) throw new NotFoundError('room_not_found')
   if (room.archivedAt) throw new BadRequestError('room_archived', { room_id: roomId })
@@ -36,10 +43,11 @@ export async function assertRoomInLocation(roomId: string, locationId: string): 
  * Pass `exclude` when rescheduling so a row doesn't clash with itself.
  */
 export async function assertRoomAvailable(
+  tenantId: string,
   roomId: string,
   startsAt: Date,
   endsAt: Date,
   exclude?: EventRef,
 ): Promise<void> {
-  await assertAvailable({ kind: 'room', id: roomId }, { startsAt, endsAt }, exclude)
+  await assertAvailable(tenantId, { kind: 'room', id: roomId }, { startsAt, endsAt }, exclude)
 }

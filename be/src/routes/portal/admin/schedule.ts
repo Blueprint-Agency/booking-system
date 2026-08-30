@@ -7,6 +7,7 @@ import { getClassDetail, getPtSessionDetail } from '../../../services/schedule/d
 import { cancelClass } from '../../../services/bookings/cancel-class'
 import { cancelWorkshop } from '../../../services/workshops/cancel'
 import { workshopRow } from './workshops'
+import { tenantId } from '../../../middleware/tenant'
 
 const isoDate = z
   .string()
@@ -115,8 +116,8 @@ function entryRow(e: timetable.ScheduleEntryRow) {
   }
 }
 
-async function classRow(c: classesSvc.ClassRow) {
-  const supportingInstructors = await classesSvc.listSupportingInstructors(c.id)
+async function classRow(tenant: string, c: classesSvc.ClassRow) {
+  const supportingInstructors = await classesSvc.listSupportingInstructors(tenant, c.id)
   const supportingInstructorIds = supportingInstructors.map(s => s.instructorId)
   return {
     id: c.id,
@@ -144,7 +145,7 @@ async function classRow(c: classesSvc.ClassRow) {
 const app = new Hono()
   .get('/', zValidator('query', listQuery), async c => {
     const q = c.req.valid('query')
-    const entries = await timetable.listSchedule({
+    const entries = await timetable.listSchedule(tenantId(c), {
       from: q.from ? new Date(q.from) : undefined,
       to: q.to ? new Date(q.to) : undefined,
       type: q.type,
@@ -156,7 +157,7 @@ const app = new Hono()
   })
   .get('/classes/:id', zValidator('param', z.object({ id: z.string().uuid() })), async c => {
     const { id } = c.req.valid('param')
-    const d = await getClassDetail(id)
+    const d = await getClassDetail(tenantId(c), id)
     return c.json({
       id: d.id,
       lifecycle: d.lifecycle,
@@ -195,7 +196,7 @@ const app = new Hono()
   })
   .get('/pt/:id', zValidator('param', z.object({ id: z.string().uuid() })), async c => {
     const { id } = c.req.valid('param')
-    const d = await getPtSessionDetail(id)
+    const d = await getPtSessionDetail(tenantId(c), id)
     return c.json({
       id: d.id,
       pt_request_id: d.ptRequestId,
@@ -225,7 +226,7 @@ const app = new Hono()
   .post('/classes', zValidator('json', createClassSchema), async c => {
     const body = c.req.valid('json')
     const staffId = c.get('staffUserId')
-    const row = await classesSvc.createClass({
+    const row = await classesSvc.createClass(tenantId(c), {
       classTypeId: body.class_type_id,
       mainInstructorId: body.main_instructor_id,
       ...(body.supporting_instructors !== undefined
@@ -246,7 +247,7 @@ const app = new Hono()
       createdByStaffId: staffId,
     })
     c.set('auditTarget' as any, { table: 'classes', id: row.id })
-    return c.json(await classRow(row), 201)
+    return c.json(await classRow(tenantId(c), row), 201)
   })
   .patch(
     '/classes/:id',
@@ -255,7 +256,7 @@ const app = new Hono()
     async c => {
       const { id } = c.req.valid('param')
       const body = c.req.valid('json')
-      const row = await classesSvc.updateClass(id, {
+      const row = await classesSvc.updateClass(tenantId(c), id, {
         ...(body.class_type_id !== undefined ? { classTypeId: body.class_type_id } : {}),
         ...(body.main_instructor_id !== undefined
           ? { mainInstructorId: body.main_instructor_id }
@@ -281,7 +282,7 @@ const app = new Hono()
           : {}),
       })
       c.set('auditTarget' as any, { table: 'classes', id })
-      return c.json(await classRow(row))
+      return c.json(await classRow(tenantId(c), row))
     },
   )
   .post(

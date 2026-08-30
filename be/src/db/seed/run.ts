@@ -3,7 +3,7 @@ import { drizzle } from 'drizzle-orm/postgres-js'
 import postgres from 'postgres'
 import * as schema from '../schema'
 
-import { seedTenants } from './tenants'
+import { seedTenants, seededTenants } from './tenants'
 import { claimSeededRowsForTenantOne } from './claim-tenant-one'
 import { seedSuperadmin } from './superadmin'
 import { seedLocations } from './locations'
@@ -29,10 +29,14 @@ async function main() {
     await seedTenants(db)
     console.log('[seed] superadmin…')
     await seedSuperadmin(db)
-    console.log('[seed] locations…')
-    await seedLocations(db)
-    console.log('[seed] rooms…')
-    await seedRooms(db)
+    // Premises and policy belong to a tenant, not to the platform: each is
+    // seeded once per provisioned tenant rather than once for the studio.
+    for (const tenant of seededTenants()) {
+      console.log(`[seed] locations, rooms + policy for ${tenant.slug}…`)
+      await seedLocations(db, tenant)
+      await seedRooms(db, tenant)
+      await seedPolicy(db, tenant)
+    }
     console.log('[seed] class types…')
     await seedClassTypes(db)
     console.log('[seed] class packages…')
@@ -41,8 +45,6 @@ async function main() {
     await seedPtPackages(db)
     console.log('[seed] corporate packages…')
     await seedCorporatePackages(db)
-    console.log('[seed] policy + pt booking config…')
-    await seedPolicy(db)
     console.log('[seed] email templates…')
     await seedEmailTemplates(db)
     console.log('[seed] waiver singleton…')

@@ -4,6 +4,7 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as svc from '../../../services/catalog/merch'
 import { BadRequestError } from '../../../shared/errors'
+import { tenantId } from '../../../middleware/tenant'
 
 /**
  * Merch CRUD. The photo is its own call (POST /:id/image) so a file that is
@@ -38,14 +39,14 @@ const listQuery = z.object({
 const app = new Hono()
   .get('/', zValidator('query', listQuery), async c => {
     const q = c.req.valid('query')
-    const rows = await svc.listMerch({
+    const rows = await svc.listMerch(tenantId(c), {
       includeArchived: q.include_archived === 'true' || q.include_archived === '1',
     })
     return c.json({ merch: rows.map(svc.serializeMerch) })
   })
   .post('/', zValidator('json', createSchema), async c => {
     const body = c.req.valid('json')
-    const row = await svc.createMerch({
+    const row = await svc.createMerch(tenantId(c), {
       title: body.title,
       description: body.description ?? null,
       priceSgd: body.price_sgd,
@@ -56,7 +57,7 @@ const app = new Hono()
   .patch('/:id', zValidator('param', idParam), zValidator('json', updateSchema), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
-    const row = await svc.updateMerch(id, {
+    const row = await svc.updateMerch(tenantId(c), id, {
       ...(body.title !== undefined ? { title: body.title } : {}),
       ...(body.description !== undefined ? { description: body.description ?? null } : {}),
       ...(body.price_sgd !== undefined ? { priceSgd: body.price_sgd } : {}),
@@ -88,6 +89,7 @@ const app = new Hono()
         })
       }
       const row = await svc.setMerchImage({
+        tenantId: tenantId(c),
         id,
         contentType: file.type,
         bytes: new Uint8Array(await file.arrayBuffer()),
@@ -98,7 +100,7 @@ const app = new Hono()
   )
   .delete('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    await svc.deleteMerch(id)
+    await svc.deleteMerch(tenantId(c), id)
     c.set('auditTarget' as any, { table: 'merch', id })
     return c.body(null, 204)
   })

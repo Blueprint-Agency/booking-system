@@ -20,6 +20,23 @@ export type ResolvedTenant = {
 const RESOLVABLE: TenantStatus[] = ['active', 'suspended']
 
 /**
+ * Short-TTL memo in front of the lookup. Slug resolution now runs twice on a
+ * request that names a tenant — once at the proxy's public call, once in the
+ * backend's own tenant middleware — and a tenant row changes about never, so
+ * the query is worth spending once a minute rather than once a request.
+ *
+ * Deliberately positive-only: a miss stays a query, so a flood of unknown slugs
+ * cannot pin arbitrary strings in memory.
+ */
+const RESOLVE_CACHE_TTL_MS = 60_000
+const resolveCache = new Map<string, { at: number; value: ResolvedTenant }>()
+
+/** Called whenever a tenant row is written, so the memo cannot serve a ghost. */
+export function forgetCachedTenants() {
+  resolveCache.clear()
+}
+
+/**
  * Slug → tenant identity + settings. Sits on every request path (the frontend
  * proxy calls it for each incoming hostname), so it is one indexed lookup and
  * a left join, nothing more. Returns null for unknown, archived and malformed
@@ -28,6 +45,10 @@ const RESOLVABLE: TenantStatus[] = ['active', 'suspended']
 export async function resolveTenantBySlug(slug: string): Promise<ResolvedTenant | null> {
   const normalised = normaliseSlug(slug)
   if (!normalised) return null
+
+  const cached = resolveCache.get(normalised)
+  if (cached && Date.now() - cached.at < RESOLVE_CACHE_TTL_MS) return cached.value
+  if (cached) resolveCache.delete(normalised)
 
   const [row] = await db
     .select({ tenant: tenants, settings: tenantSettings })
@@ -38,6 +59,7 @@ export async function resolveTenantBySlug(slug: string): Promise<ResolvedTenant 
 
   if (!row) return null
   if (!RESOLVABLE.includes(row.tenant.status)) return null
+  resolveCache.set(normalised, { at: Date.now(), value: row })
   return row
 }
 
@@ -78,6 +100,7 @@ export async function createTenant(input: CreateTenantInput): Promise<ResolvedTe
         .values({ ...input.settings, tenantId: tenant.id })
         .returning()
 
+      forgetCachedTenants()
       return { tenant, settings: settings ?? null }
     })
   } catch (err) {

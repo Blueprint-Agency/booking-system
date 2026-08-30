@@ -5,6 +5,7 @@ import * as publish from '../../../services/workshops/publish'
 import * as daysSvc from '../../../services/workshops/days'
 import * as tiersSvc from '../../../services/workshops/tiers'
 import * as cancelSvc from '../../../services/workshops/cancel'
+import { tenantId } from '../../../middleware/tenant'
 import {
   listManagedPromotionsFor,
   replacePromotionsForParent,
@@ -190,8 +191,11 @@ const app = new Hono()
   // ---- workshop basics ----
   .get('/', zValidator('query', listQuery), async c => {
     const q = c.req.valid('query')
-    const rows = await publish.listWorkshops({ lifecycle: q.lifecycle })
-    const instructorMap = await publish.listInstructorsByWorkshop(rows.map(r => r.id))
+    const rows = await publish.listWorkshops(tenantId(c), { lifecycle: q.lifecycle })
+    const instructorMap = await publish.listInstructorsByWorkshop(
+      tenantId(c),
+      rows.map(r => r.id),
+    )
     return c.json({
       workshops: rows.map(r => {
         const m = instructorMap.get(r.id) ?? {

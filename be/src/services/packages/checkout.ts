@@ -109,7 +109,11 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
     // Duration ahead of it whether it starts today or waits Dormant, so it
     // prices at the stored Duration with no arithmetic.
     if (input.crossLocationAddOn) {
-      crossLocationSgd = await priceCrossLocationForNewPlan(pkg.kind, pkg.durationMonths)
+      crossLocationSgd = await priceCrossLocationForNewPlan(
+        pkg.tenantId!,
+        pkg.kind,
+        pkg.durationMonths,
+      )
     }
 
     const promos = await listActivePromotionsFor('class_package', [pkg.id])
@@ -140,7 +144,7 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
     if (!pkg) throw new NotFoundError('pt_package_not_found')
     if (pkg.status !== 'active') throw new BadRequestError('pt_package_not_active')
     await assertPurchasableLocation(clientId, 'pt', locationId)
-    if (input.crossLocationAddOn) await priceCrossLocationForNewPlan('pt', null)
+    if (input.crossLocationAddOn) await priceCrossLocationForNewPlan(pkg.tenantId!, 'pt', null)
 
     const promos = await listActivePromotionsFor('pt_package', [pkg.id])
     const eff = bestPrice(pkg.priceSgd, promos[pkg.id] ?? [])

@@ -6,6 +6,7 @@ import { getClerkClientApp, verifyClientToken } from '../lib/clerk'
 import { syncClientFromClerk } from '../services/auth/webhook-sync'
 import { logger } from '../shared/logger'
 import { captureException } from '../instrument'
+import { tenantMatches } from './tenant'
 
 export interface ClerkClientClaims {
   sub: string
@@ -123,6 +124,14 @@ export const clerkClientAuth: MiddlewareHandler = async (c, next) => {
   }
 
   if (!row) return c.json({ error: 'client_not_found' }, 404)
+
+  // See the same check in clerk-staff.ts: the tenant header is resolved but not
+  // yet validated, and this is the first point where the caller's real tenant is
+  // known. A member of one studio naming another is refused here rather than
+  // being handed that studio's data by every scoped service downstream.
+  if (!tenantMatches(c, row.tenantId)) {
+    return c.json({ error: 'tenant_mismatch' }, 403)
+  }
 
   c.set('clerkClaims', claims)
   c.set('clientId', row.id)

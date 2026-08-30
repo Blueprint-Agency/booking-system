@@ -15,12 +15,16 @@ A Tenant's leftmost DNS label, and the only thing the frontends can read a Tenan
 _Avoid_: subdomain, handle, tenant name
 
 **`tenant_id`**:
-The column on all 53 domain tables recording which Tenant a row belongs to — including pure join tables, because Row-Level Security needs a column on every table to key a policy on. Currently **nullable and backfilled**: the expand step of expand-migrate-contract, so nothing enforces it yet and behaviour is unchanged. `NOT NULL`, query scoping and RLS land in later work.
+The column on all 53 domain tables recording which Tenant a row belongs to — including pure join tables, because Row-Level Security needs a column on every table to key a policy on. Still **nullable and backfilled**: the expand step of expand-migrate-contract. The identity, policy, catalog and schedule services now filter on it; the remaining services, `NOT NULL` and RLS land in later work. It **defaults to Tenant #1** for the length of that phase, because a read filtered on `tenant_id` sitting beside an insert that has not been scoped yet would otherwise make new rows silently invisible. The default is scaffolding with an expiry date — it must be dropped by the contract step.
+
+**Tenant context**:
+The Tenant a request is about, resolved once by `middleware/tenant.ts` and read in a route with `tenantId(c)`. It arrives as the `X-Tenant-Slug` header — the API's own hostname carries no Tenant, so the caller has to say — and a request without one is Tenant #1, which is what keeps every existing client working. Services never read it themselves: it is passed in, so a query that forgot to scope is a compile error rather than a leak.
+_Avoid_: current tenant, tenant scope, request tenant
 
 ### Packages and locations
 
 **Location**:
-One of the studio's two physical premises — Breadtalk IHQ or Outram Park. A class runs at exactly one Location.
+One of a Tenant's physical premises. Yoga Sadhana has two — Breadtalk IHQ and Outram Park — but Locations belong to the Tenant, not to the platform. A class runs at exactly one Location.
 _Avoid_: branch, studio, venue, outlet, site
 
 **Unlimited Plan**:

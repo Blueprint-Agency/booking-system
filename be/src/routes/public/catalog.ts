@@ -11,6 +11,7 @@ import {
 import * as workshopsSvc from '../../services/workshops/catalog'
 import * as merchSvc from '../../services/catalog/merch'
 import { listCorporatePackages } from '../../services/packages/corporate-packages'
+import { tenantId } from '../../middleware/tenant'
 
 function serializeClassPackage(
   r: classSvc.ClassPackageRow,
@@ -52,39 +53,39 @@ function serializePtPackage(
 
 const app = new Hono()
   .get('/locations', async c => {
-    const locations = await classCatalog.listActiveLocations()
+    const locations = await classCatalog.listActiveLocations(tenantId(c))
     return c.json({ locations })
   })
   .get('/classes', async c => {
     const filters = classCatalog.parseClassFilters(c.req.query())
-    const classes = await classCatalog.listClassCards(filters)
+    const classes = await classCatalog.listClassCards(tenantId(c), filters)
     return c.json({ classes })
   })
   .get('/classes/:id', async c => {
-    const detail = await classCatalog.getClassDetail(c.req.param('id'))
+    const detail = await classCatalog.getClassDetail(tenantId(c), c.req.param('id'))
     return c.json(detail)
   })
   .get('/workshops', async c => {
-    const cards = await workshopsSvc.listActiveWorkshopCards()
+    const cards = await workshopsSvc.listActiveWorkshopCards(tenantId(c))
     return c.json({ workshops: cards })
   })
   .get('/workshops/:id', async c => {
     const id = c.req.param('id')
-    const detail = await workshopsSvc.getWorkshopDetailPayload(id)
+    const detail = await workshopsSvc.getWorkshopDetailPayload(tenantId(c), id)
     return c.json(detail)
   })
   // Merch is browse-only and priced the same for everyone — no signed-in variant.
   .get('/merch', async c => {
-    const rows = await merchSvc.listMerch({ includeArchived: false })
+    const rows = await merchSvc.listMerch(tenantId(c), { includeArchived: false })
     return c.json({ merch: rows.map(merchSvc.serializeMerch) })
   })
   .get('/instructors', async c => {
-    const instructors = await classCatalog.listActiveInstructors()
+    const instructors = await classCatalog.listActiveInstructors(tenantId(c))
     return c.json({ instructors })
   })
   // Active class types — used by the fe-client PT request form's class type dropdown.
   .get('/class-types', async c => {
-    const rows = await classTypesSvc.listClassTypes({ includeArchived: false })
+    const rows = await classTypesSvc.listClassTypes(tenantId(c), { includeArchived: false })
     return c.json({ class_types: rows.map(r => ({ id: r.id, name: r.name })) })
   })
   .get('/packages', async c => {

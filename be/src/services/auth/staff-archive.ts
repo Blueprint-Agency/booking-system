@@ -58,12 +58,13 @@ export function isSeededSuperadminEmail(email: string): boolean {
 }
 
 export interface ArchiveStaffInput {
+  tenantId: string
   targetStaffId: string
   actorStaffId: string
 }
 
 export async function archiveStaff(input: ArchiveStaffInput): Promise<StaffUserRow> {
-  const { targetStaffId, actorStaffId } = input
+  const { tenantId, targetStaffId, actorStaffId } = input
 
   if (targetStaffId === actorStaffId) {
     throw new ForbiddenError('self_archive_forbidden', {
@@ -74,7 +75,13 @@ export async function archiveStaff(input: ArchiveStaffInput): Promise<StaffUserR
   const [target] = await db
     .select()
     .from(staffUsers)
-    .where(and(eq(staffUsers.id, targetStaffId), isNull(staffUsers.deletedAt)))
+    .where(
+      and(
+        eq(staffUsers.tenantId, tenantId),
+        eq(staffUsers.id, targetStaffId),
+        isNull(staffUsers.deletedAt),
+      ),
+    )
     .limit(1)
   if (!target) throw new NotFoundError('staff_not_found')
 
@@ -94,7 +101,13 @@ export async function archiveStaff(input: ArchiveStaffInput): Promise<StaffUserR
     const [actor] = await db
       .select()
       .from(staffUsers)
-      .where(and(eq(staffUsers.id, actorStaffId), isNull(staffUsers.deletedAt)))
+      .where(
+        and(
+          eq(staffUsers.tenantId, tenantId),
+          eq(staffUsers.id, actorStaffId),
+          isNull(staffUsers.deletedAt),
+        ),
+      )
       .limit(1)
     if (!actor) throw new ForbiddenError('actor_not_found')
     if (!isSeededSuperadminEmail(actor.email)) {
@@ -113,7 +126,7 @@ export async function archiveStaff(input: ArchiveStaffInput): Promise<StaffUserR
       archivedByStaffId: actorStaffId,
       updatedAt: now,
     })
-    .where(eq(staffUsers.id, targetStaffId))
+    .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, targetStaffId)))
     .returning()
   if (!updated) throw new ConflictError('staff_archive_failed')
 
@@ -144,14 +157,21 @@ export async function archiveStaff(input: ArchiveStaffInput): Promise<StaffUserR
  * Refuses if already active, soft-deleted, or pending (never been activated).
  */
 export async function unarchiveStaff(input: {
+  tenantId: string
   targetStaffId: string
   actorStaffId: string
 }): Promise<StaffUserRow> {
-  const { targetStaffId } = input
+  const { tenantId, targetStaffId } = input
   const [target] = await db
     .select()
     .from(staffUsers)
-    .where(and(eq(staffUsers.id, targetStaffId), isNull(staffUsers.deletedAt)))
+    .where(
+      and(
+        eq(staffUsers.tenantId, tenantId),
+        eq(staffUsers.id, targetStaffId),
+        isNull(staffUsers.deletedAt),
+      ),
+    )
     .limit(1)
   if (!target) throw new NotFoundError('staff_not_found')
   if (target.status !== 'archived') {
@@ -167,7 +187,7 @@ export async function unarchiveStaff(input: {
       archivedByStaffId: null,
       updatedAt: now,
     })
-    .where(eq(staffUsers.id, targetStaffId))
+    .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, targetStaffId)))
     .returning()
   if (!updated) throw new ConflictError('staff_unarchive_failed')
   return updated
@@ -180,10 +200,11 @@ export async function unarchiveStaff(input: {
  * The seeded superadmin can never be soft-deleted (same guard as archive).
  */
 export async function softDeleteStaff(input: {
+  tenantId: string
   targetStaffId: string
   actorStaffId: string
 }): Promise<void> {
-  const { targetStaffId, actorStaffId } = input
+  const { tenantId, targetStaffId, actorStaffId } = input
   if (targetStaffId === actorStaffId) {
     throw new ForbiddenError('self_delete_forbidden', {
       message: 'You cannot delete your own staff account.',
@@ -193,7 +214,13 @@ export async function softDeleteStaff(input: {
   const [target] = await db
     .select()
     .from(staffUsers)
-    .where(and(eq(staffUsers.id, targetStaffId), isNull(staffUsers.deletedAt)))
+    .where(
+      and(
+        eq(staffUsers.tenantId, tenantId),
+        eq(staffUsers.id, targetStaffId),
+        isNull(staffUsers.deletedAt),
+      ),
+    )
     .limit(1)
   if (!target) throw new NotFoundError('staff_not_found')
 
@@ -212,7 +239,13 @@ export async function softDeleteStaff(input: {
     const [actor] = await db
       .select()
       .from(staffUsers)
-      .where(and(eq(staffUsers.id, actorStaffId), isNull(staffUsers.deletedAt)))
+      .where(
+        and(
+          eq(staffUsers.tenantId, tenantId),
+          eq(staffUsers.id, actorStaffId),
+          isNull(staffUsers.deletedAt),
+        ),
+      )
       .limit(1)
     if (!actor) throw new ForbiddenError('actor_not_found')
     if (!isSeededSuperadminEmail(actor.email)) {
@@ -225,7 +258,7 @@ export async function softDeleteStaff(input: {
   await db
     .update(staffUsers)
     .set({ deletedAt: sql`now()`, updatedAt: new Date() })
-    .where(eq(staffUsers.id, targetStaffId))
+    .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, targetStaffId)))
 }
 
 /**
@@ -248,6 +281,7 @@ export async function softDeleteStaff(input: {
  *     archive/delete enforce).
  */
 export interface UpdateStaffProfileInput {
+  tenantId: string
   targetStaffId: string
   actorStaffId: string
   patch: {
@@ -275,19 +309,31 @@ export interface UpdateStaffProfileInput {
 }
 
 export async function updateStaffProfile(input: UpdateStaffProfileInput): Promise<StaffProfileRow> {
-  const { targetStaffId, actorStaffId, patch } = input
+  const { tenantId, targetStaffId, actorStaffId, patch } = input
 
   const [target] = await db
     .select()
     .from(staffUsers)
-    .where(and(eq(staffUsers.id, targetStaffId), isNull(staffUsers.deletedAt)))
+    .where(
+      and(
+        eq(staffUsers.tenantId, tenantId),
+        eq(staffUsers.id, targetStaffId),
+        isNull(staffUsers.deletedAt),
+      ),
+    )
     .limit(1)
   if (!target) throw new NotFoundError('staff_not_found')
 
   const [actor] = await db
     .select()
     .from(staffUsers)
-    .where(and(eq(staffUsers.id, actorStaffId), isNull(staffUsers.deletedAt)))
+    .where(
+      and(
+        eq(staffUsers.tenantId, tenantId),
+        eq(staffUsers.id, actorStaffId),
+        isNull(staffUsers.deletedAt),
+      ),
+    )
     .limit(1)
   if (!actor) throw new ForbiddenError('actor_not_found')
 
@@ -362,7 +408,12 @@ export async function updateStaffProfile(input: UpdateStaffProfileInput): Promis
     await adjustRemainingDays({ instructorId: targetStaffId, ...remaining })
   }
   if (Object.keys(assigned).length > 0) {
-    await db.update(instructors).set(assigned).where(eq(instructors.staffUserId, targetStaffId))
+    await db
+      .update(instructors)
+      .set(assigned)
+      .where(
+        and(eq(instructors.tenantId, tenantId), eq(instructors.staffUserId, targetStaffId)),
+      )
   }
 
   let row = target
@@ -371,7 +422,7 @@ export async function updateStaffProfile(input: UpdateStaffProfileInput): Promis
     const [updated] = await db
       .update(staffUsers)
       .set(set)
-      .where(eq(staffUsers.id, targetStaffId))
+      .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, targetStaffId)))
       .returning()
     if (!updated) throw new ConflictError('staff_update_failed')
     row = updated

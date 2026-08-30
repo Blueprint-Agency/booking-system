@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as svc from '../../../services/catalog/rooms'
+import { tenantId } from '../../../middleware/tenant'
 
 const createSchema = z.object({
   location_id: z.string().uuid(),
@@ -32,42 +33,42 @@ const app = new Hono()
   .get('/', zValidator('query', listQuery), async c => {
     const q = c.req.valid('query')
     const includeArchived = q.include_archived === 'true' || q.include_archived === '1'
-    const rows = await svc.listRooms({ locationId: q.location_id, includeArchived })
+    const rows = await svc.listRooms(tenantId(c), { locationId: q.location_id, includeArchived })
     return c.json({ rooms: rows.map(serialize) })
   })
   .get('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    const row = await svc.getRoom(id)
+    const row = await svc.getRoom(tenantId(c), id)
     return c.json(serialize(row))
   })
   .post('/', zValidator('json', createSchema), async c => {
     const body = c.req.valid('json')
-    const row = await svc.createRoom(body)
+    const row = await svc.createRoom(tenantId(c), body)
     c.set('auditTarget' as any, { table: 'rooms', id: row.id })
     return c.json(serialize(row), 201)
   })
   .patch('/:id', zValidator('param', idParam), zValidator('json', updateSchema), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
-    const row = await svc.updateRoom(id, body)
+    const row = await svc.updateRoom(tenantId(c), id, body)
     c.set('auditTarget' as any, { table: 'rooms', id })
     return c.json(serialize(row))
   })
   .post('/:id/archive', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    const row = await svc.archiveRoom(id)
+    const row = await svc.archiveRoom(tenantId(c), id)
     c.set('auditTarget' as any, { table: 'rooms', id })
     return c.json(serialize(row))
   })
   .post('/:id/unarchive', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    const row = await svc.unarchiveRoom(id)
+    const row = await svc.unarchiveRoom(tenantId(c), id)
     c.set('auditTarget' as any, { table: 'rooms', id })
     return c.json(serialize(row))
   })
   .delete('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    await svc.softDeleteRoom(id)
+    await svc.softDeleteRoom(tenantId(c), id)
     c.set('auditTarget' as any, { table: 'rooms', id })
     return c.body(null, 204)
   })

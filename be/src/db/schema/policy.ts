@@ -1,18 +1,22 @@
-import { pgTable, uuid, integer, numeric, timestamp, check } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, integer, numeric, timestamp, check, uniqueIndex } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { tenantIdColumn } from './tenancy'
 import { staffUsers } from './identity'
 
-const POLICY_SINGLETON_ID = '00000000-0000-0000-0000-000000000001'
-const PT_CONFIG_SINGLETON_ID = '00000000-0000-0000-0000-000000000002'
-
+/**
+ * Both tables here used to be *platform* singletons: a `CHECK (id = '<fixed
+ * uuid>')` meant exactly one row could ever exist. That is the right constraint
+ * for one studio and a data leak for two — a second tenant could not own a
+ * policy row, so it would have been served Yoga Sadhana's caps and windows.
+ *
+ * They are now singletons **per tenant**: the check is gone, the id is
+ * generated, and a unique index on `tenant_id` is what keeps it to one row each.
+ */
 export const globalPolicy = pgTable(
   'global_policy',
   {
     tenantId: tenantIdColumn(),
-    id: uuid('id')
-      .primaryKey()
-      .default(sql`'${sql.raw(POLICY_SINGLETON_ID)}'::uuid`),
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     cancelCapCount: integer('cancel_cap_count').notNull(),
     cancelCapCycleDays: integer('cancel_cap_cycle_days').notNull(),
     classWindowHours: integer('class_window_hours').notNull(),
@@ -42,7 +46,7 @@ export const globalPolicy = pgTable(
     }),
   },
   table => ({
-    singleton: check('global_policy_singleton', sql`${table.id} = '${sql.raw(POLICY_SINGLETON_ID)}'::uuid`),
+    oneRowPerTenant: uniqueIndex('global_policy_tenant_uniq').on(table.tenantId),
     leaveCaps: check('global_policy_leave_caps_min_1', sql`${table.studyLeaveCap} >= 1`),
     crossLocationRateNonNegative: check(
       'global_policy_cross_location_rate_non_negative',
@@ -55,9 +59,7 @@ export const ptBookingConfig = pgTable(
   'pt_booking_config',
   {
     tenantId: tenantIdColumn(),
-    id: uuid('id')
-      .primaryKey()
-      .default(sql`'${sql.raw(PT_CONFIG_SINGLETON_ID)}'::uuid`),
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     bookInAdvanceDays: integer('book_in_advance_days').notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     updatedByStaffId: uuid('updated_by_staff_id').references(() => staffUsers.id, {
@@ -65,6 +67,6 @@ export const ptBookingConfig = pgTable(
     }),
   },
   table => ({
-    singleton: check('pt_booking_config_singleton', sql`${table.id} = '${sql.raw(PT_CONFIG_SINGLETON_ID)}'::uuid`),
+    oneRowPerTenant: uniqueIndex('pt_booking_config_tenant_uniq').on(table.tenantId),
   }),
 )

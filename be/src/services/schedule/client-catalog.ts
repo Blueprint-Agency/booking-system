@@ -85,21 +85,34 @@ export function resolveWindow(from?: Date, to?: Date): { from: Date; to: Date } 
   return { from: start, to: end }
 }
 
-async function bookedCountByClass(classIds: string[]): Promise<Map<string, number>> {
+async function bookedCountByClass(
+  tenantId: string,
+  classIds: string[],
+): Promise<Map<string, number>> {
   const map = new Map<string, number>()
   if (classIds.length === 0) return map
   const rows = await db
     .select({ classId: bookings.classId, cnt: sql<number>`count(*)::int` })
     .from(bookings)
-    .where(and(inArray(bookings.classId, classIds), eq(bookings.state, 'confirmed')))
+    .where(
+      and(
+        eq(bookings.tenantId, tenantId),
+        inArray(bookings.classId, classIds),
+        eq(bookings.state, 'confirmed'),
+      ),
+    )
     .groupBy(bookings.classId)
   for (const r of rows) if (r.classId) map.set(r.classId, Number(r.cnt))
   return map
 }
 
-export async function listClassCards(filters: ClassListFilters): Promise<ClassCardPayload[]> {
+export async function listClassCards(
+  tenantId: string,
+  filters: ClassListFilters,
+): Promise<ClassCardPayload[]> {
   const { from, to } = resolveWindow(filters.from, filters.to)
   const conds = [
+    eq(classes.tenantId, tenantId),
     eq(classes.lifecycle, 'active'),
     gte(classes.endsAt, from),
     lt(classes.startsAt, to),
@@ -139,12 +152,20 @@ export async function listClassCards(filters: ClassListFilters): Promise<ClassCa
     const roomRows = await db
       .select({ id: rooms.id, name: rooms.name })
       .from(rooms)
-      .where(and(inArray(rooms.id, roomIds), isNull(rooms.deletedAt)))
+      .where(
+        and(eq(rooms.tenantId, tenantId), inArray(rooms.id, roomIds), isNull(rooms.deletedAt)),
+      )
     for (const r of roomRows) roomById.set(r.id, { id: r.id, name: r.name })
   }
 
-  const booked = await bookedCountByClass(rows.map(r => r.id))
-  const supportingByClass = await loadSupportingByClass(rows.map(r => r.id))
+  const booked = await bookedCountByClass(
+    tenantId,
+    rows.map(r => r.id),
+  )
+  const supportingByClass = await loadSupportingByClass(
+    tenantId,
+    rows.map(r => r.id),
+  )
 
   return rows.map(r => {
     const bookedCount = booked.get(r.id) ?? 0
@@ -169,18 +190,24 @@ export async function listClassCards(filters: ClassListFilters): Promise<ClassCa
   })
 }
 
-async function loadSupportingByClass(classIds: string[]): Promise<Map<string, string[]>> {
+async function loadSupportingByClass(
+  tenantId: string,
+  classIds: string[],
+): Promise<Map<string, string[]>> {
   // Classes with nobody supporting now get an empty entry rather than none —
   // every caller reads through `?? []`, so the result is the same.
   return new Map(
-    [...lineupsOf(await readRosters('class', classIds))].map(([id, l]) => [
+    [...lineupsOf(await readRosters(tenantId, 'class', classIds))].map(([id, l]) => [
       id,
       l.supportingInstructorIds,
     ]),
   )
 }
 
-export async function getClassDetail(id: string): Promise<ClassDetailPayload> {
+export async function getClassDetail(
+  tenantId: string,
+  id: string,
+): Promise<ClassDetailPayload> {
   const [r] = await db
     .select({
       id: classes.id,
@@ -205,7 +232,7 @@ export async function getClassDetail(id: string): Promise<ClassDetailPayload> {
     .innerJoin(instructors, eq(classes.mainInstructorId, instructors.staffUserId))
     .innerJoin(staffUsers, eq(instructors.staffUserId, staffUsers.id))
     .innerJoin(locations, eq(classes.locationId, locations.id))
-    .where(eq(classes.id, id))
+    .where(and(eq(classes.tenantId, tenantId), eq(classes.id, id)))
     .limit(1)
 
   if (!r || r.lifecycle !== 'active') throw new NotFoundError('class_not_found')
@@ -215,12 +242,12 @@ export async function getClassDetail(id: string): Promise<ClassDetailPayload> {
     const [roomRow] = await db
       .select({ id: rooms.id, name: rooms.name })
       .from(rooms)
-      .where(and(eq(rooms.id, r.roomId), isNull(rooms.deletedAt)))
+      .where(and(eq(rooms.tenantId, tenantId), eq(rooms.id, r.roomId), isNull(rooms.deletedAt)))
       .limit(1)
     room = roomRow ?? null
   }
 
-  const booked = (await bookedCountByClass([r.id])).get(r.id) ?? 0
+  const booked = (await bookedCountByClass(tenantId, [r.id])).get(r.id) ?? 0
 
   const supportingRows = await db
     .select({
@@ -229,7 +256,12 @@ export async function getClassDetail(id: string): Promise<ClassDetailPayload> {
     })
     .from(classSupportingInstructors)
     .leftJoin(staffUsers, eq(staffUsers.id, classSupportingInstructors.instructorId))
-    .where(eq(classSupportingInstructors.classId, r.id))
+    .where(
+      and(
+        eq(classSupportingInstructors.tenantId, tenantId),
+        eq(classSupportingInstructors.classId, r.id),
+      ),
+    )
   const supporting = supportingRows
     .map(s => ({ id: s.instructorId, name: s.name ?? 'Instructor' }))
     .sort((a, b) => a.id.localeCompare(b.id))
@@ -261,13 +293,18 @@ export async function getClassDetail(id: string): Promise<ClassDetailPayload> {
 }
 
 /** Returns the set of class IDs (from the given list) the client has a confirmed booking for. */
-export async function myBookedClassIds(clientId: string, classIds: string[]): Promise<Set<string>> {
+export async function myBookedClassIds(
+  tenantId: string,
+  clientId: string,
+  classIds: string[],
+): Promise<Set<string>> {
   if (classIds.length === 0) return new Set()
   const rows = await db
     .select({ classId: bookings.classId })
     .from(bookings)
     .where(
       and(
+        eq(bookings.tenantId, tenantId),
         eq(bookings.clientId, clientId),
         eq(bookings.state, 'confirmed'),
         inArray(bookings.classId, classIds),
@@ -278,7 +315,7 @@ export async function myBookedClassIds(clientId: string, classIds: string[]): Pr
   return out
 }
 
-export async function listActiveLocations(): Promise<
+export async function listActiveLocations(tenantId: string): Promise<
   { id: string; name: string; address: string | null; gmaps_url: string | null; phone: string | null }[]
 > {
   const rows = await db
@@ -290,7 +327,13 @@ export async function listActiveLocations(): Promise<
       phone: locations.phone,
     })
     .from(locations)
-    .where(and(isNull(locations.archivedAt), isNull(locations.deletedAt)))
+    .where(
+      and(
+        eq(locations.tenantId, tenantId),
+        isNull(locations.archivedAt),
+        isNull(locations.deletedAt),
+      ),
+    )
     .orderBy(locations.name)
   return rows.map(r => ({
     id: r.id,
@@ -308,7 +351,7 @@ export interface InstructorLite {
   avatar_url: string | null
 }
 
-export async function listActiveInstructors(): Promise<InstructorLite[]> {
+export async function listActiveInstructors(tenantId: string): Promise<InstructorLite[]> {
   const rows = await db
     .select({
       staffUserId: instructors.staffUserId,
@@ -322,6 +365,7 @@ export async function listActiveInstructors(): Promise<InstructorLite[]> {
     .innerJoin(staffUsers, eq(instructors.staffUserId, staffUsers.id))
     .where(
       and(
+        eq(staffUsers.tenantId, tenantId),
         isNull(staffUsers.archivedAt),
         isNull(staffUsers.deletedAt),
         eq(staffUsers.status, 'active'),

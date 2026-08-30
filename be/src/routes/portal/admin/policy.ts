@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as svc from '../../../services/policy/update'
 import { BadRequestError } from '../../../shared/errors'
+import { tenantId } from '../../../middleware/tenant'
 
 // A Leave Cap is a headcount of instructors on study leave at once, not a number
 // of days: at least 1 (zero would make study leave unobtainable) and at most 99,
@@ -77,8 +78,8 @@ function serializeGlobal(r: svc.GlobalPolicyRow) {
 }
 
 /** The declared pairs, lower id first, exactly as the table holds them. */
-async function serializeConflicts() {
-  return (await svc.readLeaveConflicts()).map(p => ({
+async function serializeConflicts(tenant: string) {
+  return (await svc.readLeaveConflicts(tenant)).map(p => ({
     instructor_a_id: p.instructorAId,
     instructor_b_id: p.instructorBId,
   }))
@@ -94,17 +95,18 @@ function serializePt(r: svc.PtBookingConfigRow) {
 
 const app = new Hono()
   .get('/', async c => {
-    const { global_policy, pt_booking_config } = await svc.readPolicy()
+    const { global_policy, pt_booking_config } = await svc.readPolicy(tenantId(c))
     return c.json({
       global_policy: serializeGlobal(global_policy),
       pt_booking_config: serializePt(pt_booking_config),
-      leave_conflicts: await serializeConflicts(),
+      leave_conflicts: await serializeConflicts(tenantId(c)),
     })
   })
   .patch('/global', zValidator('json', globalPatch, explainInvalid), async c => {
     const body = c.req.valid('json')
     const staffId = c.get('staffUserId')
     const row = await svc.updateGlobalPolicy(
+      tenantId(c),
       {
         ...(body.cancel_cap_count !== undefined ? { cancelCapCount: body.cancel_cap_count } : {}),
         ...(body.cancel_cap_cycle_days !== undefined
@@ -133,13 +135,17 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'global_policy', id: row.id })
     return c.json({
       ...serializeGlobal(row),
-      leave_conflicts: await serializeConflicts(),
+      leave_conflicts: await serializeConflicts(tenantId(c)),
     })
   })
   .patch('/pt', zValidator('json', ptPatch), async c => {
     const body = c.req.valid('json')
     const staffId = c.get('staffUserId')
-    const row = await svc.updatePtBookingConfig({ bookInAdvanceDays: body.book_in_advance_days }, staffId)
+    const row = await svc.updatePtBookingConfig(
+      tenantId(c),
+      { bookInAdvanceDays: body.book_in_advance_days },
+      staffId,
+    )
     c.set('auditTarget' as any, { table: 'pt_booking_config', id: row.id })
     return c.json(serializePt(row))
   })

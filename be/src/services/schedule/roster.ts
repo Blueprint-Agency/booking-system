@@ -84,14 +84,23 @@ const sgd = (paySgd: string | null): number | null => (paySgd == null ? null : N
  * `instructors.staff_user_id`, so a create has to satisfy it before there is an
  * event to hang a roster on.
  */
-export async function ensureInstructors(instructorIds: string[], tx?: Tx): Promise<void> {
+export async function ensureInstructors(
+  tenantId: string,
+  instructorIds: string[],
+  tx?: Tx,
+): Promise<void> {
   if (instructorIds.length === 0) return
   const unique = Array.from(new Set(instructorIds))
+  // Tenant-scoped, and this is the gate that matters most in this module: an
+  // instructor id belonging to another studio has to read as
+  // `invalid_instructor_id`, or one tenant could staff its classes with
+  // another's people.
   const valid = await exec(tx)
     .select({ id: staffUsers.id })
     .from(staffUsers)
     .where(
       and(
+        eq(staffUsers.tenantId, tenantId),
         inArray(staffUsers.id, unique),
         eq(staffUsers.role, 'instructor'),
         isNull(staffUsers.deletedAt),
@@ -100,7 +109,7 @@ export async function ensureInstructors(instructorIds: string[], tx?: Tx): Promi
   if (valid.length !== unique.length) throw new BadRequestError('invalid_instructor_id')
   await exec(tx)
     .insert(instructors)
-    .values(unique.map(staffUserId => ({ staffUserId })))
+    .values(unique.map(staffUserId => ({ tenantId, staffUserId })))
     .onConflictDoNothing({ target: instructors.staffUserId })
 }
 
@@ -110,6 +119,7 @@ export async function ensureInstructors(instructorIds: string[], tx?: Tx): Promi
  * real state for the kinds where every assignment is a row).
  */
 export async function readRosters(
+  tenantId: string,
   kind: RosterEventKind,
   eventIds: string[],
   tx?: Tx,
@@ -117,13 +127,16 @@ export async function readRosters(
   const out = new Map<string, RosterEntry[]>()
   if (eventIds.length === 0) return out
 
+  // Every query below is filtered on the event's own tenant, so an id from
+  // another studio is simply absent from the map — the same answer as an id that
+  // does not exist, which is what every caller already handles.
   if (kind === 'workshop') {
     // Every assignment is a row here, main included — so existence comes from
     // the workshop itself, not from having any roster rows.
     const events = await exec(tx)
       .select({ id: workshops.id })
       .from(workshops)
-      .where(inArray(workshops.id, eventIds))
+      .where(and(eq(workshops.tenantId, tenantId), inArray(workshops.id, eventIds)))
     for (const e of events) out.set(e.id, [])
 
     const assigned = await exec(tx)
@@ -134,7 +147,12 @@ export async function readRosters(
         paySgd: workshopInstructors.paySgd,
       })
       .from(workshopInstructors)
-      .where(inArray(workshopInstructors.workshopId, eventIds))
+      .where(
+        and(
+          eq(workshopInstructors.tenantId, tenantId),
+          inArray(workshopInstructors.workshopId, eventIds),
+        ),
+      )
     for (const a of assigned) {
       out.get(a.workshopId)?.push({
         instructorId: a.instructorId,
@@ -156,7 +174,7 @@ export async function readRosters(
                 paySgd: classes.instructorPaySgd,
               })
               .from(classes)
-              .where(inArray(classes.id, eventIds))
+              .where(and(eq(classes.tenantId, tenantId), inArray(classes.id, eventIds)))
           ).map(e => ({ id: e.id, instructorId: e.instructorId, paySgd: sgd(e.paySgd) }))
         : kind === 'pt_session'
           ? (
@@ -167,13 +185,18 @@ export async function readRosters(
                   paySgd: ptSessions.instructorPaySgd,
                 })
                 .from(ptSessions)
-                .where(inArray(ptSessions.id, eventIds))
+                .where(and(eq(ptSessions.tenantId, tenantId), inArray(ptSessions.id, eventIds)))
             ).map(e => ({ id: e.id, instructorId: e.instructorId, paySgd: sgd(e.paySgd) }))
           : (
               await exec(tx)
                 .select({ id: corporateSessions.id, instructorId: corporateSessions.mainInstructorId })
                 .from(corporateSessions)
-                .where(inArray(corporateSessions.id, eventIds))
+                .where(
+                  and(
+                    eq(corporateSessions.tenantId, tenantId),
+                    inArray(corporateSessions.id, eventIds),
+                  ),
+                )
             ).map(e => ({ id: e.id, instructorId: e.instructorId, paySgd: null }))
     for (const m of mains) {
       out.set(m.id, [{ instructorId: m.instructorId, role: 'main', paySgd: m.paySgd }])
@@ -189,7 +212,12 @@ export async function readRosters(
                 paySgd: classSupportingInstructors.paySgd,
               })
               .from(classSupportingInstructors)
-              .where(inArray(classSupportingInstructors.classId, eventIds))
+              .where(
+                and(
+                  eq(classSupportingInstructors.tenantId, tenantId),
+                  inArray(classSupportingInstructors.classId, eventIds),
+                ),
+              )
           ).map(s => ({ eventId: s.eventId, instructorId: s.instructorId, paySgd: sgd(s.paySgd) }))
         : kind === 'pt_session'
           ? (
@@ -200,7 +228,12 @@ export async function readRosters(
                   paySgd: ptSessionSupportingInstructors.paySgd,
                 })
                 .from(ptSessionSupportingInstructors)
-                .where(inArray(ptSessionSupportingInstructors.ptSessionId, eventIds))
+                .where(
+                  and(
+                    eq(ptSessionSupportingInstructors.tenantId, tenantId),
+                    inArray(ptSessionSupportingInstructors.ptSessionId, eventIds),
+                  ),
+                )
             ).map(s => ({ eventId: s.eventId, instructorId: s.instructorId, paySgd: sgd(s.paySgd) }))
           : (
               await exec(tx)
@@ -209,7 +242,12 @@ export async function readRosters(
                   instructorId: corporateSessionSupportingInstructors.instructorId,
                 })
                 .from(corporateSessionSupportingInstructors)
-                .where(inArray(corporateSessionSupportingInstructors.corporateSessionId, eventIds))
+                .where(
+                  and(
+                    eq(corporateSessionSupportingInstructors.tenantId, tenantId),
+                    inArray(corporateSessionSupportingInstructors.corporateSessionId, eventIds),
+                  ),
+                )
             ).map(s => ({ eventId: s.eventId, instructorId: s.instructorId, paySgd: null }))
     for (const s of supporting) {
       out.get(s.eventId)?.push({
@@ -232,8 +270,12 @@ export async function readRosters(
 
 /** One event's roster — main first, then supporting by instructor id. Empty when
  *  the event doesn't exist; `replaceRoster` is where a missing event is an error. */
-export async function readRoster(ref: RosterRef, tx?: Tx): Promise<RosterEntry[]> {
-  return (await readRosters(ref.kind, [ref.id], tx)).get(ref.id) ?? []
+export async function readRoster(
+  tenantId: string,
+  ref: RosterRef,
+  tx?: Tx,
+): Promise<RosterEntry[]> {
+  return (await readRosters(tenantId, ref.kind, [ref.id], tx)).get(ref.id) ?? []
 }
 
 /**
@@ -247,10 +289,14 @@ export async function readRoster(ref: RosterRef, tx?: Tx): Promise<RosterEntry[]
  */
 export async function replaceRoster(
   tx: Tx,
+  tenantId: string,
   ref: RosterRef,
   patch: RosterPatch,
 ): Promise<RosterEntry[]> {
-  const existing = (await readRosters(ref.kind, [ref.id], tx)).get(ref.id)
+  // An event belonging to another tenant reads back as absent, so this is also
+  // the "not yours" refusal — indistinguishable from "no such event", as it
+  // should be.
+  const existing = (await readRosters(tenantId, ref.kind, [ref.id], tx)).get(ref.id)
   if (!existing) throw new NotFoundError(notFoundCode[ref.kind])
 
   const merged = mergeRoster(existing, patch)
@@ -270,6 +316,7 @@ export async function replaceRoster(
   // by construction, and re-validating them would make a pay-only edit fail on a
   // class whose instructor was archived after it was scheduled.
   await ensureInstructors(
+    tenantId,
     [
       ...(patch.main?.instructorId !== undefined ? [patch.main.instructorId] : []),
       ...(patch.supporting?.map(s => s.instructorId) ?? []),
@@ -282,12 +329,20 @@ export async function replaceRoster(
     // Main and supporting are rows in one table, so one rewrite covers both.
     // Safe wholesale: `roster` restates untouched members with their merged pay,
     // so the delete can't drop a price the caller didn't ask to change.
-    await exec(tx).delete(workshopInstructors).where(eq(workshopInstructors.workshopId, ref.id))
+    await exec(tx)
+      .delete(workshopInstructors)
+      .where(
+        and(
+          eq(workshopInstructors.tenantId, tenantId),
+          eq(workshopInstructors.workshopId, ref.id),
+        ),
+      )
     if (roster.length > 0) {
       await exec(tx)
         .insert(workshopInstructors)
         .values(
           roster.map(r => ({
+            tenantId,
             workshopId: ref.id,
             instructorId: r.instructorId,
             role: r.role,
@@ -306,18 +361,18 @@ export async function replaceRoster(
         await exec(tx)
           .update(classes)
           .set({ mainInstructorId: main.instructorId, instructorPaySgd: pay })
-          .where(eq(classes.id, ref.id))
+          .where(and(eq(classes.tenantId, tenantId), eq(classes.id, ref.id)))
       } else if (ref.kind === 'pt_session') {
         await exec(tx)
           .update(ptSessions)
           .set({ instructorId: main.instructorId, instructorPaySgd: pay })
-          .where(eq(ptSessions.id, ref.id))
+          .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, ref.id)))
       } else {
         // No pay column on a corporate session — who runs it is all there is.
         await exec(tx)
           .update(corporateSessions)
           .set({ mainInstructorId: main.instructorId })
-          .where(eq(corporateSessions.id, ref.id))
+          .where(and(eq(corporateSessions.tenantId, tenantId), eq(corporateSessions.id, ref.id)))
       }
     }
   }
@@ -329,12 +384,18 @@ export async function replaceRoster(
     if (ref.kind === 'class') {
       await exec(tx)
         .delete(classSupportingInstructors)
-        .where(eq(classSupportingInstructors.classId, ref.id))
+        .where(
+          and(
+            eq(classSupportingInstructors.tenantId, tenantId),
+            eq(classSupportingInstructors.classId, ref.id),
+          ),
+        )
       if (supporting.length > 0) {
         await exec(tx)
           .insert(classSupportingInstructors)
           .values(
             supporting.map(s => ({
+              tenantId,
               classId: ref.id,
               instructorId: s.instructorId,
               paySgd: money(s.paySgd),
@@ -344,12 +405,18 @@ export async function replaceRoster(
     } else if (ref.kind === 'pt_session') {
       await exec(tx)
         .delete(ptSessionSupportingInstructors)
-        .where(eq(ptSessionSupportingInstructors.ptSessionId, ref.id))
+        .where(
+          and(
+            eq(ptSessionSupportingInstructors.tenantId, tenantId),
+            eq(ptSessionSupportingInstructors.ptSessionId, ref.id),
+          ),
+        )
       if (supporting.length > 0) {
         await exec(tx)
           .insert(ptSessionSupportingInstructors)
           .values(
             supporting.map(s => ({
+              tenantId,
               ptSessionId: ref.id,
               instructorId: s.instructorId,
               paySgd: money(s.paySgd),
@@ -359,12 +426,18 @@ export async function replaceRoster(
     } else {
       await exec(tx)
         .delete(corporateSessionSupportingInstructors)
-        .where(eq(corporateSessionSupportingInstructors.corporateSessionId, ref.id))
+        .where(
+          and(
+            eq(corporateSessionSupportingInstructors.tenantId, tenantId),
+            eq(corporateSessionSupportingInstructors.corporateSessionId, ref.id),
+          ),
+        )
       if (supporting.length > 0) {
         await exec(tx)
           .insert(corporateSessionSupportingInstructors)
           .values(
             supporting.map(s => ({
+              tenantId,
               corporateSessionId: ref.id,
               instructorId: s.instructorId,
             })),
@@ -385,6 +458,7 @@ export async function replaceRoster(
  * pay, so it needs no merge.
  */
 export async function setInstructorPay(
+  tenantId: string,
   ref: RosterRef,
   instructorId: string,
   paySgd: number | null,
@@ -397,6 +471,7 @@ export async function setInstructorPay(
       .set({ paySgd: money(paySgd) })
       .where(
         and(
+          eq(workshopInstructors.tenantId, tenantId),
           eq(workshopInstructors.workshopId, ref.id),
           eq(workshopInstructors.instructorId, instructorId),
         ),
@@ -414,12 +489,12 @@ export async function setInstructorPay(
       ? await exec(tx)
           .select({ mainInstructorId: classes.mainInstructorId })
           .from(classes)
-          .where(eq(classes.id, ref.id))
+          .where(and(eq(classes.tenantId, tenantId), eq(classes.id, ref.id)))
           .limit(1)
       : await exec(tx)
           .select({ mainInstructorId: ptSessions.instructorId })
           .from(ptSessions)
-          .where(eq(ptSessions.id, ref.id))
+          .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, ref.id)))
           .limit(1)
   if (!event) return false
 
@@ -429,12 +504,12 @@ export async function setInstructorPay(
         ? await exec(tx)
             .update(classes)
             .set({ instructorPaySgd: money(paySgd) })
-            .where(eq(classes.id, ref.id))
+            .where(and(eq(classes.tenantId, tenantId), eq(classes.id, ref.id)))
             .returning({ id: classes.id })
         : await exec(tx)
             .update(ptSessions)
             .set({ instructorPaySgd: money(paySgd) })
-            .where(eq(ptSessions.id, ref.id))
+            .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, ref.id)))
             .returning({ id: ptSessions.id })
     return rows.length > 0
   }
@@ -446,6 +521,7 @@ export async function setInstructorPay(
           .set({ paySgd: money(paySgd) })
           .where(
             and(
+              eq(classSupportingInstructors.tenantId, tenantId),
               eq(classSupportingInstructors.classId, ref.id),
               eq(classSupportingInstructors.instructorId, instructorId),
             ),
@@ -456,6 +532,7 @@ export async function setInstructorPay(
           .set({ paySgd: money(paySgd) })
           .where(
             and(
+              eq(ptSessionSupportingInstructors.tenantId, tenantId),
               eq(ptSessionSupportingInstructors.ptSessionId, ref.id),
               eq(ptSessionSupportingInstructors.instructorId, instructorId),
             ),

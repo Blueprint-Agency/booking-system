@@ -7,6 +7,7 @@ import {
   type AdminPtRequestView,
 } from '../../../services/pt-sessions/list'
 import { linkPtRequestPartner } from '../../../services/pt-sessions/request'
+import { tenantId } from '../../../middleware/tenant'
 import {
   schedulePtRequest,
   updatePtSession,
@@ -202,7 +203,7 @@ const app = new Hono()
         : {}),
     })
     c.set('auditTarget' as any, { table: 'pt_sessions', id })
-    const detail = await getPtSessionDetail(id)
+    const detail = await getPtSessionDetail(tenantId(c), id)
     return c.json(serializeSession(detail))
   })
   .post('/:id/link-partner', zValidator('param', idParam), zValidator('json', linkPartnerSchema), async c => {

@@ -56,7 +56,7 @@ export interface ClassDetail {
   scheduledBy: NamedRef | null
 }
 
-export async function getClassDetail(id: string): Promise<ClassDetail> {
+export async function getClassDetail(tenantId: string, id: string): Promise<ClassDetail> {
   // staffUsers is joined twice (instructor + creator) so the creator side is aliased.
   const creator = alias(staffUsers, 'creator')
   const [row] = await db
@@ -89,14 +89,20 @@ export async function getClassDetail(id: string): Promise<ClassDetail> {
     .leftJoin(locations, eq(locations.id, classes.locationId))
     .leftJoin(rooms, eq(rooms.id, classes.roomId))
     .leftJoin(creator, eq(creator.id, classes.createdByStaffId))
-    .where(eq(classes.id, id))
+    .where(and(eq(classes.tenantId, tenantId), eq(classes.id, id)))
     .limit(1)
   if (!row) throw new NotFoundError('class_not_found')
 
   const [count] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(bookings)
-    .where(and(eq(bookings.classId, id), eq(bookings.state, 'confirmed')))
+    .where(
+      and(
+        eq(bookings.tenantId, tenantId),
+        eq(bookings.classId, id),
+        eq(bookings.state, 'confirmed'),
+      ),
+    )
 
   // Roster of confirmed attendees (admin-restructure.md §10).
   const attendeeRows = await db
@@ -112,7 +118,13 @@ export async function getClassDetail(id: string): Promise<ClassDetail> {
     .from(bookings)
     .innerJoin(clients, eq(clients.id, bookings.clientId))
     .leftJoin(clientPackages, eq(clientPackages.id, bookings.clientPackageId))
-    .where(and(eq(bookings.classId, id), eq(bookings.state, 'confirmed')))
+    .where(
+      and(
+        eq(bookings.tenantId, tenantId),
+        eq(bookings.classId, id),
+        eq(bookings.state, 'confirmed'),
+      ),
+    )
     .orderBy(bookings.bookedAt)
   const attendees: ClassAttendee[] = attendeeRows.map(r => ({
     bookingId: r.bookingId,
@@ -131,7 +143,12 @@ export async function getClassDetail(id: string): Promise<ClassDetail> {
     })
     .from(classSupportingInstructors)
     .leftJoin(staffUsers, eq(staffUsers.id, classSupportingInstructors.instructorId))
-    .where(eq(classSupportingInstructors.classId, id))
+    .where(
+      and(
+        eq(classSupportingInstructors.tenantId, tenantId),
+        eq(classSupportingInstructors.classId, id),
+      ),
+    )
   const supportingInstructors = supportingRows
     .map(r => ({
       id: r.instructorId,
@@ -196,7 +213,10 @@ export interface PtSessionDetail {
   clients: PtSessionAttendee[]
 }
 
-export async function getPtSessionDetail(id: string): Promise<PtSessionDetail> {
+export async function getPtSessionDetail(
+  tenantId: string,
+  id: string,
+): Promise<PtSessionDetail> {
   const [row] = await db
     .select({
       id: ptSessions.id,
@@ -220,7 +240,7 @@ export async function getPtSessionDetail(id: string): Promise<PtSessionDetail> {
     .leftJoin(staffUsers, eq(staffUsers.id, ptSessions.instructorId))
     .leftJoin(locations, eq(locations.id, ptSessions.locationId))
     .leftJoin(rooms, eq(rooms.id, ptSessions.roomId))
-    .where(eq(ptSessions.id, id))
+    .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, id)))
     .limit(1)
   if (!row) throw new NotFoundError('pt_session_not_found')
 
@@ -237,7 +257,9 @@ export async function getPtSessionDetail(id: string): Promise<PtSessionDetail> {
       bookings,
       and(eq(bookings.ptSessionId, id), eq(bookings.clientId, ptSessionClients.clientId)),
     )
-    .where(eq(ptSessionClients.ptSessionId, id))
+    .where(
+      and(eq(ptSessionClients.tenantId, tenantId), eq(ptSessionClients.ptSessionId, id)),
+    )
 
   const supportingRows = await db
     .select({
@@ -247,7 +269,12 @@ export async function getPtSessionDetail(id: string): Promise<PtSessionDetail> {
     })
     .from(ptSessionSupportingInstructors)
     .leftJoin(staffUsers, eq(staffUsers.id, ptSessionSupportingInstructors.instructorId))
-    .where(eq(ptSessionSupportingInstructors.ptSessionId, id))
+    .where(
+      and(
+        eq(ptSessionSupportingInstructors.tenantId, tenantId),
+        eq(ptSessionSupportingInstructors.ptSessionId, id),
+      ),
+    )
   const supportingInstructors = supportingRows
     .map(r => ({
       id: r.instructorId,
