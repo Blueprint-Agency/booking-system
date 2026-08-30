@@ -60,6 +60,20 @@
     font-size: 1rem;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    /* A long unbroken token — an email, a promo code, a venue URL a member
+       typed — must wrap rather than widen the page on a 320px screen. */
+    overflow-wrap: break-word;
+  }
+
+  /* iOS Safari zooms the whole page when a focused field is under 16px, and the
+     90% root scale puts every `text-sm` input at ~12.6px. Pin form controls to
+     16px on phones so focusing a field never zooms; desktop keeps the scale. */
+  @media (max-width: 767px) {
+    input:not([type="checkbox"]):not([type="radio"]),
+    select,
+    textarea {
+      font-size: 16px;
+    }
   }
 
   h1, h2, h3, h4 {
@@ -150,8 +164,27 @@
   display: none;
 }
 
+/* Studio-authored HTML (workshop descriptions) is rendered as-is, so nothing
+   inside it may set the page width. Media scales down, wide blocks scroll
+   inside themselves. */
+.prose img,
+.prose video,
+.prose iframe {
+  max-width: 100%;
+  height: auto;
+}
+.prose pre,
+.prose table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
 /* react-phone-number-input — match AuthSplitShell field styling */
 .ys-phone-input { display: flex; gap: 0.5rem; }
-.ys-phone-input .PhoneInputInput { border-radius: 0.75rem; border: 1px solid rgba(13, 26, 62, 0.1); background: #f5f6fa; padding: 0.75rem 1rem; font-size: 0.875rem; width: 100%; color: #0d1a3e; }
+.ys-phone-input .PhoneInputInput { border-radius: 0.75rem; border: 1px solid rgba(13, 26, 62, 0.1); background: #f5f6fa; padding: 0.75rem 1rem; font-size: 0.875rem; width: 100%; min-width: 0; color: #0d1a3e; }
+@media (max-width: 767px) {
+  .ys-phone-input .PhoneInputInput { font-size: 16px; }
+}
 .ys-phone-input .PhoneInputInput:focus { outline: none; border-color: #1a2a7a; }
 .ys-phone-input .PhoneInputCountry { border-radius: 0.75rem; border: 1px solid rgba(13, 26, 62, 0.1); padding: 0 0.75rem; }

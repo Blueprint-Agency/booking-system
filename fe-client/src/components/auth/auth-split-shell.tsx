@@ -16,7 +16,9 @@ export function AuthSplitShell({
   const image = img(imageKey);
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 min-h-[calc(100vh-72px)]">
+    // 4rem is the top bar. `dvh` so mobile browser chrome collapsing doesn't
+    // leave a stray scroll on an otherwise short form.
+    <div className="grid grid-cols-1 lg:grid-cols-2 min-h-[calc(100dvh-4rem)]">
       <div className="relative hidden lg:block">
         <Image
           src={image.unsplash}

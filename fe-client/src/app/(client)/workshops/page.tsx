@@ -97,8 +97,11 @@ function ApiLocationFilter({
   selected: string | "all";
   onChange: (id: string | "all") => void;
 }) {
+  // "All Locations" plus two studio names is wider than a phone, so the strip
+  // scrolls rather than pushing the page sideways.
   return (
-    <div className="inline-flex rounded-lg border border-border bg-warm p-1">
+    <div className="-mx-6 overflow-x-auto no-scrollbar sm:mx-0">
+    <div className="inline-flex rounded-lg border border-border bg-warm p-1 mx-6 sm:mx-0">
       <button
         onClick={() => onChange("all")}
         className={cn(
@@ -124,6 +127,7 @@ function ApiLocationFilter({
           {loc.name}
         </button>
       ))}
+    </div>
     </div>
   );
 }

@@ -100,7 +100,7 @@ function WorkshopSuccess({
                 </p>
               )}
             </div>
-            <div className="mt-10 flex gap-3 justify-center">
+            <div className="mt-10 flex flex-col sm:flex-row gap-3 justify-center text-center">
               <Link
                 href="/account/workshops"
                 className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 transition-colors"
@@ -169,7 +169,7 @@ function MerchSuccess({ stripeSessionId }: { stripeSessionId: string | null }) {
                 at the front desk on your next visit. Nothing is shipped.
               </p>
             </div>
-            <div className="mt-10 flex gap-3 justify-center">
+            <div className="mt-10 flex flex-col sm:flex-row gap-3 justify-center text-center">
               <Link
                 href="/account/merch"
                 className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 transition-colors"
@@ -312,7 +312,7 @@ function PackageSuccess({
               <p className="text-2xl font-bold text-ink">{view.name}</p>
               <p className="text-lg text-muted mt-2">{view.subtitle}</p>
             </div>
-            <div className="mt-10 flex gap-3 justify-center">
+            <div className="mt-10 flex flex-col sm:flex-row gap-3 justify-center text-center">
               <Link
                 href={view.primary.href}
                 className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 transition-colors"

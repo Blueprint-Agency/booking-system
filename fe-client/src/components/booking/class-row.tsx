@@ -7,6 +7,7 @@ import { ChevronRight, UserRound, MapPin, Ticket, Loader2, Lock } from "lucide-r
 import { cn, formatSgd } from "@/lib/utils";
 import { ApiError, useApi } from "@/lib/api";
 import { useFocusTrap } from "@/lib/use-focus-trap";
+import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { formatClassTime, type ApiClassCard, type ClassEntitlements } from "@/lib/classes";
 
 export function ClassRow({
@@ -37,6 +38,7 @@ export function ClassRow({
   const [booking, setBooking] = useState(false);
   const noPackageTrapRef = useFocusTrap<HTMLDivElement>(showNoPackage);
   const bookErrorTrapRef = useFocusTrap<HTMLDivElement>(Boolean(bookError));
+  useBodyScrollLock(showNoPackage || Boolean(bookError));
   const isFull = spotsLeft <= 0;
   const locationName = cls.location?.name ?? null;
 
@@ -133,6 +135,48 @@ export function ClassRow({
     }
   };
 
+  // The action, rendered twice: inline at the end of the row from `sm` up, and
+  // on its own full-width line below it on phones. A 320px row cannot hold the
+  // time, the class name and a pill-shaped button without truncating the name
+  // to nothing, and the name is what the member is scanning for.
+  const cta = (fullWidth: boolean) => {
+    const shape = fullWidth
+      ? "w-full justify-center px-4 py-2.5 text-sm"
+      : "px-4 md:px-5 py-2 text-xs";
+    if (booked)
+      return (
+        <span className={cn("inline-flex items-center justify-center rounded-full bg-sage/20 text-accent-deep font-medium", shape)}>
+          Booked
+        </span>
+      );
+    if (isFull)
+      return (
+        <span className={cn("inline-flex items-center justify-center rounded-full bg-warm text-muted border border-ink/10", shape)}>
+          Full
+        </span>
+      );
+    if (notCovered)
+      return (
+        <span className={cn("inline-flex items-center justify-center gap-1.5 rounded-full bg-warm text-muted border border-ink/10", shape)}>
+          <Lock className="h-3.5 w-3.5 text-ink/40" aria-hidden />
+          Not in your plan
+        </span>
+      );
+    return (
+      <button
+        onClick={handleBookClick}
+        disabled={booking}
+        className={cn(
+          "inline-flex items-center justify-center gap-1.5 rounded-full font-medium transition-colors bg-accent text-white hover:bg-accent-deep disabled:opacity-70 disabled:cursor-wait",
+          shape,
+        )}
+      >
+        {booking && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+        {booking ? "Booking…" : "Book Now"}
+      </button>
+    );
+  };
+
   return (
     <div
       className={cn(
@@ -206,33 +250,12 @@ export function ClassRow({
           {cls.credit_cost} credit{cls.credit_cost === 1 ? "" : "s"}
         </span>
 
-        {/* CTA */}
-        <div className="shrink-0">
-          {booked ? (
-            <span className="inline-flex items-center justify-center rounded-full bg-sage/20 text-accent-deep px-4 md:px-5 py-2 text-xs font-medium">
-              Booked
-            </span>
-          ) : isFull ? (
-            <span className="inline-flex items-center justify-center rounded-full bg-warm text-muted border border-ink/10 px-4 md:px-5 py-2 text-xs">
-              Full
-            </span>
-          ) : notCovered ? (
-            <span className="inline-flex items-center justify-center gap-1.5 rounded-full bg-warm text-muted border border-ink/10 px-4 md:px-5 py-2 text-xs">
-              <Lock className="h-3.5 w-3.5 text-ink/40" aria-hidden />
-              Not in your plan
-            </span>
-          ) : (
-            <button
-              onClick={handleBookClick}
-              disabled={booking}
-              className="inline-flex items-center justify-center gap-1.5 rounded-full px-4 md:px-5 py-2 text-xs font-medium transition-colors bg-accent text-white hover:bg-accent-deep disabled:opacity-70 disabled:cursor-wait"
-            >
-              {booking && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              {booking ? "Booking…" : "Book Now"}
-            </button>
-          )}
-        </div>
+        {/* CTA — inline from sm up */}
+        <div className="hidden sm:block shrink-0">{cta(false)}</div>
       </div>
+
+      {/* CTA — its own line on phones */}
+      <div className="mt-3 sm:hidden">{cta(true)}</div>
 
       {notCovered && planLocation && (
         <div className="mt-3 border-t border-ink/10 pt-2.5 text-xs text-muted">
@@ -267,8 +290,8 @@ export function ClassRow({
       )}
 
       {showNoPackage && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4" onClick={() => setShowNoPackage(false)}>
-          <div ref={noPackageTrapRef} role="dialog" aria-modal="true" aria-label="You need a package to book a class" tabIndex={-1} className="bg-paper rounded-2xl p-8 max-w-sm w-full shadow-modal text-center outline-none" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4" onClick={() => setShowNoPackage(false)}>
+          <div ref={noPackageTrapRef} role="dialog" aria-modal="true" aria-label="You need a package to book a class" tabIndex={-1} className="bg-paper rounded-2xl p-6 sm:p-8 max-w-sm w-full max-h-[85dvh] overflow-y-auto shadow-modal text-center outline-none" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-serif text-xl text-ink leading-snug">You need a package to book a class</h3>
             <p className="text-sm text-muted mt-2 leading-relaxed">You&apos;re out of credits. Grab a package to keep booking.</p>
             <div className="mt-6 flex flex-col gap-2">
@@ -280,8 +303,8 @@ export function ClassRow({
       )}
 
       {bookError && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4" onClick={() => setBookError(null)}>
-          <div ref={bookErrorTrapRef} role="dialog" aria-modal="true" aria-label="Couldn't book" tabIndex={-1} className="bg-paper rounded-2xl p-8 max-w-sm w-full shadow-modal text-center outline-none" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4" onClick={() => setBookError(null)}>
+          <div ref={bookErrorTrapRef} role="dialog" aria-modal="true" aria-label="Couldn't book" tabIndex={-1} className="bg-paper rounded-2xl p-6 sm:p-8 max-w-sm w-full max-h-[85dvh] overflow-y-auto shadow-modal text-center outline-none" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-serif text-xl text-ink leading-snug">Couldn&apos;t book</h3>
             <p className="text-sm text-muted mt-2 leading-relaxed">{bookError.msg}</p>
             {/* Only the expiry refusal offers credits here — the wrong-studio case

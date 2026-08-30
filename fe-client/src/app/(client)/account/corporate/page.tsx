@@ -98,7 +98,9 @@ export default function AccountCorporatePage() {
 
   return (
     <>
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
+      {/* AccountShell supplies the column gutters; adding more here squeezed
+          the card content on phones. */}
+      <div className="max-w-3xl">
         <SectionHeading eyebrow="Corporate" title="Your corporate packages" />
 
         {loading && (

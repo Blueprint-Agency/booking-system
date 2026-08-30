@@ -116,7 +116,9 @@ function Inner() {
 
   return (
     <>
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
+      {/* No padding of its own — AccountShell already gutters the column, and
+          doubling it left ~296px of content on a 360px phone. */}
+      <div className="max-w-3xl">
         <SectionHeading eyebrow="Private sessions" title="Your PT sessions" />
 
         {justSubmitted && (

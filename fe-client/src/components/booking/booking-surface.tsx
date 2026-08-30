@@ -9,8 +9,10 @@ type BookingSurfaceProps = {
 
 const paddingMap = {
   tight: "p-5 md:p-6",
+  // `p-6` at the base is load-bearing: full-bleed strips inside the surface
+  // cancel it with `-mx-6`.
   default: "p-6 md:p-8",
-  loose: "p-8 md:p-12",
+  loose: "p-6 sm:p-8 md:p-12",
 };
 
 const widthMap = {

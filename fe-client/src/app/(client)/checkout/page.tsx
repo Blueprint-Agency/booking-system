@@ -425,9 +425,9 @@ function CheckoutContent() {
             {/* Promo code */}
             <div className="mt-4">
               {promoApplied ? (
-                <div className="flex items-center justify-between rounded-xl border border-accent-deep/30 bg-accent/10 px-4 py-3 text-sm">
-                  <span className="inline-flex items-center gap-2 text-ink">
-                    <Check className="h-4 w-4 text-accent-deep" />
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-xl border border-accent-deep/30 bg-accent/10 px-4 py-3 text-sm">
+                  <span className="inline-flex min-w-0 flex-wrap items-center gap-x-2 text-ink">
+                    <Check className="h-4 w-4 shrink-0 text-accent-deep" />
                     <span className="font-mono font-medium">{promoApplied.code}</span>
                     <span className="text-muted">— {formatCurrency(promoApplied.discountSgd)} off</span>
                   </span>

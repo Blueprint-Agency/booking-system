@@ -11,6 +11,7 @@ import { cn, formatDurationMonths } from "@/lib/utils";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { SectionHeading } from "@/components/booking/section-heading";
 import { useApi } from "@/lib/api";
+import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { useLocations } from "@/lib/classes";
 import {
   ApiClassPackage,
@@ -327,32 +328,40 @@ function ClassCreditsSection({
 
   return (
     <div className="space-y-8">
-      <div role="tablist" aria-label="Class credit type" className="flex justify-center gap-8">
-        {subTabs
-          .filter((t) => !t.hidden)
-          .map((tab) => {
-            const isActive = subTab === tab.key;
-            return (
-              <button
-                key={tab.key}
-                role="tab"
-                aria-selected={isActive}
-                onClick={() => setSubTab(tab.key)}
-                className={cn(
-                  "relative pb-3 text-sm font-medium transition-colors",
-                  isActive ? "text-ink" : "text-muted hover:text-ink",
-                )}
-              >
-                {tab.label}
-                <span
+      {/* Three full-word labels do not fit across a 320px card, so the strip
+          scrolls sideways there and centres itself once it fits. */}
+      <div className="-mx-6 overflow-x-auto no-scrollbar sm:mx-0">
+        <div
+          role="tablist"
+          aria-label="Class credit type"
+          className="mx-auto flex w-max gap-6 px-6 sm:gap-8 sm:px-0"
+        >
+          {subTabs
+            .filter((t) => !t.hidden)
+            .map((tab) => {
+              const isActive = subTab === tab.key;
+              return (
+                <button
+                  key={tab.key}
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => setSubTab(tab.key)}
                   className={cn(
-                    "absolute left-0 right-0 -bottom-px h-0.5 rounded-full transition-all",
-                    isActive ? "bg-ink" : "bg-transparent",
+                    "relative whitespace-nowrap pb-3 text-sm font-medium transition-colors",
+                    isActive ? "text-ink" : "text-muted hover:text-ink",
                   )}
-                />
-              </button>
-            );
-          })}
+                >
+                  {tab.label}
+                  <span
+                    className={cn(
+                      "absolute bottom-0 left-0 right-0 h-0.5 rounded-full transition-all",
+                      isActive ? "bg-ink" : "bg-transparent",
+                    )}
+                  />
+                </button>
+              );
+            })}
+        </div>
       </div>
 
       {subTab === "bundle" && (
@@ -519,30 +528,36 @@ function PrivateSection({
 
   return (
     <div className="space-y-8">
-      <div role="tablist" aria-label="Private session type" className="flex justify-center gap-8">
-        {subTabs.map((tab) => {
-          const isActive = subTab === tab.key;
-          return (
-            <button
-              key={tab.key}
-              role="tab"
-              aria-selected={isActive}
-              onClick={() => setSubTab(tab.key)}
-              className={cn(
-                "relative pb-3 text-sm font-medium transition-colors",
-                isActive ? "text-ink" : "text-muted hover:text-ink",
-              )}
-            >
-              {tab.label}
-              <span
+      <div className="-mx-6 overflow-x-auto no-scrollbar sm:mx-0">
+        <div
+          role="tablist"
+          aria-label="Private session type"
+          className="mx-auto flex w-max gap-6 px-6 sm:gap-8 sm:px-0"
+        >
+          {subTabs.map((tab) => {
+            const isActive = subTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                role="tab"
+                aria-selected={isActive}
+                onClick={() => setSubTab(tab.key)}
                 className={cn(
-                  "absolute left-0 right-0 -bottom-px h-0.5 rounded-full transition-all",
-                  isActive ? "bg-ink" : "bg-transparent",
+                  "relative whitespace-nowrap pb-3 text-sm font-medium transition-colors",
+                  isActive ? "text-ink" : "text-muted hover:text-ink",
                 )}
-              />
-            </button>
-          );
-        })}
+              >
+                {tab.label}
+                <span
+                  className={cn(
+                    "absolute bottom-0 left-0 right-0 h-0.5 rounded-full transition-all",
+                    isActive ? "bg-ink" : "bg-transparent",
+                  )}
+                />
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {subTab === "1on1" && <PtSection items={pt1on1} blurb={SHARED_BLURBS.pt1on1} />}
@@ -617,7 +632,7 @@ function BundleCard({
   const validity =
     pkg.validity_days != null ? `${pkg.validity_days} days` : "no expiry";
   return (
-    <div className="relative rounded-2xl bg-paper border border-ink/10 p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all">
+    <div className="relative rounded-2xl bg-paper border border-ink/10 p-6 sm:p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all">
       <PromoTag pkg={pkg} />
       <div>
         <p className="text-4xl font-extrabold text-ink">
@@ -665,7 +680,7 @@ function UnlimitedCard({
       ? formatDurationMonths(pkg.duration_months)
       : "unlimited";
   return (
-    <div className="relative rounded-2xl bg-paper border border-ink/10 p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all">
+    <div className="relative rounded-2xl bg-paper border border-ink/10 p-6 sm:p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all">
       <PromoTag pkg={pkg} />
       <div>
         <p className="text-4xl font-extrabold text-ink">{months}</p>
@@ -730,7 +745,7 @@ function TrialCard({
   );
 
   return (
-    <div className="relative rounded-2xl bg-paper border border-accent/40 p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all">
+    <div className="relative rounded-2xl bg-paper border border-accent/40 p-6 sm:p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all">
       <span className="absolute -top-2.5 left-4 text-[10px] font-mono uppercase tracking-wider bg-accent text-white px-2.5 py-0.5 rounded-full">
         Trial
       </span>
@@ -790,14 +805,15 @@ function TrialDisclaimerModal({
   onConfirm: () => void;
 }) {
   const [ack, setAck] = useState(false);
+  useBodyScrollLock(true);
   const isFree = Number(pkg.effective_price_sgd) === 0;
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4"
       onClick={onCancel}
     >
       <div
-        className="bg-paper rounded-2xl p-8 max-w-md w-full shadow-modal"
+        className="bg-paper rounded-2xl p-6 sm:p-8 max-w-md w-full max-h-[85dvh] overflow-y-auto shadow-modal"
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="font-serif text-xl text-ink leading-snug">
@@ -864,7 +880,7 @@ function PtCard({ pkg }: { pkg: ApiPtPackage }) {
       ? "Train with one partner"
       : `${pkg.num_sessions} personal training sessions`;
   return (
-    <div className="relative rounded-2xl bg-paper border border-ink/10 p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all">
+    <div className="relative rounded-2xl bg-paper border border-ink/10 p-6 sm:p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all">
       <PromoTag pkg={pkg} />
       <div>
         <p className="text-4xl font-extrabold text-ink">
@@ -964,7 +980,7 @@ function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
   }
 
   return (
-    <div className="relative rounded-2xl bg-paper border border-ink/10 p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all">
+    <div className="relative rounded-2xl bg-paper border border-ink/10 p-6 sm:p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all">
       <div>
         <p className="text-base font-medium text-ink">{pkg.name}</p>
         {pkg.description && (
@@ -1082,11 +1098,11 @@ function CorporateRequestModal({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-[70] flex items-center justify-center bg-ink/40 backdrop-blur-sm p-4"
       onClick={pending ? undefined : onCancel}
     >
       <div
-        className="bg-paper rounded-2xl p-8 max-w-md w-full shadow-modal max-h-[90vh] overflow-y-auto"
+        className="bg-paper rounded-2xl p-6 sm:p-8 max-w-md w-full shadow-modal max-h-[85dvh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="font-serif text-xl text-ink leading-snug">

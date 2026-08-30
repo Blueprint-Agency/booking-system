@@ -254,7 +254,7 @@ export default function WorkshopDetailPage() {
             </div>
 
             {/* Right column — sticky purchase card */}
-            <div className="sticky top-24 self-start rounded-2xl border border-ink/10 bg-paper p-6 space-y-4">
+            <div className="lg:sticky lg:top-24 self-start rounded-2xl border border-ink/10 bg-paper p-5 sm:p-6 space-y-4">
               {sortedTiers.length === 0 ? (
                 <p className="text-sm text-muted">
                   Pricing is being finalised. Check back soon.

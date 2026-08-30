@@ -23,6 +23,7 @@ import { formatDate, cn } from "@/lib/utils";
 import { formatClassTime } from "@/lib/classes";
 import { ApiError, useApi } from "@/lib/api";
 import { useClientPackages } from "@/lib/use-client-packages";
+import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { CLASS_CANCELLATION_HOURS } from "@/data/policy";
 
 /** A member may self-cancel only up to this many hours before the class starts. */
@@ -84,6 +85,7 @@ export function ClassBookings() {
   const [tab, setTab] = useState<Tab>("upcoming");
   const [cancelTarget, setCancelTarget] = useState<ApiBooking | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  useBodyScrollLock(Boolean(cancelTarget));
   const [banner, setBanner] = useState<
     { tone: "ok" | "warn" | "error"; text: string } | null
   >(null);
@@ -270,11 +272,11 @@ export function ClassBookings() {
 
       {cancelTarget && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4"
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-ink/40 p-4"
           onClick={() => !cancelling && setCancelTarget(null)}
         >
           <div
-            className="w-full max-w-md rounded-2xl bg-paper border border-ink/10 p-6 shadow-hover"
+            className="w-full max-w-md max-h-[85dvh] overflow-y-auto rounded-2xl bg-paper border border-ink/10 p-6 shadow-hover"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-bold text-ink">Cancel this booking?</h3>

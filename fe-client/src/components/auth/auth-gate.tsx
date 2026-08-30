@@ -54,7 +54,7 @@ function LoginRequiredModal({
         aria-modal="true"
         aria-label="Sign in required"
         tabIndex={-1}
-        className="w-full max-w-md bg-paper rounded-xl shadow-hover p-6 sm:p-8 outline-none"
+        className="w-full max-w-md max-h-[85dvh] overflow-y-auto bg-paper rounded-xl shadow-hover p-6 sm:p-8 outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center mb-4">

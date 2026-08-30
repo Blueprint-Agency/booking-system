@@ -15,6 +15,7 @@ import {
   LogOut,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { AccountHeader } from "./account-header";
 import { AccountMobileNav } from "./account-mobile-nav";
 
@@ -32,6 +33,7 @@ export function AccountShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { signOut } = useClerk();
   const [confirmSignOut, setConfirmSignOut] = useState(false);
+  useBodyScrollLock(confirmSignOut);
 
   return (
     <div className="bg-warm min-h-[calc(100vh-72px-320px)]">
@@ -84,7 +86,7 @@ export function AccountShell({ children }: { children: React.ReactNode }) {
 
       {confirmSignOut && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4"
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-ink/40 p-4"
           onClick={() => setConfirmSignOut(false)}
         >
           <div
