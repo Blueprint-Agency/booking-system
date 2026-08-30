@@ -199,7 +199,7 @@ function LocationCard({
             </Badge>
           )}
         </div>
-        <div className="flex shrink-0 gap-1">
+        <div className="flex shrink-0 flex-wrap justify-end gap-1">
           {!isArchived && (
             <Button size="sm" variant="ghost" onClick={onEdit}>
               Edit

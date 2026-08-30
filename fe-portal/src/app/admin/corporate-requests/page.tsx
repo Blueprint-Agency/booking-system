@@ -189,8 +189,8 @@ export default function CorporateRequestsPage() {
                 onClick={() => setActiveId(r.id)}
                 className="block w-full px-4 py-3 text-left transition hover:bg-paper"
               >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+                  <div className="min-w-0 flex-1">
                     <div className="font-medium text-ink">{r.client.name}</div>
                     <div className="text-xs text-muted">
                       {r.package.name}
@@ -199,7 +199,7 @@ export default function CorporateRequestsPage() {
                         : ""}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="ml-auto flex shrink-0 items-center gap-2">
                     <Badge tone={STATUS_TONE[r.status]}>{r.status}</Badge>
                     <span className="text-xs text-muted">
                       {formatRelative(r.createdAt)}

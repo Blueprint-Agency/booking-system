@@ -363,7 +363,10 @@ export default function FinancePage() {
       ) : (
         <>
           <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-soft">
-            <table className="w-full text-sm">
+            {/* min-w makes the wrapper's overflow-x-auto actually do something:
+                a plain w-full table shrinks to the phone instead of scrolling,
+                and eleven columns then wrap one character per line. */}
+            <table className="w-full min-w-[980px] text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-xs text-muted">
                   <th className="px-3 py-2.5 font-medium">Date</th>

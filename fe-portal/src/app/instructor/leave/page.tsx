@@ -413,7 +413,9 @@ export default function InstructorLeavePage() {
             />
           ) : (
             <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-soft">
-              <table className="w-full text-sm">
+              {/* min-w so the wrapper scrolls on a phone rather than the table
+                  squeezing its columns to unreadable slivers. */}
+              <table className="w-full min-w-[640px] text-sm">
                 <thead>
                   <tr className="border-b border-border text-left text-xs text-muted">
                     <th className="px-3 py-2.5 font-medium">Dates</th>

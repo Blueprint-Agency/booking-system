@@ -31,7 +31,7 @@ export default function WaiverPage() {
       <div className="grid gap-6 lg:grid-cols-3">
         <form onSubmit={handleSave} className="space-y-4 lg:col-span-2">
           <section className="rounded-xl border border-border bg-card p-5 shadow-soft">
-            <div className="mb-2 flex items-center justify-between">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
               <Label htmlFor="waiver-body">Waiver text</Label>
               <span className="text-[11px] text-muted">
                 Rich text editor in production · plain HTML here
@@ -45,7 +45,7 @@ export default function WaiverPage() {
             />
           </section>
 
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <span className="text-xs text-muted">
               Last updated {formatRelative(waiver.updatedAt)}
             </span>

@@ -40,7 +40,7 @@ export function CorporateRequestDrawer({
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
       <div className="absolute inset-0 bg-black/30" onClick={onClose} />
-      <div className="relative z-50 h-full w-full max-w-md overflow-y-auto bg-card p-6 shadow-xl">
+      <div className="relative z-50 h-full w-full max-w-md overflow-y-auto bg-card p-4 shadow-xl sm:p-6">
         <button
           type="button"
           onClick={onClose}
@@ -49,9 +49,9 @@ export function CorporateRequestDrawer({
         >
           <X className="h-4 w-4" />
         </button>
-        <div className="mb-4 flex items-center gap-3">
+        <div className="mb-4 flex items-center gap-3 pr-8">
           <Avatar name={client.name} size={40} />
-          <div>
+          <div className="min-w-0">
             <h2 className="text-base font-semibold text-ink">{client.name}</h2>
             <div className="text-xs text-muted">
               Submitted {formatRelative(request.createdAt)}
@@ -91,7 +91,7 @@ export function CorporateRequestDrawer({
           </Row>
         </dl>
         {request.status === "pending" && (
-          <div className="mt-6 flex gap-2">
+          <div className="mt-6 flex flex-wrap gap-2">
             <Button onClick={onSchedule} disabled={busy}>
               Schedule
             </Button>
@@ -107,7 +107,7 @@ export function CorporateRequestDrawer({
                 <>Scheduled on {formatDateTime(request.resolvedAt)}.</>
               )}
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button onClick={onAttended} disabled={busy}>
                 Mark attended
               </Button>

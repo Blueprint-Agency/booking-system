@@ -28,7 +28,15 @@ export function Tabs({
 
 export function TabsList({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={cn("inline-flex items-center gap-1 rounded-lg border border-border bg-card p-1", className)}>
+    // max-w-full + overflow-x-auto: the pill still shrink-wraps its tabs on a
+    // wide screen, but scrolls sideways instead of overflowing the viewport
+    // once there are more tabs than a phone can fit.
+    <div
+      className={cn(
+        "inline-flex max-w-full items-center gap-1 overflow-x-auto rounded-lg border border-border bg-card p-1 align-top no-scrollbar",
+        className
+      )}
+    >
       {children}
     </div>
   );
@@ -43,7 +51,7 @@ export function TabsTrigger({ value, children }: { value: string; children: Reac
       type="button"
       onClick={() => ctx.onValueChange(value)}
       className={cn(
-        "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+        "shrink-0 whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
         active ? "bg-accent text-white" : "text-muted hover:text-ink"
       )}
     >

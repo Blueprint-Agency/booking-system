@@ -30,16 +30,16 @@ export function ManageLocationsDialog({ onClose }: { onClose: () => void }) {
             {locations.map((loc) => (
               <li
                 key={loc.id}
-                className="flex items-center justify-between gap-3 px-4 py-2.5"
+                className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-2.5"
               >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 text-sm text-ink">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2 text-sm text-ink">
                     <span className="font-medium">{loc.name}</span>
                     {loc.archivedAt && <Badge tone="neutral">Archived</Badge>}
                   </div>
                   <div className="truncate text-xs text-muted">{loc.address}</div>
                 </div>
-                <div className="flex shrink-0 gap-1">
+                <div className="ml-auto flex shrink-0 flex-wrap justify-end gap-1">
                   <Button size="sm" variant="ghost" onClick={() => setEditing(loc)}>
                     <Pencil className="h-3.5 w-3.5" /> Edit
                   </Button>

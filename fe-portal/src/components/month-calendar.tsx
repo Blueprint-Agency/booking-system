@@ -54,45 +54,50 @@ export function MonthCalendar({
   const today = startOfDay(new Date());
 
   return (
-    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-soft">
-      <div className="grid grid-cols-7 border-b border-border bg-paper/40">
-        {WEEKDAYS.map((d) => (
-          <div
-            key={d}
-            className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted sm:text-xs"
-          >
-            {d}
-          </div>
-        ))}
-      </div>
-      <div className="grid grid-cols-7">
-        {days.map((day) => {
-          const inMonth = isSameMonth(day, monthStart);
-          const isToday = isSameDay(day, today);
-          const cell = renderDay(day, { inMonth, isToday });
-          const dimmed = !inMonth || !!cell.dim;
-
-          return (
+    // Seven columns can't shrink below legibility: on a phone the month scrolls
+    // sideways at a fixed 640px rather than squeezing each day to ~50px, which
+    // leaves no room for the date and its chips to sit side by side.
+    <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-soft">
+      <div className="min-w-[640px]">
+        <div className="grid grid-cols-7 border-b border-border bg-paper/40">
+          {WEEKDAYS.map((d) => (
             <div
-              key={day.toISOString()}
-              className={`min-h-[88px] border-b border-r border-border p-1.5 last:border-r-0 sm:min-h-[120px] sm:p-2 ${
-                dimmed ? "bg-paper/30" : ""
-              }`}
+              key={d}
+              className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted sm:text-xs"
             >
-              <div className="mb-1 flex items-center justify-between gap-1">
-                <span
-                  className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium ${
-                    isToday ? "bg-accent text-white" : dimmed ? "text-muted" : "text-ink"
-                  }`}
-                >
-                  {format(day, "d")}
-                </span>
-                {cell.badge}
-              </div>
-              {cell.body}
+              {d}
             </div>
-          );
-        })}
+          ))}
+        </div>
+        <div className="grid grid-cols-7">
+          {days.map((day) => {
+            const inMonth = isSameMonth(day, monthStart);
+            const isToday = isSameDay(day, today);
+            const cell = renderDay(day, { inMonth, isToday });
+            const dimmed = !inMonth || !!cell.dim;
+
+            return (
+              <div
+                key={day.toISOString()}
+                className={`min-h-[88px] border-b border-r border-border p-1.5 last:border-r-0 sm:min-h-[120px] sm:p-2 ${
+                  dimmed ? "bg-paper/30" : ""
+                }`}
+              >
+                <div className="mb-1 flex items-center justify-between gap-1">
+                  <span
+                    className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium ${
+                      isToday ? "bg-accent text-white" : dimmed ? "text-muted" : "text-ink"
+                    }`}
+                  >
+                    {format(day, "d")}
+                  </span>
+                  {cell.badge}
+                </div>
+                {cell.body}
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

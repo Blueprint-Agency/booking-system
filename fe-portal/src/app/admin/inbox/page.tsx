@@ -174,7 +174,7 @@ function InboxRow({
       }`}
       onClick={onCardClick}
     >
-      <div className="mb-1.5 flex items-center gap-2">
+      <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
         <Badge tone={meta.tone}>{meta.label}</Badge>
         {isUnread && (
           <span className="inline-flex h-2 w-2 rounded-full bg-accent" aria-label="Unread" />

@@ -314,9 +314,9 @@ function ClassRoster({
             return (
               <li
                 key={a.booking_id}
-                className="flex items-center justify-between gap-3 py-2.5 text-sm"
+                className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 py-2.5 text-sm"
               >
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <Link
                     href={`/admin/clients/${a.client.id}`}
                     className="text-ink hover:text-accent"
@@ -327,7 +327,7 @@ function ClassRoster({
                     {a.package_kind ? PACKAGE_KIND_LABEL[a.package_kind] : "—"} · {a.code}
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="ml-auto flex shrink-0 items-center gap-2">
                   {noShow && !attended && (
                     <Badge tone="error">No-show</Badge>
                   )}

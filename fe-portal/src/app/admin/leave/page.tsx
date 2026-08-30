@@ -225,7 +225,9 @@ export default function AdminLeavePage() {
         />
       ) : (
         <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-soft">
-          <table className="w-full text-sm">
+          {/* Without a min-width the wrapper never scrolls — the table just
+              shrinks and the six columns wrap to single characters. */}
+          <table className="w-full min-w-[820px] text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs text-muted">
                 <th className="px-3 py-2.5 font-medium">Instructor</th>

@@ -185,11 +185,14 @@ export default function CheckInPage() {
               </header>
               <ul className="divide-y divide-border">
                 {roster.map(({ booking, client }) => (
-                  <li key={booking.id} className="flex items-center gap-4 px-5 py-3">
+                  <li
+                    key={booking.id}
+                    className="flex items-center gap-3 px-4 py-3 sm:gap-4 sm:px-5"
+                  >
                     <Avatar name={client.name} size={32} />
                     <div className="min-w-0 flex-1">
-                      <div className="text-sm font-medium text-ink">{client.name}</div>
-                      <div className="text-xs text-muted">{booking.code}</div>
+                      <div className="truncate text-sm font-medium text-ink">{client.name}</div>
+                      <div className="truncate text-xs text-muted">{booking.code}</div>
                     </div>
                     {booking.checkInState === "attended" ? (
                       <Badge tone="sage">
@@ -198,7 +201,7 @@ export default function CheckInPage() {
                     ) : booking.checkInState === "no_show" ? (
                       <Badge tone="error">No-show</Badge>
                     ) : (
-                      <div className="flex gap-1.5">
+                      <div className="flex shrink-0 gap-1.5">
                         <button
                           type="button"
                           onClick={() => flipCheckIn(booking.id, "attended")}

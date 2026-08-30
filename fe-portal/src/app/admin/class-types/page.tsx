@@ -337,7 +337,11 @@ function ClassTypeRow({
 }) {
   const isArchived = !!ct.archivedAt;
   return (
-    <li className={`flex items-center justify-between gap-3 px-4 py-3 ${indent ? "pl-10" : ""}`}>
+    <li
+      className={`flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3 ${
+        indent ? "pl-8 sm:pl-10" : ""
+      }`}
+    >
       <div className="flex min-w-0 flex-1 items-start gap-2">
         {indent && <CornerDownRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted" />}
         <div className="min-w-0">
@@ -353,7 +357,7 @@ function ClassTypeRow({
           )}
         </div>
       </div>
-      <div className="flex shrink-0 gap-1">
+      <div className="ml-auto flex shrink-0 flex-wrap justify-end gap-1">
         <Button size="sm" variant="ghost" onClick={onEdit}>
           <Pencil className="h-3.5 w-3.5" /> Edit
         </Button>

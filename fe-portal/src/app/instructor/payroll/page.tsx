@@ -55,7 +55,7 @@ export default function InstructorPayrollPage() {
 
       {data && (
         <div className="mb-4 rounded-xl border border-border bg-card p-4 shadow-soft">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
             <div className="flex items-center gap-2 text-sm text-muted">
               <Wallet className="h-4 w-4" />
               {data.session_count}{" "}
@@ -69,7 +69,7 @@ export default function InstructorPayrollPage() {
       )}
 
       {data && data.unpriced_count > 0 && (
-        <div className="mb-4 flex items-center gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
           <AlertCircle className="h-3.5 w-3.5 shrink-0" />
           {data.unpriced_count}{" "}
           {data.unpriced_count === 1 ? "session has" : "sessions have"} no pay set
@@ -94,7 +94,9 @@ export default function InstructorPayrollPage() {
         />
       ) : (
         <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-soft">
-          <table className="w-full text-sm">
+          {/* min-w so the wrapper scrolls on a phone instead of the columns
+              collapsing. */}
+          <table className="w-full min-w-[560px] text-sm">
             <thead>
               <tr className="border-b border-border text-left text-xs text-muted">
                 <th className="px-3 py-2.5 font-medium">Class taught</th>

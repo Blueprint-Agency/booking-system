@@ -55,8 +55,8 @@ export function Sheet({
           className
         )}
       >
-        <div className="flex items-start justify-between border-b border-border px-6 py-4">
-          <div>
+        <div className="flex items-start justify-between gap-2 border-b border-border px-4 py-3 sm:px-6 sm:py-4">
+          <div className="min-w-0">
             {title && <h2 className="text-lg font-semibold text-ink">{title}</h2>}
             {description && <p className="mt-1 text-sm text-muted">{description}</p>}
           </div>
@@ -64,12 +64,12 @@ export function Sheet({
             type="button"
             onClick={() => onOpenChange(false)}
             aria-label="Close"
-            className="rounded-md p-1 text-muted hover:bg-paper hover:text-ink"
+            className="-mr-1 shrink-0 rounded-md p-2 text-muted hover:bg-paper hover:text-ink"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="flex-1 overflow-auto px-6 py-4">{children}</div>
+        <div className="flex-1 overflow-auto px-4 py-4 sm:px-6">{children}</div>
       </div>
     </div>,
     document.body

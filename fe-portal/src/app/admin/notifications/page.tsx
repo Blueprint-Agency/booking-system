@@ -36,19 +36,24 @@ export default function NotificationsPage() {
                   <li key={t.slug}>
                     <Link
                       href={`/admin/notifications/${t.slug}`}
-                      className="flex items-center gap-4 px-5 py-3 transition hover:bg-paper"
+                      className="flex items-center gap-3 px-4 py-3 transition hover:bg-paper sm:gap-4 sm:px-5"
                     >
                       <div className="min-w-0 flex-1">
                         <div className="font-medium text-ink">{t.label}</div>
                         <div className="text-xs text-muted">{t.description}</div>
+                        {/* On a phone the timestamp moves under the label rather
+                            than stealing width from it. */}
+                        <div className="mt-0.5 text-xs text-muted sm:hidden">
+                          Updated {formatRelative(t.updatedAt)}
+                        </div>
                       </div>
-                      <div className="hidden text-xs text-muted md:block">
+                      <div className="hidden shrink-0 text-xs text-muted md:block">
                         {t.variables.length} variable{t.variables.length === 1 ? "" : "s"}
                       </div>
-                      <span className="text-xs text-muted">
+                      <span className="hidden shrink-0 text-xs text-muted sm:inline">
                         Updated {formatRelative(t.updatedAt)}
                       </span>
-                      <ChevronRight className="h-4 w-4 text-muted" />
+                      <ChevronRight className="h-4 w-4 shrink-0 text-muted" />
                     </Link>
                   </li>
                 ))}

@@ -225,7 +225,9 @@ export default function ClientsPage() {
 
             {/* Desktop table */}
             <div className="hidden overflow-x-auto sm:block">
-              <table className="w-full">
+              {/* Tablet width still needs the scroll: min-w gives the wrapper
+                  something to scroll rather than crushing the columns. */}
+              <table className="w-full min-w-[720px]">
                 <thead className="bg-paper">
                   <tr className="text-left text-xs uppercase tracking-wider text-muted">
                     <th className="px-5 py-3 font-medium">Customer</th>

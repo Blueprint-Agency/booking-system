@@ -606,9 +606,11 @@ export function WorkshopEditor({
               return (
                 <div
                   key={sid}
-                  className="flex items-center gap-2 rounded-md border border-border bg-paper px-3 py-2"
+                  className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-paper px-3 py-2"
                 >
-                  <span className="flex-1 text-sm text-ink">{ins?.name ?? "Unknown"}</span>
+                  <span className="min-w-0 flex-1 text-sm text-ink">
+                    {ins?.name ?? "Unknown"}
+                  </span>
                   <Input
                     type="number"
                     min={0}
@@ -717,7 +719,7 @@ export function WorkshopEditor({
         </div>
       )}
 
-      <div className="flex justify-end gap-2">
+      <div className="flex flex-wrap justify-end gap-2">
         <Button variant="ghost" onClick={onCancel}>
           Cancel
         </Button>
@@ -750,7 +752,7 @@ function Section({
 }) {
   return (
     <section className="space-y-4 rounded-xl border border-border bg-card p-5 shadow-soft">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <h2 className="text-sm font-semibold text-ink">{title}</h2>
         <Badge tone="neutral">{step}</Badge>
         {note && <span className="text-[11px] text-muted">{note}</span>}

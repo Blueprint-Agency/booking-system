@@ -532,7 +532,7 @@ export default function PolicyPage() {
           )}
         </section>
 
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <span className="text-xs text-muted">
             {policy.updatedAt
               ? `Last updated ${new Date(policy.updatedAt).toLocaleString()}`

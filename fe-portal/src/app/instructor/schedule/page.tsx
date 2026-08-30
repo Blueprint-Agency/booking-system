@@ -150,17 +150,20 @@ export default function InstructorSchedulePage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <div className="flex items-start justify-between gap-3">
-        <PageHeader
-          title="My schedule"
-          description="Your classes and private sessions over the next 60 days."
-        />
-        <Link href="/instructor/schedule/new/class" className="shrink-0">
-          <Button>
-            <CalendarPlus className="h-4 w-4" /> New class
-          </Button>
-        </Link>
-      </div>
+      {/* The action belongs to PageHeader, which already stacks it under the
+          title on a phone — a sibling flex row squeezed the description into a
+          sliver instead. */}
+      <PageHeader
+        title="My schedule"
+        description="Your classes and private sessions over the next 60 days."
+        actions={
+          <Link href="/instructor/schedule/new/class">
+            <Button>
+              <CalendarPlus className="h-4 w-4" /> New class
+            </Button>
+          </Link>
+        }
+      />
 
       {error && (
         <div className="rounded-lg border border-error/30 bg-error/5 p-3 text-xs text-error">
@@ -195,9 +198,9 @@ export default function InstructorSchedulePage() {
                 {items.map((e) => (
                   <li
                     key={`${e.kind}:${e.id}`}
-                    className="flex items-center justify-between gap-3 px-4 py-3"
+                    className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3"
                   >
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <div className="truncate font-medium text-ink">{e.label}</div>
                       <div className="text-xs text-muted">
                         {formatTime(e.starts_at)}–{formatTime(e.ends_at)}
@@ -207,7 +210,7 @@ export default function InstructorSchedulePage() {
                         {e.room_id ? ` · ${roomName.get(e.room_id) ?? "Room"}` : ""}
                       </div>
                     </div>
-                    <div className="flex shrink-0 items-center gap-2">
+                    <div className="ml-auto flex shrink-0 items-center gap-2">
                       {e.capacity != null && (
                         <span className="text-xs tabular-nums text-muted">
                           {e.booked_count ?? 0}/{e.capacity}

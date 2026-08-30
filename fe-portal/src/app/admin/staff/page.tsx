@@ -355,7 +355,7 @@ export default function StaffPage() {
         }
       />
 
-      <div className="mb-6 flex gap-1 border-b border-border">
+      <div className="mb-6 flex gap-1 overflow-x-auto border-b border-border no-scrollbar">
         <TabButton
           active={tab === "admin"}
           onClick={() => {
@@ -409,24 +409,29 @@ export default function StaffPage() {
                       key={inv.id}
                       className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3"
                     >
-                      <Mail className="h-4 w-4 text-muted" />
-                      <div className="min-w-0 flex-1">
-                        <div className="font-medium text-ink">{inv.email}</div>
-                        <div className="text-xs text-muted">
-                          {inv.role === "superadmin"
-                            ? "Superadmin"
-                            : inv.role === "admin"
-                            ? "Admin"
-                            : "Instructor"}{" "}
-                          · sent{" "}
-                          {formatRelative(inv.created_at)} · expires{" "}
-                          {formatRelative(inv.expires_at)}
-                          {inv.invited_by_staff_name ? ` · by ${inv.invited_by_staff_name}` : ""}
+                      {/* basis-full below sm so the email and its sent/expires
+                          line get the full row width; the badge and the two
+                          actions wrap onto a second line underneath. */}
+                      <div className="flex min-w-0 basis-full items-start gap-3 sm:flex-1 sm:basis-auto">
+                        <Mail className="mt-1 h-4 w-4 shrink-0 text-muted" />
+                        <div className="min-w-0">
+                          <div className="font-medium break-all text-ink">{inv.email}</div>
+                          <div className="text-xs text-muted">
+                            {inv.role === "superadmin"
+                              ? "Superadmin"
+                              : inv.role === "admin"
+                              ? "Admin"
+                              : "Instructor"}{" "}
+                            · sent{" "}
+                            {formatRelative(inv.created_at)} · expires{" "}
+                            {formatRelative(inv.expires_at)}
+                            {inv.invited_by_staff_name ? ` · by ${inv.invited_by_staff_name}` : ""}
+                          </div>
                         </div>
                       </div>
                       <Badge tone="warning">Pending</Badge>
                       {isSuperadmin && (
-                        <>
+                        <div className="ml-auto flex flex-wrap items-center justify-end gap-1">
                           <Button
                             size="sm"
                             variant="ghost"
@@ -443,7 +448,7 @@ export default function StaffPage() {
                           >
                             <X className="h-3.5 w-3.5" /> Revoke
                           </Button>
-                        </>
+                        </div>
                       )}
                     </li>
                   ))}
@@ -617,12 +622,15 @@ function StaffRow({
   const isArchived = staff.status === "archived";
   const isPending = staff.status === "pending";
 
+  // basis-full below sm: the identity owns its own line on a phone, so the meta
+  // and the action buttons wrap underneath instead of squeezing the name into a
+  // one-word-per-line column.
   const identity = (
-    <>
+    <div className="flex min-w-0 basis-full items-center gap-3 sm:flex-1 sm:basis-auto">
       <Avatar name={staff.name} size={36} />
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="font-medium text-ink">{staff.name}</span>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="font-medium break-words text-ink">{staff.name}</span>
           {staff.role === "superadmin" && (
             <Badge tone="warning">
               <ShieldCheck className="mr-0.5 h-3 w-3" /> Superadmin
@@ -640,13 +648,13 @@ function StaffRow({
           {isPending && <Badge tone="warning">Pending invite</Badge>}
           {isSelf && <span className="text-xs text-muted">(you)</span>}
         </div>
-        <div className="text-xs text-muted">{staff.email}</div>
+        <div className="truncate text-xs text-muted">{staff.email}</div>
       </div>
-    </>
+    </div>
   );
 
   const meta = (
-    <div className="text-xs text-muted">
+    <div className="shrink-0 text-xs text-muted">
       {isArchived
         ? `Archived ${staff.archived_at ? formatDate(staff.archived_at) : ""}`
         : staff.accepted_at
@@ -658,29 +666,31 @@ function StaffRow({
   );
 
   return (
-    <li className="flex items-center gap-4 px-5 py-3">
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 sm:px-5">
       {identity}
       {meta}
-      {/* Opens read-only; the Edit button lives inside the dialog and appears
-          only for a viewer who outranks this person. */}
-      <Button size="sm" variant="ghost" onClick={onOpen}>
-        <Eye className="h-3.5 w-3.5" /> View
-      </Button>
-      {canArchive && onArchive && (
-        <Button size="sm" variant="ghost" onClick={onArchive}>
-          <Archive className="h-3.5 w-3.5" /> Archive
+      <div className="ml-auto flex flex-wrap items-center justify-end gap-1">
+        {/* Opens read-only; the Edit button lives inside the dialog and appears
+            only for a viewer who outranks this person. */}
+        <Button size="sm" variant="ghost" onClick={onOpen}>
+          <Eye className="h-3.5 w-3.5" /> View
         </Button>
-      )}
-      {isArchived && canManageArchived && onUnarchive && (
-        <Button size="sm" variant="ghost" disabled={unarchiveBusy} onClick={onUnarchive}>
-          <RotateCcw className="h-3.5 w-3.5" /> Unarchive
-        </Button>
-      )}
-      {isArchived && canManageArchived && onDelete && (
-        <Button size="sm" variant="ghost" disabled={deleteBusy} onClick={onDelete}>
-          <Trash2 className="h-3.5 w-3.5" /> Delete
-        </Button>
-      )}
+        {canArchive && onArchive && (
+          <Button size="sm" variant="ghost" onClick={onArchive}>
+            <Archive className="h-3.5 w-3.5" /> Archive
+          </Button>
+        )}
+        {isArchived && canManageArchived && onUnarchive && (
+          <Button size="sm" variant="ghost" disabled={unarchiveBusy} onClick={onUnarchive}>
+            <RotateCcw className="h-3.5 w-3.5" /> Unarchive
+          </Button>
+        )}
+        {isArchived && canManageArchived && onDelete && (
+          <Button size="sm" variant="ghost" disabled={deleteBusy} onClick={onDelete}>
+            <Trash2 className="h-3.5 w-3.5" /> Delete
+          </Button>
+        )}
+      </div>
     </li>
   );
 }
@@ -700,7 +710,7 @@ function TabButton({
     <button
       type="button"
       onClick={onClick}
-      className={`-mb-px inline-flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
+      className={`-mb-px inline-flex shrink-0 items-center gap-2 whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
         active
           ? "border-accent text-ink"
           : "border-transparent text-muted hover:text-ink"
@@ -786,7 +796,9 @@ function InviteAdminDialog({
 
         <div className="space-y-1.5">
           <Label>Role</Label>
-          <div className="grid grid-cols-3 gap-2">
+          {/* One card per row on a phone — three side by side leaves no room
+              for the role descriptions. */}
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
             <button
               type="button"
               onClick={() => setRole("admin")}

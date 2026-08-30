@@ -256,11 +256,13 @@ export default function ClientProfilePage({
             </div>
           )}
 
-          <header className="flex items-start gap-4 border-b border-border pb-6">
+          <header className="flex flex-wrap items-start gap-x-4 gap-y-3 border-b border-border pb-6">
             <Avatar name={profile.name} size={64} />
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-semibold text-ink">{profile.name}</h1>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-xl font-semibold break-words text-ink sm:text-2xl">
+                  {profile.name}
+                </h1>
                 {profile.deleted_at ? (
                   <Badge tone="error">
                     <ShieldOff className="mr-1 h-3 w-3" /> Blocked
@@ -272,8 +274,8 @@ export default function ClientProfilePage({
                 )}
               </div>
               <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted">
-                <span className="inline-flex items-center gap-1.5">
-                  <Mail className="h-3 w-3" /> {profile.email}
+                <span className="inline-flex min-w-0 items-center gap-1.5 break-all">
+                  <Mail className="h-3 w-3 shrink-0" /> {profile.email}
                 </span>
                 <span className="inline-flex items-center gap-1.5">
                   <Phone className="h-3 w-3" /> {profile.phone || "—"}
@@ -546,7 +548,7 @@ export default function ClientProfilePage({
                       </Badge>
                     );
                     return (
-                      <li key={a.id} className="flex items-start gap-3 px-5 py-3">
+                      <li key={a.id} className="flex items-start gap-3 px-4 py-3 sm:px-5">
                         {badge}
                         <div className="min-w-0 flex-1">
                           <div className="text-sm text-ink">
@@ -554,7 +556,9 @@ export default function ClientProfilePage({
                           </div>
                           <div className="text-xs text-muted">{a.reason}</div>
                         </div>
-                        <span className="text-xs text-muted">{formatRelative(a.created_at)}</span>
+                        <span className="shrink-0 text-xs text-muted">
+                          {formatRelative(a.created_at)}
+                        </span>
                       </li>
                     );
                   })}

@@ -257,7 +257,7 @@ export function PromoCodeEditor({ codeId }: { codeId?: string }) {
             : "Label, expiry, cap and products stay editable. To stop this code, archive it."
         }
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {!isNew &&
               (row!.status === "archived" ? (
                 <Badge tone="neutral">Archived</Badge>

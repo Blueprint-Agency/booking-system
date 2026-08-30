@@ -311,7 +311,7 @@ export default function SchedulePage() {
         )}
 
         {addMode && (
-          <div className="flex items-center gap-2 border-b border-accent/30 bg-accent/[0.07] px-3 py-2 text-xs font-medium text-accent">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-accent/30 bg-accent/[0.07] px-3 py-2 text-xs font-medium text-accent">
             <MousePointerClick className="h-3.5 w-3.5 shrink-0" />
             Click a slot on the grid to place the new{" "}
             {ADD_KINDS.find((k) => k.kind === addMode)?.label.toLowerCase()}.
@@ -570,7 +570,9 @@ function MonthView({
   const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
   const days = eachDayOfInterval({ start: gridStart, end: addDays(gridStart, 41) });
   return (
-    <div>
+    // Same min-width as the week view: the enclosing surface already scrolls, and
+    // seven day cells holding event chips don't fit a phone at full width.
+    <div className="min-w-[640px]">
       <div className="grid grid-cols-7 border-b border-border bg-paper/40">
         {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
           <div

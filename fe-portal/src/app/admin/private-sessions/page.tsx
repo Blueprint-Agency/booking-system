@@ -337,7 +337,7 @@ function PackageGroup({
             <div className="mb-3 text-2xl font-semibold tabular-nums text-ink">
               {formatSgd(pkg.priceSgd)}
             </div>
-            <div className="flex justify-end gap-1">
+            <div className="flex flex-wrap justify-end gap-1">
               <Button size="sm" variant="ghost" onClick={() => onEdit(pkg)}>
                 <Pencil className="h-3.5 w-3.5" /> Edit
               </Button>
