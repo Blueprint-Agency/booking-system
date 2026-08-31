@@ -52,10 +52,10 @@ export function orgIdFromClaims(claims: unknown): string | null {
  *   configured.** For the portal that is the rollout seam, and it is
  *   deliberately one-way: the moment a Tenant's organization id is written to
  *   its row, tokens without the claim stop working for it, and nothing has to be
- *   redeployed to turn enforcement on. For the client application it is the
- *   permanent state — `clerk_client_org_id` is never written — so every member
- *   token takes this branch, and writing an id there would lock a studio's
- *   entire membership out.
+ *   redeployed to turn enforcement on.
+ *
+ * Only the portal asks. Member requests never reach this function — see the
+ * note on `assertTenantOrgClaim` in `middleware/tenant.ts`.
  */
 export function orgClaimVerdict(input: {
   /** The Tenant the request resolved to, from `X-Tenant-Slug`. */

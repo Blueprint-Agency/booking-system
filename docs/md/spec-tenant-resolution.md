@@ -78,12 +78,16 @@ the tenant row (`clerk_portal_org_id`). A session token carries the organization
 the user is active in, inside a signature — the one statement about tenancy on
 the request that the caller cannot forge.
 
-**The client application has no organizations.** A studio's members are hundreds
-of people and Clerk prices organization membership per seat, so
-`clerk_client_org_id` is null on every tenant and stays null; a member request is
-corroborated by `Origin` (step 2) and fenced by Row-Level Security. The table
-below still runs for member tokens, but only its "none / none" row is ever
-reached. See `docs/adr/0003-no-client-side-clerk-organizations.md`.
+**The client application has no organizations, and member requests skip this
+step entirely.** A studio's members are hundreds of people and Clerk prices
+organization membership per seat, so `clerk_client_org_id` is null on every
+tenant and stays null; a member request is corroborated by `Origin` (step 2) and
+fenced by Row-Level Security. `middleware/clerk-client.ts` therefore does not
+call `assertTenantOrgClaim` at all: with no tenant configuring a client
+organization the check could never *grant* anything, and a member still holding a
+membership in some leftover organization would be refused `tenant_mismatch` on
+every request, permanently. The table below is the portal's.
+See `docs/adr/0003-no-client-side-clerk-organizations.md`.
 
 `services/tenants/org-claim.ts` decides, and both Clerk middlewares call it:
 
