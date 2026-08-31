@@ -6,6 +6,7 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 |---|---|---|
 | `fe-client/` | Vercel project `booking-system` (Root Directory = `fe-client/`) | `main` → `https://yogasadhana.reservetoday.app`; `staging` → `https://staging.yogasadhana.reservetoday.app`. Env vars: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_ROOT_DOMAIN`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `NEXT_PUBLIC_SENTRY_DSN`, `NEXT_PUBLIC_APP_ENV` — set **twice**, once per scope (Production / Preview). Clerk routing URLs are hardcoded in `src/app/layout.tsx` (NOT env-driven). |
 | `fe-portal/` | Vercel project `booking-system-admin` (Root Directory = `fe-portal/`) | `main` → `https://portal.yogasadhana.reservetoday.app`; `staging` → `https://staging-portal.yogasadhana.reservetoday.app`. Same env shape as fe-client, but with the **staff** Clerk app keys and its own `NEXT_PUBLIC_ROOT_DOMAIN` (the `portal.` one). |
+| `cdn/` | Vercel project `booking-cdn` (Root Directory = `cdn/`) | Edge proxy fronting the R2 bucket. Production scope → `https://cdn.reservetoday.app`; Preview scope → `https://cdn.staging.reservetoday.app`. One env var, `R2_ORIGIN`, set **twice** (Production / Preview) to each environment's `pub-<hash>.r2.dev` URL. No DNS record needed — the zone's `*` ALIAS already resolves both names. |
 | `be/` | bpvps2 (Docker) | Auto-deploy on push to `staging` **or** `main` (paths-filtered to `be/**`). `.github/workflows/deploy-be.yml` builds the image, pushes to Docker Hub (`blueprintagency/booking-be`), SSHes to bpvps2 over Tailscale, writes `.env.booking-be` from the branch's GitHub Environment, and runs migrate/seed + `docker compose up -d`. |
 
 **Deploy branch & environments:** two live environments, one per branch.
@@ -88,19 +89,25 @@ Notes:
 > frontend API hosts, so sign-in is unaffected. Whether the Clerk dashboard still expects those
 > custom domains is unverified — see `docs/adr/0001-reservetoday-app-on-vercel-nameservers.md`.
 
-> **R2 is not configured in production.** The `Production` GitHub Environment holds no `R2_*`
-> secrets at all; only `staging` does. Every asset-URL builder — `be/src/lib/r2.ts`,
-> `services/schedule/client-catalog.ts`, `services/workshops/catalog.ts` — returns `null` when
-> `R2_PUBLIC_URL` is unset, so production serves no imagery and fails silently rather than
-> erroring. Staging currently points at the raw bucket URL
-> `https://pub-…r2.dev`, which Cloudflare rate-limits and does not intend for production use.
+> **`R2_PUBLIC_URL` is a CDN hostname, never a `pub-….r2.dev` URL.** `cdn.reservetoday.app` can no
+> longer be an R2 custom domain — R2 binds one through the Cloudflare proxy, which needs the zone
+> on Cloudflare nameservers, and this zone moved to Vercel. The `cdn/` project fronts the bucket
+> from Vercel's edge instead and keeps `r2.dev` as a private origin; see `cdn/README.md` and
+> `docs/adr/0001-reservetoday-app-on-vercel-nameservers.md`.
+>
+> Every asset-URL builder — `be/src/lib/r2.ts`, `services/schedule/client-catalog.ts`,
+> `services/workshops/catalog.ts` — returns `null` when `R2_PUBLIC_URL` is unset, so a missing
+> value costs you every image with no error anywhere. The `Production` GitHub Environment held no
+> `R2_*` secrets at all until this was wired up, which is exactly how it went unnoticed.
 
 **GitHub repo settings driving `deploy-be.yml`** (see the comment block at the top of the workflow for the canonical list). The workflow job runs in the GitHub Environment named by the branch (`staging` / `Production`), so repo/environment settings can override organization-level settings with the same name. Shared deploy settings should live under the **Blueprint-Agency organization** and grant access to `booking-system`.
 - `org vars`: `BPVPS2_TAILSCALE_HOST`, `DOCKERHUB_USERNAME`
 - `env vars` (set in **both** Environments): `PORT`, `PORTAL_ORIGIN`, `CLIENT_ORIGIN`, `SUPERADMIN_EMAIL`
 - `org secrets`: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`
-- `repo/env secrets`: `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DOCKERHUB_TOKEN`, `SSH_PRIVATE_KEY`, `CLERK_STAFF_*` (×3), `CLERK_CLIENT_*` (×3), `SMTP_USER`, `SMTP_PASSWORD`, `SENTRY_DSN` (optional — error monitoring), plus deferred `STRIPE_*` and `R2_*`.
+- `repo/env secrets`: `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_APP_PASSWORD`, `DOCKERHUB_TOKEN`, `SSH_PRIVATE_KEY`, `CLERK_STAFF_*` (×3), `CLERK_CLIENT_*` (×3), `SMTP_USER`, `SMTP_PASSWORD`, `SENTRY_DSN` (optional — error monitoring), `R2_*` (×5 — required in **both** Environments; see the `R2_PUBLIC_URL` note above), plus deferred `STRIPE_*`.
 - `NODE_ENV` (always `production`), `APP_ENV`, `ENV_NAME`, `STACK_DIR`, `BOOKING_FQDN` and `IMAGE_TAG` are derived from the branch in the workflow's `env:` block, not from repo settings.
 - `ENABLE_JOBS` is hardcoded `true` in the workflow — the background cron jobs (`be/src/jobs/index.ts`) are not optional on a deployed server. With it off, pending PT requests never expire and members' session credits are never auto-refunded.
+
+**Two database connections, and why.** `DATABASE_URL` is the owner role (`DB_USER`) and is used for migrations and seeds only. The running server connects with `DATABASE_APP_URL`, built from `DB_APP_PASSWORD` for the `booking_app` role that `npm run db:migrate` provisions (`be/src/db/roles.ts`). This is not cosmetic: Postgres exempts superusers and table owners from Row-Level Security, so pointing the server at `DATABASE_URL` would leave the tenant policies (migration 0033) enforcing nothing while every request still succeeded. **`DB_APP_PASSWORD` must be set as an environment secret in BOTH `staging` and `Production` before the first deploy carrying this change** — without it the backend fails Zod validation at boot, which is the intended failure for a missing security control.
 
 **Env changes must update `.github/workflows/deploy-be.yml`** whenever a BE env var is added, renamed, or removed. The workflow's required-settings comment block AND the `echo "FOO=..."` lines that write `.env.booking-be` must both match `be/src/env.ts` exactly — and `be/.env.example` should reflect the same shape. Forgetting any of these makes prod boot fail Zod validation or silently miss a value. Same rule applies to fe-client/fe-portal env: if you add a `NEXT_PUBLIC_*` var, remember it also has to be set in the Vercel project dashboard.

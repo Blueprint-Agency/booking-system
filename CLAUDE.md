@@ -9,6 +9,7 @@ Dedicated booking & management platform for **Yoga Sadhana** (NOT multi-tenant S
 | `fe-client/` | Member-facing booking app, port 3000, hits `/api/v1/{me,public}/*` | Next.js App Router + Tailwind + shadcn/ui |
 | `fe-portal/` | Staff app (admin + instructor), port 3001, hits `/api/v1/portal/{admin,instructor}/*` | same |
 | `be/` | Backend | Hono (NOT Express) + Drizzle + Postgres + Clerk (2 apps) + Stripe + R2 + Nodemailer SMTP |
+| `cdn/` | Edge proxy fronting the R2 bucket at `cdn.reservetoday.app` | Vercel edge function (no framework) |
 | `docs/md/` | Canonical specs | — |
 
 BE layout: routes split by audience (`routes/portal/{admin,instructor}/`, `routes/client/`, `routes/public/`, `routes/webhooks/`), services by feature (`services/<feature>/`). Background jobs: `node-cron`.

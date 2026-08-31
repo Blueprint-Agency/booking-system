@@ -1,0 +1,9 @@
+{
+  "name": "booking-cdn",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Edge proxy fronting the Cloudflare R2 bucket at cdn.reservetoday.app",
+  "devDependencies": {
+    "typescript": "^5.9.2"
+  }
+}
