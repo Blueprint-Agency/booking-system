@@ -1,7 +1,8 @@
 name: BE Deploy
 
 # Both instances live on bpvps2:
-#   staging branch -> booking-staging stack -> api.staging.reservetoday.app
+#   staging branch -> booking-staging stack -> api.dev.reservetoday.app
+#                                              (+ api.staging.reservetoday.app, transitional alias)
 #   main   branch -> booking-prod    stack -> api.reservetoday.app
 # They share nothing but Traefik — separate containers, volumes, networks and
 # databases, keyed off ENV_NAME in the compose file.
@@ -37,7 +38,19 @@ jobs:
       STACK_DIR:    ${{ github.ref_name == 'main' && 'booking-prod'    || 'booking-staging' }}
       # Full hostname — booking is on reservetoday.app, not the host-wide
       # BASE_DOMAIN (teeko.ai), so the Traefik rule takes an FQDN.
-      BOOKING_FQDN: ${{ github.ref_name == 'main' && 'api.reservetoday.app' || 'api.staging.reservetoday.app' }}
+      #
+      # The frontends call the staging backend `dev`; ALIAS is the name being
+      # renamed away from, kept serving so nothing breaks mid-transition. Set
+      # ALIAS equal to FQDN when no rename is in flight — the router rule is
+      # Host(FQDN, ALIAS) and an empty value makes Traefik drop the router.
+      #
+      # Both names need their own A record at VERCEL (`vercel dns ls
+      # reservetoday.app`), created BEFORE the deploy: the cert comes from
+      # TLS-ALPN-01, which needs the name pointing at bpvps2 already. Vercel
+      # serves a `*` ALIAS, so a missing record resolves anyway — check the
+      # record exists, don't trust that the name resolves.
+      BOOKING_FQDN:       ${{ github.ref_name == 'main' && 'api.reservetoday.app' || 'api.dev.reservetoday.app' }}
+      BOOKING_FQDN_ALIAS: ${{ github.ref_name == 'main' && 'api.reservetoday.app' || 'api.staging.reservetoday.app' }}
       IMAGE_TAG:    ${{ github.ref_name == 'main' && 'latest'          || 'staging' }}
 
     steps:
@@ -100,6 +113,7 @@ jobs:
             sed -i '/^BOOKING_HOST=/d' .env 2>/dev/null || true
             for kv in "ENV_NAME=${{ env.ENV_NAME }}" \
                       "BOOKING_FQDN=${{ env.BOOKING_FQDN }}" \
+                      "BOOKING_FQDN_ALIAS=${{ env.BOOKING_FQDN_ALIAS }}" \
                       "IMAGE_TAG=${{ env.IMAGE_TAG }}"; do
               k="${kv%%=*}"
               sed -i "/^${k}=/d" .env 2>/dev/null || true
