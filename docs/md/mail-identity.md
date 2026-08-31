@@ -71,10 +71,16 @@ record was mistyped is a worse failure than a shared envelope address.
 `tenant_settings.mail_from_name`, `mail_from_email` and `mail_reply_to`, per
 tenant. `mail_from_name` falls back to the tenant's own `name`, so a studio is
 correctly branded from the moment its row exists and before anyone configures
-anything. `mail_from_email` is a *delegated* address — it is only honoured once
-the platform is genuinely authorised to send as it, which is the upgrade path
-below; a tenant that has not been through that leaves it null and sends on the
-platform address.
+anything.
+
+`mail_from_email` is a *delegated* address, and today it is **not read at all**.
+That is deliberate rather than unfinished: honouring it would put an address on
+the envelope that the platform is not authorised to send as, which is the exact
+failure this decision exists to avoid — and returning it without honouring it
+would be worse still, because a studio would look configured while its mail kept
+leaving on the platform's address with nothing to say so. The column becomes
+readable at the same moment it becomes honourable: step 2 of the upgrade path
+below, where the super portal verifies the domain's records first.
 
 Those columns are **not readable by the application role**. `tenant_settings` is
 the one tenant-scoped table with no Row-Level Security policy, because slug
