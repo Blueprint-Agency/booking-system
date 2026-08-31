@@ -278,16 +278,45 @@ passed** — an early read of that window looks exactly like "precedence does no
 Teardown: delete `spike-client` and `spike-portal` and their two wildcard domains once Phase 5
 is underway; they cost nothing but are live hostnames on a production zone.
 
-### Spike 2 — staging wildcard on a non-production environment
+### Spike 2 — staging wildcard on a non-production environment — ✅ **RESOLVED 2026-08-31**
 
 Custom environments (Pro+) accept custom domains, but **wildcard support on a non-production
 environment is undocumented**, and multi-tenant *preview* URLs are Enterprise-only.
 
-- [ ] Confirm `*.dev.reservetoday.app` can be attached to a `staging` custom environment.
-- [ ] If not: create two dedicated staging Vercel projects with production branch = `staging`.
-      Cheap and clean — decide before wiring CI.
+- [x] ~~Confirm `*.dev.reservetoday.app` can be attached to a `staging` custom environment.~~
+      **Superseded** — no custom environment is being created; Preview is treated as staging.
+      A wildcard on a non-production deployment is confirmed to work (below).
+- [x] ~~If not: create two dedicated staging Vercel projects with production branch = `staging`.~~
+      **Not needed on wildcard grounds.** Still the fallback if a wildcard turns out not to be
+      *branch-assignable* — see the open item below.
 
-**Partial findings (2026-08-31), spike not yet closed:**
+✅ **RESOLVED 2026-08-31 — a wildcard IS attachable to a non-production deployment, but
+Deployment Protection makes it unusable until switched off.**
+
+**Decision taken:** do **not** create a custom `staging` environment. Vercel's built-in
+**Preview** environment is treated as staging. That is also what the projects already do.
+
+**What was proven.** `*.dev.spike.reservetoday.app` was aliased onto a non-production
+(preview) deployment of `spike-client`. Vercel accepted it and issued a certificate covering
+both `*.dev.spike.reservetoday.app` and `dev.spike.reservetoday.app` in ~22s. So the
+undocumented question — *can a wildcard live outside Production?* — is answered **yes**, and the
+"two dedicated staging projects" fallback is **not required** on wildcard grounds.
+
+⚠️ **The blocker is Deployment Protection, not wildcards.** Every tenant hostname on the preview
+alias returns `302 → https://vercel.com/sso-api?url=…` with a `_vercel_sso_nonce` cookie. Vercel
+Authentication is on by default for non-production deployments, so `{tenant}.dev.reservetoday.app`
+is unreachable to anyone outside the Vercel team — including the studio staff and testers staging
+exists for. **Phase 5 must disable Deployment Protection on the staging target (or configure a
+bypass), and that decision makes staging publicly reachable — it needs to be a conscious one.**
+
+⚠️ **Still unproven: branch-tracked wildcards.** The test used `vercel alias set`, which pins a
+domain to *one immutable deployment* — it does not follow new pushes. A staging URL must instead
+be **branch-assigned** (domain → `staging` branch) so it auto-updates. `vercel domains add` has no
+target/branch flag and `vercel target` is list-only, so branch assignment is **dashboard-only and
+was not tested for wildcards**. Confirm this in the dashboard during Phase 5 before relying on it;
+if a wildcard cannot be branch-assigned, the two-dedicated-staging-projects fallback returns.
+
+**Supporting findings:**
 
 - **No custom environments exist anywhere in the team.** `vercel target ls` on both
   `booking-system` and the throwaway `spike-client` returns only the stock trio —
