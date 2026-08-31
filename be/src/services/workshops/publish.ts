@@ -9,10 +9,12 @@ import {
   workshopTierDays,
 } from '../../db/schema/schedule'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
+import { assertOwnObjectKeys } from '../../lib/object-key'
 import { readRoster, readRosters, replaceRoster, type RosterAssignment } from '../schedule/roster'
 import { lineupOf, lineupsOf, type Lineup } from '../schedule/lineup'
 
 export type WorkshopRow = typeof workshops.$inferSelect
+
 
 export interface CreateWorkshopInput {
   name: string
@@ -64,6 +66,10 @@ export async function createWorkshop(
   if (!input.mainInstructorId) {
     throw new BadRequestError('main_instructor_id_required')
   }
+  // The cover and the gallery are object keys an admin sends as strings, not
+  // uploads made here, so a workshop is otherwise a way to mount another
+  // studio's file under your own.
+  assertOwnObjectKeys(tenantId, [input.coverR2Key, ...(input.imageR2Keys ?? [])])
   await ensureLocation(tenantId, input.locationId)
 
   return db.transaction(async tx => {
@@ -139,6 +145,7 @@ export async function updateWorkshop(
   if (existing.lifecycle === 'cancelled') {
     throw new BadRequestError('workshop_cancelled')
   }
+  assertOwnObjectKeys(tenantId, [patch.coverR2Key, ...(patch.imageR2Keys ?? [])])
   if (patch.locationId !== undefined) await ensureLocation(tenantId, patch.locationId)
 
   // Who is on the workshop, and what they're paid, belongs to the roster module —

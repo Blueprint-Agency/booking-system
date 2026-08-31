@@ -68,12 +68,12 @@ export const classes = pgTable(
       .references(() => staffUsers.id, { onDelete: 'restrict' }),
   },
   table => ({
-    startsAtIdx: index('classes_starts_at_idx').on(table.startsAt),
-    mainInstructorStartsIdx: index('classes_main_instructor_starts_idx').on(table.mainInstructorId, table.startsAt),
-    locationStartsIdx: index('classes_location_starts_idx').on(table.locationId, table.startsAt),
-    roomStartsIdx: index('classes_room_starts_idx').on(table.roomId, table.startsAt),
-    classTypeIdx: index('classes_class_type_idx').on(table.classTypeId),
-    lifecycleStartsIdx: index('classes_lifecycle_starts_idx').on(table.lifecycle, table.startsAt),
+    startsAtIdx: index('classes_starts_at_idx').on(table.tenantId, table.startsAt),
+    mainInstructorStartsIdx: index('classes_main_instructor_starts_idx').on(table.tenantId, table.mainInstructorId, table.startsAt),
+    locationStartsIdx: index('classes_location_starts_idx').on(table.tenantId, table.locationId, table.startsAt),
+    roomStartsIdx: index('classes_room_starts_idx').on(table.tenantId, table.roomId, table.startsAt),
+    classTypeIdx: index('classes_class_type_idx').on(table.tenantId, table.classTypeId),
+    lifecycleStartsIdx: index('classes_lifecycle_starts_idx').on(table.tenantId, table.lifecycle, table.startsAt),
     endsAfterStarts: check('classes_ends_after_starts', sql`${table.endsAt} > ${table.startsAt}`),
     capacityOnlineNonNeg: check(
       'classes_capacity_online_non_negative',
@@ -116,7 +116,7 @@ export const classSupportingInstructors = pgTable(
   },
   table => ({
     pk: primaryKey({ columns: [table.classId, table.instructorId] }),
-    instructorIdx: index('class_supporting_instructors_instructor_idx').on(table.instructorId),
+    instructorIdx: index('class_supporting_instructors_instructor_idx').on(table.tenantId, table.instructorId),
   }),
 )
 
@@ -147,10 +147,11 @@ export const workshops = pgTable(
   },
   table => ({
     locationLifecycleIdx: index('workshops_location_lifecycle_idx').on(
+      table.tenantId,
       table.locationId,
       table.lifecycle,
     ),
-    lifecycleIdx: index('workshops_lifecycle_idx').on(table.lifecycle),
+    lifecycleIdx: index('workshops_lifecycle_idx').on(table.tenantId, table.lifecycle),
   }),
 )
 
@@ -183,8 +184,8 @@ export const workshopDays = pgTable(
       table.workshopId,
       table.ord,
     ),
-    startsAtIdx: index('workshop_days_starts_at_idx').on(table.startsAt),
-    roomStartsIdx: index('workshop_days_room_starts_idx').on(table.roomId, table.startsAt),
+    startsAtIdx: index('workshop_days_starts_at_idx').on(table.tenantId, table.startsAt),
+    roomStartsIdx: index('workshop_days_room_starts_idx').on(table.tenantId, table.roomId, table.startsAt),
     endsAfterStarts: check(
       'workshop_days_ends_after_starts',
       sql`${table.endsAt} > ${table.startsAt}`,
@@ -224,7 +225,7 @@ export const workshopImages = pgTable(
     ord: integer('ord').notNull(),
   },
   table => ({
-    workshopOrdIdx: index('workshop_images_workshop_ord_idx').on(table.workshopId, table.ord),
+    workshopOrdIdx: index('workshop_images_workshop_ord_idx').on(table.tenantId, table.workshopId, table.ord),
   }),
 )
 
@@ -252,7 +253,7 @@ export const workshopInstructors = pgTable(
     mainUnique: uniqueIndex('workshop_instructors_main_unique')
       .on(table.workshopId)
       .where(sql`role = 'main'`),
-    workshopRoleIdx: index('workshop_instructors_workshop_role_idx').on(table.workshopId, table.role),
+    workshopRoleIdx: index('workshop_instructors_workshop_role_idx').on(table.tenantId, table.workshopId, table.role),
   }),
 )
 
@@ -278,7 +279,7 @@ export const workshopTiers = pgTable(
     ord: integer('ord').notNull(),
   },
   table => ({
-    workshopOrdIdx: index('workshop_tiers_workshop_ord_idx').on(table.workshopId, table.ord),
+    workshopOrdIdx: index('workshop_tiers_workshop_ord_idx').on(table.tenantId, table.workshopId, table.ord),
   }),
 )
 
@@ -301,7 +302,7 @@ export const workshopTierDays = pgTable(
   table => ({
     pk: primaryKey({ columns: [table.workshopTierId, table.workshopDayId] }),
     // Reverse lookup (capacity recompute on day edit).
-    dayIdx: index('workshop_tier_days_day_idx').on(table.workshopDayId),
+    dayIdx: index('workshop_tier_days_day_idx').on(table.tenantId, table.workshopDayId),
   }),
 )
 
@@ -367,14 +368,14 @@ export const ptRequests = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
-    statusCreatedIdx: index('pt_requests_status_created_idx').on(table.status, table.createdAt),
-    clientStatusIdx: index('pt_requests_client_status_idx').on(table.clientId, table.status),
+    statusCreatedIdx: index('pt_requests_status_created_idx').on(table.tenantId, table.status, table.createdAt),
+    clientStatusIdx: index('pt_requests_client_status_idx').on(table.tenantId, table.clientId, table.status),
     // Backs the portal's location-scoped pending-request list.
-    locationStatusIdx: index('pt_requests_location_status_idx').on(table.locationId, table.status),
-    classTypeIdx: index('pt_requests_class_type_idx').on(table.classTypeId),
+    locationStatusIdx: index('pt_requests_location_status_idx').on(table.tenantId, table.locationId, table.status),
+    classTypeIdx: index('pt_requests_class_type_idx').on(table.tenantId, table.classTypeId),
     // Drives the expiry sweep — partial index over only `pending` rows.
     expiresAtPendingIdx: index('pt_requests_expires_at_pending_idx')
-      .on(table.expiresAt)
+      .on(table.tenantId, table.expiresAt)
       .where(sql`status = 'pending'`),
   }),
 )
@@ -398,7 +399,7 @@ export const ptRequestSlots = pgTable(
     endTime: time('end_time').notNull(),
   },
   table => ({
-    requestIdx: index('pt_request_slots_request_idx').on(table.ptRequestId),
+    requestIdx: index('pt_request_slots_request_idx').on(table.tenantId, table.ptRequestId),
     endAfterStart: check(
       'pt_request_slots_end_after_start',
       sql`${table.endTime} > ${table.startTime}`,
@@ -451,14 +452,16 @@ export const ptSessions = pgTable(
   },
   table => ({
     instructorStartsIdx: index('pt_sessions_instructor_starts_idx').on(
+      table.tenantId,
       table.instructorId,
       table.startsAt,
     ),
     lifecycleStartsIdx: index('pt_sessions_lifecycle_starts_idx').on(
+      table.tenantId,
       table.lifecycle,
       table.startsAt,
     ),
-    roomStartsIdx: index('pt_sessions_room_starts_idx').on(table.roomId, table.startsAt),
+    roomStartsIdx: index('pt_sessions_room_starts_idx').on(table.tenantId, table.roomId, table.startsAt),
     ptRequestUnique: uniqueIndex('pt_sessions_pt_request_unique').on(table.ptRequestId),
     // Circular FK back to pt_requests.id (resolved post-table-declaration).
     ptRequestFk: foreignKey({
@@ -590,17 +593,20 @@ export const corporateSessions = pgTable(
       .references(() => staffUsers.id, { onDelete: 'restrict' }),
   },
   table => ({
-    startsAtIdx: index('corporate_sessions_starts_at_idx').on(table.startsAt),
+    startsAtIdx: index('corporate_sessions_starts_at_idx').on(table.tenantId, table.startsAt),
     instructorStartsIdx: index('corporate_sessions_instructor_starts_idx').on(
+      table.tenantId,
       table.mainInstructorId,
       table.startsAt,
     ),
     locationStartsIdx: index('corporate_sessions_location_starts_idx').on(
+      table.tenantId,
       table.locationId,
       table.startsAt,
     ),
-    roomStartsIdx: index('corporate_sessions_room_starts_idx').on(table.roomId, table.startsAt),
+    roomStartsIdx: index('corporate_sessions_room_starts_idx').on(table.tenantId, table.roomId, table.startsAt),
     lifecycleStartsIdx: index('corporate_sessions_lifecycle_starts_idx').on(
+      table.tenantId,
       table.lifecycle,
       table.startsAt,
     ),
@@ -628,7 +634,7 @@ export const corporateSessionSupportingInstructors = pgTable(
   },
   table => ({
     pk: primaryKey({ columns: [table.corporateSessionId, table.instructorId] }),
-    instructorIdx: index('corporate_session_supporting_instructors_instructor_idx').on(table.instructorId),
+    instructorIdx: index('corporate_session_supporting_instructors_instructor_idx').on(table.tenantId, table.instructorId),
   }),
 )
 
@@ -669,10 +675,12 @@ export const corporateRequests = pgTable(
   },
   table => ({
     statusCreatedIdx: index('corporate_requests_status_created_idx').on(
+      table.tenantId,
       table.status,
       table.createdAt,
     ),
     clientStatusIdx: index('corporate_requests_client_status_idx').on(
+      table.tenantId,
       table.clientId,
       table.status,
     ),
@@ -718,6 +726,7 @@ export const manualPayrollEntries = pgTable(
   },
   table => ({
     instructorEntryDateIdx: index('manual_payroll_entries_instructor_entry_date_idx').on(
+      table.tenantId,
       table.instructorId,
       table.entryDate,
     ),

@@ -54,6 +54,11 @@ export async function mintClientImpersonation(
   const grant = signGrant({
     clientClerkUserId: row.clerkUserId,
     superadminStaffId: input.superadminStaffId,
+    // Stamped into the grant so the studio it was minted in is the only studio
+    // it works against — the lookup above is what makes it true here, and the
+    // claim is what keeps it true on every request the grant is later presented
+    // with.
+    tenantId: input.tenantId,
   })
 
   const url = new URL('/impersonate', base)

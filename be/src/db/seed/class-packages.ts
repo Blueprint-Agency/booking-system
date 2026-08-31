@@ -1,15 +1,20 @@
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import { sql } from 'drizzle-orm'
 import * as schema from '../schema'
+import type { SeededTenant } from './tenants'
 
 /**
  * Class-package catalogue — mirrors the fe-client PACKAGE_CATALOGUE
  * (`fe-client/src/lib/mock-state.ts`) for the bundle + unlimited tiers.
  *
- * Idempotent on name. Re-running is safe; rows already in the DB are skipped.
- * To start clean, TRUNCATE class_packages CASCADE before reseeding.
+ * A catalogue belongs to a studio, so this runs once per provisioned tenant and
+ * is idempotent on (tenant, name). To start clean, TRUNCATE class_packages
+ * CASCADE before reseeding.
  */
-export async function seedClassPackages(db: PostgresJsDatabase<typeof schema>) {
+export async function seedClassPackages(
+  db: PostgresJsDatabase<typeof schema>,
+  tenant: SeededTenant,
+) {
   const rows: Array<{
     name: string
     kind: 'credit_bundle' | 'unlimited' | 'trial'
@@ -34,9 +39,11 @@ export async function seedClassPackages(db: PostgresJsDatabase<typeof schema>) {
 
   for (const r of rows) {
     await db.execute(sql`
-      INSERT INTO class_packages (name, description, kind, credits, validity_days, duration_months, price_sgd, status)
-      SELECT ${r.name}, ${r.description}, ${r.kind}, ${r.credits}, ${r.validityDays}, ${r.durationMonths}, ${r.priceSgd}, 'active'
-      WHERE NOT EXISTS (SELECT 1 FROM class_packages WHERE name = ${r.name})
+      INSERT INTO class_packages (tenant_id, name, description, kind, credits, validity_days, duration_months, price_sgd, status)
+      SELECT ${tenant.id}::uuid, ${r.name}, ${r.description}, ${r.kind}, ${r.credits}, ${r.validityDays}, ${r.durationMonths}, ${r.priceSgd}, 'active'
+      WHERE NOT EXISTS (
+        SELECT 1 FROM class_packages WHERE tenant_id = ${tenant.id}::uuid AND name = ${r.name}
+      )
     `)
   }
 }

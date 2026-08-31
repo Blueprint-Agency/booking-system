@@ -89,6 +89,7 @@ const authedLimiter = rateLimiter({
 // bucket and 429 the whole platform under ordinary traffic. It gets its own,
 // much larger budget instead of an exemption.
 const TENANT_LOOKUP_PREFIX = '/api/v1/public/tenants/by-slug/'
+const isTenantLookup = (path: string) => path.startsWith(TENANT_LOOKUP_PREFIX)
 const tenantLookupLimiter = rateLimiter({
   windowMs: 60_000,
   limit: 6_000,
@@ -96,9 +97,7 @@ const tenantLookupLimiter = rateLimiter({
 })
 
 app.use('/api/v1/public/*', (c, next) =>
-  c.req.path.startsWith(TENANT_LOOKUP_PREFIX)
-    ? tenantLookupLimiter(c, next)
-    : publicLimiter(c, next),
+  isTenantLookup(c.req.path) ? tenantLookupLimiter(c, next) : publicLimiter(c, next),
 )
 app.use('/api/v1/me/*', authedLimiter)
 app.use('/api/v1/portal/*', authedLimiter)
@@ -106,7 +105,28 @@ app.use('/api/v1/portal/*', authedLimiter)
 // Which tenant is this request about? After the rate limiters, so a flood of
 // forged slugs is throttled before it reaches the lookup, and before the routes,
 // which all read `c.get('tenantId')`.
-app.use('/api/v1/*', resolveTenant)
+//
+// Three paths are exempt, because resolution now also opens a database
+// transaction (see middleware/tenant.ts):
+//
+//   - `/api/v1/healthz` is a liveness probe, and a liveness probe that needs the
+//     database is a liveness probe that fails a deploy for the wrong reason.
+//     (`/health` is the one that deliberately checks the database.)
+//   - the slug lookup reads only `tenants`, which carries no policy — and it
+//     sits on every request the frontends make, at a budget of 6,000/min, so
+//     wrapping it would buy a transaction per page view for nothing.
+//   - the payment provider's webhook resolves its OWN tenant, off the intent in
+//     the signed body (services/billing/webhook-handler.ts). Opening a
+//     tenant-#1 context here would wrap the real one in an unrelated
+//     transaction and hold two pooled connections for the length of a call to
+//     Stripe. The Clerk webhook keeps the default, because it has no tenant to
+//     read yet — that is #65's job.
+const TENANT_CONTEXT_EXEMPT = (path: string) =>
+  path === '/api/v1/healthz' || path === '/api/v1/webhooks/stripe' || isTenantLookup(path)
+
+app.use('/api/v1/*', (c, next) =>
+  TENANT_CONTEXT_EXEMPT(c.req.path) ? next() : resolveTenant(c, next),
+)
 
 app.get('/', c =>
   c.json({

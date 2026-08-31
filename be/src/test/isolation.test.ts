@@ -1,7 +1,13 @@
 import assert from 'node:assert'
 import { after, before, describe, test } from 'node:test'
 import { and, eq } from 'drizzle-orm'
-import { startTestApp, integrationTestsEnabled, SKIP_REASON, type TestApp } from './harness'
+import {
+  startTestApp,
+  integrationTestsEnabled,
+  inTenantContext,
+  SKIP_REASON,
+  type TestApp,
+} from './harness'
 
 /**
  * Tenant isolation across every migrated surface — identity, policy, catalog and
@@ -376,39 +382,45 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
 
   before(async () => {
     harness = await startTestApp()
+    // `schema` is table definitions, not behaviour, so it is used raw. Every
+    // service goes through `inTenantContext`: with Row-Level Security live, a
+    // service called outside a request has no Tenant context and its queries
+    // would see nothing — the wrapper opens the one the call already names, the
+    // way `resolveTenant` does for a request. `flagsSvc` is the exception, and
+    // is scoped by hand in its own test: half of it is synchronous cache reads.
     schema = await import('../db/schema')
-    catalogSvc = await import('../services/catalog/locations')
-    classTypesSvc = await import('../services/catalog/class-types')
-    roomsSvc = await import('../services/catalog/rooms')
-    merchSvc = await import('../services/catalog/merch')
-    classesSvc = await import('../services/schedule/classes')
-    policySvc = await import('../services/policy/update')
-    clientsSvc = await import('../services/clients/manage')
-    staffSvc = await import('../services/auth/staff-archive')
-    invitesSvc = await import('../services/auth/invitations')
-    classPackagesSvc = await import('../services/packages/class-packages')
-    purchaseSvc = await import('../services/packages/purchase')
-    entitlementsSvc = await import('../services/packages/entitlements')
-    adjustSvc = await import('../services/packages/adjust')
-    bookSvc = await import('../services/bookings/book')
-    cancelSvc = await import('../services/bookings/cancel')
-    checkInSvc = await import('../services/bookings/check-in')
-    noShowSvc = await import('../services/bookings/no-show')
-    bookingListSvc = await import('../services/bookings/list')
-    promoAdminSvc = await import('../services/packages/promo-code-admin')
-    redemptionSvc = await import('../services/packages/promo-redemption')
-    financeSvc = await import('../services/finance/list')
+    catalogSvc = inTenantContext(await import('../services/catalog/locations'))
+    classTypesSvc = inTenantContext(await import('../services/catalog/class-types'))
+    roomsSvc = inTenantContext(await import('../services/catalog/rooms'))
+    merchSvc = inTenantContext(await import('../services/catalog/merch'))
+    classesSvc = inTenantContext(await import('../services/schedule/classes'))
+    policySvc = inTenantContext(await import('../services/policy/update'))
+    clientsSvc = inTenantContext(await import('../services/clients/manage'))
+    staffSvc = inTenantContext(await import('../services/auth/staff-archive'))
+    invitesSvc = inTenantContext(await import('../services/auth/invitations'))
+    classPackagesSvc = inTenantContext(await import('../services/packages/class-packages'))
+    purchaseSvc = inTenantContext(await import('../services/packages/purchase'))
+    entitlementsSvc = inTenantContext(await import('../services/packages/entitlements'))
+    adjustSvc = inTenantContext(await import('../services/packages/adjust'))
+    bookSvc = inTenantContext(await import('../services/bookings/book'))
+    cancelSvc = inTenantContext(await import('../services/bookings/cancel'))
+    checkInSvc = inTenantContext(await import('../services/bookings/check-in'))
+    noShowSvc = inTenantContext(await import('../services/bookings/no-show'))
+    bookingListSvc = inTenantContext(await import('../services/bookings/list'))
+    promoAdminSvc = inTenantContext(await import('../services/packages/promo-code-admin'))
+    redemptionSvc = inTenantContext(await import('../services/packages/promo-redemption'))
+    financeSvc = inTenantContext(await import('../services/finance/list'))
     financeCsvSvc = await import('../services/finance/csv')
-    refundsSvc = await import('../services/billing/refunds')
-    workshopPublishSvc = await import('../services/workshops/publish')
-    workshopDaysSvc = await import('../services/workshops/days')
-    workshopTiersSvc = await import('../services/workshops/tiers')
-    workshopCancelSvc = await import('../services/workshops/cancel')
-    ptRequestSvc = await import('../services/pt-sessions/request')
-    ptListSvc = await import('../services/pt-sessions/list')
-    ptCancelSvc = await import('../services/pt-sessions/cancel')
-    leaveSvc = await import('../services/leave/requests')
-    inboxSvc = await import('../services/inbox')
+    refundsSvc = inTenantContext(await import('../services/billing/refunds'))
+    workshopPublishSvc = inTenantContext(await import('../services/workshops/publish'))
+    workshopDaysSvc = inTenantContext(await import('../services/workshops/days'))
+    workshopTiersSvc = inTenantContext(await import('../services/workshops/tiers'))
+    workshopCancelSvc = inTenantContext(await import('../services/workshops/cancel'))
+    ptRequestSvc = inTenantContext(await import('../services/pt-sessions/request'))
+    ptListSvc = inTenantContext(await import('../services/pt-sessions/list'))
+    ptCancelSvc = inTenantContext(await import('../services/pt-sessions/cancel'))
+    leaveSvc = inTenantContext(await import('../services/leave/requests'))
+    inboxSvc = inTenantContext(await import('../services/inbox'))
     flagsSvc = await import('../services/feature-flags')
 
     // A run killed mid-flight leaves its fixtures behind, and their emails and
@@ -497,40 +509,36 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     assert.ok(!names.includes(`${two.slug} Flow`))
   })
 
-  test('a write from a service no batch has scoped yet still lands on tenant #1', async () => {
-    // The load-bearing property of the expand phase. Every service is scoped
-    // now, but the column stays nullable until #63 contracts it, so a writer
-    // that names no tenant — a seed, a migration backfill, a job written before
-    // #67 — still relies on the default. Without it those rows would land NULL
-    // and vanish from the read beside them — a class that fills while every
-    // surface reports it empty. This is that default, asserted rather than
-    // assumed, on the table where the consequence is easiest to see.
-    const [booking] = await harness.db
-      .insert(schema.bookings)
-      .values({
-        clientId: one.clientId,
-        kind: 'class',
-        classId: one.classId,
-        state: 'confirmed',
-        code: 'ISO-DEFAULT',
-        qrToken: 'iso-default-token',
-      })
-      .returning()
-    assert.ok(booking)
-    try {
-      assert.equal(
-        booking.tenantId,
-        harness.tenants.one.id,
-        'an insert that names no tenant must still land on tenant #1',
-      )
-      // …and is therefore visible to the tenant-filtered read beside it.
-      const seen = await getAs(one.slug, '/api/v1/public/classes')
-      const card = seen.body.classes.find((r: any) => r.id === one.classId)
-      // The fixture's own booking plus this one.
-      assert.equal(card?.booked_count, 2)
-    } finally {
-      await harness.db.delete(schema.bookings).where(eq(schema.bookings.id, booking.id))
-    }
+  test('a write that names no tenant is refused', async () => {
+    // The inverse of what the expand phase asserted here. While the services
+    // were being scoped batch by batch, `tenant_id` defaulted to tenant #1 so an
+    // un-migrated writer kept behaving as it always had. Every batch has landed,
+    // so #63 dropped that default — and a default that silently files somebody
+    // else's booking under Yoga Sadhana is exactly the quiet failure the plan
+    // exists to avoid. The write now fails at the database instead.
+    await assert.rejects(
+      () =>
+        harness.db
+          .insert(schema.bookings)
+          .values({
+            tenantId: null as unknown as string,
+            clientId: one.clientId,
+            kind: 'class',
+            classId: one.classId,
+            state: 'confirmed',
+            code: 'ISO-DEFAULT',
+            qrToken: 'iso-default-token',
+          })
+          .returning(),
+      // Drizzle wraps the driver error, so the constraint name is on the cause.
+      (err: { cause?: { message?: string } }) => /not[- ]null/i.test(err.cause?.message ?? ''),
+    )
+
+    // Nothing landed, so the read beside it still shows only the fixture's own
+    // booking.
+    const seen = await getAs(one.slug, '/api/v1/public/classes')
+    const card = seen.body.classes.find((r: any) => r.id === one.classId)
+    assert.equal(card?.booked_count, 1)
   })
 
   // ── catalog and schedule writes ───────────────────────────────────────────
@@ -1371,9 +1379,12 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
   })
 
   test('two tenants can run the same feature flag, each with its own answer', async () => {
+    const { withTenant } = await import('../db')
     const key = 'isolation_probe'
-    await flagsSvc.setFlag(one.tenantId, key, true, one.instructorId)
-    await flagsSvc.setFlag(two.tenantId, key, false, two.instructorId)
+    await withTenant(one.tenantId, () => flagsSvc.setFlag(one.tenantId, key, true, one.instructorId))
+    await withTenant(two.tenantId, () =>
+      flagsSvc.setFlag(two.tenantId, key, false, two.instructorId),
+    )
 
     // The pair is the primary key, so both rows exist — the second write is not
     // an upsert over the first.
@@ -1383,7 +1394,10 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
       .where(eq(schema.featureFlags.key, key))
     assert.equal(rows.length, 2)
 
-    await flagsSvc.loadFeatureFlags()
+    // Once per tenant, exactly as boot does it — the read only ever sees the
+    // tenant whose context is open, and the cache merges rather than replaces.
+    await withTenant(one.tenantId, () => flagsSvc.loadFeatureFlags())
+    await withTenant(two.tenantId, () => flagsSvc.loadFeatureFlags())
     assert.equal(flagsSvc.isEnabled(one.tenantId, key), true)
     assert.equal(flagsSvc.isEnabled(two.tenantId, key), false)
   })

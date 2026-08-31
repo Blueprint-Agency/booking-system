@@ -1,6 +1,7 @@
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import { sql } from 'drizzle-orm'
 import * as schema from '../schema'
+import type { SeededTenant } from './tenants'
 
 /**
  * PT (private-training) package catalogue — mirrors the fe-client
@@ -9,10 +10,14 @@ import * as schema from '../schema'
  * (matches the "·N" suffix in the package name); each booking decrements
  * one session.
  *
- * Idempotent on name. To start clean, TRUNCATE pt_packages CASCADE before
- * reseeding.
+ * A catalogue belongs to a studio, so this runs once per provisioned tenant and
+ * is idempotent on (tenant, name). To start clean, TRUNCATE pt_packages CASCADE
+ * before reseeding.
  */
-export async function seedPtPackages(db: PostgresJsDatabase<typeof schema>) {
+export async function seedPtPackages(
+  db: PostgresJsDatabase<typeof schema>,
+  tenant: SeededTenant,
+) {
   const rows: Array<{
     name: string
     sessionType: '1on1' | '2on1'
@@ -35,9 +40,11 @@ export async function seedPtPackages(db: PostgresJsDatabase<typeof schema>) {
 
   for (const r of rows) {
     await db.execute(sql`
-      INSERT INTO pt_packages (name, session_type, num_sessions, price_sgd, status)
-      SELECT ${r.name}, ${r.sessionType}, ${r.numSessions}, ${r.priceSgd}, 'active'
-      WHERE NOT EXISTS (SELECT 1 FROM pt_packages WHERE name = ${r.name})
+      INSERT INTO pt_packages (tenant_id, name, session_type, num_sessions, price_sgd, status)
+      SELECT ${tenant.id}::uuid, ${r.name}, ${r.sessionType}, ${r.numSessions}, ${r.priceSgd}, 'active'
+      WHERE NOT EXISTS (
+        SELECT 1 FROM pt_packages WHERE tenant_id = ${tenant.id}::uuid AND name = ${r.name}
+      )
     `)
   }
 }

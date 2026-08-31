@@ -4,6 +4,7 @@ import { staffUsers } from '../../db/schema/identity'
 import { instructors } from '../../db/schema/catalog'
 import { classes, ptSessions, workshops, workshopInstructors } from '../../db/schema/schedule'
 import { ConflictError, NotFoundError, BadRequestError } from '../../shared/errors'
+import { assertOwnObjectKeys } from '../../lib/object-key'
 import { sendTemplatedEmail } from '../notifications/send'
 import { buildSignUpUrl } from '../auth/invitations'
 
@@ -118,6 +119,9 @@ export async function createInstructor(
 ): Promise<InstructorView> {
   const email = input.email.trim().toLowerCase()
   if (!email) throw new BadRequestError('email_required')
+  // The photo is an object key an admin sends as a string, not an upload made
+  // here, so without this a profile is a way to point at another studio's file.
+  assertOwnObjectKeys(tenantId, [input.photoR2Key])
 
   const view = await db.transaction(async tx => {
     // Deliberately *not* tenant-scoped: `staff_users.email` still carries a
@@ -196,6 +200,7 @@ export async function updateInstructor(
   patch: UpdateInstructorInput,
 ): Promise<InstructorView> {
   await loadById(tenantId, id) // 404 if missing
+  assertOwnObjectKeys(tenantId, [patch.photoR2Key])
 
   await db.transaction(async tx => {
     const staffPatch: Partial<StaffRow> = {}

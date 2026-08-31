@@ -20,7 +20,7 @@ import { emailRecipientKindEnum, emailLogStatusEnum } from '../enums'
 export const emailTemplates = pgTable(
   'email_templates',
   {
-    tenantId: tenantIdColumn().notNull(),
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     slug: text('slug').notNull(),
     subject: text('subject').notNull(),
@@ -57,9 +57,9 @@ export const emailLog = pgTable(
     sentAt: timestamp('sent_at', { withTimezone: true }),
   },
   table => ({
-    recipientQueuedIdx: index('email_log_recipient_queued_idx').on(table.recipientUserId, table.queuedAt),
-    statusIdx: index('email_log_status_idx').on(table.status),
-    templateQueuedIdx: index('email_log_template_queued_idx').on(table.templateSlug, table.queuedAt),
+    recipientQueuedIdx: index('email_log_recipient_queued_idx').on(table.tenantId, table.recipientUserId, table.queuedAt),
+    statusIdx: index('email_log_status_idx').on(table.tenantId, table.status),
+    templateQueuedIdx: index('email_log_template_queued_idx').on(table.tenantId, table.templateSlug, table.queuedAt),
   }),
 )
 

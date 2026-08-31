@@ -9,6 +9,7 @@ import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import postgres from 'postgres'
 import type { Hono } from 'hono'
 import * as schema from '../db/schema'
+import { APP_ROLE, ensureAppRole } from '../db/roles'
 import {
   TENANT_ONE_ID,
   TENANT_ONE_SLUG,
@@ -50,8 +51,75 @@ export type TestApp = {
  * the app imports it. Fill in throwaway values for anything the tests don't
  * exercise — real values (a real `DATABASE_URL` above all) still win.
  */
+const APP_ROLE_TEST_PASSWORD = 'booking_app_test'
+
+/**
+ * The same scratch database, reached as the application role.
+ *
+ * The harness itself keeps the owner connection — it has to migrate, and its
+ * fixtures deliberately write across both tenants — while the app under test
+ * gets the role that Row-Level Security actually applies to. Pointing both at
+ * the owner is the one mistake that would make every isolation test pass
+ * vacuously, so the two URLs are built apart here rather than shared.
+ */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function tenantNamedBy(arg: unknown): string | null {
+  if (typeof arg === 'string') return UUID.test(arg) ? arg : null
+  if (arg && typeof arg === 'object') {
+    const candidate = (arg as { tenantId?: unknown }).tenantId
+    if (typeof candidate === 'string' && UUID.test(candidate)) return candidate
+  }
+  return null
+}
+
+/**
+ * Wrap a service module so each call runs inside the Tenant context it names —
+ * the same context `resolveTenant` opens for a real request.
+ *
+ * Tests reach past HTTP because the portal routes are behind a Clerk JWT this
+ * harness cannot mint (see the note at the top of isolation.test.ts). A service
+ * called that way has no request, and with Row-Level Security live a query with
+ * no context set sees nothing — so the test would fail for the wrong reason, on
+ * every assertion at once, and stop saying anything about isolation.
+ *
+ * The tenant is read off the call itself: every one of these functions already
+ * takes it as its first argument, or on the input object, precisely because the
+ * route has to pass the tenant it resolved. A call that names none is left
+ * alone — `unwindRefund` is the deliberate case, since resolving its own tenant
+ * from the payment intent is the behaviour under test.
+ */
+export function inTenantContext<T extends object>(module: T): T {
+  return new Proxy(module, {
+    get(target, property, receiver) {
+      const value = Reflect.get(target, property, receiver) as unknown
+      if (typeof value !== 'function') return value
+      const call = value as (...args: unknown[]) => unknown
+      return (...args: unknown[]) => {
+        const tenantId = tenantNamedBy(args[0])
+        if (!tenantId) return call(...args)
+        // Imported here, not at the top of the file: `../db` builds its pool from
+        // `DATABASE_APP_URL` at module load, and `stubEnvironment` has not run
+        // yet when this file is first evaluated. By the time a test calls a
+        // service the module is already resolved, so this is a cache hit.
+        return import('../db').then(({ withTenant }) =>
+          withTenant(tenantId, async () => call(...args)),
+        )
+      }
+    },
+  })
+}
+
+export function appRoleUrl(ownerUrl: string): string {
+  const url = new URL(ownerUrl)
+  url.username = APP_ROLE
+  url.password = APP_ROLE_TEST_PASSWORD
+  return url.toString()
+}
+
 function stubEnvironment() {
   process.env.DATABASE_URL = TEST_DATABASE_URL
+  process.env.DATABASE_APP_URL = appRoleUrl(TEST_DATABASE_URL!)
   process.env.NODE_ENV ??= 'test'
   // Never 'production': that is what gates the second tenant, and a one-tenant
   // fixture would let every isolation test pass vacuously.
@@ -96,6 +164,9 @@ export async function startTestApp(): Promise<TestApp> {
     // Same folder `npm run db:migrate` uses, and the same assumption: run from
     // the `be/` package root.
     await migrate(db, { migrationsFolder: path.resolve(process.cwd(), 'src/db/migrations') })
+    // Inside the same lock as the migration, and after it: the grants only reach
+    // tables that already exist.
+    await ensureAppRole(client, APP_ROLE_TEST_PASSWORD)
     await seedAll(db)
   } finally {
     await client`select pg_advisory_unlock(${HARNESS_SETUP_LOCK})`

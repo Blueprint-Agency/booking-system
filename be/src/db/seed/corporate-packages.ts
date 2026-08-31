@@ -1,6 +1,7 @@
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import { sql } from 'drizzle-orm'
 import * as schema from '../schema'
+import type { SeededTenant } from './tenants'
 
 /**
  * Corporate-class package catalogue — mirrors the Yoga Sadhana "Corporate
@@ -13,15 +14,20 @@ import * as schema from '../schema'
  * a `num_sessions` column + migration should be added to the table — out of
  * scope for a seed-only change.
  *
- * `created_by_staff_id` is NOT NULL, so each row is attributed to the
- * superadmin. If no superadmin row exists yet (Clerk bootstrap failed), the
- * insert is skipped — seedSuperadmin runs first in run.ts, so this is normally
- * satisfied.
+ * `created_by_staff_id` is NOT NULL, so each row is attributed to the tenant's
+ * OWN superadmin — never another studio's, which would be a foreign key pointing
+ * across the isolation boundary. A tenant with no superadmin of its own (today:
+ * every tenant but #1, since the bootstrap superadmin is Yoga Sadhana's) simply
+ * gets no corporate packages seeded.
  *
- * Idempotent on name. Re-running is safe; rows already in the DB are skipped.
- * To start clean, TRUNCATE corporate_packages CASCADE before reseeding.
+ * A catalogue belongs to a studio, so this runs once per provisioned tenant and
+ * is idempotent on (tenant, name). To start clean, TRUNCATE corporate_packages
+ * CASCADE before reseeding.
  */
-export async function seedCorporatePackages(db: PostgresJsDatabase<typeof schema>) {
+export async function seedCorporatePackages(
+  db: PostgresJsDatabase<typeof schema>,
+  tenant: SeededTenant,
+) {
   const rows: Array<{
     name: string
     sessions: number
@@ -35,11 +41,16 @@ export async function seedCorporatePackages(db: PostgresJsDatabase<typeof schema
 
   for (const r of rows) {
     await db.execute(sql`
-      INSERT INTO corporate_packages (name, description, price_sgd, status, created_by_staff_id)
-      SELECT ${r.name}, ${r.description}, ${r.priceSgd}, 'active',
-             (SELECT id FROM staff_users WHERE role = 'superadmin' LIMIT 1)
-      WHERE EXISTS (SELECT 1 FROM staff_users WHERE role = 'superadmin')
-        AND NOT EXISTS (SELECT 1 FROM corporate_packages WHERE name = ${r.name})
+      INSERT INTO corporate_packages (tenant_id, name, description, price_sgd, status, created_by_staff_id)
+      SELECT ${tenant.id}::uuid, ${r.name}, ${r.description}, ${r.priceSgd}, 'active',
+             (SELECT id FROM staff_users
+              WHERE tenant_id = ${tenant.id}::uuid AND role = 'superadmin' LIMIT 1)
+      WHERE EXISTS (
+          SELECT 1 FROM staff_users WHERE tenant_id = ${tenant.id}::uuid AND role = 'superadmin'
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM corporate_packages WHERE tenant_id = ${tenant.id}::uuid AND name = ${r.name}
+        )
     `)
   }
 }

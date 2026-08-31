@@ -816,7 +816,12 @@ export async function attachSupportingDocument(input: {
   if (!check.ok) throw new BadRequestError(check.code, { message: check.message })
   requireBucket()
 
-  const key = rules.supportingDocumentKey(row.instructorId, row.id, check.extension)
+  const key = rules.supportingDocumentKey(
+    input.tenantId,
+    row.instructorId,
+    row.id,
+    check.extension,
+  )
   await putObject(key, input.bytes, input.contentType)
 
   const [updated] = await db

@@ -4,7 +4,6 @@ import postgres from 'postgres'
 import * as schema from '../schema'
 
 import { seedTenants, seededTenants } from './tenants'
-import { claimSeededRowsForTenantOne } from './claim-tenant-one'
 import { seedSuperadmin } from './superadmin'
 import { seedLocations } from './locations'
 import { seedRooms } from './rooms'
@@ -31,8 +30,13 @@ async function main() {
     await seedSuperadmin(db)
     // Premises and policy belong to a tenant, not to the platform: each is
     // seeded once per provisioned tenant rather than once for the studio.
+    //
+    // Every seeder below takes a tenant. `tenant_id` lost its default in
+    // migration 0032, so an insert that does not name one no longer lands under
+    // Yoga Sadhana — it fails, which is the point. The tenant-#1 claiming pass
+    // that used to run last is gone with the default that made it necessary.
     for (const tenant of seededTenants()) {
-      console.log(`[seed] locations, rooms, policy + content for ${tenant.slug}…`)
+      console.log(`[seed] premises, policy, content + catalogue for ${tenant.slug}…`)
       await seedLocations(db, tenant)
       await seedRooms(db, tenant)
       await seedPolicy(db, tenant)
@@ -42,19 +46,12 @@ async function main() {
       await seedEmailTemplates(db, tenant)
       await seedWaiver(db, tenant)
       await seedMarketing(db, tenant)
+      // So is its catalogue: a studio prices its own classes.
+      await seedClassTypes(db, tenant)
+      await seedClassPackages(db, tenant)
+      await seedPtPackages(db, tenant)
+      await seedCorporatePackages(db, tenant)
     }
-    console.log('[seed] class types…')
-    await seedClassTypes(db)
-    console.log('[seed] class packages…')
-    await seedClassPackages(db)
-    console.log('[seed] pt packages…')
-    await seedPtPackages(db)
-    console.log('[seed] corporate packages…')
-    await seedCorporatePackages(db)
-    // Last: the seeders above write explicit column lists that know nothing
-    // about tenancy, so anything they just inserted is still unclaimed.
-    console.log('[seed] claiming seeded rows for tenant #1…')
-    await claimSeededRowsForTenantOne(db)
     console.log('[seed] done')
   } finally {
     await client.end()

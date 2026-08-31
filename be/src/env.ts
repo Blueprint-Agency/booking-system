@@ -32,7 +32,18 @@ const schema = z.object({
   PORT: z.coerce.number().int().positive().default(4000),
   ENABLE_JOBS: booleanEnv,
 
+  // Two connection strings to the same database, on purpose. DATABASE_URL is the
+  // owner — migrations and seeds only. DATABASE_APP_URL is the `booking_app`
+  // role the server actually runs as; it owns nothing and is not a superuser,
+  // which is what makes the Row-Level Security policies in migration 0033 apply
+  // rather than being bypassed. See src/db/roles.ts.
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
+  DATABASE_APP_URL: z.string().min(1, 'DATABASE_APP_URL is required'),
+  // Declared here because it is a BE env var and this file is the list, but
+  // optional: only `npm run db:migrate` reads it (to provision the role), and
+  // the server is handed the finished DATABASE_APP_URL above. Locally it is
+  // where that URL's password comes from — see src/db/url.ts.
+  DB_APP_PASSWORD: z.string().optional(),
 
   SUPERADMIN_EMAIL: z.string().email('SUPERADMIN_EMAIL must be a valid email'),
 

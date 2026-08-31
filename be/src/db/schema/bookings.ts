@@ -58,13 +58,13 @@ export const bookings = pgTable(
     cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
   },
   table => ({
-    clientBookedIdx: index('bookings_client_booked_idx').on(table.clientId, table.bookedAt),
-    classStateIdx: index('bookings_class_state_idx').on(table.classId, table.state),
-    tierStateIdx: index('bookings_tier_state_idx').on(table.workshopTierId, table.state),
-    ptSessionIdx: index('bookings_pt_session_idx').on(table.ptSessionId),
+    clientBookedIdx: index('bookings_client_booked_idx').on(table.tenantId, table.clientId, table.bookedAt),
+    classStateIdx: index('bookings_class_state_idx').on(table.tenantId, table.classId, table.state),
+    tierStateIdx: index('bookings_tier_state_idx').on(table.tenantId, table.workshopTierId, table.state),
+    ptSessionIdx: index('bookings_pt_session_idx').on(table.tenantId, table.ptSessionId),
     qrTokenUnique: uniqueIndex('bookings_qr_token_unique').on(table.qrToken),
     codeUnique: uniqueIndex('bookings_code_unique').on(table.code),
-    checkInStateIdx: index('bookings_check_in_state_idx').on(table.checkInState),
+    checkInStateIdx: index('bookings_check_in_state_idx').on(table.tenantId, table.checkInState),
     // Partial unique — stripe_payment_intent_id is nullable for non-workshop bookings.
     stripeIntentUnique: uniqueIndex('bookings_stripe_intent_unique')
       .on(table.stripePaymentIntentId)
@@ -108,7 +108,7 @@ export const cancellations = pgTable(
     cancelledAt: timestamp('cancelled_at', { withTimezone: true }).notNull(),
   },
   table => ({
-    clientCancelledIdx: index('cancellations_client_cancelled_idx').on(table.clientId, table.cancelledAt),
+    clientCancelledIdx: index('cancellations_client_cancelled_idx').on(table.tenantId, table.clientId, table.cancelledAt),
   }),
 )
 

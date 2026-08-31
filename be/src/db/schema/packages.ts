@@ -51,8 +51,8 @@ export const classPackages = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   table => ({
-    statusKindIdx: index('class_packages_status_kind_idx').on(table.status, table.kind),
-    deletedIdx: index('class_packages_deleted_idx').on(table.deletedAt),
+    statusKindIdx: index('class_packages_status_kind_idx').on(table.tenantId, table.status, table.kind),
+    deletedIdx: index('class_packages_deleted_idx').on(table.tenantId, table.deletedAt),
     // Kind-specific column requirements per §4d:
     //  - credit_bundle → credits NOT NULL, validity_days NOT NULL, duration_months NULL
     //  - unlimited     → credits NULL, validity_days NULL, duration_months NOT NULL
@@ -127,13 +127,14 @@ export const promotions = pgTable(
   table => ({
     // Primary in-window lookup at purchase time.
     parentLookupIdx: index('promotions_parent_lookup_idx').on(
+      table.tenantId,
       table.parentType,
       table.parentId,
       table.status,
       table.startsAt,
       table.endsAt,
     ),
-    sortIdx: index('promotions_sort_idx').on(table.sortId),
+    sortIdx: index('promotions_sort_idx').on(table.tenantId, table.sortId),
     endsAfterStarts: check(
       'promotions_ends_after_starts',
       sql`${table.endsAt} > ${table.startsAt}`,
@@ -170,7 +171,7 @@ export const promoCodes = pgTable(
     // text is `(tenant_id, code)`, and Postgres treats NULLs as distinct — so a
     // nullable column would mean two rows could both be `SUMMER` and neither
     // would be found by the `(tenant_id, code)` lookup that redeems them.
-    tenantId: tenantIdColumn().notNull(),
+    tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     // Stored normalised — trimmed and upper-cased. Generated and custom codes
     // share one namespace per Tenant behind one unique index, so a custom code
@@ -338,8 +339,8 @@ export const clientPackages = pgTable(
     stripePaymentIntentId: text('stripe_payment_intent_id'),
   },
   table => ({
-    clientKindIdx: index('client_packages_client_kind_idx').on(table.clientId, table.kind),
-    clientExpiryIdx: index('client_packages_client_expiry_idx').on(table.clientId, table.expiresAt),
+    clientKindIdx: index('client_packages_client_kind_idx').on(table.tenantId, table.clientId, table.kind),
+    clientExpiryIdx: index('client_packages_client_expiry_idx').on(table.tenantId, table.clientId, table.expiresAt),
     // Partial unique on stripe_payment_intent_id (now nullable per spec).
     stripeIntentUnique: uniqueIndex('client_packages_stripe_intent_unique')
       .on(table.stripePaymentIntentId)
@@ -405,8 +406,8 @@ export const corporatePackages = pgTable(
       .references(() => staffUsers.id, { onDelete: 'restrict' }),
   },
   table => ({
-    statusIdx: index('corporate_packages_status_idx').on(table.status),
-    deletedIdx: index('corporate_packages_deleted_idx').on(table.deletedAt),
+    statusIdx: index('corporate_packages_status_idx').on(table.tenantId, table.status),
+    deletedIdx: index('corporate_packages_deleted_idx').on(table.tenantId, table.deletedAt),
     pricePositive: check('corporate_packages_price_positive', sql`${table.priceSgd} >= 0`),
   }),
 )

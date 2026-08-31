@@ -94,29 +94,20 @@ export const tenantSettings = pgTable('tenant_settings', {
 /**
  * The `tenant_id` column every other table carries.
  *
- * Nullable on purpose: this is the *expand* step of expand-migrate-contract.
- * The column exists and is backfilled, nothing enforces it yet, so the system
- * still behaves exactly as it did single-tenant. `NOT NULL` and the composite
- * indexes arrive with the contract step, and Row-Level Security needs a column
- * on every table — including pure join tables — to key a policy on.
+ * This is the *contract* step of expand-migrate-contract (#63). `NOT NULL` with
+ * **no default**: every insert now has to name its tenant, and one that forgets
+ * fails loudly instead of quietly filing somebody else's row under Yoga Sadhana.
+ * The scaffolding default that made the migrate batches safe is gone with it.
  *
- * ⚠️ **The default is scaffolding, and the contract step must drop it.**
- * Services are scoped one batch at a time, so at any moment some reads filter on
- * `tenant_id` while the inserts feeding them have not been touched yet. A
- * booking written by an un-migrated path would land `NULL` and then be invisible
- * to the migrated read beside it — a class that fills up while every surface
- * reports it empty — which is worse than not scoping at all. Defaulting to
- * tenant #1 keeps every un-migrated write behaving exactly as it did.
- *
- * It is also a footgun the moment tenant #2 is real: a forgotten insert files
- * somebody else's row under Yoga Sadhana instead of failing. That is precisely
- * why it must not outlive the remaining migrate batches (#61, #62), which make
- * every insert name its tenant, and why #63's `NOT NULL` step drops it.
+ * The column is on every table — including pure join tables — because Row-Level
+ * Security needs something local to key a policy on; a join table that inferred
+ * its tenant through a foreign key could only be protected by a subquery, and a
+ * policy that has to join is a policy that gets dropped for performance.
  */
 export const tenantIdColumn = () =>
   uuid('tenant_id')
+    .notNull()
     .references(() => tenants.id, { onDelete: 'restrict' })
-    .default(sql`'${sql.raw(TENANT_ONE_ID)}'::uuid`)
 
 export type TenantRow = typeof tenants.$inferSelect
 export type TenantSettingsRow = typeof tenantSettings.$inferSelect

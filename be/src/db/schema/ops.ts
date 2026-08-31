@@ -15,7 +15,7 @@ import { tenantIdColumn } from './tenancy'
 export const featureFlags = pgTable(
   'feature_flags',
   {
-    tenantId: tenantIdColumn().notNull(),
+    tenantId: tenantIdColumn(),
     key: text('key').notNull(),
     enabled: boolean('enabled').notNull().default(false),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

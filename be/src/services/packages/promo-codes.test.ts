@@ -1,4 +1,5 @@
 import assert from 'node:assert'
+import { TENANT_ONE_ID } from '../../db/schema/tenancy'
 import {
   CODE_ALPHABET,
   GENERATED_CODE_LENGTH,
@@ -48,7 +49,7 @@ function promoCode(over: Partial<PromoCodeRow> = {}): PromoCodeRow {
 
 function scopeRow(over: Partial<PromoCodeProductRow> = {}): PromoCodeProductRow {
   return {
-    tenantId: null,
+    tenantId: TENANT_ONE_ID,
     promoCodeId: 'code-1',
     productType: 'class_package',
     productId: 'product-1',
@@ -61,7 +62,7 @@ function redemption(over: Partial<PromoCodeRedemptionRow> = {}): PromoCodeRedemp
   redemptionSeq += 1
   return {
     id: `redemption-${redemptionSeq}`,
-    tenantId: null,
+    tenantId: TENANT_ONE_ID,
     promoCodeId: 'code-1',
     clientId: `client-${redemptionSeq}`,
     status: 'consumed',

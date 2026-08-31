@@ -1,4 +1,5 @@
 import type { Context, MiddlewareHandler } from 'hono'
+import { withTenant } from '../db'
 import { TENANT_ONE_ID } from '../db/schema/tenancy'
 import { resolveTenantBySlug } from '../services/tenants/tenants'
 
@@ -27,26 +28,31 @@ export const TENANT_SLUG_HEADER = 'x-tenant-slug'
  *   the same body as any other 404 on this API, so the header cannot be used to
  *   enumerate tenants.
  *
+ * Resolution is also what OPENS the database's Tenant context: the rest of the
+ * request runs inside `withTenant`, which is one transaction carrying
+ * `app.tenant_id`, and that setting is what the Row-Level Security policies read
+ * back (migration 0033). The two are welded together on purpose — policies are
+ * live from #63 onwards, so a request that reached a query with no context set
+ * would simply see nothing, and the way to make that unreachable is to give the
+ * middleware that knows the tenant the job of opening the context.
+ *
  * What is *not* here yet: the header is resolved, not **validated**. Checking it
  * against the Clerk organization claim on authenticated routes and against
  * `Origin` on public ones is the backend-resolution ticket (#65), and until that
- * lands a caller who can already reach the API can name any tenant. This
- * ticket's job is only to make every query name a tenant at all — the filters
- * are what #65's validation and #63's Row-Level Security then have something to
- * be true about.
+ * lands a caller who can already reach the API can name any tenant.
  */
 export const resolveTenant: MiddlewareHandler = async (c, next) => {
   const slug = c.req.header(TENANT_SLUG_HEADER)?.trim()
   if (!slug) {
     c.set('tenantId', TENANT_ONE_ID)
-    return next()
+    return withTenant(TENANT_ONE_ID, () => next())
   }
 
   const resolved = await resolveTenantBySlug(slug)
   if (!resolved) return c.json({ error: 'not_found' }, 404)
 
   c.set('tenantId', resolved.tenant.id)
-  await next()
+  await withTenant(resolved.tenant.id, () => next())
 }
 
 /**

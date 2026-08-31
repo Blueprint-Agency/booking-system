@@ -23,6 +23,7 @@ export const inboxItems = pgTable(
   },
   table => ({
     typeReadCreatedIdx: index('inbox_items_type_read_created_idx').on(
+      table.tenantId,
       table.type,
       table.readAt,
       table.createdAt,

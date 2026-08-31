@@ -10,7 +10,8 @@
  *   - the entire unwind, in ./refunds.ts
  */
 import Stripe from 'stripe'
-import { db } from '../../db'
+import { db, withTenant } from '../../db'
+import { tenantForClient as routeToTenant } from '../../db/routing'
 import { stripePayments } from '../../db/schema/ledger'
 import { clients } from '../../db/schema/identity'
 import { and, eq } from 'drizzle-orm'
@@ -96,7 +97,38 @@ async function existingPayment(tenantId: string, paymentIntentId: string) {
   return row
 }
 
+/**
+ * Route the event to its studio, then handle it.
+ *
+ * A provider webhook is the one entry point with no tenant to read: one
+ * endpoint, a hostname carrying none, and a signed body naming a client and an
+ * intent. With the tenant policies live (migration 0033) the handler below
+ * cannot find its own way — every query it makes is refused until a context is
+ * open — so the single cross-tenant question is asked through the owner-owned
+ * resolver and everything else runs inside the answer.
+ *
+ * `charge.refunded` is deliberately NOT wrapped here: `unwindRefund` routes
+ * itself off the payment intent, because the same unwind is reached from the
+ * portal's refund button and from the provider's dashboard, and it has to land
+ * in the same studio either way.
+ */
 export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
+  if (event.type !== 'checkout.session.completed') return dispatchStripeEvent(event)
+
+  const session = event.data.object as Stripe.Checkout.Session
+  const clientId = (session.metadata ?? {}).client_id
+  // No client id means our own checkout never ran — the same silent return the
+  // per-kind branches below make on missing metadata.
+  if (!clientId) return
+  const tenantId = await routeToTenant(clientId)
+  // By this point money has been captured. A charge whose member we cannot place
+  // must land in front of a human, not vanish — see `tenantForClient` below.
+  if (!tenantId) throw new NotFoundError('client_not_found', { clientId })
+
+  await withTenant(tenantId, () => dispatchStripeEvent(event))
+}
+
+async function dispatchStripeEvent(event: Stripe.Event): Promise<void> {
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session
     const meta = session.metadata ?? {}

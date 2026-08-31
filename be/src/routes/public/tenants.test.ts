@@ -106,30 +106,29 @@ describe('public slug resolution', { skip: integrationTestsEnabled ? false : SKI
     assert.equal(rows.length, 0)
   })
 
-  test('the seed claims rows a seeder wrote without a tenant', async () => {
-    const { claimSeededRowsForTenantOne } = await import('../../db/seed/claim-tenant-one')
+  test('a row written without a tenant is refused, not quietly claimed', async () => {
     const { classTypes } = await import('../../db/schema/catalog')
 
-    // `tenant_id` now defaults to tenant #1 (migration 0029), so an unclaimed
-    // row has to be written as an explicit null — which is what a row inserted
-    // before that migration, or by anything bypassing the default, looks like.
-    const [row] = await harness.db
-      .insert(classTypes)
-      .values({ name: 'Unclaimed Test Type', tenantId: null })
-      .returning()
-    assert.ok(row)
-    assert.equal(row.tenantId, null)
+    // Until #63 this was the opposite test: `tenant_id` defaulted to tenant #1
+    // and a seed pass claimed anything that slipped through as an explicit null.
+    // The contract migration dropped both the default and the claiming pass, so
+    // an insert that does not name its tenant now fails at the database instead
+    // of filing somebody else's row under Yoga Sadhana.
+    await assert.rejects(
+      () =>
+        harness.db
+          .insert(classTypes)
+          .values({ name: 'Unclaimed Test Type', tenantId: null as unknown as string })
+          .returning(),
+      // Drizzle wraps the driver error, so the constraint name is on the cause.
+      (err: { cause?: { message?: string } }) => /not[- ]null/i.test(err.cause?.message ?? ''),
+    )
 
-    try {
-      await claimSeededRowsForTenantOne(harness.db)
-      const [claimed] = await harness.db
-        .select()
-        .from(classTypes)
-        .where(eq(classTypes.id, row.id))
-      assert.equal(claimed?.tenantId, harness.tenants.one.id)
-    } finally {
-      await harness.db.delete(classTypes).where(eq(classTypes.id, row.id))
-    }
+    const leftovers = await harness.db
+      .select({ id: classTypes.id })
+      .from(classTypes)
+      .where(eq(classTypes.name, 'Unclaimed Test Type'))
+    assert.equal(leftovers.length, 0)
   })
 
   test('existing behaviour is unchanged — a pre-tenancy public route still answers', async () => {

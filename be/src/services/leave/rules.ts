@@ -23,6 +23,7 @@
  */
 
 import { daysBetween, sgDayWindow, sgToday, type PlainDate } from '../../lib/time'
+import { tenantKey } from '../../lib/object-key'
 
 /** Singapore-time arithmetic lives in `lib/time`; re-exported so the leave rules
  *  still read as one vocabulary. */
@@ -694,16 +695,22 @@ export function checkSupportingDocument(input: {
 }
 
 /** Where the object lives. Deterministic, so re-uploading replaces rather than
- *  orphans — and guessable on purpose is fine: the bucket is private.
+ *  orphans.
+ *
+ *  Under the owning studio's prefix (#63): a Supporting Document is a health
+ *  document on a public-read bucket, so the key is the only thing standing
+ *  between it and anyone who holds it — and one studio's HR paperwork should not
+ *  even share a namespace with another's.
  *
  *  The key is STORED on the request, never recomputed, so objects written under
  *  the old prefix keep resolving and only new uploads take this one. */
 export function supportingDocumentKey(
+  tenantId: string,
   instructorId: string,
   requestId: string,
   extension: string,
 ): string {
-  return `supporting-documents/${instructorId}/${requestId}.${extension}`
+  return tenantKey(tenantId, `supporting-documents/${instructorId}/${requestId}.${extension}`)
 }
 
 // ── The instructor's own transitions ───────────────────────────────────────

@@ -2,6 +2,7 @@ import assert from 'node:assert'
 import { tierEffectivePrice } from './book'
 import { workshopTiers } from '../../db/schema/schedule'
 import type { PromotionRow } from '../packages/promotions'
+import { TENANT_ONE_ID } from '../../db/schema/tenancy'
 
 type WorkshopTierRow = typeof workshopTiers.$inferSelect
 
@@ -12,7 +13,7 @@ const AFTER = new Date('2026-07-01T00:00:00Z')
 function tier(over: Partial<WorkshopTierRow> = {}): WorkshopTierRow {
   return {
     id: 'tier-1',
-    tenantId: null,
+    tenantId: TENANT_ONE_ID,
     workshopId: 'ws-1',
     name: 'Full pass',
     description: null,
@@ -30,7 +31,7 @@ function promo(over: Partial<PromotionRow> & Pick<PromotionRow, 'kind'>): Promot
   seq += 1n
   return {
     id: `promo-${seq}`,
-    tenantId: null,
+    tenantId: TENANT_ONE_ID,
     parentType: 'workshop',
     parentId: 'ws-1',
     label: 'test promo',

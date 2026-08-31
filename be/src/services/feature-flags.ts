@@ -9,15 +9,23 @@ import { featureFlags } from '../db/schema/ops'
  * alone would let whichever tenant was loaded last decide the feature for
  * everybody.
  */
-let cache: Map<string, boolean> = new Map()
+const cache: Map<string, boolean> = new Map()
 let loaded = false
 
 const cacheKey = (tenantId: string, key: string) => `${tenantId}:${key}`
 
-/** Every tenant's flags in one pass — the process serves all of them. */
+/**
+ * Load the flags visible in the current Tenant context, MERGING them into the
+ * cache rather than replacing it.
+ *
+ * Merging, because Row-Level Security means this read only ever sees one
+ * tenant's rows, and boot calls it once per tenant (src/jobs/index.ts). Replacing
+ * would leave the process serving whichever tenant happened to be loaded last
+ * and treating every other studio's features as off.
+ */
 export async function loadFeatureFlags(): Promise<void> {
   const rows = await db.select().from(featureFlags)
-  cache = new Map(rows.map(r => [cacheKey(r.tenantId, r.key), r.enabled]))
+  for (const row of rows) cache.set(cacheKey(row.tenantId, row.key), row.enabled)
   loaded = true
 }
 

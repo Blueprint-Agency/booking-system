@@ -225,6 +225,27 @@
       "when": 1788150205005,
       "tag": "0031_content_and_flags_per_tenant",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1788157975245,
+      "tag": "0032_tenant_contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1788158059175,
+      "tag": "0033_row_level_security",
+      "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1788159026011,
+      "tag": "0034_webhook_tenant_routing",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,6 @@
 import assert from 'node:assert'
 import { bestPrice, type PromotionRow } from './promotions'
+import { TENANT_ONE_ID } from '../../db/schema/tenancy'
 
 // Minimal PromotionRow factory — only the fields bestPrice reads matter
 // (kind / percentOff / specialPriceSgd / sortId / id); the rest are filler so
@@ -9,7 +10,7 @@ function promo(over: Partial<PromotionRow> & Pick<PromotionRow, 'kind'>): Promot
   seq += 1n
   return {
     id: `promo-${seq}`,
-    tenantId: null,
+    tenantId: TENANT_ONE_ID,
     parentType: 'class_package',
     parentId: 'parent-1',
     label: 'test promo',

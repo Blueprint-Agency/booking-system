@@ -15,11 +15,24 @@ A Tenant's leftmost DNS label, and the only thing the frontends can read a Tenan
 _Avoid_: subdomain, handle, tenant name
 
 **`tenant_id`**:
-The column on all 53 domain tables recording which Tenant a row belongs to — including pure join tables, because Row-Level Security needs a column on every table to key a policy on. Still **nullable and backfilled**: the expand step of expand-migrate-contract. Identity, policy, catalog and schedule filter on it, and so do bookings, check-ins, packages, the credit ledger, finance and billing; the content, inbox, leave, workshop and PT services, `NOT NULL` and RLS land in later work. It **defaults to Tenant #1** for the length of that phase, because a read filtered on `tenant_id` sitting beside an insert that has not been scoped yet would otherwise make new rows silently invisible. The default is scaffolding with an expiry date — it must be dropped by the contract step.
+The column on all 53 domain tables recording which Tenant a row belongs to — including pure join tables, because Row-Level Security needs a column on every table to key a policy on. `NOT NULL`, with **no default**: an insert that does not name its Tenant fails loudly rather than filing somebody else's row under Yoga Sadhana. Every non-unique index leads with it. (The tenant-#1 default that made the migrate batches safe was scaffolding, and migration 0032 dropped it along with the seed pass that used to claim unclaimed rows.)
 
 **Tenant context**:
-The Tenant a request is about, resolved once by `middleware/tenant.ts` and read in a route with `tenantId(c)`. It arrives as the `X-Tenant-Slug` header — the API's own hostname carries no Tenant, so the caller has to say — and a request without one is Tenant #1, which is what keeps every existing client working. Services never read it themselves: it is passed in, so a query that forgot to scope is a compile error rather than a leak.
+The Tenant a request is about — held in two places at once, and they are set together.
+
+In the *application*, it is resolved once by `middleware/tenant.ts` and read in a route with `tenantId(c)`. It arrives as the `X-Tenant-Slug` header — the API's own hostname carries no Tenant, so the caller has to say — and a request without one is Tenant #1, which is what keeps every existing client working. Services never read it themselves: it is passed in, so a query that forgot to scope is a compile error rather than a leak.
+
+In the *database*, it is `app.tenant_id`, written **transaction-locally** by `withTenant` (`db/index.ts`) and read back by every policy. Transaction-locally because session scope would ride a pooled connection into the next request. The same middleware opens it, so there is no state in which policies are live and no value is set. A caller with no request — a cron job, a test reaching past HTTP — has to open one for itself; `db/index.ts` and `jobs/index.ts` are the two places that do.
 _Avoid_: current tenant, tenant scope, request tenant
+
+**Application role** (`booking_app`):
+The Postgres role the running server connects as, provisioned by `db/roles.ts` and reached through `DATABASE_APP_URL`. It owns no tables and is neither superuser nor `BYPASSRLS`, which is the *only* reason the policies apply — Postgres exempts superusers unconditionally and owners unless the table is `FORCE`d, so a server connected as the owner in `DATABASE_URL` would pass every test while enforcing nothing. Migrations and seeds still run as the owner, which is how they write across Tenants.
+
+`tenant_settings` is the one Tenant-scoped table with no policy, because slug resolution reads it to *establish* the context a policy would key on. Column privileges stand in: the role may read the branding a studio publishes (`TenantDisplaySettings` in `services/tenants/tenants.ts`) and nothing else, so the mail-from identity and waiver text are unreadable across Tenants. The grant is by name, so a column added later is invisible until someone declares it public.
+_Avoid_: db user, service account
+
+**Tenant routing**:
+Answering "whose is this?" for a caller that arrives with no Tenant at all — a payment provider's webhook, which hits one endpoint on a hostname carrying none. The identifier in the signed body is the routing key, and looking it up is a cross-Tenant read the application role cannot make, so it goes through two owner-owned `SECURITY DEFINER` functions (migration 0034) that return a Tenant id and nothing else. Everything after runs inside `withTenant`. It is a single narrow step, deliberately, rather than a standing exemption.
 
 ### Packages and locations
 

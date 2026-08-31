@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import * as schema from '../schema'
 import { clerkStaffApp } from '../../lib/clerk'
+import { TENANT_ONE_ID } from '../schema/tenancy'
 
 /**
  * Seeds the superadmin staff_users row and bootstraps the matching Clerk user
@@ -75,6 +76,9 @@ export async function seedSuperadmin(db: PostgresJsDatabase<typeof schema>) {
   await db
     .insert(schema.staffUsers)
     .values({
+      // The bootstrap operator is Yoga Sadhana's. `tenant_id` no longer has a
+      // default (migration 0032), so this has to be said rather than assumed.
+      tenantId: TENANT_ONE_ID,
       email,
       name,
       role: 'superadmin',

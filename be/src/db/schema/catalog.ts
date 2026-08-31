@@ -28,8 +28,8 @@ export const locations = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   table => ({
-    archivedIdx: index('locations_archived_idx').on(table.archivedAt),
-    deletedIdx: index('locations_deleted_idx').on(table.deletedAt),
+    archivedIdx: index('locations_archived_idx').on(table.tenantId, table.archivedAt),
+    deletedIdx: index('locations_deleted_idx').on(table.tenantId, table.deletedAt),
   }),
 )
 
@@ -54,10 +54,11 @@ export const rooms = pgTable(
   },
   table => ({
     locationArchivedIdx: index('rooms_location_archived_idx').on(
+      table.tenantId,
       table.locationId,
       table.archivedAt,
     ),
-    deletedIdx: index('rooms_deleted_idx').on(table.deletedAt),
+    deletedIdx: index('rooms_deleted_idx').on(table.tenantId, table.deletedAt),
     locationNameLowerUnique: uniqueIndex('rooms_location_name_lower_unique').on(
       table.locationId,
       sql`lower(${table.name})`,
@@ -86,7 +87,7 @@ export const merch = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
-    archivedIdx: index('merch_archived_idx').on(table.archivedAt),
+    archivedIdx: index('merch_archived_idx').on(table.tenantId, table.archivedAt),
     priceNonNegative: check('merch_price_non_negative', sql`${table.priceSgd} >= 0`),
   }),
 )
@@ -116,7 +117,7 @@ export const merchOrders = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
-    clientCreatedIdx: index('merch_orders_client_created_idx').on(table.clientId, table.createdAt),
+    clientCreatedIdx: index('merch_orders_client_created_idx').on(table.tenantId, table.clientId, table.createdAt),
     // One order per payment. Both the webhook and the confirmation page's
     // sync-session deliver the same purchase, so this is what makes the second
     // one a no-op. Postgres allows many NULLs, which is what free items want.
@@ -141,10 +142,10 @@ export const classTypes: any = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   table => ({
-    archivedIdx: index('class_types_archived_idx').on(table.archivedAt),
-    deletedIdx: index('class_types_deleted_idx').on(table.deletedAt),
-    nameIdx: index('class_types_name_lower_idx').on(sql`lower(${table.name})`),
-    parentIdx: index('class_types_parent_idx').on(table.parentId),
+    archivedIdx: index('class_types_archived_idx').on(table.tenantId, table.archivedAt),
+    deletedIdx: index('class_types_deleted_idx').on(table.tenantId, table.deletedAt),
+    nameIdx: index('class_types_name_lower_idx').on(table.tenantId, sql`lower(${table.name})`),
+    parentIdx: index('class_types_parent_idx').on(table.tenantId, table.parentId),
   }),
 )
 

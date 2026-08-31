@@ -44,10 +44,10 @@ export const clients = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
-    statusIdx: index('clients_status_idx').on(table.status),
-    referrerIdx: index('clients_referrer_idx').on(table.referredByClientId),
-    nameIdx: index('clients_name_lower_idx').on(sql`lower(${table.name})`),
-    deletedIdx: index('clients_deleted_idx').on(table.deletedAt),
+    statusIdx: index('clients_status_idx').on(table.tenantId, table.status),
+    referrerIdx: index('clients_referrer_idx').on(table.tenantId, table.referredByClientId),
+    nameIdx: index('clients_name_lower_idx').on(table.tenantId, sql`lower(${table.name})`),
+    deletedIdx: index('clients_deleted_idx').on(table.tenantId, table.deletedAt),
     referrerFk: foreignKey({
       columns: [table.referredByClientId],
       foreignColumns: [table.id],
@@ -89,8 +89,8 @@ export const staffUsers = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
-    roleStatusIdx: index('staff_role_status_idx').on(table.role, table.status),
-    deletedIdx: index('staff_users_deleted_idx').on(table.deletedAt),
+    roleStatusIdx: index('staff_role_status_idx').on(table.tenantId, table.role, table.status),
+    deletedIdx: index('staff_users_deleted_idx').on(table.tenantId, table.deletedAt),
     // GIN on the uuid[] column for workspace membership filters (§4a indexes).
     grantedLocationsGinIdx: index('staff_users_granted_locations_gin_idx')
       .using('gin', table.grantedLocationIds),
@@ -129,7 +129,7 @@ export const staffInvitations = pgTable(
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
   },
   table => ({
-    emailStatusIdx: index('staff_invitations_email_status_idx').on(table.email, table.status),
-    inviterIdx: index('staff_invitations_inviter_idx').on(table.invitedByStaffId),
+    emailStatusIdx: index('staff_invitations_email_status_idx').on(table.tenantId, table.email, table.status),
+    inviterIdx: index('staff_invitations_inviter_idx').on(table.tenantId, table.invitedByStaffId),
   }),
 )

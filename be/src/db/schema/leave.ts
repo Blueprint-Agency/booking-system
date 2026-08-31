@@ -62,10 +62,10 @@ export const leaveRequests = pgTable(
   },
   table => ({
     // The balance query: one instructor's rows for one leave year.
-    balanceIdx: index('leave_requests_instructor_year_idx').on(table.instructorId, table.leaveYear),
+    balanceIdx: index('leave_requests_instructor_year_idx').on(table.tenantId, table.instructorId, table.leaveYear),
     // The calendar / clash queries: everything overlapping a date window.
-    datesIdx: index('leave_requests_dates_idx').on(table.startDate, table.endDate),
-    statusIdx: index('leave_requests_status_idx').on(table.status),
+    datesIdx: index('leave_requests_dates_idx').on(table.tenantId, table.startDate, table.endDate),
+    statusIdx: index('leave_requests_status_idx').on(table.tenantId, table.status),
   }),
 )
 

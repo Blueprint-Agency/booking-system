@@ -14,7 +14,8 @@
  * pass** — the provider retries, and both paths land here.
  */
 import { and, eq, gt, inArray, ne, sql } from 'drizzle-orm'
-import { db } from '../../db'
+import { db, withTenant } from '../../db'
+import { tenantForPaymentIntent } from '../../db/routing'
 import { auditLog, stripePayments } from '../../db/schema/ledger'
 import { bookings } from '../../db/schema/bookings'
 import { classPackages, clientPackages, ptPackages } from '../../db/schema/packages'
@@ -386,6 +387,18 @@ async function refundAtProviderAndAudit(args: {
  * simply redone, and the one non-repeatable act rides on the one atomic write.
  */
 export async function unwindRefund(paymentIntentId: string): Promise<void> {
+  // Route first, then work. The provider's event names an intent and nothing
+  // else; with the tenant policies live, the application role cannot read across
+  // tenants to find out whose it is, so the one narrow cross-tenant question —
+  // "whose intent is this?" — goes through the owner-owned resolver in migration
+  // 0034. Everything after runs inside that tenant's context.
+  const tenantId = await tenantForPaymentIntent(paymentIntentId)
+  // An intent this system never recorded: the same silence as a missing row.
+  if (!tenantId) return
+  return withTenant(tenantId, () => unwindRefundForTenant(paymentIntentId))
+}
+
+async function unwindRefundForTenant(paymentIntentId: string): Promise<void> {
   const [payment] = await db
     .select({
       // The provider's event names an intent and nothing else, and the intent is

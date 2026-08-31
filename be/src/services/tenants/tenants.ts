@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import { db } from '../../db'
 import { tenants, tenantSettings } from '../../db/schema/tenancy'
 import type { TenantRow, TenantSettingsRow } from '../../db/schema/tenancy'
@@ -7,9 +7,41 @@ import { isUniqueViolation } from '../../db/unique-violation'
 import { ConflictError } from '../../shared/errors'
 import { assertUsableSlug, normaliseSlug } from './slug'
 
+/**
+ * What a studio publishes about itself: the branding both frontends render
+ * before anyone has signed in.
+ *
+ * `tenant_settings` is the one Tenant-scoped table with no Row-Level Security
+ * policy, because slug resolution reads it *before* any Tenant context exists —
+ * so this narrow shape is what stands in for one. The rest of the row (the
+ * mail-from identity, the waiver text) is not display data and is not read here;
+ * `db/roles.ts` grants the application role SELECT on these columns only, so the
+ * omission is enforced rather than merely observed, and a column added later is
+ * unreadable until someone decides it is public.
+ */
+export type TenantDisplaySettings = {
+  displayName: string | null
+  logoUrl: string | null
+  faviconUrl: string | null
+  ogImageUrl: string | null
+  tagline: string | null
+  theme: unknown
+  copy: unknown
+}
+
+const DISPLAY_SETTINGS = {
+  displayName: tenantSettings.displayName,
+  logoUrl: tenantSettings.logoUrl,
+  faviconUrl: tenantSettings.faviconUrl,
+  ogImageUrl: tenantSettings.ogImageUrl,
+  tagline: tenantSettings.tagline,
+  theme: tenantSettings.theme,
+  copy: tenantSettings.copy,
+}
+
 export type ResolvedTenant = {
   tenant: TenantRow
-  settings: TenantSettingsRow | null
+  settings: TenantDisplaySettings | null
 }
 
 /**
@@ -51,7 +83,7 @@ export async function resolveTenantBySlug(slug: string): Promise<ResolvedTenant 
   if (cached) resolveCache.delete(normalised)
 
   const [row] = await db
-    .select({ tenant: tenants, settings: tenantSettings })
+    .select({ tenant: tenants, settings: DISPLAY_SETTINGS })
     .from(tenants)
     .leftJoin(tenantSettings, eq(tenantSettings.tenantId, tenants.id))
     .where(eq(tenants.slug, normalised))
@@ -61,6 +93,28 @@ export async function resolveTenantBySlug(slug: string): Promise<ResolvedTenant 
   if (!RESOLVABLE.includes(row.tenant.status)) return null
   resolveCache.set(normalised, { at: Date.now(), value: row })
   return row
+}
+
+/**
+ * Every tenant a background job should run for, oldest first.
+ *
+ * Cron jobs used to be one cross-tenant sweep each — `UPDATE … WHERE expires_at
+ * < now()` over the whole table. With Row-Level Security live that sweep sees
+ * nothing at all, because a job has no request and therefore no Tenant context.
+ * Rather than granting jobs a bypass (which is a hole shaped exactly like the
+ * one this ticket closes), each job runs once per tenant inside that tenant's
+ * context and the policy does the filtering the job never had to express.
+ *
+ * Archived tenants are skipped; suspended ones are not — a studio that is paused
+ * for its members still needs its members' credits returned on time.
+ */
+export async function listJobTenantIds(): Promise<string[]> {
+  const rows = await db
+    .select({ id: tenants.id })
+    .from(tenants)
+    .where(inArray(tenants.status, RESOLVABLE))
+    .orderBy(tenants.createdAt)
+  return rows.map(r => r.id)
 }
 
 export type CreateTenantInput = {
@@ -98,7 +152,9 @@ export async function createTenant(input: CreateTenantInput): Promise<ResolvedTe
       const [settings] = await tx
         .insert(tenantSettings)
         .values({ ...input.settings, tenantId: tenant.id })
-        .returning()
+        // Display columns only, for the same reason the resolver reads only
+        // those: the application role has SELECT on nothing else here.
+        .returning(DISPLAY_SETTINGS)
 
       forgetCachedTenants()
       return { tenant, settings: settings ?? null }

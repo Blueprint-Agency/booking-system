@@ -25,8 +25,8 @@ export const manualAdjustments = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
-    clientCreatedIdx: index('manual_adjustments_client_created_idx').on(table.clientId, table.createdAt),
-    packageIdx: index('manual_adjustments_package_idx').on(table.clientPackageId),
+    clientCreatedIdx: index('manual_adjustments_client_created_idx').on(table.tenantId, table.clientId, table.createdAt),
+    packageIdx: index('manual_adjustments_package_idx').on(table.tenantId, table.clientPackageId),
   }),
 )
 
@@ -44,9 +44,9 @@ export const auditLog = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
-    targetIdx: index('audit_log_target_idx').on(table.targetTable, table.targetId, table.createdAt),
-    actorIdx: index('audit_log_actor_idx').on(table.actorStaffId, table.createdAt),
-    actionIdx: index('audit_log_action_idx').on(table.action, table.createdAt),
+    targetIdx: index('audit_log_target_idx').on(table.tenantId, table.targetTable, table.targetId, table.createdAt),
+    actorIdx: index('audit_log_actor_idx').on(table.tenantId, table.actorStaffId, table.createdAt),
+    actionIdx: index('audit_log_action_idx').on(table.tenantId, table.action, table.createdAt),
   }),
 )
 
@@ -72,6 +72,6 @@ export const stripePayments = pgTable(
   },
   table => ({
     paymentIntentUnique: uniqueIndex('stripe_payments_intent_unique').on(table.paymentIntentId),
-    clientCreatedIdx: index('stripe_payments_client_created_idx').on(table.clientId, table.createdAt),
+    clientCreatedIdx: index('stripe_payments_client_created_idx').on(table.tenantId, table.clientId, table.createdAt),
   }),
 )

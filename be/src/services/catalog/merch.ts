@@ -2,6 +2,7 @@ import { and, asc, eq, isNull } from 'drizzle-orm'
 import { db } from '../../db'
 import { merch } from '../../db/schema/catalog'
 import { publicObjectUrl, putObject, R2_BUCKET } from '../../lib/r2'
+import { tenantKey } from '../../lib/object-key'
 import { AppError, BadRequestError, NotFoundError } from '../../shared/errors'
 
 export type MerchRow = typeof merch.$inferSelect
@@ -115,10 +116,10 @@ export async function setMerchImage(input: {
     })
   }
 
-  // The key is keyed on the merch row's own id, which is already unique across
-  // tenants; foldering objects per tenant is the R2 half of the isolation
-  // hardening ticket (#63).
-  const key = `merch/${row.id}.${extension}`
+  // Under the studio's own prefix, so one studio's photos are not addressable
+  // from another's namespace. Keys already stored on existing rows keep working
+  // — they are read back off the row, never recomputed.
+  const key = tenantKey(input.tenantId, `merch/${row.id}.${extension}`)
   await putObject(key, input.bytes, input.contentType)
   const [updated] = await db
     .update(merch)
