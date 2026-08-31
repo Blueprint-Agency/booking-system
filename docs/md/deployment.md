@@ -35,6 +35,17 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 > `PORTAL_ORIGIN` change, Clerk allowed-origin/redirect updates, and staff comms. Until then both
 > forms must stay in the allowlist.
 
+> **Production Clerk is still rooted on Vercel-generated hosts, and that is a known defect.**
+> The `Clerk instance` row above is accurate today: the client instance answers on
+> `clerk.booking-system-eight-fawn.vercel.app` and the portal one on
+> `clerk.project-3p3dw.vercel.app`. Neither is a subdomain of `reservetoday.app`, so tenant
+> subdomains do not authenticate by default, and the client instance's `Home URL` names a single
+> Tenant (`yogasadhana.reservetoday.app`) with every Component path blank — a Clerk-initiated
+> redirect for any other Tenant's member lands in Yoga Sadhana's app. Issue #74 is the fix. It is a
+> live migration that logs everyone out and rotates both publishable keys, so it is scripted rather
+> than described: run `scripts/clerk-prod-domain-migration.sh` in a maintenance window. Update this
+> row and ADR 0001 when it completes.
+
 > **Backend staging is still `api.staging.reservetoday.app`, not `api.dev.…`.** The frontends
 > settled on `dev` as the staging label and the backend has not moved. The rename (keeping the old
 > name as an alias) is a Phase 5 item; `BOOKING_FQDN` in `deploy-be.yml` is the one place to
