@@ -6,23 +6,35 @@ import { BadRequestError } from '../../shared/errors'
 
 export type CorporatePackageRow = typeof corporatePackages.$inferSelect
 
-export async function listCorporatePackages(opts: {
-  status?: 'active' | 'archived'
-} = {}): Promise<CorporatePackageRow[]> {
-  const filters = [isNull(corporatePackages.deletedAt)]
+export async function listCorporatePackages(
+  tenantId: string,
+  opts: {
+    status?: 'active' | 'archived'
+  } = {},
+): Promise<CorporatePackageRow[]> {
+  const filters = [eq(corporatePackages.tenantId, tenantId), isNull(corporatePackages.deletedAt)]
   if (opts.status) filters.push(eq(corporatePackages.status, opts.status))
   return db
     .select()
     .from(corporatePackages)
-    .where(filters.length === 1 ? filters[0] : and(...filters))
+    .where(and(...filters))
     .orderBy(desc(corporatePackages.createdAt))
 }
 
-export async function getCorporatePackage(id: string): Promise<CorporatePackageRow | null> {
+export async function getCorporatePackage(
+  tenantId: string,
+  id: string,
+): Promise<CorporatePackageRow | null> {
   const [row] = await db
     .select()
     .from(corporatePackages)
-    .where(and(eq(corporatePackages.id, id), isNull(corporatePackages.deletedAt)))
+    .where(
+      and(
+        eq(corporatePackages.tenantId, tenantId),
+        eq(corporatePackages.id, id),
+        isNull(corporatePackages.deletedAt),
+      ),
+    )
     .limit(1)
   return row ?? null
 }
@@ -35,11 +47,13 @@ export interface CreateCorporatePackageInput {
 }
 
 export async function createCorporatePackage(
+  tenantId: string,
   input: CreateCorporatePackageInput,
 ): Promise<CorporatePackageRow> {
   const [row] = await db
     .insert(corporatePackages)
     .values({
+      tenantId,
       name: input.name,
       description: input.description ?? null,
       priceSgd: input.priceSgd,
@@ -57,10 +71,11 @@ export interface UpdateCorporatePackageInput {
 }
 
 export async function updateCorporatePackage(
+  tenantId: string,
   id: string,
   patch: UpdateCorporatePackageInput,
 ): Promise<CorporatePackageRow | null> {
-  const existing = await getCorporatePackage(id)
+  const existing = await getCorporatePackage(tenantId, id)
   if (!existing) return null
 
   const setValues: Record<string, unknown> = {}
@@ -73,13 +88,16 @@ export async function updateCorporatePackage(
   const [row] = await db
     .update(corporatePackages)
     .set(setValues)
-    .where(eq(corporatePackages.id, id))
+    .where(and(eq(corporatePackages.tenantId, tenantId), eq(corporatePackages.id, id)))
     .returning()
   return row ?? null
 }
 
-export async function archiveCorporatePackage(id: string): Promise<CorporatePackageRow | null> {
-  const existing = await getCorporatePackage(id)
+export async function archiveCorporatePackage(
+  tenantId: string,
+  id: string,
+): Promise<CorporatePackageRow | null> {
+  const existing = await getCorporatePackage(tenantId, id)
   if (!existing) return null
   if (existing.status === 'archived') {
     throw new BadRequestError('corporate_package_already_archived')
@@ -87,13 +105,16 @@ export async function archiveCorporatePackage(id: string): Promise<CorporatePack
   const [row] = await db
     .update(corporatePackages)
     .set({ status: 'archived', archivedAt: new Date() })
-    .where(eq(corporatePackages.id, id))
+    .where(and(eq(corporatePackages.tenantId, tenantId), eq(corporatePackages.id, id)))
     .returning()
   return row ?? null
 }
 
-export async function unarchiveCorporatePackage(id: string): Promise<CorporatePackageRow | null> {
-  const existing = await getCorporatePackage(id)
+export async function unarchiveCorporatePackage(
+  tenantId: string,
+  id: string,
+): Promise<CorporatePackageRow | null> {
+  const existing = await getCorporatePackage(tenantId, id)
   if (!existing) return null
   if (existing.status !== 'archived') {
     throw new BadRequestError('corporate_package_not_archived')
@@ -101,7 +122,7 @@ export async function unarchiveCorporatePackage(id: string): Promise<CorporatePa
   const [row] = await db
     .update(corporatePackages)
     .set({ status: 'active', archivedAt: null })
-    .where(eq(corporatePackages.id, id))
+    .where(and(eq(corporatePackages.tenantId, tenantId), eq(corporatePackages.id, id)))
     .returning()
   return row ?? null
 }
@@ -110,14 +131,24 @@ export async function unarchiveCorporatePackage(id: string): Promise<CorporatePa
  * Legacy hard-delete. Kept only because the PATCH-driven UI predates the
  * uniform soft-delete contract. New callers should use softDeleteCorporatePackage.
  */
-export async function deleteCorporatePackage(id: string): Promise<'ok' | 'in_use'> {
+export async function deleteCorporatePackage(
+  tenantId: string,
+  id: string,
+): Promise<'ok' | 'in_use'> {
   const [used] = await db
     .select({ id: corporateSessions.id })
     .from(corporateSessions)
-    .where(eq(corporateSessions.corporatePackageId, id))
+    .where(
+      and(
+        eq(corporateSessions.tenantId, tenantId),
+        eq(corporateSessions.corporatePackageId, id),
+      ),
+    )
     .limit(1)
   if (used) return 'in_use'
-  await db.delete(corporatePackages).where(eq(corporatePackages.id, id))
+  await db
+    .delete(corporatePackages)
+    .where(and(eq(corporatePackages.tenantId, tenantId), eq(corporatePackages.id, id)))
   return 'ok'
 }
 
@@ -125,8 +156,8 @@ export async function deleteCorporatePackage(id: string): Promise<'ok' | 'in_use
  * Soft-delete a corporate package. Row must be currently archived and not
  * yet deleted. Stays in DB so historical corporate_session references resolve.
  */
-export async function softDeleteCorporatePackage(id: string): Promise<void> {
-  const existing = await getCorporatePackage(id)
+export async function softDeleteCorporatePackage(tenantId: string, id: string): Promise<void> {
+  const existing = await getCorporatePackage(tenantId, id)
   if (!existing) {
     throw new BadRequestError('corporate_package_not_found')
   }
@@ -136,5 +167,5 @@ export async function softDeleteCorporatePackage(id: string): Promise<void> {
   await db
     .update(corporatePackages)
     .set({ deletedAt: sql`now()` })
-    .where(eq(corporatePackages.id, id))
+    .where(and(eq(corporatePackages.tenantId, tenantId), eq(corporatePackages.id, id)))
 }

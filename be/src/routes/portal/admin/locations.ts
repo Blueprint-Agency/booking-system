@@ -70,7 +70,7 @@ const app = new Hono()
   })
   .get('/:id/live-unlimited-count', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    return c.json({ count: await countLiveUnlimitedAtLocation(id, new Date()) })
+    return c.json({ count: await countLiveUnlimitedAtLocation(tenantId(c), id, new Date()) })
   })
   .post('/:id/archive', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')

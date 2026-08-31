@@ -105,6 +105,7 @@ function toRow(r: Raw): ClassBookingRow {
 }
 
 export async function listClassBookings(
+  tenantId: string,
   clientId: string,
   scope: 'upcoming' | 'past',
 ): Promise<ClassBookingRow[]> {
@@ -112,12 +113,14 @@ export async function listClassBookings(
   const where =
     scope === 'upcoming'
       ? and(
+          eq(bookings.tenantId, tenantId),
           eq(bookings.clientId, clientId),
           eq(bookings.kind, 'class'),
           eq(bookings.state, 'confirmed'),
           gte(classes.startsAt, now),
         )
       : and(
+          eq(bookings.tenantId, tenantId),
           eq(bookings.clientId, clientId),
           eq(bookings.kind, 'class'),
           inArray(bookings.state, ['confirmed', 'no_show']),
@@ -140,6 +143,7 @@ export async function listClassBookings(
 }
 
 export async function getClassBookingDetail(
+  tenantId: string,
   clientId: string,
   bookingId: string,
 ): Promise<ClassBookingRow> {
@@ -154,6 +158,7 @@ export async function getClassBookingDetail(
     .leftJoin(clientPackages, eq(clientPackages.id, bookings.clientPackageId))
     .where(
       and(
+        eq(bookings.tenantId, tenantId),
         eq(bookings.id, bookingId),
         eq(bookings.clientId, clientId),
         eq(bookings.kind, 'class'),

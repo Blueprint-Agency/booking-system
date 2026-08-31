@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { getPayroll } from '../../../services/payroll/list'
+import { tenantId } from '../../../middleware/tenant'
 
 /**
  * Instructor payroll — the caller's OWN teaching log only.
@@ -31,7 +32,7 @@ const listQuery = z.object({
 const app = new Hono().get('/', zValidator('query', listQuery), async c => {
   const self = c.get('staffUserId')
   const q = c.req.valid('query')
-  const { rows, total_sgd, session_count, unpriced_count } = await getPayroll({
+  const { rows, total_sgd, session_count, unpriced_count } = await getPayroll(tenantId(c), {
     instructorId: self, // forced — never from the query
     classTypeId: q.class_type_id,
     from: q.from ? new Date(q.from) : undefined,

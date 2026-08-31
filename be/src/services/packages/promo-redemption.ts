@@ -37,6 +37,11 @@ import {
 } from './promo-codes'
 
 export interface RedemptionInput {
+  /**
+   * Whose code this is. The text is unique per Tenant, not per platform, so a
+   * member typing SUMMER gets their own studio's SUMMER and never another's.
+   */
+  tenantId: string
   /** What the member typed. Normalised here — entry is case- and space-insensitive. */
   codeText: string
   clientId: string
@@ -71,15 +76,37 @@ function refuse(refusal: Parameters<typeof refusalMessage>[0], productName: stri
 
 async function readCode(
   tx: typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0],
+  tenantId: string,
   codeText: string,
   lock: boolean,
 ) {
-  const q = tx.select().from(promoCodes).where(eq(promoCodes.code, normaliseCode(codeText)))
+  const q = tx
+    .select()
+    .from(promoCodes)
+    .where(
+      and(eq(promoCodes.tenantId, tenantId), eq(promoCodes.code, normaliseCode(codeText))),
+    )
   const [code] = lock ? await q.for('update').limit(1) : await q.limit(1)
   if (!code) return null
   const [scope, redemptions] = await Promise.all([
-    tx.select().from(promoCodeProducts).where(eq(promoCodeProducts.promoCodeId, code.id)),
-    tx.select().from(promoCodeRedemptions).where(eq(promoCodeRedemptions.promoCodeId, code.id)),
+    tx
+      .select()
+      .from(promoCodeProducts)
+      .where(
+        and(
+          eq(promoCodeProducts.tenantId, tenantId),
+          eq(promoCodeProducts.promoCodeId, code.id),
+        ),
+      ),
+    tx
+      .select()
+      .from(promoCodeRedemptions)
+      .where(
+        and(
+          eq(promoCodeRedemptions.tenantId, tenantId),
+          eq(promoCodeRedemptions.promoCodeId, code.id),
+        ),
+      ),
   ])
   return { code, scope, redemptions }
 }
@@ -93,6 +120,7 @@ async function readCode(
  * workshop level. The tier only sets the price.
  */
 export async function describeProduct(
+  tenantId: string,
   input:
     | { packageKind: 'class' | 'pt'; packageId: string }
     | { workshopId: string; workshopTierId: string },
@@ -103,6 +131,7 @@ export async function describeProduct(
       .from(workshopTiers)
       .where(
         and(
+          eq(workshopTiers.tenantId, tenantId),
           eq(workshopTiers.id, input.workshopTierId),
           eq(workshopTiers.workshopId, input.workshopId),
         ),
@@ -112,10 +141,10 @@ export async function describeProduct(
     const [ws] = await db
       .select({ name: workshops.name })
       .from(workshops)
-      .where(eq(workshops.id, input.workshopId))
+      .where(and(eq(workshops.tenantId, tenantId), eq(workshops.id, input.workshopId)))
       .limit(1)
     if (!ws) throw new NotFoundError('workshop_not_found')
-    const promos = await listActivePromotionsFor('workshop', [input.workshopId])
+    const promos = await listActivePromotionsFor(tenantId, 'workshop', [input.workshopId])
     const eff = tierEffectivePrice(tier, promos[input.workshopId] ?? [])
     return {
       product: { productType: 'workshop', productId: input.workshopId },
@@ -129,14 +158,16 @@ export async function describeProduct(
   const [pkg] = await db
     .select({ id: table.id, name: table.name, priceSgd: table.priceSgd })
     .from(table)
-    .where(and(eq(table.id, input.packageId), isNull(table.deletedAt)))
+    .where(
+      and(eq(table.tenantId, tenantId), eq(table.id, input.packageId), isNull(table.deletedAt)),
+    )
     .limit(1)
   if (!pkg) {
     throw new NotFoundError(
       input.packageKind === 'class' ? 'class_package_not_found' : 'pt_package_not_found',
     )
   }
-  const promos = await listActivePromotionsFor(productType, [pkg.id])
+  const promos = await listActivePromotionsFor(tenantId, productType, [pkg.id])
   const eff = bestPrice(pkg.priceSgd, promos[pkg.id] ?? [])
   return {
     product: { productType, productId: pkg.id },
@@ -152,7 +183,7 @@ export async function describeProduct(
  * when checkout starts, not when a member types.
  */
 export async function previewPromoCode(input: RedemptionInput): Promise<AppliedPromoCode> {
-  const found = await readCode(db, input.codeText, false)
+  const found = await readCode(db, input.tenantId, input.codeText, false)
   const evaluated = evaluatePromoCode({
     code: found?.code ?? null,
     scope: found?.scope ?? [],
@@ -200,7 +231,7 @@ export async function applyPromoCode(input: RedemptionInput): Promise<AppliedPro
 export async function holdPromoCode(input: RedemptionInput): Promise<AppliedPromoCode> {
   return db.transaction(async tx => {
     const now = new Date()
-    const found = await readCode(tx, input.codeText, true)
+    const found = await readCode(tx, input.tenantId, input.codeText, true)
     const evaluated = evaluatePromoCode({
       code: found?.code ?? null,
       scope: found?.scope ?? [],
@@ -229,7 +260,7 @@ export async function holdPromoCode(input: RedemptionInput): Promise<AppliedProm
     // overwritten by the next attempt.
     await tx
       .insert(promoCodeRedemptions)
-      .values({ promoCodeId: code.id, clientId: input.clientId, ...row })
+      .values({ tenantId: input.tenantId, promoCodeId: code.id, clientId: input.clientId, ...row })
       .onConflictDoUpdate({
         target: [promoCodeRedemptions.promoCodeId, promoCodeRedemptions.clientId],
         targetWhere: sql`${promoCodeRedemptions.status} <> 'refunded'`,
@@ -255,6 +286,7 @@ export async function holdPromoCode(input: RedemptionInput): Promise<AppliedProm
  * rewrite a Redemption that is already Consumed.
  */
 export async function consumePromoCodeHold(args: {
+  tenantId: string
   promoCodeId: string
   clientId: string
   paymentIntentId: string
@@ -270,6 +302,7 @@ export async function consumePromoCodeHold(args: {
     })
     .where(
       and(
+        eq(promoCodeRedemptions.tenantId, args.tenantId),
         eq(promoCodeRedemptions.promoCodeId, args.promoCodeId),
         eq(promoCodeRedemptions.clientId, args.clientId),
         eq(promoCodeRedemptions.status, 'held'),
@@ -289,12 +322,16 @@ export async function consumePromoCodeHold(args: {
  *
  * Only a `consumed` row moves, so a redelivered `charge.refunded` is a no-op.
  */
-export async function refundPromoCodeRedemption(paymentIntentId: string): Promise<void> {
+export async function refundPromoCodeRedemption(
+  tenantId: string,
+  paymentIntentId: string,
+): Promise<void> {
   await db
     .update(promoCodeRedemptions)
     .set({ status: 'refunded', updatedAt: new Date() })
     .where(
       and(
+        eq(promoCodeRedemptions.tenantId, tenantId),
         eq(promoCodeRedemptions.stripePaymentIntentId, paymentIntentId),
         eq(promoCodeRedemptions.status, 'consumed'),
       ),

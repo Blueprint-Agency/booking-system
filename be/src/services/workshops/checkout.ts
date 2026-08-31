@@ -38,7 +38,11 @@ export async function beginWorkshopCheckout(input: {
   if (!ws) throw new NotFoundError('workshop_not_found')
   if (ws.lifecycle !== 'active') throw new BadRequestError('workshop_not_active')
 
-  const promos = await listActivePromotionsFor('workshop', [workshopId])
+  // Off the workshop row — workshops are scoped to the Tenant in the
+  // remaining-surfaces batch (#62); until then the workshop being bought says
+  // whose promotions and whose Promo Codes apply.
+  const tenantId = ws.tenantId!
+  const promos = await listActivePromotionsFor(tenantId, 'workshop', [workshopId])
   // Early-bird beats promotions while the cutoff is live — same rule the FE uses
   // to display the price, so what's shown is what's charged.
   const eff = tierEffectivePrice(tier, promos[workshopId] ?? [])
@@ -59,6 +63,7 @@ export async function beginWorkshopCheckout(input: {
   let applied: AppliedPromoCode | null = null
   if (input.promoCode) {
     applied = await applyPromoCode({
+      tenantId,
       codeText: input.promoCode,
       clientId,
       product: { productType: 'workshop', productId: workshopId },

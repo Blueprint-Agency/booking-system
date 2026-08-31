@@ -291,7 +291,7 @@ const app = new Hono()
     async c => {
       const { id } = c.req.valid('param')
       const staffId = c.get('staffUserId')
-      const res = await cancelClass({ classId: id, actorStaffId: staffId })
+      const res = await cancelClass(tenantId(c), { classId: id, actorStaffId: staffId })
       c.set('auditTarget' as any, { table: 'classes', id })
       return c.json({ total_bookings: res.totalBookings, refunded_count: res.refundedCount })
     },

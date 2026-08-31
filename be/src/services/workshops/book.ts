@@ -140,7 +140,15 @@ async function insertWorkshopBooking(
   // against zero paid, same as a comp grant; a zero would hide the giveaway.
   // The money off is derived (list minus paid) and never stored.
   const [tierRow] = await db
-    .select({ regularPriceSgd: workshopTiers.regularPriceSgd })
+    .select({
+      regularPriceSgd: workshopTiers.regularPriceSgd,
+      // The tier is the Tenant's, so the booking it sells is too. Workshops are
+      // scoped in the remaining-surfaces batch (#62); this stamp is here now
+      // because `bookings` is read through a Tenant filter from #61 on, and a
+      // row that took the column default would vanish from the ledger and the
+      // refund path beside it.
+      tenantId: workshopTiers.tenantId,
+    })
     .from(workshopTiers)
     .where(eq(workshopTiers.id, input.workshopTierId))
     .limit(1)
@@ -150,6 +158,7 @@ async function insertWorkshopBooking(
     const [row] = await db
       .insert(bookings)
       .values({
+        tenantId: tierRow.tenantId,
         clientId: input.clientId,
         kind: 'workshop',
         workshopId: input.workshopId,
@@ -174,7 +183,12 @@ async function insertWorkshopBooking(
       await db
         .update(stripePayments)
         .set({ status: 'succeeded', bookingId })
-        .where(eq(stripePayments.paymentIntentId, input.paymentIntentId))
+        .where(
+          and(
+            eq(stripePayments.tenantId, tierRow.tenantId!),
+            eq(stripePayments.paymentIntentId, input.paymentIntentId),
+          ),
+        )
     }
 
     return { bookingId, qrToken, code, created: true }
@@ -230,7 +244,9 @@ export async function bookWorkshopFree(args: {
   if (!ws) throw new NotFoundError('workshop_not_found')
   if (ws.lifecycle !== 'active') throw new BadRequestError('workshop_not_active')
 
-  const promos = await listActivePromotionsFor('workshop', [args.workshopId])
+  // Off the workshop row — workshops are scoped to the Tenant in the
+  // remaining-surfaces batch (#62), and the workshop is whose promotions apply.
+  const promos = await listActivePromotionsFor(ws.tenantId!, 'workshop', [args.workshopId])
   const eff = tierEffectivePrice(tier, promos[args.workshopId] ?? [])
   if (Number(eff.baseSgd) > 0 && !args.appliedPromoCodeId) {
     throw new BadRequestError('workshop_is_not_free')

@@ -138,6 +138,10 @@ export async function schedulePtRequest(input: SchedulePtRequestInput): Promise<
     for (const clientId of clientIds) {
       const { qrToken, code } = generateBookingCodes()
       await tx.insert(bookings).values({
+        // Stamped rather than left to the column default: `bookings` is read
+        // through a Tenant filter from this batch on (#61), and a row that took
+        // the default would vanish from the roster and the ledger beside it.
+        tenantId,
         clientId,
         kind: 'pt',
         ptSessionId: sessionId,
@@ -225,6 +229,9 @@ async function reconcileSessionType(
   const [req] = await tx
     .select({
       id: ptRequests.id,
+      // Off the request — PT is scoped to the Tenant in the remaining-surfaces
+      // batch (#62); until then the row being changed says whose credits move.
+      tenantId: ptRequests.tenantId,
       clientId: ptRequests.clientId,
       coClientId: ptRequests.coClientId,
       debitedClientPackageId: ptRequests.debitedClientPackageId,
@@ -271,6 +278,7 @@ async function reconcileSessionType(
   // --- from here on, writes -------------------------------------------------
   if (plan.delta < 0) {
     await debitCredits(tx, {
+      tenantId: req.tenantId!,
       clientId: req.clientId,
       clientPackageId: req.debitedClientPackageId,
       amount: -plan.delta,
@@ -278,6 +286,7 @@ async function reconcileSessionType(
     })
   } else if (plan.delta > 0) {
     await refundCredits(tx, {
+      tenantId: req.tenantId!,
       clientId: req.clientId,
       clientPackageId: req.debitedClientPackageId,
       amount: plan.delta,
@@ -289,6 +298,7 @@ async function reconcileSessionType(
     await tx.insert(ptSessionClients).values({ ptSessionId: args.sessionId, clientId: partnerId! })
     const { qrToken, code } = generateBookingCodes()
     await tx.insert(bookings).values({
+      tenantId: req.tenantId!,
       clientId: partnerId!,
       kind: 'pt',
       ptSessionId: args.sessionId,

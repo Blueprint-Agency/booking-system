@@ -45,7 +45,10 @@ export interface CancelClassResult {
 
 const sgDateTime = sgFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short' })
 
-export async function cancelClass(input: CancelClassInput): Promise<CancelClassResult> {
+export async function cancelClass(
+  tenantId: string,
+  input: CancelClassInput,
+): Promise<CancelClassResult> {
   const { classId, actorStaffId } = input
   const source: CancelClassSource = input.source ?? 'admin'
   const reason = input.reason?.trim() ?? ''
@@ -64,7 +67,7 @@ export async function cancelClass(input: CancelClassInput): Promise<CancelClassR
         classTypeId: classes.classTypeId,
       })
       .from(classes)
-      .where(eq(classes.id, classId))
+      .where(and(eq(classes.tenantId, tenantId), eq(classes.id, classId)))
       .for('update')
       .limit(1)
     if (!cls) throw new NotFoundError('class_not_found')
@@ -90,7 +93,7 @@ export async function cancelClass(input: CancelClassInput): Promise<CancelClassR
     await tx
       .update(classes)
       .set({ lifecycle: 'cancelled', cancelledAt: now, cancelledByStaffId: actorStaffId })
-      .where(eq(classes.id, classId))
+      .where(and(eq(classes.tenantId, tenantId), eq(classes.id, classId)))
 
     // All confirmed bookings → cancel + refund.
     const confirmed = await tx
@@ -101,7 +104,13 @@ export async function cancelClass(input: CancelClassInput): Promise<CancelClassR
         used: bookings.creditsOrSessionsUsed,
       })
       .from(bookings)
-      .where(and(eq(bookings.classId, classId), eq(bookings.state, 'confirmed')))
+      .where(
+        and(
+          eq(bookings.tenantId, tenantId),
+          eq(bookings.classId, classId),
+          eq(bookings.state, 'confirmed'),
+        ),
+      )
       .for('update')
 
     let refundedCount = 0
@@ -113,6 +122,7 @@ export async function cancelClass(input: CancelClassInput): Promise<CancelClassR
         // Ledger re-derives `active` — an emptied bundle refunded here is
         // spendable again (it previously came back unusable).
         await refundCredits(tx, {
+          tenantId,
           clientId: bk.clientId,
           clientPackageId: bk.clientPackageId!,
           amount: used,
@@ -126,6 +136,7 @@ export async function cancelClass(input: CancelClassInput): Promise<CancelClassR
       }
 
       await tx.insert(cancellations).values({
+        tenantId,
         bookingId: bk.id,
         clientId: bk.clientId,
         kind: 'class',
@@ -144,12 +155,13 @@ export async function cancelClass(input: CancelClassInput): Promise<CancelClassR
           checkInState: 'n_a',
           cancelledAt: now,
         })
-        .where(eq(bookings.id, bk.id))
+        .where(and(eq(bookings.tenantId, tenantId), eq(bookings.id, bk.id)))
     }
 
     // Inbox notification per §13. The instructor's reason is free text and
     // lives here — the only place a cancellation carries one.
     await tx.insert(inboxItems).values({
+      tenantId,
       type: source === 'instructor' ? 'instructor_cancel_class' : 'admin_cancel_class_pt',
       payload: {
         kind: 'class',
@@ -172,6 +184,7 @@ export async function cancelClass(input: CancelClassInput): Promise<CancelClassR
 
   if (source === 'instructor') {
     await emailAdmins({
+      tenantId,
       classTypeId: outcome.classTypeId,
       startsAt: outcome.startsAt,
       instructorStaffId: actorStaffId,
@@ -189,6 +202,7 @@ export async function cancelClass(input: CancelClassInput): Promise<CancelClassR
  * because SMTP (or a missing template row on an unseeded database) misbehaved.
  */
 async function emailAdmins(args: {
+  tenantId: string
   classTypeId: string
   startsAt: Date
   instructorStaffId: string
@@ -201,12 +215,14 @@ async function emailAdmins(args: {
       const [type] = await db
         .select({ name: classTypes.name })
         .from(classTypes)
-        .where(eq(classTypes.id, args.classTypeId))
+        .where(and(eq(classTypes.tenantId, args.tenantId), eq(classTypes.id, args.classTypeId)))
         .limit(1)
       const [instructor] = await db
         .select({ name: staffUsers.name })
         .from(staffUsers)
-        .where(eq(staffUsers.id, args.instructorStaffId))
+        .where(
+          and(eq(staffUsers.tenantId, args.tenantId), eq(staffUsers.id, args.instructorStaffId)),
+        )
         .limit(1)
       return {
         class_name: type?.name ?? 'Class',

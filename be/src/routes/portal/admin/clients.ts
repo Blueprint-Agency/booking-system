@@ -204,10 +204,10 @@ const app = new Hono()
     const { id } = c.req.valid('param')
     const [client, packages, adjustments, refunds, workshopPurchases] = await Promise.all([
       getClientById(tenantId(c), id),
-      listClientPackages(id, true),
+      listClientPackages(tenantId(c), id, true),
       listRecentAdjustments(tenantId(c), id),
-      refundStatesFor(id),
-      listWorkshopPurchases(id),
+      refundStatesFor(tenantId(c), id),
+      listWorkshopPurchases(tenantId(c), id),
     ])
     return c.json({
       ...clientRow(client),
@@ -221,6 +221,7 @@ const app = new Hono()
     const { id, pid } = c.req.valid('param')
     const body = c.req.valid('json')
     const row = await adjustBalance({
+      tenantId: tenantId(c),
       clientId: id,
       clientPackageId: pid,
       delta: body.delta,
@@ -234,6 +235,7 @@ const app = new Hono()
     const { id, pid } = c.req.valid('param')
     const body = c.req.valid('json')
     const row = await setBalance({
+      tenantId: tenantId(c),
       clientId: id,
       clientPackageId: pid,
       balance: body.balance,
@@ -247,6 +249,7 @@ const app = new Hono()
     const { id, pid } = c.req.valid('param')
     const body = c.req.valid('json')
     const row = await setPackageExpiry({
+      tenantId: tenantId(c),
       clientId: id,
       clientPackageId: pid,
       expiresAt: body.expires_at ? new Date(body.expires_at) : null,
@@ -260,6 +263,7 @@ const app = new Hono()
     const { id, pid } = c.req.valid('param')
     const body = c.req.valid('json')
     const row = await setCrossLocationAddOn({
+      tenantId: tenantId(c),
       clientId: id,
       clientPackageId: pid,
       paidSgd: body.paid_sgd === null ? null : body.paid_sgd.toFixed(2),
@@ -276,6 +280,7 @@ const app = new Hono()
     const { id, pid } = c.req.valid('param')
     const body = c.req.valid('json')
     const row = await setHomeLocation({
+      tenantId: tenantId(c),
       clientId: id,
       clientPackageId: pid,
       locationId: body.location_id,
@@ -293,6 +298,7 @@ const app = new Hono()
     const { id, pid } = c.req.valid('param')
     const body = c.req.valid('json')
     const result = await issueRefund({
+      tenantId: tenantId(c),
       clientId: id,
       clientPackageId: pid,
       reason: body.reason,
@@ -316,6 +322,7 @@ const app = new Hono()
       const { id, bid } = c.req.valid('param')
       const body = c.req.valid('json')
       const result = await issueWorkshopRefund({
+        tenantId: tenantId(c),
         clientId: id,
         bookingId: bid,
         reason: body.reason,

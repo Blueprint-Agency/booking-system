@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { markAttendance } from '../../../services/bookings/check-in'
+import { tenantId } from '../../../middleware/tenant'
 
 /**
  * Instructor check-in (spec §11 — "instructor scoped to own sessions").
@@ -20,7 +21,7 @@ const app = new Hono()
     async c => {
       const staffId = c.get('staffUserId')
       const { booking_id, attended } = c.req.valid('json')
-      const res = await markAttendance({
+      const res = await markAttendance(tenantId(c), {
         bookingId: booking_id,
         staffId,
         attended,

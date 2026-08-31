@@ -64,12 +64,14 @@ const app = new Hono()
     const clientId = c.get('clientId')
     const body = c.req.valid('json')
     const item = await describeProduct(
+      tenantId(c),
       'package_id' in body
         ? { packageKind: body.package_kind, packageId: body.package_id }
         : { workshopId: body.workshop_id, workshopTierId: body.workshop_tier_id },
     )
     try {
       const applied = await previewPromoCode({
+        tenantId: tenantId(c),
         codeText: body.code,
         clientId,
         product: item.product,
@@ -94,6 +96,7 @@ const app = new Hono()
   .post('/checkout/package', zValidator('json', checkoutPackageSchema), async c => {
     const body = c.req.valid('json')
     const quote = await beginPackageCheckout({
+      tenantId: tenantId(c),
       clientId: c.get('clientId'),
       packageKind: body.package_kind,
       packageId: body.package_id,
@@ -119,7 +122,11 @@ const app = new Hono()
   // webhook must fill the column on. A quote first, so the member sees the
   // months-times-rate arithmetic before they are asked to pay it.
   .post('/checkout/cross-location/quote', zValidator('json', crossLocationSchema), async c => {
-    const q = await quoteCrossLocationAddOn(c.get('clientId'), c.req.valid('json').client_package_id)
+    const q = await quoteCrossLocationAddOn(
+      tenantId(c),
+      c.get('clientId'),
+      c.req.valid('json').client_package_id,
+    )
     return c.json({
       client_package_id: q.clientPackageId,
       months: q.months,
@@ -129,6 +136,7 @@ const app = new Hono()
   })
   .post('/checkout/cross-location', zValidator('json', crossLocationSchema), async c => {
     const quote = await beginCrossLocationCheckout(
+      tenantId(c),
       c.get('clientId'),
       c.req.valid('json').client_package_id,
     )
@@ -166,7 +174,7 @@ const app = new Hono()
   })
   // Purchase history: what the member bought and is collecting at the studio.
   .get('/merch-orders', async c => {
-    const rows = await listMerchOrders(c.get('clientId'))
+    const rows = await listMerchOrders(tenantId(c), c.get('clientId'))
     return c.json({ orders: rows.map(serializeMerchOrder) })
   })
   .post('/checkout/workshop', zValidator('json', checkoutWorkshopSchema), async c => {

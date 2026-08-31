@@ -142,7 +142,7 @@ const app = new Hono()
     async c => {
       const { id } = c.req.valid('param')
       const { reason } = c.req.valid('json')
-      const res = await cancelClass({
+      const res = await cancelClass(tenantId(c), {
         classId: id,
         actorStaffId: c.get('staffUserId'), // never from the body
         source: 'instructor',

@@ -28,6 +28,7 @@ type PtPackageRow = typeof ptPackages.$inferSelect
  * Takes the handle so a caller inside a transaction sees its own writes.
  */
 export async function liveUnlimited(
+  tenantId: string,
   clientId: string,
   now: Date,
   handle: typeof db | Tx = db,
@@ -39,7 +40,13 @@ export async function liveUnlimited(
       locationId: clientPackages.locationId,
     })
     .from(clientPackages)
-    .where(and(eq(clientPackages.clientId, clientId), isLiveUnlimited(now)))
+    .where(
+      and(
+        eq(clientPackages.tenantId, tenantId),
+        eq(clientPackages.clientId, clientId),
+        isLiveUnlimited(now),
+      ),
+    )
 }
 
 /** The one reading of "live Unlimited Plan" — Activated and unexpired, or Dormant. */
@@ -58,13 +65,20 @@ function isLiveUnlimited(now: Date) {
  * because a second one is exactly the drift §6 cannot afford.
  */
 export async function countLiveUnlimitedAtLocation(
+  tenantId: string,
   locationId: string,
   now: Date,
 ): Promise<number> {
   const [row] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(clientPackages)
-    .where(and(eq(clientPackages.locationId, locationId), isLiveUnlimited(now)))
+    .where(
+      and(
+        eq(clientPackages.tenantId, tenantId),
+        eq(clientPackages.locationId, locationId),
+        isLiveUnlimited(now),
+      ),
+    )
   return row?.count ?? 0
 }
 
@@ -155,11 +169,12 @@ export function homeLocationMove(
  * fires, and a refusal there charges a member for nothing.
  */
 export async function assertPurchasableLocation(
+  tenantId: string,
   clientId: string,
   kind: PackageKind,
   locationId: string | null | undefined,
 ): Promise<void> {
-  const live = kind === 'unlimited' ? await liveUnlimited(clientId, new Date()) : []
+  const live = kind === 'unlimited' ? await liveUnlimited(tenantId, clientId, new Date()) : []
   locationForPurchase(kind, locationId, live.map(r => r.locationId))
 }
 
@@ -214,6 +229,7 @@ export interface CrossLocationQuote {
  * an Add-On already — one per plan, never two (§5).
  */
 export async function quoteCrossLocationAddOn(
+  tenantId: string,
   clientId: string,
   clientPackageId: string,
   now: Date = new Date(),
@@ -221,7 +237,13 @@ export async function quoteCrossLocationAddOn(
   const [plan] = await db
     .select()
     .from(clientPackages)
-    .where(and(eq(clientPackages.id, clientPackageId), eq(clientPackages.clientId, clientId)))
+    .where(
+      and(
+        eq(clientPackages.tenantId, tenantId),
+        eq(clientPackages.id, clientPackageId),
+        eq(clientPackages.clientId, clientId),
+      ),
+    )
     .limit(1)
   if (!plan) throw new NotFoundError('client_package_not_found')
   if (plan.kind !== 'unlimited') throw new BadRequestError('cross_location_requires_unlimited')
@@ -231,7 +253,7 @@ export async function quoteCrossLocationAddOn(
   if (plan.crossLocationPaidSgd !== null) {
     throw new ConflictError('cross_location_already_added')
   }
-  const rateSgd = await readCrossLocationRateSgd(plan.tenantId!)
+  const rateSgd = await readCrossLocationRateSgd(tenantId)
   // A Dormant plan prices at its full stored Duration; an Activated one at the
   // whole months it has left, part months rounded up.
   const months = crossLocationMonths(plan, now)
@@ -249,6 +271,7 @@ export async function quoteCrossLocationAddOn(
  * them can land — the caller must not report the loser as delivered.
  */
 export async function applyCrossLocationAddOn(
+  tenantId: string,
   clientId: string,
   clientPackageId: string,
   amountSgd: string,
@@ -258,6 +281,7 @@ export async function applyCrossLocationAddOn(
     .set({ crossLocationPaidSgd: amountSgd })
     .where(
       and(
+        eq(clientPackages.tenantId, tenantId),
         eq(clientPackages.id, clientPackageId),
         // Scoped to the payer, exactly as every other package write is — the id
         // arrives off session metadata and is never trusted on its own.
@@ -337,6 +361,7 @@ export interface GrantPackageInput {
  * a new column, a migration and an index to answer the same question.
  */
 export async function grantPackage(
+  tenantId: string,
   input: GrantPackageInput,
 ): Promise<{ clientPackageId: string; created: boolean }> {
   const now = new Date()
@@ -345,7 +370,7 @@ export async function grantPackage(
   // intent, return it instead of inserting a duplicate. The webhook and the
   // confirmation-page sync-session fallback can both fire for one purchase.
   if (input.paymentIntentId) {
-    const existingId = await packageForIntent(input.paymentIntentId)
+    const existingId = await packageForIntent(tenantId, input.paymentIntentId)
     if (existingId) return { clientPackageId: existingId, created: false }
   }
 
@@ -359,7 +384,13 @@ export async function grantPackage(
     const [row] = await db
       .select()
       .from(classPackages)
-      .where(and(eq(classPackages.id, input.packageId), isNull(classPackages.deletedAt)))
+      .where(
+        and(
+          eq(classPackages.tenantId, tenantId),
+          eq(classPackages.id, input.packageId),
+          isNull(classPackages.deletedAt),
+        ),
+      )
       .limit(1)
     if (!row) throw new NotFoundError('class_package_not_found')
     if (row.status !== 'active') throw new BadRequestError('class_package_not_active')
@@ -371,7 +402,13 @@ export async function grantPackage(
     const [row] = await db
       .select()
       .from(ptPackages)
-      .where(and(eq(ptPackages.id, input.packageId), isNull(ptPackages.deletedAt)))
+      .where(
+        and(
+          eq(ptPackages.tenantId, tenantId),
+          eq(ptPackages.id, input.packageId),
+          isNull(ptPackages.deletedAt),
+        ),
+      )
       .limit(1)
     if (!row) throw new NotFoundError('pt_package_not_found')
     if (row.status !== 'active') throw new BadRequestError('pt_package_not_active')
@@ -390,7 +427,7 @@ export async function grantPackage(
   let expiresAt = computeExpiry(kind, source, now)
   let durationMonths: number | null = null
 
-  const live = kind === 'unlimited' ? await liveUnlimited(input.clientId, now) : []
+  const live = kind === 'unlimited' ? await liveUnlimited(tenantId, input.clientId, now) : []
   const locationId = locationForPurchase(kind, input.locationId, live.map(r => r.locationId))
 
   if (kind === 'unlimited') {
@@ -409,6 +446,7 @@ export async function grantPackage(
     const [row] = await db
       .insert(clientPackages)
       .values({
+        tenantId,
         clientId: input.clientId,
         kind,
         sourceClassPackageId,
@@ -441,7 +479,7 @@ export async function grantPackage(
     // already-granted intent means the same thing either way. Ordered ahead of
     // the trial branch so that race answers "granted", not 409.
     if (input.paymentIntentId && isUniqueViolation(err)) {
-      const existingId = await packageForIntent(input.paymentIntentId)
+      const existingId = await packageForIntent(tenantId, input.paymentIntentId)
       if (existingId) return { clientPackageId: existingId, created: false }
     }
     if (kind === 'trial' && isUniqueViolation(err, 'client_packages_trial_unique_per_client')) {
@@ -452,11 +490,19 @@ export async function grantPackage(
 }
 
 /** The package already granted for a payment intent, if any (§13 idempotency). */
-async function packageForIntent(paymentIntentId: string): Promise<string | undefined> {
+async function packageForIntent(
+  tenantId: string,
+  paymentIntentId: string,
+): Promise<string | undefined> {
   const [row] = await db
     .select({ id: clientPackages.id })
     .from(clientPackages)
-    .where(eq(clientPackages.stripePaymentIntentId, paymentIntentId))
+    .where(
+      and(
+        eq(clientPackages.tenantId, tenantId),
+        eq(clientPackages.stripePaymentIntentId, paymentIntentId),
+      ),
+    )
     .limit(1)
   return row?.id
 }
@@ -470,9 +516,10 @@ async function packageForIntent(paymentIntentId: string): Promise<string | undef
  * the client and webhook paths drift apart.
  */
 export async function grantFreePurchase(
+  tenantId: string,
   input: GrantPackageInput,
 ): Promise<{ clientPackageId: string; created: boolean }> {
-  const granted = await grantPackage(input)
+  const granted = await grantPackage(tenantId, input)
   // The slug comes off the granted kind, so a Promo Code that zeroes a trial
   // gets the trial email and one that zeroes a bundle does not.
   if (granted.created) await sendPackagePurchaseEmail(granted.clientPackageId)
@@ -492,11 +539,13 @@ export async function grantFreePurchase(
  *   409 trial_already_used  — client has claimed a trial before (active or expired)
  *   409 trial_not_eligible  — client already owns some other package (bundle/unlimited/pt)
  */
-export async function assertTrialEligible(clientId: string): Promise<void> {
+export async function assertTrialEligible(tenantId: string, clientId: string): Promise<void> {
   const rows = await db
     .select({ kind: clientPackages.kind })
     .from(clientPackages)
-    .where(eq(clientPackages.clientId, clientId))
+    .where(
+      and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.clientId, clientId)),
+    )
   if (rows.length === 0) return
   if (rows.some(r => r.kind === 'trial')) {
     throw new ConflictError('trial_already_used')
@@ -509,26 +558,33 @@ export async function assertTrialEligible(clientId: string): Promise<void> {
  * so the partial-unique index enforces one-trial-per-client.
  */
 export async function purchaseFreeTrial(
+  tenantId: string,
   clientId: string,
   classPackageId: string,
 ): Promise<{ clientPackageId: string; created: boolean }> {
   const [pkg] = await db
     .select()
     .from(classPackages)
-    .where(and(eq(classPackages.id, classPackageId), isNull(classPackages.deletedAt)))
+    .where(
+      and(
+        eq(classPackages.tenantId, tenantId),
+        eq(classPackages.id, classPackageId),
+        isNull(classPackages.deletedAt),
+      ),
+    )
     .limit(1)
   if (!pkg) throw new NotFoundError('class_package_not_found')
   if (pkg.status !== 'active') throw new BadRequestError('class_package_not_active')
   if (pkg.kind !== 'trial') throw new BadRequestError('not_a_trial_package')
 
-  const promos = await listActivePromotionsFor('class_package', [pkg.id])
+  const promos = await listActivePromotionsFor(tenantId, 'class_package', [pkg.id])
   const eff = bestPrice(pkg.priceSgd, promos[pkg.id] ?? [])
   const finalPrice = Number(eff.effectivePriceSgd)
   if (finalPrice > 0) {
     throw new BadRequestError('trial_is_not_free')
   }
 
-  const granted = await grantPackage({
+  const granted = await grantPackage(tenantId, {
     clientId,
     paymentIntentId: null,
     amountSgd: '0.00',

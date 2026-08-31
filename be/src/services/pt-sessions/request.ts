@@ -101,6 +101,9 @@ export async function submitPtRequest(input: PtRequestInput): Promise<{ ptReques
     // credit-movement audit row, so the cancel/expiry refund is reversible to
     // the exact package (backend-architecture §4, parity with classes).
     await debitCredits(tx, {
+      // Off the package being spent — PT is scoped in the remaining-surfaces
+      // batch (#62), and the package is whose credits these are.
+      tenantId: pkg.tenantId!,
       clientId: input.clientId,
       clientPackageId: pkg.id,
       amount: cost,

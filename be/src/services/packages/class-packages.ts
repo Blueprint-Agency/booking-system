@@ -6,24 +6,33 @@ import { BadRequestError, NotFoundError } from '../../shared/errors'
 export type ClassPackageRow = typeof classPackages.$inferSelect
 export type ClassPackageKind = 'credit_bundle' | 'unlimited' | 'trial'
 
-export async function listClassPackages(opts: {
-  status?: 'active' | 'archived'
-  kind?: ClassPackageKind
-}): Promise<ClassPackageRow[]> {
-  const filters = [isNull(classPackages.deletedAt)]
+export async function listClassPackages(
+  tenantId: string,
+  opts: {
+    status?: 'active' | 'archived'
+    kind?: ClassPackageKind
+  },
+): Promise<ClassPackageRow[]> {
+  const filters = [eq(classPackages.tenantId, tenantId), isNull(classPackages.deletedAt)]
   if (opts.status) filters.push(eq(classPackages.status, opts.status))
   if (opts.kind) filters.push(eq(classPackages.kind, opts.kind))
   return db
     .select()
     .from(classPackages)
-    .where(filters.length === 1 ? filters[0] : and(...filters))
+    .where(and(...filters))
 }
 
-export async function getClassPackage(id: string): Promise<ClassPackageRow> {
+export async function getClassPackage(tenantId: string, id: string): Promise<ClassPackageRow> {
   const [row] = await db
     .select()
     .from(classPackages)
-    .where(and(eq(classPackages.id, id), isNull(classPackages.deletedAt)))
+    .where(
+      and(
+        eq(classPackages.tenantId, tenantId),
+        eq(classPackages.id, id),
+        isNull(classPackages.deletedAt),
+      ),
+    )
     .limit(1)
   if (!row) throw new NotFoundError('class_package_not_found')
   return row
@@ -66,11 +75,15 @@ function validateKindFields(input: CreateClassPackageInput | UpdateClassPackageI
   }
 }
 
-export async function createClassPackage(input: CreateClassPackageInput): Promise<ClassPackageRow> {
+export async function createClassPackage(
+  tenantId: string,
+  input: CreateClassPackageInput,
+): Promise<ClassPackageRow> {
   validateKindFields(input, input.kind)
   const [row] = await db
     .insert(classPackages)
     .values({
+      tenantId,
       name: input.name,
       description: input.description ?? null,
       kind: input.kind,
@@ -95,10 +108,11 @@ export interface UpdateClassPackageInput {
 }
 
 export async function updateClassPackage(
+  tenantId: string,
   id: string,
   patch: UpdateClassPackageInput,
 ): Promise<ClassPackageRow> {
-  const current = await getClassPackage(id)
+  const current = await getClassPackage(tenantId, id)
   const merged: CreateClassPackageInput = {
     name: patch.name ?? current.name,
     description: patch.description ?? current.description,
@@ -121,33 +135,39 @@ export async function updateClassPackage(
       ...(patch.durationMonths !== undefined ? { durationMonths: patch.durationMonths } : {}),
       ...(patch.status !== undefined ? { status: patch.status } : {}),
     })
-    .where(eq(classPackages.id, id))
+    .where(and(eq(classPackages.tenantId, tenantId), eq(classPackages.id, id)))
     .returning()
   return row!
 }
 
-export async function archiveClassPackage(id: string): Promise<ClassPackageRow> {
-  const existing = await getClassPackage(id)
+export async function archiveClassPackage(
+  tenantId: string,
+  id: string,
+): Promise<ClassPackageRow> {
+  const existing = await getClassPackage(tenantId, id)
   if (existing.status === 'archived') {
     throw new BadRequestError('class_package_already_archived')
   }
   const [row] = await db
     .update(classPackages)
     .set({ status: 'archived', archivedAt: new Date() })
-    .where(eq(classPackages.id, id))
+    .where(and(eq(classPackages.tenantId, tenantId), eq(classPackages.id, id)))
     .returning()
   return row!
 }
 
-export async function unarchiveClassPackage(id: string): Promise<ClassPackageRow> {
-  const existing = await getClassPackage(id)
+export async function unarchiveClassPackage(
+  tenantId: string,
+  id: string,
+): Promise<ClassPackageRow> {
+  const existing = await getClassPackage(tenantId, id)
   if (existing.status !== 'archived') {
     throw new BadRequestError('class_package_not_archived')
   }
   const [row] = await db
     .update(classPackages)
     .set({ status: 'active', archivedAt: null })
-    .where(eq(classPackages.id, id))
+    .where(and(eq(classPackages.tenantId, tenantId), eq(classPackages.id, id)))
     .returning()
   return row!
 }
@@ -156,13 +176,13 @@ export async function unarchiveClassPackage(id: string): Promise<ClassPackageRow
  * Soft-delete a class package. Must be currently archived; the row stays in
  * DB so historical client_packages references keep resolving.
  */
-export async function softDeleteClassPackage(id: string): Promise<void> {
-  const existing = await getClassPackage(id)
+export async function softDeleteClassPackage(tenantId: string, id: string): Promise<void> {
+  const existing = await getClassPackage(tenantId, id)
   if (existing.status !== 'archived') {
     throw new BadRequestError('class_package_not_archived')
   }
   await db
     .update(classPackages)
     .set({ deletedAt: sql`now()` })
-    .where(eq(classPackages.id, id))
+    .where(and(eq(classPackages.tenantId, tenantId), eq(classPackages.id, id)))
 }

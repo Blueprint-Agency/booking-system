@@ -34,6 +34,12 @@ import { applyMovement } from './validity'
 export type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
 export interface CreditMovementInput {
+  /**
+   * The Tenant whose credits these are. Scopes the lookup alongside the owner,
+   * so a package id borrowed from another studio names nothing here — a member's
+   * credits are never spendable at a studio that did not sell them.
+   */
+  tenantId: string
   /** Owner of the package — also scopes the lookup, so a mismatched pair can't move credits. */
   clientId: string
   clientPackageId: string
@@ -73,7 +79,11 @@ async function move(tx: Tx, input: CreditMovementInput, sign: 1 | -1): Promise<M
     })
     .from(clientPackages)
     .where(
-      and(eq(clientPackages.id, input.clientPackageId), eq(clientPackages.clientId, input.clientId)),
+      and(
+        eq(clientPackages.tenantId, input.tenantId),
+        eq(clientPackages.id, input.clientPackageId),
+        eq(clientPackages.clientId, input.clientId),
+      ),
     )
     .for('update')
     .limit(1)
@@ -94,10 +104,16 @@ async function move(tx: Tx, input: CreditMovementInput, sign: 1 | -1): Promise<M
   await tx
     .update(clientPackages)
     .set({ creditsOrSessionsRemaining: result.remaining, active: result.active })
-    .where(eq(clientPackages.id, input.clientPackageId))
+    .where(
+      and(
+        eq(clientPackages.tenantId, input.tenantId),
+        eq(clientPackages.id, input.clientPackageId),
+      ),
+    )
 
   if (input.audit !== false) {
     await tx.insert(manualAdjustments).values({
+      tenantId: input.tenantId,
       clientId: input.clientId,
       clientPackageId: input.clientPackageId,
       delta: sign * input.amount,

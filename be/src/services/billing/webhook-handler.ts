@@ -12,7 +12,8 @@
 import Stripe from 'stripe'
 import { db } from '../../db'
 import { stripePayments } from '../../db/schema/ledger'
-import { eq } from 'drizzle-orm'
+import { clients } from '../../db/schema/identity'
+import { and, eq } from 'drizzle-orm'
 import { stripe } from '../../lib/stripe'
 import { applyCrossLocationAddOn, grantPackage } from '../packages/purchase'
 import { consumePromoCodeHold } from '../packages/promo-redemption'
@@ -24,6 +25,7 @@ import {
   sendWorkshopPurchaseEmail,
 } from '../notifications/send-purchase-email'
 import { reportError } from '../../shared/logger'
+import { NotFoundError } from '../../shared/errors'
 
 /**
  * The provider's own receipt for a payment (§13). `checkout.session.completed`
@@ -51,6 +53,49 @@ async function receiptUrlPatch(
   }
 }
 
+/**
+ * Which Tenant a completed checkout belongs to.
+ *
+ * Read off the buyer, not off the session metadata. The provider calls this
+ * endpoint with no tenant header and no way to be given one — its own hostname
+ * carries none either — and a member belongs to exactly one studio, so the
+ * `clients` row is the honest answer. It also survives sessions created before
+ * this shipped, which metadata would not.
+ *
+ * **Throws** when the id names nobody, rather than returning quietly. By this
+ * point money has been captured, and a silent return would leave no payment
+ * row, no package, no email and a 200 back to the provider — a charge that
+ * simply vanishes. Failing loudly makes the provider retry and puts the event
+ * in front of a human. That is the opposite of the missing-metadata case above,
+ * which returns silently because it means our own checkout never ran.
+ */
+async function tenantForClient(clientId: string): Promise<string> {
+  const [row] = await db
+    .select({ tenantId: clients.tenantId })
+    .from(clients)
+    .where(eq(clients.id, clientId))
+    .limit(1)
+  if (!row?.tenantId) {
+    throw new NotFoundError('client_not_found', { clientId })
+  }
+  return row.tenantId
+}
+
+/** The payment this system already recorded for an intent, within its Tenant. */
+async function existingPayment(tenantId: string, paymentIntentId: string) {
+  const [row] = await db
+    .select({ status: stripePayments.status })
+    .from(stripePayments)
+    .where(
+      and(
+        eq(stripePayments.tenantId, tenantId),
+        eq(stripePayments.paymentIntentId, paymentIntentId),
+      ),
+    )
+    .limit(1)
+  return row
+}
+
 export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session
@@ -64,6 +109,7 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       const packageId = meta.package_id
       const clientId = meta.client_id
       if (!packageId || !clientId) return
+      const tenantId = await tenantForClient(clientId)
 
       const amountSgd = meta.amount_sgd ?? String(((session.amount_total ?? 0) / 100).toFixed(2))
       // The Add-On bought in the same session (§5): its own money, written into
@@ -76,15 +122,13 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       ).toFixed(2)
 
       // Idempotency — skip if we already processed this payment intent
-      const [existing] = await db.select({ status: stripePayments.status })
-        .from(stripePayments)
-        .where(eq(stripePayments.paymentIntentId, paymentIntentId))
-        .limit(1)
+      const existing = await existingPayment(tenantId, paymentIntentId)
       if (existing?.status === 'succeeded') return
 
       // Insert the stripe_payments row (we now have the confirmed PaymentIntent ID)
       if (!existing) {
         await db.insert(stripePayments).values({
+          tenantId,
           paymentIntentId,
           // The ledger records what was charged; the split lives on the plan.
           amountSgd: chargedSgd,
@@ -98,10 +142,10 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       // with the moment and the payment intent (§10 step 3).
       const promoCodeId = meta.promo_code_id || null
       if (promoCodeId) {
-        await consumePromoCodeHold({ promoCodeId, clientId, paymentIntentId })
+        await consumePromoCodeHold({ tenantId, promoCodeId, clientId, paymentIntentId })
       }
 
-      const granted = await grantPackage({
+      const granted = await grantPackage(tenantId, {
         clientId,
         paymentIntentId,
         amountSgd,
@@ -124,7 +168,12 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       await db
         .update(stripePayments)
         .set({ status: 'succeeded', clientPackageId: granted.clientPackageId, ...receipt })
-        .where(eq(stripePayments.paymentIntentId, paymentIntentId))
+        .where(
+          and(
+            eq(stripePayments.tenantId, tenantId),
+            eq(stripePayments.paymentIntentId, paymentIntentId),
+          ),
+        )
 
       // One confirmation per purchase, however many times the provider retries:
       // only the delivery that inserted the row sends. The helper cannot throw.
@@ -141,20 +190,18 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       const clientPackageId = meta.client_package_id
       const clientId = meta.client_id
       if (!clientPackageId || !clientId) return
+      const tenantId = await tenantForClient(clientId)
 
       const amountSgd = meta.amount_sgd ?? String(((session.amount_total ?? 0) / 100).toFixed(2))
 
-      const [existing] = await db
-        .select({ status: stripePayments.status })
-        .from(stripePayments)
-        .where(eq(stripePayments.paymentIntentId, paymentIntentId))
-        .limit(1)
+      const existing = await existingPayment(tenantId, paymentIntentId)
       if (existing?.status === 'succeeded') return
 
       if (!existing) {
         await db
           .insert(stripePayments)
           .values({
+            tenantId,
             paymentIntentId,
             amountSgd,
             // The Add-On extends an Unlimited Plan, which is a class package.
@@ -168,7 +215,12 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
           .onConflictDoNothing()
       }
 
-      const applied = await applyCrossLocationAddOn(clientId, clientPackageId, amountSgd)
+      const applied = await applyCrossLocationAddOn(
+        tenantId,
+        clientId,
+        clientPackageId,
+        amountSgd,
+      )
       if (!applied) {
         // The plan already carried an Add-On by the time this payment landed —
         // two sessions were open at once and this one lost. The money was taken
@@ -188,7 +240,12 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       await db
         .update(stripePayments)
         .set({ status: 'succeeded', clientPackageId, ...receipt })
-        .where(eq(stripePayments.paymentIntentId, paymentIntentId))
+        .where(
+          and(
+            eq(stripePayments.tenantId, tenantId),
+            eq(stripePayments.paymentIntentId, paymentIntentId),
+          ),
+        )
       // No confirmation email: an Add-On grants no package, and §13 names four
       // sending paths, none of them this one.
       return
@@ -201,24 +258,29 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       const merchId = meta.merch_id
       const clientId = meta.client_id
       if (!merchId || !clientId) return
+      const tenantId = await tenantForClient(clientId)
 
       const amountSgd = meta.amount_sgd ?? String(((session.amount_total ?? 0) / 100).toFixed(2))
 
-      const [existing] = await db
-        .select({ status: stripePayments.status })
-        .from(stripePayments)
-        .where(eq(stripePayments.paymentIntentId, paymentIntentId))
-        .limit(1)
+      const existing = await existingPayment(tenantId, paymentIntentId)
       if (existing?.status === 'succeeded') return
 
       if (!existing) {
         await db
           .insert(stripePayments)
-          .values({ paymentIntentId, amountSgd, kind: 'merch', clientId, status: 'pending' })
+          .values({
+            tenantId,
+            paymentIntentId,
+            amountSgd,
+            kind: 'merch',
+            clientId,
+            status: 'pending',
+          })
           .onConflictDoNothing()
       }
 
       await recordMerchOrder({
+        tenantId,
         clientId,
         merchId,
         title: meta.merch_title || 'Merch',
@@ -230,7 +292,12 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       await db
         .update(stripePayments)
         .set({ status: 'succeeded', ...receipt })
-        .where(eq(stripePayments.paymentIntentId, paymentIntentId))
+        .where(
+          and(
+            eq(stripePayments.tenantId, tenantId),
+            eq(stripePayments.paymentIntentId, paymentIntentId),
+          ),
+        )
       return
     }
 
@@ -239,22 +306,20 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
       const workshopTierId = meta.workshop_tier_id
       const clientId = meta.client_id
       if (!workshopId || !workshopTierId || !clientId) return
+      const tenantId = await tenantForClient(clientId)
 
       const amountSgd = meta.amount_sgd ?? String(((session.amount_total ?? 0) / 100).toFixed(2))
       const appliedPromotionId = meta.applied_promotion_id || null
 
       // Idempotency — skip if we already processed this payment intent
-      const [existing] = await db
-        .select({ status: stripePayments.status })
-        .from(stripePayments)
-        .where(eq(stripePayments.paymentIntentId, paymentIntentId))
-        .limit(1)
+      const existing = await existingPayment(tenantId, paymentIntentId)
       if (existing?.status === 'succeeded') return
 
       if (!existing) {
         await db
           .insert(stripePayments)
           .values({
+            tenantId,
             paymentIntentId,
             amountSgd,
             kind: 'workshop',
@@ -266,7 +331,7 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
 
       const promoCodeId = meta.promo_code_id || null
       if (promoCodeId) {
-        await consumePromoCodeHold({ promoCodeId, clientId, paymentIntentId })
+        await consumePromoCodeHold({ tenantId, promoCodeId, clientId, paymentIntentId })
       }
 
       const booked = await bookWorkshopPaid({
@@ -286,7 +351,12 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         await db
           .update(stripePayments)
           .set(receipt)
-          .where(eq(stripePayments.paymentIntentId, paymentIntentId))
+          .where(
+            and(
+              eq(stripePayments.tenantId, tenantId),
+              eq(stripePayments.paymentIntentId, paymentIntentId),
+            ),
+          )
       }
 
       if (booked.created) await sendWorkshopPurchaseEmail(booked.bookingId)

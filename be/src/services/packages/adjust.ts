@@ -15,17 +15,36 @@ import { homeLocationMove, liveUnlimited } from './purchase'
 
 export type ClientPackageRow = typeof clientPackages.$inferSelect
 
-async function loadOwnedPackage(clientId: string, clientPackageId: string): Promise<ClientPackageRow> {
+/**
+ * The one lookup every edit on this page starts from. Scoped by Tenant as well
+ * as owner, so a package id belonging to another studio's member names nothing
+ * — the refusal is `client_package_not_found`, the same answer an id that does
+ * not exist gets, and nothing about the row leaks.
+ */
+function ownedPackage(tenantId: string, clientId: string, clientPackageId: string) {
+  return and(
+    eq(clientPackages.tenantId, tenantId),
+    eq(clientPackages.id, clientPackageId),
+    eq(clientPackages.clientId, clientId),
+  )
+}
+
+async function loadOwnedPackage(
+  tenantId: string,
+  clientId: string,
+  clientPackageId: string,
+): Promise<ClientPackageRow> {
   const [row] = await db
     .select()
     .from(clientPackages)
-    .where(and(eq(clientPackages.id, clientPackageId), eq(clientPackages.clientId, clientId)))
+    .where(ownedPackage(tenantId, clientId, clientPackageId))
     .limit(1)
   if (!row) throw new NotFoundError('client_package_not_found')
   return row
 }
 
 export interface AdjustInput {
+  tenantId: string
   clientId: string
   clientPackageId: string
   delta: number
@@ -47,9 +66,7 @@ export async function adjustBalance(input: AdjustInput): Promise<ClientPackageRo
     const [pkg] = await tx
       .select()
       .from(clientPackages)
-      .where(
-        and(eq(clientPackages.id, input.clientPackageId), eq(clientPackages.clientId, input.clientId)),
-      )
+      .where(ownedPackage(input.tenantId, input.clientId, input.clientPackageId))
       .limit(1)
     if (!pkg) throw new NotFoundError('client_package_not_found')
     if (pkg.creditsOrSessionsRemaining === null) {
@@ -70,9 +87,10 @@ export async function adjustBalance(input: AdjustInput): Promise<ClientPackageRo
     await tx
       .update(clientPackages)
       .set({ creditsOrSessionsRemaining: next, active: nextActive })
-      .where(eq(clientPackages.id, pkg.id))
+      .where(and(eq(clientPackages.tenantId, input.tenantId), eq(clientPackages.id, pkg.id)))
 
     await tx.insert(manualAdjustments).values({
+      tenantId: input.tenantId,
       clientId: input.clientId,
       clientPackageId: pkg.id,
       delta: input.delta,
@@ -85,6 +103,7 @@ export async function adjustBalance(input: AdjustInput): Promise<ClientPackageRo
 }
 
 export interface SetBalanceInput {
+  tenantId: string
   clientId: string
   clientPackageId: string
   balance: number
@@ -100,13 +119,14 @@ export async function setBalance(input: SetBalanceInput): Promise<ClientPackageR
   if (!Number.isInteger(input.balance) || input.balance < 0) {
     throw new BadRequestError('balance_must_be_nonnegative_integer')
   }
-  const pkg = await loadOwnedPackage(input.clientId, input.clientPackageId)
+  const pkg = await loadOwnedPackage(input.tenantId, input.clientId, input.clientPackageId)
   if (pkg.creditsOrSessionsRemaining === null) {
     throw new BadRequestError('cannot_set_balance_on_unlimited_package')
   }
   const delta = input.balance - pkg.creditsOrSessionsRemaining
   if (delta === 0) throw new BadRequestError('balance_unchanged')
   return adjustBalance({
+    tenantId: input.tenantId,
     clientId: input.clientId,
     clientPackageId: input.clientPackageId,
     delta,
@@ -116,6 +136,7 @@ export async function setBalance(input: SetBalanceInput): Promise<ClientPackageR
 }
 
 export interface SetCrossLocationInput {
+  tenantId: string
   clientId: string
   clientPackageId: string
   /** The amount the Add-On is recorded at, or null to remove it. */
@@ -139,9 +160,7 @@ export async function setCrossLocationAddOn(
     const [pkg] = await tx
       .select()
       .from(clientPackages)
-      .where(
-        and(eq(clientPackages.id, input.clientPackageId), eq(clientPackages.clientId, input.clientId)),
-      )
+      .where(ownedPackage(input.tenantId, input.clientId, input.clientPackageId))
       .limit(1)
     if (!pkg) throw new NotFoundError('client_package_not_found')
     // Only an Unlimited Plan has a Home Location to extend.
@@ -155,9 +174,10 @@ export async function setCrossLocationAddOn(
     await tx
       .update(clientPackages)
       .set({ crossLocationPaidSgd: input.paidSgd })
-      .where(eq(clientPackages.id, pkg.id))
+      .where(and(eq(clientPackages.tenantId, input.tenantId), eq(clientPackages.id, pkg.id)))
 
     await tx.insert(manualAdjustments).values({
+      tenantId: input.tenantId,
       clientId: input.clientId,
       clientPackageId: pkg.id,
       delta: 0,
@@ -170,6 +190,7 @@ export async function setCrossLocationAddOn(
 }
 
 export interface SetHomeLocationInput {
+  tenantId: string
   clientId: string
   clientPackageId: string
   /** The Location the member is moved to. */
@@ -197,9 +218,7 @@ export async function setHomeLocation(input: SetHomeLocationInput): Promise<Clie
     const [pkg] = await tx
       .select()
       .from(clientPackages)
-      .where(
-        and(eq(clientPackages.id, input.clientPackageId), eq(clientPackages.clientId, input.clientId)),
-      )
+      .where(ownedPackage(input.tenantId, input.clientId, input.clientPackageId))
       .limit(1)
     if (!pkg) throw new NotFoundError('client_package_not_found')
 
@@ -209,14 +228,20 @@ export async function setHomeLocation(input: SetHomeLocationInput): Promise<Clie
     const [to] = await tx
       .select({ id: locations.id, name: locations.name, archivedAt: locations.archivedAt })
       .from(locations)
-      .where(and(eq(locations.id, input.locationId), isNull(locations.deletedAt)))
+      .where(
+        and(
+          eq(locations.tenantId, input.tenantId),
+          eq(locations.id, input.locationId),
+          isNull(locations.deletedAt),
+        ),
+      )
       .limit(1)
     if (!to) throw new NotFoundError('location_not_found')
     if (to.archivedAt) throw new BadRequestError('location_archived')
 
     // The same set a renewal is counted against (§6) — read through the
     // transaction's own handle, and never re-derived here.
-    const live = await liveUnlimited(input.clientId, new Date(), tx)
+    const live = await liveUnlimited(input.tenantId, input.clientId, new Date(), tx)
 
     const move = homeLocationMove(pkg.kind, pkg.id, live, input.locationId)
     if (!move.ok) throw new BadRequestError(move.refusal)
@@ -225,22 +250,30 @@ export async function setHomeLocation(input: SetHomeLocationInput): Promise<Clie
     // lot costs nothing — and each row states where *that* plan was, which is
     // the whole point on the day two plans disagree.
     const names = new Map(
-      (await tx.select({ id: locations.id, name: locations.name }).from(locations)).map(l => [
-        l.id,
-        l.name,
-      ]),
+      (
+        await tx
+          .select({ id: locations.id, name: locations.name })
+          .from(locations)
+          .where(eq(locations.tenantId, input.tenantId))
+      ).map(l => [l.id, l.name]),
     )
     const wasAt = new Map(live.map(p => [p.id, p.locationId]))
 
     await tx
       .update(clientPackages)
       .set({ locationId: input.locationId })
-      .where(inArray(clientPackages.id, move.moveIds))
+      .where(
+        and(
+          eq(clientPackages.tenantId, input.tenantId),
+          inArray(clientPackages.id, move.moveIds),
+        ),
+      )
 
     // One ledger row per plan moved — the Dormant renewal moved too, and an
     // audit trail that only names one of them hides half the change.
     await tx.insert(manualAdjustments).values(
       move.moveIds.map(id => ({
+        tenantId: input.tenantId,
         clientId: input.clientId,
         clientPackageId: id,
         delta: 0,
@@ -254,6 +287,7 @@ export async function setHomeLocation(input: SetHomeLocationInput): Promise<Clie
 }
 
 export interface SetExpiryInput {
+  tenantId: string
   clientId: string
   clientPackageId: string
   /** New expiry as a Date, or null to remove expiry. */
@@ -273,9 +307,7 @@ export async function setPackageExpiry(input: SetExpiryInput): Promise<ClientPac
     const [pkg] = await tx
       .select()
       .from(clientPackages)
-      .where(
-        and(eq(clientPackages.id, input.clientPackageId), eq(clientPackages.clientId, input.clientId)),
-      )
+      .where(ownedPackage(input.tenantId, input.clientId, input.clientPackageId))
       .limit(1)
     if (!pkg) throw new NotFoundError('client_package_not_found')
 
@@ -301,9 +333,10 @@ export async function setPackageExpiry(input: SetExpiryInput): Promise<ClientPac
     await tx
       .update(clientPackages)
       .set({ expiresAt: input.expiresAt, active: nextActive })
-      .where(eq(clientPackages.id, pkg.id))
+      .where(and(eq(clientPackages.tenantId, input.tenantId), eq(clientPackages.id, pkg.id)))
 
     await tx.insert(manualAdjustments).values({
+      tenantId: input.tenantId,
       clientId: input.clientId,
       clientPackageId: pkg.id,
       delta: 0,

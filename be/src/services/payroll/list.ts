@@ -99,11 +99,21 @@ export interface PayrollRow {
  * money-in sources and totals the lot itself. Every other caller goes through
  * `getPayroll` so ordering and totalling can't drift.
  */
-export async function listPayroll(filter: PayrollFilter): Promise<PayrollRow[]> {
+export async function listPayroll(
+  tenantId: string,
+  filter: PayrollFilter,
+): Promise<PayrollRow[]> {
   const now = new Date()
 
+  // Every arm below is scoped on the table it reads FROM — the sessions, the
+  // join rows and the manual entries each carry the Tenant, so one predicate
+  // per source is enough and the joins inherit it.
   // -- main class pay --------------------------------------------------------
-  const classConds = [eq(classes.lifecycle, 'active'), lt(classes.endsAt, now)]
+  const classConds = [
+    eq(classes.tenantId, tenantId),
+    eq(classes.lifecycle, 'active'),
+    lt(classes.endsAt, now),
+  ]
   if (filter.instructorId) classConds.push(eq(classes.mainInstructorId, filter.instructorId))
   if (filter.classTypeId) classConds.push(eq(classes.classTypeId, filter.classTypeId))
   if (filter.from) classConds.push(gte(classes.startsAt, filter.from))
@@ -129,7 +139,11 @@ export async function listPayroll(filter: PayrollFilter): Promise<PayrollRow[]> 
     .where(and(...classConds))
 
   // -- supporting class pay ---------------------------------------------------
-  const classSupportingConds = [eq(classes.lifecycle, 'active'), lt(classes.endsAt, now)]
+  const classSupportingConds = [
+    eq(classSupportingInstructors.tenantId, tenantId),
+    eq(classes.lifecycle, 'active'),
+    lt(classes.endsAt, now),
+  ]
   if (filter.instructorId)
     classSupportingConds.push(eq(classSupportingInstructors.instructorId, filter.instructorId))
   if (filter.classTypeId) classSupportingConds.push(eq(classes.classTypeId, filter.classTypeId))
@@ -157,7 +171,11 @@ export async function listPayroll(filter: PayrollFilter): Promise<PayrollRow[]> 
     .where(and(...classSupportingConds))
 
   // -- main PT pay --------------------------------------------------------
-  const ptConds = [eq(ptSessions.lifecycle, 'active'), lt(ptSessions.endsAt, now)]
+  const ptConds = [
+    eq(ptSessions.tenantId, tenantId),
+    eq(ptSessions.lifecycle, 'active'),
+    lt(ptSessions.endsAt, now),
+  ]
   if (filter.instructorId) ptConds.push(eq(ptSessions.instructorId, filter.instructorId))
   if (filter.classTypeId) ptConds.push(eq(ptRequests.classTypeId, filter.classTypeId))
   if (filter.from) ptConds.push(gte(ptSessions.startsAt, filter.from))
@@ -185,7 +203,11 @@ export async function listPayroll(filter: PayrollFilter): Promise<PayrollRow[]> 
     .where(and(...ptConds))
 
   // -- supporting PT pay ----------------------------------------------------
-  const ptSupportingConds = [eq(ptSessions.lifecycle, 'active'), lt(ptSessions.endsAt, now)]
+  const ptSupportingConds = [
+    eq(ptSessionSupportingInstructors.tenantId, tenantId),
+    eq(ptSessions.lifecycle, 'active'),
+    lt(ptSessions.endsAt, now),
+  ]
   if (filter.instructorId)
     ptSupportingConds.push(eq(ptSessionSupportingInstructors.instructorId, filter.instructorId))
   if (filter.classTypeId) ptSupportingConds.push(eq(ptRequests.classTypeId, filter.classTypeId))
@@ -230,7 +252,10 @@ export async function listPayroll(filter: PayrollFilter): Promise<PayrollRow[]> 
     locationName: string | null
   }[] = []
   if (!filter.classTypeId) {
-    const workshopConds = [eq(workshops.lifecycle, 'active')]
+    const workshopConds = [
+      eq(workshopInstructors.tenantId, tenantId),
+      eq(workshops.lifecycle, 'active'),
+    ]
     if (filter.instructorId) workshopConds.push(eq(workshopInstructors.instructorId, filter.instructorId))
 
     // Bare JS Dates can't be serialized inside a raw sql`` fragment (unlike the
@@ -286,7 +311,7 @@ export async function listPayroll(filter: PayrollFilter): Promise<PayrollRow[]> 
     endsAt: Date
   }[] = []
   if (!filter.classTypeId) {
-    const manualConds = []
+    const manualConds = [eq(manualPayrollEntries.tenantId, tenantId)]
     if (filter.instructorId) manualConds.push(eq(manualPayrollEntries.instructorId, filter.instructorId))
     if (filter.from) manualConds.push(gte(manualPayrollEntries.entryDate, filter.from))
     if (filter.to) manualConds.push(lte(manualPayrollEntries.entryDate, filter.to))
@@ -303,7 +328,7 @@ export async function listPayroll(filter: PayrollFilter): Promise<PayrollRow[]> 
       })
       .from(manualPayrollEntries)
       .innerJoin(staffUsers, eq(staffUsers.id, manualPayrollEntries.instructorId))
-      .where(manualConds.length ? and(...manualConds) : undefined)
+      .where(and(...manualConds))
   }
 
   const rows: PayrollRow[] = [
@@ -330,8 +355,11 @@ export async function listPayroll(filter: PayrollFilter): Promise<PayrollRow[]> 
  * not a second implementation. Returns serialized rows plus every total either
  * screen needs; each route picks the fields its response shape has.
  */
-export async function getPayroll(filter: PayrollFilter): Promise<PayrollSummary> {
-  return summarizePayroll(await listPayroll(filter))
+export async function getPayroll(
+  tenantId: string,
+  filter: PayrollFilter,
+): Promise<PayrollSummary> {
+  return summarizePayroll(await listPayroll(tenantId, filter))
 }
 
 /** Payroll's kind → the roster module's. Payroll has no corporate rows (corporate
@@ -411,10 +439,15 @@ export interface CreateManualPayrollInput {
 }
 
 /** Ad-hoc pay line for an instructor — bonus/adjustment/one-off not tied to a session. */
-export async function createManualPayroll(input: CreateManualPayrollInput, actorStaffId: string) {
+export async function createManualPayroll(
+  tenantId: string,
+  input: CreateManualPayrollInput,
+  actorStaffId: string,
+) {
   const rows = await db
     .insert(manualPayrollEntries)
     .values({
+      tenantId,
       instructorId: input.instructorId,
       amountSgd: input.amountSgd.toFixed(2),
       label: input.label,
@@ -427,10 +460,13 @@ export async function createManualPayroll(input: CreateManualPayrollInput, actor
   return row
 }
 
-export async function deleteManualPayroll(id: string): Promise<PayrollSaveResult> {
+export async function deleteManualPayroll(
+  tenantId: string,
+  id: string,
+): Promise<PayrollSaveResult> {
   const rows = await db
     .delete(manualPayrollEntries)
-    .where(eq(manualPayrollEntries.id, id))
+    .where(and(eq(manualPayrollEntries.tenantId, tenantId), eq(manualPayrollEntries.id, id)))
     .returning({ id: manualPayrollEntries.id })
   return rows.length > 0 ? { ok: true } : payrollSaveFailed('record_not_found')
 }

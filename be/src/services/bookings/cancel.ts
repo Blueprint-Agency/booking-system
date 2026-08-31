@@ -48,7 +48,10 @@ export interface CancelResult {
   refundFired: boolean
 }
 
-export async function cancelBooking(input: CancelInput): Promise<CancelResult> {
+export async function cancelBooking(
+  tenantId: string,
+  input: CancelInput,
+): Promise<CancelResult> {
   const { bookingId, source, clientId, actorStaffId, packageVoided } = input
 
   return db.transaction(async tx => {
@@ -56,10 +59,6 @@ export async function cancelBooking(input: CancelInput): Promise<CancelResult> {
     const [bk] = await tx
       .select({
         id: bookings.id,
-        // Read off the row rather than passed in: this service is scoped to the
-        // Tenant in the transactional batch (#61), and until then the booking
-        // itself is the only honest answer to "whose policy applies".
-        tenantId: bookings.tenantId,
         clientId: bookings.clientId,
         kind: bookings.kind,
         classId: bookings.classId,
@@ -70,7 +69,7 @@ export async function cancelBooking(input: CancelInput): Promise<CancelResult> {
         used: bookings.creditsOrSessionsUsed,
       })
       .from(bookings)
-      .where(eq(bookings.id, bookingId))
+      .where(and(eq(bookings.tenantId, tenantId), eq(bookings.id, bookingId)))
       .for('update')
       .limit(1)
 
@@ -93,7 +92,7 @@ export async function cancelBooking(input: CancelInput): Promise<CancelResult> {
       const [cls] = await tx
         .select({ startsAt: classes.startsAt })
         .from(classes)
-        .where(eq(classes.id, bk.classId!))
+        .where(and(eq(classes.tenantId, tenantId), eq(classes.id, bk.classId!)))
         .for('update')
         .limit(1)
       if (!cls) throw new NotFoundError('class_not_found')
@@ -102,7 +101,7 @@ export async function cancelBooking(input: CancelInput): Promise<CancelResult> {
       const [pt] = await tx
         .select({ startsAt: ptSessions.startsAt })
         .from(ptSessions)
-        .where(eq(ptSessions.id, bk.ptSessionId!))
+        .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, bk.ptSessionId!)))
         .for('update')
         .limit(1)
       if (!pt) throw new NotFoundError('pt_session_not_found')
@@ -115,7 +114,7 @@ export async function cancelBooking(input: CancelInput): Promise<CancelResult> {
       source === 'admin'
         ? undefined
         : await evaluateCancellation({
-            tenantId: bk.tenantId!,
+            tenantId,
             clientId: bk.clientId,
             kind: cancelKind,
             sessionStartsAt,
@@ -159,6 +158,7 @@ export async function cancelBooking(input: CancelInput): Promise<CancelResult> {
     // credit-movement audit row (traceability per backend-architecture §4).
     if (refundFired) {
       await refundCredits(tx, {
+        tenantId,
         clientId: bk.clientId,
         clientPackageId: bk.clientPackageId!,
         amount: used,
@@ -169,6 +169,7 @@ export async function cancelBooking(input: CancelInput): Promise<CancelResult> {
 
     // 5. Record the cancellation (counts toward the client's cap regardless of refund outcome).
     await tx.insert(cancellations).values({
+      tenantId,
       bookingId: bk.id,
       clientId: bk.clientId,
       kind: cancelKind,
@@ -183,10 +184,11 @@ export async function cancelBooking(input: CancelInput): Promise<CancelResult> {
     await tx
       .update(bookings)
       .set({ state: 'cancelled', refundOutcome, checkInState: 'n_a', cancelledAt: now })
-      .where(eq(bookings.id, bk.id))
+      .where(and(eq(bookings.tenantId, tenantId), eq(bookings.id, bk.id)))
 
     // 7. Admin single-cancel raises an inbox item (client self-cancel also notifies admins).
     await tx.insert(inboxItems).values({
+      tenantId,
       type: source === 'admin' ? 'admin_cancel_class_pt' : 'client_cancellation',
       payload: {
         bookingId: bk.id,

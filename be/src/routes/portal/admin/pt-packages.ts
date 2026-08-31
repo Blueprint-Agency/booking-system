@@ -9,6 +9,7 @@ import {
   serializePromotion,
   type PromotionWriteInput,
 } from '../../../services/packages/promotions'
+import { tenantId } from '../../../middleware/tenant'
 
 const sessionTypeEnum = z.enum(['1on1', '2on1'])
 const statusEnum = z.enum(['active', 'archived'])
@@ -86,8 +87,8 @@ function serialize(
   }
 }
 
-async function serializeWithPromos(r: svc.PtPackageRow) {
-  const map = await listManagedPromotionsFor('pt_package', [r.id])
+async function serializeWithPromos(tenant: string, r: svc.PtPackageRow) {
+  const map = await listManagedPromotionsFor(tenant, 'pt_package', [r.id])
   const promos = map[r.id] ?? []
   return serialize(r, promos.map(serializePromotion), bestPrice(r.priceSgd, promos))
 }
@@ -95,8 +96,15 @@ async function serializeWithPromos(r: svc.PtPackageRow) {
 const app = new Hono()
   .get('/', zValidator('query', listQuery), async c => {
     const q = c.req.valid('query')
-    const rows = await svc.listPtPackages({ status: q.status, sessionType: q.session_type })
-    const promosByPkg = await listManagedPromotionsFor('pt_package', rows.map(r => r.id))
+    const rows = await svc.listPtPackages(tenantId(c), {
+      status: q.status,
+      sessionType: q.session_type,
+    })
+    const promosByPkg = await listManagedPromotionsFor(
+      tenantId(c),
+      'pt_package',
+      rows.map(r => r.id),
+    )
     return c.json({
       pt_packages: rows.map(r => {
         const ps = promosByPkg[r.id] ?? []
@@ -106,12 +114,12 @@ const app = new Hono()
   })
   .get('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    return c.json(await serializeWithPromos(await svc.getPtPackage(id)))
+    return c.json(await serializeWithPromos(tenantId(c), await svc.getPtPackage(tenantId(c), id)))
   })
   .post('/', zValidator('json', createSchema), async c => {
     const body = c.req.valid('json')
     const actor = c.get('staffUserId')
-    const row = await svc.createPtPackage({
+    const row = await svc.createPtPackage(tenantId(c), {
       name: body.name,
       sessionType: body.session_type,
       numSessions: body.num_sessions,
@@ -119,6 +127,7 @@ const app = new Hono()
     })
     if (body.promotions && body.promotions.length) {
       await replacePromotionsForParent(
+        tenantId(c),
         'pt_package',
         row.id,
         body.promotions.map(toPromotionWriteInput),
@@ -126,13 +135,13 @@ const app = new Hono()
       )
     }
     c.set('auditTarget' as any, { table: 'pt_packages', id: row.id })
-    return c.json(await serializeWithPromos(row), 201)
+    return c.json(await serializeWithPromos(tenantId(c), row), 201)
   })
   .patch('/:id', zValidator('param', idParam), zValidator('json', updateSchema), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
     const actor = c.get('staffUserId')
-    const row = await svc.updatePtPackage(id, {
+    const row = await svc.updatePtPackage(tenantId(c), id, {
       ...(body.name !== undefined ? { name: body.name } : {}),
       ...(body.num_sessions !== undefined ? { numSessions: body.num_sessions } : {}),
       ...(body.price_sgd !== undefined ? { priceSgd: body.price_sgd } : {}),
@@ -140,6 +149,7 @@ const app = new Hono()
     })
     if (body.promotions !== undefined) {
       await replacePromotionsForParent(
+        tenantId(c),
         'pt_package',
         id,
         body.promotions.map(toPromotionWriteInput),
@@ -147,23 +157,23 @@ const app = new Hono()
       )
     }
     c.set('auditTarget' as any, { table: 'pt_packages', id })
-    return c.json(await serializeWithPromos(row))
+    return c.json(await serializeWithPromos(tenantId(c), row))
   })
   .post('/:id/archive', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    const row = await svc.archivePtPackage(id)
+    const row = await svc.archivePtPackage(tenantId(c), id)
     c.set('auditTarget' as any, { table: 'pt_packages', id })
-    return c.json(await serializeWithPromos(row))
+    return c.json(await serializeWithPromos(tenantId(c), row))
   })
   .post('/:id/unarchive', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    const row = await svc.unarchivePtPackage(id)
+    const row = await svc.unarchivePtPackage(tenantId(c), id)
     c.set('auditTarget' as any, { table: 'pt_packages', id })
-    return c.json(await serializeWithPromos(row))
+    return c.json(await serializeWithPromos(tenantId(c), row))
   })
   .delete('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    await svc.softDeletePtPackage(id)
+    await svc.softDeletePtPackage(tenantId(c), id)
     c.set('auditTarget' as any, { table: 'pt_packages', id })
     return c.body(null, 204)
   })

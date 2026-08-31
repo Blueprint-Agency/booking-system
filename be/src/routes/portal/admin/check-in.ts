@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { markAttendance } from '../../../services/bookings/check-in'
+import { tenantId } from '../../../middleware/tenant'
 
 const app = new Hono()
   .get('/', c => c.json({ todo: 'check-in candidates (ongoing + class-window)' }, 501))
@@ -15,7 +16,7 @@ const app = new Hono()
     async c => {
       const staffId = c.get('staffUserId')
       const { booking_id, attended } = c.req.valid('json')
-      const res = await markAttendance({ bookingId: booking_id, staffId, attended })
+      const res = await markAttendance(tenantId(c), { bookingId: booking_id, staffId, attended })
       c.set('auditTarget' as any, { table: 'bookings', id: booking_id })
       return c.json({ check_in_state: res.checkInState })
     },

@@ -95,7 +95,7 @@ interface WorkshopDetailPayload extends WorkshopCardPayload {
   instructor_ids: string[]
 }
 
-async function loadCommon(workshopIds: string[]) {
+async function loadCommon(tenantId: string, workshopIds: string[]) {
   if (workshopIds.length === 0) {
     return {
       daysByWorkshop: new Map<string, DayPayload[]>(),
@@ -145,7 +145,7 @@ async function loadCommon(workshopIds: string[]) {
 
   // Promotions are scoped per-workshop (parent_type='workshop', parent_id=workshop.id)
   // — applied uniformly to all tiers of that workshop.
-  const promosByWorkshop = await listActivePromotionsFor('workshop', workshopIds)
+  const promosByWorkshop = await listActivePromotionsFor(tenantId, 'workshop', workshopIds)
 
   const tiersByWorkshop = new Map<string, TierPayload[]>()
   for (const t of tierRows) {
@@ -225,7 +225,7 @@ export async function listActiveWorkshopCards(tenantId: string): Promise<Worksho
   if (ws.length === 0) return []
 
   const workshopIds = ws.map(w => w.id)
-  const { daysByWorkshop, tiersByWorkshop } = await loadCommon(workshopIds)
+  const { daysByWorkshop, tiersByWorkshop } = await loadCommon(tenantId, workshopIds)
   const instructorMap = await loadInstructorRolesByWorkshop(tenantId, workshopIds)
 
   // Resolve location for all in one round-trip.
@@ -272,7 +272,7 @@ export async function getWorkshopDetailPayload(
     .limit(1)
   if (!w) throw new NotFoundError('workshop_not_found')
 
-  const { daysByWorkshop, tiersByWorkshop } = await loadCommon([w.id])
+  const { daysByWorkshop, tiersByWorkshop } = await loadCommon(tenantId, [w.id])
   const days = daysByWorkshop.get(w.id) ?? []
   const tiers = tiersByWorkshop.get(w.id) ?? []
 

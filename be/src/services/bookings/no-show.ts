@@ -7,7 +7,7 @@
  * recorded once the session has started, so an admin can't forfeit a member's credit on
  * a class/PT that hasn't happened yet.
  */
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { bookings } from '../../db/schema/bookings'
 import { classes, ptSessions } from '../../db/schema/schedule'
@@ -18,7 +18,7 @@ export interface MarkNoShowInput {
   actorStaffId: string
 }
 
-export async function markNoShow(input: MarkNoShowInput): Promise<void> {
+export async function markNoShow(tenantId: string, input: MarkNoShowInput): Promise<void> {
   await db.transaction(async tx => {
     const [bk] = await tx
       .select({
@@ -29,7 +29,7 @@ export async function markNoShow(input: MarkNoShowInput): Promise<void> {
         ptSessionId: bookings.ptSessionId,
       })
       .from(bookings)
-      .where(eq(bookings.id, input.bookingId))
+      .where(and(eq(bookings.tenantId, tenantId), eq(bookings.id, input.bookingId)))
       .for('update')
       .limit(1)
     if (!bk) throw new NotFoundError('booking_not_found')
@@ -42,7 +42,7 @@ export async function markNoShow(input: MarkNoShowInput): Promise<void> {
       const [cls] = await tx
         .select({ startsAt: classes.startsAt })
         .from(classes)
-        .where(eq(classes.id, bk.classId!))
+        .where(and(eq(classes.tenantId, tenantId), eq(classes.id, bk.classId!)))
         .limit(1)
       if (!cls) throw new NotFoundError('class_not_found')
       startsAt = cls.startsAt
@@ -50,7 +50,7 @@ export async function markNoShow(input: MarkNoShowInput): Promise<void> {
       const [pt] = await tx
         .select({ startsAt: ptSessions.startsAt })
         .from(ptSessions)
-        .where(eq(ptSessions.id, bk.ptSessionId!))
+        .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, bk.ptSessionId!)))
         .limit(1)
       if (!pt) throw new NotFoundError('pt_session_not_found')
       startsAt = pt.startsAt
@@ -60,6 +60,6 @@ export async function markNoShow(input: MarkNoShowInput): Promise<void> {
     await tx
       .update(bookings)
       .set({ state: 'no_show', checkInState: 'no_show', refundOutcome: 'forfeited' })
-      .where(eq(bookings.id, bk.id))
+      .where(and(eq(bookings.tenantId, tenantId), eq(bookings.id, bk.id)))
   })
 }

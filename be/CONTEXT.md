@@ -15,7 +15,7 @@ A Tenant's leftmost DNS label, and the only thing the frontends can read a Tenan
 _Avoid_: subdomain, handle, tenant name
 
 **`tenant_id`**:
-The column on all 53 domain tables recording which Tenant a row belongs to — including pure join tables, because Row-Level Security needs a column on every table to key a policy on. Still **nullable and backfilled**: the expand step of expand-migrate-contract. The identity, policy, catalog and schedule services now filter on it; the remaining services, `NOT NULL` and RLS land in later work. It **defaults to Tenant #1** for the length of that phase, because a read filtered on `tenant_id` sitting beside an insert that has not been scoped yet would otherwise make new rows silently invisible. The default is scaffolding with an expiry date — it must be dropped by the contract step.
+The column on all 53 domain tables recording which Tenant a row belongs to — including pure join tables, because Row-Level Security needs a column on every table to key a policy on. Still **nullable and backfilled**: the expand step of expand-migrate-contract. Identity, policy, catalog and schedule filter on it, and so do bookings, check-ins, packages, the credit ledger, finance and billing; the content, inbox, leave, workshop and PT services, `NOT NULL` and RLS land in later work. It **defaults to Tenant #1** for the length of that phase, because a read filtered on `tenant_id` sitting beside an insert that has not been scoped yet would otherwise make new rows silently invisible. The default is scaffolding with an expiry date — it must be dropped by the contract step.
 
 **Tenant context**:
 The Tenant a request is about, resolved once by `middleware/tenant.ts` and read in a route with `tenantId(c)`. It arrives as the `X-Tenant-Slug` header — the API's own hostname carries no Tenant, so the caller has to say — and a request without one is Tenant #1, which is what keeps every existing client working. Services never read it themselves: it is passed in, so a query that forgot to scope is a compile error rather than a leak.
@@ -80,7 +80,7 @@ A price cut the studio publishes on one product. It applies itself at purchase w
 _Avoid_: promo, sale, offer, deal, discount
 
 **Promo Code**:
-A price cut the member must type at checkout to receive. One code reaches across products, and it may be capped in total and is always capped at one use per member. Contrast a **Promotion**, which applies itself.
+A price cut the member must type at checkout to receive. One code reaches across products, and it may be capped in total and is always capped at one use per member. Its text is unique **per Tenant**, not across the platform: two studios each running a code called SUMMER is normal, and a member typing it always gets their own studio's terms. Contrast a **Promotion**, which applies itself.
 _Avoid_: promo, coupon, voucher, discount code
 
 **Redemption**:

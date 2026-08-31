@@ -96,6 +96,7 @@ const app = new Hono()
   // per-instructor pay breakdown. Tiles cover the WHOLE range, never a page.
   .get('/', zValidator('query', listQuery), async c => {
     const { rows, totals, instructor_totals, unpriced_count } = await getFinance(
+      tenantId(c),
       filterFrom(c.req.valid('query')),
     )
     return c.json({ rows, totals, instructor_totals, unpriced_count })
@@ -106,7 +107,7 @@ const app = new Hono()
   .get('/overview', zValidator('query', overviewQuery), async c => {
     const { from, to } = c.req.valid('query')
     return c.json(
-      await getFinanceOverview({
+      await getFinanceOverview(tenantId(c), {
         from: from ? new Date(from) : undefined,
         to: to ? new Date(to) : undefined,
       }),
@@ -115,7 +116,7 @@ const app = new Hono()
   // The same rows the table got, as a file. Same filters, same read — so the
   // bookkeeper's CSV can never disagree with what the admin was looking at.
   .get('/export', zValidator('query', listQuery), async c => {
-    const summary = await getFinance(filterFrom(c.req.valid('query')))
+    const summary = await getFinance(tenantId(c), filterFrom(c.req.valid('query')))
     return c.body(financeCsv(summary), 200, {
       'Content-Type': 'text/csv; charset=utf-8',
       'Content-Disposition': 'attachment; filename="finance.csv"',
@@ -127,6 +128,7 @@ const app = new Hono()
     const body = c.req.valid('json')
     const actorStaffId = c.get('staffUserId')
     const row = await createManualPayroll(
+      tenantId(c),
       {
         instructorId: body.instructor_id,
         amountSgd: body.amount_sgd,
@@ -140,7 +142,7 @@ const app = new Hono()
   })
   .delete('/manual/:id', async c => {
     const id = c.req.param('id')
-    const res = await deleteManualPayroll(id)
+    const res = await deleteManualPayroll(tenantId(c), id)
     if (!res.ok) return saveFailure(c, 'manual', res.reason)
     c.set('auditTarget' as any, { table: 'manual_payroll_entries', id })
     return c.json({ ok: true })

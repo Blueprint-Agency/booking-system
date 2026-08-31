@@ -61,7 +61,10 @@ export interface RefundState {
  * detail page reads every row at once and this is a group-by either way. The
  * sentence is composed here, not in the portal: frontends derive no domain rule.
  */
-export async function refundStatesFor(clientId: string): Promise<Record<string, RefundState>> {
+export async function refundStatesFor(
+  tenantId: string,
+  clientId: string,
+): Promise<Record<string, RefundState>> {
   const rows = await db
     .select({
       id: clientPackages.id,
@@ -79,7 +82,7 @@ export async function refundStatesFor(clientId: string): Promise<Record<string, 
     )
     .leftJoin(classes, eq(classes.id, bookings.classId))
     .leftJoin(ptSessions, eq(ptSessions.id, bookings.ptSessionId))
-    .where(eq(clientPackages.clientId, clientId))
+    .where(and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.clientId, clientId)))
     .groupBy(clientPackages.id, clientPackages.stripePaymentIntentId)
 
   const out: Record<string, RefundState> = {}
@@ -110,6 +113,7 @@ export async function refundStatesFor(clientId: string): Promise<Record<string, 
  * refunded against the studio's rule.
  */
 export async function issueRefund(args: {
+  tenantId: string
   clientId: string
   clientPackageId: string
   reason: string
@@ -123,7 +127,11 @@ export async function issueRefund(args: {
     })
     .from(clientPackages)
     .where(
-      and(eq(clientPackages.id, args.clientPackageId), eq(clientPackages.clientId, args.clientId)),
+      and(
+        eq(clientPackages.tenantId, args.tenantId),
+        eq(clientPackages.id, args.clientPackageId),
+        eq(clientPackages.clientId, args.clientId),
+      ),
     )
     .limit(1)
   if (!pkg) throw new NotFoundError('client_package_not_found')
@@ -136,14 +144,21 @@ export async function issueRefund(args: {
   const [payment] = await db
     .select({ status: stripePayments.status })
     .from(stripePayments)
-    .where(eq(stripePayments.paymentIntentId, pkg.paymentIntentId))
+    .where(
+      and(
+        eq(stripePayments.tenantId, args.tenantId),
+        eq(stripePayments.paymentIntentId, pkg.paymentIntentId),
+      ),
+    )
     .limit(1)
   if (payment?.status === 'refunded') throw new ConflictError('already_refunded')
 
-  const count = (await refundStatesFor(args.clientId))[args.clientPackageId]?.attendedCount ?? 0
+  const count =
+    (await refundStatesFor(args.tenantId, args.clientId))[args.clientPackageId]?.attendedCount ?? 0
   const override = !isUntouched(count)
 
   await refundAtProviderAndAudit({
+    tenantId: args.tenantId,
     paymentIntentId: pkg.paymentIntentId,
     targetTable: 'client_packages',
     targetId: args.clientPackageId,
@@ -177,7 +192,10 @@ export interface WorkshopPurchase {
   refundNotice: string | null
 }
 
-export async function listWorkshopPurchases(clientId: string): Promise<WorkshopPurchase[]> {
+export async function listWorkshopPurchases(
+  tenantId: string,
+  clientId: string,
+): Promise<WorkshopPurchase[]> {
   const rows = await db
     .select({
       bookingId: bookings.id,
@@ -193,7 +211,14 @@ export async function listWorkshopPurchases(clientId: string): Promise<WorkshopP
     .from(bookings)
     .innerJoin(workshops, eq(workshops.id, bookings.workshopId))
     .leftJoin(workshopTiers, eq(workshopTiers.id, bookings.workshopTierId))
-    .where(and(eq(bookings.clientId, clientId), eq(bookings.kind, 'workshop'), eq(bookings.state, 'confirmed')))
+    .where(
+      and(
+        eq(bookings.tenantId, tenantId),
+        eq(bookings.clientId, clientId),
+        eq(bookings.kind, 'workshop'),
+        eq(bookings.state, 'confirmed'),
+      ),
+    )
   if (rows.length === 0) return []
 
   // The date the notice quotes — the earliest day the booked tier covers —
@@ -205,7 +230,12 @@ export async function listWorkshopPurchases(clientId: string): Promise<WorkshopP
       .select({ tierId: workshopTierDays.workshopTierId, startsAt: workshopDays.startsAt })
       .from(workshopTierDays)
       .innerJoin(workshopDays, eq(workshopDays.id, workshopTierDays.workshopDayId))
-      .where(inArray(workshopTierDays.workshopTierId, tierIds))
+      .where(
+        and(
+          eq(workshopTierDays.tenantId, tenantId),
+          inArray(workshopTierDays.workshopTierId, tierIds),
+        ),
+      )
     for (const d of dayRows) {
       const cur = sinceByTier.get(d.tierId)
       if (!cur || d.startsAt < cur) sinceByTier.set(d.tierId, d.startsAt)
@@ -235,6 +265,7 @@ export async function listWorkshopPurchases(clientId: string): Promise<WorkshopP
  * are indistinguishable by construction, same as for packages.
  */
 export async function issueWorkshopRefund(args: {
+  tenantId: string
   clientId: string
   bookingId: string
   reason: string
@@ -249,6 +280,7 @@ export async function issueWorkshopRefund(args: {
     .from(bookings)
     .where(
       and(
+        eq(bookings.tenantId, args.tenantId),
         eq(bookings.id, args.bookingId),
         eq(bookings.clientId, args.clientId),
         eq(bookings.kind, 'workshop'),
@@ -263,7 +295,12 @@ export async function issueWorkshopRefund(args: {
   const [payment] = await db
     .select({ status: stripePayments.status })
     .from(stripePayments)
-    .where(eq(stripePayments.paymentIntentId, booking.paymentIntentId))
+    .where(
+      and(
+        eq(stripePayments.tenantId, args.tenantId),
+        eq(stripePayments.paymentIntentId, booking.paymentIntentId),
+      ),
+    )
     .limit(1)
   if (payment?.status === 'refunded') throw new ConflictError('already_refunded')
 
@@ -271,6 +308,7 @@ export async function issueWorkshopRefund(args: {
   const override = !isUntouched(count)
 
   await refundAtProviderAndAudit({
+    tenantId: args.tenantId,
     paymentIntentId: booking.paymentIntentId,
     targetTable: 'bookings',
     targetId: args.bookingId,
@@ -297,6 +335,7 @@ export async function issueWorkshopRefund(args: {
  * it is reported rather than thrown back at an admin whose refund did go through.
  */
 async function refundAtProviderAndAudit(args: {
+  tenantId: string
   paymentIntentId: string
   targetTable: 'client_packages' | 'bookings'
   targetId: string
@@ -311,6 +350,7 @@ async function refundAtProviderAndAudit(args: {
   )
   try {
     await db.insert(auditLog).values({
+      tenantId: args.tenantId,
       actorStaffId: args.actorStaffId,
       actorType: 'staff',
       action: 'purchase_refunded',
@@ -348,6 +388,12 @@ async function refundAtProviderAndAudit(args: {
 export async function unwindRefund(paymentIntentId: string): Promise<void> {
   const [payment] = await db
     .select({
+      // The provider's event names an intent and nothing else, and the intent is
+      // unique across the platform — so the payment row is where the Tenant
+      // comes from, and every write below is scoped with it. Reading it off the
+      // money is what makes a dashboard refund and a button refund land in the
+      // same studio without the webhook having to be told which.
+      tenantId: stripePayments.tenantId,
       status: stripePayments.status,
       bookingId: stripePayments.bookingId,
       amountSgd: stripePayments.amountSgd,
@@ -358,10 +404,11 @@ export async function unwindRefund(paymentIntentId: string): Promise<void> {
   // No row means a charge this system never recorded; already refunded means a
   // redelivery of an event that completed.
   if (!payment || payment.status === 'refunded') return
+  const tenantId = payment.tenantId!
 
   // The Promo Code comes back — to the member's one-use limit and the code's
   // pool at once. The row survives as `refunded`; only the partial index lets it.
-  await refundPromoCodeRedemption(paymentIntentId)
+  await refundPromoCodeRedemption(tenantId, paymentIntentId)
 
   // A workshop's booking IS the purchase, so the ledger's booking link is what
   // gets cancelled. Attended and no-showed workshops stand as history for the
@@ -380,6 +427,7 @@ export async function unwindRefund(paymentIntentId: string): Promise<void> {
       .set({ state: 'cancelled', refundOutcome: 'stripe_refunded', cancelledAt: new Date() })
       .where(
         and(
+          eq(bookings.tenantId, tenantId),
           eq(bookings.id, payment.bookingId),
           eq(bookings.state, 'confirmed'),
           eq(bookings.checkInState, 'pending'),
@@ -405,13 +453,18 @@ export async function unwindRefund(paymentIntentId: string): Promise<void> {
     .innerJoin(clients, eq(clients.id, clientPackages.clientId))
     .leftJoin(classPackages, eq(classPackages.id, clientPackages.sourceClassPackageId))
     .leftJoin(ptPackages, eq(ptPackages.id, clientPackages.sourcePtPackageId))
-    .where(eq(clientPackages.stripePaymentIntentId, paymentIntentId))
+    .where(
+      and(
+        eq(clientPackages.tenantId, tenantId),
+        eq(clientPackages.stripePaymentIntentId, paymentIntentId),
+      ),
+    )
     .limit(1)
   // A workshop (whose booking is above and IS the purchase), a corporate package
   // (which creates no client-package row, so there is nothing to void) or a
   // standalone Add-On payment. The money is recorded and nothing else moves.
   if (!pkg) {
-    await stampRefunded(paymentIntentId)
+    await stampRefunded(tenantId, paymentIntentId)
     return
   }
 
@@ -420,16 +473,22 @@ export async function unwindRefund(paymentIntentId: string): Promise<void> {
   await db
     .update(clientPackages)
     .set({ active: false })
-    .where(and(eq(clientPackages.id, pkg.id), eq(clientPackages.active, true)))
+    .where(
+      and(
+        eq(clientPackages.tenantId, tenantId),
+        eq(clientPackages.id, pkg.id),
+        eq(clientPackages.active, true),
+      ),
+    )
 
   // Every FUTURE booking the purchase paid for is cancelled. Attended
   // and no-showed bookings stand as history: un-attending a class would rewrite
   // instructor payroll and the studio's attendance record.
-  const cancelled = await cancelFutureBookings(pkg.id)
+  const cancelled = await cancelFutureBookings(tenantId, pkg.id)
 
   // The payment row's status becomes refunded and the time is stamped. Last, and
   // the winner of the race sends the email.
-  if (!(await stampRefunded(paymentIntentId))) return
+  if (!(await stampRefunded(tenantId, paymentIntentId))) return
 
   // The member is told. The provider sends its own money receipt; ours is the
   // one that says the plan has ended and names the classes that were cancelled.
@@ -458,12 +517,13 @@ export async function unwindRefund(paymentIntentId: string): Promise<void> {
  * own lock: two concurrent deliveries of the same event both do the (idempotent)
  * unwinding, and exactly one of them gets a row back and sends the email.
  */
-async function stampRefunded(paymentIntentId: string): Promise<boolean> {
+async function stampRefunded(tenantId: string, paymentIntentId: string): Promise<boolean> {
   const rows = await db
     .update(stripePayments)
     .set({ status: 'refunded', refundedAt: new Date() })
     .where(
       and(
+        eq(stripePayments.tenantId, tenantId),
         eq(stripePayments.paymentIntentId, paymentIntentId),
         ne(stripePayments.status, 'refunded'),
       ),
@@ -481,7 +541,10 @@ async function stampRefunded(paymentIntentId: string): Promise<boolean> {
  * touched, which is both the history rule and the idempotency: a second pass
  * finds none.
  */
-async function cancelFutureBookings(clientPackageId: string): Promise<CancelledSession[]> {
+async function cancelFutureBookings(
+  tenantId: string,
+  clientPackageId: string,
+): Promise<CancelledSession[]> {
   const now = new Date()
   const [classRows, ptRows] = await Promise.all([
     db
@@ -491,6 +554,7 @@ async function cancelFutureBookings(clientPackageId: string): Promise<CancelledS
       .innerJoin(classTypes, eq(classTypes.id, classes.classTypeId))
       .where(
         and(
+          eq(bookings.tenantId, tenantId),
           eq(bookings.clientPackageId, clientPackageId),
           eq(bookings.state, 'confirmed'),
           eq(bookings.checkInState, 'pending'),
@@ -503,6 +567,7 @@ async function cancelFutureBookings(clientPackageId: string): Promise<CancelledS
       .innerJoin(ptSessions, eq(ptSessions.id, bookings.ptSessionId))
       .where(
         and(
+          eq(bookings.tenantId, tenantId),
           eq(bookings.clientPackageId, clientPackageId),
           eq(bookings.state, 'confirmed'),
           eq(bookings.checkInState, 'pending'),
@@ -519,7 +584,7 @@ async function cancelFutureBookings(clientPackageId: string): Promise<CancelledS
   const cancelled: CancelledSession[] = []
   for (const t of targets) {
     try {
-      await cancelBooking({ bookingId: t.id, source: 'admin', packageVoided: true })
+      await cancelBooking(tenantId, { bookingId: t.id, source: 'admin', packageVoided: true })
       cancelled.push({ name: t.name, startsAt: t.startsAt })
     } catch (err) {
       // One booking that will not cancel — checked in between the read and the

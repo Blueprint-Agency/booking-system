@@ -93,6 +93,10 @@ export async function cancelPtRequest(input: CancelPtRequestInput): Promise<Canc
     const refundToPackage = async (n: number, reason: string) => {
       if (n <= 0 || !req.debitedClientPackageId) return
       await refundCredits(tx, {
+        // Read off the request rather than passed in: PT is scoped to the
+        // Tenant in the remaining-surfaces batch (#62), and until then the row
+        // being cancelled is the only honest answer to whose credits move.
+        tenantId: req.tenantId!,
         clientId: req.clientId,
         clientPackageId: req.debitedClientPackageId,
         amount: n,
@@ -207,6 +211,8 @@ export async function cancelPtRequest(input: CancelPtRequestInput): Promise<Canc
     const requesterBooking = sessionBookings.find(b => b.clientId === req.clientId)
     if (requesterBooking) {
       await tx.insert(cancellations).values({
+        // Off the request, for the same reason the refund above is (#62).
+        tenantId: req.tenantId!,
         bookingId: requesterBooking.id,
         clientId: req.clientId,
         kind: 'pt',

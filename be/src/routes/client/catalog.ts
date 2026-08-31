@@ -105,8 +105,9 @@ const app = new Hono()
   })
   .get('/class-packages', async c => {
     const clientId = c.get('clientId')
-    const rows = await classSvc.listClassPackages({ status: 'active' })
+    const rows = await classSvc.listClassPackages(tenantId(c), { status: 'active' })
     const promos = await listActivePromotionsFor(
+      tenantId(c),
       'class_package',
       rows.map(r => r.id),
     )
@@ -132,8 +133,9 @@ const app = new Hono()
     })
   })
   .get('/pt-packages', async c => {
-    const rows = await ptSvc.listPtPackages({ status: 'active' })
+    const rows = await ptSvc.listPtPackages(tenantId(c), { status: 'active' })
     const promos = await listActivePromotionsFor(
+      tenantId(c),
       'pt_package',
       rows.map(r => r.id),
     )
@@ -146,7 +148,7 @@ const app = new Hono()
   })
   // Corporate catalogue — surfaced to signed-in members (no promotions).
   .get('/corporate-packages', async c => {
-    const rows = await listCorporatePackages({ status: 'active' })
+    const rows = await listCorporatePackages(tenantId(c), { status: 'active' })
     return c.json({
       corporate_packages: rows.map(r => ({
         id: r.id,

@@ -58,7 +58,7 @@ const PRODUCT_TABLES = {
  * direct-pay and not scopable, so there is nothing to check for it.
  * Workshops are matched at workshop level; a tier is never a scope row.
  */
-async function assertProductsExist(products: ProductRef[]): Promise<void> {
+async function assertProductsExist(tenantId: string, products: ProductRef[]): Promise<void> {
   const byType = new Map<PromoCodeProduct, Set<string>>()
   for (const p of products) {
     const set = byType.get(p.productType) ?? new Set<string>()
@@ -70,7 +70,11 @@ async function assertProductsExist(products: ProductRef[]): Promise<void> {
     const found = await db
       .select({ id: table.id })
       .from(table)
-      .where(inArray(table.id, [...ids]))
+      // Another studio's product is *missing*, not merely out of scope — a code
+      // that could be pointed at one would be a scope row reaching across
+      // Tenants, and the refusal names it as not found rather than confirming
+      // the id exists somewhere.
+      .where(and(eq(table.tenantId, tenantId), inArray(table.id, [...ids])))
     if (found.length !== ids.size) {
       const missing = [...ids].filter(id => !found.some(f => f.id === id))
       throw new BadRequestError('promo_code_product_not_found', { productType: type, missing })
@@ -90,19 +94,20 @@ function assertScopeShape(appliesToAll: boolean, products: ProductRef[]): void {
 
 /** Did this write lose the race for the code's one unique index? */
 const isCodeCollision = (err: unknown): boolean =>
-  isUniqueViolation(err, 'promo_codes_code_unique')
+  isUniqueViolation(err, 'promo_codes_tenant_code_unique')
 
 /**
  * The SQL half of `consumedCount` — same rule, counted in the database because
  * loading every Redemption row to count them here would be the only reason to
  * load them at all. Keep the two in step.
  */
-async function consumedCountFor(promoCodeId: string): Promise<number> {
+async function consumedCountFor(tenantId: string, promoCodeId: string): Promise<number> {
   const [row] = await db
     .select({ n: count() })
     .from(promoCodeRedemptions)
     .where(
       and(
+        eq(promoCodeRedemptions.tenantId, tenantId),
         eq(promoCodeRedemptions.promoCodeId, promoCodeId),
         eq(promoCodeRedemptions.status, 'consumed'),
       ),
@@ -110,13 +115,19 @@ async function consumedCountFor(promoCodeId: string): Promise<number> {
   return Number(row?.n ?? 0)
 }
 
-export async function listPromoCodes(opts: { status?: PromoCodeStatus } = {}): Promise<
-  PromoCodeDetail[]
-> {
+export async function listPromoCodes(
+  tenantId: string,
+  opts: { status?: PromoCodeStatus } = {},
+): Promise<PromoCodeDetail[]> {
   const rows = await db
     .select()
     .from(promoCodes)
-    .where(opts.status ? eq(promoCodes.status, opts.status) : undefined)
+    .where(
+      and(
+        eq(promoCodes.tenantId, tenantId),
+        ...(opts.status ? [eq(promoCodes.status, opts.status)] : []),
+      ),
+    )
     .orderBy(promoCodes.createdAt)
   if (rows.length === 0) return []
 
@@ -124,12 +135,18 @@ export async function listPromoCodes(opts: { status?: PromoCodeStatus } = {}): P
   const scope = await db
     .select()
     .from(promoCodeProducts)
-    .where(inArray(promoCodeProducts.promoCodeId, ids))
+    .where(
+      and(
+        eq(promoCodeProducts.tenantId, tenantId),
+        inArray(promoCodeProducts.promoCodeId, ids),
+      ),
+    )
   const counts = await db
     .select({ id: promoCodeRedemptions.promoCodeId, n: count() })
     .from(promoCodeRedemptions)
     .where(
       and(
+        eq(promoCodeRedemptions.tenantId, tenantId),
         inArray(promoCodeRedemptions.promoCodeId, ids),
         eq(promoCodeRedemptions.status, 'consumed'),
       ),
@@ -143,14 +160,20 @@ export async function listPromoCodes(opts: { status?: PromoCodeStatus } = {}): P
   }))
 }
 
-export async function getPromoCode(id: string): Promise<PromoCodeDetail> {
-  const [code] = await db.select().from(promoCodes).where(eq(promoCodes.id, id)).limit(1)
+export async function getPromoCode(tenantId: string, id: string): Promise<PromoCodeDetail> {
+  const [code] = await db
+    .select()
+    .from(promoCodes)
+    .where(and(eq(promoCodes.tenantId, tenantId), eq(promoCodes.id, id)))
+    .limit(1)
   if (!code) throw new NotFoundError('promo_code_not_found')
   const products = await db
     .select()
     .from(promoCodeProducts)
-    .where(eq(promoCodeProducts.promoCodeId, id))
-  return { code, products, consumedCount: await consumedCountFor(id) }
+    .where(
+      and(eq(promoCodeProducts.tenantId, tenantId), eq(promoCodeProducts.promoCodeId, id)),
+    )
+  return { code, products, consumedCount: await consumedCountFor(tenantId, id) }
 }
 
 export interface CreatePromoCodeInput {
@@ -187,6 +210,7 @@ function moneyFields(input: {
 
 async function insertScope(
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  tenantId: string,
   promoCodeId: string,
   products: ProductRef[],
 ): Promise<PromoCodeProductRow[]> {
@@ -194,7 +218,12 @@ async function insertScope(
   return tx
     .insert(promoCodeProducts)
     .values(
-      products.map(p => ({ promoCodeId, productType: p.productType, productId: p.productId })),
+      products.map(p => ({
+        tenantId,
+        promoCodeId,
+        productType: p.productType,
+        productId: p.productId,
+      })),
     )
     // The same product named twice is one scope row, not an error — the composite
     // PK collapses it. Without this the duplicate raises a 23505 that reads like
@@ -204,11 +233,12 @@ async function insertScope(
 }
 
 export async function createPromoCode(
+  tenantId: string,
   input: CreatePromoCodeInput,
   actorStaffId: string,
 ): Promise<PromoCodeDetail> {
   assertScopeShape(input.appliesToAll, input.products)
-  await assertProductsExist(input.products)
+  await assertProductsExist(tenantId, input.products)
 
   const custom = input.code == null ? null : normaliseCode(input.code)
   if (custom !== null && !isValidCode(custom)) {
@@ -225,6 +255,7 @@ export async function createPromoCode(
         const [row] = await tx
           .insert(promoCodes)
           .values({
+            tenantId,
             code: text,
             label: input.label,
             ...moneyFields(input),
@@ -235,7 +266,7 @@ export async function createPromoCode(
             createdByStaffId: actorStaffId,
           })
           .returning()
-        const products = await insertScope(tx, row!.id, input.products)
+        const products = await insertScope(tx, tenantId, row!.id, input.products)
         return { code: row!, products, consumedCount: 0 }
       })
     } catch (err: unknown) {
@@ -268,10 +299,11 @@ export interface UpdatePromoCodeInput {
  * accepted, so it is refused. To stop a code, archive it.
  */
 export async function updatePromoCode(
+  tenantId: string,
   id: string,
   patch: UpdatePromoCodeInput,
 ): Promise<PromoCodeDetail> {
-  const existing = await getPromoCode(id)
+  const existing = await getPromoCode(tenantId, id)
 
   const rewritesTerms =
     patch.code !== undefined ||
@@ -295,7 +327,7 @@ export async function updatePromoCode(
       ? existing.products.map(p => ({ productType: p.productType, productId: p.productId }))
       : [])
   assertScopeShape(appliesToAll, products)
-  await assertProductsExist(products)
+  await assertProductsExist(tenantId, products)
 
   try {
     await db.transaction(async tx => {
@@ -318,16 +350,20 @@ export async function updatePromoCode(
           appliesToAll,
           updatedAt: new Date(),
         })
-        .where(eq(promoCodes.id, id))
-      await tx.delete(promoCodeProducts).where(eq(promoCodeProducts.promoCodeId, id))
-      await insertScope(tx, id, products)
+        .where(and(eq(promoCodes.tenantId, tenantId), eq(promoCodes.id, id)))
+      await tx
+        .delete(promoCodeProducts)
+        .where(
+          and(eq(promoCodeProducts.tenantId, tenantId), eq(promoCodeProducts.promoCodeId, id)),
+        )
+      await insertScope(tx, tenantId, id, products)
     })
   } catch (err: unknown) {
     if (isCodeCollision(err)) throw new ConflictError('promo_code_text_taken')
     throw err
   }
 
-  return getPromoCode(id)
+  return getPromoCode(tenantId, id)
 }
 
 /**
@@ -338,16 +374,19 @@ export async function updatePromoCode(
  * because a code's terms are frozen once a member has accepted them and
  * reviving one would put those terms back on sale under the same text.
  */
-export async function archivePromoCode(id: string): Promise<PromoCodeDetail> {
-  const existing = await getPromoCode(id)
+export async function archivePromoCode(
+  tenantId: string,
+  id: string,
+): Promise<PromoCodeDetail> {
+  const existing = await getPromoCode(tenantId, id)
   if (existing.code.status === 'archived') {
     throw new BadRequestError('promo_code_already_archived')
   }
   await db
     .update(promoCodes)
     .set({ status: 'archived', updatedAt: new Date() })
-    .where(eq(promoCodes.id, id))
-  return getPromoCode(id)
+    .where(and(eq(promoCodes.tenantId, tenantId), eq(promoCodes.id, id)))
+  return getPromoCode(tenantId, id)
 }
 
 /**
@@ -356,22 +395,34 @@ export async function archivePromoCode(id: string): Promise<PromoCodeDetail> {
  * Add-On is absent too: it is a rate on Global Policy rather than a product,
  * so there is nothing for a scope row to attach to.
  */
-export async function listScopableProducts(): Promise<
-  { productType: PromoCodeProduct; productId: string; name: string }[]
-> {
+export async function listScopableProducts(
+  tenantId: string,
+): Promise<{ productType: PromoCodeProduct; productId: string; name: string }[]> {
   const [classes, pt, ws] = await Promise.all([
     db
       .select({ id: classPackages.id, name: classPackages.name })
       .from(classPackages)
-      .where(and(eq(classPackages.status, 'active'), isNull(classPackages.deletedAt))),
+      .where(
+        and(
+          eq(classPackages.tenantId, tenantId),
+          eq(classPackages.status, 'active'),
+          isNull(classPackages.deletedAt),
+        ),
+      ),
     db
       .select({ id: ptPackages.id, name: ptPackages.name })
       .from(ptPackages)
-      .where(and(eq(ptPackages.status, 'active'), isNull(ptPackages.deletedAt))),
+      .where(
+        and(
+          eq(ptPackages.tenantId, tenantId),
+          eq(ptPackages.status, 'active'),
+          isNull(ptPackages.deletedAt),
+        ),
+      ),
     db
       .select({ id: workshops.id, name: workshops.name })
       .from(workshops)
-      .where(eq(workshops.lifecycle, 'active')),
+      .where(and(eq(workshops.tenantId, tenantId), eq(workshops.lifecycle, 'active'))),
   ])
   return [
     ...classes.map(r => ({ productType: 'class_package' as const, productId: r.id, name: r.name })),

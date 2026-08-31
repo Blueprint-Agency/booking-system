@@ -78,7 +78,7 @@ const app = new Hono()
     const clientId = c.get('clientId')
     const onlyActive = c.req.query('only_active') === '1'
     const [packages, ent] = await Promise.all([
-      listClientPackages(clientId, onlyActive),
+      listClientPackages(tenantId(c), clientId, onlyActive),
       getClientEntitlements(tenantId(c), clientId),
     ])
     return c.json({

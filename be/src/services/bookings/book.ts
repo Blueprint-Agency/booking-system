@@ -37,7 +37,10 @@ export interface BookClassResult {
   code: string
 }
 
-export async function bookClass(input: BookClassInput): Promise<BookClassResult> {
+export async function bookClass(
+  tenantId: string,
+  input: BookClassInput,
+): Promise<BookClassResult> {
   const { clientId, classId } = input
 
   return db.transaction(async tx => {
@@ -52,7 +55,7 @@ export async function bookClass(input: BookClassInput): Promise<BookClassResult>
         lifecycle: classes.lifecycle,
       })
       .from(classes)
-      .where(eq(classes.id, classId))
+      .where(and(eq(classes.tenantId, tenantId), eq(classes.id, classId)))
       .for('update')
       .limit(1)
 
@@ -65,6 +68,7 @@ export async function bookClass(input: BookClassInput): Promise<BookClassResult>
       .from(bookings)
       .where(
         and(
+          eq(bookings.tenantId, tenantId),
           eq(bookings.clientId, clientId),
           eq(bookings.classId, classId),
           eq(bookings.state, 'confirmed'),
@@ -77,7 +81,13 @@ export async function bookClass(input: BookClassInput): Promise<BookClassResult>
     const countRows = await tx
       .select({ cnt: sql<number>`count(*)::int` })
       .from(bookings)
-      .where(and(eq(bookings.classId, classId), eq(bookings.state, 'confirmed')))
+      .where(
+        and(
+          eq(bookings.tenantId, tenantId),
+          eq(bookings.classId, classId),
+          eq(bookings.state, 'confirmed'),
+        ),
+      )
     const confirmedCount = Number(countRows[0]?.cnt ?? 0)
     if (confirmedCount >= cls.capacityOnline) throw new ConflictError('class_full')
 
@@ -94,7 +104,15 @@ export async function bookClass(input: BookClassInput): Promise<BookClassResult>
         crossLocationPaidSgd: clientPackages.crossLocationPaidSgd,
       })
       .from(clientPackages)
-      .where(and(eq(clientPackages.clientId, clientId), eq(clientPackages.active, true)))
+      .where(
+        and(
+          // The credit-isolation rule, at the one place credits are chosen to be
+          // spent: a plan sold by another studio is not a candidate here.
+          eq(clientPackages.tenantId, tenantId),
+          eq(clientPackages.clientId, clientId),
+          eq(clientPackages.active, true),
+        ),
+      )
       .for('update')
 
     const choice = selectPackage({
@@ -113,6 +131,7 @@ export async function bookClass(input: BookClassInput): Promise<BookClassResult>
       // The ledger re-derives `active` — a bundle spent to exactly zero stops
       // being a booking candidate immediately, not at the nightly sweep.
       await debitCredits(tx, {
+        tenantId,
         clientId,
         clientPackageId,
         amount: creditsUsed,
@@ -129,7 +148,9 @@ export async function bookClass(input: BookClassInput): Promise<BookClassResult>
       await tx
         .update(clientPackages)
         .set({ expiresAt: choice.activateUntil })
-        .where(eq(clientPackages.id, clientPackageId))
+        .where(
+          and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.id, clientPackageId)),
+        )
     }
 
     // 5. Create the booking.
@@ -137,6 +158,7 @@ export async function bookClass(input: BookClassInput): Promise<BookClassResult>
     const [row] = await tx
       .insert(bookings)
       .values({
+        tenantId,
         clientId,
         kind: 'class',
         classId,

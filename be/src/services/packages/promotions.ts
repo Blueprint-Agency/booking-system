@@ -11,6 +11,7 @@ export type PromotionKind = 'percent' | 'special_price'
  * Used by catalog read paths to surface "from" pricing on each package.
  */
 export async function listActivePromotionsFor(
+  tenantId: string,
   parentType: PromotionParent,
   parentIds: string[],
   now: Date = new Date(),
@@ -21,6 +22,7 @@ export async function listActivePromotionsFor(
     .from(promotions)
     .where(
       and(
+        eq(promotions.tenantId, tenantId),
         eq(promotions.parentType, parentType),
         eq(promotions.status, 'active'),
         lte(promotions.startsAt, now),
@@ -94,6 +96,7 @@ export function serializePromotion(p: PromotionRow) {
  * promos they've configured.
  */
 export async function listManagedPromotionsFor(
+  tenantId: string,
   parentType: PromotionParent,
   parentIds: string[],
 ): Promise<Record<string, PromotionRow[]>> {
@@ -103,6 +106,7 @@ export async function listManagedPromotionsFor(
     .from(promotions)
     .where(
       and(
+        eq(promotions.tenantId, tenantId),
         eq(promotions.parentType, parentType),
         eq(promotions.status, 'active'),
         inArray(promotions.parentId, parentIds),
@@ -146,6 +150,7 @@ export interface PromotionWriteInput {
  * Runs in a single transaction. Returns the resulting active set ordered by sort_id.
  */
 export async function replacePromotionsForParent(
+  tenantId: string,
   parentType: PromotionParent,
   parentId: string,
   items: PromotionWriteInput[],
@@ -156,7 +161,11 @@ export async function replacePromotionsForParent(
       .select()
       .from(promotions)
       .where(
-        and(eq(promotions.parentType, parentType), eq(promotions.parentId, parentId)),
+        and(
+          eq(promotions.tenantId, tenantId),
+          eq(promotions.parentType, parentType),
+          eq(promotions.parentId, parentId),
+        ),
       )
     const existingActiveById = new Map(
       existing.filter(p => p.status === 'active').map(p => [p.id, p]),
@@ -175,7 +184,7 @@ export async function replacePromotionsForParent(
         await tx
           .update(promotions)
           .set({ status: 'archived', updatedAt: now })
-          .where(eq(promotions.id, e.id))
+          .where(and(eq(promotions.tenantId, tenantId), eq(promotions.id, e.id)))
       }
     }
 
@@ -195,9 +204,10 @@ export async function replacePromotionsForParent(
         await tx
           .update(promotions)
           .set({ ...writeRow, updatedAt: now })
-          .where(eq(promotions.id, item.id))
+          .where(and(eq(promotions.tenantId, tenantId), eq(promotions.id, item.id)))
       } else {
         await tx.insert(promotions).values({
+          tenantId,
           parentType,
           parentId,
           ...writeRow,
@@ -211,6 +221,7 @@ export async function replacePromotionsForParent(
       .from(promotions)
       .where(
         and(
+          eq(promotions.tenantId, tenantId),
           eq(promotions.parentType, parentType),
           eq(promotions.parentId, parentId),
           eq(promotions.status, 'active'),

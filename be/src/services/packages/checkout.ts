@@ -68,6 +68,8 @@ export function purchaseLines(args: {
 }
 
 export interface PackageCheckoutInput {
+  /** Whose catalogue is being bought from, and where the grant lands. */
+  tenantId: string
   clientId: string
   packageKind: 'class' | 'pt'
   packageId: string
@@ -81,7 +83,7 @@ export interface PackageCheckoutInput {
 export type PackageCheckout = CheckoutQuote<{ clientPackageId: string }>
 
 export async function beginPackageCheckout(input: PackageCheckoutInput): Promise<PackageCheckout> {
-  const { clientId, packageKind, packageId, locationId } = input
+  const { tenantId, clientId, packageKind, packageId, locationId } = input
 
   let packageName: string
   let priceSgd: string
@@ -95,7 +97,13 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
     const [pkg] = await db
       .select()
       .from(classPackages)
-      .where(and(eq(classPackages.id, packageId), isNull(classPackages.deletedAt)))
+      .where(
+        and(
+          eq(classPackages.tenantId, tenantId),
+          eq(classPackages.id, packageId),
+          isNull(classPackages.deletedAt),
+        ),
+      )
       .limit(1)
     if (!pkg) throw new NotFoundError('class_package_not_found')
     if (pkg.status !== 'active') throw new BadRequestError('class_package_not_active')
@@ -103,29 +111,29 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
     // The grant applies these same rules, but only once the webhook fires — by
     // then the member has paid, and a refusal there charges them for nothing.
     // Same rule, run before Stripe.
-    await assertPurchasableLocation(clientId, pkg.kind, locationId)
+    await assertPurchasableLocation(tenantId, clientId, pkg.kind, locationId)
 
     // The Add-On on a plan being bought now (§5). A new plan has its whole
     // Duration ahead of it whether it starts today or waits Dormant, so it
     // prices at the stored Duration with no arithmetic.
     if (input.crossLocationAddOn) {
       crossLocationSgd = await priceCrossLocationForNewPlan(
-        pkg.tenantId!,
+        tenantId,
         pkg.kind,
         pkg.durationMonths,
       )
     }
 
-    const promos = await listActivePromotionsFor('class_package', [pkg.id])
+    const promos = await listActivePromotionsFor(tenantId, 'class_package', [pkg.id])
     const eff = bestPrice(pkg.priceSgd, promos[pkg.id] ?? [])
 
     // Trial pass: new-member-only + once-per-client. Gate BEFORE any charge.
     if (pkg.kind === 'trial') {
-      await assertTrialEligible(clientId)
+      await assertTrialEligible(tenantId, clientId)
       // A $0 trial is granted immediately (no Stripe). A priced trial falls
       // through to the standard paid-class-package Checkout below.
       if (grantsWithoutPaying(toCents(eff.effectivePriceSgd))) {
-        const result = await purchaseFreeTrial(clientId, pkg.id)
+        const result = await purchaseFreeTrial(tenantId, clientId, pkg.id)
         return { outcome: 'granted', clientPackageId: result.clientPackageId }
       }
     }
@@ -139,14 +147,20 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
     const [pkg] = await db
       .select()
       .from(ptPackages)
-      .where(and(eq(ptPackages.id, packageId), isNull(ptPackages.deletedAt)))
+      .where(
+        and(
+          eq(ptPackages.tenantId, tenantId),
+          eq(ptPackages.id, packageId),
+          isNull(ptPackages.deletedAt),
+        ),
+      )
       .limit(1)
     if (!pkg) throw new NotFoundError('pt_package_not_found')
     if (pkg.status !== 'active') throw new BadRequestError('pt_package_not_active')
-    await assertPurchasableLocation(clientId, 'pt', locationId)
-    if (input.crossLocationAddOn) await priceCrossLocationForNewPlan(pkg.tenantId!, 'pt', null)
+    await assertPurchasableLocation(tenantId, clientId, 'pt', locationId)
+    if (input.crossLocationAddOn) await priceCrossLocationForNewPlan(tenantId, 'pt', null)
 
-    const promos = await listActivePromotionsFor('pt_package', [pkg.id])
+    const promos = await listActivePromotionsFor(tenantId, 'pt_package', [pkg.id])
     const eff = bestPrice(pkg.priceSgd, promos[pkg.id] ?? [])
     packageName = pkg.name
     priceSgd = pkg.priceSgd
@@ -162,6 +176,7 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
   let applied: AppliedPromoCode | null = null
   if (input.promoCode) {
     applied = await applyPromoCode({
+      tenantId,
       codeText: input.promoCode,
       clientId,
       product: { productType, productId: packageId },
@@ -185,7 +200,7 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
   // Redemption was already written straight to `consumed`, because there is no
   // webhook coming to flip it.
   if (grantsWithoutPaying(charge.totalCents)) {
-    const granted = await grantFreePurchase({
+    const granted = await grantFreePurchase(tenantId, {
       clientId,
       paymentIntentId: null,
       amountSgd: '0.00',
@@ -229,12 +244,13 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
  * rather than a grant.
  */
 export async function beginCrossLocationCheckout(
+  tenantId: string,
   clientId: string,
   clientPackageId: string,
 ): Promise<{ lines: CheckoutLine[]; metadata: Record<string, string> }> {
-  // Refuses a plan that is not the member's, not Unlimited, not live, or already
-  // carrying one — before Stripe, never after.
-  const quote = await quoteCrossLocationAddOn(clientId, clientPackageId)
+  // Refuses a plan that is not the member's, not this studio's, not Unlimited,
+  // not live, or already carrying one — before Stripe, never after.
+  const quote = await quoteCrossLocationAddOn(tenantId, clientId, clientPackageId)
   const totalCents = toCents(quote.priceSgd)
   if (grantsWithoutPaying(totalCents)) throw new BadRequestError('cross_location_nothing_to_charge')
   return {

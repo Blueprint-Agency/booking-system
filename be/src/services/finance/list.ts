@@ -119,7 +119,7 @@ const within = (col: Parameters<typeof gte>[0], f: FinanceFilter) => {
   return conds
 }
 
-async function listMoneyIn(filter: FinanceFilter): Promise<MoneyEvent[]> {
+async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<MoneyEvent[]> {
   // A class-type or instructor filter is a question about teaching, and no
   // money-in row answers it. Returning nothing beats returning rows that
   // silently ignore the filter the admin set.
@@ -148,7 +148,9 @@ async function listMoneyIn(filter: FinanceFilter): Promise<MoneyEvent[]> {
     .leftJoin(promoCodes, eq(promoCodes.id, clientPackages.appliedPromoCodeId))
     .leftJoin(classPackages, eq(classPackages.id, clientPackages.sourceClassPackageId))
     .leftJoin(ptPackages, eq(ptPackages.id, clientPackages.sourcePtPackageId))
-    .where(and(...within(clientPackages.purchasedAt, filter)))
+    .where(
+      and(eq(clientPackages.tenantId, tenantId), ...within(clientPackages.purchasedAt, filter)),
+    )
 
   // -- workshop tickets -------------------------------------------------------
   // Only bookings that actually carry money: class and PT bookings are paid for
@@ -173,6 +175,7 @@ async function listMoneyIn(filter: FinanceFilter): Promise<MoneyEvent[]> {
     .leftJoin(promoCodes, eq(promoCodes.id, bookings.appliedPromoCodeId))
     .where(
       and(
+        eq(bookings.tenantId, tenantId),
         eq(bookings.kind, 'workshop'),
         isNotNull(bookings.listPriceSgd),
         ...within(bookings.bookedAt, filter),
@@ -202,6 +205,7 @@ async function listMoneyIn(filter: FinanceFilter): Promise<MoneyEvent[]> {
     .innerJoin(clients, eq(clients.id, stripePayments.clientId))
     .where(
       and(
+        eq(stripePayments.tenantId, tenantId),
         eq(stripePayments.kind, 'corporate_package'),
         inArray(stripePayments.status, ['succeeded', 'refunded']),
         ...within(stripePayments.createdAt, filter),
@@ -229,7 +233,7 @@ async function listMoneyIn(filter: FinanceFilter): Promise<MoneyEvent[]> {
     })
     .from(merchOrders)
     .innerJoin(clients, eq(clients.id, merchOrders.clientId))
-    .where(and(...within(merchOrders.createdAt, filter)))
+    .where(and(eq(merchOrders.tenantId, tenantId), ...within(merchOrders.createdAt, filter)))
 
   // -- refunds ----------------------------------------------------------------
   // A Refund is the whole purchase back. It lands on its OWN date so a closed
@@ -248,6 +252,7 @@ async function listMoneyIn(filter: FinanceFilter): Promise<MoneyEvent[]> {
     .innerJoin(clients, eq(clients.id, stripePayments.clientId))
     .where(
       and(
+        eq(stripePayments.tenantId, tenantId),
         eq(stripePayments.status, 'refunded'),
         isNotNull(stripePayments.refundedAt),
         ...within(stripePayments.refundedAt, filter),
@@ -262,7 +267,9 @@ async function listMoneyIn(filter: FinanceFilter): Promise<MoneyEvent[]> {
       await db
         .select({ intent: stripePayments.paymentIntentId })
         .from(stripePayments)
-        .where(eq(stripePayments.status, 'refunded'))
+        .where(
+          and(eq(stripePayments.tenantId, tenantId), eq(stripePayments.status, 'refunded')),
+        )
     ).map(r => r.intent),
   )
   const isRefunded = (intent: string | null) => intent != null && refunded.has(intent)
@@ -382,15 +389,18 @@ async function listMoneyIn(filter: FinanceFilter): Promise<MoneyEvent[]> {
  * for a studio with two Locations and a few thousand rows a month. If a period
  * ever returns enough rows to feel it, push it into each query's conditions.
  */
-export async function getFinance(filter: FinanceFilter): Promise<FinanceSummary> {
+export async function getFinance(
+  tenantId: string,
+  filter: FinanceFilter,
+): Promise<FinanceSummary> {
   const [payrollRows, moneyIn] = await Promise.all([
-    listPayroll({
+    listPayroll(tenantId, {
       instructorId: filter.instructorId,
       classTypeId: filter.classTypeId,
       from: filter.from,
       to: filter.to,
     }),
-    listMoneyIn(filter),
+    listMoneyIn(tenantId, filter),
   ])
 
   let events = [...payrollRows.map(payrollToEvent), ...moneyIn]

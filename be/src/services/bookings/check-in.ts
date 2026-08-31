@@ -10,7 +10,7 @@
  * "No automatic no-show flip. Forfeits only fire when admin/instructor manually
  * marks the row `no-show`." A member who was simply never ticked stays `pending`.
  */
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { bookings, checkIns } from '../../db/schema/bookings'
 import { classes, ptSessions } from '../../db/schema/schedule'
@@ -34,6 +34,7 @@ export interface MarkAttendanceInput {
 }
 
 export async function markAttendance(
+  tenantId: string,
   input: MarkAttendanceInput,
 ): Promise<{ checkInState: 'attended' | 'pending' }> {
   const { bookingId, staffId, attended } = input
@@ -49,7 +50,7 @@ export async function markAttendance(
         ptSessionId: bookings.ptSessionId,
       })
       .from(bookings)
-      .where(eq(bookings.id, bookingId))
+      .where(and(eq(bookings.tenantId, tenantId), eq(bookings.id, bookingId)))
       .for('update')
       .limit(1)
 
@@ -67,7 +68,7 @@ export async function markAttendance(
               mainInstructorId: classes.mainInstructorId,
             })
             .from(classes)
-            .where(eq(classes.id, bk.classId!))
+            .where(and(eq(classes.tenantId, tenantId), eq(classes.id, bk.classId!)))
             .limit(1)
         : await tx
             .select({
@@ -76,7 +77,7 @@ export async function markAttendance(
               mainInstructorId: ptSessions.instructorId,
             })
             .from(ptSessions)
-            .where(eq(ptSessions.id, bk.ptSessionId!))
+            .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, bk.ptSessionId!)))
             .limit(1)
 
     if (!ses) {
@@ -96,23 +97,25 @@ export async function markAttendance(
     if (attended) {
       await tx
         .insert(checkIns)
-        .values({ bookingId: bk.id, checkedInByStaffId: staffId, method: 'manual' })
+        .values({ tenantId, bookingId: bk.id, checkedInByStaffId: staffId, method: 'manual' })
         .onConflictDoNothing()
       // Attendance implies they showed up — clear any prior no-show AND the forfeit
       // that came with it, or the member stays "forfeited" on a session they attended.
       await tx
         .update(bookings)
         .set({ checkInState: 'attended', state: 'confirmed', refundOutcome: 'n_a' })
-        .where(eq(bookings.id, bk.id))
+        .where(and(eq(bookings.tenantId, tenantId), eq(bookings.id, bk.id)))
       return { checkInState: 'attended' }
     }
 
     // Undo: remove the check-in and reset to pending.
-    await tx.delete(checkIns).where(eq(checkIns.bookingId, bk.id))
+    await tx
+      .delete(checkIns)
+      .where(and(eq(checkIns.tenantId, tenantId), eq(checkIns.bookingId, bk.id)))
     await tx
       .update(bookings)
       .set({ checkInState: 'pending' })
-      .where(eq(bookings.id, bk.id))
+      .where(and(eq(bookings.tenantId, tenantId), eq(bookings.id, bk.id)))
     return { checkInState: 'pending' }
   })
 }

@@ -29,7 +29,7 @@ function promoCode(over: Partial<PromoCodeRow> = {}): PromoCodeRow {
   seq += 1
   return {
     id: `code-${seq}`,
-    tenantId: null,
+    tenantId: 'tenant-1',
     code: `SAVE${seq}`,
     label: 'S$20 off',
     kind: 'amount',

@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { bookClass } from '../../services/bookings/book'
 import { cancelBooking } from '../../services/bookings/cancel'
 import { listClassBookings, getClassBookingDetail, type ClassBookingRow } from '../../services/bookings/list'
+import { tenantId } from '../../middleware/tenant'
 
 function bookingRow(b: ClassBookingRow) {
   return {
@@ -29,19 +30,19 @@ function bookingRow(b: ClassBookingRow) {
 const app = new Hono()
   .get('/upcoming', async c => {
     const clientId = c.get('clientId')
-    const rows = await listClassBookings(clientId, 'upcoming')
+    const rows = await listClassBookings(tenantId(c), clientId, 'upcoming')
     return c.json({ bookings: rows.map(bookingRow) })
   })
   .get('/past', async c => {
     const clientId = c.get('clientId')
-    const rows = await listClassBookings(clientId, 'past')
+    const rows = await listClassBookings(tenantId(c), clientId, 'past')
     return c.json({ bookings: rows.map(bookingRow) })
   })
   .get('/:id/qr', c => c.json({ todo: 'booking QR PNG' }, 501))
   .get('/:id', zValidator('param', z.object({ id: z.string().uuid() })), async c => {
     const clientId = c.get('clientId')
     const { id } = c.req.valid('param')
-    const row = await getClassBookingDetail(clientId, id)
+    const row = await getClassBookingDetail(tenantId(c), clientId, id)
     return c.json(bookingRow(row))
   })
   .post(
@@ -53,14 +54,18 @@ const app = new Hono()
     async c => {
       const clientId = c.get('clientId')
       const { class_id, use_credits } = c.req.valid('json')
-      const res = await bookClass({ clientId, classId: class_id, useCredits: use_credits })
+      const res = await bookClass(tenantId(c), {
+        clientId,
+        classId: class_id,
+        useCredits: use_credits,
+      })
       return c.json({ booking_id: res.bookingId, qr_token: res.qrToken, code: res.code }, 201)
     },
   )
   .delete('/:id', zValidator('param', z.object({ id: z.string().uuid() })), async c => {
     const clientId = c.get('clientId')
     const { id } = c.req.valid('param')
-    const res = await cancelBooking({ bookingId: id, source: 'client', clientId })
+    const res = await cancelBooking(tenantId(c), { bookingId: id, source: 'client', clientId })
     return c.json({ refund_outcome: res.refundOutcome, refund_fired: res.refundFired })
   })
 

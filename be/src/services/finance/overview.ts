@@ -123,8 +123,12 @@ export function salesByCategory(rows: readonly FinanceLine[]): CategorySales[] {
  * starts, so a closed upper bound would count a class starting on the boundary
  * in BOTH windows, inflating `previous` and flattening the trend it feeds.
  */
-async function attendanceByClassType(from: Date | undefined, to: Date | undefined) {
-  const conds = [eq(bookings.checkInState, 'attended')]
+async function attendanceByClassType(
+  tenantId: string,
+  from: Date | undefined,
+  to: Date | undefined,
+) {
+  const conds = [eq(bookings.tenantId, tenantId), eq(bookings.checkInState, 'attended')]
   if (from) conds.push(gte(classes.startsAt, from))
   if (to) conds.push(lt(classes.startsAt, to))
   return db
@@ -148,11 +152,16 @@ export function previousWindow(from: Date | undefined, to: Date | undefined) {
   return { from: new Date(from.getTime() - span), to: new Date(from.getTime()) }
 }
 
-async function classPopularity(filter: FinanceFilter): Promise<ClassPopularity[]> {
+async function classPopularity(
+  tenantId: string,
+  filter: FinanceFilter,
+): Promise<ClassPopularity[]> {
   const prevWindow = previousWindow(filter.from, filter.to)
   const [current, previous] = await Promise.all([
-    attendanceByClassType(filter.from, filter.to),
-    prevWindow ? attendanceByClassType(prevWindow.from, prevWindow.to) : Promise.resolve([]),
+    attendanceByClassType(tenantId, filter.from, filter.to),
+    prevWindow
+      ? attendanceByClassType(tenantId, prevWindow.from, prevWindow.to)
+      : Promise.resolve([]),
   ])
   const before = new Map(previous.map(r => [r.id, r.attended]))
   return current
@@ -191,13 +200,14 @@ async function classPopularity(filter: FinanceFilter): Promise<ClassPopularity[]
  * a credit ledger to replay the balance from. Both are schema changes — see
  * be/docs/adr/0003.
  */
-async function memberCounts(filter: FinanceFilter): Promise<MemberCounts> {
+async function memberCounts(tenantId: string, filter: FinanceFilter): Promise<MemberCounts> {
   const [active] = await db
     .select({ n: countDistinct(clientPackages.clientId) })
     .from(clientPackages)
     .innerJoin(clients, eq(clients.id, clientPackages.clientId))
     .where(
       and(
+        eq(clientPackages.tenantId, tenantId),
         eq(clientPackages.active, true),
         isNull(clients.deletedAt),
         // Expiry flips `active` on a nightly sweep, so between the expiry and
@@ -208,7 +218,7 @@ async function memberCounts(filter: FinanceFilter): Promise<MemberCounts> {
       ),
     )
 
-  const joinedConds = [isNull(clients.deletedAt)]
+  const joinedConds = [eq(clients.tenantId, tenantId), isNull(clients.deletedAt)]
   if (filter.from) joinedConds.push(gte(clients.joinedAt, filter.from))
   if (filter.to) joinedConds.push(lte(clients.joinedAt, filter.to))
   const [joined] = await db.select({ n: count() }).from(clients).where(and(...joinedConds))
@@ -221,12 +231,15 @@ async function memberCounts(filter: FinanceFilter): Promise<MemberCounts> {
  * can be driven by one set of controls, but reads only its date bounds — a
  * breakdown narrowed to one instructor is not an overview of anything.
  */
-export async function getFinanceOverview(filter: FinanceFilter): Promise<FinanceOverview> {
+export async function getFinanceOverview(
+  tenantId: string,
+  filter: FinanceFilter,
+): Promise<FinanceOverview> {
   const period: FinanceFilter = { from: filter.from, to: filter.to }
   const [finance, members, classPopularityRows] = await Promise.all([
-    getFinance(period),
-    memberCounts(period),
-    classPopularity(period),
+    getFinance(tenantId, period),
+    memberCounts(tenantId, period),
+    classPopularity(tenantId, period),
   ])
 
   return {

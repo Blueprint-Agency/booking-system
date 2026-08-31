@@ -90,16 +90,18 @@ const app = new Hono()
   })
   .get('/packages', async c => {
     const [classRows, ptRows] = await Promise.all([
-      classSvc.listClassPackages({ status: 'active' }),
-      ptSvc.listPtPackages({ status: 'active' }),
+      classSvc.listClassPackages(tenantId(c), { status: 'active' }),
+      ptSvc.listPtPackages(tenantId(c), { status: 'active' }),
     ])
 
     const [classPromos, ptPromos] = await Promise.all([
       listActivePromotionsFor(
+        tenantId(c),
         'class_package',
         classRows.map(r => r.id),
       ),
       listActivePromotionsFor(
+        tenantId(c),
         'pt_package',
         ptRows.map(r => r.id),
       ),
@@ -118,7 +120,7 @@ const app = new Hono()
   })
   // Corporate catalogue for signed-out browsing (no promotions, no entitlements).
   .get('/corporate-packages', async c => {
-    const rows = await listCorporatePackages({ status: 'active' })
+    const rows = await listCorporatePackages(tenantId(c), { status: 'active' })
     return c.json({
       corporate_packages: rows.map(r => ({
         id: r.id,

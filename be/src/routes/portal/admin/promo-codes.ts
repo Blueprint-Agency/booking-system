@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as svc from '../../../services/packages/promo-code-admin'
+import { tenantId } from '../../../middleware/tenant'
 
 const productTypeEnum = z.enum(['class_package', 'pt_package', 'workshop'])
 const statusEnum = z.enum(['active', 'archived'])
@@ -83,11 +84,11 @@ function serialize(d: svc.PromoCodeDetail) {
 const app = new Hono()
   .get('/', zValidator('query', listQuery), async c => {
     const q = c.req.valid('query')
-    return c.json({ promo_codes: (await svc.listPromoCodes(q)).map(serialize) })
+    return c.json({ promo_codes: (await svc.listPromoCodes(tenantId(c), q)).map(serialize) })
   })
   // Registered before /:id so "products" is not parsed as a uuid.
   .get('/products', async c => {
-    const rows = await svc.listScopableProducts()
+    const rows = await svc.listScopableProducts(tenantId(c))
     return c.json({
       products: rows.map(r => ({
         product_type: r.productType,
@@ -98,11 +99,12 @@ const app = new Hono()
   })
   .get('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    return c.json(serialize(await svc.getPromoCode(id)))
+    return c.json(serialize(await svc.getPromoCode(tenantId(c), id)))
   })
   .post('/', zValidator('json', createSchema), async c => {
     const body = c.req.valid('json')
     const detail = await svc.createPromoCode(
+      tenantId(c),
       {
         code: body.code ?? null,
         label: body.label,
@@ -122,7 +124,7 @@ const app = new Hono()
   .patch('/:id', zValidator('param', idParam), zValidator('json', updateSchema), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
-    const detail = await svc.updatePromoCode(id, {
+    const detail = await svc.updatePromoCode(tenantId(c), id, {
       ...(body.code !== undefined ? { code: body.code } : {}),
       ...(body.kind !== undefined
         ? {
@@ -147,7 +149,7 @@ const app = new Hono()
   // Archive only — §11 gives one direction. There is no un-archive.
   .post('/:id/archive', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    const detail = await svc.archivePromoCode(id)
+    const detail = await svc.archivePromoCode(tenantId(c), id)
     c.set('auditTarget' as any, { table: 'promo_codes', id })
     return c.json(serialize(detail))
   })

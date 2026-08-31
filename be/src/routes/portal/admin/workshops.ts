@@ -216,7 +216,7 @@ const app = new Hono()
   .get('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const detail = await publish.getWorkshopDetail(id)
-    const promosMap = await listManagedPromotionsFor('workshop', [id])
+    const promosMap = await listManagedPromotionsFor(tenantId(c), 'workshop', [id])
     return c.json({
       ...workshopRow(detail.workshop),
       days: detail.days.map(dayRow),
@@ -403,7 +403,7 @@ const app = new Hono()
   // ---- workshop promotions (applied to all tiers of the workshop) ----
   .get('/:id/promotions', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    const map = await listManagedPromotionsFor('workshop', [id])
+    const map = await listManagedPromotionsFor(tenantId(c), 'workshop', [id])
     return c.json({ promotions: (map[id] ?? []).map(serializePromotion) })
   })
   .put(
@@ -415,6 +415,7 @@ const app = new Hono()
       const body = c.req.valid('json')
       const staffId = c.get('staffUserId')
       const rows = await replacePromotionsForParent(
+        tenantId(c),
         'workshop',
         id,
         body.promotions.map(toPromotionWriteInput),

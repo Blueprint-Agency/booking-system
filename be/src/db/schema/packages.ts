@@ -165,10 +165,15 @@ export const promotions = pgTable(
 export const promoCodes = pgTable(
   'promo_codes',
   {
-    tenantId: tenantIdColumn(),
+    // `NOT NULL` ahead of the contract step (#63), which turns the column on
+    // every other table. Here it is load-bearing *now*: uniqueness of a code's
+    // text is `(tenant_id, code)`, and Postgres treats NULLs as distinct — so a
+    // nullable column would mean two rows could both be `SUMMER` and neither
+    // would be found by the `(tenant_id, code)` lookup that redeems them.
+    tenantId: tenantIdColumn().notNull(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     // Stored normalised — trimmed and upper-cased. Generated and custom codes
-    // share this one namespace behind this one unique index, so a custom code
+    // share one namespace per Tenant behind one unique index, so a custom code
     // cannot collide with a generated one by construction.
     code: text('code').notNull(),
     label: text('label').notNull(),
@@ -189,7 +194,10 @@ export const promoCodes = pgTable(
       .references(() => staffUsers.id, { onDelete: 'restrict' }),
   },
   table => ({
-    codeUnique: uniqueIndex('promo_codes_code_unique').on(table.code),
+    // Unique per **Tenant**, not per platform. A global index would have let
+    // whichever studio claimed SUMMER first keep every other studio off the
+    // word — and the collision error would have told them it was taken.
+    codeUnique: uniqueIndex('promo_codes_tenant_code_unique').on(table.tenantId, table.code),
     kindFields: check(
       'promo_codes_kind_fields',
       sql`

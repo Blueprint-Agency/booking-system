@@ -26,9 +26,6 @@ export async function beginMerchCheckout(input: {
   clientId: string
   merchId: string
 }): Promise<MerchCheckout> {
-  // The catalogue read is tenant-scoped here; the order rows themselves are
-  // written from the Stripe webhook, which cannot resolve a tenant yet — that
-  // is the transactional batch (#61).
   const [item] = await db
     .select()
     .from(merch)
@@ -43,6 +40,7 @@ export async function beginMerchCheckout(input: {
   // against — it just never reaches the payment provider.
   if (grantsWithoutPaying(totalCents)) {
     const order = await recordMerchOrder({
+      tenantId: input.tenantId,
       clientId: input.clientId,
       merchId: item.id,
       title: item.title,
@@ -74,6 +72,7 @@ export async function beginMerchCheckout(input: {
  * one must not double-charge the history.
  */
 export async function recordMerchOrder(input: {
+  tenantId: string
   clientId: string
   merchId: string | null
   title: string
@@ -83,6 +82,7 @@ export async function recordMerchOrder(input: {
   const [inserted] = await db
     .insert(merchOrders)
     .values({
+      tenantId: input.tenantId,
       clientId: input.clientId,
       merchId: input.merchId,
       title: input.title,
@@ -96,16 +96,24 @@ export async function recordMerchOrder(input: {
   const [existing] = await db
     .select()
     .from(merchOrders)
-    .where(eq(merchOrders.stripePaymentIntentId, input.paymentIntentId!))
+    .where(
+      and(
+        eq(merchOrders.tenantId, input.tenantId),
+        eq(merchOrders.stripePaymentIntentId, input.paymentIntentId!),
+      ),
+    )
     .limit(1)
   return existing!
 }
 
-export async function listMerchOrders(clientId: string): Promise<MerchOrderRow[]> {
+export async function listMerchOrders(
+  tenantId: string,
+  clientId: string,
+): Promise<MerchOrderRow[]> {
   return db
     .select()
     .from(merchOrders)
-    .where(eq(merchOrders.clientId, clientId))
+    .where(and(eq(merchOrders.tenantId, tenantId), eq(merchOrders.clientId, clientId)))
     .orderBy(desc(merchOrders.createdAt))
 }
 

@@ -68,7 +68,7 @@ export async function getClientEntitlements(
     .from(clientPackages)
     .leftJoin(ptPackages, eq(ptPackages.id, clientPackages.sourcePtPackageId))
     .leftJoin(locations, eq(locations.id, clientPackages.locationId))
-    .where(eq(clientPackages.clientId, clientId))
+    .where(and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.clientId, clientId)))
 
   let trialUsed = false
   let hasActiveUnlimited = false
@@ -122,8 +122,6 @@ export async function getClientEntitlements(
     unlimitedLocation,
     unlimitedPlanId,
     unlimitedCoversBoth,
-    // The rate is a per-tenant policy figure; the rest of this read is scoped
-    // with the transactional batch (#61).
     crossLocationRateSgd: await readCrossLocationRateSgd(tenantId),
     dormant,
     hasActiveBundleCredits,
@@ -165,11 +163,14 @@ export interface ClientPackageWithSource {
  * the client app can render it without an extra round-trip.
  */
 export async function listClientPackages(
+  tenantId: string,
   clientId: string,
   onlyActive = false,
 ): Promise<ClientPackageWithSource[]> {
-  const now = new Date()
-  const baseConds = [eq(clientPackages.clientId, clientId)]
+  const baseConds = [
+    eq(clientPackages.tenantId, tenantId),
+    eq(clientPackages.clientId, clientId),
+  ]
   if (onlyActive) baseConds.push(eq(clientPackages.active, true))
 
   const rows = await db

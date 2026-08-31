@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as svc from '../../../services/packages/corporate-packages'
+import { tenantId } from '../../../middleware/tenant'
 
 const statusEnum = z.enum(['active', 'archived'])
 
@@ -44,19 +45,19 @@ function serialize(r: svc.CorporatePackageRow) {
 const app = new Hono()
   .get('/', zValidator('query', listQuery), async c => {
     const q = c.req.valid('query')
-    const rows = await svc.listCorporatePackages(q)
+    const rows = await svc.listCorporatePackages(tenantId(c), q)
     return c.json({ corporatePackages: rows.map(serialize) })
   })
   .get('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    const row = await svc.getCorporatePackage(id)
+    const row = await svc.getCorporatePackage(tenantId(c), id)
     if (!row) return c.json({ error: 'not_found' }, 404)
     return c.json({ corporatePackage: serialize(row) })
   })
   .post('/', zValidator('json', createSchema), async c => {
     const body = c.req.valid('json')
     const actor = c.get('staffUserId') as string
-    const row = await svc.createCorporatePackage({
+    const row = await svc.createCorporatePackage(tenantId(c), {
       name: body.name,
       description: body.description ?? null,
       priceSgd: body.price_sgd,
@@ -76,7 +77,7 @@ const app = new Hono()
     const hasFieldUpdate =
       body.name !== undefined || body.description !== undefined || body.price_sgd !== undefined
     if (hasFieldUpdate) {
-      row = await svc.updateCorporatePackage(id, {
+      row = await svc.updateCorporatePackage(tenantId(c), id, {
         ...(body.name !== undefined ? { name: body.name } : {}),
         ...(body.description !== undefined ? { description: body.description ?? null } : {}),
         ...(body.price_sgd !== undefined ? { priceSgd: body.price_sgd } : {}),
@@ -85,16 +86,16 @@ const app = new Hono()
     }
 
     if (body.status === 'archived') {
-      row = await svc.archiveCorporatePackage(id)
+      row = await svc.archiveCorporatePackage(tenantId(c), id)
       if (!row) return c.json({ error: 'not_found' }, 404)
     } else if (body.status === 'active') {
-      row = await svc.unarchiveCorporatePackage(id)
+      row = await svc.unarchiveCorporatePackage(tenantId(c), id)
       if (!row) return c.json({ error: 'not_found' }, 404)
     }
 
     if (!row) {
       // No fields and no status: just return the current row.
-      row = await svc.getCorporatePackage(id)
+      row = await svc.getCorporatePackage(tenantId(c), id)
       if (!row) return c.json({ error: 'not_found' }, 404)
     }
 
@@ -103,14 +104,14 @@ const app = new Hono()
   })
   .post('/:id/unarchive', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    const row = await svc.unarchiveCorporatePackage(id)
+    const row = await svc.unarchiveCorporatePackage(tenantId(c), id)
     if (!row) return c.json({ error: 'not_found' }, 404)
     c.set('auditTarget' as any, { table: 'corporate_packages', id })
     return c.json({ corporatePackage: serialize(row) })
   })
   .delete('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    await svc.softDeleteCorporatePackage(id)
+    await svc.softDeleteCorporatePackage(tenantId(c), id)
     c.set('auditTarget' as any, { table: 'corporate_packages', id })
     return c.body(null, 204)
   })
