@@ -8,6 +8,7 @@ import { SectionHeading } from "@/components/booking/section-heading";
 import { ClassRow, FilterSelect } from "@/components/booking/class-row";
 import { ScheduleSegments } from "@/components/booking/schedule-segments";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useBrand } from "@/components/brand/brand-provider";
 
 const WINDOW_DAYS = 30;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -49,8 +50,20 @@ export function ClassFeed() {
     location_id: selectedLocation || undefined,
     instructor_id: instructor || undefined,
   });
-  const { data: locations } = useLocations();
+  // `?? []` and not a default argument: the hook returns null while loading,
+  // and a default only fires for undefined.
+  const { data: locationData } = useLocations();
+  const locations = useMemo(() => locationData ?? [], [locationData]);
   const { isSignedIn } = useUser();
+  const brand = useBrand();
+
+  // The studio and its own premises — both per Tenant, so a second studio's
+  // members never read the first studio's name or the first studio's addresses.
+  // The premises are dropped rather than guessed at while they load.
+  const eyebrow = useMemo(() => {
+    const names = locations.map((l) => l.name).filter(Boolean);
+    return names.length ? `${brand.name} · ${names.join(" & ")}` : brand.name;
+  }, [brand.name, locations]);
   const { canBook, loaded: canBookLoaded, entitlements } = useCanBookClass();
 
   const all = useMemo(() => classes ?? [], [classes]);
@@ -79,9 +92,11 @@ export function ClassFeed() {
   return (
     <BookingSurface maxWidth="xl" padding="default">
       <SectionHeading
-        eyebrow="Yoga Sadhana · Tai Seng & Outram Park"
+        eyebrow={eyebrow}
         title="Book a class"
-        description="All upcoming classes across both studios — book your spot."
+        description={`All upcoming classes across ${
+          locations.length === 1 ? "the studio" : "every studio"
+        } — book your spot.`}
       />
       <ScheduleSegments />
 
@@ -89,7 +104,7 @@ export function ClassFeed() {
         <FilterSelect
           value={selectedLocation}
           onChange={setSelectedLocation}
-          options={(locations ?? []).map((l) => ({ value: l.id, label: l.name }))}
+          options={locations.map((l) => ({ value: l.id, label: l.name }))}
           placeholder="All locations"
         />
         <FilterSelect value={instructor} onChange={setInstructor} options={instructorOptions} placeholder="All instructors" />

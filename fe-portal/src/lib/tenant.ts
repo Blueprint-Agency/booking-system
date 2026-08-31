@@ -36,9 +36,28 @@ export interface Tenant {
   status: string;
 }
 
+/**
+ * What a studio publishes about itself — the half of the resolution payload
+ * that decides what the app LOOKS like rather than which data it reads.
+ *
+ * Every field is nullable because a studio is created by inserting a row and is
+ * expected to be reachable before anyone has configured anything. The app falls
+ * back to the Tenant's own `name` and to platform-neutral defaults, never to
+ * another studio's branding.
+ */
+export interface TenantSettings {
+  display_name: string | null;
+  logo_url: string | null;
+  favicon_url: string | null;
+  og_image_url: string | null;
+  tagline: string | null;
+  theme: Record<string, string>;
+  copy: Record<string, string>;
+}
+
 export type TenantOutcome =
   /** The slug names a Tenant. `status` may be `suspended`. */
-  | { kind: "found"; tenant: Tenant }
+  | { kind: "found"; tenant: Tenant; settings: TenantSettings | null }
   /** No such Tenant — indistinguishable from archived, by design. */
   | { kind: "unknown" }
   /** The backend could not answer. Not the same thing as "unknown". */
@@ -121,9 +140,11 @@ async function lookup(slug: string): Promise<TenantOutcome> {
   }
 
   try {
-    const body = (await res.json()) as { tenant?: Tenant };
+    const body = (await res.json()) as { tenant?: Tenant; settings?: TenantSettings };
     if (!body?.tenant?.id || !body.tenant.slug) throw new Error("malformed tenant payload");
-    return { kind: "found", tenant: body.tenant };
+    // Settings are optional on purpose: a Tenant with no settings row still
+    // resolves and still renders, on its own name and the neutral defaults.
+    return { kind: "found", tenant: body.tenant, settings: body.settings ?? null };
   } catch (err) {
     reportError(new Error("Tenant resolution payload unreadable"), {
       scope: "tenant-resolve-parse",

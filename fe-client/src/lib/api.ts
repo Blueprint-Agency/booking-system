@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Thin fetch wrapper for the Yoga Sadhana client backend.
+ * Thin fetch wrapper for the member-facing backend.
  *
  * Auth: a `getToken` callback (from Clerk's `useAuth()`) is invoked on every
  * request; the resulting JWT is sent as `Authorization: Bearer ...`. Public

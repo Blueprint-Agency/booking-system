@@ -1,5 +1,10 @@
 import { env } from '../env'
-import { parseOriginPatterns, isAllowedOrigin, tenantSlugFromOrigin } from './origin'
+import {
+  parseOriginPatterns,
+  isAllowedOrigin,
+  tenantOriginFor,
+  tenantSlugFromOrigin,
+} from './origin'
 
 /**
  * The allowlist, assembled once from the environment.
@@ -31,6 +36,16 @@ export function originAllowed(origin: string): boolean {
 /** The tenant slug an `Origin` names, or null when it names none. */
 export function originTenantSlug(origin: string): string | null {
   return tenantSlugFromOrigin(origin, allowedOriginPatterns)
+}
+
+/**
+ * The URL a given tenant is served at, derived from the same wildcards CORS
+ * accepts — so the link the super portal hands out and the origin the backend
+ * trusts cannot drift apart. Null when this environment configures no wildcard
+ * for that app.
+ */
+export function tenantOrigin(app: 'client' | 'portal', slug: string): string | null {
+  return tenantOriginFor(app, slug, allowedOriginPatterns)
 }
 
 /**

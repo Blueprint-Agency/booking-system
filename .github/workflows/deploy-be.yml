@@ -114,7 +114,7 @@ jobs:
             #   org vars:    BPVPS2_TAILSCALE_HOST, DOCKERHUB_USERNAME
             #   org secrets: TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET, SSH_PRIVATE_KEY, DOCKERHUB_TOKEN
             #   env vars:    PORT, PORTAL_ORIGIN, CLIENT_ORIGIN, TENANT_ORIGIN_PATTERNS,
-            #            SUPERADMIN_EMAIL
+            #            SUPERADMIN_EMAIL, (optional) PLATFORM_ADMIN_EMAILS
             #   env secrets: DB_USER, DB_PASSWORD, DB_NAME, DB_APP_PASSWORD,
             #            CLERK_STAFF_PUBLISHABLE_KEY, CLERK_STAFF_SECRET_KEY, CLERK_STAFF_WEBHOOK_SECRET,
             #            CLERK_CLIENT_PUBLISHABLE_KEY, CLERK_CLIENT_SECRET_KEY, CLERK_CLIENT_WEBHOOK_SECRET,
@@ -146,6 +146,11 @@ jobs:
               # with this email and links the staff_users row; operator picks
               # their own password via Clerk's "Forgot password" on first sign-in.
               echo "SUPERADMIN_EMAIL=${{ vars.SUPERADMIN_EMAIL }}"
+              # Who may operate the super portal (/api/v1/platform/*) — the dev
+              # team, comma-separated. Deliberately not a staff role: a studio's
+              # own superadmin must not be able to suspend another studio.
+              # SUPERADMIN_EMAIL is always included, so blank means exactly one.
+              echo "PLATFORM_ADMIN_EMAILS=${{ vars.PLATFORM_ADMIN_EMAILS }}"
               # Portal origin — used for CORS + the sign-up URL in invitation emails
               echo "PORTAL_ORIGIN=${{ vars.PORTAL_ORIGIN }}"
               # Client origin — adds fe-client to the CORS allowlist

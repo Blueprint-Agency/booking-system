@@ -17,7 +17,10 @@
   --color-ink: #0d1a3e;
   --color-muted: #5a6174;
 
-  /* Primary accent — Yoga Sadhana deep indigo (sampled from logo #102070) */
+  /* Primary accent — the platform default, deep indigo. A studio overrides it
+     by setting the `accent` token in its Tenant theme, which BrandProvider
+     emits as a custom property on a wrapper; anything it does not set falls
+     through to the value here. */
   --color-accent: #1a2a7a;
   --color-accent-deep: #0d1a5e;
 

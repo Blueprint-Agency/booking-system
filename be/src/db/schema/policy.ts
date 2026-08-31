@@ -7,7 +7,7 @@ import { staffUsers } from './identity'
  * Both tables here used to be *platform* singletons: a `CHECK (id = '<fixed
  * uuid>')` meant exactly one row could ever exist. That is the right constraint
  * for one studio and a data leak for two — a second tenant could not own a
- * policy row, so it would have been served Yoga Sadhana's caps and windows.
+ * policy row, so it would have been served tenant #1's caps and windows.
  *
  * They are now singletons **per tenant**: the check is gone, the id is
  * generated, and a unique index on `tenant_id` is what keeps it to one row each.

@@ -68,7 +68,7 @@ export const emailLog = pgTable(
  *
  * It carried a `CHECK (id = '<fixed uuid>')`, which is the right constraint for
  * one studio and the wrong one for two: no second tenant could own a row, so
- * every second tenant would have been shown Yoga Sadhana's waiver and its
+ * every second tenant would have been shown tenant #1's waiver and its
  * members would have put their name to a document about another business. The
  * check is gone, the id is generated, and the unique index on `tenant_id` is
  * what holds the table to one row each.

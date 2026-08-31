@@ -21,9 +21,9 @@ export const emailTemplates: EmailTemplate[] = [
     trigger: "Customer completes registration",
     recipient: "New customer",
     variables: ["client_name"],
-    subject: "Welcome to Yoga Sadhana, {{client_name}} 🙏",
+    subject: "Welcome, {{client_name}} 🙏",
     bodyHtml:
-      "<p>Hello {{client_name}},</p><p>We're delighted to welcome you to Yoga Sadhana. Your account is ready — log in any time to browse our schedule and book your first class.</p><p>See you on the mat,<br/>The Yoga Sadhana team</p>",
+      "<p>Hello {{client_name}},</p><p>We're delighted to welcome you to the studio. Your account is ready — log in any time to browse our schedule and book your first class.</p><p>See you on the mat,<br/>The studio team</p>",
     updatedAt,
   },
   {
@@ -271,9 +271,9 @@ export const emailTemplates: EmailTemplate[] = [
     trigger: "Admin creates instructor profile (§15b)",
     recipient: "New instructor",
     variables: ["name", "invite_url", "expires_at"],
-    subject: "You've been invited to teach at Yoga Sadhana",
+    subject: "You've been invited to teach at the studio",
     bodyHtml:
-      "<p>Hi {{name}},</p><p>You've been added to Yoga Sadhana as an instructor. Set up your account using the link below — it expires on {{expires_at}}.</p><p><a href=\"{{invite_url}}\">Accept invitation</a></p>",
+      "<p>Hi {{name}},</p><p>You've been added as an instructor. Set up your account using the link below — it expires on {{expires_at}}.</p><p><a href=\"{{invite_url}}\">Accept invitation</a></p>",
     updatedAt,
   },
   {
@@ -284,9 +284,9 @@ export const emailTemplates: EmailTemplate[] = [
     trigger: "Admin sends admin invite (§15b)",
     recipient: "Invitee",
     variables: ["name", "invite_url", "expires_at"],
-    subject: "Admin access invitation — Yoga Sadhana",
+    subject: "Admin access invitation",
     bodyHtml:
-      "<p>Hi {{name}},</p><p>You've been invited to manage Yoga Sadhana. Tap the link to set up your account — it expires on {{expires_at}}.</p><p><a href=\"{{invite_url}}\">Accept invitation</a></p>",
+      "<p>Hi {{name}},</p><p>You've been invited to manage the studio. Tap the link to set up your account — it expires on {{expires_at}}.</p><p><a href=\"{{invite_url}}\">Accept invitation</a></p>",
     updatedAt,
   },
   {

@@ -27,12 +27,64 @@ export interface EmailTemplateSeed {
   bodyHtml: string
 }
 
+/**
+ * Everything about a studio that its copy has to say out loud.
+ *
+ * The name is not decoration: it is in the subject line of thirty emails, in
+ * the mark at the top of every one of them, and in the sentence that tells a
+ * member which studio just charged them. A tenant whose copy said someone
+ * else's name would be worse than a tenant with no copy at all, which is why
+ * `seedEmailTemplates` passes this per tenant rather than the module holding a
+ * default.
+ */
+export interface EmailStudio {
+  /** The studio's own name, as its members know it. */
+  name: string
+  /**
+   * The two or three letters in the mark at the top of every email. Derived
+   * from the name when not given — an initial per word, so a two-word studio
+   * name becomes two letters and a one-word one becomes a single letter.
+   */
+  initials?: string
+  /**
+   * The footer line: where the studio is. Optional because a brand-new tenant
+   * has no premises configured yet, and a footer naming none is better than a
+   * footer naming someone else's.
+   */
+  footer?: string
+}
+
 /** The two origins every mailed link is built from — see `buildEmailTemplates`. */
 export interface EmailOrigins {
   /** The member-facing app, no trailing slash (`env.ts:CLIENT_URL`). */
   clientUrl: string
   /** The staff portal, no trailing slash (`env.PORTAL_ORIGIN`). */
   portalUrl: string
+  /** Whose emails these are. */
+  studio: EmailStudio
+}
+
+/** An initial per word, capped at three — the mark is a square, not a label. */
+export function studioInitials(name: string): string {
+  const letters = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(word => word[0]!.toUpperCase())
+    .join('')
+  return letters.slice(0, 3) || '·'
+}
+
+/**
+ * A studio's name goes into HTML that is stored and later mailed, and it is
+ * tenant-supplied text. An unescaped `<` in it would be markup in thirty
+ * emails, so it is escaped once, here, at the only point it enters the shell.
+ */
+function esc(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
 }
 
 /**
@@ -40,13 +92,24 @@ export interface EmailOrigins {
  * heading, prose, an optional call to action, optional fine print, and the
  * footer. Sharing it is what keeps thirty emails looking like one studio.
  *
+ * A *factory*, not a constant, because the mark and the footer are the studio's
+ * own: the shell is shared across emails, never across tenants.
+ *
  * `lines` are whole sentences (inline HTML allowed); each becomes a paragraph.
  */
-const body = (
-  heading: string,
-  lines: string[],
-  opts: { cta?: { href: string; label: string }; note?: string } = {},
-) => `<!DOCTYPE html>
+const bodyFor =
+  (studio: EmailStudio) =>
+  (
+    heading: string,
+    lines: string[],
+    opts: { cta?: { href: string; label: string }; note?: string } = {},
+  ) => {
+    const name = esc(studio.name)
+    const mark = esc(studio.initials?.trim() || studioInitials(studio.name))
+    // A footer naming nobody beats a footer naming the wrong premises, so a
+    // tenant with no address configured gets the name alone.
+    const footer = studio.footer ? `${name} — ${esc(studio.footer)}` : name
+    return `<!DOCTYPE html>
 <html>
   <body style="margin:0;padding:0;background:#f7f5f2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#1f1d1b;">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f5f2;padding:32px 16px;">
@@ -55,8 +118,8 @@ const body = (
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid #e9e4dd;border-radius:14px;padding:32px 36px;">
             <tr>
               <td style="padding-bottom:20px;">
-                <div style="display:inline-block;vertical-align:middle;width:36px;height:36px;background:#c97a4a;border-radius:8px;color:#ffffff;font-weight:700;font-size:14px;line-height:36px;text-align:center;">YS</div>
-                <span style="display:inline-block;vertical-align:middle;margin-left:10px;font-size:15px;font-weight:600;letter-spacing:-0.01em;">Yoga Sadhana</span>
+                <div style="display:inline-block;vertical-align:middle;width:36px;height:36px;background:#c97a4a;border-radius:8px;color:#ffffff;font-weight:700;font-size:14px;line-height:36px;text-align:center;">${mark}</div>
+                <span style="display:inline-block;vertical-align:middle;margin-left:10px;font-size:15px;font-weight:600;letter-spacing:-0.01em;">${name}</span>
               </td>
             </tr>
             <tr>
@@ -82,7 +145,7 @@ const body = (
                   }
                 <hr style="border:0;border-top:1px solid #e9e4dd;margin:24px 0;" />
                 <p style="margin:0;font-size:12px;line-height:1.5;color:#9b9590;">
-                  Yoga Sadhana — Breadtalk IHQ (Tai Seng) &amp; Outram Park.
+                  ${footer}
                 </p>
               </td>
             </tr>
@@ -92,6 +155,7 @@ const body = (
     </table>
   </body>
 </html>`
+  }
 
 /** An inline text link in the studio's accent, for use inside a `lines` entry. */
 const link = (href: string, label: string) =>
@@ -107,7 +171,16 @@ const facts = (rows: Array<[string, string]>) =>
     .join('<br />')
 
 export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] {
-  const { clientUrl, portalUrl } = origins
+  const { clientUrl, portalUrl, studio } = origins
+
+  // The shell, bound to this studio. `studio` is the name as it appears in
+  // prose and subject lines — where it is plain text, not HTML, so it is the
+  // raw value; the shell escapes its own copy of it.
+  const body = bodyFor(studio)
+  /** For subject lines, which are plain text. */
+  const STUDIO = studio.name
+  /** For headings and prose, which are interpolated into HTML. */
+  const STUDIO_HTML = esc(studio.name)
 
   const ACCOUNT_URL = `${clientUrl}/account`
   const CLASSES_URL = `${clientUrl}/classes`
@@ -117,10 +190,10 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
   /* ── Access: the three invitations and the password reset ────────────── */
 
   const ADMIN_INVITE_BODY = body(
-    "You're invited to the Yoga Sadhana admin portal",
+    `You're invited to the ${STUDIO_HTML} admin portal`,
     [
       'Hi {{name}},',
-      'You have been invited to join Yoga Sadhana as an admin. Use the button below to set up your account and sign in.',
+      `You have been invited to join ${STUDIO_HTML} as an admin. Use the button below to set up your account and sign in.`,
     ],
     {
       cta: { href: '{{invite_url}}', label: 'Set up your account' },
@@ -129,10 +202,10 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
   )
 
   const INSTRUCTOR_INVITE_BODY = body(
-    "You're invited to teach at Yoga Sadhana",
+    `You're invited to teach at ${STUDIO_HTML}`,
     [
       'Hi {{name}},',
-      "The Yoga Sadhana team has added you as an instructor. Set up your account below to reach the portal, where you'll find your teaching schedule, your class rosters and your leave.",
+      `The ${STUDIO_HTML} team has added you as an instructor. Set up your account below to reach the portal, where you'll find your teaching schedule, your class rosters and your leave.`,
     ],
     {
       cta: { href: '{{invite_url}}', label: 'Set up your account' },
@@ -141,10 +214,10 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
   )
 
   const CLIENT_INVITE_BODY = body(
-    'Welcome to Yoga Sadhana',
+    `Welcome to ${STUDIO_HTML}`,
     [
       'Hi {{name}},',
-      'The Yoga Sadhana team has created an account for you, so you can book classes, workshops and private sessions.',
+      `The ${STUDIO_HTML} team has created an account for you, so you can book classes, workshops and private sessions.`,
     ],
     {
       cta: { href: '{{login_url}}', label: 'Sign in to your account' },
@@ -153,7 +226,7 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
   )
 
   const WELCOME_BODY = body(
-    'Welcome to Yoga Sadhana',
+    `Welcome to ${STUDIO_HTML}`,
     [
       'Hi {{client_name}},',
       'Your account is ready. You can book classes, reserve a workshop place and request private sessions from the app.',
@@ -166,7 +239,7 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
     'Reset your password',
     [
       'Hi {{client_name}},',
-      'We received a request to reset your Yoga Sadhana password. Use the button below to choose a new one.',
+      `We received a request to reset your ${STUDIO_HTML} password. Use the button below to choose a new one.`,
     ],
     {
       cta: { href: '{{reset_url}}', label: 'Choose a new password' },
@@ -332,7 +405,7 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
   ])
 
   /** A first-timer's welcome, which is not the same email as a $150 receipt. */
-  const TRIAL_PASS_PURCHASE_BODY = body('Welcome to Yoga Sadhana', [
+  const TRIAL_PASS_PURCHASE_BODY = body(`Welcome to ${STUDIO_HTML}`, [
     'Hi {{client_name}},',
     facts([['Your pass', '{{package_name}}']]) + '<br />{{contents_line}}<br />{{validity_line}}',
     'Book your first class whenever you are ready. Arrive ten minutes early and someone will show you around.',
@@ -368,7 +441,7 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
 
   const REFERRAL_CREDITED_BODY = body('You earned a referral credit', [
     'Hi {{referrer_name}},',
-    '<strong>{{referee_name}}</strong> joined Yoga Sadhana on your referral — thank you for bringing them in.',
+    `<strong>{{referee_name}}</strong> joined ${STUDIO_HTML} on your referral — thank you for bringing them in.`,
     `<strong>{{credits_granted}}</strong> credit(s) have been added to your account. ${link(CLASSES_URL, 'Book a class')}`,
   ])
 
@@ -436,10 +509,10 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
   ])
 
   return [
-    { slug: 'welcome', subject: 'Welcome to Yoga Sadhana', bodyHtml: WELCOME_BODY },
+    { slug: 'welcome', subject: `Welcome to ${STUDIO}`, bodyHtml: WELCOME_BODY },
     {
       slug: 'client_invite',
-      subject: 'Your Yoga Sadhana account is ready',
+      subject: `Your ${STUDIO} account is ready`,
       bodyHtml: CLIENT_INVITE_BODY,
     },
     { slug: 'password_reset', subject: 'Reset your password', bodyHtml: PASSWORD_RESET_BODY },
@@ -560,7 +633,7 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
     },
     {
       slug: 'admin_invite',
-      subject: "You've been invited to Yoga Sadhana — Admin Portal",
+      subject: `You've been invited to ${STUDIO} — Admin Portal`,
       bodyHtml: ADMIN_INVITE_BODY,
     },
     {
@@ -575,7 +648,7 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
     },
     {
       slug: 'trial_pass_purchase_confirmed',
-      subject: 'Welcome to Yoga Sadhana',
+      subject: `Welcome to ${STUDIO}`,
       bodyHtml: TRIAL_PASS_PURCHASE_BODY,
     },
   ]

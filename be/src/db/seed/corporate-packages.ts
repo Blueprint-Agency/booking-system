@@ -4,9 +4,10 @@ import * as schema from '../schema'
 import type { SeededTenant } from './tenants'
 
 /**
- * Corporate-class package catalogue — mirrors the Yoga Sadhana "Corporate
- * Class" (in-studio) price card. Each tier is a block of corporate sessions a
- * company purchases.
+ * Corporate-class package catalogue — the starter "Corporate Class" (in-studio)
+ * price card every provisioned tenant begins with. Each tier is a block of
+ * corporate sessions a company purchases, and a studio reprices its own from
+ * the portal; nothing here is any one studio's card.
  *
  * NOTE: `corporate_packages` has no dedicated session-count column (it is just
  * name + description + price). The number of sessions per tier is therefore
@@ -17,7 +18,7 @@ import type { SeededTenant } from './tenants'
  * `created_by_staff_id` is NOT NULL, so each row is attributed to the tenant's
  * OWN superadmin — never another studio's, which would be a foreign key pointing
  * across the isolation boundary. A tenant with no superadmin of its own (today:
- * every tenant but #1, since the bootstrap superadmin is Yoga Sadhana's) simply
+ * every tenant but #1, since the bootstrap superadmin is tenant #1's) simply
  * gets no corporate packages seeded.
  *
  * A catalogue belongs to a studio, so this runs once per provisioned tenant and

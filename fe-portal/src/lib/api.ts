@@ -1,5 +1,5 @@
 /**
- * Thin fetch wrapper for the Yoga Sadhana portal backend.
+ * Thin fetch wrapper for the staff portal backend.
  *
  * Auth: a `getToken` callback (from Clerk's `useAuth()`) is invoked on every
  * request; the resulting JWT is sent as `Authorization: Bearer ...`.

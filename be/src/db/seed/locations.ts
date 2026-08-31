@@ -1,8 +1,8 @@
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import { and, eq } from 'drizzle-orm'
 import * as schema from '../schema'
-import { TENANT_ONE_SLUG } from '../schema/tenancy'
 import type { SeededTenant } from './tenants'
+import { provisioningFor } from './provisioning'
 
 type SeedLocation = {
   name: string
@@ -12,27 +12,15 @@ type SeedLocation = {
 }
 
 /**
- * Premises are a tenant's own, not the platform's. Yoga Sadhana's two are real
- * addresses; any other tenant gets one placeholder studio so its schedule,
- * rooms and plans have somewhere to hang.
+ * Premises are a tenant's own, not the platform's — which studio has which
+ * addresses is provisioning data (`./provisioning.ts`), never a fixture here.
+ *
+ * A tenant with no premises on record still gets one, named after itself, so
+ * its schedule, rooms and plans have somewhere to hang from the first minute.
  */
-const YOGA_SADHANA: SeedLocation[] = [
-  {
-    name: 'Breadtalk IHQ (Tai Seng)',
-    address: '30 Tai Seng Street, #09-01 Breadtalk IHQ, Singapore 534013',
-    gmapsUrl: 'https://maps.google.com/?q=Breadtalk+IHQ+Tai+Seng',
-    phone: null,
-  },
-  {
-    name: 'Outram Park',
-    address: '1 Cantonment Road, #09-01, Singapore 085101',
-    gmapsUrl: 'https://maps.google.com/?q=Outram+Park+Singapore',
-    phone: null,
-  },
-]
-
 export function locationsFor(tenant: SeededTenant): SeedLocation[] {
-  if (tenant.slug === TENANT_ONE_SLUG) return YOGA_SADHANA
+  const provisioned = provisioningFor(tenant)?.locations
+  if (provisioned?.length) return provisioned
   return [{ name: `${tenant.name} Studio`, address: null, gmapsUrl: null, phone: null }]
 }
 

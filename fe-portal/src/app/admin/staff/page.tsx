@@ -790,7 +790,7 @@ function InviteAdminDialog({
             autoFocus
             value={email}
             onChange={e => setEmail(e.target.value)}
-            placeholder="name@yogasadhana.sg"
+            placeholder="name@example.com"
           />
         </div>
 

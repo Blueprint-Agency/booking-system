@@ -37,7 +37,7 @@ export async function seedSuperadmin(db: PostgresJsDatabase<typeof schema>) {
   const raw = process.env.SUPERADMIN_EMAIL
   if (!raw) {
     throw new Error(
-      'SUPERADMIN_EMAIL is required to seed. Set it in .env (e.g. SUPERADMIN_EMAIL=you@yogasadhana.sg).',
+      'SUPERADMIN_EMAIL is required to seed. Set it in .env (e.g. SUPERADMIN_EMAIL=you@example.com).',
     )
   }
   const email = raw.trim().toLowerCase()
@@ -76,7 +76,7 @@ export async function seedSuperadmin(db: PostgresJsDatabase<typeof schema>) {
   await db
     .insert(schema.staffUsers)
     .values({
-      // The bootstrap operator is Yoga Sadhana's. `tenant_id` no longer has a
+      // The bootstrap operator belongs to tenant #1. `tenant_id` no longer has a
       // default (migration 0032), so this has to be said rather than assumed.
       tenantId: TENANT_ONE_ID,
       email,

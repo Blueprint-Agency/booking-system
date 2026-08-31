@@ -10,9 +10,12 @@ import { requestId } from './middleware/request-id'
 import { requestLogger } from './middleware/logger'
 import { resolveTenant } from './middleware/tenant'
 
+import { requireActiveTenant } from './middleware/require-active-tenant'
+
 import publicRoutes from './routes/public'
 import clientRoutes from './routes/client'
 import portalRoutes from './routes/portal'
+import platformRoutes from './routes/platform'
 import webhookRoutes from './routes/webhooks'
 
 const app = new Hono()
@@ -78,6 +81,7 @@ app.use('/api/v1/public/*', (c, next) =>
 )
 app.use('/api/v1/me/*', authedLimiter)
 app.use('/api/v1/portal/*', authedLimiter)
+app.use('/api/v1/platform/*', authedLimiter)
 
 // Which tenant is this request about? After the rate limiters, so a flood of
 // forged slugs is throttled before it reaches the lookup, and before the routes,
@@ -99,10 +103,15 @@ app.use('/api/v1/portal/*', authedLimiter)
 //     wrap the real one in an unrelated transaction and hold two pooled
 //     connections for the length of a call to the provider — and, worse, would
 //     give an event that names no tenant a tenant anyway.
+//   - the super portal's own branch is cross-tenant by definition: it lists
+//     every studio and creates the ones that do not exist yet, so there is no
+//     single tenant to resolve and no honest context to open. Its gate is
+//     `requirePlatformAdmin`, which reads no tenant at all.
 const TENANT_CONTEXT_EXEMPT = (path: string) =>
   path === '/api/v1/healthz' ||
   path === '/api/v1/webhooks/stripe' ||
   path === '/api/v1/webhooks/clerk' ||
+  path.startsWith('/api/v1/platform/') ||
   isTenantLookup(path)
 
 app.use('/api/v1/*', (c, next) =>
@@ -111,7 +120,7 @@ app.use('/api/v1/*', (c, next) =>
 
 app.get('/', c =>
   c.json({
-    name: 'yoga-sadhana-be',
+    name: 'reservetoday-be',
     status: 'running',
   }),
 )
@@ -128,9 +137,17 @@ app.get('/health', async c => {
   }
 })
 
+// Suspension, enforced. A suspended studio still *resolves* — the frontends
+// render a paused page rather than a 404 — but nothing it owns may be read or
+// written until it is reactivated. The super portal is exempt, because it is
+// what lifts the suspension.
+app.use('/api/v1/me/*', requireActiveTenant)
+app.use('/api/v1/portal/*', requireActiveTenant)
+
 app.route('/api/v1/public', publicRoutes)
 app.route('/api/v1/me', clientRoutes)
 app.route('/api/v1/portal', portalRoutes)
+app.route('/api/v1/platform', platformRoutes)
 app.route('/api/v1/webhooks', webhookRoutes)
 
 // Unmatched routes — consistent JSON shape instead of Hono's default text 404.

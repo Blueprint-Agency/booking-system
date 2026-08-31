@@ -6,7 +6,12 @@ import { toCents } from '../../shared/money'
 // only thing a discount can touch, the Add-On line is charged at the Global
 // Policy rate whatever happened to the plan, and the two together ARE the charge.
 
-const plan = { planName: 'Unlimited 3 Months', planSgd: '300.00' }
+// The studio doing the selling. Any name will do here EXCEPT a real one: the
+// point of the argument is that the module has no studio of its own to fall
+// back to, so the test names an obviously invented one.
+const STUDIO = 'Test Studio'
+
+const plan = { planName: 'Unlimited 3 Months', studioName: STUDIO, planSgd: '300.00' }
 
 // --- plan alone ---
 
@@ -25,6 +30,7 @@ assert.strictEqual(both.totalCents, 36000, 'plan plus Add-On is the charge')
 
 const discounted = purchaseLines({
   planName: plan.planName,
+  studioName: STUDIO,
   planSgd: '0.00',
   crossLocationSgd: '60.00',
   promoCode: 'FREEPLAN',
@@ -49,6 +55,18 @@ assert.strictEqual(
 assert.match(
   purchaseLines({ ...plan, crossLocationSgd: null, promoCode: 'WELCOME10' }).lines[0]!.description,
   /promo WELCOME10 applied/,
+)
+
+// --- the line names the STUDIO, not the platform (#66) ---
+//
+// This is what a member reads on the checkout page and later on a card
+// statement, so a second tenant's charge has to say the second tenant's name.
+// A shared string here is a chargeback for whichever studio didn't earn it.
+assert.match(alone.lines[0]!.description, /^Test Studio/)
+assert.match(
+  purchaseLines({ ...plan, studioName: 'Second Studio', crossLocationSgd: null }).lines[0]!
+    .description,
+  /^Second Studio/,
 )
 
 // --- money is integer cents, never float arithmetic ---

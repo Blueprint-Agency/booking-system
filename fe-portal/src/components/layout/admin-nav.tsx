@@ -8,6 +8,7 @@ import { createPortal } from "react-dom";
 import { NAV_ITEMS, NAV_GROUP_ORDER, type NavItem, type NavGroup } from "./nav-items";
 import { inboxItems } from "@/data";
 import { cn } from "@/lib/utils";
+import { StudioMark } from "@/components/brand/studio-mark";
 import { useWorkspace } from "@/lib/workspace-context";
 
 type BadgeMap = Partial<Record<NonNullable<NavItem["badgeKey"]>, number | undefined>>;
@@ -18,10 +19,7 @@ function NavBrand() {
       href="/admin/schedule"
       className="group flex items-center gap-2.5 px-4 py-4 text-sm font-semibold tracking-tight text-ink"
     >
-      <span className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-accent to-accent-deep text-[11px] font-bold text-white shadow-sm transition-transform group-hover:scale-105">
-        YS
-      </span>
-      <span className="group-hover:text-accent">Yoga Sadhana</span>
+      <StudioMark />
     </Link>
   );
 }

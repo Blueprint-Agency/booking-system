@@ -54,6 +54,15 @@ const NON_TENANT_LABELS = new Set([
   "assets",
 ]);
 
+/**
+ * The label the super portal answers on: `admin.portal.<root domain>`.
+ *
+ * It is in `NON_TENANT_LABELS` above and reserved at Tenant creation in the
+ * backend, so no studio can ever hold it — which is what makes "this hostname is
+ * the super portal" a decidable question rather than a guess.
+ */
+export const SUPER_PORTAL_LABEL = "admin";
+
 /** One DNS label, lowercase: what a Tenant slug is allowed to be. */
 const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
@@ -82,9 +91,16 @@ function normalizeHost(host: string): string {
  * slug corresponds to a Tenant that *exists* is not decidable here — that is
  * the resolver's job, over HTTP.
  */
-export function tenantSlugFromHost(
+/**
+ * The single label `host` adds to the root domain, or null when it adds none —
+ * the bare root domain, or a host outside it entirely (a Vercel preview URL).
+ *
+ * Shared by the two questions asked of a hostname here — "which Tenant?" and
+ * "is this the super portal?" — so they cannot disagree about what the label is.
+ */
+function rootDomainLabel(
   host: string | null | undefined,
-  rootDomain: string = ROOT_DOMAIN,
+  rootDomain: string,
 ): string | null {
   if (!host || !rootDomain) return null;
 
@@ -93,9 +109,35 @@ export function tenantSlugFromHost(
   if (!root || normalizedHost === root) return null;
   if (!normalizedHost.endsWith(`.${root}`)) return null;
 
-  const label = normalizedHost.slice(0, -(root.length + 1));
+  return normalizedHost.slice(0, -(root.length + 1));
+}
+
+export function tenantSlugFromHost(
+  host: string | null | undefined,
+  rootDomain: string = ROOT_DOMAIN,
+): string | null {
+  const label = rootDomainLabel(host, rootDomain);
+  if (label === null) return null;
   if (NON_TENANT_LABELS.has(label)) return null;
   return SLUG.test(label) ? label : null;
+}
+
+/**
+ * Is this request for the super portal — the cross-tenant section where the dev
+ * team creates and manages studios?
+ *
+ * The hostname is the whole of the answer on the client side: `admin` is a
+ * reserved slug, so nothing else can ever be served here. It is emphatically
+ * *not* the authorisation — that is `requirePlatformAdmin` on the backend, which
+ * checks the signed-in account against the platform allowlist and refuses with a
+ * 404. This only decides which UI a hostname gets, so that a studio's staff
+ * never see a super portal they could not use anyway.
+ */
+export function isSuperPortalHost(
+  host: string | null | undefined,
+  rootDomain: string = ROOT_DOMAIN,
+): boolean {
+  return rootDomainLabel(host, rootDomain) === SUPER_PORTAL_LABEL;
 }
 
 /**

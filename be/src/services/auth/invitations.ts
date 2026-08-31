@@ -18,6 +18,7 @@ import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { staffUsers, staffInvitations } from '../../db/schema/identity'
 import { instructors } from '../../db/schema/catalog'
+import { tenantDisplayName } from '../tenants/mail-identity'
 import { ConflictError, NotFoundError } from '../../shared/errors'
 import { env } from '../../env'
 import { sendTemplatedEmail } from '../notifications/send'
@@ -194,7 +195,10 @@ export async function inviteAdmin(input: InviteAdminInput): Promise<StaffInvitat
       )
       .limit(1)
 
-    return { invitation: inv, inviterName: inviter?.name ?? 'Yoga Sadhana' }
+    // No named inviter means the invitation came from the studio itself, so the
+    // studio's name is what stands in — never the platform's, and never another
+    // tenant's.
+    return { invitation: inv, inviterName: inviter?.name ?? (await tenantDisplayName(input.tenantId)) }
   })
 
   // Email is best-effort and runs OUTSIDE the transaction so a transient SMTP
@@ -395,7 +399,7 @@ export async function resendInvitation(
       invite_url: buildSignUpUrl(inv.email, inv.token),
       expires_at: expiresAtFormat.format(expiresAt),
       invitee_email: inv.email,
-      inviter_name: inviter?.name ?? 'Yoga Sadhana',
+      inviter_name: inviter?.name ?? (await tenantDisplayName(tenantId)),
       sign_up_url: buildSignUpUrl(inv.email, inv.token),
     },
   })

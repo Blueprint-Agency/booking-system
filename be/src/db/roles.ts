@@ -59,8 +59,9 @@ export async function ensureAppRole(sql: Sql, password: string): Promise<void> {
     `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${role}`,
   )
   await sql.unsafe(`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${role}`)
-  // The webhook tenant-routing functions (migration 0034), whose EXECUTE is
-  // revoked from PUBLIC so this grant is the only way in.
+  // The webhook tenant-routing functions (migration 0034) and the mail-identity
+  // read (migration 0036), whose EXECUTE is revoked from PUBLIC so this grant is
+  // the only way in.
   await sql.unsafe(`GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO ${role}`)
 
   // `tenant_settings` is the one Tenant-scoped table migration 0033 leaves
@@ -73,6 +74,11 @@ export async function ensureAppRole(sql: Sql, password: string): Promise<void> {
   // Granted by name, not by exception, so it fails CLOSED — a column added
   // later is invisible to the app until someone decides it is public and adds
   // it here alongside `TenantDisplaySettings` in services/tenants/tenants.ts.
+  //
+  // The mail-from columns stay out, and the app reads them through
+  // `current_tenant_mail_identity()` (migration 0036) instead — a function that
+  // answers only for the tenant whose context is open, so the one read the app
+  // genuinely needs cannot become a read of every studio's identity.
   await sql.unsafe(`REVOKE SELECT ON tenant_settings FROM ${role}`)
   await sql.unsafe(`
     GRANT SELECT (tenant_id, display_name, logo_url, favicon_url, og_image_url, tagline, theme, copy)

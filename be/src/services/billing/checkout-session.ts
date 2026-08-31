@@ -15,9 +15,16 @@ export interface CheckoutLine {
   amountCents: number
 }
 
-/** The line copy every Yoga Sadhana product carries, and the code that cut it. */
-export const saleDescription = (promoCode?: string | null): string =>
-  `Yoga Sadhana${promoCode ? ` · promo ${promoCode} applied` : ''}`
+/**
+ * The line copy every product carries, and the code that cut it.
+ *
+ * The studio's name, not the platform's: this is what a member reads on the
+ * checkout page and later on a card statement, and a charge from a name they
+ * have never heard of is a chargeback. The caller passes the name because it
+ * already knows its tenant — see `tenantDisplayName`.
+ */
+export const saleDescription = (studioName: string, promoCode?: string | null): string =>
+  `${studioName}${promoCode ? ` · promo ${promoCode} applied` : ''}`
 
 /**
  * Nothing left to charge: the purchase skips the payment provider entirely and

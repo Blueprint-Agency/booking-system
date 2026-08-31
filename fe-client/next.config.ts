@@ -37,13 +37,17 @@ const nextConfig: NextConfig = {
         protocol: "https",
         hostname: "placeholder.co",
       },
+      // A studio's own logo and photography, wherever it already hosts them:
+      // `cdn.reservetoday.app` for anything uploaded through the portal, and
+      // the WordPress CDN for a studio still serving its assets from its
+      // marketing site. These are hosts, not brands — no studio is named here.
       {
         protocol: "https",
-        hostname: "i0.wp.com",
+        hostname: "cdn.reservetoday.app",
       },
       {
         protocol: "https",
-        hostname: "yogasadhana.sg",
+        hostname: "i0.wp.com",
       },
     ],
   },

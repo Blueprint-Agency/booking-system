@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm'
 import * as schema from '../schema'
 import { CLIENT_URL, env } from '../../env'
 import { buildEmailTemplates } from './email-copy'
+import { provisioningFor } from './provisioning'
 import type { SeededTenant } from './tenants'
 
 /**
@@ -25,6 +26,11 @@ export async function seedEmailTemplates(
   const templates = buildEmailTemplates({
     clientUrl: CLIENT_URL,
     portalUrl: env.PORTAL_ORIGIN.replace(/\/+$/, ''),
+    // Whose words these are. The name is the tenant's own, so a studio's
+    // members never read another studio's name in their inbox; the footer is
+    // provisioning data (`./provisioning.ts`) and is omitted for a tenant that
+    // has none, because naming no premises beats naming the wrong ones.
+    studio: { name: tenant.name, footer: provisioningFor(tenant)?.emailFooter },
   })
   for (const t of templates) {
     await db.execute(sql`

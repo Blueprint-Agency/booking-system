@@ -13,6 +13,7 @@ import {
   saleDescription,
   type CheckoutQuote,
 } from '../billing/checkout-session'
+import { tenantDisplayName } from '../tenants/mail-identity'
 import { listActivePromotionsFor } from '../packages/promotions'
 import { applyPromoCode, type AppliedPromoCode } from '../packages/promo-redemption'
 import { assertWorkshopBookable, bookWorkshopFree, tierEffectivePrice } from './book'
@@ -100,7 +101,13 @@ export async function beginWorkshopCheckout(
 
   return {
     outcome: 'checkout',
-    lines: [{ name, description: saleDescription(applied?.code), amountCents: totalCents }],
+    lines: [
+      {
+        name,
+        description: saleDescription(await tenantDisplayName(tenantId), applied?.code),
+        amountCents: totalCents,
+      },
+    ],
     expiresAt: applied?.holdExpiresAt ?? null,
     metadata: {
       kind: 'workshop',

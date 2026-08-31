@@ -33,7 +33,7 @@ async function main() {
     //
     // Every seeder below takes a tenant. `tenant_id` lost its default in
     // migration 0032, so an insert that does not name one no longer lands under
-    // Yoga Sadhana — it fails, which is the point. The tenant-#1 claiming pass
+    // tenant #1 — it fails, which is the point. The tenant-#1 claiming pass
     // that used to run last is gone with the default that made it necessary.
     for (const tenant of seededTenants()) {
       console.log(`[seed] premises, policy, content + catalogue for ${tenant.slug}…`)

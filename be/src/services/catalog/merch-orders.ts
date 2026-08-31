@@ -17,6 +17,7 @@ import {
   saleDescription,
   type CheckoutQuote,
 } from '../billing/checkout-session'
+import { tenantDisplayName } from '../tenants/mail-identity'
 
 export type MerchOrderRow = typeof merchOrders.$inferSelect
 export type MerchCheckout = CheckoutQuote<{ orderId: string }>
@@ -52,7 +53,13 @@ export async function beginMerchCheckout(input: {
 
   return {
     outcome: 'checkout',
-    lines: [{ name: item.title, description: saleDescription(), amountCents: totalCents }],
+    lines: [
+      {
+        name: item.title,
+        description: saleDescription(await tenantDisplayName(input.tenantId)),
+        amountCents: totalCents,
+      },
+    ],
     expiresAt: null,
     metadata: {
       kind: 'merch',

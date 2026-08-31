@@ -179,6 +179,81 @@ export async function listJobTenants(): Promise<JobTenant[]> {
     .orderBy(tenants.createdAt)
 }
 
+/**
+ * Every tenant on the platform, oldest first, for the super portal's list —
+ * so Yoga Sadhana, Tenant #1, heads it.
+ *
+ * Archived tenants are included — this is the one surface that has to be able to
+ * see them, because it is the surface that archived them. Everywhere else they
+ * are indistinguishable from a slug that never existed.
+ *
+ * Unpaginated on purpose: the platform has tens of studios, not thousands, and
+ * a page control here would be scaffolding for a problem nobody has. Revisit
+ * when the list stops fitting on a screen.
+ */
+export type TenantSummary = {
+  id: string
+  slug: string
+  name: string
+  timezone: string
+  status: TenantStatus
+  createdAt: Date
+  clerkClientOrgId: string | null
+  clerkPortalOrgId: string | null
+}
+
+export async function listTenants(): Promise<TenantSummary[]> {
+  return db
+    .select({
+      id: tenants.id,
+      slug: tenants.slug,
+      name: tenants.name,
+      timezone: tenants.timezone,
+      status: tenants.status,
+      createdAt: tenants.createdAt,
+      clerkClientOrgId: tenants.clerkClientOrgId,
+      clerkPortalOrgId: tenants.clerkPortalOrgId,
+    })
+    .from(tenants)
+    .orderBy(tenants.createdAt)
+}
+
+/**
+ * Suspend, reactivate or archive a studio.
+ *
+ * Status is the *only* thing that changes: suspending retains every row the
+ * studio owns, and reactivating is the same call in reverse. Deleting a tenant
+ * is deliberately not offered here — `tenant_id` is `ON DELETE RESTRICT`
+ * everywhere, so a delete would have to cascade through 53 tables, and the
+ * decision to destroy a business's data is not a button.
+ *
+ * The memo is dropped afterwards, because every one of those caches would
+ * otherwise keep serving the old status for up to a minute — including
+ * `resolveTenantByClerkOrg`, which is what refuses an archived studio's tokens.
+ */
+export async function setTenantStatus(
+  id: string,
+  status: TenantStatus,
+): Promise<TenantSummary | null> {
+  const [row] = await db
+    .update(tenants)
+    .set({ status, updatedAt: new Date() })
+    .where(eq(tenants.id, id))
+    .returning({
+      id: tenants.id,
+      slug: tenants.slug,
+      name: tenants.name,
+      timezone: tenants.timezone,
+      status: tenants.status,
+      createdAt: tenants.createdAt,
+      clerkClientOrgId: tenants.clerkClientOrgId,
+      clerkPortalOrgId: tenants.clerkPortalOrgId,
+    })
+
+  forgetCachedTenants()
+  return row ?? null
+}
+
 export type CreateTenantInput = {
   slug: string
   name: string

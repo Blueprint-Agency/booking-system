@@ -1,5 +1,6 @@
 import { renderTemplate } from './render'
 import { sendMail } from '../../lib/mailer'
+import { tenantMailIdentity } from '../tenants/mail-identity'
 import { db } from '../../db'
 import { emailTemplates, emailLog } from '../../db/schema/content'
 import { staffUsers } from '../../db/schema/identity'
@@ -96,7 +97,16 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
   if (!logRow) throw new Error('email_log_insert_failed')
 
   try {
-    const result = await sendMail({ to: recipient.email, subject, html: body })
+    // The studio's identity, not the platform's: the envelope address is shared
+    // and authenticated, the display name and Reply-To are this tenant's own.
+    const identity = await tenantMailIdentity(tenantId)
+    const result = await sendMail({
+      to: recipient.email,
+      subject,
+      html: body,
+      fromName: identity.fromName,
+      replyTo: identity.replyTo,
+    })
     await db
       .update(emailLog)
       .set({

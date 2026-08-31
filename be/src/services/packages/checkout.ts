@@ -17,6 +17,7 @@ import {
   type CheckoutLine,
   type CheckoutQuote,
 } from '../billing/checkout-session'
+import { tenantDisplayName } from '../tenants/mail-identity'
 import { bestPrice, listActivePromotionsFor } from './promotions'
 import { applyPromoCode, type AppliedPromoCode } from './promo-redemption'
 import {
@@ -37,6 +38,8 @@ import {
  */
 export function purchaseLines(args: {
   planName: string
+  /** The studio doing the selling — what a member sees on their statement. */
+  studioName: string
   /** The plan's price after any Promotion and any Promo Code. */
   planSgd: string
   /** The Add-On bought alongside the plan, or null when it was not. */
@@ -51,7 +54,7 @@ export function purchaseLines(args: {
   if (planCents > 0) {
     lines.push({
       name: args.planName,
-      description: saleDescription(args.promoCode),
+      description: saleDescription(args.studioName, args.promoCode),
       amountCents: planCents,
     })
   }
@@ -190,6 +193,7 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
   // disagree with the one frozen onto the Redemption.
   const charge = purchaseLines({
     planName: packageName,
+    studioName: await tenantDisplayName(tenantId),
     planSgd: applied?.effectivePriceSgd ?? effectivePriceSgd,
     crossLocationSgd,
     promoCode: applied?.code,

@@ -4,8 +4,10 @@ import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
 import { useClientPackages } from "@/lib/use-client-packages";
+import { useBrand } from "@/components/brand/brand-provider";
 
 export function AppTopBar({ impersonating = false }: { impersonating?: boolean }) {
+  const brand = useBrand();
   const { user, isSignedIn } = useUser();
   const isAuth = !!isSignedIn;
   const { classCredits, pt1on1, pt2on1, isUnlimited: unlimited } = useClientPackages();
@@ -22,13 +24,16 @@ export function AppTopBar({ impersonating = false }: { impersonating?: boolean }
       )}
     >
       <div className="h-full max-w-[1280px] mx-auto px-4 sm:px-6 flex items-center justify-between">
-        <Link href="/" className="flex items-center shrink-0" aria-label="Yoga Sadhana home">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="https://i0.wp.com/yogasadhana.sg/wp-content/uploads/2025/02/Yoga_Sadhana_header_logo_circle.png?w=294&ssl=1"
-            alt="Yoga Sadhana"
-            className="h-10 w-auto"
-          />
+        {/* The studio's mark, or its name when it has supplied none. Never a
+            placeholder logo: a studio would rather read its own name than see
+            another studio's wordmark. */}
+        <Link href="/" className="flex items-center shrink-0" aria-label={`${brand.name} home`}>
+          {brand.logoUrl ? (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img src={brand.logoUrl} alt={brand.name} className="h-10 w-auto" />
+          ) : (
+            <span className="text-lg font-bold tracking-tight text-ink">{brand.name}</span>
+          )}
         </Link>
 
         {isAuth ? (

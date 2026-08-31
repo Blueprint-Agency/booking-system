@@ -7,6 +7,7 @@ import { Loader2 } from "lucide-react";
 import { Button, Input, Label } from "@/components/ui";
 import { OtpInput } from "@/components/auth/otp-input";
 import { PasswordInput } from "@/components/auth/password-input";
+import { StudioMark } from "@/components/brand/studio-mark";
 import { fetchApi } from "@/lib/api-url";
 
 type InviteStatus = "valid" | "expired" | "used" | "revoked" | "not_found";
@@ -21,15 +22,7 @@ function Shell({ children }: { children: ReactNode }) {
     <div className="flex min-h-screen items-center justify-center bg-paper px-4 py-8 sm:px-6">
       <div className="w-full max-w-md">
         <div className="mb-6 flex items-center justify-center gap-2.5">
-          <span className="grid h-10 w-10 place-items-center rounded-lg bg-accent text-base font-bold text-white shadow-soft">
-            YS
-          </span>
-          <div className="text-lg font-semibold tracking-tight text-ink">
-            Yoga Sadhana
-            <span className="ml-2 rounded-full bg-card px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-muted">
-              Staff
-            </span>
-          </div>
+          <StudioMark size="auth" badge="Staff" />
         </div>
         <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
           {children}

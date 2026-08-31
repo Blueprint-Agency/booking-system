@@ -431,9 +431,27 @@ if a wildcard cannot be branch-assigned, the two-dedicated-staging-projects fall
       isolation in that case).
 
 ### Phase 6 — Super portal (the easy part, last)
-- [ ] Superadmin-gated section in fe-portal: create tenant (DB row + settings +
-      Clerk org in both apps + invite first admin), list/suspend tenants, billing overview.
-- [ ] Migrate Yoga Sadhana itself to be tenant #1.
+- [x] Platform-admin-gated section in fe-portal at `admin.portal.…`: create tenant
+      (DB row + settings + Clerk org in both apps + invite first admin, atomically —
+      the Clerk half is compensated on any failure), list/suspend tenants.
+      Backend: `/api/v1/platform/*`, exempt from tenant resolution because it is
+      cross-tenant by definition.
+- [x] Migrate Yoga Sadhana itself to be tenant #1.
+- [ ] Billing overview. Deferred — there is no per-tenant billing to overview yet.
+
+**The gate is not a staff role.** `PLATFORM_ADMIN_EMAILS` (plus `SUPERADMIN_EMAIL`,
+always) is the allowlist, checked against the signed-in Clerk account's primary
+email. `staff_users.role = 'superadmin'` says what someone may do *inside one
+studio*; a studio's own superadmin must not be able to suspend another studio, so
+platform administration deliberately lives outside the database. Refusals answer
+`404`, not `403` — a studio's staff must not be able to learn the super portal
+exists. See `be/src/services/tenants/platform-admin.ts`.
+
+**Suspension** refuses `/api/v1/me/*` and `/api/v1/portal/*` for that tenant
+(`middleware/require-active-tenant.ts`) and retains every row. Slug resolution
+still succeeds, so the studio's hostnames stay live rather than becoming a 404 —
+a dedicated "paused" page on the frontends is still to do; today they surface the
+`403 tenant_suspended` as a load failure.
 
 ## Env-var note
 

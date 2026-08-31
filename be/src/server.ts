@@ -17,7 +17,7 @@ import { closeDb } from './db'
  * Background lifecycle jobs are opt-in through ENABLE_JOBS=true.
  */
 const server = serve({ fetch: app.fetch, port: env.PORT }, info => {
-  logger.info({ port: info.port, env: env.NODE_ENV }, 'yoga-sadhana-be started')
+  logger.info({ port: info.port, env: env.NODE_ENV }, 'reservetoday-be started')
 })
 
 if (env.ENABLE_JOBS) {

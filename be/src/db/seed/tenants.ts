@@ -1,17 +1,16 @@
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import * as schema from '../schema'
-import {
-  TENANT_ONE_ID,
-  TENANT_ONE_SLUG,
-  SECOND_TENANT_ID,
-  SECOND_TENANT_SLUG,
-} from '../schema/tenancy'
 import { env } from '../../env'
+import { PROVISIONED, provisioningFor } from './provisioning'
 
 /**
- * Tenant #1 (Yoga Sadhana) — the same id migration 0027 backfilled everything
- * to, so seeding a fresh database and migrating an existing one land in the
- * same place.
+ * Tenant #1 carries the same id migration 0027 backfilled everything to, so
+ * seeding a fresh database and migrating an existing one land in the same
+ * place.
+ *
+ * Which studio it *is* — its name, its timezone, its premises — is not here.
+ * That is provisioning data and lives in `./provisioning.ts`, the one file that
+ * names a studio; this file only knows how to write a tenant row.
  *
  * Outside production we also seed a second, empty tenant. A single-tenant
  * environment cannot reveal a cross-tenant leak: every missing
@@ -31,19 +30,9 @@ export type SeededTenant = {
   timezone: string
 }
 
-const TENANT_ONE: SeededTenant = {
-  id: TENANT_ONE_ID,
-  slug: TENANT_ONE_SLUG,
-  name: 'Yoga Sadhana',
-  timezone: 'Asia/Singapore',
-}
-
-const SECOND_TENANT: SeededTenant = {
-  id: SECOND_TENANT_ID,
-  slug: SECOND_TENANT_SLUG,
-  name: 'Acme Yoga',
-  timezone: 'Australia/Sydney',
-}
+const [TENANT_ONE, SECOND_TENANT] = PROVISIONED.map(
+  (p): SeededTenant => ({ id: p.id, slug: p.slug, name: p.name, timezone: p.timezone }),
+) as [SeededTenant, SeededTenant]
 
 /**
  * The tenants this environment provisions — and therefore the list every
@@ -67,9 +56,21 @@ export async function seedTenants(db: PostgresJsDatabase<typeof schema>) {
       })
       .onConflictDoNothing()
 
+    // Branding is the studio's own — its wordmark, its photography, its line —
+    // and it is what both frontends read to render as that studio rather than
+    // as the product. Inserted only, never updated: past the first seed the
+    // studio edits its own branding from the portal, and a deploy must not put
+    // it back on whatever was written here.
+    const branding = provisioningFor(tenant)?.branding
     await db
       .insert(schema.tenantSettings)
-      .values({ tenantId: tenant.id, displayName: tenant.name })
+      .values({
+        tenantId: tenant.id,
+        displayName: tenant.name,
+        logoUrl: branding?.logoUrl ?? null,
+        ogImageUrl: branding?.ogImageUrl ?? null,
+        tagline: branding?.tagline ?? null,
+      })
       .onConflictDoNothing()
   }
 }

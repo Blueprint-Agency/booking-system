@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { tenantSlugFromHost } from "./tenant-host";
+import { isSuperPortalHost, tenantSlugFromHost } from "./tenant-host";
 
 const LOCAL = "portal.localhost:3001";
 const STAGING = "portal.dev.reservetoday.app";
@@ -85,4 +85,27 @@ test("a malformed label is not a slug", () => {
 test("a missing host or root domain yields no slug", () => {
   assert.equal(tenantSlugFromHost(null, PROD), null);
   assert.equal(tenantSlugFromHost("acme.portal.reservetoday.app", ""), null);
+});
+
+test("the super portal is the reserved `admin` label, in every environment", () => {
+  assert.equal(isSuperPortalHost("admin.portal.localhost:3001", LOCAL), true);
+  assert.equal(isSuperPortalHost("admin.portal.dev.reservetoday.app", STAGING), true);
+  assert.equal(isSuperPortalHost("admin.portal.reservetoday.app", PROD), true);
+  // Same normalisation as slug resolution — casing must not be able to smuggle
+  // a studio onto the super portal's hostname, or off it.
+  assert.equal(isSuperPortalHost("Admin.Portal.ReserveToday.App", PROD), true);
+});
+
+test("a studio's hostname is never the super portal", () => {
+  assert.equal(isSuperPortalHost("yogasadhana.portal.reservetoday.app", PROD), false);
+  assert.equal(isSuperPortalHost("acme.portal.localhost:3001", LOCAL), false);
+  // The bare root domain, a deeper name, and a foreign host are all not it.
+  assert.equal(isSuperPortalHost("portal.reservetoday.app", PROD), false);
+  assert.equal(isSuperPortalHost("admin.acme.portal.reservetoday.app", PROD), false);
+  assert.equal(isSuperPortalHost("admin.portal.evil.example", PROD), false);
+  assert.equal(isSuperPortalHost(null, PROD), false);
+});
+
+test("`admin` is not a tenant slug, so the two questions cannot both be yes", () => {
+  assert.equal(tenantSlugFromHost("admin.portal.reservetoday.app", PROD), null);
 });

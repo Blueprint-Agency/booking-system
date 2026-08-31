@@ -1,6 +1,9 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
 import { img } from "@/data/images";
+import { useBrand } from "@/components/brand/brand-provider";
 
 type AuthSplitShellProps = {
   imageKey: string;
@@ -13,7 +16,12 @@ export function AuthSplitShell({
   quote,
   children,
 }: AuthSplitShellProps) {
+  const brand = useBrand();
   const image = img(imageKey);
+  // The studio's own photography when it has supplied any; the neutral stock
+  // image otherwise. Never another studio's premises.
+  const src = brand.ogImageUrl ?? image.unsplash;
+  const alt = brand.ogImageUrl ? brand.name : image.alt;
 
   return (
     // 4rem is the top bar. `dvh` so mobile browser chrome collapsing doesn't
@@ -21,8 +29,8 @@ export function AuthSplitShell({
     <div className="grid grid-cols-1 lg:grid-cols-2 min-h-[calc(100dvh-4rem)]">
       <div className="relative hidden lg:block">
         <Image
-          src={image.unsplash}
-          alt={image.alt}
+          src={src}
+          alt={alt}
           fill
           priority
           sizes="(min-width: 1024px) 50vw, 0vw"
@@ -31,7 +39,7 @@ export function AuthSplitShell({
         <div className="absolute inset-0 bg-ink/30" />
         <div className="absolute inset-0 flex flex-col justify-between p-12 text-paper">
           <Link href="/" className="text-lg font-bold tracking-tight">
-            Yoga Sadhana
+            {brand.name}
           </Link>
           {quote ? (
             <blockquote className="max-w-md text-2xl font-serif leading-snug">

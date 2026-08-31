@@ -32,6 +32,7 @@ const STATUS_MAP: Record<string, { label: string; tone: StatusTone }> = {
   super: { label: "Super", tone: "warning" },
   // tenants
   suspended: { label: "Suspended", tone: "error" },
+  archived: { label: "Archived", tone: "neutral" },
   trial: { label: "Trial", tone: "cyan" },
   incomplete: { label: "Incomplete", tone: "warning" },
 };

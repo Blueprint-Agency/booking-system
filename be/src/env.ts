@@ -47,6 +47,16 @@ const schema = z.object({
 
   SUPERADMIN_EMAIL: z.string().email('SUPERADMIN_EMAIL must be a valid email'),
 
+  // Comma-separated addresses that may operate the **super portal** —
+  // `/api/v1/platform/*`, where studios are created, listed and suspended.
+  //
+  // Not a role in `staff_users`: that column says what someone may do inside one
+  // studio, and a studio's own superadmin must not be able to suspend another
+  // studio. Optional because `SUPERADMIN_EMAIL` is always folded in, so an
+  // environment that sets nothing has exactly one platform admin rather than a
+  // super portal nobody can reach. See services/tenants/platform-admin.ts.
+  PLATFORM_ADMIN_EMAILS: z.string().optional(),
+
   CLERK_STAFF_PUBLISHABLE_KEY: z.string().min(1, 'CLERK_STAFF_PUBLISHABLE_KEY is required'),
   CLERK_STAFF_SECRET_KEY: z.string().min(1, 'CLERK_STAFF_SECRET_KEY is required'),
   CLERK_STAFF_WEBHOOK_SECRET: z.string().min(1, 'CLERK_STAFF_WEBHOOK_SECRET is required'),

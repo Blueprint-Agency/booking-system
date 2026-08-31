@@ -7,11 +7,13 @@ import { tenantStatusEnum } from '../enums'
  * — never infra — and its subdomains (`{slug}.reservetoday.app`,
  * `{slug}.portal.reservetoday.app`) resolve the moment the row exists.
  *
- * Yoga Sadhana is tenant #1 (`slug = 'yogasadhana'`); every pre-existing row in
- * the database was backfilled to it.
+ * The studio the platform was originally built for is tenant #1; every
+ * pre-existing row in the database was backfilled to it. *Which* studio that is
+ * — its name, its premises, its branding — is provisioning data and lives in
+ * `db/seed/provisioning.ts`, the one file in the backend that names a studio.
  */
 /**
- * Yoga Sadhana's tenant id. Fixed rather than generated so every environment —
+ * Tenant #1's id. Fixed rather than generated so every environment —
  * local, staging, production, the test harness — agrees on which row is tenant
  * #1; migration 0027 backfilled every pre-existing row to it.
  */
@@ -96,7 +98,7 @@ export const tenantSettings = pgTable('tenant_settings', {
  *
  * This is the *contract* step of expand-migrate-contract (#63). `NOT NULL` with
  * **no default**: every insert now has to name its tenant, and one that forgets
- * fails loudly instead of quietly filing somebody else's row under Yoga Sadhana.
+ * fails loudly instead of quietly filing somebody else's row under tenant #1.
  * The scaffolding default that made the migrate batches safe is gone with it.
  *
  * The column is on every table — including pure join tables — because Row-Level

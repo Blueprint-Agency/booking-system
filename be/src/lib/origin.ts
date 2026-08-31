@@ -117,3 +117,32 @@ export function tenantSlugFromOrigin(origin: string, patterns: OriginPattern[]):
   }
   return null
 }
+
+/**
+ * The inverse: a tenant slug and which app, back to the origin that serves it.
+ *
+ * The same allowlist read backwards, on purpose. "Creating a tenant needs no
+ * deployment" is only true if the URL a new studio is handed is derived from the
+ * wildcard that already resolves — a second, separately configured base URL
+ * would be one deploy away from disagreeing with the origin CORS accepts, and
+ * the super portal would hand out a link that 403s.
+ *
+ * The portal pattern is the wildcard whose suffix begins with the `portal.`
+ * label (`*.portal.reservetoday.app`); the client pattern is the wildcard that
+ * does not (`*.reservetoday.app`). Returns null when this environment has no
+ * wildcard for that app — a single-origin local setup, where there is no
+ * per-tenant URL to give.
+ */
+export function tenantOriginFor(
+  app: 'client' | 'portal',
+  slug: string,
+  patterns: OriginPattern[],
+): string | null {
+  const wanted = app === 'portal'
+  const pattern = patterns.find(
+    candidate => candidate.wildcard && candidate.suffix.startsWith('portal.') === wanted,
+  )
+  if (!pattern) return null
+  const port = pattern.port ? `:${pattern.port}` : ''
+  return `${pattern.protocol}//${slug}.${pattern.suffix}${port}`
+}

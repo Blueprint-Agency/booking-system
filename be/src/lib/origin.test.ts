@@ -4,6 +4,7 @@ import {
   isAllowedOrigin,
   parseOriginPattern,
   parseOriginPatterns,
+  tenantOriginFor,
   tenantSlugFromOrigin,
 } from './origin'
 
@@ -102,5 +103,45 @@ describe('origin patterns', () => {
       undefined,
     )
     assert.equal(merged.length, 2)
+  })
+})
+
+describe('tenantOriginFor', () => {
+  test('reads the same wildcards backwards, one app each', () => {
+    assert.equal(tenantOriginFor('client', 'acme', PRODUCTION), 'https://acme.reservetoday.app')
+    assert.equal(
+      tenantOriginFor('portal', 'acme', PRODUCTION),
+      'https://acme.portal.reservetoday.app',
+    )
+  })
+
+  test('carries the port, so local development gets usable URLs', () => {
+    const local = parseOriginPatterns(
+      'http://*.localhost:3000,http://*.portal.localhost:3001',
+    )
+    assert.equal(tenantOriginFor('client', 'acme', local), 'http://acme.localhost:3000')
+    assert.equal(tenantOriginFor('portal', 'acme', local), 'http://acme.portal.localhost:3001')
+  })
+
+  test('staging keeps its extra label', () => {
+    const staging = parseOriginPatterns(
+      'https://*.dev.reservetoday.app,https://*.portal.dev.reservetoday.app',
+    )
+    assert.equal(tenantOriginFor('client', 'acme', staging), 'https://acme.dev.reservetoday.app')
+    assert.equal(
+      tenantOriginFor('portal', 'acme', staging),
+      'https://acme.portal.dev.reservetoday.app',
+    )
+  })
+
+  test('an environment with no wildcard for an app has no per-tenant URL to give', () => {
+    // Exact origins only — nothing here can be filled in with a slug.
+    const single = parseOriginPatterns('http://localhost:3000,http://localhost:3001')
+    assert.equal(tenantOriginFor('client', 'acme', single), null)
+    assert.equal(tenantOriginFor('portal', 'acme', single), null)
+    // A client wildcard alone must not be mistaken for the portal's.
+    const clientOnly = parseOriginPatterns('https://*.reservetoday.app')
+    assert.equal(tenantOriginFor('client', 'acme', clientOnly), 'https://acme.reservetoday.app')
+    assert.equal(tenantOriginFor('portal', 'acme', clientOnly), null)
   })
 })

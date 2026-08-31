@@ -4,7 +4,7 @@ export const instructors: Instructor[] = [
   {
     id: "ins-priya",
     name: "Priya Raman",
-    email: "priya@yogasadhana.sg",
+    email: "priya@example.com",
     phone: "+65 9123 4567",
     bio: "RYT-500 with 12 years of teaching experience. Specialises in Vinyasa and Aerial. Studied under Sri Krishnamacharya lineage in Mysore.",
     photoUrl: null,
@@ -13,7 +13,7 @@ export const instructors: Instructor[] = [
   {
     id: "ins-amelia",
     name: "Amelia Tan",
-    email: "amelia@yogasadhana.sg",
+    email: "amelia@example.com",
     phone: "+65 9876 5432",
     bio: "Prenatal-certified instructor with a background in physiotherapy. Brings a therapeutic, body-aware approach to every class.",
     photoUrl: null,
@@ -22,7 +22,7 @@ export const instructors: Instructor[] = [
   {
     id: "ins-ravi",
     name: "Ravi Kumar",
-    email: "ravi@yogasadhana.sg",
+    email: "ravi@example.com",
     phone: "+65 8765 4321",
     bio: "Founder. Teaches the more intensive Vinyasa flows and leads the Sunday morning workshop series.",
     photoUrl: null,
@@ -31,7 +31,7 @@ export const instructors: Instructor[] = [
   {
     id: "ins-mei",
     name: "Mei Lin Wong",
-    email: "mei@yogasadhana.sg",
+    email: "mei@example.com",
     phone: "+65 9234 5678",
     bio: "Yin and restorative yoga specialist. Trained in Traditional Chinese Medicine; weaves meridian theory into her classes.",
     photoUrl: null,
@@ -40,7 +40,7 @@ export const instructors: Instructor[] = [
   {
     id: "ins-jay",
     name: "Jay Subramanian",
-    email: "jay@yogasadhana.sg",
+    email: "jay@example.com",
     phone: "+65 8345 6789",
     bio: "Aerial and acro-yoga instructor. Former dancer; brings playfulness and precision to inversions and flying poses.",
     photoUrl: null,

@@ -6,8 +6,10 @@ import {
   TENANT_HEADER_PREFIX,
   TENANT_ID_HEADER,
   TENANT_SLUG_HEADER,
+  isSuperPortalHost,
   tenantSlugFromHost,
 } from "@/lib/tenant-host";
+import { portalRouting } from "@/lib/super-portal";
 import {
   resolveTenant,
   tenantNotFoundResponse,
@@ -67,6 +69,20 @@ export default clerkMiddleware(async (auth, req) => {
   const { headers, blocked } = await tenantContext(req);
   if (blocked) return blocked;
   const pass = () => NextResponse.next({ request: { headers } });
+
+  // Which of the two products is this hostname? `admin.portal.…` is the super
+  // portal; everything else is a studio's staff portal. The decision is made
+  // before auth so a studio's staff cannot even learn that `/platform` exists —
+  // it is a 404 on their hostname, not a redirect to a login they would then be
+  // refused at. The real gate is the backend's, which answers 404 to anyone not
+  // on the platform allowlist.
+  const routing = portalRouting(req.nextUrl.pathname, isSuperPortalHost(req.headers.get("host"), ROOT_DOMAIN));
+  // The same opaque page an unknown Tenant gets, for the same reason: nothing in
+  // the response may distinguish "no such section" from "no such address".
+  if (routing.kind === "not-found") return tenantNotFoundResponse();
+  if (routing.kind === "redirect") {
+    return NextResponse.redirect(new URL(routing.to, req.url));
+  }
 
   if (isPublicRoute(req)) {
     // A signed-in user has no business on /login — send them on. Rendering

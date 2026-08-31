@@ -18,7 +18,9 @@ const isProd = env.NODE_ENV === 'production'
 
 export const logger = pino({
   level: process.env.LOG_LEVEL ?? (isProd ? 'info' : 'debug'),
-  base: { service: 'yoga-sadhana-be' },
+  // The platform, not a studio — one backend serves every tenant, so a log line
+  // is tagged with the service and the request's own `tenantId`, never a name.
+  base: { service: 'reservetoday-be' },
   // Render `level` as its label ("info") instead of the numeric code (30) so
   // the raw JSON is human-readable in `docker logs`.
   formatters: {
