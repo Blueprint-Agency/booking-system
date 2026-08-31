@@ -64,8 +64,10 @@ Every pillar of this plan was re-checked against vendor documentation. All confi
 2. **Vercel wildcards are multi-level.** "any `tenant.acme.com` you create — whether it's
    `tenant1.acme.com` or `docs.tenant1.acme.com` — automatically resolves to your Vercel
    deployment." So `*.reservetoday.app` on fe-client would *also* match
-   `{tenant}.portal.reservetoday.app`. This makes wildcard precedence a load-bearing
-   assumption → **Spike 1** below.
+   `{tenant}.portal.reservetoday.app`. This made wildcard precedence a load-bearing
+   assumption → **Spike 1** below, now ✅ **resolved: precedence holds.** The multi-level claim
+   is true of DNS only; TLS wildcards are single-label, so a two-label host is unserveable by
+   the project holding the shorter wildcard. See Spike 1 for the evidence.
 3. **RLS must be transaction-scoped under a connection pooler.** Use
    `set_config('app.current_tenant_id', $1, true)` — the `true` makes it transaction-local.
    Session-scoped config leaks tenant state between requests wherever connections are reused,
@@ -188,9 +190,10 @@ isolation bugs surface the day they are written, not the day tenant #2 signs up.
 
 ## Pre-implementation checks (do these first, human tasks)
 
-- [ ] **Where is `reservetoday.app` registered?** If Cloudflare Registrar → NS cannot be
-      changed there; either transfer the domain out (note: 60-day transfer lock windows)
-      or fall back to Option B. Any other registrar → NS switch is a 5-min change.
+- [x] ~~**Where is `reservetoday.app` registered?**~~ **Moot — the NS move is DONE (2026-08-31).**
+      Nameservers are now `ns1/ns2.vercel-dns.com`; Option A is in force and Option B is dead.
+      This happened ahead of its ticket (#70), so treat #70's first acceptance criterion as
+      already met. ⚠️ It was done **without** the record inventory below — see the incident note.
 - [x] ~~Is `api.reservetoday.app` orange- or grey-clouded?~~ **Answered: grey, deliberately.**
       Traefik's `le-tls` resolver is TLS-ALPN-01, which proves control of :443 and cannot
       complete through a proxied host, so both `api*` records are DNS-only by design.
@@ -201,25 +204,79 @@ isolation bugs surface the day they are written, not the day tenant #2 signs up.
       `le-tls` can't do wildcards, and the DNS-01 resolver's Cloudflare token is scoped to the
       Teeko account while `reservetoday.app` is in the Blueprint account (Traefik reads that
       token process-wide). A concrete reason the frontends stay on Vercel.
-- [ ] Inventory ALL existing DNS records in the Cloudflare zone (MX, TXT/SPF/DKIM,
-      anything else) so nothing is dropped in the migration.
+- [x] ~~Inventory ALL existing DNS records in the Cloudflare zone~~ — **skipped, and it caused a
+      production outage.** Recorded here because the next zone migration must not repeat it.
+
+  > **Incident, 2026-08-31 — `api.reservetoday.app` down after the nameserver move.**
+  > Moving NS to Vercel carries over nothing. The new Vercel zone was created with only three
+  > CAA records and two auto-generated ALIASes (apex and `*`). The `api` A record did not exist,
+  > so the **`*` ALIAS swallowed `api.reservetoday.app` and pointed it at Vercel**, which
+  > returned `DEPLOYMENT_NOT_FOUND` — taking the backend offline for both frontends. Recovery
+  > was two records, since a specific A record beats the wildcard:
+  >
+  > ```
+  > vercel dns add reservetoday.app api         A 187.127.207.82 --scope blueprintdigitalmy
+  > vercel dns add reservetoday.app api.staging A 187.127.207.82 --scope blueprintdigitalmy
+  > ```
+  >
+  > The VPS IP is recorded nowhere in this repo — deploys reach bpvps2 over Tailscale — and had
+  > to be recovered from `Blueprint-Agency/teeko-infrastructure`
+  > (`vps/bpvps2/stacks/stalwart/README.md`). **bpvps2 = `187.127.207.82`.** Note it here so the
+  > next recovery is not an archaeology exercise. TLS was never at risk: Traefik's TLS-ALPN-01
+  > cert needs only the A record, and `letsencrypt.org` is in the zone's CAA set — both frontends
+  > and both API hosts verified clean afterwards.
+  >
+  > **All MX and TXT records were also lost.** Confirmed not a problem for this zone — mail for
+  > `reservetoday.app` is not hosted here (unlike `blueprintdigital.my`, whose mail is on the same
+  > box under Stalwart). ⚠️ **Still unverified:** whether Clerk, Stripe or Google Search Console
+  > ever placed a domain-verification TXT on this zone. Those would now be failing silently.
+  >
+  > The general rule, which the sibling zone learned the hard way too (bpvps2 Stalwart README:
+  > `blueprintdigital.my` had no MX for three weeks): **on any zone migration, inventory first,
+  > recreate second, switch NS last.**
 - [ ] Verify remaining UNVERIFIED items in `research-multi-tenancy.md` (Clerk Platform API
       surface, current Clerk pricing). *Vercel wildcard plan-gating is now resolved — all plans.*
 
-### Spike 1 — wildcard precedence across two projects (do this first; ~30 min)
+### Spike 1 — wildcard precedence across two projects — ✅ **RESOLVED 2026-08-31: precedence holds**
 
-Vercel wildcards match multi-level, so `*.reservetoday.app` on fe-client also matches
-`{tenant}.portal.reservetoday.app`. Whether the more-specific `*.portal.reservetoday.app` on a
-**different project** wins is **not documented anywhere**. This is the single load-bearing
-assumption of the whole URL scheme.
+**The URL scheme is safe. Build on it.** The more-specific wildcard on a *different* project
+wins, so `{tenant}.portal.reservetoday.app` reaches fe-portal even though
+`*.reservetoday.app` on fe-client also matches it at the DNS layer. The fallback (separate
+root domain for the portal) is **not needed**.
 
-- [ ] On a throwaway domain on Vercel nameservers, attach `*.test.tld` to project A and
-      `*.portal.test.tld` to project B. Hit `x.portal.test.tld` and confirm it reaches B.
-- [ ] If precedence does **not** hold, fall back to a separate root domain for the portal
-      (e.g. `{tenant}.reservetoday-portal.app`) — everything else in this plan is unaffected.
+Run live on `reservetoday.app` itself — which was already on Vercel nameservers by then — using
+two throwaway projects (`spike-client`, `spike-portal`) and an unused `spike.` label, so no
+production hostname was touched. Both wildcards attached to different projects without conflict;
+Vercel raised no ownership error.
 
-Cost of running it now: half an hour. Cost of discovering it in Phase 5: a redesign of the
-URL scheme after the data model is already built around it.
+| Hostname | HTTP | Served by |
+|---|---|---|
+| `x.spike.reservetoday.app` | 200 | `spike-client` |
+| `acme.spike.reservetoday.app` | 200 | `spike-client` |
+| `deep.nested.spike.reservetoday.app` | TLS handshake failure | — |
+| `x.portal.spike.reservetoday.app` | 200 | **`spike-portal`** |
+| `acme.portal.spike.reservetoday.app` | 200 | **`spike-portal`** |
+| `admin.portal.spike.reservetoday.app` | 200 | **`spike-portal`** |
+| `a.b.portal.spike.reservetoday.app` | TLS handshake failure | — |
+
+**Why it holds — the mechanism matters more than the verdict.** Correction 2 above was right
+that Vercel's *DNS* wildcard is multi-level: both `x.spike` and `x.portal.spike` resolved through
+the single apex `*` ALIAS, with no per-wildcard DNS records created. But **TLS wildcards are
+single-label** (RFC 6125), and Vercel issues one certificate per attached wildcard —
+`*.spike.reservetoday.app` and `*.portal.spike.reservetoday.app` were issued separately. A
+certificate for `*.spike` cannot cover `x.portal.spike`, so fe-client is structurally incapable
+of serving a two-label host. `deep.nested.spike` failing the handshake is the proof: multi-level
+DNS resolution does **not** imply multi-level serving. The certificate boundary, not a routing
+rule, is what makes the scheme work.
+
+**Operational note for Phase 5:** certificate issuance is not instant and not uniform. `*.spike`
+was serving in ~60s; `*.portal.spike` took ~3 minutes, during which it returned a TLS handshake
+failure rather than an HTTP error. Because `.app` is HSTS-preloaded there is no plaintext
+fallback to mask this. **Do not conclude a wildcard has failed until several minutes have
+passed** — an early read of that window looks exactly like "precedence does not hold".
+
+Teardown: delete `spike-client` and `spike-portal` and their two wildcard domains once Phase 5
+is underway; they cost nothing but are live hostnames on a production zone.
 
 ### Spike 2 — staging wildcard on a non-production environment
 
@@ -229,6 +286,21 @@ environment is undocumented**, and multi-tenant *preview* URLs are Enterprise-on
 - [ ] Confirm `*.dev.reservetoday.app` can be attached to a `staging` custom environment.
 - [ ] If not: create two dedicated staging Vercel projects with production branch = `staging`.
       Cheap and clean — decide before wiring CI.
+
+**Partial findings (2026-08-31), spike not yet closed:**
+
+- **No custom environments exist anywhere in the team.** `vercel target ls` on both
+  `booking-system` and the throwaway `spike-client` returns only the stock trio —
+  Production / Preview / Development. This spike therefore tests a mechanism the project does
+  not currently use at all.
+- **Today's staging is branch-assigned domains, not a custom environment.** Certificates exist
+  for `staging.reservetoday.app`, `staging.yogasadhana.reservetoday.app`,
+  `stagingportal.reservetoday.app` and `staging-portal.yogasadhana.reservetoday.app` — i.e.
+  ordinary domains pointed at the `staging` branch on the existing projects. Worth weighing:
+  the fallback (two dedicated staging projects) is closer to what is already in place than the
+  custom-environment shape is.
+- **The CLI cannot create custom environments** — `vercel target` exposes `list` only, so the
+  remaining step is dashboard-only and cannot be automated or scripted in CI.
 
 ## Implementation checklist (in order)
 
