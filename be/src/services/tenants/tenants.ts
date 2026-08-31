@@ -149,6 +149,10 @@ export async function resolveTenantBySlug(slug: string): Promise<ResolvedTenant 
   return row
 }
 
+/** What a background job needs to know about a tenant: which one, and whose
+ *  clock its daily schedule is on. */
+export type JobTenant = { id: string; timezone: string }
+
 /**
  * Every tenant a background job should run for, oldest first.
  *
@@ -159,16 +163,20 @@ export async function resolveTenantBySlug(slug: string): Promise<ResolvedTenant 
  * one this ticket closes), each job runs once per tenant inside that tenant's
  * context and the policy does the filtering the job never had to express.
  *
+ * The timezone comes along because a daily job's "01:00" is the tenant's 01:00,
+ * decided per tick — see jobs/local-time.ts. The list is read fresh on every
+ * tick rather than cached at boot, so a tenant added (or moved to another zone)
+ * after the server started is picked up on the next tick with no job wiring.
+ *
  * Archived tenants are skipped; suspended ones are not — a studio that is paused
  * for its members still needs its members' credits returned on time.
  */
-export async function listJobTenantIds(): Promise<string[]> {
-  const rows = await db
-    .select({ id: tenants.id })
+export async function listJobTenants(): Promise<JobTenant[]> {
+  return db
+    .select({ id: tenants.id, timezone: tenants.timezone })
     .from(tenants)
     .where(inArray(tenants.status, RESOLVABLE))
     .orderBy(tenants.createdAt)
-  return rows.map(r => r.id)
 }
 
 export type CreateTenantInput = {

@@ -2,7 +2,8 @@ import cron from 'node-cron'
 import { logger } from '../shared/logger'
 import { captureException } from '../instrument'
 import { withTenant } from '../db'
-import { listJobTenantIds } from '../services/tenants/tenants'
+import { listJobTenants, type JobTenant } from '../services/tenants/tenants'
+import { SLOT_CRON, isDailySlot } from './local-time'
 import { expireStaleSessions, completeEndedPtSessions } from '../services/pt-sessions/cancel'
 import { expirePackages, sendLapsingAlerts, sendExpiredNotifications } from '../services/packages/expire'
 import { flagExpiredWaivers } from '../services/waiver'
@@ -38,11 +39,25 @@ function safeJob(name: string, fn: () => Promise<unknown> | unknown) {
  *
  * One tenant's failure is logged and does not stop the rest — otherwise a single
  * broken studio would freeze every other studio's credit refunds.
+ *
+ * `due` is what makes a *daily* job tenant-aware in time as well as in data: the
+ * cron grid ticks for everyone, and each tenant's own clock decides whether this
+ * tick is its moment. Jobs on a fixed interval ("every 5 minutes") pass no `due`
+ * and run on every tick, since an interval means the same thing in every zone.
  */
-function perTenant(name: string, fn: () => Promise<unknown> | unknown) {
+function perTenant(
+  name: string,
+  fn: () => Promise<unknown> | unknown,
+  due?: (tenant: JobTenant, at: Date) => boolean,
+) {
   return async () => {
-    for (const tenantId of await listJobTenantIds()) {
+    const at = new Date()
+    for (const tenant of await listJobTenants()) {
+      const tenantId = tenant.id
       try {
+        // Inside the try: an unknown IANA zone on one tenant's row must not
+        // stop the sweep for the others.
+        if (due && !due(tenant, at)) continue
         await withTenant(tenantId, async () => {
           await fn()
         })
@@ -58,6 +73,21 @@ function perTenant(name: string, fn: () => Promise<unknown> | unknown) {
  *  catch-all, so a thrown error can never reach the cron scheduler. */
 function tenantJob(name: string, fn: () => Promise<unknown> | unknown) {
   return safeJob(name, perTenant(name, fn))
+}
+
+/**
+ * A job that runs once per tenant per day, at `localHour` on that tenant's own
+ * wall clock.
+ *
+ * Registered on the shared 15-minute grid rather than as one cron per tenant:
+ * the tenant list is re-read on every tick, so a studio created at 3pm has its
+ * daily jobs that same night without anyone touching the scheduler.
+ */
+function dailyTenantJob(name: string, localHour: number, fn: () => Promise<unknown> | unknown) {
+  return safeJob(
+    name,
+    perTenant(name, fn, (tenant, at) => isDailySlot(tenant.timezone, localHour, at)),
+  )
 }
 
 export async function registerJobs() {
@@ -76,13 +106,17 @@ export async function registerJobs() {
   // Every 5 min — advance scheduled PT requests whose session has ended to `attended`
   cron.schedule('*/5 * * * *', tenantJob('completeEndedPtSessions', completeEndedPtSessions))
 
-  // Daily 01:00 SGT (17:00 UTC) — package expiry
-  cron.schedule('0 17 * * *', tenantJob('expirePackages', expirePackages))
+  // The daily jobs below all ride the same 15-minute grid; the hour named is
+  // each tenant's *local* hour, taken from `tenants.timezone`, never from a UTC
+  // offset or from the server's (or Postgres's) own clock.
 
-  // Daily 08:00 SGT (00:00 UTC) — lapsing + expired notifications
-  cron.schedule('0 0 * * *', tenantJob('sendLapsingAlerts', sendLapsingAlerts))
-  cron.schedule('0 0 * * *', tenantJob('sendExpiredNotifications', sendExpiredNotifications))
+  // Daily 01:00 tenant-local — package expiry
+  cron.schedule(SLOT_CRON, dailyTenantJob('expirePackages', 1, expirePackages))
 
-  // Daily 02:00 SGT (18:00 UTC) — flag clients with stale waiver signature
-  cron.schedule('0 18 * * *', tenantJob('flagExpiredWaivers', flagExpiredWaivers))
+  // Daily 08:00 tenant-local — lapsing + expired notifications
+  cron.schedule(SLOT_CRON, dailyTenantJob('sendLapsingAlerts', 8, sendLapsingAlerts))
+  cron.schedule(SLOT_CRON, dailyTenantJob('sendExpiredNotifications', 8, sendExpiredNotifications))
+
+  // Daily 02:00 tenant-local — flag clients with stale waiver signature
+  cron.schedule(SLOT_CRON, dailyTenantJob('flagExpiredWaivers', 2, flagExpiredWaivers))
 }
