@@ -405,7 +405,7 @@ export async function updateStaffProfile(input: UpdateStaffProfileInput): Promis
   // otherwise immaterial: Assigned Days apply from the NEXT Leave Year, the
   // adjustment only to this one.
   if (Object.keys(remaining).length > 0) {
-    await adjustRemainingDays({ instructorId: targetStaffId, ...remaining })
+    await adjustRemainingDays(tenantId, { instructorId: targetStaffId, ...remaining })
   }
   if (Object.keys(assigned).length > 0) {
     await db
@@ -427,6 +427,8 @@ export async function updateStaffProfile(input: UpdateStaffProfileInput): Promis
     if (!updated) throw new ConflictError('staff_update_failed')
     row = updated
   }
-  const [profile] = await withLeaveFigures([{ ...row, ...(await assignedLeaveDays(targetStaffId)) }])
+  const [profile] = await withLeaveFigures(tenantId, [
+    { ...row, ...(await assignedLeaveDays(tenantId, targetStaffId)) },
+  ])
   return profile ?? row
 }

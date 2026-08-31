@@ -67,13 +67,16 @@ export type SchedulePtRequestResult =
   | { ok: true; ptSessionId: string }
   | { ok: false; error: SchedulePtRequestError }
 
-export async function schedulePtRequest(input: SchedulePtRequestInput): Promise<SchedulePtRequestResult> {
+export async function schedulePtRequest(
+  tenantId: string,
+  input: SchedulePtRequestInput,
+): Promise<SchedulePtRequestResult> {
   if (input.endsAt <= input.startsAt) return { ok: false, error: 'bad_time_range' }
 
   const [req] = await db
     .select()
     .from(ptRequests)
-    .where(eq(ptRequests.id, input.ptRequestId))
+    .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, input.ptRequestId)))
     .limit(1)
   if (!req) return { ok: false, error: 'request_not_found' }
   if (req.status !== 'pending') return { ok: false, error: 'not_pending' }
@@ -81,10 +84,6 @@ export async function schedulePtRequest(input: SchedulePtRequestInput): Promise<
   if (req.sessionType === '2on1' && !req.coClientId) {
     return { ok: false, error: 'partner_account_required' }
   }
-
-  // The request is what this session belongs to, so its tenant is the session's.
-  // (Scoping the rest of this service is the workshops/PT batch, #62.)
-  const tenantId = req.tenantId!
 
   // Room must belong to the location (throws AppError on mismatch — surfaces 4xx).
   await assertRoomInLocation(tenantId, input.roomId, input.locationId)
@@ -127,7 +126,9 @@ export async function schedulePtRequest(input: SchedulePtRequestInput): Promise<
 
     // Attendee roster: requester (+ partner for 2on1).
     const clientIds = [req.clientId, ...(req.coClientId ? [req.coClientId] : [])]
-    await tx.insert(ptSessionClients).values(clientIds.map(clientId => ({ ptSessionId: sessionId, clientId })))
+    await tx
+      .insert(ptSessionClients)
+      .values(clientIds.map(clientId => ({ tenantId, ptSessionId: sessionId, clientId })))
 
     // One confirmed booking per attendee. The debit already happened at submit.
     // The requester's booking carries the source package AND the FULL cost (2 for
@@ -138,9 +139,6 @@ export async function schedulePtRequest(input: SchedulePtRequestInput): Promise<
     for (const clientId of clientIds) {
       const { qrToken, code } = generateBookingCodes()
       await tx.insert(bookings).values({
-        // Stamped rather than left to the column default: `bookings` is read
-        // through a Tenant filter from this batch on (#61), and a row that took
-        // the default would vanish from the roster and the ledger beside it.
         tenantId,
         clientId,
         kind: 'pt',
@@ -161,7 +159,7 @@ export async function schedulePtRequest(input: SchedulePtRequestInput): Promise<
         resolvedAt: new Date(),
         resolvedByStaffId: input.actorStaffId,
       })
-      .where(eq(ptRequests.id, req.id))
+      .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, req.id)))
 
     return sessionId
   })
@@ -218,6 +216,7 @@ export interface UpdatePtSessionInput {
  */
 async function reconcileSessionType(
   tx: Tx,
+  tenantId: string,
   args: {
     sessionId: string
     ptRequestId: string
@@ -229,15 +228,12 @@ async function reconcileSessionType(
   const [req] = await tx
     .select({
       id: ptRequests.id,
-      // Off the request — PT is scoped to the Tenant in the remaining-surfaces
-      // batch (#62); until then the row being changed says whose credits move.
-      tenantId: ptRequests.tenantId,
       clientId: ptRequests.clientId,
       coClientId: ptRequests.coClientId,
       debitedClientPackageId: ptRequests.debitedClientPackageId,
     })
     .from(ptRequests)
-    .where(eq(ptRequests.id, args.ptRequestId))
+    .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, args.ptRequestId)))
     .for('update')
     .limit(1)
   if (!req) throw new NotFoundError('pt_request_not_found')
@@ -248,6 +244,7 @@ async function reconcileSessionType(
     .from(clientPackages)
     .where(
       and(
+        eq(clientPackages.tenantId, tenantId),
         eq(clientPackages.id, req.debitedClientPackageId),
         eq(clientPackages.clientId, req.clientId),
       ),
@@ -269,7 +266,7 @@ async function reconcileSessionType(
     const [partner] = await tx
       .select({ id: clients.id, status: clients.status, deletedAt: clients.deletedAt })
       .from(clients)
-      .where(eq(clients.id, partnerId))
+      .where(and(eq(clients.tenantId, tenantId), eq(clients.id, partnerId)))
       .limit(1)
     if (!partner) throw new NotFoundError('partner_client_not_found')
     if (partner.status !== 'active' || partner.deletedAt) throw new ConflictError('partner_not_active')
@@ -278,7 +275,7 @@ async function reconcileSessionType(
   // --- from here on, writes -------------------------------------------------
   if (plan.delta < 0) {
     await debitCredits(tx, {
-      tenantId: req.tenantId!,
+      tenantId,
       clientId: req.clientId,
       clientPackageId: req.debitedClientPackageId,
       amount: -plan.delta,
@@ -286,7 +283,7 @@ async function reconcileSessionType(
     })
   } else if (plan.delta > 0) {
     await refundCredits(tx, {
-      tenantId: req.tenantId!,
+      tenantId,
       clientId: req.clientId,
       clientPackageId: req.debitedClientPackageId,
       amount: plan.delta,
@@ -295,10 +292,12 @@ async function reconcileSessionType(
   }
 
   if (plan.partner === 'add') {
-    await tx.insert(ptSessionClients).values({ ptSessionId: args.sessionId, clientId: partnerId! })
+    await tx
+      .insert(ptSessionClients)
+      .values({ tenantId, ptSessionId: args.sessionId, clientId: partnerId! })
     const { qrToken, code } = generateBookingCodes()
     await tx.insert(bookings).values({
-      tenantId: req.tenantId!,
+      tenantId,
       clientId: partnerId!,
       kind: 'pt',
       ptSessionId: args.sessionId,
@@ -315,6 +314,7 @@ async function reconcileSessionType(
       .delete(ptSessionClients)
       .where(
         and(
+          eq(ptSessionClients.tenantId, tenantId),
           eq(ptSessionClients.ptSessionId, args.sessionId),
           ne(ptSessionClients.clientId, req.clientId),
         ),
@@ -324,6 +324,7 @@ async function reconcileSessionType(
       .set({ state: 'cancelled', refundOutcome: 'n_a', checkInState: 'n_a', cancelledAt: new Date() })
       .where(
         and(
+          eq(bookings.tenantId, tenantId),
           eq(bookings.ptSessionId, args.sessionId),
           ne(bookings.clientId, req.clientId),
           eq(bookings.state, 'confirmed'),
@@ -341,7 +342,7 @@ async function reconcileSessionType(
       coClientName: null,
       coClientEmail: null,
     })
-    .where(eq(ptRequests.id, req.id))
+    .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, req.id)))
 
   // Keep the recorded figure equal to what the package actually paid, so a
   // per-booking cancel returns the same amount the whole-request cancel does.
@@ -350,6 +351,7 @@ async function reconcileSessionType(
     .set({ creditsOrSessionsUsed: ptSessionCost(args.to) })
     .where(
       and(
+        eq(bookings.tenantId, tenantId),
         eq(bookings.ptSessionId, args.sessionId),
         eq(bookings.clientId, req.clientId),
         eq(bookings.state, 'confirmed'),
@@ -357,11 +359,18 @@ async function reconcileSessionType(
     )
 }
 
-export async function updatePtSession(id: string, patch: UpdatePtSessionInput): Promise<PtSessionRow> {
-  const [existing] = await db.select().from(ptSessions).where(eq(ptSessions.id, id)).limit(1)
+export async function updatePtSession(
+  tenantId: string,
+  id: string,
+  patch: UpdatePtSessionInput,
+): Promise<PtSessionRow> {
+  const [existing] = await db
+    .select()
+    .from(ptSessions)
+    .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, id)))
+    .limit(1)
   if (!existing) throw new NotFoundError('pt_session_not_found')
   if (existing.lifecycle !== 'active') throw new ConflictError('session_cancelled')
-  const tenantId = existing.tenantId!
 
   const newRoomId = patch.roomId ?? existing.roomId
   const newLocationId = patch.locationId ?? existing.locationId
@@ -423,13 +432,13 @@ export async function updatePtSession(id: string, patch: UpdatePtSessionInput): 
       const [locked] = await tx
         .select({ sessionType: ptSessions.sessionType, ptRequestId: ptSessions.ptRequestId })
         .from(ptSessions)
-        .where(eq(ptSessions.id, id))
+        .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, id)))
         .for('update')
         .limit(1)
       if (!locked) throw new NotFoundError('pt_session_not_found')
       // Setting the type to what it already is is a no-op, not a second debit.
       if (locked.sessionType !== patch.sessionType) {
-        await reconcileSessionType(tx, {
+        await reconcileSessionType(tx, tenantId, {
           sessionId: id,
           ptRequestId: locked.ptRequestId,
           from: locked.sessionType,
@@ -454,7 +463,11 @@ export async function updatePtSession(id: string, patch: UpdatePtSessionInput): 
 
     let row = existing
     if (Object.keys(set).length) {
-      const rows = await tx.update(ptSessions).set(set).where(eq(ptSessions.id, id)).returning()
+      const rows = await tx
+        .update(ptSessions)
+        .set(set)
+        .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, id)))
+        .returning()
       if (!rows[0]) throw new ConflictError('pt_session_update_failed')
       row = rows[0]
     }
@@ -462,7 +475,11 @@ export async function updatePtSession(id: string, patch: UpdatePtSessionInput): 
     if (touchesRoster) {
       await replaceRoster(tx, tenantId, { kind: 'pt_session', id }, rosterPatch)
       // instructor_id / instructor_pay_sgd may have moved under us.
-      const [fresh] = await tx.select().from(ptSessions).where(eq(ptSessions.id, id)).limit(1)
+      const [fresh] = await tx
+        .select()
+        .from(ptSessions)
+        .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, id)))
+        .limit(1)
       if (fresh) row = fresh
     }
     return row

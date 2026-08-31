@@ -169,6 +169,7 @@ export async function createInstructor(
   // Email is best-effort and runs OUTSIDE the transaction so a transient SMTP
   // failure doesn't roll back the instructor record. Failures land in `email_log`.
   await sendTemplatedEmail({
+    tenantId,
     slug: 'instructor_invite',
     recipient: { email, userId: view.id, userKind: 'staff' },
     variables: {

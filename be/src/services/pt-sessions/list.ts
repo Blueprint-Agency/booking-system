@@ -36,7 +36,10 @@ export interface ClientPtRequestView {
   refundOutcome: string | null
 }
 
-export async function listClientPtRequests(clientId: string): Promise<ClientPtRequestView[]> {
+export async function listClientPtRequests(
+  tenantId: string,
+  clientId: string,
+): Promise<ClientPtRequestView[]> {
   // Aliased so we can read the requester's name even when `clientId` is the
   // 2on1 partner (and ptRequests.clientId is someone else).
   const requester = alias(clients, 'requester')
@@ -69,7 +72,12 @@ export async function listClientPtRequests(clientId: string): Promise<ClientPtRe
     .leftJoin(staffUsers, eq(staffUsers.id, ptSessions.instructorId))
     .leftJoin(rooms, eq(rooms.id, ptSessions.roomId))
     // Caller is either the requester OR the 2on1 partner (co_client_id).
-    .where(or(eq(ptRequests.clientId, clientId), eq(ptRequests.coClientId, clientId)))
+    .where(
+      and(
+        eq(ptRequests.tenantId, tenantId),
+        or(eq(ptRequests.clientId, clientId), eq(ptRequests.coClientId, clientId)),
+      ),
+    )
     .orderBy(desc(ptRequests.createdAt))
 
   if (reqRows.length === 0) return []
@@ -78,7 +86,9 @@ export async function listClientPtRequests(clientId: string): Promise<ClientPtRe
   const slotRows = await db
     .select()
     .from(ptRequestSlots)
-    .where(inArray(ptRequestSlots.ptRequestId, ids))
+    .where(
+      and(eq(ptRequestSlots.tenantId, tenantId), inArray(ptRequestSlots.ptRequestId, ids)),
+    )
     .orderBy(asc(ptRequestSlots.proposedDate), asc(ptRequestSlots.startTime))
 
   const slotsByReq = new Map<string, ClientPtRequestView['slots']>()
@@ -101,7 +111,13 @@ export async function listClientPtRequests(clientId: string): Promise<ClientPtRe
         refundOutcome: bookings.refundOutcome,
       })
       .from(bookings)
-      .where(and(eq(bookings.clientId, clientId), inArray(bookings.ptSessionId, sessionIds)))
+      .where(
+        and(
+          eq(bookings.tenantId, tenantId),
+          eq(bookings.clientId, clientId),
+          inArray(bookings.ptSessionId, sessionIds),
+        ),
+      )
     for (const b of bks) {
       if (b.ptSessionId) {
         bookingBySession.set(b.ptSessionId, {
@@ -228,7 +244,10 @@ function adminSelect() {
 
 type AdminRow = Awaited<ReturnType<ReturnType<typeof adminSelect>['where']>>[number]
 
-async function hydrateAdminRows(rows: AdminRow[]): Promise<AdminPtRequestView[]> {
+async function hydrateAdminRows(
+  tenantId: string,
+  rows: AdminRow[],
+): Promise<AdminPtRequestView[]> {
   if (rows.length === 0) return []
 
   // Resolve existing-member partners to live name/email in one batch.
@@ -238,7 +257,7 @@ async function hydrateAdminRows(rows: AdminRow[]): Promise<AdminPtRequestView[]>
     const members = await db
       .select({ id: clients.id, name: clients.name, email: clients.email })
       .from(clients)
-      .where(inArray(clients.id, memberPartnerIds))
+      .where(and(eq(clients.tenantId, tenantId), inArray(clients.id, memberPartnerIds)))
     for (const m of members) memberById.set(m.id, { name: m.name, email: m.email })
   }
 
@@ -246,7 +265,12 @@ async function hydrateAdminRows(rows: AdminRow[]): Promise<AdminPtRequestView[]>
   const slotRows = await db
     .select()
     .from(ptRequestSlots)
-    .where(inArray(ptRequestSlots.ptRequestId, rows.map(r => r.id)))
+    .where(
+      and(
+        eq(ptRequestSlots.tenantId, tenantId),
+        inArray(ptRequestSlots.ptRequestId, rows.map(r => r.id)),
+      ),
+    )
     .orderBy(asc(ptRequestSlots.proposedDate), asc(ptRequestSlots.startTime))
   for (const s of slotRows) {
     const list = slotsByReq.get(s.ptRequestId) ?? []
@@ -264,7 +288,7 @@ async function hydrateAdminRows(rows: AdminRow[]): Promise<AdminPtRequestView[]>
         refundOutcome: bookings.refundOutcome,
       })
       .from(bookings)
-      .where(inArray(bookings.ptSessionId, sessionIds))
+      .where(and(eq(bookings.tenantId, tenantId), inArray(bookings.ptSessionId, sessionIds)))
     const requesterBySession = new Map(
       rows.filter(r => r.sessionId).map(r => [r.sessionId!, r.clientId]),
     )
@@ -325,22 +349,28 @@ export interface ListPtRequestsForAdminOpts {
 
 /** Portal triage queue. Optional status + location-scope filters; newest first. */
 export async function listPtRequestsForAdmin(
+  tenantId: string,
   opts: ListPtRequestsForAdminOpts = {},
 ): Promise<AdminPtRequestView[]> {
-  const conds = []
+  const conds = [eq(ptRequests.tenantId, tenantId)]
   if (opts.status) conds.push(eq(ptRequests.status, opts.status))
   if (opts.locationIds && opts.locationIds.length) {
     conds.push(inArray(ptRequests.locationId, opts.locationIds))
   }
   const rows = await adminSelect()
-    .where(conds.length ? and(...conds) : undefined)
+    .where(and(...conds))
     .orderBy(desc(ptRequests.createdAt))
-  return hydrateAdminRows(rows)
+  return hydrateAdminRows(tenantId, rows)
 }
 
-export async function getPtRequestForAdmin(id: string): Promise<AdminPtRequestView | null> {
-  const rows = await adminSelect().where(eq(ptRequests.id, id)).limit(1)
-  const hydrated = await hydrateAdminRows(rows)
+export async function getPtRequestForAdmin(
+  tenantId: string,
+  id: string,
+): Promise<AdminPtRequestView | null> {
+  const rows = await adminSelect()
+    .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, id)))
+    .limit(1)
+  const hydrated = await hydrateAdminRows(tenantId, rows)
   return hydrated[0] ?? null
 }
 
@@ -351,13 +381,24 @@ export interface PartnerLookupResult {
 }
 
 export async function lookupPartnerByEmail(
+  tenantId: string,
   email: string,
   requesterClientId: string,
 ): Promise<PartnerLookupResult> {
   const [row] = await db
     .select({ id: clients.id, name: clients.name })
     .from(clients)
-    .where(and(sql`lower(${clients.email}) = ${email.trim().toLowerCase()}`, ne(clients.id, requesterClientId)))
+    .where(
+      and(
+        // An address registered at another studio is `found: false` here. This
+        // endpoint answers "is this person a member?" from a member's own
+        // typing, and answering it across the platform would turn it into a
+        // directory of everyone on it.
+        eq(clients.tenantId, tenantId),
+        sql`lower(${clients.email}) = ${email.trim().toLowerCase()}`,
+        ne(clients.id, requesterClientId),
+      ),
+    )
     .limit(1)
   if (!row) return { found: false }
   return { found: true, clientId: row.id, name: row.name }

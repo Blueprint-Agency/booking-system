@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { submitPtRequest } from '../../services/pt-sessions/request'
 import { cancelPtRequest } from '../../services/pt-sessions/cancel'
 import { listClientPtRequests, lookupPartnerByEmail } from '../../services/pt-sessions/list'
+import { tenantId } from '../../middleware/tenant'
 
 const slotSchema = z.object({
   proposedDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -64,21 +65,24 @@ function serializeRequest(r: Awaited<ReturnType<typeof listClientPtRequests>>[nu
 
 const app = new Hono()
   .get('/', async c => {
-    const rows = await listClientPtRequests(c.get('clientId'))
+    const rows = await listClientPtRequests(tenantId(c), c.get('clientId'))
     return c.json({ pt_requests: rows.map(serializeRequest) })
   })
   .get('/partner-lookup', zValidator('query', z.object({ email: z.string().email() })), async c => {
     const { email } = c.req.valid('query')
-    const r = await lookupPartnerByEmail(email, c.get('clientId'))
+    const r = await lookupPartnerByEmail(tenantId(c), email, c.get('clientId'))
     return c.json({ found: r.found, client_id: r.clientId ?? null, name: r.name ?? null })
   })
   .post('/request', zValidator('json', requestSchema), async c => {
     const body = c.req.valid('json')
-    const { ptRequestId } = await submitPtRequest({ clientId: c.get('clientId'), ...body })
+    const { ptRequestId } = await submitPtRequest(tenantId(c), {
+      clientId: c.get('clientId'),
+      ...body,
+    })
     return c.json({ pt_request_id: ptRequestId }, 201)
   })
   .post('/:id/cancel', async c => {
-    const result = await cancelPtRequest({
+    const result = await cancelPtRequest(tenantId(c), {
       ptRequestId: c.req.param('id'),
       source: 'client',
       clientId: c.get('clientId'),

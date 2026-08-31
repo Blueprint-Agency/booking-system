@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as svc from '../../../services/corporate/sessions'
+import { tenantId } from '../../../middleware/tenant'
 
 const isoDate = z
   .string()
@@ -69,7 +70,7 @@ function statusFor(error: svc.CorporateSessionError): 400 | 404 | 409 | 422 {
 const app = new Hono()
   .get('/', zValidator('query', listQuery), async c => {
     const q = c.req.valid('query')
-    const rows = await svc.listCorporateSessions({
+    const rows = await svc.listCorporateSessions(tenantId(c), {
       from: q.from ? new Date(q.from) : undefined,
       to: q.to ? new Date(q.to) : undefined,
       locationId: q.location_id,
@@ -78,7 +79,7 @@ const app = new Hono()
   })
   .get('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    const row = await svc.getCorporateSession(id)
+    const row = await svc.getCorporateSession(tenantId(c), id)
     if (!row) return c.json({ error: 'not_found' }, 404)
     return c.json({ corporate_session: serializeHydrated(row) })
   })
@@ -89,7 +90,7 @@ const app = new Hono()
     const startsAt = new Date(body.starts_at)
     const endsAt = new Date(body.ends_at)
 
-    const result = await svc.createCorporateSession({
+    const result = await svc.createCorporateSession(tenantId(c), {
       corporatePackageId: body.corporate_package_id,
       clientName: body.client_name,
       mainInstructorId: body.main_instructor_id,
@@ -123,7 +124,7 @@ const app = new Hono()
     if (body.starts_at !== undefined) patch.startsAt = new Date(body.starts_at)
     if (body.ends_at !== undefined) patch.endsAt = new Date(body.ends_at)
 
-    const result = await svc.rescheduleCorporateSession(id, patch)
+    const result = await svc.rescheduleCorporateSession(tenantId(c), id, patch)
     if (!result.ok) {
       if (result.error === 'not_found') return c.json({ error: 'not_found' }, 404)
       return c.json({ error: result.error }, statusFor(result.error))
@@ -134,7 +135,7 @@ const app = new Hono()
   .post('/:id/cancel', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const actor = c.get('staffUserId') as string
-    const row = await svc.cancelCorporateSession(id, actor)
+    const row = await svc.cancelCorporateSession(tenantId(c), id, actor)
     if (!row) return c.json({ error: 'not_found_or_already_cancelled' }, 404)
     c.set('auditTarget' as any, { table: 'corporate_sessions', id })
     return c.json({ corporate_session: serialize(row) })

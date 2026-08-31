@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as svc from '../../../services/leave/requests'
+import { tenantId } from '../../../middleware/tenant'
 
 /**
  * The admin leave queue — read every instructor's requests, and decide them.
@@ -53,7 +54,10 @@ const app = new Hono()
   // ?status=pending (default) | approved | … | all
   .get('/', zValidator('query', listQuery), async c => {
     const { status } = c.req.valid('query')
-    const rows = await svc.listLeaveRequestsForAdmin(status === 'all' ? undefined : status)
+    const rows = await svc.listLeaveRequestsForAdmin(
+      tenantId(c),
+      status === 'all' ? undefined : status,
+    )
     return c.json({ leave_requests: rows.map(serialize) })
   })
   // A short-lived signed GET for the Supporting Document. Same service the
@@ -69,7 +73,11 @@ const app = new Hono()
   )
   .post('/:id/approve', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    await svc.decideLeaveRequest({ action: 'approve', id, actorStaffId: c.get('staffUserId') })
+    await svc.decideLeaveRequest(tenantId(c), {
+      action: 'approve',
+      id,
+      actorStaffId: c.get('staffUserId'),
+    })
     c.set('auditTarget' as any, { table: 'leave_requests', id })
     return c.json({ ok: true })
   })
@@ -77,7 +85,7 @@ const app = new Hono()
   // instructor is emailed, so it can't be optional at either layer.
   .post('/:id/reject', zValidator('param', idParam), zValidator('json', rejectSchema), async c => {
     const { id } = c.req.valid('param')
-    await svc.decideLeaveRequest({
+    await svc.decideLeaveRequest(tenantId(c), {
       action: 'reject',
       id,
       actorStaffId: c.get('staffUserId'),
@@ -89,7 +97,11 @@ const app = new Hono()
   // Approved leave that hasn't started. The service refuses anything else.
   .post('/:id/revoke', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    await svc.decideLeaveRequest({ action: 'revoke', id, actorStaffId: c.get('staffUserId') })
+    await svc.decideLeaveRequest(tenantId(c), {
+      action: 'revoke',
+      id,
+      actorStaffId: c.get('staffUserId'),
+    })
     c.set('auditTarget' as any, { table: 'leave_requests', id })
     return c.json({ ok: true })
   })

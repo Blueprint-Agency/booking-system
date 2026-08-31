@@ -3,6 +3,7 @@ import { db } from '../../db'
 import { ptRequests, ptSessions } from '../../db/schema/schedule'
 import { bookings, cancellations } from '../../db/schema/bookings'
 import { inboxItems } from '../../db/schema/inbox'
+import { TENANT_ONE_ID } from '../../db/schema/tenancy'
 import { evaluateCancellation } from '../policy/evaluate-cancellation'
 import { refundCredits } from '../packages/ledger'
 import { ptSessionCost } from './cost'
@@ -53,14 +54,17 @@ export interface CancelPtRequestResult {
   refundOutcome: 'session_returned' | 'forfeited' | 'n_a'
 }
 
-export async function cancelPtRequest(input: CancelPtRequestInput): Promise<CancelPtRequestResult> {
+export async function cancelPtRequest(
+  tenantId: string,
+  input: CancelPtRequestInput,
+): Promise<CancelPtRequestResult> {
   const { ptRequestId, source, clientId, actorStaffId } = input
 
   return db.transaction(async tx => {
     const [req] = await tx
       .select()
       .from(ptRequests)
-      .where(eq(ptRequests.id, ptRequestId))
+      .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, ptRequestId)))
       .for('update')
       .limit(1)
     if (!req) throw new NotFoundError('pt_request_not_found')
@@ -93,10 +97,7 @@ export async function cancelPtRequest(input: CancelPtRequestInput): Promise<Canc
     const refundToPackage = async (n: number, reason: string) => {
       if (n <= 0 || !req.debitedClientPackageId) return
       await refundCredits(tx, {
-        // Read off the request rather than passed in: PT is scoped to the
-        // Tenant in the remaining-surfaces batch (#62), and until then the row
-        // being cancelled is the only honest answer to whose credits move.
-        tenantId: req.tenantId!,
+        tenantId,
         clientId: req.clientId,
         clientPackageId: req.debitedClientPackageId,
         amount: n,
@@ -114,7 +115,7 @@ export async function cancelPtRequest(input: CancelPtRequestInput): Promise<Canc
       await tx
         .update(ptRequests)
         .set({ status: 'cancelled_before_scheduled', resolvedAt: new Date(), resolvedByStaffId })
-        .where(eq(ptRequests.id, ptRequestId))
+        .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, ptRequestId)))
       return {
         status: 'cancelled_before_scheduled',
         refundedSessions: cost,
@@ -128,15 +129,17 @@ export async function cancelPtRequest(input: CancelPtRequestInput): Promise<Canc
     const [session] = await tx
       .select({
         id: ptSessions.id,
-        // See bookings/cancel.ts: the session row is where the tenant comes from
-        // until this service is scoped in its own batch (#62).
-        tenantId: ptSessions.tenantId,
         startsAt: ptSessions.startsAt,
         lifecycle: ptSessions.lifecycle,
         instructorId: ptSessions.instructorId,
       })
       .from(ptSessions)
-      .where(eq(ptSessions.id, req.scheduledPtSessionId ?? ''))
+      .where(
+        and(
+          eq(ptSessions.tenantId, tenantId),
+          eq(ptSessions.id, req.scheduledPtSessionId ?? ''),
+        ),
+      )
       .for('update')
       .limit(1)
     if (!session) throw new NotFoundError('pt_session_not_found')
@@ -157,7 +160,7 @@ export async function cancelPtRequest(input: CancelPtRequestInput): Promise<Canc
       refundSessions = cost
     } else {
       const evaluation = await evaluateCancellation({
-        tenantId: session.tenantId!,
+        tenantId,
         clientId: req.clientId,
         kind: 'pt',
         sessionStartsAt: session.startsAt,
@@ -185,14 +188,20 @@ export async function cancelPtRequest(input: CancelPtRequestInput): Promise<Canc
         cancelledAt: now,
         cancelledByStaffId: source === 'admin' ? (actorStaffId ?? null) : null,
       })
-      .where(eq(ptSessions.id, session.id))
+      .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, session.id)))
 
     // Cancel every booking on the session. The requester's booking carries the
     // refund outcome; co-clients (2on1 partner) only lose their seat (`n_a`).
     const sessionBookings = await tx
       .select({ id: bookings.id, clientId: bookings.clientId })
       .from(bookings)
-      .where(and(eq(bookings.ptSessionId, session.id), eq(bookings.state, 'confirmed')))
+      .where(
+        and(
+          eq(bookings.tenantId, tenantId),
+          eq(bookings.ptSessionId, session.id),
+          eq(bookings.state, 'confirmed'),
+        ),
+      )
       .for('update')
     for (const bk of sessionBookings) {
       await tx
@@ -203,7 +212,7 @@ export async function cancelPtRequest(input: CancelPtRequestInput): Promise<Canc
           checkInState: 'n_a',
           cancelledAt: now,
         })
-        .where(eq(bookings.id, bk.id))
+        .where(and(eq(bookings.tenantId, tenantId), eq(bookings.id, bk.id)))
     }
 
     // One cancellation row, attributed to the requester (the actor who owns the
@@ -211,8 +220,7 @@ export async function cancelPtRequest(input: CancelPtRequestInput): Promise<Canc
     const requesterBooking = sessionBookings.find(b => b.clientId === req.clientId)
     if (requesterBooking) {
       await tx.insert(cancellations).values({
-        // Off the request, for the same reason the refund above is (#62).
-        tenantId: req.tenantId!,
+        tenantId,
         bookingId: requesterBooking.id,
         clientId: req.clientId,
         kind: 'pt',
@@ -227,9 +235,10 @@ export async function cancelPtRequest(input: CancelPtRequestInput): Promise<Canc
     await tx
       .update(ptRequests)
       .set({ status: 'cancelled_after_scheduled', resolvedAt: now, resolvedByStaffId })
-      .where(eq(ptRequests.id, ptRequestId))
+      .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, ptRequestId)))
 
     await tx.insert(inboxItems).values({
+      tenantId,
       type: source === 'admin' ? 'admin_cancel_class_pt' : 'client_cancellation',
       payload: {
         ptRequestId,
@@ -257,14 +266,24 @@ export async function cancelPtRequest(input: CancelPtRequestInput): Promise<Canc
  */
 export async function expireStaleSessions(): Promise<void> {
   const now = new Date()
+  // The scan is deliberately platform-wide — one process sweeps every studio —
+  // but each expiry is then performed AS its own tenant, so the refund, the
+  // status flip and the inbox item all land under the right one.
   const stale = await db
-    .select({ id: ptRequests.id })
+    .select({ id: ptRequests.id, tenantId: ptRequests.tenantId })
     .from(ptRequests)
     .where(and(eq(ptRequests.status, 'pending'), lt(ptRequests.expiresAt, now)))
 
   for (const row of stale) {
     try {
-      await cancelPtRequest({ ptRequestId: row.id, source: 'system' })
+      // `?? TENANT_ONE_ID`, not `!`: the column is still nullable until #63
+      // turns it `NOT NULL`, and a row that predates tenancy IS tenant #1 —
+      // the same reading `tenantMatches` takes. `!` would hand `undefined` to a
+      // scoped lookup and expire nothing, quietly.
+      await cancelPtRequest(row.tenantId ?? TENANT_ONE_ID, {
+        ptRequestId: row.id,
+        source: 'system',
+      })
     } catch (err) {
       // A request that raced into a terminal/scheduled state between the scan and
       // the lock is fine to skip — the sweep is best-effort and idempotent.
@@ -284,6 +303,9 @@ export async function expireStaleSessions(): Promise<void> {
  */
 export async function completeEndedPtSessions(): Promise<void> {
   const now = new Date()
+  // Platform-wide on purpose, like `expirePackages`: this is a clock advancing
+  // a lifecycle, not a caller asking a question, and it moves each row only in
+  // relation to its own session. Nothing crosses between studios.
   const ended = await db
     .select({ id: ptRequests.id })
     .from(ptRequests)

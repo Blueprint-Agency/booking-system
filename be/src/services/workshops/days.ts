@@ -3,12 +3,16 @@ import { db } from '../../db'
 import {
   workshops,
   workshopDays,
-  workshopTiers,
   workshopTierDays,
 } from '../../db/schema/schedule'
 import { bookings } from '../../db/schema/bookings'
 import { ConflictError, NotFoundError, BadRequestError } from '../../shared/errors'
 import { assertRoomAvailable, assertRoomInLocation } from '../schedule/room-conflicts'
+// The tenant gate every entry point here starts with: the workshop exists AND
+// is this tenant's, so an id borrowed from another studio is
+// `workshop_not_found` before any day is read, written or deleted. One
+// definition, shared with ./tiers.ts.
+import { getWorkshop as ensureWorkshop } from './publish'
 
 export type WorkshopDayRow = typeof workshopDays.$inferSelect
 
@@ -23,30 +27,28 @@ export interface CreateDayInput {
   capacityBuffer?: number
 }
 
-async function ensureWorkshop(workshopId: string) {
-  const [w] = await db.select().from(workshops).where(eq(workshops.id, workshopId)).limit(1)
-  if (!w) throw new NotFoundError('workshop_not_found')
-  return w
-}
-
-export async function listDays(workshopId: string): Promise<WorkshopDayRow[]> {
-  await ensureWorkshop(workshopId)
+export async function listDays(tenantId: string, workshopId: string): Promise<WorkshopDayRow[]> {
+  await ensureWorkshop(tenantId, workshopId)
   return db
     .select()
     .from(workshopDays)
-    .where(eq(workshopDays.workshopId, workshopId))
+    .where(and(eq(workshopDays.tenantId, tenantId), eq(workshopDays.workshopId, workshopId)))
     .orderBy(workshopDays.ord)
 }
 
-export async function createDay(workshopId: string, input: CreateDayInput): Promise<WorkshopDayRow> {
-  const w = await ensureWorkshop(workshopId)
+export async function createDay(
+  tenantId: string,
+  workshopId: string,
+  input: CreateDayInput,
+): Promise<WorkshopDayRow> {
+  const w = await ensureWorkshop(tenantId, workshopId)
   if (input.endsAt <= input.startsAt) throw new BadRequestError('ends_at_must_be_after_starts_at')
-  await assertRoomInLocation(w.tenantId!, input.roomId, w.locationId)
-  await assertRoomAvailable(w.tenantId!, input.roomId, input.startsAt, input.endsAt)
+  await assertRoomInLocation(tenantId, input.roomId, w.locationId)
+  await assertRoomAvailable(tenantId, input.roomId, input.startsAt, input.endsAt)
   const [row] = await db
     .insert(workshopDays)
     .values({
-      tenantId: w.tenantId,
+      tenantId,
       workshopId,
       ord: input.ord,
       roomId: input.roomId,
@@ -62,19 +64,25 @@ export async function createDay(workshopId: string, input: CreateDayInput): Prom
 }
 
 export async function updateDay(
+  tenantId: string,
   workshopId: string,
   dayId: string,
   patch: Partial<CreateDayInput>,
 ): Promise<WorkshopDayRow> {
-  await ensureWorkshop(workshopId)
+  const w = await ensureWorkshop(tenantId, workshopId)
   const [existing] = await db
     .select()
     .from(workshopDays)
-    .where(and(eq(workshopDays.id, dayId), eq(workshopDays.workshopId, workshopId)))
+    .where(
+      and(
+        eq(workshopDays.tenantId, tenantId),
+        eq(workshopDays.id, dayId),
+        eq(workshopDays.workshopId, workshopId),
+      ),
+    )
     .limit(1)
   if (!existing) throw new NotFoundError('workshop_day_not_found')
 
-  const w = await ensureWorkshop(workshopId)
   const nextStarts = patch.startsAt ?? existing.startsAt
   const nextEnds = patch.endsAt ?? existing.endsAt
   if (nextEnds <= nextStarts) {
@@ -86,8 +94,8 @@ export async function updateDay(
   const roomChanged = patch.roomId !== undefined && patch.roomId !== existing.roomId
   const timeChanged = patch.startsAt !== undefined || patch.endsAt !== undefined
   if (nextRoomId && (roomChanged || timeChanged)) {
-    await assertRoomInLocation(w.tenantId!, nextRoomId, w.locationId)
-    await assertRoomAvailable(w.tenantId!, nextRoomId, nextStarts, nextEnds, {
+    await assertRoomInLocation(tenantId, nextRoomId, w.locationId)
+    await assertRoomAvailable(tenantId, nextRoomId, nextStarts, nextEnds, {
       kind: 'workshop_day',
       id: dayId,
     })
@@ -105,7 +113,7 @@ export async function updateDay(
       ...(patch.capacityWaitlist !== undefined ? { capacityWaitlist: patch.capacityWaitlist } : {}),
       ...(patch.capacityBuffer !== undefined ? { capacityBuffer: patch.capacityBuffer } : {}),
     })
-    .where(eq(workshopDays.id, dayId))
+    .where(and(eq(workshopDays.tenantId, tenantId), eq(workshopDays.id, dayId)))
     .returning()
   return row!
 }
@@ -115,12 +123,22 @@ export async function updateDay(
  * → tier → tier_days). The check sums bookings on tiers whose tier_days set
  * includes this day.
  */
-export async function deleteDay(workshopId: string, dayId: string): Promise<void> {
-  await ensureWorkshop(workshopId)
+export async function deleteDay(
+  tenantId: string,
+  workshopId: string,
+  dayId: string,
+): Promise<void> {
+  await ensureWorkshop(tenantId, workshopId)
   const [existing] = await db
     .select()
     .from(workshopDays)
-    .where(and(eq(workshopDays.id, dayId), eq(workshopDays.workshopId, workshopId)))
+    .where(
+      and(
+        eq(workshopDays.tenantId, tenantId),
+        eq(workshopDays.id, dayId),
+        eq(workshopDays.workshopId, workshopId),
+      ),
+    )
     .limit(1)
   if (!existing) throw new NotFoundError('workshop_day_not_found')
 
@@ -128,7 +146,9 @@ export async function deleteDay(workshopId: string, dayId: string): Promise<void
   const tierIdsTouchingDay = await db
     .select({ tierId: workshopTierDays.workshopTierId })
     .from(workshopTierDays)
-    .where(eq(workshopTierDays.workshopDayId, dayId))
+    .where(
+      and(eq(workshopTierDays.tenantId, tenantId), eq(workshopTierDays.workshopDayId, dayId)),
+    )
 
   if (tierIdsTouchingDay.length) {
     const tierIds = tierIdsTouchingDay.map(r => r.tierId)
@@ -137,6 +157,7 @@ export async function deleteDay(workshopId: string, dayId: string): Promise<void
       .from(bookings)
       .where(
         and(
+          eq(bookings.tenantId, tenantId),
           inArray(bookings.workshopTierId, tierIds),
           // any booking still confirmed blocks the delete
           sql`${bookings.state} = 'confirmed'`,
@@ -148,5 +169,7 @@ export async function deleteDay(workshopId: string, dayId: string): Promise<void
     }
   }
 
-  await db.delete(workshopDays).where(eq(workshopDays.id, dayId))
+  await db
+    .delete(workshopDays)
+    .where(and(eq(workshopDays.tenantId, tenantId), eq(workshopDays.id, dayId)))
 }

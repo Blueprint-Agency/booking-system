@@ -16,7 +16,12 @@ import { ConflictError, ForbiddenError, NotFoundError } from '../../shared/error
  * and a third mount silently re-opens the hole; the check travels with the
  * action instead.
  */
-export async function cancelWorkshop(workshopId: string, staffId: string, actorRole: string) {
+export async function cancelWorkshop(
+  tenantId: string,
+  workshopId: string,
+  staffId: string,
+  actorRole: string,
+) {
   if (actorRole !== 'superadmin') {
     throw new ForbiddenError('forbidden_role', { required: ['superadmin'], actual: actorRole })
   }
@@ -24,7 +29,7 @@ export async function cancelWorkshop(workshopId: string, staffId: string, actorR
     const [existing] = await tx
       .select()
       .from(workshops)
-      .where(eq(workshops.id, workshopId))
+      .where(and(eq(workshops.tenantId, tenantId), eq(workshops.id, workshopId)))
       .for('update')
       .limit(1)
     if (!existing) throw new NotFoundError('workshop_not_found')
@@ -40,7 +45,7 @@ export async function cancelWorkshop(workshopId: string, staffId: string, actorR
         cancelledAt: now,
         cancelledByStaffId: staffId,
       })
-      .where(eq(workshops.id, workshopId))
+      .where(and(eq(workshops.tenantId, tenantId), eq(workshops.id, workshopId)))
       .returning()
 
     const affected = await tx
@@ -48,6 +53,7 @@ export async function cancelWorkshop(workshopId: string, staffId: string, actorR
       .from(bookings)
       .where(
         and(
+          eq(bookings.tenantId, tenantId),
           eq(bookings.kind, 'workshop'),
           eq(bookings.workshopId, workshopId),
           eq(bookings.state, 'confirmed'),
@@ -66,6 +72,7 @@ export async function cancelWorkshop(workshopId: string, staffId: string, actorR
         })
         .where(
           and(
+            eq(bookings.tenantId, tenantId),
             eq(bookings.kind, 'workshop'),
             eq(bookings.workshopId, workshopId),
             eq(bookings.state, 'confirmed'),
@@ -74,6 +81,7 @@ export async function cancelWorkshop(workshopId: string, staffId: string, actorR
     }
 
     await tx.insert(inboxItems).values({
+      tenantId,
       type: 'admin_cancel_workshop',
       payload: {
         workshopId,

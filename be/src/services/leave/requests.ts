@@ -5,6 +5,7 @@ import { leavePools, leaveRequests } from '../../db/schema/leave'
 import { instructors, leaveConflicts } from '../../db/schema/catalog'
 import { globalPolicy } from '../../db/schema/policy'
 import { staffUsers } from '../../db/schema/identity'
+import { TENANT_ONE_ID } from '../../db/schema/tenancy'
 import { conflictMessage, findOccupancyConflicts, leaveDaysPhrase } from '../schedule/occupancy'
 import type { Tx } from '../schedule/roster'
 import { emailEveryAdmin, sendTemplatedEmail } from '../notifications/send'
@@ -115,29 +116,32 @@ interface LeavePool {
  */
 async function leavePoolsFor(
   tx: Tx,
+  tenantId: string,
   instructorId: string,
   leaveYear: number,
 ): Promise<Record<rules.LeaveType, LeavePool>> {
+  // The tenant filter doubles the permission check: an instructor id belonging
+  // to another studio is `not_an_instructor` here, so no Pool of theirs is ever
+  // read, materialised or adjusted from this tenant's side.
   const [instructor] = await tx
     .select({
-      tenantId: instructors.tenantId,
       annual: instructors.annualLeaveDays,
       medical: instructors.medicalLeaveDays,
       study: instructors.studyLeaveDays,
     })
     .from(instructors)
-    .where(eq(instructors.staffUserId, instructorId))
+    .where(and(eq(instructors.tenantId, tenantId), eq(instructors.staffUserId, instructorId)))
     .for('update')
     .limit(1)
   if (!instructor) throw new ForbiddenError('not_an_instructor')
 
-  // `global_policy` is one row per tenant, so the caps have to be read for the
-  // instructor's own studio; an unqualified `limit(1)` would apply whichever
-  // studio's row came back first. (Scoping the rest of this service is #62.)
+  // `global_policy` is one row per tenant, so the carry-over cap has to be read
+  // for the instructor's own studio; an unqualified `limit(1)` would apply
+  // whichever studio's row came back first.
   const [policy] = await tx
     .select({ carryOverCapDays: globalPolicy.leaveCarryOverCapDays })
     .from(globalPolicy)
-    .where(eq(globalPolicy.tenantId, instructor.tenantId!))
+    .where(eq(globalPolicy.tenantId, tenantId))
     .limit(1)
   if (!policy) throw new NotFoundError('policy_not_seeded')
 
@@ -149,7 +153,11 @@ async function leavePoolsFor(
         .select({ type: leavePools.type, days: leavePools.days })
         .from(leavePools)
         .where(
-          and(eq(leavePools.instructorId, instructorId), eq(leavePools.leaveYear, previousYear)),
+          and(
+            eq(leavePools.tenantId, tenantId),
+            eq(leavePools.instructorId, instructorId),
+            eq(leavePools.leaveYear, previousYear),
+          ),
         )
     ).map(r => [r.type, Number(r.days)]),
   )
@@ -163,6 +171,7 @@ async function leavePoolsFor(
             .from(leaveRequests)
             .where(
               and(
+                eq(leaveRequests.tenantId, tenantId),
                 eq(leaveRequests.instructorId, instructorId),
                 eq(leaveRequests.leaveYear, previousYear),
               ),
@@ -198,6 +207,7 @@ async function leavePoolsFor(
     .insert(leavePools)
     .values(
       LEAVE_TYPES.map(type => ({
+        tenantId,
         instructorId,
         type,
         leaveYear,
@@ -222,7 +232,13 @@ async function leavePoolsFor(
           carriedDays: leavePools.carriedDays,
         })
         .from(leavePools)
-        .where(and(eq(leavePools.instructorId, instructorId), eq(leavePools.leaveYear, leaveYear)))
+        .where(
+          and(
+            eq(leavePools.tenantId, tenantId),
+            eq(leavePools.instructorId, instructorId),
+            eq(leavePools.leaveYear, leaveYear),
+          ),
+        )
     ).map(r => [
       r.type,
       { assigned: instructor[r.type], pool: Number(r.days), carried: Number(r.carriedDays) },
@@ -254,24 +270,29 @@ export type InstructorLeaveFigures = Record<rules.LeaveType, LeaveFiguresRespons
  *  has no stored Pool and a past one is frozen history. */
 const currentLeaveYear = () => rules.leaveYearOf(rules.sgToday(new Date()))
 
-async function yearRows(tx: Tx, instructorId: string, leaveYear: number) {
+async function yearRows(tx: Tx, tenantId: string, instructorId: string, leaveYear: number) {
   return (
     await tx
       .select()
       .from(leaveRequests)
       .where(
-        and(eq(leaveRequests.instructorId, instructorId), eq(leaveRequests.leaveYear, leaveYear)),
+        and(
+          eq(leaveRequests.tenantId, tenantId),
+          eq(leaveRequests.instructorId, instructorId),
+          eq(leaveRequests.leaveYear, leaveYear),
+        ),
       )
   ).map(toDaysRow)
 }
 
 async function figuresFor(
   tx: Tx,
+  tenantId: string,
   instructorId: string,
   leaveYear: number,
 ): Promise<InstructorLeaveFigures> {
-  const pools = await leavePoolsFor(tx, instructorId, leaveYear)
-  const rows = await yearRows(tx, instructorId, leaveYear)
+  const pools = await leavePoolsFor(tx, tenantId, instructorId, leaveYear)
+  const rows = await yearRows(tx, tenantId, instructorId, leaveYear)
   const of = (type: rules.LeaveType): LeaveFiguresResponse => {
     const f = rules.leavePoolFigures(type, pools[type].pool, rows, leaveYear)
     return { carried_days: pools[type].carried, pool_days: f.pool, remaining_days: f.remaining }
@@ -288,6 +309,7 @@ async function figuresFor(
  * being guessed at.
  */
 async function currentLeaveFigures(
+  tenantId: string,
   instructorIds: readonly string[],
 ): Promise<Map<string, InstructorLeaveFigures>> {
   if (instructorIds.length === 0) return new Map()
@@ -296,7 +318,7 @@ async function currentLeaveFigures(
     const out = new Map<string, InstructorLeaveFigures>()
     // ponytail: one round trip per instructor. Batch the pool/request reads if
     // the staff list ever gets long enough to notice.
-    for (const id of instructorIds) out.set(id, await figuresFor(tx, id, leaveYear))
+    for (const id of instructorIds) out.set(id, await figuresFor(tx, tenantId, id, leaveYear))
     return out
   })
 }
@@ -312,9 +334,11 @@ async function currentLeaveFigures(
  * carries.
  */
 export async function withLeaveFigures<T extends { id: string; annualLeaveDays?: number }>(
+  tenantId: string,
   rows: T[],
 ): Promise<(T & { leave?: InstructorLeaveFigures })[]> {
   const figures = await currentLeaveFigures(
+    tenantId,
     rows.filter(r => r.annualLeaveDays !== undefined).map(r => r.id),
   )
   return rows.map(r => {
@@ -327,6 +351,7 @@ export async function withLeaveFigures<T extends { id: string; annualLeaveDays?:
  *  not an instructor — the caller spreads it onto a staff row, so absent beats
  *  null. */
 export async function assignedLeaveDays(
+  tenantId: string,
   staffUserId: string,
 ): Promise<{ annualLeaveDays?: number; medicalLeaveDays?: number; studyLeaveDays?: number }> {
   const [row] = await db
@@ -336,7 +361,7 @@ export async function assignedLeaveDays(
       studyLeaveDays: instructors.studyLeaveDays,
     })
     .from(instructors)
-    .where(eq(instructors.staffUserId, staffUserId))
+    .where(and(eq(instructors.tenantId, tenantId), eq(instructors.staffUserId, staffUserId)))
     .limit(1)
   return row ?? {}
 }
@@ -368,12 +393,13 @@ export interface AdjustRemainingInput {
  * submission cannot both read the same "before".
  */
 export async function adjustRemainingDays(
+  tenantId: string,
   input: AdjustRemainingInput,
 ): Promise<InstructorLeaveFigures> {
   const leaveYear = currentLeaveYear()
   return db.transaction(async tx => {
-    const pools = await leavePoolsFor(tx, input.instructorId, leaveYear)
-    const rows = await yearRows(tx, input.instructorId, leaveYear)
+    const pools = await leavePoolsFor(tx, tenantId, input.instructorId, leaveYear)
+    const rows = await yearRows(tx, tenantId, input.instructorId, leaveYear)
 
     for (const type of LEAVE_TYPES) {
       const desired = input[type]
@@ -394,13 +420,14 @@ export async function adjustRemainingDays(
         .set({ days: rules.poolForRemaining(desired, committed).toFixed(1), updatedAt: new Date() })
         .where(
           and(
+            eq(leavePools.tenantId, tenantId),
             eq(leavePools.instructorId, input.instructorId),
             eq(leavePools.type, type),
             eq(leavePools.leaveYear, leaveYear),
           ),
         )
     }
-    return figuresFor(tx, input.instructorId, leaveYear)
+    return figuresFor(tx, tenantId, input.instructorId, leaveYear)
   })
 }
 
@@ -434,15 +461,21 @@ function balances(
  *  A read that writes: this is where a Leave Year's Pool is first materialised,
  *  so it runs in a transaction under the instructor's lock. */
 export async function getOwnLeave(
+  tenantId: string,
   instructorId: string,
   leaveYear = rules.leaveYearOf(rules.sgToday(new Date())),
 ): Promise<{ leave_year: number; balances: LeaveBalance[]; requests: LeaveRequestRow[] }> {
   return db.transaction(async tx => {
-    const pool = await leavePoolsFor(tx, instructorId, leaveYear)
+    const pool = await leavePoolsFor(tx, tenantId, instructorId, leaveYear)
     const rows = await tx
       .select()
       .from(leaveRequests)
-      .where(eq(leaveRequests.instructorId, instructorId))
+      .where(
+        and(
+          eq(leaveRequests.tenantId, tenantId),
+          eq(leaveRequests.instructorId, instructorId),
+        ),
+      )
       .orderBy(desc(leaveRequests.startDate), desc(leaveRequests.createdAt))
     return {
       leave_year: leaveYear,
@@ -473,23 +506,27 @@ export interface SubmitLeaveInput {
  * is a row that does not exist yet, and an absent row cannot be locked. It is
  * one row per instructor, so two instructors never wait on each other.
  */
-export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<LeaveRequestRow> {
+export async function submitLeaveRequest(
+  tenantId: string,
+  input: SubmitLeaveInput,
+): Promise<LeaveRequestRow> {
   const now = new Date()
   const leaveYear = rules.leaveYearOf(input.startDate)
   const halfDay = input.halfDay ?? 'none'
 
   const filed = await db.transaction(async tx => {
-    // Whose studio this submission belongs to. Read first because the caps, the
-    // declared pairs and the study-leave lock below are all per-tenant, and a
-    // study request that locked *every* instructor row on the platform would
-    // serialise submissions across studios that share nothing.
+    // The applicant is an instructor OF THIS STUDIO. Read first because the
+    // caps, the declared pairs and the study-leave lock below are all
+    // per-tenant, and a study request that locked *every* instructor row on the
+    // platform would serialise submissions across studios that share nothing.
     const [applicant] = await tx
-      .select({ tenantId: instructors.tenantId })
+      .select({ id: instructors.staffUserId })
       .from(instructors)
-      .where(eq(instructors.staffUserId, input.instructorId))
+      .where(
+        and(eq(instructors.tenantId, tenantId), eq(instructors.staffUserId, input.instructorId)),
+      )
       .limit(1)
     if (!applicant) throw new ForbiddenError('not_an_instructor')
-    const applicantTenantId = applicant.tenantId!
 
     // Who this instructor is in a declared **Leave Conflict** with. An ARCHIVED
     // partner is not in the set — their conflicts refuse nothing — which the
@@ -518,7 +555,7 @@ export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<Leave
             ),
           ),
         )
-        .where(and(eq(leaveConflicts.tenantId, applicantTenantId), eq(staffUsers.status, 'active')))
+        .where(and(eq(leaveConflicts.tenantId, tenantId), eq(staffUsers.status, 'active')))
     ).map(r => r.id)
 
     // THE FIRST write-blocking statement: the rule lock. Locking only the
@@ -537,9 +574,9 @@ export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<Leave
       .from(instructors)
       .where(
         input.type === 'study'
-          ? eq(instructors.tenantId, applicantTenantId)
+          ? eq(instructors.tenantId, tenantId)
           : and(
-              eq(instructors.tenantId, applicantTenantId),
+              eq(instructors.tenantId, tenantId),
               inArray(instructors.staffUserId, [input.instructorId, ...partnerIds]),
             ),
       )
@@ -551,14 +588,20 @@ export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<Leave
     // check — admins and superadmins have no `instructors` row. It returns the
     // Pool this submission is measured against, materialising it if this is the
     // first anyone has touched `leaveYear`, all under that one lock.
-    const pool = await leavePoolsFor(tx, input.instructorId, leaveYear)
+    const pool = await leavePoolsFor(tx, tenantId, input.instructorId, leaveYear)
 
-    // The query narrows to this instructor and leave year; which statuses and
-    // which type count is the pure rule's business.
+    // The query narrows to this tenant, instructor and leave year; which
+    // statuses and which type count is the pure rule's business.
     const existing = await tx
       .select()
       .from(leaveRequests)
-      .where(and(eq(leaveRequests.instructorId, input.instructorId), eq(leaveRequests.leaveYear, leaveYear)))
+      .where(
+        and(
+          eq(leaveRequests.tenantId, tenantId),
+          eq(leaveRequests.instructorId, input.instructorId),
+          eq(leaveRequests.leaveYear, leaveYear),
+        ),
+      )
 
     const check = rules.checkLeaveSubmission({
       type: input.type,
@@ -583,7 +626,7 @@ export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<Leave
     const [caps] = await tx
       .select({ study: globalPolicy.studyLeaveCap })
       .from(globalPolicy)
-      .where(eq(globalPolicy.tenantId, applicantTenantId))
+      .where(eq(globalPolicy.tenantId, tenantId))
       .limit(1)
     if (!caps) throw new NotFoundError('policy_not_seeded')
     const peers = (
@@ -600,6 +643,9 @@ export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<Leave
         .innerJoin(staffUsers, eq(staffUsers.id, leaveRequests.instructorId))
         .where(
           and(
+            // The peers a cap counts are this studio's. Another studio's
+            // absences must never make a class here impossible to staff.
+            eq(leaveRequests.tenantId, tenantId),
             ne(leaveRequests.instructorId, input.instructorId),
             // Pending counts, exactly as it does for the Pool: the first to
             // submit holds the day. A rejection frees it at that moment.
@@ -637,7 +683,7 @@ export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<Leave
     // flight at once, and a wedged pool takes down every route, not just leave.
     const conflicts = rules.futureConflicts(
       await findOccupancyConflicts(
-        applicantTenantId,
+        tenantId,
         { kind: 'instructor', id: input.instructorId },
         rules.leaveWindow(input.startDate, input.endDate, halfDay),
         undefined,
@@ -664,6 +710,7 @@ export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<Leave
     const [inserted] = await tx
       .insert(leaveRequests)
       .values({
+        tenantId,
         instructorId: input.instructorId,
         type: input.type,
         startDate: input.startDate,
@@ -680,13 +727,14 @@ export async function submitLeaveRequest(input: SubmitLeaveInput): Promise<Leave
 
   // Outside the transaction on purpose: the lock is released before anything
   // touches SMTP.
-  await emailAdminsOfSubmission(filed.inserted, filed.capWarning)
+  await emailAdminsOfSubmission(tenantId, filed.inserted, filed.capWarning)
   return filed.inserted
 }
 
 /** Withdraw a pending request, or cancel an approved one that hasn't started.
  *  Both give the days back with no arithmetic: Committed is a sum over rows. */
 export async function transitionOwnLeaveRequest(
+  tenantId: string,
   action: 'withdraw' | 'cancel',
   instructorId: string,
   id: string,
@@ -694,7 +742,13 @@ export async function transitionOwnLeaveRequest(
   const [row] = await db
     .select()
     .from(leaveRequests)
-    .where(and(eq(leaveRequests.id, id), eq(leaveRequests.instructorId, instructorId)))
+    .where(
+      and(
+        eq(leaveRequests.tenantId, tenantId),
+        eq(leaveRequests.id, id),
+        eq(leaveRequests.instructorId, instructorId),
+      ),
+    )
     .limit(1)
   if (!row) throw new NotFoundError('leave_request_not_found')
 
@@ -704,7 +758,7 @@ export async function transitionOwnLeaveRequest(
   const [updated] = await db
     .update(leaveRequests)
     .set({ status: check.status, updatedAt: new Date() })
-    .where(eq(leaveRequests.id, id))
+    .where(and(eq(leaveRequests.tenantId, tenantId), eq(leaveRequests.id, id)))
     .returning()
   if (!updated) throw new NotFoundError('leave_request_not_found')
   return updated
@@ -735,6 +789,7 @@ function requireBucket(): void {
  * upload leaves the row pointing at nothing rather than at a missing object.
  */
 export async function attachSupportingDocument(input: {
+  tenantId: string
   instructorId: string
   id: string
   contentType: string
@@ -743,7 +798,13 @@ export async function attachSupportingDocument(input: {
   const [row] = await db
     .select()
     .from(leaveRequests)
-    .where(and(eq(leaveRequests.id, input.id), eq(leaveRequests.instructorId, input.instructorId)))
+    .where(
+      and(
+        eq(leaveRequests.tenantId, input.tenantId),
+        eq(leaveRequests.id, input.id),
+        eq(leaveRequests.instructorId, input.instructorId),
+      ),
+    )
     .limit(1)
   if (!row) throw new NotFoundError('leave_request_not_found')
 
@@ -761,7 +822,7 @@ export async function attachSupportingDocument(input: {
   const [updated] = await db
     .update(leaveRequests)
     .set({ supportingDocumentR2Key: key, updatedAt: new Date() })
-    .where(eq(leaveRequests.id, row.id))
+    .where(and(eq(leaveRequests.tenantId, input.tenantId), eq(leaveRequests.id, row.id)))
     .returning()
   if (!updated) throw new NotFoundError('leave_request_not_found')
   return updated
@@ -782,7 +843,7 @@ export async function supportingDocumentUrl(
   const [row] = await db
     .select({ instructorId: leaveRequests.instructorId, key: leaveRequests.supportingDocumentR2Key })
     .from(leaveRequests)
-    .where(eq(leaveRequests.id, id))
+    .where(and(eq(leaveRequests.tenantId, viewer.tenantId), eq(leaveRequests.id, id)))
     .limit(1)
   if (!row) throw new NotFoundError('leave_request_not_found')
   if (viewer.role === 'instructor' && row.instructorId !== viewer.staffUserId) {
@@ -809,6 +870,7 @@ export interface AdminLeaveRequest {
 /** Every instructor's requests, latest dates first (same order as the
  *  instructor's own list). `status` omitted means all of them. */
 export async function listLeaveRequestsForAdmin(
+  tenantId: string,
   status?: rules.LeaveStatus,
 ): Promise<AdminLeaveRequest[]> {
   return db
@@ -818,7 +880,12 @@ export async function listLeaveRequestsForAdmin(
     })
     .from(leaveRequests)
     .innerJoin(staffUsers, eq(staffUsers.id, leaveRequests.instructorId))
-    .where(status ? eq(leaveRequests.status, status) : undefined)
+    .where(
+      and(
+        eq(leaveRequests.tenantId, tenantId),
+        ...(status ? [eq(leaveRequests.status, status)] : []),
+      ),
+    )
     .orderBy(desc(leaveRequests.startDate), desc(leaveRequests.createdAt))
 }
 
@@ -873,7 +940,10 @@ export interface LeaveCalendarViewer {
 export const leaveViewer = (staff: typeof staffUsers.$inferSelect): LeaveCalendarViewer => ({
   staffUserId: staff.id,
   role: staff.role,
-  tenantId: staff.tenantId!,
+  // `?? TENANT_ONE_ID`, not `!`: the column stays nullable until #63, and a
+  // staff row that predates tenancy IS tenant #1 — the reading `tenantMatches`
+  // already takes. `!` would put `undefined` in every leave filter below it.
+  tenantId: staff.tenantId ?? TENANT_ONE_ID,
 })
 
 /**
@@ -900,6 +970,7 @@ export async function listLeaveCalendar(
     .leftJoin(decider, eq(decider.id, leaveRequests.decidedByStaffId))
     .where(
       and(
+        eq(leaveRequests.tenantId, viewer.tenantId),
         inArray(leaveRequests.status, [...rules.COMMITTED_STATUSES]),
         // Overlaps the window: starts before it ends, ends after it starts.
         lte(leaveRequests.startDate, to),
@@ -1008,7 +1079,10 @@ export interface DecideLeaveInput {
  * this only fetches the row, writes the outcome and tells the instructor. No
  * Pool is touched on any path — see the note on the rule.
  */
-export async function decideLeaveRequest(input: DecideLeaveInput): Promise<LeaveRequestRow> {
+export async function decideLeaveRequest(
+  tenantId: string,
+  input: DecideLeaveInput,
+): Promise<LeaveRequestRow> {
   const reason = input.reason?.trim() ?? ''
   // Checked in the service, not the route, so no future caller can reject
   // without saying why.
@@ -1021,7 +1095,7 @@ export async function decideLeaveRequest(input: DecideLeaveInput): Promise<Leave
   const [row] = await db
     .select()
     .from(leaveRequests)
-    .where(eq(leaveRequests.id, input.id))
+    .where(and(eq(leaveRequests.tenantId, tenantId), eq(leaveRequests.id, input.id)))
     .limit(1)
   if (!row) throw new NotFoundError('leave_request_not_found')
 
@@ -1048,7 +1122,7 @@ export async function decideLeaveRequest(input: DecideLeaveInput): Promise<Leave
             updatedAt: now,
           },
     )
-    .where(eq(leaveRequests.id, input.id))
+    .where(and(eq(leaveRequests.tenantId, tenantId), eq(leaveRequests.id, input.id)))
     .returning()
   if (!updated) throw new NotFoundError('leave_request_not_found')
 
@@ -1056,6 +1130,7 @@ export async function decideLeaveRequest(input: DecideLeaveInput): Promise<Leave
   // one way this feature can leave someone expecting a day off that no longer
   // exists, so it names who took it back and when.
   await emailInstructorOfDecision(
+    tenantId,
     updated,
     reason,
     revoking ? { staffId: input.actorStaffId, at: now } : undefined,
@@ -1084,11 +1159,11 @@ const formatDates = (r: LeaveRequestRow) =>
     ? rules.formatLeaveDate(r.startDate)
     : `${rules.formatLeaveDate(r.startDate)} – ${rules.formatLeaveDate(r.endDate)}`) + HALF_DAY_LABEL[r.halfDay]
 
-async function staffName(staffUserId: string, fallback: string): Promise<string> {
+async function staffName(tenantId: string, staffUserId: string, fallback: string): Promise<string> {
   const [staff] = await db
     .select({ name: staffUsers.name })
     .from(staffUsers)
-    .where(eq(staffUsers.id, staffUserId))
+    .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, staffUserId)))
     .limit(1)
   return staff?.name ?? fallback
 }
@@ -1096,11 +1171,16 @@ async function staffName(staffUserId: string, fallback: string): Promise<string>
 /** `capWarning` is the §17 line: empty unless this request breaches a declared
  *  **Leave Conflict** or the study **Leave Cap**, which only medical ever does —
  *  everything else was refused at submission. */
-async function emailAdminsOfSubmission(row: LeaveRequestRow, capWarning: string): Promise<void> {
+async function emailAdminsOfSubmission(
+  tenantId: string,
+  row: LeaveRequestRow,
+  capWarning: string,
+): Promise<void> {
   await emailEveryAdmin(
+    tenantId,
     'leave_request_submitted',
     async () => ({
-      instructor_name: await staffName(row.instructorId, 'An instructor'),
+      instructor_name: await staffName(tenantId, row.instructorId, 'An instructor'),
       leave_type: row.type,
       dates: formatDates(row),
       days: String(Number(row.days)),
@@ -1118,6 +1198,7 @@ const revokedAtFormat = sgFormat('en-GB', { dateStyle: 'long', timeStyle: 'short
 /** Approved, rejected or revoked — one recipient, one shape. `revokedBy` is set
  *  on a revocation only, and is what that template's extra two lines render. */
 async function emailInstructorOfDecision(
+  tenantId: string,
   row: LeaveRequestRow,
   reason: string,
   revokedBy?: { staffId: string; at: Date },
@@ -1126,11 +1207,12 @@ async function emailInstructorOfDecision(
     const [staff] = await db
       .select({ id: staffUsers.id, name: staffUsers.name, email: staffUsers.email })
       .from(staffUsers)
-      .where(eq(staffUsers.id, row.instructorId))
+      .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, row.instructorId)))
       .limit(1)
     if (!staff) return
 
     await sendTemplatedEmail({
+      tenantId,
       slug:
         row.status === 'approved'
           ? 'leave_approved'
@@ -1146,7 +1228,7 @@ async function emailInstructorOfDecision(
         reason,
         ...(revokedBy
           ? {
-              revoked_by: await staffName(revokedBy.staffId, 'An admin'),
+              revoked_by: await staffName(tenantId, revokedBy.staffId, 'An admin'),
               revoked_at: revokedAtFormat.format(revokedBy.at),
             }
           : {}),

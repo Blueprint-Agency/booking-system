@@ -53,6 +53,7 @@ export interface CorporateSessionHydrated extends CorporateSessionRow {
 // module asks the roster instead — see services/schedule/occupancy.ts.
 
 export async function createCorporateSession(
+  tenantId: string,
   input: CreateCorporateSessionInput,
 ): Promise<CreateCorporateSessionResult> {
   // 1. Time range
@@ -66,6 +67,7 @@ export async function createCorporateSession(
     .from(corporatePackages)
     .where(
       and(
+        eq(corporatePackages.tenantId, tenantId),
         eq(corporatePackages.id, input.corporatePackageId),
         isNull(corporatePackages.deletedAt),
       ),
@@ -73,10 +75,6 @@ export async function createCorporateSession(
     .limit(1)
   if (!pkg) return { ok: false, error: 'package_not_found' }
   if (pkg.status !== 'active') return { ok: false, error: 'package_archived' }
-  // The corporate package the session is sold against is the only tenant this
-  // session can belong to. Scoping the rest of this service is the workshops/PT
-  // batch (#62); the shared schedule primitives below need a tenant now.
-  const tenantId = pkg.tenantId!
 
   // 3. Location: a studio location_id OR a free-text off-site venue is required.
   const locationText = input.locationText?.trim() || null
@@ -140,15 +138,16 @@ export async function createCorporateSession(
 }
 
 export async function getCorporateSession(
+  tenantId: string,
   id: string,
 ): Promise<CorporateSessionHydrated | null> {
   const [row] = await db
     .select()
     .from(corporateSessions)
-    .where(eq(corporateSessions.id, id))
+    .where(and(eq(corporateSessions.tenantId, tenantId), eq(corporateSessions.id, id)))
     .limit(1)
   if (!row) return null
-  const supports = await listSupportingInstructorIds(row.tenantId!, id)
+  const supports = await listSupportingInstructorIds(tenantId, id)
   return { ...row, supportingInstructorIds: supports }
 }
 
@@ -170,9 +169,10 @@ export interface ListCorporateSessionsOpts {
 }
 
 export async function listCorporateSessions(
+  tenantId: string,
   opts: ListCorporateSessionsOpts = {},
 ): Promise<CorporateSessionRow[]> {
-  const conds = []
+  const conds = [eq(corporateSessions.tenantId, tenantId)]
   if (opts.from) conds.push(gte(corporateSessions.endsAt, opts.from))
   if (opts.to) conds.push(lt(corporateSessions.startsAt, opts.to))
   if (opts.locationId) conds.push(eq(corporateSessions.locationId, opts.locationId))
@@ -180,11 +180,12 @@ export async function listCorporateSessions(
   return db
     .select()
     .from(corporateSessions)
-    .where(conds.length ? and(...conds) : undefined)
+    .where(and(...conds))
     .orderBy(asc(corporateSessions.startsAt))
 }
 
 export async function cancelCorporateSession(
+  tenantId: string,
   id: string,
   staffId: string,
 ): Promise<CorporateSessionRow | null> {
@@ -197,7 +198,13 @@ export async function cancelCorporateSession(
         cancelledAt: now,
         cancelledByStaffId: staffId,
       })
-      .where(and(eq(corporateSessions.id, id), eq(corporateSessions.lifecycle, 'active')))
+      .where(
+        and(
+          eq(corporateSessions.tenantId, tenantId),
+          eq(corporateSessions.id, id),
+          eq(corporateSessions.lifecycle, 'active'),
+        ),
+      )
       .returning()
     const session = rows[0] ?? null
     if (!session) return null
@@ -212,6 +219,7 @@ export async function cancelCorporateSession(
         })
         .where(
           and(
+            eq(corporateRequests.tenantId, tenantId),
             eq(corporateRequests.id, session.corporateRequestId),
             eq(corporateRequests.status, 'scheduled'),
           ),
@@ -227,17 +235,16 @@ export type RescheduleCorporateSessionPatch = Partial<
 >
 
 export async function rescheduleCorporateSession(
+  tenantId: string,
   id: string,
   patch: RescheduleCorporateSessionPatch,
 ): Promise<CreateCorporateSessionResult | { ok: false; error: 'not_found' }> {
   const [existing] = await db
     .select()
     .from(corporateSessions)
-    .where(eq(corporateSessions.id, id))
+    .where(and(eq(corporateSessions.tenantId, tenantId), eq(corporateSessions.id, id)))
     .limit(1)
   if (!existing) return { ok: false, error: 'not_found' }
-  // The session's own tenant — see the note in `createCorporateSession`.
-  const tenantId = existing.tenantId!
 
   // Compose the proposed state by overlaying the patch.
   const nextCorporatePackageId = patch.corporatePackageId ?? existing.corporatePackageId
@@ -266,6 +273,7 @@ export async function rescheduleCorporateSession(
       .from(corporatePackages)
       .where(
         and(
+          eq(corporatePackages.tenantId, tenantId),
           eq(corporatePackages.id, nextCorporatePackageId),
           isNull(corporatePackages.deletedAt),
         ),
@@ -335,7 +343,7 @@ export async function rescheduleCorporateSession(
       const rows = await tx
         .update(corporateSessions)
         .set(set)
-        .where(eq(corporateSessions.id, id))
+        .where(and(eq(corporateSessions.tenantId, tenantId), eq(corporateSessions.id, id)))
         .returning()
       if (!rows[0]) throw new Error('update returned no rows')
       row = rows[0]
@@ -359,7 +367,7 @@ export async function rescheduleCorporateSession(
       const [fresh] = await tx
         .select()
         .from(corporateSessions)
-        .where(eq(corporateSessions.id, id))
+        .where(and(eq(corporateSessions.tenantId, tenantId), eq(corporateSessions.id, id)))
         .limit(1)
       if (fresh) row = fresh
     }

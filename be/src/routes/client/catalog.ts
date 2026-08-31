@@ -100,7 +100,7 @@ const app = new Hono()
   })
   .get('/workshop-bookings', async c => {
     const clientId = c.get('clientId')
-    const rows = await listMyWorkshopBookings(clientId)
+    const rows = await listMyWorkshopBookings(tenantId(c), clientId)
     return c.json({ workshop_bookings: rows })
   })
   .get('/class-packages', async c => {
@@ -162,7 +162,7 @@ const app = new Hono()
   // The signed-in member's corporate requests (pending / scheduled / attended / cancelled).
   .get('/corporate-requests', async c => {
     const clientId = c.get('clientId')
-    const rows = await listCorporateRequestsForClient(clientId)
+    const rows = await listCorporateRequestsForClient(tenantId(c), clientId)
     return c.json({ corporate_requests: rows.map(serializeCorporateRequest) })
   })
   // Submit a corporate request directly — no payment. Creates one pending request;
@@ -182,7 +182,7 @@ const app = new Hono()
     async c => {
       const clientId = c.get('clientId')
       const { package_id, preferred_location, notes } = c.req.valid('json')
-      const { corporateRequestId } = await submitCorporateRequest({
+      const { corporateRequestId } = await submitCorporateRequest(tenantId(c), {
         clientId,
         corporatePackageId: package_id,
         preferredLocation: preferred_location || null,

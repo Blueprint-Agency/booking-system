@@ -1,6 +1,7 @@
 import type { MiddlewareHandler } from 'hono'
 import { db } from '../db'
 import { auditLog } from '../db/schema/ledger'
+import { tenantId } from './tenant'
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 
@@ -51,6 +52,10 @@ export const audit: MiddlewareHandler = async (c, next) => {
   if (impersonatedClientId) payload.impersonatedClientId = impersonatedClientId
 
   await db.insert(auditLog).values({
+    // Stamped rather than left to the column default: the audit trail is one of
+    // the things a studio is most entitled to have to itself, and a row that
+    // took the default would file every other tenant's actions under this one.
+    tenantId: tenantId(c),
     actorStaffId,
     actorType: 'staff',
     action: `${c.req.method} ${c.req.path}`,

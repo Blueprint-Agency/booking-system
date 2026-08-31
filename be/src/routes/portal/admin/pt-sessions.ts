@@ -144,14 +144,14 @@ const app = new Hono()
   // ?status=pending|scheduled|cancelled_*|attended|all (default pending), ?location_id=
   .get('/', zValidator('query', listQuery), async c => {
     const { status, location_id } = c.req.valid('query')
-    const rows = await listPtRequestsForAdmin({
+    const rows = await listPtRequestsForAdmin(tenantId(c), {
       ...(status === 'all' ? {} : { status }),
       ...(location_id ? { locationIds: [location_id] } : {}),
     })
     return c.json({ pt_requests: rows.map(serialize) })
   })
   .get('/:id', zValidator('param', idParam), async c => {
-    const row = await getPtRequestForAdmin(c.req.valid('param').id)
+    const row = await getPtRequestForAdmin(tenantId(c), c.req.valid('param').id)
     if (!row) return c.json({ error: 'not_found' }, 404)
     return c.json({ pt_request: serialize(row) })
   })
@@ -160,7 +160,7 @@ const app = new Hono()
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
     const actor = c.get('staffUserId') as string
-    const result = await schedulePtRequest({
+    const result = await schedulePtRequest(tenantId(c), {
       ptRequestId: id,
       instructorId: body.instructor_id,
       locationId: body.location_id,
@@ -172,7 +172,7 @@ const app = new Hono()
     })
     if (!result.ok) return c.json({ error: result.error }, statusForScheduleError(result.error))
     c.set('auditTarget' as any, { table: 'pt_requests', id })
-    const row = await getPtRequestForAdmin(id)
+    const row = await getPtRequestForAdmin(tenantId(c), id)
     return c.json({ pt_request: row ? serialize(row) : null }, 201)
   })
   // Edit/reschedule a SCHEDULED session. :id here is the pt_session id — kept under
@@ -181,7 +181,7 @@ const app = new Hono()
   .patch('/sessions/:id', zValidator('param', idParam), zValidator('json', updateSessionSchema), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
-    await updatePtSession(id, {
+    await updatePtSession(tenantId(c), id, {
       ...(body.instructor_id !== undefined ? { instructorId: body.instructor_id } : {}),
       ...(body.location_id !== undefined ? { locationId: body.location_id } : {}),
       ...(body.room_id !== undefined ? { roomId: body.room_id } : {}),
@@ -209,9 +209,14 @@ const app = new Hono()
   .post('/:id/link-partner', zValidator('param', idParam), zValidator('json', linkPartnerSchema), async c => {
     const { id } = c.req.valid('param')
     const { client_id, email } = c.req.valid('json')
-    await linkPtRequestPartner({ ptRequestId: id, coClientId: client_id, email })
+    await linkPtRequestPartner({
+      tenantId: tenantId(c),
+      ptRequestId: id,
+      coClientId: client_id,
+      email,
+    })
     c.set('auditTarget' as any, { table: 'pt_requests', id })
-    const row = await getPtRequestForAdmin(id)
+    const row = await getPtRequestForAdmin(tenantId(c), id)
     return c.json({ pt_request: row ? serialize(row) : null })
   })
   // Branches on status: pending → cancelled_before_scheduled (refund);
@@ -219,9 +224,13 @@ const app = new Hono()
   .post('/:id/cancel', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const actor = c.get('staffUserId') as string
-    const result = await cancelPtRequest({ ptRequestId: id, source: 'admin', actorStaffId: actor })
+    const result = await cancelPtRequest(tenantId(c), {
+      ptRequestId: id,
+      source: 'admin',
+      actorStaffId: actor,
+    })
     c.set('auditTarget' as any, { table: 'pt_requests', id })
-    const row = await getPtRequestForAdmin(id)
+    const row = await getPtRequestForAdmin(tenantId(c), id)
     return c.json({ pt_request: row ? serialize(row) : null, result })
   })
 

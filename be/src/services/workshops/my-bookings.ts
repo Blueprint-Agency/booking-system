@@ -33,7 +33,10 @@ export interface MyWorkshopBooking {
  * the booked tier is used as the booking's date range so the account view can
  * render past/upcoming sections without a second round-trip.
  */
-export async function listMyWorkshopBookings(clientId: string): Promise<MyWorkshopBooking[]> {
+export async function listMyWorkshopBookings(
+  tenantId: string,
+  clientId: string,
+): Promise<MyWorkshopBooking[]> {
   const rows = await db
     .select({
       bookingId: bookings.id,
@@ -52,7 +55,13 @@ export async function listMyWorkshopBookings(clientId: string): Promise<MyWorksh
     .from(bookings)
     .leftJoin(workshops, eq(workshops.id, bookings.workshopId))
     .leftJoin(workshopTiers, eq(workshopTiers.id, bookings.workshopTierId))
-    .where(and(eq(bookings.clientId, clientId), eq(bookings.kind, 'workshop')))
+    .where(
+      and(
+        eq(bookings.tenantId, tenantId),
+        eq(bookings.clientId, clientId),
+        eq(bookings.kind, 'workshop'),
+      ),
+    )
 
   if (rows.length === 0) return []
 
@@ -70,7 +79,12 @@ export async function listMyWorkshopBookings(clientId: string): Promise<MyWorksh
       })
       .from(workshopTierDays)
       .innerJoin(workshopDays, eq(workshopDays.id, workshopTierDays.workshopDayId))
-      .where(inArray(workshopTierDays.workshopTierId, tierIds))
+      .where(
+        and(
+          eq(workshopTierDays.tenantId, tenantId),
+          inArray(workshopTierDays.workshopTierId, tierIds),
+        ),
+      )
     for (const td of tierDayRows) {
       const cur = dayRangeByTier.get(td.tierId)
       if (!cur) {
@@ -87,7 +101,10 @@ export async function listMyWorkshopBookings(clientId: string): Promise<MyWorksh
   )
   const locationById = new Map<string, { id: string; name: string; address: string | null }>()
   if (locationIds.length) {
-    const locRows = await db.select().from(locations).where(inArray(locations.id, locationIds))
+    const locRows = await db
+      .select()
+      .from(locations)
+      .where(and(eq(locations.tenantId, tenantId), inArray(locations.id, locationIds)))
     for (const l of locRows) {
       locationById.set(l.id, { id: l.id, name: l.name, address: l.address })
     }

@@ -179,7 +179,7 @@ const app = new Hono()
   })
   .post('/checkout/workshop', zValidator('json', checkoutWorkshopSchema), async c => {
     const body = c.req.valid('json')
-    const quote = await beginWorkshopCheckout({
+    const quote = await beginWorkshopCheckout(tenantId(c), {
       clientId: c.get('clientId'),
       workshopId: body.workshop_id,
       workshopTierId: body.workshop_tier_id,

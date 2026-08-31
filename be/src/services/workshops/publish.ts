@@ -34,12 +34,19 @@ export interface CreateWorkshopInput {
  */
 export type WorkshopInstructorInput = RosterAssignment
 
-async function ensureLocation(id: string) {
+/**
+ * The premises exist, are open, and belong to this tenant — a location id
+ * borrowed from another studio is `invalid_location_id`, the same answer as one
+ * that does not exist, so the failure says nothing about who else is on the
+ * platform.
+ */
+async function ensureLocation(tenantId: string, id: string) {
   const [r] = await db
-    .select({ id: locations.id, tenantId: locations.tenantId })
+    .select({ id: locations.id })
     .from(locations)
     .where(
       and(
+        eq(locations.tenantId, tenantId),
         eq(locations.id, id),
         isNull(locations.archivedAt),
         isNull(locations.deletedAt),
@@ -50,13 +57,14 @@ async function ensureLocation(id: string) {
   return r
 }
 
-export async function createWorkshop(input: CreateWorkshopInput): Promise<WorkshopRow> {
+export async function createWorkshop(
+  tenantId: string,
+  input: CreateWorkshopInput,
+): Promise<WorkshopRow> {
   if (!input.mainInstructorId) {
     throw new BadRequestError('main_instructor_id_required')
   }
-  // The premises a workshop runs at decide whose workshop it is. (Scoping the
-  // rest of this service is the workshops/PT batch, #62.)
-  const tenantId = (await ensureLocation(input.locationId)).tenantId!
+  await ensureLocation(tenantId, input.locationId)
 
   return db.transaction(async tx => {
     const [row] = await tx
@@ -87,6 +95,7 @@ export async function createWorkshop(input: CreateWorkshopInput): Promise<Worksh
     if (input.imageR2Keys?.length) {
       await tx.insert(workshopImages).values(
         input.imageR2Keys.map((r2Key, i) => ({
+          tenantId,
           workshopId: row!.id,
           r2Key,
           ord: i + 1,
@@ -111,18 +120,26 @@ export interface UpdateWorkshopInput {
   imageR2Keys?: string[]
 }
 
-export async function getWorkshop(id: string): Promise<WorkshopRow> {
-  const [row] = await db.select().from(workshops).where(eq(workshops.id, id)).limit(1)
+export async function getWorkshop(tenantId: string, id: string): Promise<WorkshopRow> {
+  const [row] = await db
+    .select()
+    .from(workshops)
+    .where(and(eq(workshops.tenantId, tenantId), eq(workshops.id, id)))
+    .limit(1)
   if (!row) throw new NotFoundError('workshop_not_found')
   return row
 }
 
-export async function updateWorkshop(id: string, patch: UpdateWorkshopInput): Promise<WorkshopRow> {
-  const existing = await getWorkshop(id)
+export async function updateWorkshop(
+  tenantId: string,
+  id: string,
+  patch: UpdateWorkshopInput,
+): Promise<WorkshopRow> {
+  const existing = await getWorkshop(tenantId, id)
   if (existing.lifecycle === 'cancelled') {
     throw new BadRequestError('workshop_cancelled')
   }
-  if (patch.locationId !== undefined) await ensureLocation(patch.locationId)
+  if (patch.locationId !== undefined) await ensureLocation(tenantId, patch.locationId)
 
   // Who is on the workshop, and what they're paid, belongs to the roster module —
   // including the role='main' row, which it treats as any other main instructor.
@@ -140,13 +157,16 @@ export async function updateWorkshop(id: string, patch: UpdateWorkshopInput): Pr
     if (patch.descriptionHtml !== undefined) set.descriptionHtml = patch.descriptionHtml
     if (patch.coverR2Key !== undefined) set.coverR2Key = patch.coverR2Key
     if (Object.keys(set).length) {
-      await tx.update(workshops).set(set).where(eq(workshops.id, id))
+      await tx
+        .update(workshops)
+        .set(set)
+        .where(and(eq(workshops.tenantId, tenantId), eq(workshops.id, id)))
     }
 
     if (touchesRoster) {
       const roster = await replaceRoster(
         tx,
-        existing.tenantId!,
+        tenantId,
         { kind: 'workshop', id },
         {
           ...(touchesMain
@@ -176,10 +196,13 @@ export async function updateWorkshop(id: string, patch: UpdateWorkshopInput): Pr
     }
 
     if (patch.imageR2Keys !== undefined) {
-      await tx.delete(workshopImages).where(eq(workshopImages.workshopId, id))
+      await tx
+        .delete(workshopImages)
+        .where(and(eq(workshopImages.tenantId, tenantId), eq(workshopImages.workshopId, id)))
       if (patch.imageR2Keys.length) {
         await tx.insert(workshopImages).values(
           patch.imageR2Keys.map((r2Key, i) => ({
+            tenantId,
             workshopId: id,
             r2Key,
             ord: i + 1,
@@ -189,7 +212,7 @@ export async function updateWorkshop(id: string, patch: UpdateWorkshopInput): Pr
     }
   })
 
-  return getWorkshop(id)
+  return getWorkshop(tenantId, id)
 }
 
 export async function listWorkshops(
@@ -227,25 +250,33 @@ export interface WorkshopDetailView {
   supportingInstructors: { instructorId: string; paySgd: number | null }[]
 }
 
-export async function getWorkshopDetail(id: string): Promise<WorkshopDetailView> {
-  const workshop = await getWorkshop(id)
+export async function getWorkshopDetail(
+  tenantId: string,
+  id: string,
+): Promise<WorkshopDetailView> {
+  const workshop = await getWorkshop(tenantId, id)
   const days = await db
     .select()
     .from(workshopDays)
-    .where(eq(workshopDays.workshopId, id))
+    .where(and(eq(workshopDays.tenantId, tenantId), eq(workshopDays.workshopId, id)))
     .orderBy(workshopDays.ord)
 
   const tiers = await db
     .select()
     .from(workshopTiers)
-    .where(eq(workshopTiers.workshopId, id))
+    .where(and(eq(workshopTiers.tenantId, tenantId), eq(workshopTiers.workshopId, id)))
     .orderBy(workshopTiers.ord)
 
   const tierDays = tiers.length
     ? await db
         .select()
         .from(workshopTierDays)
-        .where(inArray(workshopTierDays.workshopTierId, tiers.map(t => t.id)))
+        .where(
+          and(
+            eq(workshopTierDays.tenantId, tenantId),
+            inArray(workshopTierDays.workshopTierId, tiers.map(t => t.id)),
+          ),
+        )
     : []
   const byTier = new Map<string, string[]>()
   for (const td of tierDays) {
@@ -257,11 +288,11 @@ export async function getWorkshopDetail(id: string): Promise<WorkshopDetailView>
   const images = await db
     .select()
     .from(workshopImages)
-    .where(eq(workshopImages.workshopId, id))
+    .where(and(eq(workshopImages.tenantId, tenantId), eq(workshopImages.workshopId, id)))
     .orderBy(workshopImages.ord)
 
   // Ordering (main first, then supporting by instructor id) is the roster's own.
-  const roster = await readRoster(workshop.tenantId!, { kind: 'workshop', id })
+  const roster = await readRoster(tenantId, { kind: 'workshop', id })
   const { mainInstructorId, supportingInstructorIds, instructorIds } = lineupOf(roster)
 
   return {

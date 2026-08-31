@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as svc from '../../../services/corporate/requests'
+import { tenantId } from '../../../middleware/tenant'
 
 // Corporate request triage for staff. Mirrors the PT request flow: no approve/
 // decline — admin negotiates over WhatsApp, then schedules (the implicit
@@ -79,12 +80,12 @@ const app = new Hono()
   // ?status=pending|scheduled|cancelled|attended|all — defaults to pending.
   .get('/', zValidator('query', listQuery), async c => {
     const { status } = c.req.valid('query')
-    const rows = await svc.listCorporateRequests(status === 'all' ? {} : { status })
+    const rows = await svc.listCorporateRequests(tenantId(c), status === 'all' ? {} : { status })
     return c.json({ corporate_requests: rows.map(serialize) })
   })
   .get('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    const row = await svc.getCorporateRequest(id)
+    const row = await svc.getCorporateRequest(tenantId(c), id)
     if (!row) return c.json({ error: 'not_found' }, 404)
     return c.json({ corporate_request: serialize(row) })
   })
@@ -94,7 +95,7 @@ const app = new Hono()
     const body = c.req.valid('json')
     const actor = c.get('staffUserId') as string
 
-    const result = await svc.scheduleCorporateRequest({
+    const result = await svc.scheduleCorporateRequest(tenantId(c), {
       corporateRequestId: id,
       mainInstructorId: body.main_instructor_id,
       supportingInstructorIds: body.supporting_instructor_ids,
@@ -109,25 +110,25 @@ const app = new Hono()
       return c.json({ error: result.error }, statusForScheduleError(result.error))
     }
     c.set('auditTarget' as any, { table: 'corporate_requests', id })
-    const row = await svc.getCorporateRequest(id)
+    const row = await svc.getCorporateRequest(tenantId(c), id)
     return c.json({ corporate_request: row ? serialize(row) : null }, 201)
   })
   .post('/:id/cancel', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const actor = c.get('staffUserId') as string
-    const row = await svc.cancelCorporateRequest(id, actor)
+    const row = await svc.cancelCorporateRequest(tenantId(c), id, actor)
     if (!row) return c.json({ error: 'not_found' }, 404)
     c.set('auditTarget' as any, { table: 'corporate_requests', id })
-    const hydrated = await svc.getCorporateRequest(id)
+    const hydrated = await svc.getCorporateRequest(tenantId(c), id)
     return c.json({ corporate_request: hydrated ? serialize(hydrated) : null })
   })
   .post('/:id/attended', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const actor = c.get('staffUserId') as string
-    const row = await svc.markCorporateRequestAttended(id, actor)
+    const row = await svc.markCorporateRequestAttended(tenantId(c), id, actor)
     if (!row) return c.json({ error: 'not_found' }, 404)
     c.set('auditTarget' as any, { table: 'corporate_requests', id })
-    const hydrated = await svc.getCorporateRequest(id)
+    const hydrated = await svc.getCorporateRequest(tenantId(c), id)
     return c.json({ corporate_request: hydrated ? serialize(hydrated) : null })
   })
 

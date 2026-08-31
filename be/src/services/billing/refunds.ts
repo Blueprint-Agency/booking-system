@@ -503,6 +503,7 @@ export async function unwindRefund(paymentIntentId: string): Promise<void> {
       accountUrl: ACCOUNT_URL,
     })
     await sendTemplatedEmail({
+      tenantId,
       slug,
       recipient: { email: pkg.clientEmail, userId: pkg.clientId, userKind: 'client' },
       variables,

@@ -215,7 +215,7 @@ const app = new Hono()
   })
   .get('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    const detail = await publish.getWorkshopDetail(id)
+    const detail = await publish.getWorkshopDetail(tenantId(c), id)
     const promosMap = await listManagedPromotionsFor(tenantId(c), 'workshop', [id])
     return c.json({
       ...workshopRow(detail.workshop),
@@ -236,7 +236,7 @@ const app = new Hono()
   .post('/', zValidator('json', createBasicsSchema), async c => {
     const body = c.req.valid('json')
     const staffId = c.get('staffUserId')
-    const row = await publish.createWorkshop({
+    const row = await publish.createWorkshop(tenantId(c), {
       name: body.name,
       locationId: body.location_id,
       descriptionHtml: body.description_html ?? null,
@@ -264,7 +264,7 @@ const app = new Hono()
         instructorId: s.instructor_id,
         ...(s.pay_sgd !== undefined ? { paySgd: s.pay_sgd } : {}),
       }))
-    const row = await publish.updateWorkshop(id, {
+    const row = await publish.updateWorkshop(tenantId(c), id, {
       ...(body.name !== undefined ? { name: body.name } : {}),
       ...(body.location_id !== undefined ? { locationId: body.location_id } : {}),
       ...(body.description_html !== undefined ? { descriptionHtml: body.description_html ?? null } : {}),
@@ -287,7 +287,7 @@ const app = new Hono()
   .post('/:id/cancel', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const staffId = c.get('staffUserId')
-    const row = await cancelSvc.cancelWorkshop(id, staffId, c.get('staffRow').role)
+    const row = await cancelSvc.cancelWorkshop(tenantId(c), id, staffId, c.get('staffRow').role)
     c.set('auditTarget' as any, { table: 'workshops', id })
     return c.json(workshopRow(row))
   })
@@ -295,13 +295,13 @@ const app = new Hono()
   // ---- workshop_days ----
   .get('/:id/days', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    const rows = await daysSvc.listDays(id)
+    const rows = await daysSvc.listDays(tenantId(c), id)
     return c.json({ days: rows.map(dayRow) })
   })
   .post('/:id/days', zValidator('param', idParam), zValidator('json', dayCreateSchema), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
-    const row = await daysSvc.createDay(id, {
+    const row = await daysSvc.createDay(tenantId(c), id, {
       ord: body.ord,
       roomId: body.room_id,
       startsAt: new Date(body.starts_at),
@@ -321,7 +321,7 @@ const app = new Hono()
     async c => {
       const { id, day_id } = c.req.valid('param')
       const body = c.req.valid('json')
-      const row = await daysSvc.updateDay(id, day_id, {
+      const row = await daysSvc.updateDay(tenantId(c), id, day_id, {
         ...(body.ord !== undefined ? { ord: body.ord } : {}),
         ...(body.room_id !== undefined ? { roomId: body.room_id } : {}),
         ...(body.starts_at !== undefined ? { startsAt: new Date(body.starts_at) } : {}),
@@ -337,7 +337,7 @@ const app = new Hono()
   )
   .delete('/:id/days/:day_id', zValidator('param', idDayParam), async c => {
     const { id, day_id } = c.req.valid('param')
-    await daysSvc.deleteDay(id, day_id)
+    await daysSvc.deleteDay(tenantId(c), id, day_id)
     c.set('auditTarget' as any, { table: 'workshop_days', id: day_id })
     return c.json({ deleted: true })
   })
@@ -345,13 +345,13 @@ const app = new Hono()
   // ---- workshop_tiers ----
   .get('/:id/tiers', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    const rows = await tiersSvc.listTiers(id)
+    const rows = await tiersSvc.listTiers(tenantId(c), id)
     return c.json({ tiers: rows.map(tierRow) })
   })
   .post('/:id/tiers', zValidator('param', idParam), zValidator('json', tierCreateSchema), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
-    const row = await tiersSvc.createTier(id, {
+    const row = await tiersSvc.createTier(tenantId(c), id, {
       name: body.name,
       description: body.description ?? null,
       regularPriceSgd: body.regular_price_sgd,
@@ -371,7 +371,7 @@ const app = new Hono()
     async c => {
       const { id, tier_id } = c.req.valid('param')
       const body = c.req.valid('json')
-      const row = await tiersSvc.updateTier(id, tier_id, {
+      const row = await tiersSvc.updateTier(tenantId(c), id, tier_id, {
         ...(body.name !== undefined ? { name: body.name } : {}),
         ...(body.description !== undefined ? { description: body.description ?? null } : {}),
         ...(body.regular_price_sgd !== undefined ? { regularPriceSgd: body.regular_price_sgd } : {}),
@@ -395,7 +395,7 @@ const app = new Hono()
   )
   .delete('/:id/tiers/:tier_id', zValidator('param', idTierParam), async c => {
     const { id, tier_id } = c.req.valid('param')
-    await tiersSvc.deleteTier(id, tier_id)
+    await tiersSvc.deleteTier(tenantId(c), id, tier_id)
     c.set('auditTarget' as any, { table: 'workshop_tiers', id: tier_id })
     return c.json({ deleted: true })
   })

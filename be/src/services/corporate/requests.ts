@@ -71,13 +71,18 @@ export interface SubmitCorporateRequestInput {
  * (corporate is unpaid); it is left in place to avoid a destructive enum migration.
  */
 export async function submitCorporateRequest(
+  tenantId: string,
   input: SubmitCorporateRequestInput,
 ): Promise<{ corporateRequestId: string }> {
   const [pkg] = await db
     .select({ id: corporatePackages.id, status: corporatePackages.status })
     .from(corporatePackages)
     .where(
-      and(eq(corporatePackages.id, input.corporatePackageId), isNull(corporatePackages.deletedAt)),
+      and(
+        eq(corporatePackages.tenantId, tenantId),
+        eq(corporatePackages.id, input.corporatePackageId),
+        isNull(corporatePackages.deletedAt),
+      ),
     )
     .limit(1)
   if (!pkg) throw new NotFoundError('corporate_package_not_found')
@@ -86,6 +91,7 @@ export async function submitCorporateRequest(
   const [row] = await db
     .insert(corporateRequests)
     .values({
+      tenantId,
       clientId: input.clientId,
       corporatePackageId: input.corporatePackageId,
       preferredLocation: input.preferredLocation ?? null,
@@ -161,25 +167,39 @@ function mapRow(r: HydratedRow): HydratedCorporateRequest {
 
 /** Admin queue. Optional status filter; newest first. */
 export async function listCorporateRequests(
+  tenantId: string,
   opts: { status?: CorporateRequestStatus } = {},
 ): Promise<HydratedCorporateRequest[]> {
   const rows = await hydratedSelect()
-    .where(opts.status ? eq(corporateRequests.status, opts.status) : undefined)
+    .where(
+      and(
+        eq(corporateRequests.tenantId, tenantId),
+        ...(opts.status ? [eq(corporateRequests.status, opts.status)] : []),
+      ),
+    )
     .orderBy(desc(corporateRequests.createdAt))
   return rows.map(mapRow)
 }
 
-export async function getCorporateRequest(id: string): Promise<HydratedCorporateRequest | null> {
-  const rows = await hydratedSelect().where(eq(corporateRequests.id, id)).limit(1)
+export async function getCorporateRequest(
+  tenantId: string,
+  id: string,
+): Promise<HydratedCorporateRequest | null> {
+  const rows = await hydratedSelect()
+    .where(and(eq(corporateRequests.tenantId, tenantId), eq(corporateRequests.id, id)))
+    .limit(1)
   return rows[0] ? mapRow(rows[0]) : null
 }
 
 /** A single client's own requests (fe-client account page). */
 export async function listCorporateRequestsForClient(
+  tenantId: string,
   clientId: string,
 ): Promise<HydratedCorporateRequest[]> {
   const rows = await hydratedSelect()
-    .where(eq(corporateRequests.clientId, clientId))
+    .where(
+      and(eq(corporateRequests.tenantId, tenantId), eq(corporateRequests.clientId, clientId)),
+    )
     .orderBy(desc(corporateRequests.createdAt))
   return rows.map(mapRow)
 }
@@ -218,12 +238,18 @@ export type ScheduleCorporateRequestResult =
  * derived from the member record — no longer a freeform admin entry.
  */
 export async function scheduleCorporateRequest(
+  tenantId: string,
   input: ScheduleCorporateRequestInput,
 ): Promise<ScheduleCorporateRequestResult> {
   const [req] = await db
     .select()
     .from(corporateRequests)
-    .where(eq(corporateRequests.id, input.corporateRequestId))
+    .where(
+      and(
+        eq(corporateRequests.tenantId, tenantId),
+        eq(corporateRequests.id, input.corporateRequestId),
+      ),
+    )
     .limit(1)
   if (!req) return { ok: false, error: 'request_not_found' }
   if (req.status !== 'pending') return { ok: false, error: 'not_pending' }
@@ -231,11 +257,11 @@ export async function scheduleCorporateRequest(
   const [client] = await db
     .select({ name: clients.name })
     .from(clients)
-    .where(eq(clients.id, req.clientId))
+    .where(and(eq(clients.tenantId, tenantId), eq(clients.id, req.clientId)))
     .limit(1)
   if (!client) return { ok: false, error: 'request_not_found' }
 
-  const result = await createCorporateSession({
+  const result = await createCorporateSession(tenantId, {
     corporatePackageId: req.corporatePackageId,
     clientName: client.name,
     mainInstructorId: input.mainInstructorId,
@@ -256,7 +282,7 @@ export async function scheduleCorporateRequest(
     await tx
       .update(corporateSessions)
       .set({ corporateRequestId: req.id })
-      .where(eq(corporateSessions.id, sessionId))
+      .where(and(eq(corporateSessions.tenantId, tenantId), eq(corporateSessions.id, sessionId)))
     await tx
       .update(corporateRequests)
       .set({
@@ -265,7 +291,7 @@ export async function scheduleCorporateRequest(
         resolvedAt: new Date(),
         resolvedByStaffId: input.actorStaffId,
       })
-      .where(eq(corporateRequests.id, req.id))
+      .where(and(eq(corporateRequests.tenantId, tenantId), eq(corporateRequests.id, req.id)))
   })
 
   return { ok: true, corporateSessionId: sessionId }
@@ -280,38 +306,40 @@ export async function scheduleCorporateRequest(
  * cancel the linked corporate_session. Terminal states are a no-op (idempotent).
  */
 export async function cancelCorporateRequest(
+  tenantId: string,
   id: string,
   actorStaffId: string,
 ): Promise<CorporateRequestRow | null> {
   const [req] = await db
     .select()
     .from(corporateRequests)
-    .where(eq(corporateRequests.id, id))
+    .where(and(eq(corporateRequests.tenantId, tenantId), eq(corporateRequests.id, id)))
     .limit(1)
   if (!req) return null
   if (req.status === 'cancelled' || req.status === 'attended') return req
 
   if (req.status === 'scheduled' && req.scheduledCorporateSessionId) {
-    await cancelCorporateSession(req.scheduledCorporateSessionId, actorStaffId)
+    await cancelCorporateSession(tenantId, req.scheduledCorporateSessionId, actorStaffId)
   }
 
   const [row] = await db
     .update(corporateRequests)
     .set({ status: 'cancelled', resolvedAt: new Date(), resolvedByStaffId: actorStaffId })
-    .where(eq(corporateRequests.id, id))
+    .where(and(eq(corporateRequests.tenantId, tenantId), eq(corporateRequests.id, id)))
     .returning()
   return row ?? null
 }
 
 /** Mark a scheduled corporate request as delivered. */
 export async function markCorporateRequestAttended(
+  tenantId: string,
   id: string,
   actorStaffId: string,
 ): Promise<CorporateRequestRow | null> {
   const [req] = await db
     .select()
     .from(corporateRequests)
-    .where(eq(corporateRequests.id, id))
+    .where(and(eq(corporateRequests.tenantId, tenantId), eq(corporateRequests.id, id)))
     .limit(1)
   if (!req) return null
   if (req.status !== 'scheduled') {
@@ -321,7 +349,7 @@ export async function markCorporateRequestAttended(
   const [row] = await db
     .update(corporateRequests)
     .set({ status: 'attended', resolvedAt: new Date(), resolvedByStaffId: actorStaffId })
-    .where(eq(corporateRequests.id, id))
+    .where(and(eq(corporateRequests.tenantId, tenantId), eq(corporateRequests.id, id)))
     .returning()
   return row ?? null
 }

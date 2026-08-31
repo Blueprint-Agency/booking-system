@@ -8,6 +8,7 @@ import {
 } from '../../../services/pt-sessions/list'
 import { schedulePtRequest, type SchedulePtRequestError } from '../../../services/pt-sessions/schedule'
 import { cancelPtRequest } from '../../../services/pt-sessions/cancel'
+import { tenantId } from '../../../middleware/tenant'
 
 // Instructor PT surface. Instructors see the full pending queue and pick up the
 // ones they can run — the schedule service forces instructor_id = self. There is
@@ -72,14 +73,14 @@ function statusForScheduleError(error: SchedulePtRequestError): 400 | 404 | 409 
 const app = new Hono()
   // Full pending queue — instructors pick up requests they can run.
   .get('/', async c => {
-    const rows = await listPtRequestsForAdmin({ status: 'pending' })
+    const rows = await listPtRequestsForAdmin(tenantId(c), { status: 'pending' })
     return c.json({ pt_requests: rows.map(serialize) })
   })
   .post('/:id/schedule', zValidator('param', idParam), zValidator('json', scheduleSchema), async c => {
     const { id } = c.req.valid('param')
     const body = c.req.valid('json')
     const self = c.get('staffUserId') as string
-    const result = await schedulePtRequest({
+    const result = await schedulePtRequest(tenantId(c), {
       ptRequestId: id,
       instructorId: self, // forced to the acting instructor
       locationId: body.location_id,
@@ -90,7 +91,7 @@ const app = new Hono()
     })
     if (!result.ok) return c.json({ error: result.error }, statusForScheduleError(result.error))
     c.set('auditTarget' as any, { table: 'pt_requests', id })
-    const row = await getPtRequestForAdmin(id)
+    const row = await getPtRequestForAdmin(tenantId(c), id)
     return c.json({ pt_request: row ? serialize(row) : null }, 201)
   })
   .post('/:id/cancel', zValidator('param', idParam), async c => {
@@ -98,14 +99,14 @@ const app = new Hono()
     const self = c.get('staffUserId') as string
     // source:'admin' = staff-initiated (full refund, doesn't count to client cap),
     // but requireOwnInstructorId restricts it to the instructor's own scheduled session.
-    const result = await cancelPtRequest({
+    const result = await cancelPtRequest(tenantId(c), {
       ptRequestId: id,
       source: 'admin',
       actorStaffId: self,
       requireOwnInstructorId: self,
     })
     c.set('auditTarget' as any, { table: 'pt_requests', id })
-    const row = await getPtRequestForAdmin(id)
+    const row = await getPtRequestForAdmin(tenantId(c), id)
     return c.json({ pt_request: row ? serialize(row) : null, result })
   })
 

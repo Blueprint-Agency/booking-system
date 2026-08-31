@@ -107,7 +107,9 @@ async function loadCommon(tenantId: string, workshopIds: string[]) {
   const daysRows = await db
     .select()
     .from(workshopDays)
-    .where(inArray(workshopDays.workshopId, workshopIds))
+    .where(
+      and(eq(workshopDays.tenantId, tenantId), inArray(workshopDays.workshopId, workshopIds)),
+    )
     .orderBy(workshopDays.ord)
   const daysByWorkshop = new Map<string, DayPayload[]>()
   for (const d of daysRows) {
@@ -127,14 +129,19 @@ async function loadCommon(tenantId: string, workshopIds: string[]) {
   const tierRows = await db
     .select()
     .from(workshopTiers)
-    .where(inArray(workshopTiers.workshopId, workshopIds))
+    .where(and(eq(workshopTiers.tenantId, tenantId), inArray(workshopTiers.workshopId, workshopIds)))
     .orderBy(workshopTiers.ord)
   const tierIds = tierRows.map(t => t.id)
   const tierDayRows = tierIds.length
     ? await db
         .select()
         .from(workshopTierDays)
-        .where(inArray(workshopTierDays.workshopTierId, tierIds))
+        .where(
+          and(
+            eq(workshopTierDays.tenantId, tenantId),
+            inArray(workshopTierDays.workshopTierId, tierIds),
+          ),
+        )
     : []
   const dayIdsByTier = new Map<string, string[]>()
   for (const td of tierDayRows) {
@@ -233,7 +240,13 @@ export async function listActiveWorkshopCards(tenantId: string): Promise<Worksho
   const locRows = await db
     .select()
     .from(locations)
-    .where(and(inArray(locations.id, locIds), isNull(locations.deletedAt)))
+    .where(
+      and(
+        eq(locations.tenantId, tenantId),
+        inArray(locations.id, locIds),
+        isNull(locations.deletedAt),
+      ),
+    )
   const locById = new Map(
     locRows.map(l => [l.id, { id: l.id, name: l.name, address: l.address }]),
   )
@@ -279,16 +292,22 @@ export async function getWorkshopDetailPayload(
   const [locRow] = await db
     .select()
     .from(locations)
-    .where(and(eq(locations.id, w.locationId), isNull(locations.deletedAt)))
+    .where(
+      and(
+        eq(locations.tenantId, tenantId),
+        eq(locations.id, w.locationId),
+        isNull(locations.deletedAt),
+      ),
+    )
     .limit(1)
 
   const imageRows = await db
     .select()
     .from(workshopImages)
-    .where(eq(workshopImages.workshopId, w.id))
+    .where(and(eq(workshopImages.tenantId, tenantId), eq(workshopImages.workshopId, w.id)))
     .orderBy(workshopImages.ord)
 
-  const lineup = lineupOf(await readRoster(w.tenantId!, { kind: 'workshop', id: w.id }))
+  const lineup = lineupOf(await readRoster(tenantId, { kind: 'workshop', id: w.id }))
   const { instructorIds } = lineup
 
   let instructorPayload: InstructorLite[] = []
@@ -304,6 +323,7 @@ export async function getWorkshopDetailPayload(
       .innerJoin(staffUsers, eq(staffUsers.id, instructors.staffUserId))
       .where(
         and(
+          eq(instructors.tenantId, tenantId),
           inArray(instructors.staffUserId, instructorIds),
           isNull(staffUsers.deletedAt),
         ),

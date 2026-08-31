@@ -82,26 +82,23 @@ export async function startTestApp(): Promise<TestApp> {
   const client = postgres(TEST_DATABASE_URL, { max: 1 })
   const db = drizzle(client, { schema })
 
-  // Same folder `npm run db:migrate` uses, and the same assumption: run from
-  // the `be/` package root.
-  await migrate(db, { migrationsFolder: path.resolve(process.cwd(), 'src/db/migrations') })
-
-  // Dynamic: the seed validates `env.APP_ENV`, so it must not be imported
-  // before the environment above is in place.
-  const { seedTenants, seededTenants } = await import('../db/seed/tenants')
-  await seedTenants(db)
-
-  // The per-tenant provisioning seeds, so both tenants own the fixtures an
-  // isolation test compares: their own premises, their own rooms and their own
-  // policy row. Without them the second tenant is an empty shell and "one tenant
-  // cannot read another's rows" passes for the wrong reason.
-  const { seedLocations } = await import('../db/seed/locations')
-  const { seedRooms } = await import('../db/seed/rooms')
-  const { seedPolicy } = await import('../db/seed/policy')
-  for (const tenant of seededTenants()) {
-    await seedLocations(db, tenant)
-    await seedRooms(db, tenant)
-    await seedPolicy(db, tenant)
+  // `node --test` runs one process per file, and every harness-using file points
+  // at the SAME scratch database — so two of them migrate it at the same time.
+  // Concurrent DDL does not merely race: one transaction holds the lock on a
+  // type the other is creating, the loser's migration rolls back, its `before`
+  // throws, and the whole file's tests are cancelled with the runner hanging on
+  // the dead child. Serialising migrate-and-seed behind one advisory lock is
+  // what makes `npm run check` finish with `TEST_DATABASE_URL` set; the second
+  // holder finds the migrations applied and the seeds idempotent, so it is a
+  // wait, not a second run.
+  await client`select pg_advisory_lock(${HARNESS_SETUP_LOCK})`
+  try {
+    // Same folder `npm run db:migrate` uses, and the same assumption: run from
+    // the `be/` package root.
+    await migrate(db, { migrationsFolder: path.resolve(process.cwd(), 'src/db/migrations') })
+    await seedAll(db)
+  } finally {
+    await client`select pg_advisory_unlock(${HARNESS_SETUP_LOCK})`
   }
 
   const { default: app } = await import('../app')
@@ -118,5 +115,39 @@ export async function startTestApp(): Promise<TestApp> {
       await closeDb()
       await client.end({ timeout: 5 })
     },
+  }
+}
+
+/** Arbitrary, but fixed: every harness process has to pick the same number for
+ *  the lock to mean anything. */
+const HARNESS_SETUP_LOCK = 4_120_931
+
+async function seedAll(db: PostgresJsDatabase<typeof schema>): Promise<void> {
+  // Dynamic: the seed validates `env.APP_ENV`, so it must not be imported
+  // before the environment above is in place.
+  const { seedTenants, seededTenants } = await import('../db/seed/tenants')
+  await seedTenants(db)
+
+  // The per-tenant provisioning seeds, so both tenants own the fixtures an
+  // isolation test compares: their own premises, their own rooms and their own
+  // policy row. Without them the second tenant is an empty shell and "one tenant
+  // cannot read another's rows" passes for the wrong reason.
+  const { seedLocations } = await import('../db/seed/locations')
+  const { seedRooms } = await import('../db/seed/rooms')
+  const { seedPolicy } = await import('../db/seed/policy')
+  const { seedEmailTemplates } = await import('../db/seed/email-templates')
+  const { seedWaiver } = await import('../db/seed/waiver')
+  const { seedMarketing } = await import('../db/seed/marketing')
+  for (const tenant of seededTenants()) {
+    await seedLocations(db, tenant)
+    await seedRooms(db, tenant)
+    await seedPolicy(db, tenant)
+    // A tenant's own content, for the same reason: an email template resolved
+    // by (tenant, slug) is missing for tenant #2 unless it is seeded for
+    // tenant #2, and a leave decision that cannot render is a test failure
+    // about the wrong thing.
+    await seedEmailTemplates(db, tenant)
+    await seedWaiver(db, tenant)
+    await seedMarketing(db, tenant)
   }
 }

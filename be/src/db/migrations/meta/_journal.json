@@ -218,6 +218,13 @@
       "when": 1788149725297,
       "tag": "0030_promo_codes_per_tenant",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1788150205005,
+      "tag": "0031_content_and_flags_per_tenant",
+      "breakpoints": true
     }
   ]
 }

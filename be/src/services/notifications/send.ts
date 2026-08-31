@@ -50,22 +50,31 @@ export interface TemplateRecipient {
 }
 
 export interface SendInput {
+  /** Whose words these are — the template is resolved within this tenant, and
+   *  the `email_log` row is filed under it. */
+  tenantId: string
   slug: TemplateSlug
   recipient: TemplateRecipient
   variables: Record<string, string>
 }
 
 /**
- * Look up a template by slug, render `{{var}}` substitutions, send via SMTP,
- * write one `email_log` row. SMTP failures LOG (status='failed') but do not
- * throw — emails are best-effort in v1; we don't want to roll back business
+ * Look up a template by (tenant, slug), render `{{var}}` substitutions, send via
+ * SMTP, write one `email_log` row. SMTP failures LOG (status='failed') but do
+ * not throw — emails are best-effort in v1; we don't want to roll back business
  * actions (e.g. an invitation) because of a transient SMTP hiccup.
  *
- * Throws only when the template row is missing (programming error).
+ * Throws only when the template row is missing (programming error) — which now
+ * includes a tenant that has not been seeded its copy, and that is the right
+ * failure: sending another studio's wording is worse than sending nothing.
  */
 export async function sendTemplatedEmail(input: SendInput): Promise<void> {
-  const { slug, recipient, variables } = input
-  const [tpl] = await db.select().from(emailTemplates).where(eq(emailTemplates.slug, slug)).limit(1)
+  const { tenantId, slug, recipient, variables } = input
+  const [tpl] = await db
+    .select()
+    .from(emailTemplates)
+    .where(and(eq(emailTemplates.tenantId, tenantId), eq(emailTemplates.slug, slug)))
+    .limit(1)
   if (!tpl) throw new Error(`unknown_template:${slug}`)
 
   const subject = renderTemplate(tpl.subject, variables)
@@ -74,6 +83,7 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
   const [logRow] = await db
     .insert(emailLog)
     .values({
+      tenantId,
       templateSlug: slug,
       recipientEmail: recipient.email,
       recipientUserId: recipient.userId ?? null,
@@ -95,7 +105,7 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
         smtpResponse: result.response,
         sentAt: new Date(),
       })
-      .where(eq(emailLog.id, logRow.id))
+      .where(and(eq(emailLog.tenantId, tenantId), eq(emailLog.id, logRow.id)))
   } catch (err) {
     // The error OBJECT, so the stack survives — this is the catch an SMTP fault
     // actually lands in, and callers swallow below it, so it is the last chance
@@ -110,13 +120,18 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
     await db
       .update(emailLog)
       .set({ status: 'failed', error: msg })
-      .where(eq(emailLog.id, logRow.id))
+      .where(and(eq(emailLog.tenantId, tenantId), eq(emailLog.id, logRow.id)))
     // Swallow — v1 emails are best-effort; failures show in email_log.
   }
 }
 
 /**
- * Email every active admin — the ONE definition of who "the admins" are.
+ * Email every active admin **of one tenant** — the ONE definition of who "the
+ * admins" are.
+ *
+ * The tenant filter is the load-bearing part: unscoped, a cancelled class at
+ * one studio mailed the operational details of that class — member names, the
+ * instructor, the room — to every admin on the platform.
  *
  * `variables` is a thunk because building them usually needs a query or two of
  * its own (a class type's name, an instructor's name), and those reads have to
@@ -126,6 +141,7 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
  * notification is never a silent one.
  */
 export async function emailEveryAdmin(
+  tenantId: string,
   slug: TemplateSlug,
   variables: () => Promise<Record<string, string>>,
   context?: Record<string, unknown>,
@@ -135,17 +151,24 @@ export async function emailEveryAdmin(
     const admins = await db
       .select({ id: staffUsers.id, email: staffUsers.email })
       .from(staffUsers)
-      .where(and(inArray(staffUsers.role, ['admin', 'superadmin']), eq(staffUsers.status, 'active')))
+      .where(
+        and(
+          eq(staffUsers.tenantId, tenantId),
+          inArray(staffUsers.role, ['admin', 'superadmin']),
+          eq(staffUsers.status, 'active'),
+        ),
+      )
 
     for (const admin of admins) {
       await sendTemplatedEmail({
+        tenantId,
         slug,
         recipient: { email: admin.email, userId: admin.id, userKind: 'staff' },
         variables: vars,
       })
     }
   } catch (err) {
-    reportError(err, 'admin notification failed', { slug, ...context })
+    reportError(err, 'admin notification failed', { tenantId, slug, ...context })
   }
 }
 

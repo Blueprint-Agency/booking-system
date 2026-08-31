@@ -200,6 +200,7 @@ export async function inviteAdmin(input: InviteAdminInput): Promise<StaffInvitat
   // Email is best-effort and runs OUTSIDE the transaction so a transient SMTP
   // failure doesn't roll back the invitation. Failures land in `email_log`.
   await sendTemplatedEmail({
+    tenantId: input.tenantId,
     slug: 'admin_invite',
     recipient: { email, userId: invitation.staffUserId, userKind: 'staff' },
     variables: {
@@ -257,6 +258,7 @@ export async function listStaffAndInvitations(
     .orderBy(desc(staffUsers.createdAt))
 
   const staff = await withLeaveFigures(
+    tenantId,
     staffRows.map(r =>
       r.annualLeaveDays === null || r.medicalLeaveDays === null || r.studyLeaveDays === null
         ? r.staff
@@ -385,6 +387,7 @@ export async function resendInvitation(
     .limit(1)
 
   await sendTemplatedEmail({
+    tenantId,
     slug: 'admin_invite',
     recipient: { email: inv.email, userId: inv.staffUserId, userKind: 'staff' },
     variables: {

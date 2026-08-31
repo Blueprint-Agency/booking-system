@@ -177,7 +177,7 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
 
       // One confirmation per purchase, however many times the provider retries:
       // only the delivery that inserted the row sends. The helper cannot throw.
-      if (granted.created) await sendPackagePurchaseEmail(granted.clientPackageId)
+      if (granted.created) await sendPackagePurchaseEmail(tenantId, granted.clientPackageId)
       return
     }
 
@@ -334,7 +334,7 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
         await consumePromoCodeHold({ tenantId, promoCodeId, clientId, paymentIntentId })
       }
 
-      const booked = await bookWorkshopPaid({
+      const booked = await bookWorkshopPaid(tenantId, {
         clientId,
         workshopId,
         workshopTierId,
@@ -359,7 +359,7 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
           )
       }
 
-      if (booked.created) await sendWorkshopPurchaseEmail(booked.bookingId)
+      if (booked.created) await sendWorkshopPurchaseEmail(tenantId, booked.bookingId)
       return
     }
   }

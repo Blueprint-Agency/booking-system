@@ -214,6 +214,7 @@ export async function createClientWithInvite(input: CreateClientInput): Promise<
 
   // Best-effort invite email (failures land in email_log, never block creation).
   await sendTemplatedEmail({
+    tenantId: input.tenantId,
     slug: 'client_invite',
     recipient: { email, userId: row.id, userKind: 'client' },
     variables: {

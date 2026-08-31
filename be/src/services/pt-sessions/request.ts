@@ -49,7 +49,10 @@ export interface PtRequestInput {
   partner?: PtRequestPartner
 }
 
-export async function submitPtRequest(input: PtRequestInput): Promise<{ ptRequestId: string }> {
+export async function submitPtRequest(
+  tenantId: string,
+  input: PtRequestInput,
+): Promise<{ ptRequestId: string }> {
   if (input.slots.length === 0) throw new BadRequestError('no_slots')
   for (const s of input.slots) {
     if (s.endTime <= s.startTime) throw new BadRequestError('slot_end_before_start')
@@ -61,7 +64,6 @@ export async function submitPtRequest(input: PtRequestInput): Promise<{ ptReques
     const [pkg] = await tx
       .select({
         id: clientPackages.id,
-        tenantId: clientPackages.tenantId,
         kind: clientPackages.kind,
         active: clientPackages.active,
         expiresAt: clientPackages.expiresAt,
@@ -70,7 +72,13 @@ export async function submitPtRequest(input: PtRequestInput): Promise<{ ptReques
       })
       .from(clientPackages)
       .leftJoin(ptPackages, eq(ptPackages.id, clientPackages.sourcePtPackageId))
-      .where(and(eq(clientPackages.id, input.clientPackageId), eq(clientPackages.clientId, input.clientId)))
+      .where(
+        and(
+          eq(clientPackages.tenantId, tenantId),
+          eq(clientPackages.id, input.clientPackageId),
+          eq(clientPackages.clientId, input.clientId),
+        ),
+      )
       // Lock only client_packages — Postgres rejects FOR UPDATE on the nullable
       // side of the outer join (pt_packages is read-only metadata here anyway).
       .for('update', { of: clientPackages })
@@ -90,9 +98,8 @@ export async function submitPtRequest(input: PtRequestInput): Promise<{ ptReques
     const [cfg] = await tx
       .select({ days: ptBookingConfig.bookInAdvanceDays })
       .from(ptBookingConfig)
-      // One row per tenant, keyed on the tenant rather than a fixed singleton id
-      // — the package being spent says whose config applies.
-      .where(eq(ptBookingConfig.tenantId, pkg.tenantId!))
+      // One row per tenant, keyed on the tenant rather than a fixed singleton id.
+      .where(eq(ptBookingConfig.tenantId, tenantId))
       .limit(1)
     const expiresAt = new Date(now)
     expiresAt.setDate(expiresAt.getDate() + (cfg?.days ?? 14))
@@ -101,9 +108,7 @@ export async function submitPtRequest(input: PtRequestInput): Promise<{ ptReques
     // credit-movement audit row, so the cancel/expiry refund is reversible to
     // the exact package (backend-architecture §4, parity with classes).
     await debitCredits(tx, {
-      // Off the package being spent — PT is scoped in the remaining-surfaces
-      // batch (#62), and the package is whose credits these are.
-      tenantId: pkg.tenantId!,
+      tenantId,
       clientId: input.clientId,
       clientPackageId: pkg.id,
       amount: cost,
@@ -113,6 +118,7 @@ export async function submitPtRequest(input: PtRequestInput): Promise<{ ptReques
     const [req] = await tx
       .insert(ptRequests)
       .values({
+        tenantId,
         clientId: input.clientId,
         classTypeId: input.classTypeId,
         locationId: input.locationId,
@@ -128,6 +134,7 @@ export async function submitPtRequest(input: PtRequestInput): Promise<{ ptReques
 
     await tx.insert(ptRequestSlots).values(
       input.slots.map(s => ({
+        tenantId,
         ptRequestId: req!.id,
         proposedDate: s.proposedDate,
         startTime: s.startTime,
@@ -140,6 +147,7 @@ export async function submitPtRequest(input: PtRequestInput): Promise<{ ptReques
 }
 
 export async function linkPtRequestPartner(input: {
+  tenantId: string
   ptRequestId: string
   coClientId?: string
   email?: string
@@ -156,7 +164,7 @@ export async function linkPtRequestPartner(input: {
         coClientId: ptRequests.coClientId,
       })
       .from(ptRequests)
-      .where(eq(ptRequests.id, input.ptRequestId))
+      .where(and(eq(ptRequests.tenantId, input.tenantId), eq(ptRequests.id, input.ptRequestId)))
       .for('update')
       .limit(1)
 
@@ -169,9 +177,15 @@ export async function linkPtRequestPartner(input: {
       .select({ id: clients.id, status: clients.status, deletedAt: clients.deletedAt })
       .from(clients)
       .where(
-        input.coClientId
-          ? eq(clients.id, input.coClientId)
-          : sql`lower(${clients.email}) = ${input.email!.trim().toLowerCase()}`,
+        and(
+          // A partner is a member of THIS studio. Looking one up by email
+          // across the platform would confirm that an address is registered
+          // somewhere else, and then attach that stranger to the session.
+          eq(clients.tenantId, input.tenantId),
+          input.coClientId
+            ? eq(clients.id, input.coClientId)
+            : sql`lower(${clients.email}) = ${input.email!.trim().toLowerCase()}`,
+        ),
       )
       .limit(1)
     if (!partner) throw new NotFoundError('partner_client_not_found')
@@ -185,6 +199,6 @@ export async function linkPtRequestPartner(input: {
         coClientName: null,
         coClientEmail: null,
       })
-      .where(eq(ptRequests.id, input.ptRequestId))
+      .where(and(eq(ptRequests.tenantId, input.tenantId), eq(ptRequests.id, input.ptRequestId)))
   })
 }

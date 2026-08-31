@@ -5,6 +5,7 @@ import { z } from 'zod'
 import * as svc from '../../../services/leave/requests'
 import { SUPPORTING_DOCUMENT_MAX_BYTES } from '../../../services/leave/rules'
 import { BadRequestError } from '../../../shared/errors'
+import { tenantId } from '../../../middleware/tenant'
 
 /**
  * Instructor leave — the caller's OWN requests only.
@@ -52,7 +53,11 @@ const app = new Hono()
   .get('/', zValidator('query', z.object({ year: z.coerce.number().int().optional() })), async c => {
     // No year given means the current leave year — which year that is, is the
     // service's call, so the route passes through what it was given or nothing.
-    const res = await svc.getOwnLeave(c.get('staffUserId'), c.req.valid('query').year)
+    const res = await svc.getOwnLeave(
+      tenantId(c),
+      c.get('staffUserId'),
+      c.req.valid('query').year,
+    )
     return c.json({
       leave_year: res.leave_year,
       balances: res.balances,
@@ -61,7 +66,7 @@ const app = new Hono()
   })
   .post('/', zValidator('json', submitSchema), async c => {
     const body = c.req.valid('json')
-    const row = await svc.submitLeaveRequest({
+    const row = await svc.submitLeaveRequest(tenantId(c), {
       instructorId: c.get('staffUserId'), // forced — never from the body
       type: body.type,
       startDate: body.start_date,
@@ -104,6 +109,7 @@ const app = new Hono()
         })
       }
       const row = await svc.attachSupportingDocument({
+        tenantId: tenantId(c),
         instructorId: c.get('staffUserId'), // forced — his own request only
         id,
         contentType: file.type,
@@ -125,13 +131,23 @@ const app = new Hono()
   )
   .post('/:id/withdraw', zValidator('param', z.object({ id: z.string().uuid() })), async c => {
     const { id } = c.req.valid('param')
-    const row = await svc.transitionOwnLeaveRequest('withdraw', c.get('staffUserId'), id)
+    const row = await svc.transitionOwnLeaveRequest(
+      tenantId(c),
+      'withdraw',
+      c.get('staffUserId'),
+      id,
+    )
     c.set('auditTarget' as any, { table: 'leave_requests', id })
     return c.json(serialize(row))
   })
   .post('/:id/cancel', zValidator('param', z.object({ id: z.string().uuid() })), async c => {
     const { id } = c.req.valid('param')
-    const row = await svc.transitionOwnLeaveRequest('cancel', c.get('staffUserId'), id)
+    const row = await svc.transitionOwnLeaveRequest(
+      tenantId(c),
+      'cancel',
+      c.get('staffUserId'),
+      id,
+    )
     c.set('auditTarget' as any, { table: 'leave_requests', id })
     return c.json(serialize(row))
   })

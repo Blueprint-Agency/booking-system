@@ -210,6 +210,7 @@ async function emailAdmins(args: {
   refundedCount: number
 }): Promise<void> {
   await emailEveryAdmin(
+    args.tenantId,
     'instructor_cancel_class',
     async () => {
       const [type] = await db

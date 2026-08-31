@@ -32,10 +32,16 @@ async function main() {
     // Premises and policy belong to a tenant, not to the platform: each is
     // seeded once per provisioned tenant rather than once for the studio.
     for (const tenant of seededTenants()) {
-      console.log(`[seed] locations, rooms + policy for ${tenant.slug}…`)
+      console.log(`[seed] locations, rooms, policy + content for ${tenant.slug}…`)
       await seedLocations(db, tenant)
       await seedRooms(db, tenant)
       await seedPolicy(db, tenant)
+      // Content is a tenant's own words — its emails, its waiver, its home page
+      // — and each of these tables now holds one row per tenant rather than one
+      // row (migration 0031).
+      await seedEmailTemplates(db, tenant)
+      await seedWaiver(db, tenant)
+      await seedMarketing(db, tenant)
     }
     console.log('[seed] class types…')
     await seedClassTypes(db)
@@ -45,12 +51,6 @@ async function main() {
     await seedPtPackages(db)
     console.log('[seed] corporate packages…')
     await seedCorporatePackages(db)
-    console.log('[seed] email templates…')
-    await seedEmailTemplates(db)
-    console.log('[seed] waiver singleton…')
-    await seedWaiver(db)
-    console.log('[seed] marketing singleton…')
-    await seedMarketing(db)
     // Last: the seeders above write explicit column lists that know nothing
     // about tenancy, so anything they just inserted is still unclaimed.
     console.log('[seed] claiming seeded rows for tenant #1…')

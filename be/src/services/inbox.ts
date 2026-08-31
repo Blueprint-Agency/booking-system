@@ -1,5 +1,5 @@
 /** Insert / mark read on inbox_items. */
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { inboxItems } from '../db/schema/inbox'
 
@@ -16,17 +16,25 @@ export interface InsertInboxInput {
   payload: Record<string, unknown>
 }
 
-export async function insertInbox(input: InsertInboxInput): Promise<{ id: string }> {
+export async function insertInbox(
+  tenantId: string,
+  input: InsertInboxInput,
+): Promise<{ id: string }> {
   const [row] = await db
     .insert(inboxItems)
-    .values({ type: input.type, payload: input.payload })
+    .values({ tenantId, type: input.type, payload: input.payload })
     .returning({ id: inboxItems.id })
   return { id: row!.id }
 }
 
-export async function markRead(inboxId: string, staffId: string): Promise<void> {
+/**
+ * Scoped by tenant as well as id: an item id borrowed from another studio's
+ * feed names nothing here, so the update matches no row rather than marking
+ * somebody else's notification read.
+ */
+export async function markRead(tenantId: string, inboxId: string, staffId: string): Promise<void> {
   await db
     .update(inboxItems)
     .set({ readAt: new Date(), readByStaffId: staffId })
-    .where(eq(inboxItems.id, inboxId))
+    .where(and(eq(inboxItems.tenantId, tenantId), eq(inboxItems.id, inboxId)))
 }

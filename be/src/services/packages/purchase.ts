@@ -522,7 +522,7 @@ export async function grantFreePurchase(
   const granted = await grantPackage(tenantId, input)
   // The slug comes off the granted kind, so a Promo Code that zeroes a trial
   // gets the trial email and one that zeroes a bundle does not.
-  if (granted.created) await sendPackagePurchaseEmail(granted.clientPackageId)
+  if (granted.created) await sendPackagePurchaseEmail(tenantId, granted.clientPackageId)
   return granted
 }
 
@@ -596,6 +596,6 @@ export async function purchaseFreeTrial(
   // A free trial has no payment intent to be idempotent on, so it reaches here
   // once or not at all — the eligibility gate and the partial unique index see
   // to that. It sends unconditionally, and the helper cannot throw (§13).
-  await sendPackagePurchaseEmail(granted.clientPackageId)
+  await sendPackagePurchaseEmail(tenantId, granted.clientPackageId)
   return granted
 }

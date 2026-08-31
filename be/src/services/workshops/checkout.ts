@@ -19,29 +19,38 @@ import { assertWorkshopBookable, bookWorkshopFree, tierEffectivePrice } from './
 
 export type WorkshopCheckout = CheckoutQuote<{ bookingId: string }>
 
-export async function beginWorkshopCheckout(input: {
-  clientId: string
-  workshopId: string
-  workshopTierId: string
-  promoCode?: string
-}): Promise<WorkshopCheckout> {
+export async function beginWorkshopCheckout(
+  tenantId: string,
+  input: {
+    clientId: string
+    workshopId: string
+    workshopTierId: string
+    promoCode?: string
+  },
+): Promise<WorkshopCheckout> {
   const { clientId, workshopId, workshopTierId } = input
 
   const [tier] = await db
     .select()
     .from(workshopTiers)
-    .where(and(eq(workshopTiers.id, workshopTierId), eq(workshopTiers.workshopId, workshopId)))
+    .where(
+      and(
+        eq(workshopTiers.tenantId, tenantId),
+        eq(workshopTiers.id, workshopTierId),
+        eq(workshopTiers.workshopId, workshopId),
+      ),
+    )
     .limit(1)
   if (!tier) throw new NotFoundError('workshop_tier_not_found')
 
-  const [ws] = await db.select().from(workshops).where(eq(workshops.id, workshopId)).limit(1)
+  const [ws] = await db
+    .select()
+    .from(workshops)
+    .where(and(eq(workshops.tenantId, tenantId), eq(workshops.id, workshopId)))
+    .limit(1)
   if (!ws) throw new NotFoundError('workshop_not_found')
   if (ws.lifecycle !== 'active') throw new BadRequestError('workshop_not_active')
 
-  // Off the workshop row — workshops are scoped to the Tenant in the
-  // remaining-surfaces batch (#62); until then the workshop being bought says
-  // whose promotions and whose Promo Codes apply.
-  const tenantId = ws.tenantId!
   const promos = await listActivePromotionsFor(tenantId, 'workshop', [workshopId])
   // Early-bird beats promotions while the cutoff is live — same rule the FE uses
   // to display the price, so what's shown is what's charged.
@@ -55,7 +64,7 @@ export async function beginWorkshopCheckout(input: {
 
   // Reject duplicates / full tiers BEFORE charging — there is no automated
   // refund flow yet, so an unbookable spot must never reach Stripe.
-  if (!free) await assertWorkshopBookable({ clientId, workshopId, workshopTierId })
+  if (!free) await assertWorkshopBookable(tenantId, { clientId, workshopId, workshopTierId })
 
   // The code stacks on top of the automatic Promotion / early bird, claims its
   // place under a row lock, and is refused outright when it does not apply.
@@ -80,7 +89,7 @@ export async function beginWorkshopCheckout(input: {
   // Nothing left to charge — the tier was free, or the code took it to zero.
   // Book now; the Redemption is already `consumed`, no webhook is coming.
   if (grantsWithoutPaying(totalCents)) {
-    const result = await bookWorkshopFree({
+    const result = await bookWorkshopFree(tenantId, {
       clientId,
       workshopId,
       workshopTierId,

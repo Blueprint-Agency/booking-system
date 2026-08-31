@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { clients } from '../../db/schema/identity'
 import { getClerkClientApp } from '../../lib/clerk'
@@ -7,6 +7,9 @@ import { signGrant } from '../../lib/impersonation-grant'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
 
 export interface MintImpersonationInput {
+  /** The superadmin's own studio. Impersonating across studios is not a feature
+   *  this has ever had, and the lookup is what makes that true. */
+  tenantId: string
   clientId: string
   superadminStaffId: string
 }
@@ -31,7 +34,11 @@ export interface MintImpersonationResult {
 export async function mintClientImpersonation(
   input: MintImpersonationInput,
 ): Promise<MintImpersonationResult> {
-  const [row] = await db.select().from(clients).where(eq(clients.id, input.clientId)).limit(1)
+  const [row] = await db
+    .select()
+    .from(clients)
+    .where(and(eq(clients.tenantId, input.tenantId), eq(clients.id, input.clientId)))
+    .limit(1)
   if (!row) throw new NotFoundError('client_not_found')
   if (!row.clerkUserId) throw new BadRequestError('client_not_provisioned')
 

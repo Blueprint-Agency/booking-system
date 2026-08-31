@@ -47,7 +47,10 @@ const SG_DATETIME = sgFormat('en-GB', {
  * purchase is confirmed" is false, and an admin correcting a record must not
  * mail the member.
  */
-export async function sendPackagePurchaseEmail(clientPackageId: string): Promise<void> {
+export async function sendPackagePurchaseEmail(
+  tenantId: string,
+  clientPackageId: string,
+): Promise<void> {
   try {
     const [row] = await db
       .select({
@@ -70,7 +73,7 @@ export async function sendPackagePurchaseEmail(clientPackageId: string): Promise
         stripePayments,
         eq(stripePayments.paymentIntentId, clientPackages.stripePaymentIntentId),
       )
-      .where(eq(clientPackages.id, clientPackageId))
+      .where(and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.id, clientPackageId)))
       .limit(1)
     if (!row) throw new Error(`client_package_not_found:${clientPackageId}`)
 
@@ -86,6 +89,7 @@ export async function sendPackagePurchaseEmail(clientPackageId: string): Promise
     })
 
     await sendTemplatedEmail({
+      tenantId,
       slug,
       recipient: { email: row.clientEmail, userId: row.clientId, userKind: 'client' },
       variables,
@@ -93,6 +97,7 @@ export async function sendPackagePurchaseEmail(clientPackageId: string): Promise
   } catch (err) {
     reportError(err, 'purchase confirmation email failed', {
       scope: 'purchase-email',
+      tenantId,
       clientPackageId,
     })
   }
@@ -107,7 +112,10 @@ export async function sendPackagePurchaseEmail(clientPackageId: string): Promise
  * six it already has; `receipt_url` falls back to the account page the same way,
  * because an escaped empty value inside an href renders a link that goes nowhere.
  */
-export async function sendWorkshopPurchaseEmail(bookingId: string): Promise<void> {
+export async function sendWorkshopPurchaseEmail(
+  tenantId: string,
+  bookingId: string,
+): Promise<void> {
   try {
     const [row] = await db
       .select({
@@ -123,7 +131,13 @@ export async function sendWorkshopPurchaseEmail(bookingId: string): Promise<void
       .innerJoin(clients, eq(clients.id, bookings.clientId))
       .innerJoin(workshops, eq(workshops.id, bookings.workshopId))
       .leftJoin(stripePayments, eq(stripePayments.paymentIntentId, bookings.stripePaymentIntentId))
-      .where(and(eq(bookings.id, bookingId), eq(bookings.kind, 'workshop')))
+      .where(
+        and(
+          eq(bookings.tenantId, tenantId),
+          eq(bookings.id, bookingId),
+          eq(bookings.kind, 'workshop'),
+        ),
+      )
       .limit(1)
     if (!row) throw new Error(`workshop_booking_not_found:${bookingId}`)
 
@@ -134,12 +148,18 @@ export async function sendWorkshopPurchaseEmail(bookingId: string): Promise<void
           .select({ startsAt: workshopDays.startsAt })
           .from(workshopTierDays)
           .innerJoin(workshopDays, eq(workshopDays.id, workshopTierDays.workshopDayId))
-          .where(eq(workshopTierDays.workshopTierId, row.workshopTierId))
+          .where(
+            and(
+              eq(workshopTierDays.tenantId, tenantId),
+              eq(workshopTierDays.workshopTierId, row.workshopTierId),
+            ),
+          )
           .orderBy(workshopDays.startsAt)
           .limit(1)
       : []
 
     await sendTemplatedEmail({
+      tenantId,
       slug: 'workshop_purchase_confirmed',
       recipient: { email: row.clientEmail, userId: row.clientId, userKind: 'client' },
       variables: {
@@ -154,6 +174,7 @@ export async function sendWorkshopPurchaseEmail(bookingId: string): Promise<void
   } catch (err) {
     reportError(err, 'workshop confirmation email failed', {
       scope: 'purchase-email',
+      tenantId,
       bookingId,
     })
   }

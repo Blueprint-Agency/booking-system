@@ -1,8 +1,9 @@
 import { Hono } from 'hono'
-import { and, inArray, isNull } from 'drizzle-orm'
+import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { db } from '../../db'
 import { locations } from '../../db/schema/catalog'
 import { isSeededSuperadminEmail } from '../../services/auth/staff-archive'
+import { tenantId } from '../../middleware/tenant'
 
 /**
  * GET /api/v1/portal/auth/me
@@ -20,12 +21,24 @@ const app = new Hono().get('/me', async c => {
 
   if (granted.length === 0) {
     // "All active locations" — superadmin or implicit grant.
-    activeLocations = await db.select().from(locations).where(isNull(locations.deletedAt))
+    // "All active locations" means all of THIS studio's — a superadmin's
+    // implicit grant has never meant every studio on the platform, and this
+    // response is what the portal renders its location switcher from.
+    activeLocations = await db
+      .select()
+      .from(locations)
+      .where(and(eq(locations.tenantId, tenantId(c)), isNull(locations.deletedAt)))
   } else {
     activeLocations = await db
       .select()
       .from(locations)
-      .where(and(inArray(locations.id, granted), isNull(locations.deletedAt)))
+      .where(
+        and(
+          eq(locations.tenantId, tenantId(c)),
+          inArray(locations.id, granted),
+          isNull(locations.deletedAt),
+        ),
+      )
   }
 
   return c.json({

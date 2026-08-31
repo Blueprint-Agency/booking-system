@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { mintClientImpersonation } from '../../../services/impersonation/mint'
 import { BadRequestError, NotFoundError } from '../../../shared/errors'
+import { tenantId } from '../../../middleware/tenant'
 
 const idParam = z.object({ id: z.string().uuid() })
 
@@ -17,6 +18,7 @@ const app = new Hono().post(
     }
     try {
       const res = await mintClientImpersonation({
+        tenantId: tenantId(c),
         clientId: id,
         superadminStaffId: staffRow.id,
       })
