@@ -190,7 +190,8 @@ isolation bugs surface the day they are written, not the day tenant #2 signs up.
 
 ## Pre-implementation checks (do these first, human tasks)
 
-- [x] ~~**Where is `reservetoday.app` registered?**~~ **Moot — the NS move is DONE (2026-08-31).**
+- [x] ~~**Where is `reservetoday.app` registered?**~~ **GoDaddy.com, LLC** (RDAP, 2026-08-31), which
+      allows nameserver edits in-account — no transfer, no 60-day lock. **The NS move is DONE (2026-08-31).**
       Nameservers are now `ns1/ns2.vercel-dns.com`; Option A is in force and Option B is dead.
       This happened ahead of its ticket (#70), so treat #70's first acceptance criterion as
       already met. ⚠️ It was done **without** the record inventory below — see the incident note.
@@ -206,6 +207,11 @@ isolation bugs surface the day they are written, not the day tenant #2 signs up.
       token process-wide). A concrete reason the frontends stay on Vercel.
 - [x] ~~Inventory ALL existing DNS records in the Cloudflare zone~~ — **skipped, and it caused a
       production outage.** Recorded here because the next zone migration must not repeat it.
+      Reconciled retroactively on 2026-08-31 from a Cloudflare zone export, since the deactivated
+      zone retains its records: 18 existed, 2 were recreated by hand during the outage, 4 are
+      covered by the `*` ALIAS, and **12 were lost** — 10 Clerk custom-domain CNAMEs, the `cdn`
+      R2 host, and `_dmarc`. Full reconciliation and the constraints it produced are in
+      `docs/adr/0001-reservetoday-app-on-vercel-nameservers.md`.
 
   > **Incident, 2026-08-31 — `api.reservetoday.app` down after the nameserver move.**
   > Moving NS to Vercel carries over nothing. The new Vercel zone was created with only three
@@ -228,8 +234,9 @@ isolation bugs surface the day they are written, not the day tenant #2 signs up.
   >
   > **All MX and TXT records were also lost.** Confirmed not a problem for this zone — mail for
   > `reservetoday.app` is not hosted here (unlike `blueprintdigital.my`, whose mail is on the same
-  > box under Stalwart). ⚠️ **Still unverified:** whether Clerk, Stripe or Google Search Console
-  > ever placed a domain-verification TXT on this zone. Those would now be failing silently.
+  > box under Stalwart). The zone in fact carried **no MX at all** and exactly one TXT, `_dmarc`
+  > (`p=quarantine`, `rua` to a GoDaddy address). No Stripe or Google Search Console verification
+  > record ever existed here.
   >
   > The general rule, which the sibling zone learned the hard way too (bpvps2 Stalwart README:
   > `blueprintdigital.my` had no MX for three weeks): **on any zone migration, inventory first,
