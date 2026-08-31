@@ -73,14 +73,22 @@ are both still there, unused, precisely so that reversal is a backfill and not a
 ## Clerk dashboard settings this decision requires
 
 Set on **both** client instances (development and production); the portal instances are unchanged
-and keep organizations exactly as they are.
+and keep organizations exactly as they are. Applied 2026-09-01.
 
 | Setting | Client (member) app | Portal (staff) app |
 |---|---|---|
-| Organizations | may stay enabled, but unused | enabled |
+| Organizations (`enabled`) | **off** | on |
 | Membership required (`force_organization_selection`) | **off** | on |
 | Self-serve organization creation | off | off |
-| Membership limit | irrelevant — no members join | 20 is ample |
+| Membership limit (`max_allowed_memberships`) | irrelevant — no members join | `0` (unlimited); 20 would be ample |
 
-*Membership required* being off on the client side is the half that ends the signup dead end, and
-it is the one thing here that no deploy can do.
+Organizations are turned **off** outright on the client side rather than merely left unused. That
+is the strongest form of the decision: with the feature disabled there is no organization for a
+member to be in, so no member token can carry `o.id`, and the state the migration guards against
+cannot be re-entered by someone toggling a setting later. Disabling it also subsumes the half that
+ends the signup dead end — *Membership required* cannot apply where there are no organizations.
+
+Neither is a deploy. Read back from the Clerk API, the development instances report
+`enabled: false` / `force_organization_selection: false` on the client application and
+`enabled: true` / `force_organization_selection: true` on the portal. Production carries the same
+change, but its secret keys are not in `be/.env`, so it was not read back here.
