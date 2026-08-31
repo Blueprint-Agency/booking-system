@@ -246,6 +246,30 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
     assert.equal(back?.status, 'active')
   })
 
+  test('it refuses to run inside another Tenant’s context', async () => {
+    const { withTenant } = await import('../db')
+    const clerk = fakeClerk()
+    const slug = `prov-nested-${Date.now()}`
+
+    // Inside `withTenant`, `db` *is* that transaction, so the inner
+    // `db.transaction` would be a SAVEPOINT — and `set_config(…, true)` is
+    // transaction-local, not savepoint-local. The new studio's id would outlive
+    // this call and silently become the caller's tenant. Loud is the only
+    // acceptable failure.
+    await assert.rejects(
+      withTenant(harness.tenants.one.id, () =>
+        provision.provisionTenant(
+          { slug, name: 'Nested', adminEmail: 'nested@example.test' },
+          clerk.port,
+        ),
+      ),
+      /must not run inside a Tenant context/,
+    )
+
+    assert.equal(clerk.live.size, 0)
+    assert.equal((await traces(slug)).tenant, null)
+  })
+
   test('a suspended studio is refused over HTTP, and stops being refused when it comes back', async () => {
     const slug = `prov-refuse-${Date.now()}`
     const clerk = fakeClerk()

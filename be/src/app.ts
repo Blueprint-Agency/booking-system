@@ -111,6 +111,7 @@ const TENANT_CONTEXT_EXEMPT = (path: string) =>
   path === '/api/v1/healthz' ||
   path === '/api/v1/webhooks/stripe' ||
   path === '/api/v1/webhooks/clerk' ||
+  path === '/api/v1/platform' ||
   path.startsWith('/api/v1/platform/') ||
   isTenantLookup(path)
 

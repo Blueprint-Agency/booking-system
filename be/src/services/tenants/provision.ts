@@ -31,7 +31,7 @@
  * it; retrying the same slug returns `slug_taken`, which is the correct answer.
  */
 import { eq, sql } from 'drizzle-orm'
-import { db } from '../../db'
+import { currentTenantId, db } from '../../db'
 import { staffUsers } from '../../db/schema/identity'
 import { tenants, tenantSettings } from '../../db/schema/tenancy'
 import type { TenantRow } from '../../db/schema/tenancy'
@@ -187,6 +187,23 @@ export async function provisionTenant(
   input: ProvisionTenantInput,
   clerk: ClerkOrgPort = clerkOrgPort,
 ): Promise<ProvisionedTenant> {
+  // Refused rather than accommodated, because the alternative fails silently and
+  // across tenants. Inside an open `withTenant`, `db` *is* that transaction, so
+  // `db.transaction` below opens a SAVEPOINT rather than a new transaction — and
+  // `set_config(…, true)` is transaction-local, not savepoint-local. The new
+  // tenant's id would outlive this call and every remaining query in the
+  // caller's request would run as the studio that was just created.
+  //
+  // Nothing legitimately calls it that way: the super portal's routes are exempt
+  // from `resolveTenant` precisely so this holds.
+  const openTenant = currentTenantId()
+  if (openTenant) {
+    throw new Error(
+      `provisionTenant must not run inside a Tenant context (open: ${openTenant}) — ` +
+        'it opens its own transaction and sets app.tenant_id for the new studio',
+    )
+  }
+
   // Before anything external: a reserved or malformed slug must not create a
   // Clerk organization it will then have to delete.
   const slug = assertUsableSlug(input.slug)
