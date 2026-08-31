@@ -15,38 +15,13 @@
 import { headers } from "next/headers";
 import { ROOT_DOMAIN, tenantSlugFromHost } from "@/lib/tenant-host";
 import { resolveTenant } from "@/lib/tenant";
+import { PLATFORM_BRAND, type Brand } from "@/lib/brand-shape";
 
-export interface Brand {
-  /** The studio's name, as its members know it. Never empty. */
-  name: string;
-  /** One line under the name, where a surface has room for one. */
-  tagline: string | null;
-  /** A wordmark to render instead of the name, when the studio supplied one. */
-  logoUrl: string | null;
-  faviconUrl: string | null;
-  /** The image behind the sign-in split, and the social card. */
-  ogImageUrl: string | null;
-  /** Theme tokens the studio overrides; unset keys fall through to the CSS. */
-  theme: Record<string, string>;
-  /** Overridable strings, keyed by surface. */
-  copy: Record<string, string>;
-}
-
-/**
- * What the app renders when no Tenant is resolved at all — the bare root
- * domain, a preview URL, a local `localhost:3000` with no slug.
- *
- * Named for the platform, because in that state there is no studio to name.
- */
-export const PLATFORM_BRAND: Brand = {
-  name: "ReserveToday",
-  tagline: null,
-  logoUrl: null,
-  faviconUrl: null,
-  ogImageUrl: null,
-  theme: {},
-  copy: {},
-};
+// The type and the fallback live in `brand-shape.ts`, which knows nothing about
+// requests — a client component needs both, and importing them from here would
+// drag `next/headers` into the browser bundle. Re-exported so the server-side
+// call sites that already import from this module keep working.
+export { PLATFORM_BRAND, type Brand };
 
 /** Blank-safe: a settings column that exists but is an empty string is unset. */
 const text = (value: string | null | undefined): string | null => {

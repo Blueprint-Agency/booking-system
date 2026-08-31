@@ -17,8 +17,10 @@
  * stylesheet's own value stands.
  */
 import { createContext, useContext, useMemo } from "react";
-import type { Brand } from "@/lib/brand";
-import { PLATFORM_BRAND } from "@/lib/brand";
+// From `brand-shape`, not `brand`: the latter reads the request's Host through
+// `next/headers` and is server-only, so importing the fallback from there would
+// pull that into the browser bundle and fail the build.
+import { PLATFORM_BRAND, type Brand } from "@/lib/brand-shape";
 
 const BrandContext = createContext<Brand>(PLATFORM_BRAND);
 
