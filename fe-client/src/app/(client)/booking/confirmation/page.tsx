@@ -4,7 +4,7 @@ import { Suspense, useState, useEffect } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useAuth } from "@clerk/nextjs";
-import { getApiBaseUrl } from "@/lib/api-url";
+import { fetchApi } from "@/lib/api-url";
 import { Check } from "lucide-react";
 import { useClientPackages } from "@/lib/use-client-packages";
 import { BookingSurface } from "@/components/booking/booking-surface";
@@ -43,7 +43,7 @@ function WorkshopSuccess({
     (async () => {
       try {
         const token = await getToken();
-        await fetch(`${getApiBaseUrl()}/me/checkout/sync-session`, {
+        await fetchApi("/me/checkout/sync-session", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -59,7 +59,7 @@ function WorkshopSuccess({
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${getApiBaseUrl()}/public/workshops/${workshopId}`)
+    fetchApi(`/public/workshops/${workshopId}`)
       .then(r => r.json())
       .then(data => { if (!cancelled) setWorkshop(data); })
       .catch(() => { /* non-fatal */ });
@@ -134,7 +134,7 @@ function MerchSuccess({ stripeSessionId }: { stripeSessionId: string | null }) {
     (async () => {
       try {
         const token = await getToken();
-        await fetch(`${getApiBaseUrl()}/me/checkout/sync-session`, {
+        await fetchApi("/me/checkout/sync-session", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -254,7 +254,7 @@ function PackageSuccess({
     (async () => {
       try {
         const token = await getToken();
-        await fetch(`${getApiBaseUrl()}/me/checkout/sync-session`, {
+        await fetchApi("/me/checkout/sync-session", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -276,7 +276,7 @@ function PackageSuccess({
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${getApiBaseUrl()}/public/packages`);
+        const res = await fetchApi("/public/packages");
         const data = await res.json();
         const cls = data.class_packages?.find((p: { id: string }) => p.id === packageId);
         if (cls) {

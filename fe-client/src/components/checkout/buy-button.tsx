@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { useAuth, useUser } from "@clerk/nextjs";
 import { useAuthGate } from "@/components/auth/auth-gate";
-import { getApiBaseUrl } from "@/lib/api-url";
+import { fetchApi } from "@/lib/api-url";
 import { cn } from "@/lib/utils";
 import { reportError } from "@/lib/report-error";
 
@@ -72,7 +72,7 @@ export function BuyButton({
             ? { merch_id: target.merchId }
             : { package_kind: target.packageKind, package_id: target.packageId };
 
-      const res = await fetch(`${getApiBaseUrl()}${endpoint}`, {
+      const res = await fetchApi(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

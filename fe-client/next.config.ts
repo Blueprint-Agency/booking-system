@@ -18,6 +18,11 @@ const nextConfig: NextConfig = {
   // require-in-the-middle-<hash>"). Listing them keeps them as real Node
   // externals required by their actual name.
   serverExternalPackages: ["require-in-the-middle", "import-in-the-middle"],
+  // Every tenant is a different hostname, so local development is spent on
+  // `{slug}.localhost:3000` rather than `localhost:3000`. Next's dev server
+  // treats those as cross-origin and refuses to serve its internal assets to
+  // them unless they're allowed here. Dev-only setting; production is unaffected.
+  allowedDevOrigins: ["*.localhost"],
   images: {
     remotePatterns: [
       {

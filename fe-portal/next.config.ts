@@ -15,6 +15,11 @@ const nextConfig: NextConfig = {
   // Keep Sentry's module-loader shims as real Node externals (parity with
   // fe-client) so a Turbopack build doesn't fail loading require-in-the-middle.
   serverExternalPackages: ["require-in-the-middle", "import-in-the-middle"],
+  // Every tenant is a different hostname, so local development is spent on
+  // `{slug}.portal.localhost:3001` rather than `localhost:3001`. Next's dev
+  // server treats those as cross-origin and refuses to serve its internal
+  // assets to them unless they're allowed here. Dev-only; production unaffected.
+  allowedDevOrigins: ["*.localhost", "*.portal.localhost"],
 };
 
 // Wrapped for Sentry. Without SENTRY_AUTH_TOKEN/org/project the build simply

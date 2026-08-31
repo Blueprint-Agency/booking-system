@@ -7,7 +7,7 @@ import { cn, formatCurrency, formatDurationMonths } from "@/lib/utils";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useAuth } from "@clerk/nextjs";
-import { getApiBaseUrl } from "@/lib/api-url";
+import { fetchApi } from "@/lib/api-url";
 import { useLocations } from "@/lib/classes";
 import { CrossLocationBlock } from "@/components/checkout/cross-location-block";
 import { AddOnCheckout } from "@/components/checkout/add-on-checkout";
@@ -89,7 +89,7 @@ function CheckoutContent() {
   useEffect(() => {
     if (mode === "workshop") {
       if (!workshopId) { setLoadingPkg(false); return; }
-      fetch(`${getApiBaseUrl()}/public/workshops/${workshopId}`)
+      fetchApi(`/public/workshops/${workshopId}`)
         .then(r => r.json())
         .then((data: ApiWorkshopDetail) => {
           if (!data?.id) { setPkgError("Workshop not found."); return; }
@@ -107,7 +107,7 @@ function CheckoutContent() {
       setLoadingPkg(false);
       return;
     }
-    fetch(`${getApiBaseUrl()}/public/packages`)
+    fetchApi("/public/packages")
       .then(r => r.json())
       .then((data: { class_packages?: ApiClassPackage[]; pt_packages?: ApiPtPackage[] }) => {
         const found: PackageInfo | undefined =
@@ -134,7 +134,7 @@ function CheckoutContent() {
       // /me/* routes require the Clerk token — without it the BE 401s and the
       // promo would always read as invalid.
       const token = await getToken();
-      const res = await fetch(`${getApiBaseUrl()}/me/checkout/validate-promo`, {
+      const res = await fetchApi("/me/checkout/validate-promo", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -185,7 +185,7 @@ function CheckoutContent() {
             location_id: chosenLocation?.id,
             cross_location_add_on: isUnlimited && addOn,
           };
-      const res = await fetch(`${getApiBaseUrl()}${endpoint}`, {
+      const res = await fetchApi(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

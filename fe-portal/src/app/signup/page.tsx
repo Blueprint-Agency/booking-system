@@ -7,8 +7,7 @@ import { Loader2 } from "lucide-react";
 import { Button, Input, Label } from "@/components/ui";
 import { OtpInput } from "@/components/auth/otp-input";
 import { PasswordInput } from "@/components/auth/password-input";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+import { fetchApi } from "@/lib/api-url";
 
 type InviteStatus = "valid" | "expired" | "used" | "revoked" | "not_found";
 interface InviteLookup {
@@ -384,8 +383,8 @@ function SignupInner() {
     setChecking(true);
     void (async () => {
       try {
-        const res = await fetch(
-          `${API_BASE}/api/v1/public/staff-invitation?token=${encodeURIComponent(inviteToken)}`,
+        const res = await fetchApi(
+          `/public/staff-invitation?token=${encodeURIComponent(inviteToken)}`,
           { cache: "no-store" },
         );
         const data = (await res.json()) as InviteLookup;

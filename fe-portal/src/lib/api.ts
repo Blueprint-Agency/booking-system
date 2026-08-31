@@ -7,10 +7,9 @@
  * Errors: non-2xx responses throw an `ApiError` that carries `status` plus the
  * parsed JSON body (if any) so callers can render structured copy.
  */
+import { getApiBaseUrl } from "@/lib/api-url";
 import { reportError } from "@/lib/report-error";
-
-const BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+import { tenantRequestHeaders } from "@/lib/tenant-host";
 
 export type TokenGetter = () => Promise<string | null>;
 
@@ -33,8 +32,7 @@ interface RequestOptions {
 
 function buildUrl(path: string, query?: RequestOptions["query"]) {
   const url = new URL(
-    path.startsWith("/") ? `/api/v1${path}` : `/api/v1/${path}`,
-    BASE_URL,
+    `${getApiBaseUrl()}${path.startsWith("/") ? path : `/${path}`}`,
   );
   if (query) {
     for (const [k, v] of Object.entries(query)) {
@@ -51,8 +49,11 @@ export async function apiFetch<T = unknown>(
   opts: RequestOptions = {},
 ): Promise<T> {
   const token = await getToken();
+  // The API hostname carries no tenancy — one backend serves every studio — so
+  // every call names its own Tenant, read off the page's host.
   const headers: Record<string, string> = {
     Accept: "application/json",
+    ...tenantRequestHeaders(),
   };
   if (token) headers.Authorization = `Bearer ${token}`;
   // A FormData body goes as-is: the browser has to set the multipart boundary,

@@ -7,7 +7,7 @@ import { AlertCircle } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { BookingSurface } from "@/components/booking/booking-surface";
-import { getApiBaseUrl } from "@/lib/api-url";
+import { fetchApi } from "@/lib/api-url";
 import { useLocations } from "@/lib/classes";
 import { useClientPackages, type LivePackage } from "@/lib/use-client-packages";
 import { roundsUpAPartMonth } from "@/lib/add-on-months";
@@ -69,7 +69,7 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
     (async () => {
       try {
         const token = await getToken();
-        const res = await fetch(`${getApiBaseUrl()}/me/checkout/cross-location/quote`, {
+        const res = await fetchApi("/me/checkout/cross-location/quote", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({ client_package_id: planId }),
@@ -108,7 +108,7 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
     setError(null);
     try {
       const token = await getToken();
-      const res = await fetch(`${getApiBaseUrl()}/me/checkout/cross-location`, {
+      const res = await fetchApi("/me/checkout/cross-location", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ client_package_id: planId }),

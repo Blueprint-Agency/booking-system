@@ -32,6 +32,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...except the example, which documents the required vars and carries no
+# secrets. fe-client tracks its own; this app's was ignored by accident.
+!.env.local.example
 
 # vercel
 .vercel

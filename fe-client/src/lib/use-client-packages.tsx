@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { usePathname } from "next/navigation";
-import { getApiBaseUrl } from "./api-url";
+import { fetchApi } from "./api-url";
 import { reportError } from "./report-error";
 
 export interface LivePackage {
@@ -209,7 +209,7 @@ export function ClientPackagesProvider({ children }: { children: ReactNode }) {
       const token = await getAuthToken(getToken);
       if (!token) return;
 
-      const res = await fetch(`${getApiBaseUrl()}/me/packages`, {
+      const res = await fetchApi("/me/packages", {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) {

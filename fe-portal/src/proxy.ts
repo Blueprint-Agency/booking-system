@@ -1,6 +1,18 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { signedInRedirectPath } from "@/lib/auth-redirect";
+import {
+  ROOT_DOMAIN,
+  TENANT_HEADER_PREFIX,
+  TENANT_ID_HEADER,
+  TENANT_SLUG_HEADER,
+  tenantSlugFromHost,
+} from "@/lib/tenant-host";
+import {
+  resolveTenant,
+  tenantNotFoundResponse,
+  tenantUnavailableResponse,
+} from "@/lib/tenant";
 
 /**
  * Public routes — anything not matched here requires a Clerk session.
@@ -11,7 +23,51 @@ import { signedInRedirectPath } from "@/lib/auth-redirect";
  */
 const isPublicRoute = createRouteMatcher(["/login(.*)", "/signup(.*)"]);
 
+/**
+ * Works out which Tenant the request is for and rewrites the request headers so
+ * the app sees it.
+ *
+ * The rewrite is of headers, not of the path: every Tenant is served by the
+ * same routes and differs only in its data, so Vercel's `/s/{slug}/…` path
+ * rewrite would buy nothing but a restructured `app/` tree. What the app needs
+ * is trustworthy Tenant context on the request, which is what this sets.
+ *
+ * Two things happen on **every** path through here, including the ones that
+ * never resolve a Tenant:
+ *
+ *  1. Inbound `x-tenant-*` headers are deleted. They are the app's own trusted
+ *     channel, so a caller must never be able to supply one and name itself a
+ *     Tenant. This is Vercel's explicit warning about proxy-set headers.
+ *  2. Nothing is set unless resolution succeeded. A hostname that names no
+ *     Tenant — the bare root domain, `www`, the `admin` super portal — simply
+ *     carries no Tenant context, and the backend already reads a call with no
+ *     `X-Tenant-Slug` as Tenant #1.
+ */
+async function tenantContext(
+  req: NextRequest,
+): Promise<{ headers: Headers; blocked: NextResponse | null }> {
+  const headers = new Headers(req.headers);
+  for (const key of [...headers.keys()]) {
+    if (key.startsWith(TENANT_HEADER_PREFIX)) headers.delete(key);
+  }
+
+  const slug = tenantSlugFromHost(req.headers.get("host"), ROOT_DOMAIN);
+  if (!slug) return { headers, blocked: null };
+
+  const outcome = await resolveTenant(slug);
+  if (outcome.kind === "unknown") return { headers, blocked: tenantNotFoundResponse() };
+  if (outcome.kind === "unavailable") return { headers, blocked: tenantUnavailableResponse() };
+
+  headers.set(TENANT_SLUG_HEADER, outcome.tenant.slug);
+  headers.set(TENANT_ID_HEADER, outcome.tenant.id);
+  return { headers, blocked: null };
+}
+
 export default clerkMiddleware(async (auth, req) => {
+  const { headers, blocked } = await tenantContext(req);
+  if (blocked) return blocked;
+  const pass = () => NextResponse.next({ request: { headers } });
+
   if (isPublicRoute(req)) {
     // A signed-in user has no business on /login — send them on. Rendering
     // the form leads to Clerk's `session_exists` ("You're already signed in")
@@ -21,11 +77,12 @@ export default clerkMiddleware(async (auth, req) => {
       const { userId } = await auth();
       if (userId) return NextResponse.redirect(new URL(authedTarget, req.url));
     }
-    return;
+    return pass();
   }
   const loginUrl = new URL("/login", req.url);
   loginUrl.searchParams.set("next", `${req.nextUrl.pathname}${req.nextUrl.search}`);
   await auth.protect({ unauthenticatedUrl: loginUrl.toString() });
+  return pass();
 });
 
 export const config = {

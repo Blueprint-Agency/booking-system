@@ -12,10 +12,9 @@
  */
 import { useAuth } from "@clerk/nextjs";
 import { useMemo } from "react";
+import { getApiBaseUrl } from "@/lib/api-url";
 import { reportError } from "@/lib/report-error";
-
-const BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+import { tenantRequestHeaders } from "@/lib/tenant-host";
 
 function readImpGrant(): string | null {
   if (typeof document === "undefined") return null;
@@ -44,8 +43,7 @@ interface RequestOptions {
 
 function buildUrl(path: string, query?: RequestOptions["query"]) {
   const url = new URL(
-    path.startsWith("/") ? `/api/v1${path}` : `/api/v1/${path}`,
-    BASE_URL,
+    `${getApiBaseUrl()}${path.startsWith("/") ? path : `/${path}`}`,
   );
   if (query) {
     for (const [k, v] of Object.entries(query)) {
@@ -62,7 +60,12 @@ export async function apiFetch<T = unknown>(
   opts: RequestOptions = {},
 ): Promise<T> {
   const token = await getToken();
-  const headers: Record<string, string> = { Accept: "application/json" };
+  // The API hostname carries no tenancy — one backend serves every studio — so
+  // every call names its own Tenant, read off the page's host.
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    ...tenantRequestHeaders(),
+  };
   if (token) headers.Authorization = `Bearer ${token}`;
   if (opts.body !== undefined) headers["Content-Type"] = "application/json";
 
