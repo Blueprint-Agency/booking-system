@@ -6,7 +6,7 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 |---|---|---|
 | `fe-client/` | Vercel project `booking-system` (Root Directory = `fe-client/`) | `main` → `https://yogasadhana.reservetoday.app`; `staging` → `https://staging.yogasadhana.reservetoday.app`. Env vars: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_ROOT_DOMAIN`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `NEXT_PUBLIC_SENTRY_DSN`, `NEXT_PUBLIC_APP_ENV` — set **twice**, once per scope (Production / Preview). Clerk routing URLs are hardcoded in `src/app/layout.tsx` (NOT env-driven). |
 | `fe-portal/` | Vercel project `booking-system-admin` (Root Directory = `fe-portal/`) | `main` → `https://portal.yogasadhana.reservetoday.app`; `staging` → `https://staging-portal.yogasadhana.reservetoday.app`. Same env shape as fe-client, but with the **staff** Clerk app keys and its own `NEXT_PUBLIC_ROOT_DOMAIN` (the `portal.` one). |
-| `cdn/` | Vercel project `booking-cdn` (Root Directory = `cdn/`) | Edge proxy fronting the R2 bucket. Production scope → `https://cdn.reservetoday.app`; Preview scope → `https://cdn.staging.reservetoday.app`. One env var, `R2_ORIGIN`, set **twice** (Production / Preview) to each environment's `pub-<hash>.r2.dev` URL. No DNS record needed — the zone's `*` ALIAS already resolves both names. |
+| `cdn/` | Vercel project `booking-cdn` (Root Directory = `cdn/`) | Edge proxy fronting the R2 bucket at `https://cdn.reservetoday.app`. One env var, `R2_ORIGIN`, the bucket's `pub-<hash>.r2.dev` URL. No DNS record needed — the zone's `*` ALIAS already resolves the name. **Not Git-connected**: deployed with `vercel deploy --prod` from `cdn/`, not on push. |
 | `be/` | bpvps2 (Docker) | Auto-deploy on push to `staging` **or** `main` (paths-filtered to `be/**`). `.github/workflows/deploy-be.yml` builds the image, pushes to Docker Hub (`blueprintagency/booking-be`), SSHes to bpvps2 over Tailscale, writes `.env.booking-be` from the branch's GitHub Environment, and runs migrate/seed + `docker compose up -d`. |
 
 **Deploy branch & environments:** two live environments, one per branch.
@@ -78,7 +78,14 @@ Notes:
 > bpvps2's host-wide `BASE_DOMAIN` is `teeko.ai` and cannot express `reservetoday.app`. The compose
 > lives in the infra repo at `vps/bpvps2/stacks/booking/docker-compose.yml`.
 
-**CORS:** the BE allowlists both frontends via `PORTAL_ORIGIN` (required) and `CLIENT_ORIGIN` (optional, omit to lock down to fe-portal only). Each can be an exact full URL with scheme and no trailing slash, or a leading-wildcard origin such as `https://*.vercel.app` for Vercel preview URLs. Exact URLs are also used as canonical link bases for staff invites / client redirects; wildcard values should only be used when that tradeoff is acceptable. In CI these come from `vars.PORTAL_ORIGIN` / `vars.CLIENT_ORIGIN`.
+**CORS:** the BE allowlist is assembled from three env vars, and the same list also backs the public-route `Origin` check and the Clerk `azp` check — see `docs/md/spec-tenant-resolution.md`. If they disagreed, one would become the hole in the other two.
+
+- `PORTAL_ORIGIN` (required) and `CLIENT_ORIGIN` (optional, omit to lock down to fe-portal only). Each can be an exact full URL with scheme and no trailing slash, or a leading-wildcard origin such as `https://*.vercel.app` for Vercel preview URLs. Exact URLs are also used as canonical link bases for staff invites / client redirects; wildcard values should only be used when that tradeoff is acceptable. In CI these come from `vars.PORTAL_ORIGIN` / `vars.CLIENT_ORIGIN`.
+- `TENANT_ORIGIN_PATTERNS` (optional, `vars.TENANT_ORIGIN_PATTERNS`) — comma-separated tenant subdomain origins. **A tenant is created by inserting a row**, so its origin cannot be listed in advance; this is the pattern that admits a studio which did not exist when the backend was deployed. The `*` must be the **leftmost** label and covers **exactly one** label — the same boundary the certificates enforce (RFC 6125), so `a.b.reservetoday.app` is unserveable in production and is not allowlisted either.
+  - staging: `https://*.dev.reservetoday.app,https://*.portal.dev.reservetoday.app`
+  - production: `https://*.reservetoday.app,https://*.portal.reservetoday.app`
+
+**Clerk authorized parties:** `CLERK_STAFF_AUTHORIZED_PARTIES` is **no longer passed to Clerk**. Clerk's own `authorizedParties` option is exact-match and cannot express `{slug}.portal.…` for every slug that exists — a list that would change whenever a studio is created, signing staff out of one made overnight. `verifyToken` is called without it and the `azp` claim is checked against the allowlist above instead (`be/src/lib/allowed-origins.ts`). The var still contributes any extra exact origins an environment wants to pin.
 
 **Clerk apps:** two separate Clerk applications. fe-portal + `CLERK_STAFF_*` is the staff/instructor app; fe-client + `CLERK_CLIENT_*` is the member-facing app. Cross-app tokens are rejected by the BE middleware on purpose — never share keys between them.
 
@@ -102,7 +109,7 @@ Notes:
 
 **GitHub repo settings driving `deploy-be.yml`** (see the comment block at the top of the workflow for the canonical list). The workflow job runs in the GitHub Environment named by the branch (`staging` / `Production`), so repo/environment settings can override organization-level settings with the same name. Shared deploy settings should live under the **Blueprint-Agency organization** and grant access to `booking-system`.
 - `org vars`: `BPVPS2_TAILSCALE_HOST`, `DOCKERHUB_USERNAME`
-- `env vars` (set in **both** Environments): `PORT`, `PORTAL_ORIGIN`, `CLIENT_ORIGIN`, `SUPERADMIN_EMAIL`
+- `env vars` (set in **both** Environments): `PORT`, `PORTAL_ORIGIN`, `CLIENT_ORIGIN`, `TENANT_ORIGIN_PATTERNS`, `SUPERADMIN_EMAIL`
 - `org secrets`: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`
 - `repo/env secrets`: `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_APP_PASSWORD`, `DOCKERHUB_TOKEN`, `SSH_PRIVATE_KEY`, `CLERK_STAFF_*` (×3), `CLERK_CLIENT_*` (×3), `SMTP_USER`, `SMTP_PASSWORD`, `SENTRY_DSN` (optional — error monitoring), `R2_*` (×5 — required in **both** Environments; see the `R2_PUBLIC_URL` note above), plus deferred `STRIPE_*`.
 - `NODE_ENV` (always `production`), `APP_ENV`, `ENV_NAME`, `STACK_DIR`, `BOOKING_FQDN` and `IMAGE_TAG` are derived from the branch in the workflow's `env:` block, not from repo settings.

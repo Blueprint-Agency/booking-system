@@ -36,16 +36,19 @@ body is dropped because it names the `r2.dev` host.
 
 ## Vercel setup
 
-One project, Root Directory `cdn/`, with `R2_ORIGIN` set **twice** — once per scope, exactly like
-the two frontends:
+Vercel project `booking-cdn`, Root Directory `cdn/`, serving `cdn.reservetoday.app` from the
+Production scope. `R2_ORIGIN` is the bucket's `pub-<hash>.r2.dev` URL.
 
-| Scope | Domain | `R2_ORIGIN` |
-|---|---|---|
-| Production | `cdn.reservetoday.app` | production bucket's `https://pub-<hash>.r2.dev` |
-| Preview | `cdn.staging.reservetoday.app` | staging bucket's `https://pub-<hash>.r2.dev` |
+No DNS record is needed: the zone's `*` ALIAS already resolves the name to Vercel, and attaching
+the domain to this project is what claims it. Vercel issues the certificate.
 
-No DNS record is needed: the zone's `*` ALIAS already resolves both names to Vercel, and attaching
-the domain to this project is what claims them. Vercel issues the certificates.
+**Staging and production share one bucket and one CDN host.** `R2_PUBLIC_URL` is
+`https://cdn.reservetoday.app` in *both* GitHub Environments. That is a deliberate simplification,
+and it couples the two: an object uploaded from staging is served on production URLs, and deleting
+one in staging removes it from production. Keys are UUID-based, so they do not collide — but they
+are not isolated either.
 
-The backend's `R2_PUBLIC_URL` then points at the matching hostname per environment, never at
-`r2.dev` directly.
+Splitting them later means a second bucket, a second `R2_ORIGIN` on the Preview scope, and
+`cdn.staging.reservetoday.app` attached to a preview deployment. Preview-scope environment
+variables are keyed by Git branch, so that requires the project to be connected to a Git
+repository first — `booking-cdn` currently is not, and is deployed from the CLI.
