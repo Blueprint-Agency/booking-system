@@ -181,7 +181,7 @@ export async function listJobTenants(): Promise<JobTenant[]> {
 
 /**
  * Every tenant on the platform, oldest first, for the super portal's list —
- * so Yoga Sadhana, Tenant #1, heads it.
+ * so Tenant #1 heads it.
  *
  * Archived tenants are included — this is the one surface that has to be able to
  * see them, because it is the surface that archived them. Everywhere else they

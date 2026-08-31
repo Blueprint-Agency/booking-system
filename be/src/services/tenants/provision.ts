@@ -21,7 +21,10 @@
  *    invitation sent into it, so the invite needs no separate undo.
  *  - **The order is chosen so the un-undoable step is last.** The invitation is
  *    the only outward-facing act — once the email is out, it has been seen — so
- *    it happens after every other step has already succeeded.
+ *    it is the final statement of the transaction, after every other step has
+ *    already succeeded. Inside it, not after it: a refused invitation must take
+ *    the studio down with it, or the first admin is never told about a studio
+ *    that now exists.
  *
  * The one window that remains is a commit that succeeds while the response is
  * lost. That leaves a complete, working Tenant and a caller who does not know
@@ -238,16 +241,22 @@ export async function provisionTenant(
           .returning({ id: staffUsers.id })
         if (!admin) throw new Error('first admin insert returned no row')
 
-        return { tenant, adminId: admin.id }
-      })
+        // Last, and deliberately *inside* the transaction rather than after it.
+        // Outside, a refused invitation would leave a committed studio with a
+        // first admin who was never told — the half-created Tenant this whole
+        // file exists to rule out. Inside, the throw rolls the three inserts
+        // back and `withProvisionedOrgs` deletes both organizations on the way
+        // out, which also revokes the invitation if it had already been sent.
+        //
+        // The cost is one network call with the transaction open. It is the
+        // final statement, so nothing waits behind it but the commit.
+        await clerk.inviteOrgAdmin({
+          organizationId: orgs.portalOrgId,
+          email: adminEmail,
+          redirectUrl: portalUrl ? `${portalUrl}/signup` : null,
+        })
 
-      // Last, because it is the only step that cannot be undone quietly. If it
-      // throws, the transaction above has already rolled back and
-      // `withProvisionedOrgs` deletes both organizations on the way out.
-      await clerk.inviteOrgAdmin({
-        organizationId: orgs.portalOrgId,
-        email: adminEmail,
-        redirectUrl: portalUrl ? `${portalUrl}/signup` : null,
+        return { tenant, adminId: admin.id }
       })
 
       return created
