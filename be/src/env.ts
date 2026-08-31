@@ -89,10 +89,30 @@ const schema = z.object({
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
 
-  // SMTP — only credentials live in env. Host/port/secure/from are hardcoded
-  // in lib/mailer.ts (Gmail SMTP is fixed for this project's lifetime).
+  // SMTP — credentials and the platform's envelope identity. Host/port/secure
+  // are hardcoded in lib/mailer.ts (Gmail SMTP is fixed for this platform's
+  // lifetime). The *tenant* half of the from-identity is not env at all: it is
+  // per-studio data on `tenant_settings` (docs/md/mail-identity.md).
   SMTP_USER: z.string().min(1, 'SMTP_USER is required'),
   SMTP_PASSWORD: z.string().min(1, 'SMTP_PASSWORD is required'),
+  // The envelope address every tenant's mail leaves on — it must be one the
+  // SMTP credentials are authorised for, or the mail fails SPF. Defaults to
+  // SMTP_USER, which by construction is.
+  //
+  // Both are read as "blank means unset": the deploy workflow writes the line
+  // unconditionally, so an unset repository variable arrives as an empty string
+  // rather than as an absent key, and `.optional()` alone would let that empty
+  // string through to `.email()` and fail the boot.
+  MAIL_FROM_EMAIL: z
+    .string()
+    .optional()
+    .transform(v => v?.trim() || undefined)
+    .pipe(z.string().email('MAIL_FROM_EMAIL must be a valid email').optional()),
+  // Shown only when a tenant has no name of its own to put there.
+  MAIL_FROM_NAME: z
+    .string()
+    .optional()
+    .transform(v => v?.trim() || 'ReserveToday'),
   R2_ACCOUNT_ID: z.string().optional(),
   R2_ACCESS_KEY_ID: z.string().optional(),
   R2_SECRET_ACCESS_KEY: z.string().optional(),

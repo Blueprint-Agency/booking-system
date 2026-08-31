@@ -114,7 +114,8 @@ jobs:
             #   org vars:    BPVPS2_TAILSCALE_HOST, DOCKERHUB_USERNAME
             #   org secrets: TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET, SSH_PRIVATE_KEY, DOCKERHUB_TOKEN
             #   env vars:    PORT, PORTAL_ORIGIN, CLIENT_ORIGIN, TENANT_ORIGIN_PATTERNS,
-            #            SUPERADMIN_EMAIL, (optional) PLATFORM_ADMIN_EMAILS
+            #            SUPERADMIN_EMAIL, (optional) PLATFORM_ADMIN_EMAILS,
+            #            (optional) MAIL_FROM_EMAIL, MAIL_FROM_NAME
             #   env secrets: DB_USER, DB_PASSWORD, DB_NAME, DB_APP_PASSWORD,
             #            CLERK_STAFF_PUBLISHABLE_KEY, CLERK_STAFF_SECRET_KEY, CLERK_STAFF_WEBHOOK_SECRET,
             #            CLERK_CLIENT_PUBLISHABLE_KEY, CLERK_CLIENT_SECRET_KEY, CLERK_CLIENT_WEBHOOK_SECRET,
@@ -174,10 +175,16 @@ jobs:
               echo "CLERK_CLIENT_PUBLISHABLE_KEY=${{ secrets.CLERK_CLIENT_PUBLISHABLE_KEY }}"
               echo "CLERK_CLIENT_SECRET_KEY=${{ secrets.CLERK_CLIENT_SECRET_KEY }}"
               echo "CLERK_CLIENT_WEBHOOK_SECRET=${{ secrets.CLERK_CLIENT_WEBHOOK_SECRET }}"
-              # SMTP — only credentials are env. Host/port/secure/from are hardcoded
-              # in be/src/lib/mailer.ts (Gmail SMTP for the life of the project).
+              # SMTP — credentials plus the platform's envelope identity.
+              # Host/port/secure are hardcoded in be/src/lib/mailer.ts (Gmail SMTP
+              # for the life of the platform). MAIL_FROM_EMAIL must be an address
+              # these credentials are authorised for or the mail fails SPF; blank
+              # falls back to SMTP_USER. The studio's own name and Reply-To are
+              # per-tenant data, not env — see docs/md/mail-identity.md.
               echo "SMTP_USER=${{ secrets.SMTP_USER }}"
               echo "SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}"
+              echo "MAIL_FROM_EMAIL=${{ vars.MAIL_FROM_EMAIL }}"
+              echo "MAIL_FROM_NAME=${{ vars.MAIL_FROM_NAME }}"
               echo "STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }}"
               echo "STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}"
               echo "R2_ACCOUNT_ID=${{ secrets.R2_ACCOUNT_ID }}"
