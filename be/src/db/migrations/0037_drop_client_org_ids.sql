@@ -1,0 +1,14 @@
+-- Client-side Clerk Organizations are gone. See
+-- docs/adr/0003-no-client-side-clerk-organizations.md.
+--
+-- The column stays (nullable, unique, unused) so the decision is reversible
+-- without a schema change, but every value in it must go: a non-null
+-- `clerk_client_org_id` is what `orgClaimVerdict` reads as "enforcement is on
+-- for this studio", and member tokens carry no organization claim. Left in
+-- place it would refuse every member of that studio with
+-- `organization_required` — the studio's whole membership, locked out.
+--
+-- The Clerk organizations themselves are not deleted here. Removing them is a
+-- manual tidy-up in the client application's Clerk dashboard; leaving them
+-- costs nothing but a stale row in a list nobody resolves against any more.
+update "tenants" set "clerk_client_org_id" = null where "clerk_client_org_id" is not null;

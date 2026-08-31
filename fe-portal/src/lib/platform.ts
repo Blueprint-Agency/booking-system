@@ -17,8 +17,9 @@ export interface PlatformTenant {
   timezone: string;
   status: TenantStatus;
   created_at: string;
-  /** Whether each Clerk Organization is wired. Both false would be a half-tenant. */
-  clerk: { client: boolean; portal: boolean };
+  /** Whether the studio's portal Clerk Organization is wired. False is a
+   *  half-tenant. There is no client-side Organization by design. */
+  clerk: { portal: boolean };
   /** Live URLs, derived from the same wildcards CORS accepts. Null locally when
    *  the environment configures no wildcard for that app. */
   urls: { client: string | null; portal: string | null };

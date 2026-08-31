@@ -73,11 +73,17 @@ disagreed one would become the hole in the other two.
 
 ### 3. Corroborate against the Clerk Organization — authenticated routes
 
-Each tenant is one Clerk Organization in **each** of the two applications, and
-both ids live on the tenant row (`clerk_client_org_id`, `clerk_portal_org_id`).
-A session token carries the organization the user is active in, inside a
-signature — the one statement about tenancy on the request that the caller
-cannot forge.
+Each tenant is one Clerk Organization in the **portal** application, its id on
+the tenant row (`clerk_portal_org_id`). A session token carries the organization
+the user is active in, inside a signature — the one statement about tenancy on
+the request that the caller cannot forge.
+
+**The client application has no organizations.** A studio's members are hundreds
+of people and Clerk prices organization membership per seat, so
+`clerk_client_org_id` is null on every tenant and stays null; a member request is
+corroborated by `Origin` (step 2) and fenced by Row-Level Security. The table
+below still runs for member tokens, but only its "none / none" row is ever
+reached. See `docs/adr/0003-no-client-side-clerk-organizations.md`.
 
 `services/tenants/org-claim.ts` decides, and both Clerk middlewares call it:
 
@@ -103,7 +109,9 @@ half of the table immediately (the memo's TTL is 60s, or call
 `forgetCachedTenants`). There is no deploy in either direction.
 
 The two columns are distinct namespaces and are never searched across — a staff
-token naming a *member* organization must not resolve.
+token naming a *member* organization must not resolve. `clerk_client_org_id` is
+kept, unused and null, so that decision is reversible by backfill rather than by
+schema change.
 
 **This is the portal's membership enforcement.** A staff member of one studio
 reaching another studio's portal presents a token whose organization belongs to

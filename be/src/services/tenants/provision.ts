@@ -2,10 +2,15 @@
  * Creating a studio, end to end.
  *
  * A Tenant is not one row. It is a row in `tenants`, a row in `tenant_settings`,
- * a Clerk Organization in the **client** application, another in the **portal**
- * application, a pending `staff_users` row for the studio's first admin, and an
- * organization invitation sent to them. Six writes across three systems, two of
- * which have no transactions.
+ * a Clerk Organization in the **portal** application, a pending `staff_users`
+ * row for the studio's first admin, and an organization invitation sent to them.
+ * Five writes across three systems, two of which have no transactions.
+ *
+ * The **client** application gets no organization, deliberately —
+ * `clerk_client_org_id` stays null for the life of the studio. A studio has
+ * hundreds of members and Clerk prices organization membership per seat, so
+ * members are scoped by hostname + `Origin` and fenced by Row-Level Security
+ * instead. See `docs/adr/0003-no-client-side-clerk-organizations.md`.
  *
  * The failure mode this file exists to rule out is the half-created Tenant: a
  * row with no organization (staff can never sign in, and `orgClaimVerdict`
@@ -15,9 +20,9 @@
  *
  *  - **The database half is one transaction.** Everything it writes commits
  *    together or not at all, including the first admin's row.
- *  - **The Clerk half is compensated.** Organizations are created *before* the
+ *  - **The Clerk half is compensated.** The organization is created *before* the
  *    transaction opens and deleted again if anything downstream throws, by
- *    `withProvisionedOrgs`. Deleting an organization also revokes the
+ *    `withProvisionedOrg`. Deleting an organization also revokes the
  *    invitation sent into it, so the invite needs no separate undo.
  *  - **The order is chosen so the un-undoable step is last.** The invitation is
  *    the only outward-facing act — once the email is out, it has been seen — so
@@ -37,7 +42,7 @@ import { tenants, tenantSettings } from '../../db/schema/tenancy'
 import type { TenantRow } from '../../db/schema/tenancy'
 import { isUniqueViolation } from '../../db/unique-violation'
 import { tenantOrigin } from '../../lib/allowed-origins'
-import { clerkStaffApp, getClerkClientApp } from '../../lib/clerk'
+import { clerkStaffApp } from '../../lib/clerk'
 import { splitName } from '../../lib/name'
 import { BadRequestError, ConflictError } from '../../shared/errors'
 import { logger } from '../../shared/logger'
@@ -45,18 +50,17 @@ import { captureException } from '../../instrument'
 import { assertUsableSlug } from './slug'
 import { forgetCachedTenants } from './tenants'
 
-export type ClerkApp = 'client' | 'portal'
-
 /**
- * The Clerk side of provisioning, as three calls.
+ * The Clerk side of provisioning, as three calls — all against the **portal**
+ * application, the only one a Tenant has an organization in.
  *
  * A port rather than a direct dependency because the interesting behaviour here
  * is what happens when one of these throws, and that has to be testable without
  * a Clerk account. `clerkOrgPort` below is the real one.
  */
 export interface ClerkOrgPort {
-  createOrganization(app: ClerkApp, input: { name: string; slug: string }): Promise<string>
-  deleteOrganization(app: ClerkApp, organizationId: string): Promise<void>
+  createOrganization(input: { name: string; slug: string }): Promise<string>
+  deleteOrganization(organizationId: string): Promise<void>
   inviteOrgAdmin(input: {
     organizationId: string
     email: string
@@ -65,21 +69,19 @@ export interface ClerkOrgPort {
 }
 
 export const clerkOrgPort: ClerkOrgPort = {
-  async createOrganization(app, input) {
-    const clerk = app === 'portal' ? clerkStaffApp : getClerkClientApp()
+  async createOrganization(input) {
     // The Clerk organization slug is set from ours so the two identifiers agree
     // when someone is reading a Clerk dashboard next to our tenant list. It is
     // not load-bearing — `clerk_portal_org_id` is what we resolve on.
-    const org = await clerk.organizations.createOrganization({
+    const org = await clerkStaffApp.organizations.createOrganization({
       name: input.name,
       slug: input.slug,
     })
     return org.id
   },
 
-  async deleteOrganization(app, organizationId) {
-    const clerk = app === 'portal' ? clerkStaffApp : getClerkClientApp()
-    await clerk.organizations.deleteOrganization(organizationId)
+  async deleteOrganization(organizationId) {
+    await clerkStaffApp.organizations.deleteOrganization(organizationId)
   },
 
   async inviteOrgAdmin({ organizationId, email, redirectUrl }) {
@@ -97,44 +99,36 @@ export const clerkOrgPort: ClerkOrgPort = {
 }
 
 /**
- * Create both organizations, run `body`, and delete them again if it throws.
+ * Create the portal organization, run `body`, and delete it again if it throws.
  *
  * Compensation is best-effort and never masks the original failure: a delete
  * that also fails is logged and reported, and the error the caller sees is
  * still the one that actually broke provisioning. An orphaned organization is a
  * cleanup chore; a misreported error is a debugging dead end.
- *
- * The client organization is created second and deleted first, so the unwind is
- * the mirror of the wind-up.
  */
-export async function withProvisionedOrgs<T>(
+export async function withProvisionedOrg<T>(
   clerk: ClerkOrgPort,
   input: { name: string; slug: string },
-  body: (orgs: { clientOrgId: string; portalOrgId: string }) => Promise<T>,
+  body: (portalOrgId: string) => Promise<T>,
 ): Promise<T> {
-  const created: Array<{ app: ClerkApp; id: string }> = []
+  let created: string | null = null
 
   const rollback = async () => {
-    for (const org of [...created].reverse()) {
-      try {
-        await clerk.deleteOrganization(org.app, org.id)
-      } catch (err) {
-        logger.error(
-          { err, app: org.app, organizationId: org.id, slug: input.slug },
-          'tenant provisioning: failed to roll back a Clerk organization',
-        )
-        captureException(err, { scope: 'tenant-provision-rollback', app: org.app })
-      }
+    if (!created) return
+    try {
+      await clerk.deleteOrganization(created)
+    } catch (err) {
+      logger.error(
+        { err, organizationId: created, slug: input.slug },
+        'tenant provisioning: failed to roll back the Clerk organization',
+      )
+      captureException(err, { scope: 'tenant-provision-rollback' })
     }
   }
 
   try {
-    const portalOrgId = await clerk.createOrganization('portal', input)
-    created.push({ app: 'portal', id: portalOrgId })
-    const clientOrgId = await clerk.createOrganization('client', input)
-    created.push({ app: 'client', id: clientOrgId })
-
-    return await body({ clientOrgId, portalOrgId })
+    created = await clerk.createOrganization(input)
+    return await body(created)
   } catch (err) {
     await rollback()
     throw err
@@ -215,7 +209,7 @@ export async function provisionTenant(
   const portalUrl = tenantOrigin('portal', slug)
 
   try {
-    const result = await withProvisionedOrgs(clerk, { name, slug }, async orgs => {
+    const result = await withProvisionedOrg(clerk, { name, slug }, async portalOrgId => {
       const created = await db.transaction(async tx => {
         const [tenant] = await tx
           .insert(tenants)
@@ -223,8 +217,9 @@ export async function provisionTenant(
             slug,
             name,
             ...(input.timezone ? { timezone: input.timezone } : {}),
-            clerkClientOrgId: orgs.clientOrgId,
-            clerkPortalOrgId: orgs.portalOrgId,
+            // `clerk_client_org_id` is left null on purpose, and stays null:
+            // members are not organization members. See the ADR named above.
+            clerkPortalOrgId: portalOrgId,
           })
           .returning()
         if (!tenant) throw new Error('tenant insert returned no row')
@@ -262,13 +257,13 @@ export async function provisionTenant(
         // Outside, a refused invitation would leave a committed studio with a
         // first admin who was never told — the half-created Tenant this whole
         // file exists to rule out. Inside, the throw rolls the three inserts
-        // back and `withProvisionedOrgs` deletes both organizations on the way
+        // back and `withProvisionedOrg` deletes the organization on the way
         // out, which also revokes the invitation if it had already been sent.
         //
         // The cost is one network call with the transaction open. It is the
         // final statement, so nothing waits behind it but the commit.
         await clerk.inviteOrgAdmin({
-          organizationId: orgs.portalOrgId,
+          organizationId: portalOrgId,
           email: adminEmail,
           redirectUrl: portalUrl ? `${portalUrl}/signup` : null,
         })
@@ -287,9 +282,6 @@ export async function provisionTenant(
     }
   } catch (err) {
     if (isUniqueViolation(err, 'tenants_slug_unique')) throw new ConflictError('slug_taken', { slug })
-    if (isUniqueViolation(err, 'tenants_clerk_client_org_id_unique')) {
-      throw new ConflictError('clerk_client_org_taken')
-    }
     if (isUniqueViolation(err, 'tenants_clerk_portal_org_id_unique')) {
       throw new ConflictError('clerk_portal_org_taken')
     }

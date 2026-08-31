@@ -26,10 +26,11 @@ function serialize(tenant: TenantSummary) {
     timezone: tenant.timezone,
     status: tenant.status,
     created_at: tenant.createdAt.toISOString(),
-    // Whether each Clerk organization is wired, not which one — the id is
-    // operational detail, and its absence is the thing worth seeing.
+    // Whether the Clerk organization is wired, not which one — the id is
+    // operational detail, and its absence is the thing worth seeing. Portal
+    // only: a studio has no client-side organization by design, so reporting
+    // one would be reporting a permanent, expected absence as a fault.
     clerk: {
-      client: Boolean(tenant.clerkClientOrgId),
       portal: Boolean(tenant.clerkPortalOrgId),
     },
     urls: {

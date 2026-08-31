@@ -93,9 +93,11 @@ export const clerkClientAuth: MiddlewareHandler = async (c, next) => {
     sub: payload.sub,
   }
 
-  // The member half of the organization check. Until a tenant's client-side
-  // Clerk Organization is provisioned this is a no-op; from the moment it is,
-  // a token minted for one studio cannot name another. See tenant.ts.
+  // The member half of the organization check. In practice a no-op: no Tenant
+  // has a client-side Clerk Organization, by decision, so a member token carries
+  // no claim and this only refuses one that names an organization we do not
+  // recognise. The tenant itself is corroborated by `Origin` (see tenant.ts) and
+  // fenced by Row-Level Security.
   const orgRefusal = await assertTenantOrgClaim(c, payload, 'client')
   if (orgRefusal) return c.json({ error: orgRefusal }, 403)
 

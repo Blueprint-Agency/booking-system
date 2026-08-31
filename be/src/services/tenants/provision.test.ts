@@ -1,6 +1,6 @@
 import assert from 'node:assert'
 import { describe, test } from 'node:test'
-import { withProvisionedOrgs, type ClerkOrgPort, type ClerkApp } from './provision'
+import { withProvisionedOrg, type ClerkOrgPort } from './provision'
 
 /**
  * A stand-in Clerk. Records every call so the tests can assert on the *order*
@@ -16,14 +16,14 @@ function fakeClerk(
   const port: ClerkOrgPort & { calls: string[]; live: Set<string> } = {
     calls,
     live,
-    async createOrganization(app: ClerkApp) {
-      const id = `org_${app}_${++next}`
-      calls.push(`create:${app}`)
+    async createOrganization() {
+      const id = `org_portal_${++next}`
+      calls.push('create')
       live.add(id)
       return id
     },
-    async deleteOrganization(app: ClerkApp, id: string) {
-      calls.push(`delete:${app}`)
+    async deleteOrganization(id: string) {
+      calls.push('delete')
       live.delete(id)
     },
     async inviteOrgAdmin() {
@@ -36,53 +36,36 @@ function fakeClerk(
 
 const INPUT = { name: 'Acme Yoga', slug: 'acme' }
 
-describe('withProvisionedOrgs', () => {
-  test('creates both organizations and leaves them in place on success', async () => {
+describe('withProvisionedOrg', () => {
+  test('creates the portal organization and leaves it in place on success', async () => {
     const clerk = fakeClerk()
-    const orgs = await withProvisionedOrgs(clerk, INPUT, async o => o)
+    const portalOrgId = await withProvisionedOrg(clerk, INPUT, async id => id)
 
-    assert.deepEqual(clerk.calls, ['create:portal', 'create:client'])
-    assert.equal(clerk.live.size, 2)
-    assert.ok(orgs.portalOrgId)
-    assert.ok(orgs.clientOrgId)
-    assert.notEqual(orgs.portalOrgId, orgs.clientOrgId)
+    // One organization, in the portal application. The client application gets
+    // none — members are not organization members. See the ADR in provision.ts.
+    assert.deepEqual(clerk.calls, ['create'])
+    assert.equal(clerk.live.size, 1)
+    assert.ok(portalOrgId)
   })
 
-  test('a failing body deletes both organizations, newest first', async () => {
+  test('a failing body deletes the organization', async () => {
     const clerk = fakeClerk()
     const boom = new Error('database said no')
 
     await assert.rejects(
-      withProvisionedOrgs(clerk, INPUT, async () => {
+      withProvisionedOrg(clerk, INPUT, async () => {
         throw boom
       }),
       // The caller must see the real failure, not a rollback artefact.
       (err: unknown) => err === boom,
     )
 
-    assert.deepEqual(clerk.calls, ['create:portal', 'create:client', 'delete:client', 'delete:portal'])
+    assert.deepEqual(clerk.calls, ['create', 'delete'])
     // Nothing left behind holding the slug in Clerk.
     assert.equal(clerk.live.size, 0)
   })
 
-  test('a failure creating the second organization still removes the first', async () => {
-    const boom = new Error('clerk said no')
-    let created = 0
-    const clerk = fakeClerk({
-      async createOrganization(app: ClerkApp) {
-        if (++created === 2) throw boom
-        return `org_${app}`
-      },
-    })
-
-    await assert.rejects(
-      withProvisionedOrgs(clerk, INPUT, async () => 'unreachable'),
-      (err: unknown) => err === boom,
-    )
-    assert.deepEqual(clerk.calls, ['delete:portal'])
-  })
-
-  test('a failure creating the first organization has nothing to undo', async () => {
+  test('a failure creating the organization has nothing to undo', async () => {
     const boom = new Error('clerk said no')
     const clerk = fakeClerk({
       async createOrganization() {
@@ -91,7 +74,7 @@ describe('withProvisionedOrgs', () => {
     })
 
     await assert.rejects(
-      withProvisionedOrgs(clerk, INPUT, async () => 'unreachable'),
+      withProvisionedOrg(clerk, INPUT, async () => 'unreachable'),
       (err: unknown) => err === boom,
     )
     assert.deepEqual(clerk.calls, [])
@@ -99,21 +82,20 @@ describe('withProvisionedOrgs', () => {
 
   test('a rollback that itself fails does not mask the original error', async () => {
     const boom = new Error('database said no')
-    const attempted: ClerkApp[] = []
+    let attempted = 0
     const clerk = fakeClerk({
-      async deleteOrganization(app: ClerkApp) {
-        attempted.push(app)
+      async deleteOrganization() {
+        attempted += 1
         throw new Error('clerk is down too')
       },
     })
 
     await assert.rejects(
-      withProvisionedOrgs(clerk, INPUT, async () => {
+      withProvisionedOrg(clerk, INPUT, async () => {
         throw boom
       }),
       (err: unknown) => err === boom,
     )
-    // Both deletes were still attempted — one failing must not skip the other.
-    assert.deepEqual(attempted, ['client', 'portal'])
+    assert.equal(attempted, 1, 'the delete was still attempted')
   })
 })

@@ -2,7 +2,7 @@ import assert from 'node:assert'
 import { after, before, describe, test } from 'node:test'
 import { eq } from 'drizzle-orm'
 import { startTestApp, integrationTestsEnabled, SKIP_REASON, type TestApp } from './harness'
-import type { ClerkApp, ClerkOrgPort } from '../services/tenants/provision'
+import type { ClerkOrgPort } from '../services/tenants/provision'
 
 /**
  * "Creation is atomic; a failure at any step leaves no partial Tenant."
@@ -22,27 +22,26 @@ import type { ClerkApp, ClerkOrgPort } from '../services/tenants/provision'
 /** A Clerk that records what exists, so "no organization left behind" is a
  *  question the test can actually ask. */
 /**
- * Shared across every fake, and unique per run, because `clerk_client_org_id`
- * and `clerk_portal_org_id` are unique platform-wide and the scratch database
- * is not dropped between runs. A per-fake counter would hand the second test the
- * first test's id; a per-process one would hand this run the last run's, and
- * either way the test fails on a constraint that has nothing to do with what it
- * is testing.
+ * Shared across every fake, and unique per run, because `clerk_portal_org_id`
+ * is unique platform-wide and the scratch database is not dropped between runs.
+ * A per-fake counter would hand the second test the first test's id; a
+ * per-process one would hand this run the last run's, and either way the test
+ * fails on a constraint that has nothing to do with what it is testing.
  */
 const ORG_RUN = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
 let orgSeq = 0
 
 function fakeClerk(overrides: Partial<ClerkOrgPort> = {}) {
-  const live = new Map<string, ClerkApp>()
+  const live = new Set<string>()
   const invited: string[] = []
 
   const port: ClerkOrgPort = {
-    async createOrganization(app) {
-      const id = `org_${app}_${ORG_RUN}_${++orgSeq}`
-      live.set(id, app)
+    async createOrganization() {
+      const id = `org_portal_${ORG_RUN}_${++orgSeq}`
+      live.add(id)
       return id
     },
-    async deleteOrganization(_app, id) {
+    async deleteOrganization(id) {
       live.delete(id)
     },
     async inviteOrgAdmin({ email }) {
@@ -103,7 +102,7 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
     return { tenant, settings: settings.length, staff: staff.length }
   }
 
-  test('a studio is created whole: row, settings, both orgs, and an invited admin', async () => {
+  test('a studio is created whole: row, settings, the portal org, and an invited admin', async () => {
     const clerk = fakeClerk();
     const slug = `prov-ok-${Date.now()}`
 
@@ -117,11 +116,14 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
     assert.equal(found.settings, 1, 'settings row created alongside it')
     assert.equal(found.staff, 1, 'the first admin exists')
 
-    // Both applications are wired. A null here is the half-created Tenant that
-    // `orgClaimVerdict` would read as "enforcement not switched on yet".
+    // The portal application is wired. A null here is the half-created Tenant
+    // that `orgClaimVerdict` would read as "enforcement not switched on yet".
     assert.ok(found.tenant.clerkPortalOrgId, 'portal organization recorded')
-    assert.ok(found.tenant.clerkClientOrgId, 'client organization recorded')
-    assert.equal(clerk.live.size, 2)
+    // The client application is deliberately *not* wired, and must stay that
+    // way: a non-null id here would demand an organization claim from every
+    // member and lock the whole studio's members out. See the ADR.
+    assert.equal(found.tenant.clerkClientOrgId, null, 'no client organization')
+    assert.equal(clerk.live.size, 1)
 
     // The address is normalised on the way in, so the invitation and the row
     // agree about who was invited.
@@ -173,10 +175,10 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
       (err: any) => err?.code === 'slug_taken' || /slug_taken/.test(String(err?.message)),
     )
 
-    // The second attempt's organizations were rolled back; the first's remain.
+    // The second attempt's organization was rolled back; the first's remains.
     assert.equal(second.live.size, 0, 'no orphan organization holding the slug')
     assert.equal(second.invited.length, 0, 'nobody was emailed about a studio that does not exist')
-    assert.equal(first.live.size, 2)
+    assert.equal(first.live.size, 1)
 
     // And the winner is untouched: one tenant, one settings row, one admin.
     const found = await traces(slug)
@@ -202,7 +204,7 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
     )
 
     // The transaction had already inserted three rows by this point. All of them
-    // are gone, and so are both organizations.
+    // are gone, and so is the organization.
     const found = await traces(slug)
     assert.equal(found.tenant, null, 'no tenant row survives')
     assert.equal(clerk.live.size, 0, 'no organization survives')
