@@ -140,30 +140,35 @@ export function tenantMatches(c: Context, rowTenantId: string | null): boolean {
  * the rollout seam are in `services/tenants/org-claim.ts`; this only does the
  * two lookups that turn ids into tenants.
  *
- * For the portal this is the membership enforcement the spec asks for: a staff
- * member of one studio who reaches another studio's portal presents a token
- * whose organization belongs to their own, and is refused here — before the
+ * This is the membership enforcement the spec asks for: a staff member of one
+ * studio who reaches another studio's portal presents a token whose
+ * organization belongs to their own, and is refused here — before the
  * `staff_users` row is even read, and regardless of what the header said.
+ *
+ * **Portal only.** The client application has no organizations at all
+ * (`docs/adr/0003-no-client-side-clerk-organizations.md`), so for a member token
+ * this check could never *grant* anything — no claim can match an organization
+ * no tenant has. It could only refuse, and it would: a member left over in some
+ * organization the platform no longer maps carries that id on their token and
+ * would be turned away from their own studio with `tenant_mismatch`, on every
+ * request, with no way to recover. So member requests do not consult it. Their
+ * tenant is corroborated by `Origin` and fenced by Row-Level Security.
  */
 export async function assertTenantOrgClaim(
   c: Context,
   claims: unknown,
-  app: 'client' | 'portal',
 ): Promise<'tenant_mismatch' | 'organization_required' | null> {
   const requestTenantId = tenantId(c)
   const claimedOrgId = orgIdFromClaims(claims)
 
   const [tenant, claimedTenant] = await Promise.all([
     loadTenantById(requestTenantId),
-    claimedOrgId ? resolveTenantByClerkOrg(app, claimedOrgId) : Promise.resolve(null),
+    claimedOrgId ? resolveTenantByClerkOrg('portal', claimedOrgId) : Promise.resolve(null),
   ])
-
-  const configuredOrgId =
-    (app === 'client' ? tenant?.clerkClientOrgId : tenant?.clerkPortalOrgId) ?? null
 
   const verdict = orgClaimVerdict({
     requestTenantId,
-    configuredOrgId,
+    configuredOrgId: tenant?.clerkPortalOrgId ?? null,
     claimedOrgId,
     claimedOrgTenantId: claimedTenant?.id ?? null,
   })
@@ -175,7 +180,7 @@ export async function assertTenantOrgClaim(
   }
 
   logger.warn(
-    { app, requestTenantId, claimedOrgId, claimedTenantId: claimedTenant?.id ?? null, verdict },
+    { requestTenantId, claimedOrgId, claimedTenantId: claimedTenant?.id ?? null, verdict },
     'tenant: clerk organization claim refused',
   )
   return verdict

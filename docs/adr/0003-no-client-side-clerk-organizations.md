@@ -33,6 +33,16 @@ Drop organizations on the client side. Provisioning creates the portal organizat
 values already stored, because a leftover id is exactly the state that refuses every member of
 that studio with `organization_required`.
 
+And member requests **do not consult the organization claim at all**:
+`middleware/clerk-client.ts` no longer calls `assertTenantOrgClaim`, which is now portal-only.
+This is not a shortcut, it is the safe half of the same decision. With no tenant configuring a
+client organization the check can never *grant* anything — no claim can match an organization that
+does not exist — so all it can do is refuse. And it would: a member still holding a membership in
+some organization the platform no longer maps carries that id on their session token, the lookup
+finds no tenant for it, and they are turned away from their own studio with `tenant_mismatch` on
+every request, with nothing they can do about it. Nulling the mapping while the organizations
+still exist in Clerk would otherwise be worse than leaving it alone.
+
 ### What proves the Tenant for a member request, without the claim
 
 - **`Origin`, from the browser.** Under the subdomain scheme the origin *contains* the Tenant

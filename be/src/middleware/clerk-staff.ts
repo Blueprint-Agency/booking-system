@@ -54,7 +54,7 @@ export const clerkStaffAuth: MiddlewareHandler = async (c, next) => {
   // member of one studio reaching another's portal is refused here. The header
   // is not consulted — it was already checked against `Origin`, and this is the
   // half of the check the caller cannot influence at all.
-  const orgRefusal = await assertTenantOrgClaim(c, payload, 'portal')
+  const orgRefusal = await assertTenantOrgClaim(c, payload)
   if (orgRefusal) return c.json({ error: orgRefusal }, 403)
 
   let [row] = await db

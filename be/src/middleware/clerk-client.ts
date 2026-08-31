@@ -6,7 +6,7 @@ import { getClerkClientApp, verifyClientToken } from '../lib/clerk'
 import { syncClientFromClerk } from '../services/auth/webhook-sync'
 import { logger } from '../shared/logger'
 import { captureException } from '../instrument'
-import { assertTenantOrgClaim, tenantCorroborated, tenantId, tenantMatches } from './tenant'
+import { tenantCorroborated, tenantId, tenantMatches } from './tenant'
 
 export interface ClerkClientClaims {
   sub: string
@@ -93,14 +93,12 @@ export const clerkClientAuth: MiddlewareHandler = async (c, next) => {
     sub: payload.sub,
   }
 
-  // The member half of the organization check. In practice a no-op: no Tenant
-  // has a client-side Clerk Organization, by decision, so a member token carries
-  // no claim and this only refuses one that names an organization we do not
-  // recognise. The tenant itself is corroborated by `Origin` (see tenant.ts) and
-  // fenced by Row-Level Security.
-  const orgRefusal = await assertTenantOrgClaim(c, payload, 'client')
-  if (orgRefusal) return c.json({ error: orgRefusal }, 403)
-
+  // No organization check here, deliberately — that is the portal's, and only
+  // the portal's. A studio has no client-side Clerk Organization, so a member
+  // token's organization claim (if it somehow carries one) can match nothing,
+  // and consulting it could only ever lock a member out of their own studio.
+  // The tenant is corroborated by `Origin` in `resolveTenant` and fenced by
+  // Row-Level Security. See docs/adr/0003-no-client-side-clerk-organizations.md.
   const requestTenantId = tenantId(c)
 
   // Scoped by the Tenant context this request opened: the same person may hold

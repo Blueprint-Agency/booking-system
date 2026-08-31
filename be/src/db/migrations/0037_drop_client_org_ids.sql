@@ -8,7 +8,13 @@
 -- place it would refuse every member of that studio with
 -- `organization_required` — the studio's whole membership, locked out.
 --
--- The Clerk organizations themselves are not deleted here. Removing them is a
--- manual tidy-up in the client application's Clerk dashboard; leaving them
--- costs nothing but a stale row in a list nobody resolves against any more.
+-- The Clerk organizations themselves are not deleted here, and nulling the
+-- mapping without deleting them would otherwise be the *worse* of the two
+-- states: an organization that still exists still puts `o.id` on the session
+-- token of anyone left in it, and once it maps to no tenant that claim reads as
+-- another studio's. What stops that becoming a permanent 403 is that member
+-- requests no longer consult the claim at all — `middleware/clerk-client.ts`
+-- does not call `assertTenantOrgClaim`, precisely so a stale organization can
+-- lock nobody out. Deleting them in the client Clerk dashboard is still worth
+-- doing; it is tidy-up, not a prerequisite.
 update "tenants" set "clerk_client_org_id" = null where "clerk_client_org_id" is not null;
