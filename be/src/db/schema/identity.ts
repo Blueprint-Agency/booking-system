@@ -6,6 +6,7 @@ import {
   date,
   index,
   uniqueIndex,
+  unique,
   foreignKey,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
@@ -23,8 +24,10 @@ export const clients = pgTable(
   {
     tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-    clerkUserId: text('clerk_user_id').notNull().unique(),
-    email: text('email').notNull().unique(),
+    // Unique per Tenant, not per platform — see migration 0035. One person may
+    // be a member of two studios, and gets an independent record at each.
+    clerkUserId: text('clerk_user_id').notNull(),
+    email: text('email').notNull(),
     name: text('name').notNull(),
     phone: text('phone').notNull(),
     gender: clientGenderEnum('gender'),
@@ -44,6 +47,11 @@ export const clients = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
+    tenantClerkUserUnique: unique('clients_tenant_clerk_user_unique').on(
+      table.tenantId,
+      table.clerkUserId,
+    ),
+    tenantEmailUnique: unique('clients_tenant_email_unique').on(table.tenantId, table.email),
     statusIdx: index('clients_status_idx').on(table.tenantId, table.status),
     referrerIdx: index('clients_referrer_idx').on(table.tenantId, table.referredByClientId),
     nameIdx: index('clients_name_lower_idx').on(table.tenantId, sql`lower(${table.name})`),
@@ -61,8 +69,10 @@ export const staffUsers = pgTable(
   {
     tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-    clerkUserId: text('clerk_user_id').unique(),
-    email: text('email').notNull().unique(),
+    // Unique per Tenant, not per platform — see migration 0035. The same person
+    // may be an instructor at one studio and an admin at another.
+    clerkUserId: text('clerk_user_id'),
+    email: text('email').notNull(),
     name: text('name').notNull(),
     firstName: text('first_name'),
     lastName: text('last_name'),
@@ -89,6 +99,11 @@ export const staffUsers = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
+    tenantClerkUserUnique: unique('staff_users_tenant_clerk_user_unique').on(
+      table.tenantId,
+      table.clerkUserId,
+    ),
+    tenantEmailUnique: unique('staff_users_tenant_email_unique').on(table.tenantId, table.email),
     roleStatusIdx: index('staff_role_status_idx').on(table.tenantId, table.role, table.status),
     deletedIdx: index('staff_users_deleted_idx').on(table.tenantId, table.deletedAt),
     // GIN on the uuid[] column for workspace membership filters (§4a indexes).

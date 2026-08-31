@@ -6,7 +6,7 @@ import { getClerkClientApp, verifyClientToken } from '../lib/clerk'
 import { syncClientFromClerk } from '../services/auth/webhook-sync'
 import { logger } from '../shared/logger'
 import { captureException } from '../instrument'
-import { tenantMatches } from './tenant'
+import { assertTenantOrgClaim, tenantCorroborated, tenantId, tenantMatches } from './tenant'
 
 export interface ClerkClientClaims {
   sub: string
@@ -30,7 +30,10 @@ const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() ? 
  * back to the Backend API. Clerk claim keys follow the OIDC-style shortcodes the
  * client app's session token already uses (email / email_verified / …).
  */
-async function provisionFromClaims(payload: any): Promise<ClientSyncOutcome | null> {
+async function provisionFromClaims(
+  payload: any,
+  tenantId: string,
+): Promise<ClientSyncOutcome | null> {
   const email = str(payload.email)
   if (!email) return null
   const phone = str(payload.phone_number)
@@ -45,12 +48,12 @@ async function provisionFromClaims(payload: any): Promise<ClientSyncOutcome | nu
       last_name: str(payload.last_name) ?? str(payload.family_name),
       username: str(payload.username),
     },
-    { emailVerified: payload.email_verified === true },
+    { tenantId, emailVerified: payload.email_verified === true },
   )
 }
 
 /** Fallback: fetch the full Clerk profile and provision from it. */
-async function provisionFromClerkApi(sub: string): Promise<ClientSyncOutcome> {
+async function provisionFromClerkApi(sub: string, tenantId: string): Promise<ClientSyncOutcome> {
   const clerkUser = await getClerkClientApp().users.getUser(sub)
   const primaryEmail = clerkUser.emailAddresses.find(e => e.id === clerkUser.primaryEmailAddressId)
   const emailVerified = primaryEmail?.verification?.status === 'verified'
@@ -65,7 +68,7 @@ async function provisionFromClerkApi(sub: string): Promise<ClientSyncOutcome> {
       last_name: clerkUser.lastName,
       username: clerkUser.username,
     },
-    { emailVerified },
+    { tenantId, emailVerified },
   )
 }
 
@@ -90,6 +93,16 @@ export const clerkClientAuth: MiddlewareHandler = async (c, next) => {
     sub: payload.sub,
   }
 
+  // The member half of the organization check. Until a tenant's client-side
+  // Clerk Organization is provisioned this is a no-op; from the moment it is,
+  // a token minted for one studio cannot name another. See tenant.ts.
+  const orgRefusal = await assertTenantOrgClaim(c, payload, 'client')
+  if (orgRefusal) return c.json({ error: orgRefusal }, 403)
+
+  const requestTenantId = tenantId(c)
+
+  // Scoped by the Tenant context this request opened: the same person may hold
+  // a row at another studio, and it is not this one.
   let [row] = await db.select().from(clients).where(eq(clients.clerkUserId, payload.sub)).limit(1)
 
   // Auto-provision: a self-registered member's clients row is normally inserted
@@ -103,16 +116,28 @@ export const clerkClientAuth: MiddlewareHandler = async (c, next) => {
   // which needs no Clerk API round-trip. We only call the Clerk Backend API as a
   // fallback when the token doesn't carry the email. Both paths funnel through
   // syncClientFromClerk so the insert + email-conflict guard stay in one place.
-  if (!row) {
+  //
+  // …but only for a tenant something other than the header vouched for. A
+  // member of one studio can set `X-Tenant-Slug` to another and present a
+  // perfectly valid token; the scoped lookup above then finds nothing, and
+  // provisioning on that basis would hand them a brand-new membership at a
+  // studio they were never invited to. Reads are fenced by the policies;
+  // this is the write that would not be. See tenantCorroborated().
+  if (!row && !tenantCorroborated(c)) {
+    logger.warn(
+      { requestTenantId, sub: payload.sub },
+      'clerk-client: refusing to provision into an uncorroborated tenant',
+    )
+  } else if (!row) {
     try {
       // Prefer the verified token claims (no Clerk API round-trip). Fall back to
       // the Clerk Backend API when the token carries no email *or* when the claims
       // path hit an email conflict it couldn't resolve — the API is authoritative
       // for email verification, which gates re-linking a pre-existing row (see
       // syncClientFromClerk).
-      let sync = await provisionFromClaims(payload)
+      let sync = await provisionFromClaims(payload, requestTenantId)
       if (!sync || sync.kind === 'email_conflict') {
-        sync = await provisionFromClerkApi(payload.sub)
+        sync = await provisionFromClerkApi(payload.sub, requestTenantId)
       }
       if (sync && (sync.kind === 'created' || sync.kind === 'updated' || sync.kind === 'idempotent')) {
         ;[row] = await db.select().from(clients).where(eq(clients.id, sync.clientId)).limit(1)
@@ -125,10 +150,10 @@ export const clerkClientAuth: MiddlewareHandler = async (c, next) => {
 
   if (!row) return c.json({ error: 'client_not_found' }, 404)
 
-  // See the same check in clerk-staff.ts: the tenant header is resolved but not
-  // yet validated, and this is the first point where the caller's real tenant is
-  // known. A member of one studio naming another is refused here rather than
-  // being handed that studio's data by every scoped service downstream.
+  // Belt to the organization claim's braces — see the same check in
+  // clerk-staff.ts. The lookup above already ran inside this tenant's
+  // Row-Level Security context, so a row from another studio should be
+  // unreachable rather than merely wrong; this says so out loud.
   if (!tenantMatches(c, row.tenantId)) {
     return c.json({ error: 'tenant_mismatch' }, 403)
   }

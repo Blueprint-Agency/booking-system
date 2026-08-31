@@ -6,7 +6,7 @@ import { staffUsers } from '../db/schema/identity'
 import { syncStaffFromClerk } from '../services/auth/webhook-sync'
 import { logger } from '../shared/logger'
 import { captureException } from '../instrument'
-import { tenantMatches } from './tenant'
+import { assertTenantOrgClaim, tenantCorroborated, tenantMatches } from './tenant'
 
 export interface ClerkStaffClaims {
   sub: string
@@ -42,12 +42,20 @@ export const clerkStaffAuth: MiddlewareHandler = async (c, next) => {
     return c.json({ error: 'missing_bearer_token' }, 401)
   }
 
-  let payload: { sub: string }
+  let payload: { sub: string; [k: string]: unknown }
   try {
     payload = await verifyStaffToken(token)
   } catch {
     return c.json({ error: 'invalid_token' }, 401)
   }
+
+  // Organization membership, enforced before the staff row is even read: the
+  // token says which studio's portal this person is signed into, and a staff
+  // member of one studio reaching another's portal is refused here. The header
+  // is not consulted — it was already checked against `Origin`, and this is the
+  // half of the check the caller cannot influence at all.
+  const orgRefusal = await assertTenantOrgClaim(c, payload, 'portal')
+  if (orgRefusal) return c.json({ error: orgRefusal }, 403)
 
   let [row] = await db
     .select()
@@ -59,8 +67,15 @@ export const clerkStaffAuth: MiddlewareHandler = async (c, next) => {
   // signed-in Clerk user matches a pre-seeded/invited staff_users row by email.
   // Same gate as the webhook — only emails already in staff_users get a role,
   // and an expired invitation still refuses (sync returns `invite_expired`).
+  //
+  // Gated on corroboration for the same reason as the member path: linking
+  // *activates* a pending staff row, and doing that on the strength of a header
+  // alone lets a signed-in staff member of one studio reach into another's
+  // pending invitations by naming it. See tenantCorroborated().
   let syncReason: string | undefined
-  if (!row) {
+  if (!row && !tenantCorroborated(c)) {
+    syncReason = 'tenant_uncorroborated'
+  } else if (!row) {
     try {
       const clerkUser = await clerkStaffApp.users.getUser(payload.sub)
       const sync = await syncStaffFromClerk({
@@ -94,13 +109,10 @@ export const clerkStaffAuth: MiddlewareHandler = async (c, next) => {
 
   if (!row) return c.json({ error: 'staff_not_provisioned', reason: syncReason }, 403)
 
-  // The `X-Tenant-Slug` header is resolved before any of this, and nothing has
-  // checked it yet — so on its own it would let a signed-in member of one studio
-  // name another studio and reach every service this batch scoped. Here is the
-  // first point where the caller's real tenant is known, so here is where the
-  // claim is checked. Mapping Clerk Organizations onto tenants, and doing the
-  // same for public routes against `Origin`, is still #65's work; this only
-  // closes the forged-header hole for authenticated staff in the meantime.
+  // Belt to the organization claim's braces. The lookup above already ran
+  // inside this tenant's Row-Level Security context, so a row from another
+  // studio should be unreachable rather than merely wrong — and this says so
+  // out loud instead of trusting that it stays true.
   if (!tenantMatches(c, row.tenantId)) {
     return c.json({ error: 'tenant_mismatch' }, 403)
   }

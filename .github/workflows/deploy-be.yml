@@ -113,7 +113,8 @@ jobs:
             # Required GitHub settings:
             #   org vars:    BPVPS2_TAILSCALE_HOST, DOCKERHUB_USERNAME
             #   org secrets: TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET, SSH_PRIVATE_KEY, DOCKERHUB_TOKEN
-            #   env vars:    PORT, PORTAL_ORIGIN, CLIENT_ORIGIN, SUPERADMIN_EMAIL
+            #   env vars:    PORT, PORTAL_ORIGIN, CLIENT_ORIGIN, TENANT_ORIGIN_PATTERNS,
+            #            SUPERADMIN_EMAIL
             #   env secrets: DB_USER, DB_PASSWORD, DB_NAME, DB_APP_PASSWORD,
             #            CLERK_STAFF_PUBLISHABLE_KEY, CLERK_STAFF_SECRET_KEY, CLERK_STAFF_WEBHOOK_SECRET,
             #            CLERK_CLIENT_PUBLISHABLE_KEY, CLERK_CLIENT_SECRET_KEY, CLERK_CLIENT_WEBHOOK_SECRET,
@@ -149,6 +150,13 @@ jobs:
               echo "PORTAL_ORIGIN=${{ vars.PORTAL_ORIGIN }}"
               # Client origin — adds fe-client to the CORS allowlist
               echo "CLIENT_ORIGIN=${{ vars.CLIENT_ORIGIN }}"
+              # Tenant subdomain origins, comma-separated, wildcard leftmost —
+              # every studio is a subdomain and a studio is created by inserting
+              # a row, so the allowlist has to be a pattern. Backs CORS, the
+              # Clerk `azp` check and the public-route `Origin` validation.
+              #   staging:    https://*.dev.reservetoday.app,https://*.portal.dev.reservetoday.app
+              #   production: https://*.reservetoday.app,https://*.portal.reservetoday.app
+              echo "TENANT_ORIGIN_PATTERNS=${{ vars.TENANT_ORIGIN_PATTERNS }}"
               # Clerk — staff app (admin + instructor)
               echo "CLERK_STAFF_PUBLISHABLE_KEY=${{ secrets.CLERK_STAFF_PUBLISHABLE_KEY }}"
               echo "CLERK_STAFF_SECRET_KEY=${{ secrets.CLERK_STAFF_SECRET_KEY }}"

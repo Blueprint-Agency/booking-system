@@ -20,10 +20,18 @@ The column on all 53 domain tables recording which Tenant a row belongs to — i
 **Tenant context**:
 The Tenant a request is about — held in two places at once, and they are set together.
 
-In the *application*, it is resolved once by `middleware/tenant.ts` and read in a route with `tenantId(c)`. It arrives as the `X-Tenant-Slug` header — the API's own hostname carries no Tenant, so the caller has to say — and a request without one is Tenant #1, which is what keeps every existing client working. Services never read it themselves: it is passed in, so a query that forgot to scope is a compile error rather than a leak.
+In the *application*, it is resolved once by `middleware/tenant.ts` and read in a route with `tenantId(c)`. It arrives as the `X-Tenant-Slug` header — the API's own hostname carries no Tenant, so the caller has to say — or, when the header is absent, as the tenant label in the browser's `Origin`. A request naming neither is Tenant #1, which is what keeps every existing client working. Services never read it themselves: it is passed in, so a query that forgot to scope is a compile error rather than a leak.
 
 In the *database*, it is `app.tenant_id`, written **transaction-locally** by `withTenant` (`db/index.ts`) and read back by every policy. Transaction-locally because session scope would ride a pooled connection into the next request. The same middleware opens it, so there is no state in which policies are live and no value is set. A caller with no request — a cron job, a test reaching past HTTP — has to open one for itself; `db/index.ts` and `jobs/index.ts` are the two places that do.
 _Avoid_: current tenant, tenant scope, request tenant
+
+**Tenant claim**:
+What `X-Tenant-Slug` is: a statement by the caller, never a fact. The proxies set it, and a proxy is one forged header away from being impersonated, so every request is resolved from it and then **corroborated** by a second, independent statement — the browser's `Origin`, which under the subdomain scheme contains the Tenant, and on authenticated routes the Clerk **Organization claim**, which is inside a signature. Disagreement is a 403; corroboration that names no Tenant (a server-side call sends no `Origin` at all) refuses nothing, because absence is not evidence. See `docs/md/spec-tenant-resolution.md`.
+_Avoid_: trusted header, tenant header
+
+**Organization claim**:
+The Clerk Organization a session token is active in, and the Tenant statement a caller cannot forge. Each Tenant is one Organization in **each** of the two Clerk applications, with both ids on the Tenant row (`clerk_client_org_id`, `clerk_portal_org_id`); the two are distinct namespaces and are never searched across. `services/tenants/org-claim.ts` decides: a claim naming another Tenant — or one the platform has never heard of — is refused, and a token carrying *no* claim is allowed only while that Tenant has no Organization configured. That last rule is a one-way rollout seam: enforcement turns on for a studio the moment its id is written to its row, not when something is deployed. This is also how a portal refuses a staff member of another studio.
+_Avoid_: org check, tenant membership
 
 **Application role** (`booking_app`):
 The Postgres role the running server connects as, provisioned by `db/roles.ts` and reached through `DATABASE_APP_URL`. It owns no tables and is neither superuser nor `BYPASSRLS`, which is the *only* reason the policies apply — Postgres exempts superusers unconditionally and owners unless the table is `FORCE`d, so a server connected as the owner in `DATABASE_URL` would pass every test while enforcing nothing. Migrations and seeds still run as the owner, which is how they write across Tenants.
@@ -32,7 +40,13 @@ The Postgres role the running server connects as, provisioned by `db/roles.ts` a
 _Avoid_: db user, service account
 
 **Tenant routing**:
-Answering "whose is this?" for a caller that arrives with no Tenant at all — a payment provider's webhook, which hits one endpoint on a hostname carrying none. The identifier in the signed body is the routing key, and looking it up is a cross-Tenant read the application role cannot make, so it goes through two owner-owned `SECURITY DEFINER` functions (migration 0034) that return a Tenant id and nothing else. Everything after runs inside `withTenant`. It is a single narrow step, deliberately, rather than a standing exemption.
+Answering "whose is this?" for a caller that arrives with no Tenant at all — a webhook, which hits one endpoint on a hostname carrying none. Something in the *signed body* is the routing key, and looking it up is a cross-Tenant read the application role cannot make, so it goes through owner-owned `SECURITY DEFINER` functions (migrations 0034 and 0035) that return Tenant ids and nothing else. Everything after runs inside `withTenant`. Narrow steps, deliberately, rather than a standing exemption.
+
+Both webhooks route this way, off different keys: the payment provider's off the payment intent, Clerk's off the **Organization** on the event, then a `tenant_slug` stamped at sign-up, then the Tenants that already hold a row for that Clerk user (`services/auth/webhook-tenant.ts`). The last returns a *set*, which is what lets a `user.updated` reach both records of a person who belongs to two studios. An event none of them answers is a logged no-op — never a default.
+_Avoid_: webhook tenant, tenant lookup
+
+**Per-Tenant identity**:
+`clients` and `staff_users` are unique on `(tenant_id, clerk_user_id)` and `(tenant_id, email)`, not on either column alone (migration 0035). The platform-wide version was the same sentence as "nobody may belong to two studios" — a case the spec wants to work — and it failed at sign-up as a duplicate-key error. One person, two studios, two independent records, one at each.
 
 ### Packages and locations
 

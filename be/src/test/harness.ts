@@ -131,6 +131,11 @@ function stubEnvironment() {
   process.env.IMPERSONATION_SECRET ??= 'test-harness-impersonation-secret-key'
   process.env.PORTAL_ORIGIN ??= 'http://localhost:3001'
   process.env.CLIENT_ORIGIN ??= 'http://localhost:3000'
+  // The tenant subdomain shape the local frontends use, so a test can send a
+  // real `Origin` and have it name a tenant — which is the whole of the
+  // validation on public routes.
+  process.env.TENANT_ORIGIN_PATTERNS ??=
+    'http://*.localhost:3000,http://*.portal.localhost:3001'
   process.env.SMTP_USER ??= 'smtp@example.test'
   process.env.SMTP_PASSWORD ??= 'smtp-password'
 }

@@ -62,10 +62,64 @@ const RESOLVABLE: TenantStatus[] = ['active', 'suspended']
  */
 const RESOLVE_CACHE_TTL_MS = 60_000
 const resolveCache = new Map<string, { at: number; value: ResolvedTenant }>()
+/** Same memo, keyed by id and by Clerk organization id — both sit on the authed
+ *  request path, once per request, for a row that changes about never. */
+const tenantRowCache = new Map<string, { at: number; value: TenantRow }>()
 
 /** Called whenever a tenant row is written, so the memo cannot serve a ghost. */
 export function forgetCachedTenants() {
   resolveCache.clear()
+  tenantRowCache.clear()
+}
+
+/** Positive-only memo, for the same reason as `resolveCache`: a flood of
+ *  unknown keys must not be able to pin arbitrary strings in memory. */
+async function memoisedTenant(
+  key: string,
+  load: () => Promise<TenantRow | undefined>,
+): Promise<TenantRow | null> {
+  const cached = tenantRowCache.get(key)
+  if (cached && Date.now() - cached.at < RESOLVE_CACHE_TTL_MS) return cached.value
+  if (cached) tenantRowCache.delete(key)
+
+  const row = await load()
+  if (!row) return null
+  tenantRowCache.set(key, { at: Date.now(), value: row })
+  return row
+}
+
+/**
+ * The tenant row for an id already resolved. Read on every authenticated
+ * request, to find out which Clerk Organization this studio is.
+ */
+export async function loadTenantById(id: string): Promise<TenantRow | null> {
+  return memoisedTenant(`id:${id}`, async () => {
+    const [row] = await db.select().from(tenants).where(eq(tenants.id, id)).limit(1)
+    return row
+  })
+}
+
+/**
+ * Clerk Organization → Tenant, in one of the two Clerk applications.
+ *
+ * Each application has its own organization for a studio, and the two ids are
+ * distinct namespaces — so the column is chosen by which application minted the
+ * token or sent the webhook, never searched across both. A staff token naming a
+ * *member* organization must not resolve.
+ */
+export async function resolveTenantByClerkOrg(
+  app: 'client' | 'portal',
+  orgId: string,
+): Promise<TenantRow | null> {
+  const trimmed = orgId.trim()
+  if (!trimmed) return null
+  const column = app === 'client' ? tenants.clerkClientOrgId : tenants.clerkPortalOrgId
+  const row = await memoisedTenant(`org:${app}:${trimmed}`, async () => {
+    const [found] = await db.select().from(tenants).where(eq(column, trimmed)).limit(1)
+    return found
+  })
+  if (!row) return null
+  return RESOLVABLE.includes(row.status) ? row : null
 }
 
 /**

@@ -3,8 +3,8 @@ import { cors } from 'hono/cors'
 import { secureHeaders } from 'hono/secure-headers'
 import { rateLimiter } from 'hono-rate-limiter'
 import { sql } from 'drizzle-orm'
-import { env } from './env'
 import { db } from './db'
+import { originAllowed } from './lib/allowed-origins'
 import { errorBoundary } from './middleware/error'
 import { requestId } from './middleware/request-id'
 import { requestLogger } from './middleware/logger'
@@ -22,42 +22,19 @@ app.use('*', requestLogger)
 app.use('*', errorBoundary)
 app.use('*', secureHeaders())
 
-// CORS — allow both fe-portal and (when configured) fe-client origins.
+// CORS — every tenant subdomain in this environment, plus the single-valued
+// origins that predate tenancy. A tenant is created by inserting a row, so its
+// origin cannot be listed in advance; `TENANT_ORIGIN_PATTERNS` carries the
+// wildcards and lib/origin.ts does the matching, one label deep. The same
+// allowlist backs the Clerk `azp` check and the public-route slug validation —
+// see lib/allowed-origins.ts.
+//
 // Credentials required because Clerk uses cookies on the auth handshake; the
 // frontend then carries the bearer JWT.
-const allowedOrigins = [env.PORTAL_ORIGIN, env.CLIENT_ORIGIN].filter(
-  (o): o is string => Boolean(o),
-)
-
-function isAllowedOrigin(origin: string) {
-  return allowedOrigins.some(allowedOrigin => originMatchesPattern(origin, allowedOrigin))
-}
-
-function originMatchesPattern(origin: string, pattern: string) {
-  if (!pattern.includes('*')) return origin === pattern
-  if (!pattern.includes('://*.')) return false
-
-  try {
-    const originUrl = new URL(origin)
-    const patternUrl = new URL(pattern.replace('://*.', '://wildcard.'))
-    const suffix = patternUrl.hostname.replace(/^wildcard\./, '').toLowerCase()
-    const hostname = originUrl.hostname.toLowerCase()
-
-    return (
-      originUrl.protocol === patternUrl.protocol &&
-      (!patternUrl.port || originUrl.port === patternUrl.port) &&
-      hostname !== suffix &&
-      hostname.endsWith(`.${suffix}`)
-    )
-  } catch {
-    return false
-  }
-}
-
 app.use(
   '*',
   cors({
-    origin: origin => (isAllowedOrigin(origin) ? origin : null),
+    origin: origin => (originAllowed(origin) ? origin : null),
     credentials: true,
     allowMethods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     allowHeaders: [
@@ -115,14 +92,18 @@ app.use('/api/v1/portal/*', authedLimiter)
 //   - the slug lookup reads only `tenants`, which carries no policy — and it
 //     sits on every request the frontends make, at a budget of 6,000/min, so
 //     wrapping it would buy a transaction per page view for nothing.
-//   - the payment provider's webhook resolves its OWN tenant, off the intent in
-//     the signed body (services/billing/webhook-handler.ts). Opening a
-//     tenant-#1 context here would wrap the real one in an unrelated
-//     transaction and hold two pooled connections for the length of a call to
-//     Stripe. The Clerk webhook keeps the default, because it has no tenant to
-//     read yet — that is #65's job.
+//   - both webhooks resolve their OWN tenant, off the signed body: the payment
+//     provider's off the payment intent (services/billing/webhook-handler.ts),
+//     Clerk's off the organization on the event
+//     (services/auth/webhook-tenant.ts). Opening a tenant-#1 context here would
+//     wrap the real one in an unrelated transaction and hold two pooled
+//     connections for the length of a call to the provider — and, worse, would
+//     give an event that names no tenant a tenant anyway.
 const TENANT_CONTEXT_EXEMPT = (path: string) =>
-  path === '/api/v1/healthz' || path === '/api/v1/webhooks/stripe' || isTenantLookup(path)
+  path === '/api/v1/healthz' ||
+  path === '/api/v1/webhooks/stripe' ||
+  path === '/api/v1/webhooks/clerk' ||
+  isTenantLookup(path)
 
 app.use('/api/v1/*', (c, next) =>
   TENANT_CONTEXT_EXEMPT(c.req.path) ? next() : resolveTenant(c, next),

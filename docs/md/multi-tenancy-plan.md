@@ -378,11 +378,23 @@ if a wildcard cannot be branch-assigned, the two-dedicated-staging-projects fall
       unknown slug → 404. Delete inbound `x-tenant-*` headers on **every** path, including
       paths that skip resolution.
 - [ ] FE forwards `X-Tenant-Slug` on every BE call; BE never infers tenant from its own Host.
-- [ ] BE middleware: resolve tenant from `X-Tenant-Slug`, validated against the Clerk org
+- [x] BE middleware: resolve tenant from `X-Tenant-Slug`, validated against the Clerk org
       claim (authenticated routes) or `Origin` (public routes) → attach to context.
-- [ ] CORS becomes pattern-based (`*.reservetoday.app`, `*.dev.reservetoday.app`) instead of
+      **Done (#65)** — see `docs/md/spec-tenant-resolution.md`.
+- [x] CORS becomes pattern-based (`*.reservetoday.app`, `*.dev.reservetoday.app`) instead of
       single-valued `PORTAL_ORIGIN`/`CLIENT_ORIGIN`; same for `CLERK_STAFF_AUTHORIZED_PARTIES`.
-- [ ] Map Clerk Organization ↔ `tenant_id`; enforce org membership on portal routes.
+      **Done (#65)** — new `TENANT_ORIGIN_PATTERNS`, matched by `be/src/lib/origin.ts`. Clerk's
+      own `authorizedParties` is exact-match and cannot express a per-tenant subdomain, so the
+      `azp` claim is checked against the same allowlist instead.
+- [x] Map Clerk Organization ↔ `tenant_id`; enforce org membership on portal routes.
+      **Done (#65)**, with a one-way rollout seam: enforcement turns on for a tenant the moment
+      its org id is written to its row. Provisioning the organizations is still #58.
+- [x] **Webhook tenant resolution decided and recorded** (verification-pass item 3). The Clerk
+      Organization is the authority; `user.*` events are identity only; an event that names no
+      studio is a logged no-op, never a guess. `docs/md/spec-tenant-resolution.md`.
+- [x] **One person, two studios.** `clients` / `staff_users` uniques on `clerk_user_id` and
+      `email` widened to `(tenant_id, …)` in migration 0035 — the platform-wide version was the
+      same sentence as "nobody may belong to two studios".
 - [ ] Cache the slug→tenant lookup (short TTL, bust on write) — it runs on every request.
 
 ### Phase 3 — De-hardcode branding + tenant-aware jobs

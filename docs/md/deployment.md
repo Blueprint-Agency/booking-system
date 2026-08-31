@@ -87,6 +87,8 @@ Notes:
 
 **Clerk authorized parties:** `CLERK_STAFF_AUTHORIZED_PARTIES` is **no longer passed to Clerk**. Clerk's own `authorizedParties` option is exact-match and cannot express `{slug}.portal.…` for every slug that exists — a list that would change whenever a studio is created, signing staff out of one made overnight. `verifyToken` is called without it and the `azp` claim is checked against the allowlist above instead (`be/src/lib/allowed-origins.ts`). The var still contributes any extra exact origins an environment wants to pin.
 
+> ⚠️ **The allowlist is now shared, so a wildcard in it widens `azp` too.** Setting `CLIENT_ORIGIN` or `PORTAL_ORIGIN` to something like `https://*.vercel.app` for preview URLs used to affect CORS only; it now also makes every Vercel preview host a valid authorized party for staff and member tokens. Both deployed environments use exact URLs today — keep it that way, and put preview hosts in `TENANT_ORIGIN_PATTERNS` only if that tradeoff is understood.
+
 **Clerk apps:** two separate Clerk applications. fe-portal + `CLERK_STAFF_*` is the staff/instructor app; fe-client + `CLERK_CLIENT_*` is the member-facing app. Cross-app tokens are rejected by the BE middleware on purpose — never share keys between them.
 
 > **Clerk production runs on Vercel-generated hosts, not on `reservetoday.app`.** The zone did

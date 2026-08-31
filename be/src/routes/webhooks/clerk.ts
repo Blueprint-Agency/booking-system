@@ -15,6 +15,13 @@ import { captureException } from '../../instrument'
  * from the payload which app sent it — the signing secret disambiguates. We try
  * the staff secret first, then the client secret (if configured), and dispatch
  * to the matching handler. Whichever secret verifies wins.
+ *
+ * Which *tenant* the event is about is a second question with the same shape,
+ * and the answer is in `services/auth/webhook-tenant.ts`: the Clerk Organization
+ * on the event, a `tenant_slug` the front end stamped at sign-up, or the tenants
+ * that already hold a row for that Clerk user — in that order, and no default.
+ * This route therefore runs *outside* any tenant context (see app.ts), and the
+ * handlers open one per tenant they resolve.
  */
 const app = new Hono().post('/clerk', async c => {
   const body = await c.req.text()

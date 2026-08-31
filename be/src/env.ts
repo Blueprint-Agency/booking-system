@@ -61,6 +61,17 @@ const schema = z.object({
     .url('CLIENT_ORIGIN must be a full URL like http://localhost:3000')
     .optional(),
 
+  // Comma-separated origin patterns for the tenant subdomains, one line per
+  // environment — e.g.
+  //   https://*.reservetoday.app,https://*.portal.reservetoday.app
+  // A tenant is created by inserting a row, so its origin cannot be enumerated
+  // in advance; the wildcard is what makes CORS and the Clerk `azp` check work
+  // for a studio that did not exist when the backend was deployed. The `*` must
+  // be the leftmost label and covers exactly one label — see lib/origin.ts.
+  // Optional: unset leaves only PORTAL_ORIGIN/CLIENT_ORIGIN, which is the
+  // pre-tenancy behaviour.
+  TENANT_ORIGIN_PATTERNS: z.string().optional(),
+
   // Optional / deferred — accept anything (or empty string)
   CLERK_CLIENT_PUBLISHABLE_KEY: z.string().optional(),
   CLERK_CLIENT_SECRET_KEY: z.string().optional(),
