@@ -1,6 +1,16 @@
-# Yoga Sadhana Booking System
+# Booking System
 
-Dedicated booking & management platform for **Yoga Sadhana** (NOT multi-tenant SaaS). Two studio locations: Breadtalk IHQ (Tai Seng) + Outram Park.
+A **multi-tenant** booking & management platform for yoga studios. One deployment of each app serves every studio; a studio is a **Tenant** — a row in `tenants`, never its own infrastructure — and every domain row carries a `tenant_id`.
+
+Yoga Sadhana is Tenant #1 (`slug = 'yogasadhana'`), with two Locations of its own: Breadtalk IHQ (Tai Seng) and Outram Park. Those are that Tenant's premises, not a property of the platform.
+
+## Tenancy
+
+- **Shared schema, row scoping, Row-Level Security.** One Postgres database. `tenant_id` on all 53 domain tables, `NOT NULL` with no default. Postgres policies (migration `0033`) are the fail-closed backstop for a query that forgets to scope. See `docs/adr/0002-shared-schema-row-level-security.md`.
+- **The app must not connect as the table owner.** Postgres exempts superusers and owners from RLS, so the server connects as the non-owning `booking_app` role via `DATABASE_APP_URL`. `DATABASE_URL` (the owner) is for migrations and seeds only.
+- **Tenant context is transaction-local.** `withTenant` (`be/src/db/index.ts`) sets `app.tenant_id` per transaction — session scope would ride a pooled connection into the next request.
+- **The API's own hostname carries no Tenant.** The frontends read the slug from their hostname and send `X-Tenant-Slug`; the backend corroborates it against the browser `Origin` or the Clerk Organization claim. See `docs/md/spec-tenant-resolution.md`.
+- Domain glossary for these terms: `be/CONTEXT.md` § Tenancy. Plan and status: `docs/md/multi-tenancy-plan.md`.
 
 ## Structure
 

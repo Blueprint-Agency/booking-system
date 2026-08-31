@@ -4,8 +4,8 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 
 | App | Target | How it deploys |
 |---|---|---|
-| `fe-client/` | Vercel project `booking-system` (Root Directory = `fe-client/`) | `main` → `https://yogasadhana.reservetoday.app`; `staging` → `https://staging.yogasadhana.reservetoday.app`. Env vars: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_ROOT_DOMAIN`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `NEXT_PUBLIC_SENTRY_DSN`, `NEXT_PUBLIC_APP_ENV` — set **twice**, once per scope (Production / Preview). Clerk routing URLs are hardcoded in `src/app/layout.tsx` (NOT env-driven). |
-| `fe-portal/` | Vercel project `booking-system-admin` (Root Directory = `fe-portal/`) | `main` → `https://portal.yogasadhana.reservetoday.app`; `staging` → `https://staging-portal.yogasadhana.reservetoday.app`. Same env shape as fe-client, but with the **staff** Clerk app keys and its own `NEXT_PUBLIC_ROOT_DOMAIN` (the `portal.` one). |
+| `fe-client/` | Vercel project `booking-system` (Root Directory = `fe-client/`) | `main` → `https://{slug}.reservetoday.app` (wildcard `*.reservetoday.app`); `staging` → `https://{slug}.dev.reservetoday.app` (wildcard `*.dev.reservetoday.app`). Env vars: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_ROOT_DOMAIN`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `NEXT_PUBLIC_SENTRY_DSN`, `NEXT_PUBLIC_APP_ENV` — set **twice**, once per scope (Production / Preview). Clerk routing URLs are hardcoded in `src/app/layout.tsx` (NOT env-driven). |
+| `fe-portal/` | Vercel project `booking-system-admin` (Root Directory = `fe-portal/`) | `main` → `https://{slug}.portal.reservetoday.app` (wildcard `*.portal.reservetoday.app`); `staging` → `https://{slug}.portal.dev.reservetoday.app`. Same env shape as fe-client, but with the **staff** Clerk app keys and its own `NEXT_PUBLIC_ROOT_DOMAIN` (the `portal.` one). |
 | `cdn/` | Vercel project `booking-cdn` (Root Directory = `cdn/`) | Edge proxy fronting the R2 bucket at `https://cdn.reservetoday.app`. One env var, `R2_ORIGIN`, the bucket's `pub-<hash>.r2.dev` URL. No DNS record needed — the zone's `*` ALIAS already resolves the name. **Not Git-connected**: deployed with `vercel deploy --prod` from `cdn/`, not on push. |
 | `be/` | bpvps2 (Docker) | Auto-deploy on push to `staging` **or** `main` (paths-filtered to `be/**`). `.github/workflows/deploy-be.yml` builds the image, pushes to Docker Hub (`blueprintagency/booking-be`), SSHes to bpvps2 over Tailscale, writes `.env.booking-be` from the branch's GitHub Environment, and runs migrate/seed + `docker compose up -d`. |
 
@@ -16,16 +16,34 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 | Backend | `booking-staging` stack on bpvps2 → `https://api.staging.reservetoday.app` | `booking-prod` stack on bpvps2 → `https://api.reservetoday.app` |
 | GitHub Environment | `staging` (lowercase) | `Production` (capital P) |
 | Image tag | `blueprintagency/booking-be:staging` | `…:latest` |
-| fe-client | `https://staging.yogasadhana.reservetoday.app` | `https://yogasadhana.reservetoday.app` |
-| fe-portal | `https://staging-portal.yogasadhana.reservetoday.app` | `https://portal.yogasadhana.reservetoday.app` |
+| fe-client | `https://{slug}.dev.reservetoday.app` (e.g. `yogasadhana.dev.…`) | `https://{slug}.reservetoday.app` (e.g. `yogasadhana.reservetoday.app`) |
+| fe-portal | `https://{slug}.portal.dev.reservetoday.app` | `https://{slug}.portal.reservetoday.app` |
+| Super portal | `https://admin.portal.dev.reservetoday.app` | `https://admin.portal.reservetoday.app` |
 | Vercel target | **preview** (branch-pinned domain) | **production** |
-| `PORTAL_ORIGIN` / `CLIENT_ORIGIN` | the two staging URLs above | the two production URLs above |
+| `PORTAL_ORIGIN` / `CLIENT_ORIGIN` | exact URLs — the legacy single-studio hostnames below | exact URLs — the legacy single-studio hostnames below |
+| `TENANT_ORIGIN_PATTERNS` | `https://*.dev.reservetoday.app,https://*.portal.dev.reservetoday.app` | `https://*.reservetoday.app,https://*.portal.reservetoday.app` |
 | Clerk instance | development (`*.clerk.accounts.dev`) | production — fe-client on `clerk.booking-system-eight-fawn.vercel.app`, fe-portal on `clerk.project-3p3dw.vercel.app` |
 | `APP_ENV` / `NEXT_PUBLIC_APP_ENV` | `staging` | `production` |
 
+> **The legacy single-studio hostnames still exist and have not been retired.**
+> `yogasadhana.reservetoday.app` is unchanged and is already the Tenant-subdomain form. The four
+> older names — `staging.yogasadhana.reservetoday.app`, `portal.yogasadhana.reservetoday.app`,
+> `staging-portal.yogasadhana.reservetoday.app`, `staging.reservetoday.app` — are branch-assigned
+> domains from the pre-tenancy scheme and still hold certificates. The **portal URL flip**
+> (`portal.yogasadhana.…` → `yogasadhana.portal.…`) is Phase 5 of
+> `docs/md/multi-tenancy-plan.md` and is not done: it needs a 301 on the old host, a
+> `PORTAL_ORIGIN` change, Clerk allowed-origin/redirect updates, and staff comms. Until then both
+> forms must stay in the allowlist.
+
+> **Backend staging is still `api.staging.reservetoday.app`, not `api.dev.…`.** The frontends
+> settled on `dev` as the staging label and the backend has not moved. The rename (keeping the old
+> name as an alias) is a Phase 5 item; `BOOKING_FQDN` in `deploy-be.yml` is the one place to
+> change it.
+
 > **Every staging/production URL is a real domain — do not test against `*.vercel.app`.**
 > The generated aliases still exist and still resolve, but the backend's CORS allowlist contains
-> only the four domains above, so a `.vercel.app` alias fails every API call. The trap is
+> only the exact origins and the Tenant wildcard patterns above, so a `.vercel.app` alias fails
+> every API call. The trap is
 > `booking-system-admin-git-main-….vercel.app`: it reads like a dev URL but `-git-main-` is the
 > **production** build, so it fails on CORS *and* serves production Clerk. Vercel truncates the
 > staging alias to `booking-system-adm-git-40d5d8-…` (63-char DNS label limit), which is why it
@@ -117,6 +135,6 @@ Notes:
 - `NODE_ENV` (always `production`), `APP_ENV`, `ENV_NAME`, `STACK_DIR`, `BOOKING_FQDN` and `IMAGE_TAG` are derived from the branch in the workflow's `env:` block, not from repo settings.
 - `ENABLE_JOBS` is hardcoded `true` in the workflow — the background cron jobs (`be/src/jobs/index.ts`) are not optional on a deployed server. With it off, pending PT requests never expire and members' session credits are never auto-refunded.
 
-**Two database connections, and why.** `DATABASE_URL` is the owner role (`DB_USER`) and is used for migrations and seeds only. The running server connects with `DATABASE_APP_URL`, built from `DB_APP_PASSWORD` for the `booking_app` role that `npm run db:migrate` provisions (`be/src/db/roles.ts`). This is not cosmetic: Postgres exempts superusers and table owners from Row-Level Security, so pointing the server at `DATABASE_URL` would leave the tenant policies (migration 0033) enforcing nothing while every request still succeeded. **`DB_APP_PASSWORD` must be set as an environment secret in BOTH `staging` and `Production` before the first deploy carrying this change** — without it the backend fails Zod validation at boot, which is the intended failure for a missing security control.
+**Two database connections, and why.** `DATABASE_URL` is the owner role (`DB_USER`) and is used for migrations and seeds only. The running server connects with `DATABASE_APP_URL`, built from `DB_APP_PASSWORD` for the `booking_app` role that `npm run db:migrate` provisions (`be/src/db/roles.ts`). This is not cosmetic: Postgres exempts superusers and table owners from Row-Level Security, so pointing the server at `DATABASE_URL` would leave the tenant policies (migration 0033) enforcing nothing while every request still succeeded. **`DB_APP_PASSWORD` must be set as an environment secret in BOTH `staging` and `Production` before the first deploy carrying this change** — without it the backend fails Zod validation at boot, which is the intended failure for a missing security control. The reasoning is recorded in `docs/adr/0002-shared-schema-row-level-security.md`.
 
 **Env changes must update `.github/workflows/deploy-be.yml`** whenever a BE env var is added, renamed, or removed. The workflow's required-settings comment block AND the `echo "FOO=..."` lines that write `.env.booking-be` must both match `be/src/env.ts` exactly — and `be/.env.example` should reflect the same shape. Forgetting any of these makes prod boot fail Zod validation or silently miss a value. Same rule applies to fe-client/fe-portal env: if you add a `NEXT_PUBLIC_*` var, remember it also has to be set in the Vercel project dashboard.

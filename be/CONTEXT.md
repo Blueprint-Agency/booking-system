@@ -4,6 +4,11 @@ The domain. Every rule in the platform lives here — booking, credits, scheduli
 
 ## Language
 
+> Throughout the entries below, **"the studio"** means *the Tenant the request is about* — never
+> the platform, and never Yoga Sadhana specifically. Every figure, catalogue, roster and total is
+> a figure for one Tenant; there is no platform-wide view of any of them, because the application
+> role cannot read across Tenants at all. Where an entry names Yoga Sadhana, it is an example.
+
 ### Tenancy
 
 **Tenant**:
@@ -51,7 +56,7 @@ _Avoid_: webhook tenant, tenant lookup
 ### Packages and locations
 
 **Location**:
-One of a Tenant's physical premises. Yoga Sadhana has two — Breadtalk IHQ and Outram Park — but Locations belong to the Tenant, not to the platform. A class runs at exactly one Location.
+One of a Tenant's physical premises. Locations belong to the Tenant, not to the platform, and a Tenant has as many as it has — Yoga Sadhana happens to have two, Breadtalk IHQ and Outram Park. A class runs at exactly one Location, and no rule anywhere may assume there are two.
 _Avoid_: branch, studio, venue, outlet, site
 
 **Unlimited Plan**:
@@ -59,7 +64,7 @@ A purchased plan that pays for any class at its Home Location, as often as the m
 _Avoid_: membership, subscription, unlimited package
 
 **Credit Bundle**:
-A purchased balance of credits, each booking deducting the class's cost. Location-agnostic — credits work at either Location.
+A purchased balance of credits, each booking deducting the class's cost. Location-agnostic — credits work at any of the Tenant's Locations.
 _Avoid_: pack, class pack, points
 
 **Home Location**:
@@ -67,11 +72,11 @@ The one Location an Unlimited Plan covers, chosen by the member at purchase. Onl
 _Avoid_: home branch, primary location, base studio
 
 **Cross-Location Add-On**:
-A paid extension to one Unlimited Plan that makes it Cover the other Location as well as its Home Location. Priced per month of the plan it extends, rounded up to a whole month. It belongs to that one plan, not to the member: it expires with the plan, waits Dormant with the plan, and a member holding two plans buys one per plan.
+A paid extension to one Unlimited Plan that makes it Cover every one of the Tenant's Locations, not just its Home Location — it is a flag on the plan, not a second Location on it (`covers` in `services/packages/selection.ts`). Named for the two-Location studio it was written for; a Tenant with three Locations gets all three from one Add-On. Priced per month of the plan it extends, rounded up to a whole month. It belongs to that one plan, not to the member: it expires with the plan, waits Dormant with the plan, and a member holding two plans buys one per plan.
 _Avoid_: cross-branch top-up, second branch unlock, upgrade, dual-location pass
 
 **Covers**:
-The relation between a plan and a Location — the plan permits a free booking there. An Unlimited Plan covers its Home Location; it also covers the other Location while it carries a Cross-Location Add-On.
+The relation between a plan and a Location — the plan permits a free booking there. An Unlimited Plan covers its Home Location; it also covers every other Location of that Tenant while it carries a Cross-Location Add-On. It never covers a Location of another Tenant — a plan sold by one studio is not a candidate for a class at another, which is enforced at the one place credits are chosen to be spent (`services/bookings/book.ts`).
 _Avoid_: includes, allows, valid at
 
 **Duration**:
