@@ -88,7 +88,14 @@ export async function seedSuperadmin(db: PostgresJsDatabase<typeof schema>) {
       grantedLocationIds: sql`'{}'::uuid[]`,
     })
     .onConflictDoUpdate({
-      target: schema.staffUsers.email,
+      // `(tenant_id, email)`, not `email` alone. Migration 0035 replaced the
+      // platform-wide unique index with a per-Tenant one — the same person may
+      // be an instructor at one studio and an admin at another — and
+      // `ON CONFLICT` names an index, not a column list it can approximate.
+      // Naming the old one made every deploy fail on `there is no unique or
+      // exclusion constraint matching the ON CONFLICT specification`, which the
+      // test suite never caught because the harness does not run this seed.
+      target: [schema.staffUsers.tenantId, schema.staffUsers.email],
       // Patch only when the existing row is unlinked AND we just resolved a
       // Clerk user. Otherwise this becomes a true no-op.
       set: {
