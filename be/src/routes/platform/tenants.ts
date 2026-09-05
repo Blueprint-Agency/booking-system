@@ -61,7 +61,10 @@ const createBody = z.object({
       },
       { message: 'timezone must be an IANA zone like Asia/Singapore' },
     ),
-  admin_email: z.string().email(),
+  // Optional, and an empty string means "none" rather than "invalid": a studio
+  // created to receive an archive must be left with no `staff_users` rows at
+  // all, because the archive brings its own and the import refuses to merge.
+  admin_email: z.union([z.string().email(), z.literal('')]).optional(),
   admin_name: z.string().max(200).optional(),
 })
 

@@ -23,7 +23,11 @@ import {
  * rules living here.
  *
  * Everything else a studio needs (locations, class types, staff) is set up by
- * its own admin, who is invited by this form and takes it from there.
+ * its own admin, who is invited by this form and takes it from there — unless
+ * the studio is being created to receive an archive, which brings all of that
+ * with it. That is why the first admin is optional: `importTenant` refuses a
+ * studio that already holds `staff_users` rows, so a studio about to be
+ * imported into must be created with none.
  */
 export interface CreateTenantDialogProps {
   api: Api;
@@ -96,8 +100,10 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
   }
 
   const slugProblem = verdict && !verdict.available ? verdict.reason : undefined;
-  const canSubmit =
-    !submitting && name.trim() && slug && adminEmail.trim() && verdict?.available === true;
+  // The first admin is not required. A studio created to receive an archive
+  // must be left with no staff rows at all — the archive brings its own, and
+  // the import refuses to merge into rows that are already there.
+  const canSubmit = !submitting && name.trim() && slug && verdict?.available === true;
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -109,10 +115,14 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
         slug,
         name: name.trim(),
         timezone,
-        admin_email: adminEmail.trim(),
+        ...(adminEmail.trim() ? { admin_email: adminEmail.trim() } : {}),
         ...(adminName.trim() ? { admin_name: adminName.trim() } : {}),
       });
-      toast.success(`${created.tenant.name} is live. ${created.admin.email} has been invited.`);
+      toast.success(
+        created.admin
+          ? `${created.tenant.name} is live. ${created.admin.email} has been invited.`
+          : `${created.tenant.name} is live, with no staff yet. Import an archive or add its first admin.`,
+      );
       onCreated();
     } catch (err) {
       // The backend is atomic: a failure here left no studio behind, in the
@@ -139,7 +149,7 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
       open={open}
       onOpenChange={onOpenChange}
       title="New studio"
-      description="Creates the studio, both Clerk organizations, and invites its first admin. Its URLs work immediately."
+      description="Creates the studio and its Clerk organization, and invites a first admin if you name one. Its URLs work immediately."
     >
       <form className="flex flex-col gap-4" onSubmit={submit}>
         <div className="flex flex-col gap-1.5">
@@ -199,17 +209,18 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="tenant-admin-email">First admin’s email</Label>
+          <Label htmlFor="tenant-admin-email">First admin’s email (optional)</Label>
           <Input
             id="tenant-admin-email"
             type="email"
             value={adminEmail}
             onChange={e => setAdminEmail(e.target.value)}
             placeholder="owner@acmeyoga.com"
-            required
           />
           <p className="text-xs text-muted">
-            They are invited to the studio’s portal and set everything else up from there.
+            They are invited to the studio’s portal and set everything else up from there. Leave it
+            blank if you are about to import an archive — that brings the studio’s own staff, and
+            the import needs an empty studio.
           </p>
         </div>
 
