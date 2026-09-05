@@ -52,7 +52,7 @@ test("a sole membership is used when no slug matches", () => {
       superPortal: false,
       tenantSlug: "acme",
       activeOrganizationId: null,
-      memberships: [{ id: "org_legacy", slug: "yoga-sadhana-2019" }],
+      memberships: [{ id: "org_legacy", slug: "acme-yoga-2019" }],
     }),
     { kind: "activate", organizationId: "org_legacy" },
   );

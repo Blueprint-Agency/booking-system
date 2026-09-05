@@ -272,7 +272,7 @@ function RegisterContent() {
             defaultCountry="SG"
             value={phone}
             onChange={setPhone}
-            className="ys-phone-input"
+            className="phone-input"
           />
         </div>
         <div>

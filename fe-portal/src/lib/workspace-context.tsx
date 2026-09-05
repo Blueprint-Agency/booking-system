@@ -15,7 +15,14 @@ import { reportError } from "@/lib/report-error";
 import { useActiveOrganization } from "@/lib/use-active-organization";
 import type { Location, StaffRole, StaffUser } from "@/types";
 
-export const STORAGE_KEY_LOC = "ys.activeLocationId";
+/**
+ * Namespaced for the platform, not for tenant #1 — this was `ys.`, Yoga
+ * Sadhana's initials, on every studio's portal. Isolation was never at stake
+ * (each studio is its own origin, so its `localStorage` is its own), but the
+ * name was one studio's on all of them. Renaming drops whatever location a
+ * browser had remembered, which the picker re-asks for on the next visit.
+ */
+export const STORAGE_KEY_LOC = "rt.activeLocationId";
 
 interface AuthMePayload {
   id: string;

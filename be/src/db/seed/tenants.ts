@@ -61,7 +61,8 @@ export async function seedTenants(db: PostgresJsDatabase<typeof schema>) {
     // as the product. Inserted only, never updated: past the first seed the
     // studio edits its own branding from the portal, and a deploy must not put
     // it back on whatever was written here.
-    const branding = provisioningFor(tenant)?.branding
+    const provisioned = provisioningFor(tenant)
+    const branding = provisioned?.branding
     await db
       .insert(schema.tenantSettings)
       .values({
@@ -70,6 +71,10 @@ export async function seedTenants(db: PostgresJsDatabase<typeof schema>) {
         logoUrl: branding?.logoUrl ?? null,
         ogImageUrl: branding?.ogImageUrl ?? null,
         tagline: branding?.tagline ?? null,
+        // Same insert-only rule: a deploy must not put back a string the studio
+        // has since edited. A database that already has the row is reached by a
+        // migration instead — 0042 is the first of those.
+        ...(provisioned?.copy ? { copy: provisioned.copy } : {}),
       })
       .onConflictDoNothing()
   }

@@ -11,11 +11,13 @@ import {
 } from "lucide-react";
 import { SectionHeading } from "@/components/booking/section-heading";
 import { EmptyState } from "@/components/ui/empty-state";
+import { useBrandCopy } from "@/components/brand/brand-provider";
 import {
   ApiCorporateRequest,
   ApiCorporateRequestStatus,
   corporateWhatsappHref,
   useCorporateRequests,
+  WHATSAPP_COPY_KEY,
 } from "@/lib/corporate";
 
 type Tab = "pending" | "confirmed" | "past" | "cancelled";
@@ -169,6 +171,9 @@ export default function AccountCorporatePage() {
 
 function RequestCard({ request: r }: { request: ApiCorporateRequest }) {
   const badge = statusBadge(r.status);
+  // The studio's own number. A studio that has set none gets no button — see
+  // `corporateWhatsappHref`.
+  const whatsapp = corporateWhatsappHref(useBrandCopy(WHATSAPP_COPY_KEY, ""), r.package.name);
 
   return (
     <li className="rounded-2xl border border-ink/10 bg-card p-5">
@@ -205,10 +210,10 @@ function RequestCard({ request: r }: { request: ApiCorporateRequest }) {
         </span>
       </div>
 
-      {r.status === "pending" && (
+      {r.status === "pending" && whatsapp && (
         <div className="mt-4">
           <a
-            href={corporateWhatsappHref(r.package.name)}
+            href={whatsapp}
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center justify-center gap-2 rounded-full bg-ink text-paper px-4 py-2 text-sm font-medium hover:bg-ink/90 transition-colors"

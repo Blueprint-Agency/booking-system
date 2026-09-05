@@ -7,7 +7,7 @@ const STAGING = "dev.reservetoday.app";
 const PROD = "reservetoday.app";
 
 test("local host with a port yields the slug", () => {
-  assert.equal(tenantSlugFromHost("yogasadhana.localhost:3000", LOCAL), "yogasadhana");
+  assert.equal(tenantSlugFromHost("northwind.localhost:3000", LOCAL), "northwind");
   assert.equal(tenantSlugFromHost("acme.localhost:3000", LOCAL), "acme");
 });
 
@@ -18,11 +18,11 @@ test("the port is irrelevant on both sides", () => {
 });
 
 test("staging host yields the slug", () => {
-  assert.equal(tenantSlugFromHost("yogasadhana.dev.reservetoday.app", STAGING), "yogasadhana");
+  assert.equal(tenantSlugFromHost("northwind.dev.reservetoday.app", STAGING), "northwind");
 });
 
 test("production host yields the slug", () => {
-  assert.equal(tenantSlugFromHost("yogasadhana.reservetoday.app", PROD), "yogasadhana");
+  assert.equal(tenantSlugFromHost("northwind.reservetoday.app", PROD), "northwind");
 });
 
 test("the bare root domain has no slug", () => {

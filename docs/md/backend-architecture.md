@@ -762,7 +762,7 @@ The previously-specified `instructor_availability_recurring` and `instructor_ava
 | refund_outcome | enum `refund_outcome` | `credit_returned`, `session_returned`, `stripe_refunded`, `forfeited`, `n_a` |
 | check_in_state | enum `checkin_state` | `pending`, `attended`, `no_show`, `n_a` (workshops) |
 | qr_token | text | unique, not null — encoded into QR |
-| code | text | unique, not null — `YS-` + 6 Crockford-base32 chars (e.g. `YS-A4F2K9`); see §7 Per-booking codes for alphabet + lookup rules |
+| code | text | unique, not null — `RT-` + 6 Crockford-base32 chars (e.g. `RT-A4F2K9`); see §7 Per-booking codes for alphabet + lookup rules |
 | stripe_payment_intent_id | text | unique, nullable — for workshops |
 | booked_at | timestamptz | not null |
 | cancelled_at | timestamptz | nullable |
@@ -1086,9 +1086,9 @@ Mounted on `/api/v1/portal/*` with method in `(POST, PUT, PATCH, DELETE)`. Captu
 
 On booking creation, `services/bookings/qr.ts:generateBookingCodes()` returns:
 - `qr_token` — 32-byte URL-safe random; encoded into QR, not human-readable.
-- `code` — `YS-` + **6 Crockford base32** characters (alphabet: `0123456789ABCDEFGHJKMNPQRSTVWXYZ`, omitting `I`, `L`, `O`, `U` to prevent visual ambiguity). Uniqueness enforced via DB unique index. Stored uppercase; lookup uppercases input and treats `0`↔`O` and `1`↔`I/L` as the same char (defensive against manual entry typos).
+- `code` — `RT-` + **6 Crockford base32** characters (the prefix is the platform's, not a studio's; codes issued before the rename keep `YS-` and remain valid, since lookup matches the whole string) (alphabet: `0123456789ABCDEFGHJKMNPQRSTVWXYZ`, omitting `I`, `L`, `O`, `U` to prevent visual ambiguity). Uniqueness enforced via DB unique index. Stored uppercase; lookup uppercases input and treats `0`↔`O` and `1`↔`I/L` as the same char (defensive against manual entry typos).
 
-Example: `YS-A4F2K9`. Collision probability over 10⁶ bookings on a 32⁶ ≈ 10⁹ space is ~5e-4; uniqueness retry loop handles the rare collision.
+Example: `RT-A4F2K9`. Collision probability over 10⁶ bookings on a 32⁶ ≈ 10⁹ space is ~5e-4; uniqueness retry loop handles the rare collision.
 
 Both index into `bookings` directly — no "wrong session" possible.
 

@@ -29,7 +29,7 @@ Locations are workspaces. Surfaces are partitioned as follows:
 ### Workspace switcher (topbar)
 
 - The admin shell topbar carries a `<WorkspaceSwitcher />` dropdown listing the user's accessible locations. The sidebar **no longer has a "Locations" entry** — moved into this dropdown's "Manage locations" modal (superadmin only).
-- The active location is global state, persisted in localStorage under `ys.activeLocationId`. All workspace-scoped pages (Schedule, Rooms, Check-in, Inbox) read it directly — there are **no per-page LocationFilterChips** and **no CheckinLocationPill**. (Workshops is **not** workspace-scoped — see the Workshops note above.)
+- The active location is global state, persisted in localStorage under `rt.activeLocationId`. All workspace-scoped pages (Schedule, Rooms, Check-in, Inbox) read it directly — there are **no per-page LocationFilterChips** and **no CheckinLocationPill**. (Workshops is **not** workspace-scoped — see the Workshops note above.)
 - Dropdown contents:
   - List of accessible locations (current marked).
   - Superadmin extras: "+ Add location" and "Manage locations" (modal CRUD reusing `LocationFormDialog`).
@@ -109,7 +109,7 @@ Locations are workspaces. Surfaces are partitioned as follows:
 
 **Surface:** Topbar `<WorkspaceSwitcher />` dropdown → "Manage locations" modal. **Superadmin-only.** There is no sidebar entry for Locations.
 
-Locations are the workspace boundary — every scoped surface (Schedule, Workshops, Check-in, Inbox) reads `ys.activeLocationId` from localStorage and renders only data tied to it.
+Locations are the workspace boundary — every scoped surface (Schedule, Workshops, Check-in, Inbox) reads `rt.activeLocationId` from localStorage and renders only data tied to it.
 
 **Fields per location:**
 - Name
@@ -323,7 +323,7 @@ Studio goods surfaced in the member app at `/merch`. **Both `admin` and `superad
 
 ### 7a. Timetable
 
-- Google Calendar-style unified view of all classes, workshops, and confirmed private sessions **scoped to the active workspace** (`ys.activeLocationId`). Switching workspace via the topbar re-renders the calendar.
+- Google Calendar-style unified view of all classes, workshops, and confirmed private sessions **scoped to the active workspace** (`rt.activeLocationId`). Switching workspace via the topbar re-renders the calendar.
 - Admin navigates by day / week / month.
 
 **Filters (no Location filter — workspace is global now):**
@@ -524,7 +524,7 @@ Every scheduled item (class, workshop, PT) becomes clickable on the Schedule tim
 
 **Methods (3 total):**
 1. **QR scan** — admin scans a QR code displayed in the client's app. Each booking has a unique QR.
-2. **Code entry** — admin types a per-booking alphanumeric code (same value encoded in the QR; format e.g. `YS-A4F2K9`, case-insensitive). Used as fallback when QR scan fails.
+2. **Code entry** — admin types a per-booking alphanumeric code (same value encoded in the QR; format e.g. `RT-A4F2K9`, case-insensitive). Used as fallback when QR scan fails.
 3. **Manual tick** — admin or instructor flips a roster row directly to `attended` or `no-show` without scanning.
 
 Per-booking codes are **unique** — the system resolves both client identity and target session from the code alone. No "wrong session" error possible.
