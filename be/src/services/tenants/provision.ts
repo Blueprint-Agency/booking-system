@@ -41,7 +41,7 @@
  * it; retrying the same slug returns `slug_taken`, which is the correct answer.
  */
 import { eq, sql } from 'drizzle-orm'
-import { currentTenantId, db } from '../../db'
+import { currentTenantId, db, withTenant } from '../../db'
 import { staffUsers } from '../../db/schema/identity'
 import { tenants, tenantSettings } from '../../db/schema/tenancy'
 import type { TenantRow } from '../../db/schema/tenancy'
@@ -53,7 +53,7 @@ import { BadRequestError, ConflictError } from '../../shared/errors'
 import { logger } from '../../shared/logger'
 import { captureException } from '../../instrument'
 import { assertUsableSlug } from './slug'
-import { forgetCachedTenants } from './tenants'
+import { activateAfterFirstStaff, forgetCachedTenants, loadTenantById } from './tenants'
 
 /**
  * The Clerk side of provisioning, as three calls — all against the **portal**
@@ -236,6 +236,12 @@ export async function provisionTenant(
             slug,
             name,
             ...(input.timezone ? { timezone: input.timezone } : {}),
+            // A studio nobody can sign in to must not answer on its hostnames as
+            // though it were open for business. Without a first admin it opens
+            // `suspended`, and `activateAfterFirstStaff` lifts that the moment it
+            // has staff — invited from the super portal, or restored from an
+            // archive that brought its own.
+            ...(adminEmail ? {} : { status: 'suspended' as const }),
             // `clerk_client_org_id` is left null on purpose, and stays null:
             // members are not organization members. See the ADR named above.
             clerkPortalOrgId: portalOrgId,
@@ -319,6 +325,83 @@ export async function provisionTenant(
     }
     throw err
   }
+}
+
+/**
+ * Give a studio that has nobody its first admin.
+ *
+ * The other half of provisioning without one. A studio created to receive an
+ * archive opens empty and `suspended`; if the archive never arrives — or the
+ * operator simply changes their mind — this is how it gets a way in without
+ * being torn down and made again.
+ *
+ * **First admin only.** It refuses a studio that already has staff, because
+ * inviting staff into a working studio is that studio's own job, done from
+ * inside it with its roles and location grants. This is the bootstrap, and a
+ * bootstrap that keeps working after the boot is a standing back door into every
+ * studio on the platform.
+ *
+ * Runs in the new Tenant's context for the same reason provisioning does: the
+ * `staff_users` insert is refused by the Row-Level Security policy otherwise,
+ * which is exactly what every other caller should get.
+ */
+export async function inviteFirstAdmin(
+  tenantId: string,
+  input: { email: string; name?: string },
+  clerk: ClerkOrgPort = clerkOrgPort,
+): Promise<{ id: string; email: string; name: string }> {
+  const openTenant = currentTenantId()
+  if (openTenant) {
+    throw new Error(
+      `inviteFirstAdmin must not run inside a Tenant context (open: ${openTenant})`,
+    )
+  }
+
+  const tenant = await loadTenantById(tenantId)
+  if (!tenant) throw new BadRequestError('tenant_not_found')
+  // Without an organization the invitation has nowhere to go, and the staff row
+  // it would leave behind could never authenticate. Provisioning is atomic, so
+  // this should be unreachable — say so rather than half-succeed.
+  if (!tenant.clerkPortalOrgId) throw new BadRequestError('tenant_has_no_organization')
+
+  const email = normaliseEmail(input.email)
+  const name = input.name?.trim() || emailLocalPart(email)
+  const portalUrl = tenantOrigin('portal', tenant.slug)
+
+  const admin = await withTenant(tenantId, async () => {
+    const [existing] = await db.select({ id: staffUsers.id }).from(staffUsers).limit(1)
+    if (existing) throw new ConflictError('tenant_already_has_staff')
+
+    const { firstName, lastName } = splitName(name)
+    const [row] = await db
+      .insert(staffUsers)
+      .values({
+        tenantId,
+        email,
+        name,
+        firstName,
+        lastName,
+        role: 'admin',
+        status: 'pending',
+        invitedAt: new Date(),
+      })
+      .returning({ id: staffUsers.id })
+    if (!row) throw new Error('first admin insert returned no row')
+
+    // Inside the transaction, as in `provisionTenant`: a refused invitation must
+    // take the staff row with it rather than leave an admin who was never told.
+    await clerk.inviteOrgAdmin({
+      organizationId: tenant.clerkPortalOrgId!,
+      email,
+      redirectUrl: portalUrl ? `${portalUrl}/signup` : null,
+    })
+
+    return { id: row.id, email, name }
+  })
+
+  // The studio now has a way in, so the reason it was closed is gone.
+  await activateAfterFirstStaff(tenantId)
+  return admin
 }
 
 /**

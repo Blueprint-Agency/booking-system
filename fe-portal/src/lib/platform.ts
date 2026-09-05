@@ -22,6 +22,10 @@ export interface PlatformTenant {
   /** Whether the studio's portal Clerk Organization is wired. False is a
    *  half-tenant. There is no client-side Organization by design. */
   clerk: { portal: boolean };
+  /** Staff who could sign in — active or invited. Zero is a studio nobody can
+   *  get into: legitimate while it waits for an archive, never as a resting
+   *  place, which is why such a studio is created suspended. */
+  staff_count: number;
   /** Live URLs, derived from the same wildcards CORS accepts. Null locally when
    *  the environment configures no wildcard for that app. */
   urls: { client: string | null; portal: string | null };
@@ -75,6 +79,25 @@ export function setTenantStatus(api: Api, id: string, status: TenantStatus) {
   return api.patch<{ tenant: PlatformTenant }>(`/platform/tenants/${id}/status`, { status });
 }
 
+/**
+ * Give a studio that has nobody its first admin.
+ *
+ * Only ever the first: the backend refuses a studio that already has staff,
+ * because inviting into a working studio is that studio's own job. Inviting also
+ * lifts the suspension such a studio was created under, so the response carries
+ * the studio back rather than just the admin.
+ */
+export function inviteFirstAdmin(
+  api: Api,
+  id: string,
+  input: { admin_email: string; admin_name?: string },
+) {
+  return api.post<{
+    admin: { id: string; email: string; name: string };
+    tenant: PlatformTenant;
+  }>(`/platform/tenants/${id}/admin`, input);
+}
+
 export interface ImportSummary {
   imported: number;
   tables: Record<string, number>;
@@ -82,6 +105,9 @@ export interface ImportSummary {
   /** True when the source studio was still here, so this is a copy of it and
    *  its rows were given fresh ids. False when it was a restore. */
   remapped: boolean;
+  /** True when the archive is what let this studio open: it was created with no
+   *  admin and therefore suspended, and the archive brought its own staff. */
+  opened: boolean;
 }
 
 /**

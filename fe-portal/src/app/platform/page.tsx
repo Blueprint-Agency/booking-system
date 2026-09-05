@@ -1,10 +1,20 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
-import { Download, ExternalLink, Loader2, Pause, Play, Plus, Upload } from "lucide-react";
+import {
+  Download,
+  ExternalLink,
+  Loader2,
+  Pause,
+  Play,
+  Plus,
+  Upload,
+  UserPlus,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button, EmptyState, PageHeader, StatusBadge } from "@/components/ui";
 import { CreateTenantDialog } from "@/components/platform/create-tenant-dialog";
+import { InviteFirstAdminDialog } from "@/components/platform/invite-first-admin-dialog";
 import { ApiError, makeApi } from "@/lib/api";
 import { useActiveOrganization } from "@/lib/use-active-organization";
 import {
@@ -37,6 +47,8 @@ export default function PlatformPage() {
    *  super portal does not confirm its own existence to people who cannot use it. */
   const [refused, setRefused] = useState(false);
   const [creating, setCreating] = useState(false);
+  /** The studio the invite dialog is open for, or null. */
+  const [inviting, setInviting] = useState<PlatformTenant | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   /** One file input serves every row; this is the studio the picker is for. */
   const [importTarget, setImportTarget] = useState<PlatformTenant | null>(null);
@@ -119,11 +131,13 @@ export default function PlatformPage() {
     setBusyId(`import:${tenant.id}`);
     try {
       const summary = await importTenant(api, tenant.id, file);
-      toast.success(
-        summary.remapped
-          ? `Copied ${summary.imported.toLocaleString()} rows from ${summary.from.name} into ${tenant.name}. ${summary.from.name} is untouched.`
-          : `Restored ${summary.imported.toLocaleString()} rows from ${summary.from.name} into ${tenant.name}.`,
-      );
+      const what = summary.remapped
+        ? `Copied ${summary.imported.toLocaleString()} rows from ${summary.from.name} into ${tenant.name}. ${summary.from.name} is untouched.`
+        : `Restored ${summary.imported.toLocaleString()} rows from ${summary.from.name} into ${tenant.name}.`;
+      // A studio created with no admin opens suspended. If the archive brought
+      // its staff, that is the moment it became a working studio, and the
+      // operator should not have to notice the badge to find out.
+      toast.success(summary.opened ? `${what} ${tenant.name} is now open.` : what);
       await load();
     } catch (err) {
       // The backend refuses with a sentence rather than a code — a studio that
@@ -192,6 +206,14 @@ export default function PlatformPage() {
                   {!tenant.clerk.portal && (
                     <StatusBadge status="incomplete" label="Clerk incomplete" />
                   )}
+                  {/* A studio with no staff is one nobody can sign in to. It is
+                      a legitimate step — a studio created to receive an archive
+                      starts here, and is created suspended for exactly this
+                      reason — but it must never be a resting place, so it is
+                      said out loud next to the name. */}
+                  {tenant.staff_count === 0 && (
+                    <StatusBadge status="incomplete" label="No way in" />
+                  )}
                 </div>
                 <p className="mt-1 truncate text-sm text-muted">
                   {tenant.slug} · {tenant.timezone}
@@ -221,6 +243,18 @@ export default function PlatformPage() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
+                {/* Offered only while the studio has nobody, because that is the
+                    only case the backend accepts: adding the rest of a working
+                    studio's staff is that studio's own job. First in the row —
+                    for a studio in this state it is the only action that
+                    changes anything. */}
+                {tenant.staff_count === 0 && tenant.status !== "archived" && (
+                  <Button onClick={() => setInviting(tenant)}>
+                    <UserPlus className="h-4 w-4" />
+                    Invite admin
+                  </Button>
+                )}
+
                 {/* Export first, and available whatever the studio's status —
                     taking a copy is the one action that is always safe, and the
                     moment an operator most wants it is right before they do
@@ -295,6 +329,24 @@ export default function PlatformPage() {
         onOpenChange={setCreating}
         onCreated={() => {
           setCreating(false);
+          void load();
+        }}
+      />
+
+      <InviteFirstAdminDialog
+        // Keyed on the studio, so closing the dialog remounts it empty rather
+        // than carrying one studio's half-typed address into the next.
+        key={inviting?.id ?? "none"}
+        api={api}
+        tenant={inviting}
+        onOpenChange={open => {
+          if (!open) setInviting(null);
+        }}
+        onInvited={() => {
+          setInviting(null);
+          // Reloaded rather than patched in place from the response: inviting
+          // also lifts the suspension the studio was opened under, and the
+          // badge, the status and the Suspend button all read from that.
           void load();
         }}
       />

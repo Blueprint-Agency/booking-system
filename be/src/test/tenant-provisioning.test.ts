@@ -158,6 +158,95 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
     assert.equal(clerk.live.size, 1)
     assert.deepEqual(clerk.invited, [], 'nobody was emailed')
     assert.equal(result.admin, null)
+
+    // And it is closed. A studio nobody can sign in to must not answer on its
+    // hostnames as though it were open for business.
+    assert.equal(found.tenant.status, 'suspended')
+  })
+
+  test('inviting the first admin is what opens the studio', async () => {
+    const clerk = fakeClerk()
+    const slug = `prov-firstadmin-${Date.now()}`
+    const created = await provision.provisionTenant({ slug, name: 'Waiting Studio' }, clerk.port)
+    assert.equal(created.tenant.status, 'suspended')
+
+    const admin = await provision.inviteFirstAdmin(
+      created.tenant.id,
+      { email: 'Owner@Waiting.Test' },
+      clerk.port,
+    )
+
+    assert.equal(admin.email, 'owner@waiting.test', 'normalised on the way in')
+    assert.deepEqual(clerk.invited, ['owner@waiting.test'])
+    assert.equal((await traces(slug)).staff, 1)
+
+    // The reason the studio was closed is gone, so the studio is open.
+    const [row] = await harness.db
+      .select()
+      .from(schema.tenants)
+      .where(eq(schema.tenants.slug, slug))
+    assert.equal(row!.status, 'active')
+  })
+
+  test('a studio that already has staff refuses a first admin', async () => {
+    // The bootstrap must not keep working after the boot: adding staff to a
+    // working studio is that studio's own job, with its roles and grants.
+    const clerk = fakeClerk()
+    const slug = `prov-secondadmin-${Date.now()}`
+    const created = await provision.provisionTenant(
+      { slug, name: 'Staffed Studio', adminEmail: 'first@staffed.test' },
+      clerk.port,
+    )
+
+    await assert.rejects(
+      () => provision.inviteFirstAdmin(created.tenant.id, { email: 'second@staffed.test' }, clerk.port),
+      (err: { code?: string; message?: string }) =>
+        err?.code === 'tenant_already_has_staff' ||
+        /tenant_already_has_staff/.test(String(err?.message)),
+    )
+
+    assert.deepEqual(clerk.invited, ['first@staffed.test'], 'the second was never emailed')
+    assert.equal((await traces(slug)).staff, 1)
+  })
+
+  test('a studio suspended for its own reasons is not reopened by an invitation', async () => {
+    // `activateAfterFirstStaff` only ever lifts a suspension a studio was opened
+    // under. Here the studio was suspended deliberately, with staff already in
+    // it, so the invitation is refused and nothing moves.
+    const clerk = fakeClerk()
+    const slug = `prov-stayshut-${Date.now()}`
+    const created = await provision.provisionTenant(
+      { slug, name: 'Deliberately Shut', adminEmail: 'owner@shut.test' },
+      clerk.port,
+    )
+    await tenantsService.setTenantStatus(created.tenant.id, 'suspended')
+
+    await assert.rejects(() =>
+      provision.inviteFirstAdmin(created.tenant.id, { email: 'other@shut.test' }, clerk.port),
+    )
+
+    const [row] = await harness.db
+      .select()
+      .from(schema.tenants)
+      .where(eq(schema.tenants.slug, slug))
+    assert.equal(row!.status, 'suspended')
+  })
+
+  test('the list says which studios nobody can get into', async () => {
+    const clerk = fakeClerk()
+    const empty = await provision.provisionTenant(
+      { slug: `prov-count-empty-${Date.now()}`, name: 'Empty' },
+      clerk.port,
+    )
+    const staffed = await provision.provisionTenant(
+      { slug: `prov-count-staffed-${Date.now()}`, name: 'Staffed', adminEmail: 'a@counted.test' },
+      fakeClerk().port,
+    )
+
+    const rows = await tenantsService.listTenants()
+    const byId = new Map(rows.map(r => [r.id, r]))
+    assert.equal(byId.get(empty.tenant.id)?.staffCount, 0)
+    assert.equal(byId.get(staffed.tenant.id)?.staffCount, 1)
   })
 
   test('a blank admin email is read as "none", not refused', async () => {
