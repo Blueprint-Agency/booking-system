@@ -2,9 +2,14 @@
  * Creating a studio, end to end.
  *
  * A Tenant is not one row. It is a row in `tenants`, a row in `tenant_settings`,
- * a Clerk Organization in the **portal** application, a pending `staff_users`
- * row for the studio's first admin, and an organization invitation sent to them.
- * Five writes across three systems, two of which have no transactions.
+ * a Clerk Organization in the **portal** application, and — when one is named —
+ * a pending `staff_users` row for the studio's first admin with an organization
+ * invitation sent to them. Up to five writes across three systems, two of which
+ * have no transactions.
+ *
+ * The first admin is the only optional part. A studio created to receive an
+ * archive must have an empty `staff_users`, because the archive carries its own
+ * and `importTenant` refuses to merge into rows that are already there.
  *
  * The **client** application gets no organization, deliberately —
  * `clerk_client_org_id` stays null for the life of the studio. A studio has
@@ -139,14 +144,25 @@ export interface ProvisionTenantInput {
   slug: string
   name: string
   timezone?: string
-  /** The studio's first admin. They are invited, not created signed-in. */
-  adminEmail: string
+  /**
+   * The studio's first admin. They are invited, not created signed-in.
+   *
+   * Optional, because inviting someone is not the only way a studio is
+   * onboarded. A studio restored from an archive brings its own `staff_users`
+   * rows, and `importTenant` refuses a studio that already holds any — so the
+   * studio an archive is imported into has to be creatable with that table
+   * empty. Everything else provisioning does is unchanged, the Clerk
+   * organization included: it is what staff authenticate against, and a studio
+   * without one can never be signed in to.
+   */
+  adminEmail?: string
   adminName?: string
 }
 
 export interface ProvisionedTenant {
   tenant: TenantRow
-  admin: { id: string; email: string; name: string }
+  /** Null when no first admin was asked for — see `adminEmail` above. */
+  admin: { id: string; email: string; name: string } | null
   urls: { client: string | null; portal: string | null }
 }
 
@@ -203,8 +219,11 @@ export async function provisionTenant(
   const slug = assertUsableSlug(input.slug)
   const name = input.name.trim()
   if (!name) throw new BadRequestError('name_required')
-  const adminEmail = normaliseEmail(input.adminEmail)
-  const adminName = input.adminName?.trim() || emailLocalPart(adminEmail)
+  // A blank string is the create form's "left empty" rather than an attempt at
+  // an address, so it is read as an absent field instead of being refused.
+  const rawAdminEmail = input.adminEmail?.trim()
+  const adminEmail = rawAdminEmail ? normaliseEmail(rawAdminEmail) : null
+  const adminName = adminEmail ? input.adminName?.trim() || emailLocalPart(adminEmail) : null
 
   const portalUrl = tenantOrigin('portal', slug)
 
@@ -234,41 +253,51 @@ export async function provisionTenant(
           .insert(tenantSettings)
           .values({ tenantId: tenant.id, displayName: name })
 
-        const { firstName, lastName } = splitName(adminName)
-        const [admin] = await tx
-          .insert(staffUsers)
-          .values({
-            tenantId: tenant.id,
+        // Skipped entirely when no first admin was named. An empty
+        // `staff_users` is a legitimate end state — it is the only one an
+        // archive can be imported into — and inventing a placeholder row to
+        // avoid the branch would be inventing exactly the row the import then
+        // refuses.
+        let adminId: string | null = null
+        if (adminEmail && adminName) {
+          const { firstName, lastName } = splitName(adminName)
+          const [admin] = await tx
+            .insert(staffUsers)
+            .values({
+              tenantId: tenant.id,
+              email: adminEmail,
+              name: adminName,
+              firstName,
+              lastName,
+              // `admin`, not `superadmin`: the studio's first staff member runs the
+              // studio. Platform administration is not a role in this table at all
+              // — see services/tenants/platform-admin.ts.
+              role: 'admin',
+              status: 'pending',
+              invitedAt: new Date(),
+            })
+            .returning({ id: staffUsers.id })
+          if (!admin) throw new Error('first admin insert returned no row')
+          adminId = admin.id
+
+          // Last, and deliberately *inside* the transaction rather than after
+          // it. Outside, a refused invitation would leave a committed studio
+          // with a first admin who was never told — the half-created Tenant this
+          // whole file exists to rule out. Inside, the throw rolls the three
+          // inserts back and `withProvisionedOrg` deletes the organization on
+          // the way out, which also revokes the invitation if it had already
+          // been sent.
+          //
+          // The cost is one network call with the transaction open. It is the
+          // final statement, so nothing waits behind it but the commit.
+          await clerk.inviteOrgAdmin({
+            organizationId: portalOrgId,
             email: adminEmail,
-            name: adminName,
-            firstName,
-            lastName,
-            // `admin`, not `superadmin`: the studio's first staff member runs the
-            // studio. Platform administration is not a role in this table at all
-            // — see services/tenants/platform-admin.ts.
-            role: 'admin',
-            status: 'pending',
-            invitedAt: new Date(),
+            redirectUrl: portalUrl ? `${portalUrl}/signup` : null,
           })
-          .returning({ id: staffUsers.id })
-        if (!admin) throw new Error('first admin insert returned no row')
+        }
 
-        // Last, and deliberately *inside* the transaction rather than after it.
-        // Outside, a refused invitation would leave a committed studio with a
-        // first admin who was never told — the half-created Tenant this whole
-        // file exists to rule out. Inside, the throw rolls the three inserts
-        // back and `withProvisionedOrg` deletes the organization on the way
-        // out, which also revokes the invitation if it had already been sent.
-        //
-        // The cost is one network call with the transaction open. It is the
-        // final statement, so nothing waits behind it but the commit.
-        await clerk.inviteOrgAdmin({
-          organizationId: portalOrgId,
-          email: adminEmail,
-          redirectUrl: portalUrl ? `${portalUrl}/signup` : null,
-        })
-
-        return { tenant, adminId: admin.id }
+        return { tenant, adminId }
       })
 
       return created
@@ -277,7 +306,10 @@ export async function provisionTenant(
     forgetCachedTenants()
     return {
       tenant: result.tenant,
-      admin: { id: result.adminId, email: adminEmail, name: adminName },
+      admin:
+        result.adminId && adminEmail && adminName
+          ? { id: result.adminId, email: adminEmail, name: adminName }
+          : null,
       urls: { client: tenantOrigin('client', slug), portal: portalUrl },
     }
   } catch (err) {

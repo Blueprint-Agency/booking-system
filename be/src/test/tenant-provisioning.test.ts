@@ -128,7 +128,7 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
     // The address is normalised on the way in, so the invitation and the row
     // agree about who was invited.
     assert.deepEqual(clerk.invited, ['owner@example.test'])
-    assert.equal(result.admin.email, 'owner@example.test')
+    assert.equal(result.admin?.email, 'owner@example.test')
 
     const [admin] = await harness.db
       .select()
@@ -139,6 +139,39 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
     assert.equal(admin!.role, 'admin')
     assert.equal(admin!.status, 'pending')
     assert.ok(admin!.invitedAt)
+  })
+
+  test('a studio can be created with no first admin, ready to import into', async () => {
+    // The state `importTenant` requires: the studio exists and is wired to its
+    // organization, and `staff_users` is empty, because the archive brings its
+    // own and the import refuses to merge into rows already there.
+    const clerk = fakeClerk()
+    const slug = `prov-noadmin-${Date.now()}`
+
+    const result = await provision.provisionTenant({ slug, name: 'Empty Studio' }, clerk.port)
+
+    const found = await traces(slug)
+    assert.ok(found.tenant, 'the tenant row exists')
+    assert.equal(found.settings, 1, 'settings row created alongside it')
+    assert.equal(found.staff, 0, 'no staff row — that is the point')
+    assert.ok(found.tenant.clerkPortalOrgId, 'still wired to its portal organization')
+    assert.equal(clerk.live.size, 1)
+    assert.deepEqual(clerk.invited, [], 'nobody was emailed')
+    assert.equal(result.admin, null)
+  })
+
+  test('a blank admin email is read as "none", not refused', async () => {
+    const clerk = fakeClerk()
+    const slug = `prov-blank-${Date.now()}`
+
+    const result = await provision.provisionTenant(
+      { slug, name: 'Blank Admin', adminEmail: '  ' },
+      clerk.port,
+    )
+
+    assert.equal(result.admin, null)
+    assert.equal((await traces(slug)).staff, 0)
+    assert.deepEqual(clerk.invited, [])
   })
 
   test('a reserved slug is refused before Clerk is touched at all', async () => {
