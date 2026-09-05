@@ -35,15 +35,26 @@ export const PLATFORM_MAIL_FROM_EMAIL = env.MAIL_FROM_EMAIL || env.SMTP_USER
 /** Shown only when a tenant has no name of its own to put there. */
 export const PLATFORM_MAIL_FROM_NAME = env.MAIL_FROM_NAME
 
-export const transporter: Transporter = nodemailer.createTransport({
-  host: SMTP_HOST,
-  port: SMTP_PORT,
-  secure: SMTP_SECURE,
-  auth: {
-    user: env.SMTP_USER,
-    pass: env.SMTP_PASSWORD,
-  },
-})
+/**
+ * Under test, no transport at all: `jsonTransport` renders the message and
+ * hands it back instead of delivering it. `.env` holds the real Gmail
+ * credentials and the harness cannot know a fake pair from a live one, so
+ * the guard has to sit here, on the mode, not on the credentials. Before it,
+ * every test that sent a templated email sent it for real — to an
+ * `@example.test` address — and each one bounced into the platform inbox.
+ */
+export const transporter: Transporter =
+  env.NODE_ENV === 'test'
+    ? nodemailer.createTransport({ jsonTransport: true })
+    : nodemailer.createTransport({
+        host: SMTP_HOST,
+        port: SMTP_PORT,
+        secure: SMTP_SECURE,
+        auth: {
+          user: env.SMTP_USER,
+          pass: env.SMTP_PASSWORD,
+        },
+      })
 
 /** Back-compat alias — older modules import `mailer`. */
 export const mailer = transporter

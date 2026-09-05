@@ -120,7 +120,11 @@ export function appRoleUrl(ownerUrl: string): string {
 function stubEnvironment() {
   process.env.DATABASE_URL = TEST_DATABASE_URL
   process.env.DATABASE_APP_URL = appRoleUrl(TEST_DATABASE_URL!)
-  process.env.NODE_ENV ??= 'test'
+  // Forced, not defaulted: `.env` (loaded above) says `development`, and this
+  // is the one flag the mailer reads to stay off smtp.gmail.com — see
+  // lib/mailer.ts. With `??=` every templated email a test triggered went out
+  // for real and bounced back into the platform inbox.
+  process.env.NODE_ENV = 'test'
   // Never 'production': that is what gates the second tenant, and a one-tenant
   // fixture would let every isolation test pass vacuously.
   process.env.APP_ENV = 'development'
