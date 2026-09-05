@@ -3,8 +3,14 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { tenantOrigin } from '../../lib/allowed-origins'
 import { checkSlug } from '../../services/tenants/slug'
-import { provisionTenant, slugAvailable } from '../../services/tenants/provision'
-import { listTenants, setTenantStatus, type TenantSummary } from '../../services/tenants/tenants'
+import { inviteFirstAdmin, provisionTenant, slugAvailable } from '../../services/tenants/provision'
+import {
+  listTenants,
+  loadTenantById,
+  setTenantStatus,
+  staffCountFor,
+  type TenantRowSummary,
+} from '../../services/tenants/tenants'
 import { logger } from '../../shared/logger'
 
 /**
@@ -18,7 +24,7 @@ import { logger } from '../../shared/logger'
  * the Row-Level Security policies would then have to be talked out of.
  */
 
-function serialize(tenant: TenantSummary) {
+function serialize(tenant: TenantRowSummary, staffCount: number) {
   return {
     id: tenant.id,
     slug: tenant.slug,
@@ -26,6 +32,10 @@ function serialize(tenant: TenantSummary) {
     timezone: tenant.timezone,
     status: tenant.status,
     created_at: tenant.createdAt.toISOString(),
+    // Zero is the number that matters: a studio nobody can sign in to. It is a
+    // legitimate step — a studio created to receive an archive starts here — and
+    // a terrible resting place, so the list has to be able to say so.
+    staff_count: staffCount,
     // Whether the Clerk organization is wired, not which one — the id is
     // operational detail, and its absence is the thing worth seeing. Portal
     // only: a studio has no client-side organization by design, so reporting
@@ -68,6 +78,12 @@ const createBody = z.object({
   admin_name: z.string().max(200).optional(),
 })
 
+/** Required here, unlike at creation: naming nobody would be a no-op. */
+const firstAdminBody = z.object({
+  admin_email: z.string().email(),
+  admin_name: z.string().max(200).optional(),
+})
+
 const statusBody = z.object({
   // `archived` is here because the list is the only surface that can see an
   // archived studio, so it must also be the one that can bring it back.
@@ -77,7 +93,7 @@ const statusBody = z.object({
 const app = new Hono()
   .get('/tenants', async c => {
     const rows = await listTenants()
-    return c.json({ tenants: rows.map(serialize) })
+    return c.json({ tenants: rows.map(row => serialize(row, row.staffCount)) })
   })
 
   /**
@@ -119,7 +135,7 @@ const app = new Hono()
 
     return c.json(
       {
-        tenant: serialize(result.tenant),
+        tenant: serialize(result.tenant, result.admin ? 1 : 0),
         admin: result.admin,
         urls: result.urls,
       },
@@ -140,7 +156,36 @@ const app = new Hono()
       { tenantId: id.data, slug: updated.slug, status, by: c.get('platformAdminEmail') },
       'platform: tenant status changed',
     )
-    return c.json({ tenant: serialize(updated) })
+    return c.json({ tenant: serialize(updated, await staffCountFor(id.data)) })
+  })
+
+  /**
+   * Give a studio that has nobody its first admin.
+   *
+   * The other half of provisioning without one. It refuses a studio that already
+   * has staff — inviting into a working studio is that studio's own job, done
+   * from inside it — so this is a bootstrap and not a standing way in.
+   */
+  .post('/tenants/:id/admin', zValidator('json', firstAdminBody), async c => {
+    const id = z.string().uuid().safeParse(c.req.param('id'))
+    if (!id.success) return c.json({ error: 'not_found' }, 404)
+    const body = c.req.valid('json')
+
+    const admin = await inviteFirstAdmin(id.data, {
+      email: body.admin_email,
+      name: body.admin_name,
+    })
+
+    logger.info(
+      { tenantId: id.data, admin: admin.email, by: c.get('platformAdminEmail') },
+      'platform: first admin invited',
+    )
+
+    // Re-read rather than reuse: the invitation may have lifted the suspension
+    // a studio with nobody in it was opened under, and the list has to show that.
+    const tenant = await loadTenantById(id.data)
+    if (!tenant) return c.json({ error: 'not_found' }, 404)
+    return c.json({ admin, tenant: serialize(tenant, 1) }, 201)
   })
 
 export default app

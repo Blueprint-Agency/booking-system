@@ -6,7 +6,7 @@ import {
   packArchive,
   unpackArchive,
 } from '../../services/tenants/transfer-archive'
-import { loadTenantById } from '../../services/tenants/tenants'
+import { activateAfterFirstStaff, loadTenantById } from '../../services/tenants/tenants'
 import { logger } from '../../shared/logger'
 
 /**
@@ -93,11 +93,18 @@ app.post('/tenants/:id/import', async c => {
     return c.json({ error: 'import_refused', message }, 409)
   }
 
+  // A studio provisioned to receive an archive opens `suspended`, because until
+  // the archive lands nobody can sign in to it. It just landed, and it brought
+  // the studio's own staff, so the reason for the suspension is gone.
+  const opened =
+    (summary.written.staff_users ?? 0) > 0 ? Boolean(await activateAfterFirstStaff(tenantId)) : false
+
   logger.info(
     {
       tenant: tenant.slug,
       from: summary.sourceTenant.slug,
       rows: summary.total,
+      opened,
       remapped: summary.remapped,
       by: c.get('platformAdminEmail'),
     },
@@ -112,6 +119,8 @@ app.post('/tenants/:id/import', async c => {
     // of one that is gone. The operator asked for the same thing either way, but
     // only one of them left the source studio's rows in place.
     remapped: summary.remapped,
+    /** True when the archive is what let this studio open for business. */
+    opened,
   })
 })
 

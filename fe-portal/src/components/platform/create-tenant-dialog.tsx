@@ -121,7 +121,7 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
       toast.success(
         created.admin
           ? `${created.tenant.name} is live. ${created.admin.email} has been invited.`
-          : `${created.tenant.name} is live, with no staff yet. Import an archive or add its first admin.`,
+          : `${created.tenant.name} is created and suspended — nobody can sign in yet. Import an archive, or invite its first admin.`,
       );
       onCreated();
     } catch (err) {
@@ -220,7 +220,8 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
           <p className="text-xs text-muted">
             They are invited to the studio’s portal and set everything else up from there. Leave it
             blank if you are about to import an archive — that brings the studio’s own staff, and
-            the import needs an empty studio.
+            the import needs an empty studio. A studio with nobody in it is created suspended, and
+            opens when it has its first admin.
           </p>
         </div>
 

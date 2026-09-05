@@ -1,4 +1,4 @@
-import { eq, inArray } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { tenants, tenantSettings } from '../../db/schema/tenancy'
 import type { TenantRow, TenantSettingsRow } from '../../db/schema/tenancy'
@@ -191,7 +191,8 @@ export async function listJobTenants(): Promise<JobTenant[]> {
  * a page control here would be scaffolding for a problem nobody has. Revisit
  * when the list stops fitting on a screen.
  */
-export type TenantSummary = {
+/** A studio's own row, as the super portal reads it. */
+export type TenantRowSummary = {
   id: string
   slug: string
   name: string
@@ -202,20 +203,84 @@ export type TenantSummary = {
   clerkPortalOrgId: string | null
 }
 
+export type TenantSummary = TenantRowSummary & {
+  /** Staff who could sign in — active or invited, never archived. Zero means a
+   *  studio nobody can get into. */
+  staffCount: number
+}
+
 export async function listTenants(): Promise<TenantSummary[]> {
-  return db
-    .select({
-      id: tenants.id,
-      slug: tenants.slug,
-      name: tenants.name,
-      timezone: tenants.timezone,
-      status: tenants.status,
-      createdAt: tenants.createdAt,
-      clerkClientOrgId: tenants.clerkClientOrgId,
-      clerkPortalOrgId: tenants.clerkPortalOrgId,
-    })
-    .from(tenants)
-    .orderBy(tenants.createdAt)
+  const [rows, staff] = await Promise.all([
+    db
+      .select({
+        id: tenants.id,
+        slug: tenants.slug,
+        name: tenants.name,
+        timezone: tenants.timezone,
+        status: tenants.status,
+        createdAt: tenants.createdAt,
+        clerkClientOrgId: tenants.clerkClientOrgId,
+        clerkPortalOrgId: tenants.clerkPortalOrgId,
+      })
+      .from(tenants)
+      .orderBy(tenants.createdAt),
+    staffCounts(),
+  ])
+  return rows.map(row => ({ ...row, staffCount: staff.get(row.id) ?? 0 }))
+}
+
+/**
+ * How many staff each studio has, across every studio.
+ *
+ * Through migration 0041's owner-owned function, because this runs outside any
+ * Tenant context — the super portal is cross-tenant — and the policies from
+ * 0033 therefore show the application role nothing in `staff_users` at all. The
+ * alternative is one `withTenant` transaction per studio on every refresh of
+ * the list.
+ *
+ * A studio absent from the result has no staff. That is the case worth seeing:
+ * a studio provisioned without a first admin, waiting for one or for the archive
+ * that carries its own.
+ */
+async function staffCounts(): Promise<Map<string, number>> {
+  const rows = await db.execute<{ tenant_id: string; staff_count: number }>(
+    sql`SELECT tenant_id, staff_count FROM public.tenant_staff_counts()`,
+  )
+  return new Map(rows.map(r => [r.tenant_id, Number(r.staff_count)]))
+}
+
+/** The same count, for one studio. Zero when it has nobody. */
+export async function staffCountFor(id: string): Promise<number> {
+  const [row] = await db.execute<{ staff_count: number }>(
+    sql`SELECT staff_count FROM public.tenant_staff_counts() WHERE tenant_id = ${id}`,
+  )
+  return Number(row?.staff_count ?? 0)
+}
+
+/**
+ * Open a studio that was closed only because nobody could get into it.
+ *
+ * Provisioning without a first admin leaves a studio `suspended`, because a
+ * studio nobody can sign in to should not be answering on its hostnames as
+ * though it were open for business. This is the other half of that: the moment
+ * it has staff — invited by the super portal, or restored from an archive that
+ * brought its own — the reason for the suspension is gone and so is the
+ * suspension.
+ *
+ * Narrow on purpose. It only ever moves `suspended` to `active`, and the caller
+ * has to have established that the studio just gained its first staff. A studio
+ * suspended for any other reason is not touched, because this cannot tell the
+ * two apart and guessing would reopen a studio somebody deliberately closed.
+ */
+export async function activateAfterFirstStaff(id: string): Promise<TenantRow | null> {
+  const [row] = await db
+    .update(tenants)
+    .set({ status: 'active', updatedAt: new Date() })
+    .where(and(eq(tenants.id, id), eq(tenants.status, 'suspended')))
+    .returning()
+
+  if (row) forgetCachedTenants()
+  return row ?? null
 }
 
 /**
@@ -234,7 +299,7 @@ export async function listTenants(): Promise<TenantSummary[]> {
 export async function setTenantStatus(
   id: string,
   status: TenantStatus,
-): Promise<TenantSummary | null> {
+): Promise<TenantRowSummary | null> {
   const [row] = await db
     .update(tenants)
     .set({ status, updatedAt: new Date() })
