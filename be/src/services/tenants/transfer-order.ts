@@ -67,8 +67,18 @@ export function orderTables(tables: readonly string[], foreignKeys: readonly For
   };
 
   // A self-reference is never satisfiable by ordering, so it is deferred up
-  // front and never counted as a dependency.
-  for (const fk of edges) if (fk.child === fk.parent) defer(fk);
+  // front and never counted as a dependency — but only if it *can* be deferred.
+  // Deferring means writing NULL on the first pass and filling it in on the
+  // second, which a NOT NULL column refuses. Today all three self-references in
+  // this schema are nullable; a required one added later has to be reported
+  // here, where `exportTenant` refuses to write an archive that could not be
+  // restored, rather than discovered as a not-null violation halfway through
+  // somebody's restore.
+  for (const fk of edges) {
+    if (fk.child !== fk.parent) continue;
+    if (fk.required) unbreakable.push([fk.child]);
+    else defer(fk);
+  }
   edges = edges.filter(fk => fk.child !== fk.parent);
 
   while (remaining.size > 0) {

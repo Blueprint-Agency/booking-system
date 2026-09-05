@@ -19,6 +19,7 @@
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { staffUsers } from '../../db/schema/identity'
+import { TENANT_ONE_ID } from '../../db/schema/tenancy'
 import { instructors } from '../../db/schema/catalog'
 import { clerkStaffApp } from '../../lib/clerk'
 import { env } from '../../env'
@@ -53,8 +54,24 @@ export type StaffProfileRow = StaffUserRow & {
   leave?: InstructorLeaveFigures
 }
 
-export function isSeededSuperadminEmail(email: string): boolean {
-  return email.trim().toLowerCase() === env.SUPERADMIN_EMAIL.trim().toLowerCase()
+/**
+ * Is this row the platform's own bootstrap superadmin?
+ *
+ * `SUPERADMIN_EMAIL` names one address, and the protections keyed on it —
+ * cannot be archived, deleted, or have its role changed — exist so the account
+ * that bootstraps the platform cannot be locked out of it from inside the app.
+ *
+ * **Scoped to Tenant #1**, and that is the whole point of taking a row rather
+ * than an address. The email alone was safe while every deployment had exactly
+ * one studio, seeded from this variable. It is not safe now: studios arrive by
+ * provisioning or by restoring an archive, so any studio may hold a staff member
+ * at this address — the same person consulting for two studios is the obvious
+ * case — and matching on the address alone would make that person un-archivable
+ * and role-locked at a studio the platform never seeded.
+ */
+export function isSeededSuperadmin(staff: { tenantId: string | null; email: string }): boolean {
+  if ((staff.tenantId ?? TENANT_ONE_ID) !== TENANT_ONE_ID) return false
+  return staff.email.trim().toLowerCase() === env.SUPERADMIN_EMAIL.trim().toLowerCase()
 }
 
 export interface ArchiveStaffInput {
@@ -90,7 +107,7 @@ export async function archiveStaff(input: ArchiveStaffInput): Promise<StaffUserR
     return target
   }
 
-  if (isSeededSuperadminEmail(target.email)) {
+  if (isSeededSuperadmin(target)) {
     throw new ForbiddenError('cannot_archive_seeded_superadmin', {
       message:
         'The main superadmin (set via SUPERADMIN_EMAIL) cannot be archived from the app.',
@@ -110,7 +127,7 @@ export async function archiveStaff(input: ArchiveStaffInput): Promise<StaffUserR
       )
       .limit(1)
     if (!actor) throw new ForbiddenError('actor_not_found')
-    if (!isSeededSuperadminEmail(actor.email)) {
+    if (!isSeededSuperadmin(actor)) {
       throw new ForbiddenError('only_seeded_can_archive_superadmin', {
         message: 'Only the main superadmin can archive another superadmin.',
       })
@@ -228,7 +245,7 @@ export async function softDeleteStaff(input: {
     throw new BadRequestError('staff_not_archived', { status: target.status })
   }
 
-  if (isSeededSuperadminEmail(target.email)) {
+  if (isSeededSuperadmin(target)) {
     throw new ForbiddenError('cannot_delete_seeded_superadmin', {
       message:
         'The main superadmin (set via SUPERADMIN_EMAIL) cannot be deleted from the app.',
@@ -248,7 +265,7 @@ export async function softDeleteStaff(input: {
       )
       .limit(1)
     if (!actor) throw new ForbiddenError('actor_not_found')
-    if (!isSeededSuperadminEmail(actor.email)) {
+    if (!isSeededSuperadmin(actor)) {
       throw new ForbiddenError('only_seeded_can_delete_superadmin', {
         message: 'Only the main superadmin can delete another superadmin.',
       })
@@ -354,13 +371,13 @@ export async function updateStaffProfile(input: UpdateStaffProfileInput): Promis
         message: 'You cannot change your own role.',
       })
     }
-    if (isSeededSuperadminEmail(target.email)) {
+    if (isSeededSuperadmin(target)) {
       throw new ForbiddenError('cannot_edit_seeded_superadmin_role', {
         message:
           'The main superadmin (set via SUPERADMIN_EMAIL) cannot have its role changed.',
       })
     }
-    if (target.role === 'superadmin' && !isSeededSuperadminEmail(actor.email)) {
+    if (target.role === 'superadmin' && !isSeededSuperadmin(actor)) {
       throw new ForbiddenError('only_seeded_can_edit_superadmin_role', {
         message: "Only the main superadmin can change another superadmin's role.",
       })

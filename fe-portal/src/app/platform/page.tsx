@@ -74,6 +74,19 @@ export default function PlatformPage() {
     if (isLoaded && isSignedIn && orgStatus !== "settling") void load();
   }, [isLoaded, isSignedIn, orgStatus, load]);
 
+  /**
+   * Is anything in flight for this studio?
+   *
+   * One `busyId` serves every row, and the three actions tag it differently —
+   * the status toggle with the bare id, export and import with a prefix. A
+   * button comparing against only one of those spins while staying clickable,
+   * and a second click during an import uploads the same archive twice into the
+   * same studio.
+   */
+  function isBusy(id: string) {
+    return busyId === id || busyId === `export:${id}` || busyId === `import:${id}`;
+  }
+
   async function toggleSuspension(tenant: PlatformTenant) {
     const next = tenant.status === "active" ? "suspended" : "active";
     if (
@@ -261,7 +274,7 @@ export default function PlatformPage() {
                     something they might regret. */}
                 <Button
                   variant="secondary"
-                  disabled={busyId === tenant.id}
+                  disabled={isBusy(tenant.id)}
                   onClick={() => void downloadArchive(tenant)}
                 >
                   {busyId === `export:${tenant.id}` ? (
@@ -274,7 +287,7 @@ export default function PlatformPage() {
 
                 <Button
                   variant="secondary"
-                  disabled={busyId === tenant.id}
+                  disabled={isBusy(tenant.id)}
                   onClick={() => pickArchiveFor(tenant)}
                 >
                   {busyId === `import:${tenant.id}` ? (
@@ -290,7 +303,7 @@ export default function PlatformPage() {
                 {tenant.status !== "archived" && (
                   <Button
                     variant="secondary"
-                    disabled={busyId === tenant.id}
+                    disabled={isBusy(tenant.id)}
                     onClick={() => void toggleSuspension(tenant)}
                   >
                     {busyId === tenant.id ? (

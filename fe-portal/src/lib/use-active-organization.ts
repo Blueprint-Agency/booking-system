@@ -86,6 +86,12 @@ export function useActiveOrganization(enabled: boolean): OrgSyncStatus {
     }
     if (attempted.current === target) return;
     attempted.current = target;
+    // A new target is a new attempt. Without this, one failed switch would make
+    // the hook answer `unavailable` for the rest of the session — including a
+    // later, legitimate activation on another studio's portal, where the gated
+    // request would then go out before the claim was on the token and the user
+    // would be signed out.
+    setFailed(false);
 
     let cancelled = false;
     // The switch is over when Clerk's own state reflects it, which turns the

@@ -128,7 +128,7 @@ jobs:
             #   org vars:    BPVPS2_TAILSCALE_HOST, DOCKERHUB_USERNAME
             #   org secrets: TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET, SSH_PRIVATE_KEY, DOCKERHUB_TOKEN
             #   env vars:    PORT, PORTAL_ORIGIN, CLIENT_ORIGIN, TENANT_ORIGIN_PATTERNS,
-            #            SUPERADMIN_EMAIL, (optional) PLATFORM_ADMIN_EMAILS,
+            #            SUPERADMIN_EMAIL, PLATFORM_ADMIN_EMAILS,
             #            (optional) MAIL_FROM_EMAIL, MAIL_FROM_NAME
             #   env secrets: DB_USER, DB_PASSWORD, DB_NAME, DB_APP_PASSWORD,
             #            CLERK_STAFF_PUBLISHABLE_KEY, CLERK_STAFF_SECRET_KEY, CLERK_STAFF_WEBHOOK_SECRET,
@@ -157,14 +157,23 @@ jobs:
               # `npm run db:migrate` creates the role with DB_APP_PASSWORD.
               echo "DATABASE_APP_URL=postgres://booking_app:${{ secrets.DB_APP_PASSWORD }}@db-booking:5432/${{ secrets.DB_NAME }}"
               echo "DB_APP_PASSWORD=${{ secrets.DB_APP_PASSWORD }}"
-              # Superadmin bootstrap — passwordless. Seed creates the Clerk user
-              # with this email and links the staff_users row; operator picks
-              # their own password via Clerk's "Forgot password" on first sign-in.
+              # Tenant #1's own bootstrap superadmin. The seed no longer creates
+              # it — a fresh install seeds platform admins only, and studios
+              # arrive by being provisioned or restored — so what this still does
+              # is name the one staff account in Tenant #1 that the app refuses to
+              # archive, delete or demote (services/auth/staff-archive.ts).
+              # It is NOT a platform admin: see PLATFORM_ADMIN_EMAILS below.
               echo "SUPERADMIN_EMAIL=${{ vars.SUPERADMIN_EMAIL }}"
               # Who may operate the super portal (/api/v1/platform/*) — the dev
               # team, comma-separated. Deliberately not a staff role: a studio's
               # own superadmin must not be able to suspend another studio.
-              # SUPERADMIN_EMAIL is always included, so blank means exactly one.
+              #
+              # REQUIRED. This is the whole allowlist — SUPERADMIN_EMAIL is NOT
+              # folded in any more, because doing so handed the first studio's
+              # superadmin the run of every studio. Blank means a super portal
+              # nobody can reach (the backend warns at boot and refuses everyone),
+              # which is the safe failure but is almost certainly not what you
+              # wanted.
               echo "PLATFORM_ADMIN_EMAILS=${{ vars.PLATFORM_ADMIN_EMAILS }}"
               # Portal origin — used for CORS + the sign-up URL in invitation emails
               echo "PORTAL_ORIGIN=${{ vars.PORTAL_ORIGIN }}"

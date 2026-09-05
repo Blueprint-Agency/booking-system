@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm'
 import { db, withTenant } from '../../db'
+import { isUniqueViolation } from '../../db/unique-violation'
 import { buildIdentityMap, remapRow } from './transfer-identity'
 import { orderTables, type ForeignKey } from './transfer-order'
 import { ARCHIVE_VERSION, type TenantArchive, type TenantManifest } from './transfer-shape'
@@ -101,32 +102,43 @@ export async function exportTenant(tenantId: string): Promise<TenantArchive> {
   const rows: Record<string, Record<string, unknown>[]> = {}
   const counts: Record<string, number> = {}
 
-  await withTenant(tenantId, async () => {
-    for (const table of order) {
-      // No WHERE. Row-Level Security is the filter, and letting it be the filter
-      // is the point: if a policy is ever wrong, the export is wrong in the same
-      // direction as every other read, rather than being a second opinion that
-      // hides the bug.
-      const table_rows = await db.execute<Record<string, unknown>>(
-        sql`SELECT * FROM ${sql.identifier(table)}`,
-      )
-      rows[table] = table_rows
-      counts[table] = table_rows.length
-    }
-  })
-
-  // Branding, copy, mail identity and waiver text live outside Row-Level
-  // Security, and the application role is fenced out of the last two by column
-  // privilege — so `SELECT *` here is refused, correctly. Migration 0038's
-  // SECURITY DEFINER reader is the door through that fence, and it answers only
-  // for the Tenant whose context is open, which is why this runs inside
-  // `withTenant` rather than beside it.
+  // One transaction and one snapshot, for every table and the settings alike.
+  //
+  // `repeatable read` is the whole of it, and it is not a detail. Under the
+  // default `read committed` each statement takes a fresh snapshot, so a studio
+  // that is *in use* while it is exported — which is every studio, since export
+  // is offered precisely when something is about to change — yields an archive
+  // whose bookings can reference a member read a moment before they existed.
+  // Nothing detects that at export. It surfaces as a foreign-key violation on
+  // the day the archive is restored, which is the worst day to find out.
   let settings: Record<string, unknown> | undefined
-  await withTenant(tenantId, async () => {
-    ;[settings] = await db.execute<Record<string, unknown>>(
-      sql`SELECT * FROM current_tenant_settings()`,
-    )
-  })
+  await withTenant(
+    tenantId,
+    async () => {
+      for (const table of order) {
+        // No WHERE. Row-Level Security is the filter, and letting it be the
+        // filter is the point: if a policy is ever wrong, the export is wrong in
+        // the same direction as every other read, rather than being a second
+        // opinion that hides the bug.
+        const table_rows = await db.execute<Record<string, unknown>>(
+          sql`SELECT * FROM ${sql.identifier(table)}`,
+        )
+        rows[table] = table_rows
+        counts[table] = table_rows.length
+      }
+
+      // Branding, copy, mail identity and waiver text live outside Row-Level
+      // Security, and the application role is fenced out of the last two by
+      // column privilege — so `SELECT *` here is refused, correctly. Migration
+      // 0038's SECURITY DEFINER reader is the door through that fence, and it
+      // answers only for the Tenant whose context is open, which is why it runs
+      // inside `withTenant` rather than beside it.
+      ;[settings] = await db.execute<Record<string, unknown>>(
+        sql`SELECT * FROM current_tenant_settings()`,
+      )
+    },
+    { isolation: 'repeatable read' },
+  )
   if (settings) {
     rows.tenant_settings = [settings]
     counts.tenant_settings = 1
@@ -179,22 +191,27 @@ export type ImportSummary = {
  * — those keys are unique *within a Tenant*, so two studios may hold the same
  * ones.
  *
- * **Row ids are kept when they can be and rewritten when they cannot.** Which
- * one happens is decided by a single question, asked below: are the archive's
- * rows still in this database?
+ * **Row ids are kept in exactly one case: restoring a studio into itself.** The
+ * archive's manifest names the Tenant it came from, and when that is the Tenant
+ * being written to, every id in it is provably free — the emptiness check below
+ * has just established this studio holds no rows. Nothing else can be said that
+ * cheaply, so nothing else is: every other import gives the rows fresh ids and
+ * rewrites the references between them (`transfer-identity.ts`).
  *
- *  - **They are gone.** This is a restore. Every row goes back under its own id,
- *    byte for byte, so anything holding an id from before — a Stripe intent's
- *    metadata, a bookmarked admin URL — still points at the row it named.
- *  - **They are still here.** This is a copy: a studio exported and imported
- *    into a second studio beside it. Ids are unique platform-wide, so the rows
- *    are given fresh ones and every reference between them is rewritten
- *    (`transfer-identity.ts`). Nothing outside the archive pointed at the copy,
- *    because the copy did not exist.
+ * That in-place restore is the disaster case the ids matter for. A studio's rows
+ * are emptied and put back, and everything outside this database that named one
+ * — a Stripe intent's metadata, a bookmarked admin URL — still resolves.
  *
- * The question is asked of the database rather than of the operator, so neither
- * they nor the UI has to choose a mode — and there is no mode in which a restore
- * quietly renumbers a studio that is only being brought back.
+ * An earlier version asked a cleverer question: are the archive's rows still in
+ * the database? It was wrong in a way worth recording. On a database the source
+ * studio was never on, the answer is "no" for the *second* import as much as the
+ * first, so importing one archive into two studios took the preserve-ids branch
+ * both times and collided row by row on the second. "Is the target the studio
+ * this came from" cannot be wrong that way.
+ *
+ * What a member holds is unaffected either way — see above — so the cost of
+ * renumbering is only to references held outside this database, and only a
+ * studio being restored in place has any.
  */
 export async function importTenant(
   targetTenantId: string,
@@ -213,13 +230,15 @@ export async function importTenant(
   const written: Record<string, number> = {}
 
   const rows = archive.rows
+  const settings = rows.tenant_settings?.[0]
   const columnKinds = await columnKindsByTable()
   const plain: ColumnKinds = new Map()
 
-  // Copy or restore? The one question that decides it, asked once.
-  const identity = (await sourceRowsStillPresent(archive.manifest.tenant.id, targetTenantId, order))
-    ? buildIdentityMap(order, rows)
-    : new Map<string, string>()
+  // Copy or restore? See the note on this function. Restoring in place is the
+  // one case where the archive's ids are provably free, because the emptiness
+  // check above has just established that this studio holds none of them.
+  const inPlace = archive.manifest.tenant.id === targetTenantId
+  const identity = inPlace ? new Map<string, string>() : buildIdentityMap(order, rows)
 
   await withTenant(targetTenantId, async () => {
     for (const table of order) {
@@ -264,6 +283,15 @@ export async function importTenant(
         const row = remapRow(source, identity)
         const fill = columns.filter(c => row[c] != null)
         if (fill.length === 0) continue
+        // Pass two addresses a row by its id, so a deferred column on a table
+        // keyed by its foreign keys instead — a join table — has nothing to
+        // address. None exist today; say so rather than emit `WHERE id = NULL`
+        // and silently fill nothing in.
+        if (row.id == null) {
+          throw new Error(
+            `${table} has a deferred column (${columns.join(', ')}) but no id to fill it in by`,
+          )
+        }
         await db.execute(sql`
           UPDATE ${sql.identifier(table)}
           SET ${sql.join(
@@ -274,16 +302,19 @@ export async function importTenant(
         `)
       }
     }
-  })
 
-  // Settings go back through migration 0038's writer for the same reason they
-  // came out through its reader: the application role may not write the mail
-  // identity or the waiver text directly, and the function takes its Tenant from
-  // the open context rather than an argument — so an archive cannot overwrite
-  // another studio's branding even deliberately.
-  const settings = rows.tenant_settings?.[0]
-  if (settings) {
-    await withTenant(targetTenantId, async () => {
+    // Settings go back through migration 0038's writer for the same reason they
+    // came out through its reader: the application role may not write the mail
+    // identity or the waiver text directly, and the function takes its Tenant
+    // from the open context rather than an argument — so an archive cannot
+    // overwrite another studio's branding even deliberately.
+    //
+    // Inside the same transaction as the rows, and not after it. A settings
+    // write that failed on its own would leave a studio holding all of its data
+    // and none of its identity — no branding, no mail-from, no waiver — and the
+    // import could not be run again to fix it, because the emptiness check above
+    // now refuses a studio that has rows.
+    if (settings) {
       await db.execute(sql`
         SELECT write_current_tenant_settings(
           ${settings.display_name ?? null},
@@ -299,9 +330,9 @@ export async function importTenant(
           ${settings.waiver_text ?? null}
         )
       `)
-    })
-    written.tenant_settings = 1
-  }
+      written.tenant_settings = 1
+    }
+  })
 
   return {
     written,
@@ -309,39 +340,6 @@ export async function importTenant(
     sourceTenant: archive.manifest.tenant,
     remapped: identity.size > 0,
   }
-}
-
-/**
- * Are the ids in this archive still taken?
- *
- * The question is deliberately about the *rows*, not about the `tenants` row.
- * Emptying a studio does not delete its directory entry — nothing in the super
- * portal deletes a studio at all, it suspends and archives — so "does the source
- * still exist" would answer yes for a studio that was emptied and is now being
- * put back, and quietly renumber a restore.
- *
- * Asked inside the *source's* Tenant context, because that is the only way to
- * see its rows: the application role reads through the Row-Level Security
- * policies, and outside a context they show it nothing. First hit wins, so the
- * copy case — where the source is live and full — costs one query.
- */
-async function sourceRowsStillPresent(
-  sourceId: string,
-  targetTenantId: string,
-  order: readonly string[],
-): Promise<boolean> {
-  // Restoring a studio into itself collides with nothing: the emptiness check
-  // has already established it holds no rows.
-  if (sourceId === targetTenantId) return false
-  return withTenant(sourceId, async () => {
-    for (const table of order) {
-      const [row] = await db.execute<{ x: number }>(
-        sql`SELECT 1 AS x FROM ${sql.identifier(table)} LIMIT 1`,
-      )
-      if (row) return true
-    }
-    return false
-  })
 }
 
 /**
@@ -358,8 +356,11 @@ async function sourceRowsStillPresent(
  * what makes the report actionable.
  */
 function duplicateExplained(err: unknown, table: string, sourceSlug: string): Error {
-  const code = (err as { cause?: { code?: string }; code?: string })?.cause?.code
-  if (code !== '23505') return err instanceof Error ? err : new Error(String(err))
+  // Through the repo's own helper, which walks the cause chain: Drizzle wraps
+  // the driver error, but not always, and reading `err.cause.code` alone lets an
+  // unwrapped `23505` past — handing the operator the raw constraint message
+  // this function exists to replace.
+  if (!isUniqueViolation(err)) return err instanceof Error ? err : new Error(String(err))
   return new Error(
     `${table} refused a row from this archive as a duplicate. The archive came from ${sourceSlug}, ` +
       `which still holds rows this studio may not have alongside it — a unique key on ${table} is ` +

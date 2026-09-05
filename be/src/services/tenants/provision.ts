@@ -40,7 +40,7 @@
  * lost. That leaves a complete, working Tenant and a caller who does not know
  * it; retrying the same slug returns `slug_taken`, which is the correct answer.
  */
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, isNull, ne, sql } from 'drizzle-orm'
 import { currentTenantId, db, withTenant } from '../../db'
 import { staffUsers } from '../../db/schema/identity'
 import { tenants, tenantSettings } from '../../db/schema/tenancy'
@@ -369,23 +369,44 @@ export async function inviteFirstAdmin(
   const portalUrl = tenantOrigin('portal', tenant.slug)
 
   const admin = await withTenant(tenantId, async () => {
-    const [existing] = await db.select({ id: staffUsers.id }).from(staffUsers).limit(1)
+    // The same predicate migration 0041's `tenant_staff_counts()` uses, and it
+    // has to stay the same one. The super portal offers this action to studios
+    // that function reports as having nobody; if this counted a row that one
+    // ignores — an archived admin, a soft-deleted one — the button would appear
+    // on a studio the UI calls unreachable and then refuse to fix it.
+    const [existing] = await db
+      .select({ id: staffUsers.id })
+      .from(staffUsers)
+      .where(and(isNull(staffUsers.deletedAt), ne(staffUsers.status, 'archived')))
+      .limit(1)
     if (existing) throw new ConflictError('tenant_already_has_staff')
 
     const { firstName, lastName } = splitName(name)
-    const [row] = await db
-      .insert(staffUsers)
-      .values({
-        tenantId,
-        email,
-        name,
-        firstName,
-        lastName,
-        role: 'admin',
-        status: 'pending',
-        invitedAt: new Date(),
-      })
-      .returning({ id: staffUsers.id })
+    let row: { id: string } | undefined
+    try {
+      ;[row] = await db
+        .insert(staffUsers)
+        .values({
+          tenantId,
+          email,
+          name,
+          firstName,
+          lastName,
+          role: 'admin',
+          status: 'pending',
+          invitedAt: new Date(),
+        })
+        .returning({ id: staffUsers.id })
+    } catch (err) {
+      // The guard above ignores archived and soft-deleted rows, but the unique
+      // index does not: this studio's only previous admin may be an archived row
+      // holding this exact address. Restoring them is the studio's own decision
+      // and not one to make silently from outside it.
+      if (isUniqueViolation(err, 'staff_users_tenant_email_unique')) {
+        throw new ConflictError('admin_email_archived_here', { email })
+      }
+      throw err
+    }
     if (!row) throw new Error('first admin insert returned no row')
 
     // Inside the transaction, as in `provisionTenant`: a refused invitation must

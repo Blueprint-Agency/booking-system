@@ -6,7 +6,7 @@ import { tenantId } from '../../../middleware/tenant'
 import * as svc from '../../../services/auth/invitations'
 import {
   archiveStaff,
-  isSeededSuperadminEmail,
+  isSeededSuperadmin,
   softDeleteStaff,
   unarchiveStaff,
   updateStaffProfile,
@@ -89,7 +89,7 @@ function serializeStaff(row: StaffProfileRow) {
         }
       : {}),
     is_seeded_superadmin:
-      row.role === 'superadmin' && isSeededSuperadminEmail(row.email),
+      row.role === 'superadmin' && isSeededSuperadmin(row),
   }
 }
 
