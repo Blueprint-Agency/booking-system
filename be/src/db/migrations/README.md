@@ -58,6 +58,18 @@ was collapsed into it because no deployed database needed that history preserved
    Do **not** create `.sql` files by hand without a paired snapshot — that is the
    other half of what caused the 0008–0012 drift.
 
+   **Check the `when` too.** A `--custom` migration's journal entry is stamped with
+   `Date.now()`, and nothing about `--custom` checks it against the previous entry.
+   Drizzle's Postgres migrator reads only the most recently applied row and runs a
+   migration when `lastDbMigration.created_at < migration.folderMillis` — so an entry
+   whose `when` is *behind* one already applied is **silently skipped**: no error, no
+   log, and a fresh CI database migrates from empty and passes green anyway. That is
+   how `0037` became a no-op on staging and production (#73). It happens whenever an
+   earlier `when` was hand-set ahead of wall-clock time, because the next generated
+   entry then lands behind it. **Never hand-set a `when` into the future.**
+   `journal.test.ts` fails on both halves — a non-monotonic entry and a future-dated
+   one — with `0019` and `0021` grandfathered as knowingly out of order.
+
 4. **Review the generated SQL before committing.** Drizzle's auto-rename detection
    guesses (drop+add vs rename); when it asks, or when the diff looks wrong, fix it.
 
