@@ -24,6 +24,26 @@ declare module 'hono' {
 }
 
 /**
+ * The webhook's sync, driven from a request instead: fetch the Clerk user by
+ * the token's subject and run the same link-and-activate the webhook would.
+ * Runs inside the request's Tenant context, so it only sees this studio's rows.
+ */
+async function syncFromClerkUser(clerkUserId: string) {
+  const clerkUser = await clerkStaffApp.users.getUser(clerkUserId)
+  return syncStaffFromClerk({
+    id: clerkUser.id,
+    primary_email_address_id: clerkUser.primaryEmailAddressId,
+    email_addresses: clerkUser.emailAddresses.map(e => ({
+      id: e.id,
+      email_address: e.emailAddress,
+    })),
+    first_name: clerkUser.firstName,
+    last_name: clerkUser.lastName,
+    username: clerkUser.username,
+  })
+}
+
+/**
  * Verifies a Clerk staff JWT (Authorization: Bearer <jwt>), looks up the matching
  * staff_users row by clerk_user_id, and attaches both to the Hono context.
  *
@@ -55,6 +75,31 @@ export const clerkStaffAuth: MiddlewareHandler = async (c, next) => {
   // is not consulted — it was already checked against `Origin`, and this is the
   // half of the check the caller cannot influence at all.
   const orgRefusal = await assertTenantOrgClaim(c, payload)
+  if (orgRefusal === 'organization_required') {
+    // A token with no organization on it. Usually a staff member whose row is
+    // in this studio but whose Clerk user is not yet in its organization — the
+    // window between signing up and the webhook granting membership, or a
+    // deployment where the webhook never reaches us. The refusal stands (the
+    // token really carries no claim), but the sync that grants the membership
+    // is run first, so the *next* token the front end mints does. Gated on
+    // `Origin` corroboration exactly as the auto-link below is, and for the
+    // same reason: it activates a pending row.
+    let reason = 'tenant_uncorroborated'
+    if (tenantCorroborated(c)) {
+      try {
+        const repaired = await syncFromClerkUser(payload.sub)
+        reason =
+          repaired.kind === 'linked' || repaired.kind === 'idempotent'
+            ? 'membership_granted'
+            : repaired.kind
+      } catch (err) {
+        logger.error({ err }, 'clerk-staff: organization repair failed')
+        captureException(err, { scope: 'clerk-staff-org-repair' })
+        reason = 'sync_error'
+      }
+    }
+    return c.json({ error: orgRefusal, reason }, 403)
+  }
   if (orgRefusal) return c.json({ error: orgRefusal }, 403)
 
   let [row] = await db
@@ -77,18 +122,7 @@ export const clerkStaffAuth: MiddlewareHandler = async (c, next) => {
     syncReason = 'tenant_uncorroborated'
   } else if (!row) {
     try {
-      const clerkUser = await clerkStaffApp.users.getUser(payload.sub)
-      const sync = await syncStaffFromClerk({
-        id: clerkUser.id,
-        primary_email_address_id: clerkUser.primaryEmailAddressId,
-        email_addresses: clerkUser.emailAddresses.map(e => ({
-          id: e.id,
-          email_address: e.emailAddress,
-        })),
-        first_name: clerkUser.firstName,
-        last_name: clerkUser.lastName,
-        username: clerkUser.username,
-      })
+      const sync = await syncFromClerkUser(payload.sub)
       if (sync.kind === 'linked' || sync.kind === 'idempotent') {
         ;[row] = await db
           .select()

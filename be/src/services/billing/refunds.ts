@@ -386,13 +386,16 @@ async function refundAtProviderAndAudit(args: {
  * gate having unwound nothing. Stamping at the end means a half-finished pass is
  * simply redone, and the one non-repeatable act rides on the one atomic write.
  */
-export async function unwindRefund(paymentIntentId: string): Promise<void> {
+export async function unwindRefund(
+  paymentIntentId: string,
+  claimedTenantId?: string | null,
+): Promise<void> {
   // Route first, then work. The provider's event names an intent and nothing
   // else; with the tenant policies live, the application role cannot read across
   // tenants to find out whose it is, so the one narrow cross-tenant question —
   // "whose intent is this?" — goes through the owner-owned resolver in migration
   // 0034. Everything after runs inside that tenant's context.
-  const tenantId = await tenantForPaymentIntent(paymentIntentId)
+  const tenantId = await tenantForPaymentIntent(paymentIntentId, claimedTenantId)
   // An intent this system never recorded: the same silence as a missing row.
   if (!tenantId) return
   return withTenant(tenantId, () => unwindRefundForTenant(paymentIntentId))

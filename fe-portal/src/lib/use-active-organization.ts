@@ -15,7 +15,7 @@
  * which the gated request would go out early. The one thing state is kept for
  * is the outcome of the switch itself, which nothing else can report.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useOrganization, useOrganizationList } from "@clerk/nextjs";
 import { organizationActivation, type OrgActivation } from "./active-organization";
 import { isSuperPortalHost, tenantSlugFromHost } from "./tenant-host";
@@ -36,7 +36,19 @@ const MEMBERSHIP_PAGE_SIZE = 100;
 /** How long a switch may stay in flight before the app stops waiting on it. */
 const SWITCH_TIMEOUT_MS = 8_000;
 
-export function useActiveOrganization(enabled: boolean): OrgSyncStatus {
+export interface ActiveOrganizationSync {
+  status: OrgSyncStatus;
+  /**
+   * Ask Clerk for the membership list again. The backend grants a staff
+   * member's organization membership the moment their row links — from the
+   * webhook, or from the very request that was refused `organization_required`
+   * — so a list read before that moment is stale, not final. Re-reading it
+   * turns `unavailable` into `activate` and the app carries on.
+   */
+  refreshMemberships: () => Promise<void>;
+}
+
+export function useActiveOrganization(enabled: boolean): ActiveOrganizationSync {
   const { isLoaded: orgLoaded, organization } = useOrganization();
   const {
     isLoaded: listLoaded,
@@ -112,11 +124,27 @@ export function useActiveOrganization(enabled: boolean): OrgSyncStatus {
     };
   }, [setActive, target]);
 
-  if (!enabled) return "ready";
-  if (!verdict) return "settling";
-  if (verdict.kind === "keep") return "ready";
-  if (verdict.kind === "unavailable") return "unavailable";
-  // A switch was asked for. It is in flight until Clerk's own state reflects it,
-  // at which point the verdict above becomes `keep`.
-  return failed ? "unavailable" : "settling";
+  // Clerk hands back a fresh `revalidate` on every render, and this function
+  // ends up in the dependency list of the caller's `/portal/auth/me` load — an
+  // unstable identity there is an effect that re-fires on its own result,
+  // forever. So the current one is kept in a ref and the callback never changes.
+  const revalidate = useRef(userMemberships.revalidate);
+  useEffect(() => {
+    revalidate.current = userMemberships.revalidate;
+  }, [userMemberships.revalidate]);
+  const refreshMemberships = useCallback(async () => {
+    await revalidate.current?.();
+  }, []);
+
+  const status = ((): OrgSyncStatus => {
+    if (!enabled) return "ready";
+    if (!verdict) return "settling";
+    if (verdict.kind === "keep") return "ready";
+    if (verdict.kind === "unavailable") return "unavailable";
+    // A switch was asked for. It is in flight until Clerk's own state reflects
+    // it, at which point the verdict above becomes `keep`.
+    return failed ? "unavailable" : "settling";
+  })();
+
+  return { status, refreshMemberships };
 }

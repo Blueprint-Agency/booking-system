@@ -2,7 +2,10 @@ import { and, eq, isNull, sql } from 'drizzle-orm'
 import { db, withTenant } from '../../db'
 import { staffUsers, staffInvitations, clients } from '../../db/schema/identity'
 import { logger } from '../../shared/logger'
+import { captureException } from '../../instrument'
 import { splitName } from '../../lib/name'
+import { ensureStaffOrgMembership } from '../tenants/org-membership'
+import { resolveTenantByClerkOrg, setTenantStatus } from '../tenants/tenants'
 import {
   resolveWebhookTenants,
   tenantsHoldingStaffEmail,
@@ -118,6 +121,10 @@ export async function syncStaffFromClerk(clerkUser: ClerkWebhookUser): Promise<S
         .set({ name, firstName, lastName, updatedAt: new Date() })
         .where(eq(staffUsers.id, row.id))
     }
+    // Re-asserted on every pass, not only the linking one: a grant that failed
+    // when the row was first linked heals here the next time the person signs
+    // in, and staff linked before organizations existed pick theirs up.
+    await ensureStaffOrgMembership({ tenantId: row.tenantId, clerkUserId: clerkUser.id, role: row.role })
     return { kind: 'idempotent', staffUserId: row.id }
   }
 
@@ -179,6 +186,11 @@ export async function syncStaffFromClerk(clerkUser: ClerkWebhookUser): Promise<S
       ),
     )
 
+  // The row now says which studio and Clerk now has a user id: the first moment
+  // a membership can be granted, and the only thing between this person and a
+  // token that carries the organization claim the portal requires.
+  await ensureStaffOrgMembership({ tenantId: row.tenantId, clerkUserId: clerkUser.id, role: row.role })
+
   return { kind: 'linked', staffUserId: row.id }
 }
 
@@ -221,9 +233,45 @@ const ACTED_ON = new Set([
   'organizationMembership.updated',
 ])
 
-export type StaffEventOutcome = SyncOutcome | { kind: 'unresolved_tenant'; reason: string }
+export type StaffEventOutcome =
+  | SyncOutcome
+  | { kind: 'unresolved_tenant'; reason: string }
+  | { kind: 'organization_deleted'; tenantId: string }
+
+/**
+ * The studio's organization was deleted in the Clerk dashboard.
+ *
+ * Every staff token for that studio now carries no claim, and `orgClaimVerdict`
+ * refuses each one with `organization_required` — the studio is closed, and
+ * without this nothing would have said so. The stale id is deliberately
+ * **kept** on the row: clearing it would flip the rollout seam back to
+ * "enforcement not switched on yet" and let claim-less tokens through, which
+ * is the worst reading of the same event. Suspending the studio says what
+ * happened; putting it back is an operator's decision, with a new organization.
+ *
+ * Runs outside any Tenant context, as the route does: `tenants` carries no
+ * policy and `setTenantStatus` is the same call the super portal makes.
+ */
+async function handleOrganizationDeleted(
+  event: ClerkWebhookEvent,
+): Promise<StaffEventOutcome> {
+  const tenant = await resolveTenantByClerkOrg('portal', String(event.data?.id ?? ''))
+  // Unknown, or already archived: nothing to close.
+  if (!tenant) return { kind: 'unresolved_tenant', reason: 'unknown_organization' }
+  if (tenant.status !== 'active') return { kind: 'noop' }
+
+  await setTenantStatus(tenant.id, 'suspended')
+  const err = new Error('clerk organization deleted for an active tenant — studio suspended')
+  logger.error(
+    { tenantId: tenant.id, slug: tenant.slug, organizationId: tenant.clerkPortalOrgId },
+    err.message,
+  )
+  captureException(err, { scope: 'clerk-organization-deleted', tenantId: tenant.id, slug: tenant.slug })
+  return { kind: 'organization_deleted', tenantId: tenant.id }
+}
 
 export async function handleClerkStaffEvent(event: ClerkWebhookEvent): Promise<StaffEventOutcome> {
+  if (event.type === 'organization.deleted') return handleOrganizationDeleted(event)
   if (!ACTED_ON.has(event.type)) return { kind: 'noop' }
 
   const clerkUser = userFromEvent(event)
