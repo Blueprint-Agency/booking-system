@@ -76,5 +76,6 @@
       "PowerShell(docker exec yoga-sadhana-db *)",
       "PowerShell(gh issue *)"
     ]
-  }
+  },
+  "outputStyle": "ELI5"
 }
