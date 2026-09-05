@@ -55,7 +55,8 @@ export const stripePayments = pgTable(
   {
     tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-    paymentIntentId: text('payment_intent_id').notNull().unique(),
+    // Unique per Tenant, not platform-wide — see `paymentIntentUnique` below.
+    paymentIntentId: text('payment_intent_id').notNull(),
     amountSgd: numeric('amount_sgd', { precision: 10, scale: 2 }).notNull(),
     kind: stripePaymentKindEnum('kind').notNull(),
     clientId: uuid('client_id')
@@ -71,7 +72,15 @@ export const stripePayments = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
-    paymentIntentUnique: uniqueIndex('stripe_payments_intent_unique').on(table.paymentIntentId),
+    // Scoped to the Tenant. Every lookup in `billing/webhook-handler.ts` already
+    // pairs the intent id with a tenant id — the webhook resolves the Tenant
+    // from the client in the intent's metadata before it asks about the payment
+    // — so nothing depended on the constraint being platform-wide, and a
+    // platform-wide one stops a studio's archive being restored beside it.
+    paymentIntentUnique: uniqueIndex('stripe_payments_intent_unique').on(
+      table.tenantId,
+      table.paymentIntentId,
+    ),
     clientCreatedIdx: index('stripe_payments_client_created_idx').on(table.tenantId, table.clientId, table.createdAt),
   }),
 )

@@ -132,7 +132,8 @@ export const staffInvitations = pgTable(
       .array()
       .notNull()
       .default(sql`'{}'::uuid[]`),
-    token: text('token').notNull().unique(),
+    // Unique per Tenant — see `tokenUnique` below.
+    token: text('token').notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     status: invitationStatusEnum('status').notNull().default('pending'),
     invitedByStaffId: uuid('invited_by_staff_id')
@@ -146,5 +147,9 @@ export const staffInvitations = pgTable(
   table => ({
     emailStatusIdx: index('staff_invitations_email_status_idx').on(table.tenantId, table.email, table.status),
     inviterIdx: index('staff_invitations_inviter_idx').on(table.tenantId, table.invitedByStaffId),
+    // An invitation token is looked up inside the Tenant it was issued for, so
+    // its namespace is that Tenant's. Platform-wide it was one more reason a
+    // studio's archive could not be restored beside the studio it came from.
+    tokenUnique: uniqueIndex('staff_invitations_token_unique').on(table.tenantId, table.token),
   }),
 )

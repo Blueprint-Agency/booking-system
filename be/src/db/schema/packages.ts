@@ -343,7 +343,7 @@ export const clientPackages = pgTable(
     clientExpiryIdx: index('client_packages_client_expiry_idx').on(table.tenantId, table.clientId, table.expiresAt),
     // Partial unique on stripe_payment_intent_id (now nullable per spec).
     stripeIntentUnique: uniqueIndex('client_packages_stripe_intent_unique')
-      .on(table.stripePaymentIntentId)
+      .on(table.tenantId, table.stripePaymentIntentId)
       .where(sql`${table.stripePaymentIntentId} IS NOT NULL`),
     // One-trial-per-client-ever invariant (fe-client-features.md §6.1) — partial unique.
     // A previously-purchased trial (active OR expired) blocks any further trial purchase;

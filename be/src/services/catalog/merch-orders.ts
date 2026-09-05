@@ -96,7 +96,10 @@ export async function recordMerchOrder(input: {
       amountSgd: input.amountSgd,
       stripePaymentIntentId: input.paymentIntentId,
     })
-    .onConflictDoNothing({ target: merchOrders.stripePaymentIntentId })
+    // Both columns, because `merch_orders_intent_unique` is scoped to the Tenant
+    // (migration 0040) and Postgres refuses an ON CONFLICT target that does not
+    // match a unique index exactly. The lookup below already pairs them too.
+    .onConflictDoNothing({ target: [merchOrders.tenantId, merchOrders.stripePaymentIntentId] })
     .returning()
   if (inserted) return inserted
 

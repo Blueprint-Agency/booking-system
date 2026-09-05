@@ -1,6 +1,7 @@
 import { Hono } from 'hono'
 import { requirePlatformAdmin } from '../../middleware/platform-admin'
 import tenants from './tenants'
+import transfer from './transfer'
 
 /**
  * The super portal's branch: `/api/v1/platform/*`.
@@ -15,6 +16,6 @@ import tenants from './tenants'
  *
  * So: one gate, `requirePlatformAdmin`, and no tenant context at all.
  */
-const app = new Hono().use('*', requirePlatformAdmin).route('/', tenants)
+const app = new Hono().use('*', requirePlatformAdmin).route('/', tenants).route('/', transfer)
 
 export default app
