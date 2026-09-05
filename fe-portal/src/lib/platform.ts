@@ -6,7 +6,9 @@
  * their role and their location grants — none of which a platform admin has.
  * They belong to no studio; that is the whole point of them.
  */
-import type { Api } from "@/lib/api";
+import { ApiError, type Api } from "@/lib/api";
+import { getApiBaseUrl } from "@/lib/api-url";
+import { tenantRequestHeaders } from "@/lib/tenant-host";
 
 export type TenantStatus = "active" | "suspended" | "archived";
 
@@ -29,13 +31,16 @@ export interface CreateTenantInput {
   slug: string;
   name: string;
   timezone?: string;
-  admin_email: string;
+  /** Omitted when the studio is being created to receive an archive: the
+   *  import refuses a studio that already holds any staff rows. */
+  admin_email?: string;
   admin_name?: string;
 }
 
 export interface CreatedTenant {
   tenant: PlatformTenant;
-  admin: { id: string; email: string; name: string };
+  /** Null when no first admin was named — nobody was invited. */
+  admin: { id: string; email: string; name: string } | null;
   urls: { client: string | null; portal: string | null };
 }
 
@@ -68,6 +73,67 @@ export function createTenant(api: Api, input: CreateTenantInput) {
 
 export function setTenantStatus(api: Api, id: string, status: TenantStatus) {
   return api.patch<{ tenant: PlatformTenant }>(`/platform/tenants/${id}/status`, { status });
+}
+
+export interface ImportSummary {
+  imported: number;
+  tables: Record<string, number>;
+  from: { slug: string; name: string };
+  /** True when the source studio was still here, so this is a copy of it and
+   *  its rows were given fresh ids. False when it was a restore. */
+  remapped: boolean;
+}
+
+/**
+ * Download a studio's whole archive.
+ *
+ * Not through `api.get`, which parses JSON — this answers with a zip, and the
+ * filename the operator should see is on the `Content-Disposition` header rather
+ * than in a body. So the fetch is done here and the browser is handed a blob.
+ *
+ * A link with `download` cannot carry the `Authorization` header the platform
+ * gate needs, which is why this is a fetch and a synthesised click rather than
+ * an anchor pointing at the route.
+ */
+export async function exportTenant(
+  getToken: () => Promise<string | null>,
+  tenant: PlatformTenant,
+): Promise<void> {
+  const token = await getToken();
+  const res = await fetch(`${getApiBaseUrl()}/platform/tenants/${tenant.id}/export`, {
+    headers: {
+      ...tenantRequestHeaders(),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
+  if (!res.ok) {
+    throw new ApiError(res.status, undefined, "The studio could not be exported.");
+  }
+
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filenameFrom(res) ?? `${tenant.slug}.zip`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  // Revoked on the next tick: released immediately, the click may not have read
+  // it yet in some browsers.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+/** The name the server chose, if it offered one. */
+function filenameFrom(res: Response): string | null {
+  const header = res.headers.get("Content-Disposition");
+  return header?.match(/filename="([^"]+)"/)?.[1] ?? null;
+}
+
+/** Put an archive back into an empty studio. */
+export function importTenant(api: Api, id: string, archive: File) {
+  const body = new FormData();
+  body.append("archive", archive);
+  return api.post<ImportSummary>(`/platform/tenants/${id}/import`, body);
 }
 
 /**

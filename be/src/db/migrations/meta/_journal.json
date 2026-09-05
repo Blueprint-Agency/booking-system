@@ -267,6 +267,27 @@
       "when": 1788418226000,
       "tag": "0037_drop_client_org_ids",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1788608794571,
+      "tag": "0038_tenant_settings_transfer",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1788611037613,
+      "tag": "0039_reconcile_identity_snapshot",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1788613826448,
+      "tag": "0040_tenant_scoped_unique_keys",
+      "breakpoints": true
     }
   ]
 }

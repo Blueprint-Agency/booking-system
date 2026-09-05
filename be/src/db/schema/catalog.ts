@@ -121,7 +121,12 @@ export const merchOrders = pgTable(
     // One order per payment. Both the webhook and the confirmation page's
     // sync-session deliver the same purchase, so this is what makes the second
     // one a no-op. Postgres allows many NULLs, which is what free items want.
-    intentUnique: uniqueIndex('merch_orders_intent_unique').on(table.stripePaymentIntentId),
+    // Per Tenant: every lookup already pairs the intent with a tenant id, and a
+    // studio's archive must be restorable beside the studio it came from.
+    intentUnique: uniqueIndex('merch_orders_intent_unique').on(
+      table.tenantId,
+      table.stripePaymentIntentId,
+    ),
   }),
 )
 

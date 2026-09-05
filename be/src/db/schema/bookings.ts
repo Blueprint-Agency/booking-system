@@ -62,12 +62,19 @@ export const bookings = pgTable(
     classStateIdx: index('bookings_class_state_idx').on(table.tenantId, table.classId, table.state),
     tierStateIdx: index('bookings_tier_state_idx').on(table.tenantId, table.workshopTierId, table.state),
     ptSessionIdx: index('bookings_pt_session_idx').on(table.tenantId, table.ptSessionId),
-    qrTokenUnique: uniqueIndex('bookings_qr_token_unique').on(table.qrToken),
-    codeUnique: uniqueIndex('bookings_code_unique').on(table.code),
+    // Scoped to the Tenant, like every other index here. A booking reference and
+    // a QR token identify a booking *within a studio* — they are shown to that
+    // studio's members and scanned at that studio's door, and every query for
+    // them already runs inside `withTenant`. Platform-wide they would make two
+    // studios share one namespace of short codes: a collision in one studio's
+    // generator becomes a failure in another's, and a studio's archive could
+    // never be restored beside the studio it came from.
+    qrTokenUnique: uniqueIndex('bookings_qr_token_unique').on(table.tenantId, table.qrToken),
+    codeUnique: uniqueIndex('bookings_code_unique').on(table.tenantId, table.code),
     checkInStateIdx: index('bookings_check_in_state_idx').on(table.tenantId, table.checkInState),
     // Partial unique — stripe_payment_intent_id is nullable for non-workshop bookings.
     stripeIntentUnique: uniqueIndex('bookings_stripe_intent_unique')
-      .on(table.stripePaymentIntentId)
+      .on(table.tenantId, table.stripePaymentIntentId)
       .where(sql`${table.stripePaymentIntentId} IS NOT NULL`),
     kindFkClass: check(
       'bookings_kind_class_fk',
