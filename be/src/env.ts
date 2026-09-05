@@ -89,6 +89,14 @@ const schema = z.object({
   CLERK_CLIENT_WEBHOOK_SECRET: z.string().optional(),
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  /**
+   * The fixed half of the card statement descriptor, as set on the Stripe
+   * account. Not a secret and not per-tenant: it names the platform, and the
+   * studio's name is appended per charge in the 22 characters left after it
+   * (`lib/stripe.ts`). Unset means no suffix is sent at all — Stripe refuses one
+   * without a prefix — so every studio charges under the account's own name.
+   */
+  STRIPE_STATEMENT_DESCRIPTOR_PREFIX: z.string().optional(),
 
   // SMTP — credentials and the platform's envelope identity. Host/port/secure
   // are hardcoded in lib/mailer.ts (Gmail SMTP is fixed for this platform's

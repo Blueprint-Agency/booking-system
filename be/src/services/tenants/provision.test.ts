@@ -26,6 +26,9 @@ function fakeClerk(
       calls.push('delete')
       live.delete(id)
     },
+    async linkOrganizationToTenant() {
+      calls.push('link')
+    },
     async inviteOrgAdmin() {
       calls.push('invite')
     },

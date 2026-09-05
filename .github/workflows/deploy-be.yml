@@ -129,7 +129,8 @@ jobs:
             #   org secrets: TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET, SSH_PRIVATE_KEY, DOCKERHUB_TOKEN
             #   env vars:    PORT, PORTAL_ORIGIN, CLIENT_ORIGIN, TENANT_ORIGIN_PATTERNS,
             #            SUPERADMIN_EMAIL, PLATFORM_ADMIN_EMAILS,
-            #            (optional) MAIL_FROM_EMAIL, MAIL_FROM_NAME
+            #            (optional) MAIL_FROM_EMAIL, MAIL_FROM_NAME,
+            #            (optional) STRIPE_STATEMENT_DESCRIPTOR_PREFIX
             #   env secrets: DB_USER, DB_PASSWORD, DB_NAME, DB_APP_PASSWORD,
             #            CLERK_STAFF_PUBLISHABLE_KEY, CLERK_STAFF_SECRET_KEY, CLERK_STAFF_WEBHOOK_SECRET,
             #            CLERK_CLIENT_PUBLISHABLE_KEY, CLERK_CLIENT_SECRET_KEY, CLERK_CLIENT_WEBHOOK_SECRET,
@@ -210,6 +211,8 @@ jobs:
               echo "MAIL_FROM_NAME=${{ vars.MAIL_FROM_NAME }}"
               echo "STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }}"
               echo "STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}"
+              # Not a secret — it must match the prefix set on the Stripe account.
+              echo "STRIPE_STATEMENT_DESCRIPTOR_PREFIX=${{ vars.STRIPE_STATEMENT_DESCRIPTOR_PREFIX }}"
               echo "R2_ACCOUNT_ID=${{ secrets.R2_ACCOUNT_ID }}"
               echo "R2_ACCESS_KEY_ID=${{ secrets.R2_ACCESS_KEY_ID }}"
               echo "R2_SECRET_ACCESS_KEY=${{ secrets.R2_SECRET_ACCESS_KEY }}"

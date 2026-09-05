@@ -65,6 +65,12 @@ import { activateAfterFirstStaff, forgetCachedTenants, loadTenantById } from './
  */
 export interface ClerkOrgPort {
   createOrganization(input: { name: string; slug: string }): Promise<string>
+  /** Stamps the Tenant onto the organization, once the row it names exists. */
+  linkOrganizationToTenant(input: {
+    organizationId: string
+    tenantId: string
+    slug: string
+  }): Promise<void>
   deleteOrganization(organizationId: string): Promise<void>
   inviteOrgAdmin(input: {
     organizationId: string
@@ -78,15 +84,37 @@ export const clerkOrgPort: ClerkOrgPort = {
     // The Clerk organization slug is set from ours so the two identifiers agree
     // when someone is reading a Clerk dashboard next to our tenant list. It is
     // not load-bearing — `clerk_portal_org_id` is what we resolve on.
-    const org = await clerkStaffApp.organizations.createOrganization({
-      name: input.name,
-      slug: input.slug,
-    })
+    let org
+    try {
+      org = await clerkStaffApp.organizations.createOrganization({
+        name: input.name,
+        slug: input.slug,
+      })
+    } catch (err) {
+      // Clerk keeps its own slug uniqueness across the instance. The one way it
+      // collides with a slug our table calls free is an orphan from a failed
+      // rollback — and the caller's answer is the same as for a taken slug,
+      // rather than a raw upstream error with the studio half-explained.
+      if (isClerkSlugTakenError(err)) throw new ConflictError('slug_taken', { slug: input.slug })
+      throw err
+    }
     return org.id
   },
 
   async deleteOrganization(organizationId) {
     await clerkStaffApp.organizations.deleteOrganization(organizationId)
+  },
+
+  // Written after the row exists, so the id on the organization always names a
+  // studio that is really there. Its purpose is legibility from Clerk's side:
+  // an organization left behind by a failed rollback carries no tenant id, and
+  // is therefore telling apart from a live studio's in the dashboard. Public
+  // rather than private metadata — it carries nothing secret, and the portal's
+  // own session can read it.
+  async linkOrganizationToTenant({ organizationId, tenantId, slug }) {
+    await clerkStaffApp.organizations.updateOrganizationMetadata(organizationId, {
+      publicMetadata: { tenant_id: tenantId, tenant_slug: slug },
+    })
   },
 
   async inviteOrgAdmin({ organizationId, email, redirectUrl }) {
@@ -101,6 +129,22 @@ export const clerkOrgPort: ClerkOrgPort = {
       ...(redirectUrl ? { redirectUrl } : {}),
     })
   },
+}
+
+/**
+ * Clerk's "that slug is already an organization's". Its API error shape is a
+ * list, and the slug error names its parameter — the code alone
+ * (`form_identifier_exists`) is shared with a taken email.
+ */
+export function isClerkSlugTakenError(err: unknown): boolean {
+  const errors = (err as { errors?: Array<{ code?: string; meta?: { paramName?: string } }> } | null)
+    ?.errors
+  if (!Array.isArray(errors)) return false
+  return errors.some(
+    e =>
+      e?.meta?.paramName === 'slug' &&
+      (e.code === 'form_identifier_exists' || e.code?.endsWith('_exists') === true),
+  )
 }
 
 /**
@@ -305,6 +349,25 @@ export async function provisionTenant(
 
         return { tenant, adminId }
       })
+
+      // After the commit, and still inside the rollback's reach. Purely a
+      // diagnostic — nothing resolves on it — so a failure is logged and the
+      // studio stands: tearing down a working Tenant because a metadata write
+      // did not land would be the half-created Tenant this file exists to rule
+      // out, arrived at from the other side.
+      try {
+        await clerk.linkOrganizationToTenant({
+          organizationId: portalOrgId,
+          tenantId: created.tenant.id,
+          slug,
+        })
+      } catch (err) {
+        logger.error(
+          { err, organizationId: portalOrgId, tenantId: created.tenant.id },
+          'tenant provisioning: could not stamp the tenant onto the Clerk organization',
+        )
+        captureException(err, { scope: 'tenant-provision-org-metadata' })
+      }
 
       return created
     })

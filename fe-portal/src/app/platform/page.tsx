@@ -40,7 +40,7 @@ export default function PlatformPage() {
   // The super portal belongs to no studio, so its session must be active in no
   // organization. An operator who visited a studio's portal first would
   // otherwise still be carrying that studio's claim. See `active-organization.ts`.
-  const orgStatus = useActiveOrganization(isLoaded && isSignedIn === true);
+  const { status: orgStatus } = useActiveOrganization(isLoaded && isSignedIn === true);
 
   const [tenants, setTenants] = useState<PlatformTenant[] | null>(null);
   /** Set when the backend says this account may not be here — a 404, because the

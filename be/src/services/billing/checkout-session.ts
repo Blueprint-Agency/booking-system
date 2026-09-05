@@ -7,7 +7,8 @@
  * What a purchase *costs* is not decided here: the caller's service prices it
  * and hands the lines over already priced.
  */
-import { stripe } from '../../lib/stripe'
+import { statementDescriptorSuffix, stripe } from '../../lib/stripe'
+import { tenantDisplayName } from '../tenants/mail-identity'
 
 export interface CheckoutLine {
   name: string
@@ -45,6 +46,15 @@ export type CheckoutQuote<Granted> =
     }
 
 export interface CheckoutSessionInput {
+  /**
+   * The studio the sale belongs to. Stamped on the session, the payment intent
+   * and so the charge, because every studio sells on the one Stripe account:
+   * without it the dashboard, an export and a future move to Stripe Connect
+   * cannot tell one studio's money from another's. The webhook does not read
+   * it — it routes on `client_id` through the owner-owned resolver (migration
+   * 0034), which cannot be forged by anyone who can edit metadata.
+   */
+  tenantId: string
   email: string
   lines: CheckoutLine[]
   /**
@@ -60,9 +70,21 @@ export interface CheckoutSessionInput {
 }
 
 export async function createCheckoutSession(input: CheckoutSessionInput): Promise<string | null> {
+  const studioName = await tenantDisplayName(input.tenantId)
+  const suffix = statementDescriptorSuffix(studioName)
+  const tenantMetadata = { tenant_id: input.tenantId, client_id: input.metadata.client_id ?? '' }
   const session = await stripe.checkout.sessions.create({
     mode: 'payment',
     customer_email: input.email,
+    // Metadata does not flow from a session to its intent on its own, and the
+    // intent is what a refund, a dispute and a bank statement point at. The
+    // studio's name on the statement is the same reason `saleDescription`
+    // carries it: a charge from a name the member has never heard of is a
+    // chargeback.
+    payment_intent_data: {
+      metadata: tenantMetadata,
+      ...(suffix ? { statement_descriptor_suffix: suffix } : {}),
+    },
     line_items: input.lines.map(line => ({
       price_data: {
         currency: 'sgd' as const,
@@ -74,7 +96,7 @@ export async function createCheckoutSession(input: CheckoutSessionInput): Promis
     ...(input.expiresAt
       ? { expires_at: Math.floor(input.expiresAt.getTime() / 1000) }
       : {}),
-    metadata: input.metadata,
+    metadata: { ...input.metadata, tenant_id: input.tenantId },
     success_url: input.successUrl,
     cancel_url: input.cancelUrl,
   })

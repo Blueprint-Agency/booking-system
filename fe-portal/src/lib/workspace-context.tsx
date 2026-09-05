@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -23,6 +24,17 @@ import type { Location, StaffRole, StaffUser } from "@/types";
  * browser had remembered, which the picker re-asks for on the next visit.
  */
 export const STORAGE_KEY_LOC = "rt.activeLocationId";
+
+const ORG_RETRY_LIMIT = 3;
+
+/** The backend's refusal for a token that carries no organization claim. */
+function isOrganizationRequired(body: unknown): boolean {
+  return (
+    typeof body === "object" &&
+    body !== null &&
+    (body as { error?: unknown }).error === "organization_required"
+  );
+}
 
 interface AuthMePayload {
   id: string;
@@ -88,7 +100,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   // The token has to carry this studio's Clerk organization before the first
   // call, or the backend answers 403 and `loadMe` below reads that as "no staff
   // row" and signs the user straight back out. See `active-organization.ts`.
-  const orgStatus = useActiveOrganization(isLoaded && isSignedIn === true);
+  const { status: orgStatus, refreshMemberships } = useActiveOrganization(
+    isLoaded && isSignedIn === true,
+  );
+  // How many times a refused `organization_required` has been answered by
+  // re-reading memberships. The backend grants the membership on that very
+  // refusal, so one retry is normally enough; the cap is for an account that
+  // genuinely has no place here, which must still end in a sign-out.
+  const orgRetries = useRef(0);
+  const [orgRetryTick, setOrgRetryTick] = useState(0);
 
   const [loading, setLoading] = useState(true);
   const [currentStaff, setCurrentStaff] = useState<StaffUser | null>(null);
@@ -134,7 +154,29 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         grantedLocationIds: me.granted_location_ids,
       });
       setLocations(accessible);
+      orgRetries.current = 0;
     } catch (err) {
+      if (
+        err instanceof ApiError &&
+        err.status === 403 &&
+        isOrganizationRequired(err.body) &&
+        orgRetries.current < ORG_RETRY_LIMIT
+      ) {
+        // Signed in, staff row in place, but the session is in no organization
+        // for this studio yet. The backend has just granted the membership;
+        // Clerk's list in this tab predates it. Re-read, which flips the
+        // activation verdict and re-runs this load with a token that carries
+        // the claim.
+        // No delay: the backend granted the membership *before* it answered
+        // this 403, so there is nothing to wait for — only Clerk's copy of the
+        // list in this tab is behind, and re-reading it is the whole fix.
+        orgRetries.current += 1;
+        await refreshMemberships();
+        // Re-runs the load effect below, whether or not the activation verdict
+        // moved — a list that is still empty must end in a sign-out, not silence.
+        setOrgRetryTick(tick => tick + 1);
+        return;
+      }
       if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
         // Clerk session exists but no staff_users row, or staff archived/pending.
         // Clear the persisted workspace so the next user on this browser doesn't
@@ -151,7 +193,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [api, router, signOut]);
+  }, [api, router, signOut, refreshMemberships]);
 
   // Once Clerk + API are ready, fetch /auth/me. Held back until the active
   // organization has settled — `settling` is the window in which a request
@@ -169,7 +211,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     // this account may be here, and its refusal is the honest answer.
     if (orgStatus === "settling") return;
     void loadMe();
-  }, [isLoaded, isSignedIn, orgStatus, loadMe]);
+  }, [isLoaded, isSignedIn, orgStatus, orgRetryTick, loadMe]);
 
   // For superadmin, additionally fetch ALL locations (incl. archived) so the
   // Locations page + manage dialog can render archived rows.

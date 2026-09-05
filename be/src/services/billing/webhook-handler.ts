@@ -415,6 +415,15 @@ async function dispatchStripeEvent(event: Stripe.Event): Promise<void> {
     // The whole unwind lives on this event, so a refund issued from the portal
     // and one issued from the provider's dashboard are the same operation. It is
     // idempotent — the provider retries.
-    await unwindRefund(paymentIntentId)
+    //
+    // The charge's own `tenant_id` is passed as a tiebreaker, not as the
+    // routing key. One intent can belong to two studios — an archive restored
+    // beside its source keeps the intent id in both (migration 0040) — and the
+    // resolver cannot pick between them. Stripe copies the intent's metadata
+    // onto the charge, and this backend wrote that metadata with its own secret
+    // key at checkout, so it is the one statement that says which of the two
+    // the money was actually taken for. It is only ever consulted to choose
+    // among the tenants the database already named.
+    await unwindRefund(paymentIntentId, charge.metadata?.tenant_id ?? null)
   }
 }

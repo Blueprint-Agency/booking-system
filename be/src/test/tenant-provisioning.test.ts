@@ -34,6 +34,9 @@ let orgSeq = 0
 function fakeClerk(overrides: Partial<ClerkOrgPort> = {}) {
   const live = new Set<string>()
   const invited: string[] = []
+  /** Organization id → the tenant stamped on it, so "the link was written" is
+   *  also a question the test can ask. */
+  const linked = new Map<string, string>()
 
   const port: ClerkOrgPort = {
     async createOrganization() {
@@ -44,12 +47,15 @@ function fakeClerk(overrides: Partial<ClerkOrgPort> = {}) {
     async deleteOrganization(id) {
       live.delete(id)
     },
+    async linkOrganizationToTenant({ organizationId, tenantId }) {
+      linked.set(organizationId, tenantId)
+    },
     async inviteOrgAdmin({ email }) {
       invited.push(email)
     },
     ...overrides,
   }
-  return { port, live, invited }
+  return { port, live, invited, linked }
 }
 
 describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {

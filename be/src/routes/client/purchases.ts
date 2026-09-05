@@ -108,6 +108,7 @@ const app = new Hono()
       return c.json({ outcome: 'granted', client_package_id: quote.clientPackageId, free: true }, 201)
     }
     const url = await createCheckoutSession({
+      tenantId: tenantId(c),
       email: c.get('clientRow').email,
       lines: quote.lines,
       expiresAt: quote.expiresAt,
@@ -141,6 +142,7 @@ const app = new Hono()
       c.req.valid('json').client_package_id,
     )
     const url = await createCheckoutSession({
+      tenantId: tenantId(c),
       email: c.get('clientRow').email,
       lines: quote.lines,
       expiresAt: null,
@@ -163,6 +165,7 @@ const app = new Hono()
       return c.json({ outcome: 'granted', order_id: quote.orderId, free: true }, 201)
     }
     const url = await createCheckoutSession({
+      tenantId: tenantId(c),
       email: c.get('clientRow').email,
       lines: quote.lines,
       expiresAt: quote.expiresAt,
@@ -189,6 +192,7 @@ const app = new Hono()
       return c.json({ outcome: 'granted', booking_id: quote.bookingId, free: true }, 201)
     }
     const url = await createCheckoutSession({
+      tenantId: tenantId(c),
       email: c.get('clientRow').email,
       lines: quote.lines,
       expiresAt: quote.expiresAt,
