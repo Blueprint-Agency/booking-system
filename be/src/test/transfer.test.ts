@@ -139,26 +139,29 @@ test('an export carries one studio and not the other', options, async () => {
   )
 })
 
-test('a studio deleted and restored is the same studio', options, async () => {
-  // The flow the feature exists for: take the studio out, remove it, put it
-  // back.
+test('a studio emptied and restored in place is the same studio, ids included', options, async () => {
+  // The flow the feature exists for: take the studio out, lose its rows, put
+  // them back where they were.
   //
-  // On a studio of its own, never one of the fixture pair. Deleting a fixture
+  // On a studio of its own, never one of the fixture pair. Emptying a fixture
   // would empty the studios every other test in this suite compares against,
   // and the failures would land somewhere else entirely.
   const source = await studioWithData(`source-${Date.now()}`)
   const archive = await transfer.exportTenant(source)
   await deleteTenantRows(source)
 
-  const target = await emptyTenant(`restore-${Date.now()}`)
+  // Back into the studio it came from. That is the one case where the archive's
+  // ids are provably free — this studio holds none of them — and therefore the
+  // one case that keeps them.
+  const target = source
   const summary = await transfer.importTenant(target, archive)
   assert.equal(summary.sourceTenant.slug, archive.manifest.tenant.slug)
   assert.ok(summary.total > 0, 'a studio with data must restore some rows')
 
-  // The source is gone, so this is a restore and not a copy: every row goes
-  // back under the id it had, because things outside this database — a Stripe
-  // intent's metadata, a bookmarked admin URL — still name it.
-  assert.equal(summary.remapped, false, 'a restore must not renumber the studio')
+  // Every row goes back under the id it had, because things outside this
+  // database — a Stripe intent's metadata, a bookmarked admin URL — still name
+  // it.
+  assert.equal(summary.remapped, false, 'a restore in place must not renumber the studio')
   const restored = await harness.db.execute<{ id: string }>(
     sql`SELECT id FROM clients WHERE tenant_id = ${target}`,
   )
@@ -255,6 +258,55 @@ test('a studio copies into a second one beside it', options, async () => {
     sql`SELECT count(*)::int AS n FROM clients WHERE tenant_id = ${source}`,
   )
   assert.equal(before?.n, originals.size)
+})
+
+test('one archive restores into two studios, even with the source gone', options, async () => {
+  // The case that broke the cleverer rule this replaced. Asking "are the
+  // archive's rows still in the database" answers no for the *second* import as
+  // much as the first when the source studio was never on this database — so
+  // both took the keep-the-ids branch and the second collided row by row.
+  const source = await studioWithData(`twice-src-${Date.now()}`)
+  const archive = await transfer.exportTenant(source)
+  await deleteTenantRows(source)
+
+  const first = await emptyTenant(`twice-a-${Date.now()}`)
+  const second = await emptyTenant(`twice-b-${Date.now()}`)
+
+  const one = await transfer.importTenant(first, archive)
+  const two = await transfer.importTenant(second, archive)
+
+  assert.equal(one.remapped, true, 'neither target is the studio it came from')
+  assert.equal(two.remapped, true)
+  assert.equal(one.total, two.total, 'both studios got the whole archive')
+
+  // Two studios, the same archive, no row shared between them.
+  const a = await harness.db.execute<{ id: string }>(
+    sql`SELECT id FROM clients WHERE tenant_id = ${first}`,
+  )
+  const b = await harness.db.execute<{ id: string }>(
+    sql`SELECT id FROM clients WHERE tenant_id = ${second}`,
+  )
+  assert.ok(a.length > 0)
+  assert.equal(a.length, b.length)
+  const ids = new Set(a.map(r => r.id))
+  for (const row of b) assert.ok(!ids.has(row.id), 'the two copies must not share a row id')
+})
+
+test('a studio restored from an archive gets its branding too', options, async () => {
+  // The settings write is in the same transaction as the rows. Left outside it,
+  // a failure there would leave a studio holding all of its data and none of its
+  // identity — and the emptiness check would then refuse the retry.
+  const source = await studioWithData(`branded-${Date.now()}`)
+  const archive = await transfer.exportTenant(source)
+
+  const target = await emptyTenant(`branded-dst-${Date.now()}`)
+  const summary = await transfer.importTenant(target, archive)
+  assert.equal(summary.written.tenant_settings, 1)
+
+  const [settings] = await harness.db.execute<{ waiver_text: string }>(
+    sql`SELECT waiver_text FROM tenant_settings WHERE tenant_id = ${target}`,
+  )
+  assert.equal(settings?.waiver_text, 'The studio’s own words.')
 })
 
 test('the archive survives a round trip through a zip', options, async () => {

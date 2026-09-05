@@ -17,9 +17,17 @@
  *    every tenant has no honest tenant context to be fenced by.
  *  - The dev team is a handful of people who change about never.
  *
- * `SUPERADMIN_EMAIL` — the address Yoga Sadhana's own first superadmin is seeded
- * from — is folded in by the caller, so a deployment that sets nothing new keeps
- * exactly one platform admin rather than none.
+ * `PLATFORM_ADMIN_EMAILS` is the whole of the list. `SUPERADMIN_EMAIL` used to
+ * be folded in by the caller, as a bootstrap convenience so that a deployment
+ * setting nothing new kept one platform admin rather than none. That
+ * convenience was the escalation described above, granted by default: it made
+ * the first studio's superadmin an operator of every studio on the platform.
+ *
+ * An empty allowlist is therefore allowed, and means a super portal nobody can
+ * reach. That is the right failure for an unset environment variable — refusing
+ * everyone is recoverable, admitting a studio's superadmin to the whole platform
+ * is not — and `middleware/platform-admin.ts` announces it at boot rather than
+ * leaving it to be discovered at the door.
  */
 
 /**

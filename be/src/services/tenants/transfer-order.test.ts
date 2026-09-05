@@ -50,6 +50,22 @@ test('a table that points at itself defers that column instead of ordering', () 
   assert.deepEqual(unbreakable, [])
 })
 
+test('a REQUIRED self-reference is unbreakable, not deferred', () => {
+  // Deferring means writing NULL on the first pass and filling it in on the
+  // second, which a NOT NULL column refuses. Reported here, `exportTenant` will
+  // not write an archive that could not be restored; deferred anyway, the
+  // restore fails halfway through with a not-null violation on the day it is
+  // needed. No such column exists today — this is the guard for the day one is
+  // added.
+  const { order, deferred, unbreakable } = orderTables(
+    ['nodes'],
+    [{ child: 'nodes', parent: 'nodes', column: 'parent_id', required: true }],
+  )
+  assert.deepEqual(order, ['nodes'])
+  assert.deepEqual(deferred, {})
+  assert.deepEqual(unbreakable, [['nodes']])
+})
+
 test('a cycle between two tables is broken on its nullable edge', () => {
   const { order, deferred, unbreakable } = orderTables(
     ['a', 'b'],

@@ -48,8 +48,25 @@ const scope = new AsyncLocalStorage<TenantScope>()
  * that can refuse a cross-tenant read; if it starts to bite, the fix is to move
  * the external call out of the request path, not to widen the context.
  */
-export async function withTenant<T>(tenantId: string, fn: () => Promise<T>): Promise<T> {
+export async function withTenant<T>(
+  tenantId: string,
+  fn: () => Promise<T>,
+  options: { isolation?: 'repeatable read' } = {},
+): Promise<T> {
   return pool.transaction(async tx => {
+    // Before anything else, because Postgres refuses SET TRANSACTION once the
+    // transaction has run a query — and `set_config` below is a query.
+    //
+    // The default is READ COMMITTED, where every statement takes its own
+    // snapshot. That is right for a request, which reads a little and writes a
+    // little, and wrong for anything that reads many tables and expects them to
+    // agree: a row inserted between two of the reads is in one and not the
+    // other. `exportTenant` is that case, and a studio archive whose bookings
+    // reference a member the archive does not contain only fails on the day it
+    // is restored.
+    if (options.isolation === 'repeatable read') {
+      await tx.execute(sql`set transaction isolation level repeatable read`)
+    }
     await tx.execute(sql`select set_config('app.tenant_id', ${tenantId}, true)`)
     return scope.run({ tenantId, tx: tx as unknown as Db }, fn)
   })
