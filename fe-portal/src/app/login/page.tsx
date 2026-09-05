@@ -7,6 +7,8 @@ import { Button, Input, Label } from "@/components/ui";
 import { PasswordInput } from "@/components/auth/password-input";
 import { OtpInput } from "@/components/auth/otp-input";
 import { StudioMark } from "@/components/brand/studio-mark";
+import { portalHomePath } from "@/lib/super-portal";
+import { isSuperPortalHost } from "@/lib/tenant-host";
 
 // Unexpected throw → readable message.
 function clerkErrorMessage(err: unknown): string {
@@ -87,10 +89,15 @@ function LoginContent() {
   // Only honour internal paths — never an absolute/protocol-relative URL — so a
   // crafted ?next= can't turn the login into an open redirect.
   const rawNext = searchParams?.get("next");
+  // The fallback is the hostname's own home. `/admin` is a studio route that
+  // does not exist on the super portal, so a fixed default would land a
+  // superadmin outside the app they just signed in to.
   const next =
     rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//")
       ? rawNext
-      : "/admin";
+      : portalHomePath(
+          typeof window !== "undefined" && isSuperPortalHost(window.location.host),
+        );
 
   const [view, setView] = useState<"signin" | "forgot" | "reset" | "mfa">("signin");
 

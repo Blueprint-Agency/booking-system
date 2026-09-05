@@ -27,8 +27,24 @@
 /** Where the super portal's own pages live in the `app/` tree. */
 export const PLATFORM_PREFIX = "/platform";
 
+/** Where a studio's staff portal starts. */
+export const STUDIO_PREFIX = "/admin";
+
 /** Routes that belong to neither product and must work on both hostnames. */
 const SHARED_PREFIXES = ["/login", "/signup", "/api/", "/_next/"];
+
+/**
+ * Where a signed-in user belongs on this hostname.
+ *
+ * The two products do not share a home. `/admin` is a studio route and the
+ * super portal has no Tenant to render it for, so sending someone there after
+ * sign-in is sending them somewhere that does not exist on their hostname —
+ * `portalRouting` bounces it straight back out. The destination has to be
+ * decided by the same rule that decided which product they are in.
+ */
+export function portalHomePath(superPortal: boolean): string {
+  return superPortal ? PLATFORM_PREFIX : STUDIO_PREFIX;
+}
 
 export type PortalRouting =
   /** Serve the request as-is. */

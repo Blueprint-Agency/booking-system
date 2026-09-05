@@ -1,8 +1,11 @@
 import type { Metadata } from "next";
 import { Manrope } from "next/font/google";
+import { headers } from "next/headers";
 import { ClerkProvider } from "@clerk/nextjs";
 import { Toaster } from "sonner";
 import { getBrand } from "@/lib/brand";
+import { portalHomePath } from "@/lib/super-portal";
+import { isSuperPortalHost } from "@/lib/tenant-host";
 import { BrandProvider } from "@/components/brand/brand-provider";
 import "./globals.css";
 
@@ -24,13 +27,19 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const brand = await getBrand();
+  // Two corrections in one. The destination is read from the hostname, because
+  // `/admin` is a studio route the super portal has no Tenant to render — and
+  // it is a *fallback* rather than a *force*, because the force variant wins
+  // over the `?next=` the proxy set on its way to the login page, which is the
+  // only record of where the user was actually going.
+  const home = portalHomePath(isSuperPortalHost((await headers()).get("host")));
 
   return (
     <ClerkProvider
       signInUrl="/login"
       signUpUrl="/signup"
-      signInForceRedirectUrl="/admin"
-      signUpForceRedirectUrl="/admin"
+      signInFallbackRedirectUrl={home}
+      signUpFallbackRedirectUrl={home}
     >
       <html lang="en" className={sans.variable}>
         <body className="font-sans antialiased bg-paper text-ink">
