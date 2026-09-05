@@ -4,7 +4,7 @@ import { suggestSlug } from "./platform";
 
 test("a studio name becomes a plausible slug", () => {
   assert.equal(suggestSlug("Acme Yoga"), "acme-yoga");
-  assert.equal(suggestSlug("Yoga Sadhana"), "yoga-sadhana");
+  assert.equal(suggestSlug("Northwind Studio"), "northwind-studio");
 });
 
 test("punctuation collapses rather than accumulating hyphens", () => {

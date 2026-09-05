@@ -48,7 +48,7 @@ These show up in many features. Understanding them up front makes the rest read 
 ### 0.5 Per-booking QR
 
 - Every confirmed booking generates a **QR per session** (not a generic per-user QR).
-- Format: `YS-BOOKING-{bookingId}-{sessionId}`.
+- Format: `RT-BOOKING-{bookingId}-{sessionId}`.
 - Front-desk scans → marks attendance → updates `attended`/`late`.
 
 ### 0.6 Cancellation policy (set in admin)

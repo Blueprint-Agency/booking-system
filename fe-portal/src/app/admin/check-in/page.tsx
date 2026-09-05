@@ -120,7 +120,7 @@ export default function CheckInPage() {
     <div>
       <PageHeader
         title="Check-in"
-        description="Front-desk daily driver. Scan QR codes or type the booking code (YS-XXXXXX). Both resolve customer + session in one lookup."
+        description="Front-desk daily driver. Scan QR codes or type the booking code (RT-XXXXXX). Both resolve customer + session in one lookup."
       />
 
       {activeLocation && (
@@ -254,7 +254,7 @@ export default function CheckInPage() {
               </Label>
               <Input
                 id="code-input"
-                placeholder="YS-XXXXXX"
+                placeholder="RT-XXXXXX"
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 className="uppercase"

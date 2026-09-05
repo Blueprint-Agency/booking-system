@@ -7,7 +7,7 @@ const STAGING = "portal.dev.reservetoday.app";
 const PROD = "portal.reservetoday.app";
 
 test("local host with a port yields the slug", () => {
-  assert.equal(tenantSlugFromHost("yogasadhana.portal.localhost:3001", LOCAL), "yogasadhana");
+  assert.equal(tenantSlugFromHost("northwind.portal.localhost:3001", LOCAL), "northwind");
   assert.equal(tenantSlugFromHost("acme.portal.localhost:3001", LOCAL), "acme");
 });
 
@@ -19,13 +19,13 @@ test("the port is irrelevant on both sides", () => {
 
 test("staging host yields the slug", () => {
   assert.equal(
-    tenantSlugFromHost("yogasadhana.portal.dev.reservetoday.app", STAGING),
-    "yogasadhana",
+    tenantSlugFromHost("northwind.portal.dev.reservetoday.app", STAGING),
+    "northwind",
   );
 });
 
 test("production host yields the slug", () => {
-  assert.equal(tenantSlugFromHost("yogasadhana.portal.reservetoday.app", PROD), "yogasadhana");
+  assert.equal(tenantSlugFromHost("northwind.portal.reservetoday.app", PROD), "northwind");
 });
 
 test("the bare root domain has no slug", () => {
@@ -97,7 +97,7 @@ test("the super portal is the reserved `admin` label, in every environment", () 
 });
 
 test("a studio's hostname is never the super portal", () => {
-  assert.equal(isSuperPortalHost("yogasadhana.portal.reservetoday.app", PROD), false);
+  assert.equal(isSuperPortalHost("northwind.portal.reservetoday.app", PROD), false);
   assert.equal(isSuperPortalHost("acme.portal.localhost:3001", LOCAL), false);
   // The bare root domain, a deeper name, and a foreign host are all not it.
   assert.equal(isSuperPortalHost("portal.reservetoday.app", PROD), false);

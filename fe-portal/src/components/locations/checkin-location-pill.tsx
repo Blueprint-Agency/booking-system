@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { ChevronDown, MapPin } from "lucide-react";
 import { locations as seedLocations } from "@/data";
 
-const STORAGE_KEY = "ys.checkinLocationId";
+// Platform-namespaced, for the reason `STORAGE_KEY_LOC` records.
+const STORAGE_KEY = "rt.checkinLocationId";
 
 export function CheckinLocationPill({
   value,

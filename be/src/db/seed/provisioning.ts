@@ -42,6 +42,13 @@ export type TenantProvisioning = {
     ogImageUrl?: string
     tagline?: string
   }
+  /**
+   * Strings a studio can override, keyed by surface, landing on
+   * `tenant_settings.copy`. A key absent here is not a blank — the frontend
+   * falls back to its own wording, or, where there is no honest default (a
+   * phone number), omits the surface entirely.
+   */
+  copy?: Record<string, string>
   /** Real premises, in the order a member should see them. */
   locations: Array<{
     name: string
@@ -63,6 +70,12 @@ const YOGA_SADHANA: TenantProvisioning = {
     ogImageUrl:
       'https://i0.wp.com/yogasadhana.sg/wp-content/uploads/2025/03/2024YogaSadhana182.jpg?resize=2048%2C1365&ssl=1',
     tagline: 'Singapore Yoga Studio',
+  },
+  copy: {
+    // Digits only, country code first, no `+` — WhatsApp's own deep-link
+    // format. Migration 0042 backfills the same value onto the deployed row,
+    // which this seed cannot reach: it inserts settings ON CONFLICT DO NOTHING.
+    'contact.whatsapp': '6582067247',
   },
   locations: [
     {

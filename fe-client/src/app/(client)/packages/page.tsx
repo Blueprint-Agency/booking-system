@@ -25,7 +25,9 @@ import {
   corporateContactWhatsappHref,
   submitCorporateRequest,
   useCorporatePackages,
+  WHATSAPP_COPY_KEY,
 } from "@/lib/corporate";
+import { useBrandCopy } from "@/components/brand/brand-provider";
 
 // ── Tab definitions ────────────────────────────────────────────────────────────
 
@@ -911,6 +913,7 @@ function PtCard({ pkg }: { pkg: ApiPtPackage }) {
 // ── Corporate ─────────────────────────────────────────────────────────────────
 
 function CorporateSection({ items }: { items: ApiCorporatePackage[] }) {
+  const whatsapp = corporateContactWhatsappHref(useBrandCopy(WHATSAPP_COPY_KEY, ""));
   return (
     <div className="space-y-8">
       <p className="text-sm text-muted text-center max-w-xl mx-auto">
@@ -930,20 +933,23 @@ function CorporateSection({ items }: { items: ApiCorporatePackage[] }) {
         </div>
       )}
 
-      <div className="mt-10 flex flex-col items-center gap-2 text-center">
-        <a
-          href={corporateContactWhatsappHref()}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center justify-center gap-2 rounded-full border border-ink/15 px-5 py-3 text-sm font-medium text-ink hover:bg-warm transition-colors"
-        >
-          <MessageCircle className="h-4 w-4" strokeWidth={1.5} />
-          Contact us on WhatsApp
-        </a>
-        <p className="text-xs text-muted">
-          Questions first? Chat with us before you buy.
-        </p>
-      </div>
+      {/* Only when the studio published a number — see `corporateWhatsappHref`. */}
+      {whatsapp && (
+        <div className="mt-10 flex flex-col items-center gap-2 text-center">
+          <a
+            href={whatsapp}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center justify-center gap-2 rounded-full border border-ink/15 px-5 py-3 text-sm font-medium text-ink hover:bg-warm transition-colors"
+          >
+            <MessageCircle className="h-4 w-4" strokeWidth={1.5} />
+            Contact us on WhatsApp
+          </a>
+          <p className="text-xs text-muted">
+            Questions first? Chat with us before you buy.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

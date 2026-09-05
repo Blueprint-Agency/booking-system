@@ -1,20 +1,28 @@
 import type { Location } from "@/types";
 
+/**
+ * FIXTURE ONLY — this names no studio.
+ *
+ * These used to be tenant #1's two real premises, with their real street
+ * addresses, Google Maps links and front-desk phone numbers, sitting in a file
+ * every studio's portal bundles. Invented ones carry the screens just as well,
+ * and the live list comes from the backend per Tenant.
+ */
 export const locations: Location[] = [
   {
-    id: "loc-breadtalk",
-    name: "Breadtalk IHQ",
-    address: "30 Tai Seng Street, #04-01 Breadtalk IHQ, Singapore 534013",
-    gmapsUrl: "https://maps.app.goo.gl/eGmJxmYcA8WjV3jD8",
-    phone: "+65 6385 8826",
+    id: "loc-riverside",
+    name: "Riverside",
+    address: "12 Riverside Walk, #03-02, Example City 100001",
+    gmapsUrl: "https://maps.google.com/?q=Riverside+Walk",
+    phone: "+65 6000 0001",
     archivedAt: null,
   },
   {
-    id: "loc-outram",
-    name: "Outram Park",
-    address: "10 Sin Ming Drive, #02-12, Singapore 575717",
-    gmapsUrl: "https://maps.app.goo.gl/x7Y9VJVrBVGr9tnq6",
-    phone: "+65 6334 7888",
+    id: "loc-eastgate",
+    name: "Eastgate",
+    address: "88 Eastgate Avenue, #02-11, Example City 100002",
+    gmapsUrl: "https://maps.google.com/?q=Eastgate+Avenue",
+    phone: "+65 6000 0002",
     archivedAt: null,
   },
 ];

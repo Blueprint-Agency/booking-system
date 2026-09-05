@@ -16,8 +16,15 @@ const sans = Manrope({ subsets: ["latin"], variable: "--font-sans" });
  * studio's name in every other studio's browser tab, which is the visible half
  * of #66.
  *
- * The icons fall back to the files in `/public/brand` only when the studio has
- * supplied none — those are the platform's, not a studio's.
+ * The icon falls back to `/brand/platform-mark.svg` only when the studio has
+ * supplied none, and that file is the platform's own mark. It used to be tenant
+ * #1's logo, which meant every studio without a favicon of its own wore tenant
+ * #1's — a fallback must be nobody's branding, never another tenant's.
+ *
+ * There is no `apple` fallback for the same reason in reverse: an
+ * apple-touch-icon is what a member pins to their home screen, so if the studio
+ * has supplied nothing there is nothing honest to put there, and the platform
+ * mark on a member's home screen would name the wrong business.
  */
 export async function generateMetadata(): Promise<Metadata> {
   const brand = await getBrand();
@@ -25,8 +32,8 @@ export async function generateMetadata(): Promise<Metadata> {
     title: brand.tagline ? `${brand.name} — ${brand.tagline}` : brand.name,
     description: brand.tagline ?? `Book classes, workshops and private sessions at ${brand.name}.`,
     icons: {
-      icon: brand.faviconUrl ?? "/brand/favicon.jpg",
-      apple: brand.faviconUrl ?? "/brand/apple-icon.jpg",
+      icon: brand.faviconUrl ?? "/brand/platform-mark.svg",
+      ...(brand.faviconUrl ? { apple: brand.faviconUrl } : {}),
     },
     ...(brand.ogImageUrl ? { openGraph: { images: [brand.ogImageUrl] } } : {}),
   };

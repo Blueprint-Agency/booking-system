@@ -147,20 +147,38 @@ export function submitCorporateRequest(
   });
 }
 
-const WHATSAPP_PHONE = "6582067247";
+/**
+ * The studio's own WhatsApp number, from `tenant_settings.copy["contact.whatsapp"]`.
+ *
+ * This used to be a constant — tenant #1's real number, compiled into the
+ * bundle every studio serves, so a member of any other studio who tapped
+ * "arrange over WhatsApp" messaged tenant #1. There is no sensible fallback for
+ * a phone number, which is why these return `null` rather than a platform one:
+ * a studio that has set none simply does not offer the link.
+ *
+ * Digits only, country code first and no `+` — WhatsApp's own deep-link format.
+ */
+export const WHATSAPP_COPY_KEY = "contact.whatsapp";
 
-/** Builds the WhatsApp deep link used to arrange a purchased corporate package. */
-export function corporateWhatsappHref(packageName: string): string {
-  const text = encodeURIComponent(
-    `Hi! I just purchased the ${packageName} corporate package and would like to arrange the sessions.`,
-  );
-  return `https://api.whatsapp.com/send/?phone=${WHATSAPP_PHONE}&text=${text}&type=phone_number&app_absent=0`;
+function whatsappHref(phone: string | null | undefined, message: string): string | null {
+  const digits = (phone ?? "").replace(/\D/g, "");
+  if (!digits) return null;
+  const text = encodeURIComponent(message);
+  return `https://api.whatsapp.com/send/?phone=${digits}&text=${text}&type=phone_number&app_absent=0`;
 }
 
-/** General "contact us" WhatsApp link for the corporate catalog page. */
-export function corporateContactWhatsappHref(): string {
-  const text = encodeURIComponent(
-    "Hi! I'd like to know more about your corporate yoga packages.",
+/** The deep link used to arrange a purchased corporate package. */
+export function corporateWhatsappHref(
+  phone: string | null | undefined,
+  packageName: string,
+): string | null {
+  return whatsappHref(
+    phone,
+    `Hi! I just purchased the ${packageName} corporate package and would like to arrange the sessions.`,
   );
-  return `https://api.whatsapp.com/send/?phone=${WHATSAPP_PHONE}&text=${text}&type=phone_number&app_absent=0`;
+}
+
+/** General "contact us" link for the corporate catalog page. */
+export function corporateContactWhatsappHref(phone: string | null | undefined): string | null {
+  return whatsappHref(phone, "Hi! I'd like to know more about your corporate yoga packages.");
 }

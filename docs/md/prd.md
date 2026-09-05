@@ -161,7 +161,7 @@ Anywhere the PRD specifies an "inbox" surface, this is the underlying pattern: a
 | `late` | Checked in after start |
 | `no-show` | Did not check in within window |
 
-**Per-booking QR** — every confirmed booking generates a QR scoped to that single booking, format `YS-BOOKING-{bookingId}-{sessionId}`. Front-desk scans the per-booking QR (never a per-user QR) to mark attendance and update state to `attended` or `late`.
+**Per-booking QR** — every confirmed booking generates a QR scoped to that single booking, format `RT-BOOKING-{bookingId}-{sessionId}`. Front-desk scans the per-booking QR (never a per-user QR) to mark attendance and update state to `attended` or `late`.
 
 ### 3.5 Cancellation policy
 
@@ -362,7 +362,7 @@ Super-admin does not see (without impersonating): a "Refund" button, a credit-ad
 #### 6.2.2 In-class
 
 1. Opens **Today** view → starts roster QR scanner.
-2. Scans each arriving client's per-booking QR (`YS-BOOKING-…`) → state flips to `attended` (or `late` if past start). Manual override available with a reason for tech failures.
+2. Scans each arriving client's per-booking QR (`RT-BOOKING-…`) → state flips to `attended` (or `late` if past start). Manual override available with a reason for tech failures.
 3. After class window closes (e.g., 30 min after start), unmarked rows auto-flip to `no-show`.
 
 #### 6.2.3 Post-class
@@ -528,7 +528,7 @@ Named explicitly so a reader does not infer them as v1 commitments:
 - **Unlimited** — package type granting unlimited group classes within a time window (no credit count).
 - **Credit** — currency for group classes only. 1 booking = 1 credit at confirmation.
 - **Session** — currency for private training only. Held by VIP packages. 1 session deducted at private-request confirmation, never on submission.
-- **Per-booking QR** — QR scoped to a single booking, format `YS-BOOKING-{bookingId}-{sessionId}`. Not a per-user QR.
+- **Per-booking QR** — QR scoped to a single booking, format `RT-BOOKING-{bookingId}-{sessionId}`. Not a per-user QR.
 - **Inbox surface** — admin-side queue for an out-of-app flow (refund / cancellation / private-session). State machine + admin notes + audit, never an in-app financial action.
 - **Mutex resolution** — the modal that fires when admin tries to issue a Bundle while user has Unlimited active (or vice versa). Choices: replace, queue.
 - **Factory template** — super-admin-owned canonical email template per event.
