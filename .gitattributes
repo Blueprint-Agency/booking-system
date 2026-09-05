@@ -1,0 +1,9 @@
+# Shell scripts must keep LF endings whatever the checkout platform does.
+# On Windows, core.autocrlf rewrites them to CRLF, and bash then reads the
+# trailing \r as part of the command — `set -euo pipefail\r` fails with
+# "invalid option name" and the script dies on its second line.
+*.sh text eol=lf
+
+# Same reasoning: these are read by tools that expect LF regardless of host.
+*.sql text eol=lf
+Dockerfile text eol=lf
