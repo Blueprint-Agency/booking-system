@@ -12,6 +12,7 @@ import { useRouter } from "next/navigation";
 import { useAuth, useClerk } from "@clerk/nextjs";
 import { ApiError, makeApi, type Api } from "@/lib/api";
 import { reportError } from "@/lib/report-error";
+import { useActiveOrganization } from "@/lib/use-active-organization";
 import type { Location, StaffRole, StaffUser } from "@/types";
 
 export const STORAGE_KEY_LOC = "ys.activeLocationId";
@@ -77,6 +78,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const { signOut } = useClerk();
   const router = useRouter();
 
+  // The token has to carry this studio's Clerk organization before the first
+  // call, or the backend answers 403 and `loadMe` below reads that as "no staff
+  // row" and signs the user straight back out. See `active-organization.ts`.
+  const orgStatus = useActiveOrganization(isLoaded && isSignedIn === true);
+
   const [loading, setLoading] = useState(true);
   const [currentStaff, setCurrentStaff] = useState<StaffUser | null>(null);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -140,7 +146,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, [api, router, signOut]);
 
-  // Once Clerk + API are ready, fetch /auth/me.
+  // Once Clerk + API are ready, fetch /auth/me. Held back until the active
+  // organization has settled — `settling` is the window in which a request
+  // would be refused for carrying no organization claim yet, and this provider
+  // answers a refusal by signing out.
   useEffect(() => {
     if (!isLoaded) return;
     if (!isSignedIn) {
@@ -149,8 +158,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setLocations([]);
       return;
     }
+    // `unavailable` still goes through: the backend is the authority on whether
+    // this account may be here, and its refusal is the honest answer.
+    if (orgStatus === "settling") return;
     void loadMe();
-  }, [isLoaded, isSignedIn, loadMe]);
+  }, [isLoaded, isSignedIn, orgStatus, loadMe]);
 
   // For superadmin, additionally fetch ALL locations (incl. archived) so the
   // Locations page + manage dialog can render archived rows.
