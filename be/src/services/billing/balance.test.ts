@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 
 import {
   amountPaidCents,
+  heldPayments,
   isSettled,
   outstandingCents,
   type PaymentEvidence,
@@ -71,5 +72,56 @@ test('cents, not floats — a total that floats would round short of settled', (
 test('an overpayment owes nothing rather than less than nothing', () => {
   assert.equal(outstandingCents(100_00, 150_00), 0)
   assert.equal(isSettled(100_00, 150_00), true)
+})
+
+// ── what a Refund still has to give back (#92) ───────────────────────────────
+
+test('a Refund of a purchase settled by one payment has one call to make', () => {
+  const held = heldPayments([payment('pi_1', '129.00')])
+  assert.deepEqual(held.map(p => p.paymentIntentId), ['pi_1'])
+})
+
+test('a Refund walks every payment the purchase holds, not just the last', () => {
+  const held = heldPayments([payment('pi_1', '300.00'), payment('pi_2', '200.00')])
+  assert.deepEqual(held.map(p => p.paymentIntentId), ['pi_1', 'pi_2'])
+})
+
+test('a purchase with one payment back and one still held is not a finished Refund', () => {
+  // The unwind refuses this state: voiding the plan here would take the
+  // member's entitlement away while the studio still held part of their money.
+  const held = heldPayments([
+    payment('pi_1', '300.00', 'refunded'),
+    payment('pi_2', '200.00'),
+  ])
+  assert.deepEqual(held.map(p => p.paymentIntentId), ['pi_2'])
+})
+
+test('a Refund is complete only when nothing is held', () => {
+  const payments: PaymentEvidence[] = [
+    payment('pi_1', '300.00', 'refunded'),
+    payment('pi_2', '200.00', 'refunded'),
+  ]
+  assert.deepEqual(heldPayments(payments), [])
+})
+
+test('a payment stuck pending is money the provider still holds, and is returned', () => {
+  // The row is only inserted once the provider confirmed the money; the flip to
+  // succeeded waits for the grant. A pending row is a delivery that died
+  // between the two, and voiding a plan without giving that money back is the
+  // one outcome this must never produce.
+  const held = heldPayments([payment('pi_1', '300.00', 'pending')])
+  assert.deepEqual(held.map(p => p.paymentIntentId), ['pi_1'])
+})
+
+test('a failed payment never became money, so it holds a Refund up for nothing', () => {
+  const payments: PaymentEvidence[] = [
+    payment('pi_1', '300.00', 'refunded'),
+    payment('pi_2', '200.00', 'failed'),
+  ]
+  assert.deepEqual(heldPayments(payments), [])
+})
+
+test('a purchase that never reached the provider has nothing to give back', () => {
+  assert.deepEqual(heldPayments([]), [])
 })
 

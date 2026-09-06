@@ -505,12 +505,12 @@ Polymorphic — a promotion belongs to exactly one parent (`class_package`, `pt_
 | expires_at | timestamptz | nullable — null means **Dormant** for an Unlimited Plan (waiting behind a plan still running); set for credit_bundle + unlimited-with-no-live-plan-in-front + trial (when validity_days set); null for pt and trial-without-expiry |
 | purchased_at | timestamptz | not null |
 | amount_paid_sgd | numeric(10, 2) | not null — effective price actually charged (may be 0 for admin-issued grants) |
-| stripe_payment_intent_id | text | unique, **nullable** — null for admin-issued grants (§16 manual issue) and free trial passes priced at 0 SGD |
+| purchase_id | uuid | FK → `purchases`, **nullable** — the sale that bought the plan. Null for admin-issued grants (§16 manual issue) and free trial passes priced at 0 SGD, the same rows the payment intent it replaced (#92) was null for. A plan settled by more than one payment still has exactly one of these |
 | active | boolean | not null, default true — the lever both the nightly expiry sweep and a Refund's Void pull; `false` means expired or refunded, and the payment row records which |
 
 **`client_packages_kind_fields` CHECK** (`spec-pre-launch-batch.md` §1): `kind='unlimited'` requires `location_id` and `duration_months` NOT NULL; every other kind requires both NULL and `expires_at` NOT NULL. Extended in `0045`: `bound_instructor_id` must be NULL on every kind but `pt` — the column is the whole of what "bound" means, so a binding on any other kind would be one no rule in the domain knows how to read. Strict, no grandfathering — the backfill probe found zero Unlimited Plans in either database before this shipped.
 
-**Indexes:** `(client_id, kind)`, `(client_id, expires_at)` for upcoming-expiry sweep, `(stripe_payment_intent_id) unique where not null`, a **unique partial index `(client_id) WHERE kind='trial'`** — enforces the one-trial-per-client-ever invariant from `fe-client-features.md` §6.1 (a previously-purchased trial, active OR expired, blocks any further trial purchase; the purchase service catches the unique-violation and returns `409 trial_already_used`) — and a **unique partial index `(client_id) WHERE kind='unlimited' AND active AND expires_at IS NOT NULL`**, capping a client at one Activated Unlimited Plan (plus, enforced in the purchase path rather than an index, at most one Dormant one).
+**Indexes:** `(client_id, kind)`, `(client_id, expires_at)` for upcoming-expiry sweep, `(purchase_id) unique where not null` — one plan per sale, the index that decides a webhook-redelivery race — a **unique partial index `(client_id) WHERE kind='trial'`** — enforces the one-trial-per-client-ever invariant from `fe-client-features.md` §6.1 (a previously-purchased trial, active OR expired, blocks any further trial purchase; the purchase service catches the unique-violation and returns `409 trial_already_used`) — and a **unique partial index `(client_id) WHERE kind='unlimited' AND active AND expires_at IS NOT NULL`**, capping a client at one Activated Unlimited Plan (plus, enforced in the purchase path rather than an index, at most one Dormant one).
 
 Promo Code tables (`promo_codes`, `promo_code_products`, `promo_code_redemptions`) live beside this table and are documented in full in `spec-pre-launch-batch.md` §9–§11 rather than repeated here — the model is the shipped one, not the used-count-plus-valid-from-window model an earlier draft of this document sketched.
 
@@ -769,7 +769,7 @@ The previously-specified `instructor_availability_recurring` and `instructor_ava
 | check_in_state | enum `checkin_state` | `pending`, `attended`, `no_show`, `n_a` (workshops) |
 | qr_token | text | unique, not null — encoded into QR |
 | code | text | unique, not null — `RT-` + 6 Crockford-base32 chars (e.g. `RT-A4F2K9`); see §7 Per-booking codes for alphabet + lookup rules |
-| stripe_payment_intent_id | text | unique, nullable — for workshops |
+| purchase_id | uuid | FK → `purchases`, unique where not null — set only on a workshop booking, whose booking IS the purchase. Null for class and PT bookings, which a plan paid for (#92) |
 | booked_at | timestamptz | not null |
 | cancelled_at | timestamptz | nullable |
 
@@ -787,7 +787,7 @@ Workshop bookings cover **the tier**, not individual days. Per-day attendance / 
 - `(pt_session_id)` unique partial where kind=`pt` (one booking per PT session for 1-on-1; for 2-on-1 multiple bookings tied via pt_session_clients)
 - `(qr_token) unique`, `(code) unique`
 - `(check_in_state)` for "pending check-in" surfacing (§11)
-- `(stripe_payment_intent_id) unique where not null`
+- `(purchase_id) unique where not null`
 
 #### `cancellations` (drives §4 cap calculation)
 
@@ -1018,7 +1018,7 @@ See `docs/adr/0004-self-hosted-auth-with-better-auth.md` for the decision.
   - kind=`corporate_package` → insert **no** `client_packages` row; instead auto-create ONE `corporate_requests` row (status=`pending`, `client_id`, `corporate_package_id` from the intent metadata). The pending request is the entitlement; scheduling happens via the portal (`be-portal.md` §3f). The `checkout.session.completed` path carries the same effect for the corporate branch.
   - Always insert `stripe_payments` row with `status='succeeded'`
 - **Workshop admin-cancel** (§7a) → enqueue one `stripe-refund` job per booking in workshop. Worker calls Stripe Refund API. `charge.refunded` webhook closes the loop.
-- **Free workshops** (`workshop_tiers.regular_price_sgd = 0`) skip Stripe entirely. Booking flow inserts a `bookings` row with `kind='workshop'`, `state='confirmed'`, `stripe_payment_intent_id = null`, and **no** `stripe_payments` row is created. The receipt UI on fe-client suppresses the Download link when `receipt_url` is null.
+- **Free workshops** (`workshop_tiers.regular_price_sgd = 0`) skip Stripe entirely. Booking flow inserts a `bookings` row with `kind='workshop'`, `state='confirmed'`, `purchase_id = null`, and **no** `stripe_payments` row is created. The receipt UI on fe-client suppresses the Download link when `receipt_url` is null.
 - **Idempotency.** Stripe's event IDs are deduplicated against `stripe_payments.payment_intent_id` (and a separate `stripe_webhook_events` table for raw event de-dupe — minor, can add later).
 - **Known gap, observed but not fixed by `spec-pre-launch-batch.md`:** if the payment provider's own automatic receipt emails are switched on in the dashboard, a paid purchase produces two emails — ours, the branded one carrying the QR code and the activation sentence, and theirs, a bare payment record. Confirm this setting is off before go-live; nothing in the code prevents it either way.
 
@@ -1117,7 +1117,7 @@ Per `fe-client-features.md`: when a referee makes their **first paid** booking (
 **Flow (`services/referrals.ts:onRefereeFirstPayment(refereeClientId)`)**, called from `services/billing/webhook-handler.ts` inside the same transaction as the package grant or workshop booking insert:
 
 1. Load referee row. Skip if `referred_by_client_id IS NULL` (no referrer) or `referral_credit_granted_at IS NOT NULL` (already credited).
-2. Pick the referrer's most recent active `client_packages` row (`kind in ('credit_bundle','unlimited')`, `expires_at > now()`). If none exists, insert a 90-day "referral credit" `client_packages` row with `kind='credit_bundle'`, `credits = 20 / standard_credit_value_sgd`, `amount_paid_sgd = 0`, `stripe_payment_intent_id = NULL`.
+2. Pick the referrer's most recent active `client_packages` row (`kind in ('credit_bundle','unlimited')`, `expires_at > now()`). If none exists, insert a 90-day "referral credit" `client_packages` row with `kind='credit_bundle'`, `credits = 20 / standard_credit_value_sgd`, `amount_paid_sgd = 0`, `purchase_id = NULL`.
 3. Insert `manual_adjustments` row: `client_id = referrer`, `client_package_id = chosen`, `delta = credits granted`, `reason = 'referral_conversion'`, `acted_by_staff_id = NULL`.
 4. Update referee: `UPDATE clients SET referral_credit_granted_at = now() WHERE id = referee`.
 5. Write `audit_log` row: `actor_type='system'`, `action='referral.converted'`, target = referrer's `clients.id`.

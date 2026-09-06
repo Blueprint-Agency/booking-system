@@ -139,15 +139,16 @@ export const stripePayments = pgTable(
     // Unique per Tenant, not platform-wide — see `paymentIntentUnique` below.
     paymentIntentId: text('payment_intent_id').notNull(),
     /**
-     * The sale this payment is evidence of part of.
+     * The sale this payment is evidence of part of. **NOT NULL** since #92: it
+     * is now the only route from money to what the money bought, because the
+     * plan and the booking point at the Purchase and no longer at an intent.
      *
-     * Nullable for now, and only for now: this is the expand half of an
-     * expand–contract. Every historical row was backfilled (migration 0044) and
-     * every new one is written with it, so nothing in the code may treat null as
-     * a state to design for — the contract half takes the column NOT NULL once
-     * the old intent pointers come off.
+     * The webhook opens one rather than writing null if a session ever arrives
+     * without one in its metadata — see `purchaseForPayment`.
      */
-    purchaseId: uuid('purchase_id').references(() => purchases.id, { onDelete: 'restrict' }),
+    purchaseId: uuid('purchase_id')
+      .notNull()
+      .references(() => purchases.id, { onDelete: 'restrict' }),
     amountSgd: numeric('amount_sgd', { precision: 10, scale: 2 }).notNull(),
     kind: stripePaymentKindEnum('kind').notNull(),
     // Null once the member is permanently deleted (#144): the payment is the

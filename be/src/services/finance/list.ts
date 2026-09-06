@@ -142,7 +142,7 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
       clientName: clients.name,
       classPackageName: classPackages.name,
       ptPackageName: ptPackages.name,
-      paymentIntentId: clientPackages.stripePaymentIntentId,
+      purchaseId: clientPackages.purchaseId,
       complimentary: clientPackages.complimentary,
     })
     .from(clientPackages)
@@ -169,7 +169,7 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
       locationName: locations.name,
       promoCode: promoCodes.code,
       clientName: clients.name,
-      paymentIntentId: bookings.stripePaymentIntentId,
+      purchaseId: bookings.purchaseId,
     })
     .from(bookings)
     .innerJoin(clients, eq(clients.id, bookings.clientId))
@@ -265,17 +265,23 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
   // Which purchases carry the "Refunded" tag. Read over the WHOLE history, not
   // the filtered window: a purchase in August refunded in September is still a
   // refunded purchase when you look at August.
-  const refunded = new Set(
-    (
-      await db
-        .select({ intent: stripePayments.paymentIntentId })
-        .from(stripePayments)
-        .where(
-          and(eq(stripePayments.tenantId, tenantId), eq(stripePayments.status, 'refunded')),
-        )
-    ).map(r => r.intent),
-  )
-  const isRefunded = (intent: string | null) => intent != null && refunded.has(intent)
+  //
+  // Two keys off one query, because the rows above are keyed two ways: a plan
+  // and a workshop booking name the Purchase (#92), while a corporate payment
+  // and a Merch Order still name the intent. Both come off the same refunded
+  // payment rows, so they cannot disagree.
+  const refundedPayments = await db
+    .select({
+      intent: stripePayments.paymentIntentId,
+      purchaseId: stripePayments.purchaseId,
+    })
+    .from(stripePayments)
+    .where(and(eq(stripePayments.tenantId, tenantId), eq(stripePayments.status, 'refunded')))
+  const refundedIntents = new Set(refundedPayments.map(r => r.intent))
+  const refundedPurchases = new Set(refundedPayments.map(r => r.purchaseId))
+  const isRefunded = (intent: string | null) => intent != null && refundedIntents.has(intent)
+  const purchaseRefunded = (purchaseId: string | null) =>
+    purchaseId != null && refundedPurchases.has(purchaseId)
 
   const events: MoneyEvent[] = []
 
@@ -295,7 +301,7 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
       listPriceSgd: r.listPriceSgd,
       paidSgd: r.amountPaidSgd,
       promoCode: r.promoCode,
-      refunded: isRefunded(r.paymentIntentId),
+      refunded: purchaseRefunded(r.purchaseId),
       complimentary: r.complimentary,
     })
     // The Add-On's own line. The column IS what the member paid for it, and it
@@ -313,7 +319,7 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
         locationName: r.locationName,
         listPriceSgd: r.crossLocationPaidSgd,
         paidSgd: r.crossLocationPaidSgd,
-        refunded: isRefunded(r.paymentIntentId),
+        refunded: purchaseRefunded(r.purchaseId),
         // An Add-On given with a comped plan was given too, at $0. It totals to
         // nothing either way; saying so keeps the two lines telling one story.
         complimentary: r.complimentary,
@@ -335,7 +341,7 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
       listPriceSgd: r.listPriceSgd,
       paidSgd: r.amountPaidSgd,
       promoCode: r.promoCode,
-      refunded: isRefunded(r.paymentIntentId),
+      refunded: purchaseRefunded(r.purchaseId),
     })
   }
 

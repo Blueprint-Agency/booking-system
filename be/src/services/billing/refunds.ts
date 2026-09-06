@@ -5,6 +5,13 @@
  * and hands the Promo Code back.** There is no partial refund and no separate
  * admin revoke.
  *
+ * Since #92 a Refund is something done to a **Purchase** rather than to a
+ * payment intent. The Purchase owns the money and a payment is evidence of part
+ * of it, so issuing a Refund walks the Purchase's payments and returns every
+ * one: a purchase settled by two cards is unwound by one admin action rather
+ * than two. Today every Purchase holds exactly one payment, so an admin sees no
+ * difference — the path is simply ready for the ones that will hold two.
+ *
  * The shape of this module is the decision: `issueRefund` only calls the
  * payment provider and returns, and `unwindRefund` — driven by
  * `charge.refunded` — does all of the rest. The provider's dashboard can never
@@ -16,7 +23,7 @@
 import { and, eq, gt, inArray, ne, sql } from 'drizzle-orm'
 import { db, withTenant } from '../../db'
 import { tenantForPaymentIntent } from '../../db/routing'
-import { auditLog, stripePayments } from '../../db/schema/ledger'
+import { auditLog, purchases, stripePayments } from '../../db/schema/ledger'
 import { bookings } from '../../db/schema/bookings'
 import { classPackages, clientPackages, ptPackages } from '../../db/schema/packages'
 import { classes, ptSessions, workshops, workshopTiers, workshopTierDays, workshopDays } from '../../db/schema/schedule'
@@ -26,10 +33,13 @@ import { requireTenantUrl } from '../tenants/urls'
 import { stripeForTenant } from '../../lib/stripe'
 import { outbound } from '../../lib/outbound'
 import { reportError } from '../../shared/logger'
+import { toCents } from '../../shared/money'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { cancelBooking } from '../bookings/cancel'
 import { refundPromoCodeRedemption } from '../packages/promo-redemption'
 import { sendTemplatedEmail } from '../notifications/send'
+import { heldPayments } from './balance'
+import { markPurchaseRefunded, paymentsForPurchase, purchaseById } from './purchases'
 import {
   attendedNotice,
   composeRefundEmail,
@@ -48,6 +58,19 @@ import {
  */
 const accountUrlFor = (tenantId: string) =>
   requireTenantUrl('client', tenantId).then(base => `${base}/account`)
+
+/**
+ * Is there money at the provider to give back?
+ *
+ * Read off the Purchase's own Balance, which is derived from the payment rows
+ * and means *money currently held*: a comp grant, a $0 trial and a Promo Code
+ * that took the total to zero never reached the provider and hold nothing, and
+ * a Purchase already refunded has been zeroed by `markPurchaseRefunded`. It is
+ * the same question the payment intent used to answer by being non-null, asked
+ * of the record that now owns the money.
+ */
+const holdsMoney = (amountPaidSgd: string | null): boolean =>
+  amountPaidSgd != null && toCents(amountPaidSgd) > 0
 
 export interface RefundState {
   /** There is money at the provider to give back. */
@@ -80,11 +103,12 @@ export async function refundStatesFor(
   const rows = await db
     .select({
       id: clientPackages.id,
-      paymentIntentId: clientPackages.stripePaymentIntentId,
+      amountPaidSgd: purchases.amountPaidSgd,
       count: sql<number>`count(${bookings.id})::int`,
       since: sql<string | null>`min(coalesce(${classes.startsAt}, ${ptSessions.startsAt}))`,
     })
     .from(clientPackages)
+    .leftJoin(purchases, eq(purchases.id, clientPackages.purchaseId))
     .leftJoin(
       bookings,
       and(
@@ -95,15 +119,13 @@ export async function refundStatesFor(
     .leftJoin(classes, eq(classes.id, bookings.classId))
     .leftJoin(ptSessions, eq(ptSessions.id, bookings.ptSessionId))
     .where(and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.clientId, clientId)))
-    .groupBy(clientPackages.id, clientPackages.stripePaymentIntentId)
+    .groupBy(clientPackages.id, purchases.amountPaidSgd)
 
   const out: Record<string, RefundState> = {}
   for (const r of rows) {
     const count = Number(r.count ?? 0)
     out[r.id] = {
-      // A comp grant, a $0 trial and a Promo Code that took the total to zero
-      // never reached the payment provider, so there is no money to give back.
-      refundable: r.paymentIntentId != null,
+      refundable: holdsMoney(r.amountPaidSgd),
       attendedCount: count,
       notice: attendedNotice(count, r.since ? new Date(r.since) : null),
     }
@@ -112,9 +134,10 @@ export async function refundStatesFor(
 }
 
 /**
- * Issue the Refund. **This calls the payment provider and returns.** Nothing is
- * unwound here: the `charge.refunded` webhook it triggers does all of it, which
- * is what makes this button and the provider's dashboard the same operation.
+ * Issue the Refund. **This calls the payment provider, once per payment the
+ * Purchase holds, and returns.** Nothing is unwound here: the `charge.refunded`
+ * webhook each call triggers does all of it, which is what makes this button
+ * and the provider's dashboard the same operation.
  *
  * Always the full amount — no amount is accepted, because there is no partial
  * refund. For a plan bought with a Cross-Location Add-On in the same session
@@ -130,12 +153,17 @@ export async function issueRefund(args: {
   clientPackageId: string
   reason: string
   actorStaffId: string
-}): Promise<{ paymentIntentId: string; attendedCount: number; override: boolean }> {
+}): Promise<{
+  purchaseId: string
+  paymentIntentIds: string[]
+  attendedCount: number
+  override: boolean
+}> {
   const [pkg] = await db
     .select({
       id: clientPackages.id,
       clientId: clientPackages.clientId,
-      paymentIntentId: clientPackages.stripePaymentIntentId,
+      purchaseId: clientPackages.purchaseId,
     })
     .from(clientPackages)
     .where(
@@ -147,40 +175,19 @@ export async function issueRefund(args: {
     )
     .limit(1)
   if (!pkg) throw new NotFoundError('client_package_not_found')
-  // A comp grant, a $0 trial or a Promo Code that took the total to zero never
-  // reached the payment provider, so there is no money to give back. Corporate
-  // is out of scope for the same reason from the other end — it creates no
-  // client-package row at all, so it cannot be named here.
-  if (!pkg.paymentIntentId) throw new BadRequestError('purchase_not_refundable')
-
-  const [payment] = await db
-    .select({ status: stripePayments.status })
-    .from(stripePayments)
-    .where(
-      and(
-        eq(stripePayments.tenantId, args.tenantId),
-        eq(stripePayments.paymentIntentId, pkg.paymentIntentId),
-      ),
-    )
-    .limit(1)
-  if (payment?.status === 'refunded') throw new ConflictError('already_refunded')
 
   const count =
     (await refundStatesFor(args.tenantId, args.clientId))[args.clientPackageId]?.attendedCount ?? 0
-  const override = !isUntouched(count)
 
-  await refundAtProviderAndAudit({
+  return refundPurchaseAndAudit({
     tenantId: args.tenantId,
-    paymentIntentId: pkg.paymentIntentId,
+    purchaseId: pkg.purchaseId,
     targetTable: 'client_packages',
     targetId: args.clientPackageId,
     actorStaffId: args.actorStaffId,
     reason: args.reason,
     attendedCount: count,
-    override,
   })
-
-  return { paymentIntentId: pkg.paymentIntentId, attendedCount: count, override }
 }
 
 /**
@@ -218,11 +225,12 @@ export async function listWorkshopPurchases(
       listPriceSgd: bookings.listPriceSgd,
       purchasedAt: bookings.bookedAt,
       checkInState: bookings.checkInState,
-      paymentIntentId: bookings.stripePaymentIntentId,
+      purchasePaidSgd: purchases.amountPaidSgd,
     })
     .from(bookings)
     .innerJoin(workshops, eq(workshops.id, bookings.workshopId))
     .leftJoin(workshopTiers, eq(workshopTiers.id, bookings.workshopTierId))
+    .leftJoin(purchases, eq(purchases.id, bookings.purchaseId))
     .where(
       and(
         eq(bookings.tenantId, tenantId),
@@ -263,7 +271,7 @@ export async function listWorkshopPurchases(
       amountPaidSgd: r.amountPaidSgd ?? '0.00',
       listPriceSgd: r.listPriceSgd ?? '0.00',
       purchasedAt: r.purchasedAt,
-      refundable: r.paymentIntentId != null,
+      refundable: holdsMoney(r.purchasePaidSgd),
       refundNotice: attendedNotice(count, r.tierId ? sinceByTier.get(r.tierId) ?? null : null),
     }
   })
@@ -282,11 +290,16 @@ export async function issueWorkshopRefund(args: {
   bookingId: string
   reason: string
   actorStaffId: string
-}): Promise<{ paymentIntentId: string; attendedCount: number; override: boolean }> {
+}): Promise<{
+  purchaseId: string
+  paymentIntentIds: string[]
+  attendedCount: number
+  override: boolean
+}> {
   const [booking] = await db
     .select({
       id: bookings.id,
-      paymentIntentId: bookings.stripePaymentIntentId,
+      purchaseId: bookings.purchaseId,
       checkInState: bookings.checkInState,
     })
     .from(bookings)
@@ -300,37 +313,18 @@ export async function issueWorkshopRefund(args: {
     )
     .limit(1)
   if (!booking) throw new NotFoundError('workshop_booking_not_found')
-  // A free workshop never reached the payment provider, so there is no money to
-  // give back — same rule as a comp grant on a package.
-  if (!booking.paymentIntentId) throw new BadRequestError('purchase_not_refundable')
-
-  const [payment] = await db
-    .select({ status: stripePayments.status })
-    .from(stripePayments)
-    .where(
-      and(
-        eq(stripePayments.tenantId, args.tenantId),
-        eq(stripePayments.paymentIntentId, booking.paymentIntentId),
-      ),
-    )
-    .limit(1)
-  if (payment?.status === 'refunded') throw new ConflictError('already_refunded')
 
   const count = booking.checkInState === 'attended' || booking.checkInState === 'no_show' ? 1 : 0
-  const override = !isUntouched(count)
 
-  await refundAtProviderAndAudit({
+  return refundPurchaseAndAudit({
     tenantId: args.tenantId,
-    paymentIntentId: booking.paymentIntentId,
+    purchaseId: booking.purchaseId,
     targetTable: 'bookings',
     targetId: args.bookingId,
     actorStaffId: args.actorStaffId,
     reason: args.reason,
     attendedCount: count,
-    override,
   })
-
-  return { paymentIntentId: booking.paymentIntentId, attendedCount: count, override }
 }
 
 /**
@@ -356,25 +350,58 @@ export async function refundAtProvider(
 }
 
 /**
- * The part `issueRefund` and `issueWorkshopRefund` share: call the provider,
- * then write the one record of why an admin refunded against the studio's rule.
+ * The part `issueRefund` and `issueWorkshopRefund` share: return every payment
+ * the Purchase holds, then write the one record of why an admin refunded
+ * against the studio's rule.
  *
- * Written after the provider has taken it, so the log records refunds that
- * actually happened. The generic audit middleware records the request; this row
- * records the decision — but the money has already moved, so a failure to write
- * it is reported rather than thrown back at an admin whose refund did go through.
+ * The provider calls run in sequence and one audit row covers them, because
+ * they are one decision. A call that fails part-way through leaves a Purchase
+ * with some payments returned and some not, which the unwind refuses to treat
+ * as a finished Refund — it reports it and waits, and the admin who pressed the
+ * button sees the error.
+ *
+ * The audit row is written after the provider has taken it, so the log records
+ * refunds that actually happened. The generic audit middleware records the
+ * request; this row records the decision — but the money has already moved, so
+ * a failure to write it is reported rather than thrown back at an admin whose
+ * refund did go through.
  */
-async function refundAtProviderAndAudit(args: {
+async function refundPurchaseAndAudit(args: {
   tenantId: string
-  paymentIntentId: string
+  purchaseId: string | null
   targetTable: 'client_packages' | 'bookings'
   targetId: string
   actorStaffId: string
   reason: string
   attendedCount: number
+}): Promise<{
+  purchaseId: string
+  paymentIntentIds: string[]
+  attendedCount: number
   override: boolean
-}): Promise<void> {
-  await refundAtProvider(args.tenantId, args.paymentIntentId)
+}> {
+  // A comp grant, a $0 trial, a free workshop place or a Promo Code that took
+  // the total to zero never reached the payment provider, so there is no money
+  // to give back. Corporate is out of scope for the same reason from the other
+  // end — it creates no client-package row at all, so it cannot be named here.
+  if (!args.purchaseId) throw new BadRequestError('purchase_not_refundable')
+
+  const payments = await paymentsForPurchase(args.tenantId, args.purchaseId)
+  const toReturn = heldPayments(payments)
+  if (toReturn.length === 0) {
+    // Nothing held. Told apart so an admin double-clicking a button reads
+    // "already refunded" rather than "not refundable", which is the difference
+    // between a race they can ignore and a purchase they should look at.
+    if (payments.some(p => p.status === 'refunded')) throw new ConflictError('already_refunded')
+    throw new BadRequestError('purchase_not_refundable')
+  }
+
+  const override = !isUntouched(args.attendedCount)
+  const paymentIntentIds = toReturn.map(p => p.paymentIntentId)
+  for (const intentId of paymentIntentIds) {
+    await refundAtProvider(args.tenantId, intentId)
+  }
+
   try {
     await db.insert(auditLog).values({
       tenantId: args.tenantId,
@@ -385,9 +412,10 @@ async function refundAtProviderAndAudit(args: {
       targetId: args.targetId,
       payload: {
         reason: args.reason,
-        override: args.override,
+        override,
         attendedCount: args.attendedCount,
-        paymentIntentId: args.paymentIntentId,
+        purchaseId: args.purchaseId,
+        paymentIntentIds,
       },
     })
   } catch (err) {
@@ -398,19 +426,20 @@ async function refundAtProviderAndAudit(args: {
       reason: args.reason,
     })
   }
+
+  return { purchaseId: args.purchaseId, paymentIntentIds, attendedCount: args.attendedCount, override }
 }
 
 /**
  * The unwind, driven by `charge.refunded`. **Every step is a no-op on a second
  * pass** — each write is conditioned on the state it is moving away from, and
- * the only step that cannot be (the email) is gated on the payment row's flip,
+ * the only step that cannot be (the email) is gated on the Purchase's flip,
  * which is atomic.
  *
- * The flip is stamped **last** on purpose. As a first step it would be a neat
- * gate and a trap: a delivery that died halfway would leave the payment marked
- * refunded and the plan still live, and the provider's retry would return at the
- * gate having unwound nothing. Stamping at the end means a half-finished pass is
- * simply redone, and the one non-repeatable act rides on the one atomic write.
+ * The provider's event names one intent, so the intent is where this starts;
+ * everything after routes on the **Purchase** that payment is evidence of part
+ * of. That is what lets one admin action return a purchase settled by two cards
+ * and unwind it once, when the second `charge.refunded` lands.
  */
 export async function unwindRefund(
   paymentIntentId: string,
@@ -436,25 +465,70 @@ async function unwindRefundForTenant(paymentIntentId: string): Promise<void> {
       // money is what makes a dashboard refund and a button refund land in the
       // same studio without the webhook having to be told which.
       tenantId: stripePayments.tenantId,
-      status: stripePayments.status,
-      bookingId: stripePayments.bookingId,
-      amountSgd: stripePayments.amountSgd,
+      purchaseId: stripePayments.purchaseId,
     })
     .from(stripePayments)
     .where(eq(stripePayments.paymentIntentId, paymentIntentId))
     .limit(1)
-  // No row means a charge this system never recorded; already refunded means a
-  // redelivery of an event that completed.
-  if (!payment || payment.status === 'refunded') return
+  // No row means a charge this system never recorded.
+  if (!payment) return
   const tenantId = payment.tenantId!
 
-  // The Promo Code comes back — to the member's one-use limit and the code's
-  // pool at once. The row survives as `refunded`; only the partial index lets it.
-  await refundPromoCodeRedemption(tenantId, paymentIntentId)
+  // This payment is back. Stamped before the Purchase is looked at, and NOT as
+  // the gate for the unwind: the gate is the Purchase's own status, stamped
+  // last. A redelivery that arrives after this write still walks the whole
+  // unwind, which is what makes a pass that died halfway simply get redone.
+  await stampPaymentRefunded(tenantId, paymentIntentId)
+  await unwindPurchase(tenantId, payment.purchaseId)
+}
 
-  // A workshop's booking IS the purchase, so the ledger's booking link is what
-  // gets cancelled. Attended and no-showed workshops stand as history for the
-  // same reason classes do.
+/**
+ * The unwind proper, routed on the Purchase.
+ *
+ * **A Refund counts as complete only when every payment has been returned.** A
+ * Purchase holding a payment the provider still has is not a refunded purchase
+ * — it is a half-done one, and voiding the plan there would take a member's
+ * entitlement away while keeping some of their money. So it is reported and
+ * left alone, and the next `charge.refunded` finishes the job.
+ *
+ * The Purchase's own flip is stamped **last** on purpose. As a first step it
+ * would be a neat gate and a trap: a delivery that died halfway would leave the
+ * sale marked refunded and the plan still live, and the provider's retry would
+ * return at the gate having unwound nothing. Stamping at the end means a
+ * half-finished pass is simply redone, and the one non-repeatable act — the
+ * member's email — rides on the one atomic write.
+ */
+async function unwindPurchase(tenantId: string, purchaseId: string): Promise<void> {
+  const purchase = await purchaseById(tenantId, purchaseId)
+  // Already refunded means a redelivery of an event that completed.
+  if (!purchase || purchase.status === 'refunded') return
+
+  const payments = await paymentsForPurchase(tenantId, purchaseId)
+  const outstanding = heldPayments(payments)
+  if (outstanding.length > 0) {
+    reportError(
+      new Error(`purchase ${purchaseId} is part-refunded: ${outstanding.length} payment(s) still held`),
+      'refund not complete — some payments not returned',
+      {
+        scope: 'refunds',
+        purchaseId,
+        heldIntents: outstanding.map(p => p.paymentIntentId).join(','),
+      },
+    )
+    return
+  }
+
+  // The Promo Code comes back — to the member's one-use limit and the code's
+  // pool at once. The row survives as `refunded`; only the partial index lets
+  // it. Held against the intent that consumed it, so a Purchase settled by more
+  // than one payment hands the code back on whichever of them carried it.
+  for (const payment of payments) {
+    await refundPromoCodeRedemption(tenantId, payment.paymentIntentId)
+  }
+
+  // A workshop's booking IS the purchase, so it is what gets cancelled.
+  // Attended and no-showed workshops stand as history for the same reason
+  // classes do.
   //
   // Deliberately NOT through `cancelBooking`: that service refuses a workshop
   // outright (`workshop_cancel_unsupported`) because a workshop booking has no
@@ -463,25 +537,24 @@ async function unwindRefundForTenant(paymentIntentId: string): Promise<void> {
   // `n_a` the class and PT bookings take: that rule is about bookings a voided
   // package paid for, where returning a credit would be meaningless. Here money
   // genuinely went back for this exact booking, which is what the arm is for.
-  if (payment.bookingId) {
-    await db
-      .update(bookings)
-      .set({ state: 'cancelled', refundOutcome: 'stripe_refunded', cancelledAt: new Date() })
-      .where(
-        and(
-          eq(bookings.tenantId, tenantId),
-          eq(bookings.id, payment.bookingId),
-          eq(bookings.state, 'confirmed'),
-          eq(bookings.checkInState, 'pending'),
-        ),
-      )
-  }
+  await db
+    .update(bookings)
+    .set({ state: 'cancelled', refundOutcome: 'stripe_refunded', cancelledAt: new Date() })
+    .where(
+      and(
+        eq(bookings.tenantId, tenantId),
+        eq(bookings.purchaseId, purchaseId),
+        eq(bookings.state, 'confirmed'),
+        eq(bookings.checkInState, 'pending'),
+      ),
+    )
 
-  // The purchase is **Voided**. Matched on the plan's OWN purchase intent,
-  // never on `stripe_payments.client_package_id`: a standalone Cross-Location
-  // Add-On payment also points at the plan, and refunding an Add-On must not
-  // void the plan someone else's money paid for. The Add-On has no independent
-  // refund — it dies with the plan, free, because it is a column on this row.
+  // The purchase is **Voided**. Matched on the plan's OWN Purchase, never on
+  // `stripe_payments.client_package_id`: a standalone Cross-Location Add-On
+  // payment also points at the plan, and refunding an Add-On must not void the
+  // plan someone else's money paid for. The Add-On is its own Purchase and has
+  // no independent unwind — it dies with the plan, free, because it is a column
+  // on this row.
   const [pkg] = await db
     .select({
       id: clientPackages.id,
@@ -496,17 +569,14 @@ async function unwindRefundForTenant(paymentIntentId: string): Promise<void> {
     .leftJoin(classPackages, eq(classPackages.id, clientPackages.sourceClassPackageId))
     .leftJoin(ptPackages, eq(ptPackages.id, clientPackages.sourcePtPackageId))
     .where(
-      and(
-        eq(clientPackages.tenantId, tenantId),
-        eq(clientPackages.stripePaymentIntentId, paymentIntentId),
-      ),
+      and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.purchaseId, purchaseId)),
     )
     .limit(1)
   // A workshop (whose booking is above and IS the purchase), a corporate package
-  // (which creates no client-package row, so there is nothing to void) or a
-  // standalone Add-On payment. The money is recorded and nothing else moves.
+  // (which creates no client-package row, so there is nothing to void), Merch or
+  // a standalone Add-On payment. The money is recorded and nothing else moves.
   if (!pkg) {
-    await stampRefunded(tenantId, paymentIntentId)
+    await markPurchaseRefunded(tenantId, purchaseId)
     return
   }
 
@@ -528,9 +598,9 @@ async function unwindRefundForTenant(paymentIntentId: string): Promise<void> {
   // instructor payroll and the studio's attendance record.
   const cancelled = await cancelFutureBookings(tenantId, pkg.id)
 
-  // The payment row's status becomes refunded and the time is stamped. Last, and
-  // the winner of the race sends the email.
-  if (!(await stampRefunded(tenantId, paymentIntentId))) return
+  // The Purchase's status becomes refunded and its Balance goes to zero. Last,
+  // and the winner of the race sends the email.
+  if (!(await markPurchaseRefunded(tenantId, purchaseId))) return
 
   // The member is told. The provider sends its own money receipt; ours is the
   // one that says the plan has ended and names the classes that were cancelled.
@@ -540,7 +610,9 @@ async function unwindRefundForTenant(paymentIntentId: string): Promise<void> {
     const { slug, variables } = composeRefundEmail({
       clientName: pkg.clientName,
       packageName: pkg.classPackageName ?? pkg.ptPackageName ?? 'Your package',
-      amountSgd: payment.amountSgd,
+      // What the member gets back is the whole Purchase, which is what the
+      // Balance held a moment ago — however many cards it arrived on.
+      amountSgd: purchase.amountPaidSgd,
       cancelled,
       accountUrl: await accountUrlFor(tenantId),
     })
@@ -551,17 +623,17 @@ async function unwindRefundForTenant(paymentIntentId: string): Promise<void> {
       variables,
     })
   } catch (err) {
-    reportError(err, 'refund email failed', { scope: 'refunds', paymentIntentId })
+    reportError(err, 'refund email failed', { scope: 'refunds', purchaseId })
   }
 }
 
 /**
- * Mark the payment refunded, once. `status <> 'refunded'` makes the write its
- * own lock: two concurrent deliveries of the same event both do the (idempotent)
- * unwinding, and exactly one of them gets a row back and sends the email.
+ * Mark one payment refunded. Idempotent by the same `status <> 'refunded'`
+ * predicate the Purchase's own flip uses; unlike that one it gates nothing, so
+ * its return value is not needed.
  */
-async function stampRefunded(tenantId: string, paymentIntentId: string): Promise<boolean> {
-  const rows = await db
+async function stampPaymentRefunded(tenantId: string, paymentIntentId: string): Promise<void> {
+  await db
     .update(stripePayments)
     .set({ status: 'refunded', refundedAt: new Date() })
     .where(
@@ -571,8 +643,6 @@ async function stampRefunded(tenantId: string, paymentIntentId: string): Promise
         ne(stripePayments.status, 'refunded'),
       ),
     )
-    .returning({ id: stripePayments.id })
-  return rows.length > 0
 }
 
 /**
