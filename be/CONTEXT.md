@@ -171,7 +171,7 @@ _Avoid_: reservation, lock, pending, soft-booked
 ### Refunds
 
 **Refund**:
-Money returned to a member for one purchase, always the whole amount — there is no such thing as a partial one. It never describes a credit going back to a wallet: a cancelled booking returns a credit or a session, and calling that a refund confuses money with entitlement.
+Money returned to a member for one Purchase, always the whole of it — there is no such thing as a partial one. Every payment the Purchase holds is returned, so a Purchase paid across two cards is refunded across both; that is still one Refund, because the Purchase is the thing being unwound. Do not read a Part Payment as a partial refund arriving: one is money coming in a piece at a time, the other is money going back in a piece, and only the first exists. It never describes a credit going back to a wallet either: a cancelled booking returns a credit or a session, and calling that a refund confuses money with entitlement.
 _Avoid_: partial refund, refund a credit, reimbursement, chargeback, revoke
 
 **Void**:
@@ -183,6 +183,22 @@ The property that makes a purchase refundable without a warning: no class it pai
 _Avoid_: unused, unconsumed, clean, fresh, pristine
 
 ### Money
+
+**Purchase**:
+One sale, and the thing that owns its money: who bought, what kind of thing they bought, what it costs, and how much has been paid. Every sale opens one — a plan, a workshop, Merch, a standalone Cross-Location Add-On — and a sale paid in full at the first attempt, which is every sale the platform takes today, is simply a Purchase that closes immediately. Its price is frozen when it opens and never recomputed, so what a member owes cannot rise while they are settling it. Nothing it bought is granted until its Balance reaches zero. A payment is not a Purchase: it is evidence of part of one.
+_Avoid_: order, transaction, cart, checkout, payment, sale record
+
+**Balance**:
+What a Purchase still owes — its total less what has actually been paid, never below zero. Recomputed from the payment rows every time one lands, never added to, because a running total is exactly what a provider redelivery would increment twice. Zero is the only state in which anything is granted. It is not a member's wallet or a store credit; nothing on this platform holds a balance in the member's favour.
+_Avoid_: outstanding amount, due, owing, credit, wallet, arrears
+
+**Part Payment**:
+Paying one Purchase with more than one card, in amounts the member chooses, because only they know what each of their cards will take. A declined attempt captures nothing and moves nothing, so a wrong guess costs a retry rather than a sale. Every Part Payment is a payment; not every payment is a Part Payment — a sale settled in one go is neither split nor partial. It is never a deposit, an instalment plan or a payment schedule: there are no dates and no debt, only a Balance the member clears when they choose.
+_Avoid_: split payment, instalment, deposit, partial payment, payment plan, down payment
+
+**Connected Account**:
+A studio's own account with the payment provider, onboarded by the studio itself, that its members' payments are created directly on. Money lands in the studio's balance, the studio's name appears on the statement, and the studio's balance carries its own Refunds and chargebacks. A Tenant with no Connected Account still sells on the platform operator's account, which is where every studio sells today. It is not a login, not a Tenant, and not something the platform operator can create on a studio's behalf.
+_Avoid_: merchant account, sub-account, Stripe account, seller account, payout account
 
 **Money Event**:
 One thing that moved money, or that owes money, on the day it happened. A purchase, a Refund, a session's Instructor Pay, or a Manual Entry. Every figure the studio reports is a sum over Money Events; there is no separate stored total.

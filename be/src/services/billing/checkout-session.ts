@@ -7,8 +7,11 @@
  * What a purchase *costs* is not decided here: the caller's service prices it
  * and hands the lines over already priced.
  */
-import { statementDescriptorSuffix, stripe } from '../../lib/stripe'
+import type Stripe from 'stripe'
+import { statementDescriptorSuffix, stripeForTenant } from '../../lib/stripe'
 import { tenantDisplayName } from '../tenants/mail-identity'
+import { BadRequestError } from '../../shared/errors'
+import { attachCheckoutSession, openPurchase, type PurchaseKind } from './purchases'
 
 export interface CheckoutLine {
   name: string
@@ -69,11 +72,21 @@ export interface CheckoutSessionInput {
   cancelUrl: string
 }
 
-export async function createCheckoutSession(input: CheckoutSessionInput): Promise<string | null> {
-  const studioName = await tenantDisplayName(input.tenantId)
+/**
+ * The session Stripe is asked for, given the studio's name.
+ *
+ * Split out from the call so the shape of a checkout — its metadata, its
+ * descriptor, its lines, its expiry — can be asserted without a provider and
+ * without a database. The name is passed in because reading it is the caller's
+ * database round trip, not a rule of the session.
+ */
+export function checkoutSessionParams(
+  input: CheckoutSessionInput,
+  studioName: string,
+): Stripe.Checkout.SessionCreateParams {
   const suffix = statementDescriptorSuffix(studioName)
   const tenantMetadata = { tenant_id: input.tenantId, client_id: input.metadata.client_id ?? '' }
-  const session = await stripe.checkout.sessions.create({
+  return {
     mode: 'payment',
     customer_email: input.email,
     // Metadata does not flow from a session to its intent on its own, and the
@@ -99,6 +112,61 @@ export async function createCheckoutSession(input: CheckoutSessionInput): Promis
     metadata: { ...input.metadata, tenant_id: input.tenantId },
     success_url: input.successUrl,
     cancel_url: input.cancelUrl,
+  }
+}
+
+/**
+ * Which kind of Purchase a set of checkout metadata describes.
+ *
+ * Read off `kind`, the same field the webhook dispatches on, so the record and
+ * the grant can never disagree about what was sold. A `kind` this does not
+ * recognise is a checkout nothing could grant anyway, and is refused here
+ * rather than becoming a Purchase with no meaning.
+ */
+export function purchaseKindFor(metadata: Record<string, string>): PurchaseKind {
+  const kind = metadata.kind
+  if (
+    kind === 'class_package' ||
+    kind === 'pt_package' ||
+    kind === 'workshop' ||
+    kind === 'merch' ||
+    kind === 'cross_location_add_on'
+  ) {
+    return kind
+  }
+  throw new BadRequestError('checkout_kind_unknown', { kind: kind ?? null })
+}
+
+/** What the lines add up to — the Purchase's total, frozen at this moment. */
+export const totalCents = (lines: CheckoutLine[]): number =>
+  lines.reduce((sum, line) => sum + line.amountCents, 0)
+
+/**
+ * Open the Purchase, then ask the provider for the session that pays it.
+ *
+ * In that order, and never the other way round: the Purchase is the record of
+ * what is owed, and a session created before it could take money this system
+ * has nowhere to put. `purchase_id` rides along in the metadata because the
+ * webhook has nothing else to find the sale by — it is handed a session and an
+ * intent, and every other route to the Purchase would be a guess.
+ */
+export async function createCheckoutSession(input: CheckoutSessionInput): Promise<string | null> {
+  const studioName = await tenantDisplayName(input.tenantId)
+  const purchase = await openPurchase({
+    tenantId: input.tenantId,
+    clientId: input.metadata.client_id!,
+    kind: purchaseKindFor(input.metadata),
+    totalCents: totalCents(input.lines),
+    metadata: input.metadata,
   })
+
+  const stripe = await stripeForTenant(input.tenantId)
+  const session = await stripe.checkout.sessions.create(
+    checkoutSessionParams(
+      { ...input, metadata: { ...input.metadata, purchase_id: purchase.id } },
+      studioName,
+    ),
+  )
+  await attachCheckoutSession(input.tenantId, purchase.id, session.id)
   return session.url
 }

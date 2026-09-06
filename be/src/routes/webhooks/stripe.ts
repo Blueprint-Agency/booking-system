@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { stripe } from '../../lib/stripe'
+import { stripePlatform } from '../../lib/stripe'
 import { handleStripeEvent } from '../../services/billing/webhook-handler'
 import { logger } from '../../shared/logger'
 
@@ -12,7 +12,9 @@ const app = new Hono().post('/stripe', async c => {
 
   let event: any
   try {
-    event = stripe.webhooks.constructEvent(body, sig, secret)
+    // The platform's client, not a studio's: the signature is checked before
+    // anything in the body has been trusted enough to name a Tenant.
+    event = stripePlatform().webhooks.constructEvent(body, sig, secret)
   } catch {
     return c.json({ error: 'invalid_webhook_signature' }, 400)
   }
