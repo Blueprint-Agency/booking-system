@@ -5,7 +5,7 @@ import { clientPackages } from '../../db/schema/packages'
 import { bookings } from '../../db/schema/bookings'
 import { manualAdjustments } from '../../db/schema/ledger'
 import { getClerkClientApp } from '../../lib/clerk'
-import { env } from '../../env'
+import { requireTenantUrl } from '../tenants/urls'
 import { sendTemplatedEmail } from '../notifications/send'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { logger } from '../../shared/logger'
@@ -133,9 +133,16 @@ function splitName(full: string): { firstName: string; lastName?: string } {
   return { firstName: parts[0]!, lastName: parts.slice(1).join(' ') }
 }
 
-function buildClientLoginUrl(): string {
-  const base = env.CLIENT_ORIGIN?.replace(/\/+$/, '')
-  return base ? `${base}/login` : ''
+/**
+ * Where the new member signs in — their own studio's app.
+ *
+ * It used to be the platform's single `CLIENT_ORIGIN`, which named one studio,
+ * so a member added by the second studio's admin was invited to sign in at the
+ * first studio's app: a hostname their Clerk account is not for and their
+ * bookings are not on.
+ */
+function buildClientLoginUrl(tenantId: string): Promise<string> {
+  return requireTenantUrl('client', tenantId).then(base => `${base}/login`)
 }
 
 /**
@@ -154,6 +161,10 @@ export async function createClientWithInvite(input: CreateClientInput): Promise<
   if (!name) throw new BadRequestError('name_required')
   if (!email) throw new BadRequestError('email_required')
   if (!phone) throw new BadRequestError('phone_required')
+
+  // Resolved before Clerk is touched: an invite email nobody can act on is not
+  // worth a Clerk account and a member row to go with it.
+  const loginUrl = await buildClientLoginUrl(input.tenantId)
 
   // Reject duplicates before touching Clerk so we don't orphan a Clerk user.
   // Deliberately platform-wide, not per-tenant: `clients.email` still carries a
@@ -220,7 +231,7 @@ export async function createClientWithInvite(input: CreateClientInput): Promise<
     variables: {
       name,
       invitee_email: email,
-      login_url: buildClientLoginUrl(),
+      login_url: loginUrl,
     },
   })
 

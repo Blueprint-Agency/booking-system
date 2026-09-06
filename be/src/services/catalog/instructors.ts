@@ -7,6 +7,7 @@ import { ConflictError, NotFoundError, BadRequestError } from '../../shared/erro
 import { assertOwnObjectKeys } from '../../lib/object-key'
 import { sendTemplatedEmail } from '../notifications/send'
 import { buildSignUpUrl } from '../auth/invitations'
+import { requireTenantUrl } from '../tenants/urls'
 
 export type StaffRow = typeof staffUsers.$inferSelect
 export type InstructorProfile = typeof instructors.$inferSelect
@@ -108,7 +109,7 @@ export interface CreateInstructorInput {
  * Like the admin-invite flow, we do NOT pre-create a Clerk user. The pending
  * staff_users row links up when the invited email signs into the staff Clerk
  * app and the `user.created` webhook fires (matched by email). The invite email
- * carries a `PORTAL_ORIGIN/signup?invite_email=…` link.
+ * carries a `{studio portal origin}/signup?invite_email=…` link.
  *
  * Class-type eligibility (instructor_class_types) is no longer modelled in the
  * UI — instructors are assignable to any class type at scheduling time.
@@ -122,6 +123,10 @@ export async function createInstructor(
   // The photo is an object key an admin sends as a string, not an upload made
   // here, so without this a profile is a way to point at another studio's file.
   assertOwnObjectKeys(tenantId, [input.photoR2Key])
+
+  // Before the writes, as in `inviteAdmin`: the invitation is only worth
+  // anything if there is a portal of this studio's own to point it at.
+  const portalUrl = await requireTenantUrl('portal', tenantId)
 
   const view = await db.transaction(async tx => {
     // Deliberately *not* tenant-scoped: `staff_users.email` still carries a
@@ -178,9 +183,9 @@ export async function createInstructor(
     recipient: { email, userId: view.id, userKind: 'staff' },
     variables: {
       name: view.name,
-      invite_url: buildSignUpUrl(email),
+      invite_url: buildSignUpUrl(portalUrl, email),
       invitee_email: email,
-      sign_up_url: buildSignUpUrl(email),
+      sign_up_url: buildSignUpUrl(portalUrl, email),
     },
   })
 

@@ -133,13 +133,12 @@ function stubEnvironment() {
   process.env.CLERK_STAFF_SECRET_KEY ??= 'sk_test_harness'
   process.env.CLERK_STAFF_WEBHOOK_SECRET ??= 'whsec_test_harness'
   process.env.IMPERSONATION_SECRET ??= 'test-harness-impersonation-secret-key'
-  process.env.PORTAL_ORIGIN ??= 'http://localhost:3001'
-  process.env.CLIENT_ORIGIN ??= 'http://localhost:3000'
   // The tenant subdomain shape the local frontends use, so a test can send a
   // real `Origin` and have it name a tenant — which is the whole of the
-  // validation on public routes.
+  // validation on public routes. The two exact origins are the bare local
+  // hosts, which name no tenant and fall back to tenant #1.
   process.env.TENANT_ORIGIN_PATTERNS ??=
-    'http://*.localhost:3000,http://*.portal.localhost:3001'
+    'http://*.localhost:3000,http://*.portal.localhost:3001,http://localhost:3000,http://localhost:3001'
   process.env.SMTP_USER ??= 'smtp@example.test'
   process.env.SMTP_PASSWORD ??= 'smtp-password'
 }

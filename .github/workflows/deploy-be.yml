@@ -127,7 +127,7 @@ jobs:
             # Required GitHub settings:
             #   org vars:    BPVPS2_TAILSCALE_HOST, DOCKERHUB_USERNAME
             #   org secrets: TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET, SSH_PRIVATE_KEY, DOCKERHUB_TOKEN
-            #   env vars:    PORT, PORTAL_ORIGIN, CLIENT_ORIGIN, TENANT_ORIGIN_PATTERNS,
+            #   env vars:    PORT, TENANT_ORIGIN_PATTERNS,
             #            SUPERADMIN_EMAIL, PLATFORM_ADMIN_EMAILS,
             #            (optional) MAIL_FROM_EMAIL, MAIL_FROM_NAME,
             #            (optional) STRIPE_STATEMENT_DESCRIPTOR_PREFIX
@@ -176,14 +176,16 @@ jobs:
               # which is the safe failure but is almost certainly not what you
               # wanted.
               echo "PLATFORM_ADMIN_EMAILS=${{ vars.PLATFORM_ADMIN_EMAILS }}"
-              # Portal origin — used for CORS + the sign-up URL in invitation emails
-              echo "PORTAL_ORIGIN=${{ vars.PORTAL_ORIGIN }}"
-              # Client origin — adds fe-client to the CORS allowlist
-              echo "CLIENT_ORIGIN=${{ vars.CLIENT_ORIGIN }}"
               # Tenant subdomain origins, comma-separated, wildcard leftmost —
               # every studio is a subdomain and a studio is created by inserting
               # a row, so the allowlist has to be a pattern. Backs CORS, the
-              # Clerk `azp` check and the public-route `Origin` validation.
+              # Clerk `azp` check and the public-route `Origin` validation, and
+              # is read backwards to build every per-studio link the backend
+              # mails or redirects to.
+              #
+              # Required. It replaced PORTAL_ORIGIN and CLIENT_ORIGIN, which were
+              # one value each for the whole platform and therefore named one
+              # studio's apps to every studio's members.
               #   staging:    https://*.dev.reservetoday.app,https://*.portal.dev.reservetoday.app
               #   production: https://*.reservetoday.app,https://*.portal.reservetoday.app
               echo "TENANT_ORIGIN_PATTERNS=${{ vars.TENANT_ORIGIN_PATTERNS }}"

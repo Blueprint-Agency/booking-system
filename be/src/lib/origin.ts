@@ -5,8 +5,9 @@
  * Every tenant is a subdomain: `{slug}.reservetoday.app` for the member app,
  * `{slug}.portal.reservetoday.app` for the staff one, with a `dev.` level in
  * staging and `.localhost:PORT` locally. A single-valued `PORTAL_ORIGIN` /
- * `CLIENT_ORIGIN` cannot express that, so origins are configured as *patterns*
- * with a leading `*` label and matched here.
+ * `CLIENT_ORIGIN` could not express that — and, being one value, named one
+ * studio — so origins are configured as *patterns* with a leading `*` label and
+ * matched here.
  *
  * The wildcard is deliberately **one label**, not "any depth". That is not a
  * simplification — it is the boundary the certificates already enforce

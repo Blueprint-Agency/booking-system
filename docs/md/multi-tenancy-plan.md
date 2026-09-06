@@ -385,7 +385,8 @@ if a wildcard cannot be branch-assigned, the two-dedicated-staging-projects fall
       single-valued `PORTAL_ORIGIN`/`CLIENT_ORIGIN`; same for `CLERK_STAFF_AUTHORIZED_PARTIES`.
       **Done (#65)** — new `TENANT_ORIGIN_PATTERNS`, matched by `be/src/lib/origin.ts`. Clerk's
       own `authorizedParties` is exact-match and cannot express a per-tenant subdomain, so the
-      `azp` claim is checked against the same allowlist instead.
+      `azp` claim is checked against the same allowlist instead. `PORTAL_ORIGIN` / `CLIENT_ORIGIN`
+      are now deleted outright, along with the per-studio links that were built from them.
 - [x] Map Clerk Organization ↔ `tenant_id`; enforce org membership on portal routes.
       **Done (#65)**, with a one-way rollout seam: enforcement turns on for a tenant the moment
       its org id is written to its row. Provisioning the organizations is still #58.
@@ -423,8 +424,9 @@ if a wildcard cannot be branch-assigned, the two-dedicated-staging-projects fall
 - [ ] Attach `*.reservetoday.app` to fe-client, `*.portal.reservetoday.app` to fe-portal;
       add `*.dev.…` / `*.portal.dev.…` per Spike 2's outcome.
 - [ ] **Portal URL flip:** `portal.yogasadhana.reservetoday.app` →
-      `yogasadhana.portal.reservetoday.app`. 301 the old host, update `PORTAL_ORIGIN`, Clerk
-      allowed origins/redirect URLs, and staff comms. fe-client's URL is unchanged.
+      `yogasadhana.portal.reservetoday.app`. 301 the old host, Clerk allowed origins/redirect
+      URLs, and staff comms. fe-client's URL is unchanged. No backend env change: the portal
+      wildcard already covers the new form, and `PORTAL_ORIGIN` is gone.
 - [ ] Rename BE staging host `api.staging.…` → `api.dev.…` (keep old as alias).
 - [ ] Public Suffix List: not needed — tenants can't publish content or run code on their
       subdomains. Revisit only if that changes (Vercel recommends PSL submission for cookie

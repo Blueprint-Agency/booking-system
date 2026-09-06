@@ -18,16 +18,32 @@ import { clientPackages, classPackages, ptPackages } from '../../db/schema/packa
 import { bookings } from '../../db/schema/bookings'
 import { stripePayments } from '../../db/schema/ledger'
 import { workshops, workshopDays, workshopTierDays } from '../../db/schema/schedule'
-import { CLIENT_URL } from '../../env'
+import { requireTenantUrl } from '../tenants/urls'
 import { reportError } from '../../shared/logger'
 import { sgFormat } from '../../lib/time'
 import { composePurchaseEmail } from './purchase-email'
 import { sendTemplatedEmail } from './send'
 
+/**
+ * The member's own studio's app, per send.
+ *
+ * Both pages used to be module constants built from the one platform-wide
+ * `CLIENT_URL`, so a member of the second studio was sent to the first studio's
+ * account page — a hostname they cannot sign into — to see the purchase they
+ * had just made. The origin is the buying studio's own, derived from its slug.
+ *
+ * Both callers already run inside a `try` that reports and swallows, because
+ * neither may fail the committed purchase it announces; a studio whose origin
+ * cannot be built therefore loses the email and gains a report, rather than
+ * mailing a link into somebody else's studio.
+ */
+
 /** The page that lists what the member owns — where a free purchase points. */
-const ACCOUNT_URL = `${CLIENT_URL}/account`
+const accountUrlFor = (tenantId: string) =>
+  requireTenantUrl('client', tenantId).then(base => `${base}/account`)
 /** Where a workshop booking's QR code lives. */
-const WORKSHOP_QR_URL = `${CLIENT_URL}/account/workshops`
+const workshopQrUrlFor = (tenantId: string) =>
+  requireTenantUrl('client', tenantId).then(base => `${base}/account/workshops`)
 
 const SG_DATETIME = sgFormat('en-GB', {
   day: 'numeric',
@@ -85,7 +101,7 @@ export async function sendPackagePurchaseEmail(
       expiresAt: row.expiresAt,
       durationMonths: row.durationMonths,
       receiptUrl: row.receiptUrl,
-      accountUrl: ACCOUNT_URL,
+      accountUrl: await accountUrlFor(tenantId),
     })
 
     await sendTemplatedEmail({
@@ -166,9 +182,9 @@ export async function sendWorkshopPurchaseEmail(
         client_name: row.clientName,
         workshop_name: row.workshopName,
         date: firstDay ? SG_DATETIME.format(firstDay.startsAt) : 'See your account for the date',
-        qr_url: WORKSHOP_QR_URL,
+        qr_url: await workshopQrUrlFor(tenantId),
         code: row.code,
-        receipt_url: row.receiptUrl || ACCOUNT_URL,
+        receipt_url: row.receiptUrl || (await accountUrlFor(tenantId)),
       },
     })
   } catch (err) {

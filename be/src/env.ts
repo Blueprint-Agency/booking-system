@@ -66,22 +66,24 @@ const schema = z.object({
     .min(32, 'IMPERSONATION_SECRET must be at least 32 chars (used to sign HS256 grant JWTs)'),
   CLERK_STAFF_AUTHORIZED_PARTIES: z.string().optional(),
 
-  PORTAL_ORIGIN: z.string().url('PORTAL_ORIGIN must be a full URL like http://localhost:3001'),
-  CLIENT_ORIGIN: z
-    .string()
-    .url('CLIENT_ORIGIN must be a full URL like http://localhost:3000')
-    .optional(),
-
-  // Comma-separated origin patterns for the tenant subdomains, one line per
-  // environment — e.g.
+  // Comma-separated origin patterns, one line per environment — e.g.
   //   https://*.reservetoday.app,https://*.portal.reservetoday.app
   // A tenant is created by inserting a row, so its origin cannot be enumerated
   // in advance; the wildcard is what makes CORS and the Clerk `azp` check work
   // for a studio that did not exist when the backend was deployed. The `*` must
   // be the leftmost label and covers exactly one label — see lib/origin.ts.
-  // Optional: unset leaves only PORTAL_ORIGIN/CLIENT_ORIGIN, which is the
-  // pre-tenancy behaviour.
-  TENANT_ORIGIN_PATTERNS: z.string().optional(),
+  // Exact origins are accepted too, for a host that names no tenant.
+  //
+  // Required, and it replaced `PORTAL_ORIGIN` / `CLIENT_ORIGIN`. Those were one
+  // value each for the whole platform and could only ever name one studio's
+  // apps, which is why every link built from them pointed at Yoga Sadhana
+  // whichever studio the code was acting for. This is now the only statement
+  // the environment makes about which origins are ours, so an environment that
+  // sets none has an empty allowlist and serves nobody — a boot failure is the
+  // honest form of that.
+  TENANT_ORIGIN_PATTERNS: z
+    .string()
+    .min(1, 'TENANT_ORIGIN_PATTERNS is required — e.g. https://*.example.app,https://*.portal.example.app'),
 
   // Optional / deferred — accept anything (or empty string)
   CLERK_CLIENT_PUBLISHABLE_KEY: z.string().optional(),
@@ -143,11 +145,12 @@ if (!parsed.success) {
 export const env = parsed.data
 export type Env = typeof env
 
-/**
- * The member-facing app's base URL, trailing slash trimmed — the one place any
- * link mailed or redirected to a member is built from. Optional in env because
- * the client app is deployed separately; the dev default keeps local runs
- * working. Paths that must REFUSE when it is unset (impersonation) read
- * `env.CLIENT_ORIGIN` directly instead.
+/*
+ * `CLIENT_URL` used to live here — "the one place any link mailed or redirected
+ * to a member is built from", built from `CLIENT_ORIGIN`. One place, and one
+ * studio: on a platform serving many, it named whichever studio the deployment
+ * was configured for, so a member of any other one was mailed and redirected
+ * into somebody else's app. A studio's URLs are per studio and are derived from
+ * its slug — `services/tenants/urls.ts`. There is no platform-wide equivalent
+ * to reach for, deliberately.
  */
-export const CLIENT_URL = (env.CLIENT_ORIGIN ?? 'http://localhost:3000').replace(/\/+$/, '')

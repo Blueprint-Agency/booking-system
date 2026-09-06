@@ -20,7 +20,6 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 | fe-portal | `https://{slug}.portal.dev.reservetoday.app` | `https://{slug}.portal.reservetoday.app` |
 | Super portal | `https://admin.portal.dev.reservetoday.app` | `https://admin.portal.reservetoday.app` |
 | Vercel target | **preview** (branch-pinned domain) | **production** |
-| `PORTAL_ORIGIN` / `CLIENT_ORIGIN` | exact URLs — the legacy single-studio hostnames below | exact URLs — the legacy single-studio hostnames below |
 | `TENANT_ORIGIN_PATTERNS` | `https://*.dev.reservetoday.app,https://*.portal.dev.reservetoday.app` | `https://*.reservetoday.app,https://*.portal.reservetoday.app` |
 | Clerk instance | development (`*.clerk.accounts.dev`) | production — fe-client on `clerk.booking-system-eight-fawn.vercel.app`, fe-portal on `clerk.project-3p3dw.vercel.app` |
 | `APP_ENV` / `NEXT_PUBLIC_APP_ENV` | `staging` | `production` |
@@ -31,9 +30,12 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 > `staging-portal.yogasadhana.reservetoday.app`, `staging.reservetoday.app` — are branch-assigned
 > domains from the pre-tenancy scheme and still hold certificates. The **portal URL flip**
 > (`portal.yogasadhana.…` → `yogasadhana.portal.…`) is Phase 5 of
-> `docs/md/multi-tenancy-plan.md` and is not done: it needs a 301 on the old host, a
-> `PORTAL_ORIGIN` change, Clerk allowed-origin/redirect updates, and staff comms. Until then both
-> forms must stay in the allowlist.
+> `docs/md/multi-tenancy-plan.md` and is not done: it needs a 301 on the old host, Clerk
+> allowed-origin/redirect updates, and staff comms. The backend side of it is already done —
+> `yogasadhana.portal.…` is covered by the portal wildcard and is what the backend builds staff
+> links from. Until the flip completes, the old form has to stay reachable, and since it is not a
+> `{slug}.portal.…` name no wildcard covers it: add it to `TENANT_ORIGIN_PATTERNS` as an exact
+> origin if it must keep working against the API.
 
 > **Production Clerk is still rooted on Vercel-generated hosts, and that is a known defect.**
 > The `Clerk instance` row above is accurate today: the client instance answers on
@@ -107,16 +109,18 @@ Notes:
 > bpvps2's host-wide `BASE_DOMAIN` is `teeko.ai` and cannot express `reservetoday.app`. The compose
 > lives in the infra repo at `vps/bpvps2/stacks/booking/docker-compose.yml`.
 
-**CORS:** the BE allowlist is assembled from three env vars, and the same list also backs the public-route `Origin` check and the Clerk `azp` check — see `docs/md/spec-tenant-resolution.md`. If they disagreed, one would become the hole in the other two.
+**CORS:** the BE allowlist is assembled from two env vars, and the same list also backs the public-route `Origin` check and the Clerk `azp` check — see `docs/md/spec-tenant-resolution.md`. If they disagreed, one would become the hole in the other two.
 
-- `PORTAL_ORIGIN` (required) and `CLIENT_ORIGIN` (optional, omit to lock down to fe-portal only). Each can be an exact full URL with scheme and no trailing slash, or a leading-wildcard origin such as `https://*.vercel.app` for Vercel preview URLs. Exact URLs are also used as canonical link bases for staff invites / client redirects; wildcard values should only be used when that tradeoff is acceptable. In CI these come from `vars.PORTAL_ORIGIN` / `vars.CLIENT_ORIGIN`.
-- `TENANT_ORIGIN_PATTERNS` (optional, `vars.TENANT_ORIGIN_PATTERNS`) — comma-separated tenant subdomain origins. **A tenant is created by inserting a row**, so its origin cannot be listed in advance; this is the pattern that admits a studio which did not exist when the backend was deployed. The `*` must be the **leftmost** label and covers **exactly one** label — the same boundary the certificates enforce (RFC 6125), so `a.b.reservetoday.app` is unserveable in production and is not allowlisted either.
+- `TENANT_ORIGIN_PATTERNS` (**required**, `vars.TENANT_ORIGIN_PATTERNS`) — comma-separated tenant subdomain origins. **A tenant is created by inserting a row**, so its origin cannot be listed in advance; this is the pattern that admits a studio which did not exist when the backend was deployed. The `*` must be the **leftmost** label and covers **exactly one** label — the same boundary the certificates enforce (RFC 6125), so `a.b.reservetoday.app` is unserveable in production and is not allowlisted either. An exact origin (no `*`) is accepted too, for a host that names no tenant — e.g. the bare local `http://localhost:3000`, whose requests fall back to Tenant #1.
   - staging: `https://*.dev.reservetoday.app,https://*.portal.dev.reservetoday.app`
   - production: `https://*.reservetoday.app,https://*.portal.reservetoday.app`
+  - It is also read **backwards** (`be/src/services/tenants/urls.ts`): a slug plus an app gives back the origin serving that studio, which is the base of every invitation link, member login link, account link and Stripe redirect the backend builds. That is why the link handed out and the origin the backend trusts cannot drift apart.
+- `CLERK_STAFF_AUTHORIZED_PARTIES` (optional) — any extra exact origins to pin, described below.
+- `PORTAL_ORIGIN` and `CLIENT_ORIGIN` are **gone**. They were one value each for the whole platform, so they could only ever name one studio's two apps — and everything built from them (staff invite links, member login links, Stripe redirects) pointed at Yoga Sadhana whichever studio the code was acting for. The wildcards already cover those two hostnames; an environment that genuinely needs an extra exact origin adds it to `TENANT_ORIGIN_PATTERNS`.
 
 **Clerk authorized parties:** `CLERK_STAFF_AUTHORIZED_PARTIES` is **no longer passed to Clerk**. Clerk's own `authorizedParties` option is exact-match and cannot express `{slug}.portal.…` for every slug that exists — a list that would change whenever a studio is created, signing staff out of one made overnight. `verifyToken` is called without it and the `azp` claim is checked against the allowlist above instead (`be/src/lib/allowed-origins.ts`). The var still contributes any extra exact origins an environment wants to pin.
 
-> ⚠️ **The allowlist is now shared, so a wildcard in it widens `azp` too.** Setting `CLIENT_ORIGIN` or `PORTAL_ORIGIN` to something like `https://*.vercel.app` for preview URLs used to affect CORS only; it now also makes every Vercel preview host a valid authorized party for staff and member tokens. Both deployed environments use exact URLs today — keep it that way, and put preview hosts in `TENANT_ORIGIN_PATTERNS` only if that tradeoff is understood.
+> ⚠️ **The allowlist is shared, so a wildcard in it widens `azp` too.** Adding something like `https://*.vercel.app` to `TENANT_ORIGIN_PATTERNS` for preview URLs does not affect CORS alone: it also makes every Vercel preview host a valid authorized party for staff and member tokens, and — since the list is read backwards for link bases — a candidate origin to mail people. Add preview hosts only if that tradeoff is understood.
 
 **Clerk apps:** two separate Clerk applications. fe-portal + `CLERK_STAFF_*` is the staff/instructor app; fe-client + `CLERK_CLIENT_*` is the member-facing app. Cross-app tokens are rejected by the BE middleware on purpose — never share keys between them.
 
@@ -140,7 +144,7 @@ Notes:
 
 **GitHub repo settings driving `deploy-be.yml`** (see the comment block at the top of the workflow for the canonical list). The workflow job runs in the GitHub Environment named by the branch (`staging` / `Production`), so repo/environment settings can override organization-level settings with the same name. Shared deploy settings should live under the **Blueprint-Agency organization** and grant access to `booking-system`.
 - `org vars`: `BPVPS2_TAILSCALE_HOST`, `DOCKERHUB_USERNAME`
-- `env vars` (set in **both** Environments): `PORT`, `PORTAL_ORIGIN`, `CLIENT_ORIGIN`, `TENANT_ORIGIN_PATTERNS`, `SUPERADMIN_EMAIL`, `PLATFORM_ADMIN_EMAILS` (optional), `MAIL_FROM_EMAIL` / `MAIL_FROM_NAME` (optional — the platform's envelope identity; see below)
+- `env vars` (set in **both** Environments): `PORT`, `TENANT_ORIGIN_PATTERNS`, `SUPERADMIN_EMAIL`, `PLATFORM_ADMIN_EMAILS` (optional), `MAIL_FROM_EMAIL` / `MAIL_FROM_NAME` (optional — the platform's envelope identity; see below)
 - `org secrets`: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`
 - `repo/env secrets`: `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_APP_PASSWORD`, `DOCKERHUB_TOKEN`, `SSH_PRIVATE_KEY`, `CLERK_STAFF_*` (×3), `CLERK_CLIENT_*` (×3), `SMTP_USER`, `SMTP_PASSWORD`, `SENTRY_DSN` (optional — error monitoring), `R2_*` (×5 — required in **both** Environments; see the `R2_PUBLIC_URL` note above), plus deferred `STRIPE_*`.
 - `NODE_ENV` (always `production`), `APP_ENV`, `ENV_NAME`, `STACK_DIR`, `BOOKING_FQDN` and `IMAGE_TAG` are derived from the branch in the workflow's `env:` block, not from repo settings.
