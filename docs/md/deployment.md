@@ -68,13 +68,23 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 > scope of both Vercel projects already reads `https://api.dev.reservetoday.app`. Nothing points at
 > the old name any more, so the next staging deploy is the moment it stops being served.
 >
-> Two loose ends stay open for a human, both on issue #69. The infra repo's
-> `vps/bpvps2/stacks/booking/docker-compose.yml` still ORs a second `Host(${BOOKING_FQDN_ALIAS})`
-> into the Traefik rule, so the workflow has to keep writing that key — pinned to `BOOKING_FQDN`,
-> which makes it a harmless duplicate rather than a second name. Drop the second `Host()` there,
-> then delete the key from `deploy-be.yml` and sweep it out of each stack's `.env`. Separately, the
-> `api.staging` A record (`rec_daf75bd3e2124b56909a310e`) is still in Vercel DNS and can be removed
-> once a staging deploy has run.
+> **`BOOKING_FQDN_ALIAS` is gone.** The Traefik rule is now a single
+> ``Host(`${BOOKING_FQDN}`)``. The alias was the second hostname in that rule, so a rename could
+> overlap — the new name serving a valid certificate before anything was repointed at it, the old
+> name still answering until nothing called it — and the `api.staging` → `api.dev` rename it
+> existed for is finished. Both stacks had been carrying it set equal to `BOOKING_FQDN`, so the
+> rule read ``Host(x) || Host(x)``.
+>
+> It was removed rather than left idle because idle was not free: the variable was **required**
+> whether or not a rename was in flight, since an unset one renders ``Host(``)``, which Traefik
+> rejects — the router then vanishes while TLS still terminates, so the failure presents as a 404
+> rather than an outage. A mechanism that breaks the API when someone tidies away a duplicate line
+> is worse than writing the second `Host()` again on the day it is next needed. When that day
+> comes: ``Host(a) || Host(b)``, never ``Host(a, b)`` — Traefik v3's matcher takes exactly one
+> parameter and rejects the list form.
+>
+> One loose end stays open for a human, on issue #69: the `api.staging` A record
+> (`rec_daf75bd3e2124b56909a310e`) is still in Vercel DNS and can be removed.
 
 > **Every staging/production URL is a real domain — do not test against `*.vercel.app`.**
 > The generated aliases still exist and still resolve, but the backend's CORS allowlist contains

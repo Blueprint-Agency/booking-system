@@ -106,19 +106,15 @@ jobs:
             # CF_DNS_API_TOKEN, TRAEFIK_DASHBOARD_AUTH) survive untouched.
             # BOOKING_HOST is dead — the router rule takes a full FQDN now.
             sed -i '/^BOOKING_HOST=/d' .env 2>/dev/null || true
-            # BOOKING_FQDN_ALIAS no longer names a second hostname — it is
-            # pinned to BOOKING_FQDN, which is what `main` always did. It cannot
-            # simply be dropped: the infra repo's compose still spells the router
-            # rule Host(`${BOOKING_FQDN}`) || Host(`${BOOKING_FQDN_ALIAS}`), and
-            # compose substitutes an unset var as empty — Host(``) is not a valid
-            # rule, so on a fresh stack Traefik would drop the router and the API
-            # would 404. Writing it as a duplicate of FQDN retires the old name
-            # (the rule stops matching it) while keeping the rule well-formed.
-            # Delete both this line and the loop entry once that compose file
-            # drops the second Host() (Blueprint-Agency/booking-system#69).
+            # BOOKING_FQDN_ALIAS is dead too. It was the second hostname in the
+            # router rule, so a rename could overlap; the api.staging -> api.dev
+            # rename it existed for is finished, and the infra repo's compose now
+            # spells the rule with a single Host(). Swept out of .env for the same
+            # reason as BOOKING_HOST: a key nothing reads is a key that gets read
+            # back as though it meant something.
+            sed -i '/^BOOKING_FQDN_ALIAS=/d' .env 2>/dev/null || true
             for kv in "ENV_NAME=${{ env.ENV_NAME }}" \
                       "BOOKING_FQDN=${{ env.BOOKING_FQDN }}" \
-                      "BOOKING_FQDN_ALIAS=${{ env.BOOKING_FQDN }}" \
                       "IMAGE_TAG=${{ env.IMAGE_TAG }}"; do
               k="${kv%%=*}"
               sed -i "/^${k}=/d" .env 2>/dev/null || true
