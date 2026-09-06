@@ -19,6 +19,12 @@
  * makes a dashboard refund and a button refund indistinguishable by
  * construction. Which is also why **every step below is a no-op on a second
  * pass** — the provider retries, and both paths land here.
+ *
+ * Since #95 a Purchase that granted nothing can be returned too, and it is the
+ * one case where the unwind has nothing to unwind: no plan to Void, no bookings
+ * to cancel, no place to give up, because the grant runs on settlement and this
+ * sale never settled. It closes as **abandoned** rather than refunded — money
+ * that was never revenue must not be subtracted from Net as though it had been.
  */
 import { and, eq, gt, inArray, ne, sql } from 'drizzle-orm'
 import { db, withTenant } from '../../db'
@@ -39,9 +45,16 @@ import { cancelBooking } from '../bookings/cancel'
 import { refundPromoCodeRedemption } from '../packages/promo-redemption'
 import { sendTemplatedEmail } from '../notifications/send'
 import { heldPayments } from './balance'
-import { markPurchaseRefunded, paymentsForPurchase, purchaseById } from './purchases'
+import {
+  markPurchaseAbandoned,
+  markPurchaseRefunded,
+  paymentsForPurchase,
+  purchaseById,
+  type PurchaseRow,
+} from './purchases'
 import {
   attendedNotice,
+  composeAbandonedRefundEmail,
   composeRefundEmail,
   isUntouched,
   type CancelledSession,
@@ -157,7 +170,7 @@ export async function refundStatesFor(
  * One query for the whole page, keyed by Purchase, because the client detail
  * page reads every row at once.
  */
-async function heldPaymentCounts(
+export async function heldPaymentCounts(
   tenantId: string,
   purchaseIds: (string | null)[],
 ): Promise<Map<string, number>> {
@@ -484,6 +497,83 @@ async function refundPurchaseAndAudit(args: {
 }
 
 /**
+ * Refund a Purchase that was part-paid and **never granted** (#95).
+ *
+ * The money's only way out. A member who part-pays and never comes back leaves
+ * the studio holding real cash against an entitlement that does not exist, and
+ * every other path in this module refuses to touch it — `issueRefund` is aimed
+ * at a plan and `issueWorkshopRefund` at a booking, and an ungranted Purchase
+ * has neither.
+ *
+ * Same shape as the rest: **this calls the provider and returns.** The
+ * `charge.refunded` webhook each call triggers does the unwind, which is what
+ * keeps a refund issued from here and one issued from the provider's dashboard
+ * the same operation. There is no attended count and no override, because
+ * nothing was delivered — a Purchase that granted nothing cannot have been used,
+ * so there is no studio rule to refund against and nothing to warn an admin
+ * about beyond how many returns will land on the statement.
+ */
+export async function issueOpenPurchaseRefund(args: {
+  tenantId: string
+  purchaseId: string
+  reason: string
+  actorStaffId: string
+}): Promise<{ purchaseId: string; paymentIntentIds: string[]; returnedSgd: string }> {
+  const purchase = await purchaseById(args.tenantId, args.purchaseId)
+  if (!purchase) throw new NotFoundError('purchase_not_found')
+  // Only an ungranted Purchase comes through here. A `paid` one delivered
+  // something and is refunded through the plan or the booking it bought, so
+  // that the plan is Voided and its future bookings cancelled; sending it down
+  // this path would return the money and leave the entitlement standing.
+  if (purchase.status !== 'open') {
+    if (purchase.status === 'abandoned') throw new ConflictError('already_refunded')
+    throw new BadRequestError('purchase_not_open')
+  }
+
+  const payments = await paymentsForPurchase(args.tenantId, args.purchaseId)
+  const toReturn = heldPayments(payments)
+  // An `open` Purchase with nothing against it is an abandoned click, not money
+  // the studio is holding — the member owes nothing on it and does not remember
+  // making it. There is nothing to give back.
+  if (toReturn.length === 0) throw new BadRequestError('purchase_not_refundable')
+
+  const returnedSgd = purchase.amountPaidSgd
+  const paymentIntentIds = toReturn.map(p => p.paymentIntentId)
+  for (const intentId of paymentIntentIds) {
+    await refundAtProvider(args.tenantId, intentId)
+  }
+
+  // Written after the provider has taken it, and reported rather than thrown if
+  // it fails — the money has already moved, and an admin whose refund went
+  // through must not be told it did not. Same reasoning as
+  // `refundPurchaseAndAudit`.
+  try {
+    await db.insert(auditLog).values({
+      tenantId: args.tenantId,
+      actorStaffId: args.actorStaffId,
+      actorType: 'staff',
+      action: 'purchase_abandoned',
+      targetTable: 'purchases',
+      targetId: args.purchaseId,
+      payload: {
+        reason: args.reason,
+        purchaseId: args.purchaseId,
+        paymentIntentIds,
+        returnedSgd,
+      },
+    })
+  } catch (err) {
+    reportError(err, 'abandoned refund audit row failed', {
+      scope: 'refunds',
+      purchaseId: args.purchaseId,
+      reason: args.reason,
+    })
+  }
+
+  return { purchaseId: args.purchaseId, paymentIntentIds, returnedSgd }
+}
+
+/**
  * The unwind, driven by `charge.refunded`. **Every step is a no-op on a second
  * pass** — each write is conditioned on the state it is moving away from, and
  * the only step that cannot be (the email) is gated on the Purchase's flip,
@@ -553,8 +643,9 @@ async function unwindRefundForTenant(paymentIntentId: string): Promise<void> {
  */
 async function unwindPurchase(tenantId: string, purchaseId: string): Promise<void> {
   const purchase = await purchaseById(tenantId, purchaseId)
-  // Already refunded means a redelivery of an event that completed.
-  if (!purchase || purchase.status === 'refunded') return
+  // Already refunded or already abandoned means a redelivery of an event that
+  // completed.
+  if (!purchase || purchase.status === 'refunded' || purchase.status === 'abandoned') return
 
   const payments = await paymentsForPurchase(tenantId, purchaseId)
   const outstanding = heldPayments(payments)
@@ -577,6 +668,18 @@ async function unwindPurchase(tenantId: string, purchaseId: string): Promise<voi
   // than one payment hands the code back on whichever of them carried it.
   for (const payment of payments) {
     await refundPromoCodeRedemption(tenantId, payment.paymentIntentId)
+  }
+
+  // A Purchase that granted nothing (#95). It is still `open` at this point,
+  // which is precisely the statement that nothing was delivered: the grant runs
+  // on settlement, and settlement is what moves a Purchase off `open`. So the
+  // whole of the unwind below — voiding a plan, cancelling future bookings,
+  // ending a workshop place — has nothing to act on, and the sale is closed as
+  // **abandoned** rather than refunded. Told apart because they are different
+  // events: a refund reverses revenue, and this money was never revenue.
+  if (purchase.status === 'open') {
+    await abandonPurchase(tenantId, purchase)
+    return
   }
 
   // A workshop's booking IS the purchase, so it is what gets cancelled.
@@ -677,6 +780,55 @@ async function unwindPurchase(tenantId: string, purchaseId: string): Promise<voi
     })
   } catch (err) {
     reportError(err, 'refund email failed', { scope: 'refunds', purchaseId })
+  }
+}
+
+/**
+ * Close an ungranted Purchase and tell the member their money is back (#95).
+ *
+ * Two steps and no third: the status flip, and the email that rides on winning
+ * it. There is deliberately nothing to unwind — no plan to Void, no bookings to
+ * cancel, no place to give up — because a Purchase that never settled granted
+ * none of those. The Promo Code has already been handed back by the caller,
+ * which is the one thing a part payment did consume.
+ *
+ * The flip is last and atomic for the same reason the refund flip is: it is what
+ * decides which of two concurrent deliveries sends the one email.
+ */
+async function abandonPurchase(tenantId: string, purchase: PurchaseRow): Promise<void> {
+  // Read before the flip zeroes it — this is what the member is being told came
+  // back, and what the portal reconciles against the statement.
+  const returnedSgd = purchase.amountPaidSgd
+
+  if (!(await markPurchaseAbandoned(tenantId, purchase.id))) return
+
+  const [client] = await db
+    .select({ name: clients.name, email: clients.email })
+    .from(clients)
+    .where(and(eq(clients.tenantId, tenantId), eq(clients.id, purchase.clientId)))
+    .limit(1)
+  if (!client) return
+
+  // The provider sends its own money receipt; ours is the one that says the
+  // purchase is closed and that nothing was ever issued on it — which is the
+  // question a member who part-paid will otherwise ring the studio to ask. It
+  // must never take the unwind down with it, so it swallows.
+  try {
+    const metadata = purchase.metadata as Record<string, string>
+    const { slug, variables } = composeAbandonedRefundEmail({
+      clientName: client.name,
+      itemName: metadata.item_name || 'your purchase',
+      amountSgd: returnedSgd,
+      accountUrl: await accountUrlFor(tenantId),
+    })
+    await sendTemplatedEmail({
+      tenantId,
+      slug,
+      recipient: { email: client.email, userId: purchase.clientId, userKind: 'client' },
+      variables,
+    })
+  } catch (err) {
+    reportError(err, 'abandoned refund email failed', { scope: 'refunds', purchaseId: purchase.id })
   }
 }
 

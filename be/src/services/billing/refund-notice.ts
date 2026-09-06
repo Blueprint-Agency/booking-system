@@ -80,6 +80,64 @@ export function cancelledClassesLine(sessions: CancelledSession[]): string {
   return `We have cancelled ${plural(sessions.length, 'upcoming booking', 'upcoming bookings')}: ${named}.`
 }
 
+/**
+ * How long a part-paid Purchase may sit before the portal raises it (#95).
+ *
+ * Fourteen days, and the number is a judgement rather than a derivation: long
+ * enough that a member who meant to come back with a second card still can,
+ * short enough that the studio is not holding a stranger's money for a season.
+ * Nothing happens when it elapses except that the row appears on a list — the
+ * refund is always a person's decision, so being wrong here costs an admin a
+ * glance and never a member their purchase.
+ */
+export const SILENT_AFTER_DAYS = 14
+
+const DAY_MS = 86_400_000
+
+/** Whole days between the last thing that happened on a Purchase and now. */
+export function daysSilent(lastActivityAt: Date, now: Date): number {
+  return Math.floor((now.getTime() - lastActivityAt.getTime()) / DAY_MS)
+}
+
+/**
+ * Has this Purchase gone quiet? The clock runs from the **last** payment, not
+ * the first: a member who paid a second card a week ago is mid-purchase, not
+ * silent, and raising them would ask an admin to chase somebody who is still
+ * going.
+ */
+export function isSilent(lastActivityAt: Date, now: Date): boolean {
+  return daysSilent(lastActivityAt, now) >= SILENT_AFTER_DAYS
+}
+
+/** What the portal prints beside a silent Purchase. */
+export function silenceNotice(lastActivityAt: Date, now: Date): string {
+  const days = daysSilent(lastActivityAt, now)
+  return `No payment for ${plural(days, 'day', 'days')} — last paid ${SG_DATE.format(lastActivityAt)}`
+}
+
+/**
+ * What an abandoned refund put back, in the terms a bank statement uses (#95).
+ *
+ * The count matters as much as the total: one press of the button becomes one
+ * provider call per payment, so a Purchase settled by two cards produces two
+ * lines on the studio's statement. An admin reconciling the month needs to know
+ * that before they start counting.
+ */
+export function abandonedReturnLine(paymentCount: number, amountSgd: string): string {
+  return `${plural(paymentCount, 'payment', 'payments')} returned, totalling S$${amountSgd}`
+}
+
+/**
+ * What the Refund did to a Purchase that granted nothing.
+ *
+ * Deliberately not `voidedLine`: there is no plan to say has stopped covering
+ * bookings, and a member told their package "no longer covers any bookings"
+ * would go looking for a package they never had.
+ */
+export function abandonedLine(itemName: string, amountSgd: string): string {
+  return `Your unfinished purchase of ${itemName} has been cancelled and the S$${amountSgd} you had paid towards it returned in full.`
+}
+
 export interface RefundEmailInput {
   clientName: string
   packageName: string
@@ -100,6 +158,41 @@ export function composeRefundEmail(input: RefundEmailInput): {
       package_name: input.packageName,
       refund_line: voidedLine(input.packageName, input.amountSgd),
       cancelled_line: cancelledClassesLine(input.cancelled),
+      account_url: input.accountUrl,
+    },
+  }
+}
+
+export interface AbandonedRefundEmailInput {
+  clientName: string
+  /** What they were buying, frozen at checkout — never a package they hold. */
+  itemName: string
+  amountSgd: string
+  accountUrl: string
+}
+
+/**
+ * The member's email for a Purchase they never finished (#95).
+ *
+ * The **same template** as an ordinary Refund, with different sentences in it.
+ * A second template would be a second thing for a studio to edit and keep in
+ * step, and the member's question is identical either way: what happened to my
+ * money. What differs is only that there is no entitlement to report the end of
+ * and no booking to report the cancellation of — so `cancelled_line` says that
+ * plainly rather than being left empty, which would render as a hole in the copy.
+ */
+export function composeAbandonedRefundEmail(input: AbandonedRefundEmailInput): {
+  slug: 'purchase_refunded'
+  variables: Record<string, string>
+} {
+  return {
+    slug: 'purchase_refunded',
+    variables: {
+      client_name: input.clientName,
+      package_name: input.itemName,
+      refund_line: abandonedLine(input.itemName, input.amountSgd),
+      cancelled_line:
+        'Nothing had been issued to you on it — no package, no credits and no booking — so there was nothing to cancel.',
       account_url: input.accountUrl,
     },
   }

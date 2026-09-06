@@ -18,7 +18,7 @@
  * There is no finance_events table and there should not be one: these rows ARE
  * the ledger, and a copy of them would be a second thing to keep true.
  */
-import { and, eq, gte, inArray, isNotNull, lte, ne } from 'drizzle-orm'
+import { and, eq, gte, inArray, isNotNull, lte, notInArray } from 'drizzle-orm'
 import { db } from '../../db'
 import { clientPackages, classPackages, ptPackages, promoCodes } from '../../db/schema/packages'
 import { bookings } from '../../db/schema/bookings'
@@ -269,11 +269,14 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
         // here would subtract from Net a figure Net never contained, quietly
         // understating the month by the refunded amount.
         //
-        // It is reachable: a part payment can be returned from the provider's
-        // dashboard, which is the only place a purchase that granted nothing
-        // can be refunded from today. What that money was is the "held on
-        // unfinished purchases" figure, and it simply stops being held.
-        ne(purchases.status, 'open'),
+        // `abandoned` is the same purchase a moment later (#95). An admin
+        // refunding an ungranted Purchase closes it as abandoned rather than
+        // refunded precisely so the two stay apart here: the row was `open`
+        // when the money went back and would be excluded on that ground alone,
+        // and it must keep being excluded once it is closed. Naming both is
+        // what makes that true regardless of which side of the status flip a
+        // finance query happens to run on.
+        notInArray(purchases.status, ['open', 'abandoned']),
         ...within(stripePayments.refundedAt, filter),
       ),
     )

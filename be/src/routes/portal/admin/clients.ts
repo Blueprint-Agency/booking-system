@@ -226,14 +226,11 @@ function workshopPurchaseView(w: WorkshopPurchase) {
  * in against it — which is what `grants_nothing` says in one word to every
  * surface that shows it.
  *
- * ponytail: no Refund button. `refundStatesFor` walks what a purchase
- * *delivered*, and an open Purchase delivered nothing, so an admin who wants to
- * return a part payment has to do it from the provider's dashboard — where the
- * `charge.refunded` webhook still catches it and there is nothing to unwind.
- * #93 asks that this money be visible, not that it be returnable from here, and
- * the finance figures are correct either way (see the settlement test on the
- * refund rows in services/finance/list.ts). Upgrade path: a Refund issued
- * against a Purchase rather than against the plan or booking it bought.
+ * It **is** refundable from here since #95, through
+ * `POST /portal/admin/purchases/:id/refund` rather than through this file: the
+ * Refund is aimed at the Purchase itself, since there is no plan and no booking
+ * to aim it at. `refund_payment_count` is what the dialog needs — how many
+ * returns one press of the button will put on the statement.
  */
 function openPurchaseView(p: OpenPurchaseView) {
   return {
@@ -246,6 +243,7 @@ function openPurchaseView(p: OpenPurchaseView) {
     part_paid_at: p.partPaidAt,
     created_at: p.createdAt,
     grants_nothing: true,
+    refund_payment_count: p.paymentCount,
   }
 }
 
