@@ -29,6 +29,40 @@ export function getClerkClientApp(): ClerkClient {
 }
 
 /**
+ * Third Clerk application, backing the super portal alone.
+ *
+ * Lazy and optional in the same shape as the client app, but for a different
+ * reason: unset here does not mean "deferred", it means "the super portal
+ * shares the staff app's session", which is what shipped before this and stays
+ * the fallback so an environment that has not created the third Clerk
+ * application keeps working. `isPlatformAppConfigured()` is the one place that
+ * distinguishes the two, so callers never have to re-derive it.
+ */
+export function isPlatformAppConfigured(): boolean {
+  // Both halves, matching fe-portal's `platformKeys()`. The two sides have to
+  // agree about what "configured" means or they disagree about which instance
+  // signs a token: `deploy-be.yml` writes both lines unconditionally, so an
+  // unset `CLERK_PLATFORM_PUBLISHABLE_KEY` secret leaves the publishable key
+  // blank and the secret set. Keying off the secret alone, the backend would
+  // then verify against the platform instance while the frontend — which
+  // requires both — kept minting staff-app tokens, and every
+  // `/api/v1/platform/*` call would 404 on a signature failure with the boot
+  // warning below staying silent because the backend believed it was set up.
+  return Boolean(env.CLERK_PLATFORM_SECRET_KEY && env.CLERK_PLATFORM_PUBLISHABLE_KEY)
+}
+
+let _clerkPlatformApp: ClerkClient | null = null
+export function getClerkPlatformApp(): ClerkClient {
+  if (!isPlatformAppConfigured()) return clerkStaffApp
+  if (_clerkPlatformApp) return _clerkPlatformApp
+  _clerkPlatformApp = createClerkClient({
+    secretKey: env.CLERK_PLATFORM_SECRET_KEY,
+    publishableKey: env.CLERK_PLATFORM_PUBLISHABLE_KEY,
+  })
+  return _clerkPlatformApp
+}
+
+/**
  * The authorized-parties gate, applied by us rather than by Clerk.
  *
  * Clerk's own `authorizedParties` option is an exact-match list of origins, and
@@ -54,6 +88,26 @@ function assertAuthorizedParty(claims: Record<string, unknown>): void {
 export async function verifyStaffToken(token: string): Promise<{ sub: string; [k: string]: unknown }> {
   const claims = await verifyToken(token, {
     secretKey: env.CLERK_STAFF_SECRET_KEY,
+  })
+  assertAuthorizedParty(claims as Record<string, unknown>)
+  return claims as { sub: string; [k: string]: unknown }
+}
+
+/**
+ * Verifies a super portal Clerk JWT.
+ *
+ * Routes through the PLATFORM Clerk app when one is configured, and through the
+ * staff app when none is — so this is where "the super portal has its own user
+ * pool" actually becomes true. With the platform app configured, a studio
+ * superadmin's staff token does not reach the `PLATFORM_ADMIN_EMAILS` check at
+ * all: it was signed by a different Clerk instance and fails verification here.
+ */
+export async function verifyPlatformToken(
+  token: string,
+): Promise<{ sub: string; [k: string]: unknown }> {
+  if (!isPlatformAppConfigured()) return verifyStaffToken(token)
+  const claims = await verifyToken(token, {
+    secretKey: env.CLERK_PLATFORM_SECRET_KEY!,
   })
   assertAuthorizedParty(claims as Record<string, unknown>)
   return claims as { sub: string; [k: string]: unknown }

@@ -66,7 +66,32 @@ const schema = z.object({
     .min(32, 'IMPERSONATION_SECRET must be at least 32 chars (used to sign HS256 grant JWTs)'),
   CLERK_STAFF_AUTHORIZED_PARTIES: z.string().optional(),
 
-  // Comma-separated origin patterns, one line per environment — e.g.
+  // Third Clerk application, backing the **super portal** at
+  // `admin.portal.<root domain>` and nothing else.
+  //
+  // It exists for a reason cookies cannot express. Clerk's session material is
+  // the `__client` cookie, and Clerk scopes it to the instance's own Frontend
+  // API host — `Domain=clerk.portal.reservetoday.app` for the staff app. So two
+  // hostnames served by ONE Clerk application share one `__client`, which means
+  // they share one signed-in person: sign into `admin.portal.…` and
+  // `{slug}.portal.…` is already signed in as the same account, and vice versa.
+  // That is not a bug in the cookie, it is what one Clerk application means.
+  //
+  // The super portal operates every studio on the platform, so it is the one
+  // surface where that conflation is worth a whole extra Clerk application:
+  // its own Frontend API host, its own `__client`, its own user pool. A studio
+  // superadmin's staff token is then not merely refused by the allowlist below
+  // — it fails signature verification, because it was minted by a different
+  // Clerk instance.
+  //
+  // Optional, and unset is the pre-existing behaviour: the super portal falls
+  // back to the STAFF app and shares its session, which is what shipped before
+  // this. `PLATFORM_ADMIN_EMAILS` remains the authorisation either way.
+  CLERK_PLATFORM_PUBLISHABLE_KEY: z.string().optional(),
+  CLERK_PLATFORM_SECRET_KEY: z.string().optional(),
+
+  // Comma-separated origin patterns for the tenant subdomains, one line per
+  // environment — e.g.
   //   https://*.reservetoday.app,https://*.portal.reservetoday.app
   // A tenant is created by inserting a row, so its origin cannot be enumerated
   // in advance; the wildcard is what makes CORS and the Clerk `azp` check work

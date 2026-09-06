@@ -1,5 +1,5 @@
 import type { MiddlewareHandler } from 'hono'
-import { clerkStaffApp, verifyStaffToken } from '../lib/clerk'
+import { getClerkPlatformApp, isPlatformAppConfigured, verifyPlatformToken } from '../lib/clerk'
 import { env } from '../env'
 import { isPlatformAdmin, parsePlatformAdmins } from '../services/tenants/platform-admin'
 import { logger } from '../shared/logger'
@@ -35,6 +35,17 @@ if (PLATFORM_ADMINS.length === 0) {
   )
 }
 
+// Announced at boot rather than discovered in a browser. Without its own Clerk
+// application the super portal shares the staff app's `__client` cookie, so
+// `admin.portal.…` and `{slug}.portal.…` are one signed-in person and cannot be
+// two — the allowlist still refuses the wrong account at the API, but the two
+// hostnames cannot hold separate sessions in one browser.
+if (!isPlatformAppConfigured()) {
+  logger.warn(
+    'CLERK_PLATFORM_SECRET_KEY is unset — the super portal shares the STAFF Clerk app, so it shares one browser session with every studio portal.',
+  )
+}
+
 /**
  * Short memo of clerk user id → primary email. The gate runs on every super
  * portal request and the answer changes about never; without it every list
@@ -52,7 +63,7 @@ async function primaryEmail(clerkUserId: string): Promise<string | null> {
   if (cached && Date.now() - cached.at < EMAIL_TTL_MS) return cached.email
   if (cached) emailCache.delete(clerkUserId)
 
-  const user = await clerkStaffApp.users.getUser(clerkUserId)
+  const user = await getClerkPlatformApp().users.getUser(clerkUserId)
   const primary =
     user.emailAddresses.find(address => address.id === user.primaryEmailAddressId) ?? null
   const email = primary?.emailAddress ?? null
@@ -83,7 +94,7 @@ export const requirePlatformAdmin: MiddlewareHandler = async (c, next) => {
 
   let sub: string
   try {
-    ;({ sub } = await verifyStaffToken(token))
+    ;({ sub } = await verifyPlatformToken(token))
   } catch {
     return c.json({ error: 'not_found' }, 404)
   }
