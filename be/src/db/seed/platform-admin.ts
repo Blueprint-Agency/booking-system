@@ -1,4 +1,4 @@
-import { clerkStaffApp } from '../../lib/clerk'
+import { getClerkPlatformApp, isPlatformAppConfigured } from '../../lib/clerk'
 import { parsePlatformAdmins } from '../../services/tenants/platform-admin'
 
 /**
@@ -11,11 +11,20 @@ import { parsePlatformAdmins } from '../../services/tenants/platform-admin'
  * on it arrives afterwards: created from the super portal, or restored from an
  * archive.
  *
- * So this seeds the people on `PLATFORM_ADMIN_EMAILS` into the staff Clerk
- * application, and nothing else. There is no `staff_users` row to write —
- * platform administration deliberately lives outside the database, so that a
- * studio's own superadmin cannot become one by any write path (see
- * services/tenants/platform-admin.ts).
+ * So this seeds the people on `PLATFORM_ADMIN_EMAILS` into the Clerk
+ * application the super portal actually signs in against, and nothing else.
+ * There is no `staff_users` row to write — platform administration deliberately
+ * lives outside the database, so that a studio's own superadmin cannot become
+ * one by any write path (see services/tenants/platform-admin.ts).
+ *
+ * **Which application that is has to be asked, not assumed.** It is the
+ * PLATFORM app where one is configured and the staff app otherwise, which is
+ * exactly the question `requirePlatformAdmin` answers on every request. This
+ * seeder used to name `clerkStaffApp` outright, and once the super portal moved
+ * to its own instance that made the seed a quiet lie: `npm run db:seed` runs on
+ * every deploy, so each one would create the operator in the *staff* pool and
+ * log "platform admin … created" while the pool the super portal reads stayed
+ * empty and nobody could sign in.
  *
  * **Passwordless, by design.** A Clerk user is created with no credential and
  * the operator sets their own via "Forgot password" on first sign-in. That keeps
@@ -37,21 +46,28 @@ export async function seedPlatformAdmins() {
     return
   }
 
+  // Named in the log because the two pools are indistinguishable from the
+  // output otherwise, and "created" in the wrong one reads exactly like success.
+  const clerk = getClerkPlatformApp()
+  const pool = isPlatformAppConfigured() ? 'platform' : 'staff'
+
   for (const email of admins) {
     try {
-      const { data } = await clerkStaffApp.users.getUserList({ emailAddress: [email] })
+      const { data } = await clerk.users.getUserList({ emailAddress: [email] })
       if (data[0]) {
-        console.log(`[seed] platform admin ${email} already exists — credential left untouched`)
+        console.log(
+          `[seed] platform admin ${email} already exists in the ${pool} Clerk app — credential left untouched`,
+        )
         continue
       }
       // Backend-API-created users have their primary email auto-verified, so the
       // reset flow delivers immediately on first sign-in with no extra step.
-      const user = await clerkStaffApp.users.createUser({
+      const user = await clerk.users.createUser({
         emailAddress: [email],
         skipPasswordRequirement: true,
       })
       console.log(
-        `[seed] platform admin ${email} created (${user.id}) — set the password via "Forgot password" on first sign-in`,
+        `[seed] platform admin ${email} created (${user.id}) in the ${pool} Clerk app — set the password via "Forgot password" on first sign-in`,
       )
     } catch (err) {
       console.warn(`[seed] could not provision platform admin ${email}:`, err)
