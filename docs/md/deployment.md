@@ -21,7 +21,7 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 | Super portal | `https://admin.portal.dev.reservetoday.app` | `https://admin.portal.reservetoday.app` |
 | Vercel target | **preview** (branch-pinned domain) | **production** |
 | `TENANT_ORIGIN_PATTERNS` | `https://*.dev.reservetoday.app,https://*.portal.dev.reservetoday.app` | `https://*.reservetoday.app,https://*.portal.reservetoday.app` |
-| Clerk instance | development (`*.clerk.accounts.dev`) | production — fe-client on `clerk.booking-system-eight-fawn.vercel.app`, fe-portal on `clerk.project-3p3dw.vercel.app` |
+| Clerk instance | development (`*.clerk.accounts.dev`) | production — fe-client on `clerk.reservetoday.app`, fe-portal on `clerk.portal.reservetoday.app`, super portal on `clerk.admin.portal.reservetoday.app` |
 | `APP_ENV` / `NEXT_PUBLIC_APP_ENV` | `staging` | `production` |
 
 > **The legacy single-studio hostnames still exist and have not been retired.**
@@ -37,16 +37,20 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 > `{slug}.portal.…` name no wildcard covers it: add it to `TENANT_ORIGIN_PATTERNS` as an exact
 > origin if it must keep working against the API.
 
-> **Production Clerk is still rooted on Vercel-generated hosts, and that is a known defect.**
-> The `Clerk instance` row above is accurate today: the client instance answers on
-> `clerk.booking-system-eight-fawn.vercel.app` and the portal one on
-> `clerk.project-3p3dw.vercel.app`. Neither is a subdomain of `reservetoday.app`, so tenant
-> subdomains do not authenticate by default, and the client instance's `Home URL` names a single
-> Tenant (`yogasadhana.reservetoday.app`) with every Component path blank — a Clerk-initiated
-> redirect for any other Tenant's member lands in Yoga Sadhana's app. Issue #74 is the fix. It is a
-> live migration that logs everyone out and rotates both publishable keys, so it is scripted rather
-> than described: run `scripts/clerk-prod-domain-migration.sh` in a maintenance window. Update this
-> row and ADR 0001 when it completes.
+> **Production Clerk now sits on `reservetoday.app`.** This block used to record the opposite —
+> that both instances answered on Vercel-generated hosts
+> (`clerk.booking-system-eight-fawn.vercel.app`, `clerk.project-3p3dw.vercel.app`), which is what
+> issue #74 existed to fix. That migration has landed. Verified from the live
+> `pk_live_` keys, which encode their own Frontend API host: the client instance is
+> `clerk.reservetoday.app` and the portal instance `clerk.portal.reservetoday.app`, both
+> resolving. `scripts/clerk-prod-domain-migration.sh` is kept for the record but has been run and
+> should not be run again.
+>
+> Being rooted at the shared parent domain is what makes tenant subdomains authenticate without
+> being enumerated — the property the Vercel-host arrangement could not have. **Leave
+> `Configure → Domains → Allowed Subdomains` disabled**: a Tenant is created by inserting a row,
+> so it cannot be allowlisted in advance, and enabling that setting would turn every new studio
+> into a dashboard chore.
 
 > **The backend staging host is `api.dev.reservetoday.app`.** It used to be
 > `api.staging.reservetoday.app`, which disagreed with the `dev` label both frontends settled on.
