@@ -2,10 +2,10 @@
  * Creating a studio, end to end.
  *
  * A Tenant is not one row. It is a row in `tenants`, a row in `tenant_settings`,
- * a Clerk Organization in the **portal** application, and — when one is named —
- * a pending `staff_users` row for the studio's first admin with an organization
- * invitation sent to them. Up to five writes across three systems, two of which
- * have no transactions.
+ * its own transactional email copy, a Clerk Organization in the **portal**
+ * application, and — when one is named — a pending `staff_users` row for the
+ * studio's first admin with an organization invitation sent to them. Writes
+ * across three systems, two of which have no transactions.
  *
  * The first admin is the only optional part. A studio created to receive an
  * archive must have an empty `staff_users`, because the archive carries its own
@@ -42,6 +42,8 @@
  */
 import { and, eq, isNull, ne, sql } from 'drizzle-orm'
 import { currentTenantId, db, withTenant } from '../../db'
+import { seedEmailTemplates } from '../../db/seed/email-templates'
+import { emailTemplates } from '../../db/schema/content'
 import { staffUsers } from '../../db/schema/identity'
 import { tenants, tenantSettings } from '../../db/schema/tenancy'
 import type { TenantRow } from '../../db/schema/tenancy'
@@ -303,6 +305,28 @@ export async function provisionTenant(
           .insert(tenantSettings)
           .values({ tenantId: tenant.id, displayName: name })
 
+        // The studio's own words, in its own voice, pointing at its own
+        // hostnames. `sendTemplatedEmail` throws when the (tenant, slug) row is
+        // missing — deliberately, because sending another studio's wording is
+        // worse than sending nothing — so without this every templated email a
+        // new studio ever sends fails: staff invitations, booking
+        // confirmations, refund notices. Nothing else seeds them; `db/seed`
+        // stopped provisioning studios when the platform stopped being one.
+        //
+        // Inside this transaction, on `tx`, for the reason the header gives: a
+        // failure downstream must leave no half-created Tenant, and templates
+        // written on the pool would outlive the rollback that removed the
+        // studio they name.
+        //
+        // Skipped for a studio created to receive an archive, and that is not
+        // an oversight. `importTenant` refuses any target that already holds
+        // rows — email templates included — and the archive carries the
+        // studio's own templates, edits and all. Seeding here would make the
+        // studio un-importable *and* give it a second source of truth for its
+        // copy. The other route in, `inviteFirstAdmin`, seeds them at the point
+        // it establishes that no archive is coming.
+        if (adminEmail) await seedEmailTemplates(tx, tenant)
+
         // Skipped entirely when no first admin was named. An empty
         // `staff_users` is a legitimate end state — it is the only one an
         // archive can be imported into — and inventing a placeholder row to
@@ -471,6 +495,28 @@ export async function inviteFirstAdmin(
       throw err
     }
     if (!row) throw new Error('first admin insert returned no row')
+
+    // The templates provisioning held back. A studio opened empty is a studio
+    // waiting for an archive, and an archive brings its own copy; giving it the
+    // first admin is the moment that stops being true, so this is where the
+    // default copy is written instead.
+    //
+    // Only when it has none, and the check is the point rather than caution: an
+    // archive whose staff were all archived leaves `staff_users` looking empty
+    // to the guard above while `email_templates` is full of the studio's own
+    // edited wording, and seeding over that would replace copy a studio wrote
+    // with copy the platform ships.
+    const [templates] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(emailTemplates)
+    if ((templates?.n ?? 0) === 0) {
+      await seedEmailTemplates(db, {
+        id: tenant.id,
+        slug: tenant.slug,
+        name: tenant.name,
+        timezone: tenant.timezone,
+      })
+    }
 
     // Inside the transaction, as in `provisionTenant`: a refused invitation must
     // take the staff row with it rather than leave an admin who was never told.

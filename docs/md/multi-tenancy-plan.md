@@ -165,9 +165,9 @@ The `dev` label is effectively forced. The alternative `dev-{tenant}.reservetoda
 the *same* level as production tenants and would be swallowed by `*.reservetoday.app`, which
 binds to exactly one Vercel project. One level down gives staging its own namespace.
 
-⚠️ **Naming inconsistency to fix:** the backend staging host is currently
-`api.staging.reservetoday.app` while the frontends use `dev`. Align on `dev` — move the BE to
-`api.dev.reservetoday.app`, keeping the old name as an alias through the transition.
+✅ **Naming inconsistency resolved:** the backend staging host was `api.staging.reservetoday.app`
+while the frontends used `dev`. It is now `api.dev.reservetoday.app`, and the transitional alias no
+longer names a second host — see the Phase 5 checklist for the off-repo remnants.
 
 ### Two rules people get wrong
 
@@ -385,7 +385,8 @@ if a wildcard cannot be branch-assigned, the two-dedicated-staging-projects fall
       single-valued `PORTAL_ORIGIN`/`CLIENT_ORIGIN`; same for `CLERK_STAFF_AUTHORIZED_PARTIES`.
       **Done (#65)** — new `TENANT_ORIGIN_PATTERNS`, matched by `be/src/lib/origin.ts`. Clerk's
       own `authorizedParties` is exact-match and cannot express a per-tenant subdomain, so the
-      `azp` claim is checked against the same allowlist instead.
+      `azp` claim is checked against the same allowlist instead. `PORTAL_ORIGIN` / `CLIENT_ORIGIN`
+      are now deleted outright, along with the per-studio links that were built from them.
 - [x] Map Clerk Organization ↔ `tenant_id`; enforce org membership on portal routes.
       **Done (#65)**, with a one-way rollout seam: enforcement turns on for a tenant the moment
       its org id is written to its row. Provisioning the organizations is still #58.
@@ -423,9 +424,15 @@ if a wildcard cannot be branch-assigned, the two-dedicated-staging-projects fall
 - [ ] Attach `*.reservetoday.app` to fe-client, `*.portal.reservetoday.app` to fe-portal;
       add `*.dev.…` / `*.portal.dev.…` per Spike 2's outcome.
 - [ ] **Portal URL flip:** `portal.yogasadhana.reservetoday.app` →
-      `yogasadhana.portal.reservetoday.app`. 301 the old host, update `PORTAL_ORIGIN`, Clerk
-      allowed origins/redirect URLs, and staff comms. fe-client's URL is unchanged.
-- [ ] Rename BE staging host `api.staging.…` → `api.dev.…` (keep old as alias).
+      `yogasadhana.portal.reservetoday.app`. 301 the old host, Clerk allowed origins/redirect
+      URLs, and staff comms. fe-client's URL is unchanged. No backend env change: the portal
+      wildcard already covers the new form, and `PORTAL_ORIGIN` is gone.
+- [x] Rename BE staging host `api.staging.…` → `api.dev.…` in the repo. `BOOKING_FQDN` names only
+      `api.dev`; `BOOKING_FQDN_ALIAS` is pinned to it rather than to a second name, so the router
+      rule stays well-formed while the old host stops being matched.
+- [ ] Finish the cutover off-repo (issue #69): run a staging deploy, then drop the second `Host()`
+      from the infra repo's booking compose, delete `BOOKING_FQDN_ALIAS` from `deploy-be.yml` and
+      each stack's `.env`, and remove the `api.staging` A record from Vercel DNS.
 - [ ] Public Suffix List: not needed — tenants can't publish content or run code on their
       subdomains. Revisit only if that changes (Vercel recommends PSL submission for cookie
       isolation in that case).

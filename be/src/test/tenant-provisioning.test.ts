@@ -66,7 +66,9 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
     tenants: typeof import('../db/schema/tenancy')['tenants']
     tenantSettings: typeof import('../db/schema/tenancy')['tenantSettings']
     staffUsers: typeof import('../db/schema/identity')['staffUsers']
+    emailTemplates: typeof import('../db/schema/content')['emailTemplates']
   }
+  let declaredTemplateSlugs!: string[]
 
   before(async () => {
     harness = await startTestApp()
@@ -76,11 +78,15 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
     tenantsService = await import('../services/tenants/tenants')
     const tenancy = await import('../db/schema/tenancy')
     const identity = await import('../db/schema/identity')
+    const content = await import('../db/schema/content')
     schema = {
       tenants: tenancy.tenants,
       tenantSettings: tenancy.tenantSettings,
       staffUsers: identity.staffUsers,
+      emailTemplates: content.emailTemplates,
     }
+    const { TEMPLATE_VARIABLES } = await import('../services/notifications/variables')
+    declaredTemplateSlugs = Object.keys(TEMPLATE_VARIABLES)
   })
 
   after(async () => {
@@ -147,6 +153,57 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
     assert.ok(admin!.invitedAt)
   })
 
+  /** Every template row a studio holds, by slug. */
+  async function templatesOf(tenantId: string) {
+    return await harness.db
+      .select()
+      .from(schema.emailTemplates)
+      .where(eq(schema.emailTemplates.tenantId, tenantId))
+  }
+
+  test('a new studio can send email at all: it is created with its own copy', async () => {
+    // The bug this covers: nothing seeded a provisioned studio's templates, and
+    // `sendTemplatedEmail` throws on a missing (tenant, slug) row rather than
+    // reach for another studio's wording — so every staff invitation, booking
+    // confirmation and refund notice the studio ever sent failed.
+    const clerk = fakeClerk()
+    const slug = `prov-copy-${Date.now()}`
+
+    const created = await provision.provisionTenant(
+      { slug, name: 'Copy Studio', adminEmail: 'owner@copy.test' },
+      clerk.port,
+    )
+
+    const rows = await templatesOf(created.tenant.id)
+    assert.deepEqual(
+      rows.map(r => r.slug).sort(),
+      [...declaredTemplateSlugs].sort(),
+      'every slug a sender knows has a row in the new studio',
+    )
+  })
+
+  test('a new studio’s emails link to its own hostnames, never the platform’s', async () => {
+    // The coupled defect: the copy used to bake in `CLIENT_URL` and
+    // `PORTAL_ORIGIN`, two single global values naming one studio's apps. The
+    // second studio's instructor got an "Open the schedule" button pointing at
+    // the first studio's portal.
+    const clerk = fakeClerk()
+    const slug = `prov-links-${Date.now()}`
+
+    const created = await provision.provisionTenant(
+      { slug, name: 'Links Studio', adminEmail: 'owner@links.test' },
+      clerk.port,
+    )
+
+    const html = (await templatesOf(created.tenant.id)).map(r => r.bodyHtml).join('\n')
+    // The harness configures the same wildcards the local frontends use, so the
+    // origins here are the ones `tenantOrigin` derives from this studio's slug.
+    assert.ok(html.includes(`http://${slug}.localhost:3000`), 'its own member app')
+    assert.ok(html.includes(`http://${slug}.portal.localhost:3001`), 'its own portal')
+    assert.ok(!html.includes('http://localhost:3000'), 'not the platform CLIENT_ORIGIN')
+    assert.ok(!html.includes('http://localhost:3001'), 'not the platform PORTAL_ORIGIN')
+  })
+
   test('a studio can be created with no first admin, ready to import into', async () => {
     // The state `importTenant` requires: the studio exists and is wired to its
     // organization, and `staff_users` is empty, because the archive brings its
@@ -168,6 +225,13 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
     // And it is closed. A studio nobody can sign in to must not answer on its
     // hostnames as though it were open for business.
     assert.equal(found.tenant.status, 'suspended')
+
+    // No email copy either, and for the same reason as the empty
+    // `staff_users`: the archive brings the studio's own templates, and
+    // `importTenant` refuses a target that already holds rows in any table.
+    // Seeding here would leave the studio un-importable and holding two
+    // sources of truth for its wording.
+    assert.equal((await templatesOf(found.tenant.id)).length, 0)
   })
 
   test('inviting the first admin is what opens the studio', async () => {
@@ -186,12 +250,43 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
     assert.deepEqual(clerk.invited, ['owner@waiting.test'])
     assert.equal((await traces(slug)).staff, 1)
 
+    // Giving it an admin is the moment "an archive is coming" stops being true,
+    // so this is where the copy provisioning held back gets written — otherwise
+    // the studio opens with a way in and no way to send a single email.
+    assert.deepEqual(
+      (await templatesOf(created.tenant.id)).map(r => r.slug).sort(),
+      [...declaredTemplateSlugs].sort(),
+    )
+
     // The reason the studio was closed is gone, so the studio is open.
     const [row] = await harness.db
       .select()
       .from(schema.tenants)
       .where(eq(schema.tenants.slug, slug))
     assert.equal(row!.status, 'active')
+  })
+
+  test('a first admin does not overwrite copy the studio already has', async () => {
+    // The archive case, from the side that can still surprise: a restored
+    // studio whose staff were all archived looks staff-less to the bootstrap,
+    // but its templates are its own edited wording. Shipping copy over it would
+    // replace what a studio wrote with what the platform ships.
+    const clerk = fakeClerk()
+    const slug = `prov-keepcopy-${Date.now()}`
+    const created = await provision.provisionTenant({ slug, name: 'Restored Studio' }, clerk.port)
+
+    await harness.db.insert(schema.emailTemplates).values({
+      tenantId: created.tenant.id,
+      slug: 'welcome',
+      subject: 'the studio’s own words',
+      bodyHtml: '<p>theirs</p>',
+    })
+
+    await provision.inviteFirstAdmin(created.tenant.id, { email: 'owner@restored.test' }, clerk.port)
+
+    const rows = await templatesOf(created.tenant.id)
+    assert.equal(rows.length, 1, 'nothing was seeded alongside what was already there')
+    assert.equal(rows[0]!.subject, 'the studio’s own words')
   })
 
   test('a studio that already has staff refuses a first admin', async () => {

@@ -9,25 +9,56 @@ import {
 /**
  * The allowlist, assembled once from the environment.
  *
- * Three sources, deliberately kept together rather than one per consumer: CORS,
+ * Two sources, deliberately kept together rather than one per consumer: CORS,
  * the Clerk `azp` check and the public-route slug validation must agree about
  * which origins are ours, or one of them becomes the hole in the other two.
  *
  * - `TENANT_ORIGIN_PATTERNS` — the tenant subdomain wildcards, one per
- *   environment (`https://*.reservetoday.app`, `https://*.portal.dev.…`, …).
- * - `PORTAL_ORIGIN` / `CLIENT_ORIGIN` — the single-valued origins that predate
- *   tenancy. Still load-bearing: `PORTAL_ORIGIN` is also the base for
- *   invitation links, and the bare local `http://localhost:3000` names no
- *   tenant at all.
+ *   environment (`https://*.reservetoday.app`, `https://*.portal.dev.…`, …),
+ *   plus any exact origin that names no tenant, such as the bare local
+ *   `http://localhost:3000`.
  * - `CLERK_STAFF_AUTHORIZED_PARTIES` — any extra parties an environment pins by
  *   hand. They join the same list rather than getting their own.
+ *
+ * `PORTAL_ORIGIN` and `CLIENT_ORIGIN` used to be a third source. They named one
+ * studio's two apps, which the wildcards already cover, and they were read
+ * elsewhere as link bases — which is how a studio's identity got into platform
+ * configuration and out again into other studios' emails. An environment that
+ * really does need an extra exact origin puts it in `TENANT_ORIGIN_PATTERNS`,
+ * which has always accepted one.
  */
 export const allowedOriginPatterns = parseOriginPatterns(
   env.TENANT_ORIGIN_PATTERNS,
-  env.PORTAL_ORIGIN,
-  env.CLIENT_ORIGIN,
   env.CLERK_STAFF_AUTHORIZED_PARTIES,
 )
+
+/**
+ * Both apps must be expressible, or the process does not start.
+ *
+ * `env.ts` can only check that the variable is non-empty, and non-empty is not
+ * the requirement: a list carrying only the client wildcard — an easy slip while
+ * migrating off the two deleted single-valued origins — satisfies the schema,
+ * boots, serves traffic, and then throws on the first staff invitation, the
+ * first checkout and halfway through provisioning the next studio. Those are
+ * failures in front of a member or a new studio's owner, hours after the deploy
+ * that caused them.
+ *
+ * Deriving a link is now as load-bearing as accepting an origin, so it is
+ * checked at the same moment: once, at boot, while an operator is still
+ * watching. The slug is a placeholder — what is being asserted is that a
+ * wildcard for each app exists at all, not anything about a tenant.
+ */
+for (const app of ['client', 'portal'] as const) {
+  if (!tenantOriginFor(app, 'any-slug', allowedOriginPatterns)) {
+    throw new Error(
+      `TENANT_ORIGIN_PATTERNS configures no ${app} wildcard, so no studio's ${app} URL ` +
+        'can be derived and every link the backend mails would fail. Add one, with the ' +
+        `wildcard as the leftmost label (${
+          app === 'portal' ? 'https://*.portal.example.com' : 'https://*.example.com'
+        }).`,
+    )
+  }
+}
 
 export function originAllowed(origin: string): boolean {
   return isAllowedOrigin(origin, allowedOriginPatterns)

@@ -16,7 +16,7 @@ import {
 } from '../../services/catalog/merch-orders'
 import { createCheckoutSession } from '../../services/billing/checkout-session'
 import { describeProduct, previewPromoCode } from '../../services/packages/promo-redemption'
-import { CLIENT_URL } from '../../env'
+import { requireTenantUrl } from '../../services/tenants/urls'
 import { tenantId } from '../../middleware/tenant'
 
 const checkoutPackageSchema = z.object({
@@ -107,14 +107,19 @@ const app = new Hono()
     if (quote.outcome === 'granted') {
       return c.json({ outcome: 'granted', client_package_id: quote.clientPackageId, free: true }, 201)
     }
+    // Where Stripe sends the member back to — this studio's app, not the
+    // platform's one configured origin. A member of the second studio used to
+    // finish paying and land on the first studio's confirmation page, signed
+    // out, looking at somebody else's booking app.
+    const clientUrl = await requireTenantUrl('client', tenantId(c))
     const url = await createCheckoutSession({
       tenantId: tenantId(c),
       email: c.get('clientRow').email,
       lines: quote.lines,
       expiresAt: quote.expiresAt,
       metadata: quote.metadata,
-      successUrl: `${CLIENT_URL}/booking/confirmation?type=package&package_id=${body.package_id}&package_kind=${body.package_kind}&session_id={CHECKOUT_SESSION_ID}`,
-      cancelUrl: `${CLIENT_URL}/checkout?package=${body.package_id}&kind=${body.package_kind}&cancelled=1`,
+      successUrl: `${clientUrl}/booking/confirmation?type=package&package_id=${body.package_id}&package_kind=${body.package_kind}&session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: `${clientUrl}/checkout?package=${body.package_id}&kind=${body.package_kind}&cancelled=1`,
     })
     return c.json({ url })
   })
@@ -141,14 +146,15 @@ const app = new Hono()
       c.get('clientId'),
       c.req.valid('json').client_package_id,
     )
+    const clientUrl = await requireTenantUrl('client', tenantId(c))
     const url = await createCheckoutSession({
       tenantId: tenantId(c),
       email: c.get('clientRow').email,
       lines: quote.lines,
       expiresAt: null,
       metadata: quote.metadata,
-      successUrl: `${CLIENT_URL}/booking/confirmation?type=cross_location&session_id={CHECKOUT_SESSION_ID}`,
-      cancelUrl: `${CLIENT_URL}/account?cancelled=1`,
+      successUrl: `${clientUrl}/booking/confirmation?type=cross_location&session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: `${clientUrl}/account?cancelled=1`,
     })
     return c.json({ url })
   })
@@ -164,14 +170,15 @@ const app = new Hono()
     if (quote.outcome === 'granted') {
       return c.json({ outcome: 'granted', order_id: quote.orderId, free: true }, 201)
     }
+    const clientUrl = await requireTenantUrl('client', tenantId(c))
     const url = await createCheckoutSession({
       tenantId: tenantId(c),
       email: c.get('clientRow').email,
       lines: quote.lines,
       expiresAt: quote.expiresAt,
       metadata: quote.metadata,
-      successUrl: `${CLIENT_URL}/booking/confirmation?type=merch&session_id={CHECKOUT_SESSION_ID}`,
-      cancelUrl: `${CLIENT_URL}/merch?cancelled=1`,
+      successUrl: `${clientUrl}/booking/confirmation?type=merch&session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: `${clientUrl}/merch?cancelled=1`,
     })
     return c.json({ url })
   })
@@ -191,14 +198,15 @@ const app = new Hono()
     if (quote.outcome === 'granted') {
       return c.json({ outcome: 'granted', booking_id: quote.bookingId, free: true }, 201)
     }
+    const clientUrl = await requireTenantUrl('client', tenantId(c))
     const url = await createCheckoutSession({
       tenantId: tenantId(c),
       email: c.get('clientRow').email,
       lines: quote.lines,
       expiresAt: quote.expiresAt,
       metadata: quote.metadata,
-      successUrl: `${CLIENT_URL}/booking/confirmation?type=workshop&workshop_id=${body.workshop_id}&workshop_tier_id=${body.workshop_tier_id}&session_id={CHECKOUT_SESSION_ID}`,
-      cancelUrl: `${CLIENT_URL}/checkout?workshop=${body.workshop_id}&tier=${body.workshop_tier_id}&cancelled=1`,
+      successUrl: `${clientUrl}/booking/confirmation?type=workshop&workshop_id=${body.workshop_id}&workshop_tier_id=${body.workshop_tier_id}&session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: `${clientUrl}/checkout?workshop=${body.workshop_id}&tier=${body.workshop_tier_id}&cancelled=1`,
     })
     return c.json({ url })
   })

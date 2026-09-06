@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { clients } from '../../db/schema/identity'
 import { getClerkClientApp } from '../../lib/clerk'
-import { env } from '../../env'
+import { tenantUrl } from '../tenants/urls'
 import { signGrant } from '../../lib/impersonation-grant'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
 
@@ -29,7 +29,9 @@ export interface MintImpersonationResult {
  *   - NotFoundError('client_not_found') if the row is missing
  *   - BadRequestError('client_not_provisioned') if the client has no clerk_user_id
  *     (invited but never finished signup)
- *   - BadRequestError('client_origin_not_configured') if CLIENT_ORIGIN is unset
+ *   - BadRequestError('client_origin_not_configured') if this environment can
+ *     build no member-app origin for the studio (no client wildcard in
+ *     TENANT_ORIGIN_PATTERNS)
  */
 export async function mintClientImpersonation(
   input: MintImpersonationInput,
@@ -42,7 +44,11 @@ export async function mintClientImpersonation(
   if (!row) throw new NotFoundError('client_not_found')
   if (!row.clerkUserId) throw new BadRequestError('client_not_provisioned')
 
-  const base = env.CLIENT_ORIGIN?.replace(/\/+$/, '')
+  // This studio's own member app. It used to be the platform's single
+  // `CLIENT_ORIGIN`, so impersonating a member of any studio but the first
+  // opened a session ticket against a hostname that is not theirs — and the
+  // `/me/*` calls that followed would carry the wrong studio's `Origin`.
+  const base = await tenantUrl('client', input.tenantId)
   if (!base) throw new BadRequestError('client_origin_not_configured')
 
   const clerk = getClerkClientApp()

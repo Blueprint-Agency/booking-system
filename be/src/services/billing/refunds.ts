@@ -22,7 +22,7 @@ import { classPackages, clientPackages, ptPackages } from '../../db/schema/packa
 import { classes, ptSessions, workshops, workshopTiers, workshopTierDays, workshopDays } from '../../db/schema/schedule'
 import { classTypes } from '../../db/schema/catalog'
 import { clients } from '../../db/schema/identity'
-import { CLIENT_URL } from '../../env'
+import { requireTenantUrl } from '../tenants/urls'
 import { stripe } from '../../lib/stripe'
 import { reportError } from '../../shared/logger'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
@@ -36,7 +36,17 @@ import {
   type CancelledSession,
 } from './refund-notice'
 
-const ACCOUNT_URL = `${CLIENT_URL}/account`
+/**
+ * The refunded member's own account page, on their own studio's app.
+ *
+ * A function and not a module constant, which is the substance of the change
+ * rather than a style choice: a constant can only be built from a
+ * platform-wide origin, and this email is sent to a member of whichever studio
+ * took the money. Yoga Sadhana's `/account` is not a page a second studio's
+ * member can even sign into.
+ */
+const accountUrlFor = (tenantId: string) =>
+  requireTenantUrl('client', tenantId).then(base => `${base}/account`)
 
 export interface RefundState {
   /** There is money at the provider to give back. */
@@ -516,7 +526,7 @@ async function unwindRefundForTenant(paymentIntentId: string): Promise<void> {
       packageName: pkg.classPackageName ?? pkg.ptPackageName ?? 'Your package',
       amountSgd: payment.amountSgd,
       cancelled,
-      accountUrl: ACCOUNT_URL,
+      accountUrl: await accountUrlFor(tenantId),
     })
     await sendTemplatedEmail({
       tenantId,

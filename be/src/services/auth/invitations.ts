@@ -9,7 +9,7 @@
  *   1. Superadmin POSTs /portal/admin/staff/invite { email, granted_location_ids? }
  *   2. We insert one `staff_users` row (status='pending') + one `staff_invitations`
  *      row (token, expires_at = now+7d) in a single transaction
- *   3. Email the invitee a sign-up link to `PORTAL_ORIGIN/signup?invite_email=…`
+ *   3. Email the invitee a sign-up link to `{studio portal origin}/signup?invite_email=…`
  *      (NOT a token-gated landing — they sign up with Clerk normally; the
  *      Clerk webhook matches by email and links them to the pending row)
  */
@@ -19,8 +19,8 @@ import { db } from '../../db'
 import { staffUsers, staffInvitations } from '../../db/schema/identity'
 import { instructors } from '../../db/schema/catalog'
 import { tenantDisplayName } from '../tenants/mail-identity'
+import { requireTenantUrl } from '../tenants/urls'
 import { ConflictError, NotFoundError } from '../../shared/errors'
-import { env } from '../../env'
 import { sendTemplatedEmail } from '../notifications/send'
 import { splitName, joinName } from '../../lib/name'
 import { sgFormat } from '../../lib/time'
@@ -51,8 +51,21 @@ function emailLocalPart(email: string): string {
   return at > 0 ? email.slice(0, at) : email
 }
 
-export function buildSignUpUrl(email: string, token?: string): string {
-  const base = `${env.PORTAL_ORIGIN.replace(/\/+$/, '')}/signup?invite_email=${encodeURIComponent(email)}`
+/**
+ * The sign-up link, on the **inviting studio's own portal**.
+ *
+ * `portalUrl` is that studio's origin, from `requireTenantUrl('portal', …)`, and
+ * is a parameter rather than read here so the lookup that can fail happens
+ * before the invitation row is written — an admin gets a refusal instead of a
+ * committed invitation nobody could be told about.
+ *
+ * It used to be `env.PORTAL_ORIGIN`, one value for the whole platform. Staff of
+ * the second studio were invited into the first studio's portal, where their
+ * Clerk organization does not match and the token is refused on arrival: an
+ * invitation that cannot be accepted, with nothing in it saying why.
+ */
+export function buildSignUpUrl(portalUrl: string, email: string, token?: string): string {
+  const base = `${portalUrl.replace(/\/+$/, '')}/signup?invite_email=${encodeURIComponent(email)}`
   return token ? `${base}&invite_token=${encodeURIComponent(token)}` : base
 }
 
@@ -112,6 +125,12 @@ export async function inviteAdmin(input: InviteAdminInput): Promise<StaffInvitat
   const grants = role === 'admin' ? (input.grantedLocationIds ?? []) : []
   const now = new Date()
   const expiresAt = new Date(now.getTime() + INVITE_TTL_MS)
+
+  // Resolved before anything is written. The link is the whole point of an
+  // invitation, so a studio the platform cannot build a portal URL for must fail
+  // here — not after a `staff_users` row and a token exist for someone who was
+  // never told about either.
+  const portalUrl = await requireTenantUrl('portal', input.tenantId)
 
   const { invitation, inviterName } = await db.transaction(async tx => {
     // Existing staff with this email blocks invitation. Active or pending = already in use;
@@ -210,13 +229,13 @@ export async function inviteAdmin(input: InviteAdminInput): Promise<StaffInvitat
     variables: {
       // Canonical variables from services/notifications/variables.ts
       name: emailLocalPart(email),
-      invite_url: buildSignUpUrl(email, invitation.token),
+      invite_url: buildSignUpUrl(portalUrl, email, invitation.token),
       expires_at: expiresAtFormat.format(expiresAt),
       // Friendly extras — unknown {{}} are left as-is per spec, but the
       // seeded template uses these for richer copy.
       invitee_email: email,
       inviter_name: inviterName,
-      sign_up_url: buildSignUpUrl(email, invitation.token),
+      sign_up_url: buildSignUpUrl(portalUrl, email, invitation.token),
     },
   })
 
@@ -376,6 +395,11 @@ export async function resendInvitation(
   const now = new Date()
   const expiresAt = new Date(now.getTime() + INVITE_TTL_MS)
 
+  // Before the extension, for the reason `inviteAdmin` gives: an invitation
+  // whose expiry was pushed out but whose email could not be built is a link
+  // that silently did not arrive.
+  const portalUrl = await requireTenantUrl('portal', tenantId)
+
   const [updated] = await db
     .update(staffInvitations)
     .set({ createdAt: now, expiresAt })
@@ -396,11 +420,11 @@ export async function resendInvitation(
     recipient: { email: inv.email, userId: inv.staffUserId, userKind: 'staff' },
     variables: {
       name: emailLocalPart(inv.email),
-      invite_url: buildSignUpUrl(inv.email, inv.token),
+      invite_url: buildSignUpUrl(portalUrl, inv.email, inv.token),
       expires_at: expiresAtFormat.format(expiresAt),
       invitee_email: inv.email,
       inviter_name: inviter?.name ?? (await tenantDisplayName(tenantId)),
-      sign_up_url: buildSignUpUrl(inv.email, inv.token),
+      sign_up_url: buildSignUpUrl(portalUrl, inv.email, inv.token),
     },
   })
 

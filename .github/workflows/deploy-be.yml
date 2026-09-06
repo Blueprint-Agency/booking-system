@@ -2,7 +2,6 @@ name: BE Deploy
 
 # Both instances live on bpvps2:
 #   staging branch -> booking-staging stack -> api.dev.reservetoday.app
-#                                              (+ api.staging.reservetoday.app, transitional alias)
 #   main   branch -> booking-prod    stack -> api.reservetoday.app
 # They share nothing but Traefik — separate containers, volumes, networks and
 # databases, keyed off ENV_NAME in the compose file.
@@ -37,20 +36,16 @@ jobs:
       ENV_NAME:     ${{ github.ref_name == 'main' && 'prod'            || 'staging' }}
       STACK_DIR:    ${{ github.ref_name == 'main' && 'booking-prod'    || 'booking-staging' }}
       # Full hostname — booking is on reservetoday.app, not the host-wide
-      # BASE_DOMAIN (teeko.ai), so the Traefik rule takes an FQDN.
+      # BASE_DOMAIN (teeko.ai), so the Traefik rule takes an FQDN. One name per
+      # environment: the staging backend is `api.dev`, matching the `dev` label
+      # the frontends already use. The old `api.staging` alias is retired.
       #
-      # The frontends call the staging backend `dev`; ALIAS is the name being
-      # renamed away from, kept serving so nothing breaks mid-transition. Set
-      # ALIAS equal to FQDN when no rename is in flight — the router rule is
-      # Host(FQDN, ALIAS) and an empty value makes Traefik drop the router.
-      #
-      # Both names need their own A record at VERCEL (`vercel dns ls
+      # The name needs its own A record at VERCEL (`vercel dns ls
       # reservetoday.app`), created BEFORE the deploy: the cert comes from
       # TLS-ALPN-01, which needs the name pointing at bpvps2 already. Vercel
       # serves a `*` ALIAS, so a missing record resolves anyway — check the
       # record exists, don't trust that the name resolves.
-      BOOKING_FQDN:       ${{ github.ref_name == 'main' && 'api.reservetoday.app' || 'api.dev.reservetoday.app' }}
-      BOOKING_FQDN_ALIAS: ${{ github.ref_name == 'main' && 'api.reservetoday.app' || 'api.staging.reservetoday.app' }}
+      BOOKING_FQDN: ${{ github.ref_name == 'main' && 'api.reservetoday.app' || 'api.dev.reservetoday.app' }}
       IMAGE_TAG:    ${{ github.ref_name == 'main' && 'latest'          || 'staging' }}
 
     steps:
@@ -111,9 +106,19 @@ jobs:
             # CF_DNS_API_TOKEN, TRAEFIK_DASHBOARD_AUTH) survive untouched.
             # BOOKING_HOST is dead — the router rule takes a full FQDN now.
             sed -i '/^BOOKING_HOST=/d' .env 2>/dev/null || true
+            # BOOKING_FQDN_ALIAS no longer names a second hostname — it is
+            # pinned to BOOKING_FQDN, which is what `main` always did. It cannot
+            # simply be dropped: the infra repo's compose still spells the router
+            # rule Host(`${BOOKING_FQDN}`) || Host(`${BOOKING_FQDN_ALIAS}`), and
+            # compose substitutes an unset var as empty — Host(``) is not a valid
+            # rule, so on a fresh stack Traefik would drop the router and the API
+            # would 404. Writing it as a duplicate of FQDN retires the old name
+            # (the rule stops matching it) while keeping the rule well-formed.
+            # Delete both this line and the loop entry once that compose file
+            # drops the second Host() (Blueprint-Agency/booking-system#69).
             for kv in "ENV_NAME=${{ env.ENV_NAME }}" \
                       "BOOKING_FQDN=${{ env.BOOKING_FQDN }}" \
-                      "BOOKING_FQDN_ALIAS=${{ env.BOOKING_FQDN_ALIAS }}" \
+                      "BOOKING_FQDN_ALIAS=${{ env.BOOKING_FQDN }}" \
                       "IMAGE_TAG=${{ env.IMAGE_TAG }}"; do
               k="${kv%%=*}"
               sed -i "/^${k}=/d" .env 2>/dev/null || true
@@ -127,7 +132,7 @@ jobs:
             # Required GitHub settings:
             #   org vars:    BPVPS2_TAILSCALE_HOST, DOCKERHUB_USERNAME
             #   org secrets: TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET, SSH_PRIVATE_KEY, DOCKERHUB_TOKEN
-            #   env vars:    PORT, PORTAL_ORIGIN, CLIENT_ORIGIN, TENANT_ORIGIN_PATTERNS,
+            #   env vars:    PORT, TENANT_ORIGIN_PATTERNS,
             #            SUPERADMIN_EMAIL, PLATFORM_ADMIN_EMAILS,
             #            (optional) MAIL_FROM_EMAIL, MAIL_FROM_NAME,
             #            (optional) STRIPE_STATEMENT_DESCRIPTOR_PREFIX
@@ -177,14 +182,16 @@ jobs:
               # which is the safe failure but is almost certainly not what you
               # wanted.
               echo "PLATFORM_ADMIN_EMAILS=${{ vars.PLATFORM_ADMIN_EMAILS }}"
-              # Portal origin — used for CORS + the sign-up URL in invitation emails
-              echo "PORTAL_ORIGIN=${{ vars.PORTAL_ORIGIN }}"
-              # Client origin — adds fe-client to the CORS allowlist
-              echo "CLIENT_ORIGIN=${{ vars.CLIENT_ORIGIN }}"
               # Tenant subdomain origins, comma-separated, wildcard leftmost —
               # every studio is a subdomain and a studio is created by inserting
               # a row, so the allowlist has to be a pattern. Backs CORS, the
-              # Clerk `azp` check and the public-route `Origin` validation.
+              # Clerk `azp` check and the public-route `Origin` validation, and
+              # is read backwards to build every per-studio link the backend
+              # mails or redirects to.
+              #
+              # Required. It replaced PORTAL_ORIGIN and CLIENT_ORIGIN, which were
+              # one value each for the whole platform and therefore named one
+              # studio's apps to every studio's members.
               #   staging:    https://*.dev.reservetoday.app,https://*.portal.dev.reservetoday.app
               #   production: https://*.reservetoday.app,https://*.portal.reservetoday.app
               echo "TENANT_ORIGIN_PATTERNS=${{ vars.TENANT_ORIGIN_PATTERNS }}"
