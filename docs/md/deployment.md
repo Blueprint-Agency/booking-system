@@ -13,7 +13,7 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 
 | | `staging` branch | `main` branch |
 |---|---|---|
-| Backend | `booking-staging` stack on bpvps2 → `https://api.staging.reservetoday.app` | `booking-prod` stack on bpvps2 → `https://api.reservetoday.app` |
+| Backend | `booking-staging` stack on bpvps2 → `https://api.dev.reservetoday.app` | `booking-prod` stack on bpvps2 → `https://api.reservetoday.app` |
 | GitHub Environment | `staging` (lowercase) | `Production` (capital P) |
 | Image tag | `blueprintagency/booking-be:staging` | `…:latest` |
 | fe-client | `https://{slug}.dev.reservetoday.app` (e.g. `yogasadhana.dev.…`) | `https://{slug}.reservetoday.app` (e.g. `yogasadhana.reservetoday.app`) |
@@ -48,10 +48,20 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 > than described: run `scripts/clerk-prod-domain-migration.sh` in a maintenance window. Update this
 > row and ADR 0001 when it completes.
 
-> **Backend staging is still `api.staging.reservetoday.app`, not `api.dev.…`.** The frontends
-> settled on `dev` as the staging label and the backend has not moved. The rename (keeping the old
-> name as an alias) is a Phase 5 item; `BOOKING_FQDN` in `deploy-be.yml` is the one place to
-> change it.
+> **The backend staging host is `api.dev.reservetoday.app`.** It used to be
+> `api.staging.reservetoday.app`, which disagreed with the `dev` label both frontends settled on.
+> `BOOKING_FQDN` in `deploy-be.yml` names `api.dev`, the `api.dev` A record exists in Vercel DNS
+> (`rec_990affe97080aea4f5e03e33` → `187.127.207.82`), and `NEXT_PUBLIC_API_URL` on the **Preview**
+> scope of both Vercel projects already reads `https://api.dev.reservetoday.app`. Nothing points at
+> the old name any more, so the next staging deploy is the moment it stops being served.
+>
+> Two loose ends stay open for a human, both on issue #69. The infra repo's
+> `vps/bpvps2/stacks/booking/docker-compose.yml` still ORs a second `Host(${BOOKING_FQDN_ALIAS})`
+> into the Traefik rule, so the workflow has to keep writing that key — pinned to `BOOKING_FQDN`,
+> which makes it a harmless duplicate rather than a second name. Drop the second `Host()` there,
+> then delete the key from `deploy-be.yml` and sweep it out of each stack's `.env`. Separately, the
+> `api.staging` A record (`rec_daf75bd3e2124b56909a310e`) is still in Vercel DNS and can be removed
+> once a staging deploy has run.
 
 > **Every staging/production URL is a real domain — do not test against `*.vercel.app`.**
 > The generated aliases still exist and still resolve, but the backend's CORS allowlist contains
