@@ -11,11 +11,17 @@ import {
   check,
   boolean,
   primaryKey,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { tenantIdColumn } from './tenancy'
 import { clients, staffUsers } from './identity'
 import { locations } from './catalog'
+// A cycle on purpose: `ledger` already points here, and now a plan points back
+// at the sale that bought it. Every reference across the pair is a lazy
+// callback, so whichever module the loader reaches first finishes without
+// dereferencing the other.
+import { purchases } from './ledger'
 import {
   classPackageKindEnum,
   ptSessionTypeEnum,
@@ -372,16 +378,29 @@ export const clientPackages = pgTable(
     // ones, so a comp grant or $0 trial reads as 100% off rather than vanishing.
     // The money off is derived (list minus paid) and never stored.
     listPriceSgd: numeric('list_price_sgd', { precision: 10, scale: 2 }).notNull(),
-    // Nullable per §4d — null for admin-issued grants (§16) and free trial passes at 0 SGD.
-    stripePaymentIntentId: text('stripe_payment_intent_id'),
+    /**
+     * The sale that bought this plan (#92). A Purchase owns the money and a
+     * payment is evidence of part of it, so a plan settled by two cards has one
+     * pointer here rather than one per card — which is exactly what the payment
+     * intent it replaces could not express.
+     *
+     * Nullable for the same rows the intent was nullable for, and no others:
+     * an admin-issued grant (§16) and a $0 trial pass are grants no sale paid
+     * for. Everything the payment provider ever touched carries one.
+     */
+    purchaseId: uuid('purchase_id').references((): AnyPgColumn => purchases.id, {
+      onDelete: 'restrict',
+    }),
   },
   table => ({
     clientKindIdx: index('client_packages_client_kind_idx').on(table.tenantId, table.clientId, table.kind),
     clientExpiryIdx: index('client_packages_client_expiry_idx').on(table.tenantId, table.clientId, table.expiresAt),
-    // Partial unique on stripe_payment_intent_id (now nullable per spec).
-    stripeIntentUnique: uniqueIndex('client_packages_stripe_intent_unique')
-      .on(table.tenantId, table.stripePaymentIntentId)
-      .where(sql`${table.stripePaymentIntentId} IS NOT NULL`),
+    // One plan per Purchase — the index that decides a redelivery race, in the
+    // place the payment intent's used to. Partial, because a comp grant has no
+    // Purchase and any number of them may exist.
+    purchaseUnique: uniqueIndex('client_packages_purchase_unique')
+      .on(table.tenantId, table.purchaseId)
+      .where(sql`${table.purchaseId} IS NOT NULL`),
     // One-trial-per-client-ever invariant (fe-client-features.md §6.1) — partial unique.
     // A previously-purchased trial (active OR expired) blocks any further trial purchase;
     // the purchase service catches the unique-violation and returns `409 trial_already_used`.

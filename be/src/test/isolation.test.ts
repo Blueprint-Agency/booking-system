@@ -183,7 +183,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     })
     const granted = await purchaseSvc.grantPackage(tenantId, {
       clientId: client.id,
-      paymentIntentId: null,
+      purchaseId: null,
       amountSgd: '200.00',
       packageKind: 'class',
       packageId: classPackage.id,
@@ -277,6 +277,9 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     )
     await harness.db.execute(sql`DELETE FROM bookings WHERE client_id IN (${isolationClients})`)
     await harness.db.execute(sql`DELETE FROM client_packages WHERE client_id IN (${isolationClients})`)
+    // After the payments, the bookings and the plans that point at it, and
+    // before the clients it points at — a Purchase sits between the two.
+    await harness.db.execute(sql`DELETE FROM purchases WHERE client_id IN (${isolationClients})`)
     await harness.db.execute(sql`
       DELETE FROM promo_code_products WHERE promo_code_id IN (
         SELECT id FROM promo_codes WHERE label LIKE 'isolation %'
@@ -790,7 +793,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
       () =>
         purchaseSvc.grantPackage(two.tenantId, {
           clientId: two.clientId,
-          paymentIntentId: null,
+          purchaseId: null,
           amountSgd: '200.00',
           packageKind: 'class',
           packageId: one.classPackageId,
@@ -1009,16 +1012,29 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
 
   test('a payment record carries its tenant, and the unwind reads it off there', async () => {
     // The provider's event names an intent and nothing else, so the payment row
-    // is where the tenant has to come from. Both studios hold a purchase of the
-    // same shape; refunding one must not touch the other.
+    // is where the tenant has to come from — and since #92 the payment is also
+    // the only route to the Purchase everything else routes on. Both studios
+    // hold a purchase of the same shape; refunding one must not touch the other.
     const intent = 'pi_isolation_refund'
+    const [purchase] = await harness.db
+      .insert(schema.purchases)
+      .values({
+        tenantId: two.tenantId,
+        clientId: two.clientId,
+        kind: 'class_package',
+        totalSgd: '200.00',
+        amountPaidSgd: '200.00',
+        status: 'paid',
+      })
+      .returning({ id: schema.purchases.id })
     await harness.db
       .update(schema.clientPackages)
-      .set({ stripePaymentIntentId: intent })
+      .set({ purchaseId: purchase!.id })
       .where(eq(schema.clientPackages.id, two.clientPackageId))
     await harness.db.insert(schema.stripePayments).values({
       tenantId: two.tenantId,
       paymentIntentId: intent,
+      purchaseId: purchase!.id,
       amountSgd: '200.00',
       kind: 'class_package',
       clientId: two.clientId,
@@ -1054,7 +1070,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     } finally {
       await harness.db
         .update(schema.clientPackages)
-        .set({ stripePaymentIntentId: null })
+        .set({ purchaseId: null })
         .where(eq(schema.clientPackages.id, two.clientPackageId))
     }
   })

@@ -230,7 +230,9 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
   if (grantsWithoutPaying(charge.totalCents)) {
     const granted = await grantFreePurchase(tenantId, {
       clientId,
-      paymentIntentId: null,
+      // A grant no money paid for: the Purchase this opens beside it is closed
+      // the moment it exists, so there is nothing on it for a Refund to return.
+      purchaseId: null,
       amountSgd: '0.00',
       packageKind,
       packageId,

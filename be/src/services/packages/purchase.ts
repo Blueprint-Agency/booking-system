@@ -392,8 +392,12 @@ export async function applyCrossLocationAddOn(
 
 export interface GrantPackageInput {
   clientId: string
-  /** stripe_payment_intents.id — null for free trial / admin grants */
-  paymentIntentId: string | null
+  /**
+   * The Purchase that bought this plan — null for a free trial or an admin
+   * grant, which are grants no sale paid for. It replaced the payment intent
+   * in #92: a Purchase settled by two cards is still one sale to point at.
+   */
+  purchaseId: string | null
   /** amount actually paid in SGD as "120.00" string. "0.00" for free trial. */
   amountSgd: string
   packageKind: 'class' | 'pt'
@@ -433,10 +437,10 @@ export interface GrantPackageInput {
  * Throws ConflictError('trial_already_used') on partial-unique violation.
  *
  * `created` says whether THIS call inserted the row (§13). It is what the
- * confirmation email is gated on: the payment-intent unique index already
- * decides who wins a redelivery, and this merely surfaces a fact the function
- * already knows and used to throw away. Using the email log instead would mean
- * a new column, a migration and an index to answer the same question.
+ * confirmation email is gated on: the Purchase's unique index already decides
+ * who wins a redelivery, and this merely surfaces a fact the function already
+ * knows and used to throw away. Using the email log instead would mean a new
+ * column, a migration and an index to answer the same question.
  */
 export async function grantPackage(
   tenantId: string,
@@ -444,11 +448,13 @@ export async function grantPackage(
 ): Promise<{ clientPackageId: string; created: boolean }> {
   const now = new Date()
 
-  // Idempotency — if a package was already granted for this Stripe payment
-  // intent, return it instead of inserting a duplicate. The webhook and the
-  // confirmation-page sync-session fallback can both fire for one purchase.
-  if (input.paymentIntentId) {
-    const existingId = await packageForIntent(tenantId, input.paymentIntentId)
+  // Idempotency — if a package was already granted for this sale, return it
+  // instead of inserting a duplicate. The webhook and the confirmation-page
+  // sync-session fallback can both fire for one purchase, and since #92 a
+  // purchase may be settled by more than one payment, so the sale is the key
+  // rather than whichever payment happened to arrive last.
+  if (input.purchaseId) {
+    const existingId = await packageForPurchase(tenantId, input.purchaseId)
     if (existingId) return { clientPackageId: existingId, created: false }
   }
 
@@ -559,7 +565,7 @@ export async function grantPackage(
         // zero paid so it reads as a 100% discount instead of vanishing.
         // Discount is always derived (list minus paid); nothing stores it.
         listPriceSgd: source.priceSgd,
-        stripePaymentIntentId: input.paymentIntentId,
+        purchaseId: input.purchaseId,
       })
       .returning({ id: clientPackages.id })
     return { clientPackageId: row!.id, created: true }
@@ -568,12 +574,12 @@ export async function grantPackage(
     // sync-session both grant one purchase, and concurrently both read "no row".
     // The index decides the winner; the loser reads the winner's row, which is
     // the same answer the pre-check would have given a moment later. Any unique
-    // violation qualifies, not just the intent index: a priced trial racing
+    // violation qualifies, not just the Purchase index: a priced trial racing
     // itself trips whichever of the two indexes Postgres checks first, and an
-    // already-granted intent means the same thing either way. Ordered ahead of
+    // already-granted sale means the same thing either way. Ordered ahead of
     // the trial branch so that race answers "granted", not 409.
-    if (input.paymentIntentId && isUniqueViolation(err)) {
-      const existingId = await packageForIntent(tenantId, input.paymentIntentId)
+    if (input.purchaseId && isUniqueViolation(err)) {
+      const existingId = await packageForPurchase(tenantId, input.purchaseId)
       if (existingId) return { clientPackageId: existingId, created: false }
     }
     if (kind === 'trial' && isUniqueViolation(err, 'client_packages_trial_unique_per_client')) {
@@ -583,19 +589,16 @@ export async function grantPackage(
   }
 }
 
-/** The package already granted for a payment intent, if any (§13 idempotency). */
-async function packageForIntent(
+/** The package already granted for a Purchase, if any (§13 idempotency). */
+async function packageForPurchase(
   tenantId: string,
-  paymentIntentId: string,
+  purchaseId: string,
 ): Promise<string | undefined> {
   const [row] = await db
     .select({ id: clientPackages.id })
     .from(clientPackages)
     .where(
-      and(
-        eq(clientPackages.tenantId, tenantId),
-        eq(clientPackages.stripePaymentIntentId, paymentIntentId),
-      ),
+      and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.purchaseId, purchaseId)),
     )
     .limit(1)
   return row?.id
@@ -680,14 +683,14 @@ export async function purchaseFreeTrial(
 
   const granted = await grantPackage(tenantId, {
     clientId,
-    paymentIntentId: null,
+    purchaseId: null,
     amountSgd: '0.00',
     packageKind: 'class',
     packageId: pkg.id,
     appliedPromotionId: eff.appliedPromotionId,
   })
 
-  // A free trial has no payment intent to be idempotent on, so it reaches here
+  // A free trial has no sale to be idempotent on, so it reaches here
   // once or not at all — the eligibility gate and the partial unique index see
   // to that. It sends unconditionally, and the helper cannot throw (§13).
   await sendPackagePurchaseEmail(tenantId, granted.clientPackageId)

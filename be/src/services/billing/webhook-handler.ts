@@ -14,12 +14,14 @@ import { db, withTenant } from '../../db'
 import { tenantForClient as routeToTenant } from '../../db/routing'
 import { stripePayments } from '../../db/schema/ledger'
 import { clients } from '../../db/schema/identity'
-import { and, eq } from 'drizzle-orm'
+import { and, eq, ne } from 'drizzle-orm'
 import { stripeForTenant } from '../../lib/stripe'
 import { applyCrossLocationAddOn, grantPackage } from '../packages/purchase'
 import { consumePromoCodeHold } from '../packages/promo-redemption'
 import { unwindRefund } from './refunds'
-import { purchaseById, recomputeBalance } from './purchases'
+import { openPurchase, purchaseById, recomputeBalance, type PurchaseRow } from './purchases'
+import { purchaseKindFor } from './checkout-session'
+import { toCents } from '../../shared/money'
 import { bookWorkshopPaid } from '../workshops/book'
 import { recordMerchOrder } from '../catalog/merch-orders'
 import {
@@ -86,21 +88,39 @@ async function tenantForClient(clientId: string): Promise<string> {
 }
 
 /**
- * Which Purchase this payment is evidence of part of.
+ * Which Purchase this payment is evidence of part of. **Never null**: since #92
+ * the payment row's `purchase_id` is the only route from money to what the
+ * money bought, so there is no shape of this that a payment may take.
  *
- * The session metadata is the normal answer. The payment row is the fallback,
+ * The session metadata is the normal answer. The payment row is the next one,
  * and it is not merely defensive: a checkout session created before Purchases
  * existed carries no `purchase_id`, but its payment row was given one by the
  * backfill (migration 0044), and without this that Purchase would sit `open`
  * with nothing paid while its payment succeeded — the one disagreement between
  * `amount_paid_sgd` and the ledger that this record exists to prevent.
+ *
+ * Failing both, one is opened here and closed by the recompute a moment later.
+ * That is a session created before #91 shipped and completed after #92 did: one
+ * payment for the whole sale, the only shape this system has ever taken, and
+ * the same Purchase the backfill would have given it.
+ *
+ * A `purchase_id` that names nothing is the one case that does **not** get
+ * that: it is far likelier to be a routing bug — the wrong Tenant's context —
+ * than a legacy session, and minting a second sale record for money that
+ * already has one is worse than failing. It throws, so the provider retries and
+ * a human sees it.
  */
 async function purchaseForPayment(
   tenantId: string,
-  metadataPurchaseId: string | undefined,
+  meta: Record<string, string>,
   paymentIntentId: string,
-): Promise<string | null> {
-  if (metadataPurchaseId) return metadataPurchaseId
+  fallback: { clientId: string; amountSgd: string },
+): Promise<PurchaseRow> {
+  if (meta.purchase_id) {
+    const named = await purchaseById(tenantId, meta.purchase_id)
+    if (!named) throw new NotFoundError('purchase_not_found', { purchaseId: meta.purchase_id })
+    return named
+  }
   const [row] = await db
     .select({ purchaseId: stripePayments.purchaseId })
     .from(stripePayments)
@@ -111,7 +131,17 @@ async function purchaseForPayment(
       ),
     )
     .limit(1)
-  return row?.purchaseId ?? null
+  if (row?.purchaseId) {
+    const recorded = await purchaseById(tenantId, row.purchaseId)
+    if (recorded) return recorded
+  }
+  return openPurchase({
+    tenantId,
+    clientId: fallback.clientId,
+    kind: purchaseKindFor(meta),
+    totalCents: toCents(fallback.amountSgd),
+    metadata: meta,
+  })
 }
 
 /**
@@ -129,37 +159,46 @@ async function purchaseForPayment(
  * the next recompute could not see. On the settling payment the flip stays
  * where it was, after the grant, which is what makes a crash between the two
  * recoverable by the provider's next redelivery.
- *
- * A payment with no Purchase at all — a session in flight from before this
- * shipped, whose row the backfill never reached — grants exactly as it always
- * did. Those are one payment for the whole sale, the only shape this system has
- * ever taken.
  */
 async function settleAndMayGrant(
   tenantId: string,
-  metadataPurchaseId: string | undefined,
+  purchase: PurchaseRow,
   paymentIntentId: string,
 ): Promise<boolean> {
-  const purchaseId = await purchaseForPayment(tenantId, metadataPurchaseId, paymentIntentId)
-  if (!purchaseId) return true
-
-  const purchase = await purchaseById(tenantId, purchaseId)
-  if (!purchase) return true
-
   const { settled } = await recomputeBalance(tenantId, purchase, paymentIntentId)
   if (settled) return true
 
-  const receipt = await receiptUrlPatch(tenantId, paymentIntentId)
+  await bankPayment(tenantId, paymentIntentId, await receiptUrlPatch(tenantId, paymentIntentId))
+  return false
+}
+
+/**
+ * Bank the payment: mark it `succeeded` and write whatever the caller learned
+ * along the way — the receipt URL, the package or booking it delivered.
+ *
+ * **Never over a refund.** The provider redelivers `checkout.session.completed`
+ * for days, and the confirmation page's `sync-session` fallback replays it by
+ * hand; a session whose charge was refunded still reports itself paid. Without
+ * the predicate that replay would flip a refunded payment back to `succeeded`,
+ * which since #92 is the column that says what a Refund still has to return —
+ * so a refunded plan would offer its Refund button again and reach the provider
+ * for money already given back.
+ */
+async function bankPayment(
+  tenantId: string,
+  paymentIntentId: string,
+  patch: Partial<typeof stripePayments.$inferInsert> = {},
+): Promise<void> {
   await db
     .update(stripePayments)
-    .set({ status: 'succeeded', ...receipt })
+    .set({ status: 'succeeded', ...patch })
     .where(
       and(
         eq(stripePayments.tenantId, tenantId),
         eq(stripePayments.paymentIntentId, paymentIntentId),
+        ne(stripePayments.status, 'refunded'),
       ),
     )
-  return false
 }
 
 /** The payment this system already recorded for an intent, within its Tenant. */
@@ -237,12 +276,17 @@ async function dispatchStripeEvent(event: Stripe.Event): Promise<void> {
       const existing = await existingPayment(tenantId, paymentIntentId)
       if (existing?.status === 'succeeded') return
 
+      const purchase = await purchaseForPayment(tenantId, meta, paymentIntentId, {
+        clientId,
+        amountSgd: chargedSgd,
+      })
+
       // Insert the stripe_payments row (we now have the confirmed PaymentIntent ID)
       if (!existing) {
         await db.insert(stripePayments).values({
           tenantId,
           paymentIntentId,
-          purchaseId: meta.purchase_id || null,
+          purchaseId: purchase.id,
           // The ledger records what was charged; the split lives on the plan.
           amountSgd: chargedSgd,
           kind: kind === 'class_package' ? 'class_package' : 'pt_package',
@@ -254,7 +298,7 @@ async function dispatchStripeEvent(event: Stripe.Event): Promise<void> {
       // A sale paid in full at the first attempt — every sale this system takes
       // today — clears here and carries on exactly as it did before Purchases
       // existed.
-      if (!(await settleAndMayGrant(tenantId, meta.purchase_id, paymentIntentId))) return
+      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId))) return
 
       // Payment succeeded, so the Hold becomes a Consumed Redemption, stamped
       // with the moment and the payment intent (§10 step 3).
@@ -265,7 +309,7 @@ async function dispatchStripeEvent(event: Stripe.Event): Promise<void> {
 
       const granted = await grantPackage(tenantId, {
         clientId,
-        paymentIntentId,
+        purchaseId: purchase.id,
         amountSgd,
         packageKind: kind === 'class_package' ? 'class' : 'pt',
         packageId,
@@ -286,16 +330,10 @@ async function dispatchStripeEvent(event: Stripe.Event): Promise<void> {
       // at the `status === 'succeeded'` guard above instead of double-granting.
       // The receipt URL lands in the same write — the column the confirmation
       // email reads (§13).
-      const receipt = await receiptUrlPatch(tenantId, paymentIntentId)
-      await db
-        .update(stripePayments)
-        .set({ status: 'succeeded', clientPackageId: granted.clientPackageId, ...receipt })
-        .where(
-          and(
-            eq(stripePayments.tenantId, tenantId),
-            eq(stripePayments.paymentIntentId, paymentIntentId),
-          ),
-        )
+      await bankPayment(tenantId, paymentIntentId, {
+        clientPackageId: granted.clientPackageId,
+        ...(await receiptUrlPatch(tenantId, paymentIntentId)),
+      })
 
       // One confirmation per purchase, however many times the provider retries:
       // only the delivery that inserted the row sends. The helper cannot throw.
@@ -305,9 +343,9 @@ async function dispatchStripeEvent(event: Stripe.Event): Promise<void> {
 
     // A Cross-Location Add-On bought on its own, against a plan the member
     // already holds (§5). No package is granted: the money fills a column on the
-    // named plan. The plan's `stripe_payment_intent_id` is already taken by the
-    // plan's own purchase, so this payment sits in the ledger pointing at the
-    // plan instead — `client_package_id` is what makes it findable.
+    // named plan. The plan's `purchase_id` is already taken by the plan's own
+    // sale, so this payment sits in the ledger under a Purchase of its own,
+    // pointing at the plan — `client_package_id` is what makes it findable.
     if (kind === 'cross_location_add_on') {
       const clientPackageId = meta.client_package_id
       const clientId = meta.client_id
@@ -319,13 +357,18 @@ async function dispatchStripeEvent(event: Stripe.Event): Promise<void> {
       const existing = await existingPayment(tenantId, paymentIntentId)
       if (existing?.status === 'succeeded') return
 
+      const purchase = await purchaseForPayment(tenantId, meta, paymentIntentId, {
+        clientId,
+        amountSgd,
+      })
+
       if (!existing) {
         await db
           .insert(stripePayments)
           .values({
             tenantId,
             paymentIntentId,
-            purchaseId: meta.purchase_id || null,
+            purchaseId: purchase.id,
             amountSgd,
             // The Add-On extends an Unlimited Plan, which is a class package.
             // The enum gains no fourth arm for it — Add-On revenue is read off
@@ -338,7 +381,7 @@ async function dispatchStripeEvent(event: Stripe.Event): Promise<void> {
           .onConflictDoNothing()
       }
 
-      if (!(await settleAndMayGrant(tenantId, meta.purchase_id, paymentIntentId))) return
+      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId))) return
 
       const applied = await applyCrossLocationAddOn(
         tenantId,
@@ -361,16 +404,10 @@ async function dispatchStripeEvent(event: Stripe.Event): Promise<void> {
         )
       }
 
-      const receipt = await receiptUrlPatch(tenantId, paymentIntentId)
-      await db
-        .update(stripePayments)
-        .set({ status: 'succeeded', clientPackageId, ...receipt })
-        .where(
-          and(
-            eq(stripePayments.tenantId, tenantId),
-            eq(stripePayments.paymentIntentId, paymentIntentId),
-          ),
-        )
+      await bankPayment(tenantId, paymentIntentId, {
+        clientPackageId,
+        ...(await receiptUrlPatch(tenantId, paymentIntentId)),
+      })
       // No confirmation email: an Add-On grants no package, and §13 names four
       // sending paths, none of them this one.
       return
@@ -390,13 +427,18 @@ async function dispatchStripeEvent(event: Stripe.Event): Promise<void> {
       const existing = await existingPayment(tenantId, paymentIntentId)
       if (existing?.status === 'succeeded') return
 
+      const purchase = await purchaseForPayment(tenantId, meta, paymentIntentId, {
+        clientId,
+        amountSgd,
+      })
+
       if (!existing) {
         await db
           .insert(stripePayments)
           .values({
             tenantId,
             paymentIntentId,
-            purchaseId: meta.purchase_id || null,
+            purchaseId: purchase.id,
             amountSgd,
             kind: 'merch',
             clientId,
@@ -405,7 +447,7 @@ async function dispatchStripeEvent(event: Stripe.Event): Promise<void> {
           .onConflictDoNothing()
       }
 
-      if (!(await settleAndMayGrant(tenantId, meta.purchase_id, paymentIntentId))) return
+      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId))) return
 
       await recordMerchOrder({
         tenantId,
@@ -416,16 +458,7 @@ async function dispatchStripeEvent(event: Stripe.Event): Promise<void> {
         paymentIntentId,
       })
 
-      const receipt = await receiptUrlPatch(tenantId, paymentIntentId)
-      await db
-        .update(stripePayments)
-        .set({ status: 'succeeded', ...receipt })
-        .where(
-          and(
-            eq(stripePayments.tenantId, tenantId),
-            eq(stripePayments.paymentIntentId, paymentIntentId),
-          ),
-        )
+      await bankPayment(tenantId, paymentIntentId, await receiptUrlPatch(tenantId, paymentIntentId))
       return
     }
 
@@ -443,13 +476,18 @@ async function dispatchStripeEvent(event: Stripe.Event): Promise<void> {
       const existing = await existingPayment(tenantId, paymentIntentId)
       if (existing?.status === 'succeeded') return
 
+      const purchase = await purchaseForPayment(tenantId, meta, paymentIntentId, {
+        clientId,
+        amountSgd,
+      })
+
       if (!existing) {
         await db
           .insert(stripePayments)
           .values({
             tenantId,
             paymentIntentId,
-            purchaseId: meta.purchase_id || null,
+            purchaseId: purchase.id,
             amountSgd,
             kind: 'workshop',
             clientId,
@@ -460,7 +498,7 @@ async function dispatchStripeEvent(event: Stripe.Event): Promise<void> {
 
       // A workshop place is not held until the Balance reaches zero — the
       // booking is the grant, and it is not made while anything is outstanding.
-      if (!(await settleAndMayGrant(tenantId, meta.purchase_id, paymentIntentId))) return
+      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId))) return
 
       const promoCodeId = meta.promo_code_id || null
       if (promoCodeId) {
@@ -472,6 +510,7 @@ async function dispatchStripeEvent(event: Stripe.Event): Promise<void> {
         workshopId,
         workshopTierId,
         paymentIntentId,
+        purchaseId: purchase.id,
         amountSgd,
         appliedPromotionId,
         appliedPromoCodeId: promoCodeId,

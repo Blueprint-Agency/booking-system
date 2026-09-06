@@ -129,7 +129,7 @@ Per `admin-restructure.md` §9 and `fe-client-features.md` §5.2, the client-fac
 | POST | `/checkout/cross-location/quote` | `{ client_package_id }` — prices the **Cross-Location Add-On** against a plan the member already holds (§5). Returns `{ client_package_id, months, rate_sgd, price_sgd }`: months is the plan's whole months remaining with part months rounded up, or its full stored Duration while Dormant, and the rate is read from Global Policy at this moment. 400 `cross_location_requires_unlimited`, 400 `cross_location_plan_not_live`, 409 `cross_location_already_added` — one Add-On per plan, never two. |
 | POST | `/checkout/cross-location` | `{ client_package_id }` — the same refusals, then its own Stripe session carrying `kind='cross_location_add_on'` and `client_package_id` in the metadata; the webhook fills `client_packages.cross_location_paid_sgd` on the named plan. Bought **with** a plan instead, it rides `/checkout/package` as `cross_location_add_on: true` — one session, two line items, `amount_sgd` (plan) plus `cross_location_sgd` (Add-On) equalling the charge. A Promo Code discounts the plan line only: the Add-On is a Global Policy rate, not a product. |
 | POST | `/checkout/workshop` | `{ workshop_id, workshop_tier_id }` — same. Server resolves the workshop's best-price-wins promotion plus tier-level early-bird (early_bird wins over regular, then promotion further reduces if applicable — see §4b for the ordering). Free workshops (effective_price = 0) **bypass Stripe entirely** and route through `/workshops/:id/register` semantics inline. |
-| POST | `/workshops/:id/register` | `{ workshop_tier_id }` — explicit free-workshop registration endpoint. Returns 409 if the resolved effective price is non-zero (client must use `/checkout/workshop`). Inserts a `bookings` row with `kind='workshop'`, `state='confirmed'`, `stripe_payment_intent_id=NULL` directly. Convenience: idempotent on `(client_id, workshop_tier_id)` — re-call returns the existing booking instead of erroring. |
+| POST | `/workshops/:id/register` | `{ workshop_tier_id }` — explicit free-workshop registration endpoint. Returns 409 if the resolved effective price is non-zero (client must use `/checkout/workshop`). Inserts a `bookings` row with `kind='workshop'`, `state='confirmed'`, `purchase_id=NULL` directly. Convenience: idempotent on `(client_id, workshop_tier_id)` — re-call returns the existing booking instead of erroring. |
 | POST | `/checkout/merch` | `{ merch_id }` — one item, no Promo Code and no review page: creates a Stripe checkout and returns `{ url }`. 404 `merch_not_found`, 400 `merch_not_available` (archived). A merch item priced at 0 bypasses Stripe and returns `{ outcome: 'granted', order_id, free: true }` with the order already written. The intent metadata carries `kind='merch'`, `merch_id`, `merch_title` and `amount_sgd`; the webhook records a `stripe_payments` row (kind `merch`) plus one `merch_orders` row, idempotent on the payment intent. Nothing is granted and nothing is booked — merch is handed over physically at the studio, which is what the fe-client notice says. |
 | GET | `/merch-orders` | This client's merch purchase history, newest first. Shape: `{ orders: [{ id, merch_id, title, amount_sgd, purchased_at }] }`. `title` and `amount_sgd` are frozen at purchase and `merch_id` goes null if the catalogue row is deleted, so history reads as what was actually bought. |
 
@@ -240,7 +240,7 @@ tx start
    - If status='succeeded': webhook is a retry, no-op (idempotent)
 2. Insert bookings row: kind='workshop', workshop_id, workshop_tier_id, state='confirmed',
    client_package_id=NULL, refund_outcome='n_a', check_in_state='pending',
-   stripe_payment_intent_id=X
+   purchase_id=P            — the sale; a Refund routes on it, not on the intent (#92)
 3. Generate qr_token + code
 4. Update stripe_payments: status='succeeded', receipt_url = paymentIntent.charges.data[0].receipt_url
 5. enqueueEmail('workshop_purchase_confirmed', client.email, { workshop_name, date, qr_url, code, receipt_url })
@@ -257,7 +257,7 @@ When `effective_price = 0`, we skip Stripe entirely:
 tx start
 1. Capacity check (same as above)
 2. Insert bookings row: kind='workshop', workshop_id, workshop_tier_id, state='confirmed',
-   stripe_payment_intent_id=NULL, refund_outcome='n_a', check_in_state='pending'
+   purchase_id=NULL, refund_outcome='n_a', check_in_state='pending'
 3. Generate qr_token + code
 4. enqueueEmail('workshop_purchase_confirmed', { ..., receipt_url=NULL })
 tx commit
@@ -423,7 +423,7 @@ tx start
                 : NULL),
    purchased_at = now(),
    amount_paid_sgd = stripe_payments.amount_sgd,
-   stripe_payment_intent_id = X
+   purchase_id = P
    (Trial unique partial index catches any race — if a concurrent purchase already inserted a trial
     for this client, this INSERT raises 23505 and the webhook handler logs it then no-ops.)
 

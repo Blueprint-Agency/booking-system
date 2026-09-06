@@ -51,6 +51,34 @@ export function amountPaidCents(
   return total
 }
 
+/**
+ * The payments the provider is still holding — what a Refund has left to give
+ * back, and what an issued Refund has to call the provider about.
+ *
+ * **`pending` counts as held**, which is the one thing here that is not
+ * obvious. A payment row is only ever inserted once the provider has confirmed
+ * the money; the flip to `succeeded` waits for the grant on purpose, so a row
+ * stuck `pending` is a delivery that died between the two — real money, sitting
+ * at the provider. Leaving it out would let the unwind void a plan the studio
+ * has been paid for, and would refuse a Refund an admin could have issued
+ * before this record existed. Only `refunded` (already back) and `failed`
+ * (never taken) are out.
+ *
+ * That makes this a deliberately *wider* set than the one `amountPaidCents`
+ * counts, and the asymmetry runs the safe way on both sides: money is credited
+ * only once it is certain, and given back whenever it might still be there.
+ *
+ * **A Refund is complete only when this is empty.** A Purchase with some
+ * payments returned and some not is a half-done Refund, and unwinding there
+ * would take a member's plan away while the studio still held part of their
+ * money.
+ */
+export function heldPayments<T extends { status: PaymentEvidence['status'] }>(
+  payments: T[],
+): T[] {
+  return payments.filter(p => p.status === 'succeeded' || p.status === 'pending')
+}
+
 /** What is left to pay. Never negative — an overpayment owes nothing, not less than nothing. */
 export function outstandingCents(totalCents: number, paidCents: number): number {
   return Math.max(0, totalCents - paidCents)

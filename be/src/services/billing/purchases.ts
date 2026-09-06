@@ -10,7 +10,7 @@
  * the first attempt settles on that first payment, which is every sale this
  * system takes today. Part payment is #92; this is the record it will need.
  */
-import { and, eq } from 'drizzle-orm'
+import { and, eq, ne } from 'drizzle-orm'
 
 import { db } from '../../db'
 import { purchases, stripePayments } from '../../db/schema/ledger'
@@ -114,6 +114,65 @@ export async function purchaseById(
   return row ?? null
 }
 
+/** One payment on a Purchase, as the Refund path needs to see it. */
+export interface PurchasePayment {
+  paymentIntentId: string
+  amountSgd: string
+  status: 'pending' | 'succeeded' | 'refunded' | 'failed'
+}
+
+/**
+ * Every payment written against a Purchase.
+ *
+ * A Refund walks these rather than being handed one intent: a Purchase settled
+ * by two cards is returned by two provider calls, and the admin who pressed the
+ * button pressed it once. Today every Purchase holds exactly one, so this
+ * returns a list of one and the Refund is the single call it always was.
+ */
+export async function paymentsForPurchase(
+  tenantId: string,
+  purchaseId: string,
+): Promise<PurchasePayment[]> {
+  return db
+    .select({
+      paymentIntentId: stripePayments.paymentIntentId,
+      amountSgd: stripePayments.amountSgd,
+      status: stripePayments.status,
+    })
+    .from(stripePayments)
+    .where(and(eq(stripePayments.tenantId, tenantId), eq(stripePayments.purchaseId, purchaseId)))
+}
+
+/**
+ * Stamp the Purchase refunded, once.
+ *
+ * `status <> 'refunded'` makes the write its own lock: two concurrent
+ * deliveries of the same event both do the (idempotent) unwinding, and exactly
+ * one of them gets a row back and sends the member's email.
+ *
+ * `amount_paid_sgd` goes to zero in the same write, because it means money
+ * currently held and none is — the same reading `balance.ts` computes, where a
+ * refunded payment counts for nothing. It is also what takes the Purchase out
+ * of the refundable set, since a Refund is the whole purchase back.
+ */
+export async function markPurchaseRefunded(
+  tenantId: string,
+  purchaseId: string,
+): Promise<boolean> {
+  const rows = await db
+    .update(purchases)
+    .set({ status: 'refunded', amountPaidSgd: '0.00' })
+    .where(
+      and(
+        eq(purchases.tenantId, tenantId),
+        eq(purchases.id, purchaseId),
+        ne(purchases.status, 'refunded'),
+      ),
+    )
+    .returning({ id: purchases.id })
+  return rows.length > 0
+}
+
 export interface Settlement {
   /** True when nothing is outstanding — the only state in which anything is granted. */
   settled: boolean
@@ -154,18 +213,23 @@ export async function recomputeBalance(
   const paidCents = amountPaidCents(rows, creditingIntentId)
   const settled = isSettled(totalCents, paidCents)
 
-  await db
-    .update(purchases)
-    .set({
-      amountPaidSgd: toSgd(paidCents),
-      // A refunded Purchase stays refunded: the unwind is the later word on it,
-      // and a redelivery of the original payment must not reopen it as paid.
-      ...(purchase.status === 'refunded'
-        ? {}
-        : { status: settled ? ('paid' as const) : ('open' as const) }),
-      ...(settled && !purchase.settledAt ? { settledAt: new Date() } : {}),
-    })
-    .where(and(eq(purchases.tenantId, tenantId), eq(purchases.id, purchase.id)))
+  // A refunded Purchase stays refunded, and its Balance stays at zero. The
+  // unwind is the later word on it, and a redelivery of the original payment —
+  // which the provider will retry for days, and which the confirmation page's
+  // `sync-session` fallback can replay by hand — must reopen neither. The
+  // Balance matters as much as the status since #92: `amount_paid_sgd` is what
+  // says a purchase is refundable, so restoring it would put a Refund button
+  // back on a plan already refunded.
+  if (purchase.status !== 'refunded') {
+    await db
+      .update(purchases)
+      .set({
+        amountPaidSgd: toSgd(paidCents),
+        status: settled ? ('paid' as const) : ('open' as const),
+        ...(settled && !purchase.settledAt ? { settledAt: new Date() } : {}),
+      })
+      .where(and(eq(purchases.tenantId, tenantId), eq(purchases.id, purchase.id)))
+  }
 
   return { settled, paidCents, outstandingCents: outstandingCents(totalCents, paidCents) }
 }
