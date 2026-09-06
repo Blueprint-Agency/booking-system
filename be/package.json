@@ -8,6 +8,7 @@
     "build": "tsc",
     "check": "node --import tsx --test \"src/**/*.test.ts\"",
     "start": "node dist/server.js",
+    "predb:generate": "tsx src/db/migrations/check-journal.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:studio": "drizzle-kit studio",
