@@ -448,7 +448,9 @@ retired.**
       stacks were recreated and verified at 200 on their own hostname. It was removed rather than
       left set-equal because idle was not free — an unset alias renders ``Host(``)``, which Traefik
       rejects, so the variable was *required* forever to keep a rule that no longer needed it.
-      Still open: remove the `api.staging` A record from Vercel DNS.
+      The `api.staging` A record is gone from Vercel DNS as well: the zone holds `api` and
+      `api.dev` and nothing else. The name still resolves, through the apex `*` ALIAS, but to
+      Vercel and a 404 rather than to the backend.
 - [ ] Public Suffix List: not needed — tenants can't publish content or run code on their
       subdomains. Revisit only if that changes (Vercel recommends PSL submission for cookie
       isolation in that case).

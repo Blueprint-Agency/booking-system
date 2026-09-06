@@ -83,8 +83,10 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 > comes: ``Host(a) || Host(b)``, never ``Host(a, b)`` — Traefik v3's matcher takes exactly one
 > parameter and rejects the list form.
 >
-> One loose end stays open for a human, on issue #69: the `api.staging` A record
-> (`rec_daf75bd3e2124b56909a310e`) is still in Vercel DNS and can be removed.
+> The `api.staging` A record is gone from Vercel DNS too — the zone holds `api` and `api.dev` and
+> nothing else beginning `api`. The name still *resolves*, because the apex `*` ALIAS answers for
+> anything unclaimed, but it resolves to Vercel and 404s rather than reaching the backend. Nothing
+> to do; noted so the next person does not go looking for a record to delete.
 
 > **Every staging/production URL is a real domain — do not test against `*.vercel.app`.**
 > The generated aliases still exist and still resolve, but the backend's CORS allowlist contains
