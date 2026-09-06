@@ -21,10 +21,17 @@ import { seedPlatformAdmins } from './platform-admin'
  *     after the seeders that used to invent it were removed, and how a studio
  *     survives being deleted.
  *
- * The per-tenant seeders that used to run here still exist, and are now what
+ * The per-tenant seeders that used to run here still exist, and are mostly what
  * they always really were: **fixtures for the test harness**, which needs two
- * studios with data in order to prove that neither can see the other's. Nothing
- * in a deployment reads them.
+ * studios with data in order to prove that neither can see the other's.
+ *
+ * One is not a fixture. `./email-templates.ts` is called by `provisionTenant`
+ * itself, because a studio with no template rows cannot send a single
+ * transactional email — `sendTemplatedEmail` throws rather than reach for
+ * another studio's wording — so the copy is part of creating a studio rather
+ * than something a deploy hands out. It runs there, per tenant, on that
+ * tenant's own origins; it does not run here, because a deployment has no
+ * studios to run it for.
  */
 async function main() {
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required to seed')

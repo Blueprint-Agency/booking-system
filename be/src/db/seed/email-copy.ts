@@ -3,7 +3,7 @@
  *
  * Pure on purpose, and separate from `./email-templates.ts` for the same reason
  * `services/notifications/purchase-email.ts` is separate from its `send-`
- * sibling: the seeder needs the studio's real origins out of `../../env`, which
+ * sibling: the seeder derives the studio's real origins from `../../env`, which
  * zod-parses the WHOLE backend env at import — right for a booting server, and
  * wrong for a copy file whose check has no database, Clerk key or SMTP password
  * in sight. The origins arrive as an argument instead.
@@ -56,9 +56,9 @@ export interface EmailStudio {
 
 /** The two origins every mailed link is built from — see `buildEmailTemplates`. */
 export interface EmailOrigins {
-  /** The member-facing app, no trailing slash (`env.ts:CLIENT_URL`). */
+  /** This tenant's member-facing app, no trailing slash — `tenantOrigin('client', slug)`. */
   clientUrl: string
-  /** The staff portal, no trailing slash (`env.PORTAL_ORIGIN`). */
+  /** This tenant's staff portal, no trailing slash — `tenantOrigin('portal', slug)`. */
   portalUrl: string
   /** Whose emails these are. */
   studio: EmailStudio
