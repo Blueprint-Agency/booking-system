@@ -94,3 +94,70 @@ export async function ensureAppRole(sql: Sql, password: string): Promise<void> {
     `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT EXECUTE ON FUNCTIONS TO ${role}`,
   )
 }
+
+/**
+ * The one table `tenant_isolation` deliberately does not cover.
+ *
+ * `tenants` has no `tenant_id` at all, so it never matches. `tenant_settings`
+ * does, and is excluded for the reason migration 0033 gives: slug resolution
+ * reads it *before* any Tenant context exists, so a policy keyed on that
+ * context could only refuse the very request that establishes it. Column
+ * privileges stand in, granted by name above.
+ */
+const UNPOLICED = new Set(['tenant_settings'])
+
+/**
+ * Re-apply migration 0033's rule to every Tenant-scoped table, on every deploy.
+ *
+ * 0033 enabled Row-Level Security by looping over the tables that existed the
+ * day it ran. Nothing has done so since — and the two halves of a new table's
+ * security do not arrive together:
+ *
+ *   - `GRANT … ON ALL TABLES` and `ALTER DEFAULT PRIVILEGES` (above) give the
+ *     app role full DML on a new table **automatically**.
+ *   - Its policy does not exist until someone writes one.
+ *
+ * So a migration that adds a Tenant-scoped table and forgets the four lines of
+ * RLS ships a table the app can read across every studio, and nothing anywhere
+ * says so. That is the opposite of the fail-closed property the whole design
+ * rests on, and it fails in the direction that does not announce itself: every
+ * test passes, because a policy that is absent refuses nothing.
+ *
+ * This closes it by construction rather than by review. Idempotent — `ENABLE`
+ * and `FORCE` are no-ops when already set, and the policy is dropped and
+ * recreated so a hand-edited one is brought back to the canonical text.
+ *
+ * Runs as the owner, after migrations, beside the grants — for exactly the
+ * reason the grants run there: the tables have to exist first.
+ */
+export async function ensureTenantIsolation(sql: Sql): Promise<string[]> {
+  const tables = await sql<{ table_name: string }[]>`
+    SELECT table_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND column_name = 'tenant_id'
+    ORDER BY table_name
+  `
+
+  const policed: string[] = []
+
+  for (const { table_name: table } of tables) {
+    if (UNPOLICED.has(table)) continue
+    const quoted = `"${table.replace(/"/g, '""')}"`
+
+    await sql.unsafe(`ALTER TABLE ${quoted} ENABLE ROW LEVEL SECURITY`)
+    // FORCE so the table owner is subject to its own policy too. A superuser
+    // still bypasses both, which is why migrations and seeds keep working.
+    await sql.unsafe(`ALTER TABLE ${quoted} FORCE ROW LEVEL SECURITY`)
+    await sql.unsafe(`DROP POLICY IF EXISTS tenant_isolation ON ${quoted}`)
+    await sql.unsafe(`
+      CREATE POLICY tenant_isolation ON ${quoted}
+        USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+        WITH CHECK (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+    `)
+
+    policed.push(table)
+  }
+
+  return policed
+}
