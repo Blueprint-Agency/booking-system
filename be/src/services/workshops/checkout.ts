@@ -13,6 +13,7 @@ import {
   saleDescription,
   type CheckoutQuote,
 } from '../billing/checkout-session'
+import { openSettledPurchase } from '../billing/purchases'
 import { tenantDisplayName } from '../tenants/mail-identity'
 import { listActivePromotionsFor } from '../packages/promotions'
 import { applyPromoCode, type AppliedPromoCode } from '../packages/promo-redemption'
@@ -95,6 +96,21 @@ export async function beginWorkshopCheckout(
       workshopId,
       workshopTierId,
       appliedPromoCodeId: applied?.promoCodeId ?? null,
+    })
+    // A free place is still a sale — the Purchase opens and closes here,
+    // because a total of zero leaves nothing outstanding.
+    await openSettledPurchase({
+      tenantId,
+      clientId,
+      kind: 'workshop',
+      metadata: {
+        kind: 'workshop',
+        workshop_id: workshopId,
+        workshop_tier_id: workshopTierId,
+        client_id: clientId,
+        promo_code_id: applied?.promoCodeId ?? '',
+        applied_promotion_id: eff.appliedPromotionId ?? '',
+      },
     })
     return { outcome: 'granted', bookingId: result.bookingId }
   }

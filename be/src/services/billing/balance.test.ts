@@ -3,7 +3,6 @@ import assert from 'node:assert/strict'
 
 import {
   amountPaidCents,
-  centsToSgd,
   isSettled,
   outstandingCents,
   type PaymentEvidence,
@@ -74,7 +73,3 @@ test('an overpayment owes nothing rather than less than nothing', () => {
   assert.equal(isSettled(100_00, 150_00), true)
 })
 
-test('cents come back as the numeric string the ledger stores', () => {
-  assert.equal(centsToSgd(0), '0.00')
-  assert.equal(centsToSgd(12_950), '129.50')
-})

@@ -143,6 +143,18 @@ export const totalCents = (lines: CheckoutLine[]): number =>
   lines.reduce((sum, line) => sum + line.amountCents, 0)
 
 /**
+ * Who is buying. Refused here rather than left to become a foreign-key error
+ * two statements later: every checkout service puts `client_id` on its
+ * metadata, and a session without one is a sale with no buyer — which the
+ * webhook would drop on the floor anyway, having nobody to grant to.
+ */
+export function buyerFor(metadata: Record<string, string>): string {
+  const clientId = metadata.client_id
+  if (!clientId) throw new BadRequestError('checkout_client_missing')
+  return clientId
+}
+
+/**
  * Open the Purchase, then ask the provider for the session that pays it.
  *
  * In that order, and never the other way round: the Purchase is the record of
@@ -155,7 +167,7 @@ export async function createCheckoutSession(input: CheckoutSessionInput): Promis
   const studioName = await tenantDisplayName(input.tenantId)
   const purchase = await openPurchase({
     tenantId: input.tenantId,
-    clientId: input.metadata.client_id!,
+    clientId: buyerFor(input.metadata),
     kind: purchaseKindFor(input.metadata),
     totalCents: totalCents(input.lines),
     metadata: input.metadata,

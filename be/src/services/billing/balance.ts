@@ -64,6 +64,3 @@ export function outstandingCents(totalCents: number, paidCents: number): number 
 export function isSettled(totalCents: number, paidCents: number): boolean {
   return outstandingCents(totalCents, paidCents) === 0
 }
-
-/** Cents back to the `numeric(10,2)` string the ledger stores. */
-export const centsToSgd = (cents: number): string => (cents / 100).toFixed(2)

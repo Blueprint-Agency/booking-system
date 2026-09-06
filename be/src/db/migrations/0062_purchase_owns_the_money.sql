@@ -62,6 +62,14 @@ CREATE POLICY tenant_isolation ON "purchases"
 -- abandoned Purchase, which is what those rows already mean. `metadata` is
 -- empty because there is nothing left to grant from — every one of these
 -- Purchases is closed.
+--
+-- `amount_paid_sgd` means money currently held, which is what
+-- `services/billing/balance.ts` computes: a refunded payment counts for
+-- nothing there, so it counts for nothing here either. The two must agree —
+-- the stored figure is derived from the ledger, never a second opinion about
+-- it. A payment still `pending` when this ran is the one row that could go
+-- stale, and does not: its Purchase is reachable from the payment row, so the
+-- webhook recomputes it when the payment lands (`purchaseForPayment`).
 INSERT INTO purchases (
   tenant_id, id, client_id, kind, total_sgd, amount_paid_sgd,
   status, metadata, checkout_session_id, settled_at, created_at
@@ -72,7 +80,7 @@ SELECT
   sp.client_id,
   sp.kind::text::purchase_kind,
   sp.amount_sgd,
-  CASE WHEN sp.status IN ('succeeded', 'refunded') THEN sp.amount_sgd ELSE 0.00 END,
+  CASE WHEN sp.status = 'succeeded' THEN sp.amount_sgd ELSE 0.00 END,
   (CASE sp.status
      WHEN 'succeeded' THEN 'paid'
      WHEN 'refunded'  THEN 'refunded'
