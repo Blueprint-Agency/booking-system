@@ -70,6 +70,14 @@ was collapsed into it because no deployed database needed that history preserved
    `journal.test.ts` fails on both halves — a non-monotonic entry and a future-dated
    one — with `0019` and `0021` grandfathered as knowingly out of order.
 
+   **`predb:generate` refuses to generate against a journal that is already
+   future-dated.** That is the only moment the check can prevent anything rather than
+   report it: `generate` stamps the new entry with `Date.now()`, so if nothing is dated
+   ahead, the new entry cannot land behind. Both the guard and the test read
+   `journal-checks.ts`, so they cannot drift apart. `npx drizzle-kit generate --custom`
+   bypasses npm scripts and therefore bypasses the guard — on that path the `when` is
+   yours to check, and the test is what catches you.
+
 4. **Review the generated SQL before committing.** Drizzle's auto-rename detection
    guesses (drop+add vs rename); when it asks, or when the diff looks wrong, fix it.
 

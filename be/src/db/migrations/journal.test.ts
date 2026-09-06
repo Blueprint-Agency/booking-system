@@ -1,8 +1,13 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readdirSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
-import { dirname, join } from 'node:path'
+
+import {
+  KNOWN_OUT_OF_ORDER,
+  findFutureDatedEntries,
+  findMisnumberedEntries,
+  findNonMonotonicEntries,
+  findOrphanedMigrations,
+} from './journal-checks'
 import journal from './meta/_journal.json' with { type: 'json' }
 
 /**
@@ -12,80 +17,45 @@ import journal from './meta/_journal.json' with { type: 'json' }
  * one skips a migration without an error, the other invents one that fails to
  * apply. A test is the cheapest place to catch either, because both are visible
  * in a JSON file and neither is visible on a fresh CI database.
- */
-
-const here = dirname(fileURLToPath(import.meta.url))
-
-/**
- * Two entries whose `when` runs backwards, knowingly left alone.
  *
- * Both were applied long ago on every database, so renumbering them now would
- * change a tag that `__drizzle_migrations` already records. They are harmless
- * where they are: the migrations after them have later values, so nothing is
- * skipped. New entries do not get this latitude.
+ * The predicates live in `journal-checks.ts` because `predb:generate` runs them
+ * too. A guard the suite and the tooling implement separately is a guard that
+ * eventually only one of them has.
  */
-const KNOWN_OUT_OF_ORDER = new Set(['0019_promo_code_frozen_on_purchase', '0021_cross_location_add_on'])
 
 test('every migration after the historic pair moves the clock forward', () => {
-  // Drizzle's Postgres migrator reads only the most recently applied row and
-  // applies a migration when `lastDbMigration.created_at < migration.folderMillis`.
-  // An entry whose `when` is *behind* one already applied is therefore skipped —
-  // no error, no log. On a fresh CI database everything migrates from empty and
-  // the suite still passes, which is what makes it dangerous.
-  const entries = journal.entries
-  for (let i = 1; i < entries.length; i++) {
-    const previous = entries[i - 1]!
-    const current = entries[i]!
-    if (KNOWN_OUT_OF_ORDER.has(current.tag)) continue
-
-    assert.ok(
-      current.when > previous.when,
-      `${current.tag} (when ${current.when}) is not after ${previous.tag} (when ${previous.when}). ` +
-        `Drizzle would skip it silently on any database that already has ${previous.tag}. ` +
-        `Raise its "when" above the previous entry's in meta/_journal.json.`,
-    )
-  }
+  assert.deepEqual(findNonMonotonicEntries(), [])
 })
 
 test('a hand-set `when` never runs ahead of the wall clock', () => {
-  // The other half of the same trap. `drizzle-kit generate` stamps a new entry
-  // with `Date.now()`, so an entry dated in the future guarantees that the *next*
-  // migration lands behind it and is skipped. That is exactly how 0037 came to
-  // be a no-op on staging and production.
-  const now = Date.now()
-  for (const entry of journal.entries) {
-    assert.ok(
-      entry.when <= now,
-      `${entry.tag} is dated in the future (${new Date(entry.when).toISOString()}). ` +
-        `The next generated migration will be stamped with the current time, land behind it, ` +
-        `and be silently skipped.`,
-    )
-  }
+  assert.deepEqual(findFutureDatedEntries(), [])
 })
 
 test('every journal entry has its SQL file, and every SQL file its entry', () => {
-  // The migrator loads `<tag>.sql`, so a renamed file with an unrenamed tag
-  // fails at deploy time rather than here.
-  const onDisk = new Set(
-    readdirSync(here)
-      .filter(name => name.endsWith('.sql'))
-      .map(name => name.replace(/\.sql$/, '')),
-  )
-  const inJournal = new Set(journal.entries.map(e => e.tag))
-
-  for (const tag of inJournal) {
-    assert.ok(onDisk.has(tag), `${tag} is in the journal but has no ${tag}.sql`)
-  }
-  for (const tag of onDisk) {
-    assert.ok(inJournal.has(tag), `${tag}.sql is on disk but not in the journal, so it never runs`)
-  }
+  assert.deepEqual(findOrphanedMigrations(), [])
 })
 
 test('indexes are unique and consecutive', () => {
-  journal.entries.forEach((entry, i) => {
-    assert.equal(entry.idx, i, `${entry.tag} is at position ${i} but claims idx ${entry.idx}`)
-  })
+  assert.deepEqual(findMisnumberedEntries(), [])
 })
 
-// Referenced so the path is exercised rather than merely computed.
-void join(here, 'meta')
+test('the monotonic check actually fires on an entry that runs backwards', () => {
+  // Guards the guard. Every other assertion here passes on an empty result, so
+  // a predicate that silently stopped looking would look identical to a healthy
+  // journal. The two grandfathered entries are the one place the repository has
+  // a real violation to point at, so they double as the fixture.
+  const entries = journal.entries
+  const grandfathered = entries.filter(e => KNOWN_OUT_OF_ORDER.has(e.tag))
+
+  assert.equal(grandfathered.length, 2, 'the historic out-of-order pair should still be present')
+
+  for (const entry of grandfathered) {
+    const previous = entries[entries.indexOf(entry) - 1]
+    assert.ok(previous, `${entry.tag} should not be the first entry`)
+    assert.ok(
+      entry.when < previous.when,
+      `${entry.tag} is no longer out of order — remove it from KNOWN_OUT_OF_ORDER ` +
+        `rather than leaving an exemption that hides a future violation`,
+    )
+  }
+})
