@@ -6,8 +6,10 @@
  * state, apply the verdict, and say whether the session has settled. It exists
  * as a hook rather than inline in `workspace-context.tsx` because the answer
  * gates the first API call: a `/portal/auth/me` sent before the organization is
- * active comes back 403, and the provider reads a 403 as "no staff row" and
- * signs the user out — the sign-in loop this whole path exists to stop.
+ * active comes back 403, and a staff member with a perfectly good row is told
+ * they have no access. The refusal no longer signs them out
+ * (`access-refusal.ts`), but a dead end they never needed to see is still a
+ * dead end — holding the call back is what keeps them out of it.
  *
  * The status is *derived*, not stored. Everything it depends on already lives
  * in Clerk's own state, so keeping a second copy in `useState` would only add a
@@ -102,7 +104,7 @@ export function useActiveOrganization(enabled: boolean): ActiveOrganizationSync 
     // the hook answer `unavailable` for the rest of the session — including a
     // later, legitimate activation on another studio's portal, where the gated
     // request would then go out before the claim was on the token and the user
-    // would be signed out.
+    // would be refused a studio they do work at.
     setFailed(false);
 
     let cancelled = false;

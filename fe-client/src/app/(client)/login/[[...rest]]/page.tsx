@@ -1,9 +1,10 @@
 "use client";
 
 import { Suspense, useEffect, useRef, useState } from "react";
-import { useClerk, useSignIn } from "@clerk/nextjs";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useAuth, useClerk, useSignIn } from "@clerk/nextjs";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { safeNextPath, signedInRedirectTarget } from "@/lib/auth-redirect";
 import { AuthSplitShell } from "@/components/auth/auth-split-shell";
 import { OtpInput } from "@/components/auth/otp-input";
 import { PasswordInput } from "@/components/auth/password-input";
@@ -64,14 +65,15 @@ type SecondFactor = {
 
 function LoginContent() {
   const { signIn } = useSignIn();
+  const { isLoaded: authLoaded, isSignedIn } = useAuth();
   const { setActive } = useClerk();
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
-  // Only honour internal paths — never an absolute/protocol-relative URL — so a
-  // crafted ?next= can't redirect an authenticated member off-site.
-  const rawNext = searchParams.get("next");
-  const next =
-    rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/";
+  // `safeNextPath` is the same sanitiser the edge uses — internal paths only,
+  // never an absolute or protocol-relative URL, and never an auth page — so a
+  // `?next=` this page honours is one `proxy.ts` would have honoured too.
+  const next = safeNextPath(searchParams) ?? "/";
 
   const [view, setView] = useState<"signin" | "forgot" | "reset" | "mfa">(
     searchParams.get("reset") === "1" ? "forgot" : "signin",
@@ -225,6 +227,23 @@ function LoginContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ticket, signIn]);
 
+  // A sign-in form is for someone who is not signed in. Landing a live session
+  // on one gave them a form that could only fail ("You're already signed in"),
+  // when the honest answer is that there is nothing left to do here.
+  //
+  // The rule — including the impersonation-ticket exemption, since a ticket
+  // arrives with a session precisely so this page can swap it — is `proxy.ts`'s
+  // own, asked again here for the way in the edge never sees: a
+  // `router.push("/login")` from inside the app.
+  const signedIn = authLoaded && isSignedIn === true;
+  const redirectTarget = signedIn
+    ? signedInRedirectTarget(pathname ?? "", searchParams)
+    : null;
+  useEffect(() => {
+    if (!redirectTarget) return;
+    router.replace(redirectTarget);
+  }, [redirectTarget, router]);
+
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -373,6 +392,21 @@ function LoginContent() {
     setMfaTarget(factor.safeIdentifier ?? null);
     setMfaCode("");
     setError(null);
+  }
+
+  // Either the redirect above is about to run, or Clerk has not said yet
+  // whether it needs to. Neither is a moment to show a form.
+  if (!authLoaded || redirectTarget) {
+    return (
+      <AuthSplitShell
+        imageKey="hero-yoga-01"
+        quote="The pose you avoid is the one you need most."
+      >
+        <h1 className="text-3xl font-extrabold tracking-tight text-ink mb-2">
+          One moment…
+        </h1>
+      </AuthSplitShell>
+    );
   }
 
   // Ticket sign-in in flight — hide the form so nobody types into it while

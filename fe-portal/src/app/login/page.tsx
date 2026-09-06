@@ -1,12 +1,13 @@
 "use client";
-import { Suspense, useState } from "react";
-import { useClerk, useSignIn } from "@clerk/nextjs";
-import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useAuth, useClerk, useSignIn } from "@clerk/nextjs";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { Button, Input, Label } from "@/components/ui";
 import { PasswordInput } from "@/components/auth/password-input";
 import { OtpInput } from "@/components/auth/otp-input";
 import { StudioMark } from "@/components/brand/studio-mark";
+import { safeNextPath, signedInRedirectTarget } from "@/lib/auth-redirect";
 import { portalHomePath } from "@/lib/super-portal";
 import { isSuperPortalHost } from "@/lib/tenant-host";
 
@@ -83,21 +84,22 @@ function ErrorNote({ message }: { message: string }) {
 
 function LoginContent() {
   const { signIn } = useSignIn();
+  const { isLoaded: authLoaded, isSignedIn } = useAuth();
   const { setActive } = useClerk();
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
-  // Only honour internal paths — never an absolute/protocol-relative URL — so a
-  // crafted ?next= can't turn the login into an open redirect.
-  const rawNext = searchParams?.get("next");
-  // The fallback is the hostname's own home. `/admin` is a studio route that
+  // The hostname is the one input that does not exist during the server
+  // render. Both uses below fall back to the studio home there, which is what
+  // this page rendered on a studio's hostname anyway.
+  const superPortal =
+    typeof window !== "undefined" && isSuperPortalHost(window.location.host);
+  // Where to go once signed in. `safeNextPath` is the same sanitiser the edge
+  // uses, so a `?next=` this page honours is one the edge would have honoured.
+  // The fallback is the hostname's own home: `/admin` is a studio route that
   // does not exist on the super portal, so a fixed default would land a
   // superadmin outside the app they just signed in to.
-  const next =
-    rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//")
-      ? rawNext
-      : portalHomePath(
-          typeof window !== "undefined" && isSuperPortalHost(window.location.host),
-        );
+  const next = safeNextPath(searchParams ?? new URLSearchParams()) ?? portalHomePath(superPortal);
 
   const [view, setView] = useState<"signin" | "forgot" | "reset" | "mfa">("signin");
 
@@ -112,6 +114,24 @@ function LoginContent() {
 
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // A sign-in form is for someone who is not signed in. Showing it to a live
+  // session invited the "You're already signed in" throw the flow below has to
+  // recover from, and hid the real question — whether *that* account belongs
+  // here, which only the destination can answer. Send them to it; if the
+  // account has no access there, `WorkspaceProvider` says so by name.
+  //
+  // `proxy.ts` already does this at the edge, from the same rule. This is for
+  // the way in the edge never sees: a `router.push("/login")` from inside the
+  // app, which is how the old 403-means-sign-out path used to arrive here.
+  const signedIn = authLoaded && isSignedIn === true;
+  const redirectTarget = signedIn
+    ? signedInRedirectTarget(pathname ?? "", searchParams ?? new URLSearchParams(), superPortal)
+    : null;
+  useEffect(() => {
+    if (!redirectTarget) return;
+    router.replace(redirectTarget);
+  }, [redirectTarget, router]);
 
   async function runAuthStep<T extends { error: { code?: string; message?: string } | null }>(
     step: () => Promise<T>,
@@ -378,6 +398,16 @@ function LoginContent() {
     setMfaTarget(factor.safeIdentifier ?? null);
     setMfaCode("");
     setError(null);
+  }
+
+  // Either the redirect above is about to run, or Clerk has not said yet
+  // whether it needs to. Both are a spinner, not a form.
+  if (!authLoaded || redirectTarget) {
+    return (
+      <div className="flex justify-center py-6">
+        <Loader2 className="h-5 w-5 animate-spin text-muted" />
+      </div>
+    );
   }
 
   if (view === "mfa") {

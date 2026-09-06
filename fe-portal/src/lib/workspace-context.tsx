@@ -10,7 +10,9 @@ import {
   type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth, useClerk } from "@clerk/nextjs";
+import { useAuth, useClerk, useUser } from "@clerk/nextjs";
+import { AccessDenied } from "@/components/auth/access-denied";
+import { authFailure, refusalCode } from "@/lib/access-refusal";
 import { ApiError, makeApi, type Api } from "@/lib/api";
 import { reportError } from "@/lib/report-error";
 import { useActiveOrganization } from "@/lib/use-active-organization";
@@ -29,11 +31,7 @@ const ORG_RETRY_LIMIT = 3;
 
 /** The backend's refusal for a token that carries no organization claim. */
 function isOrganizationRequired(body: unknown): boolean {
-  return (
-    typeof body === "object" &&
-    body !== null &&
-    (body as { error?: unknown }).error === "organization_required"
-  );
+  return refusalCode(body) === "organization_required";
 }
 
 interface AuthMePayload {
@@ -94,23 +92,31 @@ const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const { isLoaded, isSignedIn, getToken } = useAuth();
+  const { user } = useUser();
   const { signOut } = useClerk();
   const router = useRouter();
 
   // The token has to carry this studio's Clerk organization before the first
-  // call, or the backend answers 403 and `loadMe` below reads that as "no staff
-  // row" and signs the user straight back out. See `active-organization.ts`.
+  // call, or the backend answers 403 and a staff member with a perfectly good
+  // row is told they have none. See `active-organization.ts`.
   const { status: orgStatus, refreshMemberships } = useActiveOrganization(
     isLoaded && isSignedIn === true,
   );
   // How many times a refused `organization_required` has been answered by
   // re-reading memberships. The backend grants the membership on that very
-  // refusal, so one retry is normally enough; the cap is for an account that
-  // genuinely has no place here, which must still end in a sign-out.
+  // refusal, so one retry is normally enough; the cap is what stops an account
+  // that genuinely has no place here from re-reading forever. Spending it ends
+  // on the denial screen, which offers the retry back by hand.
   const orgRetries = useRef(0);
   const [orgRetryTick, setOrgRetryTick] = useState(0);
 
   const [loading, setLoading] = useState(true);
+  /**
+   * The backend's refusal code, when it has told us this session may not be
+   * here. Held rather than acted on: a 403 is an answer about *this account on
+   * this hostname*, not a reason to destroy a session that is valid elsewhere.
+   */
+  const [denied, setDenied] = useState<{ reason: string | null } | null>(null);
   const [currentStaff, setCurrentStaff] = useState<StaffUser | null>(null);
   const [locations, setLocations] = useState<Location[]>([]);
   const [activeLocationId, setActiveLocationIdState] = useState<string | null>(
@@ -155,6 +161,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       });
       setLocations(accessible);
       orgRetries.current = 0;
+      setDenied(null);
     } catch (err) {
       if (
         err instanceof ApiError &&
@@ -177,14 +184,26 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setOrgRetryTick(tick => tick + 1);
         return;
       }
-      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
-        // Clerk session exists but no staff_users row, or staff archived/pending.
-        // Clear the persisted workspace so the next user on this browser doesn't
-        // inherit a stale active location.
+      const failure =
+        err instanceof ApiError
+          ? authFailure(err.status, err.body)
+          : ({ kind: "other" } as const);
+
+      if (failure.kind !== "other") {
+        // Whichever way this went, the workspace this browser remembered was
+        // the previous account's. Clearing it stops the next one inheriting it.
         if (typeof window !== "undefined") {
           window.localStorage.removeItem(STORAGE_KEY_LOC);
         }
+      }
+      if (failure.kind === "sign-out") {
         await signOut(() => router.push("/login"));
+        return;
+      }
+      if (failure.kind === "denied") {
+        setDenied({ reason: failure.reason });
+        setCurrentStaff(null);
+        setLocations([]);
         return;
       }
       // Network or unexpected — leave staff null so UI shows error/empty
@@ -205,6 +224,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setLoading(false);
       setCurrentStaff(null);
       setLocations([]);
+      setDenied(null);
       return;
     }
     // `unavailable` still goes through: the backend is the authority on whether
@@ -336,6 +356,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [api, refreshAllLocations],
   );
 
+  // The way out of a refusal that was never about the account. A spent
+  // `organization_required` retry budget and a suspended studio both land on
+  // the denial screen, and both can stop being true without the session
+  // changing — so the budget is restored along with the attempt, or the button
+  // would work once and then look broken.
+  const retryAfterDenial = useCallback(() => {
+    orgRetries.current = 0;
+    setDenied(null);
+    void loadMe();
+  }, [loadMe]);
+
   // Compat no-ops (real auth lives in Clerk; the DevRoleSwitcher was a v0
   // affordance only).
   const switchStaff = useCallback(() => {}, []);
@@ -365,6 +396,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     api,
     refresh: loadMe,
   };
+
+  // Replaces the shell rather than rendering inside it: every page under this
+  // provider assumes a staff row, and there isn't one.
+  if (denied) {
+    return (
+      <AccessDenied
+        email={user?.primaryEmailAddress?.emailAddress ?? null}
+        reason={denied.reason}
+        onRetry={retryAfterDenial}
+      />
+    );
+  }
 
   return (
     <WorkspaceContext.Provider value={value}>
