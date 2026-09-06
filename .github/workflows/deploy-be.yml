@@ -17,8 +17,24 @@ permissions:
   contents: read
 
 concurrency:
-  # Per-branch, so a prod deploy never cancels or queues behind a staging one.
-  group: booking-be-deploy-${{ github.ref_name }}
+  # Deliberately NOT per-branch. Both stacks live on bpvps2 and share one Docker
+  # daemon, so they share its containerd content store — and two `docker compose
+  # up` runs pulling at once collide there:
+  #
+  #     unable to lease content: lease does not exist: not found
+  #
+  # The pull itself succeeds; compose's own re-pull is what fails, so the job
+  # dies *after* migrations have run, leaving the stack on its old image with a
+  # migrated database. Seen twice on 2026-09-06, both times with the `main` run
+  # starting ~40s behind the `staging` one, because merging to `staging` and
+  # fast-forwarding `main` fires both within a minute.
+  #
+  # This group was keyed on the branch so a prod deploy would never queue behind
+  # a staging one. That is the right instinct for two independent targets and the
+  # wrong one for two stacks on the same host: queueing is not the cost, it is
+  # the fix. `cancel-in-progress: false` keeps the second run — the deploy that
+  # waits is still the deploy that happens.
+  group: booking-be-deploy-bpvps2
   cancel-in-progress: false
 
 jobs:

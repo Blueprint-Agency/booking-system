@@ -88,6 +88,27 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 > anything unclaimed, but it resolves to Vercel and 404s rather than reaching the backend. Nothing
 > to do; noted so the next person does not go looking for a record to delete.
 
+> **The two backend deploys cannot run at the same time, and the workflow now enforces it.**
+> Both stacks live on bpvps2 and share one Docker daemon, therefore one containerd content store.
+> Two `docker compose up` runs pulling at once collide there with
+> `unable to lease content: lease does not exist: not found`. The failure is nastier than it looks:
+> the explicit `docker pull` succeeds and compose's own re-pull is what dies, so the job fails
+> **after migrations have already run** — leaving the stack on its old image against a migrated
+> database. It stays healthy and serves the previous build, which is why nobody notices from the
+> outside.
+>
+> This bit twice on 2026-09-06, both times with the `main` run starting ~40 seconds behind the
+> `staging` one, because merging to `staging` and then fast-forwarding `main` fires both within a
+> minute. The `concurrency.group` in `deploy-be.yml` is therefore **not** keyed on the branch —
+> `booking-be-deploy-bpvps2`, with `cancel-in-progress: false`, so the second deploy waits rather
+> than racing or being dropped. Queueing is the fix, not the cost.
+>
+> If you ever see that error anyway: re-run the failed job once the other one has finished, and
+> **check the running image against the tag** before assuming it recovered —
+> `docker inspect booking-be-prod --format '{{.Image}}'` against
+> `docker image inspect blueprintagency/booking-be:latest --format '{{.Id}}'`. A healthy container
+> is not evidence of a current one.
+
 > **Every staging/production URL is a real domain — do not test against `*.vercel.app`.**
 > The generated aliases still exist and still resolve, but the backend's CORS allowlist contains
 > only the exact origins and the Tenant wildcard patterns above, so a `.vercel.app` alias fails
