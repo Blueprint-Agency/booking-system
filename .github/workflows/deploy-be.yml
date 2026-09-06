@@ -134,6 +134,7 @@ jobs:
             #   env secrets: DB_USER, DB_PASSWORD, DB_NAME, DB_APP_PASSWORD,
             #            CLERK_STAFF_PUBLISHABLE_KEY, CLERK_STAFF_SECRET_KEY, CLERK_STAFF_WEBHOOK_SECRET,
             #            CLERK_CLIENT_PUBLISHABLE_KEY, CLERK_CLIENT_SECRET_KEY, CLERK_CLIENT_WEBHOOK_SECRET,
+            #            (optional) CLERK_PLATFORM_PUBLISHABLE_KEY, CLERK_PLATFORM_SECRET_KEY,
             #            IMPERSONATION_SECRET, SMTP_USER, SMTP_PASSWORD,
             #            STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
             #            R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, R2_PUBLIC_URL,
@@ -199,6 +200,14 @@ jobs:
               echo "CLERK_CLIENT_PUBLISHABLE_KEY=${{ secrets.CLERK_CLIENT_PUBLISHABLE_KEY }}"
               echo "CLERK_CLIENT_SECRET_KEY=${{ secrets.CLERK_CLIENT_SECRET_KEY }}"
               echo "CLERK_CLIENT_WEBHOOK_SECRET=${{ secrets.CLERK_CLIENT_WEBHOOK_SECRET }}"
+              # Clerk — super portal app (admin.portal.<root domain>; a THIRD
+              # Clerk application). Optional: blank leaves the super portal
+              # sharing the staff app's `__client` cookie, which means it shares
+              # one browser session with every studio portal. Set it and the two
+              # hostnames hold two separate sessions. The backend warns at boot
+              # when it is unset. See be/.env.example.
+              echo "CLERK_PLATFORM_PUBLISHABLE_KEY=${{ secrets.CLERK_PLATFORM_PUBLISHABLE_KEY }}"
+              echo "CLERK_PLATFORM_SECRET_KEY=${{ secrets.CLERK_PLATFORM_SECRET_KEY }}"
               # SMTP — credentials plus the platform's envelope identity.
               # Host/port/secure are hardcoded in be/src/lib/mailer.ts (Gmail SMTP
               # for the life of the platform). MAIL_FROM_EMAIL must be an address

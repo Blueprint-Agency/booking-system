@@ -10,6 +10,7 @@ import {
   tenantSlugFromHost,
 } from "@/lib/tenant-host";
 import { portalRouting } from "@/lib/super-portal";
+import { portalClerkKeys } from "@/lib/clerk-keys";
 import {
   resolveTenant,
   tenantNotFoundResponse,
@@ -99,7 +100,18 @@ export default clerkMiddleware(async (auth, req) => {
   loginUrl.searchParams.set("next", `${req.nextUrl.pathname}${req.nextUrl.search}`);
   await auth.protect({ unauthenticatedUrl: loginUrl.toString() });
   return pass();
-});
+},
+// Which Clerk application verifies this request, chosen by hostname — the
+// server-side half of the split `<ClerkProvider publishableKey>` makes in the
+// browser. Both halves are required and for the same reason: the super portal
+// has its own Clerk instance, so a session minted there is signed by a key the
+// staff instance does not know. Verify a super portal request against the staff
+// app and every page bounces back to `/login` with a valid session in hand.
+//
+// `{}` for a studio portal, and for a super portal with no application of its
+// own, leaves Clerk on the ambient env vars — the behaviour that shipped before
+// this. See `lib/clerk-keys.ts`.
+req => portalClerkKeys(req.headers.get("host")));
 
 export const config = {
   matcher: [
