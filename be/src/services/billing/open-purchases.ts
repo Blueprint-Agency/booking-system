@@ -22,6 +22,7 @@
 import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 
 import { db } from '../../db'
+import { clients } from '../../db/schema/identity'
 import { purchases, stripePayments } from '../../db/schema/ledger'
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { toCents } from '../../shared/money'
@@ -38,7 +39,9 @@ import {
   PART_PAYMENT_FLOOR_CENTS,
 } from './part-payment'
 import { attachCheckoutSession, type PurchaseRow } from './purchases'
+import { heldPaymentCounts } from './refunds'
 import { checkoutSessionParams, type CheckoutLine } from './checkout-session'
+import { daysSilent, isSilent, silenceNotice } from './refund-notice'
 
 /** An unfinished Purchase, as every screen that shows one needs to see it. */
 export interface OpenPurchaseView {
@@ -54,6 +57,12 @@ export interface OpenPurchaseView {
   /** When the first payment landed that did not clear it. Null before any did. */
   partPaidAt: Date | null
   createdAt: Date
+  /**
+   * How many payments the studio is holding against it (#95) — and so how many
+   * returns a refund of it will put on the statement. Zero for a Purchase
+   * opened and never paid towards, which is why it is not a count of rows.
+   */
+  paymentCount: number
 }
 
 /**
@@ -83,9 +92,14 @@ async function outstandingFor(tenantId: string, purchase: PurchaseRow): Promise<
 
 const sgd = (cents: number) => (cents / 100).toFixed(2)
 
-function view(purchase: PurchaseRow, outstanding: number): OpenPurchaseView {
+function view(
+  purchase: PurchaseRow,
+  outstanding: number,
+  paymentCount: number,
+): OpenPurchaseView {
   const metadata = purchase.metadata as Record<string, string>
   return {
+    paymentCount,
     id: purchase.id,
     kind: purchase.kind,
     itemName: metadata.item_name || 'Purchase',
@@ -129,17 +143,18 @@ export async function listOpenPurchases(
   // One grouped read for the page, not one per row: the account page and the
   // portal's client detail both call this inside a request that already holds a
   // pooled connection for its whole life.
-  const paid = await paidByPurchase(
-    tenantId,
-    rows.map(r => r.id),
-  )
+  const ids = rows.map(r => r.id)
+  const [paid, held] = await Promise.all([
+    paidByPurchase(tenantId, ids),
+    heldPaymentCounts(tenantId, ids),
+  ])
 
   const out: OpenPurchaseView[] = []
   for (const row of rows) {
     const outstanding = outstandingCents(toCents(row.totalSgd), paid.get(row.id) ?? 0)
     // Settled at the provider but not yet at the webhook. It owes nothing, so
     // showing it would offer the member a payment there is no room for.
-    if (outstanding > 0) out.push(view(row, outstanding))
+    if (outstanding > 0) out.push(view(row, outstanding, held.get(row.id) ?? 0))
   }
   return out
 }
@@ -206,7 +221,9 @@ export async function openPurchaseById(
     .limit(1)
   if (!row) return null
   const outstanding = await outstandingFor(tenantId, row)
-  return outstanding > 0 ? view(row, outstanding) : null
+  if (outstanding <= 0) return null
+  const held = await heldPaymentCounts(tenantId, [row.id])
+  return view(row, outstanding, held.get(row.id) ?? 0)
 }
 
 /**
@@ -286,6 +303,23 @@ const isAlreadyFinished = (err: unknown): boolean =>
   (err as { type?: unknown }).type === 'StripeInvalidRequestError'
 
 /**
+ * Why a Purchase cannot be resumed, in the member's words.
+ *
+ * A map rather than a chain of ternaries so that adding a status to the enum
+ * without deciding what it says here does not compile — every way a Purchase can
+ * be closed is a different sentence, and a member reading the wrong one goes to
+ * the front desk. **Abandoned** is the one #95 adds: the studio has given the
+ * money back, and offering a Resume button beside that would invite a member to
+ * start paying again for something already settled.
+ */
+const RESUME_REFUSALS: Record<Exclude<PurchaseRow['status'], 'open'>, string> = {
+  paid: 'This purchase has already been paid in full.',
+  refunded: 'This purchase was refunded.',
+  abandoned:
+    'This purchase was cancelled and everything you paid towards it has been refunded. Please start again if you still want it.',
+}
+
+/**
  * Mint a session for what is still owed on a Purchase the member already
  * started paying.
  *
@@ -313,10 +347,7 @@ export async function resumePurchaseCheckout(args: {
   if (purchase.clientId !== args.clientId) throw new ForbiddenError('not_your_purchase')
   if (purchase.status !== 'open') {
     throw new BadRequestError('purchase_not_open', {
-      message:
-        purchase.status === 'refunded'
-          ? 'This purchase was refunded.'
-          : 'This purchase has already been paid in full.',
+      message: RESUME_REFUSALS[purchase.status],
     })
   }
 
@@ -394,6 +425,92 @@ export async function heldOnOpenPurchases(tenantId: string): Promise<number> {
     .from(purchases)
     .where(and(eq(purchases.tenantId, tenantId), eq(purchases.status, 'open')))
   return toCents(row?.total ?? '0') / 100
+}
+
+/**
+ * A part-paid Purchase that has gone quiet, as the portal's list shows one.
+ *
+ * The member is named because this list is read across the whole studio rather
+ * than from inside one member's page — an admin settling these is working
+ * through money, not through people.
+ */
+export interface SilentPurchaseView extends OpenPurchaseView {
+  clientId: string
+  clientName: string
+  clientEmail: string
+  /** The last payment that landed. What the silence is measured from. */
+  lastPaymentAt: Date
+  daysSilent: number
+  silenceNotice: string
+}
+
+/**
+ * Part-paid Purchases nobody has touched for a long time (#95).
+ *
+ * **Nothing is swept.** This is a list and only a list: money moving back to a
+ * member without a person choosing it is not an improvement on money sitting
+ * still, so the studio is told these exist and an admin decides each one. That
+ * is also why there is no job, no `notified_at` column and no state — the query
+ * is the feature, and it answers the same whether it is run once or never.
+ *
+ * Silence is measured from the **last** payment rather than from `part_paid_at`,
+ * because a member who put a second card down last week is mid-purchase. See
+ * `isSilent` for the threshold and why the number is a judgement.
+ */
+export async function listSilentPartPaidPurchases(
+  tenantId: string,
+  now: Date = new Date(),
+): Promise<SilentPurchaseView[]> {
+  const rows = await db
+    .select({
+      purchase: purchases,
+      clientName: clients.name,
+      clientEmail: clients.email,
+      // The held set — `succeeded` and `pending` — because that is what a refund
+      // will call the provider about, so the count the admin reads is the number
+      // of lines the statement will grow by.
+      lastPaymentAt: sql<string | null>`max(${stripePayments.createdAt})`,
+      paymentCount: sql<number>`count(${stripePayments.id})::int`,
+    })
+    .from(purchases)
+    .innerJoin(clients, eq(clients.id, purchases.clientId))
+    .innerJoin(
+      stripePayments,
+      and(
+        eq(stripePayments.purchaseId, purchases.id),
+        inArray(stripePayments.status, ['succeeded', 'pending']),
+      ),
+    )
+    .where(
+      and(
+        eq(purchases.tenantId, tenantId),
+        eq(purchases.status, 'open'),
+        sql`${purchases.partPaidAt} is not null`,
+      ),
+    )
+    .groupBy(purchases.id, purchases.tenantId, clients.name, clients.email)
+    .orderBy(purchases.createdAt)
+
+  const out: SilentPurchaseView[] = []
+  for (const row of rows) {
+    if (!row.lastPaymentAt) continue
+    const lastPaymentAt = new Date(row.lastPaymentAt)
+    if (!isSilent(lastPaymentAt, now)) continue
+    const outstanding = outstandingCents(
+      toCents(row.purchase.totalSgd),
+      toCents(row.purchase.amountPaidSgd),
+    )
+    out.push({
+      ...view(row.purchase, outstanding, Number(row.paymentCount ?? 0)),
+      clientId: row.purchase.clientId,
+      clientName: row.clientName,
+      clientEmail: row.clientEmail,
+      lastPaymentAt,
+      daysSilent: daysSilent(lastPaymentAt, now),
+      silenceNotice: silenceNotice(lastPaymentAt, now),
+    })
+  }
+  return out
 }
 
 /** Re-exported so a route can quote the floor and the switch from one module. */

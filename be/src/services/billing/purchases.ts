@@ -173,6 +173,40 @@ export async function markPurchaseRefunded(
   return rows.length > 0
 }
 
+/**
+ * Stamp the Purchase abandoned, once (#95).
+ *
+ * The twin of `markPurchaseRefunded`, and separate from it because the two say
+ * different things. **Refunded** is a sale unwound: something was delivered and
+ * has been taken back. **Abandoned** is a sale that never happened — the member
+ * stopped part-way, nothing was granted, and the money they had put down has
+ * been returned. Collapsing them would make an abandoned purchase look like a
+ * refund in the finance rows, subtracting from a Net it was never in.
+ *
+ * `status <> 'abandoned'` makes the write its own lock, exactly as the refund
+ * flip does: two deliveries of the same event both walk the (idempotent) unwind
+ * and exactly one gets a row back and sends the member's email. `refunded` is
+ * excluded too, so a Purchase that somehow settled and was refunded between the
+ * read and this write is never relabelled underneath it.
+ */
+export async function markPurchaseAbandoned(
+  tenantId: string,
+  purchaseId: string,
+): Promise<boolean> {
+  const rows = await db
+    .update(purchases)
+    .set({ status: 'abandoned', amountPaidSgd: '0.00' })
+    .where(
+      and(
+        eq(purchases.tenantId, tenantId),
+        eq(purchases.id, purchaseId),
+        eq(purchases.status, 'open'),
+      ),
+    )
+    .returning({ id: purchases.id })
+  return rows.length > 0
+}
+
 export interface Settlement {
   /** True when nothing is outstanding — the only state in which anything is granted. */
   settled: boolean
@@ -220,7 +254,12 @@ export async function recomputeBalance(
   // Balance matters as much as the status since #92: `amount_paid_sgd` is what
   // says a purchase is refundable, so restoring it would put a Refund button
   // back on a plan already refunded.
-  if (purchase.status !== 'refunded') {
+  //
+  // `abandoned` is closed for the same reason and more sharply (#95): its
+  // payments have all been returned, so a redelivery that reopened it would put
+  // a Resume button in front of a member whose money is already back and offer
+  // them a Balance to clear on a purchase the studio has written off.
+  if (purchase.status !== 'refunded' && purchase.status !== 'abandoned') {
     await db
       .update(purchases)
       .set({

@@ -200,6 +200,10 @@ _Avoid_: split payment, instalment, deposit, partial payment, payment plan, down
 A Purchase with a Balance still outstanding, and so with nothing granted against it: no plan, no credits, no workshop place. It does not expire — the member returns to it from their account page whenever they like and a fresh checkout session is minted for whatever is still owed. What has been paid into one is money the studio is holding, and it is reported as that and never as revenue: a Purchase enters the finance figures once, at its frozen total, at the moment it closes. It is not an unpaid invoice and not a debt; nobody is chasing the member for it.
 _Avoid_: pending purchase, unpaid order, outstanding invoice, abandoned cart, arrears
 
+**Abandoned Purchase**:
+An Open Purchase an admin has closed by giving back everything paid into it. The member part-paid, never came back, and the studio was left holding money against nothing delivered; refunding it returns every payment the Purchase holds and ends the sale. It is not a Refund and is deliberately not counted as one: a Refund reverses revenue, and an Open Purchase was never revenue, so subtracting it from Net would understate the month. Nothing is Voided and no booking is cancelled, because nothing was ever granted. Nothing becomes Abandoned on its own — Purchases that have been silent for a long time are raised in the portal for a person to decide, and never swept.
+_Avoid_: cancelled purchase, written off, lapsed, expired purchase, partial refund, credited back
+
 **Connected Account**:
 A studio's own account with the payment provider, onboarded by the studio itself, that its members' payments are created directly on. Money lands in the studio's balance, the studio's name appears on the statement, and the studio's balance carries its own Refunds and chargebacks. A Tenant with no Connected Account still sells on the platform operator's account, which is where every studio sells today. It is not a login, not a Tenant, and not something the platform operator can create on a studio's behalf.
 _Avoid_: merchant account, sub-account, Stripe account, seller account, payout account

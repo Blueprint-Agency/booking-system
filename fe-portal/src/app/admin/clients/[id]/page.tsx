@@ -101,6 +101,8 @@ interface ApiOpenPurchase {
   part_paid_at: string | null;
   created_at: string;
   grants_nothing: boolean;
+  /** How many returns one press of Refund will put on the statement (#95). */
+  refund_payment_count: number;
 }
 
 interface ApiAdjustment {
@@ -173,6 +175,7 @@ export default function ClientProfilePage({
   const [boundInstructorFor, setBoundInstructorFor] = useState<ApiPackage | null>(null);
   const [refundFor, setRefundFor] = useState<ApiPackage | null>(null);
   const [workshopRefundFor, setWorkshopRefundFor] = useState<ApiWorkshopPurchase | null>(null);
+  const [openPurchaseRefundFor, setOpenPurchaseRefundFor] = useState<ApiOpenPurchase | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [permanentDeleteOpen, setPermanentDeleteOpen] = useState(false);
   const [restoring, setRestoring] = useState(false);
@@ -230,6 +233,7 @@ export default function ClientProfilePage({
       setBoundInstructorFor(null);
       setRefundFor(null);
       setWorkshopRefundFor(null);
+      setOpenPurchaseRefundFor(null);
       await load();
     } catch (err) {
       const code =
@@ -431,6 +435,21 @@ export default function ClientProfilePage({
                         check this member in against it.
                       </span>
                     </p>
+                    {/* The money's only way out (#95). Nothing was delivered, so
+                        there is no plan to void and no booking to cancel — the
+                        refund closes the purchase and that is all it does. */}
+                    {canEdit && (
+                      <div className="mt-3 flex justify-end">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setOpenPurchaseRefundFor(p)}
+                          className="text-error hover:bg-error/10 hover:text-error"
+                        >
+                          Refund S${p.paid_sgd}
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -875,6 +894,40 @@ export default function ClientProfilePage({
             )
           }
           onClose={() => setWorkshopRefundFor(null)}
+        />
+      )}
+
+      {/* An unfinished purchase (#95). Aimed at the Purchase itself, because
+          there is no plan and no booking to aim it at. The reply names how many
+          payments went back and what they totalled, so an admin can reconcile
+          it against the statement without opening the provider's dashboard. */}
+      {canEdit && openPurchaseRefundFor && (
+        <RefundDialog
+          packageName={openPurchaseRefundFor.item_name}
+          kind="unfinished"
+          notice={null}
+          paymentCount={openPurchaseRefundFor.refund_payment_count}
+          onConfirm={async (reason) => {
+            const purchaseId = openPurchaseRefundFor.id;
+            try {
+              const res = await api!.post<{ returned_line: string }>(
+                `/portal/admin/purchases/${purchaseId}/refund`,
+                { reason },
+              );
+              // The backend's own sentence — "2 payments returned, totalling
+              // S$120.00". The number of lines the statement will grow by is
+              // the thing an admin has to reconcile, and it is not derivable
+              // from the amount alone.
+              toast.success(`${res.returned_line}. The purchase closes once the provider confirms.`);
+              setOpenPurchaseRefundFor(null);
+              await load();
+            } catch (err) {
+              toast.error(
+                err instanceof ApiError ? `Refund failed (HTTP ${err.status}).` : "Refund failed.",
+              );
+            }
+          }}
+          onClose={() => setOpenPurchaseRefundFor(null)}
         />
       )}
 

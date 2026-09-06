@@ -28,6 +28,7 @@ import waiver from './waiver'
 import marketing from './marketing'
 import featureFlags from './feature-flags'
 import impersonate from './impersonate'
+import purchases from './purchases'
 
 /**
  * Role gating for the portal /admin subtree: a studio's admins run the whole
@@ -38,6 +39,9 @@ const app = new Hono()
   .use('*', requireRole('admin'))
 
   // ── Route mounts ────────────────────────────────────────────────────────
+  // Unfinished purchases (#95): the money the studio is holding against nothing
+  // granted, and the one place it can be given back.
+  .route('/purchases', purchases)
   .route('/locations', locations)
   .route('/rooms', rooms)
   .route('/class-types', classTypes)
