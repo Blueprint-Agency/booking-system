@@ -1,11 +1,12 @@
 "use client";
 
-import { Suspense, useState } from "react";
-import { useClerk, useSignUp } from "@clerk/nextjs";
-import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useAuth, useClerk, useSignUp } from "@clerk/nextjs";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import PhoneInput, { isValidPhoneNumber } from "react-phone-number-input";
 import "react-phone-number-input/style.css";
 import Link from "next/link";
+import { safeNextPath, signedInRedirectTarget } from "@/lib/auth-redirect";
 import { AuthSplitShell } from "@/components/auth/auth-split-shell";
 import { OtpInput } from "@/components/auth/otp-input";
 import { PasswordInput } from "@/components/auth/password-input";
@@ -65,14 +66,15 @@ function isAlreadySignedInError(err: unknown): boolean {
 
 function RegisterContent() {
   const { signUp } = useSignUp();
+  const { isLoaded: authLoaded, isSignedIn } = useAuth();
   const { setActive } = useClerk();
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
-  // Only honour internal paths — never an absolute/protocol-relative URL — so a
-  // crafted ?next= can't redirect a newly-registered member off-site.
-  const rawNext = searchParams.get("next");
-  const next =
-    rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/";
+  // `safeNextPath` is the same sanitiser the edge uses — internal paths only,
+  // never an absolute or protocol-relative URL, and never an auth page — so a
+  // `?next=` this page honours is one `proxy.ts` would have honoured too.
+  const next = safeNextPath(searchParams) ?? "/";
 
   const [view, setView] = useState<"form" | "verify">("form");
 
@@ -86,6 +88,22 @@ function RegisterContent() {
 
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Nobody signed in needs to create an account. The form could only fail for
+  // them ("You're already signed in"), so send them where they were going.
+  //
+  // Asked of `proxy.ts`'s own rule rather than of `signedIn` alone, so the
+  // ticket exemption holds here too: the edge deliberately lets a
+  // `?__clerk_ticket=` through on `/register`, and a redirect of our own would
+  // burn the ticket on the way past.
+  const signedIn = authLoaded && isSignedIn === true;
+  const redirectTarget = signedIn
+    ? signedInRedirectTarget(pathname ?? "", searchParams)
+    : null;
+  useEffect(() => {
+    if (!redirectTarget) return;
+    router.replace(redirectTarget);
+  }, [redirectTarget, router]);
 
   async function runAuthStep<T extends { error: { code?: string; message?: string } | null }>(
     step: () => Promise<T>,
@@ -201,6 +219,21 @@ function RegisterContent() {
     } catch (err) {
       setError(clerkErrorMessage(err));
     }
+  }
+
+  // Either the redirect above is about to run, or Clerk has not said yet
+  // whether it needs to. Neither is a moment to show a form.
+  if (!authLoaded || redirectTarget) {
+    return (
+      <AuthSplitShell
+        imageKey="hero-pilates-01"
+        quote="Every student begins with a single breath."
+      >
+        <h1 className="text-3xl font-extrabold tracking-tight text-ink mb-2">
+          One moment…
+        </h1>
+      </AuthSplitShell>
+    );
   }
 
   if (view === "verify") {
