@@ -316,12 +316,20 @@ is unreachable to anyone outside the Vercel team — including the studio staff 
 exists for. **Phase 5 must disable Deployment Protection on the staging target (or configure a
 bypass), and that decision makes staging publicly reachable — it needs to be a conscious one.**
 
-⚠️ **Still unproven: branch-tracked wildcards.** The test used `vercel alias set`, which pins a
-domain to *one immutable deployment* — it does not follow new pushes. A staging URL must instead
-be **branch-assigned** (domain → `staging` branch) so it auto-updates. `vercel domains add` has no
-target/branch flag and `vercel target` is list-only, so branch assignment is **dashboard-only and
-was not tested for wildcards**. Confirm this in the dashboard during Phase 5 before relying on it;
-if a wildcard cannot be branch-assigned, the two-dedicated-staging-projects fallback returns.
+✅ **Settled.** Both projects now report `ssoProtection: null`, and the staging tenant hostnames
+answer 200/307 with no SSO hop. Staging is deliberately public: it is where studio staff and
+testers are meant to look, and it now runs on its own Clerk development instances, so a public
+staging URL exposes no production account.
+
+✅ **Resolved: branch-tracked wildcards work.** The spike's test used `vercel alias set`, which
+pins a domain to *one immutable deployment* and does not follow new pushes, leaving open whether a
+wildcard could be **branch-assigned** instead. It can. Branch assignment is not in fact
+dashboard-only — the REST API takes it, which the CLI does not expose:
+`POST /v10/projects/{id}/domains` with `{"name": "*.dev.reservetoday.app", "gitBranch": "staging"}`
+returns `verified: true`. Proven end to end on a throwaway `*.wftest.reservetoday.app` before being
+applied for real: `yogasadhana.dev.reservetoday.app` serves a deployment whose `githubCommitRef` is
+`staging` at the branch tip, not a frozen alias. **The two-dedicated-staging-projects fallback is
+retired.**
 
 **Supporting findings:**
 
@@ -418,15 +426,20 @@ if a wildcard cannot be branch-assigned, the two-dedicated-staging-projects fall
 > promoting the DNS cutover ahead of it since that's what gates "URLs work instantly".
 
 ### Phase 5 — Infra cutover (DNS)
-- [ ] Add `reservetoday.app` in Vercel → get Vercel nameservers.
-- [ ] Recreate all records in Vercel DNS (incl. `api` A record → VPS IP).
-- [ ] Switch NS at the registrar; verify propagation + `api` TLS still valid.
-- [ ] Attach `*.reservetoday.app` to fe-client, `*.portal.reservetoday.app` to fe-portal;
-      add `*.dev.…` / `*.portal.dev.…` per Spike 2's outcome.
-- [ ] **Portal URL flip:** `portal.yogasadhana.reservetoday.app` →
-      `yogasadhana.portal.reservetoday.app`. 301 the old host, Clerk allowed origins/redirect
-      URLs, and staff comms. fe-client's URL is unchanged. No backend env change: the portal
-      wildcard already covers the new form, and `PORTAL_ORIGIN` is gone.
+- [x] Add `reservetoday.app` in Vercel → get Vercel nameservers.
+- [x] Recreate all records in Vercel DNS (incl. `api` A record → VPS IP).
+- [x] Switch NS at the registrar; verify propagation + `api` TLS still valid.
+- [x] Attach `*.reservetoday.app` to fe-client, `*.portal.reservetoday.app` to fe-portal;
+      add `*.dev.…` / `*.portal.dev.…` per Spike 2's outcome. Spike 2's open question came back
+      **positive** — a wildcard *can* be branch-assigned, so the two-projects fallback is dead.
+      Explicit `*.dev` and `*.portal.dev` CNAMEs were required: `api.dev` already made `dev` a node
+      in the zone, and RFC 4592 stops a wildcard reaching past a node that exists.
+- [x] **Portal URL flip:** `portal.yogasadhana.reservetoday.app` →
+      `yogasadhana.portal.reservetoday.app`, a 301 with path and query preserved. Clerk needed
+      nothing: the new host was already covered by the portal wildcard, already authenticated by
+      the portal instance, and a redirect never reaches the API. fe-client's URL is unchanged, and
+      `PORTAL_ORIGIN` is gone. **Staff comms still owed** — the old host had already been 404ing,
+      so the redirect is a repair as much as a move.
 - [x] Rename BE staging host `api.staging.…` → `api.dev.…` in the repo. `BOOKING_FQDN` names only
       `api.dev`; `BOOKING_FQDN_ALIAS` is pinned to it rather than to a second name, so the router
       rule stays well-formed while the old host stops being matched.

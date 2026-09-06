@@ -24,18 +24,27 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 | Clerk instance | development (`*.clerk.accounts.dev`) | production — fe-client on `clerk.reservetoday.app`, fe-portal on `clerk.portal.reservetoday.app`, super portal on `clerk.admin.portal.reservetoday.app` |
 | `APP_ENV` / `NEXT_PUBLIC_APP_ENV` | `staging` | `production` |
 
-> **The legacy single-studio hostnames still exist and have not been retired.**
-> `yogasadhana.reservetoday.app` is unchanged and is already the Tenant-subdomain form. The four
-> older names — `staging.yogasadhana.reservetoday.app`, `portal.yogasadhana.reservetoday.app`,
-> `staging-portal.yogasadhana.reservetoday.app`, `staging.reservetoday.app` — are branch-assigned
-> domains from the pre-tenancy scheme and still hold certificates. The **portal URL flip**
-> (`portal.yogasadhana.…` → `yogasadhana.portal.…`) is Phase 5 of
-> `docs/md/multi-tenancy-plan.md` and is not done: it needs a 301 on the old host, Clerk
-> allowed-origin/redirect updates, and staff comms. The backend side of it is already done —
-> `yogasadhana.portal.…` is covered by the portal wildcard and is what the backend builds staff
-> links from. Until the flip completes, the old form has to stay reachable, and since it is not a
-> `{slug}.portal.…` name no wildcard covers it: add it to `TENANT_ORIGIN_PATTERNS` as an exact
-> origin if it must keep working against the API.
+> **The portal URL flip is done.** `portal.yogasadhana.reservetoday.app` is attached to the
+> fe-portal Vercel project as a **301 redirect** to `yogasadhana.portal.reservetoday.app`, path
+> and query preserved. It had been returning Vercel's `DEPLOYMENT_NOT_FOUND` 404 — it resolves
+> through the apex wildcard but matched no project domain, so a staff bookmark was already broken
+> rather than merely old. The redirect target had to be attached explicitly (Vercel refuses to
+> redirect to a host the project does not own, and wildcard coverage does not count), which is why
+> `yogasadhana.portal.reservetoday.app` now appears as its own row next to the wildcard. That row
+> is a redirect target, **not** a per-Tenant domain: provisioning a studio still adds nothing here.
+>
+> Nothing was needed on the backend or in Clerk. `yogasadhana.portal.…` is covered by
+> `*.portal.reservetoday.app`, is what the backend already builds staff links from, and is what the
+> portal Clerk instance already authenticates — a redirect is a browser-side hop that never reaches
+> the API, so no exact origin has to be added to `TENANT_ORIGIN_PATTERNS`.
+>
+> **Three legacy staging hostnames remain**, and unlike the portal one they still work:
+> `staging.yogasadhana.reservetoday.app`, `staging-portal.yogasadhana.reservetoday.app`,
+> `staging.reservetoday.app` — branch-assigned domains from the pre-tenancy scheme, still holding
+> certificates. They are superseded by `{slug}.dev.reservetoday.app` and
+> `{slug}.portal.dev.reservetoday.app`, and can be given the same 301 treatment whenever someone
+> is sure nobody's bookmarks depend on them. `staging.reservetoday.app` names no studio at all, so
+> retiring it needs a decision about which Tenant it should land on rather than a redirect.
 
 > **Production Clerk now sits on `reservetoday.app`.** This block used to record the opposite —
 > that both instances answered on Vercel-generated hosts
@@ -95,6 +104,18 @@ It is a `NEXT_PUBLIC_*` var, so per the repo convention it **must also be set in
 dashboard** — once per scope, Production and Preview — or the deployed build falls back to the
 local default and resolves nothing. It is inlined at build time: changing it needs a redeploy, not
 a restart.
+
+> **Check which Clerk instance a deployed page actually loads — the Preview scope has been wrong
+> before.** Both projects' Preview-scope `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`
+> held `pk_live` / `sk_live` values, so staging signed people in against **production Clerk**,
+> sharing its user directory and sessions. It survived undetected because staging had no tenant
+> subdomain to render until the wildcards landed, and because Vercel marks those keys sensitive —
+> they cannot be read back through the API or the dashboard, so the wiring could not be checked by
+> inspection. The rendered page can be, and that is the reliable test:
+> `curl -sL https://{slug}.dev.reservetoday.app/login | grep -oE '[a-z0-9-]+\.clerk\.accounts\.dev'`
+> — a staging page must name a `*.clerk.accounts.dev` host, never `clerk.*.reservetoday.app`. The
+> correct development keys are always recoverable from the running backend:
+> `docker exec booking-be-staging env | grep CLERK_`.
 
 Notes:
 
@@ -159,12 +180,25 @@ The same rule cuts the other way for one application serving two hostnames. `adm
 
 > `__client_uat` *is* set on the registrable domain (`Domain=reservetoday.app`), so every app on the domain shares it. It carries no identity — it is the "is anyone signed in?" hint clerk-js checks before a handshake — and each instance also writes a suffixed copy, `__client_uat_<hash>`, which is the one modern clerk-js reads. A stale suffix from a retired instance is harmless but never expires on its own; clearing site data for `reservetoday.app` is the only way to remove one.
 
-> **Clerk production runs on Vercel-generated hosts, not on `reservetoday.app`.** The zone did
-> carry two full Clerk custom-domain sets (`accounts`, `clerk`, `clkmail`, `clk._domainkey`,
-> `clk2._domainkey`, for both `reservetoday.app` and `yogasadhana.reservetoday.app`), but they were
-> lost in the 2026-08-31 nameserver move and both live publishable keys decode to `*.vercel.app`
-> frontend API hosts, so sign-in is unaffected. Whether the Clerk dashboard still expects those
-> custom domains is unverified — see `docs/adr/0001-reservetoday-app-on-vercel-nameservers.md`.
+> **Adding a record under a host a wildcard currently serves breaks that host — pin it in the same
+> change.** RFC 4592: a wildcard does not reach past a node that exists, and creating
+> `x.foo.example` makes `foo.example` exist as an empty non-terminal even though nothing was
+> written at it. This zone has now been bitten three times. `*.portal.reservetoday.app` broke the
+> moment the Clerk `clerk.portal` / `accounts.portal` records were added; `*.dev` and `*.portal.dev`
+> had to be explicit because `api.dev` already made `dev` a node; and the super portal's own Clerk
+> domain repeated it exactly (below). Treat it as a rule, not a surprise.
+>
+> **The super portal's Clerk domain needs five records of its own, plus a sixth for the site.**
+> The third Clerk application (#81) is a production instance on `admin.portal.reservetoday.app`, so
+> its `pk_live_` decodes to the Frontend API host `clerk.admin.portal.reservetoday.app` — and that
+> host had **no record at all**. It resolved through `*.portal` to Vercel, the TLS handshake failed,
+> and the sign-in card spun forever with no error anywhere. The instance's five required CNAMEs
+> (`clerk`, `accounts`, `clkmail`, `clk._domainkey`, `clk2._domainkey`, all prefixed
+> `.admin.portal`) are readable from `GET https://api.clerk.com/v1/domains` with that app's secret
+> key, which is faster than the dashboard. Adding them makes `admin.portal.reservetoday.app` an
+> empty non-terminal, so an explicit `admin.portal` CNAME to Vercel has to go in **first** or the
+> super portal itself disappears behind the same rule. Certificate issuance is not instant; it
+> completes after the instance's domain is verified in the Clerk dashboard.
 
 > **`R2_PUBLIC_URL` is a CDN hostname, never a `pub-….r2.dev` URL.** `cdn.reservetoday.app` can no
 > longer be an R2 custom domain — R2 binds one through the Cloudflare proxy, which needs the zone
