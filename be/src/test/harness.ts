@@ -9,7 +9,7 @@ import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import postgres from 'postgres'
 import type { Hono } from 'hono'
 import * as schema from '../db/schema'
-import { APP_ROLE, ensureAppRole } from '../db/roles'
+import { APP_ROLE, ensureAppRole, ensureTenantIsolation } from '../db/roles'
 import {
   TENANT_ONE_ID,
   TENANT_ONE_SLUG,
@@ -175,6 +175,11 @@ export async function startTestApp(): Promise<TestApp> {
     // Inside the same lock as the migration, and after it: the grants only reach
     // tables that already exist.
     await ensureAppRole(client, APP_ROLE_TEST_PASSWORD)
+    // The deploy runs this immediately after the grants, so the harness does
+    // too. Skipping it here would give the tests a database whose isolation is
+    // *stronger* than production's on old tables and absent on new ones — the
+    // one difference guaranteed to make an isolation suite lie.
+    await ensureTenantIsolation(client)
     await seedAll(db)
   } finally {
     await client`select pg_advisory_unlock(${HARNESS_SETUP_LOCK})`
