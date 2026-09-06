@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
-import { stripe } from '../../lib/stripe'
+import { stripeForTenant } from '../../lib/stripe'
 import { outbound, VendorTimeoutError } from '../../lib/outbound'
 import { AppError, NotFoundError } from '../../shared/errors'
 import { ERROR_CODES } from '../../shared/error-codes'
@@ -223,6 +223,7 @@ const app = new Hono()
     const { session_id } = c.req.valid('json')
     const clientId = c.get('clientId')
 
+    const stripe = await stripeForTenant(tenantId(c))
     let session: Awaited<ReturnType<typeof stripe.checkout.sessions.retrieve>>
     try {
       session = await outbound('stripe', 'checkout.sessions.retrieve', () =>

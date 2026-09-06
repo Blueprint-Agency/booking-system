@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { stripe } from '../../lib/stripe'
+import { stripePlatform } from '../../lib/stripe'
 import { OFF_REQUEST_RETRY } from '../../lib/outbound'
 import { handleStripeEvent } from '../../services/billing/webhook-handler'
 import { ERROR_CODES } from '../../shared/error-codes'
@@ -15,7 +15,9 @@ const app = new Hono().post('/stripe', async c => {
 
   let event: any
   try {
-    event = stripe.webhooks.constructEvent(body, sig, secret)
+    // The platform's client, not a studio's: the signature is checked before
+    // anything in the body has been trusted enough to name a Tenant.
+    event = stripePlatform().webhooks.constructEvent(body, sig, secret)
   } catch (err) {
     logger.warn({ reason: (err as Error)?.message }, 'stripe-webhook: signature refused')
     return c.json({ error: ERROR_CODES.invalid_webhook_signature }, 400)

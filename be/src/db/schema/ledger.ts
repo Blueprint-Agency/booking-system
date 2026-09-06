@@ -4,7 +4,88 @@ import { tenantIdColumn } from './tenancy'
 import { clients, staffUsers } from './identity'
 import { clientPackages } from './packages'
 import { bookings } from './bookings'
-import { auditActorTypeEnum, stripePaymentKindEnum, stripePaymentStatusEnum } from '../enums'
+import {
+  auditActorTypeEnum,
+  purchaseKindEnum,
+  purchaseStatusEnum,
+  stripePaymentKindEnum,
+  stripePaymentStatusEnum,
+} from '../enums'
+
+/**
+ * A Purchase owns the money; a payment is evidence of part of it.
+ *
+ * Until this table existed, one purchase was one payment intent, and that
+ * assumption was load-bearing across plans, workshops, Merch and Cross-Location
+ * Add-Ons. It cannot survive either half of #89: a member paying with two cards
+ * needs many payments per purchase, and a Refund on a connected account becomes
+ * several provider calls. So the sale becomes a row of its own, holding what was
+ * bought, what it costs and how much has been paid, and the payment rows point
+ * at it.
+ *
+ * The rule this makes safe is one comparison, in `services/billing/balance.ts`:
+ * **nothing is granted until the Balance reaches zero.** A sale paid in full at
+ * the first attempt — today's only shape — is simply a Purchase that closes
+ * immediately, which is why nothing a member or an admin can see changes.
+ */
+export const purchases = pgTable(
+  'purchases',
+  {
+    tenantId: tenantIdColumn(),
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id, { onDelete: 'restrict' }),
+    kind: purchaseKindEnum('kind').notNull(),
+    /**
+     * Frozen at creation and never recomputed. The member is told what they owe
+     * before their first payment, and a price that could move between the first
+     * card and the second would be a debt that grows while it is being settled
+     * (story 12).
+     */
+    totalSgd: numeric('total_sgd', { precision: 10, scale: 2 }).notNull(),
+    /**
+     * Derived, not authoritative: recomputed from the payment rows every time
+     * one lands. Stored so the account page and the finance figures can read a
+     * Balance without summing the ledger, never so that it can disagree with it.
+     */
+    amountPaidSgd: numeric('amount_paid_sgd', { precision: 10, scale: 2 })
+      .notNull()
+      .default('0.00'),
+    status: purchaseStatusEnum('status').notNull().default('open'),
+    /**
+     * What the webhook grants from — the same key/value bag the checkout session
+     * carries, held here so a second payment against the same Purchase grants
+     * exactly what the first one would have. Session metadata is capped and
+     * editable by anyone holding the session; this is the copy that is neither.
+     */
+    metadata: jsonb('metadata').notNull().default(sql`'{}'::jsonb`),
+    /**
+     * The one live checkout session, if a payment is in flight. Singular on
+     * purpose: two open sessions against one Purchase is two members' worth of
+     * money against one Balance, and there is no way to tell afterwards which
+     * one the member meant.
+     */
+    checkoutSessionId: text('checkout_session_id'),
+    settledAt: timestamp('settled_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  table => ({
+    clientCreatedIdx: index('purchases_client_created_idx').on(
+      table.tenantId,
+      table.clientId,
+      table.createdAt,
+    ),
+    statusIdx: index('purchases_status_idx').on(table.tenantId, table.status),
+    // Scoped to the Tenant for the same reason `stripe_payments_intent_unique`
+    // is (migration 0040): a studio's archive restored beside its source keeps
+    // the provider's identifiers in both.
+    checkoutSessionUnique: uniqueIndex('purchases_checkout_session_unique').on(
+      table.tenantId,
+      table.checkoutSessionId,
+    ),
+  }),
+)
 
 export const manualAdjustments = pgTable(
   'manual_adjustments',
@@ -57,6 +138,16 @@ export const stripePayments = pgTable(
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     // Unique per Tenant, not platform-wide — see `paymentIntentUnique` below.
     paymentIntentId: text('payment_intent_id').notNull(),
+    /**
+     * The sale this payment is evidence of part of.
+     *
+     * Nullable for now, and only for now: this is the expand half of an
+     * expand–contract. Every historical row was backfilled (migration 0044) and
+     * every new one is written with it, so nothing in the code may treat null as
+     * a state to design for — the contract half takes the column NOT NULL once
+     * the old intent pointers come off.
+     */
+    purchaseId: uuid('purchase_id').references(() => purchases.id, { onDelete: 'restrict' }),
     amountSgd: numeric('amount_sgd', { precision: 10, scale: 2 }).notNull(),
     kind: stripePaymentKindEnum('kind').notNull(),
     // Null once the member is permanently deleted (#144): the payment is the
@@ -82,5 +173,7 @@ export const stripePayments = pgTable(
       table.paymentIntentId,
     ),
     clientCreatedIdx: index('stripe_payments_client_created_idx').on(table.tenantId, table.clientId, table.createdAt),
+    // Every recompute of a Balance reads a Purchase's payments by this.
+    purchaseIdx: index('stripe_payments_purchase_idx').on(table.tenantId, table.purchaseId),
   }),
 )

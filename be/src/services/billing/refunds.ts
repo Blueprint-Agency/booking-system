@@ -23,7 +23,7 @@ import { classes, ptSessions, workshops, workshopTiers, workshopTierDays, worksh
 import { classTypes } from '../../db/schema/catalog'
 import { clients } from '../../db/schema/identity'
 import { requireTenantUrl } from '../tenants/urls'
-import { stripe } from '../../lib/stripe'
+import { stripeForTenant } from '../../lib/stripe'
 import { outbound } from '../../lib/outbound'
 import { reportError } from '../../shared/logger'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
@@ -334,12 +334,30 @@ export async function issueWorkshopRefund(args: {
 }
 
 /**
- * The part `issueRefund` and `issueWorkshopRefund` share: call the provider,
- * then write the one record of why an admin refunded against the studio's rule.
+ * The provider call itself, on the studio's own account.
+ *
  * Keyed on the payment intent, which is the money path's only real guard — the
  * caller's `already_refunded` check reads a status the webhook flips
  * asynchronously, so a double-click or a client retry would otherwise reach the
- * provider twice.
+ * provider twice. The key is the intent alone and not the Tenant, because an
+ * intent belongs to one studio's account and the key is scoped to that account.
+ */
+export async function refundAtProvider(
+  tenantId: string,
+  paymentIntentId: string,
+): Promise<void> {
+  const stripe = await stripeForTenant(tenantId)
+  await outbound('stripe', 'refunds.create', () =>
+    stripe.refunds.create(
+      { payment_intent: paymentIntentId },
+      { idempotencyKey: `refund:${paymentIntentId}` },
+    ),
+  )
+}
+
+/**
+ * The part `issueRefund` and `issueWorkshopRefund` share: call the provider,
+ * then write the one record of why an admin refunded against the studio's rule.
  *
  * Written after the provider has taken it, so the log records refunds that
  * actually happened. The generic audit middleware records the request; this row
@@ -356,12 +374,7 @@ async function refundAtProviderAndAudit(args: {
   attendedCount: number
   override: boolean
 }): Promise<void> {
-  await outbound('stripe', 'refunds.create', () =>
-    stripe.refunds.create(
-      { payment_intent: args.paymentIntentId },
-      { idempotencyKey: `refund:${args.paymentIntentId}` },
-    ),
-  )
+  await refundAtProvider(args.tenantId, args.paymentIntentId)
   try {
     await db.insert(auditLog).values({
       tenantId: args.tenantId,

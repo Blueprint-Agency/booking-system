@@ -15,11 +15,12 @@ import { tenantForClient as routeToTenant } from '../../db/routing'
 import { stripePayments } from '../../db/schema/ledger'
 import { clients } from '../../db/schema/identity'
 import { and, eq } from 'drizzle-orm'
-import { stripe } from '../../lib/stripe'
+import { stripeForTenant } from '../../lib/stripe'
 import { outbound, type RetryPolicy } from '../../lib/outbound'
 import { applyCrossLocationAddOn, grantPackage } from '../packages/purchase'
 import { consumePromoCodeHold } from '../packages/promo-redemption'
 import { unwindRefund } from './refunds'
+import { purchaseById, recomputeBalance } from './purchases'
 import { bookWorkshopPaid } from '../workshops/book'
 import { recordMerchOrder } from '../catalog/merch-orders'
 import {
@@ -37,11 +38,13 @@ import { NotFoundError } from '../../shared/errors'
  * Returns null rather than throwing: the confirmation email falls back to the
  * account page, and a receipt lookup must never fail a delivered purchase.
  */
-async function receiptUrlPatch(
+export async function receiptUrlPatch(
+  tenantId: string,
   paymentIntentId: string,
-  retry: RetryPolicy | undefined,
+  retry?: RetryPolicy,
 ): Promise<{ receiptUrl?: string }> {
   try {
+    const stripe = await stripeForTenant(tenantId)
     const intent = await outbound(
       'stripe',
       'paymentIntents.retrieve',
@@ -85,6 +88,52 @@ async function tenantForClient(clientId: string): Promise<string> {
     throw new NotFoundError('client_not_found', { clientId })
   }
   return row.tenantId
+}
+
+/**
+ * Has this Purchase been paid in full — and may the grant proceed?
+ *
+ * The payment row is already written by the time this is asked, so the answer
+ * is recomputed from the ledger rather than from the event: the provider is
+ * telling us about one payment, and the question is about all of them.
+ *
+ * A missing `purchase_id` means a checkout session that was created before
+ * Purchases existed and is still in flight. Those grant exactly as they always
+ * did — they are one payment for the whole sale, which is the only shape this
+ * system has ever taken — and they drain within a session's lifetime.
+ */
+async function balanceCleared(
+  tenantId: string,
+  purchaseId: string | undefined,
+  paymentIntentId: string,
+): Promise<boolean> {
+  if (!purchaseId) return true
+  const purchase = await purchaseById(tenantId, purchaseId)
+  if (!purchase) return true
+  const settlement = await recomputeBalance(tenantId, purchase, paymentIntentId)
+  return settlement.settled
+}
+
+/**
+ * A payment that left a Balance outstanding: banked, and nothing delivered.
+ *
+ * The row is flipped to `succeeded` here rather than after a grant, because no
+ * grant is coming — and a row left `pending` forever would be money the next
+ * recompute could not see. That is the whole reason the flip normally waits:
+ * on the settling payment it is what makes a crash mid-grant recoverable by the
+ * provider's next redelivery.
+ */
+async function bankPartPayment(tenantId: string, paymentIntentId: string): Promise<void> {
+  const receipt = await receiptUrlPatch(tenantId, paymentIntentId)
+  await db
+    .update(stripePayments)
+    .set({ status: 'succeeded', ...receipt })
+    .where(
+      and(
+        eq(stripePayments.tenantId, tenantId),
+        eq(stripePayments.paymentIntentId, paymentIntentId),
+      ),
+    )
 }
 
 /** The payment this system already recorded for an intent, within its Tenant. */
@@ -173,12 +222,21 @@ async function dispatchStripeEvent(event: Stripe.Event, retry: RetryPolicy | und
         await db.insert(stripePayments).values({
           tenantId,
           paymentIntentId,
+          purchaseId: meta.purchase_id || null,
           // The ledger records what was charged; the split lives on the plan.
           amountSgd: chargedSgd,
           kind: kind === 'class_package' ? 'class_package' : 'pt_package',
           clientId,
           status: 'pending',
         }).onConflictDoNothing()
+      }
+
+      // Nothing is granted while a Balance is outstanding. A sale paid in full
+      // at the first attempt — every sale this system takes today — clears here
+      // and carries on exactly as it did before Purchases existed.
+      if (!(await balanceCleared(tenantId, meta.purchase_id, paymentIntentId))) {
+        await bankPartPayment(tenantId, paymentIntentId)
+        return
       }
 
       // Payment succeeded, so the Hold becomes a Consumed Redemption, stamped
@@ -211,7 +269,7 @@ async function dispatchStripeEvent(event: Stripe.Event, retry: RetryPolicy | und
       // at the `status === 'succeeded'` guard above instead of double-granting.
       // The receipt URL lands in the same write — the column the confirmation
       // email reads (§13).
-      const receipt = await receiptUrlPatch(paymentIntentId, retry)
+      const receipt = await receiptUrlPatch(tenantId, paymentIntentId, retry)
       await db
         .update(stripePayments)
         .set({ status: 'succeeded', clientPackageId: granted.clientPackageId, ...receipt })
@@ -250,6 +308,7 @@ async function dispatchStripeEvent(event: Stripe.Event, retry: RetryPolicy | und
           .values({
             tenantId,
             paymentIntentId,
+            purchaseId: meta.purchase_id || null,
             amountSgd,
             // The Add-On extends an Unlimited Plan, which is a class package.
             // The enum gains no fourth arm for it — Add-On revenue is read off
@@ -260,6 +319,11 @@ async function dispatchStripeEvent(event: Stripe.Event, retry: RetryPolicy | und
             status: 'pending',
           })
           .onConflictDoNothing()
+      }
+
+      if (!(await balanceCleared(tenantId, meta.purchase_id, paymentIntentId))) {
+        await bankPartPayment(tenantId, paymentIntentId)
+        return
       }
 
       const applied = await applyCrossLocationAddOn(
@@ -283,7 +347,7 @@ async function dispatchStripeEvent(event: Stripe.Event, retry: RetryPolicy | und
         )
       }
 
-      const receipt = await receiptUrlPatch(paymentIntentId, retry)
+      const receipt = await receiptUrlPatch(tenantId, paymentIntentId, retry)
       await db
         .update(stripePayments)
         .set({ status: 'succeeded', clientPackageId, ...receipt })
@@ -318,12 +382,18 @@ async function dispatchStripeEvent(event: Stripe.Event, retry: RetryPolicy | und
           .values({
             tenantId,
             paymentIntentId,
+            purchaseId: meta.purchase_id || null,
             amountSgd,
             kind: 'merch',
             clientId,
             status: 'pending',
           })
           .onConflictDoNothing()
+      }
+
+      if (!(await balanceCleared(tenantId, meta.purchase_id, paymentIntentId))) {
+        await bankPartPayment(tenantId, paymentIntentId)
+        return
       }
 
       await recordMerchOrder({
@@ -335,7 +405,7 @@ async function dispatchStripeEvent(event: Stripe.Event, retry: RetryPolicy | und
         paymentIntentId,
       })
 
-      const receipt = await receiptUrlPatch(paymentIntentId, retry)
+      const receipt = await receiptUrlPatch(tenantId, paymentIntentId, retry)
       await db
         .update(stripePayments)
         .set({ status: 'succeeded', ...receipt })
@@ -368,12 +438,20 @@ async function dispatchStripeEvent(event: Stripe.Event, retry: RetryPolicy | und
           .values({
             tenantId,
             paymentIntentId,
+            purchaseId: meta.purchase_id || null,
             amountSgd,
             kind: 'workshop',
             clientId,
             status: 'pending',
           })
           .onConflictDoNothing()
+      }
+
+      // A workshop place is not held until the Balance reaches zero — the
+      // booking is the grant, and it is not made while anything is outstanding.
+      if (!(await balanceCleared(tenantId, meta.purchase_id, paymentIntentId))) {
+        await bankPartPayment(tenantId, paymentIntentId)
+        return
       }
 
       const promoCodeId = meta.promo_code_id || null
@@ -393,7 +471,7 @@ async function dispatchStripeEvent(event: Stripe.Event, retry: RetryPolicy | und
 
       // Written before the email is composed — it is where `receipt_url` comes
       // from (§13).
-      const receipt = await receiptUrlPatch(paymentIntentId, retry)
+      const receipt = await receiptUrlPatch(tenantId, paymentIntentId, retry)
       if (receipt.receiptUrl) {
         await db
           .update(stripePayments)

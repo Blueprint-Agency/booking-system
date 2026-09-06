@@ -442,6 +442,13 @@
       "when": 1789888775091,
       "tag": "0062_slug_rename_class_series_complimentary",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1789554886533,
+      "tag": "0062_purchase_owns_the_money",
+      "breakpoints": true
     }
   ]
 }

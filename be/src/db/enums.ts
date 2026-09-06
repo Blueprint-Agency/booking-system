@@ -144,6 +144,38 @@ export const auditActorTypeEnum = pgEnum('audit_actor_type', ['staff', 'system']
 export const stripePaymentKindEnum = pgEnum('stripe_payment_kind', ['workshop', 'class_package', 'pt_package', 'corporate_package', 'merch'])
 export const stripePaymentStatusEnum = pgEnum('stripe_payment_status', ['pending', 'succeeded', 'refunded', 'failed'])
 
+/**
+ * What a Purchase bought. A separate axis from `stripe_payment_kind`, which
+ * says what a *payment* was for: a standalone Cross-Location Add-On is its own
+ * kind of sale but has always been recorded in the ledger as a `class_package`,
+ * because Add-On revenue is read off the plan's own column rather than off the
+ * payment row (§15). The Purchase is the thing that was bought, so it says so.
+ * `corporate_package` exists here only because historical payments carry it.
+ */
+export const purchaseKindEnum = pgEnum('purchase_kind', [
+  'class_package',
+  'pt_package',
+  'workshop',
+  'merch',
+  'cross_location_add_on',
+  'corporate_package',
+])
+
+/**
+ * Where a Purchase's money has got to.
+ *
+ * `open` — a Balance is outstanding, and nothing has been granted.
+ * `paid` — settled. Everything bought has been delivered.
+ * `refunded` — settled and then unwound in full. There is still no partial refund (§14).
+ * `abandoned` — the member never finished, and what they paid is owed back.
+ */
+export const purchaseStatusEnum = pgEnum('purchase_status', [
+  'open',
+  'paid',
+  'refunded',
+  'abandoned',
+])
+
 // Content
 export const emailRecipientKindEnum = pgEnum('email_recipient_kind', ['client', 'staff'])
 // Spec §4j uses `email_log` with a `status` column. The pgEnum is named `email_log_status` per
