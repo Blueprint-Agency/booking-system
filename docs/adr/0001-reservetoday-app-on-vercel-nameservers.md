@@ -23,7 +23,7 @@ at Cloudflare were simply gone. Twelve of them did not come back:
 
 | Lost | Count | Consequence |
 |---|---|---|
-| Clerk custom-domain sets for `reservetoday.app` and `yogasadhana.reservetoday.app` (`accounts`, `clerk`, `clkmail`, `clk._domainkey`, `clk2._domainkey`) | 10 | Both apps run on Clerk's default `*.vercel.app` frontend API hosts and are unaffected. The Clerk dashboard state for instances `yzxn3e3xr293` and `peu4tr0s6xj5` is unverified. |
+| Clerk custom-domain sets for `reservetoday.app` and `yogasadhana.reservetoday.app` (`accounts`, `clerk`, `clkmail`, `clk._domainkey`, `clk2._domainkey`) | 10 | *At the time:* both apps ran on Clerk's default `*.vercel.app` frontend API hosts and were unaffected; the dashboard state for instances `yzxn3e3xr293` and `peu4tr0s6xj5` was unverified. **Since resolved — see Consequences.** The records were recreated, and both instances now sit on the zone. |
 | `cdn` → `public.r2.dev` (the only proxied record in the zone) | 1 | No runtime effect: the `Production` GitHub Environment has never held any `R2_*` secret, so production builds no asset URLs at all. The record was orphaned infrastructure. |
 | `_dmarc` TXT (`p=quarantine`) | 1 | No mail originates from this zone — the backend sends through Gmail SMTP as `askblueprintagency@gmail.com` — so nothing was failing authentication. The zone is now unprotected against spoofing. |
 
@@ -80,3 +80,17 @@ did not threaten the certificate. `letsencrypt.org` is in the zone's CAA set.
   because none does: a strict policy on a non-sending domain is free anti-spoofing.
 - Whether Clerk's two production instances still expect their custom domains is unresolved, and
   the answer decides whether ten CNAMEs get recreated or formally retired.
+
+  **Resolved (2026-09-06, issue #74): recreated, not retired.** Both production instances are now
+  rooted on the zone rather than on Vercel-generated hosts — the client instance on
+  `clerk.reservetoday.app`, the portal instance on `clerk.portal.reservetoday.app` — and a third
+  Clerk application for the super portal answers on `clerk.admin.portal.reservetoday.app`. The
+  records exist and resolve. Rooting the instances at the shared parent domain is what lets a
+  Tenant subdomain authenticate without being enumerated in advance, so this is load-bearing for
+  multi-tenancy rather than cosmetic.
+
+  Note for anyone adding Clerk records here: the `clerk.portal` / `accounts.portal` set makes
+  `portal` an existing node in the zone, and a wildcard does not reach past an existing node
+  (RFC 4592 closest-encloser). Adding them silently broke `*.portal.reservetoday.app` during the
+  production cutover until an explicit `*.portal` record was added. The same trap applies to
+  `*.dev` and `*.portal.dev` (issue #79).
