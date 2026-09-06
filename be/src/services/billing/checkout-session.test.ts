@@ -1,8 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { purchaseKindFor, totalCents } from './checkout-session'
+import { buyerFor, purchaseKindFor, totalCents } from './checkout-session'
 import { AppError } from '../../shared/errors'
+import { toSgd } from '../../shared/money'
 
 test('the Purchase kind is read off the same field the webhook dispatches on', () => {
   assert.equal(purchaseKindFor({ kind: 'class_package' }), 'class_package')
@@ -30,4 +31,19 @@ test('the total is what the lines add up to — the plan and its Add-On together
     ]),
     590_00,
   )
+})
+
+test('a sale with no buyer is refused, not left to fail as a foreign key', () => {
+  assert.equal(buyerFor({ client_id: 'c-1' }), 'c-1')
+  assert.throws(() => buyerFor({ kind: 'merch' }), (err: unknown) => {
+    assert.ok(err instanceof AppError)
+    assert.equal(err.code, 'checkout_client_missing')
+    return true
+  })
+})
+
+test('a total in cents becomes the numeric string the ledger stores', () => {
+  assert.equal(toSgd(0), '0.00')
+  assert.equal(toSgd(590_00), '590.00')
+  assert.equal(toSgd(12_950), '129.50')
 })

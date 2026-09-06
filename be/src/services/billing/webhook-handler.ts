@@ -86,39 +86,69 @@ async function tenantForClient(clientId: string): Promise<string> {
 }
 
 /**
- * Has this Purchase been paid in full — and may the grant proceed?
+ * Which Purchase this payment is evidence of part of.
  *
- * The payment row is already written by the time this is asked, so the answer
- * is recomputed from the ledger rather than from the event: the provider is
- * telling us about one payment, and the question is about all of them.
- *
- * A missing `purchase_id` means a checkout session that was created before
- * Purchases existed and is still in flight. Those grant exactly as they always
- * did — they are one payment for the whole sale, which is the only shape this
- * system has ever taken — and they drain within a session's lifetime.
+ * The session metadata is the normal answer. The payment row is the fallback,
+ * and it is not merely defensive: a checkout session created before Purchases
+ * existed carries no `purchase_id`, but its payment row was given one by the
+ * backfill (migration 0044), and without this that Purchase would sit `open`
+ * with nothing paid while its payment succeeded — the one disagreement between
+ * `amount_paid_sgd` and the ledger that this record exists to prevent.
  */
-async function balanceCleared(
+async function purchaseForPayment(
   tenantId: string,
-  purchaseId: string | undefined,
+  metadataPurchaseId: string | undefined,
   paymentIntentId: string,
-): Promise<boolean> {
-  if (!purchaseId) return true
-  const purchase = await purchaseById(tenantId, purchaseId)
-  if (!purchase) return true
-  const settlement = await recomputeBalance(tenantId, purchase, paymentIntentId)
-  return settlement.settled
+): Promise<string | null> {
+  if (metadataPurchaseId) return metadataPurchaseId
+  const [row] = await db
+    .select({ purchaseId: stripePayments.purchaseId })
+    .from(stripePayments)
+    .where(
+      and(
+        eq(stripePayments.tenantId, tenantId),
+        eq(stripePayments.paymentIntentId, paymentIntentId),
+      ),
+    )
+    .limit(1)
+  return row?.purchaseId ?? null
 }
 
 /**
- * A payment that left a Balance outstanding: banked, and nothing delivered.
+ * Write this payment against its Purchase, and say whether the grant may go on.
  *
- * The row is flipped to `succeeded` here rather than after a grant, because no
- * grant is coming — and a row left `pending` forever would be money the next
- * recompute could not see. That is the whole reason the flip normally waits:
- * on the settling payment it is what makes a crash mid-grant recoverable by the
- * provider's next redelivery.
+ * It answers a question and it writes — deliberately, and in that order: the
+ * amount paid is recomputed from the payment rows (never added to, which a
+ * provider redelivery would double), and only then is the Balance compared with
+ * zero. Every branch below asks exactly this before it delivers anything, so
+ * **nothing is granted while a Balance is outstanding** is one call rather than
+ * a rule each of the four product kinds has to remember.
+ *
+ * When it answers false the payment is banked here rather than after a grant,
+ * because no grant is coming — and a row left `pending` forever would be money
+ * the next recompute could not see. On the settling payment the flip stays
+ * where it was, after the grant, which is what makes a crash between the two
+ * recoverable by the provider's next redelivery.
+ *
+ * A payment with no Purchase at all — a session in flight from before this
+ * shipped, whose row the backfill never reached — grants exactly as it always
+ * did. Those are one payment for the whole sale, the only shape this system has
+ * ever taken.
  */
-async function bankPartPayment(tenantId: string, paymentIntentId: string): Promise<void> {
+async function settleAndMayGrant(
+  tenantId: string,
+  metadataPurchaseId: string | undefined,
+  paymentIntentId: string,
+): Promise<boolean> {
+  const purchaseId = await purchaseForPayment(tenantId, metadataPurchaseId, paymentIntentId)
+  if (!purchaseId) return true
+
+  const purchase = await purchaseById(tenantId, purchaseId)
+  if (!purchase) return true
+
+  const { settled } = await recomputeBalance(tenantId, purchase, paymentIntentId)
+  if (settled) return true
+
   const receipt = await receiptUrlPatch(tenantId, paymentIntentId)
   await db
     .update(stripePayments)
@@ -129,6 +159,7 @@ async function bankPartPayment(tenantId: string, paymentIntentId: string): Promi
         eq(stripePayments.paymentIntentId, paymentIntentId),
       ),
     )
+  return false
 }
 
 /** The payment this system already recorded for an intent, within its Tenant. */
@@ -220,13 +251,10 @@ async function dispatchStripeEvent(event: Stripe.Event): Promise<void> {
         }).onConflictDoNothing()
       }
 
-      // Nothing is granted while a Balance is outstanding. A sale paid in full
-      // at the first attempt — every sale this system takes today — clears here
-      // and carries on exactly as it did before Purchases existed.
-      if (!(await balanceCleared(tenantId, meta.purchase_id, paymentIntentId))) {
-        await bankPartPayment(tenantId, paymentIntentId)
-        return
-      }
+      // A sale paid in full at the first attempt — every sale this system takes
+      // today — clears here and carries on exactly as it did before Purchases
+      // existed.
+      if (!(await settleAndMayGrant(tenantId, meta.purchase_id, paymentIntentId))) return
 
       // Payment succeeded, so the Hold becomes a Consumed Redemption, stamped
       // with the moment and the payment intent (§10 step 3).
@@ -310,10 +338,7 @@ async function dispatchStripeEvent(event: Stripe.Event): Promise<void> {
           .onConflictDoNothing()
       }
 
-      if (!(await balanceCleared(tenantId, meta.purchase_id, paymentIntentId))) {
-        await bankPartPayment(tenantId, paymentIntentId)
-        return
-      }
+      if (!(await settleAndMayGrant(tenantId, meta.purchase_id, paymentIntentId))) return
 
       const applied = await applyCrossLocationAddOn(
         tenantId,
@@ -380,10 +405,7 @@ async function dispatchStripeEvent(event: Stripe.Event): Promise<void> {
           .onConflictDoNothing()
       }
 
-      if (!(await balanceCleared(tenantId, meta.purchase_id, paymentIntentId))) {
-        await bankPartPayment(tenantId, paymentIntentId)
-        return
-      }
+      if (!(await settleAndMayGrant(tenantId, meta.purchase_id, paymentIntentId))) return
 
       await recordMerchOrder({
         tenantId,
@@ -438,10 +460,7 @@ async function dispatchStripeEvent(event: Stripe.Event): Promise<void> {
 
       // A workshop place is not held until the Balance reaches zero — the
       // booking is the grant, and it is not made while anything is outstanding.
-      if (!(await balanceCleared(tenantId, meta.purchase_id, paymentIntentId))) {
-        await bankPartPayment(tenantId, paymentIntentId)
-        return
-      }
+      if (!(await settleAndMayGrant(tenantId, meta.purchase_id, paymentIntentId))) return
 
       const promoCodeId = meta.promo_code_id || null
       if (promoCodeId) {

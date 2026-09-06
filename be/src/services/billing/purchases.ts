@@ -14,8 +14,8 @@ import { and, eq } from 'drizzle-orm'
 
 import { db } from '../../db'
 import { purchases, stripePayments } from '../../db/schema/ledger'
-import { toCents } from '../../shared/money'
-import { amountPaidCents, centsToSgd, isSettled, outstandingCents } from './balance'
+import { toCents, toSgd } from '../../shared/money'
+import { amountPaidCents, isSettled, outstandingCents } from './balance'
 
 export type PurchaseRow = typeof purchases.$inferSelect
 export type PurchaseKind = PurchaseRow['kind']
@@ -44,10 +44,41 @@ export async function openPurchase(input: OpenPurchaseInput): Promise<PurchaseRo
       tenantId: input.tenantId,
       clientId: input.clientId,
       kind: input.kind,
-      totalSgd: centsToSgd(input.totalCents),
+      totalSgd: toSgd(input.totalCents),
       amountPaidSgd: '0.00',
       status: 'open',
       metadata: input.metadata,
+    })
+    .returning()
+  return row!
+}
+
+/**
+ * A sale with nothing left to charge — a free product, or a discount that took
+ * the total to zero. It skips the payment provider entirely and is granted on
+ * the spot, so its Purchase is opened and closed in the same breath: a total of
+ * zero leaves nothing outstanding, which is the same rule every other sale
+ * settles by rather than an exception to it.
+ *
+ * It exists because a Purchase is the record of a sale, not of a payment. A
+ * free trial pass and a $500 plan are both things a member acquired on a day,
+ * and a history that shows only the ones that moved money is a history with
+ * holes in it.
+ */
+export async function openSettledPurchase(
+  input: Omit<OpenPurchaseInput, 'totalCents'>,
+): Promise<PurchaseRow> {
+  const [row] = await db
+    .insert(purchases)
+    .values({
+      tenantId: input.tenantId,
+      clientId: input.clientId,
+      kind: input.kind,
+      totalSgd: '0.00',
+      amountPaidSgd: '0.00',
+      status: 'paid',
+      metadata: input.metadata,
+      settledAt: new Date(),
     })
     .returning()
   return row!
@@ -126,7 +157,7 @@ export async function recomputeBalance(
   await db
     .update(purchases)
     .set({
-      amountPaidSgd: centsToSgd(paidCents),
+      amountPaidSgd: toSgd(paidCents),
       // A refunded Purchase stays refunded: the unwind is the later word on it,
       // and a redelivery of the original payment must not reopen it as paid.
       ...(purchase.status === 'refunded'

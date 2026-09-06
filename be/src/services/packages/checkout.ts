@@ -17,6 +17,7 @@ import {
   type CheckoutLine,
   type CheckoutQuote,
 } from '../billing/checkout-session'
+import { openSettledPurchase } from '../billing/purchases'
 import { tenantDisplayName } from '../tenants/mail-identity'
 import { bestPrice, listActivePromotionsFor } from './promotions'
 import { applyPromoCode, type AppliedPromoCode } from './promo-redemption'
@@ -148,6 +149,14 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
       // through to the standard paid-class-package Checkout below.
       if (grantsWithoutPaying(toCents(eff.effectivePriceSgd))) {
         const result = await purchaseFreeTrial(tenantId, clientId, pkg.id)
+        // A sale is a sale whether or not money moved: the Purchase opens and
+        // closes here, because a total of zero leaves nothing outstanding.
+        await openSettledPurchase({
+          tenantId,
+          clientId,
+          kind: 'class_package',
+          metadata: { kind: 'class_package', client_id: clientId, package_id: pkg.id },
+        })
         return { outcome: 'granted', clientPackageId: result.clientPackageId }
       }
     }
@@ -233,6 +242,19 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
       // the drift #109 exists to prevent.
       instructorId: instructorId ?? null,
       crossLocationPaidSgd: crossLocationSgd,
+    })
+    await openSettledPurchase({
+      tenantId,
+      clientId,
+      kind: productType,
+      metadata: {
+        kind: productType,
+        package_id: packageId,
+        client_id: clientId,
+        promo_code_id: applied?.promoCodeId ?? '',
+        applied_promotion_id: appliedPromotionId ?? '',
+        location_id: locationId ?? '',
+      },
     })
     return { outcome: 'granted', clientPackageId: granted.clientPackageId }
   }
