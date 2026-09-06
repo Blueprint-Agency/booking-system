@@ -32,6 +32,34 @@ export const allowedOriginPatterns = parseOriginPatterns(
   env.CLERK_STAFF_AUTHORIZED_PARTIES,
 )
 
+/**
+ * Both apps must be expressible, or the process does not start.
+ *
+ * `env.ts` can only check that the variable is non-empty, and non-empty is not
+ * the requirement: a list carrying only the client wildcard — an easy slip while
+ * migrating off the two deleted single-valued origins — satisfies the schema,
+ * boots, serves traffic, and then throws on the first staff invitation, the
+ * first checkout and halfway through provisioning the next studio. Those are
+ * failures in front of a member or a new studio's owner, hours after the deploy
+ * that caused them.
+ *
+ * Deriving a link is now as load-bearing as accepting an origin, so it is
+ * checked at the same moment: once, at boot, while an operator is still
+ * watching. The slug is a placeholder — what is being asserted is that a
+ * wildcard for each app exists at all, not anything about a tenant.
+ */
+for (const app of ['client', 'portal'] as const) {
+  if (!tenantOriginFor(app, 'any-slug', allowedOriginPatterns)) {
+    throw new Error(
+      `TENANT_ORIGIN_PATTERNS configures no ${app} wildcard, so no studio's ${app} URL ` +
+        'can be derived and every link the backend mails would fail. Add one, with the ' +
+        `wildcard as the leftmost label (${
+          app === 'portal' ? 'https://*.portal.example.com' : 'https://*.example.com'
+        }).`,
+    )
+  }
+}
+
 export function originAllowed(origin: string): boolean {
   return isAllowedOrigin(origin, allowedOriginPatterns)
 }
