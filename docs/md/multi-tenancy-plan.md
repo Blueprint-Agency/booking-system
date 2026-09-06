@@ -440,12 +440,17 @@ retired.**
       the portal instance, and a redirect never reaches the API. fe-client's URL is unchanged, and
       `PORTAL_ORIGIN` is gone. **Staff comms still owed** — the old host had already been 404ing,
       so the redirect is a repair as much as a move.
-- [x] Rename BE staging host `api.staging.…` → `api.dev.…` in the repo. `BOOKING_FQDN` names only
-      `api.dev`; `BOOKING_FQDN_ALIAS` is pinned to it rather than to a second name, so the router
-      rule stays well-formed while the old host stops being matched.
-- [ ] Finish the cutover off-repo (issue #69): run a staging deploy, then drop the second `Host()`
-      from the infra repo's booking compose, delete `BOOKING_FQDN_ALIAS` from `deploy-be.yml` and
-      each stack's `.env`, and remove the `api.staging` A record from Vercel DNS.
+- [x] Rename BE staging host `api.staging.…` → `api.dev.…`. `BOOKING_FQDN` names only `api.dev`,
+      on both stacks and in `deploy-be.yml`.
+- [x] Finish the cutover off-repo (issue #69). The transitional `BOOKING_FQDN_ALIAS` is retired:
+      the infra repo's compose spells the router rule with a single ``Host(`${BOOKING_FQDN}`)``,
+      the workflow no longer writes the key and sweeps it out of each stack's `.env`, and both
+      stacks were recreated and verified at 200 on their own hostname. It was removed rather than
+      left set-equal because idle was not free — an unset alias renders ``Host(``)``, which Traefik
+      rejects, so the variable was *required* forever to keep a rule that no longer needed it.
+      The `api.staging` A record is gone from Vercel DNS as well: the zone holds `api` and
+      `api.dev` and nothing else. The name still resolves, through the apex `*` ALIAS, but to
+      Vercel and a 404 rather than to the backend.
 - [ ] Public Suffix List: not needed — tenants can't publish content or run code on their
       subdomains. Revisit only if that changes (Vercel recommends PSL submission for cookie
       isolation in that case).
