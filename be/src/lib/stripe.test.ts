@@ -68,6 +68,14 @@ describe('statement descriptor prefix check', () => {
   test('a usable prefix is no problem', () => {
     assert.equal(statementDescriptorPrefixProblem(true, 'RESERVE'), undefined)
   })
+
+  test('the check and the charge path measure the same prefix', () => {
+    // Whitespace a GitHub variable picked up must not pass the check and then
+    // quietly cost the suffix a character of its room.
+    const padded = ` ${'A'.repeat(21)} `
+    assert.ok(statementDescriptorPrefixProblem(true, padded))
+    assert.equal(descriptorSuffix(padded.trim(), 'Acme Yoga'), undefined)
+  })
 })
 
 const TENANT_A = '11111111-1111-4111-8111-111111111111'
