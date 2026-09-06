@@ -18,11 +18,11 @@
  * There is no finance_events table and there should not be one: these rows ARE
  * the ledger, and a copy of them would be a second thing to keep true.
  */
-import { and, eq, gte, inArray, isNotNull, lte } from 'drizzle-orm'
+import { and, eq, gte, inArray, isNotNull, lte, ne } from 'drizzle-orm'
 import { db } from '../../db'
 import { clientPackages, classPackages, ptPackages, promoCodes } from '../../db/schema/packages'
 import { bookings } from '../../db/schema/bookings'
-import { stripePayments } from '../../db/schema/ledger'
+import { purchases, stripePayments } from '../../db/schema/ledger'
 import { locations, merchOrders } from '../../db/schema/catalog'
 import { workshops } from '../../db/schema/schedule'
 import { clients } from '../../db/schema/identity'
@@ -250,11 +250,27 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
     })
     .from(stripePayments)
     .innerJoin(clients, eq(clients.id, stripePayments.clientId))
+    // The Purchase the payment belongs to, for the settlement test below.
+    .innerJoin(purchases, eq(purchases.id, stripePayments.purchaseId))
     .where(
       and(
         eq(stripePayments.tenantId, tenantId),
         eq(stripePayments.status, 'refunded'),
         isNotNull(stripePayments.refundedAt),
+        // **A Purchase that never settled produces no Refund event** (#93).
+        //
+        // Every money-in row above is read off what a sale *delivered* — a
+        // plan, a booking, a Merch Order — so a Purchase still `open` has
+        // contributed nothing to Gross. Giving that money back is the studio
+        // ceasing to hold cash it never counted as revenue, and reporting it
+        // here would subtract from Net a figure Net never contained, quietly
+        // understating the month by the refunded amount.
+        //
+        // It is reachable: a part payment can be returned from the provider's
+        // dashboard, which is the only place a purchase that granted nothing
+        // can be refunded from today. What that money was is the "held on
+        // unfinished purchases" figure, and it simply stops being held.
+        ne(purchases.status, 'open'),
         ...within(stripePayments.refundedAt, filter),
       ),
     )

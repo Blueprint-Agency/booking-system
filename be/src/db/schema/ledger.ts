@@ -67,6 +67,17 @@ export const purchases = pgTable(
      * one the member meant.
      */
     checkoutSessionId: text('checkout_session_id'),
+    /**
+     * When the first payment landed that did **not** clear the Balance (#93).
+     *
+     * Not derivable from the other columns: `amount_paid_sgd` says what is held
+     * right now, so a Purchase part-paid at noon and finished at one o'clock is
+     * indistinguishable afterwards from one paid in full at the first attempt.
+     * The portal has to tell those apart — a member who part-paid is somebody
+     * the front desk will meet — and the studio's "money held against nothing
+     * granted" figure has to say since when.
+     */
+    partPaidAt: timestamp('part_paid_at', { withTimezone: true }),
     settledAt: timestamp('settled_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -76,6 +87,11 @@ export const purchases = pgTable(
       table.clientId,
       table.createdAt,
     ),
+    // Also the whole of the #93 "money held against nothing granted" read,
+    // which is `sum(amount_paid_sgd) where status = 'open'`. A member's own
+    // unfinished purchases come off `clientCreatedIdx` below, which already
+    // leads with the two columns that query filters on and ends with the one it
+    // orders by — so part payment needed no index of its own.
     statusIdx: index('purchases_status_idx').on(table.tenantId, table.status),
     // Scoped to the Tenant for the same reason `stripe_payments_intent_unique`
     // is (migration 0040): a studio's archive restored beside its source keeps

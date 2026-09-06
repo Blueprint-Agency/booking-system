@@ -45,6 +45,11 @@ const globalPatch = z.object({
     .min(0, 'The Add-On rate must be between $0 and $9999.')
     .max(9999, 'The Add-On rate must be between $0 and $9999.')
     .optional(),
+  // Part Payment (#93). Off unless the studio says otherwise; turning it off
+  // hides the checkbox and leaves every Purchase already open resumable.
+  part_payment_enabled: z
+    .boolean({ message: 'Part Payment is either on or off.' })
+    .optional(),
   // Every declared Leave Conflict, as one replacement set. Which pairs are
   // allowed — two different, active instructors, each pair once — is the
   // service's call; this only says what the shape has to be.
@@ -72,6 +77,7 @@ function serializeGlobal(r: svc.GlobalPolicyRow) {
     leave_carry_over_cap_days: r.leaveCarryOverCapDays,
     study_leave_cap: r.studyLeaveCap,
     cross_location_rate_sgd: r.crossLocationRateSgd,
+    part_payment_enabled: r.partPaymentEnabled,
     updated_at: r.updatedAt,
     updated_by_staff_id: r.updatedByStaffId,
   }
@@ -120,6 +126,9 @@ const app = new Hono()
         ...(body.study_leave_cap !== undefined ? { studyLeaveCap: body.study_leave_cap } : {}),
         ...(body.cross_location_rate_sgd !== undefined
           ? { crossLocationRateSgd: body.cross_location_rate_sgd.toFixed(2) }
+          : {}),
+        ...(body.part_payment_enabled !== undefined
+          ? { partPaymentEnabled: body.part_payment_enabled }
           : {}),
         ...(body.leave_conflicts !== undefined
           ? {

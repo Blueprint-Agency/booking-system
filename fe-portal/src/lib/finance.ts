@@ -197,6 +197,16 @@ export interface FinanceOverview {
   totals: FinanceTotals;
   /** Sessions with no pay set. Excluded from Net, so Net says so. */
   unpriced_count: number;
+  /**
+   * Money taken against purchases that have granted nothing yet (#93) — a
+   * member part-way through paying with two cards.
+   *
+   * **Not revenue**, and never inside Gross or Net: a purchase enters the
+   * figures once, when it closes. It is shown so that money the studio holds is
+   * visible rather than missing. Like Active Members, it is a stock read now,
+   * not a flow measured over the period.
+   */
+  held_on_open_purchases_sgd: number;
   sales_by_category: CategorySales[];
   by_instructor: FinanceInstructorTotal[];
   members: { active: number; joined: number };

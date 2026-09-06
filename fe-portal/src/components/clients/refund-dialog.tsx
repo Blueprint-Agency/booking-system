@@ -16,6 +16,7 @@ export function RefundDialog({
   packageName,
   kind = "package",
   notice,
+  paymentCount = 1,
   onConfirm,
   onClose,
 }: {
@@ -24,10 +25,18 @@ export function RefundDialog({
    *  operation either way — only the sentence differs. */
   kind?: "package" | "workshop";
   notice: string | null;
+  /**
+   * How many payments this purchase holds (#93). One is the ordinary case and
+   * says nothing extra. More than one means several returns will appear on the
+   * statement from one press of this button, and the admin is told before they
+   * press it rather than by a bookkeeper a week later.
+   */
+  paymentCount?: number;
   onConfirm: (reason: string) => Promise<void>;
   onClose: () => void;
 }) {
   const isWorkshop = kind === "workshop";
+  const splitPayments = paymentCount > 1;
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   return (
@@ -54,6 +63,20 @@ export function RefundDialog({
           }
         }}
       >
+        {splitPayments && (
+          <div className="flex items-start gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
+            <div>
+              <div className="font-medium text-ink">
+                This was paid with {paymentCount} cards.
+              </div>
+              <div className="text-xs text-muted">
+                One refund, {paymentCount} separate returns — one back to each card,
+                so {paymentCount} lines will appear on the statement.
+              </div>
+            </div>
+          </div>
+        )}
         {notice && (
           <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/5 px-3 py-2 text-sm">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />

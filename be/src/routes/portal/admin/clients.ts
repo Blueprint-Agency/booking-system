@@ -36,6 +36,10 @@ import { exportMember } from '../../../services/clients/member-export'
 import { deleteMemberPermanently } from '../../../services/clients/member-delete'
 import { memberArchiveFilename, packArchive } from '../../../services/tenants/transfer-archive'
 import { sessionView } from '../session-view'
+import {
+  listOpenPurchases,
+  type OpenPurchaseView,
+} from '../../../services/billing/open-purchases'
 
 const idParam = z.object({ id: z.string().uuid() })
 const idPkgParam = z.object({ id: z.string().uuid(), pid: z.string().uuid() })
@@ -126,6 +130,8 @@ function packageView(p: ClientPackageWithSource, refund?: RefundState) {
     // works nothing out for itself.
     refundable: refund?.refundable ?? false,
     refund_notice: refund?.notice ?? null,
+    // How many returns the Refund will put on the statement (#93).
+    refund_payment_count: refund?.paymentCount ?? 0,
     id: p.id,
     kind: p.kind,
     source_package_id: p.sourcePackageId,
@@ -168,6 +174,40 @@ function workshopPurchaseView(w: WorkshopPurchase) {
     purchased_at: w.purchasedAt,
     refundable: w.refundable,
     refund_notice: w.refundNotice,
+    refund_payment_count: w.paymentCount,
+  }
+}
+
+/**
+ * An unfinished Purchase on the client detail page (#93).
+ *
+ * Deliberately its **own** list, beside the plans the member holds and never
+ * mixed in with them: this is money the studio is holding against nothing
+ * granted, and a row that sat among the packages would read as a package. The
+ * member has no entitlement from it, cannot book on it, and must not be checked
+ * in against it — which is what `grants_nothing` says in one word to every
+ * surface that shows it.
+ *
+ * ponytail: no Refund button. `refundStatesFor` walks what a purchase
+ * *delivered*, and an open Purchase delivered nothing, so an admin who wants to
+ * return a part payment has to do it from the provider's dashboard — where the
+ * `charge.refunded` webhook still catches it and there is nothing to unwind.
+ * #93 asks that this money be visible, not that it be returnable from here, and
+ * the finance figures are correct either way (see the settlement test on the
+ * refund rows in services/finance/list.ts). Upgrade path: a Refund issued
+ * against a Purchase rather than against the plan or booking it bought.
+ */
+function openPurchaseView(p: OpenPurchaseView) {
+  return {
+    id: p.id,
+    kind: p.kind,
+    item_name: p.itemName,
+    total_sgd: p.totalSgd,
+    paid_sgd: p.paidSgd,
+    outstanding_sgd: p.outstandingSgd,
+    part_paid_at: p.partPaidAt,
+    created_at: p.createdAt,
+    grants_nothing: true,
   }
 }
 
@@ -220,18 +260,23 @@ const app = new Hono()
   })
   .get('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    const [client, packages, adjustments, refunds, workshopPurchases] = await Promise.all([
-      getClientById(tenantId(c), id),
-      listClientPackages(tenantId(c), id, true),
-      listRecentAdjustments(tenantId(c), id),
-      refundStatesFor(tenantId(c), id),
-      listWorkshopPurchases(tenantId(c), id),
-    ])
+    const [client, packages, adjustments, refunds, workshopPurchases, openPurchases] =
+      await Promise.all([
+        getClientById(tenantId(c), id),
+        listClientPackages(tenantId(c), id, true),
+        listRecentAdjustments(tenantId(c), id),
+        refundStatesFor(tenantId(c), id),
+        listWorkshopPurchases(tenantId(c), id),
+        listOpenPurchases(tenantId(c), id),
+      ])
     return c.json({
       ...clientRow(client),
       packages: packages.map(p => packageView(p, refunds[p.id])),
       adjustments: adjustments.map(adjustmentView),
       workshop_purchases: workshopPurchases.map(workshopPurchaseView),
+      // Money held against nothing granted. Separate from `packages` on
+      // purpose — see `openPurchaseView`.
+      open_purchases: openPurchases.map(openPurchaseView),
     })
   })
   // ---- package wallet edits (admin) ----
