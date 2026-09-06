@@ -65,6 +65,23 @@ export async function receiptUrlPatch(
 }
 
 /**
+ * What **this session** actually captured, which since #93 is not always the
+ * price of what was bought.
+ *
+ * The ledger records money, and a part payment is one card's worth of it; the
+ * Purchase is what says the sale cost more. Writing the full price on a payment
+ * row that took half of it would make the Balance read as settled on the first
+ * card, and the grant would fire against money the studio does not have.
+ *
+ * `amount_total` is the provider's own figure for the session and needs no
+ * trusting — it is what the charge was, not what our metadata hoped it would
+ * be. On every whole-price sale it equals the fallback exactly, which is why
+ * this is safe to apply to sessions created long before part payment existed.
+ */
+const capturedSgd = (session: Stripe.Checkout.Session, fallbackSgd: string): string =>
+  session.amount_total == null ? fallbackSgd : (session.amount_total / 100).toFixed(2)
+
+/**
  * Which Tenant a completed checkout belongs to.
  *
  * Read off the buyer, not off the session metadata. The provider calls this
@@ -298,25 +315,35 @@ async function dispatchStripeEvent(event: Stripe.Event, retry: RetryPolicy | und
           tenantId,
           paymentIntentId,
           purchaseId: purchase.id,
-          // The ledger records what was charged; the split lives on the plan.
-          amountSgd: chargedSgd,
+          // The ledger records what THIS session charged; the split across the
+          // plan and its Add-On lives on the plan, and the price of the whole
+          // sale lives on the Purchase.
+          amountSgd: capturedSgd(session, chargedSgd),
           kind: kind === 'class_package' ? 'class_package' : 'pt_package',
           clientId,
           status: 'pending',
         }).onConflictDoNothing()
       }
 
-      // A sale paid in full at the first attempt — every sale this system takes
-      // today — clears here and carries on exactly as it did before Purchases
-      // existed.
-      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId))) return
-
       // Payment succeeded, so the Hold becomes a Consumed Redemption, stamped
       // with the moment and the payment intent (§10 step 3).
+      //
+      // **At the FIRST payment, not at settlement** (#93). The price a Promo
+      // Code cut is already frozen on the Purchase, so a member paying with two
+      // cards is paying the discounted price whatever happens next; leaving the
+      // Redemption Held until the second card would let its Hold lapse and put
+      // a capped code's place back in the pool while somebody was mid-purchase
+      // at the discounted price. It only ever touches a Held row, so the second
+      // payment's delivery finds nothing to do.
       const promoCodeId = meta.promo_code_id || null
       if (promoCodeId) {
         await consumePromoCodeHold({ tenantId, promoCodeId, clientId, paymentIntentId })
       }
+
+      // A sale paid in full at the first attempt — every sale before #93 — clears
+      // here and carries on exactly as it did before Purchases existed. A part
+      // payment stops, having banked its money and granted nothing.
+      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId))) return
 
       const granted = await grantPackage(tenantId, {
         clientId,
@@ -380,7 +407,7 @@ async function dispatchStripeEvent(event: Stripe.Event, retry: RetryPolicy | und
             tenantId,
             paymentIntentId,
             purchaseId: purchase.id,
-            amountSgd,
+            amountSgd: capturedSgd(session, amountSgd),
             // The Add-On extends an Unlimited Plan, which is a class package.
             // The enum gains no fourth arm for it — Add-On revenue is read off
             // `client_packages.cross_location_paid_sgd`, not off this row (§15).
@@ -450,7 +477,7 @@ async function dispatchStripeEvent(event: Stripe.Event, retry: RetryPolicy | und
             tenantId,
             paymentIntentId,
             purchaseId: purchase.id,
-            amountSgd,
+            amountSgd: capturedSgd(session, amountSgd),
             kind: 'merch',
             clientId,
             status: 'pending',
@@ -503,7 +530,7 @@ async function dispatchStripeEvent(event: Stripe.Event, retry: RetryPolicy | und
             tenantId,
             paymentIntentId,
             purchaseId: purchase.id,
-            amountSgd,
+            amountSgd: capturedSgd(session, amountSgd),
             kind: 'workshop',
             clientId,
             status: 'pending',
@@ -511,14 +538,28 @@ async function dispatchStripeEvent(event: Stripe.Event, retry: RetryPolicy | und
           .onConflictDoNothing()
       }
 
-      // A workshop place is not held until the Balance reaches zero — the
-      // booking is the grant, and it is not made while anything is outstanding.
-      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId))) return
-
+      // Consumed at the first payment and the price locks with it — see the
+      // package branch above for why it cannot wait for settlement.
       const promoCodeId = meta.promo_code_id || null
       if (promoCodeId) {
         await consumePromoCodeHold({ tenantId, promoCodeId, clientId, paymentIntentId })
       }
+
+      // A workshop place is not held until the Balance reaches zero — the
+      // booking is the grant, and it is not made while anything is outstanding.
+      // The member is told so at checkout and again on their account page.
+      //
+      // ponytail: capacity is checked when checkout starts, and `bookWorkshopPaid`
+      // deliberately does not re-check it — for a sale paid in one go the money is
+      // already captured and the gap is seconds. A part payment stretches that gap
+      // to however long the member takes to come back, so a Balance settled weeks
+      // later can book past a workshop that has since filled, silently. #93's
+      // acceptance criteria say only that no place is held and that the member is
+      // told so, which is what ships here. Upgrade path: a capacity check on the
+      // settling payment that refuses the booking and flags the Purchase for the
+      // studio to refund — which needs a way to refund a Purchase that granted
+      // nothing, and there is none yet (see `refundStatesFor`).
+      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId))) return
 
       const booked = await bookWorkshopPaid(tenantId, {
         clientId,

@@ -77,6 +77,8 @@ interface ApiPackage {
    * purchase is Untouched. A notice, never a gate: the refund is still allowed.
    */
   refund_notice: string | null;
+  /** How many returns the Refund will put on the statement (#93). */
+  refund_payment_count: number;
 }
 
 interface ApiWorkshopPurchase {
@@ -88,6 +90,27 @@ interface ApiWorkshopPurchase {
   purchased_at: string;
   refundable: boolean;
   refund_notice: string | null;
+  refund_payment_count: number;
+}
+
+/**
+ * A purchase the member started paying for and has not finished (#93).
+ *
+ * Money the studio is holding against **nothing granted**: no plan, no place,
+ * no credits. It is listed apart from the packages for exactly that reason —
+ * a row among them would read as an entitlement, and the front desk would let
+ * somebody into a class they have not finished paying for.
+ */
+interface ApiOpenPurchase {
+  id: string;
+  kind: string;
+  item_name: string;
+  total_sgd: string;
+  paid_sgd: string;
+  outstanding_sgd: string;
+  part_paid_at: string | null;
+  created_at: string;
+  grants_nothing: boolean;
 }
 
 interface ApiAdjustment {
@@ -112,6 +135,7 @@ interface ApiProfile {
   packages: ApiPackage[];
   workshop_purchases: ApiWorkshopPurchase[];
   adjustments: ApiAdjustment[];
+  open_purchases: ApiOpenPurchase[];
 }
 
 /**
@@ -411,6 +435,57 @@ export default function ClientProfilePage({
               ) : null
             }
           />
+
+          {/* Unfinished purchases — money held against nothing granted (#93).
+              Above the packages, because it is the thing a member's arrival at
+              the front desk turns into a question. */}
+          {profile.open_purchases.length > 0 && (
+            <section>
+              <header className="mb-3 flex items-center justify-between">
+                <h2 className="text-sm font-semibold text-ink">Unfinished purchases</h2>
+                <span className="text-xs text-muted">
+                  {profile.open_purchases.length} open
+                </span>
+              </header>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {profile.open_purchases.map((p) => (
+                  <div
+                    key={p.id}
+                    className="rounded-xl border border-warning/40 bg-warning/5 px-5 py-4 shadow-soft"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-ink">
+                          {p.item_name}
+                        </p>
+                        <p className="mt-1 text-xs text-muted">
+                          S${p.paid_sgd} paid of S${p.total_sgd}
+                          {p.part_paid_at
+                            ? ` · since ${formatDate(p.part_paid_at)}`
+                            : ""}
+                        </p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-lg font-semibold text-ink">
+                          S${p.outstanding_sgd}
+                        </p>
+                        <p className="text-[10px] uppercase tracking-wider text-muted">
+                          Outstanding
+                        </p>
+                      </div>
+                    </div>
+                    <p className="mt-3 flex items-start gap-1.5 text-xs text-ink">
+                      <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-warning" />
+                      <span>
+                        Grants nothing — no plan, no credits, no place held. Do not
+                        check this member in against it.
+                      </span>
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           <section>
             <header className="mb-3 flex items-center justify-between">
@@ -845,6 +920,7 @@ export default function ClientProfilePage({
         <RefundDialog
           packageName={refundFor.package_name}
           notice={refundFor.refund_notice}
+          paymentCount={refundFor.refund_payment_count}
           onConfirm={(reason) =>
             runEdit(
               () =>
@@ -863,6 +939,7 @@ export default function ClientProfilePage({
           packageName={workshopRefundFor.workshop_name}
           kind="workshop"
           notice={workshopRefundFor.refund_notice}
+          paymentCount={workshopRefundFor.refund_payment_count}
           onConfirm={(reason) =>
             runEdit(
               () =>

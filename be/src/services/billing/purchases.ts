@@ -227,6 +227,11 @@ export async function recomputeBalance(
         amountPaidSgd: toSgd(paidCents),
         status: settled ? ('paid' as const) : ('open' as const),
         ...(settled && !purchase.settledAt ? { settledAt: new Date() } : {}),
+        // Money landed and the Balance did not close: this is a part payment,
+        // and from here on the Purchase is one the front desk may meet. Stamped
+        // once and never cleared — settling it later does not make it untrue
+        // that the studio held money against nothing granted in between.
+        ...(!settled && paidCents > 0 && !purchase.partPaidAt ? { partPaidAt: new Date() } : {}),
       })
       .where(and(eq(purchases.tenantId, tenantId), eq(purchases.id, purchase.id)))
   }

@@ -222,6 +222,10 @@ _Avoid_: outstanding amount, due, owing, credit, wallet, arrears
 Paying one Purchase with more than one card, in amounts the member chooses, because only they know what each of their cards will take. A declined attempt captures nothing and moves nothing, so a wrong guess costs a retry rather than a sale. Every Part Payment is a payment; not every payment is a Part Payment — a sale settled in one go is neither split nor partial. It is never a deposit, an instalment plan or a payment schedule: there are no dates and no debt, only a Balance the member clears when they choose.
 _Avoid_: split payment, instalment, deposit, partial payment, payment plan, down payment
 
+**Open Purchase**:
+A Purchase with a Balance still outstanding, and so with nothing granted against it: no plan, no credits, no workshop place. It does not expire — the member returns to it from their account page whenever they like and a fresh checkout session is minted for whatever is still owed. What has been paid into one is money the studio is holding, and it is reported as that and never as revenue: a Purchase enters the finance figures once, at its frozen total, at the moment it closes. It is not an unpaid invoice and not a debt; nobody is chasing the member for it.
+_Avoid_: pending purchase, unpaid order, outstanding invoice, abandoned cart, arrears
+
 **Connected Account**:
 A studio's own account with the payment provider, onboarded by the studio itself, that its members' payments are created directly on. Money lands in the studio's balance, the studio's name appears on the statement, and the studio's balance carries its own Refunds and chargebacks. A Tenant with no Connected Account still sells on the platform operator's account, which is where every studio sells today. It is not a login, not a Tenant, and not something the platform operator can create on a studio's behalf.
 _Avoid_: merchant account, sub-account, Stripe account, seller account, payout account

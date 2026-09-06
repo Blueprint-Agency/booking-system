@@ -78,6 +78,15 @@ export interface RefundState {
   attendedCount: number
   /** Null when the purchase is **Untouched** — there is nothing to warn about. */
   notice: string | null
+  /**
+   * How many payments the Refund will return (#93).
+   *
+   * A Purchase settled with two cards is unwound by two provider calls, so two
+   * returns appear on the studio's statement and two on the member's. The admin
+   * pressed one button; the dialog says so before they do, because a second
+   * unexplained line on a statement is a phone call.
+   */
+  paymentCount: number
 }
 
 /**
@@ -103,6 +112,7 @@ export async function refundStatesFor(
   const rows = await db
     .select({
       id: clientPackages.id,
+      purchaseId: clientPackages.purchaseId,
       amountPaidSgd: purchases.amountPaidSgd,
       count: sql<number>`count(${bookings.id})::int`,
       since: sql<string | null>`min(coalesce(${classes.startsAt}, ${ptSessions.startsAt}))`,
@@ -119,7 +129,9 @@ export async function refundStatesFor(
     .leftJoin(classes, eq(classes.id, bookings.classId))
     .leftJoin(ptSessions, eq(ptSessions.id, bookings.ptSessionId))
     .where(and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.clientId, clientId)))
-    .groupBy(clientPackages.id, purchases.amountPaidSgd)
+    .groupBy(clientPackages.id, clientPackages.purchaseId, purchases.amountPaidSgd)
+
+  const held = await heldPaymentCounts(tenantId, rows.map(r => r.purchaseId))
 
   const out: Record<string, RefundState> = {}
   for (const r of rows) {
@@ -128,9 +140,44 @@ export async function refundStatesFor(
       refundable: holdsMoney(r.amountPaidSgd),
       attendedCount: count,
       notice: attendedNotice(count, r.since ? new Date(r.since) : null),
+      paymentCount: (r.purchaseId && held.get(r.purchaseId)) || 0,
     }
   }
   return out
+}
+
+/**
+ * How many payments each of these Purchases still has at the provider.
+ *
+ * The **held** set — `succeeded` and `pending` both — because that is exactly
+ * what `issueRefund` will call the provider about, and a dialog that promised a
+ * different number from the one the statement shows would be worse than saying
+ * nothing. See `heldPayments` in balance.ts for why `pending` counts as held.
+ *
+ * One query for the whole page, keyed by Purchase, because the client detail
+ * page reads every row at once.
+ */
+async function heldPaymentCounts(
+  tenantId: string,
+  purchaseIds: (string | null)[],
+): Promise<Map<string, number>> {
+  const ids = purchaseIds.filter((id): id is string => id != null)
+  if (ids.length === 0) return new Map()
+  const rows = await db
+    .select({
+      purchaseId: stripePayments.purchaseId,
+      n: sql<number>`count(*)::int`,
+    })
+    .from(stripePayments)
+    .where(
+      and(
+        eq(stripePayments.tenantId, tenantId),
+        inArray(stripePayments.purchaseId, ids),
+        inArray(stripePayments.status, ['succeeded', 'pending']),
+      ),
+    )
+    .groupBy(stripePayments.purchaseId)
+  return new Map(rows.map(r => [r.purchaseId, Number(r.n ?? 0)]))
 }
 
 /**
@@ -209,6 +256,8 @@ export interface WorkshopPurchase {
   purchasedAt: Date
   refundable: boolean
   refundNotice: string | null
+  /** How many payments the Refund will return — see `RefundState`. */
+  paymentCount: number
 }
 
 export async function listWorkshopPurchases(
@@ -226,6 +275,7 @@ export async function listWorkshopPurchases(
       purchasedAt: bookings.bookedAt,
       checkInState: bookings.checkInState,
       purchasePaidSgd: purchases.amountPaidSgd,
+      purchaseId: bookings.purchaseId,
     })
     .from(bookings)
     .innerJoin(workshops, eq(workshops.id, bookings.workshopId))
@@ -262,9 +312,12 @@ export async function listWorkshopPurchases(
     }
   }
 
+  const held = await heldPaymentCounts(tenantId, rows.map(r => r.purchaseId))
+
   return rows.map(r => {
     const count = r.checkInState === 'attended' || r.checkInState === 'no_show' ? 1 : 0
     return {
+      paymentCount: (r.purchaseId && held.get(r.purchaseId)) || 0,
       bookingId: r.bookingId,
       workshopName: r.workshopName,
       tierName: r.tierName,
