@@ -113,7 +113,11 @@ const SEPARATOR = '* '
  * letter, and none of `<>\'"*`.
  */
 export function statementDescriptorSuffix(studioName: string): string | undefined {
-  return descriptorSuffix(env.STRIPE_STATEMENT_DESCRIPTOR_PREFIX, studioName)
+  // Trimmed on the way in so the boot check below and the charge path agree on
+  // what the configured prefix is — a value pasted into a GitHub variable with
+  // stray whitespace must not pass the check and then eat a character of the
+  // suffix's room.
+  return descriptorSuffix(env.STRIPE_STATEMENT_DESCRIPTOR_PREFIX?.trim(), studioName)
 }
 
 /** The rule itself, with the configured prefix passed in so it can be tested. */
