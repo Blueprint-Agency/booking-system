@@ -118,6 +118,43 @@ export async function stripeForTenant(tenantId: string): Promise<Stripe> {
 }
 
 /**
+ * The provider, bound to the account a *particular payment* was taken on (#97).
+ *
+ * `stripeForTenant` answers "where does this studio sell today?", which is the
+ * right question for a charge and the wrong one for a Refund. Money goes back
+ * on the account it came in on, and a studio that has moved onto its own
+ * account left its history on the platform's — no provider will hand a payment
+ * intent across accounts, so that history stays where it is, refundable,
+ * indefinitely. Asking today's credentials would send a refund of a historical
+ * payment to an account where the intent does not exist: the member gets
+ * nothing back, and the admin gets an error naming an id that looks right.
+ *
+ * `accountId` comes off the payment row, where `null` means the platform's own.
+ *
+ * A studio can therefore hold payments on two accounts at once, and a single
+ * Purchase can too — one card before the move and one after. Each is returned
+ * on its own account, and neither knows about the other.
+ *
+ * It **throws** for an account this platform holds no key for, which is a
+ * studio whose credentials were replaced with a different account's after money
+ * was taken. There is nothing sensible to do there: the platform's key cannot
+ * reach that intent either, so falling back would turn a legible failure into a
+ * confusing one — and a refund silently not happening is worse than one that
+ * says so.
+ */
+export async function stripeForProviderAccount(
+  tenantId: string,
+  accountId: string | null,
+): Promise<Stripe> {
+  if (!accountId) return stripePlatform()
+  const current = await providerAccountForTenant(tenantId)
+  if (current?.accountId === accountId) return clientFor(current)
+  throw new Error(
+    `no credentials held for provider account ${accountId} — this payment was taken on an account this studio no longer supplies`,
+  )
+}
+
+/**
  * The platform's own client, for the calls that belong to no studio: verifying
  * a webhook signature, which happens before anything has been routed to a
  * Tenant at all. Use `stripeForTenant` for everything else.

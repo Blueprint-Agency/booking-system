@@ -238,6 +238,10 @@ _Avoid_: connected account, merchant account, sub-account, Stripe account, selle
 The secret key and webhook signing secret of a studio's Payment Account, held by the platform on that studio's behalf. Stored encrypted, never logged, never returned by any route, and never present in an error or an exception report — so after they are set, the only facts anyone can learn about them are that they exist and which account they name. Only the super portal can set or replace them, and nothing anywhere can read them back. They are not a login and not a Tenant's identity: they open one studio's money and nothing else.
 _Avoid_: API keys, Stripe keys, secrets, tokens
 
+**Account of Record**:
+The Payment Account a particular payment was taken on, recorded on the payment itself and never afterwards changed. It answers a different question from "which account does this studio sell on?" — the same answer until a studio is moved, and a different one forever after, because no provider will hand a payment intent from one account to another. A studio that moves therefore keeps its history on the account it sold on before, readable, reportable and refundable indefinitely, and a single Purchase can hold payments with two different Accounts of Record — one card before the move, one after. Every provider call about an existing payment — a Refund above all — is made against its Account of Record, not against the studio's current credentials.
+_Avoid_: original account, old account, source account, charge account
+
 **Money Event**:
 One thing that moved money, or that owes money, on the day it happened. A purchase, a Refund, a session's Instructor Pay, or a Manual Entry. Every figure the studio reports is a sum over Money Events; there is no separate stored total.
 _Avoid_: transaction, ledger entry, line item, record

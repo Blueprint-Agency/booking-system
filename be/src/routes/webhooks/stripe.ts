@@ -49,7 +49,7 @@ const app = new Hono()
 
     try {
       // Off the request path: the provider waits for the answer, not a member.
-      await handleStripeEvent(event, undefined, { retry: OFF_REQUEST_RETRY })
+      await handleStripeEvent(event, undefined, null, { retry: OFF_REQUEST_RETRY })
     } catch (err) {
       logger.error(
         { err, eventId: event?.id, eventType: event?.type },
@@ -79,17 +79,26 @@ const app = new Hono()
     if (!resolved) return c.json({ error: ERROR_CODES.invalid_webhook_signature }, 400)
     const tenantId = resolved.tenant.id
 
-    const event = await verifyTenantDelivery(tenantId, body, sig)
-    if (!event) {
+    const delivery = await verifyTenantDelivery(tenantId, body, sig)
+    if (!delivery) {
       logger.warn({ tenantId }, 'stripe-webhook: signature refused')
       return c.json({ error: ERROR_CODES.invalid_webhook_signature }, 400)
     }
+    const event = delivery.event
 
     try {
       // The studio the URL named, carried through: the handler routes off the
       // signed body, and a body that routes anywhere else is a delivery this
-      // endpoint has no business acting on. Off the request path, so it retries.
-      await handleStripeEvent(event, tenantId, { retry: OFF_REQUEST_RETRY })
+      // endpoint has no business acting on.
+      //
+      // And the account that signed it (#97), which is the account the money is
+      // on — stamped onto every payment this delivery writes, so a Refund years
+      // later is issued there and not wherever the studio sells by then.
+      //
+      // Off the request path, so vendor calls made while handling it retry.
+      await handleStripeEvent(event, tenantId, delivery.accountId, {
+        retry: OFF_REQUEST_RETRY,
+      })
     } catch (err) {
       logger.error(
         { err, tenantId, eventId: event?.id, eventType: event?.type },

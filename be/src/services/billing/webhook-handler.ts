@@ -15,7 +15,7 @@ import { tenantForClient as routeToTenant, tenantForPaymentIntent } from '../../
 import { stripePayments } from '../../db/schema/ledger'
 import { clients } from '../../db/schema/identity'
 import { and, eq, ne } from 'drizzle-orm'
-import { stripeForTenant } from '../../lib/stripe'
+import { stripeForProviderAccount } from '../../lib/stripe'
 import { outbound, type RetryPolicy } from '../../lib/outbound'
 import { applyCrossLocationAddOn, grantPackage } from '../packages/purchase'
 import { consumePromoCodeHold } from '../packages/promo-redemption'
@@ -43,10 +43,17 @@ import { NotFoundError } from '../../shared/errors'
 export async function receiptUrlPatch(
   tenantId: string,
   paymentIntentId: string,
+  /**
+   * The account the intent lives on; null is the platform's (#97). Retrieved
+   * from *there* rather than from wherever the studio sells today — a member
+   * finishing a checkout begun before their studio moved holds an intent the
+   * studio's new key cannot see.
+   */
+  providerAccountId: string | null,
   retry?: RetryPolicy,
 ): Promise<{ receiptUrl?: string }> {
   try {
-    const stripe = await stripeForTenant(tenantId)
+    const stripe = await stripeForProviderAccount(tenantId, providerAccountId)
     const intent = await outbound(
       'stripe',
       'paymentIntents.retrieve',
@@ -186,11 +193,16 @@ async function settleAndMayGrant(
   tenantId: string,
   purchase: PurchaseRow,
   paymentIntentId: string,
+  providerAccountId: string | null,
 ): Promise<boolean> {
   const { settled } = await recomputeBalance(tenantId, purchase, paymentIntentId)
   if (settled) return true
 
-  await bankPayment(tenantId, paymentIntentId, await receiptUrlPatch(tenantId, paymentIntentId))
+  await bankPayment(
+    tenantId,
+    paymentIntentId,
+    await receiptUrlPatch(tenantId, paymentIntentId, providerAccountId),
+  )
   return false
 }
 
@@ -317,6 +329,19 @@ export async function handleStripeEvent(
    */
   expectedTenantId?: string,
   /**
+   * The account that **signed** this delivery, which is the account the money
+   * in it is on (#97). Null is the platform's own, and it is what the shared
+   * endpoint passes.
+   *
+   * It comes from the signature check rather than from a fresh reading of the
+   * studio's credentials, because the signature is where it was proved: the
+   * secret that verified this body is that account's secret. Reading the
+   * credentials here instead would be an unproved second answer to a question
+   * already settled, and it would stamp the wrong account on a payment made
+   * while credentials were being changed — leaving money nobody can refund.
+   */
+  providerAccountId: string | null = null,
+  /**
    * `retry` is for vendor calls made while handling the event. The webhook
    * passes one; the member's confirmation page, which reaches here on a
    * request, does not.
@@ -330,7 +355,7 @@ export async function handleStripeEvent(
   refuseWrongTenant(named, expectedTenantId, { eventId: event.id, eventType: event.type })
 
   if (event.type !== 'checkout.session.completed') {
-    return dispatchStripeEvent(event, expectedTenantId, retry)
+    return dispatchStripeEvent(event, expectedTenantId, providerAccountId, retry)
   }
 
   const session = event.data.object as Stripe.Checkout.Session
@@ -342,12 +367,15 @@ export async function handleStripeEvent(
   // must land in front of a human, not vanish — see `tenantForClient` below.
   if (!named) throw new NotFoundError('client_not_found', { clientId })
 
-  await withTenant(named, () => dispatchStripeEvent(event, expectedTenantId, retry))
+  await withTenant(named, () =>
+    dispatchStripeEvent(event, expectedTenantId, providerAccountId, retry),
+  )
 }
 
 async function dispatchStripeEvent(
   event: Stripe.Event,
   expectedTenantId: string | undefined,
+  providerAccountId: string | null,
   retry: RetryPolicy | undefined,
 ): Promise<void> {
   if (event.type === 'checkout.session.completed') {
@@ -395,6 +423,7 @@ async function dispatchStripeEvent(
           amountSgd: capturedSgd(session, chargedSgd),
           kind: kind === 'class_package' ? 'class_package' : 'pt_package',
           clientId,
+          providerAccountId,
           status: 'pending',
         }).onConflictDoNothing()
       }
@@ -417,7 +446,7 @@ async function dispatchStripeEvent(
       // A sale paid in full at the first attempt — every sale before #93 — clears
       // here and carries on exactly as it did before Purchases existed. A part
       // payment stops, having banked its money and granted nothing.
-      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId))) return
+      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId, providerAccountId))) return
 
       const granted = await grantPackage(tenantId, {
         clientId,
@@ -444,7 +473,7 @@ async function dispatchStripeEvent(
       // email reads (§13).
       await bankPayment(tenantId, paymentIntentId, {
         clientPackageId: granted.clientPackageId,
-        ...(await receiptUrlPatch(tenantId, paymentIntentId, retry)),
+        ...(await receiptUrlPatch(tenantId, paymentIntentId, providerAccountId, retry)),
       })
 
       // One confirmation per purchase, however many times the provider retries:
@@ -488,12 +517,13 @@ async function dispatchStripeEvent(
             kind: 'class_package',
             clientId,
             clientPackageId,
+            providerAccountId,
             status: 'pending',
           })
           .onConflictDoNothing()
       }
 
-      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId))) return
+      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId, providerAccountId))) return
 
       const applied = await applyCrossLocationAddOn(
         tenantId,
@@ -518,7 +548,7 @@ async function dispatchStripeEvent(
 
       await bankPayment(tenantId, paymentIntentId, {
         clientPackageId,
-        ...(await receiptUrlPatch(tenantId, paymentIntentId, retry)),
+        ...(await receiptUrlPatch(tenantId, paymentIntentId, providerAccountId, retry)),
       })
       // No confirmation email: an Add-On grants no package, and §13 names four
       // sending paths, none of them this one.
@@ -554,12 +584,13 @@ async function dispatchStripeEvent(
             amountSgd: capturedSgd(session, amountSgd),
             kind: 'merch',
             clientId,
+            providerAccountId,
             status: 'pending',
           })
           .onConflictDoNothing()
       }
 
-      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId))) return
+      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId, providerAccountId))) return
 
       await recordMerchOrder({
         tenantId,
@@ -573,7 +604,7 @@ async function dispatchStripeEvent(
       await bankPayment(
         tenantId,
         paymentIntentId,
-        await receiptUrlPatch(tenantId, paymentIntentId, retry),
+        await receiptUrlPatch(tenantId, paymentIntentId, providerAccountId, retry),
       )
       return
     }
@@ -607,6 +638,7 @@ async function dispatchStripeEvent(
             amountSgd: capturedSgd(session, amountSgd),
             kind: 'workshop',
             clientId,
+            providerAccountId,
             status: 'pending',
           })
           .onConflictDoNothing()
@@ -633,7 +665,7 @@ async function dispatchStripeEvent(
       // settling payment that refuses the booking and flags the Purchase for the
       // studio to refund — which needs a way to refund a Purchase that granted
       // nothing, and there is none yet (see `refundStatesFor`).
-      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId))) return
+      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId, providerAccountId))) return
 
       const booked = await bookWorkshopPaid(tenantId, {
         clientId,
@@ -648,7 +680,7 @@ async function dispatchStripeEvent(
 
       // Written before the email is composed — it is where `receipt_url` comes
       // from (§13).
-      const receipt = await receiptUrlPatch(tenantId, paymentIntentId, retry)
+      const receipt = await receiptUrlPatch(tenantId, paymentIntentId, providerAccountId, retry)
       if (receipt.receiptUrl) {
         await db
           .update(stripePayments)

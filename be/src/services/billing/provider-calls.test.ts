@@ -142,23 +142,79 @@ describe('the checkout session a purchase asks for', () => {
 })
 
 describe('the refund call', () => {
-  test('the intent is refunded whole, on the studio it was taken on', async () => {
+  test('the intent is refunded whole, on the platform account when that is where it was taken', async () => {
     const fake = billing.installStripeFake()
     fake.reply('refunds.create', {})
 
-    await billing.refundAtProvider(TENANT, 'pi_123')
+    await billing.refundAtProvider(TENANT, 'pi_123', null)
 
     const [call] = fake.callsTo('refunds.create')
     assert.deepEqual(call?.args[0], { payment_intent: 'pi_123' })
     assert.equal(call?.account, null)
   })
 
+  test("a payment taken on the studio's own account is returned there", async () => {
+    const fake = billing.installStripeFake()
+    fake.credentials(TENANT, { accountId: 'acct_studio' })
+    fake.reply('refunds.create', {})
+
+    await billing.refundAtProvider(TENANT, 'pi_new', 'acct_studio')
+
+    assert.equal(fake.callsTo('refunds.create')[0]?.account, 'acct_studio')
+  })
+
+  /**
+   * The migration, in one assertion (#97). Yoga Sadhana is on its own account
+   * now; this payment was taken before it moved. Reading the studio's *current*
+   * credentials would send the refund to an account where the intent does not
+   * exist — the member gets nothing back and the error names an id that looks
+   * right.
+   */
+  test('a payment taken before the studio moved is still returned on the platform account', async () => {
+    const fake = billing.installStripeFake()
+    fake.credentials(TENANT, { accountId: 'acct_studio' })
+    fake.reply('refunds.create', {})
+
+    await billing.refundAtProvider(TENANT, 'pi_old', null)
+
+    assert.equal(fake.callsTo('refunds.create')[0]?.account, null)
+  })
+
+  test('one Purchase straddling the move returns each payment where it came in', async () => {
+    const fake = billing.installStripeFake()
+    fake.credentials(TENANT, { accountId: 'acct_studio' })
+    fake.reply('refunds.create', {})
+
+    await billing.refundAtProvider(TENANT, 'pi_before', null)
+    await billing.refundAtProvider(TENANT, 'pi_after', 'acct_studio')
+
+    assert.deepEqual(
+      fake.callsTo('refunds.create').map(call => [call.account, call.args[0]]),
+      [
+        [null, { payment_intent: 'pi_before' }],
+        ['acct_studio', { payment_intent: 'pi_after' }],
+      ],
+    )
+  })
+
+  test('an account this platform holds no key for is refused rather than sent elsewhere', async () => {
+    const fake = billing.installStripeFake()
+    fake.credentials(TENANT, { accountId: 'acct_studio' })
+    fake.reply('refunds.create', {})
+
+    await assert.rejects(
+      () => billing.refundAtProvider(TENANT, 'pi_123', 'acct_someone_else'),
+      /no credentials held for provider account acct_someone_else/,
+    )
+    assert.deepEqual(fake.callsTo('refunds.create'), [])
+  })
+
   test('the intent is the idempotency key — a double-click cannot refund twice', async () => {
     const fake = billing.installStripeFake()
     fake.reply('refunds.create', {})
 
-    await billing.refundAtProvider(TENANT, 'pi_123')
-    await billing.refundAtProvider(TENANT, 'pi_123')
+    await billing.refundAtProvider(TENANT, 'pi_123', null)
+    await billing.refundAtProvider(TENANT, 'pi_123', null)
 
     const keys = fake.callsTo('refunds.create').map(call => call.args[1])
     assert.deepEqual(keys, [
@@ -167,11 +223,25 @@ describe('the refund call', () => {
     ])
   })
 
+  test('the key is per payment, so two cards on one Purchase are two refunds', async () => {
+    const fake = billing.installStripeFake()
+    fake.credentials(TENANT, { accountId: 'acct_studio' })
+    fake.reply('refunds.create', {})
+
+    await billing.refundAtProvider(TENANT, 'pi_first', 'acct_studio')
+    await billing.refundAtProvider(TENANT, 'pi_second', 'acct_studio')
+
+    assert.deepEqual(
+      fake.callsTo('refunds.create').map(call => call.args[1]),
+      [{ idempotencyKey: 'refund:pi_first' }, { idempotencyKey: 'refund:pi_second' }],
+    )
+  })
+
   test('a provider refusal reaches the caller — the audit row must not be written', async () => {
     const fake = billing.installStripeFake()
     fake.reply('refunds.create', new Error('charge_already_refunded'))
 
-    await assert.rejects(() => billing.refundAtProvider(TENANT, 'pi_123'), /already_refunded/)
+    await assert.rejects(() => billing.refundAtProvider(TENANT, 'pi_123', null), /already_refunded/)
   })
 })
 
@@ -182,7 +252,7 @@ describe("the webhook's receipt lookup", () => {
       latest_charge: { receipt_url: 'https://pay.example.test/r/1' },
     })
 
-    const patch = await billing.receiptUrlPatch(TENANT, 'pi_123')
+    const patch = await billing.receiptUrlPatch(TENANT, 'pi_123', null)
 
     assert.deepEqual(patch, { receiptUrl: 'https://pay.example.test/r/1' })
     assert.deepEqual(fake.callsTo('paymentIntents.retrieve')[0]?.args, [
@@ -195,14 +265,14 @@ describe("the webhook's receipt lookup", () => {
     const fake = billing.installStripeFake()
     fake.reply('paymentIntents.retrieve', { latest_charge: 'ch_123' })
 
-    assert.deepEqual(await billing.receiptUrlPatch(TENANT, 'pi_123'), {})
+    assert.deepEqual(await billing.receiptUrlPatch(TENANT, 'pi_123', null), {})
   })
 
   test('a provider failure never fails a purchase that was already delivered', async () => {
     const fake = billing.installStripeFake()
     fake.reply('paymentIntents.retrieve', new Error('provider down'))
 
-    assert.deepEqual(await billing.receiptUrlPatch(TENANT, 'pi_123'), {})
+    assert.deepEqual(await billing.receiptUrlPatch(TENANT, 'pi_123', null), {})
   })
 })
 
