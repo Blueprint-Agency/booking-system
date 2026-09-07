@@ -131,10 +131,13 @@ describe('public slug resolution', { skip: integrationTestsEnabled ? false : SKI
     assert.equal(leftovers.length, 0)
   })
 
-  test('existing behaviour is unchanged — a pre-tenancy public route still answers', async () => {
+  test('a public route reached without a tenant is refused', async () => {
+    // The pre-tenancy compatibility path, retired. A public route is public
+    // about *a studio* — there is no platform-wide list of locations to return —
+    // so a request that names none is asking a question with no answer. It used
+    // to be handed tenant #1's.
     const res = await harness.app.request('/api/v1/public/locations')
-    assert.equal(res.status, 200)
-    const body = (await res.json()) as { locations: unknown[] }
-    assert.ok(Array.isArray(body.locations))
+    assert.equal(res.status, 400)
+    assert.deepEqual(await res.json(), { error: 'tenant_required' })
   })
 })

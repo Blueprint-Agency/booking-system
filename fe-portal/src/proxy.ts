@@ -43,8 +43,10 @@ const isPublicRoute = createRouteMatcher(["/login(.*)", "/signup(.*)"]);
  *     Tenant. This is Vercel's explicit warning about proxy-set headers.
  *  2. Nothing is set unless resolution succeeded. A hostname that names no
  *     Tenant — the bare root domain, `www`, the `admin` super portal — simply
- *     carries no Tenant context, and the backend already reads a call with no
- *     `X-Tenant-Slug` as Tenant #1.
+ *     carries no Tenant context. A tenant-scoped API call from such a page is
+ *     refused `tenant_required` (400) rather than answered about tenant #1; the
+ *     super portal is unaffected because its own routes are exempt from tenant
+ *     resolution entirely (`TENANT_CONTEXT_EXEMPT` in the backend's `app.ts`).
  */
 async function tenantContext(
   req: NextRequest,

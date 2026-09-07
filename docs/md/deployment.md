@@ -47,12 +47,22 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 > answering for a name; `TENANT_ORIGIN_PATTERNS`, the Clerk instances and every link the backend
 > builds already named the `{slug}.[portal.][dev.]reservetoday.app` forms and nothing else.
 >
-> One row survives the flip: `yogasadhana.portal.reservetoday.app` is still attached explicitly,
-> because Vercel refused to redirect to a host the project did not own. It is now redundant —
-> `*.portal.reservetoday.app` covers it, exactly as it covers every other studio — and it is the
-> last thing standing between this project and the invariant that **provisioning a studio adds no
-> Vercel domain**. Left in place only because detaching a live production staff hostname is a
-> routing change, not a cleanup.
+> `yogasadhana.portal.reservetoday.app` went with them. It had been attached explicitly only
+> because Vercel refuses to redirect to a host the project does not own; once the redirect was
+> deleted the row was a per-Tenant domain sitting in a project that is supposed to have none.
+> `*.portal.reservetoday.app` covers it, exactly as it covers every other studio — verified live
+> after the removal.
+>
+> **Every domain row on both projects is now a wildcard**, which is the invariant worth naming:
+> **provisioning a studio adds no Vercel domain.** The super portal is covered by the same
+> `*.portal.…` wildcard as the studios — `admin` is simply a label the app recognises
+> (`isSuperPortalHost`), not a hostname Vercel knows about.
+>
+> | Project | Rows |
+> |---|---|
+> | `booking-system` | `*.reservetoday.app` · `*.dev.reservetoday.app` (branch `staging`) |
+> | `booking-system-admin` | `*.portal.reservetoday.app` · `*.portal.dev.reservetoday.app` (branch `staging`) |
+> | `booking-cdn` | `cdn.reservetoday.app` |
 >
 > **`staging.reservetoday.app` is not a legacy hostname** and was left alone. It matches no project
 > domain of its own; `staging` is in `NON_TENANT_LABELS` (`fe-client/src/lib/tenant-host.ts`,
@@ -170,6 +180,12 @@ Notes:
 - Locally, `*.localhost` reaches loopback in Chrome, Edge and Firefox with **no hosts-file entry**,
   multi-level names included — `acme.localhost:3000` and `acme.portal.localhost:3001` just work.
   Safari does not do this; Safari users add `127.0.0.1 acme.localhost` or use `lvh.me`.
+- **Browse a studio's subdomain, not the bare host.** `yogasadhana.localhost:3000` and
+  `yogasadhana.portal.localhost:3001`, never `localhost:3000` / `localhost:3001` — the bare host is
+  the root domain, so it names no Tenant and the API answers `400 tenant_required`. This was
+  survivable while a tenant-less request silently became tenant #1; that fallback is gone
+  (`docs/md/spec-tenant-resolution.md` § Resolve), so the bare host now fails loudly instead of
+  quietly showing one studio's data.
 - The proxy resolves the slug against the backend's public route
   (`GET /api/v1/public/tenants/by-slug/:slug`) — never the database, since the frontends reach `be`
   over HTTP only. An unknown slug is a bare 404 that names nothing; a backend outage is a 503 (with

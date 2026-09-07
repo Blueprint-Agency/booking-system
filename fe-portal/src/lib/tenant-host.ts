@@ -86,10 +86,17 @@ function normalizeHost(host: string): string {
  * bare root domain, `www`, the super portal at `admin`, a host outside the root
  * domain (a Vercel preview URL), or a label that isn't a well-formed slug.
  *
- * Null is not an error: it means "no Tenant context", and the backend already
- * treats a request with no `X-Tenant-Slug` as Tenant #1. Whether a well-formed
- * slug corresponds to a Tenant that *exists* is not decidable here — that is
- * the resolver's job, over HTTP.
+ * Null is not an error, and on the super portal it is the correct answer — that
+ * product is cross-tenant and its routes are exempt from tenant resolution
+ * altogether. Everywhere else it is a dead end: the backend refuses a
+ * tenant-scoped request carrying no `X-Tenant-Slug` with `tenant_required`
+ * (400), where it used to answer as Tenant #1. Whether a well-formed slug
+ * corresponds to a Tenant that *exists* is not decidable here — that is the
+ * resolver's job, over HTTP.
+ *
+ * Locally this is why a studio's portal is reached at
+ * `yogasadhana.portal.localhost:3001` rather than `localhost:3001`: the bare
+ * host names no Tenant, exactly as the bare production domain does not.
  */
 /**
  * The single label `host` adds to the root domain, or null when it adds none —

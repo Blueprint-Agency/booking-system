@@ -193,9 +193,14 @@ describe('tenant resolution', { skip: integrationTestsEnabled ? false : SKIP_REA
       { tenantId: two.id, corroborated: true },
     )
 
-    // And a request that claimed nothing has nothing to have forged, so the
-    // pre-tenancy path provisions exactly as it always did.
-    assert.deepEqual(await ask({}), { tenantId: one.id, corroborated: true })
+    // And a request that claimed nothing is refused outright. It used to be
+    // handed tenant #1 with `corroborated: true` — nothing had been forged, so
+    // nothing was suspicious — which meant the one request that named no studio
+    // at all was the one request allowed to provision a membership in a studio
+    // it had never mentioned.
+    const bare = await probe.request('/probe')
+    assert.equal(bare.status, 400)
+    assert.deepEqual(await bare.json(), { error: 'tenant_required' })
   })
 
   test('an origin outside every pattern gets no CORS header', async () => {

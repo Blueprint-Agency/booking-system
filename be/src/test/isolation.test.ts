@@ -500,13 +500,16 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     assert.deepEqual(await res.json(), { error: 'not_found' })
   })
 
-  test('no header still answers as tenant #1 — every existing client sends none', async () => {
+  test('a request that names no tenant is refused, not answered as tenant #1', async () => {
+    // This asserted the opposite while the platform still had one studio, and
+    // the assertion was the bug: answering as tenant #1 meant a caller that
+    // forgot to say whose data it wanted got Yoga Sadhana's, plausibly and
+    // silently. Nothing legitimate lands here — health, the webhooks, the super
+    // portal and tenant lookup are exempted before this middleware runs — so the
+    // absence is always a caller bug and 400 is what surfaces it.
     const res = await harness.app.request('/api/v1/public/class-types')
-    assert.equal(res.status, 200)
-    const body = (await res.json()) as { class_types: { name: string }[] }
-    const names = body.class_types.map(t => t.name)
-    assert.ok(names.includes(`${one.slug} Flow`))
-    assert.ok(!names.includes(`${two.slug} Flow`))
+    assert.equal(res.status, 400)
+    assert.deepEqual(await res.json(), { error: 'tenant_required' })
   })
 
   test('a write that names no tenant is refused', async () => {
