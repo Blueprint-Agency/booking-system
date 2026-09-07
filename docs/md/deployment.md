@@ -24,27 +24,40 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 | Clerk instance | development (`*.clerk.accounts.dev`) | production — fe-client on `clerk.reservetoday.app`, fe-portal on `clerk.portal.reservetoday.app`, super portal on `clerk.admin.portal.reservetoday.app` |
 | `APP_ENV` / `NEXT_PUBLIC_APP_ENV` | `staging` | `production` |
 
-> **The portal URL flip is done.** `portal.yogasadhana.reservetoday.app` is attached to the
-> fe-portal Vercel project as a **301 redirect** to `yogasadhana.portal.reservetoday.app`, path
-> and query preserved. It had been returning Vercel's `DEPLOYMENT_NOT_FOUND` 404 — it resolves
-> through the apex wildcard but matched no project domain, so a staff bookmark was already broken
-> rather than merely old. The redirect target had to be attached explicitly (Vercel refuses to
-> redirect to a host the project does not own, and wildcard coverage does not count), which is why
-> `yogasadhana.portal.reservetoday.app` now appears as its own row next to the wildcard. That row
-> is a redirect target, **not** a per-Tenant domain: provisioning a studio still adds nothing here.
+> **Every pre-tenancy hostname is gone.** The table above is now the whole list: nothing outside
+> it answers on `reservetoday.app`. Three rows were deleted from the Vercel projects, and each is
+> named here because a 404 with no explanation is how someone rediscovers a URL we retired on
+> purpose:
 >
-> Nothing was needed on the backend or in Clerk. `yogasadhana.portal.…` is covered by
-> `*.portal.reservetoday.app`, is what the backend already builds staff links from, and is what the
-> portal Clerk instance already authenticates — a redirect is a browser-side hop that never reaches
-> the API, so no exact origin has to be added to `TENANT_ORIGIN_PATTERNS`.
+> | Removed | Was | Use instead |
+> |---|---|---|
+> | `portal.yogasadhana.reservetoday.app` | 301 → `yogasadhana.portal.…` | `yogasadhana.portal.reservetoday.app` |
+> | `staging-portal.yogasadhana.reservetoday.app` | live, `staging` branch | `yogasadhana.portal.dev.reservetoday.app` |
+> | `staging.yogasadhana.reservetoday.app` | live, `staging` branch | `yogasadhana.dev.reservetoday.app` |
 >
-> **Three legacy staging hostnames remain**, and unlike the portal one they still work:
-> `staging.yogasadhana.reservetoday.app`, `staging-portal.yogasadhana.reservetoday.app`,
-> `staging.reservetoday.app` — branch-assigned domains from the pre-tenancy scheme, still holding
-> certificates. They are superseded by `{slug}.dev.reservetoday.app` and
-> `{slug}.portal.dev.reservetoday.app`, and can be given the same 301 treatment whenever someone
-> is sure nobody's bookmarks depend on them. `staging.reservetoday.app` names no studio at all, so
-> retiring it needs a decision about which Tenant it should land on rather than a redirect.
+> The two `staging-*` rows were the worse of the three. They were branch-assigned domains from the
+> pre-tenancy scheme, so they served the **staging** build — dev Clerk keys, dev API — from a
+> hostname that reads as production. A bookmark to one looked like the live studio and was not.
+>
+> `portal.yogasadhana.…` had been a 301 rather than a live host, added when the portal URL flipped.
+> The redirect went too: a redirect is still a hostname to keep, certify and explain, and the flip
+> is old enough that a 404 is the more honest answer.
+>
+> Nothing was needed on the backend or in Clerk for any of it. A removal only stops Vercel
+> answering for a name; `TENANT_ORIGIN_PATTERNS`, the Clerk instances and every link the backend
+> builds already named the `{slug}.[portal.][dev.]reservetoday.app` forms and nothing else.
+>
+> One row survives the flip: `yogasadhana.portal.reservetoday.app` is still attached explicitly,
+> because Vercel refused to redirect to a host the project did not own. It is now redundant —
+> `*.portal.reservetoday.app` covers it, exactly as it covers every other studio — and it is the
+> last thing standing between this project and the invariant that **provisioning a studio adds no
+> Vercel domain**. Left in place only because detaching a live production staff hostname is a
+> routing change, not a cleanup.
+>
+> **`staging.reservetoday.app` is not a legacy hostname** and was left alone. It matches no project
+> domain of its own; `staging` is in `NON_TENANT_LABELS` (`fe-client/src/lib/tenant-host.ts`,
+> mirroring `be/src/services/tenants/slug.ts`), so the client wildcard serves it the same
+> no-Tenant page it serves `www.` and `app.`. An unknown slug still 404s.
 
 > **Production Clerk now sits on `reservetoday.app`.** This block used to record the opposite —
 > that both instances answered on Vercel-generated hosts

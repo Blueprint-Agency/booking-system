@@ -343,6 +343,9 @@ retired.**
   ordinary domains pointed at the `staging` branch on the existing projects. Worth weighing:
   the fallback (two dedicated staging projects) is closer to what is already in place than the
   custom-environment shape is.
+  **Since superseded:** those branch-assigned domains have been deleted; staging is served by
+  `*.dev.reservetoday.app` / `*.portal.dev.reservetoday.app`, both pinned to the `staging` branch.
+  See `docs/md/deployment.md` for the removals and their replacements.
 - **The CLI cannot create custom environments** — `vercel target` exposes `list` only, so the
   remaining step is dashboard-only and cannot be automated or scripted in CI.
 
