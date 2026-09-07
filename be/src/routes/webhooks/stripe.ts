@@ -73,22 +73,24 @@ const app = new Hono()
     if (!resolved) return c.json({ error: 'invalid_webhook_signature' }, 400)
     const tenantId = resolved.tenant.id
 
-    const event = await verifyTenantDelivery(tenantId, body, sig)
-    if (!event) return c.json({ error: 'invalid_webhook_signature' }, 400)
+    const delivery = await verifyTenantDelivery(tenantId, body, sig)
+    if (!delivery) return c.json({ error: 'invalid_webhook_signature' }, 400)
+    const event = delivery.event
 
     try {
       // The studio the URL named, carried through: the handler routes off the
       // signed body, and a body that routes anywhere else is a delivery this
       // endpoint has no business acting on.
-      await handleStripeEvent(event, tenantId)
+      //
+      // And the account that signed it (#97), which is the account the money is
+      // on — stamped onto every payment this delivery writes, so a Refund years
+      // later is issued there and not wherever the studio sells by then.
+      await handleStripeEvent(event, tenantId, delivery.accountId)
     } catch (err) {
-      logger.error({ err, tenantId }, 'stripe-webhook handler error')
-      captureException(err, {
-        webhook: 'stripe',
-        tenantId,
-        eventId: event?.id,
-        eventType: event?.type,
-      })
+      logger.error(
+        { err, tenantId, eventId: event?.id, eventType: event?.type },
+        'stripe-webhook handler error',
+      )
       return c.json({ error: 'handler_failed' }, 500)
     }
 

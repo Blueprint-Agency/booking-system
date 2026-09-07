@@ -5,6 +5,7 @@ import {
   descriptorSuffix,
   providerAccountForTenant,
   statementDescriptorPrefixProblem,
+  stripeForProviderAccount,
   stripeForTenant,
   stripePlatform,
   setStripeFactory,
@@ -159,5 +160,69 @@ describe('the Tenant-bound provider accessor', () => {
     const fake = installStripeFake()
     fake.restore()
     assert.ok(stripePlatform() instanceof Stripe)
+  })
+})
+
+/**
+ * The other question (#97): not "where does this studio sell?" but "where did
+ * *this payment* come in?". They are the same answer until a studio moves, and
+ * different forever afterwards.
+ */
+describe('the payment-bound provider accessor', () => {
+  afterEach(() => {
+    setStripeFactory(null)
+    setProviderCredentialsLoader(null)
+  })
+
+  test('no account on the payment is the platform account, not an unknown one', async () => {
+    const fake = installStripeFake()
+    fake.reply('refunds.create', {})
+
+    await (await stripeForProviderAccount(TENANT_A, null)).refunds.create({ payment_intent: 'pi' })
+
+    assert.equal(fake.calls[0]?.account, null)
+  })
+
+  test("the studio's own account resolves to the studio's own key", async () => {
+    const fake = installStripeFake()
+    fake.credentials(TENANT_A, { accountId: 'acct_studio_a' })
+    fake.reply('refunds.create', {})
+
+    await (
+      await stripeForProviderAccount(TENANT_A, 'acct_studio_a')
+    ).refunds.create({ payment_intent: 'pi' })
+
+    assert.equal(fake.calls[0]?.account, 'acct_studio_a')
+  })
+
+  test('a studio that has moved still reaches its history on the platform account', async () => {
+    const fake = installStripeFake()
+    fake.credentials(TENANT_A, { accountId: 'acct_studio_a' })
+    fake.reply('refunds.create', {})
+
+    // The studio sells on its own account today; this payment predates that.
+    await (await stripeForProviderAccount(TENANT_A, null)).refunds.create({ payment_intent: 'pi' })
+
+    assert.equal(fake.calls[0]?.account, null)
+  })
+
+  test('an account no key is held for throws rather than falling back', async () => {
+    const fake = installStripeFake()
+    fake.credentials(TENANT_A, { accountId: 'acct_studio_a' })
+
+    // Falling back to the platform's key would send the call somewhere the
+    // intent does not exist, and report a failure that names the wrong cause.
+    await assert.rejects(
+      () => stripeForProviderAccount(TENANT_A, 'acct_gone'),
+      /no credentials held for provider account acct_gone/,
+    )
+  })
+
+  test('a studio with no credentials at all cannot reach a named account', async () => {
+    installStripeFake()
+    await assert.rejects(
+      () => stripeForProviderAccount(TENANT_B, 'acct_studio_a'),
+      /no credentials held for provider account acct_studio_a/,
+    )
   })
 })

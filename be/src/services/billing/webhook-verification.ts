@@ -24,11 +24,26 @@ import { loadProviderCredentials } from './provider-credentials'
  * distinguished them would let anyone holding a URL learn which studios take
  * their own money.
  */
+export type VerifiedDelivery = {
+  event: Stripe.Event
+  /**
+   * The account that signed this delivery — which is the account the money in
+   * it is on (#97).
+   *
+   * It is returned from here rather than looked up again later because *here*
+   * is where it was proved. The secret that verified the signature is this
+   * account's secret; a lookup afterwards would be a second, unproved reading
+   * of a row that can be replaced while a delivery is in flight, and would
+   * stamp the wrong account on a payment nobody would then be able to refund.
+   */
+  accountId: string
+}
+
 export async function verifyTenantDelivery(
   tenantId: string,
   body: string,
   signature: string,
-): Promise<Stripe.Event | null> {
+): Promise<VerifiedDelivery | null> {
   // No credentials means this studio's deliveries belong on the platform's
   // shared endpoint, and this one has nothing to check them against. It must
   // not fall back to the platform's secret: a second secret tried against a
@@ -38,7 +53,8 @@ export async function verifyTenantDelivery(
 
   try {
     const stripe = await stripeForTenant(tenantId)
-    return stripe.webhooks.constructEvent(body, signature, credentials.webhookSecret)
+    const event = stripe.webhooks.constructEvent(body, signature, credentials.webhookSecret)
+    return { event, accountId: credentials.accountId }
   } catch {
     return null
   }

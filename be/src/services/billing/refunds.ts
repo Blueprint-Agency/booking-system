@@ -36,7 +36,7 @@ import { classes, ptSessions, workshops, workshopTiers, workshopTierDays, worksh
 import { classTypes } from '../../db/schema/catalog'
 import { clients } from '../../db/schema/identity'
 import { requireTenantUrl } from '../tenants/urls'
-import { stripeForTenant } from '../../lib/stripe'
+import { stripeForProviderAccount } from '../../lib/stripe'
 import { reportError } from '../../shared/logger'
 import { toCents } from '../../shared/money'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
@@ -49,6 +49,7 @@ import {
   markPurchaseRefunded,
   paymentsForPurchase,
   purchaseById,
+  type PurchasePayment,
   type PurchaseRow,
 } from './purchases'
 import {
@@ -393,23 +394,50 @@ export async function issueWorkshopRefund(args: {
 }
 
 /**
- * The provider call itself, on the studio's own account.
+ * The provider call itself, **on the account the money came in on** (#97).
+ *
+ * Not the account the studio sells on today. A studio that moves onto its own
+ * credentials leaves its history on the platform's account — no provider hands
+ * a payment intent across accounts — so its old sales stay there, refundable,
+ * indefinitely, and a Purchase straddling the move holds payments on both. The
+ * account therefore comes off the payment row rather than off the Tenant, and
+ * `null` is the platform's own.
  *
  * Keyed on the payment intent, which is the money path's only real guard — the
  * caller's `already_refunded` check reads a status the webhook flips
  * asynchronously, so a double-click or a client retry would otherwise reach the
  * provider twice. The key is the intent alone and not the Tenant, because an
- * intent belongs to one studio's account and the key is scoped to that account.
+ * intent belongs to one account and the key is scoped to that account — which
+ * is now true across the migration boundary as well, since the account the key
+ * is scoped to is the one this call is made on.
  */
 export async function refundAtProvider(
   tenantId: string,
   paymentIntentId: string,
+  providerAccountId: string | null,
 ): Promise<void> {
-  const stripe = await stripeForTenant(tenantId)
+  const stripe = await stripeForProviderAccount(tenantId, providerAccountId)
   await stripe.refunds.create(
     { payment_intent: paymentIntentId },
     { idempotencyKey: `refund:${paymentIntentId}` },
   )
+}
+
+/**
+ * Give back every payment a Purchase is still holding, each on its own account.
+ *
+ * In sequence, because they are one decision and the audit row below covers
+ * them together. A call that fails part-way leaves some payments returned and
+ * some not, which the unwind refuses to treat as a finished Refund — it reports
+ * it and waits, and the admin who pressed the button sees the error.
+ */
+async function returnEveryPayment(
+  tenantId: string,
+  toReturn: readonly PurchasePayment[],
+): Promise<void> {
+  for (const payment of toReturn) {
+    await refundAtProvider(tenantId, payment.paymentIntentId, payment.providerAccountId)
+  }
 }
 
 /**
@@ -461,9 +489,7 @@ async function refundPurchaseAndAudit(args: {
 
   const override = !isUntouched(args.attendedCount)
   const paymentIntentIds = toReturn.map(p => p.paymentIntentId)
-  for (const intentId of paymentIntentIds) {
-    await refundAtProvider(args.tenantId, intentId)
-  }
+  await returnEveryPayment(args.tenantId, toReturn)
 
   try {
     await db.insert(auditLog).values({
@@ -536,9 +562,9 @@ export async function issueOpenPurchaseRefund(args: {
 
   const returnedSgd = purchase.amountPaidSgd
   const paymentIntentIds = toReturn.map(p => p.paymentIntentId)
-  for (const intentId of paymentIntentIds) {
-    await refundAtProvider(args.tenantId, intentId)
-  }
+  // A part-paid Purchase is exactly the shape that can straddle a studio's move
+  // onto its own account, so each payment goes back where it came in (#97).
+  await returnEveryPayment(args.tenantId, toReturn)
 
   // Written after the provider has taken it, and reported rather than thrown if
   // it fails — the money has already moved, and an admin whose refund went

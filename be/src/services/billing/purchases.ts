@@ -119,6 +119,14 @@ export interface PurchasePayment {
   paymentIntentId: string
   amountSgd: string
   status: 'pending' | 'succeeded' | 'refunded' | 'failed'
+  /**
+   * The account this payment was taken on; null is the platform's own (#97).
+   *
+   * It travels with the payment because the Refund is issued *there* and not
+   * wherever the studio sells today — and after a studio moves, one Purchase
+   * can hold payments on two different accounts.
+   */
+  providerAccountId: string | null
 }
 
 /**
@@ -138,6 +146,7 @@ export async function paymentsForPurchase(
       paymentIntentId: stripePayments.paymentIntentId,
       amountSgd: stripePayments.amountSgd,
       status: stripePayments.status,
+      providerAccountId: stripePayments.providerAccountId,
     })
     .from(stripePayments)
     .where(and(eq(stripePayments.tenantId, tenantId), eq(stripePayments.purchaseId, purchaseId)))

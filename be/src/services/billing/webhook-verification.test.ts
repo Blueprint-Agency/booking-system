@@ -72,11 +72,26 @@ describe("a delivery on a studio's own endpoint", () => {
     const fake = install()
     fake.credentials(STUDIO_A, { accountId: 'acct_a', webhookSecret: SECRET_A })
 
-    const event = await subject.verifyTenantDelivery(STUDIO_A, BODY, signed(BODY, SECRET_A))
+    const delivery = await subject.verifyTenantDelivery(STUDIO_A, BODY, signed(BODY, SECRET_A))
 
-    assert.equal(event?.id, 'evt_1')
+    assert.equal(delivery?.event.id, 'evt_1')
     // Made on the studio's own account, not the platform's.
     assert.equal(fake.callsTo('webhooks.constructEvent')[0]?.account, 'acct_a')
+  })
+
+  /**
+   * The account comes back **with** the event (#97), because here is where the
+   * signature proved it: the secret that verified this body is this account's.
+   * Every payment the delivery writes is stamped with it, so a Refund years
+   * later is issued on the account the money came in on.
+   */
+  test('the account that signed it comes back with the event', async () => {
+    const fake = install()
+    fake.credentials(STUDIO_A, { accountId: 'acct_a', webhookSecret: SECRET_A })
+
+    const delivery = await subject.verifyTenantDelivery(STUDIO_A, BODY, signed(BODY, SECRET_A))
+
+    assert.equal(delivery?.accountId, 'acct_a')
   })
 
   test("another studio's secret cannot verify it — no second attempt", async () => {
@@ -100,7 +115,10 @@ describe("a delivery on a studio's own endpoint", () => {
 
     const signature = signed(BODY, SECRET_B)
     assert.equal(await subject.verifyTenantDelivery(STUDIO_A, BODY, signature), null)
-    assert.equal((await subject.verifyTenantDelivery(STUDIO_B, BODY, signature))?.id, 'evt_1')
+    assert.equal(
+      (await subject.verifyTenantDelivery(STUDIO_B, BODY, signature))?.event.id,
+      'evt_1',
+    )
   })
 
   test('a studio with no account of its own accepts nothing here', async () => {

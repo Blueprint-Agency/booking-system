@@ -175,6 +175,18 @@ export const stripePayments = pgTable(
       onDelete: 'restrict',
     }),
     status: stripePaymentStatusEnum('status').notNull().default('pending'),
+    /**
+     * The provider account this payment was taken on — **null is the platform's
+     * own**, not "unknown" (#97).
+     *
+     * Written once, at capture, and never updated. A studio that moves onto its
+     * own account (#100) leaves its history behind on the platform's, because
+     * no provider will hand a payment intent from one account to another; so a
+     * Refund years later has to be issued on the account the money actually
+     * came in on, and the studio's *current* credentials are the wrong answer
+     * to that question. This column is the right one.
+     */
+    providerAccountId: text('provider_account_id'),
     receiptUrl: text('receipt_url'),
     refundedAt: timestamp('refunded_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
