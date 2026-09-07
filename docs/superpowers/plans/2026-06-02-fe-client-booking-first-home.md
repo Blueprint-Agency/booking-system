@@ -50,7 +50,7 @@ In `class-schedule.tsx`, change the `SectionHeading` eyebrow from `"Schedule"` t
 
 ```tsx
         <SectionHeading
-          eyebrow="Yoga Sadhana · Tai Seng & Outram Park"
+          eyebrow={`${studio.name} · ${studio.locations}`}
           title="Book a class"
           description="Pick a day, filter the schedule, and reserve your spot."
         />
@@ -123,7 +123,7 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "placehold.co" },
       { protocol: "https", hostname: "placeholder.co" },
       { protocol: "https", hostname: "i0.wp.com" },
-      { protocol: "https", hostname: "yogasadhana.sg" },
+      { protocol: "https", hostname: "i0.wp.com" },
     ],
   },
   async redirects() {

@@ -3,11 +3,11 @@ import { RESERVED_SLUGS, checkSlug, assertUsableSlug } from './slug'
 
 // ---------- accepts ----------
 {
-  assert.deepEqual(checkSlug('yogasadhana'), { ok: true, slug: 'yogasadhana' })
+  assert.deepEqual(checkSlug('northwind'), { ok: true, slug: 'northwind' })
   assert.deepEqual(checkSlug('acme'), { ok: true, slug: 'acme' })
-  assert.deepEqual(checkSlug('yoga-sadhana-2'), { ok: true, slug: 'yoga-sadhana-2' })
+  assert.deepEqual(checkSlug('north-wind-2'), { ok: true, slug: 'north-wind-2' })
   // Normalised, not rejected: the caller may be echoing a form field.
-  assert.deepEqual(checkSlug('  YogaSadhana '), { ok: true, slug: 'yogasadhana' })
+  assert.deepEqual(checkSlug('  NorthWind '), { ok: true, slug: 'northwind' })
 }
 
 // ---------- reserved ----------
@@ -38,11 +38,11 @@ import { RESERVED_SLUGS, checkSlug, assertUsableSlug } from './slug'
   assert.deepEqual(checkSlug(''), { ok: false, reason: 'slug_too_short' })
   assert.deepEqual(checkSlug('ab'), { ok: false, reason: 'slug_too_short' })
   assert.deepEqual(checkSlug('a'.repeat(64)), { ok: false, reason: 'slug_too_long' })
-  assert.deepEqual(checkSlug('yoga sadhana'), { ok: false, reason: 'slug_malformed' })
-  assert.deepEqual(checkSlug('yoga_sadhana'), { ok: false, reason: 'slug_malformed' })
-  assert.deepEqual(checkSlug('yoga.sadhana'), { ok: false, reason: 'slug_malformed' })
+  assert.deepEqual(checkSlug('north wind'), { ok: false, reason: 'slug_malformed' })
+  assert.deepEqual(checkSlug('north_wind'), { ok: false, reason: 'slug_malformed' })
+  assert.deepEqual(checkSlug('north.wind'), { ok: false, reason: 'slug_malformed' })
   // A hostname label may not start or end with a hyphen.
-  assert.deepEqual(checkSlug('-yoga'), { ok: false, reason: 'slug_malformed' })
+  assert.deepEqual(checkSlug('-north'), { ok: false, reason: 'slug_malformed' })
   assert.deepEqual(checkSlug('yoga-'), { ok: false, reason: 'slug_malformed' })
   // Punycode prefix — reserved by IDNA for encoded labels.
   assert.deepEqual(checkSlug('xn--abc'), { ok: false, reason: 'slug_malformed' })

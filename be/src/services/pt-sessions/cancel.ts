@@ -3,7 +3,6 @@ import { db } from '../../db'
 import { ptRequests, ptSessions } from '../../db/schema/schedule'
 import { bookings, cancellations } from '../../db/schema/bookings'
 import { inboxItems } from '../../db/schema/inbox'
-import { TENANT_ONE_ID } from '../../db/schema/tenancy'
 import { evaluateCancellation } from '../policy/evaluate-cancellation'
 import { refundCredits } from '../packages/ledger'
 import { ptSessionCost } from './cost'
@@ -276,11 +275,12 @@ export async function expireStaleSessions(): Promise<void> {
 
   for (const row of stale) {
     try {
-      // `?? TENANT_ONE_ID`, not `!`: the column is still nullable until #63
-      // turns it `NOT NULL`, and a row that predates tenancy IS tenant #1 —
-      // the same reading `tenantMatches` takes. `!` would hand `undefined` to a
-      // scoped lookup and expire nothing, quietly.
-      await cancelPtRequest(row.tenantId ?? TENANT_ONE_ID, {
+      // No fallback: #63 landed and `tenant_id` is `NOT NULL`, so this is a
+      // `string`. It used to read `?? TENANT_ONE_ID`, which was right while the
+      // column was nullable and a row that predated tenancy belonged to the
+      // first studio. Today that would expire one studio's request under
+      // another's context.
+      await cancelPtRequest(row.tenantId, {
         ptRequestId: row.id,
         source: 'system',
       })

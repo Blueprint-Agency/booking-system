@@ -75,11 +75,12 @@ export async function seedEmailTemplates(db: TemplateWriter, tenant: SeededTenan
     // has none, because naming no premises beats naming the wrong ones.
     //
     // Looked up **by id, never by slug**. `provisioningFor` prefers the slug,
-    // and its records are keyed on `yogasadhana` and `acme` — neither of which
-    // is a reserved slug. Now that this runs while a studio is being created,
-    // an operator who onboards a new studio as `acme` would otherwise have
-    // Yoga Sadhana's real premises printed in the footer of all thirty of its
-    // emails. An id is generated and cannot be typed into the create form.
+    // and its records are keyed on the two fixture slugs — neither of which is
+    // reserved, so both can be typed into the create form. Since this runs while
+    // a studio is being created, an operator who onboards a real studio under a
+    // fixture's slug would otherwise get the fixture's premises printed in the
+    // footer of all thirty of its emails. An id is generated and cannot be
+    // typed in.
     studio: { name: tenant.name, footer: provisioningFor({ id: tenant.id })?.emailFooter },
   })
   for (const t of templates) {

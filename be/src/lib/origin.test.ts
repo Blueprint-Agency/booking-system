@@ -30,7 +30,7 @@ describe('origin patterns', () => {
 
   test('a wildcard matches exactly one label, never two', () => {
     assert.equal(isAllowedOrigin('https://acme.reservetoday.app', PRODUCTION), true)
-    assert.equal(isAllowedOrigin('https://yogasadhana.reservetoday.app', PRODUCTION), true)
+    assert.equal(isAllowedOrigin('https://northwind.reservetoday.app', PRODUCTION), true)
     // The bare root domain is not a tenant, and a two-label host is one no
     // certificate in this scheme can cover.
     assert.equal(isAllowedOrigin('https://reservetoday.app', PRODUCTION), false)
@@ -60,13 +60,13 @@ describe('origin patterns', () => {
   test('the wildcard label is the tenant slug', () => {
     assert.equal(tenantSlugFromOrigin('https://acme.reservetoday.app', PRODUCTION), 'acme')
     assert.equal(
-      tenantSlugFromOrigin('https://yogasadhana.portal.reservetoday.app', PRODUCTION),
-      'yogasadhana',
+      tenantSlugFromOrigin('https://northwind.portal.reservetoday.app', PRODUCTION),
+      'northwind',
     )
     assert.equal(tenantSlugFromOrigin('http://acme.localhost:3000', LOCAL), 'acme')
     assert.equal(
-      tenantSlugFromOrigin('http://yogasadhana.portal.localhost:3001', LOCAL),
-      'yogasadhana',
+      tenantSlugFromOrigin('http://northwind.portal.localhost:3001', LOCAL),
+      'northwind',
     )
   })
 

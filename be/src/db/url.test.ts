@@ -3,8 +3,8 @@ import { appRolePassword, buildAppDatabaseUrl, buildDatabaseUrl } from './url'
 import { APP_ROLE } from './roles'
 
 assert.strictEqual(
-  buildDatabaseUrl({ POSTGRES_USER: 'postgres', POSTGRES_PASSWORD: 'pw', POSTGRES_DB: 'yoga-sadhana', POSTGRES_PORT: '5500' }),
-  'postgres://postgres:pw@localhost:5500/yoga-sadhana'
+  buildDatabaseUrl({ POSTGRES_USER: 'postgres', POSTGRES_PASSWORD: 'pw', POSTGRES_DB: 'reservetoday', POSTGRES_PORT: '5500' }),
+  'postgres://postgres:pw@localhost:5500/reservetoday'
 )
 // password with URL-hostile characters must survive the round trip
 assert.strictEqual(
@@ -20,7 +20,7 @@ const appUrl = new URL(
   buildAppDatabaseUrl({
     POSTGRES_USER: 'postgres',
     POSTGRES_PASSWORD: 'owner-pw',
-    POSTGRES_DB: 'yoga-sadhana',
+    POSTGRES_DB: 'reservetoday',
     POSTGRES_PORT: '5500',
     DB_APP_PASSWORD: 'app-pw',
   })!,
@@ -28,7 +28,7 @@ const appUrl = new URL(
 assert.strictEqual(appUrl.username, APP_ROLE)
 assert.notStrictEqual(appUrl.username, 'postgres')
 assert.strictEqual(appUrl.password, 'app-pw')
-assert.strictEqual(appUrl.pathname, '/yoga-sadhana')
+assert.strictEqual(appUrl.pathname, '/reservetoday')
 assert.strictEqual(appUrl.port, '5500')
 
 // No database name, no URL — same contract as the owner builder.

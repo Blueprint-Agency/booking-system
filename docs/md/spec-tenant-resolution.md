@@ -32,10 +32,19 @@ lookup, and the two webhooks).
 | `Origin` naming a tenant, no header | the origin's tenant |
 | both, agreeing | that tenant |
 | both, disagreeing | **403 `tenant_mismatch`** |
-| neither | tenant #1 |
+| neither | **400 `tenant_required`** |
 
-The last row is the compatibility seam: every client that predates tenancy sends
-no header, and must keep working.
+The last row used to read "tenant #1" — a compatibility seam for clients that
+predated tenancy and sent no header. It has been closed. The seam only ever made
+sense while "no tenant" and "the tenant" named the same studio; after the second
+one existed, what it actually did was answer a request that had forgotten to say
+whose data it wanted with somebody's data anyway. A caller cannot detect that: it
+receives a well-formed, plausible answer about the wrong studio.
+
+Nothing legitimate lands on that row. Every path that genuinely carries no tenant
+is exempted before this middleware runs — `healthz`, the two webhooks, the whole
+super portal branch, and the slug lookup — so an absent tenant is a bug in the
+caller, and 400 is what turns it into one somebody fixes.
 
 Resolution also opens the database's tenant context — one transaction carrying
 `app.tenant_id`, which the Row-Level Security policies from #63 read back. The
@@ -57,8 +66,9 @@ rather than a gap:
 
 - the frontend proxies call the backend server-side, and a server-side `fetch`
   sends no `Origin` at all;
-- `http://localhost:3000` and the bare root domain are allowlisted but
-  single-tenant;
+- `http://localhost:3000` and the bare root domain are allowlisted but name no
+  tenant of their own — a request carrying only one of these and no header is
+  refused `tenant_required` rather than resolved;
 - an origin outside every pattern has already been refused by CORS.
 
 None of the three is evidence about which tenant the caller meant, so none may
@@ -140,11 +150,13 @@ tenant — `tenantCorroborated()` in `middleware/tenant.ts`:
 |---|---|
 | `Origin` named this tenant | yes |
 | the organization claim named this tenant | yes |
-| the request named no tenant at all (tenant #1 fallback) | yes — nothing was claimed, so nothing was forged |
+| the request named no tenant at all | n/a — refused at resolution with `tenant_required` |
 | the header is the only statement | **no** — the caller gets `client_not_found`, and nothing is written |
 
-The third row is what preserves today's behaviour exactly: pre-tenancy clients
-send no header and provision as they always have.
+The third row used to say "yes — nothing was claimed, so nothing was forged",
+and that reasoning was backwards. It made the one request naming no studio at
+all the one request permitted to provision a membership in a studio it had
+never mentioned. It no longer reaches this check at all.
 
 ### 5. Authorized parties
 

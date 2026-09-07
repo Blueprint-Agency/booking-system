@@ -32,8 +32,10 @@ const isProtected = createRouteMatcher(["/account(.*)", "/checkout"]);
  *     channel, so a caller must never be able to supply one and name itself a
  *     Tenant. This is Vercel's explicit warning about proxy-set headers.
  *  2. Nothing is set unless resolution succeeded. A hostname that names no
- *     Tenant — the bare root domain, `www` — simply carries no Tenant context,
- *     and the backend already reads a call with no `X-Tenant-Slug` as Tenant #1.
+ *     Tenant — the bare root domain, `www` — simply carries no Tenant context.
+ *     A tenant-scoped API call from such a page is refused `tenant_required`
+ *     (400) by the backend rather than answered about tenant #1, so these
+ *     hostnames may serve only pages that ask the API for nothing.
  */
 async function tenantContext(
   req: NextRequest,

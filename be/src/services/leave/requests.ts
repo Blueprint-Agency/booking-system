@@ -5,7 +5,6 @@ import { leavePools, leaveRequests } from '../../db/schema/leave'
 import { instructors, leaveConflicts } from '../../db/schema/catalog'
 import { globalPolicy } from '../../db/schema/policy'
 import { staffUsers } from '../../db/schema/identity'
-import { TENANT_ONE_ID } from '../../db/schema/tenancy'
 import { conflictMessage, findOccupancyConflicts, leaveDaysPhrase } from '../schedule/occupancy'
 import type { Tx } from '../schedule/roster'
 import { emailEveryAdmin, sendTemplatedEmail } from '../notifications/send'
@@ -945,10 +944,12 @@ export interface LeaveCalendarViewer {
 export const leaveViewer = (staff: typeof staffUsers.$inferSelect): LeaveCalendarViewer => ({
   staffUserId: staff.id,
   role: staff.role,
-  // `?? TENANT_ONE_ID`, not `!`: the column stays nullable until #63, and a
-  // staff row that predates tenancy IS tenant #1 — the reading `tenantMatches`
-  // already takes. `!` would put `undefined` in every leave filter below it.
-  tenantId: staff.tenantId ?? TENANT_ONE_ID,
+  // No fallback: #63 landed and `tenant_id` is `NOT NULL` on every table, so
+  // this is a `string`. It used to read `?? TENANT_ONE_ID`, because while the
+  // column was nullable a staff row that predated tenancy really did belong to
+  // the first studio. Naming a studio here now would mean filing an impossible
+  // row under it rather than failing.
+  tenantId: staff.tenantId,
 })
 
 /**

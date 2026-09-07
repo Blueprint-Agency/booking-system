@@ -12,7 +12,7 @@
 
 ## Background and Design Decisions
 
-The fe-portal mockup currently treats every page as if a single admin sees everything. Real Yoga Sadhana has two staff roles and multiple location workspaces:
+The fe-portal mockup currently treats every page as if a single admin sees everything. A real studio has two staff roles and multiple location workspaces:
 
 - **Superadmin** — owns the global catalogue and policy. Creates locations, edits class types, configures packages (Classes + Private Sessions + their promotions), edits global policy, manages staff/notifications/waiver. Also has full access to every workspace.
 - **Admin** — operations staff scoped to one or more granted locations. Sees Schedule, Workshops, Check-in, PT Requests, Inbox for their workspace, and a read-only view of Clients.
@@ -50,7 +50,7 @@ The active location is shared across all workspace-scoped pages. The user picks 
 
 ### Why Clients is global
 
-Memory captures that Yoga Sadhana uses **cross-location credits** — a single client account spans workspaces. Filtering would fragment the customer view. Admins still see everything, just without write power.
+Memory captures that the studio uses **cross-location credits** — a single client account spans workspaces. Filtering would fragment the customer view. Admins still see everything, just without write power.
 
 ### What we are NOT doing in this PR
 
@@ -235,7 +235,7 @@ export const staffUsers: StaffUser[] = [
   {
     id: "stf-super-1",
     name: "Maya Suresh",
-    email: "maya@yogasadhana.sg",
+    email: "maya@example.com",
     role: "superadmin",
     grantedLocationIds: [],
     archivedAt: null,
@@ -243,17 +243,17 @@ export const staffUsers: StaffUser[] = [
   {
     id: "stf-admin-1",
     name: "Lakshmi Iyer",
-    email: "lakshmi@yogasadhana.sg",
+    email: "lakshmi@example.com",
     role: "admin",
-    grantedLocationIds: ["loc-breadtalk"],
+    grantedLocationIds: ["loc-harbour"],
     archivedAt: null,
   },
   {
     id: "stf-admin-2",
     name: "Priya Tan",
-    email: "priya@yogasadhana.sg",
+    email: "priya@example.com",
     role: "admin",
-    grantedLocationIds: ["loc-outram"],
+    grantedLocationIds: ["loc-parkside"],
     archivedAt: null,
   },
 ];
@@ -650,7 +650,7 @@ return (
         href="/admin/schedule"
         className="hidden truncate text-sm font-medium text-ink hover:text-accent sm:block"
       >
-        Yoga Sadhana
+        {studio.name}
       </Link>
     </div>
     <div className="flex items-center gap-2 sm:gap-3">
@@ -952,8 +952,8 @@ cd fe-portal && pnpm dev
 
 Open http://localhost:3001/admin/schedule.
 - The topbar should show the workspace switcher (MapPin + location name + chevron) and the user pill (Maya Suresh · superadmin).
-- Click the workspace switcher → dropdown shows Breadtalk IHQ and Outram Park, "Add location", "Manage locations".
-- Click the user pill → dropdown lists all three staff. Switch to Lakshmi (admin). Topbar workspace switcher should now show only Breadtalk IHQ. No "Add"/"Manage" options.
+- Click the workspace switcher → dropdown shows Harbour Studio and Parkside Studio, "Add location", "Manage locations".
+- Click the user pill → dropdown lists all three staff. Switch to Lakshmi (admin). Topbar workspace switcher should now show only Harbour Studio. No "Add"/"Manage" options.
 
 Stop dev server.
 
@@ -1252,7 +1252,7 @@ cd fe-portal && pnpm exec tsc --noEmit && pnpm dev
 
 Smoke:
 - Switch to an admin (Lakshmi) and uncheck all grants in DevRoleSwitcher → page should show the "No workspace access" card.
-- Re-grant Breadtalk IHQ → content reappears.
+- Re-grant Harbour Studio → content reappears.
 - Switch back to superadmin (Maya). Archive both locations via Manage locations dialog → page shows "Add your first location" gate.
 - Restore one → content reappears.
 
@@ -1308,7 +1308,7 @@ Expected: clean.
 cd fe-portal && pnpm dev
 ```
 
-Visit `/admin/schedule`. As superadmin (Maya), switch workspace from Breadtalk → Outram via topbar dropdown. The calendar should re-render with the other location's events only. No filter chips visible above the calendar. Stop dev.
+Visit `/admin/schedule`. As superadmin (Maya), switch workspace from Harbour → Parkside via topbar dropdown. The calendar should re-render with the other location's events only. No filter chips visible above the calendar. Stop dev.
 
 - [ ] **Step 4: Commit**
 
@@ -1621,17 +1621,17 @@ Start dev (`pnpm dev`) and run through:
 
 - **Superadmin (Maya, default)**
   - [ ] Topbar shows MapPin pill (current location), search box, user pill (Maya · superadmin)
-  - [ ] Workspace switcher lists Breadtalk IHQ + Outram Park + "Add location" + "Manage locations"
+  - [ ] Workspace switcher lists Harbour Studio + Parkside Studio + "Add location" + "Manage locations"
   - [ ] Sidebar has full nav. "Locations" entry is gone.
   - [ ] Schedule, Workshops, Check-in, Inbox all react to workspace switch in topbar
   - [ ] Clients profile shows kebabs and adjustment dialogs
-  - [ ] "Manage locations" dialog opens; archive Breadtalk → schedule for Breadtalk events disappears for that workspace; restore → it returns
-- **Admin (Lakshmi, granted Breadtalk)**
+  - [ ] "Manage locations" dialog opens; archive Harbour → schedule for Harbour events disappears for that workspace; restore → it returns
+- **Admin (Lakshmi, granted Harbour)**
   - [ ] Sidebar shows only: Instructors, Workshops, Schedule, Check-in, PT Requests, Inbox, Clients
-  - [ ] Workspace switcher shows only Breadtalk IHQ; no "Add"/"Manage"; footer hint "Contact your superadmin"
+  - [ ] Workspace switcher shows only Harbour Studio; no "Add"/"Manage"; footer hint "Contact your superadmin"
   - [ ] Clients profile shows the read-only banner; no kebabs/adjustment buttons
   - [ ] `/admin/locations`, `/admin/class-types`, `/admin/classes`, `/admin/policy` etc. (if reached directly) — class-types/policy/classes still render (no per-page guards added), but they're hidden from nav. (Optional follow-up: per-page guards.)
-- **Admin with zero grants** (uncheck Breadtalk in DevRoleSwitcher)
+- **Admin with zero grants** (uncheck Harbour in DevRoleSwitcher)
   - [ ] LocationGate shows "No workspace access"
 - **Superadmin with all locations archived**
   - [ ] LocationGate shows "Add your first location"

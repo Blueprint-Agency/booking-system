@@ -46,10 +46,10 @@ describe('public slug resolution', { skip: integrationTestsEnabled ? false : SKI
     const body = (await res.json()) as { tenant: Record<string, unknown>; settings: Record<string, unknown> }
     assert.equal(body.tenant.id, harness.tenants.one.id)
     assert.equal(body.tenant.slug, harness.tenants.one.slug)
-    assert.equal(body.tenant.name, 'Yoga Sadhana')
+    assert.equal(body.tenant.name, 'Northwind Yoga')
     assert.equal(body.tenant.timezone, 'Asia/Singapore')
     assert.equal(body.tenant.status, 'active')
-    assert.equal(body.settings.display_name, 'Yoga Sadhana')
+    assert.equal(body.settings.display_name, 'Northwind Yoga')
     // No mail-from identity or waiver text on a public, cached endpoint.
     assert.ok(!('mail_from_email' in body.settings))
     assert.ok(!('waiver_text' in body.settings))
@@ -113,7 +113,7 @@ describe('public slug resolution', { skip: integrationTestsEnabled ? false : SKI
     // and a seed pass claimed anything that slipped through as an explicit null.
     // The contract migration dropped both the default and the claiming pass, so
     // an insert that does not name its tenant now fails at the database instead
-    // of filing somebody else's row under Yoga Sadhana.
+    // of filing somebody else's row under the first tenant.
     await assert.rejects(
       () =>
         harness.db
@@ -131,10 +131,13 @@ describe('public slug resolution', { skip: integrationTestsEnabled ? false : SKI
     assert.equal(leftovers.length, 0)
   })
 
-  test('existing behaviour is unchanged — a pre-tenancy public route still answers', async () => {
+  test('a public route reached without a tenant is refused', async () => {
+    // The pre-tenancy compatibility path, retired. A public route is public
+    // about *a studio* — there is no platform-wide list of locations to return —
+    // so a request that names none is asking a question with no answer. It used
+    // to be handed tenant #1's.
     const res = await harness.app.request('/api/v1/public/locations')
-    assert.equal(res.status, 200)
-    const body = (await res.json()) as { locations: unknown[] }
-    assert.ok(Array.isArray(body.locations))
+    assert.equal(res.status, 400)
+    assert.deepEqual(await res.json(), { error: 'tenant_required' })
   })
 })

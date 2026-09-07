@@ -10,7 +10,7 @@
 
 ## Goal
 
-Turn the single-tenant Yoga Sadhana booking system into a productized multi-tenant SaaS
+Turn the single-tenant booking system into a productized multi-tenant SaaS
 (product domain: **`reservetoday.app`**) with:
 
 - **1 super portal** — dev team creates/manages tenants (thin CRUD; starts as a
@@ -32,7 +32,7 @@ the URLs resolve; `tenant_id` scoping makes the data isolate. Never infra-per-te
 |---|---|
 | Architecture | Single shared deployment per app, single Postgres, `tenant_id` column scoping, with Postgres RLS as the fail-closed backstop. ⚠️ RLS only works if the app stops connecting as the table owner — see "Verification pass". Instance-per-tenant rejected. |
 | Clerk | **2 applications forever** (client + portal), each with dev + prod instances = the 4 "projects" already in the dashboard today. Nothing to restructure; count never grows with tenants. Each tenant = a **Clerk Organization** in both apps; org ID maps to `tenant_id`. Satellite domains NOT needed (same root domain). App-per-tenant ("Clerk for Platforms") rejected — sales-gated, wrong use case. |
-| Subdomain scheme | `{tenant}.reservetoday.app` → fe-client via `*.reservetoday.app`; `{tenant}.portal.reservetoday.app` → fe-portal via `*.portal.reservetoday.app`. **The label order is forced, not a preference:** RFC 4592 requires the asterisk to be the *leftmost* label, so today's `portal.{tenant}.…` shape would need `portal.*.reservetoday.app` — not a legal DNS record, therefore impossible to wildcard. ⚠️ **The live production portal URL must therefore change** (Phase 5). The fe-client production URL `yogasadhana.reservetoday.app` already matches the target scheme and does **not** change. |
+| Subdomain scheme | `{tenant}.reservetoday.app` → fe-client via `*.reservetoday.app`; `{tenant}.portal.reservetoday.app` → fe-portal via `*.portal.reservetoday.app`. **The label order is forced, not a preference:** RFC 4592 requires the asterisk to be the *leftmost* label, so today's `portal.{tenant}.…` shape would need `portal.*.reservetoday.app` — not a legal DNS record, therefore impossible to wildcard. ⚠️ **The live production portal URL must therefore change** (Phase 5). The fe-client production URL `{slug}.reservetoday.app` already matches the target scheme and does **not** change. |
 | Frontends | Stay on **Vercel** (Platforms pattern: one deployment, Host-header middleware). Moving FEs to the VPS gains nothing — rejected. |
 | DNS | **Option A (preferred): move `reservetoday.app` nameservers from Cloudflare to Vercel** to get true wildcards. Vercel DNS is a full DNS host — recreate `api` A record + MX/TXT there. Fallback Option B (if NS can't move): keep Cloudflare, no wildcard, super portal makes 2 API calls per tenant (Cloudflare CNAME + Vercel Domains API). |
 | Backend | Stays on Hostinger VPS at `api.reservetoday.app`, as an A record in Vercel DNS. ✅ **No cert work needed** — Traefik on bpvps2 already issues a genuine Let's Encrypt cert via its `le-tls` resolver (TLS-ALPN-01), and `api*` records are already DNS-only *on purpose*, because that challenge cannot complete through a proxied host. Since the resolver needs only an A record, the NS move does not threaten the cert. |
@@ -135,12 +135,12 @@ worst failure mode this project has. (This is Vercel's own reference algorithm �
 
 ### Full URL map
 
-Tenants shown: `yogasadhana` (tenant #1) and `acme` (synthetic second tenant).
+Tenants shown: the two seeded fixtures, `northwind` (tenant #1) and `acme`.
 
 | | Local | Staging | Production |
 |---|---|---|---|
-| **Client** | `yogasadhana.localhost:3000`<br>`acme.localhost:3000` | `yogasadhana.dev.reservetoday.app`<br>`acme.dev.reservetoday.app` | `yogasadhana.reservetoday.app`<br>`acme.reservetoday.app` |
-| **Portal** | `yogasadhana.portal.localhost:3001` | `yogasadhana.portal.dev.reservetoday.app` | `yogasadhana.portal.reservetoday.app` |
+| **Client** | `northwind.localhost:3000`<br>`acme.localhost:3000` | `northwind.dev.reservetoday.app`<br>`acme.dev.reservetoday.app` | `northwind.reservetoday.app`<br>`acme.reservetoday.app` |
+| **Portal** | `northwind.portal.localhost:3001` | `northwind.portal.dev.reservetoday.app` | `northwind.portal.reservetoday.app` |
 | **Super portal** | `admin.portal.localhost:3001` | `admin.portal.dev.reservetoday.app` | `admin.portal.reservetoday.app` |
 | **API** | `localhost:4000` | `api.dev.reservetoday.app` | `api.reservetoday.app` |
 | **Wildcards** | — (browser handles `.localhost`) | `*.dev.…` → fe-client<br>`*.portal.dev.…` → fe-portal | `*.reservetoday.app` → fe-client<br>`*.portal.reservetoday.app` → fe-portal |
@@ -149,7 +149,7 @@ Tenants shown: `yogasadhana` (tenant #1) and `acme` (synthetic second tenant).
 
 `*.localhost` resolves to loopback in Chrome, Edge and Firefox with **no hosts-file entry and
 no admin rights**, including multi-level names. Safari does not — Safari users add hosts
-entries (`127.0.0.1 yogasadhana.localhost`) or use `lvh.me`.
+entries (`127.0.0.1 northwind.localhost`) or use `lvh.me`.
 
 Keep the `portal.` segment locally even though ports 3000/3001 already separate the apps: it
 makes fe-portal exercise the same two-label strip it runs in production.
@@ -185,7 +185,7 @@ longer names a second host — see the Phase 5 checklist for the off-repo remnan
 
 A single-tenant environment **cannot** reveal a cross-tenant leak — every missing
 `WHERE tenant_id = ?` looks correct when there is only one tenant's data to return. Seed
-`yogasadhana` plus a throwaway `acme` in local and staging from the start of Phase 1 so
+the first tenant plus a throwaway `acme` in local and staging from the start of Phase 1 so
 isolation bugs surface the day they are written, not the day tenant #2 signs up.
 
 ## Pre-implementation checks (do these first, human tasks)
@@ -327,7 +327,7 @@ wildcard could be **branch-assigned** instead. It can. Branch assignment is not 
 dashboard-only — the REST API takes it, which the CLI does not expose:
 `POST /v10/projects/{id}/domains` with `{"name": "*.dev.reservetoday.app", "gitBranch": "staging"}`
 returns `verified: true`. Proven end to end on a throwaway `*.wftest.reservetoday.app` before being
-applied for real: `yogasadhana.dev.reservetoday.app` serves a deployment whose `githubCommitRef` is
+applied for real: `{slug}.dev.reservetoday.app` serves a deployment whose `githubCommitRef` is
 `staging` at the branch tip, not a frozen alias. **The two-dedicated-staging-projects fallback is
 retired.**
 
@@ -338,11 +338,14 @@ retired.**
   Production / Preview / Development. This spike therefore tests a mechanism the project does
   not currently use at all.
 - **Today's staging is branch-assigned domains, not a custom environment.** Certificates exist
-  for `staging.reservetoday.app`, `staging.yogasadhana.reservetoday.app`,
-  `stagingportal.reservetoday.app` and `staging-portal.yogasadhana.reservetoday.app` — i.e.
+  for `staging.reservetoday.app`, `staging.{slug}.reservetoday.app`,
+  `stagingportal.reservetoday.app` and `staging-portal.{slug}.reservetoday.app` — i.e.
   ordinary domains pointed at the `staging` branch on the existing projects. Worth weighing:
   the fallback (two dedicated staging projects) is closer to what is already in place than the
   custom-environment shape is.
+  **Since superseded:** those branch-assigned domains have been deleted; staging is served by
+  `*.dev.reservetoday.app` / `*.portal.dev.reservetoday.app`, both pinned to the `staging` branch.
+  See `docs/md/deployment.md` for the removals and their replacements.
 - **The CLI cannot create custom environments** — `vercel target` exposes `list` only, so the
   remaining step is dashboard-only and cannot be automated or scripted in CI.
 
@@ -356,7 +359,7 @@ retired.**
 - [ ] Add `tenant_id` across **all 53 tables** in `be/src/db/schema/`'s 12 files —
       including child tables that could inherit it via FK, so RLS has a column to key on.
 - [ ] **Three-step migration, not one:** add nullable column → backfill everything to
-      tenant #1 (Yoga Sadhana) → add `NOT NULL` + composite indexes. One reviewed migration
+      tenant #1 → add `NOT NULL` + composite indexes. One reviewed migration
       touching 53 live tables is the riskiest single moment in this project.
 - [ ] Scope every service query by `tenant_id`; add Postgres RLS as the fail-closed backstop.
       **Set tenant context transaction-scoped:** `set_config('app.current_tenant_id', $1, true)`
@@ -368,7 +371,7 @@ retired.**
       expand step, #59). `waiver`, `marketing_content`, `global_policy` and `pt_booking_config`
       each carry a `CHECK (id = '<fixed uuid>')` singleton constraint, and `feature_flags` has
       `key` as its sole primary key. All five now have a `tenant_id` column, but no second
-      tenant can ever own a row in them — so today `acme` would render Yoga Sadhana's waiver,
+      tenant can ever own a row in them — so today `acme` would render tenant #1's waiver,
       marketing content and policy. Each needs its primary key / check widened to include
       `tenant_id` before per-tenant settings mean anything.
 - [ ] Move seeds (`locations.ts`, `waiver.ts`, `email-copy.ts`, `corporate-packages.ts`)
@@ -407,7 +410,7 @@ retired.**
 - [ ] Cache the slug→tenant lookup (short TTL, bust on write) — it runs on every request.
 
 ### Phase 3 — De-hardcode branding + tenant-aware jobs
-- [ ] Replace "Yoga Sadhana" strings with `tenant_settings` lookups. Actual scope measured:
+- [ ] Replace the hardcoded studio name with `tenant_settings` lookups. Actual scope measured:
       **8 BE files + 16 FE files** (layouts, nav, auth pages, email templates, waiver).
 - [ ] `be/src/lib/mailer.ts` `MAIL_FROM` → per-tenant from-address.
 - [ ] R2 object paths + webhooks scoped by tenant.
@@ -434,8 +437,8 @@ retired.**
       **positive** — a wildcard *can* be branch-assigned, so the two-projects fallback is dead.
       Explicit `*.dev` and `*.portal.dev` CNAMEs were required: `api.dev` already made `dev` a node
       in the zone, and RFC 4592 stops a wildcard reaching past a node that exists.
-- [x] **Portal URL flip:** `portal.yogasadhana.reservetoday.app` →
-      `yogasadhana.portal.reservetoday.app`, a 301 with path and query preserved. Clerk needed
+- [x] **Portal URL flip:** `portal.{slug}.reservetoday.app` →
+      `{slug}.portal.reservetoday.app`, a 301 with path and query preserved. Clerk needed
       nothing: the new host was already covered by the portal wildcard, already authenticated by
       the portal instance, and a redirect never reaches the API. fe-client's URL is unchanged, and
       `PORTAL_ORIGIN` is gone. **Staff comms still owed** — the old host had already been 404ing,
@@ -461,7 +464,7 @@ retired.**
       the Clerk half is compensated on any failure), list/suspend tenants.
       Backend: `/api/v1/platform/*`, exempt from tenant resolution because it is
       cross-tenant by definition.
-- [x] Migrate Yoga Sadhana itself to be tenant #1.
+- [x] Migrate the existing studio itself to be tenant #1.
 - [ ] Billing overview. Deferred — there is no per-tenant billing to overview yet.
 
 **The gate is not a staff role.** `PLATFORM_ADMIN_EMAILS` (plus `SUPERADMIN_EMAIL`,

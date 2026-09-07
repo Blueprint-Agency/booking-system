@@ -4,24 +4,25 @@ import { env } from '../../env'
 import { PROVISIONED, provisioningFor } from './provisioning'
 
 /**
- * Tenant #1 carries the same id migration 0027 backfilled everything to, so
- * seeding a fresh database and migrating an existing one land in the same
- * place.
+ * The two invented studios a seeded environment runs on, and nothing else.
  *
- * Which studio it *is* — its name, its timezone, its premises — is not here.
- * That is provisioning data and lives in `./provisioning.ts`, the one file that
- * names a studio; this file only knows how to write a tenant row.
- *
- * Outside production we also seed a second, empty tenant. A single-tenant
- * environment cannot reveal a cross-tenant leak: every missing
+ * A single-tenant environment cannot reveal a cross-tenant leak: every missing
  * `WHERE tenant_id = ?` looks correct when there is only one tenant's data to
- * return. The second tenant is what makes an isolation bug visible the day it
- * is written.
+ * return. Two fixtures are what make an isolation bug visible the day it is
+ * written. Which studios they are is in `./provisioning.ts`; both are invented,
+ * and no file in this repo names a real one.
+ *
+ * **Production seeds no tenant at all.** It used to seed one, because the
+ * platform had been built for exactly one and that studio was in the repo; a
+ * deployment therefore came up already knowing who it was. A studio now arrives
+ * by being created or restored from the super portal (`./run.ts`), so there is
+ * nothing here for production to do — and `./run.ts` does not call this file
+ * anyway. The guard is belt and braces on a function that writes studios.
  *
  * The guard reads the *validated* `env.APP_ENV`, not raw `process.env`: a
  * tenant row is the whole of tenant existence — its slug resolves publicly the
  * moment it lands — so a missing or misspelled value must fail at boot rather
- * than quietly publish `acme` on a real deployment.
+ * than quietly publish a fixture on a real deployment.
  */
 export type SeededTenant = {
   id: string
@@ -41,9 +42,25 @@ const [TENANT_ONE, SECOND_TENANT] = PROVISIONED.map(
  * `WHERE tenant_id = ?` has something to be visibly wrong about.
  */
 export function seededTenants(): SeededTenant[] {
-  return env.APP_ENV === 'production' ? [TENANT_ONE] : [TENANT_ONE, SECOND_TENANT]
+  return env.APP_ENV === 'production' ? [] : [TENANT_ONE, SECOND_TENANT]
 }
 
+/**
+ * Writes the fixture studios. **Never in production**, where `seededTenants()`
+ * is empty and this does nothing at all.
+ *
+ * That guard is what lets the tenant row below be an *upsert* rather than an
+ * insert. A fresh database arrives at this point already holding the placeholder
+ * tenant #1 that migration 0027 leaves behind, under the same fixed id, so an
+ * `onConflictDoNothing` would keep the placeholder's slug and the fixture would
+ * silently not exist — every test that resolves it by slug then 404s. Overwriting
+ * is right for a fixture and would be very wrong for a studio, which is why it
+ * may only ever run where there are no studios.
+ *
+ * `tenant_settings` below stays insert-only for the opposite reason: it is the
+ * half a studio edits from the portal, and even in a seeded environment a deploy
+ * must not put back branding somebody has since changed.
+ */
 export async function seedTenants(db: PostgresJsDatabase<typeof schema>) {
   for (const tenant of seededTenants()) {
     await db
@@ -54,7 +71,10 @@ export async function seedTenants(db: PostgresJsDatabase<typeof schema>) {
         name: tenant.name,
         timezone: tenant.timezone,
       })
-      .onConflictDoNothing()
+      .onConflictDoUpdate({
+        target: schema.tenants.id,
+        set: { slug: tenant.slug, name: tenant.name, timezone: tenant.timezone },
+      })
 
     // Branding is the studio's own — its wordmark, its photography, its line —
     // and it is what both frontends read to render as that studio rather than
@@ -76,6 +96,18 @@ export async function seedTenants(db: PostgresJsDatabase<typeof schema>) {
         // migration instead — 0042 is the first of those.
         ...(provisioned?.copy ? { copy: provisioned.copy } : {}),
       })
-      .onConflictDoNothing()
+      // `displayName` alone is overwritten, for the same reason the tenant row
+      // above is: migration 0027 leaves a settings row under this id carrying
+      // the placeholder's name, so insert-only would leave the fixture rendering
+      // as "Tenant One" while its `tenants` row said otherwise — two names for
+      // one studio, which is exactly what a display-name bug looks like.
+      //
+      // Branding and copy stay insert-only even here. They are what a studio
+      // edits from the portal, and re-running the seed against a local database
+      // must not put back a logo somebody has just changed.
+      .onConflictDoUpdate({
+        target: schema.tenantSettings.tenantId,
+        set: { displayName: tenant.name },
+      })
   }
 }

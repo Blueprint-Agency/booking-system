@@ -42,8 +42,8 @@ import {
  * A function and not a module constant, which is the substance of the change
  * rather than a style choice: a constant can only be built from a
  * platform-wide origin, and this email is sent to a member of whichever studio
- * took the money. Yoga Sadhana's `/account` is not a page a second studio's
- * member can even sign into.
+ * took the money. One studio's `/account` is not a page another studio's member
+ * can even sign into.
  */
 const accountUrlFor = (tenantId: string) =>
   requireTenantUrl('client', tenantId).then(base => `${base}/account`)

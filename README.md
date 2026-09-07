@@ -1,6 +1,8 @@
-# Yoga Sadhana Booking System
+# ReserveToday Booking System
 
-Dedicated booking and management platform for **Yoga Sadhana** — two studio locations: Breadtalk IHQ (Tai Seng) and Outram Park.
+Multi-tenant booking and management platform for yoga studios. One deployment of each app serves every studio; a studio is a **Tenant**, a row in `tenants`, and it is created or restored from the super portal — never by deploying anything.
+
+No studio is named in this repo. A studio's name, premises, branding and copy are its own rows. The only studios in the code are two invented fixtures (`northwind`, `acme`) that exist so the isolation tests have two tenants to prove neither can read the other's data.
 
 ## Apps
 

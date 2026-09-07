@@ -244,10 +244,10 @@ const pay = (p: Partial<MoneyEvent> = {}) =>
 // -- an Unattributed row says so, rather than carrying a null a screen must guess at
 {
   const s = summarizeFinance([
-    purchase({ id: 'a', locationId: 'loc-1', locationName: 'Outram Park' }),
+    purchase({ id: 'a', locationId: 'loc-1', locationName: 'Parkside Studio' }),
     purchase({ id: 'b' }),
   ])
-  assert.strictEqual(s.rows.find(r => r.id === 'a')!.location_name, 'Outram Park')
+  assert.strictEqual(s.rows.find(r => r.id === 'a')!.location_name, 'Parkside Studio')
   assert.strictEqual(s.rows.find(r => r.id === 'b')!.location_name, null)
   assert.strictEqual(s.rows.find(r => r.id === 'b')!.unattributed, true)
 }

@@ -1,7 +1,28 @@
--- Expand step, part 2 of 2: Yoga Sadhana becomes tenant #1 and every existing
--- row is claimed by it. Pure data — 0026 already added the (nullable) columns,
--- so this migration changes no schema and its snapshot is a verbatim copy of
--- 0026's, per migrations/README.md §3.
+-- Expand step, part 2 of 2: the database's existing studio becomes tenant #1 and
+-- every existing row is claimed by it. Pure data — 0026 already added the
+-- (nullable) columns, so this migration changes no schema and its snapshot is a
+-- verbatim copy of 0026's, per migrations/README.md §3.
+--
+-- **Edited after it was applied, deliberately.** It used to insert a specific
+-- studio here by name and slug, because when it was written there was only one
+-- and this file was how it became a row. That made a real customer's identity
+-- part of the product: `db:migrate` against an empty database created *that*
+-- studio, on every deployment of the platform, forever.
+--
+-- Editing an applied migration is safe here and only here, because of how the
+-- migrator decides what to run: it compares the journal's `when` against the
+-- newest `created_at` in `drizzle.__drizzle_migrations` (see
+-- `pg-core/dialect`), and the stored `hash` is written but never read back. The
+-- journal entry is untouched, so on every database that has already applied
+-- this — production, staging, every developer's — the file is never opened
+-- again and the studio it created keeps the name and slug it was created with.
+-- Only a database that has never seen this migration reads the text below, and
+-- such a database has no pre-existing rows for a named studio to own.
+--
+-- What a fresh database gets instead is the placeholder row below: the tenant
+-- that would have owned the pre-tenancy data, with nothing in it. Rename it from
+-- the super portal, or ignore it — the real path onto a new platform is
+-- creating or restoring a studio there (`db/seed/run.ts`).
 --
 -- The id is fixed rather than generated so every environment (local, staging,
 -- production, the test harness) agrees on which tenant is #1.
@@ -20,9 +41,9 @@
 INSERT INTO "tenants" ("id", "slug", "name", "timezone", "status")
 VALUES (
 	'10000000-0000-0000-0000-000000000001',
-	'yogasadhana',
-	'Yoga Sadhana',
-	'Asia/Singapore',
+	'tenant-one',
+	'Tenant One',
+	'UTC',
 	'active'
 )
 ON CONFLICT ("id") DO NOTHING;--> statement-breakpoint
@@ -32,7 +53,7 @@ ON CONFLICT ("id") DO NOTHING;--> statement-breakpoint
 INSERT INTO "tenant_settings" ("tenant_id", "display_name", "waiver_text")
 VALUES (
 	'10000000-0000-0000-0000-000000000001',
-	'Yoga Sadhana',
+	'Tenant One',
 	(SELECT "body_html" FROM "waiver" LIMIT 1)
 )
 ON CONFLICT ("tenant_id") DO NOTHING;--> statement-breakpoint

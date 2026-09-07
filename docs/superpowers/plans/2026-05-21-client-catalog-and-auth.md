@@ -1353,7 +1353,7 @@ verification and password-reset codes. "When emails get sent" is therefore a Cle
 
 ## Email templates
 - Review the **Verification code** and **Reset password code** templates under
-  **Customization → Emails** for Yoga Sadhana branding.
+  **Customization → Emails** for platform branding.
 
 ## Keys (already provisioned per CLAUDE.md)
 - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` set in the fe-client Vercel project.

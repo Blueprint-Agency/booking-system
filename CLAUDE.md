@@ -2,7 +2,7 @@
 
 A **multi-tenant** booking & management platform for yoga studios. One deployment of each app serves every studio; a studio is a **Tenant** — a row in `tenants`, never its own infrastructure — and every domain row carries a `tenant_id`.
 
-Yoga Sadhana is Tenant #1 (`slug = 'yogasadhana'`), with two Locations of its own: Breadtalk IHQ (Tai Seng) and Outram Park. Those are that Tenant's premises, not a property of the platform.
+**No studio is named anywhere in this repo, and none may be.** A studio's name, premises, branding and copy are rows it owns, written when it is created or restored through the super portal — not constants, not seed data, not comments. The only studios that appear in the code are the two invented fixtures the isolation tests run against (`northwind` and `acme`, in `be/src/db/seed/provisioning.ts`), which exist so that a missing `WHERE tenant_id = ?` has something to be visibly wrong about. If you are about to write a real studio's name into a file, the thing you actually want is a `tenants` / `tenant_settings` row.
 
 ## Tenancy
 

@@ -3,7 +3,7 @@
 -- `global_policy` and `pt_booking_config` each carried a
 -- `CHECK (id = '<fixed uuid>')`, which is the correct constraint for one studio
 -- and a data leak for two: no second tenant could own a row, so every second
--- tenant would have been served Yoga Sadhana's caps, windows and cross-location
+-- tenant would have been served the first tenant's caps, windows and cross-location
 -- rate. The check goes, the id becomes generated, and a unique index on
 -- `tenant_id` is what now holds each table to one row per studio.
 --

@@ -204,7 +204,7 @@ say "Two production Clerk instances move off their Vercel-generated hosts:"
 note "  fe-client  clerk.booking-system-eight-fawn.vercel.app → reservetoday.app"
 note "  fe-portal  clerk.project-3p3dw.vercel.app             → portal.reservetoday.app"
 printf '\n'
-warn "Every signed-in Yoga Sadhana member and staff member is logged out."
+warn "Every signed-in member and staff member, on every studio, is logged out."
 warn "Both publishable keys change. Until Vercel + CI are updated and redeployed,"
 warn "Clerk fails to load and both apps are down. Do this in a maintenance window."
 printf '\n'
@@ -309,9 +309,9 @@ pause "Records verified in the Clerk dashboard. Press Enter."
 
 # ── 7 ─────────────────────────────────────────────────────────────────────
 stage "CLIENT — un-hardcode Home URL and Paths (AC 5)"
-warn "This is the cross-tenant leak. Home URL is currently yogasadhana.reservetoday.app"
+warn "This is the cross-tenant leak. Home URL is currently one studio's subdomain"
 warn "and every Component path is blank, so blank paths fall back to it — a member of"
-warn "any other Tenant is redirected into Yoga Sadhana's app."
+warn "any other Tenant is redirected into that one studio's app."
 printf '\n'
 open_url "$CLERK_DASH"
 step "CLIENT Production → Configure → Paths."
@@ -461,8 +461,8 @@ printf '  %-40s ' "clerk.portal.reservetoday.app reachable?"
 code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' "https://clerk.portal.reservetoday.app/v1/environment?__clerk_api_version=2021-02-05" || echo 000)
 [[ "$code" == "200" ]] && printf '%s✓ 200%s\n' "$GREEN" "$RESET" || printf '%s✗ %s%s\n' "$RED" "$code" "$RESET"
 printf '\n'
-step "Sign in as a member at https://yogasadhana.reservetoday.app — should work."
-step "Sign in as staff at https://yogasadhana.portal.reservetoday.app — should work."
+step "Sign in as a member at https://<slug>.reservetoday.app — should work."
+step "Sign in as staff at https://<slug>.portal.reservetoday.app — should work."
 step "Now open a SECOND tenant's subdomain in the same browser."
 printf '\n'
 warn "What to expect, per the contradiction flagged at stage 1:"

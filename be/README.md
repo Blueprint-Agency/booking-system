@@ -1,4 +1,4 @@
-# Yoga Sadhana backend
+# ReserveToday backend
 
 Hono + Drizzle + Postgres. See `../docs/md/backend-architecture.md` for the spine.
 

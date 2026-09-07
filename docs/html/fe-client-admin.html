@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>fe-admin — Feature Breakdown · Yoga Sadhana</title>
+  <title>fe-admin — Feature Breakdown · ReserveToday</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -81,12 +81,12 @@
   <header class="page">
     <div class="header-inner">
       <div class="eyebrow">fe-admin · feature breakdown</div>
-      <h1 class="page-title">Yoga Sadhana — Admin Portal Mockup</h1>
+      <h1 class="page-title">ReserveToday — Admin Portal Mockup</h1>
       <p class="page-sub">Surfaces, journeys, and feature scope for the staff-side clickable mockup. Companion to <code>fe-client-features.md</code>; derived from <code>prd.md</code>.</p>
       <div class="meta-strip">
         <span>Phase: <strong>Frontend mockup (no backend)</strong></span>
         <span>Roles: <strong>Super-admin · Studio admin · Instructor</strong></span>
-        <span>Locations: <strong>Breadtalk IHQ · Outram Park</strong></span>
+        <span>Locations: <strong>Harbour Studio · Parkside Studio</strong></span>
       </div>
     </div>
   </header>
@@ -159,7 +159,7 @@
     </aside>
     <main class="content">
       <h1 id="fe-admin-feature-breakdown">fe-admin — Feature Breakdown</h1>
-<p>Companion to <code>fe-client-features.md</code>. This document defines the <strong>admin-side</strong> clickable mockup for the Yoga Sadhana product: what surfaces exist, what each one does, what UX it presents, and which journeys cut across them.</p>
+<p>Companion to <code>fe-client-features.md</code>. This document defines the <strong>admin-side</strong> clickable mockup for a studio's admin portal: what surfaces exist, what each one does, what UX it presents, and which journeys cut across them.</p>
 <p>Source of truth references:</p>
 <ul>
 <li>Product scope, role model, business rules: <code>docs/md/prd.md</code></li>
@@ -170,10 +170,10 @@
 <h2 id="0-cross-cutting-concepts">0. Cross-cutting concepts</h2>
 <p>These appear on every surface. Keep them consistent — never re-implement them per page.</p>
 <h3 id="01-three-tier-role-model">0.1 Three-tier role model</h3>
-<div class="table-wrap"><table><thead><tr><th style="text-align:left">Role</th><th style="text-align:left">Default home</th><th style="text-align:left">Authority</th></tr></thead><tbody><tr><td style="text-align:left"><strong>Super-admin</strong></td><td style="text-align:left"><code>/super/health</code></td><td style="text-align:left">Platform/system ops + impersonation. Never touches business data directly — impersonates a studio admin to act.</td></tr><tr><td style="text-align:left"><strong>Studio admin</strong></td><td style="text-align:left"><code>/admin</code></td><td style="text-align:left">Full business authority within Yoga Sadhana — schedule, packages, member profiles, refund inbox, settings, reports, notification templates. Single tier; no sub-roles.</td></tr><tr><td style="text-align:left"><strong>Instructor</strong></td><td style="text-align:left"><code>/admin/today</code></td><td style="text-align:left">Row-level scope: own classes, own roster (no member profiles), own private-session inbox, own availability, own profile, own teaching log.</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th style="text-align:left">Role</th><th style="text-align:left">Default home</th><th style="text-align:left">Authority</th></tr></thead><tbody><tr><td style="text-align:left"><strong>Super-admin</strong></td><td style="text-align:left"><code>/super/health</code></td><td style="text-align:left">Platform/system ops + impersonation. Never touches business data directly — impersonates a studio admin to act.</td></tr><tr><td style="text-align:left"><strong>Studio admin</strong></td><td style="text-align:left"><code>/admin</code></td><td style="text-align:left">Full business authority within their own studio — schedule, packages, member profiles, refund inbox, settings, reports, notification templates. Single tier; no sub-roles.</td></tr><tr><td style="text-align:left"><strong>Instructor</strong></td><td style="text-align:left"><code>/admin/today</code></td><td style="text-align:left">Row-level scope: own classes, own roster (no member profiles), own private-session inbox, own availability, own profile, own teaching log.</td></tr></tbody></table></div>
 <p>Demo prop: a <strong>role switcher</strong> in the top bar (visible only when the mockup is in dev mode) flips between seeded super-admin / studio admin / instructor identities so all three surfaces are walkable in one session.</p>
 <h3 id="02-two-locations">0.2 Two locations</h3>
-<p>Breadtalk IHQ (Tai Seng) + Outram Park. Every list with a physical-presence dimension carries a <strong>location filter chip — <code>All / Breadtalk / Outram</code></strong>. Per-user "default location" is a UI preference only, not a permission boundary. Cross-location packages are an explicit exception: credits and sessions are usable at either site.</p>
+<p>Harbour Studio + Parkside Studio. Every list with a physical-presence dimension carries a <strong>location filter chip — <code>All / Harbour / Parkside</code></strong>. Per-user "default location" is a UI preference only, not a permission boundary. Cross-location packages are an explicit exception: credits and sessions are usable at either site.</p>
 <p>Instructors do not see a location chip — their scope is implicit via assigned classes.</p>
 <h3 id="03-inbox-pattern-refund-cancellation-private-session">0.3 Inbox pattern (refund / cancellation / private-session)</h3>
 <p>Three out-of-app flows where the system owns the <strong>request inbox</strong> but a human resolves outside the app (typically WhatsApp + PayNow / bank transfer / cash):</p>
@@ -396,7 +396,7 @@
 </ul>
 <li>Versioned with <strong>CMS history</strong> (revert to prior). Saved as the live marketing data the client app reads.</li>
 </ul>
-<p><strong>Why it exists</strong> Yoga Sadhana staff change copy and imagery seasonally without a code deploy.</p>
+<p><strong>Why it exists</strong> A studio's staff change copy and imagery seasonally without a code deploy.</p>
 <h3 id="217-notifications-adminnotifications">2.17 Notifications <code>/admin/notifications</code></h3>
 <p><strong>Business logic</strong></p>
 <ul>
@@ -424,7 +424,7 @@
 <p><strong>Business logic</strong></p>
 <ul>
 <li>Tabbed: <strong>Attendance</strong>, <strong>Revenue</strong>, <strong>Membership</strong>, <strong>Teaching log</strong>, <strong>Inbox throughput</strong>, <strong>Referral attribution</strong>.</li>
-<li>Standard filter set across all: date-range presets (7d / 30d / 90d / current month / last month / custom), location (All / Breadtalk / Outram), <strong>Export to CSV</strong>.</li>
+<li>Standard filter set across all: date-range presets (7d / 30d / 90d / current month / last month / custom), location (All / Harbour / Parkside), <strong>Export to CSV</strong>.</li>
 </ul>
 <div class="table-wrap"><table><thead><tr><th style="text-align:left">Report</th><th style="text-align:left">Detail</th></tr></thead><tbody><tr><td style="text-align:left">Attendance</td><td style="text-align:left">Class fill rate, no-show rate, by class type / location / time-of-day / instructor. Trend over period.</td></tr><tr><td style="text-align:left">Revenue</td><td style="text-align:left">Package sales by type / location / period; payment method mix; outstanding balances; workshop ticket revenue (separate line).</td></tr><tr><td style="text-align:left">Membership</td><td style="text-align:left">Active / expired / lapsing-soon clients; bundle vs unlimited mix; signed vs lapsed waivers; churn signals (no booking 30/60/90d).</td></tr><tr><td style="text-align:left">Teaching log</td><td style="text-align:left">Classes scheduled / completed / cancelled per instructor per period. Powers external pay.</td></tr><tr><td style="text-align:left">Inbox throughput</td><td style="text-align:left">Refund / cancellation / private-session counts and time-to-resolution by state.</td></tr><tr><td style="text-align:left">Referral attribution</td><td style="text-align:left">Referrer → referee → first-purchase conversion rate.</td></tr></tbody></table></div>
 <h3 id="221-settings-adminsettings">2.21 Settings <code>/admin/settings</code></h3>
@@ -577,7 +577,7 @@
   </div>
   <a href="#" class="back-top" title="Back to top">↑</a>
   <footer class="page">
-    <strong>Yoga Sadhana</strong> · fe-admin spec · Source: <code>docs/md/fe-client-admin.md</code>
+    <strong>ReserveToday</strong> · fe-admin spec · Source: <code>docs/md/fe-client-admin.md</code>
   </footer>
 </body>
 </html>

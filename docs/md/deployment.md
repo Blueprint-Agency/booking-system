@@ -16,7 +16,7 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 | Backend | `booking-staging` stack on bpvps2 → `https://api.dev.reservetoday.app` | `booking-prod` stack on bpvps2 → `https://api.reservetoday.app` |
 | GitHub Environment | `staging` (lowercase) | `Production` (capital P) |
 | Image tag | `blueprintagency/booking-be:staging` | `…:latest` |
-| fe-client | `https://{slug}.dev.reservetoday.app` (e.g. `yogasadhana.dev.…`) | `https://{slug}.reservetoday.app` (e.g. `yogasadhana.reservetoday.app`) |
+| fe-client | `https://{slug}.dev.reservetoday.app` | `https://{slug}.reservetoday.app` |
 | fe-portal | `https://{slug}.portal.dev.reservetoday.app` | `https://{slug}.portal.reservetoday.app` |
 | Super portal | `https://admin.portal.dev.reservetoday.app` | `https://admin.portal.reservetoday.app` |
 | Vercel target | **preview** (branch-pinned domain) | **production** |
@@ -24,27 +24,53 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 | Clerk instance | development (`*.clerk.accounts.dev`) | production — fe-client on `clerk.reservetoday.app`, fe-portal on `clerk.portal.reservetoday.app`, super portal on `clerk.admin.portal.reservetoday.app` |
 | `APP_ENV` / `NEXT_PUBLIC_APP_ENV` | `staging` | `production` |
 
-> **The portal URL flip is done.** `portal.yogasadhana.reservetoday.app` is attached to the
-> fe-portal Vercel project as a **301 redirect** to `yogasadhana.portal.reservetoday.app`, path
-> and query preserved. It had been returning Vercel's `DEPLOYMENT_NOT_FOUND` 404 — it resolves
-> through the apex wildcard but matched no project domain, so a staff bookmark was already broken
-> rather than merely old. The redirect target had to be attached explicitly (Vercel refuses to
-> redirect to a host the project does not own, and wildcard coverage does not count), which is why
-> `yogasadhana.portal.reservetoday.app` now appears as its own row next to the wildcard. That row
-> is a redirect target, **not** a per-Tenant domain: provisioning a studio still adds nothing here.
+> **Every pre-tenancy hostname is gone.** The table above is now the whole list: nothing outside
+> it answers on `reservetoday.app`. Three rows were deleted from the Vercel projects, and each is
+> named here because a 404 with no explanation is how someone rediscovers a URL we retired on
+> purpose:
 >
-> Nothing was needed on the backend or in Clerk. `yogasadhana.portal.…` is covered by
-> `*.portal.reservetoday.app`, is what the backend already builds staff links from, and is what the
-> portal Clerk instance already authenticates — a redirect is a browser-side hop that never reaches
-> the API, so no exact origin has to be added to `TENANT_ORIGIN_PATTERNS`.
+> | Removed | Was | Use instead |
+> |---|---|---|
+> | `portal.{slug}.reservetoday.app` | 301 → `{slug}.portal.…` | `{slug}.portal.reservetoday.app` |
+> | `staging-portal.{slug}.reservetoday.app` | live, `staging` branch | `{slug}.portal.dev.reservetoday.app` |
+> | `staging.{slug}.reservetoday.app` | live, `staging` branch | `{slug}.dev.reservetoday.app` |
 >
-> **Three legacy staging hostnames remain**, and unlike the portal one they still work:
-> `staging.yogasadhana.reservetoday.app`, `staging-portal.yogasadhana.reservetoday.app`,
-> `staging.reservetoday.app` — branch-assigned domains from the pre-tenancy scheme, still holding
-> certificates. They are superseded by `{slug}.dev.reservetoday.app` and
-> `{slug}.portal.dev.reservetoday.app`, and can be given the same 301 treatment whenever someone
-> is sure nobody's bookmarks depend on them. `staging.reservetoday.app` names no studio at all, so
-> retiring it needs a decision about which Tenant it should land on rather than a redirect.
+> (Each existed for exactly one studio, since they predate wildcards; `{slug}` above stands for
+> that studio's own label.)
+>
+> The two `staging-*` rows were the worse of the three. They were branch-assigned domains from the
+> pre-tenancy scheme, so they served the **staging** build — dev Clerk keys, dev API — from a
+> hostname that reads as production. A bookmark to one looked like the live studio and was not.
+>
+> `portal.{slug}.…` had been a 301 rather than a live host, added when the portal URL flipped.
+> The redirect went too: a redirect is still a hostname to keep, certify and explain, and the flip
+> is old enough that a 404 is the more honest answer.
+>
+> Nothing was needed on the backend or in Clerk for any of it. A removal only stops Vercel
+> answering for a name; `TENANT_ORIGIN_PATTERNS`, the Clerk instances and every link the backend
+> builds already named the `{slug}.[portal.][dev.]reservetoday.app` forms and nothing else.
+>
+> The first studio's own `{slug}.portal.reservetoday.app` row went with them. It had been attached explicitly only
+> because Vercel refuses to redirect to a host the project does not own; once the redirect was
+> deleted the row was a per-Tenant domain sitting in a project that is supposed to have none.
+> `*.portal.reservetoday.app` covers it, exactly as it covers every other studio — verified live
+> after the removal.
+>
+> **Every domain row on both projects is now a wildcard**, which is the invariant worth naming:
+> **provisioning a studio adds no Vercel domain.** The super portal is covered by the same
+> `*.portal.…` wildcard as the studios — `admin` is simply a label the app recognises
+> (`isSuperPortalHost`), not a hostname Vercel knows about.
+>
+> | Project | Rows |
+> |---|---|
+> | `booking-system` | `*.reservetoday.app` · `*.dev.reservetoday.app` (branch `staging`) |
+> | `booking-system-admin` | `*.portal.reservetoday.app` · `*.portal.dev.reservetoday.app` (branch `staging`) |
+> | `booking-cdn` | `cdn.reservetoday.app` |
+>
+> **`staging.reservetoday.app` is not a legacy hostname** and was left alone. It matches no project
+> domain of its own; `staging` is in `NON_TENANT_LABELS` (`fe-client/src/lib/tenant-host.ts`,
+> mirroring `be/src/services/tenants/slug.ts`), so the client wildcard serves it the same
+> no-Tenant page it serves `www.` and `app.`. An unknown slug still 404s.
 
 > **Production Clerk now sits on `reservetoday.app`.** This block used to record the opposite —
 > that both instances answered on Vercel-generated hosts
@@ -157,6 +183,13 @@ Notes:
 - Locally, `*.localhost` reaches loopback in Chrome, Edge and Firefox with **no hosts-file entry**,
   multi-level names included — `acme.localhost:3000` and `acme.portal.localhost:3001` just work.
   Safari does not do this; Safari users add `127.0.0.1 acme.localhost` or use `lvh.me`.
+- **Browse a studio's subdomain, not the bare host.** `northwind.localhost:3000` and
+  `northwind.portal.localhost:3001` (the seeded fixture studios are `northwind` and `acme`),
+  never `localhost:3000` / `localhost:3001` — the bare host is
+  the root domain, so it names no Tenant and the API answers `400 tenant_required`. This was
+  survivable while a tenant-less request silently became tenant #1; that fallback is gone
+  (`docs/md/spec-tenant-resolution.md` § Resolve), so the bare host now fails loudly instead of
+  quietly showing one studio's data.
 - The proxy resolves the slug against the backend's public route
   (`GET /api/v1/public/tenants/by-slug/:slug`) — never the database, since the frontends reach `be`
   over HTTP only. An unknown slug is a bare 404 that names nothing; a backend outage is a 503 (with
@@ -184,7 +217,7 @@ Notes:
   - production: `https://*.reservetoday.app,https://*.portal.reservetoday.app`
   - It is also read **backwards** (`be/src/services/tenants/urls.ts`): a slug plus an app gives back the origin serving that studio, which is the base of every invitation link, member login link, account link and Stripe redirect the backend builds. That is why the link handed out and the origin the backend trusts cannot drift apart.
 - `CLERK_STAFF_AUTHORIZED_PARTIES` (optional) — any extra exact origins to pin, described below.
-- `PORTAL_ORIGIN` and `CLIENT_ORIGIN` are **gone**. They were one value each for the whole platform, so they could only ever name one studio's two apps — and everything built from them (staff invite links, member login links, Stripe redirects) pointed at Yoga Sadhana whichever studio the code was acting for. The wildcards already cover those two hostnames; an environment that genuinely needs an extra exact origin adds it to `TENANT_ORIGIN_PATTERNS`.
+- `PORTAL_ORIGIN` and `CLIENT_ORIGIN` are **gone**. They were one value each for the whole platform, so they could only ever name one studio's two apps — and everything built from them (staff invite links, member login links, Stripe redirects) pointed at the first studio whichever studio the code was acting for. The wildcards already cover those two hostnames; an environment that genuinely needs an extra exact origin adds it to `TENANT_ORIGIN_PATTERNS`.
 
 **Clerk authorized parties:** `CLERK_STAFF_AUTHORIZED_PARTIES` is **no longer passed to Clerk**. Clerk's own `authorizedParties` option is exact-match and cannot express `{slug}.portal.…` for every slug that exists — a list that would change whenever a studio is created, signing staff out of one made overnight. `verifyToken` is called without it and the `azp` claim is checked against the allowlist above instead (`be/src/lib/allowed-origins.ts`). The var still contributes any extra exact origins an environment wants to pin.
 

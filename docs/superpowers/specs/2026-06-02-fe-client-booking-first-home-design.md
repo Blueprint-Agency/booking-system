@@ -52,7 +52,7 @@ The booking architecture already exists; only the front door is wrong.
   - Leave everything else (logo → `/`, credit pill, account dropdown, auth CTAs, mobile drawer) unchanged.
 
 ### 5. Light orientation instead of a hero
-- **Edit:** the `SectionHeading` at the top of the schedule — set the eyebrow to carry brand + locations, e.g. eyebrow `"Yoga Sadhana · Tai Seng & Outram Park"`, title `"Book a class"`, keep the existing one-line description. This orients a first-time/logged-out visitor without a marketing wall. The existing `SiteFooter` continues to carry fuller brand/location info.
+- **Edit:** the `SectionHeading` at the top of the schedule — set the eyebrow to carry brand + locations, e.g. eyebrow `"{studio name} · {its locations}"`, title `"Book a class"`, keep the existing one-line description. This orients a first-time/logged-out visitor without a marketing wall. The existing `SiteFooter` continues to carry fuller brand/location info.
 
 ### 6. Remove now-unused marketing components
 - After (2), grep each `@/components/marketing/*` file for other usages. **Delete only those referenced solely by the old homepage.** Keep any reused elsewhere (e.g. `Hero` may appear on other pages — verify before deleting).

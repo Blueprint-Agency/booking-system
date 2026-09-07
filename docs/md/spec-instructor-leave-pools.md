@@ -6,7 +6,7 @@ Supersedes the allowance model in `spec-instructor-leave.md`. See `be/docs/adr/0
 
 ## Problem Statement
 
-Leave at Yoga Sadhana is a term of an individual instructor's engagement, not a studio-wide policy. Today it is the opposite: one pair of numbers on the global policy singleton gives every instructor the same 14 annual and 14 medical days, and the only way to give one person a different figure is for an admin to exercise judgement at approval time and let them go over. That is invisible, unauditable, and it means the number an instructor sees is not the number they actually have.
+Leave is a term of an individual instructor's engagement, not a studio-wide policy. Today it is the opposite: one pair of numbers on the global policy singleton gives every instructor the same 14 annual and 14 medical days, and the only way to give one person a different figure is for an admin to exercise judgement at approval time and let them go over. That is invisible, unauditable, and it means the number an instructor sees is not the number they actually have.
 
 Three further things are wrong with the current model:
 

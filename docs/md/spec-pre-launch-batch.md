@@ -8,7 +8,7 @@ Collapsed from the wayfinder map *Wayfinder: promo codes, location-bound unlimit
 
 ## Problem Statement
 
-Yoga Sadhana is pre-launch. Production holds zero rows; staging holds five test accounts and three purchases from a single manual checkout run. Before the first real member arrives, four things the studio has asked for do not work:
+The first studio is pre-launch. Production holds zero rows; staging holds five test accounts and three purchases from a single manual checkout run. Before the first real member arrives, four things the studio has asked for do not work:
 
 1. **The studio cannot run a discount campaign.** Two promo codes are hardcoded in a source file — absolute SGD only, no expiry, no usage cap, no product scoping, and no way for an admin to create or change one without a deploy. Worse, the one page that accepts a code is unreachable: members buy one-click from the catalogue, so the live purchase path takes no code at all. And a mistyped code sent to the checkout endpoint is silently ignored — the member is charged full price while the interface still shows the code as accepted.
 
@@ -299,7 +299,7 @@ The expiry helper accordingly returns null for `unlimited`, and the grant path w
 
 **The rate lives on Global Policy** as `cross_location_rate_sgd`. That singleton already has admin CRUD and an updated-by-staff audit column, so repricing without a deploy costs one column and no new surface. The rate is read once, at checkout, and never again — repricing moves future purchases only.
 
-**One Add-On per plan, never per member.** It belongs to one plan: it prices at that plan's months, expires with it, and waits Dormant with it. A member holding an Activated plan and a Dormant renewal buys two, one on each. Both surfaces show it per plan, so "both studios until 14 November, then Breadtalk IHQ only" stays a sentence a human can read.
+**One Add-On per plan, never per member.** It belongs to one plan: it prices at that plan's months, expires with it, and waits Dormant with it. A member holding an Activated plan and a Dormant renewal buys two, one on each. Both surfaces show it per plan, so "both studios until 14 November, then Harbour Studio only" stays a sentence a human can read.
 
 **A Dormant Add-On needs no machinery.** It is a paid column on a row whose expiry is null. It prices at the plan's full stored Duration — no arithmetic. It activates when the plan does, because activation stamps the row it already lives on.
 
@@ -324,7 +324,7 @@ A member holds **one Activated plan plus at most one Dormant plan**. A third pur
 
 Enforcement is a partial unique index on `(client_id) WHERE kind = 'unlimited' AND active AND expires_at IS NOT NULL`, plus a check in the purchase path for the Dormant one — an index cannot usefully count to two.
 
-**A member holding a live Unlimited Plan may only renew at that plan's existing Home Location.** This closes a hole that would otherwise be structural: with the Location filter applied *first*, a member holding Breadtalk IHQ Activated and Outram Park Dormant who books at Outram Park skips the Activated plan entirely and activates the Dormant one — two Activated plans, and the index rejects the write in the member's face.
+**A member holding a live Unlimited Plan may only renew at that plan's existing Home Location.** This closes a hole that would otherwise be structural: with the Location filter applied *first*, a member holding Harbour Studio Activated and Parkside Studio Dormant who books at Parkside Studio skips the Activated plan entirely and activates the Dormant one — two Activated plans, and the index rejects the write in the member's face.
 
 Closing it at the purchase makes both plans always share a Home Location, so booking can never reach the Dormant plan on Location grounds. The index stays as a backstop rather than as the enforcement.
 
@@ -484,16 +484,16 @@ The scope is forced rather than chosen. A Promo Code reaches across products and
 3. **Cross-Location Add-On** *(unlimited)* — a checkbox block, **disabled until a studio is picked**, with the reason in place of the price. Live, it names the other studio, shows the months-times-rate arithmetic, and closes with "Expires with the plan it's attached to."
 4. **Promo code** — exists, now with distinct failure reasons.
 5. **Breakdown** — the Add-On is its own line, never folded into the plan.
-6. **Home studio, restated** — "Your home studio is Breadtalk IHQ for the next 6 months." immediately above Pay, so the member passes the choice twice.
+6. **Home studio, restated** — "Your home studio is Harbour Studio for the next 6 months." immediately above Pay, so the member passes the choice twice.
 7. **Pay.**
 
 **Greyed copy is always a precondition, never "Unavailable"**, and the rate stays visible while disabled — so the greyed state advertises rather than reads as broken. The Add-On has **three** distinct disabled reasons: no studio picked yet, the plan already carries one, and the member holds no plan at all ("this attaches to an Unlimited plan, and you don't have one yet" — *nothing to attach to*, worded away from *nothing chosen yet*).
 
-**A renewal replaces the radios with a locked row** — "Your renewal continues at Breadtalk IHQ. Ask us if you need to move it." Building the radios unconditionally would offer a choice the backend refuses. **A Dormant renewal's Add-On** prices at the full stored Duration and shows the plain months-times-rate form with no remainder sentence.
+**A renewal replaces the radios with a locked row** — "Your renewal continues at Harbour Studio. Ask us if you need to move it." Building the radios unconditionally would offer a choice the backend refuses. **A Dormant renewal's Add-On** prices at the full stored Duration and shows the plain months-times-rate form with no remainder sentence.
 
 **The standalone Add-On purchase** is the same page, entered with the target plan's id. Two entry points: the nudge on a blocked class, and the plan card on the account page. The remainder sentence comes **before** the arithmetic — "Your plan runs to 26 Nov 2026 — 3 months, 10 days left. Part months are charged as whole months, so that's 4." then the multiplication — so the surprising part is answered before the number that provokes the question.
 
-**The blocked class is a nudge, not an ad.** The row dims, takes a "Not in your plan" lock chip where the Book button was, and carries one line under a hairline: "Your plan covers **Breadtalk IHQ** only. [Add Outram Park for $30/month] · or [use 1 credit]". Both are links, weighted below the class itself. The louder treatment — accent border, tinted card, filled button — was rejected on **repetition**, not on looks: this state appears on every wrong-Location class in the schedule, and at that density an offer becomes an ad break.
+**The blocked class is a nudge, not an ad.** The row dims, takes a "Not in your plan" lock chip where the Book button was, and carries one line under a hairline: "Your plan covers **Harbour Studio** only. [Add Parkside Studio for $30/month] · or [use 1 credit]". Both are links, weighted below the class itself. The louder treatment — accent border, tinted card, filled button — was rejected on **repetition**, not on looks: this state appears on every wrong-Location class in the schedule, and at that density an offer becomes an ad break.
 
 **Four live defects this closes.** The unreachable checkout page; the "Valid across both locations" bullet on every Unlimited card, which becomes false the day Home Location ships and gives the Add-On away ("Covers one studio — you choose at checkout"); the duration formatter that assumes days, which goes with `duration_days`; and the flat "Invalid promo code" that collapses every failure into one string.
 
@@ -539,13 +539,13 @@ These are **renames rather than additions**, because the portal template editor 
 >
 > Hi Sarah,
 >
-> **Unlimited 6 Months — Breadtalk IHQ**
+> **Unlimited 6 Months — Harbour Studio**
 > Unlimited classes
 > Valid 6 months from your first class — your plan activates when you make your first booking.
 >
 > View your receipt →
 
-> **Welcome to Yoga Sadhana**
+> **Welcome to {{studio.name}}**
 >
 > Hi Sarah,
 >
@@ -780,7 +780,7 @@ Ruled out during charting. Each returns only as its own effort.
 
 - **Reworking the referral system.** The referral service is a stub that throws. It overlaps conceptually with Promo Codes and is a separate effort.
 
-- **Multi-tenant or multi-studio expansion.** The platform is dedicated to Yoga Sadhana. The Location model should not hardcode two Locations, but supporting other studios is not this effort.
+- **Multi-tenant or multi-studio expansion.** ~~The platform is dedicated to one studio.~~ Out of scope *for this effort*, and since delivered: the platform is multi-tenant (`multi-tenancy-plan.md`). The Location model must still not assume a fixed number of Locations.
 
 - **An activation deadline.** The studio chose activation-on-first-booking *without* one, so a renewal bought today and first booked in three years is honoured at today's price. Left open knowingly: the purchase timestamp is already stored, so a "must activate within N days" rule is a later query rather than a migration, and nobody has evidence for a number. What this spec asks for instead is **visibility** — Dormant plans legible to staff and members before anyone rules on it.
 
@@ -792,7 +792,7 @@ Ruled out during charting. Each returns only as its own effort.
 
 ## Further Notes
 
-**Shipping order is free.** There is no business-driven first. Yoga Sadhana is pre-launch and not close to launch, and every urgency driver dissolves against that: a revenue lever needs a campaign and there is nobody to run one at; the leave cap's urgency was "whatever the leave calendar says" and nothing runs through the portal; "the email members notice by its absence" needs members. The strongest ordering argument — that zero Unlimited Plans sold is the cheapest this will ever be to ship — closes on a **sale**, not on a date, and no sale can happen before launch, so the window stays open throughout.
+**Shipping order is free.** There is no business-driven first. The first studio is pre-launch and not close to launch, and every urgency driver dissolves against that: a revenue lever needs a campaign and there is nobody to run one at; the leave cap's urgency was "whatever the leave calendar says" and nothing runs through the portal; "the email members notice by its absence" needs members. The strongest ordering argument — that zero Unlimited Plans sold is the cheapest this will ever be to ship — closes on a **sale**, not on a date, and no sale can happen before launch, so the window stays open throughout.
 
 **All four ship before the first member arrives.** That is a completeness requirement, not an ordering one, and it is the only real constraint the studio gave. The pre-launch window is what makes every one of these cheap — the plain `ALTER TABLE`, the semantic change to a null expiry landing on zero rows, the Promo Code tables built with no import — and that is a property of shipping before launch rather than of shipping in any particular order.
 

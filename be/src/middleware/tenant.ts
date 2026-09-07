@@ -1,6 +1,5 @@
 import type { Context, MiddlewareHandler } from 'hono'
 import { withTenant } from '../db'
-import { TENANT_ONE_ID } from '../db/schema/tenancy'
 import { originTenantSlug } from '../lib/allowed-origins'
 import { normaliseSlug } from '../services/tenants/slug'
 import { loadTenantById, resolveTenantByClerkOrg, resolveTenantBySlug } from '../services/tenants/tenants'
@@ -39,8 +38,10 @@ export const TENANT_SLUG_HEADER = 'x-tenant-slug'
  *   signed statement of which studio the caller is signed into; the two Clerk
  *   middlewares run `assertTenantOrgClaim` at the point they have it.
  *
- * Behaviour when nothing names a tenant at all is unchanged: tenant #1. Every
- * client that predates tenancy sends no header and must keep working.
+ * A request that names no tenant at all is refused with `tenant_required`. The
+ * paths that genuinely have no tenant never reach here — `app.ts` exempts them
+ * by name before mounting this — so on every other path the absence is a caller
+ * bug, and 400 is what turns it into one someone fixes.
  *
  * Resolution is also what OPENS the database's Tenant context: the rest of the
  * request runs inside `withTenant`, which is one transaction carrying
@@ -72,10 +73,20 @@ export const resolveTenant: MiddlewareHandler = async (c, next) => {
   // still unambiguously asking about `acme`.
   const slug = headerSlug || originSlug
   if (!slug) {
-    // Nothing was claimed, so there is nothing to have forged.
-    c.set('tenantId', TENANT_ONE_ID)
-    c.set('tenantCorroborated', true)
-    return withTenant(TENANT_ONE_ID, () => next())
+    // Nothing named a studio, so there is no honest answer to give. This used
+    // to fall back to tenant #1 — a compatibility shim from the single-tenant
+    // era, when "no tenant" and "the tenant" were the same thing. They stopped
+    // being the same thing the moment a second studio existed, and what the
+    // shim did after that was hand one studio's data to a request that had
+    // simply forgotten to say whose data it wanted. A caller cannot notice
+    // that; it gets a plausible answer about the wrong studio.
+    //
+    // Every path that legitimately carries no tenant is already exempted before
+    // this middleware runs — health, the two webhooks, the whole super portal
+    // branch, tenant lookup (`TENANT_CONTEXT_EXEMPT` in app.ts) — so anything
+    // arriving here without a tenant is a bug in the caller, and saying so is
+    // the only way it gets fixed rather than silently mis-answered.
+    return c.json({ error: 'tenant_required' }, 400)
   }
 
   // An unknown slug is a 404 carrying the same body as any other 404 on this
@@ -125,11 +136,15 @@ export function tenantId(c: Context): string {
  * actually belongs to?
  *
  * Called from the two Clerk middlewares, at the first moment the caller's own
- * row is in hand. A row that predates tenancy and somehow still has no
- * `tenant_id` is treated as tenant #1, which is what it is.
+ * row is in hand. A null `rowTenantId` used to be read as tenant #1 — the right
+ * reading while the column was still nullable and an un-backfilled row really
+ * did belong to the first studio. `tenant_id` is `NOT NULL` on all 53 tables
+ * now (`tenantIdColumn`), so null is no longer a pre-tenancy row; it is a row
+ * that should not exist. Matching it against a studio would let it through, so
+ * it matches nothing.
  */
 export function tenantMatches(c: Context, rowTenantId: string | null): boolean {
-  return (rowTenantId ?? TENANT_ONE_ID) === tenantId(c)
+  return rowTenantId !== null && rowTenantId === tenantId(c)
 }
 
 /**

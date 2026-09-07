@@ -1,4 +1,11 @@
-# Yoga Sadhana — Product Requirements Document (PRD)
+# ReserveToday — Product Requirements Document (PRD)
+
+> **Superseded on tenancy.** This document was written for a single-studio
+> product and still describes the member and staff surfaces accurately, which is
+> why it is kept. Everything it says about there being one studio is no longer
+> true: the platform is multi-tenant, a studio is a row in `tenants`, and no
+> studio is named anywhere in the repo. Read §1.1 with that correction, and see
+> `multi-tenancy-plan.md` and `spec-tenant-resolution.md` for what replaced it.
 
 **Status:** v1 scope, post-redo (2026-05-01)
 **Owner:** Teeko (Christopher Kwek)
@@ -10,12 +17,12 @@
 
 ### 1.1 Product scope
 
-A **dedicated 2-app product for Yoga Sadhana**, a yoga studio in Singapore with 2 physical locations (Breadtalk IHQ Tai Seng + Outram Park). It replaces their previous Reserv subscription.
+A **2-app product for a yoga studio** — as originally written, one studio with two physical locations, replacing its previous Reserv subscription. It is now one deployment of each app serving every studio on the platform; the surfaces below are what any one studio's members and staff see.
 
 - **fe-client** — member-facing booking app: browse classes/workshops/private sessions, buy packages, manage bookings, QR check-in, referrals.
 - **fe-portal** — staff back-office: schedule + roster + member ops + content + reports + system ops.
 
-This is **not a multi-tenant SaaS**. There is no tenant entity, no slug routing, no plan/billing layer, no "For Business" pitch surface. Yoga Sadhana is hardcoded throughout. Any prior tenants/billing/plans surface from the H-series fe-portal commits is legacy and gets removed in this rebuild.
+~~This is **not a multi-tenant SaaS**. There is no tenant entity, no slug routing, no plan/billing layer. The studio is hardcoded throughout.~~ **No longer true, and reversed deliberately.** There is a Tenant entity, slug routing off the hostname, Row-Level Security per Tenant, and no studio hardcoded anywhere. What remains true is the absence of a plan/billing layer and a "For Business" pitch surface.
 
 ### 1.2 v1 in-scope
 
@@ -61,8 +68,8 @@ Anywhere the PRD specifies an "inbox" surface, this is the underlying pattern: a
 | Role | Who | Default home | Authority shape |
 |---|---|---|---|
 | **Super-admin** | Teeko dev team / founder (platform operators) | `/super/health` | Platform/system ops + impersonation. **Does not touch business data directly** — when they need to act on a member or invoice, they impersonate a studio admin. |
-| **Studio admin** | Yoga Sadhana staff (founder, manager, front-desk) | `/admin` | Full business authority within Yoga Sadhana — schedule, packages, member profiles, refund inbox, settings, reports, notification templates. Single tier; no sub-roles in v1. |
-| **Instructor** | Yoga Sadhana instructors | `/admin/today` | Row-level scope: own classes, own roster (no member profiles), own private-session inbox, own availability, own profile, own teaching log. **Never sees other instructors or aggregates.** |
+| **Studio admin** | A studio's staff (founder, manager, front-desk) | `/admin` | Full business authority within their own studio — schedule, packages, member profiles, refund inbox, settings, reports, notification templates. Single tier; no sub-roles in v1. |
+| **Instructor** | A studio's instructors | `/admin/today` | Row-level scope: own classes, own roster (no member profiles), own private-session inbox, own availability, own profile, own teaching log. **Never sees other instructors or aggregates.** |
 
 ### 2.2 Permission matrix
 
@@ -103,7 +110,7 @@ Anywhere the PRD specifies an "inbox" surface, this is the underlying pattern: a
 | Role | Location scope | UI |
 |---|---|---|
 | Super-admin | Both locations always | No filter; sees raw data |
-| Studio admin | Both locations by default; per-list location filter chip ("All / Breadtalk / Outram"); optional per-user "default location" UX preference (no permission boundary) | Filter chip on every list with a location dimension |
+| Studio admin | Both locations by default; per-list location filter chip ("All / Harbour / Parkside"); optional per-user "default location" UX preference (no permission boundary) | Filter chip on every list with a location dimension |
 | Instructor | Implicit — wherever their assigned classes are; no filter chip | n/a |
 
 **Row-level scope** applies only to Instructor:
@@ -143,7 +150,7 @@ Anywhere the PRD specifies an "inbox" surface, this is the underlying pattern: a
 
 ### 3.3 Locations
 
-- 2 locations: **Breadtalk IHQ (Tai Seng)** + **Outram Park**.
+- 2 locations: **Harbour Studio** + **Parkside Studio**.
 - Locations are a **separate entity**, not a label.
 - Class instances, instructors (when teaching), workshops, and physical-presence sessions are scoped to a `location_id`.
 - **Packages and credits/sessions are cross-location** — 1 credit works at either site. Member balance is studio-wide.
@@ -165,7 +172,7 @@ Anywhere the PRD specifies an "inbox" surface, this is the underlying pattern: a
 
 ### 3.5 Cancellation policy
 
-Yoga Sadhana defaults seeded at v1 launch (admin-editable):
+Defaults a studio starts with (admin-editable, per Tenant):
 
 | Booking | Window (free) | Outside window |
 |---|---|---|
@@ -479,7 +486,7 @@ Admin-side **inbox surfaces** (refund / cancellation / private-session) are dash
 ### 8.2 Standard filter set
 
 - Date range (presets: 7d / 30d / 90d / current month / last month / custom).
-- Location (All / Breadtalk / Outram / **Unattributed**). The Unattributed bucket is not an error state: only an Unlimited Plan records a Location at purchase, so most revenue genuinely has none. Naming it keeps the gap visible instead of dropping that money out of both studios' figures.
+- Location (All / Harbour / Parkside / **Unattributed**). The Unattributed bucket is not an error state: only an Unlimited Plan records a Location at purchase, so most revenue genuinely has none. Naming it keeps the gap visible instead of dropping that money out of both studios' figures.
 - Export to CSV — exactly the filtered rows, from the same read the screen used.
 
 ### 8.3 Visibility
@@ -546,4 +553,4 @@ Named explicitly so a reader does not infer them as v1 commitments:
 - Memory: `project_refunds_out_of_app.md` — refund pattern.
 - Memory: `project_instructor_pay_out_of_app.md` — pay pattern.
 - Memory: `project_email_only_v1.md` — channel scope.
-- Memory: `project_yoga_sadhana.md` — Mar 29 product decisions.
+- Memory: the first studio's project notes — Mar 29 product decisions.

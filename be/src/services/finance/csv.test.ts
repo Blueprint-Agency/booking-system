@@ -74,13 +74,13 @@ const lines = (csv: string) => csv.split('\r\n')
         listPriceSgd: '100.00',
         paidSgd: '100.00',
         locationId: 'loc-1',
-        locationName: 'Outram Park',
+        locationName: 'Parkside Studio',
       }),
     ]),
   )
   const body = lines(csv).slice(1)
   assert.ok(body.some(l => l.includes('Unattributed')))
-  assert.ok(body.some(l => l.includes('Outram Park')))
+  assert.ok(body.some(l => l.includes('Parkside Studio')))
 }
 
 // -- the export is exactly the rows it was given, in the same order ----------

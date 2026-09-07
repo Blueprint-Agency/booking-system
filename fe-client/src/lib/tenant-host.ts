@@ -73,10 +73,16 @@ function normalizeHost(host: string): string {
  * bare root domain, `www`, the super portal, a host outside the root domain
  * (a Vercel preview URL), or a label that isn't a well-formed slug.
  *
- * Null is not an error: it means "no Tenant context", and the backend already
- * treats a request with no `X-Tenant-Slug` as Tenant #1. Whether a well-formed
- * slug corresponds to a Tenant that *exists* is not decidable here — that is
- * the resolver's job, over HTTP.
+ * Null is not an error, but it is a dead end for anything that needs data: the
+ * backend refuses a tenant-scoped request carrying no `X-Tenant-Slug` with
+ * `tenant_required` (400). It used to answer as Tenant #1, which meant a page on
+ * the bare root domain silently rendered one studio's data. Whether a
+ * well-formed slug corresponds to a Tenant that *exists* is not decidable here —
+ * that is the resolver's job, over HTTP.
+ *
+ * Locally this is why the dev server is reached at
+ * `{slug}.localhost:3000` rather than `localhost:3000`: the bare host names
+ * no Tenant, exactly as the bare production domain does not.
  */
 export function tenantSlugFromHost(
   host: string | null | undefined,
