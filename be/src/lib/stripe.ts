@@ -1,7 +1,13 @@
+import { createHash } from 'node:crypto'
 import Stripe from 'stripe'
 import { env } from '../env'
 import { logger } from '../shared/logger'
 import { VENDOR_DEADLINE_MS } from './outbound'
+import {
+  loadProviderCredentials,
+  providerCredentials,
+  type TenantProviderCredentials,
+} from '../services/billing/provider-credentials'
 
 /**
  * The one way into the payment provider.
@@ -9,9 +15,15 @@ import { VENDOR_DEADLINE_MS } from './outbound'
  * There is deliberately **no exported client**. Every call is made through
  * `stripeForTenant`, which binds the client to the studio whose money is
  * moving, so the question "which account is this charge on?" is answered in
- * exactly one place — `providerAccountForTenant` below. Today that answer is
- * always the platform's own account; when a studio connects its own (#94), that
- * function is the change, and no call site moves.
+ * exactly one place — `providerAccountForTenant` below.
+ *
+ * Since #100 that answer is the studio's *own* account, when it has supplied
+ * one. Not a connected account: Stripe Connect is unavailable to this platform,
+ * so there is no `Stripe-Account` header and no platform account in the middle.
+ * A studio's credentials are a whole different API key, and the client is built
+ * with it — which is why the account is bound to the client rather than passed
+ * per call. A studio that has supplied none still sells on the platform's
+ * account, exactly as every studio did before.
  *
  * It is also the seam a test substitutes: `setStripeFactory` swaps in a fake
  * client, so checkout, the webhook and refunds can be exercised without a
@@ -21,10 +33,10 @@ export const STRIPE_API_VERSION = '2023-10-16'
 
 /**
  * The provider account a call is made against, or null for the platform's own.
- * `null` is not "unknown" — it is the platform account, which is where every
- * studio still sells.
+ * `null` is not "unknown" — it is the platform account, which is where a studio
+ * that has supplied no credentials of its own still sells.
  */
-export type ProviderAccount = string | null
+export type ProviderAccount = TenantProviderCredentials | null
 
 export type StripeFactory = (account: ProviderAccount) => Stripe
 
@@ -36,18 +48,25 @@ export type StripeFactory = (account: ProviderAccount) => Stripe
  * the wrapper does it.
  */
 function realClient(account: ProviderAccount): Stripe {
-  return new Stripe(env.STRIPE_SECRET_KEY ?? '', {
+  // The studio's own key, or the platform's. There is no third case: an account
+  // is a key here, not a header, so a call cannot half-belong to a studio.
+  return new Stripe(account?.secretKey ?? env.STRIPE_SECRET_KEY ?? '', {
     apiVersion: STRIPE_API_VERSION,
     timeout: VENDOR_DEADLINE_MS.stripe,
     maxNetworkRetries: 0,
-    // Bound on the client rather than passed per call: the whole point of the
-    // accessor is that a call site cannot forget it.
-    ...(account ? { stripeAccount: account } : {}),
   })
 }
 
 let factory: StripeFactory = realClient
-/** Keyed by account, so the ordinary path builds one client per process. */
+/**
+ * Keyed by account, so the ordinary path builds one client per process.
+ *
+ * The key carries a digest of the secret as well as the account id, because a
+ * studio that rotates its key keeps the same account — and a cache keyed on the
+ * account alone would go on charging with the revoked key until the process
+ * restarted. The digest, not the key: this map is in memory, but a secret used
+ * as a map key is a secret one heap dump away from being read.
+ */
 const clients = new Map<string, Stripe>()
 
 /**
@@ -60,8 +79,14 @@ export function setStripeFactory(next: StripeFactory | null): void {
   clients.clear()
 }
 
+function cacheKey(account: ProviderAccount): string {
+  if (!account) return ''
+  const digest = createHash('sha256').update(account.secretKey).digest('hex').slice(0, 16)
+  return `${account.accountId}:${digest}`
+}
+
 function clientFor(account: ProviderAccount): Stripe {
-  const key = account ?? ''
+  const key = cacheKey(account)
   const cached = clients.get(key)
   if (cached) return cached
   const client = factory(account)
@@ -72,14 +97,19 @@ function clientFor(account: ProviderAccount): Stripe {
 /**
  * How a Tenant maps to a provider account — the single fact this module owns.
  *
- * Every studio sells on the platform's account today, so every Tenant maps to
- * `null`. Async because the connected-account id will be a column on the tenant
- * row (#94), and having the callers already await it is the whole point of
- * doing this ahead of Connect.
+ * A studio that has supplied its own credentials maps to them; one that has not
+ * maps to `null`, the platform's account, which is where every studio sold
+ * before #100 and where every studio still sells until it is moved. That is
+ * what makes onboarding one studio at a time possible: the studios behind it
+ * are not waiting on anything.
+ *
+ * It **throws** rather than falling back when a studio has credentials that
+ * cannot be opened. Falling back would mean taking that studio's members' money
+ * onto the platform's account — a silent misdirection of somebody else's
+ * revenue, which is worse than a failed checkout by a wide margin.
  */
 export async function providerAccountForTenant(tenantId: string): Promise<ProviderAccount> {
-  void tenantId
-  return null
+  return loadProviderCredentials(tenantId)
 }
 
 /** The provider, bound to the studio whose money is moving. */
@@ -97,11 +127,44 @@ export function stripePlatform(): Stripe {
 }
 
 /**
- * The card statement is one Stripe account's, and every studio charges on it
- * (v1 — Stripe Connect is issue #71). The one per-charge thing Stripe lets a
- * platform vary on a shared account is the descriptor *suffix*, appended to the
- * account's fixed prefix as `PREFIX* SUFFIX`, and the pair together may not
- * exceed 22 characters.
+ * Is this key real, and whose account is it?
+ *
+ * Called once, when the super portal saves a studio's credentials, and it is
+ * the reason a wrong key is a message on that form rather than a member's
+ * checkout failing weeks later — by which point nobody can look at the stored
+ * key to see what went wrong, because nobody can look at it at all.
+ *
+ * It answers with the account id the provider itself reports, which is then
+ * what gets stored and shown. Taking it from the provider rather than from the
+ * person pasting the key means the super portal's "these credentials belong to
+ * acct_xxx" is a fact and not a label.
+ *
+ * The client here is built and thrown away rather than cached: a key that turns
+ * out to be wrong must leave nothing behind.
+ */
+export async function providerAccountForKey(secretKey: string): Promise<string> {
+  // Built through `providerCredentials`, not as a literal: that is what makes
+  // the secret non-enumerable, and a probe object assembled by hand would be
+  // the one credentials object on this platform that a log line or a Sentry
+  // event could serialise. The two empty strings are honest here — the account
+  // is what this call is about to find out, and a probe verifies no webhook.
+  const probe = factory(providerCredentials({ accountId: '', secretKey, webhookSecret: '' }))
+  const account = await probe.accounts.retrieve()
+  if (!account?.id) throw new Error('the provider returned no account for that key')
+  return account.id
+}
+
+/**
+ * The card statement is one Stripe account's, and every studio that has not yet
+ * supplied credentials of its own charges on the platform's. The one per-charge
+ * thing Stripe lets a platform vary on a shared account is the descriptor
+ * *suffix*, appended to the account's fixed prefix as `PREFIX* SUFFIX`, and the
+ * pair together may not exceed 22 characters.
+ *
+ * A studio charging on its own account (#100) has no such problem — the
+ * statement already says its name — but the suffix is harmless there and the
+ * prefix below is the platform's, so nothing here needs to know which case it
+ * is in.
  *
  * The prefix is a dashboard setting that changes about never, so it is
  * configuration (`STRIPE_STATEMENT_DESCRIPTOR_PREFIX`) rather than something

@@ -96,6 +96,23 @@ const schema = z.object({
    * without a prefix — so every studio charges under the account's own name.
    */
   STRIPE_STATEMENT_DESCRIPTOR_PREFIX: z.string().optional(),
+  /**
+   * The key that seals a Tenant's own payment-provider credentials (#100).
+   *
+   * Base64, decoding to exactly 32 bytes — `openssl rand -base64 32`. It is not
+   * validated here beyond being a string, because an environment that never
+   * onboards a studio onto its own account needs none, and a boot failure for a
+   * feature nobody has turned on is the wrong trade. The shape is checked at the
+   * one moment it matters — when the super portal tries to save a studio's
+   * credentials, which refuses rather than storing them in the clear
+   * (`lib/secret-box.ts`).
+   *
+   * Rotating it orphans every sealed value, so a rotation means re-entering
+   * each studio's credentials. There is deliberately no second key to fall back
+   * to — a decryption that quietly succeeds under an old key is how a rotation
+   * gets abandoned half-done.
+   */
+  PAYMENT_CREDENTIALS_KEY: z.string().optional(),
 
   // Mail — one Resend API key. The platform's envelope address and name are
   // constants in lib/mailer.ts; the *tenant* half of the from-identity is

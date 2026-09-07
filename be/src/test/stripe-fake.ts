@@ -1,5 +1,9 @@
 import type Stripe from 'stripe'
-import { setStripeFactory, type ProviderAccount } from '../lib/stripe'
+import { setStripeFactory } from '../lib/stripe'
+import {
+  providerCredentials,
+  setProviderCredentialsLoader,
+} from '../services/billing/provider-credentials'
 
 /**
  * A stand-in payment provider, installed at the one seam every call goes
@@ -9,11 +13,17 @@ import { setStripeFactory, type ProviderAccount } from '../lib/stripe'
  * patched, no key is needed. The accessor is asked for a client and hands back
  * this instead, so a test drives checkout, the webhook and refunds exactly as
  * the real code does — and can then read back *which account* each call was
- * made against, which is the fact Stripe Connect (#94) turns on.
+ * made against, which is the fact a studio's own credentials (#100) turn on.
  */
 export type ProviderCall = {
-  /** The account the client was bound to — null is the platform's own. */
-  account: ProviderAccount
+  /**
+   * The account the client was bound to — null is the platform's own.
+   *
+   * The id, not the credentials: a test asserts which studio's account the
+   * money moved on, and recording the key alongside it would put live-shaped
+   * secrets into assertion output for no gain.
+   */
+  account: string | null
   /** Dotted path as written at the call site, e.g. `refunds.create`. */
   method: string
   args: unknown[]
@@ -29,11 +39,18 @@ export type StripeFake = {
   callsTo(method: string): ProviderCall[]
   /** What `method` answers with. An `Error` is thrown rather than returned. */
   reply(method: string, value: Reply): void
+  /**
+   * Give a studio its own provider account (#100), so calls on its behalf are
+   * recorded against that account instead of the platform's. A studio not named
+   * here has none, which is the platform account — the same default the real
+   * lookup gives a studio that has supplied no credentials.
+   */
+  credentials(tenantId: string, account: { accountId: string; secretKey?: string; webhookSecret?: string }): void
   /** Put the real provider back. Always call this from an `after` hook. */
   restore(): void
 }
 
-function recorder(fake: StripeFake, replies: Map<string, Reply>, account: ProviderAccount, path: string): any {
+function recorder(fake: StripeFake, replies: Map<string, Reply>, account: string | null, path: string): any {
   return new Proxy(function () {}, {
     get(_target, property) {
       if (typeof property !== 'string') return undefined
@@ -55,14 +72,35 @@ function recorder(fake: StripeFake, replies: Map<string, Reply>, account: Provid
 
 export function installStripeFake(): StripeFake {
   const replies = new Map<string, Reply>()
+  const accounts = new Map<string, ReturnType<typeof providerCredentials>>()
   const fake: StripeFake = {
     calls: [],
     callsTo: method => fake.calls.filter(call => call.method === method),
     reply: (method, value) => {
       replies.set(method, value)
     },
-    restore: () => setStripeFactory(null),
+    credentials: (tenantId, account) => {
+      accounts.set(
+        tenantId,
+        providerCredentials({
+          accountId: account.accountId,
+          secretKey: account.secretKey ?? `sk_test_${account.accountId}`,
+          webhookSecret: account.webhookSecret ?? `whsec_${account.accountId}`,
+        }),
+      )
+    },
+    restore: () => {
+      setStripeFactory(null)
+      setProviderCredentialsLoader(null)
+    },
   }
-  setStripeFactory(account => recorder(fake, replies, account, '') as unknown as Stripe)
+  // Both halves of the seam, together. The credentials lookup is what the
+  // accessor asks first, and leaving it on the real one would send every test
+  // that installs a fake provider to the database to find out which account a
+  // charge is on.
+  setProviderCredentialsLoader(async tenantId => accounts.get(tenantId) ?? null)
+  setStripeFactory(
+    account => recorder(fake, replies, account?.accountId || null, '') as unknown as Stripe,
+  )
   return fake
 }
