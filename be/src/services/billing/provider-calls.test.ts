@@ -29,31 +29,42 @@ type Billing = {
   receiptUrlPatch: typeof import('./webhook-handler').receiptUrlPatch
   installStripeFake: typeof import('../../test/stripe-fake').installStripeFake
   setStripeFactory: typeof import('../../lib/stripe').setStripeFactory
+  setProviderCredentialsLoader: typeof import('./provider-credentials').setProviderCredentialsLoader
   webhookRoute: typeof import('../../routes/webhooks/stripe').default
+  refuseWrongTenant: typeof import('./webhook-handler').refuseWrongTenant
 }
 
 let billing: Billing
 
 before(async () => {
-  const [checkout, refunds, webhook, fake, lib, route] = await Promise.all([
+  const [checkout, refunds, webhook, fake, lib, route, credentials] = await Promise.all([
     import('./checkout-session'),
     import('./refunds'),
     import('./webhook-handler'),
     import('../../test/stripe-fake'),
     import('../../lib/stripe'),
     import('../../routes/webhooks/stripe'),
+    import('./provider-credentials'),
   ])
   billing = {
     checkoutSessionParams: checkout.checkoutSessionParams,
     refundAtProvider: refunds.refundAtProvider,
     receiptUrlPatch: webhook.receiptUrlPatch,
+    refuseWrongTenant: webhook.refuseWrongTenant,
     installStripeFake: fake.installStripeFake,
     setStripeFactory: lib.setStripeFactory,
+    setProviderCredentialsLoader: credentials.setProviderCredentialsLoader,
     webhookRoute: route.default,
   }
 })
 
-afterEach(() => billing.setStripeFactory(null))
+// Both halves of the seam. Since #100 the accessor asks which account a call is
+// on before it makes one, and leaving that on the real lookup would send this
+// file — which deliberately has no database — to Postgres.
+afterEach(() => {
+  billing.setStripeFactory(null)
+  billing.setProviderCredentialsLoader(null)
+})
 
 const input = (over: Partial<Parameters<Billing['checkoutSessionParams']>[0]> = {}) => ({
   tenantId: TENANT,
@@ -81,6 +92,17 @@ describe('the checkout session a purchase asks for', () => {
   test("the studio's name rides on the card statement", () => {
     const params = billing.checkoutSessionParams(input(), 'Acme Yoga')
     assert.equal(params.payment_intent_data?.statement_descriptor_suffix, 'Acme Yoga')
+  })
+
+  test("a studio charging on its own account sends no suffix at all", () => {
+    // The statement already says the studio's name, and the 22-character limit
+    // is measured against that account's own prefix — which this platform does
+    // not know. A refused charge costs the sale; a missing suffix costs a
+    // nicety.
+    const params = billing.checkoutSessionParams(input(), 'Acme Yoga', true)
+    assert.ok(!('statement_descriptor_suffix' in (params.payment_intent_data ?? {})))
+    // Still stamped with the studio, because a refund and a dispute point here.
+    assert.equal(params.payment_intent_data?.metadata?.tenant_id, TENANT)
   })
 
   test('a name that cannot be sent safely is left off rather than refused', () => {
@@ -181,6 +203,36 @@ describe("the webhook's receipt lookup", () => {
     fake.reply('paymentIntents.retrieve', new Error('provider down'))
 
     assert.deepEqual(await billing.receiptUrlPatch(TENANT, 'pi_123'), {})
+  })
+})
+
+describe('an event that arrived on one studio’s endpoint and names another', () => {
+  const OTHER = '44444444-4444-4444-8444-444444444444'
+  const refuse = (named: string | null, expected?: string) =>
+    billing.refuseWrongTenant(named, expected, { eventType: 'charge.refunded' })
+
+  test('it is refused, whatever the event type', () => {
+    // A studio holds its own signing secret, so a delivery naming its
+    // neighbour's payment is one it could have minted itself. Without this,
+    // that secret would unwind another studio's purchase and entitlements.
+    assert.throws(() => refuse(OTHER, TENANT), /webhook_tenant_mismatch/)
+  })
+
+  test('an event naming the studio it arrived at is allowed through', () => {
+    assert.doesNotThrow(() => refuse(TENANT, TENANT))
+  })
+
+  test('the shared platform endpoint expects no studio, and constrains none', () => {
+    // A studio that has supplied no credentials still sells there, and the body
+    // is the only thing that names a studio at all.
+    assert.doesNotThrow(() => refuse(OTHER, undefined))
+  })
+
+  test('an event this system cannot place is not a mismatch', () => {
+    // The handlers already treat an unplaceable event as a silent no-op or a
+    // loud `client_not_found`; refusing here would only change which error a
+    // human reads.
+    assert.doesNotThrow(() => refuse(null, TENANT))
   })
 })
 

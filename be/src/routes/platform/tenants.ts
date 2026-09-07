@@ -11,6 +11,18 @@ import {
   staffCountFor,
   type TenantRowSummary,
 } from '../../services/tenants/tenants'
+import {
+  NO_PAYMENT_ACCOUNT,
+  providerAccountStatus,
+  providerAccountStatuses,
+  type ProviderAccountStatus,
+} from '../../services/billing/provider-credentials'
+import {
+  configureProviderAccount,
+  releaseProviderAccount,
+  ProviderOnboardingError,
+  type ConfiguredAccount,
+} from '../../services/billing/provider-onboarding'
 import { logger } from '../../shared/logger'
 
 /**
@@ -24,7 +36,11 @@ import { logger } from '../../shared/logger'
  * the Row-Level Security policies would then have to be talked out of.
  */
 
-function serialize(tenant: TenantRowSummary, staffCount: number) {
+function serialize(
+  tenant: TenantRowSummary,
+  staffCount: number,
+  payments: ProviderAccountStatus = NO_PAYMENT_ACCOUNT,
+) {
   return {
     id: tenant.id,
     slug: tenant.slug,
@@ -36,6 +52,15 @@ function serialize(tenant: TenantRowSummary, staffCount: number) {
     // legitimate step — a studio created to receive an archive starts here — and
     // a terrible resting place, so the list has to be able to say so.
     staff_count: staffCount,
+    // Whether this studio takes its own money, and on which account (#100).
+    // Both facts and no third one: the account id names the account, which is
+    // what lets a human tell the right account from the wrong one, and the
+    // credentials that open it are never readable by anybody — including this
+    // route, which is the only surface that can set them.
+    payments: {
+      configured: payments.configured,
+      account_id: payments.accountId,
+    },
     urls: {
       client: tenantOrigin('client', tenant.slug),
       portal: tenantOrigin('portal', tenant.slug),
@@ -77,6 +102,21 @@ const firstAdminBody = z.object({
   admin_name: z.string().max(200).optional(),
 })
 
+/**
+ * A studio's own payment-provider credentials, on the way in and never on the
+ * way out.
+ *
+ * Both are trimmed, because a key pasted out of a dashboard carries whitespace
+ * often enough that the alternative is a validation failure nobody can see the
+ * cause of. Neither is pattern-matched beyond being non-empty: the provider is
+ * the authority on whether a key is real, and it is asked directly a few lines
+ * later, so a regex here could only ever refuse a key that in fact works.
+ */
+const credentialsBody = z.object({
+  secret_key: z.string().trim().min(1),
+  webhook_secret: z.string().trim().min(1),
+})
+
 const statusBody = z.object({
   // `archived` is here because the list is the only surface that can see an
   // archived studio, so it must also be the one that can bring it back.
@@ -85,8 +125,10 @@ const statusBody = z.object({
 
 const app = new Hono()
   .get('/tenants', async c => {
-    const rows = await listTenants()
-    return c.json({ tenants: rows.map(row => serialize(row, row.staffCount)) })
+    const [rows, payments] = await Promise.all([listTenants(), providerAccountStatuses()])
+    return c.json({
+      tenants: rows.map(row => serialize(row, row.staffCount, payments.get(row.id))),
+    })
   })
 
   /**
@@ -149,7 +191,9 @@ const app = new Hono()
       { tenantId: id.data, slug: updated.slug, status, by: c.get('platformAdminEmail') },
       'platform: tenant status changed',
     )
-    return c.json({ tenant: serialize(updated, await staffCountFor(id.data)) })
+    return c.json({
+      tenant: serialize(updated, await staffCountFor(id.data), await providerAccountStatus(id.data)),
+    })
   })
 
   /**
@@ -178,7 +222,100 @@ const app = new Hono()
     // a studio with nobody in it was opened under, and the list has to show that.
     const tenant = await loadTenantById(id.data)
     if (!tenant) return c.json({ error: 'not_found' }, 404)
-    return c.json({ admin, tenant: serialize(tenant, 1) }, 201)
+    return c.json(
+      { admin, tenant: serialize(tenant, 1, await providerAccountStatus(id.data)) },
+      201,
+    )
+  })
+
+  /**
+   * Move a studio onto its own payment-provider account (#100).
+   *
+   * The super portal is the only surface that can do this, and after it has
+   * been done the super portal can see only that credentials exist and which
+   * account they name. There is no route anywhere that reads them back — not
+   * here, not masked, not last-four. A key that needs checking is replaced, not
+   * inspected.
+   *
+   * The key is validated against the provider before it is stored, which is the
+   * point: a typo is a message on this form, and not a member's checkout
+   * failing three weeks later against a key nobody can look at. The account id
+   * comes back from the provider rather than from whoever pasted the key, so
+   * "these credentials belong to acct_xxx" is a fact.
+   *
+   * The signing secret is not validated, because it cannot be — the provider
+   * offers no way to ask. It is proved by the first delivery that verifies
+   * against it, which is why the studio's endpoint refuses every delivery until
+   * this is right rather than falling back to the platform's secret.
+   */
+  .put('/tenants/:id/payment-credentials', zValidator('json', credentialsBody), async c => {
+    const id = z.string().uuid().safeParse(c.req.param('id'))
+    if (!id.success) return c.json({ error: 'not_found' }, 404)
+
+    const tenant = await loadTenantById(id.data)
+    if (!tenant) return c.json({ error: 'not_found' }, 404)
+
+    const body = c.req.valid('json')
+
+    let payments: ConfiguredAccount
+    try {
+      payments = await configureProviderAccount(id.data, {
+        secretKey: body.secret_key,
+        webhookSecret: body.webhook_secret,
+      })
+    } catch (err) {
+      if (!(err instanceof ProviderOnboardingError)) throw err
+      return err.reason === 'storage_unavailable'
+        ? c.json({ error: 'secret_storage_unavailable' }, 503)
+        : c.json({ error: 'provider_key_rejected' }, 400)
+    }
+
+    // The account, never the key. This line is the audit trail for "who moved
+    // this studio onto which account, and when".
+    logger.warn(
+      {
+        tenantId: id.data,
+        slug: tenant.slug,
+        accountId: payments.accountId,
+        by: c.get('platformAdminEmail'),
+      },
+      'platform: tenant payment credentials set',
+    )
+
+    return c.json({
+      tenant: serialize(tenant, await staffCountFor(id.data), payments),
+      // Where the studio has to point the webhook on its own account. Built
+      // from the address this request actually arrived on rather than from
+      // configuration, so it cannot name an environment other than the one
+      // being configured — the commonest way to wire a studio's live account to
+      // a staging server.
+      webhook_url: `${new URL(c.req.url).origin}/api/v1/webhooks/stripe/${tenant.slug}`,
+    })
+  })
+
+  /**
+   * Take a studio back off its own account, so it charges on the platform's
+   * again.
+   *
+   * The only way out of credentials that turn out to be wrong, because the way
+   * that would seem obvious — look at what is stored — does not exist by
+   * design.
+   */
+  .delete('/tenants/:id/payment-credentials', async c => {
+    const id = z.string().uuid().safeParse(c.req.param('id'))
+    if (!id.success) return c.json({ error: 'not_found' }, 404)
+
+    const tenant = await loadTenantById(id.data)
+    if (!tenant) return c.json({ error: 'not_found' }, 404)
+
+    const payments = await releaseProviderAccount(id.data)
+
+    logger.warn(
+      { tenantId: id.data, slug: tenant.slug, by: c.get('platformAdminEmail') },
+      'platform: tenant payment credentials cleared',
+    )
+
+    return c.json({ tenant: serialize(tenant, await staffCountFor(id.data), payments) })
   })
 
 export default app

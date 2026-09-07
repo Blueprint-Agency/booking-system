@@ -836,6 +836,18 @@ id, payment_intent_id (text unique), amount_sgd, kind enum (`workshop`, `class_p
 
 The fe-client `/account/invoices` "Download" link points directly to `receipt_url`; no PDF generation needed.
 
+#### `tenant_payment_credentials` (#100)
+
+tenant_id (uuid PK, FK → tenants.id on delete cascade), provider (text, not null, default `'stripe'`), account_id (text, not null), secret_key_sealed (text, not null), webhook_secret_sealed (text, not null), created_at, updated_at.
+
+A studio's **own** payment-provider account: its credentials, so every call on that studio's behalf is made against that account rather than the platform's. Not Stripe Connect — there is no connected account and no `Stripe-Account` header; an account here is a *key*. See `be/docs/adr/0004-tenant-supplied-payment-credentials.md`.
+
+**A Tenant with no row here charges on the platform account,** exactly as every Tenant did before, which is what lets studios be moved across one at a time.
+
+**Both secrets are sealed** (AES-256-GCM, `be/src/lib/secret-box.ts`) with `PAYMENT_CREDENTIALS_KEY` from the environment, so a database backup is not a set of live payment keys. `account_id` is deliberately *not* sealed: it names the account rather than opening it, and it is the only thing the super portal ever shows back. No route returns either secret, masked or otherwise.
+
+**Two doors, and only two.** Writes run inside `withTenant`, under the same Row-Level Security policy every other tenant-scoped table carries (migration 0048). Reads go through the owner-owned `tenant_payment_credentials_for(tenant_id)` — because the callers have no Tenant context to open: a background job has no request, and a webhook cannot open one until it knows whose delivery it is holding. The super portal's list reads `tenant_payment_accounts()`, which returns tenant ids and account ids and no sealed value at all.
+
 ### 4j. Content
 
 #### `email_templates` (§17)
@@ -1020,6 +1032,8 @@ See `docs/adr/0004-self-hosted-auth-with-better-auth.md` for the decision.
 - **Workshop admin-cancel** (§7a) → enqueue one `stripe-refund` job per booking in workshop. Worker calls Stripe Refund API. `charge.refunded` webhook closes the loop.
 - **Free workshops** (`workshop_tiers.regular_price_sgd = 0`) skip Stripe entirely. Booking flow inserts a `bookings` row with `kind='workshop'`, `state='confirmed'`, `purchase_id = null`, and **no** `stripe_payments` row is created. The receipt UI on fe-client suppresses the Download link when `receipt_url` is null.
 - **Idempotency.** Stripe's event IDs are deduplicated against `stripe_payments.payment_intent_id` (and a separate `stripe_webhook_events` table for raw event de-dupe — minor, can add later).
+- **Each studio may charge on its own account (#100).** Every provider call goes through one Tenant-bound accessor, `stripeForTenant` (`be/src/lib/stripe.ts`), and `providerAccountForTenant` is the single place that answers which account it is on: the studio's own credentials when it has supplied them (§4i `tenant_payment_credentials`), otherwise `null` — the platform's account, where a studio that has supplied none still sells. A studio on its own account sends **no statement descriptor suffix**, because the 22-character limit is measured against that account's own prefix, which this platform cannot read.
+- **Webhooks, two endpoints.** `/api/v1/webhooks/stripe` is the platform account's, verified with `STRIPE_WEBHOOK_SECRET`, and the studio is worked out afterwards from the signed body. `/api/v1/webhooks/stripe/{slug}` is a studio's own: its account signs with its own secret, so the studio has to be settled **before** the signature can be checked, and the URL is the only part of a delivery fixed before the body is read. Exactly one secret is tried — no fallback to the platform's, no sweep of every studio — and the tenant the URL named is carried into the handler, which refuses any event whose body routes elsewhere (`refuseWrongTenant`). Every refusal on that endpoint is the same flat 400, so a URL cannot be used to enumerate which studios take their own money.
 - **Known gap, observed but not fixed by `spec-pre-launch-batch.md`:** if the payment provider's own automatic receipt emails are switched on in the dashboard, a paid purchase produces two emails — ours, the branded one carrying the QR code and the activation sentence, and theirs, a bare payment record. Confirm this setting is off before go-live; nothing in the code prevents it either way.
 
 ### 6c. Cloudflare R2

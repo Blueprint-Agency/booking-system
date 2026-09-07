@@ -11,7 +11,7 @@
  */
 import Stripe from 'stripe'
 import { db, withTenant } from '../../db'
-import { tenantForClient as routeToTenant } from '../../db/routing'
+import { tenantForClient as routeToTenant, tenantForPaymentIntent } from '../../db/routing'
 import { stripePayments } from '../../db/schema/ledger'
 import { clients } from '../../db/schema/identity'
 import { and, eq, ne } from 'drizzle-orm'
@@ -248,23 +248,93 @@ async function existingPayment(tenantId: string, paymentIntentId: string) {
  * portal's refund button and from the provider's dashboard, and it has to land
  * in the same studio either way.
  */
-export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
-  if (event.type !== 'checkout.session.completed') return dispatchStripeEvent(event)
+/**
+ * Which studio does this event's body name, or null when it names none this
+ * system can place.
+ *
+ * Every routing key the handler below uses, asked once and in one place, so the
+ * ownership check and the work cannot disagree about whose event this is. Both
+ * questions go through the owner-owned resolvers (migrations 0034 and 0043),
+ * because a webhook has no Tenant context to read across.
+ */
+async function tenantNamedByEvent(event: Stripe.Event): Promise<string | null> {
+  if (event.type === 'checkout.session.completed') {
+    const clientId = (event.data.object as Stripe.Checkout.Session).metadata?.client_id
+    return clientId ? routeToTenant(clientId) : null
+  }
+  if (event.type === 'charge.refunded') {
+    const charge = event.data.object as Stripe.Charge
+    const intentId = typeof charge.payment_intent === 'string' ? charge.payment_intent : null
+    return intentId ? tenantForPaymentIntent(intentId, charge.metadata?.tenant_id ?? null) : null
+  }
+  return null
+}
+
+/**
+ * Refuse an event that arrived on one studio's endpoint and names another.
+ *
+ * The signature already established which studio sent this; this establishes
+ * that the body agrees. They can only disagree if a studio's own endpoint
+ * received an event belonging to somebody else's members — which, since a
+ * studio holds its own signing secret, is a delivery it could have minted
+ * itself. Without this, one studio's secret would be enough to unwind a
+ * *different* studio's purchase, refund row and entitlements.
+ *
+ * A `null` name is not a mismatch: it is an event this system cannot place at
+ * all, which the handlers below already treat as a silent no-op or a loud
+ * `client_not_found`. Refusing it here would only change which error a human
+ * reads.
+ */
+export function refuseWrongTenant(
+  named: string | null,
+  expectedTenantId: string | undefined,
+  context: Record<string, unknown>,
+): void {
+  if (!expectedTenantId || !named || named === expectedTenantId) return
+  throw new NotFoundError('webhook_tenant_mismatch', { ...context, expectedTenantId, named })
+}
+
+export async function handleStripeEvent(
+  event: Stripe.Event,
+  /**
+   * The studio whose endpoint this delivery arrived on, when it arrived on one
+   * (#100). A studio charging on its own account has its own webhook URL and
+   * its own signing secret, so by this point the provider has already proved
+   * *whose* delivery this is — and a body that routes to a different studio is
+   * not a delivery this endpoint may act on.
+   *
+   * Absent for the platform account's shared endpoint, which is what a studio
+   * that has supplied no credentials still uses, and where the body is the only
+   * thing that names a studio.
+   */
+  expectedTenantId?: string,
+): Promise<void> {
+  // Every event type, not merely the one that grants: a refund unwinds a
+  // purchase, and a studio able to unwind its neighbour's is the same breach
+  // read backwards.
+  const named = await tenantNamedByEvent(event)
+  refuseWrongTenant(named, expectedTenantId, { eventId: event.id, eventType: event.type })
+
+  if (event.type !== 'checkout.session.completed') {
+    return dispatchStripeEvent(event, expectedTenantId)
+  }
 
   const session = event.data.object as Stripe.Checkout.Session
   const clientId = (session.metadata ?? {}).client_id
   // No client id means our own checkout never ran — the same silent return the
   // per-kind branches below make on missing metadata.
   if (!clientId) return
-  const tenantId = await routeToTenant(clientId)
   // By this point money has been captured. A charge whose member we cannot place
   // must land in front of a human, not vanish — see `tenantForClient` below.
-  if (!tenantId) throw new NotFoundError('client_not_found', { clientId })
+  if (!named) throw new NotFoundError('client_not_found', { clientId })
 
-  await withTenant(tenantId, () => dispatchStripeEvent(event))
+  await withTenant(named, () => dispatchStripeEvent(event, expectedTenantId))
 }
 
-async function dispatchStripeEvent(event: Stripe.Event): Promise<void> {
+async function dispatchStripeEvent(
+  event: Stripe.Event,
+  expectedTenantId?: string,
+): Promise<void> {
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session
     const meta = session.metadata ?? {}
@@ -605,6 +675,13 @@ async function dispatchStripeEvent(event: Stripe.Event): Promise<void> {
     // key at checkout, so it is the one statement that says which of the two
     // the money was actually taken for. It is only ever consulted to choose
     // among the tenants the database already named.
-    await unwindRefund(paymentIntentId, charge.metadata?.tenant_id ?? null)
+    //
+    // A delivery that arrived on a studio's OWN endpoint carries a stronger
+    // statement than the metadata does: the studio proved itself with its own
+    // signing secret, which no metadata can. So it is preferred as the
+    // tiebreaker — and, like the metadata, it can only ever choose among the
+    // tenants the database already named, so it cannot route money into a
+    // studio that holds no row for the intent.
+    await unwindRefund(paymentIntentId, expectedTenantId ?? charge.metadata?.tenant_id ?? null)
   }
 }

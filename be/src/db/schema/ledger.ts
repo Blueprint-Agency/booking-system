@@ -18,8 +18,8 @@ import {
  * Until this table existed, one purchase was one payment intent, and that
  * assumption was load-bearing across plans, workshops, Merch and Cross-Location
  * Add-Ons. It cannot survive either half of #89: a member paying with two cards
- * needs many payments per purchase, and a Refund on a connected account becomes
- * several provider calls. So the sale becomes a row of its own, holding what was
+ * needs many payments per purchase, and a Refund of a sale paid across two
+ * cards becomes several provider calls. So the sale becomes a row of its own, holding what was
  * bought, what it costs and how much has been paid, and the payment rows point
  * at it.
  *

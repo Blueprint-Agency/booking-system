@@ -10,6 +10,7 @@ import {
   setStripeFactory,
 } from './stripe'
 import { installStripeFake } from '../test/stripe-fake'
+import { setProviderCredentialsLoader } from '../services/billing/provider-credentials'
 
 const MAX = 22
 
@@ -82,14 +83,33 @@ const TENANT_A = '11111111-1111-4111-8111-111111111111'
 const TENANT_B = '22222222-2222-4222-8222-222222222222'
 
 describe('the Tenant-bound provider accessor', () => {
-  afterEach(() => setStripeFactory(null))
+  afterEach(() => {
+    setStripeFactory(null)
+    setProviderCredentialsLoader(null)
+  })
 
-  test('every studio still sells on the platform account', async () => {
+  test('a studio that has supplied nothing still sells on the platform account', async () => {
+    installStripeFake()
     assert.equal(await providerAccountForTenant(TENANT_A), null)
     assert.equal(await providerAccountForTenant(TENANT_B), null)
   })
 
+  test("a studio with its own credentials resolves to its own account", async () => {
+    const fake = installStripeFake()
+    fake.credentials(TENANT_A, { accountId: 'acct_studio_a' })
+
+    const account = await providerAccountForTenant(TENANT_A)
+
+    assert.equal(account?.accountId, 'acct_studio_a')
+    // The studio beside it is untouched — this is what makes onboarding one
+    // studio at a time safe.
+    assert.equal(await providerAccountForTenant(TENANT_B), null)
+  })
+
   test('with nothing substituted, the accessor hands out a real client', async () => {
+    // The lookup alone is substituted — nothing in this file has a database —
+    // and the client it produces is the real one.
+    setProviderCredentialsLoader(async () => null)
     assert.ok((await stripeForTenant(TENANT_A)) instanceof Stripe)
     assert.ok(stripePlatform() instanceof Stripe)
   })
@@ -105,24 +125,39 @@ describe('the Tenant-bound provider accessor', () => {
     assert.deepEqual(fake.callsTo('refunds.create')[0]?.args, [{ payment_intent: 'pi_1' }])
   })
 
-  test('the client is built for the account the mapping names, not the tenant id', async () => {
+  test("each studio's call is made on that studio's own account", async () => {
     const fake = installStripeFake()
+    fake.credentials(TENANT_A, { accountId: 'acct_studio_a' })
     fake.reply('refunds.create', {})
 
     await (await stripeForTenant(TENANT_A)).refunds.create({ payment_intent: 'pi_1' })
     await (await stripeForTenant(TENANT_B)).refunds.create({ payment_intent: 'pi_2' })
 
-    // One account today, so one client — and the recorded account is what a
-    // connected-account change (#94) will flip, at `providerAccountForTenant`.
+    // One studio takes its own money; the one beside it still sells on the
+    // platform's account. Neither call site knows the difference.
     assert.deepEqual(
       fake.calls.map(call => call.account),
-      [null, null],
+      ['acct_studio_a', null],
     )
+  })
+
+  test('the secret never leaves as data — it is not serialisable', async () => {
+    const fake = installStripeFake()
+    fake.credentials(TENANT_A, { accountId: 'acct_studio_a', secretKey: 'sk_live_do_not_log' })
+
+    const account = await providerAccountForTenant(TENANT_A)
+
+    // The two accidents this guards against: a log line carrying the object,
+    // and a route spreading it into a response.
+    assert.equal(JSON.stringify(account), '{"accountId":"acct_studio_a"}')
+    assert.deepEqual({ ...account! }, { accountId: 'acct_studio_a' })
+    // Still readable by anyone who means to read it.
+    assert.equal(account?.secretKey, 'sk_live_do_not_log')
   })
 
   test('restoring puts the real provider back, so a fake cannot outlive its test', async () => {
     const fake = installStripeFake()
     fake.restore()
-    assert.ok((await stripeForTenant(TENANT_A)) instanceof Stripe)
+    assert.ok(stripePlatform() instanceof Stripe)
   })
 })

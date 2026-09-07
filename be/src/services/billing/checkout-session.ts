@@ -8,7 +8,7 @@
  * and hands the lines over already priced.
  */
 import type Stripe from 'stripe'
-import { statementDescriptorSuffix, stripeForTenant } from '../../lib/stripe'
+import { providerAccountForTenant, statementDescriptorSuffix, stripeForTenant } from '../../lib/stripe'
 import { tenantDisplayName } from '../tenants/mail-identity'
 import { BadRequestError } from '../../shared/errors'
 import { attachCheckoutSession, openPurchase, type PurchaseKind } from './purchases'
@@ -53,9 +53,10 @@ export type CheckoutQuote<Granted> =
 export interface CheckoutSessionInput {
   /**
    * The studio the sale belongs to. Stamped on the session, the payment intent
-   * and so the charge, because every studio sells on the one Stripe account:
-   * without it the dashboard, an export and a future move to Stripe Connect
-   * cannot tell one studio's money from another's. The webhook does not read
+   * and so the charge — still stamped even now that a studio can charge on its
+   * own account (#100), because a studio that has supplied no credentials sells
+   * on the shared one, where the dashboard and an export cannot otherwise tell
+   * one studio's money from another's. The webhook does not read
    * it — it routes on `client_id` through the owner-owned resolver (migration
    * 0034), which cannot be forged by anyone who can edit metadata.
    */
@@ -124,8 +125,20 @@ export function partPaymentLine(
 export function checkoutSessionParams(
   input: CheckoutSessionInput,
   studioName: string,
+  /**
+   * Is this charge on the studio's own payment account (#100)?
+   *
+   * It decides one thing: whether to append the studio's name to the card
+   * statement. On the platform's shared account that suffix is the only way a
+   * member sees who they paid. On the studio's own account it is at best
+   * redundant — the statement already says the studio's name — and at worst a
+   * refused charge, because the 22-character limit is measured against *that*
+   * account's prefix, which this platform does not know and cannot read
+   * reliably. A missing suffix costs a nicety; a refused charge costs the sale.
+   */
+  ownAccount = false,
 ): Stripe.Checkout.SessionCreateParams {
-  const suffix = statementDescriptorSuffix(studioName)
+  const suffix = ownAccount ? undefined : statementDescriptorSuffix(studioName)
   const tenantMetadata = { tenant_id: input.tenantId, client_id: input.metadata.client_id ?? '' }
   const part = input.partPaymentCents ?? null
   // A part payment is one line for the instalment, not the shopping list: the
@@ -263,7 +276,10 @@ export async function createCheckoutSession(
     metadata: { ...input.metadata, item_name: itemName(input.lines) },
   })
 
-  const stripe = await stripeForTenant(input.tenantId)
+  const [stripe, account] = await Promise.all([
+    stripeForTenant(input.tenantId),
+    providerAccountForTenant(input.tenantId),
+  ])
   const session = await stripe.checkout.sessions.create(
     checkoutSessionParams(
       {
@@ -272,6 +288,7 @@ export async function createCheckoutSession(
         partPaymentCents: charge,
       },
       studioName,
+      account !== null,
     ),
   )
   await attachCheckoutSession(input.tenantId, purchase.id, session.id)

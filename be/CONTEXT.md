@@ -20,7 +20,7 @@ A Tenant's leftmost DNS label, and the only thing the frontends can read a Tenan
 _Avoid_: subdomain, handle, tenant name
 
 **`tenant_id`**:
-The column on all 53 domain tables recording which Tenant a row belongs to — including pure join tables, because Row-Level Security needs a column on every table to key a policy on. `NOT NULL`, with **no default**: an insert that does not name its Tenant fails loudly rather than filing somebody else's row under the first Tenant. Every non-unique index leads with it. (The tenant-#1 default that made the migrate batches safe was scaffolding, and migration 0032 dropped it along with the seed pass that used to claim unclaimed rows.) The one nullable `tenant_id` outside those is `auth_events`, whose null rows are **Platform rows**.
+The column on all 54 domain tables recording which Tenant a row belongs to — including pure join tables, because Row-Level Security needs a column on every table to key a policy on. `NOT NULL`, with **no default**: an insert that does not name its Tenant fails loudly rather than filing somebody else's row under the first Tenant. Every non-unique index leads with it. (The tenant-#1 default that made the migrate batches safe was scaffolding, and migration 0032 dropped it along with the seed pass that used to claim unclaimed rows.) The one nullable `tenant_id` outside those is `auth_events`, whose null rows are **Platform rows**.
 
 **Tenant context**:
 The Tenant a request is about — held in two places at once, and they are set together.
@@ -204,9 +204,13 @@ _Avoid_: pending purchase, unpaid order, outstanding invoice, abandoned cart, ar
 An Open Purchase an admin has closed by giving back everything paid into it. The member part-paid, never came back, and the studio was left holding money against nothing delivered; refunding it returns every payment the Purchase holds and ends the sale. It is not a Refund and is deliberately not counted as one: a Refund reverses revenue, and an Open Purchase was never revenue, so subtracting it from Net would understate the month. Nothing is Voided and no booking is cancelled, because nothing was ever granted. Nothing becomes Abandoned on its own — Purchases that have been silent for a long time are raised in the portal for a person to decide, and never swept.
 _Avoid_: cancelled purchase, written off, lapsed, expired purchase, partial refund, credited back
 
-**Connected Account**:
-A studio's own account with the payment provider, onboarded by the studio itself, that its members' payments are created directly on. Money lands in the studio's balance, the studio's name appears on the statement, and the studio's balance carries its own Refunds and chargebacks. A Tenant with no Connected Account still sells on the platform operator's account, which is where every studio sells today. It is not a login, not a Tenant, and not something the platform operator can create on a studio's behalf.
-_Avoid_: merchant account, sub-account, Stripe account, seller account, payout account
+**Payment Account**:
+A studio's own account with the payment provider, opened by the studio itself, that its members' payments are created directly on. Money lands in the studio's balance, the studio's name appears on the statement, and the studio's balance carries its own Refunds and chargebacks. The studio hands the platform the credentials to it, and every call on that studio's behalf — a checkout, a refund, a receipt lookup — is made against that account with them. There is no platform account in the middle: the account *is* the studio's, so it is not a connected account, a sub-account or anything the platform operator can create on a studio's behalf. A Tenant that has supplied no credentials still sells on the platform operator's account, which is where every studio sells until it is moved.
+_Avoid_: connected account, merchant account, sub-account, Stripe account, seller account, payout account
+
+**Payment Credentials**:
+The secret key and webhook signing secret of a studio's Payment Account, held by the platform on that studio's behalf. Stored encrypted, never logged, never returned by any route, and never present in an error or an exception report — so after they are set, the only facts anyone can learn about them are that they exist and which account they name. Only the super portal can set or replace them, and nothing anywhere can read them back. They are not a login and not a Tenant's identity: they open one studio's money and nothing else.
+_Avoid_: API keys, Stripe keys, secrets, tokens
 
 **Money Event**:
 One thing that moved money, or that owes money, on the day it happened. A purchase, a Refund, a session's Instructor Pay, or a Manual Entry. Every figure the studio reports is a sum over Money Events; there is no separate stored total.

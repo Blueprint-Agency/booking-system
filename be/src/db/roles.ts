@@ -59,9 +59,9 @@ export async function ensureAppRole(sql: Sql, password: string): Promise<void> {
     `GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${role}`,
   )
   await sql.unsafe(`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${role}`)
-  // The webhook tenant-routing functions (migration 0034) and the mail-identity
-  // read (migration 0036), whose EXECUTE is revoked from PUBLIC so this grant is
-  // the only way in.
+  // The webhook tenant-routing functions (migration 0034), the mail-identity
+  // read (migration 0036) and the payment-credential reads (migration 0048),
+  // whose EXECUTE is revoked from PUBLIC so this grant is the only way in.
   await sql.unsafe(`GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO ${role}`)
 
   // `tenant_settings` is the one Tenant-scoped table migration 0033 leaves

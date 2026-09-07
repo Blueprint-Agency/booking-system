@@ -38,7 +38,7 @@ the URLs resolve; `tenant_id` scoping makes the data isolate. Never infra-per-te
 | Backend | Stays on Hostinger VPS at `api.reservetoday.app`, as an A record in Vercel DNS. ✅ **No cert work needed** — Traefik on bpvps2 already issues a genuine Let's Encrypt cert via its `le-tls` resolver (TLS-ALPN-01), and `api*` records are already DNS-only *on purpose*, because that challenge cannot complete through a proxied host. Since the resolver needs only an A record, the NS move does not threaten the cert. |
 | Cloudflare for SaaS | Only needed later, if a tenant brings their **own** custom domain (100 free hostnames, then ~$0.10/mo). Not needed for our subdomains. |
 | Per-tenant auth branding | Sign-in screens are our own UI on each studio's hostname, and sign-in mail is worded by the studio whose context is open. |
-| Stripe | Per-tenant via **Stripe Connect** (payouts to each studio) rather than one shared account. |
+| Stripe | Per-tenant via the studio's **own account credentials**, held encrypted by the platform, rather than one shared account. Stripe Connect was the original plan and is unavailable to us — see `be/docs/adr/0004-tenant-supplied-payment-credentials.md`. |
 
 ## Validation record (2026-08-31, primary sources)
 
@@ -53,7 +53,7 @@ Every pillar of this plan was re-checked against vendor documentation. All confi
 | `{tenant}.portal.…` ordering is mandatory | ✅ Confirmed — wildcard asterisk must be the leftmost label | RFC 4592 §2.1.1 |
 | Root-domain env var + suffix-strip is the right slug algorithm | ✅ Confirmed — it is Vercel's own reference implementation (`hostname.endsWith('.'+rootDomain)` → `hostname.replace(...)`) | vercel.com/docs/platforms/examples/multi-tenant-template |
 | `{tenant}.localhost:PORT` is the right local-dev shape | ✅ Confirmed — Vercel's template ships exactly this | same |
-| Stripe Connect is the right payments model | ✅ Confirmed — "Build a SaaS platform: Provide platform services to businesses that collect payments from their own customers" | docs.stripe.com/connect |
+| Stripe Connect is the right payments model | ❌ **Overturned (2026-09-07)** — the model fits, but a Malaysian platform may not collect application fees on connected accounts outside Malaysia, and Tenant #1 is Singaporean. Each studio supplies its own account credentials instead. | docs.stripe.com/connect; `be/docs/adr/0004-tenant-supplied-payment-credentials.md` |
 
 **Three corrections this validation produced:**
 
@@ -417,7 +417,11 @@ retired.**
       cross-tenant data leak.
 
 ### Phase 4 — Payments
-- [ ] Stripe Connect onboarding per tenant; checkout/webhooks routed by connected account.
+- [x] Each Tenant supplies its own payment-provider credentials, held encrypted; every provider
+      call is made against that studio's own account, and its webhook deliveries arrive on its
+      own endpoint and are verified against its own signing secret. A Tenant that has supplied
+      none still charges on the platform account. See
+      `be/docs/adr/0004-tenant-supplied-payment-credentials.md`.
 
 > **Ordering note:** Phase 4 is the deepest unknown and blocks nothing else — v1 can ship with
 > all tenants on the platform Stripe account. Consider running it last, after Phase 6, and
