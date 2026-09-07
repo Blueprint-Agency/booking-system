@@ -183,7 +183,19 @@ function LoginContent() {
 
   async function completeSignIn() {
     if (!signIn) return false;
-    if (signIn.status === "needs_second_factor") {
+    // `needs_client_trust` is Clerk's Device Trust step: a sign-in from a browser
+    // the instance has not seen before is held until an emailed code proves the
+    // device, even for an account carrying no MFA of its own. It arrives as a
+    // status rather than an error, and it is answered through exactly the same
+    // `signIn.mfa.*` calls as a second factor, so the two share a branch.
+    //
+    // Without it the status fell through to `signInStatusMessage`, which said
+    // "this browser needs an additional security check" and stopped — a dead end
+    // no refresh could clear, because an unrecognised browser is the very thing
+    // that triggers it. It stayed hidden for as long as it did because a browser
+    // that has signed in once is trusted from then on: only a new machine, a
+    // cleared profile or an incognito window ever meets it.
+    if (signIn.status === "needs_second_factor" || signIn.status === "needs_client_trust") {
       return beginSecondFactor();
     }
     if (signIn.status !== "complete") {
