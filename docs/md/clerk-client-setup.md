@@ -32,7 +32,9 @@ whose keys live in the `fe-client` Vercel project — never the staff app):
 
 ## Email templates
 - Review the **Verification code** and **Reset password code** templates under
-  **Customization → Emails** for Yoga Sadhana branding.
+  **Customization → Emails** for platform branding. These are the Clerk
+  instance's own emails and are shared by every studio — a studio's *own*
+  transactional mail is per-Tenant and goes out through `email_templates`.
 
 ## Keys (already provisioned per CLAUDE.md)
 - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` set in the fe-client Vercel project.

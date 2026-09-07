@@ -8,7 +8,7 @@ import {
 } from './purchase-email'
 
 const EXPIRY = new Date('2027-02-14T12:00:00Z')
-const ACCOUNT_URL = 'https://book.yogasadhana.sg/account'
+const ACCOUNT_URL = 'https://northwind.reservetoday.app/account'
 
 function input(over: Partial<PurchaseEmailInput> = {}): PurchaseEmailInput {
   return {
@@ -142,7 +142,7 @@ function input(over: Partial<PurchaseEmailInput> = {}): PurchaseEmailInput {
   const composed = composePurchaseEmail(
     input({
       kind: 'unlimited',
-      packageName: 'Unlimited 6 Months — Breadtalk IHQ',
+      packageName: 'Unlimited 6 Months — Harbour Studio',
       creditsOrSessions: null,
       expiresAt: null,
       durationMonths: 6,
@@ -152,7 +152,7 @@ function input(over: Partial<PurchaseEmailInput> = {}): PurchaseEmailInput {
     composed.variables,
     {
       client_name: 'Sarah',
-      package_name: 'Unlimited 6 Months — Breadtalk IHQ',
+      package_name: 'Unlimited 6 Months — Harbour Studio',
       contents_line: 'Unlimited classes',
       validity_line:
         'Valid 6 months from your first class — your plan activates when you make your first booking.',

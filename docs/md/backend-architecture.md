@@ -1,6 +1,6 @@
-# Backend Architecture — Yoga Sadhana
+# Backend Architecture — ReserveToday
 
-The structural spine for the Yoga Sadhana backend (`/be`). Stack, folder structure, database schema, external integrations, jobs, and shared cross-cutting infrastructure live here. Per-audience surface (routes, endpoints, business flows) lives in two sister docs:
+The structural spine for the ReserveToday backend (`/be`). Stack, folder structure, database schema, external integrations, jobs, and shared cross-cutting infrastructure live here. Per-audience surface (routes, endpoints, business flows) lives in two sister docs:
 
 - **`be-portal.md`** — staff backend (admin + instructor scopes), maps `admin-restructure.md` behaviour onto routes/services.
 - **`be-client.md`** — client backend (`/me/*` and public reads), maps `fe-client-features.md` behaviour onto routes/services.
@@ -1029,7 +1029,7 @@ Idempotency keys on `stripe-refund` jobs (booking_id) prevent double refund on r
 
 ### 6d. SMTP (Nodemailer)
 
-- **Transport.** `lib/mailer.ts` constructs a single Nodemailer SMTP transport at boot from env vars: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_SECURE` (boolean — true for 465, false for 587 STARTTLS), `SMTP_FROM` (RFC 5322 from address, e.g. `Yoga Sadhana <hello@yogasadhana.sg>`). The same transport is reused across all sends.
+- **Transport.** `lib/mailer.ts` constructs a single Nodemailer SMTP transport at boot from env vars: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_SECURE` (boolean — true for 465, false for 587 STARTTLS), `SMTP_FROM` (RFC 5322 from address, e.g. `ReserveToday <hello@reservetoday.app>`; a Tenant's own from-identity overrides it per send). The same transport is reused across all sends.
 - **Provider-agnostic.** Any SMTP provider works (AWS SES SMTP endpoint, Gmail relay, Mailgun SMTP, Sendgrid SMTP, self-hosted Postfix). Switching providers is an env var change, no code change.
 - **Server-side rendering** via `services/notifications/render.ts`:
   - Parse template body for `{{variable}}` tokens
@@ -1158,7 +1158,7 @@ Run idempotently on fresh deployment:
 - ~~Typed promo codes at checkout.~~ **Superseded — Promo Codes ship.** See `spec-pre-launch-batch.md` §9–§11 and migration `0016`. The model built is **not** the one sketched here: there is no used-count on the code row (a second source of truth that drifts) and no valid-from window (a code does nothing until someone hands it out; `archived` covers "made, not yet running"). Three tables — `promo_codes`, `promo_code_products` (scope, no FK on `product_id`), `promo_code_redemptions` (the ledger, one row per member per code) — with the rules in `services/packages/promo-codes.ts` and admin CRUD in `services/packages/promo-code-admin.ts`. A Promo Code is typed and crosses products; a **Promotion** (§4d) applies itself to one product inside a window. The two are distinct mechanisms and `be/CONTEXT.md` § Discounts is the glossary. Redeeming a code at checkout is wired separately.
 - **Class waitlist.** `fe-client-features.md` §Booking Rules mentions "Full → Join Waitlist" with seat-available email + time-bound claim CTA. v1 UI shows "Full" with no waitlist CTA. If kept later: add `waitlist_entries (client_id, class_id|workshop_tier_id, joined_at, offered_at, offer_expires_at, status=waiting|offered|claimed|expired|cancelled)`.
 - **WhatsApp / SMS / push notifications.** Email-only in v1.
-- **Multi-tenant SaaS surface.** This backend serves Yoga Sadhana exclusively; no tenant scoping.
+- ~~**Multi-tenant SaaS surface.** This backend serves one studio exclusively; no tenant scoping.~~ **Superseded — multi-tenancy shipped.** `tenant_id` on all 53 domain tables, Row-Level Security as the fail-closed backstop, hostname-resolved Tenants, and no studio named anywhere in the repo. See `multi-tenancy-plan.md`, `spec-tenant-resolution.md` and `docs/adr/0002-shared-schema-row-level-security.md`. What is still out of scope is the **plan/billing** layer for studios.
 
 ---
 

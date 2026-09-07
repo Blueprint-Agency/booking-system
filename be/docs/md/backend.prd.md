@@ -1,4 +1,10 @@
-# Yoga Sadhana — Backend PRD
+# ReserveToday — Backend PRD
+
+> **Superseded on tenancy.** Written for a single-studio backend. The stack,
+> API contract and service boundaries still describe the system; the assumption
+> that there is one studio does not. See `docs/md/backend-architecture.md` for
+> the current spine and `docs/md/spec-tenant-resolution.md` for how a request
+> finds its Tenant.
 
 **Status:** v1 scope (2026-05-07)
 **Owner:** Teeko (Christopher Kwek)
@@ -10,7 +16,7 @@
 
 ### 1.1 Purpose
 
-This document defines the backend architecture, API contract, data schema, and service boundaries for the Yoga Sadhana booking system. It is the implementation spec for the Node.js REST API that serves both `fe-client` and `fe-portal` (the staff app — admin + instructor views).
+This document defines the backend architecture, API contract, data schema, and service boundaries for the ReserveToday booking system. It is the implementation spec for the Node.js REST API that serves both `fe-client` and `fe-portal` (the staff app — admin + instructor views).
 
 ### 1.2 Tech Stack
 
@@ -618,7 +624,7 @@ SSE connection is per-user. No fan-out to other roles. Connection uses `Last-Eve
 Bucket structure:
 
 ```
-r2://yoga-sadhana/
+r2://reservetoday/
   qr/{bookingId}.png          -- per-booking QR images
   profiles/{userId}.jpg       -- instructor/admin profile photos
 ```

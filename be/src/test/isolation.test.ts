@@ -20,7 +20,7 @@ import {
  *   these surfaces that a request can reach without a Clerk token, and it is a
  *   real end-to-end proof: hostname → `X-Tenant-Slug` → middleware → service →
  *   SQL. Tenant `acme` asking for classes, locations, instructors, class types
- *   or merch must never see Yoga Sadhana's.
+ *   or merch must never see northwind's.
  *
  * - **Writes go through the services.** Every portal route is behind a verified
  *   Clerk JWT, and this harness has no way to mint one — the backend-resolution
@@ -449,7 +449,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     const twoNames = asTwo.body.class_types.map((t: any) => t.name)
     assert.ok(oneNames.includes(`${one.slug} Flow`))
     assert.ok(twoNames.includes(`${two.slug} Flow`))
-    assert.ok(!twoNames.includes(`${one.slug} Flow`), "acme can read Yoga Sadhana's class types")
+    assert.ok(!twoNames.includes(`${one.slug} Flow`), "acme can read northwind's class types")
     assert.ok(!oneNames.includes(`${two.slug} Flow`))
   })
 
@@ -474,7 +474,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     const asTwo = await getAs(two.slug, '/api/v1/public/classes')
     const ids = asTwo.body.classes.map((r: any) => r.id)
     assert.ok(ids.includes(two.classId))
-    assert.ok(!ids.includes(one.classId), "acme can read Yoga Sadhana's schedule")
+    assert.ok(!ids.includes(one.classId), "acme can read northwind's schedule")
   })
 
   test("asking for another tenant's class by id is a 404, not a 403", async () => {
@@ -503,7 +503,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
   test('a request that names no tenant is refused, not answered as tenant #1', async () => {
     // This asserted the opposite while the platform still had one studio, and
     // the assertion was the bug: answering as tenant #1 meant a caller that
-    // forgot to say whose data it wanted got Yoga Sadhana's, plausibly and
+    // forgot to say whose data it wanted got northwind's, plausibly and
     // silently. Nothing legitimate lands here — health, the webhooks, the super
     // portal and tenant lookup are exempted before this middleware runs — so the
     // absence is always a caller bug and 400 is what surfaces it.
@@ -517,7 +517,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     // were being scoped batch by batch, `tenant_id` defaulted to tenant #1 so an
     // un-migrated writer kept behaving as it always had. Every batch has landed,
     // so #63 dropped that default — and a default that silently files somebody
-    // else's booking under Yoga Sadhana is exactly the quiet failure the plan
+    // else's booking under the first tenant is exactly the quiet failure the plan
     // exists to avoid. The write now fails at the database instead.
     await assert.rejects(
       () =>
@@ -767,7 +767,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     const publicPackages = await getAs(two.slug, '/api/v1/public/packages')
     const names = publicPackages.body.class_packages.map((p: any) => p.name)
     assert.ok(names.includes(`${two.slug} Bundle`))
-    assert.ok(!names.includes(`${one.slug} Bundle`), "acme can read Yoga Sadhana's price list")
+    assert.ok(!names.includes(`${one.slug} Bundle`), "acme can read northwind's price list")
 
     await assert.rejects(
       () => classPackagesSvc.getClassPackage(two.tenantId, one.classPackageId),
@@ -980,7 +980,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     assert.ok(variants(forTwo).includes(`${two.slug} Bundle`))
     assert.ok(
       !variants(forTwo).includes(`${one.slug} Bundle`),
-      "acme's ledger carries Yoga Sadhana's sales",
+      "acme's ledger carries northwind's sales",
     )
 
     // The tiles are a sum over exactly those rows, so a leak would show up here
@@ -1064,7 +1064,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     const asTwo = await getAs(two.slug, '/api/v1/public/workshops')
     const ids = asTwo.body.workshops.map((w: any) => w.id)
     assert.ok(ids.includes(two.workshopId))
-    assert.ok(!ids.includes(one.workshopId), "acme can read Yoga Sadhana's workshops")
+    assert.ok(!ids.includes(one.workshopId), "acme can read northwind's workshops")
   })
 
   test("asking for another tenant's workshop by id is the same 404 as a missing one", async () => {
@@ -1143,7 +1143,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
       .select()
       .from(schema.workshopDays)
       .where(eq(schema.workshopDays.id, one.workshopDayId))
-    assert.ok(day, "Yoga Sadhana's workshop day was deleted from acme")
+    assert.ok(day, "northwind's workshop day was deleted from acme")
   })
 
   // ── PT (#62) ──────────────────────────────────────────────────────────────
@@ -1181,7 +1181,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
       const forOne = await ptListSvc.listPtRequestsForAdmin(one.tenantId)
       assert.ok(forOne.some(r => r.id === req.id))
       const forTwo = await ptListSvc.listPtRequestsForAdmin(two.tenantId)
-      assert.ok(!forTwo.some(r => r.id === req.id), "acme can triage Yoga Sadhana's PT requests")
+      assert.ok(!forTwo.some(r => r.id === req.id), "acme can triage northwind's PT requests")
 
       assert.equal(await ptListSvc.getPtRequestForAdmin(two.tenantId, req.id), null)
       assert.ok(await ptListSvc.getPtRequestForAdmin(one.tenantId, req.id))
@@ -1253,7 +1253,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     assert.ok(pools.length > 0, 'the instructor’s own read did not materialise a Pool')
     assert.ok(
       pools.every(p => p.tenantId === one.tenantId),
-      "a Pool was materialised under acme for Yoga Sadhana's instructor",
+      "a Pool was materialised under acme for northwind's instructor",
     )
   })
 
@@ -1262,7 +1262,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     assert.ok(forOne.some(r => r.row.id === one.leaveRequestId))
     assert.ok(
       !forOne.some(r => r.row.id === two.leaveRequestId),
-      "Yoga Sadhana's queue carries acme's leave",
+      "northwind's queue carries acme's leave",
     )
 
     await assert.rejects(
@@ -1304,7 +1304,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     assert.ok(entries.some(e => e.id === two.leaveRequestId))
     assert.ok(
       !entries.some(e => e.id === one.leaveRequestId),
-      "acme's calendar shows who is away at Yoga Sadhana",
+      "acme's calendar shows who is away at northwind",
     )
   })
 
@@ -1368,7 +1368,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
         .select()
         .from(schema.inboxItems)
         .where(eq(schema.inboxItems.id, id))
-      assert.equal(afterForeign?.readAt, null, "acme marked Yoga Sadhana's notification read")
+      assert.equal(afterForeign?.readAt, null, "acme marked northwind's notification read")
 
       await inboxSvc.markRead(one.tenantId, id, one.instructorId)
       const [afterOwn] = await harness.db

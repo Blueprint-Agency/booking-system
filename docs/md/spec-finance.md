@@ -8,7 +8,7 @@ The money is all there, but scattered. A member's purchase lives in `stripe_paym
 
 So the owner opens four screens, the Stripe dashboard, and a spreadsheet, and does the subtraction by hand. The PRD promised a Revenue report and a Teaching log report; neither exists, and no reports surface is mounted at all.
 
-Two smaller problems ride along with it. Instructor Pay is optional when a session is scheduled, so sessions sit Unpriced and any total computed over them understates what the studio owes. And nothing anywhere filters money by Location, so the owner cannot compare Breadtalk IHQ against Outram Park.
+Two smaller problems ride along with it. Instructor Pay is optional when a session is scheduled, so sessions sit Unpriced and any total computed over them understates what the studio owes. And nothing anywhere filters money by Location, so the owner cannot compare Harbour Studio against Parkside Studio.
 
 ## Solution
 

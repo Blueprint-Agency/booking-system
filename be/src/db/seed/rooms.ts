@@ -1,18 +1,23 @@
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import { and, eq, sql } from 'drizzle-orm'
 import * as schema from '../schema'
-import { TENANT_ONE_SLUG } from '../schema/tenancy'
+import { TENANT_ONE_SLUG } from './provisioning'
 import { locationsFor } from './locations'
 import type { SeededTenant } from './tenants'
 
 type SeedRoom = { name: string; capacity: number }
 
-const YOGA_SADHANA_ROOMS: Record<string, SeedRoom[]> = {
-  'Breadtalk IHQ (Tai Seng)': [
+/**
+ * Rooms for the richer fixture, keyed by its invented premises. Two rooms per
+ * location with different capacities, because a room-count or capacity bug is
+ * invisible against a single uniform room.
+ */
+const FIRST_FIXTURE_ROOMS: Record<string, SeedRoom[]> = {
+  'Harbour Studio': [
     { name: 'Studio A', capacity: 24 },
     { name: 'Studio B', capacity: 12 },
   ],
-  'Outram Park': [
+  'Parkside Studio': [
     { name: 'Main Hall', capacity: 30 },
     { name: 'Private Room', capacity: 4 },
   ],
@@ -28,7 +33,7 @@ const DEFAULT_ROOMS: SeedRoom[] = [{ name: 'Main Hall', capacity: 20 }]
 export async function seedRooms(db: PostgresJsDatabase<typeof schema>, tenant: SeededTenant) {
   for (const location of locationsFor(tenant)) {
     const rooms =
-      tenant.slug === TENANT_ONE_SLUG ? (YOGA_SADHANA_ROOMS[location.name] ?? []) : DEFAULT_ROOMS
+      tenant.slug === TENANT_ONE_SLUG ? (FIRST_FIXTURE_ROOMS[location.name] ?? []) : DEFAULT_ROOMS
 
     const [locationRow] = await db
       .select({ id: schema.locations.id })

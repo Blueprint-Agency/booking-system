@@ -41,7 +41,7 @@ Builds on the prior change (`2026-06-02-fe-client-booking-first-home-design.md`)
 ```
 DESKTOP (≥ md)                 MOBILE
 ┌─────────────────────────┐    ┌──────────────────┐
-│ YS Yoga Sadhana    ◔ ▾ │    │ YS  Yoga…   ◔ ▾  │  AppTopBar
+│ ▩ Studio name      ◔ ▾ │    │ ▩  Studio…  ◔ ▾  │  AppTopBar
 ├────┬────────────────────┤    ├──────────────────┤
 │▣Sc │  Today · Jun 4      │    │  Today · Jun 4   │
 │◳Wk │  7:00 Hatha    Book │    │  7:00 Hatha Book │  <main> (ClassFeed)
@@ -102,7 +102,7 @@ Client component. Replaces the calendar.
   - Group by `toLocalDateStr(starts_at)`; sort groups by date ascending; within a group sort by `starts_at`.
 - **Day header label** for a date `d`:
   - today → `Today`; today+1 → `Tomorrow`; else `EEE` (e.g. `Sat`). Always followed by `· Mon D` (e.g. `Today · Jun 4`).
-- **Render order:** `<SectionHeading eyebrow="Yoga Sadhana · Tai Seng & Outram Park" title="Book a class" description="…">` → `<ScheduleSegments/>` → filter row → grouped list (`day header` + `ClassRow[]`).
+- **Render order:** `<SectionHeading eyebrow="{studio name} · {its locations}" title="Book a class" description="…">` → `<ScheduleSegments/>` → filter row → grouped list (`day header` + `ClassRow[]`).
 - **Loading:** "Loading schedule…". **Empty:** "No upcoming classes in the next 30 days."
 - **Window note (YAGNI):** fixed 30-day window for v1; no infinite scroll/"load more" yet. If 30 days proves too short/long, adjust the constant. Documented, not silently capped.
 

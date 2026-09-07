@@ -68,7 +68,7 @@ submission takes the same lock (`be/src/services/leave/requests.ts:487-496`).
 
 1. **Any single pair.** Alice-never-with-Bob while Alice-with-Cara is fine is unrepresentable.
    Tick all three at cap 1 and you have also banned Bob+Cara; at cap 2 you have allowed Alice+Bob.
-2. **More than one group.** One boolean, so the Tai Seng cover team and the Outram Park cover
+2. **More than one group.** One boolean, so the Harbour cover team and the Parkside cover
    team cannot have separate caps — and two locations is the studio's actual shape (`CLAUDE.md`).
 3. **Overlapping membership.** An instructor is in at most one cover set.
 4. **Anything asymmetric, per-type or date-bounded.**
@@ -321,7 +321,7 @@ by any set of pairs at all — pairs can only say K = 1.
 
 For this studio — two locations, a handful of instructors per style — the realistic
 requirement is almost certainly *coverage*, not personal incompatibility. "At least one
-Hatha instructor must be at Outram" is a coverage statement; "Alice and Bob must not both be
+Hatha instructor must be at Parkside" is a coverage statement; "Alice and Bob must not both be
 away" is that same statement when Alice and Bob are the only two Hatha instructors there.
 The pairwise framing is the coverage rule with the reason stripped out, and it stops being
 correct the moment a third Hatha instructor is hired: the pair rule keeps refusing, the
@@ -335,7 +335,7 @@ Costs, plainly:
 | **Schema** | One table, `(a, b)` with `a < b` to make symmetry a constraint rather than a convention. Simplest possible. | Two tables (group + membership) with a name and a cap per group. Drops `in_cover_group` and `cover_group_leave_cap`. |
 | **Rule change** | Counted set = the applicant's partners; cap is hard-wired at 1. `peakLeaveAway` is unchanged. | Counted sets = one per group the applicant belongs to, each with its own cap. `leaveCapExceedance` already loops over a `counted[]` array (`rules.ts:549-561`) — this is the shape it was written in. |
 | **Lock widening** | Lock the applicant's partners' rows. Narrower than today. | Lock rows of every group the applicant is in. Same shape as today (`requests.ts:487-496`). |
-| **Refusal clarity** | Best case. "Alice is already on leave on 18 Aug" needs no further explanation. | Needs the group's name to stay legible once there is more than one group: *"Alice is already on leave on 18 Aug. At most 1 of Outram Cover can be away at once."* The name is why the group must have one. |
+| **Refusal clarity** | Best case. "Alice is already on leave on 18 Aug" needs no further explanation. | Needs the group's name to stay legible once there is more than one group: *"Alice is already on leave on 18 Aug. At most 1 of Parkside Cover can be away at once."* The name is why the group must have one. |
 | **Admin comprehension** | Immediate — but O(N²) facts to maintain, and adding an instructor means revisiting every existing pair. | One more concept (the group), but O(groups) facts, and hiring means ticking one box in one group. |
 | **UI a11y** | Needs a multi-select per person — the one pattern APG does not cover — or a per-person dialog reusing the existing checkbox list. | Repeats the control already on the page, inside a `fieldset`/`legend`. Zero custom ARIA. |
 
@@ -386,7 +386,7 @@ problem that sinks the token-field pattern disappears if the canonical `a < b` o
 database constraint rather than application code.
 
 **What it costs:** less code than Option 1, but it *narrows* the model — "at most 2 of the
-5 Outram instructors" becomes permanently unsayable, and the existing studio-wide cap has to
+5 Parkside instructors" becomes permanently unsayable, and the existing studio-wide cap has to
 either survive alongside it (two overlapping concepts on one screen, which is worse than one
 generalised concept) or be dropped, losing the ability to express what it expresses today.
 Editing is O(N²) facts, and every new hire means revisiting the list. The a11y story is the
@@ -405,7 +405,7 @@ That question is cheap to ask and settles it; it is worth asking before either i
 **Option 2.** Asked the tiebreak question directly, the admin's answer was *specific people,
 for a reason unrelated to who can teach what* — not coverage. That is the one case this note
 says picks pairwise over groups, so the pairwise narrowing is accepted knowingly: "at most 2
-of the 5 Outram instructors" stays unsayable, and adding an instructor means revisiting pairs.
+of the 5 Parkside instructors" stays unsayable, and adding an instructor means revisiting pairs.
 
 Still open, and it is the real design question inside Option 2: **what happens to the
 existing studio-wide Cover Group cap** — kept alongside pairs (two overlapping concepts on

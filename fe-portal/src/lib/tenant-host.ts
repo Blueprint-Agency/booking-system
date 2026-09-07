@@ -95,7 +95,7 @@ function normalizeHost(host: string): string {
  * resolver's job, over HTTP.
  *
  * Locally this is why a studio's portal is reached at
- * `yogasadhana.portal.localhost:3001` rather than `localhost:3001`: the bare
+ * `{slug}.portal.localhost:3001` rather than `localhost:3001`: the bare
  * host names no Tenant, exactly as the bare production domain does not.
  */
 /**

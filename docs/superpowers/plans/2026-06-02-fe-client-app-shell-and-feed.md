@@ -158,11 +158,11 @@ export function AppTopBar({ impersonating = false }: { impersonating?: boolean }
       )}
     >
       <div className="h-full max-w-[1280px] mx-auto px-4 sm:px-6 flex items-center justify-between">
-        <Link href="/" className="flex items-center shrink-0" aria-label="Yoga Sadhana home">
+        <Link href="/" className="flex items-center shrink-0" aria-label={`${studio.name} home`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src="https://i0.wp.com/yogasadhana.sg/wp-content/uploads/2025/02/Yoga_Sadhana_header_logo_circle.png?w=294&ssl=1"
-            alt="Yoga Sadhana"
+            src={studio.logoUrl}
+            alt={studio.name}
             className="h-10 w-auto"
           />
         </Link>
@@ -431,7 +431,7 @@ export function ClassFeed() {
   return (
     <BookingSurface maxWidth="xl" padding="default">
       <SectionHeading
-        eyebrow="Yoga Sadhana · Tai Seng & Outram Park"
+        eyebrow={`${studio.name} · ${studio.locations}`}
         title="Book a class"
         description="All upcoming classes across both studios — book your spot."
       />

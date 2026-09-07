@@ -2,7 +2,7 @@
 
 The booking platform is three decoupled applications. They share no code — only the HTTP contract.
 
-It is multi-tenant: one deployment of each app serves every studio. A studio is a **Tenant**, resolved per request from the hostname, and the backend refuses to answer for a Tenant the caller cannot evidence. Yoga Sadhana is Tenant #1.
+It is multi-tenant: one deployment of each app serves every studio. A studio is a **Tenant**, resolved per request from the hostname, and the backend refuses to answer for a Tenant the caller cannot evidence. No studio is named in the repo — a studio is data, and arrives through the super portal.
 
 ## Contexts
 

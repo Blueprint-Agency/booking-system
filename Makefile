@@ -25,12 +25,18 @@ init: ensure-db
 	cd be && npm run db:migrate
 	cd be && npm run db:seed
 
-# Bring up Postgres and ensure the yoga-sadhana database exists.
+# Bring up Postgres and ensure the reservetoday database exists.
 # Postgres auto-creates POSTGRES_DB on first volume init only; for an existing
 # volume we explicitly createdb (idempotent — swallows "already exists" error).
+#
+# The container, volume and database were named after one studio until the
+# platform stopped being that studio's. Renaming the volume means Docker mounts
+# a new, empty one: a machine that had the old names needs `make reset` (which
+# drops the old volume) then `make init`. Local scratch data only — the seed
+# creates no studios, so nothing here is anyone's records.
 ensure-db:
 	docker compose --env-file be/.env up -d --wait
-	docker exec yoga-sadhana-db createdb -U postgres yoga-sadhana 2>/dev/null || true
+	docker exec reservetoday-db createdb -U postgres reservetoday 2>/dev/null || true
 
 reset:
 	docker compose --env-file be/.env down -v

@@ -2,9 +2,11 @@
 
 A reference for the **business logic** and **user journey** behind every client-facing feature in `fe-client/`. Written for an agent that will plan the admin-side counterpart in `fe-portal/`. Where state on the client is read-only, the admin app is where it's *written* — every "Where admin comes in" callout flags the data the admin must manage.
 
-**Scope.** This is a dedicated 2-app suite for **Yoga Sadhana** only — `fe-client` (member-facing booking app) and `fe-portal` (staff-facing back office). It is **not** a multi-tenant SaaS; there are no other studios on this platform, no tenant switcher, no slug routing, no plan/billing layer for the studio. Studio-specific data (locations, branding, copy, policies, products) is owned and edited in `fe-portal`, but it lives as a single set of values — there is no "per-tenant" surface anywhere.
+**Scope.** A 2-app suite — `fe-client` (member-facing booking app) and `fe-portal` (staff-facing back office) — serving **every** studio on the platform from one deployment of each. Everything below describes what one studio's members see; which studio a request is about is resolved from the hostname (`spec-tenant-resolution.md`).
 
-Yoga Sadhana operates 2 studios in Singapore: **Breadtalk IHQ** (Tai Seng) and **Outram Park**.
+> **Superseded on tenancy.** This paragraph used to read "a dedicated suite for one studio… not a multi-tenant SaaS… studio data lives as a single set of values". All of that is now false: studio-specific data (locations, branding, copy, policies, products) is per-Tenant, owned and edited by that studio's own admins, and fenced by Row-Level Security. The feature descriptions themselves still hold.
+
+A studio has as many Locations as it has — one, several, or none yet. No rule anywhere may assume a particular number.
 
 ---
 
@@ -17,7 +19,7 @@ These show up in many features. Understanding them up front makes the rest read 
 - **Credit** = currency for **group classes only**. Earned by purchasing a Bundle, or held implicitly by an Unlimited package.
 - A user can hold a Bundle **OR** Unlimited at a time, **never both** at the same time.
 - A class booking deducts **1 credit** at the moment of confirmation.
-- Cancelling within the policy window returns the credit; outside the window it is forfeited (or fee charged — per Yoga Sadhana's cancellation policy, configured in admin).
+- Cancelling within the policy window returns the credit; outside the window it is forfeited (or fee charged — per the studio's own cancellation policy, configured in admin).
 - Workshops do **not** consume credits — they're paid directly per workshop.
 
 ### 0.2 Session entitlement (private training)
@@ -168,7 +170,7 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
 - Anonymous visitor scrolls; CTAs hand off into `/classes` or `/packages` for browse, or `/login` / `/register` for first-time users.
 
 **Where admin comes in**
-- Hero copy, locations content, feature tiles, testimonials, CTA banner are all editable from admin. The admin app should expose a **Marketing / Site Content** surface where Yoga Sadhana staff can update copy and imagery without a code deploy.
+- Hero copy, locations content, feature tiles, testimonials, CTA banner are all editable from admin. The admin app should expose a **Marketing / Site Content** surface where a studio's own staff can update copy and imagery without a code deploy.
 
 ### 2.2 Pricing `/pricing`
 
@@ -190,7 +192,7 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
 
 **Business logic**
 - Schedule is generated from **session templates** by location/instructor, materialised as concrete sessions for the selected week.
-- Filters: location pill (All / Breadtalk / Outram), level, instructor (optional). Filters are **per-page**, not global nav.
+- Filters: location pill (All / Harbour / Parkside), level, instructor (optional). Filters are **per-page**, not global nav.
 - Each session has: category tag, title, instructor, start time + tz, duration, capacity, seats taken.
 - **No dollar price shown** — credits only. (A user without a Bundle/Unlimited can still book a single class via the **One-time Pass** under `/packages`, which acts as the drop-in path.)
 
@@ -401,7 +403,7 @@ Fields, in order:
 
 **User journey**
 1. User browses `/corporate`, taps **Buy** on a package → normal Stripe checkout (`/checkout`).
-2. On success → a pending corporate request is created; the user lands on `/account/corporate` (§8.8) with a WhatsApp contact button (number **6582067247**).
+2. On success → a pending corporate request is created; the user lands on `/account/corporate` (§8.8) with a WhatsApp contact button (number the studio's own `tenant_settings.copy->>'contact.whatsapp'`).
 3. Studio negotiates on WhatsApp, then schedules → the request flips to **Scheduled** (date/time, location, instructor shown). After the session, it moves to **done** (attended). Either side can end up at **Cancelled**.
 
 **Where admin comes in**
@@ -436,7 +438,7 @@ The dead `/checkout` page from the earlier spec is gone. `/checkout` is now a re
 **What the page carries, top to bottom** — rows marked *(unlimited)* render only when the item being bought is an Unlimited Plan:
 
 1. **Order summary** — item, validity / event date, price.
-2. **Home studio** *(unlimited)* — two radios, one per Location, address shown on each, **no pre-selected default**. Pay stays disabled and reads "Choose your home studio to continue" until one is picked. **A renewal** — bought while the member already holds a live Unlimited Plan — replaces the radios with a locked row: "Your renewal continues at Breadtalk IHQ. Ask us if you need to move it." A member may only renew at their existing plan's Home Location; changing it is a portal-only, admin-audited action.
+2. **Home studio** *(unlimited)* — two radios, one per Location, address shown on each, **no pre-selected default**. Pay stays disabled and reads "Choose your home studio to continue" until one is picked. **A renewal** — bought while the member already holds a live Unlimited Plan — replaces the radios with a locked row: "Your renewal continues at Harbour Studio. Ask us if you need to move it." A member may only renew at their existing plan's Home Location; changing it is a portal-only, admin-audited action.
 3. **Cross-Location Add-On** *(unlimited)* — a checkbox block, **disabled until a studio is picked**, showing the rate even while disabled so it advertises rather than reads as broken. Live, it names the other studio and shows the arithmetic — months (rounded up) × rate = total — and closes with "Expires with the plan it's attached to." Greyed copy is always a precondition, never "Unavailable": the three disabled reasons are *no studio picked yet*, *this plan already carries one*, and *nothing to attach to* (no Unlimited Plan held at all, worded away from "nothing chosen yet" and routed to the plans). A Dormant plan's Add-On prices at its full stored Duration with no remainder wording; an Activated plan's remainder sentence comes **before** the arithmetic — "Your plan runs to 26 Nov 2026 — 3 months, 10 days left. Part months are charged as whole months, so that's 4." — so the surprising part is answered before the number that provokes it.
 4. **Promo code** — a text input, case- and whitespace-insensitive. A code is checked against the specific item being bought, so a green tick is never contradicted by a refusal seconds later. Five distinct outcomes, four of them specific:
 
@@ -450,12 +452,12 @@ The dead `/checkout` page from the earlier spec is gone. `/checkout` is now a re
 
    Unknown and archived deliberately share one message so the field can't be used to fish for valid codes. **Checkout refuses a bad code outright** — a mistyped or expired code can never silently fall through to a full-price charge while the screen still shows it as accepted, which is the live defect this closes.
 5. **Breakdown** — the Add-On is its own line, never folded into the plan; a Promo Code discounts the plan line only and can never touch the Add-On, which is a rate on Global Policy rather than a discountable product.
-6. **Home studio, restated** *(unlimited)* — "Your home studio is Breadtalk IHQ for the next 6 months." directly above Pay, so the member passes the irreversible choice twice before money moves.
+6. **Home studio, restated** *(unlimited)* — "Your home studio is Harbour Studio for the next 6 months." directly above Pay, so the member passes the irreversible choice twice before money moves.
 7. **Pay.** A discount that takes the total to $0 skips the payment step entirely and grants immediately, the same free path packages and free workshop tiers already use.
 
 **Two entry points for a standalone Add-On purchase** against a plan the member already holds — no new Unlimited purchase involved: the nudge on a blocked class (below), and the plan card on the account page. Same review page, entered with the target plan's id instead of a catalogue item.
 
-**The blocked class is a nudge, not an ad.** On `/classes`, a class outside a member's plan coverage is shown, not hidden — the row dims, takes a "Not in your plan" lock chip where the Book button was, and carries one line under a hairline: "Your plan covers **Breadtalk IHQ** only. [Add Outram Park for $30/month] · or [use 1 credit]" if the member also holds credits. Both are links, weighted below the class itself — a louder treatment was tried and rejected because this state repeats on every wrong-Location class in the week's schedule, and at that density an accent border and a filled button read as an ad break. A blocked class never silently spends a credit; a member choosing to pay with credits does so explicitly through the "use 1 credit" link.
+**The blocked class is a nudge, not an ad.** On `/classes`, a class outside a member's plan coverage is shown, not hidden — the row dims, takes a "Not in your plan" lock chip where the Book button was, and carries one line under a hairline: "Your plan covers **Harbour Studio** only. [Add Parkside Studio for $30/month] · or [use 1 credit]" if the member also holds credits. Both are links, weighted below the class itself — a louder treatment was tried and rejected because this state repeats on every wrong-Location class in the week's schedule, and at that density an accent border and a filled button read as an ad break. A blocked class never silently spends a credit; a member choosing to pay with credits does so explicitly through the "use 1 credit" link.
 
 **Four confirmation emails**, one per completed purchase, none for an admin's complimentary grant:
 
@@ -601,7 +603,7 @@ The account section is a sticky sidebar (desktop) / tab bar (mobile). All sub-pa
 
 **Business logic**
 - Lists the user's corporate requests, one card per request, with a status that the FE reflects back from the backend:
-  - **Pending** — request created on purchase; shows a **WhatsApp contact** button (deep link to **6582067247**) so the user can start the conversation. No in-app form.
+  - **Pending** — request created on purchase; shows a **WhatsApp contact** button (deep link to the studio's own `tenant_settings.copy->>'contact.whatsapp'`) so the user can start the conversation. No in-app form.
   - **Scheduled** — shows final date/time, location, and assigned instructor.
   - **Attended** — rendered as "done".
   - **Cancelled** — read-only, dim.
@@ -625,7 +627,7 @@ The account section is a sticky sidebar (desktop) / tab bar (mobile). All sub-pa
 ### 9.2 Footer
 
 - Studio info, location addresses, social links, legal links (Terms, Privacy), copyright.
-- (No "For Business" / SaaS marketing link — this product is dedicated to Yoga Sadhana members.)
+- (No "For Business" / SaaS marketing link — a studio's client app is for that studio's members, not a pitch surface for the platform.)
 
 **Where admin comes in**
 - Footer copy is editable from admin.

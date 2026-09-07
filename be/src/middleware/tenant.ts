@@ -1,6 +1,5 @@
 import type { Context, MiddlewareHandler } from 'hono'
 import { withTenant } from '../db'
-import { TENANT_ONE_ID } from '../db/schema/tenancy'
 import { originTenantSlug } from '../lib/allowed-origins'
 import { normaliseSlug } from '../services/tenants/slug'
 import { loadTenantById, resolveTenantByClerkOrg, resolveTenantBySlug } from '../services/tenants/tenants'
@@ -137,11 +136,15 @@ export function tenantId(c: Context): string {
  * actually belongs to?
  *
  * Called from the two Clerk middlewares, at the first moment the caller's own
- * row is in hand. A row that predates tenancy and somehow still has no
- * `tenant_id` is treated as tenant #1, which is what it is.
+ * row is in hand. A null `rowTenantId` used to be read as tenant #1 — the right
+ * reading while the column was still nullable and an un-backfilled row really
+ * did belong to the first studio. `tenant_id` is `NOT NULL` on all 53 tables
+ * now (`tenantIdColumn`), so null is no longer a pre-tenancy row; it is a row
+ * that should not exist. Matching it against a studio would let it through, so
+ * it matches nothing.
  */
 export function tenantMatches(c: Context, rowTenantId: string | null): boolean {
-  return (rowTenantId ?? TENANT_ONE_ID) === tenantId(c)
+  return rowTenantId !== null && rowTenantId === tenantId(c)
 }
 
 /**

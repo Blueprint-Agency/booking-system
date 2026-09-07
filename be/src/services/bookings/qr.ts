@@ -5,7 +5,7 @@ const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ'
 /**
  * The platform's booking-code prefix, and deliberately not a studio's.
  *
- * It was `YS-` — Yoga Sadhana's initials, minted for every studio on the
+ * It was the first studio's initials, minted for every studio on the
  * platform. A per-Tenant prefix is not the fix either: the code is what a
  * member reads down the phone to a front desk, and two studios choosing the
  * same initials would put the collision somewhere nobody is looking.

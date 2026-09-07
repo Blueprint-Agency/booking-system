@@ -18,13 +18,19 @@
 -- driver is entitled to read as a parameter placeholder.
 --
 -- Scoped by slug, and a no-op on any database where that studio is absent — a
--- fresh install seeds no studio at all (0033's policies, and
--- `src/db/seed/provisioning.ts`, which carries the same number for a seeded
--- environment).
-UPDATE tenant_settings AS ts
-SET copy = ts.copy || jsonb_build_object('contact.whatsapp', '6582067247'),
-    updated_at = now()
-FROM tenants AS t
-WHERE t.id = ts.tenant_id
-  AND t.slug = 'yogasadhana'
-  AND NOT jsonb_exists(ts.copy, 'contact.whatsapp');
+-- fresh install seeds no studio at all.
+-- **Edited after it was applied, and now a no-op.** The UPDATE that stood here
+-- carried a real studio's telephone number and matched it by slug. It has done
+-- its work everywhere it was ever going to: the one database holding that studio
+-- ran it, and on any other database it matched no row at all.
+--
+-- What it left behind was a customer's phone number sitting in the repository,
+-- which is the same class of problem the migration existed to fix — the number
+-- used to be a constant in `fe-client`, compiled into every studio's bundle.
+--
+-- Safe to edit for the reason set out at length in 0027: the migrator skips a
+-- migration by comparing the journal's `when` against the newest applied
+-- `created_at`, and never re-reads the file once that timestamp is passed. The
+-- journal entry is unchanged, so no database re-runs this. A studio that wants a
+-- WhatsApp link publishes one in `tenant_settings.copy->>'contact.whatsapp'`.
+SELECT 1;

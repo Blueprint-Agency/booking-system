@@ -7,18 +7,27 @@ import { tenantStatusEnum } from '../enums'
  * — never infra — and its subdomains (`{slug}.reservetoday.app`,
  * `{slug}.portal.reservetoday.app`) resolve the moment the row exists.
  *
- * The studio the platform was originally built for is tenant #1; every
- * pre-existing row in the database was backfilled to it. *Which* studio that is
- * — its name, its premises, its branding — is provisioning data and lives in
- * `db/seed/provisioning.ts`, the one file in the backend that names a studio.
+ * No studio is named anywhere in this file, or in any other file the server
+ * runs. A studio's identity is *its data*: it arrives by being created or
+ * restored through the super portal, and the backend reads it out of the
+ * `tenants` row like every other studio's. The two ids below are the only fixed
+ * points, and they name positions rather than businesses.
  */
 /**
- * Tenant #1's id. Fixed rather than generated so every environment —
- * local, staging, production, the test harness — agrees on which row is tenant
- * #1; migration 0027 backfilled every pre-existing row to it.
+ * The first tenant's id — a *position*, not a studio.
+ *
+ * Fixed rather than generated because migration 0027 backfilled every row that
+ * predated tenancy to this id: at that moment the database held exactly one
+ * studio's data, and this is the row it became. Whichever studio that was on a
+ * given deployment is that deployment's business and appears nowhere in the
+ * code.
+ *
+ * Used only by the seed fixtures now. The server no longer reads it at all —
+ * the last runtime use was `tenantMatches` treating a null `tenant_id` as this
+ * tenant, which stopped being a sensible reading when the column became
+ * `NOT NULL`.
  */
 export const TENANT_ONE_ID = '10000000-0000-0000-0000-000000000001'
-export const TENANT_ONE_SLUG = 'yogasadhana'
 
 /**
  * The throwaway second tenant, seeded outside production. A single-tenant
@@ -27,7 +36,6 @@ export const TENANT_ONE_SLUG = 'yogasadhana'
  * return — so local, staging and the test harness all run two.
  */
 export const SECOND_TENANT_ID = '10000000-0000-0000-0000-000000000002'
-export const SECOND_TENANT_SLUG = 'acme'
 
 export const tenants = pgTable(
   'tenants',

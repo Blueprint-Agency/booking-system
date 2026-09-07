@@ -3,8 +3,8 @@ import { selectPackage, type CandidatePackage, type SelectionInput } from './sel
 
 const NOW = new Date('2026-06-01T00:00:00Z')
 const CLASS_AT = new Date('2026-06-10T09:00:00Z')
-const HOME = 'loc-breadtalk'
-const OTHER = 'loc-outram'
+const HOME = 'loc-harbour'
+const OTHER = 'loc-parkside'
 
 let seq = 0
 const plan = (over: Partial<CandidatePackage> = {}): CandidatePackage => ({

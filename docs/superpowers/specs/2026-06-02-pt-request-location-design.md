@@ -23,7 +23,7 @@ session is scheduled").
   used by the classes filter — the request form can reuse it.
 - `fe-portal` workspace switcher (`useWorkspace().activeLocation`) is **live**
   (real location UUIDs from `/portal/auth/me`), while the PT Requests page is
-  **seed-only** (`@/data`, seed ids `loc-breadtalk` / `loc-outram`).
+  **seed-only** (`@/data`, seed ids `loc-harbour` / `loc-parkside`).
 
 ## Decisions
 
@@ -59,7 +59,7 @@ session is scheduled").
 ### fe-portal
 7. `types/index.ts` — add `locationId: string` to `PtRequest`.
 8. `data/pt-requests.ts` — add `locationId` to each seed row, split across
-   `loc-breadtalk` / `loc-outram`.
+   `loc-harbour` / `loc-parkside`.
 9. `app/admin/pt-requests/page.tsx` — filter list + per-tab counts by
    `useWorkspace().activeLocation`. Replace the "across all locations" banner
    with an active-location indicator. **Seed-era bridge:** resolve

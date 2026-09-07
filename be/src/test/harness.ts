@@ -10,12 +10,8 @@ import postgres from 'postgres'
 import type { Hono } from 'hono'
 import * as schema from '../db/schema'
 import { APP_ROLE, ensureAppRole, ensureTenantIsolation } from '../db/roles'
-import {
-  TENANT_ONE_ID,
-  TENANT_ONE_SLUG,
-  SECOND_TENANT_ID,
-  SECOND_TENANT_SLUG,
-} from '../db/schema/tenancy'
+import { TENANT_ONE_ID, SECOND_TENANT_ID } from '../db/schema/tenancy'
+import { TENANT_ONE_SLUG, SECOND_TENANT_SLUG } from '../db/seed/provisioning'
 
 /**
  * The one integration seam: the real Hono app, invoked in-process with

@@ -81,7 +81,7 @@ function normalizeHost(host: string): string {
  * that is the resolver's job, over HTTP.
  *
  * Locally this is why the dev server is reached at
- * `yogasadhana.localhost:3000` rather than `localhost:3000`: the bare host names
+ * `{slug}.localhost:3000` rather than `localhost:3000`: the bare host names
  * no Tenant, exactly as the bare production domain does not.
  */
 export function tenantSlugFromHost(

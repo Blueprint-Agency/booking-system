@@ -101,7 +101,7 @@ const schema = z.object({
   //
   // Required, and it replaced `PORTAL_ORIGIN` / `CLIENT_ORIGIN`. Those were one
   // value each for the whole platform and could only ever name one studio's
-  // apps, which is why every link built from them pointed at Yoga Sadhana
+  // apps, which is why every link built from them pointed at the first studio
   // whichever studio the code was acting for. This is now the only statement
   // the environment makes about which origins are ours, so an environment that
   // sets none has an empty allowlist and serves nobody — a boot failure is the

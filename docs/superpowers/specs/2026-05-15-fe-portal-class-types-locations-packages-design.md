@@ -81,13 +81,13 @@ Rather than a global topbar switcher that implies wider influence than it delive
 Used by Schedule and Workshops list:
 
 ```
-Location  [All] [Breadtalk IHQ] [Outram Park]
+Location  [All] [Harbour Studio] [Parkside Studio]
 ```
 
 - Chips are rendered from the active (non-archived) locations array, with an `All` chip prepended.
 - Selection persists per-page in `localStorage` (keys: `ys.scheduleLocationFilter`, `ys.workshopsLocationFilter`). Pages do their own filtering on the resulting id.
 - Default selection on first visit: `All`.
-- When only one active location exists, the chips collapse to a static label "All events at Breadtalk IHQ" (no toggle needed).
+- When only one active location exists, the chips collapse to a static label "All events at Harbour Studio" (no toggle needed).
 
 Even when `All` is selected, each row on those pages shows a small location pill so the admin always sees which studio an item belongs to.
 
@@ -95,8 +95,8 @@ Even when `All` is selected, each row on those pages shows a small location pill
 
 Check-in is operationally different — the operator stands at one studio with a scanner; there's no "all locations" use case. Implementation:
 
-- A single-select pill near the page title: `Checking in at: Outram Park ▾`. No `All` option.
-- Tapping opens a small menu listing active locations, with a confirmation step ("Switch to Breadtalk IHQ?") to prevent fat-fingering during a busy class.
+- A single-select pill near the page title: `Checking in at: Parkside Studio ▾`. No `All` option.
+- Tapping opens a small menu listing active locations, with a confirmation step ("Switch to Harbour Studio?") to prevent fat-fingering during a busy class.
 - Persists in `localStorage` under `ys.checkinLocationId`. On first visit, defaults to the first active location and shows a one-time onboarding hint: *"Confirm you're checking in at the right studio."*
 
 ### Fresh-install gate

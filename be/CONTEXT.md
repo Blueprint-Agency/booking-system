@@ -5,14 +5,14 @@ The domain. Every rule in the platform lives here — booking, credits, scheduli
 ## Language
 
 > Throughout the entries below, **"the studio"** means *the Tenant the request is about* — never
-> the platform, and never Yoga Sadhana specifically. Every figure, catalogue, roster and total is
+> the platform, and never one particular business. Every figure, catalogue, roster and total is
 > a figure for one Tenant; there is no platform-wide view of any of them, because the application
-> role cannot read across Tenants at all. Where an entry names Yoga Sadhana, it is an example.
+> role cannot read across Tenants at all. No real studio is named here, or anywhere in the repo.
 
 ### Tenancy
 
 **Tenant**:
-One studio business on the platform, and one row in `tenants`. Creating a Tenant is that insert — never infrastructure — and its subdomains resolve the moment the row exists. Yoga Sadhana is Tenant #1 (`slug = 'yogasadhana'`, id `10000000-…-0001`); every row that predates tenancy was backfilled to it.
+One studio business on the platform, and one row in `tenants`. Creating a Tenant is that insert — never infrastructure — and its subdomains resolve the moment the row exists. Tenant #1 (id `10000000-…-0001`) is a *position*, not a business: migration 0027 backfilled every row that predated tenancy to it, so on any given deployment it is whichever studio that database already held. Which one that is appears nowhere in the code.
 _Avoid_: account, org, workspace, customer, client (a Client is a member — see below)
 
 **Slug**:
@@ -20,7 +20,7 @@ A Tenant's leftmost DNS label, and the only thing the frontends can read a Tenan
 _Avoid_: subdomain, handle, tenant name
 
 **`tenant_id`**:
-The column on all 53 domain tables recording which Tenant a row belongs to — including pure join tables, because Row-Level Security needs a column on every table to key a policy on. `NOT NULL`, with **no default**: an insert that does not name its Tenant fails loudly rather than filing somebody else's row under Yoga Sadhana. Every non-unique index leads with it. (The tenant-#1 default that made the migrate batches safe was scaffolding, and migration 0032 dropped it along with the seed pass that used to claim unclaimed rows.)
+The column on all 53 domain tables recording which Tenant a row belongs to — including pure join tables, because Row-Level Security needs a column on every table to key a policy on. `NOT NULL`, with **no default**: an insert that does not name its Tenant fails loudly rather than filing somebody else's row under the first Tenant. Every non-unique index leads with it. (The tenant-#1 default that made the migrate batches safe was scaffolding, and migration 0032 dropped it along with the seed pass that used to claim unclaimed rows.)
 
 **Tenant context**:
 The Tenant a request is about — held in two places at once, and they are set together.
@@ -56,7 +56,7 @@ _Avoid_: webhook tenant, tenant lookup
 ### Packages and locations
 
 **Location**:
-One of a Tenant's physical premises. Locations belong to the Tenant, not to the platform, and a Tenant has as many as it has — Yoga Sadhana happens to have two, Breadtalk IHQ and Outram Park. A class runs at exactly one Location, and no rule anywhere may assume there are two.
+One of a Tenant's physical premises. Locations belong to the Tenant, not to the platform, and a Tenant has as many as it has — one, two, a dozen, or none yet. A class runs at exactly one Location, and no rule anywhere may assume a particular number.
 _Avoid_: branch, studio, venue, outlet, site
 
 **Unlimited Plan**:

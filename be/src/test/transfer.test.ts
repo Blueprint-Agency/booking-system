@@ -179,8 +179,16 @@ test('a studio emptied and restored in place is the same studio, ids included', 
   }
 
   // The values came back, not just the shape.
+  //
+  // Named in the WHERE rather than taken as the first of an unordered SELECT.
+  // The studio has two members and Postgres owes no order without an ORDER BY,
+  // so `[0]` was whichever row the heap happened to hand back — which a restore
+  // rewrites. It passed for as long as the physical order held and failed the
+  // first time a database was rebuilt, which is the worst way for a test to
+  // report anything.
   const [client] = await harness.db.execute<{ email: string; name: string }>(sql`
-    SELECT email, name FROM clients WHERE tenant_id = ${target}
+    SELECT email, name FROM clients
+    WHERE tenant_id = ${target} AND email = 'member@restored.test'
   `)
   assert.equal(client?.email, 'member@restored.test')
   assert.equal(client?.name, 'Restored Member')

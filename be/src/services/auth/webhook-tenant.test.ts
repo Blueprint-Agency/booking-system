@@ -47,7 +47,7 @@ describe('clerk webhook tenant hints', () => {
         data: {
           id: 'u',
           public_metadata: { tenant_slug: 'acme' },
-          unsafe_metadata: { tenant_slug: 'yogasadhana' },
+          unsafe_metadata: { tenant_slug: 'northwind' },
         },
       }).metadataSlug,
       'acme',

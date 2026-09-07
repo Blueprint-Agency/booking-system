@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { portalClerkKeys, portalPublishableKey } from "./clerk-keys";
 
-const STUDIO = "yogasadhana.portal.localhost:3001";
+const STUDIO = "northwind.portal.localhost:3001";
 const SUPER = "admin.portal.localhost:3001";
 
 /**
@@ -114,6 +114,6 @@ test("a host that names no portal at all gets no platform keys", () => {
     assert.deepEqual(portalClerkKeys(null), {});
     assert.deepEqual(portalClerkKeys("portal.localhost:3001"), {});
     // The member app's hostname, which this middleware never serves anyway.
-    assert.deepEqual(portalClerkKeys("yogasadhana.localhost:3000"), {});
+    assert.deepEqual(portalClerkKeys("northwind.localhost:3000"), {});
   });
 });

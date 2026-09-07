@@ -17,7 +17,7 @@ describe('statement descriptor suffix', () => {
   })
 
   test('characters Stripe refuses are dropped rather than sent', () => {
-    assert.equal(descriptorSuffix('RSVT', 'Yoga <Sadhana>* "SG"'), 'Yoga Sadhana SG')
+    assert.equal(descriptorSuffix('RSVT', 'Acme <Yoga>* "SG"'), 'Acme Yoga SG')
   })
 
   test('a name with no letters left is no suffix at all', () => {

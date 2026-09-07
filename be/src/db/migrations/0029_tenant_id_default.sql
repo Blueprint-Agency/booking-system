@@ -9,7 +9,7 @@
 -- keeps every un-migrated write behaving exactly as it did single-tenant.
 --
 -- ⚠️ This is scaffolding with an expiry date. Once a second tenant is real, a
--- forgotten insert files its row under Yoga Sadhana rather than failing, which
+-- forgotten insert files its row under the first tenant rather than failing, which
 -- is the quiet failure mode this whole plan exists to avoid. It must be dropped
 -- by the contract step (#63) that makes the column `NOT NULL`, once #61 and #62
 -- have made every insert name its tenant.

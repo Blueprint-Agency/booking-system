@@ -113,7 +113,7 @@ export async function unpackArchive(bytes: Buffer | Uint8Array): Promise<TenantA
   return { manifest, rows }
 }
 
-/** `yogasadhana-2026-09-05.zip` — sortable, and says whose it is. */
+/** `{slug}-2026-09-05.zip` — sortable, and says whose it is. */
 export function archiveFilename(slug: string, exportedAt: string): string {
   const day = exportedAt.slice(0, 10)
   return `${slug}-${day}.zip`

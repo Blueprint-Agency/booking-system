@@ -2,7 +2,7 @@
 --
 --   1. Every `tenant_id` becomes NOT NULL and loses the tenant-#1 default that
 --      0029 added as scaffolding. From here an insert that forgets its tenant
---      fails loudly instead of filing somebody else's row under Yoga Sadhana.
+--      fails loudly instead of filing somebody else's row under the first tenant.
 --   2. Every non-unique index is rebuilt with `tenant_id` leading, because every
 --      query now filters on it first. Unique indexes are deliberately untouched:
 --      folding the tenant into them would CHANGE what is unique (a globally

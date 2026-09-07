@@ -23,7 +23,7 @@ at Cloudflare were simply gone. Twelve of them did not come back:
 
 | Lost | Count | Consequence |
 |---|---|---|
-| Clerk custom-domain sets for `reservetoday.app` and `yogasadhana.reservetoday.app` (`accounts`, `clerk`, `clkmail`, `clk._domainkey`, `clk2._domainkey`) | 10 | *At the time:* both apps ran on Clerk's default `*.vercel.app` frontend API hosts and were unaffected; the dashboard state for instances `yzxn3e3xr293` and `peu4tr0s6xj5` was unverified. **Since resolved — see Consequences.** The records were recreated, and both instances now sit on the zone. |
+| Clerk custom-domain sets for `reservetoday.app` and the first studio's `{slug}.reservetoday.app` (`accounts`, `clerk`, `clkmail`, `clk._domainkey`, `clk2._domainkey`) | 10 | *At the time:* both apps ran on Clerk's default `*.vercel.app` frontend API hosts and were unaffected; the dashboard state for instances `yzxn3e3xr293` and `peu4tr0s6xj5` was unverified. **Since resolved — see Consequences.** The records were recreated, and both instances now sit on the zone. |
 | `cdn` → `public.r2.dev` (the only proxied record in the zone) | 1 | No runtime effect: the `Production` GitHub Environment has never held any `R2_*` secret, so production builds no asset URLs at all. The record was orphaned infrastructure. |
 | `_dmarc` TXT (`p=quarantine`) | 1 | No mail originates from this zone — the backend sends through Gmail SMTP as `askblueprintagency@gmail.com` — so nothing was failing authentication. The zone is now unprotected against spoofing. |
 

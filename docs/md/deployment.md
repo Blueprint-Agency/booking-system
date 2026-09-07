@@ -16,7 +16,7 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 | Backend | `booking-staging` stack on bpvps2 → `https://api.dev.reservetoday.app` | `booking-prod` stack on bpvps2 → `https://api.reservetoday.app` |
 | GitHub Environment | `staging` (lowercase) | `Production` (capital P) |
 | Image tag | `blueprintagency/booking-be:staging` | `…:latest` |
-| fe-client | `https://{slug}.dev.reservetoday.app` (e.g. `yogasadhana.dev.…`) | `https://{slug}.reservetoday.app` (e.g. `yogasadhana.reservetoday.app`) |
+| fe-client | `https://{slug}.dev.reservetoday.app` | `https://{slug}.reservetoday.app` |
 | fe-portal | `https://{slug}.portal.dev.reservetoday.app` | `https://{slug}.portal.reservetoday.app` |
 | Super portal | `https://admin.portal.dev.reservetoday.app` | `https://admin.portal.reservetoday.app` |
 | Vercel target | **preview** (branch-pinned domain) | **production** |
@@ -31,15 +31,18 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 >
 > | Removed | Was | Use instead |
 > |---|---|---|
-> | `portal.yogasadhana.reservetoday.app` | 301 → `yogasadhana.portal.…` | `yogasadhana.portal.reservetoday.app` |
-> | `staging-portal.yogasadhana.reservetoday.app` | live, `staging` branch | `yogasadhana.portal.dev.reservetoday.app` |
-> | `staging.yogasadhana.reservetoday.app` | live, `staging` branch | `yogasadhana.dev.reservetoday.app` |
+> | `portal.{slug}.reservetoday.app` | 301 → `{slug}.portal.…` | `{slug}.portal.reservetoday.app` |
+> | `staging-portal.{slug}.reservetoday.app` | live, `staging` branch | `{slug}.portal.dev.reservetoday.app` |
+> | `staging.{slug}.reservetoday.app` | live, `staging` branch | `{slug}.dev.reservetoday.app` |
+>
+> (Each existed for exactly one studio, since they predate wildcards; `{slug}` above stands for
+> that studio's own label.)
 >
 > The two `staging-*` rows were the worse of the three. They were branch-assigned domains from the
 > pre-tenancy scheme, so they served the **staging** build — dev Clerk keys, dev API — from a
 > hostname that reads as production. A bookmark to one looked like the live studio and was not.
 >
-> `portal.yogasadhana.…` had been a 301 rather than a live host, added when the portal URL flipped.
+> `portal.{slug}.…` had been a 301 rather than a live host, added when the portal URL flipped.
 > The redirect went too: a redirect is still a hostname to keep, certify and explain, and the flip
 > is old enough that a 404 is the more honest answer.
 >
@@ -47,7 +50,7 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 > answering for a name; `TENANT_ORIGIN_PATTERNS`, the Clerk instances and every link the backend
 > builds already named the `{slug}.[portal.][dev.]reservetoday.app` forms and nothing else.
 >
-> `yogasadhana.portal.reservetoday.app` went with them. It had been attached explicitly only
+> The first studio's own `{slug}.portal.reservetoday.app` row went with them. It had been attached explicitly only
 > because Vercel refuses to redirect to a host the project does not own; once the redirect was
 > deleted the row was a per-Tenant domain sitting in a project that is supposed to have none.
 > `*.portal.reservetoday.app` covers it, exactly as it covers every other studio — verified live
@@ -180,8 +183,9 @@ Notes:
 - Locally, `*.localhost` reaches loopback in Chrome, Edge and Firefox with **no hosts-file entry**,
   multi-level names included — `acme.localhost:3000` and `acme.portal.localhost:3001` just work.
   Safari does not do this; Safari users add `127.0.0.1 acme.localhost` or use `lvh.me`.
-- **Browse a studio's subdomain, not the bare host.** `yogasadhana.localhost:3000` and
-  `yogasadhana.portal.localhost:3001`, never `localhost:3000` / `localhost:3001` — the bare host is
+- **Browse a studio's subdomain, not the bare host.** `northwind.localhost:3000` and
+  `northwind.portal.localhost:3001` (the seeded fixture studios are `northwind` and `acme`),
+  never `localhost:3000` / `localhost:3001` — the bare host is
   the root domain, so it names no Tenant and the API answers `400 tenant_required`. This was
   survivable while a tenant-less request silently became tenant #1; that fallback is gone
   (`docs/md/spec-tenant-resolution.md` § Resolve), so the bare host now fails loudly instead of
@@ -213,7 +217,7 @@ Notes:
   - production: `https://*.reservetoday.app,https://*.portal.reservetoday.app`
   - It is also read **backwards** (`be/src/services/tenants/urls.ts`): a slug plus an app gives back the origin serving that studio, which is the base of every invitation link, member login link, account link and Stripe redirect the backend builds. That is why the link handed out and the origin the backend trusts cannot drift apart.
 - `CLERK_STAFF_AUTHORIZED_PARTIES` (optional) — any extra exact origins to pin, described below.
-- `PORTAL_ORIGIN` and `CLIENT_ORIGIN` are **gone**. They were one value each for the whole platform, so they could only ever name one studio's two apps — and everything built from them (staff invite links, member login links, Stripe redirects) pointed at Yoga Sadhana whichever studio the code was acting for. The wildcards already cover those two hostnames; an environment that genuinely needs an extra exact origin adds it to `TENANT_ORIGIN_PATTERNS`.
+- `PORTAL_ORIGIN` and `CLIENT_ORIGIN` are **gone**. They were one value each for the whole platform, so they could only ever name one studio's two apps — and everything built from them (staff invite links, member login links, Stripe redirects) pointed at the first studio whichever studio the code was acting for. The wildcards already cover those two hostnames; an environment that genuinely needs an extra exact origin adds it to `TENANT_ORIGIN_PATTERNS`.
 
 **Clerk authorized parties:** `CLERK_STAFF_AUTHORIZED_PARTIES` is **no longer passed to Clerk**. Clerk's own `authorizedParties` option is exact-match and cannot express `{slug}.portal.…` for every slug that exists — a list that would change whenever a studio is created, signing staff out of one made overnight. `verifyToken` is called without it and the `azp` claim is checked against the allowlist above instead (`be/src/lib/allowed-origins.ts`). The var still contributes any extra exact origins an environment wants to pin.
 
