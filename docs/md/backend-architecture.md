@@ -450,7 +450,11 @@ book_in_advance_days int, updated_at, updated_by_staff_id (FK).
 
 #### `pt_packages` (§6)
 
-id, name, description (text, nullable), session_type enum (`1on1`, `2on1`), num_sessions int, price_sgd, status, archived_at.
+id, name, description (text, nullable), session_type enum (`1on1`, `2on1`), num_sessions int, validity_days int, instructor_bound boolean, price_sgd, status, archived_at.
+
+`validity_days` is NOT NULL and `> 0` (`pt_packages_validity_days_positive`). A PT purchase expires at purchase time plus this figure, through the same `purchaseExpiry` helper a Credit Bundle goes through — there is no global PT validity constant. Migration `0044` backfilled 365 (what that constant had been applying) onto every existing row before the NOT NULL landed.
+
+`instructor_bound` is NOT NULL, default `false` (migration `0045`) — **Instructor-Bound**. When true, a member buying this package must choose one active instructor at checkout and the purchase lands carrying `client_packages.bound_instructor_id`; when false the member is asked nothing and a pick is refused. The flag is read at purchase and never copied onto the purchased row, so editing it moves future sales only. `instructorForPurchase` (`services/packages/purchase.ts`) is the pure rule — bound with no pick → `pt_bound_requires_instructor`, a pick on an unbound or non-PT package → `instructor_only_applies_to_bound_pt`, a pick outside the Tenant's active instructors → `instructor_not_active` — and both checkout and the grant call it, so a purchase refused at the grant was already refused before the member was charged.
 
 #### `promotions` (`fe-client-features.md` §6.1, `admin-restructure.md` §5d, §19)
 
@@ -492,6 +496,7 @@ Polymorphic — a promotion belongs to exactly one parent (`class_package`, `pt_
 | applied_promotion_id | uuid | FK → promotions.id, nullable — set when a promotion resolved at purchase (best-price-wins, §4d Promotions). Frozen at purchase so a later change to the promotion row doesn't rewrite history. |
 | applied_promo_code_id | uuid | FK → promo_codes.id, restrict, nullable — frozen the same way (`spec-pre-launch-batch.md` §9–§11). The identifier is frozen rather than the label, because staff may edit the label later; the money taken off is frozen on the redemption row, not here. |
 | location_id | uuid | FK → locations.id, restrict — **the Home Location.** Required when kind=`unlimited`, null for every other kind (folded into `client_packages_kind_fields` below). |
+| bound_instructor_id | uuid | FK → staff_users.id, restrict, nullable — **the Bound Instructor.** The one instructor this PT package's sessions are with; null means open to any of them. Only kind=`pt` may carry one (folded into `client_packages_kind_fields` below). The column IS the binding: the catalogue's `instructor_bound` flag is NOT copied here, so a package sold open can be bound later by filling this, and no second flag can go stale. `restrict` because a bound package outlives its instructor's archival — it stays bound and visibly so rather than silently reopening. |
 | duration_months | int | nullable — the Unlimited Plan's Duration, frozen from the catalogue at purchase so a later catalogue edit can't lengthen a plan already sold. Required when kind=`unlimited`, null otherwise. |
 | cross_location_paid_sgd | numeric(10, 2) | nullable, kind=`unlimited` only — null means the plan Covers its Home Location only; non-null is what the member paid for the Cross-Location Add-On, and the plan Covers both Locations. |
 | list_price_sgd | numeric(10, 2) | not null, **including free purchases** — what the product was listed at before any Promotion or Promo Code, so a later catalogue change can't restate what a member was charged. Total discount is `list_price_sgd - amount_paid_sgd`, derived rather than stored a second time. |
@@ -502,7 +507,7 @@ Polymorphic — a promotion belongs to exactly one parent (`class_package`, `pt_
 | stripe_payment_intent_id | text | unique, **nullable** — null for admin-issued grants (§16 manual issue) and free trial passes priced at 0 SGD |
 | active | boolean | not null, default true — the lever both the nightly expiry sweep and a Refund's Void pull; `false` means expired or refunded, and the payment row records which |
 
-**`client_packages_kind_fields` CHECK** (`spec-pre-launch-batch.md` §1): `kind='unlimited'` requires `location_id` and `duration_months` NOT NULL; every other kind requires both NULL and `expires_at` NOT NULL. Strict, no grandfathering — the backfill probe found zero Unlimited Plans in either database before this shipped.
+**`client_packages_kind_fields` CHECK** (`spec-pre-launch-batch.md` §1): `kind='unlimited'` requires `location_id` and `duration_months` NOT NULL; every other kind requires both NULL and `expires_at` NOT NULL. Extended in `0045`: `bound_instructor_id` must be NULL on every kind but `pt` — the column is the whole of what "bound" means, so a binding on any other kind would be one no rule in the domain knows how to read. Strict, no grandfathering — the backfill probe found zero Unlimited Plans in either database before this shipped.
 
 **Indexes:** `(client_id, kind)`, `(client_id, expires_at)` for upcoming-expiry sweep, `(stripe_payment_intent_id) unique where not null`, a **unique partial index `(client_id) WHERE kind='trial'`** — enforces the one-trial-per-client-ever invariant from `fe-client-features.md` §6.1 (a previously-purchased trial, active OR expired, blocks any further trial purchase; the purchase service catches the unique-violation and returns `409 trial_already_used`) — and a **unique partial index `(client_id) WHERE kind='unlimited' AND active AND expires_at IS NOT NULL`**, capping a client at one Activated Unlimited Plan (plus, enforced in the purchase path rather than an index, at most one Dormant one).
 

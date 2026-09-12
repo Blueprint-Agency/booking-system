@@ -894,7 +894,17 @@ function PtCard({ pkg }: { pkg: ApiPtPackage }) {
       <ul className="text-sm text-muted space-y-2 mt-6 flex-1">
         <li>{partnerLine}</li>
         <li>{formatSgd(perSession)}/session</li>
-        <li>Dedicated instructor throughout</li>
+        <li>
+          Valid {pkg.validity_days} {pkg.validity_days === 1 ? "day" : "days"} from purchase
+        </li>
+        {/* Only an Instructor-Bound package promises one coach. An open package
+            is open to any instructor, so the old unconditional promise was one
+            the studio had not made. */}
+        <li>
+          {pkg.instructor_bound
+            ? "One instructor you choose, for every session"
+            : "Book with any of our instructors"}
+        </li>
         <li>Valid across both locations</li>
       </ul>
       <BuyButton

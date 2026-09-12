@@ -323,8 +323,14 @@ export default function ClientProfilePage({
                         : p.kind === "trial"
                           ? "Trial"
                           : "PT";
-                  const canEditExpiry =
-                    p.kind === "credit_bundle" || p.kind === "unlimited" || p.kind === "trial";
+                  // Every kind expires, PT included — a PT package now carries
+                  // its own validity in days like a Credit Bundle does, so an
+                  // admin can extend or shorten one member's the same way. The
+                  // backend has always accepted the edit for every kind; this
+                  // page was the only thing hiding it. A blank date is still
+                  // refused for everything but an Unlimited Plan (§8) — that
+                  // rule lives in the dialog and in `setExpiryRefusal`.
+                  const canEditExpiry = true;
                   const canSetBalance = p.kind === "credit_bundle" || p.kind === "trial";
                   const canAdjustDelta = p.kind !== "unlimited";
                   // Only an Unlimited Plan has a Home Location to extend.

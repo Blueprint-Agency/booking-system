@@ -351,7 +351,7 @@ The dead `/checkout` page is live: every paid purchase — class/PT package, wor
 
 `POST /me/checkout/validate-promo` — `{ code, package_kind + package_id | workshop_id + workshop_tier_id }`. A **preview, not a claim**: the code's place is claimed when checkout actually starts, not here. `services/packages/promo-redemption.ts:previewPromoCode()` normalises the code (trim, upper-case), matches it against the named product (the product travels with the code because the endpoint can't answer the scope case otherwise), and returns `{ valid: true, promo_code_id, discount_sgd, effective_price_sgd }` or `{ valid: false, reason }` — always `200`, never a thrown error, with the same one of five reasons checkout itself refuses on (`promo-codes.ts`: expired, cap reached, already redeemed, out of scope, unknown-or-archived — the last two share one message on purpose).
 
-`POST /me/checkout/package` — `{ package_kind, package_id, promo_code?, location_id?, cross_location_add_on? }`:
+`POST /me/checkout/package` — `{ package_kind, package_id, promo_code?, location_id?, instructor_id?, cross_location_add_on? }`:
 
 ```
 services/packages/purchase.ts
@@ -365,6 +365,13 @@ services/packages/purchase.ts
      (409 unlimited_limit_reached on a third), and a renewal bought while a live plan exists may only pick
      that plan's own Home Location (409 unlimited_renewal_location_mismatch otherwise) — see
      `class-booking-lifecycle.md` §1a and `spec-pre-launch-batch.md` §6
+   - pt_packages.instructor_bound=true → resolveBoundInstructor(): instructor_id is REQUIRED
+     (400 pt_bound_requires_instructor) and must be an active instructor of this Tenant
+     (400 instructor_not_active). On an unbound PT package, and on every class package,
+     an instructor_id is refused rather than ignored (400 instructor_only_applies_to_bound_pt).
+     `instructorForPurchase()` is the pure rule and `resolveBoundInstructor()` the one place it
+     meets the roster; the grant calls the same function for the id it stores, so this run is
+     purely what stops a member paying for a purchase the webhook would refuse.
    (a Credit Bundle and an Unlimited Plan may now be held together — the old mutual-exclusion gate this
     section described is gone, superseded by user story 25's "spend a credit outside my plan's coverage
     instead of being blocked"; PT is independent of all three)
@@ -378,13 +385,14 @@ services/packages/purchase.ts
    full stored Duration × the Global Policy rate (a Dormant plan has no partial month to round). Carried as
    its own metadata field and its own money — never inside the plan's price, never discounted by the code.
 6. If effective_price = 0 (a $0 trial, or a code/promotion that drives any package to zero):
-   skip Stripe, grantPackage() directly, redemption row (if any) written straight to `consumed`,
+   skip Stripe, grantPackage() directly (carrying instructor_id, which has no session metadata to ride),
+   redemption row (if any) written straight to `consumed`,
    send the purchase confirmation synchronously (§13, below) — the free path this batch added.
 7. Stripe.paymentIntents.create({
      amount: (effective_price + cross_location_sgd) * 100,
      currency: 'sgd',
      metadata: { kind: package_kind === 'class' ? 'class_package' : 'pt_package',
-                 client_id, package_id, location_id, cross_location_sgd,
+                 client_id, package_id, location_id, instructor_id, cross_location_sgd,
                  applied_promotion_id, applied_promo_code_id }
    }, { expires_at: matches the redemption hold when the code is capped, else the standard 24h })
 8. Insert stripe_payments: status='pending', kind, client_id, payment_intent_id

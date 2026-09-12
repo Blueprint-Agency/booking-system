@@ -19,6 +19,8 @@ interface ApiPtPackage {
   name: string;
   session_type: PtSessionType;
   num_sessions: number;
+  validity_days: number;
+  instructor_bound: boolean;
   price_sgd: string;
   status: "active" | "archived";
   archived_at: string | null;
@@ -31,6 +33,8 @@ function fromApi(r: ApiPtPackage): PtPackage {
     name: r.name,
     sessionType: r.session_type,
     numSessions: r.num_sessions,
+    validityDays: r.validity_days,
+    instructorBound: r.instructor_bound,
     priceSgd: Number(r.price_sgd),
     status: r.status,
     promotions: (r.promotions ?? []).map(promotionFromApi),
@@ -88,6 +92,8 @@ export default function PrivateSessionsPage() {
         await api.patch(`/portal/admin/pt-packages/${pkg.id}`, {
           name: pkg.name,
           num_sessions: pkg.numSessions,
+          validity_days: pkg.validityDays,
+          instructor_bound: pkg.instructorBound,
           price_sgd: String(pkg.priceSgd),
           promotions: promosPayload,
         });
@@ -96,6 +102,8 @@ export default function PrivateSessionsPage() {
           name: pkg.name,
           session_type: pkg.sessionType,
           num_sessions: pkg.numSessions,
+          validity_days: pkg.validityDays,
+          instructor_bound: pkg.instructorBound,
           price_sgd: String(pkg.priceSgd),
           promotions: promosPayload,
         });
@@ -331,6 +339,10 @@ function PackageGroup({
                     {pkg.sessionType === "1on1" ? "1-on-1" : "2-on-1"}
                   </Badge>
                   <Badge tone="neutral">{pkg.numSessions} sessions</Badge>
+                  <Badge tone="neutral">{pkg.validityDays}-day validity</Badge>
+                  {/* Only shown when on — an open package is the norm and needs
+                      no badge saying it is ordinary. */}
+                  {pkg.instructorBound && <Badge tone="accent">Instructor-bound</Badge>}
                 </div>
               </div>
             </div>

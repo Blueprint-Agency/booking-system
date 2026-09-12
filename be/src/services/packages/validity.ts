@@ -1,6 +1,3 @@
-/** Global validity for PT packages — the PT catalog has no per-package validity. */
-export const PT_VALIDITY_DAYS = 365
-
 export interface PackageValidity {
   kind: 'credit_bundle' | 'unlimited' | 'trial' | 'pt'
   expiresAt: Date | null
@@ -26,6 +23,40 @@ export function addMonths(from: Date, months: number): Date {
   ).getUTCDate()
   d.setUTCDate(Math.min(day, lastDayOfTargetMonth))
   return d
+}
+
+/**
+ * Days added to a purchase instant, in UTC. `expires_at` is a timestamptz and
+ * must not drift with the server's local zone — `setDate` reads and writes the
+ * local day, which shifts the stamp by the offset on a non-UTC host.
+ */
+export function addDays(from: Date, days: number): Date {
+  const d = new Date(from)
+  d.setUTCDate(d.getUTCDate() + days)
+  return d
+}
+
+/**
+ * When a purchase of a catalogue row expires, as a pure function of the kind and
+ * the row's own validity — the rule checkout and the grant must agree on.
+ *
+ *  - credit_bundle / trial / pt: purchase time plus the catalogue's `validity_days`
+ *  - unlimited: null — a Duration is calendar months, not days, and whether the
+ *    clock starts now or at Activation is a rule this helper cannot see (§3/§4).
+ *    `grantPackage` decides and stamps it.
+ *
+ * PT goes through this same helper on purpose. It used to expire on a global
+ * 365-day constant no admin could see or change; the constant is gone and a PT
+ * package now carries its own validity like every other dated product.
+ */
+export function purchaseExpiry(
+  kind: PackageValidity['kind'],
+  validityDays: number | null,
+  now: Date,
+): Date | null {
+  if (kind === 'unlimited') return null
+  if (validityDays == null) return null
+  return addDays(now, validityDays)
 }
 
 /**

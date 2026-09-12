@@ -5,14 +5,15 @@ import { isUniqueViolation } from '../../db/unique-violation'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { sendPackagePurchaseEmail } from '../notifications/send-purchase-email'
 import { globalPolicy } from '../../db/schema/policy'
+import { listActiveInstructors } from '../schedule/client-catalog'
 import { bestPrice, listActivePromotionsFor } from './promotions'
 import type { Tx } from './ledger'
 import {
-  PT_VALIDITY_DAYS,
   addMonths,
   computeActive,
   crossLocationMonths,
   crossLocationPriceSgd,
+  purchaseExpiry,
 } from './validity'
 
 type ClassPackageRow = typeof classPackages.$inferSelect
@@ -117,6 +118,42 @@ export function locationForPurchase(
   return locationId
 }
 
+/**
+ * The **Bound Instructor** this purchase lands on — null for every package that
+ * has none. The Home Location rule read across to PT: pure, so the grant and
+ * the checkout that precedes it refuse exactly the same purchases, and a
+ * refusal never arrives after the member has been charged.
+ *
+ * `instructorBound` is the catalogue row's flag, read at purchase. It is not
+ * copied onto the purchased row — the stored instructor id IS the binding, so
+ * an admin can bind a package sold open later without a second flag to keep in
+ * step, and flipping the catalogue flag moves future sales only.
+ *
+ * `activeInstructorIds` is the same set the checkout picker is fed from, so a
+ * member cannot pick anybody the rule would then refuse. Someone who has left
+ * is not in it: the studio may not sell sessions with an instructor who cannot
+ * teach them.
+ */
+export function instructorForPurchase(
+  kind: PackageKind,
+  instructorBound: boolean,
+  instructorId: string | null | undefined,
+  activeInstructorIds: string[],
+): string | null {
+  // An unbound package — and every kind that is not PT at all — asks the member
+  // nothing, so a choice arriving on one is a mistake rather than a preference
+  // to honour quietly. The two kinds of PT package stay distinct.
+  if (kind !== 'pt' || !instructorBound) {
+    if (instructorId) throw new BadRequestError('instructor_only_applies_to_bound_pt')
+    return null
+  }
+  if (!instructorId) throw new BadRequestError('pt_bound_requires_instructor')
+  if (!activeInstructorIds.includes(instructorId)) {
+    throw new BadRequestError('instructor_not_active')
+  }
+  return instructorId
+}
+
 export type HomeLocationRefusal =
   | 'home_location_requires_unlimited'
   | 'home_location_unchanged'
@@ -176,6 +213,30 @@ export async function assertPurchasableLocation(
 ): Promise<void> {
   const live = kind === 'unlimited' ? await liveUnlimited(tenantId, clientId, new Date()) : []
   locationForPurchase(kind, locationId, live.map(r => r.locationId))
+}
+
+/**
+ * `instructorForPurchase` against the Tenant's roster. The ONE place the rule
+ * meets the database, called by both the checkout and the grant — checkout for
+ * the refusal (a rule that only fires in the webhook has already charged the
+ * member) and the grant for the id it stores.
+ *
+ * The roster comes from the same listing that feeds the checkout picker, so the
+ * picker can never offer somebody the rule would then refuse. It is read only
+ * when there is a pick to check against it: an unbound package with no pick is
+ * settled by the pure rule alone.
+ */
+export async function resolveBoundInstructor(
+  tenantId: string,
+  kind: PackageKind,
+  instructorBound: boolean,
+  instructorId: string | null | undefined,
+): Promise<string | null> {
+  const roster =
+    kind === 'pt' && instructorBound && instructorId
+      ? (await listActiveInstructors(tenantId)).map(i => i.id)
+      : []
+  return instructorForPurchase(kind, instructorBound, instructorId, roster)
 }
 
 /**
@@ -294,29 +355,17 @@ export async function applyCrossLocationAddOn(
 }
 
 /**
- *  - credit_bundle: now + validity_days
- *  - unlimited:     null — a Duration is calendar months, not days, and whether the
- *                   clock starts now or at Activation is a rule this helper cannot
- *                   see (§3/§4). `grantPackage` decides and stamps it.
- *  - trial:         now + validity_days (now required by the catalogue check)
- *  - pt:            now + PT_VALIDITY_DAYS (365)
+ * Every dated kind now reads the same column off its own catalogue row — a PT
+ * package carries `validity_days` too, so there is one rule and no kind with a
+ * hidden constant behind it. The arithmetic itself lives in `./validity.ts`,
+ * where it is checkable without a database.
  */
 function computeExpiry(
   kind: PackageKind,
   src: ClassPackageRow | PtPackageRow,
   now: Date,
 ): Date | null {
-  if (kind === 'pt') {
-    const d = new Date(now)
-    d.setDate(d.getDate() + PT_VALIDITY_DAYS)
-    return d
-  }
-  if (kind === 'unlimited') return null
-  const days = (src as ClassPackageRow).validityDays
-  if (days == null) return null
-  const d = new Date(now)
-  d.setDate(d.getDate() + days)
-  return d
+  return purchaseExpiry(kind, src.validityDays, now)
 }
 
 export interface GrantPackageInput {
@@ -344,6 +393,13 @@ export interface GrantPackageInput {
    * only. Refused for every kind that has no Home Location to extend.
    */
   crossLocationPaidSgd?: string | null
+  /**
+   * The instructor the member picked at checkout for an Instructor-Bound PT
+   * package (#109). Required for one, refused for anything else. It reaches
+   * here off the provider's session metadata on a card payment and straight
+   * from checkout on a purchase a discount took to zero — one rule, both paths.
+   */
+  instructorId?: string | null
 }
 
 /**
@@ -379,6 +435,8 @@ export async function grantPackage(
   let sourcePtPackageId: string | null = null
   let creditsOrSessionsRemaining: number | null = null
   let source: ClassPackageRow | PtPackageRow
+  /** The catalogue's Instructor-Bound flag, read at purchase — never a class package's. */
+  let instructorBound = false
 
   if (input.packageKind === 'class') {
     const [row] = await db
@@ -416,6 +474,7 @@ export async function grantPackage(
     kind = 'pt'
     sourcePtPackageId = row.id
     creditsOrSessionsRemaining = row.numSessions
+    instructorBound = row.instructorBound
   }
 
   // Only an Unlimited Plan has a Home Location to extend, so only it can carry
@@ -429,6 +488,15 @@ export async function grantPackage(
 
   const live = kind === 'unlimited' ? await liveUnlimited(tenantId, input.clientId, now) : []
   const locationId = locationForPurchase(kind, input.locationId, live.map(r => r.locationId))
+  // The same rule checkout already applied, applied again against the roster as
+  // it stands now. Checkout is what saves the member from paying for a refusal;
+  // this is what makes the refusal true of the row that actually lands.
+  const boundInstructorId = await resolveBoundInstructor(
+    tenantId,
+    kind,
+    instructorBound,
+    input.instructorId,
+  )
 
   if (kind === 'unlimited') {
     const cs = source as ClassPackageRow
@@ -454,6 +522,7 @@ export async function grantPackage(
         appliedPromotionId: input.appliedPromotionId ?? null,
         appliedPromoCodeId: input.appliedPromoCodeId ?? null,
         locationId,
+        boundInstructorId,
         durationMonths,
         crossLocationPaidSgd: input.crossLocationPaidSgd ?? null,
         creditsOrSessionsRemaining,

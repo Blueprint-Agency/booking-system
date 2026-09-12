@@ -40,6 +40,9 @@ function serializeClientPackage(r: Awaited<ReturnType<typeof listClientPackages>
     // re-derives coverage.
     cross_location_paid_sgd: r.crossLocationPaidSgd,
     session_type: r.sessionType,
+    // Who this PT package's sessions are with (#109). Null means open to any
+    // instructor — the member surface reads the null and never re-derives it.
+    bound_instructor: r.boundInstructor,
   }
 }
 

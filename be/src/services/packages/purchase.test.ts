@@ -1,5 +1,5 @@
 import assert from 'node:assert'
-import { locationForPurchase, homeLocationMove } from './purchase'
+import { locationForPurchase, homeLocationMove, instructorForPurchase } from './purchase'
 
 // The rule this module exists to hold: checkout and the grant must refuse the
 // same purchases, because a refusal that only fires in the webhook has already
@@ -123,5 +123,69 @@ assert.deepStrictEqual(
   { ok: true, moveIds: [PKG_ACTIVATED, PKG_DORMANT] },
   'unchanged means every live plan already sits there, not just the one staff clicked',
 )
+
+// --- the Bound Instructor a purchase lands on (#109) ---
+//
+// Same reason the Location rule is pure and tested here: checkout and the grant
+// must refuse the same purchases, because a refusal that only fires in the
+// webhook has already charged the member.
+
+const COACH_A = 'cccccccc-cccc-cccc-cccc-cccccccccccc'
+const COACH_B = 'dddddddd-dddd-dddd-dddd-dddddddddddd'
+const LEAVER = 'eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee'
+const ROSTER = [COACH_A, COACH_B]
+
+assert.strictEqual(
+  instructorForPurchase('pt', true, COACH_A, ROSTER),
+  COACH_A,
+  'a bound PT package takes the active instructor the member picked',
+)
+
+assert.throws(
+  () => instructorForPurchase('pt', true, null, ROSTER),
+  /pt_bound_requires_instructor/,
+  'a bound PT package may not be bought with nobody bound',
+)
+
+assert.throws(
+  () => instructorForPurchase('pt', true, LEAVER, ROSTER),
+  /instructor_not_active/,
+  'the studio may not sell sessions with an instructor who has left',
+)
+
+// An empty roster is the same refusal and not a pass: a studio with no active
+// instructor has nobody to sell bound sessions with.
+assert.throws(
+  () => instructorForPurchase('pt', true, COACH_A, []),
+  /instructor_not_active/,
+  'a pick is refused when the roster holds nobody',
+)
+
+assert.strictEqual(
+  instructorForPurchase('pt', false, null, ROSTER),
+  null,
+  'an unbound PT package asks the member nothing and lands open',
+)
+
+assert.throws(
+  () => instructorForPurchase('pt', false, COACH_A, ROSTER),
+  /instructor_only_applies_to_bound_pt/,
+  'a choice on an unbound PT package is a mistake, not a preference to honour',
+)
+
+for (const kind of ['credit_bundle', 'unlimited', 'trial'] as const) {
+  assert.strictEqual(
+    instructorForPurchase(kind, false, null, ROSTER),
+    null,
+    `a ${kind} lands with no instructor at all`,
+  )
+  assert.throws(
+    () => instructorForPurchase(kind, true, COACH_A, ROSTER),
+    /instructor_only_applies_to_bound_pt/,
+    // The flag lives on the PT catalogue, so it can only reach a class package
+    // through a caller's mistake. The kind decides, never the flag.
+    `a ${kind} cannot be bound to an instructor however the flag arrives`,
+  )
+}
 
 console.log('packages/purchase.test ok')

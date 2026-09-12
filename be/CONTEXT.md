@@ -91,6 +91,14 @@ _Avoid_: pending, inactive, unused, scheduled, queued
 The moment a Dormant Plan starts its clock: the first confirmed class booking that plan pays for, which can only happen once the plan in front has expired. The end date is fixed at that moment, one Duration forward from that day. A member who stops attending keeps the plan waiting and loses none of it. Activation happens once and never reverses on its own; only staff can return a plan to Dormant.
 _Avoid_: start, redemption, kick-off, going live
 
+**Instructor-Bound**:
+A property of a PT Package **in the catalogue**: buying it means choosing one instructor, and the purchase lands tied to them. An admin turns it on per package; it is off by default. It is a question asked at checkout and nothing else — it is never copied onto what the member buys, so turning it on or off moves future sales only and cannot reach a package already sold. A PT Package that is not Instructor-Bound asks the member nothing and is open to any instructor.
+_Avoid_: dedicated, assigned, exclusive, locked, instructor-specific
+
+**Bound Instructor**:
+The one instructor a **purchased** PT Package's sessions are with. It is a single nullable column on the purchased row, and it IS the binding: "bound" means exactly that the column is filled, which is why a package sold open can be bound later without a second flag going stale. Only a PT Package can have one. It must be an active instructor of the Tenant at the moment it is set; a Bound Instructor later archived stays bound and visibly so, rather than the package silently reopening.
+_Avoid_: owner, assigned instructor, coach, trainer, preferred instructor
+
 ### Merch
 
 **Merch**:

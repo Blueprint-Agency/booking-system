@@ -1,11 +1,13 @@
 import assert from 'node:assert'
 import {
+  addDays,
   addMonths,
   applyMovement,
   computeActive,
   crossLocationMonths,
   crossLocationPriceSgd,
   isDormant,
+  purchaseExpiry,
   setExpiryRefusal,
   type PackageValidity,
 } from './validity'
@@ -141,6 +143,52 @@ assert.strictEqual(
 assert.strictEqual(
   addMonths(new Date('2026-11-30T00:00:00Z'), 3).toISOString(),
   '2027-02-28T00:00:00.000Z',
+)
+
+// --- purchase expiry --------------------------------------------------------
+// The rule the deleted PT_VALIDITY_DAYS constant used to hide: a PT package
+// expires at purchase time plus ITS OWN catalogue validity, through the same
+// helper a Credit Bundle goes through. Nothing here reads a global.
+
+assert.strictEqual(
+  purchaseExpiry('pt', 30, new Date('2026-06-01T09:30:00Z'))?.toISOString(),
+  '2026-07-01T09:30:00.000Z',
+  'a PT purchase expires its validity in days after the purchase instant',
+)
+
+assert.strictEqual(
+  purchaseExpiry('pt', 365, new Date('2026-06-01T00:00:00Z'))?.toISOString(),
+  '2027-06-01T00:00:00.000Z',
+  'the 365 the old constant applied is now just one validity among many',
+)
+
+// Two PT packages bought at the same moment on different validities end on
+// different days — which is the whole point of the column.
+assert.notStrictEqual(
+  purchaseExpiry('pt', 30, NOW)?.toISOString(),
+  purchaseExpiry('pt', 90, NOW)?.toISOString(),
+)
+
+// PT and a Credit Bundle on the same validity land on the same instant: one
+// rule, no per-kind arithmetic.
+assert.strictEqual(
+  purchaseExpiry('pt', 60, NOW)?.toISOString(),
+  purchaseExpiry('credit_bundle', 60, NOW)?.toISOString(),
+)
+
+// An Unlimited Plan is months, not days, and whose clock has not necessarily
+// started — `grantPackage` stamps it, not this.
+assert.strictEqual(purchaseExpiry('unlimited', 60, NOW), null)
+
+// Leap day, and a year boundary — `addDays` is UTC so neither drifts with the
+// host's zone.
+assert.strictEqual(
+  addDays(new Date('2028-02-28T16:00:00Z'), 1).toISOString(),
+  '2028-02-29T16:00:00.000Z',
+)
+assert.strictEqual(
+  addDays(new Date('2026-12-31T23:00:00Z'), 1).toISOString(),
+  '2027-01-01T23:00:00.000Z',
 )
 
 // --- Dormant ----------------------------------------------------------------

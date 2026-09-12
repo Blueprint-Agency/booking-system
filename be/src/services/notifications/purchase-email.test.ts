@@ -55,6 +55,41 @@ function input(over: Partial<PurchaseEmailInput> = {}): PurchaseEmailInput {
   )
 }
 
+// --- a bound PT package names the instructor in that same line (#109) --------
+// The renderer has no conditionals, so a variable of its own would leave a
+// dangling label on every open package. Folding it in is what keeps ONE
+// template correct for a bound purchase and an open one.
+{
+  assert.strictEqual(
+    contentsLine('pt', 5, 'Mei Ling'),
+    '5 private sessions with Mei Ling',
+    'a bound PT package tells the member who their sessions are with',
+  )
+  assert.strictEqual(
+    contentsLine('pt', 1, 'Mei Ling'),
+    '1 private session with Mei Ling',
+    'the count is still singular beside the name',
+  )
+  assert.strictEqual(
+    contentsLine('pt', 5, null),
+    '5 private sessions',
+    'an open PT package says nothing about an instructor, rather than saying nobody',
+  )
+  // Only a PT package can be bound, so a name arriving on any other kind is a
+  // caller's mistake and must not reach the member's inbox as a sentence.
+  assert.strictEqual(
+    contentsLine('credit_bundle', 10, 'Mei Ling'),
+    '10 class credits',
+    'a Credit Bundle never names an instructor',
+  )
+  assert.strictEqual(
+    composePurchaseEmail(input({ kind: 'pt', creditsOrSessions: 5, boundInstructorName: 'Mei Ling' }))
+      .variables.contents_line,
+    '5 private sessions with Mei Ling',
+    'the whole email carries the binding through, not just the helper',
+  )
+}
+
 // --- the Unlimited validity line carries the activation sentence -------------
 // A Dormant plan is the only purchase with no date to print, and only an
 // Unlimited Plan can ever be Dormant. The months figure is the frozen
