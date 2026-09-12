@@ -96,7 +96,7 @@ A property of a PT Package **in the catalogue**: buying it means choosing one in
 _Avoid_: dedicated, assigned, exclusive, locked, instructor-specific
 
 **Bound Instructor**:
-The one instructor a **purchased** PT Package's sessions are with. It is a single nullable column on the purchased row, and it IS the binding: "bound" means exactly that the column is filled, which is why a package sold open can be bound later without a second flag going stale. Only a PT Package can have one. It must be an active instructor of the Tenant at the moment it is set; a Bound Instructor later archived stays bound and visibly so, rather than the package silently reopening.
+The one instructor a **purchased** PT Package's sessions are with. It is a single nullable column on the purchased row, and it IS the binding: "bound" means exactly that the column is filled, which is why a package sold open can be bound later without a second flag going stale. Only a PT Package can have one. It must be an active instructor of the Tenant at the moment it is set; a Bound Instructor later archived stays bound and visibly so, rather than the package silently reopening. An admin sets, changes or clears it at any time from the member's profile, with a reason and a ledger row; the change reaches future scheduling only and never moves a session already on the calendar.
 _Avoid_: owner, assigned instructor, coach, trainer, preferred instructor
 
 ### Merch

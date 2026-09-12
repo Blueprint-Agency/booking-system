@@ -17,6 +17,7 @@ import { Avatar, Badge, Button, Dialog, DialogFooter, Input, Label } from "@/com
 import { PackageExpiryDialog } from "@/components/clients/package-expiry-dialog";
 import { CrossLocationDialog } from "@/components/clients/cross-location-dialog";
 import { HomeLocationDialog } from "@/components/clients/home-location-dialog";
+import { BoundInstructorDialog } from "@/components/clients/bound-instructor-dialog";
 import { PackageSetBalanceDialog } from "@/components/clients/package-set-balance-dialog";
 import { RefundDialog } from "@/components/clients/refund-dialog";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -46,6 +47,12 @@ interface ApiPackage {
   cross_location_paid_sgd: string | null;
   /** The Promo Code the member typed at purchase; null if none. */
   promo_code: string | null;
+  /**
+   * The one instructor this PT Package's sessions go to; null means open to
+   * anyone. Still named after they are archived — the package stays bound until
+   * an admin rebinds it.
+   */
+  bound_instructor: { id: string; name: string } | null;
   /** There is money at the payment provider to give back (§14). */
   refundable: boolean;
   /**
@@ -132,6 +139,7 @@ export default function ClientProfilePage({
   const [expiryFor, setExpiryFor] = useState<ApiPackage | null>(null);
   const [crossLocationFor, setCrossLocationFor] = useState<ApiPackage | null>(null);
   const [homeLocationFor, setHomeLocationFor] = useState<ApiPackage | null>(null);
+  const [boundInstructorFor, setBoundInstructorFor] = useState<ApiPackage | null>(null);
   const [refundFor, setRefundFor] = useState<ApiPackage | null>(null);
   const [workshopRefundFor, setWorkshopRefundFor] = useState<ApiWorkshopPurchase | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -170,6 +178,7 @@ export default function ClientProfilePage({
       setExpiryFor(null);
       setCrossLocationFor(null);
       setHomeLocationFor(null);
+      setBoundInstructorFor(null);
       setRefundFor(null);
       setWorkshopRefundFor(null);
       await load();
@@ -339,6 +348,13 @@ export default function ClientProfilePage({
                   // superadmin-only — so is the write itself. Offering it to an
                   // admin would open a dialog with nothing to pick.
                   const canMoveHomeLocation = p.kind === "unlimited" && isSuperadmin;
+                  // Only a PT Package has a Bound Instructor, and every one of
+                  // them does — a package sold open is bound later from here.
+                  // Superadmin-only for the same reason as the Home Location
+                  // move: the picker needs the instructor roster, which is
+                  // superadmin-only, and `/clients/*` is read-only for a plain
+                  // admin, so the save would 403 anyway.
+                  const canBindInstructor = p.kind === "pt" && isSuperadmin;
                   const showMenu =
                     canEdit &&
                     (canEditExpiry ||
@@ -346,6 +362,7 @@ export default function ClientProfilePage({
                       canAdjustDelta ||
                       canEditCrossLocation ||
                       canMoveHomeLocation ||
+                      canBindInstructor ||
                       p.refundable);
                   return (
                     <div
@@ -409,6 +426,15 @@ export default function ClientProfilePage({
                               }}
                             />
                           )}
+                          {canBindInstructor && (
+                            <MenuButton
+                              label="Change bound instructor"
+                              onClick={() => {
+                                setBoundInstructorFor(p);
+                                setOpenMenuId(null);
+                              }}
+                            />
+                          )}
                           {canAdjustDelta && (
                             <MenuButton
                               label="Manual adjustment"
@@ -454,6 +480,16 @@ export default function ClientProfilePage({
                           ? ` · both studios (Add-On S$${p.cross_location_paid_sgd})`
                           : ""}
                       </div>
+                      {/* Stated on every PT Package, open ones included — "open
+                          to any instructor" is a fact about the package, and an
+                          absent line would read as one nobody had checked. */}
+                      {p.kind === "pt" && (
+                        <div className="text-xs text-muted">
+                          {p.bound_instructor
+                            ? `Sessions with ${p.bound_instructor.name}`
+                            : "Open to any instructor"}
+                        </div>
+                      )}
                       {/* List Price and the money off derived from it. That figure is
                           NOT stored and NOT sent — a third number would be free to
                           disagree with the two that matter. */}
@@ -659,6 +695,24 @@ export default function ClientProfilePage({
             )
           }
           onClose={() => setHomeLocationFor(null)}
+        />
+      )}
+
+      {isSuperadmin && boundInstructorFor && (
+        <BoundInstructorDialog
+          packageName={boundInstructorFor.package_name}
+          currentInstructor={boundInstructorFor.bound_instructor}
+          onSave={(instructorId, reason) =>
+            runEdit(
+              () =>
+                api!.post(
+                  `/portal/admin/clients/${id}/packages/${boundInstructorFor.id}/bound-instructor`,
+                  { instructor_id: instructorId, reason },
+                ),
+              "Bound instructor updated. Scheduled sessions are unchanged.",
+            )
+          }
+          onClose={() => setBoundInstructorFor(null)}
         />
       )}
 

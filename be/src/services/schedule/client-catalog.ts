@@ -7,7 +7,7 @@ import { classes, classSupportingInstructors } from '../../db/schema/schedule'
 import { classTypes, instructors, locations, rooms } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
 import { NotFoundError } from '../../shared/errors'
-import { readRosters } from './roster'
+import { readRosters, type Tx } from './roster'
 import { lineupsOf } from './lineup'
 
 function r2Url(key: string | null | undefined): string | null {
@@ -351,8 +351,16 @@ export interface InstructorLite {
   avatar_url: string | null
 }
 
-export async function listActiveInstructors(tenantId: string): Promise<InstructorLite[]> {
-  const rows = await db
+/**
+ * `handle` lets a caller already inside a transaction read the roster on that
+ * transaction's own connection. Tenant context is transaction-local — a read on
+ * a different pooled connection is outside it, and RLS fails closed there.
+ */
+export async function listActiveInstructors(
+  tenantId: string,
+  handle: typeof db | Tx = db,
+): Promise<InstructorLite[]> {
+  const rows = await handle
     .select({
       staffUserId: instructors.staffUserId,
       bio: staffUsers.bio,

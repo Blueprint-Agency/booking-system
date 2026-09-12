@@ -1,5 +1,10 @@
 import assert from 'node:assert'
-import { locationForPurchase, homeLocationMove, instructorForPurchase } from './purchase'
+import {
+  locationForPurchase,
+  homeLocationMove,
+  instructorForPurchase,
+  boundInstructorChange,
+} from './purchase'
 
 // The rule this module exists to hold: checkout and the grant must refuse the
 // same purchases, because a refusal that only fires in the webhook has already
@@ -185,6 +190,79 @@ for (const kind of ['credit_bundle', 'unlimited', 'trial'] as const) {
     // The flag lives on the PT catalogue, so it can only reach a class package
     // through a caller's mistake. The kind decides, never the flag.
     `a ${kind} cannot be bound to an instructor however the flag arrives`,
+  )
+}
+
+// --- an admin binds, moves or clears a purchased package's Bound Instructor (#110) ---
+//
+// A separate rule from the purchase one, because it answers a different
+// question: not "what may the studio sell", but "what may an admin change it to
+// afterwards". Clearing is allowed here and impossible at checkout, and a no-op
+// is a refusal rather than a silent write — the audit trail must not gain a row
+// that records nothing.
+
+assert.deepStrictEqual(
+  boundInstructorChange('pt', null, COACH_A, ROSTER),
+  { ok: true, instructorId: COACH_A },
+  'an open PT package can be bound to an active instructor later',
+)
+
+assert.deepStrictEqual(
+  boundInstructorChange('pt', COACH_A, COACH_B, ROSTER),
+  { ok: true, instructorId: COACH_B },
+  'a member can be moved to a new coach',
+)
+
+assert.deepStrictEqual(
+  boundInstructorChange('pt', COACH_A, null, ROSTER),
+  { ok: true, instructorId: null },
+  'clearing the binding reopens the package to anyone',
+)
+
+// The leaver here is the instructor already on the row, not the one being
+// picked. A package bound to somebody archived stays bound until an admin
+// rebinds it, so their own absence must never be what blocks the rebinding.
+assert.deepStrictEqual(
+  boundInstructorChange('pt', LEAVER, COACH_A, ROSTER),
+  { ok: true, instructorId: COACH_A },
+  'a package bound to an archived instructor can still be rebound',
+)
+assert.deepStrictEqual(
+  boundInstructorChange('pt', LEAVER, null, ROSTER),
+  { ok: true, instructorId: null },
+  'a package bound to an archived instructor can still be cleared',
+)
+
+assert.deepStrictEqual(
+  boundInstructorChange('pt', null, LEAVER, ROSTER),
+  { ok: false, refusal: 'instructor_not_active' },
+  'a package may not be bound to somebody who cannot teach it',
+)
+
+assert.deepStrictEqual(
+  boundInstructorChange('pt', COACH_A, COACH_A, ROSTER),
+  { ok: false, refusal: 'bound_instructor_unchanged' },
+  'rebinding to the instructor already bound writes nothing and says so',
+)
+assert.deepStrictEqual(
+  boundInstructorChange('pt', null, null, ROSTER),
+  { ok: false, refusal: 'bound_instructor_unchanged' },
+  'clearing a package that is already open writes nothing and says so',
+)
+
+for (const kind of ['credit_bundle', 'unlimited', 'trial'] as const) {
+  assert.deepStrictEqual(
+    boundInstructorChange(kind, null, COACH_A, ROSTER),
+    { ok: false, refusal: 'bound_instructor_requires_pt' },
+    `a ${kind} has no Bound Instructor to set`,
+  )
+  // The kind is refused before the no-op is even considered: what stops the
+  // admin is the kind, and answering "unchanged" would imply the action exists
+  // for a Credit Bundle and simply had nothing to do.
+  assert.deepStrictEqual(
+    boundInstructorChange(kind, null, null, ROSTER),
+    { ok: false, refusal: 'bound_instructor_requires_pt' },
+    `a ${kind} refuses on its kind, not on the change being empty`,
   )
 }
 

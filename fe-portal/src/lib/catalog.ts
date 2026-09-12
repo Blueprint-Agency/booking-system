@@ -73,6 +73,20 @@ export async function fetchActiveInstructors(api: Api): Promise<CatalogInstructo
   return res.instructors.filter((i) => !i.archived_at);
 }
 
+/**
+ * Instructors a purchased PT Package may be **bound** to (#110). Narrower than
+ * `fetchActiveInstructors`: the backend's binding rule reads the same roster
+ * checkout does, which is accepted instructors only, so offering a pending
+ * invitee here would offer somebody the save would then refuse.
+ */
+export async function fetchBindableInstructors(api: Api): Promise<CatalogInstructor[]> {
+  const res = await cachedGet<{ instructors: CatalogInstructor[] }>(
+    api,
+    "/portal/admin/instructors?status=active",
+  );
+  return res.instructors;
+}
+
 /** Rooms across all locations; archived ones are excluded by the backend. */
 export async function fetchActiveRooms(api: Api): Promise<CatalogRoom[]> {
   const res = await cachedGet<{ rooms: CatalogRoom[] }>(api, "/portal/admin/rooms");

@@ -154,6 +154,48 @@ export function instructorForPurchase(
   return instructorId
 }
 
+export type BoundInstructorRefusal =
+  | 'bound_instructor_requires_pt'
+  | 'instructor_not_active'
+  | 'bound_instructor_unchanged'
+
+export type BoundInstructorChange =
+  | { ok: true; instructorId: string | null }
+  | { ok: false; refusal: BoundInstructorRefusal }
+
+/**
+ * What an admin may change a purchased package's **Bound Instructor** to (#110)
+ * — a different question from `instructorForPurchase`, which decides what the
+ * studio may sell. Two things are true here that are not true at checkout: an
+ * admin may clear the binding, and there is a current value to compare against.
+ *
+ * A no-op is a refusal rather than a quiet success. The change writes a row to
+ * the member's adjustment history, and a history that gains a row recording no
+ * change is worse than one that never gained it.
+ *
+ * `activeInstructorIds` gates only the instructor being moved TO. A package
+ * bound to somebody since archived stays bound and shows as such (§39), so
+ * their absence from the roster must never be what stops an admin rebinding or
+ * clearing it.
+ */
+export function boundInstructorChange(
+  kind: PackageKind,
+  currentInstructorId: string | null,
+  nextInstructorId: string | null,
+  activeInstructorIds: string[],
+): BoundInstructorChange {
+  // The kind decides first. Answering "unchanged" for a Credit Bundle would
+  // imply the action exists for it and simply had nothing to do.
+  if (kind !== 'pt') return { ok: false, refusal: 'bound_instructor_requires_pt' }
+  if (nextInstructorId && !activeInstructorIds.includes(nextInstructorId)) {
+    return { ok: false, refusal: 'instructor_not_active' }
+  }
+  if (currentInstructorId === nextInstructorId) {
+    return { ok: false, refusal: 'bound_instructor_unchanged' }
+  }
+  return { ok: true, instructorId: nextInstructorId }
+}
+
 export type HomeLocationRefusal =
   | 'home_location_requires_unlimited'
   | 'home_location_unchanged'
