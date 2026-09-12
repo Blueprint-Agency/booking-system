@@ -32,6 +32,7 @@ import {
   type RosterPatch,
 } from '../schedule/roster'
 import { planPtTypeChange, ptSessionCost } from './cost'
+import { maySchedulePtRequest } from './binding'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 
 export interface SchedulePtRequestInput {
@@ -52,6 +53,14 @@ export interface SchedulePtRequestInput {
    */
   instructorPaySgd?: number | null
   actorStaffId: string
+  /**
+   * Whether the actor is scheduling as an admin. Decides the Bound Instructor
+   * rule alone (see ./binding.ts) — an admin may place a bound package's
+   * session with any instructor, an instructor may only take their own or an
+   * unbound one. Required rather than defaulted: a caller who forgets would
+   * otherwise be granted or denied the bypass by omission.
+   */
+  actorIsAdmin: boolean
 }
 
 export type SchedulePtRequestError =
@@ -59,6 +68,7 @@ export type SchedulePtRequestError =
   | 'not_pending'
   | 'partner_account_required'
   | 'bad_time_range'
+  | 'pt_request_bound_to_other_instructor'
 // Room / instructor clashes are NOT in here: they throw
 // ConflictError('schedule_conflict') from the occupancy module, the same 409
 // every other scheduling path returns. See services/schedule/occupancy.ts.
@@ -66,6 +76,24 @@ export type SchedulePtRequestError =
 export type SchedulePtRequestResult =
   | { ok: true; ptSessionId: string }
   | { ok: false; error: SchedulePtRequestError }
+
+/**
+ * The Bound Instructor of the package a request was debited from — the one
+ * input the may-schedule rule needs from the database. Null when the package
+ * is open, and null when there is no package to read, which is the same answer
+ * the rule wants: nothing to be bound to.
+ */
+async function boundInstructorFor(
+  tenantId: string,
+  clientPackageId: string,
+): Promise<string | null> {
+  const [pkg] = await db
+    .select({ boundInstructorId: clientPackages.boundInstructorId })
+    .from(clientPackages)
+    .where(and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.id, clientPackageId)))
+    .limit(1)
+  return pkg?.boundInstructorId ?? null
+}
 
 export async function schedulePtRequest(
   tenantId: string,
@@ -84,6 +112,19 @@ export async function schedulePtRequest(
   if (req.sessionType === '2on1' && !req.coClientId) {
     return { ok: false, error: 'partner_account_required' }
   }
+
+  // A package sold as sessions with one coach is not one a different
+  // instructor may pick up off the queue. The instructor queue already hides
+  // these; this is the check a stale screen cannot get past.
+  const boundInstructorId = req.debitedClientPackageId
+    ? await boundInstructorFor(tenantId, req.debitedClientPackageId)
+    : null
+  const allowed = maySchedulePtRequest({
+    boundInstructorId,
+    actorStaffId: input.actorStaffId,
+    actorIsAdmin: input.actorIsAdmin,
+  })
+  if (!allowed.ok) return { ok: false, error: allowed.error }
 
   // Room must belong to the location (throws AppError on mismatch — surfaces 4xx).
   await assertRoomInLocation(tenantId, input.roomId, input.locationId)

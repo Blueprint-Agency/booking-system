@@ -165,6 +165,9 @@ export default function PtRequestsPage() {
                           : ""}
                         {more > 0 ? ` +${more} more` : ""}
                         {partnerHint}
+                        {r.bound_instructor
+                          ? ` · with ${r.bound_instructor.name}`
+                          : ""}
                       </div>
                     </div>
                     <div className="ml-auto flex shrink-0 items-center gap-2">

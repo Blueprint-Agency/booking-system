@@ -202,6 +202,8 @@ PT requests carry a `location_id` chosen by the client at submission time, so th
 | POST | `/pt-requests/:id/schedule` | Convert request → `pt_sessions` row. Body: `{ instructor_id, location_id, room_id, starts_at, ends_at, instructor_pay_sgd?, capacity_online?, capacity_waitlist?, capacity_buffer? }` (`instructor_pay_sgd` = pay to the instructor — see `payroll.ts`). Calls `services/pt-sessions/schedule.ts:schedulePtRequest()` — see §3c. `location_id` must be in the acting admin's `granted_location_ids`. **For 2on1 requests with no `co_client_id` yet** the call rejects with 409 — admin must create the partner's client first via `/admin/clients`, the FE then re-opens the schedule dialog with `co_client_id` resolved. |
 | POST | `/pt-requests/:id/cancel` | Admin cancel. Branches on current status: `pending` → `cancelled_before_scheduled` + refund (1 session for 1on1, 2 for 2on1) to the originating client package; `scheduled` → `cancelled_after_scheduled`, cascade-cancel the linked `pt_sessions` row + every booking on it (state='cancelled', refund_outcome='forfeited'), **no refund** (v1 policy). Emits `admin_cancel_class_pt` inbox row and emails the affected client(s). Idempotent — calling on an already-terminal request is a no-op. |
 
+Every row on both the list and the detail carries `bound_instructor` (`{ id, name }` or null) — the **Bound Instructor** of the package the request was debited from. The admin queue shows all requests with the binding visible; the schedule dialog pre-selects that instructor and allows an override.
+
 ### `pt-sessions.ts` — removed
 
 Admin-side PT actions all flow through `/pt-requests/*`. Cancellation of a scheduled session goes via `POST /pt-requests/:id/cancel` (branches as documented above) so the request and session stay in lockstep. Listing scheduled `pt_sessions` for the schedule view is handled by `schedule.ts:listScheduleItems`.
@@ -429,6 +431,14 @@ tx start
    → else 409 request_not_pending
 2. For 2on1 requests: pt_requests.co_client_id MUST be NOT NULL
    → else 409 partner_account_required (admin must create the partner via /admin/clients first)
+2b. Bound Instructor check: services/pt-sessions/binding.ts:maySchedulePtRequest, against the
+   debited client_packages row's bound_instructor_id. Admin → always allowed. Unbound package
+   → allowed for anyone. Instructor on a package bound to them → allowed.
+   → else 403 pt_request_bound_to_other_instructor
+   The admin route passes actor_is_admin=true and the service does NOT force the bound
+   instructor onto the session — the dialog pre-selects them and the admin may override for
+   that one session. The instructor route forces instructor_id = self, so the rule refuses
+   a bound-to-other request there.
 3. Conflict check: no class, workshop_day, pt_session or corporate_session the instructor is
    ON — main or supporting — overlaps [starts_at, ends_at]
    → if conflict: 409 schedule_conflict
@@ -564,7 +574,7 @@ Scoped to the authenticated instructor. The middleware loads `staff_users` then 
 ### `pt-requests.ts`
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/pt-requests` | All pending PT requests (workspace-agnostic). The request no longer carries an instructor preference — instructors see the full pending queue and pick up the ones they can run, same as admins. |
+| GET | `/pt-requests` | Pending PT requests this instructor may act on (workspace-agnostic): those debited from an unbound package, plus those bound to them. A request bound to a different instructor is not theirs to pick up, so it is filtered out. Each row carries `bound_instructor` (`{ id, name }` or null) — on this surface a non-null value always means "bound to you". |
 | POST | `/pt-requests/:id/schedule` | Same shape as the admin route — `services/pt-sessions/schedule.ts:schedulePtRequest()`. The service forces `instructor_id = ctx.instructor_id` on this surface. |
 | POST | `/pt-requests/:id/cancel` | Same shape as admin cancel — branches on current status per §3c.cancel. |
 

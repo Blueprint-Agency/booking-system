@@ -6,12 +6,15 @@ import {
   getPtRequestForAdmin,
   type AdminPtRequestView,
 } from '../../../services/pt-sessions/list'
-import { schedulePtRequest, type SchedulePtRequestError } from '../../../services/pt-sessions/schedule'
+import { schedulePtRequest } from '../../../services/pt-sessions/schedule'
 import { cancelPtRequest } from '../../../services/pt-sessions/cancel'
+import { statusForScheduleError } from '../pt-schedule-status'
 import { tenantId } from '../../../middleware/tenant'
 
-// Instructor PT surface. Instructors see the full pending queue and pick up the
-// ones they can run — the schedule service forces instructor_id = self. There is
+// Instructor PT surface. Instructors see the pending requests they may act on —
+// unbound ones, plus those bound to them — and pick up the ones they can run;
+// the schedule service forces instructor_id = self. A request debited from a
+// package bound to someone else is neither listed nor schedulable here. There is
 // no approve/decline: scheduling is the implicit approval. See be-portal.md §3c.
 
 const isoDate = z.string().refine(v => !Number.isNaN(Date.parse(v)), { message: 'invalid iso datetime' })
@@ -44,6 +47,9 @@ function serialize(r: AdminPtRequestView) {
     class_type: r.classType,
     location: r.location,
     co_client: r.coClient,
+    // Present only on requests this instructor may take, because the queue
+    // filters the rest out — so a non-null value here means "bound to you".
+    bound_instructor: r.boundInstructor,
     slots: r.slots.map(s => ({ proposed_date: s.proposedDate, start_time: s.startTime, end_time: s.endTime })),
     session: r.session
       ? {
@@ -57,23 +63,15 @@ function serialize(r: AdminPtRequestView) {
   }
 }
 
-function statusForScheduleError(error: SchedulePtRequestError): 400 | 404 | 409 | 422 {
-  switch (error) {
-    case 'request_not_found':
-      return 404
-    case 'not_pending':
-      return 409
-    case 'partner_account_required':
-      return 422
-    case 'bad_time_range':
-      return 400
-  }
-}
-
 const app = new Hono()
-  // Full pending queue — instructors pick up requests they can run.
+  // The pending queue this instructor may act on: unbound requests, plus the
+  // ones bound to them. Somebody else's bound request is not work they can
+  // pick up, so it is not work they see.
   .get('/', async c => {
-    const rows = await listPtRequestsForAdmin(tenantId(c), { status: 'pending' })
+    const rows = await listPtRequestsForAdmin(tenantId(c), {
+      status: 'pending',
+      visibleToInstructorId: c.get('staffUserId') as string,
+    })
     return c.json({ pt_requests: rows.map(serialize) })
   })
   .post('/:id/schedule', zValidator('param', idParam), zValidator('json', scheduleSchema), async c => {
@@ -88,6 +86,9 @@ const app = new Hono()
       startsAt: new Date(body.starts_at),
       endsAt: new Date(body.ends_at),
       actorStaffId: self,
+      // Never the admin bypass: on this surface the binding rule decides, and
+      // a request bound to a different instructor is refused.
+      actorIsAdmin: false,
     })
     if (!result.ok) return c.json({ error: result.error }, statusForScheduleError(result.error))
     c.set('auditTarget' as any, { table: 'pt_requests', id })
