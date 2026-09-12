@@ -83,18 +83,40 @@ export const classPackages = pgTable(
 
 // ---------- pt_packages (§6) ----------
 
-export const ptPackages = pgTable('pt_packages', {
-  tenantId: tenantIdColumn(),
-  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-  name: text('name').notNull(),
-  description: text('description'),
-  sessionType: ptSessionTypeEnum('session_type').notNull(),
-  numSessions: integer('num_sessions').notNull(),
-  priceSgd: numeric('price_sgd', { precision: 10, scale: 2 }).notNull(),
-  status: packageStatusEnum('status').notNull().default('active'),
-  archivedAt: timestamp('archived_at', { withTimezone: true }),
-  deletedAt: timestamp('deleted_at', { withTimezone: true }),
-})
+export const ptPackages = pgTable(
+  'pt_packages',
+  {
+    tenantId: tenantIdColumn(),
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    name: text('name').notNull(),
+    description: text('description'),
+    sessionType: ptSessionTypeEnum('session_type').notNull(),
+    numSessions: integer('num_sessions').notNull(),
+    // **Instructor-Bound**: a member buying this package must choose one active
+    // instructor at checkout, and the purchase lands tied to them. The flag
+    // lives on the catalogue only — the purchased row records the instructor
+    // chosen and not the flag, so an admin can bind an open package later
+    // without a second copy of "is this bound" going stale. Editing it here
+    // moves future sales and never a package already sold.
+    instructorBound: boolean('instructor_bound').notNull().default(false),
+    // How long a purchase of this package lasts, in days — the admin sets it,
+    // exactly as they do on a Credit Bundle. Required, because "never expires"
+    // has left the domain: a null expiry means Dormant and only an Unlimited
+    // Plan can be that. Every row existing before `0044` was backfilled with the
+    // 365 the deleted global constant had been silently applying.
+    validityDays: integer('validity_days').notNull(),
+    priceSgd: numeric('price_sgd', { precision: 10, scale: 2 }).notNull(),
+    status: packageStatusEnum('status').notNull().default('active'),
+    archivedAt: timestamp('archived_at', { withTimezone: true }),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  table => ({
+    validityPositive: check(
+      'pt_packages_validity_days_positive',
+      sql`${table.validityDays} > 0`,
+    ),
+  }),
+)
 
 // ---------- promotions (§4d) — polymorphic ----------
 // Parent table varies (class_packages | pt_packages | workshops), so parent_id has NO DB FK —
@@ -315,6 +337,15 @@ export const clientPackages = pgTable(
     // Home Location — the one Location an Unlimited Plan covers (§1). Only an
     // Unlimited Plan carries one; every other kind is Location-agnostic.
     locationId: uuid('location_id').references(() => locations.id, { onDelete: 'restrict' }),
+    // The **Bound Instructor** — the one instructor this purchased PT package's
+    // sessions are with. Only a PT package can carry one, and it stays nullable
+    // for PT too: "bound" means exactly "this column is filled", which is what
+    // lets a package sold open be bound later without a second flag to keep in
+    // step. `restrict`, because a bound package outlives its instructor's
+    // archival — it stays bound and visibly so, rather than silently reopening.
+    boundInstructorId: uuid('bound_instructor_id').references(() => staffUsers.id, {
+      onDelete: 'restrict',
+    }),
     // Frozen copy of the catalogue Duration in calendar months (§4). Frozen because
     // activation reads it later, and the live catalogue row is admin-editable.
     durationMonths: integer('duration_months'),
@@ -369,19 +400,24 @@ export const clientPackages = pgTable(
     // The folded check (§1 + §3). Strict, no grandfathering: an unusable plan is
     // impossible at the database level rather than something booking has to detect.
     // Only an Unlimited Plan carries a Location and a Duration, and only an
-    // Unlimited Plan may have a null expiry (which means Dormant).
+    // Unlimited Plan may have a null expiry (which means Dormant). And only a
+    // PT package may name a Bound Instructor: the column IS what "bound" means,
+    // so a row of any other kind carrying one would be a binding no rule in the
+    // domain knows how to read.
     kindFields: check(
       'client_packages_kind_fields',
       sql`
         (${table.kind} = 'unlimited'
           AND ${table.locationId} IS NOT NULL
-          AND ${table.durationMonths} IS NOT NULL)
+          AND ${table.durationMonths} IS NOT NULL
+          AND ${table.boundInstructorId} IS NULL)
         OR
         (${table.kind} <> 'unlimited'
           AND ${table.locationId} IS NULL
           AND ${table.durationMonths} IS NULL
           AND ${table.crossLocationPaidSgd} IS NULL
-          AND ${table.expiresAt} IS NOT NULL)
+          AND ${table.expiresAt} IS NOT NULL
+          AND (${table.kind} = 'pt' OR ${table.boundInstructorId} IS NULL))
       `,
     ),
   }),

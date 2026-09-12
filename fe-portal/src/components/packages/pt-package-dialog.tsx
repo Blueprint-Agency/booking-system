@@ -17,6 +17,8 @@ export function PtPackageDialog({
   const [name, setName] = useState(pkg?.name ?? "");
   const [sessionType, setSessionType] = useState<PtSessionType>(pkg?.sessionType ?? "1on1");
   const [numSessions, setNumSessions] = useState<string>(pkg?.numSessions.toString() ?? "");
+  const [validityDays, setValidityDays] = useState<string>(pkg?.validityDays.toString() ?? "");
+  const [instructorBound, setInstructorBound] = useState<boolean>(pkg?.instructorBound ?? false);
   const [priceSgd, setPriceSgd] = useState<string>(pkg?.priceSgd.toString() ?? "");
   const [promotions, setPromotions] = useState<Promotion[]>(pkg?.promotions ?? []);
   const promosOverlap = hasPromotionOverlap(promotions);
@@ -29,6 +31,8 @@ export function PtPackageDialog({
       name: name.trim(),
       sessionType,
       numSessions: Number(numSessions),
+      validityDays: Number(validityDays),
+      instructorBound,
       priceSgd: Number(priceSgd),
       status: pkg?.status ?? "active",
       promotions,
@@ -73,7 +77,7 @@ export function PtPackageDialog({
           />
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3 sm:grid-cols-3">
           <div className="space-y-1.5">
             <Label htmlFor="pt-sessions">Number of sessions</Label>
             <Input
@@ -83,6 +87,18 @@ export function PtPackageDialog({
               min={1}
               value={numSessions}
               onChange={(e) => setNumSessions(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="pt-validity">Validity (days)</Label>
+            <Input
+              id="pt-validity"
+              required
+              type="number"
+              min={1}
+              max={3650}
+              value={validityDays}
+              onChange={(e) => setValidityDays(e.target.value)}
             />
           </div>
           <div className="space-y-1.5">
@@ -98,6 +114,25 @@ export function PtPackageDialog({
             />
           </div>
         </div>
+
+        {/* Instructor-Bound. Off by default, and editing it here moves future
+            sales only — a package a member already bought keeps the instructor
+            it was sold with. */}
+        <label className="flex items-start gap-3 rounded-lg border border-border bg-paper px-3 py-2.5 cursor-pointer transition hover:bg-warm">
+          <input
+            type="checkbox"
+            checked={instructorBound}
+            onChange={(e) => setInstructorBound(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-border text-accent focus:ring-accent"
+          />
+          <span className="min-w-0">
+            <span className="block text-sm font-medium text-ink">Instructor-bound</span>
+            <span className="mt-0.5 block text-xs text-muted">
+              The member picks one instructor at checkout, and every session in the package
+              is with them. Changing this affects future sales only.
+            </span>
+          </span>
+        </label>
 
         <PromotionsEditor
           basePriceSgd={Number(priceSgd) || 0}

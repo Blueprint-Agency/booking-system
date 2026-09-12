@@ -258,6 +258,15 @@ function PackageCard({
               ? ACTIVATION_LINE
               : `Expires ${formatDate(pkg.expiresAt!)}`}
           </p>
+          {/* Who this package's sessions are with. Shown only when the backend
+              says it is bound — an open package says nothing rather than
+              claiming "any instructor", which is a promise nobody made. */}
+          {pkg.boundInstructor && (
+            <p className="text-xs text-muted mt-1">
+              Sessions with{" "}
+              <span className="text-ink">{pkg.boundInstructor.name}</span>
+            </p>
+          )}
           {/* What this plan Covers, and when cross-location coverage ends —
               losing it is never silent (§5). */}
           {isUnlimited && pkg.location && (

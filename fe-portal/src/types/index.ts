@@ -97,6 +97,13 @@ export interface PtPackage {
   name: string;
   sessionType: PtSessionType;
   numSessions: number;
+  validityDays: number;  // required — a PT package always expires (1..3650)
+  /**
+   * Instructor-Bound: a member buying this picks one active instructor at
+   * checkout and the purchase lands tied to them. Future sales only — packages
+   * already sold keep the binding they were sold with.
+   */
+  instructorBound: boolean;
   priceSgd: number;
   status: "active" | "archived";
   promotions: Promotion[];

@@ -23,6 +23,9 @@ export interface ApiPtRequest {
   location: { id: string; name: string };
   // Only present for 2on1. clientId is null when the partner isn't a member yet.
   co_client: { clientId: string | null; name: string | null; email: string | null } | null;
+  // The instructor the member bought these sessions with. Null means the
+  // package is open to any of them.
+  bound_instructor: { id: string; name: string } | null;
   slots: { proposed_date: string; start_time: string; end_time: string }[];
   session: {
     id: string;

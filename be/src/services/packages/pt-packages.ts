@@ -38,6 +38,14 @@ export interface CreatePtPackageInput {
   name: string
   sessionType: PtSessionType
   numSessions: number
+  /** How long a purchase of this package lasts, in days. Required — a PT package always expires. */
+  validityDays: number
+  /**
+   * Instructor-Bound (#109) — a member buying this package picks one active
+   * instructor at checkout. Defaults off, so nothing an admin already sells
+   * changes shape unless they opt in.
+   */
+  instructorBound?: boolean
   priceSgd: string
 }
 
@@ -52,6 +60,8 @@ export async function createPtPackage(
       name: input.name,
       sessionType: input.sessionType,
       numSessions: input.numSessions,
+      validityDays: input.validityDays,
+      instructorBound: input.instructorBound ?? false,
       priceSgd: input.priceSgd,
       status: 'active',
     })
@@ -63,6 +73,18 @@ export interface UpdatePtPackageInput {
   name?: string
   priceSgd?: string
   numSessions?: number
+  /**
+   * Future sales only. The purchased row's `expires_at` is stamped at purchase
+   * from the validity in force then, so editing this never relengthens or
+   * shortens a package a member already owns.
+   */
+  validityDays?: number
+  /**
+   * Future sales only, for the same reason the validity is. The binding a
+   * member already bought lives on their own row as an instructor id, and
+   * nothing here can reach it.
+   */
+  instructorBound?: boolean
   status?: 'active' | 'archived'
 }
 
@@ -78,6 +100,8 @@ export async function updatePtPackage(
       ...(patch.name !== undefined ? { name: patch.name } : {}),
       ...(patch.priceSgd !== undefined ? { priceSgd: patch.priceSgd } : {}),
       ...(patch.numSessions !== undefined ? { numSessions: patch.numSessions } : {}),
+      ...(patch.validityDays !== undefined ? { validityDays: patch.validityDays } : {}),
+      ...(patch.instructorBound !== undefined ? { instructorBound: patch.instructorBound } : {}),
       ...(patch.status !== undefined ? { status: patch.status } : {}),
     })
     .where(and(eq(ptPackages.tenantId, tenantId), eq(ptPackages.id, id)))

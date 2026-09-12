@@ -25,6 +25,9 @@ const checkoutPackageSchema = z.object({
   promo_code: z.string().optional(),
   /** Home Location — required for an Unlimited Plan, refused for anything else (§1). */
   location_id: z.string().uuid().optional(),
+  /** The instructor picked for an Instructor-Bound PT package — required for
+   *  one, refused for anything else (#109). */
+  instructor_id: z.string().uuid().optional(),
   /** Buy the Cross-Location Add-On with the plan — one session, two line items (§5). */
   cross_location_add_on: z.boolean().optional(),
 })
@@ -102,6 +105,7 @@ const app = new Hono()
       packageId: body.package_id,
       promoCode: body.promo_code,
       locationId: body.location_id,
+      instructorId: body.instructor_id,
       crossLocationAddOn: body.cross_location_add_on,
     })
     if (quote.outcome === 'granted') {

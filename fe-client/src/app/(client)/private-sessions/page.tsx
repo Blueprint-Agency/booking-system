@@ -46,13 +46,17 @@ export default function PrivateSessionsPage() {
   const { data: classTypes } = useClassTypes();
   const ptApi = usePtSessionsApi();
 
-  const ptPackages = packages.filter((p) => p.kind === "pt");
+  const ptPackages = useMemo(() => packages.filter((p) => p.kind === "pt"), [packages]);
 
   const [sessionType, setSessionType] = useState<"1on1" | "2on1">("1on1");
   const [classTypeId, setClassTypeId] = useState<string>("");
   const [locationId, setLocationId] = useState<string>("");
   const [slots, setSlots] = useState<Slot[]>([emptySlot()]);
   const [message, setMessage] = useState<string>("");
+  // Which package this request is debited from, when more than one fits. It
+  // decides the instructor too, so it is the member's choice to make and not
+  // ours to guess. Empty means "whichever the form picks by default".
+  const [packageId, setPackageId] = useState<string>("");
 
   // Default to the first location once the public list loads.
   useEffect(() => {
@@ -188,11 +192,22 @@ export default function PrivateSessionsPage() {
 
   const balanceForType = (t: "1on1" | "2on1") => (t === "2on1" ? pt2on1 : pt1on1);
   const requestCost = computedSessionType === "2on1" ? 2 : 1;
-  const matchingPackage = ptPackages.find(
-    (p) =>
-      p.sessionType === computedSessionType &&
-      (p.creditsOrSessionsRemaining ?? 0) >= requestCost,
+  // Every package that could pay for this request. More than one means the
+  // member picks, because the package they pick decides the instructor.
+  const eligiblePackages = useMemo(
+    () =>
+      ptPackages.filter(
+        (p) =>
+          p.sessionType === computedSessionType &&
+          (p.creditsOrSessionsRemaining ?? 0) >= requestCost,
+      ),
+    [ptPackages, computedSessionType, requestCost],
   );
+  // A pick that no longer fits (the session type changed under it) falls back
+  // rather than lingering — the request must never be debited from a package
+  // the member can no longer see in the list.
+  const matchingPackage =
+    eligiblePackages.find((p) => p.id === packageId) ?? eligiblePackages[0];
   const hasPackageForType = ptPackages.some((p) => p.sessionType === computedSessionType);
   const hasEnoughCredits = Boolean(matchingPackage) && balanceForType(computedSessionType) >= requestCost;
 
@@ -242,6 +257,36 @@ export default function PrivateSessionsPage() {
                 You have {pt1on1} 1-on-1 and {pt2on1} 2-on-1 sessions remaining.
               </p>
             </div>
+          )}
+
+          {eligiblePackages.length > 1 && (
+            <div>
+              <label
+                className="text-xs uppercase tracking-wider text-muted mb-1.5 block"
+                htmlFor="pt-package"
+              >
+                Use package
+              </label>
+              <select
+                id="pt-package"
+                value={matchingPackage?.id ?? ""}
+                onChange={(e) => setPackageId(e.target.value)}
+                className="w-full rounded-xl border border-ink/10 bg-card px-3 py-2.5 text-sm text-ink focus:outline-none focus:border-accent"
+              >
+                {eligiblePackages.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} — {p.creditsOrSessionsRemaining ?? 0} left
+                    {p.boundInstructor ? ` · with ${p.boundInstructor.name}` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {matchingPackage?.boundInstructor && (
+            <p className="rounded-xl border border-accent/25 bg-accent/5 px-3 py-2.5 text-sm text-ink">
+              Your sessions will be with {matchingPackage.boundInstructor.name}.
+            </p>
           )}
 
           <div>

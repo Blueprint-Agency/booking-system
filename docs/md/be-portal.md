@@ -202,6 +202,8 @@ PT requests carry a `location_id` chosen by the client at submission time, so th
 | POST | `/pt-requests/:id/schedule` | Convert request → `pt_sessions` row. Body: `{ instructor_id, location_id, room_id, starts_at, ends_at, instructor_pay_sgd?, capacity_online?, capacity_waitlist?, capacity_buffer? }` (`instructor_pay_sgd` = pay to the instructor — see `payroll.ts`). Calls `services/pt-sessions/schedule.ts:schedulePtRequest()` — see §3c. `location_id` must be in the acting admin's `granted_location_ids`. **For 2on1 requests with no `co_client_id` yet** the call rejects with 409 — admin must create the partner's client first via `/admin/clients`, the FE then re-opens the schedule dialog with `co_client_id` resolved. |
 | POST | `/pt-requests/:id/cancel` | Admin cancel. Branches on current status: `pending` → `cancelled_before_scheduled` + refund (1 session for 1on1, 2 for 2on1) to the originating client package; `scheduled` → `cancelled_after_scheduled`, cascade-cancel the linked `pt_sessions` row + every booking on it (state='cancelled', refund_outcome='forfeited'), **no refund** (v1 policy). Emits `admin_cancel_class_pt` inbox row and emails the affected client(s). Idempotent — calling on an already-terminal request is a no-op. |
 
+Every row on both the list and the detail carries `bound_instructor` (`{ id, name }` or null) — the **Bound Instructor** of the package the request was debited from. The admin queue shows all requests with the binding visible; the schedule dialog pre-selects that instructor and allows an override.
+
 ### `pt-sessions.ts` — removed
 
 Admin-side PT actions all flow through `/pt-requests/*`. Cancellation of a scheduled session goes via `POST /pt-requests/:id/cancel` (branches as documented above) so the request and session stay in lockstep. Listing scheduled `pt_sessions` for the schedule view is handled by `schedule.ts:listScheduleItems`.
@@ -317,6 +319,7 @@ There is no separate suspend/unsuspend surface — blocking is the single mechan
 | POST | `/clients/:id/packages/:client_package_id/expiry` | superadmin | `{ expires_at, reason }` — edit expiry on `client_packages` (per `admin-restructure.md` §16 "Edit expiry" action, applies to `credit_bundle`, `unlimited`, `trial`). A **null `expires_at` returns the plan to Dormant** (spec-pre-launch-batch.md §8) — the escape hatch the one-way activation rule depends on — and is accepted for `unlimited` only: 400 `only_unlimited_can_be_dormant` for every other kind. Writes a `manual_adjustments` row with `delta=0` and the reason note, which renders a null expiry as "Dormant". |
 | POST | `/clients/:id/packages/:client_package_id/cross-location` | superadmin | `{ paid_sgd: number \| null, reason }` — attach (amount) or remove (`null`) the **Cross-Location Add-On** on one Unlimited Plan (spec-pre-launch-batch.md §5). 400 `cross_location_requires_unlimited` for every other kind. Writes a `manual_adjustments` row with `delta=0` and the reason, exactly as the expiry edit does. |
 | POST | `/clients/:id/packages/:client_package_id/location` | superadmin | `{ location_id, reason }` — move a member's **Home Location** (spec-pre-launch-batch.md §7), the correction for a studio picked wrong at checkout. Moves the member's Activated plan **and** any Dormant renewal in one transaction, so the two can never disagree and re-open the two-Activated-plans hole §6 closes. **Bookings are untouched**, including bookings at the Location being left. 400 `home_location_requires_unlimited` for every other kind, 400 `home_location_unchanged`, 400 `home_location_plan_not_live` on a plan that has already ended, 404 `location_not_found`, 400 `location_archived`. Writes one `manual_adjustments` row per plan moved, `delta=0`, naming both Locations and the reason. |
+| POST | `/clients/:id/packages/:client_package_id/bound-instructor` | superadmin | `{ instructor_id: uuid \| null, reason }` — bind a purchased PT Package to an instructor, move it to another, or clear it back to open (`null`) (#110, spec #107 §33-§37). 400 `bound_instructor_requires_pt` for every other kind, 400 `instructor_not_active` for a staff id that is not an active instructor of the Tenant, 400 `bound_instructor_unchanged` for a no-op. **Sessions already scheduled are untouched** — the binding decides who may pick up future requests. Writes a `manual_adjustments` row with `delta=0` naming the before and after instructors and the reason, exactly as the expiry edit does. The instructor being moved *away* from is named even when archived, and is not required to be active: a package bound to a leaver stays bound until an admin rebinds it. |
 | POST | `/clients/:id/packages/issue` | superadmin | Admin grants a complimentary package (any kind). Inserts `client_packages` row with `amount_paid_sgd=0`, `stripe_payment_intent_id=NULL`. **Trial issue is gated by the `(client_id) WHERE kind='trial'` unique partial index** — returns `409 trial_already_used` if the client already holds a trial. |
 
 ### `staff.ts` (superadmin-only)
@@ -429,6 +432,14 @@ tx start
    → else 409 request_not_pending
 2. For 2on1 requests: pt_requests.co_client_id MUST be NOT NULL
    → else 409 partner_account_required (admin must create the partner via /admin/clients first)
+2b. Bound Instructor check: services/pt-sessions/binding.ts:maySchedulePtRequest, against the
+   debited client_packages row's bound_instructor_id. Admin → always allowed. Unbound package
+   → allowed for anyone. Instructor on a package bound to them → allowed.
+   → else 403 pt_request_bound_to_other_instructor
+   The admin route passes actor_is_admin=true and the service does NOT force the bound
+   instructor onto the session — the dialog pre-selects them and the admin may override for
+   that one session. The instructor route forces instructor_id = self, so the rule refuses
+   a bound-to-other request there.
 3. Conflict check: no class, workshop_day, pt_session or corporate_session the instructor is
    ON — main or supporting — overlaps [starts_at, ends_at]
    → if conflict: 409 schedule_conflict
@@ -564,7 +575,7 @@ Scoped to the authenticated instructor. The middleware loads `staff_users` then 
 ### `pt-requests.ts`
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/pt-requests` | All pending PT requests (workspace-agnostic). The request no longer carries an instructor preference — instructors see the full pending queue and pick up the ones they can run, same as admins. |
+| GET | `/pt-requests` | Pending PT requests this instructor may act on (workspace-agnostic): those debited from an unbound package, plus those bound to them. A request bound to a different instructor is not theirs to pick up, so it is filtered out. Each row carries `bound_instructor` (`{ id, name }` or null) — on this surface a non-null value always means "bound to you". |
 | POST | `/pt-requests/:id/schedule` | Same shape as the admin route — `services/pt-sessions/schedule.ts:schedulePtRequest()`. The service forces `instructor_id = ctx.instructor_id` on this surface. |
 | POST | `/pt-requests/:id/cancel` | Same shape as admin cancel — branches on current status per §3c.cancel. |
 

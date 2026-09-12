@@ -13,7 +13,7 @@
  */
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
-import { clients } from '../../db/schema/identity'
+import { clients, staffUsers } from '../../db/schema/identity'
 import { clientPackages, classPackages, ptPackages } from '../../db/schema/packages'
 import { bookings } from '../../db/schema/bookings'
 import { stripePayments } from '../../db/schema/ledger'
@@ -79,10 +79,14 @@ export async function sendPackagePurchaseEmail(
         clientId: clients.id,
         classPackageName: classPackages.name,
         ptPackageName: ptPackages.name,
+        boundInstructorName: staffUsers.name,
         receiptUrl: stripePayments.receiptUrl,
       })
       .from(clientPackages)
       .innerJoin(clients, eq(clients.id, clientPackages.clientId))
+      // The Bound Instructor a PT package's sessions are with (#109). Left, and
+      // null on every open package and every other kind.
+      .leftJoin(staffUsers, eq(staffUsers.id, clientPackages.boundInstructorId))
       .leftJoin(classPackages, eq(classPackages.id, clientPackages.sourceClassPackageId))
       .leftJoin(ptPackages, eq(ptPackages.id, clientPackages.sourcePtPackageId))
       .leftJoin(
@@ -100,6 +104,7 @@ export async function sendPackagePurchaseEmail(
       creditsOrSessions: row.creditsOrSessions,
       expiresAt: row.expiresAt,
       durationMonths: row.durationMonths,
+      boundInstructorName: row.boundInstructorName,
       receiptUrl: row.receiptUrl,
       accountUrl: await accountUrlFor(tenantId),
     })

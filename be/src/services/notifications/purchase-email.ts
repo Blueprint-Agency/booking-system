@@ -29,15 +29,27 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
  * for an Unlimited Plan and so left any label a template wrapped around it
  * dangling.
  */
-export function contentsLine(kind: PurchasedKind, creditsOrSessions: number | null): string {
+export function contentsLine(
+  kind: PurchasedKind,
+  creditsOrSessions: number | null,
+  /**
+   * The **Bound Instructor** a PT package's sessions are with (#109); null on
+   * an open package. It is folded into this sentence rather than given a
+   * variable of its own, because a template cannot say two things: a separate
+   * `instructor_line` would render a dangling label on every unbound purchase.
+   */
+  boundInstructorName: string | null = null,
+): string {
   const n = creditsOrSessions ?? 0
   switch (kind) {
     case 'unlimited':
       return 'Unlimited classes'
     case 'credit_bundle':
       return plural(n, 'class credit', 'class credits')
-    case 'pt':
-      return plural(n, 'private session', 'private sessions')
+    case 'pt': {
+      const sessions = plural(n, 'private session', 'private sessions')
+      return boundInstructorName ? `${sessions} with ${boundInstructorName}` : sessions
+    }
     // A first-timer has never heard of a credit, so a trial pass counts classes.
     case 'trial':
       return plural(n, 'class', 'classes')
@@ -97,6 +109,8 @@ export interface PurchaseEmailInput {
   expiresAt: Date | null
   /** Frozen Duration in whole calendar months — Unlimited Plans only. */
   durationMonths: number | null
+  /** The Bound Instructor a PT package's sessions are with; null when open. */
+  boundInstructorName?: string | null
   /** The provider's receipt for a paid purchase; null on the free paths. */
   receiptUrl: string | null
   /** Where a free purchase points instead — the page that lists what they own. */
@@ -118,7 +132,11 @@ export function composePurchaseEmail(input: PurchaseEmailInput): {
     variables: {
       client_name: input.clientName,
       package_name: input.packageName,
-      contents_line: contentsLine(input.kind, input.creditsOrSessions),
+      contents_line: contentsLine(
+        input.kind,
+        input.creditsOrSessions,
+        input.boundInstructorName ?? null,
+      ),
       validity_line: validityLine(input.kind, input.expiresAt, input.durationMonths),
       receipt_url: input.receiptUrl || input.accountUrl,
     },

@@ -1,10 +1,11 @@
-import { and, asc, desc, eq, inArray, ne, or, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/pg-core'
 import { db } from '../../db'
 import { clients, staffUsers } from '../../db/schema/identity'
 import { classTypes, locations, rooms } from '../../db/schema/catalog'
 import { ptRequests, ptRequestSlots, ptSessions } from '../../db/schema/schedule'
 import { bookings } from '../../db/schema/bookings'
+import { clientPackages } from '../../db/schema/packages'
 
 export interface ClientPtRequestView {
   id: string
@@ -193,6 +194,13 @@ export interface AdminPtRequestView {
   location: { id: string; name: string }
   /** Resolved partner for 2on1: a member (with clientId) OR a not-yet-member (clientId null). */
   coClient: { clientId: string | null; name: string | null; email: string | null } | null
+  /**
+   * The **Bound Instructor** of the package this request was debited from —
+   * who the member bought their sessions with. Null means the package is open
+   * to any instructor. An admin routes by it; an instructor sees it only on
+   * requests they may take, because the queue hides the rest.
+   */
+  boundInstructor: { id: string; name: string } | null
   slots: { proposedDate: string; startTime: string; endTime: string }[]
   /** Populated once scheduled (else null). */
   session: {
@@ -205,6 +213,13 @@ export interface AdminPtRequestView {
   /** Requester booking cancellation outcome when terminal; null while active/pending. */
   refundOutcome: string | null
 }
+
+/**
+ * `staff_users` is joined twice on this query — once for whoever ended up
+ * teaching the scheduled session, once for whoever the package is bound to.
+ * They are different questions and frequently different people.
+ */
+const boundInstructor = alias(staffUsers, 'bound_instructor')
 
 function adminSelect() {
   return db
@@ -231,6 +246,8 @@ function adminSelect() {
       sessionEndsAt: ptSessions.endsAt,
       instructorName: staffUsers.name,
       roomName: rooms.name,
+      boundInstructorId: clientPackages.boundInstructorId,
+      boundInstructorName: boundInstructor.name,
     })
     .from(ptRequests)
     .innerJoin(clients, eq(clients.id, ptRequests.clientId))
@@ -240,6 +257,8 @@ function adminSelect() {
     // pt_sessions.instructor_id → instructors.staff_user_id, which IS staff_users.id.
     .leftJoin(staffUsers, eq(staffUsers.id, ptSessions.instructorId))
     .leftJoin(rooms, eq(rooms.id, ptSessions.roomId))
+    .leftJoin(clientPackages, eq(clientPackages.id, ptRequests.debitedClientPackageId))
+    .leftJoin(boundInstructor, eq(boundInstructor.id, clientPackages.boundInstructorId))
 }
 
 type AdminRow = Awaited<ReturnType<ReturnType<typeof adminSelect>['where']>>[number]
@@ -321,6 +340,9 @@ async function hydrateAdminRows(
       classType: { id: r.classTypeId, name: r.className ?? 'Class' },
       location: { id: r.locationId, name: r.locationName ?? 'Studio' },
       coClient,
+      boundInstructor: r.boundInstructorId
+        ? { id: r.boundInstructorId, name: r.boundInstructorName || 'Instructor' }
+        : null,
       slots: slotsByReq.get(r.id) ?? [],
       session: r.sessionId
         ? {
@@ -345,6 +367,13 @@ export interface ListPtRequestsForAdminOpts {
   status?: PtRequestStatusFilter
   /** Workspace scoping — restrict to these location ids (admin's granted locations). */
   locationIds?: string[]
+  /**
+   * The instructor whose queue this is. Hides requests debited from a package
+   * bound to somebody else — work they may not pick up, so work they should
+   * not be reading a member's private note about. Omit for the admin queue,
+   * which sees everything with the binding shown.
+   */
+  visibleToInstructorId?: string
 }
 
 /** Portal triage queue. Optional status + location-scope filters; newest first. */
@@ -356,6 +385,16 @@ export async function listPtRequestsForAdmin(
   if (opts.status) conds.push(eq(ptRequests.status, opts.status))
   if (opts.locationIds && opts.locationIds.length) {
     conds.push(inArray(ptRequests.locationId, opts.locationIds))
+  }
+  if (opts.visibleToInstructorId) {
+    // Unbound, or bound to them. `IS NULL` covers both the open package and a
+    // request with no package to read — neither is somebody else's.
+    conds.push(
+      or(
+        isNull(clientPackages.boundInstructorId),
+        eq(clientPackages.boundInstructorId, opts.visibleToInstructorId),
+      )!,
+    )
   }
   const rows = await adminSelect()
     .where(and(...conds))

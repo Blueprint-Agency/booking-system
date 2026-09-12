@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { clientPackages, classPackages, promoCodes, ptPackages } from '../../db/schema/packages'
 import { locations } from '../../db/schema/catalog'
+import { staffUsers } from '../../db/schema/identity'
 import { isDormant } from './validity'
 import { readCrossLocationRateSgd } from './purchase'
 
@@ -154,6 +155,12 @@ export interface ClientPackageWithSource {
   crossLocationPaidSgd: string | null
   /** '1on1' | '2on1' for PT packages; null otherwise. */
   sessionType: '1on1' | '2on1' | null
+  /**
+   * The **Bound Instructor** this PT package's sessions are with (#109); null
+   * on an open package and on every other kind. Named here rather than left as
+   * a bare id, because every surface that shows a binding shows the person.
+   */
+  boundInstructor: { id: string; name: string } | null
   /** The Promo Code the member typed at purchase, as text; null if none (§11). */
   promoCode: string | null
 }
@@ -188,6 +195,8 @@ export async function listClientPackages(
       crossLocationPaidSgd: clientPackages.crossLocationPaidSgd,
       locationId: clientPackages.locationId,
       locationName: locations.name,
+      boundInstructorId: clientPackages.boundInstructorId,
+      boundInstructorName: staffUsers.name,
       classPackageName: classPackages.name,
       ptPackageName: ptPackages.name,
       classPackageCredits: classPackages.credits,
@@ -200,6 +209,9 @@ export async function listClientPackages(
     .leftJoin(classPackages, eq(classPackages.id, clientPackages.sourceClassPackageId))
     .leftJoin(ptPackages, eq(ptPackages.id, clientPackages.sourcePtPackageId))
     .leftJoin(locations, eq(locations.id, clientPackages.locationId))
+    // Left, and never filtered on the instructor's status: a package bound to
+    // someone who has since been archived stays bound and says so.
+    .leftJoin(staffUsers, eq(staffUsers.id, clientPackages.boundInstructorId))
     .leftJoin(promoCodes, eq(promoCodes.id, clientPackages.appliedPromoCodeId))
     .where(and(...baseConds))
 
@@ -220,6 +232,9 @@ export async function listClientPackages(
     durationMonths: r.durationMonths,
     crossLocationPaidSgd: r.crossLocationPaidSgd,
     sessionType: (r.ptSessionType ?? null) as '1on1' | '2on1' | null,
+    boundInstructor: r.boundInstructorId
+      ? { id: r.boundInstructorId, name: r.boundInstructorName || 'Instructor' }
+      : null,
     promoCode: r.promoCode ?? null,
   }))
 }

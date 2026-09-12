@@ -27,6 +27,7 @@ import {
   priceCrossLocationForNewPlan,
   purchaseFreeTrial,
   quoteCrossLocationAddOn,
+  resolveBoundInstructor,
 } from './purchase'
 
 /**
@@ -79,6 +80,12 @@ export interface PackageCheckoutInput {
   promoCode?: string
   /** Home Location — required for an Unlimited Plan, refused for anything else (§1). */
   locationId?: string
+  /**
+   * The instructor picked for an Instructor-Bound PT package (#109) — required
+   * for one, refused for anything else. It rides provider session metadata to
+   * the grant, exactly as `locationId` does.
+   */
+  instructorId?: string
   /** Buy the Cross-Location Add-On with the plan — one session, two line items (§5). */
   crossLocationAddOn?: boolean
 }
@@ -86,7 +93,7 @@ export interface PackageCheckoutInput {
 export type PackageCheckout = CheckoutQuote<{ clientPackageId: string }>
 
 export async function beginPackageCheckout(input: PackageCheckoutInput): Promise<PackageCheckout> {
-  const { tenantId, clientId, packageKind, packageId, locationId } = input
+  const { tenantId, clientId, packageKind, packageId, locationId, instructorId } = input
 
   let packageName: string
   let priceSgd: string
@@ -115,6 +122,10 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
     // then the member has paid, and a refusal there charges them for nothing.
     // Same rule, run before Stripe.
     await assertPurchasableLocation(tenantId, clientId, pkg.kind, locationId)
+    // No class package is ever Instructor-Bound, so this only ever refuses —
+    // but it refuses HERE rather than letting a stray pick reach the grant and
+    // fail after the charge.
+    await resolveBoundInstructor(tenantId, pkg.kind, false, instructorId)
 
     // The Add-On on a plan being bought now (§5). A new plan has its whole
     // Duration ahead of it whether it starts today or waits Dormant, so it
@@ -161,6 +172,10 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
     if (!pkg) throw new NotFoundError('pt_package_not_found')
     if (pkg.status !== 'active') throw new BadRequestError('pt_package_not_active')
     await assertPurchasableLocation(tenantId, clientId, 'pt', locationId)
+    // The binding rule, run before the provider. The grant runs it again on the
+    // roster as it stands then; this is the run that stops a member paying for
+    // a purchase that was never going to land.
+    await resolveBoundInstructor(tenantId, 'pt', pkg.instructorBound, instructorId)
     if (input.crossLocationAddOn) await priceCrossLocationForNewPlan(tenantId, 'pt', null)
 
     const promos = await listActivePromotionsFor(tenantId, 'pt_package', [pkg.id])
@@ -213,6 +228,10 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
       appliedPromotionId,
       appliedPromoCodeId: applied?.promoCodeId ?? null,
       locationId: locationId ?? null,
+      // The free path carries the pick directly — there is no provider session
+      // for it to ride on, and a package bound only when a card was charged is
+      // the drift #109 exists to prevent.
+      instructorId: instructorId ?? null,
       crossLocationPaidSgd: crossLocationSgd,
     })
     return { outcome: 'granted', clientPackageId: granted.clientPackageId }
@@ -232,6 +251,7 @@ export async function beginPackageCheckout(input: PackageCheckoutInput): Promise
       applied_promotion_id: appliedPromotionId ?? '',
       list_price_sgd: priceSgd,
       location_id: locationId ?? '',
+      instructor_id: instructorId ?? '',
       // The plan's money and the Add-On's money, split without overlap: the two
       // together are the charge, and each stays separately reportable.
       amount_sgd: (charge.planCents / 100).toFixed(2),

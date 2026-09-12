@@ -188,6 +188,10 @@ async function dispatchStripeEvent(event: Stripe.Event): Promise<void> {
         // Home Location for an Unlimited Plan (§1). The checkout that puts it on
         // the session is #23; this only carries it through.
         locationId: meta.location_id || null,
+        // The instructor the member picked for an Instructor-Bound PT package
+        // (#109). Checkout put it on the session and refused the purchase if it
+        // was wrong; this only carries it through.
+        instructorId: meta.instructor_id || null,
         crossLocationPaidSgd: crossLocationSgd,
       })
 

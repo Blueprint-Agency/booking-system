@@ -113,7 +113,25 @@ export function ScheduleFromRequestDialog({
         if (cancelled) return;
         setInstructors(ins);
         setRooms(rm);
-        setInstructorId((prev) => prev || ins[0]?.id || "");
+        // A bound package's session goes to its Bound Instructor unless the
+        // admin says otherwise — so pre-select them and leave the picker open.
+        //
+        // Set for THIS request rather than only when the field is still empty:
+        // the dialog stays mounted across a change of request (the timetable
+        // picker, and the partner-link flow), and a sticky `prev` would carry
+        // the last request's instructor into the next one.
+        //
+        // A bound coach who has been archived is NOT pre-selected and NOT
+        // quietly replaced by the first name on the roster: the admin is told
+        // the binding is stale and picks deliberately (#107 story 39).
+        const bound = request.bound_instructor?.id;
+        setInstructorId(
+          bound
+            ? ins.some((i) => i.id === bound)
+              ? bound
+              : ""
+            : ins[0]?.id || "",
+        );
       } finally {
         if (!cancelled) setRefLoading(false);
       }
@@ -121,11 +139,18 @@ export function ScheduleFromRequestDialog({
     return () => {
       cancelled = true;
     };
-  }, [api]);
+  }, [api, request.id, request.bound_instructor?.id]);
 
   const activeLocations = useMemo(
     () => accessibleLocations.filter((l) => !l.archivedAt),
     [accessibleLocations],
+  );
+  // A package can outlive the coach it was sold with (#107 story 39): the
+  // binding stays and shows as stale until an admin rebinds it.
+  const boundInstructorArchived = Boolean(
+    !refLoading &&
+      currentRequest.bound_instructor &&
+      !instructors.some((i) => i.id === currentRequest.bound_instructor!.id),
   );
   const roomsForLocation = useMemo(
     () => rooms.filter((r) => r.location_id === locationId),
@@ -297,6 +322,18 @@ export function ScheduleFromRequestDialog({
                 />
               ))}
             </select>
+            {currentRequest.bound_instructor && (
+              <p
+                className={`text-xs ${boundInstructorArchived ? "text-warning" : "text-muted"}`}
+              >
+                This package is bound to {currentRequest.bound_instructor.name}.
+                {boundInstructorArchived
+                  ? " They're no longer an active instructor — pick who runs this session, or rebind the package on the member's profile."
+                  : instructorId !== currentRequest.bound_instructor.id
+                    ? " You're overriding that for this session only."
+                    : ""}
+              </p>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label>Instructor pay (S$)</Label>

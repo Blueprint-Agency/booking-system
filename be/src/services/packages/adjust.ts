@@ -1,17 +1,20 @@
 /**
  * Admin edits to a client's package wallet — manual credit/session adjustments,
- * absolute balance sets, expiry changes, the Cross-Location Add-On and Home
- * Location moves. Every change writes a manual_adjustments ledger row (delta=0
+ * absolute balance sets, expiry changes, the Cross-Location Add-On, Home
+ * Location moves and a PT Package's Bound Instructor. Every change writes a
+ * manual_adjustments ledger row (delta=0
  * for every edit that moves no credits). See be-portal.md §3d.
  */
 import { and, eq, inArray, isNull } from 'drizzle-orm'
 import { db } from '../../db'
 import { clientPackages } from '../../db/schema/packages'
 import { locations } from '../../db/schema/catalog'
+import { staffUsers } from '../../db/schema/identity'
 import { manualAdjustments } from '../../db/schema/ledger'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
+import { listActiveInstructors } from '../schedule/client-catalog'
 import { computeActive, setExpiryRefusal } from './validity'
-import { homeLocationMove, liveUnlimited } from './purchase'
+import { boundInstructorChange, homeLocationMove, liveUnlimited } from './purchase'
 
 export type ClientPackageRow = typeof clientPackages.$inferSelect
 
@@ -283,6 +286,89 @@ export async function setHomeLocation(input: SetHomeLocationInput): Promise<Clie
     )
 
     return { ...pkg, locationId: input.locationId }
+  })
+}
+
+export interface SetBoundInstructorInput {
+  tenantId: string
+  clientId: string
+  clientPackageId: string
+  /** The instructor the package is bound to, or null to reopen it to anyone. */
+  instructorId: string | null
+  reason: string
+  actedByStaffId: string
+}
+
+/**
+ * Bind, move or clear a purchased PT Package's **Bound Instructor** (#110) —
+ * the admin-side counterpart to the choice a member makes at checkout, for a
+ * package sold open, a member changing coach, or a coach who has left.
+ *
+ * Sessions already on the calendar are deliberately untouched, exactly as a
+ * Home Location move leaves bookings standing: the binding decides who may pick
+ * up FUTURE requests, and rewriting a scheduled session under an instructor is
+ * a different act with different consequences.
+ *
+ * The refusals live in `boundInstructorChange` beside the purchase rule, so the
+ * dialog and the route stay presentation and plumbing.
+ */
+export async function setBoundInstructor(
+  input: SetBoundInstructorInput,
+): Promise<ClientPackageRow> {
+  if (!input.reason.trim()) throw new BadRequestError('reason_required')
+
+  return db.transaction(async tx => {
+    const [pkg] = await tx
+      .select()
+      .from(clientPackages)
+      .where(ownedPackage(input.tenantId, input.clientId, input.clientPackageId))
+      .limit(1)
+    if (!pkg) throw new NotFoundError('client_package_not_found')
+
+    // The Tenant's active instructors, read only when there is a pick to check
+    // against them — clearing a binding needs no roster. Same set the checkout
+    // picker is fed from, so the two paths refuse the same people. Read through
+    // the transaction's own handle: tenant context is transaction-local, so a
+    // read on another pooled connection is outside it.
+    const roster = input.instructorId
+      ? (await listActiveInstructors(input.tenantId, tx)).map(i => i.id)
+      : []
+
+    const change = boundInstructorChange(pkg.kind, pkg.boundInstructorId, input.instructorId, roster)
+    if (!change.ok) throw new BadRequestError(change.refusal)
+
+    // Both names, read by id and not filtered on status: the instructor being
+    // moved AWAY from may well be archived by now, and an audit row that calls
+    // them "unknown" loses the only record of who the sessions were with.
+    const ids = [pkg.boundInstructorId, change.instructorId].filter((v): v is string => v !== null)
+    const names = new Map(
+      ids.length
+        ? (
+            await tx
+              .select({ id: staffUsers.id, name: staffUsers.name })
+              .from(staffUsers)
+              .where(and(eq(staffUsers.tenantId, input.tenantId), inArray(staffUsers.id, ids)))
+          ).map(s => [s.id, s.name || 'Instructor'])
+        : [],
+    )
+    const who = (id: string | null) => (id ? (names.get(id) ?? 'unknown') : 'anyone')
+    const reason = `Bound instructor changed from ${who(pkg.boundInstructorId)} to ${who(change.instructorId)}: ${input.reason.trim()}`
+
+    await tx
+      .update(clientPackages)
+      .set({ boundInstructorId: change.instructorId })
+      .where(and(eq(clientPackages.tenantId, input.tenantId), eq(clientPackages.id, pkg.id)))
+
+    await tx.insert(manualAdjustments).values({
+      tenantId: input.tenantId,
+      clientId: input.clientId,
+      clientPackageId: pkg.id,
+      delta: 0,
+      reason,
+      actedByStaffId: input.actedByStaffId,
+    })
+
+    return { ...pkg, boundInstructorId: change.instructorId }
   })
 }
 

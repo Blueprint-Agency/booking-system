@@ -117,6 +117,53 @@ const getClassTypes = cacheOnce(async () => {
   return res.class_types;
 });
 
+/** An active instructor of this studio, as the public roster states them. */
+export interface ApiInstructorLite {
+  id: string;
+  name: string;
+  bio: string | null;
+  avatar_url: string | null;
+}
+
+const getInstructors = cacheOnce(async () => {
+  const res = await publicApi.get<{ instructors: ApiInstructorLite[] }>("/public/instructors");
+  return res.instructors;
+});
+
+/**
+ * The studio's active instructors — the checkout picker for an Instructor-Bound
+ * PT package. Deliberately the same listing the backend's binding rule checks a
+ * pick against, so the picker can never offer somebody the purchase would then
+ * be refused for.
+ *
+ * A failed fetch lands as an empty list, exactly as `useLocations` does; the
+ * caller says so rather than leaving a disabled button above an empty picker.
+ */
+export function useInstructors(): {
+  data: ApiInstructorLite[] | null;
+  loading: boolean;
+} {
+  const [data, setData] = useState<ApiInstructorLite[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const instructors = await getInstructors();
+        if (!cancelled) setData(instructors);
+      } catch {
+        if (!cancelled) setData([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return { data, loading };
+}
+
 export function useLocations(): {
   data: ApiLocationFull[] | null;
   loading: boolean;

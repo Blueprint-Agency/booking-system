@@ -8,11 +8,8 @@ import {
 } from '../../../services/pt-sessions/list'
 import { linkPtRequestPartner } from '../../../services/pt-sessions/request'
 import { tenantId } from '../../../middleware/tenant'
-import {
-  schedulePtRequest,
-  updatePtSession,
-  type SchedulePtRequestError,
-} from '../../../services/pt-sessions/schedule'
+import { schedulePtRequest, updatePtSession } from '../../../services/pt-sessions/schedule'
+import { statusForScheduleError } from '../pt-schedule-status'
 import { cancelPtRequest } from '../../../services/pt-sessions/cancel'
 import { getPtSessionDetail, type PtSessionDetail } from '../../../services/schedule/detail'
 
@@ -92,6 +89,9 @@ function serialize(r: AdminPtRequestView) {
     class_type: r.classType,
     location: r.location,
     co_client: r.coClient,
+    // Shown on every pending request so an admin can route it — and fed back
+    // as the schedule dialog's pre-selected instructor.
+    bound_instructor: r.boundInstructor,
     slots: r.slots.map(s => ({ proposed_date: s.proposedDate, start_time: s.startTime, end_time: s.endTime })),
     session: r.session
       ? {
@@ -127,19 +127,6 @@ function serializeSession(d: PtSessionDetail) {
   }
 }
 
-function statusForScheduleError(error: SchedulePtRequestError): 400 | 404 | 409 | 422 {
-  switch (error) {
-    case 'request_not_found':
-      return 404
-    case 'not_pending':
-      return 409
-    case 'partner_account_required':
-      return 422
-    case 'bad_time_range':
-      return 400
-  }
-}
-
 const app = new Hono()
   // ?status=pending|scheduled|cancelled_*|attended|all (default pending), ?location_id=
   .get('/', zValidator('query', listQuery), async c => {
@@ -169,6 +156,9 @@ const app = new Hono()
       endsAt: new Date(body.ends_at),
       instructorPaySgd: body.instructor_pay_sgd ?? null,
       actorStaffId: actor,
+      // The dialog pre-selects the Bound Instructor, but an admin may override
+      // it for one session — a bound coach's illness must not block a member.
+      actorIsAdmin: true,
     })
     if (!result.ok) return c.json({ error: result.error }, statusForScheduleError(result.error))
     c.set('auditTarget' as any, { table: 'pt_requests', id })

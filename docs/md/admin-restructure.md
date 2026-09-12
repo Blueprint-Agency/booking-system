@@ -297,11 +297,12 @@ A standalone, quota-based pack that any client may purchase **once only** — en
 - `name` (e.g. "5-session 1-on-1 pack")
 - `session_type` — `1on1` or `2on1` (dropdown)
 - `sessions` — number of sessions
+- `validity_days` — how long a purchase lasts, in days. **Required**, 1..3650, set beside `sessions` in the editor. A purchased package expires at purchase time plus this figure, through the same helper a Credit Bundle uses. Editing it moves **future sales only** — a package already sold keeps the expiry it was stamped with. There is no "never expires": a null expiry means Dormant and only an Unlimited Plan can be that.
 - `price_sgd`
 - Active / Archived toggle
 - `promotions: Promotion[]` — same shape and best-price-wins resolution as §5d.
 
-No validity period on PT packages.
+The catalogue list shows each package's session count and validity.
 
 **Booking config:**
 - `book_in_advance_days` — how many days ahead a client can submit a PT request.

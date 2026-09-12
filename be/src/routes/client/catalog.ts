@@ -68,6 +68,10 @@ function serializePtPackage(
     description: r.description,
     session_type: r.sessionType,
     num_sessions: r.numSessions,
+    validity_days: r.validityDays,
+    // Instructor-Bound (#109) — checkout asks for an instructor on a true, and
+    // for nothing at all on a false.
+    instructor_bound: r.instructorBound,
     price_sgd: r.priceSgd,
     effective_price_sgd: effective.effectivePriceSgd,
     applied_promotion_id: effective.appliedPromotionId,

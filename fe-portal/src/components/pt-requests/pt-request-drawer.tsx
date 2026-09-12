@@ -50,6 +50,13 @@ export function PtRequestDrawer({
           </Row>
           <Row label="Class type">{request.class_type.name}</Row>
           <Row label="Location">{request.location.name}</Row>
+          <Row label="Bound instructor">
+            {request.bound_instructor ? (
+              request.bound_instructor.name
+            ) : (
+              <span className="text-muted">Open to any instructor</span>
+            )}
+          </Row>
           {request.session_type === "2on1" && (
             <Row label="Partner">
               <div className="flex items-center gap-2">

@@ -2,13 +2,13 @@
 
 import { useState, Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Lock, ShoppingCart, Tag, Check, AlertCircle, MapPin } from "lucide-react";
+import { Lock, ShoppingCart, Tag, Check, AlertCircle, MapPin, UserRound } from "lucide-react";
 import { cn, formatCurrency, formatDurationMonths } from "@/lib/utils";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { EmptyState } from "@/components/ui/empty-state";
 import { useAuth } from "@clerk/nextjs";
 import { fetchApi } from "@/lib/api-url";
-import { useLocations } from "@/lib/classes";
+import { useInstructors, useLocations } from "@/lib/classes";
 import { CrossLocationBlock } from "@/components/checkout/cross-location-block";
 import { AddOnCheckout } from "@/components/checkout/add-on-checkout";
 import { PayButton, StripeFootnote } from "@/components/checkout/pay-button";
@@ -21,14 +21,15 @@ type PackageInfo =
   | ({ _kind: "class" } & ApiClassPackage)
   | ({ _kind: "pt" } & ApiPtPackage);
 
+/** "1 day" / "90 days" — the review step states the validity before the member pays. */
+const validityPhrase = (days: number) => (days === 1 ? "1 day" : `${days} days`);
+
 function subtitleForPackage(pkg: PackageInfo): string {
   if (pkg._kind === "pt") {
-    return `${pkg.num_sessions} private sessions`;
+    return `${pkg.num_sessions} private sessions · valid ${validityPhrase(pkg.validity_days)}`;
   }
   if (pkg.kind === "credit_bundle" || pkg.kind === "trial") {
-    const days = pkg.validity_days ?? 0;
-    const validity = days === 1 ? "1 day" : `${days} days`;
-    return `${pkg.credits} credit${pkg.credits === 1 ? "" : "s"} · valid ${validity}`;
+    return `${pkg.credits} credit${pkg.credits === 1 ? "" : "s"} · valid ${validityPhrase(pkg.validity_days ?? 0)}`;
   }
   const duration = pkg.duration_months != null ? formatDurationMonths(pkg.duration_months) : "?";
   return `Unlimited classes · ${duration}`;
@@ -84,6 +85,14 @@ function CheckoutContent() {
     ? unlimitedLocation ?? locations?.find((l) => l.id === homeLocationId) ?? null
     : null;
   const needsHomeStudio = isUnlimited && !unlimitedLocation && !homeLocationId;
+
+  // The instructor an Instructor-Bound PT package's sessions will be with. Only
+  // a bound package asks; an open one shows nothing and sends nothing, and the
+  // backend refuses a pick that arrives on one either way.
+  const [instructorId, setInstructorId] = useState<string | null>(null);
+  const isBoundPt = pkg?._kind === "pt" && pkg.instructor_bound;
+  const { data: instructors, loading: instructorsLoading } = useInstructors();
+  const needsInstructor = isBoundPt && !instructorId;
 
   // Fetch package or workshop details from the catalogue
   useEffect(() => {
@@ -183,6 +192,9 @@ function CheckoutContent() {
             package_id: packageId,
             promo_code: promoApplied?.code,
             location_id: chosenLocation?.id,
+            // Only ever sent for a bound PT package — the server refuses a pick
+            // on anything else rather than ignoring it.
+            instructor_id: isBoundPt ? instructorId ?? undefined : undefined,
             cross_location_add_on: isUnlimited && addOn,
           };
       const res = await fetchApi(endpoint, {
@@ -407,6 +419,64 @@ function CheckoutContent() {
               </div>
             )}
 
+            {/* Your instructor — an Instructor-Bound PT package is sold tied to
+                one coach, chosen here. An unbound package renders nothing at
+                all, so the two kinds of package stay visibly distinct. */}
+            {isBoundPt && (
+              <div className="mt-4 pb-4 border-b border-ink/5">
+                <p className="text-sm font-medium text-ink mb-1">Your instructor</p>
+                {instructorsLoading ? (
+                  <p className="text-xs text-muted py-3">Loading…</p>
+                ) : !instructors?.length ? (
+                  // useInstructors swallows a failed fetch into an empty list,
+                  // so this branch is also a studio with nobody on its roster.
+                  // The sentence has to be true of both — without it, Pay sits
+                  // disabled above a picker with nothing to click and no reason.
+                  <p className="text-sm text-error py-2">
+                    We couldn&apos;t show any instructors for this package. Refresh the page, or
+                    contact the studio if this keeps happening.
+                  </p>
+                ) : (
+                  <>
+                    <p className="text-xs text-muted mb-3">
+                      Every session in this package is with the instructor you pick.
+                    </p>
+                    <div className="space-y-2">
+                      {instructors.map((ins) => (
+                        <label
+                          key={ins.id}
+                          className={cn(
+                            "flex items-start gap-3 rounded-xl border px-4 py-3 cursor-pointer transition-colors",
+                            instructorId === ins.id
+                              ? "border-accent-deep bg-accent/10"
+                              : "border-ink/10 hover:border-accent",
+                          )}
+                        >
+                          <input
+                            type="radio"
+                            name="bound-instructor"
+                            value={ins.id}
+                            checked={instructorId === ins.id}
+                            onChange={() => setInstructorId(ins.id)}
+                            className="mt-0.5 h-4 w-4 border-ink/30 text-accent focus:ring-accent"
+                          />
+                          <span className="min-w-0">
+                            <span className="block text-sm font-medium text-ink">{ins.name}</span>
+                            {ins.bio && (
+                              <span className="mt-0.5 flex items-start gap-1 text-xs text-muted line-clamp-2">
+                                <UserRound className="h-3 w-3 shrink-0 mt-0.5" />
+                                {ins.bio}
+                              </span>
+                            )}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
             {/* Cross-Location Add-On — disabled until a studio is picked (§12).
                 Held back until the rate has loaded, so it never quotes S$0. */}
             {isUnlimited && !packagesLoading && (
@@ -514,13 +584,27 @@ function CheckoutContent() {
             </p>
           )}
 
+          {/* The same restatement for a binding: the member reads the name once
+              in the picker and once more on the way to paying. */}
+          {isBoundPt && instructorId && (
+            <p className="text-sm text-ink text-center">
+              Your sessions will be with{" "}
+              <span className="font-medium">
+                {instructors?.find((i) => i.id === instructorId)?.name}
+              </span>
+              .
+            </p>
+          )}
+
           <PayButton
             onClick={handleProceed}
             busy={redirecting}
-            disabled={needsHomeStudio}
+            disabled={needsHomeStudio || needsInstructor}
             label={
               needsHomeStudio
                 ? "Choose your home studio to continue"
+                : needsInstructor
+                  ? "Choose your instructor to continue"
                 : // A discount that clears the total skips Stripe entirely, so the
                   // button names the confirmation rather than a charge of nothing.
                   totalCents === 0

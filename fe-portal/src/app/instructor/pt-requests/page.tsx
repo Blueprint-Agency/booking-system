@@ -24,6 +24,12 @@ interface InstructorPtRequest {
   class_type: { id: string; name: string };
   location: { id: string; name: string };
   co_client: { clientId: string | null; name: string | null; email: string | null } | null;
+  /**
+   * The instructor the member's package is bound to. The queue only carries
+   * requests this instructor may take, so a value here always means "bound to
+   * you" — somebody else's bound request never arrives.
+   */
+  bound_instructor: { id: string; name: string } | null;
   slots: PtSlot[];
 }
 interface ApiRoom {
@@ -98,7 +104,14 @@ export default function InstructorPtRequestsPage() {
               >
                 <div className="flex items-start justify-between gap-3 px-4 py-3">
                   <div className="min-w-0">
-                    <div className="font-medium text-ink">{r.client.name}</div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-ink">{r.client.name}</span>
+                      {r.bound_instructor && (
+                        <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[11px] text-ink">
+                          your member
+                        </span>
+                      )}
+                    </div>
                     <div className="text-xs text-muted">
                       {r.session_type === "2on1" ? "2-on-1" : "1-on-1"} ·{" "}
                       {r.class_type.name} · {r.location.name}
@@ -200,6 +213,10 @@ function ScheduleForm({
       const body = e2 instanceof ApiError ? (e2.body as { error?: string } | null) : null;
       if (status === 409 && body?.error === "not_pending")
         setErr("This request was already taken or cancelled.");
+      else if (body?.error === "pt_request_bound_to_other_instructor")
+        setErr(
+          "This member's package is bound to another instructor. Ask an admin to schedule it.",
+        );
       else if (status === 422)
         setErr("The 2-on-1 partner needs a member account before this can be scheduled.");
       // A clash names the room or instructor and the event in the way — that

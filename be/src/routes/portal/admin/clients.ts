@@ -19,6 +19,7 @@ import {
   adjustBalance,
   setBalance,
   setCrossLocationAddOn,
+  setBoundInstructor,
   setHomeLocation,
   setPackageExpiry,
   type ClientPackageRow,
@@ -73,6 +74,14 @@ const refundSchema = z.object({
 // "clear it" — an Unlimited Plan always Covers exactly one Location.
 const homeLocationSchema = z.object({
   location_id: z.string().uuid(),
+  reason: z.string().min(1).max(2000),
+})
+// Binding a purchased PT Package to an instructor, moving it, or clearing it
+// back to open (#110). Null is a real value here and not an omission — it is
+// how an admin reopens a package to the whole roster — so the field is required
+// and nullable rather than optional.
+const boundInstructorSchema = z.object({
+  instructor_id: z.string().uuid().nullable(),
   reason: z.string().min(1).max(2000),
 })
 const expirySchema = z.object({
@@ -134,6 +143,10 @@ function packageView(p: ClientPackageWithSource, refund?: RefundState) {
     // Which Promo Code the member typed, frozen at purchase (§11). The text is
     // read through the id, so a later relabelling of the code cannot restate it.
     promo_code: p.promoCode,
+    // The one instructor a PT Package's sessions go to; null means open to
+    // anyone. Named even when they have since been archived — a package bound
+    // to a leaver stays bound and must show as such until an admin rebinds it.
+    bound_instructor: p.boundInstructor,
   }
 }
 
@@ -174,6 +187,9 @@ function editedPackageView(p: ClientPackageRow) {
     credits_or_sessions_remaining: p.creditsOrSessionsRemaining,
     expires_at: p.expiresAt,
     cross_location_paid_sgd: p.crossLocationPaidSgd,
+    // Just the id — the name lives on the profile row this edit tells the
+    // client to refetch, and a name looked up twice is a name free to disagree.
+    bound_instructor_id: p.boundInstructorId,
   }
 }
 
@@ -253,6 +269,22 @@ const app = new Hono()
       clientId: id,
       clientPackageId: pid,
       expiresAt: body.expires_at ? new Date(body.expires_at) : null,
+      reason: body.reason,
+      actedByStaffId: c.get('staffUserId'),
+    })
+    c.set('auditTarget' as any, { table: 'client_packages', id: pid })
+    return c.json(editedPackageView(row))
+  })
+  // Bind, move or clear a purchased PT Package's Bound Instructor (§33-§37).
+  // Future scheduling only — sessions already on the calendar never move.
+  .post('/:id/packages/:pid/bound-instructor', zValidator('param', idPkgParam), zValidator('json', boundInstructorSchema), async c => {
+    const { id, pid } = c.req.valid('param')
+    const body = c.req.valid('json')
+    const row = await setBoundInstructor({
+      tenantId: tenantId(c),
+      clientId: id,
+      clientPackageId: pid,
+      instructorId: body.instructor_id,
       reason: body.reason,
       actedByStaffId: c.get('staffUserId'),
     })

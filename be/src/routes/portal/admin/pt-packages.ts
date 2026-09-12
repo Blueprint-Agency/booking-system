@@ -49,10 +49,19 @@ function toPromotionWriteInput(p: z.infer<typeof promotionInputSchema>): Promoti
   }
 }
 
+// Required on create and never nullable: "never expires" has left the domain,
+// so a blank field cannot be how an admin creates an eternal PT package.
+// 3650 days is ten years — past that the admin means "no expiry" and may not.
+const validityDaysField = z.number().int().min(1).max(3650)
+
 const createSchema = z.object({
   name: z.string().min(1).max(160),
   session_type: sessionTypeEnum,
   num_sessions: z.number().int().min(1).max(200),
+  validity_days: validityDaysField,
+  // Absent means off (#109) — a studio that has never heard of binding keeps
+  // selling open packages without sending the field.
+  instructor_bound: z.boolean().optional(),
   price_sgd: priceField,
   promotions: z.array(promotionInputSchema).optional(),
 })
@@ -60,6 +69,8 @@ const createSchema = z.object({
 const updateSchema = z.object({
   name: z.string().min(1).max(160).optional(),
   num_sessions: z.number().int().min(1).max(200).optional(),
+  validity_days: validityDaysField.optional(),
+  instructor_bound: z.boolean().optional(),
   price_sgd: priceField.optional(),
   status: statusEnum.optional(),
   promotions: z.array(promotionInputSchema).optional(),
@@ -78,6 +89,8 @@ function serialize(
     name: r.name,
     session_type: r.sessionType,
     num_sessions: r.numSessions,
+    validity_days: r.validityDays,
+    instructor_bound: r.instructorBound,
     price_sgd: r.priceSgd,
     effective_price_sgd: effective.effectivePriceSgd,
     applied_promotion_id: effective.appliedPromotionId,
@@ -123,6 +136,8 @@ const app = new Hono()
       name: body.name,
       sessionType: body.session_type,
       numSessions: body.num_sessions,
+      validityDays: body.validity_days,
+      instructorBound: body.instructor_bound,
       priceSgd: body.price_sgd,
     })
     if (body.promotions && body.promotions.length) {
@@ -144,6 +159,10 @@ const app = new Hono()
     const row = await svc.updatePtPackage(tenantId(c), id, {
       ...(body.name !== undefined ? { name: body.name } : {}),
       ...(body.num_sessions !== undefined ? { numSessions: body.num_sessions } : {}),
+      ...(body.validity_days !== undefined ? { validityDays: body.validity_days } : {}),
+      ...(body.instructor_bound !== undefined
+        ? { instructorBound: body.instructor_bound }
+        : {}),
       ...(body.price_sgd !== undefined ? { priceSgd: body.price_sgd } : {}),
       ...(body.status !== undefined ? { status: body.status } : {}),
     })

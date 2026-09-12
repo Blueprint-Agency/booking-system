@@ -39,6 +39,13 @@ export interface ApiPtPackage {
   description: string | null;
   session_type: ApiPtSessionType;
   num_sessions: number;
+  /** How long the purchase lasts, in days. Always set — a PT package always expires. */
+  validity_days: number;
+  /**
+   * Instructor-Bound: buying this package means choosing one active instructor
+   * at checkout, and the purchase lands tied to them. False asks nothing.
+   */
+  instructor_bound: boolean;
   price_sgd: string;
   effective_price_sgd: string;
   applied_promotion_id: string | null;

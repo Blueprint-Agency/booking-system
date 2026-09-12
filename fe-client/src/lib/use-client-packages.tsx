@@ -30,6 +30,11 @@ export interface LivePackage {
   /** The plan's Home Location; null for every kind but an Unlimited Plan. */
   location: UnlimitedLocation | null;
   sessionType: "1on1" | "2on1" | null;
+  /**
+   * The instructor this PT package's sessions are with; null means open to any
+   * of them. Backend-derived — never re-tested here as "PT and bound".
+   */
+  boundInstructor: { id: string; name: string } | null;
 }
 
 /** The one Location a live Unlimited Plan Covers. Null when there is no live plan. */
@@ -90,6 +95,7 @@ interface RawClientPackage {
   cross_location_paid_sgd: string | null;
   unlimited_location: UnlimitedLocation | null;
   session_type: "1on1" | "2on1" | null;
+  bound_instructor: { id: string; name: string } | null;
 }
 interface RawPackagesResponse {
   client_packages: RawClientPackage[];
@@ -160,6 +166,7 @@ function mapPackagesResponse(raw: RawPackagesResponse): ClientPackagesData {
       crossLocationPaidSgd: p.cross_location_paid_sgd,
       location: p.unlimited_location ?? null,
       sessionType: p.session_type,
+      boundInstructor: p.bound_instructor ?? null,
     }));
 
   return {
