@@ -11,9 +11,11 @@ import { clientPackages } from '../../db/schema/packages'
 import { locations } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
 import { manualAdjustments } from '../../db/schema/ledger'
-import { BadRequestError, NotFoundError } from '../../shared/errors'
+import { isUniqueViolation } from '../../db/unique-violation'
+import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { listActiveInstructors } from '../schedule/client-catalog'
-import { computeActive, setExpiryRefusal } from './validity'
+import { computeActive } from './validity'
+import { revivalPatch } from './activation'
 import { boundInstructorChange, homeLocationMove, liveUnlimited } from './purchase'
 
 export type ClientPackageRow = typeof clientPackages.$inferSelect
@@ -86,10 +88,13 @@ export async function adjustBalance(input: AdjustInput): Promise<ClientPackageRo
       expiresAt: pkg.expiresAt,
       creditsOrSessionsRemaining: next,
     })
+    // Topping up a spent package while the next one in its family runs
+    // returns it to Dormant rather than tripping the one-Activated index.
+    const patch = await revivalPatch(tx, pkg, nextActive, new Date())
 
     await tx
       .update(clientPackages)
-      .set({ creditsOrSessionsRemaining: next, active: nextActive })
+      .set({ creditsOrSessionsRemaining: next, ...patch })
       .where(and(eq(clientPackages.tenantId, input.tenantId), eq(clientPackages.id, pkg.id)))
 
     await tx.insert(manualAdjustments).values({
@@ -101,7 +106,7 @@ export async function adjustBalance(input: AdjustInput): Promise<ClientPackageRo
       actedByStaffId: input.actedByStaffId,
     })
 
-    return { ...pkg, creditsOrSessionsRemaining: next, active: nextActive }
+    return { ...pkg, creditsOrSessionsRemaining: next, ...patch }
   })
 }
 
@@ -397,12 +402,9 @@ export async function setPackageExpiry(input: SetExpiryInput): Promise<ClientPac
       .limit(1)
     if (!pkg) throw new NotFoundError('client_package_not_found')
 
-    // A blank expiry returns the plan to Dormant, and only an Unlimited Plan
-    // can be Dormant (§8). The rule lives in ./validity so the dialog and the
-    // route stay presentation and plumbing.
-    const refusal = setExpiryRefusal(pkg.kind, input.expiresAt)
-    if (refusal) throw new BadRequestError(refusal)
-
+    // A blank expiry returns the package to Dormant (§8) — the escape hatch the
+    // one-way activation rule depends on, the way an admin undoes an Activation
+    // caused by a class the studio itself cancelled. Every kind can be Dormant.
     // A null expiry means Dormant and nothing else — "no expiry" has left the domain.
     const fmt = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : 'Dormant')
     const reason = `Expiry changed from ${fmt(pkg.expiresAt)} to ${fmt(input.expiresAt)}: ${input.reason.trim()}`
@@ -416,10 +418,18 @@ export async function setPackageExpiry(input: SetExpiryInput): Promise<ClientPac
       creditsOrSessionsRemaining: pkg.creditsOrSessionsRemaining,
     })
 
-    await tx
-      .update(clientPackages)
-      .set({ expiresAt: input.expiresAt, active: nextActive })
-      .where(and(eq(clientPackages.tenantId, input.tenantId), eq(clientPackages.id, pkg.id)))
+    // Giving a Dormant package a date IS an Activation by hand, and the
+    // one-per-family index applies to staff too: two running in a family is
+    // the state the whole rule exists to prevent, whoever writes it.
+    try {
+      await tx
+        .update(clientPackages)
+        .set({ expiresAt: input.expiresAt, active: nextActive })
+        .where(and(eq(clientPackages.tenantId, input.tenantId), eq(clientPackages.id, pkg.id)))
+    } catch (err: unknown) {
+      if (isUniqueViolation(err)) throw new ConflictError('family_already_activated')
+      throw err
+    }
 
     await tx.insert(manualAdjustments).values({
       tenantId: input.tenantId,

@@ -18,6 +18,7 @@ function input(over: Partial<PurchaseEmailInput> = {}): PurchaseEmailInput {
     creditsOrSessions: 10,
     expiresAt: EXPIRY,
     durationMonths: null,
+    validityDays: 90,
     receiptUrl: null,
     accountUrl: ACCOUNT_URL,
     ...over,
@@ -90,44 +91,46 @@ function input(over: Partial<PurchaseEmailInput> = {}): PurchaseEmailInput {
   )
 }
 
-// --- the Unlimited validity line carries the activation sentence -------------
-// A Dormant plan is the only purchase with no date to print, and only an
-// Unlimited Plan can ever be Dormant. The months figure is the frozen
-// `duration_months`, so a later edit to the catalogue cannot restate what was
-// sold.
+// --- a Dormant purchase's validity line carries the activation sentence -----
+// Every purchase is Dormant when the confirmation goes out. The length is the
+// frozen `duration_months` or `validity_days`, so a later edit to the catalogue
+// cannot restate what was sold.
 {
   assert.strictEqual(
-    validityLine('unlimited', null, 6),
-    'Valid 6 months from your first class — your plan activates when you make your first booking.',
+    validityLine('unlimited', null, 6, null),
+    'Valid 6 months from your first class — your package activates when you make your first booking.',
     'a Dormant plan promises Activation on the first booking, in the domain’s words',
   )
   assert.strictEqual(
-    validityLine('unlimited', null, 1),
-    'Valid 1 month from your first class — your plan activates when you make your first booking.',
+    validityLine('unlimited', null, 1, null),
+    'Valid 1 month from your first class — your package activates when you make your first booking.',
     'one month is singular',
   )
-  // An Unlimited Plan bought when the member holds no live plan is NOT Dormant:
-  // its clock started at purchase, and the end date it was sold is the thing
-  // that member is owed. Promising Activation there would be false.
-  const activated = validityLine('unlimited', EXPIRY, 6)
   assert.strictEqual(
-    activated,
-    'Expires 14 Feb 2027',
-    'an Activated plan prints the end date its clock is already running to',
+    validityLine('credit_bundle', null, null, 90),
+    'Valid 90 days from your first class — your package activates when you make your first booking.',
+    'a Dormant bundle promises the same, in days',
   )
-  assert.ok(!/activat/i.test(activated), 'an Activated plan is not waiting to activate')
+  assert.strictEqual(
+    validityLine('trial', null, null, 1),
+    'Valid 1 day from your first class — your package activates when you make your first booking.',
+    'one day is singular',
+  )
+  assert.strictEqual(
+    validityLine('pt', null, null, 365),
+    'Valid 365 days from your first session request — your package activates when you make your first booking.',
+    'a PT package starts on its first session request, and says so',
+  )
 }
 
-// --- every other kind's validity line carries a date and never mentions
-// --- activation --------------------------------------------------------------
-// This is what stops the activation promise leaking onto a Credit Bundle: it is
-// decided by kind in code, not by copy an admin can edit into the wrong template.
+// --- an Activated package prints its date and never mentions activation ----
+// A resent confirmation for a package that has since started tells the member
+// the date its clock is actually running to.
 {
-  for (const kind of ['credit_bundle', 'trial', 'pt'] as const) {
-    const line = validityLine(kind, EXPIRY, null)
+  for (const kind of ['unlimited', 'credit_bundle', 'trial', 'pt'] as const) {
+    const line = validityLine(kind, EXPIRY, 6, 90)
     assert.strictEqual(line, 'Expires 14 Feb 2027', `${kind} prints its expiry date`)
-    assert.ok(!/activat/i.test(line), `${kind} must never promise Activation`)
-    assert.ok(!/first class|first booking/i.test(line), `${kind} has no first-class clock`)
+    assert.ok(!/activat/i.test(line), `${kind} is not waiting to activate`)
   }
 }
 
@@ -181,6 +184,7 @@ function input(over: Partial<PurchaseEmailInput> = {}): PurchaseEmailInput {
       creditsOrSessions: null,
       expiresAt: null,
       durationMonths: 6,
+      validityDays: null,
     }),
   )
   assert.deepStrictEqual(
@@ -190,7 +194,7 @@ function input(over: Partial<PurchaseEmailInput> = {}): PurchaseEmailInput {
       package_name: 'Unlimited 6 Months — Harbour Studio',
       contents_line: 'Unlimited classes',
       validity_line:
-        'Valid 6 months from your first class — your plan activates when you make your first booking.',
+        'Valid 6 months from your first class — your package activates when you make your first booking.',
       receipt_url: ACCOUNT_URL,
     },
     'the five allow-listed variables, each a whole composed sentence',

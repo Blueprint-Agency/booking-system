@@ -39,8 +39,8 @@ export function ClassPackageDialog({
       description: description.trim(),
       kind,
       credits: kind === "credit_bundle" || kind === "trial" ? Number(credits) : null,
-      // A trial validity is now required, not optional — "never expires" has left
-      // the domain and a null expiry means Dormant, which only Unlimited can be.
+      // A trial validity is required, not optional — "never expires" has left
+      // the domain. The days count from the member's first booking, not purchase.
       validityDays:
         kind === "credit_bundle" || kind === "trial" ? Number(validityDays) : null,
       durationMonths: kind === "unlimited" ? Number(durationMonths) : null,

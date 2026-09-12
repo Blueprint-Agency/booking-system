@@ -173,23 +173,28 @@ tx start
 2. SELECT class FOR UPDATE (lock for capacity check)
    - lifecycle='active', starts_at > now() + 0  (no past bookings)
 3. SELECT bookings count WHERE class_id=X AND state='confirmed' → if >= class.capacity: 409 class_full
-4. SELECT client_packages FOR UPDATE WHERE client_id=me AND active
-   → services/packages/selection.ts:selectPackage (pure; spec §2)
-   - an Unlimited Plan whose location_id is the class's Location, Activated before
-     Dormant, soonest-expiring first, and valid when the class actually RUNS
-     (a Dormant plan's test is prospective: now + duration_months >= class start)
-   - a live plan that covers nothing here → 409 location_not_covered. NOT a silent
-     fall-through to credits, unless the caller passed use_credits
-   - else the soonest-expiring credit_bundle/trial with enough credits, else
-     409 insufficient_credits
+4. Sweep the member's own expired-but-still-active rows (services/packages/activation.ts),
+   then SELECT client_packages FOR UPDATE WHERE client_id=me AND active
+   → services/packages/selection.ts:selectPackage (pure; spec §2, ADR 0004)
+   - one Activated package per class family (bundle + Unlimited + trial). If one
+     is running it is the ONLY candidate: a running plan must cover the Location
+     (409 location_not_covered) and last to the class (409 plan_expires_before_class);
+     a running bundle must have enough credits (409 insufficient_credits) and last
+     to the class. Nothing waiting behind it starts, use_credits or not.
+   - nothing running: the Dormant package bought first starts on this booking —
+     a plan covering the Location (prospective test: now + duration_months >= class
+     start), unless use_credits, then a bundle/trial (now + validity_days >= class
+     start). A plan that covers nothing here → 409 location_not_covered, NOT a
+     silent fall-through to credits.
 5. Insert bookings row: kind='class', class_id, client_package_id, state='confirmed',
    credits_or_sessions_used = (credit_bundle ? credit_cost : NULL),
    refund_outcome='n_a', check_in_state='pending'
 6. Generate qr_token + code via services/bookings/qr.ts
 7. If credit_bundle: UPDATE client_packages SET credits_or_sessions_remaining -= credit_cost
-7b. Activation (§3): if the chosen plan was Dormant, UPDATE client_packages
-   SET expires_at = booking moment + duration_months. One-way — no cancellation
-   un-stamps it, and paying with credits leaves the plan Dormant.
+7b. Activation (§3, ADR 0004): if the chosen package was Dormant, UPDATE client_packages
+   SET expires_at = booking moment + duration_months (Unlimited) or + validity_days
+   (every other kind). One-way — no cancellation un-stamps it. A second Activated
+   package in the family trips the partial unique index → 409 family_already_activated.
 8. enqueueEmail('class_booking_confirmed', client.email, { class_name, date, instructor, location, qr_url, code, credits_remaining })
 tx commit
 
@@ -323,9 +328,13 @@ tx start
    '2on1' → partner REQUIRED. If kind='existing', co_client_id MUST be a different active client.
             If kind='new', email MUST NOT match any existing client (otherwise the FE should have
             collapsed to 'existing' via /partner-lookup; reject 422 partner_should_be_existing).
-4. SELECT client_packages FOR UPDATE WHERE id=client_package_id AND client_id=ctx.client_id.
+4. Sweep the member's expired-but-active rows, then SELECT client_packages FOR UPDATE
+   WHERE id=client_package_id AND client_id=ctx.client_id.
    Required: kind='pt', not expired, session_type matches, credits_or_sessions_remaining >=
    (1 for 1on1, 2 for 2on1) → else 422 insufficient_pt_sessions.
+   One Activated PT package at a time (ADR 0004): if a DIFFERENT PT package is running
+   → 409 pt_package_not_current. If the chosen one is Dormant, this request Activates it:
+   expires_at = now + validity_days (409 family_already_activated on a race).
 5. DEBIT the package: credits_or_sessions_remaining -= (1 for 1on1, 2 for 2on1).
    The debit is recorded against pt_requests.id via the manual_adjustments shape with
    reason='pt_request_submit' so cancellation can reverse it precisely.

@@ -132,6 +132,9 @@ const app = new Hono()
         unlimited_covers_both: ent.unlimitedCoversBoth,
         cross_location_rate_sgd: ent.crossLocationRateSgd,
         dormant: ent.dormant,
+        // A class package is running, so "use a credit instead" is not on offer
+        // — nothing behind the running one can start (§3).
+        class_family_running: ent.classFamilyRunning,
         has_active_bundle_credits: ent.hasActiveBundleCredits,
       },
     })

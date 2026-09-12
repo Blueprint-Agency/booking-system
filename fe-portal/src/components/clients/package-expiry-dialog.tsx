@@ -15,10 +15,12 @@ export function PackageExpiryDialog({
 }) {
   const [date, setDate] = useState(pkg.expiresAt?.slice(0, 10) ?? "");
   const [reason, setReason] = useState("");
-  // A blank expiry means "return this plan to Dormant", and only an Unlimited
-  // Plan can be Dormant (spec §8). The backend refuses it for every other kind;
-  // this only stops the dialog offering what would be refused.
-  const canReturnToDormant = pkg.kind === "unlimited";
+  // A blank expiry means "return this package to Dormant" (spec §8). Every
+  // kind starts Dormant and Activates on its first booking, so every kind can
+  // be sent back there — it is how an admin undoes an Activation the studio
+  // itself caused. Setting a date on a Dormant package Activates it by hand,
+  // which the backend refuses while another in the same family is running.
+  const isPt = pkg.kind === "pt";
   return (
     <Dialog
       open
@@ -44,16 +46,15 @@ export function PackageExpiryDialog({
             id="exp-date"
             type="date"
             min={todayIso()}
-            required={!canReturnToDormant}
             value={date}
             onChange={(e) => setDate(e.target.value)}
           />
-          {canReturnToDormant && (
-            <p className="text-xs text-muted">
-              Leave blank to return this plan to Dormant — its clock restarts at the
-              member&apos;s first booking this plan pays for.
-            </p>
-          )}
+          <p className="text-xs text-muted">
+            Leave blank to return this package to Dormant — its clock restarts at
+            the member&apos;s first {isPt ? "session request" : "booking"} this
+            package pays for. Only one {isPt ? "PT" : "class"} package can be
+            running at a time.
+          </p>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="exp-reason">Reason (required)</Label>

@@ -1,7 +1,21 @@
+export type PackageKind = 'credit_bundle' | 'unlimited' | 'trial' | 'pt'
+
 export interface PackageValidity {
-  kind: 'credit_bundle' | 'unlimited' | 'trial' | 'pt'
+  kind: PackageKind
   expiresAt: Date | null
   creditsOrSessionsRemaining: number | null
+}
+
+/**
+ * The two **families**, within each of which at most one package is Activated
+ * at a time. A Credit Bundle, an Unlimited Plan and a trial all pay for
+ * classes, so they queue behind one another; a PT package pays for private
+ * sessions and queues only behind other PT packages.
+ */
+export type PackageFamily = 'class' | 'pt'
+
+export function familyOf(kind: PackageKind): PackageFamily {
+  return kind === 'pt' ? 'pt' : 'class'
 }
 
 /**
@@ -37,57 +51,60 @@ export function addDays(from: Date, days: number): Date {
 }
 
 /**
- * When a purchase of a catalogue row expires, as a pure function of the kind and
- * the row's own validity — the rule checkout and the grant must agree on.
- *
- *  - credit_bundle / trial / pt: purchase time plus the catalogue's `validity_days`
- *  - unlimited: null — a Duration is calendar months, not days, and whether the
- *    clock starts now or at Activation is a rule this helper cannot see (§3/§4).
- *    `grantPackage` decides and stamps it.
- *
- * PT goes through this same helper on purpose. It used to expire on a global
- * 365-day constant no admin could see or change; the constant is gone and a PT
- * package now carries its own validity like every other dated product.
+ * The length a package carries, frozen at purchase — a Duration in calendar
+ * months for an Unlimited Plan, `validity_days` for every other kind. Both are
+ * copied off the catalogue row because the catalogue is admin-editable and
+ * Activation reads them later.
  */
-export function purchaseExpiry(
-  kind: PackageValidity['kind'],
-  validityDays: number | null,
-  now: Date,
-): Date | null {
-  if (kind === 'unlimited') return null
-  if (validityDays == null) return null
-  return addDays(now, validityDays)
+export interface PackageLength {
+  kind: PackageKind
+  durationMonths: number | null
+  validityDays: number | null
 }
 
 /**
- * Dormant: an Unlimited Plan bought while another was still live, whose clock
- * starts at Activation (spec §3). A null `expires_at` means this and nothing
- * else — "never expires" has left the domain, and the `client_packages_kind_fields`
- * check makes an absent expiry impossible for every other kind.
+ * When a package expires once it Activates on `activatedAt` — the ONE rule for
+ * the end date, which the booking path, the PT request path and any test agree
+ * on. Nothing stamps an expiry at purchase any more: every kind waits Dormant
+ * until its first booking, and the clock runs from that day (§3).
+ *
+ *  - unlimited: `activatedAt` plus the frozen Duration, in calendar months
+ *  - credit_bundle / trial / pt: `activatedAt` plus the frozen `validity_days`
+ *
+ * Null when the row carries no length of its own, which the DB check makes
+ * impossible — kept as a return rather than a throw so callers decide.
  */
-export function isDormant(p: Pick<PackageValidity, 'kind' | 'expiresAt'>): boolean {
-  return p.kind === 'unlimited' && p.expiresAt === null
+export function activationExpiry(p: PackageLength, activatedAt: Date): Date | null {
+  if (p.kind === 'unlimited') {
+    return p.durationMonths == null ? null : addMonths(activatedAt, p.durationMonths)
+  }
+  return p.validityDays == null ? null : addDays(activatedAt, p.validityDays)
 }
 
 /**
- * The expiry dialog's blank field means **return this plan to Dormant** (§8) —
- * the escape hatch the one-way activation rule depends on, the way an admin
- * undoes an activation caused by a class the studio itself cancelled. Only an
- * Unlimited Plan can ever be Dormant, so a blank expiry is refused for every
- * other kind. Returned rather than thrown so this stays pure; `adjust.ts` maps it.
+ * Dormant: bought, paid for, clock not started (spec §3). A null `expires_at`
+ * means this and nothing else — "never expires" has left the domain. Every
+ * kind is Dormant at purchase and Activates on the first booking it pays for;
+ * `kind` is accepted so callers holding a row can pass it whole.
  */
-export function setExpiryRefusal(
-  kind: PackageValidity['kind'],
-  expiresAt: Date | null,
-): 'only_unlimited_can_be_dormant' | null {
-  return expiresAt === null && kind !== 'unlimited' ? 'only_unlimited_can_be_dormant' : null
+export function isDormant(p: Pick<PackageValidity, 'expiresAt'> & { kind?: PackageKind }): boolean {
+  return p.expiresAt === null
+}
+
+/**
+ * Activated: the clock is running and has not run out. The one reading of
+ * "the package paying right now" in a family — selection prefers it, and the
+ * partial unique indexes on `client_packages` allow one per family per client.
+ */
+export function isActivated(p: Pick<PackageValidity, 'expiresAt'>, now: Date): boolean {
+  return p.expiresAt !== null && p.expiresAt > now
 }
 
 /**
  * A package is consumable (active) when not expired AND (unlimited OR balance > 0).
  *
- * A Dormant plan is active: it is bought, paid for and waiting, and its first
- * confirmed class booking starts its clock. Nothing is expired that has not started.
+ * A Dormant package is active: it is bought, paid for and waiting, and its first
+ * booking starts its clock. Nothing is expired that has not started.
  */
 export function computeActive(p: PackageValidity, now: Date = new Date()): boolean {
   const notExpired = p.expiresAt === null || p.expiresAt > now

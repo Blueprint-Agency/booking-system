@@ -9,7 +9,7 @@
  * Concurrency: the class row is locked FOR UPDATE so concurrent bookings for the
  * same class serialise (capacity + double-book checks are race-safe); the
  * client's package rows are locked too so a double-click can't double-debit —
- * and so a Dormant plan has exactly one writer at Activation.
+ * and so a Dormant package has exactly one writer at Activation.
  */
 import { and, eq, sql } from 'drizzle-orm'
 import { db } from '../../db'
@@ -18,6 +18,7 @@ import { bookings } from '../../db/schema/bookings'
 import { clientPackages } from '../../db/schema/packages'
 import { generateBookingCodes } from './qr'
 import { debitCredits } from '../packages/ledger'
+import { activatePackage, sweepExpired } from '../packages/activation'
 import { selectPackage } from '../packages/selection'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 
@@ -93,6 +94,11 @@ export async function bookClass(
 
     // 4. Pick a package to pay with (lock the client's rows).
     const now = new Date()
+    // A package whose expiry has passed since the nightly sweep still says
+    // `active`, and the one-Activated-per-family index counts it. Sweep the
+    // member's own rows first so an ended package can never block the next
+    // one from starting — the same flip the cron does, a day early.
+    await sweepExpired(tx, tenantId, clientId, now)
     const pkgs = await tx
       .select({
         id: clientPackages.id,
@@ -101,7 +107,9 @@ export async function bookClass(
         expiresAt: clientPackages.expiresAt,
         locationId: clientPackages.locationId,
         durationMonths: clientPackages.durationMonths,
+        validityDays: clientPackages.validityDays,
         crossLocationPaidSgd: clientPackages.crossLocationPaidSgd,
+        purchasedAt: clientPackages.purchasedAt,
       })
       .from(clientPackages)
       .where(
@@ -141,16 +149,11 @@ export async function bookClass(
       })
     }
 
-    // Activation (§3): the first confirmed class booking a Dormant plan pays for
-    // starts its clock, stamped here because this transaction already holds the
-    // row locked — one writer, no race. One-way: no cancellation un-stamps it.
+    // Activation (§3): the first confirmed class booking a Dormant package pays
+    // for starts its clock, stamped here because this transaction already holds
+    // the row locked — one writer, no race. One-way: no cancellation un-stamps it.
     if (choice.activateUntil) {
-      await tx
-        .update(clientPackages)
-        .set({ expiresAt: choice.activateUntil })
-        .where(
-          and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.id, clientPackageId)),
-        )
+      await activatePackage(tx, tenantId, clientPackageId, choice.activateUntil)
     }
 
     // 5. Create the booking.

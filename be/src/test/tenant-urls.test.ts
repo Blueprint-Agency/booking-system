@@ -97,7 +97,10 @@ describe('per-studio URLs', { skip: integrationTestsEnabled ? false : SKIP_REASO
         clientId: memberId,
         kind: 'credit_bundle',
         creditsOrSessionsRemaining: 10,
-        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        // Every dated kind carries its frozen validity (ADR 0004); Dormant
+        // until a booking, which this test never makes.
+        validityDays: 30,
+        expiresAt: null,
         listPriceSgd: '150.00',
         amountPaidSgd: '150.00',
       })

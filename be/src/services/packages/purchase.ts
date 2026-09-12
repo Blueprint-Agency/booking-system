@@ -8,13 +8,7 @@ import { globalPolicy } from '../../db/schema/policy'
 import { listActiveInstructors } from '../schedule/client-catalog'
 import { bestPrice, listActivePromotionsFor } from './promotions'
 import type { Tx } from './ledger'
-import {
-  addMonths,
-  computeActive,
-  crossLocationMonths,
-  crossLocationPriceSgd,
-  purchaseExpiry,
-} from './validity'
+import { computeActive, crossLocationMonths, crossLocationPriceSgd } from './validity'
 
 type ClassPackageRow = typeof classPackages.$inferSelect
 type PtPackageRow = typeof ptPackages.$inferSelect
@@ -396,20 +390,6 @@ export async function applyCrossLocationAddOn(
   return rows.length > 0
 }
 
-/**
- * Every dated kind now reads the same column off its own catalogue row — a PT
- * package carries `validity_days` too, so there is one rule and no kind with a
- * hidden constant behind it. The arithmetic itself lives in `./validity.ts`,
- * where it is checkable without a database.
- */
-function computeExpiry(
-  kind: PackageKind,
-  src: ClassPackageRow | PtPackageRow,
-  now: Date,
-): Date | null {
-  return purchaseExpiry(kind, src.validityDays, now)
-}
-
 export interface GrantPackageInput {
   clientId: string
   /** stripe_payment_intents.id — null for free trial / admin grants */
@@ -525,8 +505,13 @@ export async function grantPackage(
     throw new BadRequestError('cross_location_requires_unlimited')
   }
 
-  let expiresAt = computeExpiry(kind, source, now)
+  // Every purchase lands Dormant (§3): a null expiry, and the first booking it
+  // pays for stamps the end date one length forward from THAT day. What is
+  // frozen here is the length — the catalogue row is admin-editable, and
+  // re-reading it at Activation would silently relengthen every package sold.
+  const expiresAt: Date | null = null
   let durationMonths: number | null = null
+  let validityDays: number | null = null
 
   const live = kind === 'unlimited' ? await liveUnlimited(tenantId, input.clientId, now) : []
   const locationId = locationForPurchase(kind, input.locationId, live.map(r => r.locationId))
@@ -543,13 +528,10 @@ export async function grantPackage(
   if (kind === 'unlimited') {
     const cs = source as ClassPackageRow
     if (cs.durationMonths == null) throw new BadRequestError('unlimited_requires_duration_months')
-    // Frozen at purchase (§4). The live catalogue row is admin-editable, so
-    // re-reading it at Activation would silently relengthen every plan sold.
     durationMonths = cs.durationMonths
-    // §3: the clock starts at purchase only when nothing is already live.
-    // Otherwise the plan is stored Dormant (null expiry) and the first confirmed
-    // class booking it pays for starts it — that stamping is #25's booking path.
-    expiresAt = live.length > 0 ? null : addMonths(now, durationMonths)
+  } else {
+    if (source.validityDays == null) throw new BadRequestError('package_requires_validity_days')
+    validityDays = source.validityDays
   }
 
   try {
@@ -566,6 +548,7 @@ export async function grantPackage(
         locationId,
         boundInstructorId,
         durationMonths,
+        validityDays,
         crossLocationPaidSgd: input.crossLocationPaidSgd ?? null,
         creditsOrSessionsRemaining,
         expiresAt,

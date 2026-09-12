@@ -22,8 +22,19 @@ import type { ApiBooking } from "@/components/account/class-bookings";
 
 const PAGE_SIZE = 5;
 
-/** What a Dormant plan says on both member surfaces (spec §8). */
+/** What a Dormant package says on both member surfaces (spec §8). */
 const ACTIVATION_LINE = "Starts when you book your first class";
+
+/**
+ * The same promise with the length attached, for a package card. Every kind
+ * waits Dormant until its first booking; a PT package starts on its first
+ * session request rather than a class.
+ */
+function dormantLine(pkg: LivePackage): string {
+  const start = pkg.kind === "pt" ? "Starts at your first session request" : ACTIVATION_LINE;
+  if (pkg.validityDays == null) return start;
+  return `${start} · valid ${pkg.validityDays} ${pkg.validityDays === 1 ? "day" : "days"} from then`;
+}
 
 export default function AccountOverview() {
   const { user } = useUser();
@@ -255,7 +266,7 @@ function PackageCard({
           <p className="font-medium text-ink truncate">{pkg.name}</p>
           <p className="text-xs text-muted mt-1">
             {pkg.dormant
-              ? ACTIVATION_LINE
+              ? dormantLine(pkg)
               : `Expires ${formatDate(pkg.expiresAt!)}`}
           </p>
           {/* Who this package's sessions are with. Shown only when the backend

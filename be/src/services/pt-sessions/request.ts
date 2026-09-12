@@ -7,14 +7,16 @@
  * implicit approval. See docs/md/be-client.md §PT for the full contract.
  */
 
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, isNotNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { clients } from '../../db/schema/identity'
 import { clientPackages, ptPackages } from '../../db/schema/packages'
 import { ptRequests, ptRequestSlots } from '../../db/schema/schedule'
 import { ptBookingConfig } from '../../db/schema/policy'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
+import { activatePackage, sweepExpired } from '../packages/activation'
 import { debitCredits } from '../packages/ledger'
+import { activationExpiry, isDormant } from '../packages/validity'
 import { ptSessionCost } from './cost'
 
 export interface PtRequestSlotInput {
@@ -61,12 +63,17 @@ export async function submitPtRequest(
   if (input.sessionType === '1on1' && input.partner) throw new BadRequestError('partner_not_allowed')
 
   return db.transaction(async tx => {
+    const now = new Date()
+    // Same as the class path: an ended package must not hold the family's one
+    // Activated slot until the nightly sweep gets to it.
+    await sweepExpired(tx, tenantId, input.clientId, now)
     const [pkg] = await tx
       .select({
         id: clientPackages.id,
         kind: clientPackages.kind,
         active: clientPackages.active,
         expiresAt: clientPackages.expiresAt,
+        validityDays: clientPackages.validityDays,
         remaining: clientPackages.creditsOrSessionsRemaining,
         sessionType: ptPackages.sessionType,
       })
@@ -88,12 +95,38 @@ export async function submitPtRequest(
     if (pkg.kind !== 'pt') throw new BadRequestError('not_a_pt_package')
     if (pkg.sessionType !== input.sessionType) throw new BadRequestError('session_type_mismatch')
 
-    const now = new Date()
     const notExpired = pkg.expiresAt === null || pkg.expiresAt > now
     if (!pkg.active || !notExpired) throw new ConflictError('package_not_consumable')
+
+    // One Activated PT package at a time (§3). The member picks which package
+    // pays, so the rule is a check rather than a selection: while one PT
+    // package is running, it is the only one a request may be debited from,
+    // and a Dormant one waits behind it whatever its session type. A Dormant
+    // pick with nothing running is this request's Activation.
+    const [running] = await tx
+      .select({ id: clientPackages.id })
+      .from(clientPackages)
+      .where(
+        and(
+          eq(clientPackages.tenantId, tenantId),
+          eq(clientPackages.clientId, input.clientId),
+          eq(clientPackages.kind, 'pt'),
+          eq(clientPackages.active, true),
+          isNotNull(clientPackages.expiresAt),
+        ),
+      )
+      .limit(1)
+    if (running && running.id !== pkg.id) throw new ConflictError('pt_package_not_current')
+
     // 1on1 debits 1 session, 2on1 debits 2 (one per attendee).
     const cost = ptSessionCost(input.sessionType)
     if ((pkg.remaining ?? 0) < cost) throw new ConflictError('insufficient_pt_credit')
+
+    if (isDormant(pkg)) {
+      const until = activationExpiry({ kind: 'pt', durationMonths: null, validityDays: pkg.validityDays }, now)
+      if (!until) throw new ConflictError('package_not_consumable')
+      await activatePackage(tx, tenantId, pkg.id, until)
+    }
 
     const [cfg] = await tx
       .select({ days: ptBookingConfig.bookInAdvanceDays })

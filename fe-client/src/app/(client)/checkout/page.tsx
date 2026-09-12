@@ -21,15 +21,18 @@ type PackageInfo =
   | ({ _kind: "class" } & ApiClassPackage)
   | ({ _kind: "pt" } & ApiPtPackage);
 
-/** "1 day" / "90 days" — the review step states the validity before the member pays. */
+/**
+ * "1 day" / "90 days" — the review step states the validity before the member
+ * pays. The days run from the first booking, not from purchase (§3).
+ */
 const validityPhrase = (days: number) => (days === 1 ? "1 day" : `${days} days`);
 
 function subtitleForPackage(pkg: PackageInfo): string {
   if (pkg._kind === "pt") {
-    return `${pkg.num_sessions} private sessions · valid ${validityPhrase(pkg.validity_days)}`;
+    return `${pkg.num_sessions} private sessions · valid ${validityPhrase(pkg.validity_days)} from your first session request`;
   }
   if (pkg.kind === "credit_bundle" || pkg.kind === "trial") {
-    return `${pkg.credits} credit${pkg.credits === 1 ? "" : "s"} · valid ${validityPhrase(pkg.validity_days ?? 0)}`;
+    return `${pkg.credits} credit${pkg.credits === 1 ? "" : "s"} · valid ${validityPhrase(pkg.validity_days ?? 0)} from your first class`;
   }
   const duration = pkg.duration_months != null ? formatDurationMonths(pkg.duration_months) : "?";
   return `Unlimited classes · ${duration}`;

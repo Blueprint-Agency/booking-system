@@ -60,30 +60,29 @@ export function contentsLine(
  * How long it lasts, as a sentence — chosen by the state of the purchase, never
  * by the code path that made it.
  *
- * A **Dormant** plan is the only purchase with no date to print: it is paid for
- * and its clock has not started, so its line names **Activation** as the first
- * booking the plan pays for. `durationMonths` is the Duration frozen onto the
- * plan at purchase, so the sentence stays true if an admin later edits the
- * catalogue.
+ * Every purchase is **Dormant** when this email goes out: paid for, clock not
+ * started, so the line names **Activation** as the first booking it pays for.
+ * The length is the Duration or `validity_days` frozen onto the purchase, so
+ * the sentence stays true if an admin later edits the catalogue. A PT package
+ * starts on its first session request, so its wording says so.
  *
- * Only an Unlimited Plan can ever be Dormant, and an Unlimited Plan bought when
- * the member holds no live plan is **not** Dormant — its clock started at
- * purchase and it has a real end date, which is the date that member is owed.
- * That is why this reads `isDormant` rather than the kind alone: the activation
- * promise reaches exactly the plans it is true of, and no Credit Bundle can be
- * edited into it from a template.
+ * Read off the row's state rather than assumed: a resent confirmation for a
+ * package that has since Activated prints the real end date it now carries.
  */
 export function validityLine(
   kind: PurchasedKind,
   expiresAt: Date | null,
   durationMonths: number | null,
+  validityDays: number | null,
 ): string {
   if (isDormant({ kind, expiresAt })) {
-    return `Valid ${plural(durationMonths ?? 0, 'month', 'months')} from your first class — your plan activates when you make your first booking.`
+    const length =
+      kind === 'unlimited'
+        ? plural(durationMonths ?? 0, 'month', 'months')
+        : plural(validityDays ?? 0, 'day', 'days')
+    const first = kind === 'pt' ? 'your first session request' : 'your first class'
+    return `Valid ${length} from ${first} — your package activates when you make your first booking.`
   }
-  // Everything else is dated: `client_packages_kind_fields` makes an absent
-  // expiry impossible for every kind but Unlimited, and an Unlimited without one
-  // is Dormant and already handled above.
   return expiresAt ? `Expires ${SG_DATE.format(expiresAt)}` : 'See your account for the expiry date'
 }
 
@@ -109,6 +108,8 @@ export interface PurchaseEmailInput {
   expiresAt: Date | null
   /** Frozen Duration in whole calendar months — Unlimited Plans only. */
   durationMonths: number | null
+  /** Frozen validity in days — every kind but Unlimited. */
+  validityDays: number | null
   /** The Bound Instructor a PT package's sessions are with; null when open. */
   boundInstructorName?: string | null
   /** The provider's receipt for a paid purchase; null on the free paths. */
@@ -137,7 +138,12 @@ export function composePurchaseEmail(input: PurchaseEmailInput): {
         input.creditsOrSessions,
         input.boundInstructorName ?? null,
       ),
-      validity_line: validityLine(input.kind, input.expiresAt, input.durationMonths),
+      validity_line: validityLine(
+        input.kind,
+        input.expiresAt,
+        input.durationMonths,
+        input.validityDays,
+      ),
       receipt_url: input.receiptUrl || input.accountUrl,
     },
   }

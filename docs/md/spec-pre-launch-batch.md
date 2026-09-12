@@ -262,16 +262,18 @@ Point 5 deliberately breaks the "server picks the package, no client input" rule
 
 ### 3. Activation, and what a null expiry means
 
+> **Superseded in part by `be/docs/adr/0004-every-package-activates-on-first-booking.md` (2026-09-12).** Every kind — Credit Bundle, Unlimited, trial and PT — now lands Dormant at purchase and Activates on its first booking, with `validity_days` frozen onto the purchase beside `duration_months`. One package per **Family** (class: bundle + Unlimited + trial; PT on its own) runs at a time. The table and the "only an Unlimited Plan can be Dormant" paragraph below describe the rule as it stood before that ADR; everything else in this section stands.
+
 **A null `expires_at` means Dormant, and nothing else.** "Never expires" leaves the domain.
 
 | Case | Clock starts | `expires_at` at purchase |
 |---|---|---|
-| Buys an Unlimited Plan holding no live plan | At purchase | Stamped immediately |
+| Buys an Unlimited Plan holding no live plan | ~~At purchase~~ At Activation (ADR 0004) | ~~Stamped immediately~~ Null until then |
 | Buys a renewal while one is still live | At Activation | Null until then |
 
 **No new column for dormancy** — `expires_at IS NULL` *is* the test, which the Location work already committed to for both the booking sort and its uniqueness index. An `activated_at` column would buy an audit trail that end-date-minus-Duration already derives.
 
-**Only an Unlimited Plan can be Dormant.** Credit Bundles hold their value in a balance rather than a clock; a trial is a single class; PT runs a fixed 365 days through a separate path. The payoff is that activation lives in exactly one function and nothing else in the system learns about dormancy.
+~~**Only an Unlimited Plan can be Dormant.**~~ Superseded by ADR 0004: every kind can be, and every kind starts that way. Activation still lives in exactly one place — `services/packages/activation.ts` stamps it, `services/packages/validity.ts` computes the date.
 
 Two changes fence "never expires" out: `class_packages.validity_days` becomes **required for trials** (the catalogue check allows null today), and the folded `client_packages_kind_fields` above makes an absent expiry impossible for every non-unlimited kind.
 
@@ -322,7 +324,7 @@ Money splits without overlap — the plan's amount and the Add-On's amount toget
 
 A member holds **one Activated plan plus at most one Dormant plan**. A third purchase is refused; wanting the other Location means buying the Add-On, not a second plan.
 
-Enforcement is a partial unique index on `(client_id) WHERE kind = 'unlimited' AND active AND expires_at IS NOT NULL`, plus a check in the purchase path for the Dormant one — an index cannot usefully count to two.
+Enforcement is a partial unique index on `(client_id) WHERE kind = 'unlimited' AND active AND expires_at IS NOT NULL`, plus a check in the purchase path for the Dormant one — an index cannot usefully count to two. *(ADR 0004: that index is now `client_packages_one_activated_class_per_client`, over the whole class family — bundle, Unlimited and trial — with a sibling for PT. The "one Activated plus one Dormant" purchase cap on Unlimited Plans stands.)*
 
 **A member holding a live Unlimited Plan may only renew at that plan's existing Home Location.** This closes a hole that would otherwise be structural: with the Location filter applied *first*, a member holding Harbour Studio Activated and Parkside Studio Dormant who books at Parkside Studio skips the Activated plan entirely and activates the Dormant one — two Activated plans, and the index rejects the write in the member's face.
 

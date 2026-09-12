@@ -56,7 +56,11 @@ export function ClassRow({
     !!cls.location &&
     cls.location.id !== planLocation.id;
   const hasCredits = !!entitlements?.has_active_bundle_credits;
-  const canUseCredit = notCovered && hasCredits;
+  // Credits can only step in while nothing in the class family is running: a
+  // running plan is the only package that can pay, and the credits behind it
+  // cannot start until it ends (§3). The backend refuses either way.
+  const creditsCanStart = hasCredits && !entitlements?.class_family_running;
+  const canUseCredit = notCovered && creditsCanStart;
   // The upsell: the Add-On on the plan that would pay, at the rate the server states.
   const addOn =
     notCovered && entitlements?.unlimited_plan_id && cls.location
@@ -115,17 +119,17 @@ export function ClassRow({
             : "Your plan doesn't cover this studio.",
         });
       } else if (code === "plan_expires_before_class") {
-        // Not a coverage problem: the plan does cover this studio, it just runs
-        // out first. The Cross-Location Add-On sells Locations, not time, so it
-        // is the wrong remedy here — and a queued renewal starts itself on the
-        // first booking after the current plan ends, which the client has no
-        // field to see. Credits are the one remedy that fits: the same request
-        // with use_credits skips the plan and spends the Bundle instead.
+        // Not a coverage problem: the package does cover this studio, it just
+        // runs out first. The Cross-Location Add-On sells Locations, not time,
+        // so it is the wrong remedy here — and the next package starts itself
+        // on the first booking after the current one ends. Credits are offered
+        // only when nothing is running yet (a Dormant plan being passed over):
+        // while a package runs, nothing behind it can start.
         setBookError({
           msg:
-            "Your plan runs out before this class starts, so it can't cover it." +
-            (hasCredits ? "" : " Try again once your next plan is running."),
-          offersCredit: hasCredits,
+            "Your current package runs out before this class starts, so it can't cover it." +
+            (creditsCanStart ? "" : " Try again once it has ended and your next package is running."),
+          offersCredit: creditsCanStart,
         });
       } else {
         setBookError({ msg: "Couldn't book this class. Please try again." });

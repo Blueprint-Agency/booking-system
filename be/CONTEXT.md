@@ -84,12 +84,16 @@ How long an Unlimited Plan runs, counted in whole calendar months. A 6-month pla
 _Avoid_: length, term, validity, duration days
 
 **Dormant**:
-An Unlimited Plan bought while the member already holds a live one. It is paid for, but its clock has not started — it waits behind the plan in front. A plan bought when the member holds no live plan is **not** Dormant; its clock starts at purchase. Only an Unlimited Plan can ever be Dormant. Contrast **Activated** — clock running, end date fixed.
+A package that is paid for but whose clock has not started. **Every** package is Dormant from purchase — Credit Bundle, Unlimited Plan, trial and PT package alike — and stays so until the first booking it pays for. A member may hold any number of Dormant packages; they wait in the order they were bought. A null `expires_at` means Dormant and nothing else. Contrast **Activated** — clock running, end date fixed. (Before ADR 0004 only an Unlimited Plan bought behind another could be Dormant; everything else started its clock at purchase.)
 _Avoid_: pending, inactive, unused, scheduled, queued
 
 **Activation**:
-The moment a Dormant Plan starts its clock: the first confirmed class booking that plan pays for, which can only happen once the plan in front has expired. The end date is fixed at that moment, one Duration forward from that day. A member who stops attending keeps the plan waiting and loses none of it. Activation happens once and never reverses on its own; only staff can return a plan to Dormant.
+The moment a Dormant package starts its clock: the first booking it pays for — a confirmed class booking for the class family, a session request for a PT package. It can only happen once the package in front of it in the same Family has ended. The end date is fixed at that moment: one Duration forward for an Unlimited Plan, `validity_days` forward for every other kind, both frozen onto the purchase. A member who stops attending keeps the package waiting and loses none of it. Activation happens once and never reverses on its own; only staff can return a package to Dormant.
 _Avoid_: start, redemption, kick-off, going live
+
+**Family**:
+The two groups within which **one package is Activated at a time**. The **class family** is Credit Bundle, Unlimited Plan and trial — they all pay for classes, so they queue behind one another. The **PT family** is PT packages alone. While a package is running it is the only one in its Family that can pay, whatever the member asks: a running Unlimited Plan cannot be stepped around with waiting credits, and a running 1-on-1 PT package holds a waiting 2-on-1 one behind it. A package has **ended** — and frees its Family's slot — when it expires, is spent to zero, or is refunded. Enforced by two partial unique indexes on `client_packages` (`…_one_activated_class_per_client`, `…_one_activated_pt_per_client`).
+_Avoid_: category, group, pool, type (which means the catalogue kind)
 
 **Instructor-Bound**:
 A property of a PT Package **in the catalogue**: buying it means choosing one instructor, and the purchase lands tied to them. An admin turns it on per package; it is off by default. It is a question asked at checkout and nothing else — it is never copied onto what the member buys, so turning it on or off moves future sales only and cannot reach a package already sold. A PT Package that is not Instructor-Bound asks the member nothing and is open to any instructor.

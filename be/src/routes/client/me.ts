@@ -35,6 +35,9 @@ function serializeClientPackage(r: Awaited<ReturnType<typeof listClientPackages>
     dormant: r.dormant,
     unlimited_location: r.location,
     duration_months: r.durationMonths,
+    // How long a Dormant package will run once its first booking starts it —
+    // the member surface prints the promise, the backend keeps the number.
+    validity_days: r.validityDays,
     // What this plan paid for the Cross-Location Add-On (§5). Null means it
     // Covers its Home Location only — the member surface reads the null, never
     // re-derives coverage.
@@ -96,6 +99,9 @@ const app = new Hono()
         unlimited_covers_both: ent.unlimitedCoversBoth,
         cross_location_rate_sgd: ent.crossLocationRateSgd,
         dormant: ent.dormant,
+        // One package per family runs at a time (§3); these say whether one is.
+        class_family_running: ent.classFamilyRunning,
+        pt_family_running: ent.ptFamilyRunning,
         has_active_bundle_credits: ent.hasActiveBundleCredits,
         pt_1on1_remaining: ent.pt1on1Remaining,
         pt_2on1_remaining: ent.pt2on1Remaining,

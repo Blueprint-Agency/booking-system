@@ -366,11 +366,17 @@ function ClassCreditsSection({
         </div>
       </div>
 
+      {/* Nothing blocks a purchase on top of what the member holds: every
+          package waits Dormant and starts on the first booking after the one in
+          front has ended (§3). Only one class package runs at a time, and a
+          member with one running is told the new one will wait, not refused. */}
       {subTab === "bundle" && (
         <>
-          {hasUnlimited && (
+          {(hasUnlimited || hasBundle) && (
             <div className="rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3 text-center">
-              You have an active Unlimited pass. Credit Bundles can't be purchased while Unlimited is active.
+              You already have a {hasUnlimited ? "class pass" : "Credit Bundle"}. Buy a bundle
+              now and it waits — it starts when you book your first class after your current
+              package ends or is used up.
             </div>
           )}
           {bundles.length === 0 ? (
@@ -378,12 +384,7 @@ function ClassCreditsSection({
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {bundles.map((p) => (
-                <BundleCard
-                  key={p.id}
-                  pkg={p}
-                  disabled={hasUnlimited}
-                  disabledReason="Available once your Unlimited pass ends"
-                />
+                <BundleCard key={p.id} pkg={p} disabled={false} disabledReason="" />
               ))}
             </div>
           )}
@@ -394,7 +395,8 @@ function ClassCreditsSection({
         <>
           {hasBundle && !hasUnlimited && (
             <div className="rounded-xl border border-warning/30 bg-warning/10 text-ink text-sm px-4 py-3 text-center">
-              You still have an active Credit Bundle. Unlimited can't be purchased while a bundle has credits remaining.
+              You still have a Credit Bundle. Buy Unlimited now and it waits — it starts when you
+              book your first class after your credits are used up or expire.
             </div>
           )}
           {hasUnlimited && (
@@ -408,15 +410,7 @@ function ClassCreditsSection({
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {unlimited.map((p) => (
-                <UnlimitedCard
-                  key={p.id}
-                  pkg={p}
-                  // A live plan does NOT block the card: buying on top of one is
-                  // a renewal, which the backend accepts and stores Dormant (§3).
-                  // Only a live Credit Bundle conflicts.
-                  disabled={hasBundle}
-                  disabledReason="Available once your Credit Bundle credits are used up"
-                />
+                <UnlimitedCard key={p.id} pkg={p} disabled={false} disabledReason="" />
               ))}
             </div>
           )}
@@ -631,8 +625,9 @@ function BundleCard({
   disabledReason: string;
 }) {
   const credits = pkg.credits ?? 0;
+  // The days count from the member's first class, not from purchase (§3).
   const validity =
-    pkg.validity_days != null ? `${pkg.validity_days} days` : "no expiry";
+    pkg.validity_days != null ? `${pkg.validity_days} days from your first class` : "no expiry";
   return (
     <div className="relative rounded-2xl bg-paper border border-ink/10 p-6 sm:p-8 flex flex-col hover:shadow-hover hover:-translate-y-0.5 transition-all">
       <PromoTag pkg={pkg} />
@@ -739,7 +734,7 @@ function TrialCard({
   const credits = pkg.credits ?? 1;
   const isFree = Number(pkg.effective_price_sgd) === 0;
   const validity =
-    pkg.validity_days != null ? `${pkg.validity_days} days` : "redeem anytime";
+    pkg.validity_days != null ? `${pkg.validity_days} days from your first class` : "redeem anytime";
 
   const ctaClass = cn(
     "rounded-full bg-accent text-white px-5 py-3 text-sm font-medium hover:bg-accent/90 mt-6 w-full text-center transition-colors inline-flex items-center justify-center gap-2",
@@ -895,7 +890,8 @@ function PtCard({ pkg }: { pkg: ApiPtPackage }) {
         <li>{partnerLine}</li>
         <li>{formatSgd(perSession)}/session</li>
         <li>
-          Valid {pkg.validity_days} {pkg.validity_days === 1 ? "day" : "days"} from purchase
+          Valid {pkg.validity_days} {pkg.validity_days === 1 ? "day" : "days"} from your first
+          session request
         </li>
         {/* Only an Instructor-Bound package promises one coach. An open package
             is open to any instructor, so the old unconditional promise was one

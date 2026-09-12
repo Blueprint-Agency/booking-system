@@ -183,10 +183,16 @@ export default function ClientProfilePage({
       setWorkshopRefundFor(null);
       await load();
     } catch (err) {
+      const code =
+        err instanceof ApiError && err.body && typeof err.body === "object" && "error" in err.body
+          ? String((err.body as { error: unknown }).error)
+          : "";
       const msg =
-        err instanceof ApiError
-          ? `Update failed (HTTP ${err.status}).`
-          : "Update failed.";
+        code === "family_already_activated"
+          ? "Another package of this type is already running. Only one class package and one PT package can run at a time — return the running one to Dormant first, or wait for it to end."
+          : err instanceof ApiError
+            ? `Update failed (HTTP ${err.status}).`
+            : "Update failed.";
       toast.error(msg);
     }
   }
@@ -332,13 +338,11 @@ export default function ClientProfilePage({
                         : p.kind === "trial"
                           ? "Trial"
                           : "PT";
-                  // Every kind expires, PT included — a PT package now carries
-                  // its own validity in days like a Credit Bundle does, so an
-                  // admin can extend or shorten one member's the same way. The
-                  // backend has always accepted the edit for every kind; this
-                  // page was the only thing hiding it. A blank date is still
-                  // refused for everything but an Unlimited Plan (§8) — that
-                  // rule lives in the dialog and in `setExpiryRefusal`.
+                  // Every kind expires, PT included — a PT package carries its
+                  // own validity in days like a Credit Bundle does, so an admin
+                  // can extend or shorten one member's the same way. A blank
+                  // date returns any kind to Dormant (§8): every package starts
+                  // there and Activates on its first booking.
                   const canEditExpiry = true;
                   const canSetBalance = p.kind === "credit_bundle" || p.kind === "trial";
                   const canAdjustDelta = p.kind !== "unlimited";

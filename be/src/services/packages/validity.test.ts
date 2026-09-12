@@ -6,9 +6,10 @@ import {
   computeActive,
   crossLocationMonths,
   crossLocationPriceSgd,
+  activationExpiry,
+  familyOf,
+  isActivated,
   isDormant,
-  purchaseExpiry,
-  setExpiryRefusal,
   type PackageValidity,
 } from './validity'
 
@@ -145,40 +146,49 @@ assert.strictEqual(
   '2027-02-28T00:00:00.000Z',
 )
 
-// --- purchase expiry --------------------------------------------------------
-// The rule the deleted PT_VALIDITY_DAYS constant used to hide: a PT package
-// expires at purchase time plus ITS OWN catalogue validity, through the same
-// helper a Credit Bundle goes through. Nothing here reads a global.
+// --- activation expiry ------------------------------------------------------
+// The ONE rule for a package's end date: the moment it Activates plus the
+// length frozen on it. Nothing stamps an expiry at purchase any more.
 
 assert.strictEqual(
-  purchaseExpiry('pt', 30, new Date('2026-06-01T09:30:00Z'))?.toISOString(),
+  activationExpiry(
+    { kind: 'pt', durationMonths: null, validityDays: 30 },
+    new Date('2026-06-01T09:30:00Z'),
+  )?.toISOString(),
   '2026-07-01T09:30:00.000Z',
-  'a PT purchase expires its validity in days after the purchase instant',
-)
-
-assert.strictEqual(
-  purchaseExpiry('pt', 365, new Date('2026-06-01T00:00:00Z'))?.toISOString(),
-  '2027-06-01T00:00:00.000Z',
-  'the 365 the old constant applied is now just one validity among many',
-)
-
-// Two PT packages bought at the same moment on different validities end on
-// different days — which is the whole point of the column.
-assert.notStrictEqual(
-  purchaseExpiry('pt', 30, NOW)?.toISOString(),
-  purchaseExpiry('pt', 90, NOW)?.toISOString(),
+  'a PT package runs its validity in days from the instant it Activates',
 )
 
 // PT and a Credit Bundle on the same validity land on the same instant: one
 // rule, no per-kind arithmetic.
 assert.strictEqual(
-  purchaseExpiry('pt', 60, NOW)?.toISOString(),
-  purchaseExpiry('credit_bundle', 60, NOW)?.toISOString(),
+  activationExpiry({ kind: 'pt', durationMonths: null, validityDays: 60 }, NOW)?.toISOString(),
+  activationExpiry(
+    { kind: 'credit_bundle', durationMonths: null, validityDays: 60 },
+    NOW,
+  )?.toISOString(),
 )
 
-// An Unlimited Plan is months, not days, and whose clock has not necessarily
-// started — `grantPackage` stamps it, not this.
-assert.strictEqual(purchaseExpiry('unlimited', 60, NOW), null)
+// An Unlimited Plan is months, not days — calendar months, month-ends clamped.
+assert.strictEqual(
+  activationExpiry(
+    { kind: 'unlimited', durationMonths: 6, validityDays: null },
+    new Date('2026-08-31T00:00:00Z'),
+  )?.toISOString(),
+  '2027-02-28T00:00:00.000Z',
+  'six months from 31 August is 28 February',
+)
+
+// A row with no length of its own cannot start — the DB check makes this
+// impossible, and the helper says so rather than inventing a date.
+assert.strictEqual(
+  activationExpiry({ kind: 'credit_bundle', durationMonths: null, validityDays: null }, NOW),
+  null,
+)
+assert.strictEqual(
+  activationExpiry({ kind: 'unlimited', durationMonths: null, validityDays: null }, NOW),
+  null,
+)
 
 // Leap day, and a year boundary — `addDays` is UTC so neither drifts with the
 // host's zone.
@@ -204,15 +214,34 @@ assert.strictEqual(
   false,
   'an Activated plan carries an expiry and is not Dormant',
 )
+// Every kind is Dormant until its first booking, not only an Unlimited Plan.
+assert.strictEqual(isDormant({ kind: 'credit_bundle', expiresAt: null }), true)
+assert.strictEqual(isDormant({ kind: 'pt', expiresAt: null }), true)
+assert.strictEqual(isDormant({ kind: 'trial', expiresAt: null }), true)
 
-// A Dormant plan is active. It is bought and paid for and waiting for its first
-// booking — flagging it inactive would make it unspendable and unactivatable, so
-// nothing would ever start its clock.
+// Activated: the clock is running and has not run out. An expired package is
+// neither Dormant nor Activated — it is over.
+assert.strictEqual(isActivated({ expiresAt: LATER }, NOW), true)
+assert.strictEqual(isActivated({ expiresAt: null }, NOW), false)
+assert.strictEqual(isActivated({ expiresAt: EARLIER }, NOW), false)
+
+// A Dormant package is active. It is bought and paid for and waiting for its
+// first booking — flagging it inactive would make it unspendable and
+// unactivatable, so nothing would ever start its clock.
 assert.strictEqual(
   computeActive(dormantPlan, NOW),
   true,
   'a Dormant Unlimited Plan must be active — nothing is expired that has not started',
 )
+assert.strictEqual(computeActive(bundle(5, null), NOW), true, 'a Dormant bundle with credits is active')
+assert.strictEqual(computeActive(bundle(0, null), NOW), false, 'a Dormant bundle spent to zero is not')
+
+// --- families ---------------------------------------------------------------
+// One Activated package per family: classes are one family, PT the other.
+assert.strictEqual(familyOf('credit_bundle'), 'class')
+assert.strictEqual(familyOf('unlimited'), 'class')
+assert.strictEqual(familyOf('trial'), 'class')
+assert.strictEqual(familyOf('pt'), 'pt')
 
 // --- the Cross-Location Add-On's months and price ---------------------------
 // A Dormant plan prices at its full stored Duration with no arithmetic: its
@@ -268,39 +297,5 @@ assert.strictEqual(crossLocationPriceSgd(6, '30.00'), '180.00', 'six months at $
 assert.strictEqual(crossLocationPriceSgd(3, '30.00'), '90.00', 'three months at $30 is $90')
 assert.strictEqual(crossLocationPriceSgd(3, '29.90'), '89.70', 'a cent-precise rate stays exact')
 assert.strictEqual(crossLocationPriceSgd(0, '30.00'), '0.00', 'no months left is no charge')
-
-// --- returning a plan to Dormant (§8) ---------------------------------------
-// A blank expiry means "return this plan to Dormant", which only an Unlimited
-// Plan can ever be. It is the escape hatch the one-way activation rule depends on.
-assert.strictEqual(
-  setExpiryRefusal('unlimited', null),
-  null,
-  'an Unlimited Plan may be returned to Dormant',
-)
-assert.strictEqual(
-  setExpiryRefusal('credit_bundle', null),
-  'only_unlimited_can_be_dormant',
-  'a Credit Bundle cannot be Dormant, so a blank expiry is refused',
-)
-assert.strictEqual(
-  setExpiryRefusal('trial', null),
-  'only_unlimited_can_be_dormant',
-  'a trial cannot be Dormant',
-)
-assert.strictEqual(
-  setExpiryRefusal('pt', null),
-  'only_unlimited_can_be_dormant',
-  'a PT package cannot be Dormant',
-)
-assert.strictEqual(
-  setExpiryRefusal('credit_bundle', LATER),
-  null,
-  'a dated expiry is accepted on every kind',
-)
-assert.strictEqual(
-  setExpiryRefusal('unlimited', LATER),
-  null,
-  'the common path — a plan given an end date',
-)
 
 console.log('packages/validity.test ok')

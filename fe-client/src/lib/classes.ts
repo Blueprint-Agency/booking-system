@@ -237,6 +237,13 @@ export interface ClassEntitlements {
   unlimited_plan_id: string | null;
   unlimited_covers_both: boolean;
   cross_location_rate_sgd: string;
+  /**
+   * A class package is running right now. While it is, it is the only one
+   * that can pay, so "use a credit instead" is off the table — the credits
+   * would have to start, and only one package per family runs at a time.
+   * Backend-derived; the booking refusal stays the enforcement.
+   */
+  class_family_running: boolean;
 }
 
 /** Whether the signed-in client currently holds something that can pay for a class. */

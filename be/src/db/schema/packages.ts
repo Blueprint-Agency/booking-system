@@ -349,6 +349,12 @@ export const clientPackages = pgTable(
     // Frozen copy of the catalogue Duration in calendar months (§4). Frozen because
     // activation reads it later, and the live catalogue row is admin-editable.
     durationMonths: integer('duration_months'),
+    // Frozen copy of the catalogue `validity_days` for every dated kind (Credit
+    // Bundle, trial, PT) — the same freeze as `duration_months`, for the same
+    // reason: every purchase waits Dormant until its first booking, and
+    // Activation reads the length THEN, so it cannot read the live catalogue
+    // row without an admin's edit silently relengthening everything sold.
+    validityDays: integer('validity_days'),
     // The **Cross-Location Add-On** (§5): null means this plan Covers its Home
     // Location only; non-null means it Covers both, and the value IS what the
     // member paid. A column rather than a product, because the Add-On cannot
@@ -356,8 +362,9 @@ export const clientPackages = pgTable(
     // separates from plan revenue for free.
     crossLocationPaidSgd: numeric('cross_location_paid_sgd', { precision: 10, scale: 2 }),
     creditsOrSessionsRemaining: integer('credits_or_sessions_remaining'),
-    // Null ONLY for a Dormant Unlimited Plan — a plan bought while another was
-    // still live, whose clock starts at Activation (§3). It never means "never expires".
+    // Null means **Dormant** — bought, paid for, clock not started — and nothing
+    // else. Every kind is Dormant at purchase; the first booking a package pays
+    // for is its Activation and stamps this. It never means "never expires".
     expiresAt: timestamp('expires_at', { withTimezone: true }),
     active: boolean('active').notNull().default(true),
     purchasedAt: timestamp('purchased_at', { withTimezone: true }).notNull().defaultNow(),
@@ -382,41 +389,51 @@ export const clientPackages = pgTable(
     trialUniquePerClient: uniqueIndex('client_packages_trial_unique_per_client')
       .on(table.clientId)
       .where(sql`${table.kind} = 'trial'`),
-    // One Activated Unlimited Plan per client (§6). A Dormant plan (null expiry)
-    // sits outside the predicate, which is what lets a renewal wait beside the
-    // running one. The renewal rule in the purchase path is the enforcement;
-    // this index is the backstop that catches a race or a bug.
-    activatedUnlimitedUniquePerClient: uniqueIndex(
-      'client_packages_one_activated_unlimited_per_client',
-    )
+    // One Activated package per **family** per client. The class family is
+    // Credit Bundle + Unlimited + trial; PT is its own. A Dormant row (null
+    // expiry) sits outside the predicate, which is what lets any number of
+    // purchases wait behind the running one. Selection is the enforcement;
+    // these indexes are the backstop that catches a race or a bug.
+    //
+    // `active` is in the predicate so an ended package (expired and swept, or
+    // spent to zero) frees the slot. Between an expiry passing and the nightly
+    // sweep the booking path sweeps the member's own rows first, so a stale
+    // `active` never blocks the next Activation.
+    activatedClassUniquePerClient: uniqueIndex('client_packages_one_activated_class_per_client')
       .on(table.clientId)
       .where(
-        sql`${table.kind} = 'unlimited' AND ${table.active} AND ${table.expiresAt} IS NOT NULL`,
+        sql`${table.kind} IN ('credit_bundle', 'unlimited', 'trial') AND ${table.active} AND ${table.expiresAt} IS NOT NULL`,
       ),
+    activatedPtUniquePerClient: uniqueIndex('client_packages_one_activated_pt_per_client')
+      .on(table.clientId)
+      .where(sql`${table.kind} = 'pt' AND ${table.active} AND ${table.expiresAt} IS NOT NULL`),
     nonNegBalance: check(
       'client_packages_non_negative_balance',
       sql`${table.creditsOrSessionsRemaining} IS NULL OR ${table.creditsOrSessionsRemaining} >= 0`,
     ),
     // The folded check (§1 + §3). Strict, no grandfathering: an unusable plan is
     // impossible at the database level rather than something booking has to detect.
-    // Only an Unlimited Plan carries a Location and a Duration, and only an
-    // Unlimited Plan may have a null expiry (which means Dormant). And only a
-    // PT package may name a Bound Instructor: the column IS what "bound" means,
-    // so a row of any other kind carrying one would be a binding no rule in the
-    // domain knows how to read.
+    // Only an Unlimited Plan carries a Location and a Duration; every other kind
+    // carries a frozen `validity_days` instead. Either length is what Activation
+    // reads, so a row missing its own is a package that could never start. And
+    // only a PT package may name a Bound Instructor: the column IS what "bound"
+    // means, so a row of any other kind carrying one would be a binding no rule
+    // in the domain knows how to read. A null expiry is allowed on every kind —
+    // it means Dormant, and every kind starts that way.
     kindFields: check(
       'client_packages_kind_fields',
       sql`
         (${table.kind} = 'unlimited'
           AND ${table.locationId} IS NOT NULL
           AND ${table.durationMonths} IS NOT NULL
+          AND ${table.validityDays} IS NULL
           AND ${table.boundInstructorId} IS NULL)
         OR
         (${table.kind} <> 'unlimited'
           AND ${table.locationId} IS NULL
           AND ${table.durationMonths} IS NULL
+          AND ${table.validityDays} IS NOT NULL
           AND ${table.crossLocationPaidSgd} IS NULL
-          AND ${table.expiresAt} IS NOT NULL
           AND (${table.kind} = 'pt' OR ${table.boundInstructorId} IS NULL))
       `,
     ),

@@ -23,8 +23,14 @@ export interface LivePackage {
   purchasedAt: string;
   amountPaidSgd: string;
   active: boolean;
-  /** Backend-derived. Never re-tested here as "unlimited and no end date". */
+  /**
+   * Backend-derived. Never re-tested here as "no end date". Every package
+   * starts Dormant and Activates on the first booking it pays for; one per
+   * family (class / PT) runs at a time.
+   */
   dormant: boolean;
+  /** How long a Dormant package runs once it starts; null on an Unlimited Plan. */
+  validityDays: number | null;
   /** What this plan paid for its Cross-Location Add-On; null means Home Location only. */
   crossLocationPaidSgd: string | null;
   /** The plan's Home Location; null for every kind but an Unlimited Plan. */
@@ -92,6 +98,7 @@ interface RawClientPackage {
   amount_paid_sgd: string;
   active: boolean;
   dormant: boolean;
+  validity_days: number | null;
   cross_location_paid_sgd: string | null;
   unlimited_location: UnlimitedLocation | null;
   session_type: "1on1" | "2on1" | null;
@@ -134,7 +141,13 @@ function mapPackagesResponse(raw: RawPackagesResponse): ClientPackagesData {
     pt_2on1_remaining: 0,
   };
 
-  const isActive = (p: RawClientPackage) => p.active;
+  // `active` is authoritative; the live expiry check covers the gap between a
+  // package ending and the nightly sweep flipping the flag (the BE entitlements
+  // make the same allowance). Without it an ended PT package still looks like
+  // the running one and hides the package waiting behind it.
+  const now = Date.now();
+  const isActive = (p: RawClientPackage) =>
+    p.active && (p.expires_at === null || new Date(p.expires_at).getTime() > now);
 
   // Class credit total = sum of active credit-bundle + trial credits.
   let classTotal = 0;
@@ -163,6 +176,7 @@ function mapPackagesResponse(raw: RawPackagesResponse): ClientPackagesData {
       amountPaidSgd: p.amount_paid_sgd,
       active: p.active,
       dormant: p.dormant,
+      validityDays: p.validity_days ?? null,
       crossLocationPaidSgd: p.cross_location_paid_sgd,
       location: p.unlimited_location ?? null,
       sessionType: p.session_type,

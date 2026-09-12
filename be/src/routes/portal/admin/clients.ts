@@ -137,6 +137,7 @@ function packageView(p: ClientPackageWithSource, refund?: RefundState) {
     dormant: p.dormant,
     unlimited_location: p.location,
     duration_months: p.durationMonths,
+    validity_days: p.validityDays,
     // The Cross-Location Add-On and what was paid for it (§5, §15) — null means
     // this plan Covers its Home Location only.
     cross_location_paid_sgd: p.crossLocationPaidSgd,

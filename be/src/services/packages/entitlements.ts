@@ -3,7 +3,7 @@ import { db } from '../../db'
 import { clientPackages, classPackages, promoCodes, ptPackages } from '../../db/schema/packages'
 import { locations } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
-import { isDormant } from './validity'
+import { familyOf, isActivated, isDormant } from './validity'
 import { readCrossLocationRateSgd } from './purchase'
 
 export interface ClientEntitlements {
@@ -37,6 +37,16 @@ export interface ClientEntitlements {
    * "unlimited and no end date" for itself (§8).
    */
   dormant: boolean
+  /**
+   * A class-family package (Credit Bundle, Unlimited or trial) is Activated
+   * right now — clock running, not yet ended. While it is, it is the only one
+   * that can pay for a class and nothing waiting behind it can start, so the
+   * member surface must not offer "use a credit instead" on top of a running
+   * plan. Derived HERE, from the same reading selection uses.
+   */
+  classFamilyRunning: boolean
+  /** The same for the PT family: one PT package is running, and only it can pay. */
+  ptFamilyRunning: boolean
   hasActiveBundleCredits: boolean
   pt1on1Remaining: number
   pt2on1Remaining: number
@@ -78,6 +88,8 @@ export async function getClientEntitlements(
   let unlimitedCoversBoth = false
   let locationIsDormant = false
   let dormant = false
+  let classFamilyRunning = false
+  let ptFamilyRunning = false
   let hasActiveBundleCredits = false
   let pt1on1Remaining = 0
   let pt2on1Remaining = 0
@@ -86,6 +98,12 @@ export async function getClientEntitlements(
     // active is authoritative; the live expiry check covers cron lag.
     const consumable = r.active && (r.expiresAt === null || r.expiresAt > now)
     const balance = r.remaining ?? 0
+    // Running: consumable AND its clock has started. An Unlimited Plan has no
+    // balance to be spent; every other kind is over once it is.
+    if (consumable && isActivated(r, now) && (r.kind === 'unlimited' || balance > 0)) {
+      if (familyOf(r.kind) === 'pt') ptFamilyRunning = true
+      else classFamilyRunning = true
+    }
     if (r.kind === 'trial') {
       trialUsed = true // any trial ever (active or expired) counts as used
       if (consumable && balance > 0) hasActiveBundleCredits = true
@@ -125,6 +143,8 @@ export async function getClientEntitlements(
     unlimitedCoversBoth,
     crossLocationRateSgd: await readCrossLocationRateSgd(tenantId),
     dormant,
+    classFamilyRunning,
+    ptFamilyRunning,
     hasActiveBundleCredits,
     pt1on1Remaining,
     pt2on1Remaining,
@@ -145,12 +165,17 @@ export interface ClientPackageWithSource {
   /** Catalogue price frozen at purchase (§15). Money off is derived: list minus paid. */
   listPriceSgd: string
   active: boolean
-  /** Backend-derived (§8) — a null expiry means Dormant and the frontends never test for it. */
+  /**
+   * Backend-derived (§8) — a null expiry means Dormant and the frontends never
+   * test for it. Every kind starts Dormant and Activates on its first booking.
+   */
   dormant: boolean
   /** Home Location of an Unlimited Plan (§1); null for every other kind. */
   location: { id: string; name: string } | null
   /** Frozen Duration in calendar months for an Unlimited Plan; null otherwise. */
   durationMonths: number | null
+  /** Frozen validity in days for every kind but Unlimited; what Activation counts forward. */
+  validityDays: number | null
   /** What the member paid for the Cross-Location Add-On (§5); null means Home Location only. */
   crossLocationPaidSgd: string | null
   /** '1on1' | '2on1' for PT packages; null otherwise. */
@@ -192,6 +217,7 @@ export async function listClientPackages(
       amountPaidSgd: clientPackages.amountPaidSgd,
       listPriceSgd: clientPackages.listPriceSgd,
       durationMonths: clientPackages.durationMonths,
+      validityDays: clientPackages.validityDays,
       crossLocationPaidSgd: clientPackages.crossLocationPaidSgd,
       locationId: clientPackages.locationId,
       locationName: locations.name,
@@ -230,6 +256,7 @@ export async function listClientPackages(
     dormant: isDormant({ kind: r.kind as ClientPackageWithSource['kind'], expiresAt: r.expiresAt }),
     location: r.locationId && r.locationName ? { id: r.locationId, name: r.locationName } : null,
     durationMonths: r.durationMonths,
+    validityDays: r.validityDays,
     crossLocationPaidSgd: r.crossLocationPaidSgd,
     sessionType: (r.ptSessionType ?? null) as '1on1' | '2on1' | null,
     boundInstructor: r.boundInstructorId
