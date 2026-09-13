@@ -1,4 +1,4 @@
-import type { MiddlewareHandler } from 'hono'
+import type { Context, MiddlewareHandler, Next } from 'hono'
 import { and, eq, isNull } from 'drizzle-orm'
 import { clerkStaffApp, verifyStaffToken } from '../lib/clerk'
 import { db } from '../db'
@@ -6,7 +6,14 @@ import { staffUsers } from '../db/schema/identity'
 import { syncStaffFromClerk } from '../services/auth/webhook-sync'
 import { logger } from '../shared/logger'
 import { captureException } from '../instrument'
-import { assertTenantOrgClaim, tenantCorroborated, tenantMatches } from './tenant'
+import { isPoolSessionToken, readPoolSession } from '../services/auth/better-auth'
+import {
+  assertTenantOrgClaim,
+  assertTenantSessionClaim,
+  tenantCorroborated,
+  tenantId,
+  tenantMatches,
+} from './tenant'
 
 export interface ClerkStaffClaims {
   sub: string
@@ -44,8 +51,53 @@ async function syncFromClerkUser(clerkUserId: string) {
 }
 
 /**
- * Verifies a Clerk staff JWT (Authorization: Bearer <jwt>), looks up the matching
- * staff_users row by clerk_user_id, and attaches both to the Hono context.
+ * The Better Auth half of `clerkStaffAuth`: a `staff` pool session.
+ *
+ *   401 — no such session in the staff pool (a member's or the super portal's
+ *         session is a row this pool has never seen)
+ *   403 — the session was signed in on another studio, or this studio has no
+ *         staff_users row linked to the user
+ *
+ * The session claim stands where the organization claim does on the Clerk path,
+ * and is checked before the row is read. A staff member of two studios is one
+ * user with a row at each, and a session per hostname; this finds the row of the
+ * studio the request resolved to, inside its Row-Level Security context, and
+ * nothing else. No auto-link: a Better Auth account exists because an invitation
+ * made it, and the invitation writes `auth_user_id` itself (#106).
+ */
+async function staffFromSession(c: Context, next: Next, token: string) {
+  const session = await readPoolSession('staff', token)
+  if (!session) return c.json({ error: 'invalid_token' }, 401)
+
+  const claimRefusal = assertTenantSessionClaim(c, session.claimedTenantId)
+  if (claimRefusal) return c.json({ error: claimRefusal }, 403)
+
+  // Scoped by tenant in the query as well as by the RLS context: this person may
+  // hold a row at every studio they work at, and `limit(1)` must not be what
+  // decides which one.
+  const [row] = await db
+    .select()
+    .from(staffUsers)
+    .where(
+      and(
+        eq(staffUsers.tenantId, tenantId(c)),
+        eq(staffUsers.authUserId, session.userId),
+        isNull(staffUsers.deletedAt),
+      ),
+    )
+    .limit(1)
+  if (!row) return c.json({ error: 'staff_not_provisioned' }, 403)
+  if (!tenantMatches(c, row.tenantId)) return c.json({ error: 'tenant_mismatch' }, 403)
+
+  c.set('staffUserId', row.id)
+  c.set('staffRow', row)
+  await next()
+}
+
+/**
+ * Verifies a staff bearer token — a Better Auth `staff` session
+ * (`staffFromSession`) or a Clerk staff JWT — looks up the matching staff_users
+ * row, and attaches it to the Hono context. The Clerk half, below:
  *
  *   401 — missing/invalid token
  *   403 — token is valid but no staff_users row links to that clerk_user_id
@@ -61,6 +113,7 @@ export const clerkStaffAuth: MiddlewareHandler = async (c, next) => {
   if (!token) {
     return c.json({ error: 'missing_bearer_token' }, 401)
   }
+  if (isPoolSessionToken(token)) return staffFromSession(c, next, token)
 
   let payload: { sub: string; [k: string]: unknown }
   try {

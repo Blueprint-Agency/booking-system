@@ -1,12 +1,13 @@
-import type { MiddlewareHandler } from 'hono'
+import type { Context, MiddlewareHandler, Next } from 'hono'
 import { db } from '../db'
 import { clients } from '../db/schema/identity'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { getClerkClientApp, verifyClientToken } from '../lib/clerk'
 import { syncClientFromClerk } from '../services/auth/webhook-sync'
 import { logger } from '../shared/logger'
 import { captureException } from '../instrument'
-import { tenantCorroborated, tenantId, tenantMatches } from './tenant'
+import { isPoolSessionToken, readPoolSession } from '../services/auth/better-auth'
+import { assertTenantSessionClaim, tenantCorroborated, tenantId, tenantMatches } from './tenant'
 
 export interface ClerkClientClaims {
   sub: string
@@ -72,12 +73,53 @@ async function provisionFromClerkApi(sub: string, tenantId: string): Promise<Cli
   )
 }
 
+/**
+ * The Better Auth half of `clerkClientAuth`: a `client` pool session.
+ *
+ *   401 — no such session in the client pool (a staff or super portal session
+ *         is a row this pool has never seen)
+ *   403 — the session was signed in on another studio
+ *   404 — this studio has no clients row linked to the user, as on the Clerk path
+ *
+ * The check ADR 0003 said the member side could not afford: the session carries
+ * the Tenant it was signed in on, so a member of studio A who names studio B is
+ * refused here, before any row is read — not merely fenced by Row-Level Security.
+ * No auto-provision: member self-registration writes the clients row alongside
+ * the auth user (#106). `clerkClaims` is not set, so `clientImpersonation` stays
+ * a no-op on these sessions until impersonation moves over.
+ */
+async function clientFromSession(c: Context, next: Next, token: string) {
+  const session = await readPoolSession('client', token)
+  if (!session) return c.json({ error: 'invalid_token' }, 401)
+
+  const claimRefusal = assertTenantSessionClaim(c, session.claimedTenantId)
+  if (claimRefusal) return c.json({ error: claimRefusal }, 403)
+
+  // Tenant in the query as well as in the RLS context — see staffFromSession.
+  const [row] = await db
+    .select()
+    .from(clients)
+    .where(and(eq(clients.tenantId, tenantId(c)), eq(clients.authUserId, session.userId)))
+    .limit(1)
+  if (!row) return c.json({ error: 'client_not_found' }, 404)
+  if (!tenantMatches(c, row.tenantId)) return c.json({ error: 'tenant_mismatch' }, 403)
+
+  c.set('clientId', row.id)
+  c.set('clientRow', row)
+  await next()
+}
+
+/**
+ * Verifies a member bearer token — a Better Auth `client` session
+ * (`clientFromSession`) or a Clerk client JWT, below.
+ */
 export const clerkClientAuth: MiddlewareHandler = async (c, next) => {
   const header = c.req.header('authorization')
   if (!header?.startsWith('Bearer ')) {
     return c.json({ error: 'missing_bearer_token' }, 401)
   }
   const token = header.slice(7)
+  if (isPoolSessionToken(token.trim())) return clientFromSession(c, next, token.trim())
 
   let payload: any
   try {

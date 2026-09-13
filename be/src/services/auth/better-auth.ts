@@ -1,7 +1,8 @@
 import { betterAuth, type BetterAuthOptions } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
+import { APIError } from 'better-auth/api'
 import { bearer, emailOTP, twoFactor } from 'better-auth/plugins'
-import { db } from '../../db'
+import { currentTenantId, db } from '../../db'
 import * as schema from '../../db/schema/auth'
 import { env } from '../../env'
 import { originAllowed } from '../../lib/allowed-origins'
@@ -16,8 +17,8 @@ import {
 
 /**
  * Self-hosted auth (Better Auth), running beside Clerk while #106 swaps it in.
- * Nothing reads these sessions to authorise a request yet; every Clerk path is
- * unchanged.
+ * The three request middlewares accept either a session from here or a Clerk
+ * JWT (`readPoolSession`); every Clerk path is unchanged.
  *
  * **Three instances, not one.** Separate user pools are the property being
  * kept from the three Clerk applications: a member must never be able to sign
@@ -34,6 +35,13 @@ import {
  *   - `platform` — the super portal, `/api/v1/auth/platform`. As staff, but on
  *                  a pool no studio can write to, and with no Tenant at all.
  *
+ * **A studio-pool session carries its Tenant.** `client` and `staff` sign in on a
+ * studio's hostname, inside the Tenant context `resolveTenant` opened, and the
+ * session-create hook below writes that Tenant onto the row as its claim. The
+ * middlewares refuse a session whose claim is not the Tenant the request
+ * resolved to (`services/tenants/session-claim.ts`), so a session issued at
+ * studio A is worthless at studio B. `platform` sessions carry no Tenant.
+ *
  * **Bearer, not cookies.** The API and the frontends are on different hosts,
  * so a session travels as `Authorization: Bearer <token>`, held per origin by
  * the browser; the token is returned in the `set-auth-token` header.
@@ -46,6 +54,37 @@ export const AUTH_BASE_PATH: Record<AuthPool, string> = {
   staff: '/api/v1/auth/staff',
   platform: '/api/v1/auth/platform',
 }
+
+/**
+ * The claim, as Better Auth sees it: a session field the caller cannot set
+ * (`input: false`), stored in `claimed_tenant_id` — see `db/schema/auth.ts` for
+ * why the column is not named `tenant_id`.
+ */
+const tenantClaimField = {
+  claimedTenantId: { type: 'string', required: false, input: false },
+} as const
+
+/**
+ * Stamp the resolved Tenant onto every session a studio pool creates.
+ *
+ * The Tenant is the one whose context is open, which on `/api/v1/auth/{client,
+ * staff}/*` is the one the request's hostname named. No context means a sign-in
+ * that named no studio — `resolveTenant` already refuses those with
+ * `tenant_required`, so this is the backstop for a path someone later exempts:
+ * a session with no claim would be refused at every tenant route anyway, and it
+ * is better never written.
+ */
+const stampTenantClaim = {
+  session: {
+    create: {
+      before: async (session: Record<string, unknown>) => {
+        const tenantId = currentTenantId()
+        if (!tenantId) throw new APIError('FORBIDDEN', { message: 'tenant_required' })
+        return { data: { ...session, claimedTenantId: tenantId } as never }
+      },
+    },
+  },
+} satisfies BetterAuthOptions['databaseHooks']
 
 /** Five minutes and six digits, for every emailed code on every pool. */
 const CODE_TTL_SECONDS = 5 * 60
@@ -117,7 +156,8 @@ const clientAuth = betterAuth({
     },
   }),
   user: { modelName: 'clientAuthUsers' },
-  session: { modelName: 'clientAuthSessions' },
+  session: { modelName: 'clientAuthSessions', additionalFields: tenantClaimField },
+  databaseHooks: stampTenantClaim,
   account: { modelName: 'clientAuthAccounts' },
   verification: { modelName: 'clientAuthVerifications' },
   plugins: [
@@ -151,6 +191,8 @@ function passwordPool(
   },
 ) {
   const model = (table: keyof typeof tables) => `${pool}Auth${table[0]!.toUpperCase()}${table.slice(1)}`
+  // The super portal signs in on no studio, so its sessions carry no claim.
+  const studioPool = pool === 'staff'
   return betterAuth({
     ...shared(pool),
     database: drizzleAdapter(db, {
@@ -160,7 +202,11 @@ function passwordPool(
       ),
     }),
     user: { modelName: model('users') },
-    session: { modelName: model('sessions') },
+    session: {
+      modelName: model('sessions'),
+      ...(studioPool ? { additionalFields: tenantClaimField } : {}),
+    },
+    ...(studioPool ? { databaseHooks: stampTenantClaim } : {}),
     account: { modelName: model('accounts') },
     verification: { modelName: model('verifications') },
     emailAndPassword: {
@@ -231,8 +277,8 @@ const platformAuth = passwordPool(
 /**
  * What the rest of the backend sees of a pool: its request handler. Narrowed on
  * purpose — Better Auth's inferred instance type cannot be named in a
- * declaration file, and nothing outside this module should be calling its
- * server API yet.
+ * declaration file. The one other thing a caller needs, reading a session, is
+ * `readPoolSession` below.
  */
 export type AuthPoolHandler = { handler: (request: Request) => Promise<Response> }
 
@@ -240,4 +286,60 @@ export const authPools: Record<AuthPool, AuthPoolHandler> = {
   client: clientAuth,
   staff: staffAuth,
   platform: platformAuth,
+}
+
+/** A signed-in session, as a middleware needs it. */
+export type PoolSession = {
+  sessionId: string
+  userId: string
+  email: string
+  /** The Tenant the session was signed in on; always null on `platform`. */
+  claimedTenantId: string | null
+}
+
+type SessionReader = (input: { headers: Headers }) => Promise<{
+  session: { id: string; claimedTenantId?: string | null }
+  user: { id: string; email: string }
+} | null>
+
+const sessionReaders: Record<AuthPool, SessionReader> = {
+  client: clientAuth.api.getSession as unknown as SessionReader,
+  staff: staffAuth.api.getSession as unknown as SessionReader,
+  platform: platformAuth.api.getSession as unknown as SessionReader,
+}
+
+/**
+ * Is this bearer token a Better Auth session token rather than a Clerk JWT?
+ *
+ * The shapes cannot be confused: a Better Auth bearer token is the session token
+ * and its signature (`token.sig`, one dot), a JWT is three segments. So a
+ * middleware routes by shape and asks exactly one issuer — no session lookup on
+ * every Clerk request, no call to Clerk on every Better Auth one. Goes with the
+ * Clerk path (#106).
+ */
+export function isPoolSessionToken(token: string): boolean {
+  return token.split('.').length !== 3
+}
+
+/**
+ * The session a bearer token names in this pool, or null.
+ *
+ * Null for a token another pool issued, too: the pools share a signing secret
+ * but not a table, so the signature checks out and the lookup finds nothing.
+ *
+ * Only the `Authorization` header is handed over. Given the whole request,
+ * Better Auth falls back to a session cookie when the bearer token fails its
+ * signature — so `Bearer junk` beside a stray cookie would still sign someone
+ * in, and "sessions travel as bearer tokens" would be half true.
+ */
+export async function readPoolSession(pool: AuthPool, bearerToken: string): Promise<PoolSession | null> {
+  const headers = new Headers({ authorization: `Bearer ${bearerToken}` })
+  const found = await sessionReaders[pool]({ headers })
+  if (!found) return null
+  return {
+    sessionId: found.session.id,
+    userId: found.user.id,
+    email: found.user.email,
+    claimedTenantId: found.session.claimedTenantId ?? null,
+  }
 }

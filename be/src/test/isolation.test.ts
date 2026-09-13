@@ -22,11 +22,12 @@ import {
  *   SQL. Tenant `acme` asking for classes, locations, instructors, class types
  *   or merch must never see northwind's.
  *
- * - **Writes go through the services.** Every portal route is behind a verified
- *   Clerk JWT, and this harness has no way to mint one — the backend-resolution
- *   ticket (#65) is what brings an auth seam a test can drive. Until then the
- *   refusals are asserted one layer below the HTTP boundary, on exactly the
- *   functions those routes call, with the tenant the route would have passed.
+ * - **Writes go through the services.** These were written while every portal
+ *   route sat behind a Clerk JWT this harness could not mint, so the refusals are
+ *   asserted one layer below the HTTP boundary, on exactly the functions those
+ *   routes call, with the tenant the route would have passed. The harness's
+ *   `signInAs` now signs in for real (#113); the signed-in half of isolation —
+ *   a session from one studio refused at another — is `isolation-sessions.test.ts`.
  */
 
 const SOON = () => new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)

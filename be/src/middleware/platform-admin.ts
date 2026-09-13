@@ -1,5 +1,6 @@
-import type { MiddlewareHandler } from 'hono'
+import type { Context, MiddlewareHandler } from 'hono'
 import { getClerkPlatformApp, isPlatformAppConfigured, verifyPlatformToken } from '../lib/clerk'
+import { isPoolSessionToken, readPoolSession } from '../services/auth/better-auth'
 import { env } from '../env'
 import { isPlatformAdmin, parsePlatformAdmins } from '../services/tenants/platform-admin'
 import { logger } from '../shared/logger'
@@ -72,6 +73,37 @@ async function primaryEmail(clerkUserId: string): Promise<string | null> {
 }
 
 /**
+ * Who is behind this bearer token: a Better Auth `platform` session, or a Clerk
+ * super portal JWT. Null for anything else — including a studio pool's session,
+ * which is a row the platform pool has never seen, and a studio session never
+ * reaches the allowlist at all.
+ */
+async function callerOf(
+  c: Context,
+  token: string,
+): Promise<{ sub: string; email: string | null } | null> {
+  if (isPoolSessionToken(token)) {
+    const session = await readPoolSession('platform', token)
+    return session ? { sub: session.userId, email: session.email } : null
+  }
+
+  let sub: string
+  try {
+    ;({ sub } = await verifyPlatformToken(token))
+  } catch {
+    return null
+  }
+  try {
+    return { sub, email: await primaryEmail(sub) }
+  } catch (err) {
+    // A Clerk outage must not become an open door. Refuse, loudly.
+    logger.error({ err, clerkUserId: sub }, 'platform-admin: could not read the caller’s email')
+    captureException(err, { scope: 'platform-admin-gate' })
+    return null
+  }
+}
+
+/**
  * The gate on the super portal.
  *
  * A valid Clerk staff token gets you as far as this line and no further: what
@@ -92,25 +124,12 @@ export const requirePlatformAdmin: MiddlewareHandler = async (c, next) => {
   const token = header.slice(7).trim()
   if (!token) return c.json({ error: 'not_found' }, 404)
 
-  let sub: string
-  try {
-    ;({ sub } = await verifyPlatformToken(token))
-  } catch {
-    return c.json({ error: 'not_found' }, 404)
-  }
-
-  let email: string | null
-  try {
-    email = await primaryEmail(sub)
-  } catch (err) {
-    // A Clerk outage must not become an open door. Refuse, loudly.
-    logger.error({ err, clerkUserId: sub }, 'platform-admin: could not read the caller’s email')
-    captureException(err, { scope: 'platform-admin-gate' })
-    return c.json({ error: 'not_found' }, 404)
-  }
+  const caller = await callerOf(c, token)
+  if (!caller) return c.json({ error: 'not_found' }, 404)
+  const { email, sub } = caller
 
   if (!isPlatformAdmin(email, PLATFORM_ADMINS)) {
-    logger.warn({ clerkUserId: sub, path: c.req.path }, 'platform-admin: refused')
+    logger.warn({ userId: sub, path: c.req.path }, 'platform-admin: refused')
     return c.json({ error: 'not_found' }, 404)
   }
 

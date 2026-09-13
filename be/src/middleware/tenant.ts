@@ -4,6 +4,7 @@ import { originTenantSlug } from '../lib/allowed-origins'
 import { normaliseSlug } from '../services/tenants/slug'
 import { loadTenantById, resolveTenantByClerkOrg, resolveTenantBySlug } from '../services/tenants/tenants'
 import { orgClaimVerdict, orgIdFromClaims } from '../services/tenants/org-claim'
+import { sessionClaimVerdict } from '../services/tenants/session-claim'
 import { logger } from '../shared/logger'
 
 declare module 'hono' {
@@ -34,9 +35,11 @@ export const TENANT_SLUG_HEADER = 'x-tenant-slug'
  *   An origin that names no tenant (a server-side call from the proxy, which
  *   sends none at all; the bare local `http://localhost:3000`) is not evidence
  *   and refuses nothing.
- * - **The Clerk organization claim, later.** Authenticated routes carry a
- *   signed statement of which studio the caller is signed into; the two Clerk
- *   middlewares run `assertTenantOrgClaim` at the point they have it.
+ * - **The session claim, later.** Authenticated routes carry a signed statement
+ *   of which studio the caller is signed into: a Better Auth session's
+ *   `claimedTenantId` (`assertTenantSessionClaim`, staff and members) or the
+ *   Clerk organization claim (`assertTenantOrgClaim`, staff only). The
+ *   middlewares run them at the point they have them.
  *
  * A request that names no tenant at all is refused with `tenant_required`. The
  * paths that genuinely have no tenant never reach here — `app.ts` exempts them
@@ -145,6 +148,32 @@ export function tenantId(c: Context): string {
  */
 export function tenantMatches(c: Context, rowTenantId: string | null): boolean {
   return rowTenantId !== null && rowTenantId === tenantId(c)
+}
+
+/**
+ * The Better Auth half of the check: was this session signed in on the Tenant
+ * the request resolved to?
+ *
+ * Returns a refusal reason, or null when the request may proceed. Unlike the
+ * Clerk organization claim below this runs on **both** studio middlewares — the
+ * claim is a column on our own session row, so the member side gets it for
+ * nothing.
+ *
+ * A matching claim does **not** mark the Tenant corroborated, unlike an
+ * organization claim. The claim is whatever Tenant the sign-in resolved, and a
+ * sign-in can resolve from `X-Tenant-Slug` alone — so it proves the session
+ * belongs here, not that anything but a header ever vouched for "here". The
+ * session path provisions nothing, so no write gate needs it today.
+ */
+export function assertTenantSessionClaim(
+  c: Context,
+  claimedTenantId: string | null,
+): 'tenant_mismatch' | 'tenant_required' | null {
+  const requestTenantId = tenantId(c)
+  const verdict = sessionClaimVerdict({ requestTenantId, claimedTenantId })
+  if (verdict === 'ok') return null
+  logger.warn({ requestTenantId, claimedTenantId, verdict }, 'tenant: session claim refused')
+  return verdict
 }
 
 /**
