@@ -60,10 +60,11 @@ export interface SendInput {
 }
 
 /**
- * Look up a template by (tenant, slug), render `{{var}}` substitutions, send via
- * SMTP, write one `email_log` row. SMTP failures LOG (status='failed') but do
- * not throw — emails are best-effort in v1; we don't want to roll back business
- * actions (e.g. an invitation) because of a transient SMTP hiccup.
+ * Look up a template by (tenant, slug), render `{{var}}` substitutions, send
+ * through the mailer, write one `email_log` row. Send failures LOG
+ * (status='failed') but do not throw — emails are best-effort in v1; we don't
+ * want to roll back business actions (e.g. an invitation) because of a
+ * transient provider hiccup.
  *
  * Throws only when the template row is missing (programming error) — which now
  * includes a tenant that has not been seeded its copy, and that is the right
@@ -99,6 +100,8 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
   try {
     // The studio's identity, not the platform's: the envelope address is shared
     // and authenticated, the display name and Reply-To are this tenant's own.
+    // `userKind` picks which of the platform's two addresses that envelope is —
+    // a member's mail comes from `hello@`, a staff member's from `portal@`.
     const identity = await tenantMailIdentity(tenantId)
     const result = await sendMail({
       to: recipient.email,
@@ -106,6 +109,7 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
       html: body,
       fromName: identity.fromName,
       replyTo: identity.replyTo,
+      audience: recipient.userKind,
     })
     await db
       .update(emailLog)
@@ -117,7 +121,7 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
       })
       .where(and(eq(emailLog.tenantId, tenantId), eq(emailLog.id, logRow.id)))
   } catch (err) {
-    // The error OBJECT, so the stack survives — this is the catch an SMTP fault
+    // The error OBJECT, so the stack survives — this is the catch a send fault
     // actually lands in, and callers swallow below it, so it is the last chance
     // anyone has to hear about it. `msg` is for the email_log column only.
     const msg = err instanceof Error ? err.message : String(err)

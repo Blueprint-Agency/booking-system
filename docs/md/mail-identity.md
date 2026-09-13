@@ -15,9 +15,9 @@ the thing this platform cannot do, and the reason is not a missing feature.
 Two independent checks reject it, and they are checks the *recipient* runs.
 
 **SPF** asks the sending domain which servers may send for it. The platform
-sends through Gmail SMTP on its own credentials. `a-studio.com`'s SPF record
-does not list those servers — it lists whatever the studio's own mail provider
-is — so the check fails. The studio would have to publish an SPF record naming
+sends through Resend on its own verified domain. `a-studio.com`'s SPF record
+does not list Resend's servers — it lists whatever the studio's own mail
+provider is — so the check fails. The studio would have to publish an SPF record naming
 our sender, and only the studio can edit its own DNS.
 
 **DKIM** asks whether the message carries a signature that the sending domain's
@@ -31,15 +31,24 @@ mailbox providers. So the failure is not "occasionally lands in spam". It is a
 studio's booking confirmations reliably not arriving, and the platform being
 unable to fix it without that studio publishing DNS records first.
 
-### What `reservetoday.app` carries today
+### What `reservetoday.app` carries
 
-The zone is on Vercel's nameservers and carries the records the apps and the CDN
-need — the wildcard hosts and `cdn.reservetoday.app` (see
-`docs/adr/0001-reservetoday-app-on-vercel-nameservers.md` and
-`docs/md/deployment.md`). It carries **no mail records**: no MX, no SPF, no DKIM
-selector, no DMARC policy. Mail leaves on the Gmail account behind `SMTP_USER`
-and is authenticated as that account's domain, not as `reservetoday.app` and not
-as any tenant's domain.
+The zone is on Vercel's nameservers (see
+`docs/adr/0001-reservetoday-app-on-vercel-nameservers.md`). Outbound mail is
+authenticated as `reservetoday.app` through Resend, which needs three records
+in the zone, all scoped to the `send` subdomain so the apex stays free for a
+human inbox provider:
+
+| Type | Name | Value |
+|---|---|---|
+| TXT | `resend._domainkey` | the DKIM key Resend issues for the domain |
+| TXT | `send` | `v=spf1 include:amazonses.com ~all` |
+| MX | `send` | `feedback-smtp.<region>.amazonses.com`, priority 10 |
+
+Plus a `_dmarc` TXT (`v=DMARC1; p=quarantine; rua=mailto:hello@reservetoday.app`)
+on the apex — the nameserver move dropped the one that was there. Before Resend,
+mail left on a Gmail account and was authenticated as *that* domain; the zone
+carried no mail records at all.
 
 ## The decision
 
@@ -47,9 +56,25 @@ as any tenant's domain.
 display name, with the tenant's address as `Reply-To`.**
 
 ```
-From:     "A Studio" <the platform's SMTP address>
+From:     "A Studio" <hello@reservetoday.app>
 Reply-To: hello@a-studio.com
 ```
+
+The platform has **two** envelope addresses, chosen by who is reading, never
+by which studio is speaking:
+
+| Recipient | Envelope | Env |
+|---|---|---|
+| A member (`userKind: 'client'`) | `hello@reservetoday.app` | `MAIL_FROM_EMAIL` |
+| Staff — admin or instructor (`userKind: 'staff'`) | `portal@reservetoday.app` | `MAIL_FROM_PORTAL_EMAIL` |
+
+Both are in the one verified domain, so authentication is identical. The split
+is for the *staff* inbox: an admin can filter platform operations (cancellation
+notices, leave requests, invitations) away from anything a member might send to
+`hello@`. `sendTemplatedEmail` picks the address from the recipient's
+`userKind`, so no call site chooses — and cannot choose wrongly. Both addresses
+are env, not tenant data, because they belong to the platform's domain and are
+the same for every studio.
 
 - **The display name is what a recipient actually sees.** Every mail client
   shows the name, not the address, in the inbox list. This is the part that
@@ -95,14 +120,14 @@ identity it is currently sending as, and no other.
 
 Nothing here has to be undone to get there.
 
-1. Add a subdomain the platform controls per tenant — `mail.{slug}.reservetoday.app`
-   — and publish SPF and DKIM for it in the `reservetoday.app` zone. That is DNS
-   we own, so it needs nothing from the studio, and it is a strictly better
-   envelope than the shared one.
-2. For a studio that wants its *own* domain on the envelope, give it the two
-   records to publish (an SPF include and a DKIM CNAME), verify them from the
-   super portal, and only then write `mail_from_email`. The verification step is
-   the load-bearing part: an unverified domain must never reach the envelope.
+1. Add a subdomain the platform controls per tenant — `{slug}.reservetoday.app`
+   — as its own Resend domain. That is DNS we own, so it needs nothing from the
+   studio, and it is a strictly better envelope than the shared one.
+2. For a studio that wants its *own* domain on the envelope, add it as a Resend
+   domain, give the studio the records Resend issues, poll Resend's domain
+   status from the super portal, and only then write `mail_from_email`. The
+   verification step is the load-bearing part: an unverified domain must never
+   reach the envelope.
 
 Both steps change which address `PLATFORM_MAIL_FROM_EMAIL` resolves to for a
 given tenant. Neither changes the shape of what the application sends, because
@@ -112,9 +137,14 @@ the display name and `Reply-To` are already per-tenant.
 
 | Var | Where | Meaning |
 |---|---|---|
-| `SMTP_USER` / `SMTP_PASSWORD` | secrets | The Gmail account and App Password the transport authenticates with. |
-| `MAIL_FROM_EMAIL` | repository variable | The envelope address. Must be one the credentials are authorised for. Blank falls back to `SMTP_USER`. |
-| `MAIL_FROM_NAME` | repository variable | Display name used only when a tenant has no name of its own. Defaults to `ReserveToday`. |
+| `RESEND_API_KEY` | environment secret | Sending-access key for the platform's verified domain. |
+| `MAIL_FROM_EMAIL` | environment variable | The envelope address a member sees. Required. |
+| `MAIL_FROM_PORTAL_EMAIL` | environment variable | The envelope address staff see. Blank falls back to `MAIL_FROM_EMAIL`. |
+| `MAIL_FROM_NAME` | environment variable | Display name used only when a tenant has no name of its own. Defaults to `ReserveToday`. |
+
+Under test (`NODE_ENV=test`) the mailer swaps in a transport that accepts and
+discards every message — `.env` holds a live key and the harness cannot tell a
+fake one from a real one, so the guard sits on the mode.
 
 Per repo convention these land in `.github/workflows/deploy-be.yml`,
 `be/.env.example` and `be/src/env.ts` together.

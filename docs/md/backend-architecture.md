@@ -25,7 +25,7 @@ The single backend serves **both** `fe-portal` and `fe-client`. `fe-portal` is t
 | Auth | **Clerk** — two applications: client app + staff app (per §15b session isolation) |
 | File storage | **Cloudflare R2** (S3-compatible via `@aws-sdk/client-s3`) — presigned PUT for public imagery, server-side upload + signed GET for private documents (§6c) |
 | Background jobs | **`node-cron`** for non-critical periodic jobs (reminders, expiry sweeps); **BullMQ** (Redis-backed) added when the durable refund flow lands. Until then, no Redis dependency. |
-| Email | **SMTP via Nodemailer** (transactional, 22 templates per §17). Provider-agnostic — host/port/credentials via env vars (e.g. AWS SES SMTP, Gmail relay, Mailgun SMTP, self-hosted Postfix). |
+| Email | **Resend** HTTP API (transactional, 22 templates per §17). One API key, two envelope addresses on the platform's verified domain — see §6d. |
 | Payments | **Stripe** (Payment Intents + Refund API; no Subscriptions in v1) |
 
 ---
@@ -193,7 +193,7 @@ be/
     │   ├── clerk.ts                   # Two Clerk SDK instances (client + staff app keys)
     │   ├── stripe.ts                  # Stripe SDK + signed webhook verification
     │   ├── r2.ts                      # S3 client + private-bucket put + signed-GET helpers
-    │   ├── mailer.ts                  # Nodemailer SMTP transport (host/port/auth from env) + send wrapper
+    │   ├── mailer.ts                  # Resend transport (API key + two from-addresses from env) + send wrapper
     │   ├── time.ts                    # SGT (`Asia/Singapore`) conversions
     │   ├── richtext.ts                # Sanitise/render rich text bodies (waiver, workshop description, email)
     │   ├── capacity.ts                # `getBookedCount(classId | workshopTierId)` query helpers
@@ -1032,16 +1032,16 @@ Idempotency keys on `stripe-refund` jobs (booking_id) prevent double refund on r
   - **Why this one is not presigned.** Type and size are checked at a trust boundary the server controls rather than announced to a browser.
 - **Supporting Document reads — signed GET.** `lib/r2.ts#signedObjectUrl` mints a 5-minute signed URL per request, generated on demand and never stored, after the service has decided the caller may see the row (the owning instructor, or any admin/superadmin). On a public bucket the expiry is a courtesy: the same object is reachable unsigned through `R2_PUBLIC_URL`.
 
-### 6d. SMTP (Nodemailer)
+### 6d. Mail (Resend)
 
-- **Transport.** `lib/mailer.ts` constructs a single Nodemailer SMTP transport at boot from env vars: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_SECURE` (boolean — true for 465, false for 587 STARTTLS), `SMTP_FROM` (RFC 5322 from address, e.g. `ReserveToday <hello@reservetoday.app>`; a Tenant's own from-identity overrides it per send). The same transport is reused across all sends.
-- **Provider-agnostic.** Any SMTP provider works (AWS SES SMTP endpoint, Gmail relay, Mailgun SMTP, Sendgrid SMTP, self-hosted Postfix). Switching providers is an env var change, no code change.
+- **Transport.** `lib/mailer.ts` constructs one Resend client at boot from `RESEND_API_KEY`. Two envelope addresses, both in the domain verified on Resend: `MAIL_FROM_EMAIL` (`hello@reservetoday.app`) for members, `MAIL_FROM_PORTAL_EMAIL` (`portal@reservetoday.app`) for staff — `sendTemplatedEmail` picks by the recipient's `userKind`. A Tenant's display name and `Reply-To` are applied per send (`docs/md/mail-identity.md`). Under `NODE_ENV=test` a null transport accepts and discards every message.
+- **Provider swap** is confined to the `MailTransport` interface in `lib/mailer.ts`; callers see `sendMail()` only.
 - **Server-side rendering** via `services/notifications/render.ts`:
   - Parse template body for `{{variable}}` tokens
   - Validate against `services/notifications/variables.ts` allow-list per slug (this is what powers the §17c amber flag in fe — same source of truth)
   - Substitute values; sanitise (XSS safe — rich text from admin trusted, but variables themselves escaped)
-- **Logging.** One `email_log` row per recipient per send. On send success, store Nodemailer's `info.messageId` in `smtp_message_id` and the last line of `info.response` in `smtp_response`. On rejection, store the error in `error` and set `status='failed'`.
-- **No bounce webhook.** SMTP itself has no callback channel for asynchronous bounces (bounces arrive as DSN emails to the configured `Return-Path`). v1 does not parse DSNs. If the chosen provider exposes its own bounce API (e.g. AWS SES `SendingNotifications` SNS topic), add it as a separate webhook later — out of scope for v1.
+- **Logging.** One `email_log` row per recipient per send. On send success, store Resend's email `id` in `smtp_message_id` (column name kept from the SMTP era; `smtp_response` is now always null). On a refused send, store the error in `error` and set `status='failed'`.
+- **No bounce webhook.** Resend exposes `email.bounced` / `email.complained` webhooks; v1 does not consume them. Add as a route under `routes/webhooks/` later — out of scope for v1.
 - **Testing.** Local dev uses `SMTP_HOST=localhost` + `mailpit` or `mailhog` running on port 1025; staging uses the production provider with a sandboxed sender domain.
 
 ---

@@ -117,7 +117,7 @@ function stubEnvironment() {
   process.env.DATABASE_URL = TEST_DATABASE_URL
   process.env.DATABASE_APP_URL = appRoleUrl(TEST_DATABASE_URL!)
   // Forced, not defaulted: `.env` (loaded above) says `development`, and this
-  // is the one flag the mailer reads to stay off smtp.gmail.com — see
+  // is the one flag the mailer reads to stay off Resend — see
   // lib/mailer.ts. With `??=` every templated email a test triggered went out
   // for real and bounced back into the platform inbox.
   process.env.NODE_ENV = 'test'
@@ -135,8 +135,8 @@ function stubEnvironment() {
   // hosts, which name no tenant and fall back to tenant #1.
   process.env.TENANT_ORIGIN_PATTERNS ??=
     'http://*.localhost:3000,http://*.portal.localhost:3001,http://localhost:3000,http://localhost:3001'
-  process.env.SMTP_USER ??= 'smtp@example.test'
-  process.env.SMTP_PASSWORD ??= 'smtp-password'
+  process.env.RESEND_API_KEY ??= 're_test_harness'
+  process.env.MAIL_FROM_EMAIL ??= 'hello@example.test'
 }
 
 /**
