@@ -48,9 +48,25 @@ test("other pages pass through", () => {
   assert.equal(signedInRedirectPath(u("/loginfoo")), null);
 });
 
-// The login page asks the same question on the client, because a
-// `router.push("/login")` from inside the app never reaches the edge. If the
-// two answers could differ, the pair of them would be the loop.
+// On a studio's portal the login page is the only one asking: the staff session
+// is a bearer token in the page's storage, invisible to the edge. On the super
+// portal the edge asks too (Clerk's cookie is visible there), and if the two
+// answers could differ, the pair of them would be the loop.
+
+test("a signed-in staff member on a studio's /login goes to the studio home", () => {
+  const params = new URLSearchParams();
+  assert.equal(signedInRedirectTarget("/login", params, false), "/admin");
+  assert.equal(
+    signedInRedirectTarget("/login", new URLSearchParams("next=/admin/staff"), false),
+    "/admin/staff",
+  );
+});
+
+test("a studio's set-password page is not a sign-in form, so it is left alone", () => {
+  // An invitee who is already signed in as someone else must still be able to
+  // open their link; the page itself decides what to do about the session.
+  assert.equal(signedInRedirectTarget("/signup", new URLSearchParams("invite_token=t"), false), null);
+});
 
 test("the client form of the rule answers exactly as the edge does", () => {
   for (const [path, superPortal] of [

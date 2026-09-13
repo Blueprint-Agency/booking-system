@@ -26,7 +26,7 @@ export function InstructorShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   // Admins/superadmins don't use the instructor surface — send them to /admin.
-  // (Role lives in the BE, not the Clerk token, so this resolves client-side.)
+  // (Role lives in the BE, not the session, so this resolves client-side.)
   const isStaffAdmin =
     currentStaff?.role === "admin" || currentStaff?.role === "superadmin";
   useEffect(() => {

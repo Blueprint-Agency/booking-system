@@ -13,10 +13,12 @@ import { isSuperPortalHost } from "./tenant-host";
  * hostname, so defaulting to it there sends the user out of the app they just
  * signed in to.
  *
- * Two callers, one rule. `proxy.ts` asks at the edge with a whole URL; the
- * login page asks again on the client, where a `router.push("/login")` from
- * inside the app can put a live session on the form without the edge ever
- * seeing it. They must agree — a client guard that redirected where the edge
+ * Two callers, one rule. On a **studio's** portal only the login page can ask:
+ * the staff session is a bearer token in the page's own storage, which the edge
+ * never sees, so the client form below is the whole of the guard there. The
+ * **super portal** still signs in through Clerk, whose cookie the edge does see,
+ * so `lib/platform-proxy.ts` asks at the edge with a whole URL as well. Where
+ * both ask they must agree — a client guard that redirected where the edge
  * would not (or a `next` the edge would refuse) is a loop between the two.
  */
 const LOGIN_PAGE = /^\/login(\/|$)/;
@@ -44,7 +46,7 @@ export function signedInRedirectTarget(
   return safeNextPath(params) ?? portalHomePath(superPortal);
 }
 
-/** The rule, for the edge, which holds a whole URL. */
+/** The rule, for the edge, which holds a whole URL — the super portal's proxy. */
 export function signedInRedirectPath(url: URL): string | null {
   return signedInRedirectTarget(
     url.pathname,

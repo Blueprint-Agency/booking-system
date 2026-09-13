@@ -126,6 +126,7 @@ describe('per-studio URLs', { skip: integrationTestsEnabled ? false : SKIP_REASO
     if (memberId) await harness.db.delete(schema.clients).where(eq(schema.clients.id, memberId))
     for (const email of [INVITER_EMAIL, INVITEE_EMAIL]) {
       await harness.db.delete(schema.staffUsers).where(eq(schema.staffUsers.email, email))
+      await harness.db.delete(schema.staffAuthUsers).where(eq(schema.staffAuthUsers.email, email))
     }
     await harness.close()
   })
@@ -174,8 +175,8 @@ describe('per-studio URLs', { skip: integrationTestsEnabled ? false : SKIP_REASO
     assert.notEqual(link, invites.buildSignUpUrl(portalHost(one.slug), 'a+b@example.test', 'tok en'))
     // A trailing slash on the origin must not double up into `//signup`.
     assert.equal(
-      invites.buildSignUpUrl(`${portalHost(two.slug)}/`, 'x@example.test'),
-      `${portalHost(two.slug)}/signup?invite_email=x%40example.test`,
+      invites.buildSignUpUrl(`${portalHost(two.slug)}/`, 'x@example.test', 't'),
+      `${portalHost(two.slug)}/signup?invite_email=x%40example.test&invite_token=t`,
     )
   })
 
@@ -187,7 +188,10 @@ describe('per-studio URLs', { skip: integrationTestsEnabled ? false : SKIP_REASO
       invitedByStaffId: inviterStaffId,
     })
 
-    const body = await bodyOf('admin_invite', INVITEE_EMAIL)
+    // Read off the message, not the log: the link sets a password, so `email_log`
+    // keeps it redacted.
+    const { discardedMail } = await import('../lib/mailer')
+    const body = [...discardedMail].reverse().find(m => m.to === INVITEE_EMAIL)?.html ?? ''
     assert.ok(
       body.includes(`${portalHost(two.slug)}/signup?invite_email=`),
       "the sign-up link is on the inviting studio's own portal",

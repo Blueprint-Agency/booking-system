@@ -16,7 +16,6 @@ import { Button, EmptyState, PageHeader, StatusBadge } from "@/components/ui";
 import { CreateTenantDialog } from "@/components/platform/create-tenant-dialog";
 import { InviteFirstAdminDialog } from "@/components/platform/invite-first-admin-dialog";
 import { ApiError, makeApi } from "@/lib/api";
-import { useActiveOrganization } from "@/lib/use-active-organization";
 import {
   exportTenant,
   importTenant,
@@ -37,10 +36,6 @@ import {
 export default function PlatformPage() {
   const { getToken, isLoaded, isSignedIn } = useAuth();
   const api = useMemo(() => makeApi(getToken), [getToken]);
-  // The super portal belongs to no studio, so its session must be active in no
-  // organization. An operator who visited a studio's portal first would
-  // otherwise still be carrying that studio's claim. See `active-organization.ts`.
-  const { status: orgStatus } = useActiveOrganization(isLoaded && isSignedIn === true);
 
   const [tenants, setTenants] = useState<PlatformTenant[] | null>(null);
   /** Set when the backend says this account may not be here — a 404, because the
@@ -71,8 +66,8 @@ export default function PlatformPage() {
   }, [api]);
 
   useEffect(() => {
-    if (isLoaded && isSignedIn && orgStatus !== "settling") void load();
-  }, [isLoaded, isSignedIn, orgStatus, load]);
+    if (isLoaded && isSignedIn) void load();
+  }, [isLoaded, isSignedIn, load]);
 
   /**
    * Is anything in flight for this studio?

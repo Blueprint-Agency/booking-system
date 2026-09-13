@@ -365,18 +365,25 @@ There is no separate suspend/unsuspend surface — blocking is the single mechan
 
 Triggered from: `POST /staff/invite` (admin/superadmin) or auto-fired during `POST /instructors`.
 
+Invitation-only in fact (#115): there is no staff sign-up, and nothing links a stranger's account to a row by address.
+
 ```
-services/auth/invitations.ts:invite({ email, role, invited_by_staff_id })
-  ↓
-1. Insert staff_users row: { email, role, status='pending', clerk_user_id=NULL }
-2. Insert staff_invitations row: { email, role, token, expires_at = now + 7d, status='pending', invited_by_staff_id, staff_user_id=staff_users.id }
-3. Call Clerk's invitation API with redirect URL = fe-portal accept page + ?token=…
-4. enqueueEmail('admin_invite' | 'instructor_invite', { email }, { invite_url, expires_at })
+services/auth/invitations.ts:inviteAdmin / catalog/instructors.ts:createInstructor
+  ↓  one transaction (writePendingStaff)
+1. Find or create the `staff` pool auth user for the address (no password)
+2. Insert staff_users row: { email, role, status='pending', auth_user_id }
+3. Insert staff_invitations row: { email, role, token, expires_at = now + 7d, status='pending', invited_by_staff_id, staff_user_id }
+  ↓  after commit
+4. Mail 'admin_invite' | 'instructor_invite' with invite_url = {studio portal}/signup?invite_email=…&invite_token=… (redacted in email_log)
 ```
 
-When the invitee clicks the link and signs in via Clerk:
-- Clerk fires `user.created` webhook → `services/auth/webhook-sync.ts` matches by email, sets `staff_users.clerk_user_id` and `status='active'`, sets `staff_invitations.status='accepted'` and `accepted_at=now()`.
-- If the email matches no pending invitation: webhook short-circuits (we don't auto-create staff from rogue sign-ins).
+When the invitee opens the link (`fe-portal` `/signup`, on the inviting studio's hostname):
+- `GET /public/staff-invitation?token=` → status, email, role, `password_set`.
+- `POST /public/staff-invitation/accept { token, password, first_name, last_name }` sets the first password (only if the account has none — a token never replaces one), sets `staff_users.status='active'`, and marks the invitation accepted. The page then signs in with that password.
+- Resend (`/staff/invitations/:id/resend`) re-mails the same link with a fresh 7-day expiry. Revoke before acceptance deletes the pending staff row (and with it the invitation) and the auth user if it never had a password.
+- Archiving a staff member deletes their Better Auth sessions **at that studio** (`endStaffSessionsAt`); the same account stays signed in at any other studio it works at.
+
+A studio's *first* admin, invited from the super portal at provisioning, still goes through the Clerk organization invitation until a follow-up moves it onto this flow.
 
 ### 3b. Cancellation paths — admin vs. client
 

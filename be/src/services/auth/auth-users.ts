@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import { eq } from 'drizzle-orm'
+import { hashPassword } from 'better-auth/crypto'
+import { and, eq } from 'drizzle-orm'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import * as schema from '../../db/schema'
 
@@ -41,4 +42,73 @@ export async function ensureAuthUser(
   const [row] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1)
   if (!row) throw new Error(`ensureAuthUser: no ${pool} user for ${email} after insert`)
   return row.id
+}
+
+/** The shortest and longest password the staff pool accepts — Better Auth's defaults. */
+export const MIN_PASSWORD_LENGTH = 8
+export const MAX_PASSWORD_LENGTH = 128
+
+type Reader = Pick<PostgresJsDatabase<typeof schema>, 'select'>
+type Deleter = Pick<PostgresJsDatabase<typeof schema>, 'delete'>
+
+/** Does this staff auth user have a password yet? */
+export async function hasStaffPassword(db: Reader, userId: string): Promise<boolean> {
+  const accounts = schema.staffAuthAccounts
+  const [row] = await db
+    .select({ id: accounts.id })
+    .from(accounts)
+    .where(and(eq(accounts.userId, userId), eq(accounts.providerId, 'credential')))
+    .limit(1)
+  return Boolean(row)
+}
+
+/**
+ * Give a staff auth user their first password, hashed the way Better Auth hashes
+ * one, on a credential account of the shape its own sign-up writes. Only for a
+ * user who has none: replacing a password is the reset flow's job.
+ */
+export async function setFirstStaffPassword(db: UserWriter, userId: string, password: string): Promise<void> {
+  await db.insert(schema.staffAuthAccounts).values({
+    id: randomUUID(),
+    accountId: userId,
+    providerId: 'credential',
+    userId,
+    password: await hashPassword(password),
+  })
+}
+
+export async function renameStaffUser(
+  db: Pick<PostgresJsDatabase<typeof schema>, 'update'>,
+  userId: string,
+  name: string,
+): Promise<void> {
+  await db
+    .update(schema.staffAuthUsers)
+    .set({ name, updatedAt: new Date() })
+    .where(eq(schema.staffAuthUsers.id, userId))
+}
+
+/**
+ * End a staff user's sessions **at one studio**.
+ *
+ * Not the admin plugin's revoke-all, which is keyed on the user alone: one staff
+ * auth user signs into every studio they work at, a session per hostname, and
+ * archiving them at studio A must not sign them out of studio B, where they are
+ * still staff. The session's Tenant claim is what tells the two apart.
+ */
+export async function endStaffSessionsAt(db: Deleter, tenantId: string, userId: string): Promise<void> {
+  const sessions = schema.staffAuthSessions
+  await db
+    .delete(sessions)
+    .where(and(eq(sessions.userId, userId), eq(sessions.claimedTenantId, tenantId)))
+}
+
+/**
+ * Remove a staff auth user nobody has used. With no password there was never a
+ * session, so nothing is lost. One with a password is left alone: it may be the
+ * same person's account at another studio, which this studio cannot see.
+ */
+export async function removeUnusedStaffUser(db: Reader & Deleter, userId: string): Promise<void> {
+  if (await hasStaffPassword(db, userId)) return
+  await db.delete(schema.staffAuthUsers).where(eq(schema.staffAuthUsers.id, userId))
 }

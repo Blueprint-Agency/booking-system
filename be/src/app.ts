@@ -5,7 +5,7 @@ import { rateLimiter } from 'hono-rate-limiter'
 import { sql } from 'drizzle-orm'
 import { db } from './db'
 import { originAllowed } from './lib/allowed-origins'
-import { errorBoundary } from './middleware/error'
+import { errorBoundary, onAppError } from './middleware/error'
 import { requestId } from './middleware/request-id'
 import { requestLogger } from './middleware/logger'
 import { resolveTenant } from './middleware/tenant'
@@ -29,6 +29,7 @@ const app = new Hono()
 app.use('*', requestId)
 app.use('*', requestLogger)
 app.use('*', errorBoundary)
+app.onError(onAppError)
 app.use('*', secureHeaders())
 
 // CORS — every tenant subdomain in this environment, plus the single-valued
@@ -53,10 +54,12 @@ app.use(
       'X-Impersonation-Grant',
       'X-Request-Id',
       'X-Tenant-Slug',
+      'X-Two-Factor-Challenge',
     ],
     // Better Auth hands a new session's bearer token back in this header, and a
-    // cross-origin page cannot read a header CORS does not expose.
-    exposeHeaders: ['set-auth-token'],
+    // cross-origin page cannot read a header CORS does not expose. The
+    // second-factor challenge travels the same way (`two-factor-challenge.ts`).
+    exposeHeaders: ['set-auth-token', 'set-two-factor-challenge'],
   }),
 )
 
