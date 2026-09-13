@@ -12,10 +12,10 @@ The client-side backend surface. Implements the `/me/*` scope of the client app 
 
 ```
 /api/v1/public/*  — unauthenticated
-/api/v1/me/*      — require Clerk client JWT + require-active + verification gate (booking endpoints only)
+/api/v1/me/*      — require a member session + require-active + verification gate (booking endpoints only)
 ```
 
-`/me/*` mounts under `routes/client/index.ts` with `clerk-client.ts` middleware (verifies the **client** Clerk app's JWT issuer; rejects staff-app tokens). `requireActiveClient` rejects `clients.status='suspended'`.
+`/me/*` mounts under `routes/client/index.ts` with `clerk-client.ts` middleware: a Better Auth `client` pool bearer session whose Tenant claim is this studio (fe-client signs in only this way since #117), or — until #106 removes it — a Clerk client JWT. Staff and platform sessions are rows the client pool has never seen, so they are 401. `requireActiveClient` rejects `clients.status='suspended'` and blocked (`deleted_at`) members.
 
 ### Verification gate
 
@@ -493,19 +493,17 @@ The client then tracks the request on `/account/corporate` (`fe-client-features.
 
 ### 4f. Registration flow
 
-Not a single endpoint — orchestrated across Clerk + our backend:
+Members sign up and sign in with an emailed one-time code through the Better Auth `client` pool (#117). No webhook and no provisioning on first request: the account and the studio's row are written together.
 
-1. fe-client `/register` collects `{ email, password, name, phone, gender?, dob?, referral_code? }`.
-2. fe-client calls Clerk's signUp API → Clerk creates the user, sends email + SMS verification.
-3. **Webhook `user.created`** fires from Clerk → `services/auth/webhook-sync.ts`:
-   - Looks for an existing `clients` row by email (idempotency).
-   - If absent: insert `clients` row with `clerk_user_id`, name, phone, gender, dob, referred_by_client_id (resolved via the public referral endpoint at fe-client step 1 if a code was entered).
-   - Returns 200 to Clerk.
-4. fe-client redirects to `/waiver`. Client signs → `POST /me/waiver/sign` → inserts `waiver_signatures`.
-5. fe-client surfaces verification CTA until both Clerk verifications complete.
-6. Once both verifications complete, the verification gate (§1) lets booking endpoints through.
+1. fe-client `/register` collects `{ first_name, last_name, email, phone }` and asks the pool for a code: `POST /api/v1/auth/client/email-otp/send-verification-otp` `{ email, type: 'sign-in' }`.
+2. It sends the code with the details to **`POST /api/v1/public/members/register`** `{ email, otp, first_name, last_name, phone }` (`services/clients/register.ts`):
+   - 409 `already_member` if this studio already has a `clients` row for the address — sign in instead.
+   - The code is checked without being spent; a wrong one is 400 `invalid_otp` / `otp_expired` (403 `too_many_attempts`) and writes nothing but the attempt.
+   - Then, in one savepoint: the `client_auth_users` row (found, not duplicated, when the person is already a member at another studio), the `clients` row with `auth_user_id`, and the session — the code spent through the pool's own sign-in, so it meets the same origin check, rate limit, audit row and Tenant stamp as any sign-in.
+   - Answers `{ token }` (also in `set-auth-token`): the member is signed in at this studio.
+3. An existing member signs in at `POST /api/v1/auth/client/sign-in/email-otp` `{ email, otp }`. A member this studio has blocked is refused there, 403 `client_blocked` (the pool's session hook reads `clients.deleted_at` at the resolved Tenant).
 
-The dual-claim verification check on every booking request is the only gate; we do not store verification state.
+An admin adding a member (`POST /portal/admin/clients`) writes the same two rows in one transaction; the member signs in by code. Blocking deletes the member's sessions **at that studio only** and restoring lets them sign in again — a block is one studio's decision, and the same auth user may be a member elsewhere.
 
 ### 4g. Referral conversion (cross-link)
 

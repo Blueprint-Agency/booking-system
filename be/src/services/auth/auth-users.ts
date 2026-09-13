@@ -4,8 +4,13 @@ import { and, eq } from 'drizzle-orm'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import * as schema from '../../db/schema'
 
-/** The user table of each password pool — the pools a seed provisions into. */
+/**
+ * The user table of each pool something provisions into: the password pools
+ * from a seed or an invitation, the client pool when a member registers or an
+ * admin adds one.
+ */
 const USERS = {
+  client: schema.clientAuthUsers,
   staff: schema.staffAuthUsers,
   platform: schema.platformAuthUsers,
 } as const
@@ -98,6 +103,18 @@ export async function renameStaffUser(
  */
 export async function endStaffSessionsAt(db: Deleter, tenantId: string, userId: string): Promise<void> {
   const sessions = schema.staffAuthSessions
+  await db
+    .delete(sessions)
+    .where(and(eq(sessions.userId, userId), eq(sessions.claimedTenantId, tenantId)))
+}
+
+/**
+ * End a member's sessions **at one studio** — for the reason `endStaffSessionsAt`
+ * gives: one member auth user signs into every studio they have joined, and
+ * blocking them at studio A is not studio A's to do at studio B.
+ */
+export async function endClientSessionsAt(db: Deleter, tenantId: string, userId: string): Promise<void> {
+  const sessions = schema.clientAuthSessions
   await db
     .delete(sessions)
     .where(and(eq(sessions.userId, userId), eq(sessions.claimedTenantId, tenantId)))

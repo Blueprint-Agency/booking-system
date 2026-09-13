@@ -3,7 +3,7 @@
 import { Suspense, useState, useEffect } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useAuth } from "@clerk/nextjs";
+import { getMemberToken } from "@/lib/member-auth";
 import { fetchApi } from "@/lib/api-url";
 import { Check } from "lucide-react";
 import { useClientPackages } from "@/lib/use-client-packages";
@@ -27,7 +27,7 @@ function WorkshopSuccess({
   workshopId: string;
   stripeSessionId: string | null;
 }) {
-  const { getToken } = useAuth();
+  const getToken = getMemberToken;
   const [synced, setSynced] = useState(false);
   const [workshop, setWorkshop] = useState<{
     name: string;
@@ -123,7 +123,7 @@ function WorkshopSuccess({
 
 // ── Merch post-payment success ────────────────────────────────────────────────
 function MerchSuccess({ stripeSessionId }: { stripeSessionId: string | null }) {
-  const { getToken } = useAuth();
+  const getToken = getMemberToken;
   const [synced, setSynced] = useState(false);
 
   // Same sync as the other flows: record the order immediately rather than
@@ -239,7 +239,7 @@ function PackageSuccess({
   packageKind: PackageKind;
   stripeSessionId: string | null;
 }) {
-  const { getToken } = useAuth();
+  const getToken = getMemberToken;
   const { refetch } = useClientPackages();
   const [synced, setSynced] = useState(false);
   const [details, setDetails] = useState<PackageDetails | null>(null);

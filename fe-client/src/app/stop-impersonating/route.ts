@@ -10,7 +10,10 @@ import { NextResponse } from "next/server";
  * close() and falls back to about:blank so the tab is visually clean.
  */
 export async function POST() {
-  const { sessionId } = await auth();
+  // Clerk's middleware no longer runs in front of the app (#117), so `auth()`
+  // throws; the grant cookie must still be cleared. Impersonation moves to
+  // Better Auth in #118.
+  const sessionId = await auth().then(a => a.sessionId, () => null);
   if (sessionId) {
     // Revoke the current Clerk session so the impersonated identity is gone
     // even if the cookie is somehow restored.

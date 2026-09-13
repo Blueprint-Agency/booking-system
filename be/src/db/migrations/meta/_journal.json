@@ -344,6 +344,13 @@
       "when": 1789311645362,
       "tag": "0048_auth_events",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1789324012586,
+      "tag": "0049_client_clerk_user_id_nullable",
+      "breakpoints": true
     }
   ]
 }

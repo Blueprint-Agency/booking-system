@@ -2,8 +2,10 @@ import { betterAuth, type BetterAuthOptions } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { APIError } from 'better-auth/api'
 import { bearer, emailOTP, twoFactor } from 'better-auth/plugins'
+import { and, eq } from 'drizzle-orm'
 import { currentTenantId, db } from '../../db'
 import * as schema from '../../db/schema/auth'
+import { clients } from '../../db/schema/identity'
 import { env } from '../../env'
 import { originAllowed } from '../../lib/allowed-origins'
 import { PLATFORM_MAIL_FROM_NAME } from '../../lib/mailer'
@@ -91,6 +93,36 @@ const stampTenantClaim = {
   },
 } satisfies BetterAuthOptions['databaseHooks']
 
+/**
+ * The client pool's hook: the claim, and one refusal before it is written — a
+ * member this studio has blocked gets no session here (#117).
+ *
+ * Asked of the `clients` row at the Tenant the sign-in named, not of the auth
+ * user, because a block is one studio's decision about its own member: the same
+ * person may be a member in good standing at another studio, on the same auth
+ * user. No row at all is not refused — the harness and the register flow both
+ * sign in before or alongside writing one, and a session with no row reaches
+ * nothing (`client_not_found` at every member route).
+ */
+const memberSessionHooks = {
+  session: {
+    create: {
+      before: async (session: Record<string, unknown>) => {
+        const tenantId = currentTenantId()
+        if (tenantId) {
+          const [member] = await db
+            .select({ deletedAt: clients.deletedAt })
+            .from(clients)
+            .where(and(eq(clients.tenantId, tenantId), eq(clients.authUserId, String(session.userId))))
+            .limit(1)
+          if (member?.deletedAt) throw new APIError('FORBIDDEN', { message: 'client_blocked' })
+        }
+        return stampTenantClaim.session.create.before(session)
+      },
+    },
+  },
+} satisfies BetterAuthOptions['databaseHooks']
+
 /** Five minutes and six digits, for every emailed code on every pool. */
 const CODE_TTL_SECONDS = 5 * 60
 const CODE_DIGITS = 6
@@ -164,7 +196,7 @@ const clientAuth = betterAuth({
   }),
   user: { modelName: 'clientAuthUsers' },
   session: { modelName: 'clientAuthSessions', additionalFields: tenantClaimField },
-  databaseHooks: stampTenantClaim,
+  databaseHooks: memberSessionHooks,
   account: { modelName: 'clientAuthAccounts' },
   verification: { modelName: 'clientAuthVerifications' },
   plugins: [
@@ -355,4 +387,67 @@ export async function readPoolSession(pool: AuthPool, bearerToken: string): Prom
     email: found.user.email,
     claimedTenantId: found.session.claimedTenantId ?? null,
   }
+}
+
+/** Why a member's emailed code was not accepted — Better Auth's own codes. */
+export type MemberCodeRefusal = 'INVALID_OTP' | 'OTP_EXPIRED' | 'TOO_MANY_ATTEMPTS'
+
+/**
+ * Is this the code mailed to `email` for signing in? Checked, not spent: the
+ * code stays usable for the sign-in that follows, and a wrong guess still
+ * counts against the address's attempts.
+ *
+ * "User not found" is a yes. Better Auth checks the code first and the user
+ * second, and a code for an address with no account yet is exactly what
+ * registration holds.
+ */
+export async function checkMemberCode(email: string, otp: string): Promise<MemberCodeRefusal | null> {
+  try {
+    await clientAuth.api.checkVerificationOTP({ body: { email, otp, type: 'sign-in' } })
+    return null
+  } catch (err) {
+    const code = err instanceof APIError ? (err.body as { code?: string } | undefined)?.code : undefined
+    if (code === 'USER_NOT_FOUND') return null
+    if (code === 'INVALID_OTP' || code === 'OTP_EXPIRED' || code === 'TOO_MANY_ATTEMPTS') return code
+    throw err
+  }
+}
+
+/** The request headers a sign-in made on a member's behalf carries over from theirs. */
+const FORWARDED_HEADERS = ['origin', 'x-tenant-slug', 'x-forwarded-for', 'user-agent'] as const
+
+/**
+ * Spend a member's code on a session, in-process, as if their browser had.
+ *
+ * Through the pool's own handler rather than `api.signInEmailOTP`, so it meets
+ * everything a real sign-in does — the origin check, the rate limit, the audit
+ * row and the session hooks above. The caller's `Origin` and address go with it.
+ */
+export async function signInMemberByCode(
+  from: Headers,
+  email: string,
+  otp: string,
+): Promise<{ token: string } | { status: number; body: unknown }> {
+  const headers = new Headers({ 'content-type': 'application/json' })
+  for (const name of FORWARDED_HEADERS) {
+    const value = from.get(name)
+    if (value) headers.set(name, value)
+  }
+  const res = await clientAuth.handler(
+    new Request(`${env.BETTER_AUTH_URL}${AUTH_BASE_PATH.client}/sign-in/email-otp`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ email, otp }),
+    }),
+  )
+  const token = res.headers.get('set-auth-token')
+  if (res.ok && token) return { token }
+  const text = await res.text()
+  let body: unknown = text
+  try {
+    body = JSON.parse(text)
+  } catch {
+    // Not JSON; the text is the body.
+  }
+  return { status: res.status, body }
 }

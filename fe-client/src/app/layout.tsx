@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Manrope } from "next/font/google";
-import { ClerkProvider } from "@clerk/nextjs";
 import { Toaster } from "sonner";
 import { getBrand } from "@/lib/brand";
 import { BrandProvider } from "@/components/brand/brand-provider";
@@ -50,18 +49,11 @@ export default async function RootLayout({
   const brand = await getBrand();
 
   return (
-    <ClerkProvider
-      signInUrl="/login"
-      signUpUrl="/register"
-      signInFallbackRedirectUrl="/"
-      signUpFallbackRedirectUrl="/"
-    >
     <html lang="en" className={sans.variable}>
       <body className="antialiased">
         <BrandProvider brand={brand}>{children}</BrandProvider>
         <Toaster position="top-center" richColors />
       </body>
     </html>
-    </ClerkProvider>
   );
 }

@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useUser, useClerk } from "@clerk/nextjs";
 import { Lock } from "lucide-react";
 import { SectionHeading } from "@/components/booking/section-heading";
 import { ApiError, useApi } from "@/lib/api";
+import { refreshAppUser } from "@/lib/auth";
 
 interface ApiClientProfile {
   id: string;
@@ -25,11 +25,6 @@ function splitName(full: string): { first: string; last: string } {
   };
 }
 
-function clerkErrorMessage(err: unknown): string | null {
-  const e = err as { errors?: Array<{ message?: string }> };
-  return e?.errors?.[0]?.message ?? null;
-}
-
 const inputClass =
   "rounded-xl border border-ink/10 bg-paper px-4 py-3 text-sm w-full focus:border-accent focus:outline-none";
 const readOnlyClass =
@@ -39,8 +34,6 @@ const cardClass = "rounded-2xl bg-paper border border-ink/10 p-8 space-y-6";
 
 export default function ProfilePage() {
   const api = useApi();
-  const { user } = useUser();
-  const { signOut } = useClerk();
 
   // Personal info (name) — editable.
   const [firstName, setFirstName] = useState("");
@@ -52,9 +45,8 @@ export default function ProfilePage() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Initial load. clerkClientAuth on the BE auto-provisions the row from token
-  // claims if the webhook hasn't fired yet, so GET /me should always return a
-  // row for an authenticated session.
+  // Initial load. A signed-in member always has a row here: registration and an
+  // admin adding a member both write it alongside the account.
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -99,20 +91,18 @@ export default function ProfilePage() {
       return;
     }
     try {
-      // Clerk is the source of truth for first/last name (the `user.updated`
-      // webhook syncs the joined name back to the BE row). We also PATCH /me so
-      // the BE row reflects the change immediately. Phone/email are not editable.
-      if (user) {
-        await user.update({ firstName: first, lastName: last });
-      }
+      // The member's row at this studio is the one source of truth for their
+      // name. Phone/email are not editable here.
       await api.patch<ApiClientProfile>("/me", { name: joinedName });
+      // The top bar and the account header read the same row; show them the edit.
+      await refreshAppUser();
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
       setError(
         err instanceof ApiError
           ? `Couldn't save (HTTP ${err.status}).`
-          : clerkErrorMessage(err) ?? "Couldn't save. Please try again.",
+          : "Couldn't save. Please try again.",
       );
     } finally {
       setSaving(false);
@@ -219,25 +209,6 @@ export default function ProfilePage() {
             </div>
           </section>
         </form>
-
-        {/* Password */}
-        <section className={cardClass}>
-          <div>
-            <h3 className="font-serif text-lg text-ink">Password</h3>
-            <p className="text-sm text-muted mt-1">
-              We&apos;ll sign you out and email you a code to set a new password.
-            </p>
-          </div>
-          <div className="flex justify-start">
-            <button
-              type="button"
-              onClick={() => signOut({ redirectUrl: "/login?reset=1" })}
-              className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium"
-            >
-              Reset password
-            </button>
-          </div>
-        </section>
       </div>
     </div>
   );
