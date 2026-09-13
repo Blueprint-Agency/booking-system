@@ -10,11 +10,11 @@
  *     instructors but not each other.
  *   - Already-archived target is a no-op (idempotent).
  *
- * After the DB flip we best-effort revoke all Clerk sessions for the
- * target so they're booted from the portal immediately. requireActiveStaff
- * also blocks archived rows on the next request, so the Clerk revoke is
- * defense-in-depth, not load-bearing — a transient Clerk failure must not
- * roll back the archive.
+ * After the DB flip the target's Better Auth sessions at this studio are
+ * deleted, and we best-effort revoke all Clerk sessions for the target, so
+ * they're booted from the portal immediately. requireActiveStaff also blocks
+ * archived rows on the next request, so both are defense-in-depth, not
+ * load-bearing — a transient Clerk failure must not roll back the archive.
  */
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
@@ -37,6 +37,7 @@ import {
   withLeaveFigures,
   type InstructorLeaveFigures,
 } from '../leave/requests'
+import { endStaffSessionsAt } from './auth-users'
 import { STAFF_EDIT_REFUSAL_MESSAGE, staffEditRefusal } from './staff-rank'
 
 export type StaffUserRow = typeof staffUsers.$inferSelect
@@ -146,6 +147,10 @@ export async function archiveStaff(input: ArchiveStaffInput): Promise<StaffUserR
     .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, targetStaffId)))
     .returning()
   if (!updated) throw new ConflictError('staff_archive_failed')
+
+  // Their Better Auth sessions at this studio end in the request's transaction,
+  // with the flip. Only this studio's: the same account may still be staff elsewhere.
+  if (target.authUserId) await endStaffSessionsAt(db, tenantId, target.authUserId)
 
   if (target.clerkUserId) {
     try {

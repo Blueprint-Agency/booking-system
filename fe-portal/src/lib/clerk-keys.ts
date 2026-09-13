@@ -31,11 +31,14 @@ import { isSuperPortalHost } from "./tenant-host";
  * exactly the behaviour that shipped before this: one shared session, still
  * gated at the API by the backend's `PLATFORM_ADMIN_EMAILS` allowlist.
  *
- * Server-side callers only — `proxy.ts` and the root layout — because
+ * Only the super portal reads this now: a studio's portal signs in through
+ * Better Auth (#115), and #116 retires the rest.
+ *
+ * Server-side callers only — `lib/platform-proxy.ts` and
+ * `components/platform/platform-auth-provider.tsx` — because
  * `CLERK_PLATFORM_SECRET_KEY` is read here. It is kept out of `super-portal.ts`
- * for exactly that reason: that module is imported by `login/page.tsx`, which
- * is a client component, and a secret has no business in a module reachable
- * from a client bundle.
+ * for exactly that reason: that module is imported by client components, and a
+ * secret has no business in a module reachable from a client bundle.
  *
  * The env references are written out literally rather than looked up by a
  * computed name — Next inlines `process.env.NEXT_PUBLIC_*` at build time and

@@ -57,6 +57,7 @@ const app = new Hono()
       bio: body.bio ?? null,
       phone: body.phone ?? null,
       photoR2Key: body.photo_r2_key ?? null,
+      invitedByStaffId: c.get('staffUserId'),
     })
     c.set('auditTarget' as any, { table: 'staff_users', id: view.id })
     return c.json(serialize(view), 201)

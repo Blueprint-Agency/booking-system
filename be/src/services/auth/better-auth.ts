@@ -9,6 +9,7 @@ import { originAllowed } from '../../lib/allowed-origins'
 import { PLATFORM_MAIL_FROM_NAME } from '../../lib/mailer'
 import { authAudit } from './auth-events'
 import { authRateLimit } from './rate-limit'
+import { twoFactorChallengeHeader } from './two-factor-challenge'
 import {
   mailClientCode,
   mailPlatformPasswordReset,
@@ -236,6 +237,9 @@ function passwordPool(
         }),
         model('twoFactors'),
       ),
+      // The portals send no cookies, so the second-factor challenge rides a header
+      // too. After the two-factor plugin, whose after-hook is what sets the cookie.
+      twoFactorChallengeHeader(),
       // Last: it has to see the session the two-factor plugin leaves, not the one it deletes.
       authAudit(pool),
     ],
