@@ -1,4 +1,5 @@
 import { pgTable, text, timestamp, boolean, integer, uuid, index } from 'drizzle-orm/pg-core'
+import { authEventKindEnum, authPoolEnum } from '../enums'
 import { tenants } from './tenancy'
 
 /**
@@ -182,5 +183,46 @@ export const platformAuthTwoFactors = pgTable(
   table => ({
     userIdx: index('platform_auth_two_factors_user_idx').on(table.userId),
     secretIdx: index('platform_auth_two_factors_secret_idx').on(table.secret),
+  }),
+)
+
+/* ── auth_events: who signed in as whom, when (#114) ───────────────────── */
+
+/**
+ * The sign-in audit log, written by `services/auth/auth-events.ts` from every
+ * pool's hooks. Unlike the pool tables above it does carry a `tenant_id`: an
+ * event happens at one studio, even when the person it happened to works at two.
+ *
+ * **The one table whose `tenant_id` is nullable, on purpose.** A studio pool's
+ * event belongs to the studio it happened at and is fenced like any other
+ * studio row. A platform-pool event happened at no studio, so its Tenant is
+ * null — and `ensureTenantIsolation` gives this table the platform-row policy
+ * (`PLATFORM_ROWS` in `db/roles.ts`): a Tenant context sees that Tenant's rows,
+ * and no context — the super portal's — sees only the null ones.
+ *
+ * Holds no email and never a password or a code. The actor is the auth user id
+ * in `pool`'s table, when one is known: a failed sign-in for an address that
+ * has no account has no actor. No foreign key to the pool tables — there are
+ * three of them, and the record should outlive the account. The subject is
+ * the user acted on, when it is not the actor: the member an impersonation
+ * signed in as. (Which pool an impersonation row is filed under, when its actor
+ * is staff and its subject a member, is #118's to settle.)
+ */
+export const authEvents = pgTable(
+  'auth_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id').references(() => tenants.id, { onDelete: 'restrict' }),
+    pool: authPoolEnum('pool').notNull(),
+    kind: authEventKindEnum('kind').notNull(),
+    actorUserId: text('actor_user_id'),
+    subjectUserId: text('subject_user_id'),
+    ip: text('ip'),
+    userAgent: text('user_agent'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  table => ({
+    tenantCreatedIdx: index('auth_events_tenant_created_idx').on(table.tenantId, table.createdAt),
+    actorCreatedIdx: index('auth_events_actor_created_idx').on(table.actorUserId, table.createdAt),
   }),
 )

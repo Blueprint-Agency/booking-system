@@ -10,7 +10,7 @@ import {
   startTestApp,
   type TestApp,
 } from './harness'
-import { ensureTenantIsolation } from '../db/roles'
+import { ensureTenantIsolation, PLATFORM_ROWS } from '../db/roles'
 
 /**
  * Every Tenant-scoped table is policed, including ones nobody has written yet.
@@ -117,7 +117,7 @@ test('the sweep reaches the whole schema but tenant_settings', options, async ()
   assert.ok(names.includes('tenant_settings'), 'tenant_settings is tenant-scoped')
 })
 
-test('the auth pools are platform rows the sweep leaves alone', options, async () => {
+test('the auth pool tables carry no tenant_id and the sweep leaves them alone', options, async () => {
   // A staff member of two studios is ONE auth user, so the Better Auth tables
   // carry no `tenant_id` — and the session's Tenant claim is deliberately named
   // something else. Were either to change, the sweep below would fence the
@@ -143,6 +143,30 @@ test('the auth pools are platform rows the sweep leaves alone', options, async (
   assert.equal(auth.length, 14, `expected the three pools' tables, saw ${auth.map(r => r.table_name)}`)
   assert.deepEqual(auth.filter(r => r.scoped).map(r => r.table_name), [], 'an auth table grew a tenant_id')
   assert.deepEqual(auth.filter(r => r.secured).map(r => r.table_name), [], 'an auth table carries a policy')
+})
+
+test('a null tenant_id is allowed only where the platform owns rows, and policed as such', options, async () => {
+  // `auth_events` holds the super portal's sign-ins under a null Tenant, and its
+  // policy says so (`IS NOT DISTINCT FROM`). Every other `tenant_id` is NOT NULL
+  // with the strict policy. A column that went nullable without joining
+  // PLATFORM_ROWS would still be strict — its null rows invisible — but it is a
+  // schema change nobody decided on, so it fails here rather than later.
+  const nullable = await harness.db.execute<{ table_name: string; policy: string }>(sql`
+    SELECT col.table_name, coalesce(p.qual, '') AS policy
+    FROM information_schema.columns col
+    LEFT JOIN pg_policies p
+      ON p.schemaname = 'public' AND p.tablename = col.table_name AND p.policyname = 'tenant_isolation'
+    WHERE col.table_schema = 'public'
+      AND col.column_name = 'tenant_id'
+      AND col.is_nullable = 'YES'
+    ORDER BY col.table_name
+  `)
+
+  assert.deepEqual(nullable.map(r => r.table_name), [...PLATFORM_ROWS].sort())
+  for (const row of nullable) {
+    // Postgres deparses `a IS NOT DISTINCT FROM b` as `NOT (a IS DISTINCT FROM b)`.
+    assert.match(row.policy, /NOT \(tenant_id IS DISTINCT FROM/, `${row.table_name} has the strict policy, so its platform rows are unreachable`)
+  }
 })
 
 test('a Tenant-scoped table added later is policed by the next deploy', options, async () => {

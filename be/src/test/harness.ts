@@ -54,7 +54,7 @@ export type TestApp = {
 
 
 /** The password every harness-made staff and platform account signs in with. */
-const HARNESS_PASSWORD = 'harness-password-not-a-secret'
+export const HARNESS_PASSWORD = 'harness-password-not-a-secret'
 
 /** The origins the local frontends use; `TENANT_ORIGIN_PATTERNS` below admits them. */
 export const frontendOrigin = (pool: AuthPool, tenant: { slug: string } | null): string => {
@@ -85,8 +85,15 @@ async function signInAs(
   tenant: { slug: string } | null,
 ): Promise<Record<string, string>> {
   const origin = frontendOrigin(pool, tenant)
+  // A client address of its own, as the proxy in front of the API would set.
+  // Without one every sign-in in a test process shares the limiter's single
+  // no-address bucket (#114), and a suite that signs in a dozen people is
+  // throttled for doing so.
+  const forwardedFor = harnessAddress()
   const fromFrontend: Record<string, string> =
-    pool === 'platform' ? { Origin: origin } : { Origin: origin, 'X-Tenant-Slug': tenant!.slug }
+    pool === 'platform'
+      ? { Origin: origin, 'X-Forwarded-For': forwardedFor }
+      : { Origin: origin, 'X-Tenant-Slug': tenant!.slug, 'X-Forwarded-For': forwardedFor }
   const post = (path: string, body: unknown) =>
     app.request(`/api/v1/auth/${pool}${path}`, {
       method: 'POST',
@@ -113,6 +120,16 @@ async function signInAs(
     throw new Error(`signInAs: ${pool} sign-in for ${email} failed (${signedIn.status}): ${await signedIn.text()}`)
   }
   return { ...fromFrontend, Authorization: `Bearer ${token}` }
+}
+
+/**
+ * A client address no other request in this process has used: one from the
+ * 198.18.0.0/15 benchmarking range, which no real client comes from.
+ */
+let harnessAddresses = Math.floor(Math.random() * 60_000)
+export function harnessAddress(): string {
+  const n = harnessAddresses++
+  return `198.${18 + ((n >> 16) & 1)}.${(n >> 8) & 255}.${n & 255}`
 }
 
 async function ensureCredential(

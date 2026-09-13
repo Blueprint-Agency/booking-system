@@ -107,6 +107,24 @@ export async function ensureAppRole(sql: Sql, password: string): Promise<void> {
 const UNPOLICED = new Set(['tenant_settings'])
 
 /**
+ * The tables where a null `tenant_id` is a real row: one that belongs to the
+ * platform rather than to any studio.
+ *
+ * `auth_events` is the one. A super-portal sign-in happens at no studio, so its
+ * audit row has no Tenant, and under the ordinary policy it could be neither
+ * written nor read by the app — `NULL = anything` is never true. These tables
+ * get `IS NOT DISTINCT FROM` instead, which reads as: inside a Tenant context,
+ * that Tenant's rows and nothing else; outside every context (the super portal
+ * runs outside one), the platform's rows and nothing else. A studio still
+ * cannot see another studio's rows, nor the platform's.
+ *
+ * Named, not inferred from the column being nullable, so it fails closed: a
+ * `tenant_id` made nullable by mistake keeps the strict policy, and its null
+ * rows stay invisible rather than becoming everyone-outside-a-context's.
+ */
+export const PLATFORM_ROWS = new Set(['auth_events'])
+
+/**
  * Re-apply migration 0033's rule to every Tenant-scoped table, on every deploy.
  *
  * 0033 enabled Row-Level Security by looping over the tables that existed the
@@ -150,10 +168,11 @@ export async function ensureTenantIsolation(sql: Sql): Promise<string[]> {
     // still bypasses both, which is why migrations and seeds keep working.
     await sql.unsafe(`ALTER TABLE ${quoted} FORCE ROW LEVEL SECURITY`)
     await sql.unsafe(`DROP POLICY IF EXISTS tenant_isolation ON ${quoted}`)
+    const matches = PLATFORM_ROWS.has(table) ? 'IS NOT DISTINCT FROM' : '='
     await sql.unsafe(`
       CREATE POLICY tenant_isolation ON ${quoted}
-        USING (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
-        WITH CHECK (tenant_id = nullif(current_setting('app.tenant_id', true), '')::uuid)
+        USING (tenant_id ${matches} nullif(current_setting('app.tenant_id', true), '')::uuid)
+        WITH CHECK (tenant_id ${matches} nullif(current_setting('app.tenant_id', true), '')::uuid)
     `)
 
     policed.push(table)
