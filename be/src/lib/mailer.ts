@@ -78,10 +78,21 @@ export interface MailTransport {
  */
 const nullTransport: MailTransport = {
   name: 'null',
-  async send() {
+  async send(message) {
+    discardedMail.push(message)
+    if (discardedMail.length > DISCARDED_MAIL_KEPT) discardedMail.shift()
     return { messageId: `null-${Date.now()}`, response: 'discarded (NODE_ENV=test)' }
   },
 }
+
+/**
+ * The last few messages the null transport dropped, newest last — so a test
+ * can read what was "sent". The sign-in code tests need it: a one-time code is
+ * stored hashed and redacted from `email_log`, so the rendered message is the
+ * only place the code exists. Empty outside tests, where nothing is discarded.
+ */
+export const discardedMail: OutboundMessage[] = []
+const DISCARDED_MAIL_KEPT = 50
 
 /**
  * Resend allows 2 requests a second and the SDK does not retry a refusal.

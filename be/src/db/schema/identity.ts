@@ -27,6 +27,10 @@ export const clients = pgTable(
     // Unique per Tenant, not per platform — see migration 0035. One person may
     // be a member of two studios, and gets an independent record at each.
     clerkUserId: text('clerk_user_id').notNull(),
+    // The member's `client_auth_users` id — the Better Auth sibling of
+    // `clerk_user_id`, nullable while both run (#106). Unique per Tenant for the
+    // same reason: one person, one record at each studio they join.
+    authUserId: text('auth_user_id'),
     email: text('email').notNull(),
     name: text('name').notNull(),
     phone: text('phone').notNull(),
@@ -51,6 +55,10 @@ export const clients = pgTable(
       table.tenantId,
       table.clerkUserId,
     ),
+    tenantAuthUserUnique: unique('clients_tenant_auth_user_unique').on(
+      table.tenantId,
+      table.authUserId,
+    ),
     tenantEmailUnique: unique('clients_tenant_email_unique').on(table.tenantId, table.email),
     statusIdx: index('clients_status_idx').on(table.tenantId, table.status),
     referrerIdx: index('clients_referrer_idx').on(table.tenantId, table.referredByClientId),
@@ -72,6 +80,10 @@ export const staffUsers = pgTable(
     // Unique per Tenant, not per platform — see migration 0035. The same person
     // may be an instructor at one studio and an admin at another.
     clerkUserId: text('clerk_user_id'),
+    // The `staff_auth_users` id — the Better Auth sibling of `clerk_user_id`,
+    // nullable while both run (#106). One auth user may hold a row here at each
+    // studio they work at, so this too is unique per Tenant.
+    authUserId: text('auth_user_id'),
     email: text('email').notNull(),
     name: text('name').notNull(),
     firstName: text('first_name'),
@@ -102,6 +114,10 @@ export const staffUsers = pgTable(
     tenantClerkUserUnique: unique('staff_users_tenant_clerk_user_unique').on(
       table.tenantId,
       table.clerkUserId,
+    ),
+    tenantAuthUserUnique: unique('staff_users_tenant_auth_user_unique').on(
+      table.tenantId,
+      table.authUserId,
     ),
     tenantEmailUnique: unique('staff_users_tenant_email_unique').on(table.tenantId, table.email),
     roleStatusIdx: index('staff_role_status_idx').on(table.tenantId, table.role, table.status),

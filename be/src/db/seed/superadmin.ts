@@ -3,6 +3,7 @@ import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import * as schema from '../schema'
 import { clerkStaffApp } from '../../lib/clerk'
 import { TENANT_ONE_ID } from '../schema/tenancy'
+import { ensureAuthUser } from '../../services/auth/auth-users'
 
 /**
  * Seeds the superadmin staff_users row and bootstraps the matching Clerk user
@@ -18,6 +19,8 @@ import { TENANT_ONE_ID } from '../schema/tenancy'
  *   3. Either way, we write `clerk_user_id` + `status='active'` onto the
  *      staff_users row, so the operator can sign in immediately without a
  *      separate webhook round-trip.
+ *   4. Beside it, the matching Better Auth staff user (#106) — also
+ *      passwordless — and its id as `auth_user_id`.
  *
  * Why passwordless: no SUPERADMIN_PASSWORD secret in env / CI / GitHub
  * Actions logs / .env.booking-be on disk. The operator owns the credential;
@@ -73,6 +76,12 @@ export async function seedSuperadmin(db: PostgresJsDatabase<typeof schema>) {
     console.warn('[seed] superadmin Clerk bootstrap skipped:', err)
   }
 
+  // The Better Auth user beside the Clerk one (#106), passwordless in the same
+  // way: the operator sets a password through the reset flow on first sign-in.
+  // Not wrapped like the Clerk call — this is our own database, and a seed that
+  // cannot write to it has nothing else worth doing.
+  const authUserId = await ensureAuthUser(db, 'staff', { email, name })
+
   await db
     .insert(schema.staffUsers)
     .values({
@@ -84,6 +93,7 @@ export async function seedSuperadmin(db: PostgresJsDatabase<typeof schema>) {
       role: 'superadmin',
       status,
       clerkUserId,
+      authUserId,
       acceptedAt,
       grantedLocationIds: sql`'{}'::uuid[]`,
     })
@@ -100,6 +110,8 @@ export async function seedSuperadmin(db: PostgresJsDatabase<typeof schema>) {
       // Clerk user. Otherwise this becomes a true no-op.
       set: {
         clerkUserId: sql`COALESCE(${schema.staffUsers.clerkUserId}, EXCLUDED.clerk_user_id)`,
+        // Same rule: stamp an unlinked row, never re-point a linked one.
+        authUserId: sql`COALESCE(${schema.staffUsers.authUserId}, EXCLUDED.auth_user_id)`,
         status: sql`CASE
           WHEN ${schema.staffUsers.clerkUserId} IS NULL AND EXCLUDED.clerk_user_id IS NOT NULL
             THEN 'active'::staff_status

@@ -1,5 +1,6 @@
 import { getClerkPlatformApp, isPlatformAppConfigured } from '../../lib/clerk'
 import { parsePlatformAdmins } from '../../services/tenants/platform-admin'
+import { ensureAuthUser } from '../../services/auth/auth-users'
 
 /**
  * The only thing a fresh deployment provisions.
@@ -12,7 +13,9 @@ import { parsePlatformAdmins } from '../../services/tenants/platform-admin'
  * archive.
  *
  * So this seeds the people on `PLATFORM_ADMIN_EMAILS` into the Clerk
- * application the super portal actually signs in against, and nothing else.
+ * application the super portal actually signs in against — and, while the two
+ * run side by side (#106), into the Better Auth `platform` pool — and nothing
+ * else.
  * There is no `staff_users` row to write — platform administration deliberately
  * lives outside the database, so that a studio's own superadmin cannot become
  * one by any write path (see services/tenants/platform-admin.ts).
@@ -37,7 +40,7 @@ import { parsePlatformAdmins } from '../../services/tenants/platform-admin'
  * allowlist is environment, not data, so the gate already works — the account
  * simply has to be created by hand or by the next run.
  */
-export async function seedPlatformAdmins() {
+export async function seedPlatformAdmins(db: Parameters<typeof ensureAuthUser>[0]) {
   const admins = parsePlatformAdmins(process.env.PLATFORM_ADMIN_EMAILS)
   if (admins.length === 0) {
     console.warn(
@@ -52,6 +55,12 @@ export async function seedPlatformAdmins() {
   const pool = isPlatformAppConfigured() ? 'platform' : 'staff'
 
   for (const email of admins) {
+    // The Better Auth platform user (#106), before and regardless of Clerk: our
+    // own database, passwordless, idempotent. The address is its own name until
+    // the operator says otherwise.
+    const authUserId = await ensureAuthUser(db, 'platform', { email, name: email })
+    console.log(`[seed] platform admin ${email} present in the platform auth pool (${authUserId})`)
+
     try {
       const { data } = await clerk.users.getUserList({ emailAddress: [email] })
       if (data[0]) {

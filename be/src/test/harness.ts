@@ -129,6 +129,8 @@ function stubEnvironment() {
   process.env.CLERK_STAFF_SECRET_KEY ??= 'sk_test_harness'
   process.env.CLERK_STAFF_WEBHOOK_SECRET ??= 'whsec_test_harness'
   process.env.IMPERSONATION_SECRET ??= 'test-harness-impersonation-secret-key'
+  process.env.BETTER_AUTH_SECRET ??= 'test-harness-better-auth-secret-key-0123456789'
+  process.env.BETTER_AUTH_URL ??= 'http://localhost:4000'
   // The tenant subdomain shape the local frontends use, so a test can send a
   // real `Origin` and have it name a tenant — which is the whole of the
   // validation on public routes. The two exact origins are the bare local
