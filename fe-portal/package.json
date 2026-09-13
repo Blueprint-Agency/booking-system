@@ -11,7 +11,6 @@
     "check": "node --import tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
-    "@clerk/nextjs": "^7.9.1",
     "@hookform/resolvers": "^3.10.0",
     "@sentry/nextjs": "^10.57.0",
     "better-auth": "^1.7.4",

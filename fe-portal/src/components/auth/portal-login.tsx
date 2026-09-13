@@ -1,6 +1,9 @@
 "use client";
 /**
- * A studio portal's sign-in form, on the `staff` Better Auth pool (#115).
+ * The portal's sign-in form: on a studio's hostname against the `staff` Better
+ * Auth pool (#115), on the super portal's against the `platform` pool (#116).
+ * `lib/portal-auth.ts` already talks to the right pool; `superPortal` only
+ * decides where a signed-in person is sent and a line of copy.
  *
  * The same screens it had on Clerk — email and password, a second factor when
  * one is enrolled, and a password reset — with the calls swapped. Two things
@@ -21,7 +24,7 @@ import { OtpInput } from "@/components/auth/otp-input";
 import { PasswordInput } from "@/components/auth/password-input";
 import { safeNextPath, signedInRedirectTarget } from "@/lib/auth-redirect";
 import { portalHomePath } from "@/lib/super-portal";
-import { staffAuth, useStaffSession } from "@/lib/staff-auth";
+import { portalAuth, usePortalSession } from "@/lib/portal-auth";
 
 type SecondFactor = "totp" | "otp" | "backup";
 
@@ -33,14 +36,14 @@ function errorMessage(error: AuthError, fallback: string): string {
   return error?.message || fallback;
 }
 
-export function StaffLogin() {
+export function PortalLogin({ superPortal }: { superPortal: boolean }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams() ?? new URLSearchParams();
-  const { isLoaded, session } = useStaffSession();
+  const { isLoaded, session } = usePortalSession();
 
-  // Where to go once signed in: a safe `?next=`, or the studio home.
-  const next = safeNextPath(searchParams) ?? portalHomePath(false);
+  // Where to go once signed in: a safe `?next=`, or this product's home.
+  const next = safeNextPath(searchParams) ?? portalHomePath(superPortal);
   // Better Auth sends a reset link back here carrying one of these.
   const resetToken = searchParams.get("token");
   const resetLinkBroken = searchParams.get("error") === "INVALID_TOKEN";
@@ -64,11 +67,11 @@ export function StaffLogin() {
 
   // A sign-in form is for someone who is not signed in. A live session goes to
   // where it was heading; if the account has no access there, the workspace
-  // says so by name. The edge cannot do this for a studio's portal — the session
-  // is a token in this page's storage — so this is the whole of the guard.
+  // says so by name. The edge cannot do this — the session is a token in this
+  // page's storage — so this is the whole of the guard.
   const redirectTarget =
     session && view !== "reset"
-      ? signedInRedirectTarget(pathname ?? "", searchParams, false)
+      ? signedInRedirectTarget(pathname ?? "", searchParams, superPortal)
       : null;
   useEffect(() => {
     if (redirectTarget) router.replace(redirectTarget);
@@ -93,7 +96,7 @@ export function StaffLogin() {
       setFactor("totp");
     } else {
       setFactor("otp");
-      const { error: sendErr } = await staffAuth.twoFactor.sendOtp();
+      const { error: sendErr } = await portalAuth.twoFactor.sendOtp();
       if (sendErr) setError(errorMessage(sendErr, "Could not send a verification code."));
     }
     setView("mfa");
@@ -102,7 +105,7 @@ export function StaffLogin() {
   function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
     void run(async () => {
-      const { data, error: signInErr } = await staffAuth.signIn.email({
+      const { data, error: signInErr } = await portalAuth.signIn.email({
         email: email.trim(),
         password,
       });
@@ -129,10 +132,10 @@ export function StaffLogin() {
       const trimmed = code.trim();
       const { error: verifyErr } =
         factor === "totp"
-          ? await staffAuth.twoFactor.verifyTotp({ code: trimmed })
+          ? await portalAuth.twoFactor.verifyTotp({ code: trimmed })
           : factor === "otp"
-            ? await staffAuth.twoFactor.verifyOtp({ code: trimmed })
-            : await staffAuth.twoFactor.verifyBackupCode({ code: trimmed });
+            ? await portalAuth.twoFactor.verifyOtp({ code: trimmed })
+            : await portalAuth.twoFactor.verifyBackupCode({ code: trimmed });
       if (verifyErr) {
         setError(errorMessage(verifyErr, "Invalid or expired verification code."));
         return;
@@ -143,7 +146,7 @@ export function StaffLogin() {
 
   function emailMeACode() {
     void run(async () => {
-      const { error: sendErr } = await staffAuth.twoFactor.sendOtp();
+      const { error: sendErr } = await portalAuth.twoFactor.sendOtp();
       if (sendErr) {
         setError(errorMessage(sendErr, "Could not send a verification code."));
         return;
@@ -162,7 +165,7 @@ export function StaffLogin() {
   function handleRequestReset(e: React.FormEvent) {
     e.preventDefault();
     void run(async () => {
-      const { error: sendErr } = await staffAuth.requestPasswordReset({
+      const { error: sendErr } = await portalAuth.requestPasswordReset({
         email: email.trim(),
         redirectTo: `${window.location.origin}/login`,
       });
@@ -186,7 +189,7 @@ export function StaffLogin() {
     }
     if (!resetToken) return;
     void run(async () => {
-      const { error: resetErr } = await staffAuth.resetPassword({ newPassword, token: resetToken });
+      const { error: resetErr } = await portalAuth.resetPassword({ newPassword, token: resetToken });
       if (resetErr) {
         setError(errorMessage(resetErr, "That reset link has expired or was already used. Ask for a new one."));
         return;
@@ -299,7 +302,7 @@ export function StaffLogin() {
       <>
         <h1 className="mb-1 text-lg font-semibold text-ink">Check your email</h1>
         <p className="mb-5 text-sm text-muted">
-          If {email.trim()} has a staff account here, a link to choose a new password is on its way.
+          If {email.trim()} has {superPortal ? "an operator" : "a staff"} account here, a link to choose a new password is on its way.
           It works once, for one hour.
         </p>
         <button type="button" onClick={backToSignIn} className={`text-sm ${linkButton}`}>

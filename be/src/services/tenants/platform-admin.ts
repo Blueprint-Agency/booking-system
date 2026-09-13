@@ -60,9 +60,8 @@ export function parsePlatformAdmins(...raw: (string | null | undefined)[]): stri
 /**
  * Is this address on the list?
  *
- * Returns false for a null or blank address, so a Clerk user with no primary
- * email — which is possible; Clerk allows phone-only accounts — is refused
- * rather than matched against a blank entry.
+ * Returns false for a null or blank address, so a caller with no address is
+ * refused rather than matched against a blank entry.
  */
 export function isPlatformAdmin(
   email: string | null | undefined,

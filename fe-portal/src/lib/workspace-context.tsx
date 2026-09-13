@@ -14,7 +14,7 @@ import { authFailure } from "@/lib/access-refusal";
 import { ApiError, makeApi, type Api } from "@/lib/api";
 import { reportError } from "@/lib/report-error";
 import { sessionTenantRefusal } from "@/lib/session-tenant";
-import { getStaffToken, signOutStaff, useStaffSession } from "@/lib/staff-auth";
+import { getPortalToken, signOutPortal, usePortalSession } from "@/lib/portal-auth";
 import type { Location, StaffRole, StaffUser } from "@/types";
 
 /**
@@ -101,7 +101,7 @@ export function WorkspaceProvider({
   children: ReactNode;
   hostTenantId: string | null;
 }) {
-  const { isLoaded, session } = useStaffSession();
+  const { isLoaded, session } = usePortalSession();
   const isSignedIn = session !== null;
   const router = useRouter();
   const pathname = usePathname();
@@ -122,7 +122,7 @@ export function WorkspaceProvider({
   // Bound API instance — stable for as long as someone is signed in.
   const api = useMemo<Api | null>(() => {
     if (!isLoaded || !isSignedIn) return null;
-    return makeApi(getStaffToken);
+    return makeApi(getPortalToken);
   }, [isLoaded, isSignedIn]);
 
   const claimedTenantId = session?.claimedTenantId ?? null;
@@ -134,7 +134,7 @@ export function WorkspaceProvider({
 
   const signOutToLogin = useCallback(async () => {
     try {
-      await signOutStaff();
+      await signOutPortal();
     } finally {
       router.push("/login");
     }

@@ -4,12 +4,12 @@ import { and, eq } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 
 /**
- * The two bootstrap seeds provision the Better Auth user beside the Clerk one
- * (#112), and stay safe to run on every deploy.
+ * The two bootstrap seeds provision the Better Auth user (#112), and stay safe
+ * to run on every deploy. The platform-admin seed writes nothing else (#116).
  *
- * Clerk is stubbed to fail, which is the seeds' own tolerated path ("bootstrap
- * skipped"): the Better Auth half is our database and must land regardless, and
- * a test suite has no business calling a vendor.
+ * Clerk is stubbed to fail, which is the superadmin seed's own tolerated path
+ * ("bootstrap skipped"): the Better Auth half is our database and must land
+ * regardless, and a test suite has no business calling a vendor.
  */
 describe('auth bootstrap seeds', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
   let harness!: TestApp
