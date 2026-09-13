@@ -81,7 +81,41 @@ is not allowlisted here either. `lib/origin.ts` is the matcher; the same
 allowlist backs CORS, this check, and the Clerk `azp` check, because if the three
 disagreed one would become the hole in the other two.
 
-### 3. Corroborate against the Clerk Organization — authenticated routes
+### 3. Corroborate against the session claim — Better Auth sessions (#106)
+
+While Clerk is swapped out, all three middlewares accept **either** a Better Auth
+bearer session **or** a Clerk JWT, routed by shape (`isPoolSessionToken` in
+`services/auth/better-auth.ts`: a session token has one dot, a JWT three). The
+Clerk path is step 3b below, unchanged.
+
+A studio-pool session (`client` or `staff`) is created on a studio hostname,
+inside the Tenant context this resolution opened, and a session-create hook writes
+that Tenant onto the row as `claimed_tenant_id`. A sign-in that names no studio
+never gets that far (`tenant_required`), and the hook refuses one that somehow
+does. `services/tenants/session-claim.ts` decides, and **both** studio
+middlewares call it through `assertTenantSessionClaim` — the member side gets the
+check ADR 0003 said Clerk could not afford:
+
+| Session's claim | Verdict |
+|---|---|
+| this tenant | proceed (not counted as corroboration — a sign-in may have resolved from the header alone) |
+| another tenant | **403 `tenant_mismatch`** |
+| none | **403 `tenant_required`** |
+
+There is no rollout seam: every studio-pool session is stamped, so a missing claim
+proves nothing. A staff member of two studios is one user with a `staff_users` row
+at each and a session per hostname; after the claim, the row for the resolved
+tenant must exist (`staff_not_provisioned`) and be active (`staff_inactive`), as
+on the Clerk path. No auto-link or auto-provision on this path — invitations and
+member registration write `auth_user_id` themselves.
+
+The pools are separate tables, so a session from one pool is unknown to the
+others: a member session on the portal, a staff session on `/me`, and a platform
+session on either are **401**; a studio session on `/api/v1/platform/*` is the
+usual **404 `not_found`**. `src/test/isolation-sessions.test.ts` proves each of
+these over real HTTP, using the harness's `signInAs(pool, email, tenant)`.
+
+### 3b. Corroborate against the Clerk Organization — Clerk JWTs
 
 Each tenant is one Clerk Organization in the **portal** application, its id on
 the tenant row (`clerk_portal_org_id`). A session token carries the organization
@@ -149,8 +183,7 @@ tenant — `tenantCorroborated()` in `middleware/tenant.ts`:
 | Situation | Corroborated |
 |---|---|
 | `Origin` named this tenant | yes |
-| the organization claim named this tenant | yes |
-| the request named no tenant at all | n/a — refused at resolution with `tenant_required` |
+| the organization claim named this tenant | yes || the request named no tenant at all | n/a — refused at resolution with `tenant_required` |
 | the header is the only statement | **no** — the caller gets `client_not_found`, and nothing is written |
 
 The third row used to say "yes — nothing was claimed, so nothing was forged",
