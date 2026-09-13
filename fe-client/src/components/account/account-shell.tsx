@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
-import { usePathname } from "next/navigation";
-import { useClerk } from "@clerk/nextjs";
+import { useEffect, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { signInPathFor } from "@/lib/auth-redirect";
+import { signOutMember, useMemberSession } from "@/lib/member-auth";
 import {
   LayoutDashboard,
   CalendarCheck,
@@ -31,9 +32,32 @@ const navItems = [
 
 export function AccountShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { signOut } = useClerk();
+  const router = useRouter();
+  const { isLoaded, isSignedIn } = useMemberSession();
   const [confirmSignOut, setConfirmSignOut] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   useBodyScrollLock(confirmSignOut);
+
+  // The account pages are a member's, and the edge cannot tell (the session is
+  // a token in this page's storage), so this is the gate: a signed-out visitor
+  // is sent to sign in and brought back. Not while signing out, which goes home.
+  const mustSignIn = isLoaded && !isSignedIn && !signingOut;
+  useEffect(() => {
+    if (mustSignIn) router.replace(signInPathFor(pathname, window.location.search));
+  }, [mustSignIn, pathname, router]);
+
+  async function handleSignOut() {
+    setSigningOut(true);
+    try {
+      await signOutMember();
+    } finally {
+      router.replace("/");
+    }
+  }
+
+  if (!isLoaded || !isSignedIn) {
+    return <div className="bg-warm min-h-[calc(100vh-72px-320px)]" aria-busy="true" />;
+  }
 
   return (
     <div className="bg-warm min-h-[calc(100vh-72px-320px)]">
@@ -107,7 +131,7 @@ export function AccountShell({ children }: { children: React.ReactNode }) {
               </button>
               <button
                 type="button"
-                onClick={() => signOut({ redirectUrl: "/" })}
+                onClick={handleSignOut}
                 className="flex-1 min-h-[44px] rounded-full bg-error px-4 text-sm font-medium text-paper hover:bg-error/90 transition-colors"
               >
                 Sign out

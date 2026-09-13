@@ -1,18 +1,17 @@
 /**
- * Where a signed-in user landing on an auth page (/login, /register) should be
- * sent instead. Returns null when the page should be left alone.
+ * Where a member moves between the auth pages and the rest of the app.
  *
- * Exceptions:
- *  - `__clerk_ticket` (impersonation): the auth pages must stay reachable so
- *    the page can swap the existing session for the ticket's session.
- *  - `next` is only honoured for internal paths that aren't themselves auth
- *    pages, so a crafted ?next= can't open-redirect or loop.
+ * Both directions are asked on the client. The session is a bearer token in the
+ * page's own storage (`lib/member-auth.ts`), which the edge never sees, so the
+ * pages are the whole of the guard:
  *
- * Two callers, one rule. `proxy.ts` asks at the edge with a whole URL; the
- * pages ask again on the client, where a `router.push("/login")` from inside
- * the app can put a live session on the form without the edge ever seeing it.
- * They must agree — a client guard that redirected where the edge would not
- * (or a `next` the edge would refuse) is a loop between the two of them.
+ *  - a signed-in member landing on /login or /register is sent where they were
+ *    headed (`signedInRedirectTarget`); and
+ *  - a signed-out visitor to a member page is sent to /login with that page as
+ *    its `next` (`signInPathFor`).
+ *
+ * `next` is only honoured for internal paths that aren't themselves auth pages,
+ * so a crafted ?next= can't open-redirect or loop.
  */
 const AUTH_PAGE = /^\/(login|register)(\/|$)/;
 
@@ -30,11 +29,11 @@ export function signedInRedirectTarget(
   params: URLSearchParams,
 ): string | null {
   if (!AUTH_PAGE.test(pathname)) return null;
-  if (params.has("__clerk_ticket")) return null;
   return safeNextPath(params) ?? "/";
 }
 
-/** The rule, for the edge, which holds a whole URL. */
-export function signedInRedirectPath(url: URL): string | null {
-  return signedInRedirectTarget(url.pathname, url.searchParams);
+/** The sign-in page for a signed-out visitor to `pathname` (with its `search`). */
+export function signInPathFor(pathname: string, search: string): string {
+  const params = new URLSearchParams({ next: `${pathname}${search}` });
+  return `/login?${params.toString()}`;
 }

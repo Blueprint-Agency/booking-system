@@ -221,7 +221,7 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
     ],
     {
       cta: { href: '{{login_url}}', label: 'Sign in to your account' },
-      note: 'Your account email is <strong>{{invitee_email}}</strong>. Use "Forgot password" on the sign-in screen to set your password the first time. If the button doesn\'t work, paste this into your browser: {{login_url}}',
+      note: 'Your account email is <strong>{{invitee_email}}</strong>. Sign in with it and we\'ll email you a one-time code — there is no password to remember. If the button doesn\'t work, paste this into your browser: {{login_url}}',
     },
   )
 

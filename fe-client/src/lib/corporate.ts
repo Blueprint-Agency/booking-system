@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useUser } from "@clerk/nextjs";
+import { useMemberSession } from "./member-auth";
 import { Api, ApiError, publicApi, useApi } from "./api";
 
 // ── Wire types (snake_case as returned by BE) ────────────────────────────────
@@ -51,7 +51,7 @@ export function useCorporatePackages(): {
   error: ApiError | Error | null;
   refresh: () => Promise<void>;
 } {
-  const { isSignedIn, isLoaded } = useUser();
+  const { isSignedIn, isLoaded } = useMemberSession();
   const api = useApi();
   const [data, setData] = useState<ApiCorporatePackage[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -92,7 +92,7 @@ export function useCorporateRequests(): {
   error: ApiError | Error | null;
   refresh: () => Promise<void>;
 } {
-  const { isSignedIn, isLoaded } = useUser();
+  const { isSignedIn, isLoaded } = useMemberSession();
   const api = useApi();
   const [data, setData] = useState<ApiCorporateRequest[] | null>(null);
   const [loading, setLoading] = useState(true);

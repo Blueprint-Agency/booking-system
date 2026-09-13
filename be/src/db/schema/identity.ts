@@ -26,7 +26,9 @@ export const clients = pgTable(
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     // Unique per Tenant, not per platform — see migration 0035. One person may
     // be a member of two studios, and gets an independent record at each.
-    clerkUserId: text('clerk_user_id').notNull(),
+    // Nullable from #117: a member who joins through Better Auth has no Clerk
+    // user. Dropped with the rest of Clerk (#106).
+    clerkUserId: text('clerk_user_id'),
     // The member's `client_auth_users` id — the Better Auth sibling of
     // `clerk_user_id`, nullable while both run (#106). Unique per Tenant for the
     // same reason: one person, one record at each studio they join.

@@ -1,6 +1,4 @@
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse, type NextRequest } from "next/server";
-import { signedInRedirectPath } from "@/lib/auth-redirect";
 import {
   ROOT_DOMAIN,
   TENANT_HEADER_PREFIX,
@@ -13,8 +11,6 @@ import {
   tenantNotFoundResponse,
   tenantUnavailableResponse,
 } from "@/lib/tenant";
-
-const isProtected = createRouteMatcher(["/account(.*)", "/checkout"]);
 
 /**
  * Works out which Tenant the request is for and rewrites the request headers so
@@ -57,32 +53,18 @@ async function tenantContext(
   return { headers, blocked: null };
 }
 
-export default clerkMiddleware(async (auth, req) => {
+/**
+ * Tenant context only. The proxy does not gate on a session: the member's
+ * session is a bearer token in the page's own storage (`lib/member-auth.ts`),
+ * which never reaches the edge. The account shell and checkout send a
+ * signed-out visitor to `/login`, and the login and register pages send a
+ * signed-in one on (`lib/auth-redirect.ts`).
+ */
+export default async function proxy(req: NextRequest) {
   const { headers, blocked } = await tenantContext(req);
   if (blocked) return blocked;
-  const pass = () => NextResponse.next({ request: { headers } });
-
-  // A signed-in user has no business on /login or /register — send them where
-  // they were headed. Rendering the form leads to Clerk's `session_exists`
-  // ("You're already signed in") error on submit.
-  const authedTarget = signedInRedirectPath(req.nextUrl);
-  if (authedTarget) {
-    const { userId } = await auth();
-    if (userId) return NextResponse.redirect(new URL(authedTarget, req.url));
-    return pass();
-  }
-
-  if (isProtected(req)) {
-    const { userId } = await auth();
-    if (!userId) {
-      const signIn = new URL("/login", req.url);
-      signIn.searchParams.set("next", req.nextUrl.pathname + req.nextUrl.search);
-      return NextResponse.redirect(signIn);
-    }
-  }
-
-  return pass();
-});
+  return NextResponse.next({ request: { headers } });
+}
 
 export const config = {
   matcher: [
