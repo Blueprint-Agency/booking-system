@@ -7,7 +7,7 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 | `fe-client/` | Vercel project `booking-system` (Root Directory = `fe-client/`) | `main` → `https://{slug}.reservetoday.app` (wildcard `*.reservetoday.app`); `staging` → `https://{slug}.dev.reservetoday.app` (wildcard `*.dev.reservetoday.app`). Env vars: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_ROOT_DOMAIN`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, `NEXT_PUBLIC_SENTRY_DSN`, `NEXT_PUBLIC_APP_ENV` — set **twice**, once per scope (Production / Preview). Clerk routing URLs are hardcoded in `src/app/layout.tsx` (NOT env-driven). |
 | `fe-portal/` | Vercel project `booking-system-admin` (Root Directory = `fe-portal/`) | `main` → `https://{slug}.portal.reservetoday.app` (wildcard `*.portal.reservetoday.app`); `staging` → `https://{slug}.portal.dev.reservetoday.app`. Same env shape as fe-client, but with the **staff** Clerk app keys and its own `NEXT_PUBLIC_ROOT_DOMAIN` (the `portal.` one). |
 | `cdn/` | Vercel project `booking-cdn` (Root Directory = `cdn/`) | Edge proxy fronting the R2 bucket at `https://cdn.reservetoday.app`. One env var, `R2_ORIGIN`, the bucket's `pub-<hash>.r2.dev` URL. No DNS record needed — the zone's `*` ALIAS already resolves the name. **Not Git-connected**: deployed with `vercel deploy --prod` from `cdn/`, not on push. |
-| `be/` | bpvps2 (Docker) | Auto-deploy on push to `staging` **or** `main` (paths-filtered to `be/**`). `.github/workflows/deploy-be.yml` builds the image, pushes to Docker Hub (`blueprintagency/booking-be`), SSHes to bpvps2 over Tailscale, writes `.env.booking-be` from the branch's GitHub Environment, and runs migrate/seed + `docker compose up -d`. |
+| `be/` | bpvps2 (Docker) | Auto-deploy on push to `staging` **or** `main` (paths-filtered to `be/**`), **only after the backend test suite passes** — see [Tests gate the backend deploy](#tests-gate-the-backend-deploy). `.github/workflows/deploy-be.yml` builds the image, pushes to Docker Hub (`blueprintagency/booking-be`), SSHes to bpvps2 over Tailscale, writes `.env.booking-be` from the branch's GitHub Environment, and runs migrate/seed + `docker compose up -d`. |
 
 **Deploy branch & environments:** two live environments, one per branch.
 
@@ -113,6 +113,31 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 > nothing else beginning `api`. The name still *resolves*, because the apex `*` ALIAS answers for
 > anything unclaimed, but it resolves to Vercel and 404s rather than reaching the backend. Nothing
 > to do; noted so the next person does not go looking for a record to delete.
+
+### Tests gate the backend deploy
+
+`deploy-be.yml` runs a `test` job before `deploy`, and `deploy` declares `needs: test`. A red
+backend suite means no image is built and neither stack is touched.
+
+- **What runs.** The whole backend suite (`be/src/**/*.test.ts`) against a throwaway `postgres:16`
+  service container, with `TEST_DATABASE_URL` pointing at it and the same stub environment the
+  integration harness (`be/src/test/harness.ts`) fills in — `src/env.ts` validates at import, so
+  unit tests need it too.
+- **Serially** (`--test-concurrency=1`). The suite is green serially and flaky in parallel: the RLS
+  coverage test's probe table races the transfer test's table count. Serial is the gate; fixing the
+  flake is separate work.
+- **Skips fail the job.** The integration tests skip themselves when `TEST_DATABASE_URL` is unset,
+  and a skipped test counts as a pass. Nothing else in the suite skips, so the job fails unless the
+  TAP summary reads `# skipped 0` — a broken CI env cannot turn the gate green by testing nothing.
+- **Pull requests** into `staging` or `main` run the same tests and never deploy. A push that only
+  touches a frontend does not run the backend tests or deploy (a `changes` job filters by path).
+  A manual `workflow_dispatch` always runs the tests, then deploys.
+
+**Frontend checks are advisory.** The same workflow runs `npm run check` in `fe-client/` and
+`fe-portal/` when their paths change, so a broken frontend test shows a red check on the commit or
+PR. But Vercel deploys the frontends itself and **does not wait for GitHub checks** — a red frontend
+check does not stop a Vercel deploy. That is a deliberate launch decision; look at the check before
+merging.
 
 > **The two backend deploys cannot run at the same time, and the workflow now enforces it.**
 > Both stacks live on bpvps2 and share one Docker daemon, therefore one containerd content store.

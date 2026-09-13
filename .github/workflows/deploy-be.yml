@@ -5,41 +5,226 @@ name: BE Deploy
 #   main   branch -> booking-prod    stack -> api.reservetoday.app
 # They share nothing but Traefik — separate containers, volumes, networks and
 # databases, keyed off ENV_NAME in the compose file.
+#
+# The deploy is gated on the backend test suite: `deploy` needs `test`, so a red
+# suite never reaches either stack. The same workflow runs both frontends'
+# `check` scripts when their paths change — but Vercel deploys the frontends on
+# its own and does not wait for GitHub checks, so for them a red check is a
+# signal, not a gate. Pull requests into `staging`/`main` run every check and
+# never deploy.
 on:
   push:
     branches: [staging, main]
     paths:
       - 'be/**'
+      - 'fe-client/**'
+      - 'fe-portal/**'
+      - '.github/workflows/deploy-be.yml'
+  pull_request:
+    branches: [staging, main]
+    paths:
+      - 'be/**'
+      - 'fe-client/**'
+      - 'fe-portal/**'
       - '.github/workflows/deploy-be.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  # Deliberately NOT per-branch. Both stacks live on bpvps2 and share one Docker
-  # daemon, so they share its containerd content store — and two `docker compose
-  # up` runs pulling at once collide there:
-  #
-  #     unable to lease content: lease does not exist: not found
-  #
-  # The pull itself succeeds; compose's own re-pull is what fails, so the job
-  # dies *after* migrations have run, leaving the stack on its old image with a
-  # migrated database. Seen twice on 2026-09-06, both times with the `main` run
-  # starting ~40s behind the `staging` one, because merging to `staging` and
-  # fast-forwarding `main` fires both within a minute.
-  #
-  # This group was keyed on the branch so a prod deploy would never queue behind
-  # a staging one. That is the right instinct for two independent targets and the
-  # wrong one for two stacks on the same host: queueing is not the cost, it is
-  # the fix. `cancel-in-progress: false` keeps the second run — the deploy that
-  # waits is still the deploy that happens.
-  group: booking-be-deploy-bpvps2
-  cancel-in-progress: false
-
 jobs:
+  # The workflow-level `paths` above only decides whether the workflow runs at
+  # all. A push touching only fe-client must not build and deploy the backend,
+  # so each job below checks which app actually changed.
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # paths-filter lists a pull request's files through the API.
+      pull-requests: read
+    outputs:
+      be: ${{ steps.filter.outputs.be }}
+      fe-client: ${{ steps.filter.outputs.fe-client }}
+      fe-portal: ${{ steps.filter.outputs.fe-portal }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          # Without this a push to `staging` is diffed against `main` (the default
+          # branch), so every push reports `be` changed while `staging` is ahead
+          # of `main` on `be/**` — and a frontend-only push redeploys the backend.
+          # Naming the pushed branch diffs against the commit before the push.
+          # Ignored for pull requests, which diff against their base.
+          base: ${{ github.ref }}
+          filters: |
+            be:
+              - 'be/**'
+              - '.github/workflows/deploy-be.yml'
+            fe-client:
+              - 'fe-client/**'
+              - '.github/workflows/deploy-be.yml'
+            fe-portal:
+              - 'fe-portal/**'
+              - '.github/workflows/deploy-be.yml'
+
+  test:
+    needs: changes
+    # A manual dispatch has no diff to filter on; it is a request to deploy, so
+    # it gets the tests that gate the deploy.
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.be == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # One test run per branch at a time, so deploys leave in push order. Without
+    # it two pushes test side by side, the faster one deploys first, and the
+    # slower, older one then deploys over it — an older image against a database
+    # the newer one already migrated. A queued run superseded by a newer push is
+    # cancelled, which skips its deploy; the newer commit deploys instead.
+    concurrency:
+      group: booking-be-test-${{ github.ref }}
+      cancel-in-progress: false
+
+    # Throwaway. The integration harness migrates it, creates the `booking_app`
+    # role and seeds both fixture tenants on every run.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: booking_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d booking_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    # `src/env.ts` validates at import, and unit tests import it without the
+    # harness — so they need a complete environment too. These are the same
+    # throwaway values `stubEnvironment` in be/src/test/harness.ts fills in; the
+    # harness then points DATABASE_URL / DATABASE_APP_URL at TEST_DATABASE_URL
+    # itself. NODE_ENV=test is what keeps the mailer off Resend.
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/booking_test
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/booking_test
+      DATABASE_APP_URL: postgres://booking_app:booking_app_test@localhost:5432/booking_test
+      NODE_ENV: test
+      APP_ENV: development
+      SUPERADMIN_EMAIL: superadmin@example.test
+      CLERK_STAFF_PUBLISHABLE_KEY: pk_test_harness
+      CLERK_STAFF_SECRET_KEY: sk_test_harness
+      CLERK_STAFF_WEBHOOK_SECRET: whsec_test_harness
+      IMPERSONATION_SECRET: test-harness-impersonation-secret-key
+      TENANT_ORIGIN_PATTERNS: http://*.localhost:3000,http://*.portal.localhost:3001,http://localhost:3000,http://localhost:3001
+      RESEND_API_KEY: re_test_harness
+      MAIL_FROM_EMAIL: hello@example.test
+
+    defaults:
+      run:
+        working-directory: be
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 22, not the image's 20: `node --test` only expands the quoted glob from 21.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: be/package-lock.json
+
+      - run: npm ci
+
+      # Serially, on purpose. The suite is green serially and flaky in parallel:
+      # the RLS coverage test's probe table races the transfer test's table count.
+      #
+      # The integration tests skip themselves when TEST_DATABASE_URL is missing,
+      # and a skipped test is a passing one — so a broken env here would turn the
+      # gate green while testing nothing. Nothing else in the suite skips, so any
+      # skip at all fails the job.
+      - name: Backend tests (serial)
+        shell: bash
+        run: |
+          node --import tsx --test --test-concurrency=1 --test-reporter=tap "src/**/*.test.ts" | tee test-output.tap
+          if ! grep -qx '# skipped 0' test-output.tap; then
+            echo "::error::Tests were skipped — the integration suite did not run against Postgres."
+            grep -E '^# (tests|pass|fail|skipped)' test-output.tap
+            exit 1
+          fi
+
+  fe-client:
+    needs: changes
+    if: needs.changes.outputs.fe-client == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: fe-client
+    steps:
+      - uses: actions/checkout@v4
+      # 22: the check script runs .ts through Node's own type stripping, no tsx.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: fe-client/package-lock.json
+      - run: npm ci
+      - run: npm run check
+
+  fe-portal:
+    needs: changes
+    if: needs.changes.outputs.fe-portal == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: fe-portal
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: fe-portal/package-lock.json
+      - run: npm ci
+      - run: npm run check
+
   deploy:
-    if: github.ref_name == 'staging' || github.ref_name == 'main'
+    needs: [changes, test]
+    # Push or manual dispatch only — a pull request runs the tests and stops.
+    # `needs: test` is the gate: a failed or skipped test job skips this one.
+    if: >-
+      github.event_name != 'pull_request' &&
+      (github.ref_name == 'staging' || github.ref_name == 'main') &&
+      (github.event_name == 'workflow_dispatch' || needs.changes.outputs.be == 'true')
+
+    # Job-level, not workflow-level: only the deploy has to queue. At workflow
+    # level every pull request's tests would wait behind a deploy, and vice versa.
+    concurrency:
+      # Deliberately NOT per-branch. Both stacks live on bpvps2 and share one Docker
+      # daemon, so they share its containerd content store — and two `docker compose
+      # up` runs pulling at once collide there:
+      #
+      #     unable to lease content: lease does not exist: not found
+      #
+      # The pull itself succeeds; compose's own re-pull is what fails, so the job
+      # dies *after* migrations have run, leaving the stack on its old image with a
+      # migrated database. Seen twice on 2026-09-06, both times with the `main` run
+      # starting ~40s behind the `staging` one, because merging to `staging` and
+      # fast-forwarding `main` fires both within a minute.
+      #
+      # This group was keyed on the branch so a prod deploy would never queue behind
+      # a staging one. That is the right instinct for two independent targets and the
+      # wrong one for two stacks on the same host: queueing is not the cost, it is
+      # the fix. `cancel-in-progress: false` keeps the second run — the deploy that
+      # waits is still the deploy that happens.
+      group: booking-be-deploy-bpvps2
+      cancel-in-progress: false
+
     runs-on: ubuntu-latest
     # GitHub environment names are case-sensitive: "staging" vs "Production".
     environment: ${{ github.ref_name == 'main' && 'Production' || 'staging' }}
