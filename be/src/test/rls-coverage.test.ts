@@ -117,6 +117,34 @@ test('the sweep reaches the whole schema but tenant_settings', options, async ()
   assert.ok(names.includes('tenant_settings'), 'tenant_settings is tenant-scoped')
 })
 
+test('the auth pools are platform rows the sweep leaves alone', options, async () => {
+  // A staff member of two studios is ONE auth user, so the Better Auth tables
+  // carry no `tenant_id` — and the session's Tenant claim is deliberately named
+  // something else. Were either to change, the sweep below would fence the
+  // sessions table: every super-portal session would vanish, and signing a
+  // person out everywhere would reach only the studio in context. See
+  // db/schema/auth.ts.
+  const auth = await harness.db.execute<{ table_name: string; scoped: boolean; secured: boolean }>(sql`
+    SELECT c.relname AS table_name,
+           EXISTS (
+             SELECT 1 FROM information_schema.columns col
+             WHERE col.table_schema = 'public' AND col.table_name = c.relname
+               AND col.column_name = 'tenant_id') AS scoped,
+           c.relrowsecurity OR EXISTS (
+             SELECT 1 FROM pg_policies p
+             WHERE p.schemaname = 'public' AND p.tablename = c.relname) AS secured
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'public' AND c.relkind = 'r'
+      AND c.relname ~ '^(client|staff|platform)_auth_'
+    ORDER BY c.relname
+  `)
+
+  assert.equal(auth.length, 14, `expected the three pools' tables, saw ${auth.map(r => r.table_name)}`)
+  assert.deepEqual(auth.filter(r => r.scoped).map(r => r.table_name), [], 'an auth table grew a tenant_id')
+  assert.deepEqual(auth.filter(r => r.secured).map(r => r.table_name), [], 'an auth table carries a policy')
+})
+
 test('a Tenant-scoped table added later is policed by the next deploy', options, async () => {
   // The property that actually matters, and the one migration 0033 could not
   // have: a table that did not exist when the policy loop ran. Rather than

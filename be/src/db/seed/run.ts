@@ -1,4 +1,7 @@
 import '../url'
+import { drizzle } from 'drizzle-orm/postgres-js'
+import postgres from 'postgres'
+import * as schema from '../schema'
 import { seedPlatformAdmins } from './platform-admin'
 
 /**
@@ -36,9 +39,16 @@ import { seedPlatformAdmins } from './platform-admin'
 async function main() {
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required to seed')
 
-  console.log('[seed] platform administrators…')
-  await seedPlatformAdmins()
-  console.log('[seed] done — the platform has no studios; create one from the super portal')
+  // As the owner, like every seed: the auth pools carry no Row-Level Security,
+  // but the seed is provisioning, not the app.
+  const client = postgres(process.env.DATABASE_URL, { max: 1 })
+  try {
+    console.log('[seed] platform administrators…')
+    await seedPlatformAdmins(drizzle(client, { schema }))
+    console.log('[seed] done — the platform has no studios; create one from the super portal')
+  } finally {
+    await client.end({ timeout: 5 })
+  }
 }
 
 main().catch(err => {

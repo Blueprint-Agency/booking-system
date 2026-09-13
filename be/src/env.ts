@@ -66,6 +66,17 @@ const schema = z.object({
     .min(32, 'IMPERSONATION_SECRET must be at least 32 chars (used to sign HS256 grant JWTs)'),
   CLERK_STAFF_AUTHORIZED_PARTIES: z.string().optional(),
 
+  // Better Auth (self-hosted), running beside Clerk until #106 removes it. One
+  // secret signs the session tokens and encrypts the second-factor secrets of
+  // all three pools (services/auth/better-auth.ts); rotating it signs everyone out.
+  BETTER_AUTH_SECRET: z
+    .string()
+    .min(32, 'BETTER_AUTH_SECRET must be at least 32 chars (signs sessions and encrypts 2FA secrets)'),
+  // The backend's own public origin — `https://api.reservetoday.app`. Every
+  // link Better Auth builds (a password reset, above all) starts here, under
+  // the pool's base path `/api/v1/auth/{client,staff,platform}`.
+  BETTER_AUTH_URL: z.string().url('BETTER_AUTH_URL must be the backend origin, e.g. https://api.example.app'),
+
   // Third Clerk application, backing the **super portal** at
   // `admin.portal.<root domain>` and nothing else.
   //

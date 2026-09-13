@@ -11,6 +11,12 @@ import { requestLogger } from './middleware/logger'
 import { resolveTenant } from './middleware/tenant'
 
 import { requireActiveTenant } from './middleware/require-active-tenant'
+import {
+  AUTH_BASE_PATH,
+  authPools,
+  type AuthPool,
+  type AuthPoolHandler,
+} from './services/auth/better-auth'
 
 import publicRoutes from './routes/public'
 import clientRoutes from './routes/client'
@@ -48,6 +54,9 @@ app.use(
       'X-Request-Id',
       'X-Tenant-Slug',
     ],
+    // Better Auth hands a new session's bearer token back in this header, and a
+    // cross-origin page cannot read a header CORS does not expose.
+    exposeHeaders: ['set-auth-token'],
   }),
 )
 
@@ -106,13 +115,20 @@ app.use('/api/v1/platform/*', authedLimiter)
 //   - the super portal's own branch is cross-tenant by definition: it lists
 //     every studio and creates the ones that do not exist yet, so there is no
 //     single tenant to resolve and no honest context to open. Its gate is
-//     `requirePlatformAdmin`, which reads no tenant at all.
+//     `requirePlatformAdmin`, which reads no tenant at all. Its auth pool is
+//     exempt for the same reason: the super portal signs in on no studio.
+//   - a staff password-reset link. It is opened from an inbox, so it carries
+//     no `X-Tenant-Slug` and no `Origin`; it only checks the token and
+//     redirects to the portal page that sets the password, which does run
+//     inside a context. The mail was sent from inside one when it was asked for.
 const TENANT_CONTEXT_EXEMPT = (path: string) =>
   path === '/api/v1/healthz' ||
   path === '/api/v1/webhooks/stripe' ||
   path === '/api/v1/webhooks/clerk' ||
   path === '/api/v1/platform' ||
   path.startsWith('/api/v1/platform/') ||
+  path.startsWith(`${AUTH_BASE_PATH.platform}/`) ||
+  path.startsWith(`${AUTH_BASE_PATH.staff}/reset-password/`) ||
   isTenantLookup(path)
 
 app.use('/api/v1/*', (c, next) =>
@@ -150,6 +166,14 @@ app.route('/api/v1/me', clientRoutes)
 app.route('/api/v1/portal', portalRoutes)
 app.route('/api/v1/platform', platformRoutes)
 app.route('/api/v1/webhooks', webhookRoutes)
+
+// The three Better Auth pools (services/auth/better-auth.ts), each answering on
+// its own base path, mounted the way Better Auth's Hono integration describes.
+// `client` and `staff` run inside the Tenant context `resolveTenant` opened, so
+// the codes they mail are worded and signed by that studio.
+for (const [pool, auth] of Object.entries(authPools) as Array<[AuthPool, AuthPoolHandler]>) {
+  app.on(['GET', 'POST'], `${AUTH_BASE_PATH[pool]}/*`, c => auth.handler(c.req.raw))
+}
 
 // Unmatched routes — consistent JSON shape instead of Hono's default text 404.
 app.notFound(c => c.json({ error: 'not_found' }, 404))
