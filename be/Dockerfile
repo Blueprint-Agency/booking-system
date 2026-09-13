@@ -1,4 +1,4 @@
-FROM node:20-alpine AS runtime
+FROM node:22-alpine AS runtime
 WORKDIR /app
 COPY package.json package-lock.json ./
 # Install ALL deps (incl. tsx + drizzle-kit) so the server runs via tsx

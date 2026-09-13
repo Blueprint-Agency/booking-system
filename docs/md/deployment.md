@@ -132,6 +132,8 @@ backend suite means no image is built and neither stack is touched.
 - **Pull requests** into `staging` or `main` run the same tests and never deploy. A push that only
   touches a frontend does not run the backend tests or deploy (a `changes` job filters by path).
   A manual `workflow_dispatch` always runs the tests, then deploys.
+- **Same Node as the image.** The `test` job runs on the Node major `be/Dockerfile` ships (22) and
+  fails at once if the two drift apart — bump both together.
 
 **Frontend checks are advisory.** The same workflow runs `npm run check` in `fe-client/` and
 `fe-portal/` when their paths change, so a broken frontend test shows a red check on the commit or
@@ -152,7 +154,15 @@ merging.
 > `staging` one, because merging to `staging` and then fast-forwarding `main` fires both within a
 > minute. The `concurrency.group` in `deploy-be.yml` is therefore **not** keyed on the branch —
 > `booking-be-deploy-bpvps2`, with `cancel-in-progress: false`, so the second deploy waits rather
-> than racing or being dropped. Queueing is the fix, not the cost.
+> than racing. Queueing is the fix, not the cost.
+>
+> **Only one deploy can wait at a time.** GitHub keeps a single pending run per concurrency group.
+> `cancel-in-progress: false` protects the deploy that is *running*, not the one that is waiting:
+> if a third deploy queues while one runs and one waits, the waiting one is **cancelled** and the
+> newest takes its place, whatever branch either is on. So a `staging` push can cancel a waiting
+> `main` deploy, and production quietly stays on the old build. A cancelled deploy does not come
+> back by itself — **re-run it** (Actions → the cancelled run → *Re-run all jobs*). After a burst of
+> pushes, check that the latest `main` run's `deploy` job actually finished.
 >
 > If you ever see that error anyway: re-run the failed job once the other one has finished, and
 > **check the running image against the tag** before assuming it recovered —

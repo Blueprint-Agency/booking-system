@@ -130,12 +130,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 22, not the image's 20: `node --test` only expands the quoted glob from 21.
+      # The same major as the image (be/Dockerfile), so a test cannot pass here on
+      # a Node the server never runs on. At least 21 either way: `node --test` only
+      # expands the quoted glob from 21.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: be/package-lock.json
+
+      # Bumping one and not the other fails here, not after the deploy.
+      - name: Node matches the image
+        shell: bash
+        run: |
+          image=$(sed -nE 's/^FROM node:([0-9]+).*/\1/p' Dockerfile | head -n1)
+          ci=$(node -p 'process.versions.node.split(".")[0]')
+          if [ -z "$image" ] || [ "$image" != "$ci" ]; then
+            echo "::error::CI tests on Node $ci but be/Dockerfile ships Node ${image:-?}. Keep them on the same major."
+            exit 1
+          fi
 
       - run: npm ci
 
@@ -220,8 +233,13 @@ jobs:
       # This group was keyed on the branch so a prod deploy would never queue behind
       # a staging one. That is the right instinct for two independent targets and the
       # wrong one for two stacks on the same host: queueing is not the cost, it is
-      # the fix. `cancel-in-progress: false` keeps the second run — the deploy that
-      # waits is still the deploy that happens.
+      # the fix. `cancel-in-progress: false` spares the RUNNING deploy, nothing more.
+      #
+      # GitHub keeps only ONE pending run per concurrency group. If a third deploy
+      # queues while one runs and one waits, the waiting one is cancelled and the
+      # newest takes its place, whichever branch either is on — so a `staging` push
+      # can cancel a waiting `main` (production) deploy. A cancelled deploy does not
+      # come back on its own: re-run it. See docs/md/deployment.md.
       group: booking-be-deploy-bpvps2
       cancel-in-progress: false
 
