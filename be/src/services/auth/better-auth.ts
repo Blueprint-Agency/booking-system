@@ -7,6 +7,8 @@ import * as schema from '../../db/schema/auth'
 import { env } from '../../env'
 import { originAllowed } from '../../lib/allowed-origins'
 import { PLATFORM_MAIL_FROM_NAME } from '../../lib/mailer'
+import { authAudit } from './auth-events'
+import { authRateLimit } from './rate-limit'
 import {
   mailClientCode,
   mailPlatformPasswordReset,
@@ -47,7 +49,8 @@ import {
  * the browser; the token is returned in the `set-auth-token` header.
  */
 
-export type AuthPool = 'client' | 'staff' | 'platform'
+export type { AuthPool } from '../../db/enums'
+import type { AuthPool } from '../../db/enums'
 
 export const AUTH_BASE_PATH: Record<AuthPool, string> = {
   client: '/api/v1/auth/client',
@@ -132,6 +135,8 @@ function shared(pool: AuthPool) {
     basePath: AUTH_BASE_PATH[pool],
     trustedOrigins,
     telemetry: { enabled: false },
+    // Code requests and sign-in attempts, per address per window (#114).
+    rateLimit: authRateLimit(),
     // Distinct cookie names per pool, so a browser that does hold a cookie from
     // one never presents it to another under the same name.
     advanced: {
@@ -169,6 +174,7 @@ const clientAuth = betterAuth({
       disableSignUp: false,
       sendVerificationOTP: async ({ email, otp }) => mailClientCode(email, otp),
     }),
+    authAudit('client'),
   ],
 })
 
@@ -230,6 +236,8 @@ function passwordPool(
         }),
         model('twoFactors'),
       ),
+      // Last: it has to see the session the two-factor plugin leaves, not the one it deletes.
+      authAudit(pool),
     ],
   })
 }

@@ -20,7 +20,7 @@ A Tenant's leftmost DNS label, and the only thing the frontends can read a Tenan
 _Avoid_: subdomain, handle, tenant name
 
 **`tenant_id`**:
-The column on all 53 domain tables recording which Tenant a row belongs to — including pure join tables, because Row-Level Security needs a column on every table to key a policy on. `NOT NULL`, with **no default**: an insert that does not name its Tenant fails loudly rather than filing somebody else's row under the first Tenant. Every non-unique index leads with it. (The tenant-#1 default that made the migrate batches safe was scaffolding, and migration 0032 dropped it along with the seed pass that used to claim unclaimed rows.)
+The column on all 53 domain tables recording which Tenant a row belongs to — including pure join tables, because Row-Level Security needs a column on every table to key a policy on. `NOT NULL`, with **no default**: an insert that does not name its Tenant fails loudly rather than filing somebody else's row under the first Tenant. Every non-unique index leads with it. (The tenant-#1 default that made the migrate batches safe was scaffolding, and migration 0032 dropped it along with the seed pass that used to claim unclaimed rows.) The one nullable `tenant_id` outside those is `auth_events`, whose null rows are **Platform rows**.
 
 **Tenant context**:
 The Tenant a request is about — held in two places at once, and they are set together.
@@ -41,6 +41,13 @@ _Avoid_: org check, tenant membership
 **Session claim**:
 The Tenant a Better Auth session was signed in on, written onto the session row (`claimed_tenant_id`) at sign-in from the Tenant the hostname resolved to. Unlike a **Tenant claim** it is a fact, not a statement: the row is ours and the token naming it is signed. `services/tenants/session-claim.ts` decides, and — unlike the **Organization claim** — both the portal and the member middleware ask: a session whose claim is not the resolved Tenant, or that carries none, is refused 403. So a session from studio A is worthless at studio B, and a staff member of two studios holds one user and one session per studio. `platform` sessions carry no claim; the super portal has no Tenant. Replaces the Organization claim when Clerk goes (#106).
 _Avoid_: tenant_id (the column is deliberately not named that — see `db/schema/auth.ts`), org claim
+
+**Auth event**:
+One row in `auth_events`: a sign-in, sign-out, failed sign-in (a refused password), code sent, code failed (a refused one-time code or second factor), or impersonation start or end, with the pool, the actor's auth user id, the subject for impersonation, the client address and user agent. Written from each pool's Better Auth hooks (`services/auth/auth-events.ts`), in the request's own transaction. Never the address tried, a password or a code: a failed sign-in for an address with no account names no actor. A studio pool's event is filed under the Tenant whose context is open; a `platform` event under none — the one **Platform row**.
+_Avoid_: login log; bare "audit log" when `audit_log` (staff actions on domain rows) could be meant — say "sign-in audit log"
+
+**Platform row**:
+A row with a null `tenant_id` in a table that allows one — `auth_events` only, named in `PLATFORM_ROWS` (`db/roles.ts`). Its policy matches with `IS NOT DISTINCT FROM`, so inside a Tenant context a query sees that Tenant's rows and nothing else, and outside every context — where the super portal runs — only the platform's.
 
 **Application role** (`booking_app`):
 The Postgres role the running server connects as, provisioned by `db/roles.ts` and reached through `DATABASE_APP_URL`. It owns no tables and is neither superuser nor `BYPASSRLS`, which is the *only* reason the policies apply — Postgres exempts superusers unconditionally and owners unless the table is `FORCE`d, so a server connected as the owner in `DATABASE_URL` would pass every test while enforcing nothing. Migrations and seeds still run as the owner, which is how they write across Tenants.
