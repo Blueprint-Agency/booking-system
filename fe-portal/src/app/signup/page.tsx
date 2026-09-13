@@ -21,7 +21,7 @@ import { AuthShell, ErrorNote } from "@/components/auth/auth-card";
 import { PasswordInput } from "@/components/auth/password-input";
 import { refusalCode } from "@/lib/access-refusal";
 import { fetchApi } from "@/lib/api-url";
-import { staffAuth } from "@/lib/staff-auth";
+import { portalAuth } from "@/lib/portal-auth";
 
 type InviteStatus = "valid" | "expired" | "used" | "revoked" | "not_found";
 interface InviteLookup {
@@ -126,7 +126,7 @@ function SetPasswordForm({ token, email }: { token: string; email: string }) {
         setError(refused);
         return;
       }
-      const { error: signInErr } = await staffAuth.signIn.email({ email, password });
+      const { error: signInErr } = await portalAuth.signIn.email({ email, password });
       // The account is set up either way; if signing in did not follow, the
       // login page is one step away with the password they just chose.
       router.replace(signInErr ? "/login" : "/admin");

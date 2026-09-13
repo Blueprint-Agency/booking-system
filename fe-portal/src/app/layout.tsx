@@ -1,11 +1,8 @@
 import type { Metadata } from "next";
 import { Manrope } from "next/font/google";
-import { headers } from "next/headers";
 import { Toaster } from "sonner";
 import { getBrand } from "@/lib/brand";
-import { isSuperPortalHost } from "@/lib/tenant-host";
 import { BrandProvider } from "@/components/brand/brand-provider";
-import { PlatformAuthProvider } from "@/components/platform/platform-auth-provider";
 import "./globals.css";
 
 const sans = Manrope({ subsets: ["latin"], variable: "--font-sans" });
@@ -24,25 +21,19 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
+/**
+ * No auth provider: both products hold a Better Auth session as a bearer token
+ * in the page's own storage (`lib/portal-auth.ts`), which needs none.
+ */
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const brand = await getBrand();
-  const host = (await headers()).get("host");
 
-  const page = (
+  return (
     <html lang="en" className={sans.variable}>
       <body className="font-sans antialiased bg-paper text-ink">
         <BrandProvider brand={brand}>{children}</BrandProvider>
         <Toaster position="top-right" richColors />
       </body>
     </html>
-  );
-
-  // Two products, two sign-ins, told apart by hostname. A studio's portal holds
-  // a Better Auth staff session (`lib/staff-auth.ts`) and needs no provider; the
-  // super portal is still on Clerk until #116.
-  return isSuperPortalHost(host) ? (
-    <PlatformAuthProvider host={host}>{page}</PlatformAuthProvider>
-  ) : (
-    page
   );
 }

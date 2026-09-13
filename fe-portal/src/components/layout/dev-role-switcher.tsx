@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect } from "react";
 import { ChevronDown, LogOut, User } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { signOutStaff } from "@/lib/staff-auth";
+import { signOutPortal } from "@/lib/portal-auth";
 import { useWorkspace, STORAGE_KEY_LOC } from "@/lib/workspace-context";
 
 /**
@@ -73,7 +73,7 @@ export function DevRoleSwitcher() {
                   if (typeof window !== "undefined") {
                     window.localStorage.removeItem(STORAGE_KEY_LOC);
                   }
-                  void signOutStaff().finally(() => router.push("/login"));
+                  void signOutPortal().finally(() => router.push("/login"));
                 }}
                 className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm text-ink hover:bg-paper"
               >

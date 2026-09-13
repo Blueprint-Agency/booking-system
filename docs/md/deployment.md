@@ -21,7 +21,7 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 | Super portal | `https://admin.portal.dev.reservetoday.app` | `https://admin.portal.reservetoday.app` |
 | Vercel target | **preview** (branch-pinned domain) | **production** |
 | `TENANT_ORIGIN_PATTERNS` | `https://*.dev.reservetoday.app,https://*.portal.dev.reservetoday.app` | `https://*.reservetoday.app,https://*.portal.reservetoday.app` |
-| Clerk instance | development (`*.clerk.accounts.dev`) | production — fe-client on `clerk.reservetoday.app`, fe-portal on `clerk.portal.reservetoday.app`, super portal on `clerk.admin.portal.reservetoday.app` |
+| Clerk instance | development (`*.clerk.accounts.dev`) | production — fe-client on `clerk.reservetoday.app`, fe-portal on `clerk.portal.reservetoday.app` (the super portal signs in through Better Auth since #116) |
 | `APP_ENV` / `NEXT_PUBLIC_APP_ENV` | `staging` | `production` |
 
 > **Every pre-tenancy hostname is gone.** The table above is now the whole list: nothing outside
@@ -223,28 +223,11 @@ Notes:
 
 > ⚠️ **The allowlist is shared, so a wildcard in it widens `azp` too.** Adding something like `https://*.vercel.app` to `TENANT_ORIGIN_PATTERNS` for preview URLs does not affect CORS alone: it also makes every Vercel preview host a valid authorized party for staff and member tokens, and — since the list is read backwards for link bases — a candidate origin to mail people. Add preview hosts only if that tradeoff is understood.
 
-**Clerk apps:** up to three separate Clerk applications. fe-portal + `CLERK_STAFF_*` is the staff/instructor app; fe-client + `CLERK_CLIENT_*` is the member-facing app; the super portal + `CLERK_PLATFORM_*` is optional and covered below. Cross-app tokens are rejected by the BE middleware on purpose — never share keys between them.
+**Clerk apps:** two separate Clerk applications while #106 swaps them out. fe-client + `CLERK_CLIENT_*` is the member-facing app; `CLERK_STAFF_*` is the staff app, which the backend still accepts beside Better Auth. Cross-app tokens are rejected by the BE middleware on purpose — never share keys between them.
 
-**Clerk sessions and cookies — why the super portal needs its own application.** Clerk's session lives in the `__client` cookie, and Clerk scopes it to the *instance's own Frontend API host*:
+**The super portal signs in through the Better Auth `platform` pool (#116), not Clerk.** fe-portal picks the pool by hostname (`fe-portal/src/lib/auth-pool.ts`): `admin.portal.…` signs in on `/api/v1/auth/platform`, every `{slug}.portal.…` on `/api/v1/auth/staff`. The two pools are separate user tables, so a studio superadmin's email and password are refused at the super portal with no session issued, and `PLATFORM_ADMIN_EMAILS` stays the second gate on the session's email. Sessions are bearer tokens kept in each hostname's own `localStorage`, so the super portal and every studio portal hold separate sessions in one browser, and signing out of one leaves the others. There is nothing to configure on fe-portal for it; `npm run db:seed` creates each `PLATFORM_ADMIN_EMAILS` address in the platform pool without a password, and operators set one through "Forgot password" on first sign-in.
 
-```
-Set-Cookie: __client=…; Domain=clerk.reservetoday.app;        HttpOnly  # member app
-Set-Cookie: __client=…; Domain=clerk.portal.reservetoday.app; HttpOnly  # staff app
-```
-
-Host-only, so the member app and the staff app **cannot** see each other's sessions even though both live under `reservetoday.app`. The two frontends are properly isolated and always have been.
-
-The same rule cuts the other way for one application serving two hostnames. `admin.portal.…` and `{slug}.portal.…` are both fe-portal on the staff app, so they share one `__client` — and therefore **one signed-in person**. Signing into the super portal signs you into every studio portal as that same account. No cookie setting changes this; a second Clerk application does, because it brings a second Frontend API host and so a second `__client`.
-
-- `CLERK_PLATFORM_PUBLISHABLE_KEY` / `CLERK_PLATFORM_SECRET_KEY` (BE) and `NEXT_PUBLIC_CLERK_PLATFORM_PUBLISHABLE_KEY` / `CLERK_PLATFORM_SECRET_KEY` / `CLERK_ENCRYPTION_KEY` (fe-portal). **All of them or none** — a partial configuration mints tokens with one instance and verifies them with another, which surfaces as a signature error or a looping login page far from the blank variable. Both sides enforce this (`be/src/lib/clerk.ts` `isPlatformAppConfigured`, `fe-portal/src/lib/clerk-keys.ts` `platformKeys`) and fall back to the shared-session behaviour rather than half-applying it.
-- `CLERK_ENCRYPTION_KEY` is not optional on fe-portal once the secret is set. `clerkMiddleware()` is given the keys per request (`src/proxy.ts`), and Clerk throws from `encryptClerkRequestData` when a `secretKey` arrives without it — on the `NextResponse.next()` path, i.e. every request, `/login` included. It is part of the all-or-none guard for exactly that reason: missing it degrades to the shared session instead of 500ing the super portal.
-- The hostname picks the application in two places that must agree: `<ClerkProvider publishableKey>` in `fe-portal/src/app/layout.tsx` (browser) and the `clerkMiddleware` options callback in `fe-portal/src/proxy.ts` (server). Both read `fe-portal/src/lib/clerk-keys.ts`.
-- Leaving it unset is supported and is the pre-existing behaviour: the super portal shares the staff app's session. The BE warns at boot. `PLATFORM_ADMIN_EMAILS` remains the authorisation either way — this only decides whether the two hostnames can hold two different sessions in one browser.
-- Set it and a studio superadmin's staff token no longer reaches the allowlist at all: it was signed by a different Clerk instance and fails verification.
-
-> Turning this on **signs every super portal operator out once**, and the new application starts with an empty user pool. `npm run db:seed` provisions it — the seeder follows the same `isPlatformAppConfigured()` question, so it creates each `PLATFORM_ADMIN_EMAILS` address in whichever app the super portal actually reads, and names that app in its output. Operators then set their own password via "Forgot password", as they did on the staff app. Do it in a maintenance window, staging first.
-
-> `__client_uat` *is* set on the registrable domain (`Domain=reservetoday.app`), so every app on the domain shares it. It carries no identity — it is the "is anyone signed in?" hint clerk-js checks before a handshake — and each instance also writes a suffixed copy, `__client_uat_<hash>`, which is the one modern clerk-js reads. A stale suffix from a retired instance is harmless but never expires on its own; clearing site data for `reservetoday.app` is the only way to remove one.
+> **Retiring the super portal's Clerk application.** Nothing reads `CLERK_PLATFORM_PUBLISHABLE_KEY` / `CLERK_PLATFORM_SECRET_KEY` (BE) or `NEXT_PUBLIC_CLERK_PLATFORM_PUBLISHABLE_KEY` / `CLERK_PLATFORM_SECRET_KEY` / `CLERK_ENCRYPTION_KEY` (fe-portal) any more. Delete them from the GitHub environments and the fe-portal Vercel project. If the application's DNS records (below) are removed too, keep the explicit `admin.portal` CNAME to Vercel — it is harmless on its own, and removing it before the records would reopen the wildcard trap described below.
 
 > **Adding a record under a host a wildcard currently serves breaks that host — pin it in the same
 > change.** RFC 4592: a wildcard does not reach past a node that exists, and creating

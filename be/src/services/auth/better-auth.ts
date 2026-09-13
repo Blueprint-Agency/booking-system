@@ -20,8 +20,9 @@ import {
 
 /**
  * Self-hosted auth (Better Auth), running beside Clerk while #106 swaps it in.
- * The three request middlewares accept either a session from here or a Clerk
- * JWT (`readPoolSession`); every Clerk path is unchanged.
+ * The staff and member middlewares accept either a session from here or a Clerk
+ * JWT (`readPoolSession`); the super portal's gate reads only a `platform`
+ * session (#116).
  *
  * **Three instances, not one.** Separate user pools are the property being
  * kept from the three Clerk applications: a member must never be able to sign

@@ -1,4 +1,4 @@
-import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import {
   ROOT_DOMAIN,
   TENANT_ID_HEADER,
@@ -7,7 +7,6 @@ import {
   tenantSlugFromHost,
   withoutTenantHeaders,
 } from "@/lib/tenant-host";
-import { platformProxy } from "@/lib/platform-proxy";
 import { portalRouting } from "@/lib/super-portal";
 import {
   resolveTenant,
@@ -54,28 +53,29 @@ async function tenantContext(
 
 /**
  * Which of the two products is this hostname? `admin.portal.…` is the super
- * portal, still on Clerk (`lib/platform-proxy.ts`); everything else is a
- * studio's staff portal, handled here.
+ * portal; everything else is a studio's staff portal. The super portal's
+ * hostname names no Tenant, so `tenantContext` sets nothing for it — but a
+ * caller's own `x-tenant-*` headers are still removed on the way through.
  *
- * **A studio's portal is not gated at the edge.** Its session is a Better Auth
- * bearer token held in the page's own storage, which a request to Next never
- * carries, so there is nothing here to check. The gate is `WorkspaceProvider`
- * (`lib/workspace-context.tsx`), which sends a visitor with no session to
- * `/login`, and — the real one — the backend, which refuses every portal call
- * without a staff session signed in at this studio.
+ * **Neither product is gated at the edge.** Both sessions are Better Auth bearer
+ * tokens held in the page's own storage (`lib/portal-auth.ts`), which a request
+ * to Next never carries, so there is nothing here to check. The gates are the
+ * client shells — `WorkspaceProvider` (`lib/workspace-context.tsx`) on a studio,
+ * `PlatformShell` on the super portal — which send a visitor with no session to
+ * `/login`, and, the real one, the backend, which refuses every call without a
+ * session from the right pool.
  */
-export default async function proxy(req: NextRequest, event: NextFetchEvent) {
-  if (isSuperPortalHost(req.headers.get("host"), ROOT_DOMAIN)) {
-    return platformProxy(req, event);
-  }
+export default async function proxy(req: NextRequest) {
+  const superPortal = isSuperPortalHost(req.headers.get("host"), ROOT_DOMAIN);
 
   const { headers, blocked } = await tenantContext(req);
   if (blocked) return blocked;
 
   // The decision is made before anything renders so a studio's staff cannot even
   // learn that `/platform` exists — it is a 404 on their hostname, the same
-  // opaque page an unknown Tenant gets.
-  const routing = portalRouting(req.nextUrl.pathname, false);
+  // opaque page an unknown Tenant gets. On the super portal it is the reverse:
+  // everything belongs to `/platform`. See `lib/super-portal.ts`.
+  const routing = portalRouting(req.nextUrl.pathname, superPortal);
   if (routing.kind === "not-found") return tenantNotFoundResponse();
   if (routing.kind === "redirect") {
     return NextResponse.redirect(new URL(routing.to, req.url));

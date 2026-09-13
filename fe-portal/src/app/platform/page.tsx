@@ -1,6 +1,5 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useAuth } from "@clerk/nextjs";
 import {
   Download,
   ExternalLink,
@@ -23,6 +22,7 @@ import {
   setTenantStatus,
   type PlatformTenant,
 } from "@/lib/platform";
+import { getPortalToken, usePortalSession } from "@/lib/portal-auth";
 
 /**
  * Every studio on the platform, and the two things that are done to one from
@@ -34,8 +34,9 @@ import {
  * drift.
  */
 export default function PlatformPage() {
-  const { getToken, isLoaded, isSignedIn } = useAuth();
-  const api = useMemo(() => makeApi(getToken), [getToken]);
+  const { isLoaded, session } = usePortalSession();
+  const isSignedIn = session !== null;
+  const api = useMemo(() => makeApi(getPortalToken), []);
 
   const [tenants, setTenants] = useState<PlatformTenant[] | null>(null);
   /** Set when the backend says this account may not be here — a 404, because the
@@ -108,7 +109,7 @@ export default function PlatformPage() {
   async function downloadArchive(tenant: PlatformTenant) {
     setBusyId(`export:${tenant.id}`);
     try {
-      await exportTenant(getToken, tenant);
+      await exportTenant(getPortalToken, tenant);
       toast.success(`${tenant.name} exported.`);
     } catch {
       toast.error(`Could not export ${tenant.name}.`);
