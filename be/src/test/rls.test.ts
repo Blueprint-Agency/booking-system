@@ -293,7 +293,7 @@ describe('row-level security', { skip: integrationTestsEnabled ? false : SKIP_RE
 
     const grant = verifyGrant(
       signGrant({
-        clientClerkUserId: 'user_probe',
+        clientAuthUserId: 'user_probe',
         superadminStaffId: '00000000-0000-0000-0000-0000000000bb',
         tenantId: oneId,
       }),
@@ -359,7 +359,8 @@ describe('row-level security', { skip: integrationTestsEnabled ? false : SKIP_RE
           mintClientImpersonation({
             tenantId: oneId,
             clientId: outsider.id,
-            superadminStaffId: '00000000-0000-0000-0000-0000000000bb',
+            superadmin: { id: '00000000-0000-0000-0000-0000000000bb', authUserId: 'staff_probe' },
+            from: new Headers(),
           }),
         ),
       (err: { message?: string }) => err.message === 'client_not_found',

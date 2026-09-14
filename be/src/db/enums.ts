@@ -12,8 +12,7 @@ export const staffStatusEnum = pgEnum('staff_status', ['pending', 'active', 'arc
 export const invitationStatusEnum = pgEnum('invitation_status', ['pending', 'accepted', 'revoked', 'expired'])
 
 // Sign-in audit log (`auth_events`, #114). The pools are the three Better Auth
-// instances. The two impersonation kinds are written from #118 on; they exist
-// now so the log has one vocabulary from the start.
+// instances. The two impersonation kinds are written from #118 on.
 export const authPoolEnum = pgEnum('auth_pool', ['client', 'staff', 'platform'])
 export const authEventKindEnum = pgEnum('auth_event_kind', [
   'sign_in',

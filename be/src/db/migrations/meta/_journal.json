@@ -351,6 +351,13 @@
       "when": 1789324012586,
       "tag": "0049_client_clerk_user_id_nullable",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1789355677908,
+      "tag": "0050_client_session_impersonated_by",
+      "breakpoints": true
     }
   ]
 }

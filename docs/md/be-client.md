@@ -17,6 +17,12 @@ The client-side backend surface. Implements the `/me/*` scope of the client app 
 
 `/me/*` mounts under `routes/client/index.ts` with `clerk-client.ts` middleware: a Better Auth `client` pool bearer session whose Tenant claim is this studio (fe-client signs in only this way since #117), or — until #106 removes it — a Clerk client JWT. Staff and platform sessions are rows the client pool has never seen, so they are 401. `requireActiveClient` rejects `clients.status='suspended'` and blocked (`deleted_at`) members.
 
+### Impersonation (#118)
+
+A studio superadmin impersonates a member from the portal: `POST /api/v1/portal/admin/clients/:id/impersonate` (superadmin only; the lookup is scoped to the superadmin's studio, so another studio's member is 404; a blocked member is 422 `client_blocked`) opens a real `client` pool session for the member — `client_auth_sessions.impersonated_by` set to the superadmin's staff auth user, one hour, stamped with the studio's claim — and returns `{ token, grant, fe_client_url }`. `fe_client_url` is `{studio member app}/impersonate#token=…&grant=…`; the fragment keeps the token out of every server log.
+
+The member app adopts the token as its session and sends the grant on every call as `X-Impersonation-Grant`. `client-impersonation.ts` checks it after the session: the two only work together — an impersonation session without a valid grant, or a grant on a session that is not an impersonation, is 401 `impersonation_grant_mismatch`; a grant whose subject is not the session's auth user is 401 `impersonation_subject_mismatch`, one minted at another studio 401 `impersonation_tenant_mismatch`; a match sets `impersonatedBy` (the superadmin's `staff_users.id`) and `impersonatedClientId`, and `audit_log` names both on every write. Stopping signs the session out through the client pool (`/api/v1/auth/client/sign-out`), so a sibling tab is 401 on its next request. Start and end are `auth_events` rows (`impersonation_started`, `impersonation_ended`), filed under the `staff` pool with the superadmin as actor and the member as subject.
+
 ### Verification gate
 
 `fe-client-features.md` §Auth requires `phone_verified` AND `email_verified` before any booking action. The gate reads the claims directly off the Clerk session token — there are no `clients` columns to mirror. Implementation:

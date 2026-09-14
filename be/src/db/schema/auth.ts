@@ -106,7 +106,16 @@ const clientUserId = () =>
 
 export const clientAuthSessions = pgTable(
   'client_auth_sessions',
-  { ...sessionColumns(clientUserId), claimedTenantId: claimedTenantId() },
+  {
+    ...sessionColumns(clientUserId),
+    claimedTenantId: claimedTenantId(),
+    /**
+     * Set on a session a studio superadmin opened as this member (#118): the
+     * superadmin's `staff` pool auth user id. The admin plugin's field name, and
+     * no foreign key — it names a user in another pool's table.
+     */
+    impersonatedBy: text('impersonated_by'),
+  },
   table => ({ userIdx: index('client_auth_sessions_user_idx').on(table.userId) }),
 )
 
@@ -205,8 +214,8 @@ export const platformAuthTwoFactors = pgTable(
  * has no account has no actor. No foreign key to the pool tables — there are
  * three of them, and the record should outlive the account. The subject is
  * the user acted on, when it is not the actor: the member an impersonation
- * signed in as. (Which pool an impersonation row is filed under, when its actor
- * is staff and its subject a member, is #118's to settle.)
+ * signed in as. An impersonation row is filed under `staff` (#118): its actor is
+ * the superadmin's staff auth user, its subject the member's client auth user.
  */
 export const authEvents = pgTable(
   'auth_events',

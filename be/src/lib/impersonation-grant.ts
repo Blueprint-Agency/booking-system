@@ -4,11 +4,11 @@ import { env } from '../env'
 
 /**
  * BE-signed grant JWT proving that a /api/v1/me/* call is being made by a
- * superadmin impersonating a specific client. Separate from the Clerk client
- * JWT (which carries the *target client's* identity) — we need our own
- * signature because Clerk client tokens have no notion of the staff actor.
+ * superadmin impersonating a specific client. Separate from the member's session
+ * (which carries the *target client's* identity): the grant is the proof that a
+ * superadmin is behind it, and names them for the audit log (#118).
  *
- *   sub — clerk_user_id of the impersonated client (matches Clerk JWT.sub)
+ *   sub — the impersonated client's `client` pool auth user id (the session's user)
  *   sas — superadmin staff_users.id (UUID) — the actor for audit
  *   tid — the tenant the grant was minted in, and the ONLY tenant it is good
  *         for. Without it a grant is a bearer token that says "somebody is
@@ -26,22 +26,23 @@ export interface ImpersonationGrant {
   exp: number
 }
 
-const TTL_SECONDS = 60 * 60 // 1h
+/** 1h — and the impersonation session it goes with lives exactly as long. */
+export const GRANT_TTL_SECONDS = 60 * 60
 
 export function signGrant(input: {
-  clientClerkUserId: string
+  clientAuthUserId: string
   superadminStaffId: string
   tenantId: string
 }): string {
   const payload: Omit<ImpersonationGrant, 'iat' | 'exp'> = {
-    sub: input.clientClerkUserId,
+    sub: input.clientAuthUserId,
     sas: input.superadminStaffId,
     tid: input.tenantId,
     jti: randomUUID(),
   }
   return jwt.sign(payload, env.IMPERSONATION_SECRET, {
     algorithm: 'HS256',
-    expiresIn: TTL_SECONDS,
+    expiresIn: GRANT_TTL_SECONDS,
   })
 }
 

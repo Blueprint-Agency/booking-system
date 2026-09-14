@@ -76,13 +76,16 @@ export default function ClientsPage() {
     if (!api) return;
     try {
       const res = await api.post<{
-        ticket: string;
+        token: string;
         grant: string;
         fe_client_url: string;
       }>(`/portal/admin/clients/${clientId}/impersonate`, {});
       window.open(res.fe_client_url, "_blank", "noopener");
     } catch (err) {
-      if (err instanceof ApiError && err.status === 422) {
+      const reason = err instanceof ApiError ? (err.body as { error?: string } | null)?.error : undefined;
+      if (reason === "client_blocked") {
+        toast.error("This customer is blocked. Restore them to impersonate.");
+      } else if (err instanceof ApiError && err.status === 422) {
         toast.error("This customer hasn't activated their account yet.");
       } else if (err instanceof ApiError && err.status === 403) {
         toast.error("Only superadmins can impersonate.");

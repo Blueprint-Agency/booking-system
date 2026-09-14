@@ -6,7 +6,7 @@ import { getClerkClientApp, verifyClientToken } from '../lib/clerk'
 import { syncClientFromClerk } from '../services/auth/webhook-sync'
 import { logger } from '../shared/logger'
 import { captureException } from '../instrument'
-import { isPoolSessionToken, readPoolSession } from '../services/auth/better-auth'
+import { isPoolSessionToken, readPoolSession, type PoolSession } from '../services/auth/better-auth'
 import { assertTenantSessionClaim, tenantCorroborated, tenantId, tenantMatches } from './tenant'
 
 export interface ClerkClientClaims {
@@ -16,6 +16,8 @@ export interface ClerkClientClaims {
 declare module 'hono' {
   interface ContextVariableMap {
     clerkClaims: ClerkClientClaims
+    /** The member's Better Auth session, when that is what signed the request in. */
+    clientSession: PoolSession
     clientId: string
     clientRow: typeof clients.$inferSelect
   }
@@ -85,8 +87,8 @@ async function provisionFromClerkApi(sub: string, tenantId: string): Promise<Cli
  * the Tenant it was signed in on, so a member of studio A who names studio B is
  * refused here, before any row is read — not merely fenced by Row-Level Security.
  * No auto-provision: member self-registration writes the clients row alongside
- * the auth user (#106). `clerkClaims` is not set, so `clientImpersonation` stays
- * a no-op on these sessions until impersonation moves over.
+ * the auth user (#106). `clientSession` is what `clientImpersonation` compares an
+ * impersonation grant against (#118).
  */
 async function clientFromSession(c: Context, next: Next, token: string) {
   const session = await readPoolSession('client', token)
@@ -104,6 +106,7 @@ async function clientFromSession(c: Context, next: Next, token: string) {
   if (!row) return c.json({ error: 'client_not_found' }, 404)
   if (!tenantMatches(c, row.tenantId)) return c.json({ error: 'tenant_mismatch' }, 403)
 
+  c.set('clientSession', session)
   c.set('clientId', row.id)
   c.set('clientRow', row)
   await next()
