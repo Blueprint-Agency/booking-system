@@ -1,6 +1,7 @@
 import { betterAuth, type BetterAuthOptions } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { APIError, getIP } from 'better-auth/api'
+import { hashPassword } from 'better-auth/crypto'
 import { bearer, emailOTP, twoFactor } from 'better-auth/plugins'
 import { and, eq } from 'drizzle-orm'
 import { currentTenantId, db } from '../../db'
@@ -12,6 +13,7 @@ import { GRANT_TTL_SECONDS } from '../../lib/impersonation-grant'
 import { BadRequestError } from '../../shared/errors'
 import { PLATFORM_MAIL_FROM_NAME } from '../../lib/mailer'
 import { authAudit, recordAuthEvent } from './auth-events'
+import { verifyPoolPassword } from './password-hash'
 import { authRateLimit } from './rate-limit'
 import { twoFactorChallengeHeader } from './two-factor-challenge'
 import {
@@ -263,6 +265,9 @@ function passwordPool(
       // Invitation-only (#106): an account exists because a seed or an
       // invitation made it, and its first password is set through the reset.
       disableSignUp: true,
+      // Better Auth's hash for every new password; a bcrypt digest imported from
+      // Clerk still verifies, so migrated staff keep theirs (#120).
+      password: { hash: hashPassword, verify: verifyPoolPassword },
       sendResetPassword: async ({ user, url }) => mail.passwordReset(user, url),
     },
     plugins: [

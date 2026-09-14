@@ -227,7 +227,18 @@ Notes:
 
 **The super portal signs in through the Better Auth `platform` pool (#116), not Clerk.** fe-portal picks the pool by hostname (`fe-portal/src/lib/auth-pool.ts`): `admin.portal.…` signs in on `/api/v1/auth/platform`, every `{slug}.portal.…` on `/api/v1/auth/staff`. The two pools are separate user tables, so a studio superadmin's email and password are refused at the super portal with no session issued, and `PLATFORM_ADMIN_EMAILS` stays the second gate on the session's email. Sessions are bearer tokens kept in each hostname's own `localStorage`, so the super portal and every studio portal hold separate sessions in one browser, and signing out of one leaves the others. There is nothing to configure on fe-portal for it; `npm run db:seed` creates each `PLATFORM_ADMIN_EMAILS` address in the platform pool without a password, and operators set one through "Forgot password" on first sign-in.
 
-> **Retiring the super portal's Clerk application.** Nothing reads `CLERK_PLATFORM_PUBLISHABLE_KEY` / `CLERK_PLATFORM_SECRET_KEY` (BE) or `NEXT_PUBLIC_CLERK_PLATFORM_PUBLISHABLE_KEY` / `CLERK_PLATFORM_SECRET_KEY` / `CLERK_ENCRYPTION_KEY` (fe-portal) any more. Delete them from the GitHub environments and the fe-portal Vercel project. If the application's DNS records (below) are removed too, keep the explicit `admin.portal` CNAME to Vercel — it is harmless on its own, and removing it before the records would reopen the wildcard trap described below.
+> **Moving Clerk's users into Better Auth (#120) — once per environment, staging first.** `npm run auth:import-clerk` exports every user from the three Clerk applications, creates them in the matching pool, copies staff and operator passwords (Clerk's bcrypt digests, verified as they are), and writes `auth_user_id` onto every `clients` / `staff_users` row with a `clerk_user_id`. It prints exported / inserted / already present / mapped / unmapped per pool, the staff who must re-enrol an authenticator app, and anyone whose password digest was missing; a second run changes nothing and says so. Steps:
+>
+> 1. Take a backup of the environment's database.
+> 2. From each password application's Clerk dashboard (staff, platform) download the user export CSV — it is the only source of `password_digest`; the API never returns it.
+> 3. Run it in a one-off container, as the owner, with the three secret keys set (`CLERK_PLATFORM_SECRET_KEY` is read by this script only) and the CSVs mounted:
+>    `docker compose run --rm -T -v "$PWD/clerk-import:/import" -e CLERK_PLATFORM_SECRET_KEY booking-be npm run auth:import-clerk -- --staff-csv /import/staff.csv --platform-csv /import/platform.csv --report /import/clerk-import-$APP_ENV.json`
+> 4. On staging the report must end **clean** (every export accounted for, unmapped = 0); the script exits 1 otherwise. Keep `clerk-import-staging.json`.
+> 5. On production (`APP_ENV=production`) the script refuses to run without `--staging-report /import/clerk-import-staging.json` from a clean staging run.
+>
+> The CSVs hold password digests: delete them when the run is done.
+
+> **Retiring the super portal's Clerk application.** Nothing reads `CLERK_PLATFORM_PUBLISHABLE_KEY` / `CLERK_PLATFORM_SECRET_KEY` (BE) or `NEXT_PUBLIC_CLERK_PLATFORM_PUBLISHABLE_KEY` / `CLERK_PLATFORM_SECRET_KEY` / `CLERK_ENCRYPTION_KEY` (fe-portal) any more — except the user import above, so keep the secret key somewhere until that has run on the environment. Delete them from the GitHub environments and the fe-portal Vercel project. If the application's DNS records (below) are removed too, keep the explicit `admin.portal` CNAME to Vercel — it is harmless on its own, and removing it before the records would reopen the wildcard trap described below.
 
 > **Adding a record under a host a wildcard currently serves breaks that host — pin it in the same
 > change.** RFC 4592: a wildcard does not reach past a node that exists, and creating
