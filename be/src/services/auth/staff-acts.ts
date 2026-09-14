@@ -20,9 +20,9 @@ export type StaffActKind = Extract<
  * (#118). The subject is a `client` pool user when the target is a member.
  *
  * `from` is the acting staff member's request, whose address and user agent the
- * row records. A staff member with no auth user — one still signed in through
- * Clerk — is logged with no actor rather than refused: the act has already
- * happened, and `audit_log` names their `staff_users` row regardless.
+ * row records. An actor whose row cannot be read is logged with no actor rather
+ * than refused: the act has already happened, and `audit_log` names their
+ * `staff_users` row regardless.
  */
 export async function recordStaffAct(input: {
   tenantId: string

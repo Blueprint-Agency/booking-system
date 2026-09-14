@@ -62,8 +62,7 @@ const RESOLVABLE: TenantStatus[] = ['active', 'suspended']
  */
 const RESOLVE_CACHE_TTL_MS = 60_000
 const resolveCache = new Map<string, { at: number; value: ResolvedTenant }>()
-/** Same memo, keyed by id and by Clerk organization id — both sit on the authed
- *  request path, once per request, for a row that changes about never. */
+/** Same memo, keyed by id, for a row that changes about never. */
 const tenantRowCache = new Map<string, { at: number; value: TenantRow }>()
 
 /** Called whenever a tenant row is written, so the memo cannot serve a ghost. */
@@ -88,38 +87,12 @@ async function memoisedTenant(
   return row
 }
 
-/**
- * The tenant row for an id already resolved. Read on every authenticated
- * request, to find out which Clerk Organization this studio is.
- */
+/** The tenant row for an id already resolved. */
 export async function loadTenantById(id: string): Promise<TenantRow | null> {
   return memoisedTenant(`id:${id}`, async () => {
     const [row] = await db.select().from(tenants).where(eq(tenants.id, id)).limit(1)
     return row
   })
-}
-
-/**
- * Clerk Organization → Tenant, in one of the two Clerk applications.
- *
- * Each application has its own organization for a studio, and the two ids are
- * distinct namespaces — so the column is chosen by which application minted the
- * token or sent the webhook, never searched across both. A staff token naming a
- * *member* organization must not resolve.
- */
-export async function resolveTenantByClerkOrg(
-  app: 'client' | 'portal',
-  orgId: string,
-): Promise<TenantRow | null> {
-  const trimmed = orgId.trim()
-  if (!trimmed) return null
-  const column = app === 'client' ? tenants.clerkClientOrgId : tenants.clerkPortalOrgId
-  const row = await memoisedTenant(`org:${app}:${trimmed}`, async () => {
-    const [found] = await db.select().from(tenants).where(eq(column, trimmed)).limit(1)
-    return found
-  })
-  if (!row) return null
-  return RESOLVABLE.includes(row.status) ? row : null
 }
 
 /**
@@ -199,8 +172,6 @@ export type TenantRowSummary = {
   timezone: string
   status: TenantStatus
   createdAt: Date
-  clerkClientOrgId: string | null
-  clerkPortalOrgId: string | null
 }
 
 export type TenantSummary = TenantRowSummary & {
@@ -219,8 +190,6 @@ export async function listTenants(): Promise<TenantSummary[]> {
         timezone: tenants.timezone,
         status: tenants.status,
         createdAt: tenants.createdAt,
-        clerkClientOrgId: tenants.clerkClientOrgId,
-        clerkPortalOrgId: tenants.clerkPortalOrgId,
       })
       .from(tenants)
       .orderBy(tenants.createdAt),
@@ -293,8 +262,7 @@ export async function activateAfterFirstStaff(id: string): Promise<TenantRow | n
  * decision to destroy a business's data is not a button.
  *
  * The memo is dropped afterwards, because every one of those caches would
- * otherwise keep serving the old status for up to a minute — including
- * `resolveTenantByClerkOrg`, which is what refuses an archived studio's tokens.
+ * otherwise keep serving the old status for up to a minute.
  */
 export async function setTenantStatus(
   id: string,
@@ -311,8 +279,6 @@ export async function setTenantStatus(
       timezone: tenants.timezone,
       status: tenants.status,
       createdAt: tenants.createdAt,
-      clerkClientOrgId: tenants.clerkClientOrgId,
-      clerkPortalOrgId: tenants.clerkPortalOrgId,
     })
 
   forgetCachedTenants()
@@ -323,8 +289,6 @@ export type CreateTenantInput = {
   slug: string
   name: string
   timezone?: string
-  clerk_client_org_id?: string | null
-  clerk_portal_org_id?: string | null
   settings?: Partial<Omit<TenantSettingsRow, 'tenantId' | 'createdAt' | 'updatedAt'>>
 }
 
@@ -345,8 +309,6 @@ export async function createTenant(input: CreateTenantInput): Promise<ResolvedTe
           slug,
           name: input.name,
           ...(input.timezone ? { timezone: input.timezone } : {}),
-          clerkClientOrgId: input.clerk_client_org_id ?? null,
-          clerkPortalOrgId: input.clerk_portal_org_id ?? null,
         })
         .returning()
       if (!tenant) throw new Error('tenant insert returned no row')
@@ -364,13 +326,6 @@ export async function createTenant(input: CreateTenantInput): Promise<ResolvedTe
   } catch (err) {
     if (isUniqueViolation(err, 'tenants_slug_unique')) {
       throw new ConflictError('slug_taken', { slug })
-    }
-    // A Clerk organization belongs to exactly one tenant in each application.
-    if (isUniqueViolation(err, 'tenants_clerk_client_org_id_unique')) {
-      throw new ConflictError('clerk_client_org_taken')
-    }
-    if (isUniqueViolation(err, 'tenants_clerk_portal_org_id_unique')) {
-      throw new ConflictError('clerk_portal_org_taken')
     }
     throw err
   }

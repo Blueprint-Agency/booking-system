@@ -95,7 +95,8 @@ export interface PendingStaffInput {
   name: string
   role: InvitableRole
   grantedLocationIds?: string[]
-  invitedByStaffId: string
+  /** Null for a studio's first admin, whom nobody on its staff invited. */
+  invitedByStaffId: string | null
   bio?: string | null
   phone?: string | null
   photoR2Key?: string | null
@@ -215,14 +216,17 @@ export async function mailInvitation(input: {
 
 /**
  * The name that signs an invitation: the inviting colleague's, or — when there
- * is none — the studio's. Never the platform's, and never another tenant's.
+ * is none, as for a studio's first admin — the studio's. Never the platform's,
+ * and never another tenant's.
  */
 export async function inviterNameFor(tenantId: string, invitation: StaffInvitationRow): Promise<string> {
-  const [inviter] = await db
-    .select({ name: staffUsers.name })
-    .from(staffUsers)
-    .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, invitation.invitedByStaffId)))
-    .limit(1)
+  const [inviter] = invitation.invitedByStaffId
+    ? await db
+        .select({ name: staffUsers.name })
+        .from(staffUsers)
+        .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, invitation.invitedByStaffId)))
+        .limit(1)
+    : []
   return inviter?.name ?? tenantDisplayName(tenantId)
 }
 
@@ -553,8 +557,7 @@ export async function revokeInvitation(
 
     if (inv.staffUserId) {
       // Only a row that is still pending — anyone who did arrive keeps their
-      // audit trail. A pending row linked to a Clerk user signed up the old
-      // way, and is kept for the same reason.
+      // audit trail.
       const [removed] = await tx
         .delete(staffUsers)
         .where(
@@ -562,7 +565,6 @@ export async function revokeInvitation(
             eq(staffUsers.tenantId, tenantId),
             eq(staffUsers.id, inv.staffUserId),
             eq(staffUsers.status, 'pending'),
-            isNull(staffUsers.clerkUserId),
           ),
         )
         .returning({ authUserId: staffUsers.authUserId })

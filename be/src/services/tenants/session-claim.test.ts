@@ -16,7 +16,7 @@ describe('session tenant claim', () => {
   })
 
   test('a session that claims no tenant is refused, not waved through', () => {
-    // There is no rollout seam here, unlike the Clerk organization claim: every
+    // There is no rollout seam here: every
     // studio-pool session is stamped at creation, so a missing claim is a
     // session made outside a Tenant context, and it proves nothing.
     assert.equal(sessionClaimVerdict({ requestTenantId: ONE, claimedTenantId: null }), 'tenant_required')

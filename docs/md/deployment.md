@@ -4,8 +4,8 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 
 | App | Target | How it deploys |
 |---|---|---|
-| `fe-client/` | Vercel project `booking-system` (Root Directory = `fe-client/`) | `main` → `https://{slug}.reservetoday.app` (wildcard `*.reservetoday.app`); `staging` → `https://{slug}.dev.reservetoday.app` (wildcard `*.dev.reservetoday.app`). Env vars: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_ROOT_DOMAIN`, `NEXT_PUBLIC_SENTRY_DSN`, `NEXT_PUBLIC_APP_ENV` — set **twice**, once per scope (Production / Preview). Members sign in through the backend's Better Auth `client` pool (#117), and so does a superadmin impersonating one (#118), so nothing auth-related is set here; `CLERK_SECRET_KEY` and `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` are read by nothing and can be removed from the project. |
-| `fe-portal/` | Vercel project `booking-system-admin` (Root Directory = `fe-portal/`) | `main` → `https://{slug}.portal.reservetoday.app` (wildcard `*.portal.reservetoday.app`); `staging` → `https://{slug}.portal.dev.reservetoday.app`. Same env shape as fe-client, but with the **staff** Clerk app keys and its own `NEXT_PUBLIC_ROOT_DOMAIN` (the `portal.` one). |
+| `fe-client/` | Vercel project `booking-system` (Root Directory = `fe-client/`) | `main` → `https://{slug}.reservetoday.app` (wildcard `*.reservetoday.app`); `staging` → `https://{slug}.dev.reservetoday.app` (wildcard `*.dev.reservetoday.app`). Env vars: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_ROOT_DOMAIN`, `NEXT_PUBLIC_SENTRY_DSN`, `NEXT_PUBLIC_APP_ENV` — set **twice**, once per scope (Production / Preview). Members sign in through the backend's Better Auth `client` pool, and so does a superadmin impersonating one, so nothing auth-related is set here. |
+| `fe-portal/` | Vercel project `booking-system-admin` (Root Directory = `fe-portal/`) | `main` → `https://{slug}.portal.reservetoday.app` (wildcard `*.portal.reservetoday.app`); `staging` → `https://{slug}.portal.dev.reservetoday.app`. Same env shape as fe-client, with its own `NEXT_PUBLIC_ROOT_DOMAIN` (the `portal.` one). Staff and the super portal sign in through the backend's `staff` / `platform` pools, so nothing auth-related is set here either. |
 | `cdn/` | Vercel project `booking-cdn` (Root Directory = `cdn/`) | Edge proxy fronting the R2 bucket at `https://cdn.reservetoday.app`. One env var, `R2_ORIGIN`, the bucket's `pub-<hash>.r2.dev` URL. No DNS record needed — the zone's `*` ALIAS already resolves the name. **Not Git-connected**: deployed with `vercel deploy --prod` from `cdn/`, not on push. |
 | `be/` | bpvps2 (Docker) | Auto-deploy on push to `staging` **or** `main` (paths-filtered to `be/**`), **only after the backend test suite passes** — see [Tests gate the backend deploy](#tests-gate-the-backend-deploy). `.github/workflows/deploy-be.yml` builds the image, pushes to Docker Hub (`blueprintagency/booking-be`), SSHes to bpvps2 over Tailscale, writes `.env.booking-be` from the branch's GitHub Environment, and runs migrate/seed + `docker compose up -d`. |
 
@@ -21,7 +21,7 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 | Super portal | `https://admin.portal.dev.reservetoday.app` | `https://admin.portal.reservetoday.app` |
 | Vercel target | **preview** (branch-pinned domain) | **production** |
 | `TENANT_ORIGIN_PATTERNS` | `https://*.dev.reservetoday.app,https://*.portal.dev.reservetoday.app` | `https://*.reservetoday.app,https://*.portal.reservetoday.app` |
-| Clerk instance | development (`*.clerk.accounts.dev`) | production — fe-client on `clerk.reservetoday.app`, fe-portal on `clerk.portal.reservetoday.app` (the super portal signs in through Better Auth since #116) |
+| Auth | the staging backend's own three Better Auth pools (`/api/v1/auth/{client,staff,platform}`) | the production backend's own three pools — separate databases, so separate users and sessions |
 | `APP_ENV` / `NEXT_PUBLIC_APP_ENV` | `staging` | `production` |
 
 > **Every pre-tenancy hostname is gone.** The table above is now the whole list: nothing outside
@@ -39,15 +39,15 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 > that studio's own label.)
 >
 > The two `staging-*` rows were the worse of the three. They were branch-assigned domains from the
-> pre-tenancy scheme, so they served the **staging** build — dev Clerk keys, dev API — from a
+> pre-tenancy scheme, so they served the **staging** build — staging auth, dev API — from a
 > hostname that reads as production. A bookmark to one looked like the live studio and was not.
 >
 > `portal.{slug}.…` had been a 301 rather than a live host, added when the portal URL flipped.
 > The redirect went too: a redirect is still a hostname to keep, certify and explain, and the flip
 > is old enough that a 404 is the more honest answer.
 >
-> Nothing was needed on the backend or in Clerk for any of it. A removal only stops Vercel
-> answering for a name; `TENANT_ORIGIN_PATTERNS`, the Clerk instances and every link the backend
+> Nothing was needed on the backend for any of it. A removal only stops Vercel
+> answering for a name; `TENANT_ORIGIN_PATTERNS` and every link the backend
 > builds already named the `{slug}.[portal.][dev.]reservetoday.app` forms and nothing else.
 >
 > The first studio's own `{slug}.portal.reservetoday.app` row went with them. It had been attached explicitly only
@@ -71,21 +71,6 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 > domain of its own; `staging` is in `NON_TENANT_LABELS` (`fe-client/src/lib/tenant-host.ts`,
 > mirroring `be/src/services/tenants/slug.ts`), so the client wildcard serves it the same
 > no-Tenant page it serves `www.` and `app.`. An unknown slug still 404s.
-
-> **Production Clerk now sits on `reservetoday.app`.** This block used to record the opposite —
-> that both instances answered on Vercel-generated hosts
-> (`clerk.booking-system-eight-fawn.vercel.app`, `clerk.project-3p3dw.vercel.app`), which is what
-> issue #74 existed to fix. That migration has landed. Verified from the live
-> `pk_live_` keys, which encode their own Frontend API host: the client instance is
-> `clerk.reservetoday.app` and the portal instance `clerk.portal.reservetoday.app`, both
-> resolving. `scripts/clerk-prod-domain-migration.sh` is kept for the record but has been run and
-> should not be run again.
->
-> Being rooted at the shared parent domain is what makes tenant subdomains authenticate without
-> being enumerated — the property the Vercel-host arrangement could not have. **Leave
-> `Configure → Domains → Allowed Subdomains` disabled**: a Tenant is created by inserting a row,
-> so it cannot be allowlisted in advance, and enabling that setting would turn every new studio
-> into a dashboard chore.
 
 > **The backend staging host is `api.dev.reservetoday.app`.** It used to be
 > `api.staging.reservetoday.app`, which disagreed with the `dev` label both frontends settled on.
@@ -195,7 +180,7 @@ nightly backup (03:30 KL) mid-run: re-run it.
 > only the exact origins and the Tenant wildcard patterns above, so a `.vercel.app` alias fails
 > every API call. The trap is
 > `booking-system-admin-git-main-….vercel.app`: it reads like a dev URL but `-git-main-` is the
-> **production** build, so it fails on CORS *and* serves production Clerk. Vercel truncates the
+> **production** build, so it fails on CORS against the production API. Vercel truncates the
 > staging alias to `booking-system-adm-git-40d5d8-…` (63-char DNS label limit), which is why it
 > looks nothing like a staging URL.
 
@@ -219,17 +204,11 @@ dashboard** — once per scope, Production and Preview — or the deployed build
 local default and resolves nothing. It is inlined at build time: changing it needs a redeploy, not
 a restart.
 
-> **Check which Clerk instance a deployed page actually loads — the Preview scope has been wrong
-> before.** Both projects' Preview-scope `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`
-> held `pk_live` / `sk_live` values, so staging signed people in against **production Clerk**,
-> sharing its user directory and sessions. It survived undetected because staging had no tenant
-> subdomain to render until the wildcards landed, and because Vercel marks those keys sensitive —
-> they cannot be read back through the API or the dashboard, so the wiring could not be checked by
-> inspection. The rendered page can be, and that is the reliable test:
-> `curl -sL https://{slug}.dev.reservetoday.app/login | grep -oE '[a-z0-9-]+\.clerk\.accounts\.dev'`
-> — a staging page must name a `*.clerk.accounts.dev` host, never `clerk.*.reservetoday.app`. The
-> correct development keys are always recoverable from the running backend:
-> `docker exec booking-be-staging env | grep CLERK_`.
+> **Check which backend a deployed page actually calls — the Preview scope has been wrong
+> before** (it once signed staging in against production auth). Sign-in goes to
+> `NEXT_PUBLIC_API_URL`, so on the **Preview** scope of both projects it must read
+> `https://api.dev.reservetoday.app`; a staging page whose sign-in request goes to
+> `api.reservetoday.app` is using production accounts.
 
 Notes:
 
@@ -265,55 +244,54 @@ Notes:
 > bpvps2's host-wide `BASE_DOMAIN` is `teeko.ai` and cannot express `reservetoday.app`. The compose
 > lives in the infra repo at `vps/bpvps2/stacks/booking/docker-compose.yml`.
 
-**CORS:** the BE allowlist is assembled from two env vars, and the same list also backs the public-route `Origin` check and the Clerk `azp` check — see `docs/md/spec-tenant-resolution.md`. If they disagreed, one would become the hole in the other two.
+**CORS:** the BE allowlist is assembled from one env var, and the same list also backs the public-route `Origin` check and the auth pools' trusted origins — see `docs/md/spec-tenant-resolution.md`. If they disagreed, one would become the hole in the other two.
 
-- `TENANT_ORIGIN_PATTERNS` (**required**, `vars.TENANT_ORIGIN_PATTERNS`) — comma-separated tenant subdomain origins. **A tenant is created by inserting a row**, so its origin cannot be listed in advance; this is the pattern that admits a studio which did not exist when the backend was deployed. The `*` must be the **leftmost** label and covers **exactly one** label — the same boundary the certificates enforce (RFC 6125), so `a.b.reservetoday.app` is unserveable in production and is not allowlisted either. An exact origin (no `*`) is accepted too, for a host that names no tenant — e.g. the bare local `http://localhost:3000`, whose requests fall back to Tenant #1.
+- `TENANT_ORIGIN_PATTERNS` (**required**, `vars.TENANT_ORIGIN_PATTERNS`) — comma-separated tenant subdomain origins. **A tenant is created by inserting a row**, so its origin cannot be listed in advance; this is the pattern that admits a studio which did not exist when the backend was deployed. The `*` must be the **leftmost** label and covers **exactly one** label — the same boundary the certificates enforce (RFC 6125), so `a.b.reservetoday.app` is unserveable in production and is not allowlisted either. An exact origin (no `*`) is accepted too, for a host that names no tenant — e.g. the bare local `http://localhost:3000` — or any extra origin an environment needs to pin.
   - staging: `https://*.dev.reservetoday.app,https://*.portal.dev.reservetoday.app`
   - production: `https://*.reservetoday.app,https://*.portal.reservetoday.app`
   - It is also read **backwards** (`be/src/services/tenants/urls.ts`): a slug plus an app gives back the origin serving that studio, which is the base of every invitation link, member login link, account link and Stripe redirect the backend builds. That is why the link handed out and the origin the backend trusts cannot drift apart.
-- `CLERK_STAFF_AUTHORIZED_PARTIES` (optional) — any extra exact origins to pin, described below.
 - `PORTAL_ORIGIN` and `CLIENT_ORIGIN` are **gone**. They were one value each for the whole platform, so they could only ever name one studio's two apps — and everything built from them (staff invite links, member login links, Stripe redirects) pointed at the first studio whichever studio the code was acting for. The wildcards already cover those two hostnames; an environment that genuinely needs an extra exact origin adds it to `TENANT_ORIGIN_PATTERNS`.
 
-**Clerk authorized parties:** `CLERK_STAFF_AUTHORIZED_PARTIES` is **no longer passed to Clerk**. Clerk's own `authorizedParties` option is exact-match and cannot express `{slug}.portal.…` for every slug that exists — a list that would change whenever a studio is created, signing staff out of one made overnight. `verifyToken` is called without it and the `azp` claim is checked against the allowlist above instead (`be/src/lib/allowed-origins.ts`). The var still contributes any extra exact origins an environment wants to pin.
+> ⚠️ **The allowlist is shared, so a wildcard in it widens auth too.** Adding something like `https://*.vercel.app` to `TENANT_ORIGIN_PATTERNS` for preview URLs does not affect CORS alone: it also makes every Vercel preview host a trusted origin for sign-in and password-reset redirects, and — since the list is read backwards for link bases — a candidate origin to mail people. Add preview hosts only if that tradeoff is understood.
 
-> ⚠️ **The allowlist is shared, so a wildcard in it widens `azp` too.** Adding something like `https://*.vercel.app` to `TENANT_ORIGIN_PATTERNS` for preview URLs does not affect CORS alone: it also makes every Vercel preview host a valid authorized party for staff and member tokens, and — since the list is read backwards for link bases — a candidate origin to mail people. Add preview hosts only if that tradeoff is understood.
+**Auth:** self-hosted Better Auth, three pools on separate tables — `client` (members), `staff` (studio portals), `platform` (the super portal) — at `/api/v1/auth/{pool}`. Sessions are bearer tokens, and a studio-pool session carries the Tenant it signed in on. Two backend env vars: `BETTER_AUTH_SECRET` (environment secret, ≥32 chars; signs sessions and encrypts 2FA secrets for all three pools, so rotating it signs everyone out) and `BETTER_AUTH_URL` (derived in the workflow as `https://$BOOKING_FQDN`, the base of every link the pools mail). The frontends set nothing. See `docs/adr/0004-self-hosted-auth-with-better-auth.md`.
 
-**Clerk apps:** two separate Clerk applications while #106 swaps them out. fe-client + `CLERK_CLIENT_*` is the member-facing app; `CLERK_STAFF_*` is the staff app, which the backend still accepts beside Better Auth. Cross-app tokens are rejected by the BE middleware on purpose — never share keys between them.
+**The super portal signs in through the `platform` pool.** fe-portal picks the pool by hostname (`fe-portal/src/lib/auth-pool.ts`): `admin.portal.…` signs in on `/api/v1/auth/platform`, every `{slug}.portal.…` on `/api/v1/auth/staff`. The two pools are separate user tables, so a studio superadmin's email and password are refused at the super portal with no session issued, and `PLATFORM_ADMIN_EMAILS` stays the second gate on the session's email. Sessions are bearer tokens kept in each hostname's own `localStorage`, so the super portal and every studio portal hold separate sessions in one browser, and signing out of one leaves the others. There is nothing to configure on fe-portal for it; `npm run db:seed` creates each `PLATFORM_ADMIN_EMAILS` address in the platform pool without a password, and operators set one through "Forgot password" on first sign-in.
 
-**The super portal signs in through the Better Auth `platform` pool (#116), not Clerk.** fe-portal picks the pool by hostname (`fe-portal/src/lib/auth-pool.ts`): `admin.portal.…` signs in on `/api/v1/auth/platform`, every `{slug}.portal.…` on `/api/v1/auth/staff`. The two pools are separate user tables, so a studio superadmin's email and password are refused at the super portal with no session issued, and `PLATFORM_ADMIN_EMAILS` stays the second gate on the session's email. Sessions are bearer tokens kept in each hostname's own `localStorage`, so the super portal and every studio portal hold separate sessions in one browser, and signing out of one leaves the others. There is nothing to configure on fe-portal for it; `npm run db:seed` creates each `PLATFORM_ADMIN_EMAILS` address in the platform pool without a password, and operators set one through "Forgot password" on first sign-in.
-
-> **Moving Clerk's users into Better Auth (#120) — once per environment, staging first.** `npm run auth:import-clerk` exports every user from the three Clerk applications, creates them in the matching pool, copies staff and operator passwords (Clerk's bcrypt digests, verified as they are), and writes `auth_user_id` onto every `clients` / `staff_users` row with a `clerk_user_id`. It prints exported / inserted / already present / mapped / unmapped per pool, the staff who must re-enrol an authenticator app, and anyone whose password digest was missing; a second run changes nothing and says so. Steps:
+> **Retiring Clerk (#121) — once per environment, staging first.**
 >
-> 1. Take a backup of the environment's database.
-> 2. From each password application's Clerk dashboard (staff, platform) download the user export CSV — it is the only source of `password_digest`; the API never returns it.
-> 3. Run it in a one-off container, as the owner, with the three secret keys set (`CLERK_PLATFORM_SECRET_KEY` is read by this script only) and the CSVs mounted:
->    `docker compose run --rm -T -v "$PWD/clerk-import:/import" -e CLERK_PLATFORM_SECRET_KEY booking-be npm run auth:import-clerk -- --staff-csv /import/staff.csv --platform-csv /import/platform.csv --report /import/clerk-import-$APP_ENV.json`
-> 4. On staging the report must end **clean** (every export accounted for, unmapped = 0); the script exits 1 otherwise. Keep `clerk-import-staging.json`.
-> 5. On production (`APP_ENV=production`) the script refuses to run without `--staging-report /import/clerk-import-staging.json` from a clean staging run.
->
-> The CSVs hold password digests: delete them when the run is done.
-
-> **Retiring the super portal's Clerk application.** Nothing reads `CLERK_PLATFORM_PUBLISHABLE_KEY` / `CLERK_PLATFORM_SECRET_KEY` (BE) or `NEXT_PUBLIC_CLERK_PLATFORM_PUBLISHABLE_KEY` / `CLERK_PLATFORM_SECRET_KEY` / `CLERK_ENCRYPTION_KEY` (fe-portal) any more — except the user import above, so keep the secret key somewhere until that has run on the environment. Delete them from the GitHub environments and the fe-portal Vercel project. If the application's DNS records (below) are removed too, keep the explicit `admin.portal` CNAME to Vercel — it is harmless on its own, and removing it before the records would reopen the wildcard trap described below.
+> 1. **The user import (#120) must already have completed on that environment.** Migration 0052
+>    refuses to run while any `clients` or `staff_users` row lacks `auth_user_id`, naming the
+>    counts; 0053 then drops `clerk_user_id` and the two `tenants` organization columns. The import
+>    script is gone from the tree — it lives in git history at commit `517af28`
+>    (`npm run auth:import-clerk`); check that commit out to run it if an environment still needs it.
+> 2. **Take a database backup** before the deploy.
+> 3. **Deploy at a quiet time.** The migrate step runs before the container swap, so for the
+>    minute or so until the new container is up the old server still selects the dropped columns
+>    and errors.
+> 4. **Then clean up outside the repo:** delete every `CLERK_*` secret from both GitHub
+>    Environments (`CLERK_STAFF_PUBLISHABLE_KEY`, `CLERK_STAFF_SECRET_KEY`,
+>    `CLERK_STAFF_WEBHOOK_SECRET`, `CLERK_STAFF_AUTHORIZED_PARTIES`, `CLERK_CLIENT_PUBLISHABLE_KEY`,
+>    `CLERK_CLIENT_SECRET_KEY`, `CLERK_CLIENT_WEBHOOK_SECRET`, `CLERK_PLATFORM_PUBLISHABLE_KEY`,
+>    `CLERK_PLATFORM_SECRET_KEY`) — moving any `CLERK_STAFF_AUTHORIZED_PARTIES` value into
+>    `TENANT_ORIGIN_PATTERNS` first; delete `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and
+>    `CLERK_SECRET_KEY` from the fe-client Vercel project, and `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`,
+>    `CLERK_SECRET_KEY`, `NEXT_PUBLIC_CLERK_PLATFORM_PUBLISHABLE_KEY` and
+>    `CLERK_PLATFORM_SECRET_KEY` (and `CLERK_ENCRYPTION_KEY`, if still there) from fe-portal, both
+>    scopes; remove the webhook endpoints and applications in the vendor dashboard; and remove
+>    its DNS records (`clerk`, `accounts`, `clkmail`, `clk._domainkey`, `clk2._domainkey` under the
+>    apex, `.portal` and `.admin.portal`). **Keep the explicit `admin.portal` CNAME to Vercel** —
+>    harmless on its own, and removing it before those records are gone would hide the super
+>    portal behind the rule below.
 
 > **Adding a record under a host a wildcard currently serves breaks that host — pin it in the same
 > change.** RFC 4592: a wildcard does not reach past a node that exists, and creating
 > `x.foo.example` makes `foo.example` exist as an empty non-terminal even though nothing was
-> written at it. This zone has now been bitten three times. `*.portal.reservetoday.app` broke the
-> moment the Clerk `clerk.portal` / `accounts.portal` records were added; `*.dev` and `*.portal.dev`
-> had to be explicit because `api.dev` already made `dev` a node; and the super portal's own Clerk
-> domain repeated it exactly (below). Treat it as a rule, not a surprise.
->
-> **The super portal's Clerk domain needs five records of its own, plus a sixth for the site.**
-> The third Clerk application (#81) is a production instance on `admin.portal.reservetoday.app`, so
-> its `pk_live_` decodes to the Frontend API host `clerk.admin.portal.reservetoday.app` — and that
-> host had **no record at all**. It resolved through `*.portal` to Vercel, the TLS handshake failed,
-> and the sign-in card spun forever with no error anywhere. The instance's five required CNAMEs
-> (`clerk`, `accounts`, `clkmail`, `clk._domainkey`, `clk2._domainkey`, all prefixed
-> `.admin.portal`) are readable from `GET https://api.clerk.com/v1/domains` with that app's secret
-> key, which is faster than the dashboard. Adding them makes `admin.portal.reservetoday.app` an
-> empty non-terminal, so an explicit `admin.portal` CNAME to Vercel has to go in **first** or the
-> super portal itself disappears behind the same rule. Certificate issuance is not instant; it
-> completes after the instance's domain is verified in the Clerk dashboard.
+> written at it. This zone has been bitten three times: `*.portal.reservetoday.app` broke the
+> moment records were added under `portal`; `*.dev` and `*.portal.dev` had to be explicit because
+> `api.dev` already made `dev` a node; and records under `admin.portal` did the same to the super
+> portal until an explicit `admin.portal` CNAME to Vercel went in first. Treat it as a rule, not a
+> surprise: any record under a wildcard-served host needs that host pinned explicitly first.
 
 > **`R2_PUBLIC_URL` is a CDN hostname, never a `pub-….r2.dev` URL.** `cdn.reservetoday.app` can no
 > longer be an R2 custom domain — R2 binds one through the Cloudflare proxy, which needs the zone
@@ -330,7 +308,7 @@ Notes:
 - `org vars`: `BPVPS2_TAILSCALE_HOST`, `DOCKERHUB_USERNAME`
 - `env vars` (set in **both** Environments): `PORT`, `TENANT_ORIGIN_PATTERNS`, `SUPERADMIN_EMAIL`, `PLATFORM_ADMIN_EMAILS` (optional), `MAIL_FROM_EMAIL` (required), `MAIL_FROM_PORTAL_EMAIL` / `MAIL_FROM_NAME` (optional) — the platform's envelope identity; see below
 - `org secrets`: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`
-- `repo/env secrets`: `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_APP_PASSWORD`, `DOCKERHUB_TOKEN`, `SSH_PRIVATE_KEY`, `CLERK_STAFF_*` (×3), `CLERK_CLIENT_*` (×3), `BETTER_AUTH_SECRET` (≥32 chars — required in **both** Environments; the backend fails Zod validation at boot without it), `RESEND_API_KEY`, `SENTRY_DSN` (optional — error monitoring), `R2_*` (×5 — required in **both** Environments; see the `R2_PUBLIC_URL` note above), plus deferred `STRIPE_*`.
+- `repo/env secrets`: `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_APP_PASSWORD`, `DOCKERHUB_TOKEN`, `SSH_PRIVATE_KEY`, `IMPERSONATION_SECRET` (≥32 chars), `BETTER_AUTH_SECRET` (≥32 chars — required in **both** Environments; the backend fails Zod validation at boot without it), `RESEND_API_KEY`, `SENTRY_DSN` (optional — error monitoring), `R2_*` (×5 — required in **both** Environments; see the `R2_PUBLIC_URL` note above), plus deferred `STRIPE_*`.
 - `NODE_ENV` (always `production`), `APP_ENV`, `ENV_NAME`, `STACK_DIR`, `BOOKING_FQDN` and `IMAGE_TAG` are derived from the branch in the workflow's `env:` block, not from repo settings. `BETTER_AUTH_URL` is derived too, as `https://$BOOKING_FQDN`.
 - `ENABLE_JOBS` is hardcoded `true` in the workflow — the background cron jobs (`be/src/jobs/index.ts`) are not optional on a deployed server. With it off, pending PT requests never expire and members' session credits are never auto-refunded.
 

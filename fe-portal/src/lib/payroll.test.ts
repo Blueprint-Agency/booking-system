@@ -7,7 +7,7 @@ import {
 } from "./payroll";
 import { ApiError, type Api } from "./api";
 
-// Captures the one request the module makes — no Clerk session, no React.
+// Captures the one request the module makes — no session, no React.
 function spyApi(seen: { path?: string; query?: unknown }): Api {
   return {
     get: async (path: string, query?: unknown) => {

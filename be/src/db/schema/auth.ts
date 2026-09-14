@@ -6,8 +6,8 @@ import { tenants } from './tenancy'
  * The three Better Auth user pools: `client` (members), `staff` (studio
  * portals) and `platform` (the super portal). Each pool owns its own four or
  * five tables, so a member cannot sign into a portal and a studio superadmin's
- * credentials do not exist in the pool the super portal reads — the property
- * the three Clerk applications gave us, kept by table rather than by vendor.
+ * credentials do not exist in the pool the super portal reads — separation
+ * kept by table rather than by vendor account.
  * The instances that read these tables are in `services/auth/better-auth.ts`.
  *
  * **No `tenant_id` on any of them, deliberately.** These are platform rows,

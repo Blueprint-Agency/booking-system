@@ -3,11 +3,11 @@ import { verifyPassword } from 'better-auth/crypto'
 
 /**
  * How the staff and platform pools check a password: Better Auth's own scrypt
- * hash, or a bcrypt digest carried over from Clerk (#120).
+ * hash, or a bcrypt digest carried over from the previous auth provider (#120).
  *
- * Clerk exports its password digests as bcrypt, and the import writes them onto
- * the credential account as they are (`clerk-import.ts`), so a staff member
- * keeps the password they had rather than being sent a reset. The two formats
+ * That provider exported its password digests as bcrypt, and the one-off user
+ * import wrote them onto the credential account as they were, so a staff member
+ * kept the password they had rather than being sent a reset. The two formats
  * cannot be confused: bcrypt's modular-crypt string starts `$2a$`/`$2b$`/`$2y$`,
  * Better Auth's is `salt:key` in hex.
  *

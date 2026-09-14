@@ -19,9 +19,6 @@ export interface PlatformTenant {
   timezone: string;
   status: TenantStatus;
   created_at: string;
-  /** Whether the studio's portal Clerk Organization is wired. False is a
-   *  half-tenant. There is no client-side Organization by design. */
-  clerk: { portal: boolean };
   /** Staff who could sign in — active or invited. Zero is a studio nobody can
    *  get into: legitimate while it waits for an archive, never as a resting
    *  place, which is why such a studio is created suspended. */

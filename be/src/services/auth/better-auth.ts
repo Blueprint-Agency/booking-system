@@ -25,13 +25,13 @@ import {
 } from './sign-in-mail'
 
 /**
- * Self-hosted auth (Better Auth), running beside Clerk while #106 swaps it in.
- * The staff and member middlewares accept either a session from here or a Clerk
- * JWT (`readPoolSession`); the super portal's gate reads only a `platform`
- * session (#116).
+ * Self-hosted auth (Better Auth) — the only issuer. The staff and member
+ * middlewares read a `staff` or `client` session from here (`readPoolSession`);
+ * the super portal's gate reads a `platform` session (#116). See
+ * docs/adr/0004-self-hosted-auth-with-better-auth.md.
  *
  * **Three instances, not one.** Separate user pools are the property being
- * kept from the three Clerk applications: a member must never be able to sign
+ * kept: a member must never be able to sign
  * into a portal, and a studio superadmin's credentials must not exist in the
  * pool the super portal reads. So each pool is its own instance over its own
  * tables (`db/schema/auth.ts`) on its own base path, and a token one pool
@@ -265,8 +265,8 @@ function passwordPool(
       // Invitation-only (#106): an account exists because a seed or an
       // invitation made it, and its first password is set through the reset.
       disableSignUp: true,
-      // Better Auth's hash for every new password; a bcrypt digest imported from
-      // Clerk still verifies, so migrated staff keep theirs (#120).
+      // Better Auth's hash for every new password; a bcrypt digest carried over
+      // by the user import still verifies, so migrated staff keep theirs (#120).
       password: { hash: hashPassword, verify: verifyPoolPassword },
       sendResetPassword: async ({ user, url }) => mail.passwordReset(user, url),
     },
@@ -367,19 +367,6 @@ const sessionReaders: Record<AuthPool, SessionReader> = {
   client: clientAuth.api.getSession as unknown as SessionReader,
   staff: staffAuth.api.getSession as unknown as SessionReader,
   platform: platformAuth.api.getSession as unknown as SessionReader,
-}
-
-/**
- * Is this bearer token a Better Auth session token rather than a Clerk JWT?
- *
- * The shapes cannot be confused: a Better Auth bearer token is the session token
- * and its signature (`token.sig`, one dot), a JWT is three segments. So a
- * middleware routes by shape and asks exactly one issuer — no session lookup on
- * every Clerk request, no call to Clerk on every Better Auth one. Goes with the
- * Clerk path (#106).
- */
-export function isPoolSessionToken(token: string): boolean {
-  return token.split('.').length !== 3
 }
 
 /**

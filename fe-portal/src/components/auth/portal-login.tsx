@@ -5,8 +5,8 @@
  * `lib/portal-auth.ts` already talks to the right pool; `superPortal` only
  * decides where a signed-in person is sent and a line of copy.
  *
- * The same screens it had on Clerk — email and password, a second factor when
- * one is enrolled, and a password reset — with the calls swapped. Two things
+ * Email and password, a second factor when one is enrolled, and a password
+ * reset. Two things
  * read differently because the flows underneath do:
  *
  *   - **The second factor** offers the authenticator app first when one is

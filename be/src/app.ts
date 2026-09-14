@@ -36,11 +36,10 @@ app.use('*', secureHeaders())
 // origins that predate tenancy. A tenant is created by inserting a row, so its
 // origin cannot be listed in advance; `TENANT_ORIGIN_PATTERNS` carries the
 // wildcards and lib/origin.ts does the matching, one label deep. The same
-// allowlist backs the Clerk `azp` check and the public-route slug validation —
-// see lib/allowed-origins.ts.
+// allowlist backs the auth pools' trusted origins and the public-route slug
+// validation — see lib/allowed-origins.ts.
 //
-// Credentials required because Clerk uses cookies on the auth handshake; the
-// frontend then carries the bearer JWT.
+// Sessions travel as bearer tokens, not cookies (services/auth/better-auth.ts).
 app.use(
   '*',
   cors({
@@ -108,13 +107,11 @@ app.use('/api/v1/platform/*', authedLimiter)
 //   - the slug lookup reads only `tenants`, which carries no policy — and it
 //     sits on every request the frontends make, at a budget of 6,000/min, so
 //     wrapping it would buy a transaction per page view for nothing.
-//   - both webhooks resolve their OWN tenant, off the signed body: the payment
-//     provider's off the payment intent (services/billing/webhook-handler.ts),
-//     Clerk's off the organization on the event
-//     (services/auth/webhook-tenant.ts). Opening a tenant-#1 context here would
-//     wrap the real one in an unrelated transaction and hold two pooled
-//     connections for the length of a call to the provider — and, worse, would
-//     give an event that names no tenant a tenant anyway.
+//   - the payment provider's webhook resolves its OWN tenant, off the signed
+//     body's payment intent (services/billing/webhook-handler.ts). Opening a
+//     context here would wrap the real one in an unrelated transaction and hold
+//     two pooled connections for the length of a call to the provider — and,
+//     worse, would give an event that names no tenant a tenant anyway.
 //   - the super portal's own branch is cross-tenant by definition: it lists
 //     every studio and creates the ones that do not exist yet, so there is no
 //     single tenant to resolve and no honest context to open. Its gate is
@@ -127,7 +124,6 @@ app.use('/api/v1/platform/*', authedLimiter)
 const TENANT_CONTEXT_EXEMPT = (path: string) =>
   path === '/api/v1/healthz' ||
   path === '/api/v1/webhooks/stripe' ||
-  path === '/api/v1/webhooks/clerk' ||
   path === '/api/v1/platform' ||
   path.startsWith('/api/v1/platform/') ||
   path.startsWith(`${AUTH_BASE_PATH.platform}/`) ||

@@ -36,13 +36,6 @@ function serialize(tenant: TenantRowSummary, staffCount: number) {
     // legitimate step — a studio created to receive an archive starts here — and
     // a terrible resting place, so the list has to be able to say so.
     staff_count: staffCount,
-    // Whether the Clerk organization is wired, not which one — the id is
-    // operational detail, and its absence is the thing worth seeing. Portal
-    // only: a studio has no client-side organization by design, so reporting
-    // one would be reporting a permanent, expected absence as a fault.
-    clerk: {
-      portal: Boolean(tenant.clerkPortalOrgId),
-    },
     urls: {
       client: tenantOrigin('client', tenant.slug),
       portal: tenantOrigin('portal', tenant.slug),

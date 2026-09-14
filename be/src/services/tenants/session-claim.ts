@@ -5,9 +5,8 @@
  * inside the Tenant context `resolveTenant` opened, and the session-create hook
  * in `services/auth/better-auth.ts` writes that Tenant's id onto the row as
  * `claimed_tenant_id`. The row is ours and the token that names it is signed, so
- * the claim is a statement about tenancy the caller cannot forge — the job the
- * Clerk Organization claim does for the portal (`./org-claim.ts`), now on both
- * the portal and the member side, which ADR 0003 said Clerk could not afford.
+ * the claim is a statement about tenancy the caller cannot forge, on both the
+ * portal and the member side. See docs/adr/0004-self-hosted-auth-with-better-auth.md.
  *
  * So the header is resolved and the session is what confirms it. A session from
  * studio A is worthless at studio B.

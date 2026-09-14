@@ -1,5 +1,6 @@
 import test, { before, after } from 'node:test'
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import { sql } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import { packArchive, unpackArchive } from '../services/tenants/transfer-archive'
@@ -54,13 +55,13 @@ async function studioWithData(slug: string): Promise<string> {
   const tenantId = await emptyTenant(slug)
 
   const [referrer] = await harness.db.execute<{ id: string }>(sql`
-    INSERT INTO clients (tenant_id, clerk_user_id, email, name, phone)
-    VALUES (${tenantId}, ${`clerk_${slug}_member`}, 'member@restored.test', 'Restored Member', '+6580000001')
+    INSERT INTO clients (tenant_id, auth_user_id, email, name, phone)
+    VALUES (${tenantId}, ${randomUUID()}, 'member@restored.test', 'Restored Member', '+6580000001')
     RETURNING id
   `)
   await harness.db.execute(sql`
-    INSERT INTO clients (tenant_id, clerk_user_id, email, name, phone, referred_by_client_id)
-    VALUES (${tenantId}, ${`clerk_${slug}_friend`}, 'friend@restored.test', 'Referred Friend', '+6580000002', ${referrer!.id})
+    INSERT INTO clients (tenant_id, auth_user_id, email, name, phone, referred_by_client_id)
+    VALUES (${tenantId}, ${randomUUID()}, 'friend@restored.test', 'Referred Friend', '+6580000002', ${referrer!.id})
   `)
   await harness.db.execute(sql`
     INSERT INTO locations (tenant_id, name) VALUES (${tenantId}, 'The Studio')
@@ -210,6 +211,29 @@ test('a studio emptied and restored in place is the same studio, ids included', 
   assert.equal(settings?.waiver_text, 'The studio’s own words.')
 })
 
+test('an archive exported while identity rows still carried clerk_user_id imports', options, async () => {
+  // Exports are `SELECT *`, so every archive written before migration 0053 has
+  // the column on each `clients` and `staff_users` row. The column is gone, the
+  // archive format is otherwise unchanged, and a backup taken the day before
+  // the deploy must still restore.
+  const source = await studioWithData(`retiredsrc-${Date.now()}`)
+  const archive = await transfer.exportTenant(source)
+  for (const row of archive.rows.clients!) row.clerk_user_id = `user_${String(row.id).slice(0, 8)}`
+
+  const target = await emptyTenant(`retireddst-${Date.now()}`)
+  const summary = await transfer.importTenant(target, archive)
+  assert.equal(summary.written.clients, archive.rows.clients!.length)
+})
+
+test('an archive row with no auth_user_id is refused by name', options, async () => {
+  const source = await studioWithData(`noauthsrc-${Date.now()}`)
+  const archive = await transfer.exportTenant(source)
+  archive.rows.clients![0]!.auth_user_id = null
+
+  const target = await emptyTenant(`noauthdst-${Date.now()}`)
+  await assert.rejects(() => transfer.importTenant(target, archive), /auth_user_id/)
+})
+
 test('a studio that already has rows refuses the import', options, async () => {
   const source = await transfer.exportTenant(harness.tenants.one.id)
   // Tenant one is not empty — it is the studio the archive came from. Merging is
@@ -250,6 +274,17 @@ test('a studio copies into a second one beside it', options, async () => {
   for (const row of copied) {
     assert.ok(!originals.has(row.id), 'a copied row must not reuse the original row s id')
   }
+
+  // The account a member signs in with is not a row of the studio: it passes
+  // through untouched, uuid-shaped as it is, so the same person signs in to the
+  // copy with the same account — one person, a record at each studio.
+  const accounts = await harness.db.execute<{ auth_user_id: string }>(
+    sql`SELECT auth_user_id FROM clients WHERE tenant_id = ${target} ORDER BY auth_user_id`,
+  )
+  assert.deepEqual(
+    accounts.map(r => r.auth_user_id),
+    archive.rows.clients!.map(r => String(r.auth_user_id)).sort(),
+  )
 
   // Rewritten consistently: the referral still points at the member who made
   // it, and at the *copy* of them rather than the original.

@@ -6,10 +6,6 @@ import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from
 /**
  * The two bootstrap seeds provision the Better Auth user (#112), and stay safe
  * to run on every deploy. The platform-admin seed writes nothing else (#116).
- *
- * Clerk is stubbed to fail, which is the superadmin seed's own tolerated path
- * ("bootstrap skipped"): the Better Auth half is our database and must land
- * regardless, and a test suite has no business calling a vendor.
  */
 describe('auth bootstrap seeds', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
   let harness!: TestApp
@@ -26,11 +22,6 @@ describe('auth bootstrap seeds', { skip: integrationTestsEnabled ? false : SKIP_
   before(async () => {
     harness = await startTestApp()
     schema = await import('../db/schema')
-    const { clerkStaffApp } = await import('../lib/clerk')
-    const offline = async () => {
-      throw new Error('clerk is offline under test')
-    }
-    Object.assign(clerkStaffApp.users, { getUserList: offline, createUser: offline })
     process.env.SUPERADMIN_EMAIL = SUPERADMIN
     process.env.PLATFORM_ADMIN_EMAILS = OPERATOR
   })
@@ -45,7 +36,7 @@ describe('auth bootstrap seeds', { skip: integrationTestsEnabled ? false : SKIP_
     await harness.close()
   })
 
-  test('the superadmin seed creates the staff auth user and stamps auth_user_id, idempotently', async () => {
+  test('the superadmin seed creates the staff auth user and an active row linked to it, idempotently', async () => {
     const { seedSuperadmin } = await import('../db/seed/superadmin')
     const { TENANT_ONE_ID } = await import('../db/schema/tenancy')
 
@@ -55,7 +46,7 @@ describe('auth bootstrap seeds', { skip: integrationTestsEnabled ? false : SKIP_
         .from(schema.staffAuthUsers)
         .where(eq(schema.staffAuthUsers.email, SUPERADMIN))
       const rows = await harness.db
-        .select({ authUserId: schema.staffUsers.authUserId, clerkUserId: schema.staffUsers.clerkUserId })
+        .select({ authUserId: schema.staffUsers.authUserId, status: schema.staffUsers.status })
         .from(schema.staffUsers)
         .where(and(eq(schema.staffUsers.tenantId, TENANT_ONE_ID), eq(schema.staffUsers.email, SUPERADMIN)))
       return { users, rows }
@@ -66,13 +57,29 @@ describe('auth bootstrap seeds', { skip: integrationTestsEnabled ? false : SKIP_
     assert.equal(first.users.length, 1, 'one staff auth user')
     assert.equal(first.rows.length, 1, 'one staff_users row')
     assert.equal(first.rows[0]!.authUserId, first.users[0]!.id)
-    assert.equal(first.rows[0]!.clerkUserId, null, 'the Clerk half failed on its own')
+    // Active from the start: the operator's way in is "Forgot password" on the
+    // account above, and a pending row would refuse them once they had one.
+    assert.equal(first.rows[0]!.status, 'active')
 
     await seedSuperadmin(harness.db)
     const second = await stamped()
     assert.deepEqual(second.users.map(u => u.id), first.users.map(u => u.id), 'a re-run makes no second user')
     assert.equal(second.rows.length, 1)
     assert.equal(second.rows[0]!.authUserId, first.users[0]!.id)
+    assert.equal(second.rows[0]!.status, 'active')
+  })
+
+  test('a re-run leaves an archived superadmin archived', async () => {
+    const { seedSuperadmin } = await import('../db/seed/superadmin')
+    const { TENANT_ONE_ID } = await import('../db/schema/tenancy')
+    const row = and(eq(schema.staffUsers.tenantId, TENANT_ONE_ID), eq(schema.staffUsers.email, SUPERADMIN))
+
+    await seedSuperadmin(harness.db)
+    await harness.db.update(schema.staffUsers).set({ status: 'archived' }).where(row)
+    await seedSuperadmin(harness.db)
+
+    const [after] = await harness.db.select({ status: schema.staffUsers.status }).from(schema.staffUsers).where(row)
+    assert.equal(after!.status, 'archived', 'a deploy does not undo an archive')
   })
 
   test('the platform-admin seed creates the platform auth user, idempotently', async () => {

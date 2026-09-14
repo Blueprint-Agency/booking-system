@@ -183,7 +183,7 @@ function tenantNamedBy(arg: unknown): string | null {
  * the same context `resolveTenant` opens for a real request.
  *
  * Tests written before `signInAs` existed reach past HTTP, because the portal
- * routes were behind a Clerk JWT this harness cannot mint. A service
+ * routes were behind a vendor JWT this harness could not mint. A service
  * called that way has no request, and with Row-Level Security live a query with
  * no context set sees nothing — so the test would fail for the wrong reason, on
  * every assertion at once, and stop saying anything about isolation.
@@ -234,9 +234,6 @@ function stubEnvironment() {
   // fixture would let every isolation test pass vacuously.
   process.env.APP_ENV = 'development'
   process.env.SUPERADMIN_EMAIL ??= 'superadmin@example.test'
-  process.env.CLERK_STAFF_PUBLISHABLE_KEY ??= 'pk_test_harness'
-  process.env.CLERK_STAFF_SECRET_KEY ??= 'sk_test_harness'
-  process.env.CLERK_STAFF_WEBHOOK_SECRET ??= 'whsec_test_harness'
   process.env.IMPERSONATION_SECRET ??= 'test-harness-impersonation-secret-key'
   process.env.BETTER_AUTH_SECRET ??= 'test-harness-better-auth-secret-key-0123456789'
   process.env.BETTER_AUTH_URL ??= 'http://localhost:4000'

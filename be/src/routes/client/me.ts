@@ -62,7 +62,7 @@ const patchSchema = z
 
 const app = new Hono()
   .get('/', c => {
-    // clientRow is attached by clerkClientAuth — middleware already loaded it.
+    // clientRow is attached by clientAuth — middleware already loaded it.
     return c.json(serializeProfile(c.get('clientRow')))
   })
   .patch('/', zValidator('json', patchSchema), async c => {

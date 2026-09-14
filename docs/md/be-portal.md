@@ -11,21 +11,21 @@ The staff-side backend surface. Implements the admin and instructor scopes of th
 ## 1. Mount & Auth
 
 ```
-/api/v1/portal/admin/*       — require Clerk staff JWT + role in {admin, superadmin}
-/api/v1/portal/instructor/*  — require Clerk staff JWT + role in {instructor, admin, superadmin}
+/api/v1/portal/admin/*       — require staff session + role in {admin, superadmin}
+/api/v1/portal/instructor/*  — require staff session + role in {instructor, admin, superadmin}
 ```
 
-Both subtrees mount under `routes/portal/index.ts`, which applies a single `clerk-staff.ts` middleware (verifies the staff Clerk app's JWT issuer; rejects client-app tokens). Role-specific gates live on the subtrees:
+Both subtrees mount under `routes/portal/index.ts`, which applies a single `staffAuth` middleware (`middleware/staff-auth.ts`: reads a Better Auth `staff` pool bearer session, checks its Tenant claim is this studio, and loads the `staff_users` row linked by `auth_user_id`). Role-specific gates live on the subtrees:
 
 ```ts
 const portalRoutes = new Hono()
-  .use('*', clerkStaffAuth, requireActiveStaff)
+  .use('*', staffAuth, requireActiveStaff)
   .use('*', auditMiddleware)
   .route('/admin',      adminRoutes)        // .use('*', requireRole('admin', 'superadmin'))
   .route('/instructor', instructorRoutes);  // .use('*', requireRole('instructor', 'admin', 'superadmin'))
 ```
 
-`requireActiveStaff` rejects any `staff_users.status` not equal to `'active'` (i.e. `pending` or `archived`). Cross-app tokens (a client JWT presented to `/portal/*`) are rejected by the Clerk staff verifier.
+`requireActiveStaff` rejects any `staff_users.status` not equal to `'active'` (i.e. `pending` or `archived`). A member or platform session presented to `/portal/*` is a row the staff pool has never seen: 401 `invalid_token`. A staff session signed in at another studio is 403 `tenant_mismatch`.
 
 `auditMiddleware` writes one `audit_log` row per successful mutating request (`POST | PUT | PATCH | DELETE`). Idempotent reads do not audit.
 
@@ -88,7 +88,7 @@ Same CRUD shape as locations. Archive is blocked if any non-archived `instructor
 | GET | `/instructors/:id` | Detail incl. `instructor_class_types` eligibility, photo presigned URL |
 | POST | `/instructors` | Create `staff_users` row (role=`instructor`, status=`pending`) + `instructors` row + `instructor_class_types` rows + auto-fires staff invitation (see §3a) |
 | PATCH | `/instructors/:id` | Update bio, phone override, eligible class types. Photo upload via presigned R2 PUT URL flow (see `backend-architecture.md` §6c). |
-| POST | `/instructors/:id/archive` | Set `staff_users.archived_at`, call Clerk `revokeAllSessions(clerk_user_id)`. Blocks on active future sessions where this instructor is assigned. |
+| POST | `/instructors/:id/archive` | Set `staff_users.archived_at` and delete the instructor's Better Auth sessions at this studio (`endStaffSessionsAt`). Blocks on active future sessions where this instructor is assigned. |
 | POST | `/instructors/:id/resend-invite` | Re-issue invitation (§3a) — only if `status='pending'` |
 
 ### `policy.ts`
@@ -390,7 +390,7 @@ When the invitee opens the link (`fe-portal` `/signup`, on the inviting studio's
 - Resend (`/staff/invitations/:id/resend`) re-mails the same link with a fresh 7-day expiry. Revoke before acceptance deletes the pending staff row (and with it the invitation) and the auth user if it never had a password.
 - Archiving a staff member deletes their Better Auth sessions **at that studio** (`endStaffSessionsAt`); the same account stays signed in at any other studio it works at.
 
-A studio's *first* admin, invited from the super portal at provisioning, still goes through the Clerk organization invitation until a follow-up moves it onto this flow.
+A studio's *first* admin, invited from the super portal (at provisioning, or later through `POST /api/v1/platform/tenants/:id/admin`), goes through this same flow: `writePendingStaff` writes the auth user, the pending row and the invitation inside the provisioning transaction, with `invited_by_staff_id` null — nobody on the studio's staff did the inviting — and the mail, signed by the studio, goes after the commit. A mail that fails is logged and the invitation can be resent from the staff list.
 
 ### 3b. Cancellation paths — admin vs. client
 

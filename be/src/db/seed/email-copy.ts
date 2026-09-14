@@ -5,7 +5,7 @@
  * `services/notifications/purchase-email.ts` is separate from its `send-`
  * sibling: the seeder derives the studio's real origins from `../../env`, which
  * zod-parses the WHOLE backend env at import — right for a booting server, and
- * wrong for a copy file whose check has no database, Clerk key or SMTP password
+ * wrong for a copy file whose check has no database, auth secret or mail key
  * in sight. The origins arrive as an argument instead.
  *
  * Two rules bind everything below:

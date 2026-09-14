@@ -10,8 +10,8 @@
  * studio's app after paying.
  *
  * The origins come from the tenant's own slug through `tenantOrigin`, which
- * reads the same `TENANT_ORIGIN_PATTERNS` wildcards CORS and the Clerk `azp`
- * check accept. That is the point of deriving rather than configuring: the link
+ * reads the same `TENANT_ORIGIN_PATTERNS` wildcards CORS and the auth pools'
+ * trusted origins accept. That is the point of deriving rather than configuring: the link
  * handed out and the origin the backend trusts cannot drift apart, and creating
  * a studio stays a row insert with no deploy behind it.
  *

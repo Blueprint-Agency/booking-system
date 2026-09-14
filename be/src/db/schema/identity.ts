@@ -24,15 +24,10 @@ export const clients = pgTable(
   {
     tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-    // Unique per Tenant, not per platform — see migration 0035. One person may
-    // be a member of two studios, and gets an independent record at each.
-    // Nullable from #117: a member who joins through Better Auth has no Clerk
-    // user. Dropped with the rest of Clerk (#106).
-    clerkUserId: text('clerk_user_id'),
-    // The member's `client_auth_users` id — the Better Auth sibling of
-    // `clerk_user_id`, nullable while both run (#106). Unique per Tenant for the
-    // same reason: one person, one record at each studio they join.
-    authUserId: text('auth_user_id'),
+    // The member's `client_auth_users` id. Unique per Tenant, not per platform:
+    // one person may be a member of two studios, and gets an independent record
+    // at each.
+    authUserId: text('auth_user_id').notNull(),
     email: text('email').notNull(),
     name: text('name').notNull(),
     phone: text('phone').notNull(),
@@ -41,8 +36,8 @@ export const clients = pgTable(
     status: clientStatusEnum('status').notNull().default('active'),
     suspendedAt: timestamp('suspended_at', { withTimezone: true }),
     // Soft-delete (superadmin-only). When set, the row is filtered out of every
-    // admin/client read path; Clerk user is banned in parallel so the member
-    // can't log in. Restore clears both. Hard erase (GDPR) is a separate Purge
+    // admin/client read path, and the member's sessions here end so they can't
+    // sign in. Restore clears it. Hard erase (GDPR) is a separate Purge
     // action that anonymises PII — not implemented in this slice.
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedByStaffId: uuid('deleted_by_staff_id'),
@@ -53,10 +48,6 @@ export const clients = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
-    tenantClerkUserUnique: unique('clients_tenant_clerk_user_unique').on(
-      table.tenantId,
-      table.clerkUserId,
-    ),
     tenantAuthUserUnique: unique('clients_tenant_auth_user_unique').on(
       table.tenantId,
       table.authUserId,
@@ -79,13 +70,10 @@ export const staffUsers = pgTable(
   {
     tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-    // Unique per Tenant, not per platform — see migration 0035. The same person
-    // may be an instructor at one studio and an admin at another.
-    clerkUserId: text('clerk_user_id'),
-    // The `staff_auth_users` id — the Better Auth sibling of `clerk_user_id`,
-    // nullable while both run (#106). One auth user may hold a row here at each
-    // studio they work at, so this too is unique per Tenant.
-    authUserId: text('auth_user_id'),
+    // The `staff_auth_users` id. Written by the invitation or seed that made the
+    // row, so a pending row has one too. Unique per Tenant, not per platform: the
+    // same person may be an instructor at one studio and an admin at another.
+    authUserId: text('auth_user_id').notNull(),
     email: text('email').notNull(),
     name: text('name').notNull(),
     firstName: text('first_name'),
@@ -113,10 +101,6 @@ export const staffUsers = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
-    tenantClerkUserUnique: unique('staff_users_tenant_clerk_user_unique').on(
-      table.tenantId,
-      table.clerkUserId,
-    ),
     tenantAuthUserUnique: unique('staff_users_tenant_auth_user_unique').on(
       table.tenantId,
       table.authUserId,
@@ -154,9 +138,10 @@ export const staffInvitations = pgTable(
     token: text('token').notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     status: invitationStatusEnum('status').notNull().default('pending'),
-    invitedByStaffId: uuid('invited_by_staff_id')
-      .notNull()
-      .references(() => staffUsers.id, { onDelete: 'restrict' }),
+    // Null for a studio's first admin, invited from the super portal: the studio
+    // has no staff yet to have done the inviting, and the mail is signed by the
+    // studio itself (`inviterNameFor`).
+    invitedByStaffId: uuid('invited_by_staff_id').references(() => staffUsers.id, { onDelete: 'restrict' }),
     staffUserId: uuid('staff_user_id').references(() => staffUsers.id, { onDelete: 'cascade' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     acceptedAt: timestamp('accepted_at', { withTimezone: true }),

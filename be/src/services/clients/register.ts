@@ -23,8 +23,7 @@ export interface RegisterMemberInput {
  *
  * The `client` pool's auth user and the studio's `clients` row are written
  * together with the session, so there is no moment at which a member is signed
- * in with nothing to be signed in to — the gap the Clerk path closed by
- * provisioning a row on the member's first request. One person joining a second
+ * in with nothing to be signed in to. One person joining a second
  * studio reuses their auth user and gets a second, independent row.
  *
  * In order:

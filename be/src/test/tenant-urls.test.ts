@@ -14,8 +14,8 @@ import {
  *
  * The platform used to have one `PORTAL_ORIGIN` and one `CLIENT_ORIGIN`, so it
  * had one studio's two hostnames and mailed them to everybody: staff invited to
- * the second studio were sent into the first studio's portal, where their Clerk
- * organization does not match and the token is refused; members of the second
+ * the second studio were sent into the first studio's portal, where their
+ * invitation does not exist; members of the second
  * studio were sent to the first studio's account page, which they cannot sign
  * into. Both are silent — nothing fails until somebody clicks.
  *
@@ -71,6 +71,7 @@ describe('per-studio URLs', { skip: integrationTestsEnabled ? false : SKIP_REASO
         name: 'Urls Inviter',
         role: 'superadmin',
         status: 'active',
+        authUserId: `auth_urls_inviter_${Date.now()}`,
       })
       .returning()
     inviterStaffId = inviter!.id
@@ -79,7 +80,7 @@ describe('per-studio URLs', { skip: integrationTestsEnabled ? false : SKIP_REASO
       .insert(schema.clients)
       .values({
         tenantId: two.id,
-        clerkUserId: `user_urls_${Date.now()}`,
+        authUserId: `auth_urls_member_${Date.now()}`,
         email: MEMBER_EMAIL,
         name: 'Urls Member',
         phone: '+6580000000',
