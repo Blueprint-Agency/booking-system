@@ -463,6 +463,26 @@ jobs:
 
             docker pull blueprintagency/booking-be:${{ env.IMAGE_TAG }}
 
+            # ── Snapshot the database this deploy is about to migrate, so a bad
+            # schema change is reversible. The host's `backup` container (infra
+            # repo, vps/bpvps2/stacks/backup) dumps the instance and uploads it to
+            # R2 — seconds at today's size — and the snapshot is kept at least 7
+            # days. Both branches: `booking-staging` holds the real member data.
+            #
+            # backup.sh exits 3 for a one-target run that succeeded ("green, others
+            # left out"); 0 is fine too. Anything else stops the deploy HERE,
+            # before a migration runs without a way back. Exit 2 includes "the
+            # nightly run holds the lock" (03:30 KL, seconds): re-run the deploy.
+            # Undo a migration with restore-live.sh — infra docs/backup-restore.md.
+            echo "Snapshotting booking-${{ env.ENV_NAME }} before migrations ..."
+            snap_rc=0
+            docker exec backup /app/bin/backup.sh "booking-${{ env.ENV_NAME }}" || snap_rc=$?
+            if [ "$snap_rc" != 0 ] && [ "$snap_rc" != 3 ]; then
+              echo "Pre-migration snapshot FAILED (backup.sh exit $snap_rc) — not migrating."
+              docker logs --tail 30 backup 2>&1 || true
+              exit 1
+            fi
+
             # Run DB migrations + seed in a SHORT-LIVED one-off container, BEFORE
             # the API server starts. Previously these ran via `docker compose exec`
             # INTO the already-running server container, so a second tsx/esbuild

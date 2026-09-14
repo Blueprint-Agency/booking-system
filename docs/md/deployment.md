@@ -170,6 +170,26 @@ merging.
 > `docker image inspect blueprintagency/booking-be:latest --format '{{.Id}}'`. A healthy container
 > is not evidence of a current one.
 
+### Every deploy snapshots the database before it migrates
+
+Immediately before `db:migrate`, the deploy runs the host's backup job for the instance it is
+about to migrate — `docker exec backup /app/bin/backup.sh booking-staging` on `staging`,
+`booking-prod` on `main` — and **stops before migrating** unless that snapshot succeeded. The
+snapshot is encrypted, in R2, and kept at least 7 days, so a migration that breaks data is
+reversible:
+
+```bash
+ssh bp-bpvps2
+docker exec backup restic snapshots --tag booking-staging    # the one just before the bad deploy
+docker exec backup /app/bin/restore-live.sh booking-staging <id> --confirm booking-staging
+```
+
+Both branches, on purpose: `booking-staging` holds the real member data. The backup job, the
+restore command and what it does are the infrastructure repo's
+[`docs/backup-restore.md`](https://github.com/Blueprint-Agency/infrastructure/blob/main/docs/backup-restore.md).
+A deploy failing with `Pre-migration snapshot FAILED (backup.sh exit 2)` most often met the
+nightly backup (03:30 KL) mid-run: re-run it.
+
 > **Every staging/production URL is a real domain — do not test against `*.vercel.app`.**
 > The generated aliases still exist and still resolve, but the backend's CORS allowlist contains
 > only the exact origins and the Tenant wildcard patterns above, so a `.vercel.app` alias fails
