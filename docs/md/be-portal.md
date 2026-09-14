@@ -310,10 +310,14 @@ Per `admin-restructure.md` §15a, **admin role is read-only on Clients**. Mutati
 |---|---|---|---|
 | GET | `/clients` | admin+superadmin | List with search, status filter. Each row also carries the trial funnel — `trial_started_at` (first trial purchase, `null` = never bought one), `attended` (classes turned up to, all time) and `converted` (bought anything that isn't another trial) — which is what the portal's **Trials** filter counts. |
 | GET | `/clients/:id` | admin+superadmin | Profile incl. packages (including any trial pass + active promotion frozen at purchase), booking history, cancellation count, attendance, referrals, waiver. Admin views are workspace-agnostic — Clients is global. |
-| DELETE | `/clients/:id` | superadmin | **Block** — sets `deleted_at`, bans the user in Clerk and revokes sessions. Nothing is erased; bookings/packages/ledger are preserved. |
-| POST | `/clients/:id/restore` | superadmin | **Unblock** — clears `deleted_at`, unbans in Clerk. |
+| DELETE | `/clients/:id` | superadmin | **Block** — sets `deleted_at` and ends the member's sessions at this studio; the client pool refuses their next sign-in here (`client_blocked`). Nothing is erased; bookings/packages/ledger are preserved. Logs `user_blocked`. |
+| POST | `/clients/:id/restore` | superadmin | **Unblock** — clears `deleted_at`, which is all it takes to sign in again. Logs `user_unblocked`. |
+| GET | `/clients/:id/sessions` | admin+superadmin | The member's live sessions **at this studio** (#119): `{ sessions: [{ id, signed_in_at, last_seen_at, expires_at, ip, user_agent, impersonated }] }`, newest first. `last_seen_at` moves when the session is refreshed, about once a day. 404 `client_not_found` for another studio's member. |
+| POST | `/clients/:id/sessions/revoke` | superadmin | **Sign out everywhere** — ends every session the member holds at this studio, on every device; their next request is 401. Another studio's sessions for the same person are left alone. `{ revoked: n }`. Logs `sessions_revoked`. |
 
-There is no separate suspend/unsuspend surface — blocking is the single mechanism. `requireActiveClient` rejects a blocked client on `deleted_at` as well as `status`, so a failed Clerk ban can't leave them with API access.
+There is no separate suspend/unsuspend surface — blocking is the single mechanism. `requireActiveClient` rejects a blocked client on `deleted_at` as well as `status`.
+
+Block, unblock and sign-out are **per studio**, not Better Auth's admin-plugin ban or revoke-all: those are keyed on the auth user, and one person is one auth user at every studio they belong to. Each act writes an `auth_events` row filed under `staff`, with the acting staff member's auth user as actor and the member's client auth user as subject.
 | POST | `/clients/:id/credits/adjust` | superadmin | `{ client_package_id, delta, reason }` — manual credit adjust. Valid for `kind in ('credit_bundle', 'unlimited', 'trial')`. See §3d. |
 | POST | `/clients/:id/sessions/adjust` | superadmin | Same shape, for PT session balance (`kind='pt'`) |
 | POST | `/clients/:id/packages/:client_package_id/expiry` | superadmin | `{ expires_at, reason }` — edit expiry on `client_packages` (per `admin-restructure.md` §16 "Edit expiry" action, applies to `credit_bundle`, `unlimited`, `trial`). A **null `expires_at` returns the plan to Dormant** (spec-pre-launch-batch.md §8) — the escape hatch the one-way activation rule depends on — and is accepted for **every kind** (ADR 0004 — every package starts Dormant). Giving a Dormant package a date is an Activation by hand: 409 `family_already_activated` while another package in the same family is running. Writes a `manual_adjustments` row with `delta=0` and the reason note, which renders a null expiry as "Dormant". |
@@ -329,7 +333,10 @@ There is no separate suspend/unsuspend surface — blocking is the single mechan
 | POST | `/staff/invite` | `{ email, role: 'admin', granted_location_ids: uuid[] }`. **Role restricted to `admin` in v1** — instructor invitations land via `POST /instructors` (which auto-fires an internally-typed invitation). Inviter's `granted_location_ids` must cover the requested set (superadmin always passes). See §3a. |
 | POST | `/staff/invitations/:id/revoke` | Set `status='revoked'`. Re-invite requires fresh row. |
 | PATCH | `/staff/:id/grants` | `{ granted_location_ids: uuid[] }` — superadmin shrinks/expands an admin's workspace grants without archiving (`admin-restructure.md` §15b "softer alternative"). Effective on next page load (no session revoke). |
-| POST | `/staff/:id/archive` | Soft delete + Clerk session revoke. Superadmin cannot be archived. |
+| POST | `/staff/:id/archive` | **Block** a staff member: status `archived`, and their sessions at this studio end. Only the seeded superadmin archives another superadmin. Logs `user_blocked`; `/staff/:id/unarchive` logs `user_unblocked`. |
+| GET | `/staff/:id/sessions` | admin+superadmin. The staff member's live sessions at this studio, same shape as `/clients/:id/sessions` (`impersonated` always false). 404 `staff_not_found` for another studio's staff. |
+| POST | `/staff/:id/sessions/revoke` | superadmin. **Sign out everywhere** at this studio; their next request is 401. Signing out another superadmin takes the seeded superadmin (403 `only_seeded_can_sign_out_superadmin`); yourself is allowed. `{ revoked: n }`. Logs `sessions_revoked`. |
+| POST | `/staff/:id/resend-invitation` | superadmin. Re-mails the set-password link: the pending invitation when there is one (as `/staff/invitations/:id/resend`), otherwise Better Auth's reset link on the studio's portal, which sets a first password as readily as it replaces one. `{ sent: 'invitation' \| 'set_password' }`. 409 `staff_archived`. Logs `invitation_resent`, as does `/staff/invitations/:id/resend`. |
 
 ### `notifications.ts`
 | Method | Path | Effect |
