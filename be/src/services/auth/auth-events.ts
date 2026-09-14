@@ -97,7 +97,9 @@ function whereFrom(ctx: EndpointContext): Pick<AuthEvent, 'ip' | 'userAgent'> {
  * plugin's, which is why this is not one.)
  *
  * Sign-out is caught as the session row is deleted rather than after the
- * request: by then the session, and so the person, is gone.
+ * request: by then the session, and so the person, is gone. An impersonation's
+ * start is written by the service that opens it (`services/impersonation/mint.ts`),
+ * which does not go through an endpoint.
  */
 export function authAudit(pool: AuthPool) {
   return {
@@ -107,8 +109,20 @@ export function authAudit(pool: AuthPool) {
         databaseHooks: {
           session: {
             delete: {
-              before: async (session: { userId: string }, ctx: EndpointContext | null) => {
+              before: async (session: { userId: string; impersonatedBy?: string | null }, ctx: EndpointContext | null) => {
                 if (ctx?.path !== '/sign-out') return
+                // Signing an impersonation session out is how it stops (#118):
+                // filed like its start, as the superadmin's act on the member.
+                if (session.impersonatedBy) {
+                  await recordAuthEvent({
+                    pool: 'staff',
+                    kind: 'impersonation_ended',
+                    actorUserId: session.impersonatedBy,
+                    subjectUserId: session.userId,
+                    ...whereFrom(ctx),
+                  })
+                  return
+                }
                 await recordAuthEvent({ pool, kind: 'sign_out', actorUserId: session.userId, ...whereFrom(ctx) })
               },
             },

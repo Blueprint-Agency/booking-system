@@ -15,7 +15,6 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@clerk/nextjs": "^7.9.1",
     "@sentry/nextjs": "^10.57.0",
     "better-auth": "^1.7.4",
     "class-variance-authority": "^0.7.1",

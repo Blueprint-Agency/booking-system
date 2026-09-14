@@ -1,6 +1,6 @@
 import { betterAuth, type BetterAuthOptions } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
-import { APIError } from 'better-auth/api'
+import { APIError, getIP } from 'better-auth/api'
 import { bearer, emailOTP, twoFactor } from 'better-auth/plugins'
 import { and, eq } from 'drizzle-orm'
 import { currentTenantId, db } from '../../db'
@@ -8,8 +8,10 @@ import * as schema from '../../db/schema/auth'
 import { clients } from '../../db/schema/identity'
 import { env } from '../../env'
 import { originAllowed } from '../../lib/allowed-origins'
+import { GRANT_TTL_SECONDS } from '../../lib/impersonation-grant'
+import { BadRequestError } from '../../shared/errors'
 import { PLATFORM_MAIL_FROM_NAME } from '../../lib/mailer'
-import { authAudit } from './auth-events'
+import { authAudit, recordAuthEvent } from './auth-events'
 import { authRateLimit } from './rate-limit'
 import { twoFactorChallengeHeader } from './two-factor-challenge'
 import {
@@ -195,7 +197,14 @@ const clientAuth = betterAuth({
     },
   }),
   user: { modelName: 'clientAuthUsers' },
-  session: { modelName: 'clientAuthSessions', additionalFields: tenantClaimField },
+  session: {
+    modelName: 'clientAuthSessions',
+    additionalFields: {
+      ...tenantClaimField,
+      // Who opened this session as the member, when a superadmin did (#118).
+      impersonatedBy: { type: 'string', required: false, input: false },
+    },
+  },
   databaseHooks: memberSessionHooks,
   account: { modelName: 'clientAuthAccounts' },
   verification: { modelName: 'clientAuthVerifications' },
@@ -340,10 +349,12 @@ export type PoolSession = {
   email: string
   /** The Tenant the session was signed in on; always null on `platform`. */
   claimedTenantId: string | null
+  /** The staff auth user who opened this session as the member; `client` only (#118). */
+  impersonatedBy: string | null
 }
 
 type SessionReader = (input: { headers: Headers }) => Promise<{
-  session: { id: string; claimedTenantId?: string | null }
+  session: { id: string; claimedTenantId?: string | null; impersonatedBy?: string | null }
   user: { id: string; email: string }
 } | null>
 
@@ -386,7 +397,61 @@ export async function readPoolSession(pool: AuthPool, bearerToken: string): Prom
     userId: found.user.id,
     email: found.user.email,
     claimedTenantId: found.session.claimedTenantId ?? null,
+    impersonatedBy: found.session.impersonatedBy ?? null,
   }
+}
+
+/**
+ * Open a real `client` pool session for a member on a superadmin's behalf, log
+ * its start, and return its bearer token (#118).
+ *
+ * The admin plugin's impersonation, minus its endpoint: that endpoint wants the
+ * caller signed into the *same* pool with an admin role, and nobody in the member
+ * pool is, or ever should be, an admin. The superadmin is in the staff pool, so
+ * the session is created the way the plugin creates it — through the pool's
+ * internal adapter, which runs the pool's session hooks — with `impersonatedBy`
+ * set, living exactly as long as the grant that goes with it.
+ *
+ * Inside the caller's Tenant context, so the session is stamped with that
+ * Tenant's claim, and a member the studio has blocked gets no session
+ * (`client_blocked`), exactly as for their own sign-in.
+ *
+ * The start is logged here because no endpoint ran for the auth-audit plugin
+ * to see; the end is the plugin's, when the session is signed out. `from` is the
+ * superadmin's request, whose address and user agent the row records.
+ */
+export async function openImpersonationSession(input: {
+  memberAuthUserId: string
+  staffAuthUserId: string
+  from: Headers
+}): Promise<{ token: string }> {
+  const context = await clientAuth.$context
+  let session: { token: string } | null
+  try {
+    session = await context.internalAdapter.createSession(
+      input.memberAuthUserId,
+      true,
+      {
+        impersonatedBy: input.staffAuthUserId,
+        expiresAt: new Date(Date.now() + GRANT_TTL_SECONDS * 1000),
+      },
+      true,
+    )
+  } catch (err) {
+    if (err instanceof APIError && err.message === 'client_blocked') throw new BadRequestError('client_blocked')
+    throw err
+  }
+  if (!session) throw new Error('openImpersonationSession: the client pool created no session')
+
+  await recordAuthEvent({
+    pool: 'staff',
+    kind: 'impersonation_started',
+    actorUserId: input.staffAuthUserId,
+    subjectUserId: input.memberAuthUserId,
+    ip: getIP(input.from, context.options),
+    userAgent: input.from.get('user-agent'),
+  })
+  return { token: session.token }
 }
 
 /** Why a member's emailed code was not accepted — Better Auth's own codes. */
