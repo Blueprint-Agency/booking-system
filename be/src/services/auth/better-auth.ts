@@ -454,6 +454,44 @@ export async function openImpersonationSession(input: {
   return { token: session.token }
 }
 
+/**
+ * The address and user agent a request came from, read the way the pools read
+ * them for their own audit rows — for an act logged outside an auth endpoint.
+ */
+export async function requestAddress(from: Headers): Promise<{ ip: string | null; userAgent: string | null }> {
+  const context = await staffAuth.$context
+  return { ip: getIP(from, context.options), userAgent: from.get('user-agent') }
+}
+
+/**
+ * Mail a staff member the link that sets their password, at the request of an
+ * admin (#119) — Better Auth's own reset, which creates the credential when the
+ * account has none.
+ *
+ * Through the pool's handler, as `signInMemberByCode` is, so the origin check
+ * and the pool's mail hook are the ones a person asking for it meets. The
+ * request is made as from the studio's own portal (`portalUrl`), which is where
+ * the link lands, inside the caller's Tenant context, which is whose copy words
+ * the mail. The admin's address and user agent go with it.
+ */
+export async function mailStaffSetPasswordLink(from: Headers, email: string, portalUrl: string): Promise<void> {
+  const origin = new URL(portalUrl).origin
+  const headers = new Headers({ 'content-type': 'application/json', origin })
+  // The admin's address and agent; not their Origin or Tenant header, which the portal URL stands in for.
+  for (const name of FORWARDED_HEADERS.filter(h => h === 'x-forwarded-for' || h === 'user-agent')) {
+    const value = from.get(name)
+    if (value) headers.set(name, value)
+  }
+  const res = await staffAuth.handler(
+    new Request(`${env.BETTER_AUTH_URL}${AUTH_BASE_PATH.staff}/request-password-reset`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ email, redirectTo: `${origin}/login` }),
+    }),
+  )
+  if (!res.ok) throw new Error(`mailStaffSetPasswordLink: the staff pool refused (${res.status}): ${await res.text()}`)
+}
+
 /** Why a member's emailed code was not accepted — Better Auth's own codes. */
 export type MemberCodeRefusal = 'INVALID_OTP' | 'OTP_EXPIRED' | 'TOO_MANY_ATTEMPTS'
 

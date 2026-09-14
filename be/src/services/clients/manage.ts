@@ -5,6 +5,7 @@ import { clientPackages } from '../../db/schema/packages'
 import { bookings } from '../../db/schema/bookings'
 import { manualAdjustments } from '../../db/schema/ledger'
 import { endClientSessionsAt, ensureAuthUser } from '../auth/auth-users'
+import { recordStaffAct } from '../auth/staff-acts'
 import { requireTenantUrl } from '../tenants/urls'
 import { sendTemplatedEmail } from '../notifications/send'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
@@ -205,6 +206,8 @@ export interface SoftDeleteClientInput {
   tenantId: string
   targetClientId: string
   actorStaffId: string
+  /** The acting staff member's request, for the `auth_events` row (#119). */
+  from?: Headers
 }
 
 /**
@@ -247,6 +250,7 @@ export async function softDeleteClient(input: SoftDeleteClientInput): Promise<Cl
   // `requireActiveClient`. The flip above stays the load-bearing guard: it is
   // what refuses the next sign-in (the client pool's session hook reads it).
   if (target.authUserId) await endClientSessionsAt(db, tenantId, target.authUserId)
+  await recordStaffAct({ tenantId, actorStaffId, kind: 'user_blocked', subjectUserId: target.authUserId, from: input.from })
 
   return updated
 }
@@ -255,6 +259,8 @@ export interface RestoreClientInput {
   tenantId: string
   targetClientId: string
   actorStaffId: string
+  /** The acting staff member's request, for the `auth_events` row (#119). */
+  from?: Headers
 }
 
 /**
@@ -288,5 +294,12 @@ export async function restoreClient(input: RestoreClientInput): Promise<ClientRo
   if (!updated) throw new ConflictError('client_restore_failed')
 
   // Nothing to undo on the auth side: the sign-in refusal reads the flag cleared above.
+  await recordStaffAct({
+    tenantId,
+    actorStaffId: input.actorStaffId,
+    kind: 'user_unblocked',
+    subjectUserId: target.authUserId,
+    from: input.from,
+  })
   return updated
 }
