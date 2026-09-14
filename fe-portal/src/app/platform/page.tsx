@@ -209,12 +209,6 @@ export default function PlatformPage() {
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium text-ink">{tenant.name}</span>
                   <StatusBadge status={tenant.status} />
-                  {/* A studio missing its portal organization cannot authenticate
-                      staff at all. It should be impossible — provisioning is
-                      atomic — so say so loudly if it ever happens. */}
-                  {!tenant.clerk.portal && (
-                    <StatusBadge status="incomplete" label="Clerk incomplete" />
-                  )}
                   {/* A studio with no staff is one nobody can sign in to. It is
                       a legitimate step — a studio created to receive an archive
                       starts here, and is created suspended for exactly this

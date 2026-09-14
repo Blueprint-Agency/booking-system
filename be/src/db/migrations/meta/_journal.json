@@ -365,6 +365,20 @@
       "when": 1789368974708,
       "tag": "0051_auth_event_staff_actions",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1789382830294,
+      "tag": "0052_auth_user_id_required",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1789382853516,
+      "tag": "0053_drop_clerk_columns",
+      "breakpoints": true
     }
   ]
 }

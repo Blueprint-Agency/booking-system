@@ -131,7 +131,7 @@ export async function createInstructor(
     // Deliberately *not* tenant-scoped: `staff_users.email` still carries a
     // platform-wide unique index, so scoping this check would only trade a
     // clean 409 for a unique violation. Making one person staff at two tenants
-    // is a schema change, and it belongs with the Clerk organization work (#65).
+    // is a schema change of its own (#65).
     const existing = await tx
       .select({ id: staffUsers.id })
       .from(staffUsers)

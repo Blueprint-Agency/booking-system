@@ -16,11 +16,11 @@ const booleanEnv = z.preprocess(value => {
  * Zod-validated env loader. Required vars cover:
  *   - DB connection
  *   - Superadmin bootstrap email (passwordless — see seed/superadmin.ts)
- *   - Clerk staff app (publishable + secret + webhook signing secret)
- *   - CORS origin for fe-portal
+ *   - Better Auth (session signing secret + the backend's own origin)
+ *   - Tenant origin patterns (CORS, links)
  *   - Resend (staff invitations + outbound transactional email)
  *
- * Anything not in this slice (Stripe, R2, client Clerk app) is *optional* — the
+ * Anything not in this slice (Stripe, R2, Sentry) is *optional* — the
  * relevant lib will fail at use-site if missing rather than blocking boot.
  */
 const schema = z.object({
@@ -58,17 +58,13 @@ const schema = z.object({
   // is announced at boot. See services/tenants/platform-admin.ts.
   PLATFORM_ADMIN_EMAILS: z.string().optional(),
 
-  CLERK_STAFF_PUBLISHABLE_KEY: z.string().min(1, 'CLERK_STAFF_PUBLISHABLE_KEY is required'),
-  CLERK_STAFF_SECRET_KEY: z.string().min(1, 'CLERK_STAFF_SECRET_KEY is required'),
-  CLERK_STAFF_WEBHOOK_SECRET: z.string().min(1, 'CLERK_STAFF_WEBHOOK_SECRET is required'),
   IMPERSONATION_SECRET: z
     .string()
     .min(32, 'IMPERSONATION_SECRET must be at least 32 chars (used to sign HS256 grant JWTs)'),
-  CLERK_STAFF_AUTHORIZED_PARTIES: z.string().optional(),
 
-  // Better Auth (self-hosted), running beside Clerk until #106 removes it. One
-  // secret signs the session tokens and encrypts the second-factor secrets of
-  // all three pools (services/auth/better-auth.ts); rotating it signs everyone out.
+  // Better Auth (self-hosted). One secret signs the session tokens and encrypts
+  // the second-factor secrets of all three pools (services/auth/better-auth.ts);
+  // rotating it signs everyone out.
   BETTER_AUTH_SECRET: z
     .string()
     .min(32, 'BETTER_AUTH_SECRET must be at least 32 chars (signs sessions and encrypts 2FA secrets)'),
@@ -81,8 +77,8 @@ const schema = z.object({
   // environment — e.g.
   //   https://*.reservetoday.app,https://*.portal.reservetoday.app
   // A tenant is created by inserting a row, so its origin cannot be enumerated
-  // in advance; the wildcard is what makes CORS and the Clerk `azp` check work
-  // for a studio that did not exist when the backend was deployed. The `*` must
+  // in advance; the wildcard is what makes CORS and the auth pools' trusted
+  // origins work for a studio that did not exist when the backend was deployed. The `*` must
   // be the leftmost label and covers exactly one label — see lib/origin.ts.
   // Exact origins are accepted too, for a host that names no tenant.
   //
@@ -98,9 +94,6 @@ const schema = z.object({
     .min(1, 'TENANT_ORIGIN_PATTERNS is required — e.g. https://*.example.app,https://*.portal.example.app'),
 
   // Optional / deferred — accept anything (or empty string)
-  CLERK_CLIENT_PUBLISHABLE_KEY: z.string().optional(),
-  CLERK_CLIENT_SECRET_KEY: z.string().optional(),
-  CLERK_CLIENT_WEBHOOK_SECRET: z.string().optional(),
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   /**

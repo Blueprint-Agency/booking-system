@@ -77,7 +77,7 @@ describe('super portal sign-in', { skip: integrationTestsEnabled ? false : SKIP_
     const operator = await harness.signInAs('platform', OPERATOR, null)
     await expectStatus(await tenants(operator), 200)
 
-    // Create shares this gate but calls Clerk to provision; tenant-provisioning.test.ts owns it.
+    // Create shares this gate; tenant-provisioning.test.ts owns what it writes.
     const archive = await harness.app.request(`/api/v1/platform/tenants/${harness.tenants.one.id}/export`, {
       headers: { Authorization: operator.Authorization! },
     })
@@ -119,7 +119,7 @@ describe('super portal sign-in', { skip: integrationTestsEnabled ? false : SKIP_
     await expectStatus(await tenants(stranger), 404, 'not_found')
   })
 
-  test('a JWT-shaped token is refused: the super portal reads no Clerk session', async () => {
+  test('a token no pool issued is refused, whatever its shape', async () => {
     await expectStatus(await tenants({ Authorization: 'Bearer a.b.c' }), 404, 'not_found')
   })
 

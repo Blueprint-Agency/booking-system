@@ -20,7 +20,7 @@ type UserWriter = Pick<PostgresJsDatabase<typeof schema>, 'insert' | 'select'>
 /**
  * Make sure a Better Auth user exists for this address, and return its id.
  *
- * **Passwordless, like the Clerk bootstrap it sits beside.** The row is a user
+ * **Passwordless.** The row is a user
  * with no credential account at all; the person sets their first password
  * through the reset flow (`/request-password-reset`), which creates the
  * credential when there is none. So no password lives in `.env`, CI logs or a

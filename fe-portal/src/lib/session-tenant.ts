@@ -8,8 +8,8 @@
  * lands on the refusal screen straight away rather than after a request that
  * was always going to fail.
  *
- * It replaces the Clerk "active organization" wiring, which had to *make* a
- * session carry the right studio. A Better Auth session cannot be moved between
+ * Nothing has to *make* a session carry the right studio: a Better Auth
+ * session cannot be moved between
  * studios at all: the claim is written once, at sign-in, and a staff member of
  * two studios holds one session per hostname. So there is nothing to switch —
  * only a verdict to read.

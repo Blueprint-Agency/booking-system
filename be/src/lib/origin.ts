@@ -1,6 +1,6 @@
 /**
  * Origin patterns — the one allowlist the backend compares a browser's `Origin`
- * (and a Clerk token's `azp`) against.
+ * against.
  *
  * Every tenant is a subdomain: `{slug}.reservetoday.app` for the member app,
  * `{slug}.portal.reservetoday.app` for the staff one, with a `dev.` level in

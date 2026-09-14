@@ -20,9 +20,7 @@ import { tenantId } from './tenant'
  *     `staff_users.id`, from the grant) + `impersonatedClientId` (the member's
  *     clients row).
  *
- * Must run AFTER clerkClientAuth, which sets `clientSession` for a Better Auth
- * session. A request signed in through Clerk has no such session, and a grant
- * on one means nothing.
+ * Must run AFTER clientAuth, which sets `clientSession`.
  */
 export const clientImpersonation: MiddlewareHandler = async (c, next) => {
   const session = c.get('clientSession')

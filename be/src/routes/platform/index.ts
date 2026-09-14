@@ -7,8 +7,8 @@ import transfer from './transfer'
  * The super portal's branch: `/api/v1/platform/*`.
  *
  * Mounted beside `/portal` rather than inside it, deliberately. Everything under
- * `/portal` runs `clerkStaffAuth`, which resolves a tenant, checks the Clerk
- * organization claim against it and reads a `staff_users` row — three things
+ * `/portal` runs `staffAuth`, which resolves a tenant, checks the session's
+ * Tenant claim against it and reads a `staff_users` row — three things
  * that are meaningless for a caller who belongs to no studio and is asking about
  * all of them. Nesting the super portal there would have meant carving
  * exceptions into the middleware every tenant-scoped request depends on, which

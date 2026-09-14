@@ -15,7 +15,7 @@ The client-side backend surface. Implements the `/me/*` scope of the client app 
 /api/v1/me/*      — require a member session + require-active + verification gate (booking endpoints only)
 ```
 
-`/me/*` mounts under `routes/client/index.ts` with `clerk-client.ts` middleware: a Better Auth `client` pool bearer session whose Tenant claim is this studio (fe-client signs in only this way since #117), or — until #106 removes it — a Clerk client JWT. Staff and platform sessions are rows the client pool has never seen, so they are 401. `requireActiveClient` rejects `clients.status='suspended'` and blocked (`deleted_at`) members.
+`/me/*` mounts under `routes/client/index.ts` with `clientAuth` (`middleware/client-auth.ts`): a Better Auth `client` pool bearer session whose Tenant claim is this studio, and the member's `clients` row at this studio, linked by `auth_user_id` (404 `client_not_found` otherwise — nothing is provisioned on a request). Any other token is 401 `invalid_token`. Staff and platform sessions are rows the client pool has never seen, so they are 401. `requireActiveClient` rejects `clients.status='suspended'` and blocked (`deleted_at`) members.
 
 ### Impersonation (#118)
 
@@ -25,20 +25,7 @@ The member app adopts the token as its session and sends the grant on every call
 
 ### Verification gate
 
-`fe-client-features.md` §Auth requires `phone_verified` AND `email_verified` before any booking action. The gate reads the claims directly off the Clerk session token — there are no `clients` columns to mirror. Implementation:
-
-```ts
-// middleware/require-verified.ts
-export const requireVerified: MiddlewareHandler = async (c, next) => {
-  const claims = c.get('clerkClaims');
-  if (!claims.email_verified || !claims.phone_verified) {
-    return c.json({ error: 'verification_required', missing: { email: !claims.email_verified, phone: !claims.phone_verified }}, 403);
-  }
-  await next();
-};
-```
-
-Applied to `bookings.ts`, `pt-sessions.ts`, `purchases.ts` only. Profile reads and waiver sign do **not** require verification (otherwise users couldn't progress past half-verified state).
+`fe-client-features.md` §Auth requires `phone_verified` AND `email_verified` before any booking action. **Not built.** A member signs in only by a code mailed to their address, so every session already proves the email; phone verification has no source yet, and when it gets one it belongs on the `client` pool user, not in `clients`. When built, it applies to `bookings.ts`, `pt-sessions.ts`, `purchases.ts` only — profile reads and waiver sign must not require it (otherwise users couldn't progress past half-verified state).
 
 ---
 
@@ -99,8 +86,8 @@ All endpoints prefixed with `/api/v1/me`.
 ### `me.ts`
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/` | Own profile: `{ name, email, phone, gender, dob, joined_at, status, waiver_signed, verification_status }`. `verification_status` is read from Clerk claims, not DB. |
-| PATCH | `/` | Update `name`, `phone`, `gender`, `dob`. Email + password edits flow through Clerk directly (fe-client links to Clerk-hosted account page). |
+| GET | `/` | Own profile: `{ name, email, phone, gender, dob, joined_at, status, waiver_signed }`. |
+| PATCH | `/` | Update `name`, `phone`, `gender`, `dob`. There is no password to edit — members sign in by emailed code — and changing the email is not offered. |
 | GET | `/dashboard` | Aggregated home payload: next-up booking, package balances (credits + sessions remaining + days to expiry), referral conversions count. One round-trip for the `/account` landing page. |
 | GET | `/packages` | List `client_packages` for this client with each linked source (class_packages or pt_packages) and the `applied_promotion` frozen at purchase (if any). Each row carries `cross_location_paid_sgd` — null means the plan Covers its Home Location only. The `entitlements` block also carries `unlimited_plan_id` (the plan a **Cross-Location Add-On** would attach to), `unlimited_covers_both` (it already carries one) and `cross_location_rate_sgd` (the Global Policy rate right now), which is what the member surfaces quote the Add-On at. The same three appear on `/me/class-packages`, where the schedule's blocked-class nudge reads them. |
 | GET | `/packages/eligibility` | `{ trial_used: bool, holds_active_bundle: bool, holds_active_unlimited: bool }` — drives fe-client `/packages` gating per `fe-client-features.md` §6.1. `trial_used` is `true` if any `client_packages WHERE client_id=me AND kind='trial'` exists (active or expired). `holds_active_bundle` / `holds_active_unlimited` derive the "Bundle excludes Unlimited and vice versa" rule. Cheap query — call on every `/packages` page load. |

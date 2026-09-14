@@ -4,7 +4,7 @@ import { clients } from '../../db/schema/identity'
 import { tenantUrl } from '../tenants/urls'
 import { signGrant } from '../../lib/impersonation-grant'
 import { openImpersonationSession } from '../auth/better-auth'
-import { BadRequestError, ForbiddenError, NotFoundError } from '../../shared/errors'
+import { BadRequestError, NotFoundError } from '../../shared/errors'
 
 export interface MintImpersonationInput {
   /** The superadmin's own studio. Impersonating across studios is not a feature
@@ -13,7 +13,7 @@ export interface MintImpersonationInput {
   clientId: string
   /** The superadmin's `staff_users` row: its id goes in the grant, its auth user
    *  on the session and in the sign-in log. */
-  superadmin: { id: string; authUserId: string | null }
+  superadmin: { id: string; authUserId: string }
   /** The superadmin's request headers, for the sign-in log. */
   from: Headers
 }
@@ -31,10 +31,7 @@ export interface MintImpersonationResult {
  * and by whom.
  *
  * Throws:
- *   - ForbiddenError('impersonation_requires_better_auth') if the superadmin has
- *     no staff auth user (signed in through Clerk)
  *   - NotFoundError('client_not_found') if the row is missing
- *   - BadRequestError('client_not_provisioned') if the client has no auth user
  *   - BadRequestError('client_origin_not_configured') if this environment can
  *     build no member-app origin for the studio (no client wildcard in
  *     TENANT_ORIGIN_PATTERNS)
@@ -44,10 +41,8 @@ export interface MintImpersonationResult {
 export async function mintClientImpersonation(
   input: MintImpersonationInput,
 ): Promise<MintImpersonationResult> {
-  // The session and the log name the superadmin's staff auth user, so a portal
-  // session still signed in through Clerk has nobody to name.
+  // The session and the log name the superadmin's staff auth user.
   const staffAuthUserId = input.superadmin.authUserId
-  if (!staffAuthUserId) throw new ForbiddenError('impersonation_requires_better_auth')
 
   const [row] = await db
     .select()
@@ -55,7 +50,6 @@ export async function mintClientImpersonation(
     .where(and(eq(clients.tenantId, input.tenantId), eq(clients.id, input.clientId)))
     .limit(1)
   if (!row) throw new NotFoundError('client_not_found')
-  if (!row.authUserId) throw new BadRequestError('client_not_provisioned')
 
   // This studio's own member app. It used to be the platform's single
   // `CLIENT_ORIGIN`, so impersonating a member of any studio but the first

@@ -65,13 +65,14 @@ describe('row-level security', { skip: integrationTestsEnabled ? false : SKIP_RE
           name: `${PROBE} staff ${label}`,
           role: 'superadmin',
           status: 'active',
+          authUserId: `${PROBE}-staff-${label}`,
         })
         .returning({ id: staffUsers.id })
       const [client] = await harness.db
         .insert(clients)
         .values({
           tenantId,
-          clerkUserId: `${PROBE}-client-${label}`,
+          authUserId: `${PROBE}-client-${label}`,
           email: `${PROBE}-client-${label}@example.test`,
           name: `${PROBE} member ${label}`,
           phone: '+6580000000',
@@ -320,7 +321,7 @@ describe('row-level security', { skip: integrationTestsEnabled ? false : SKIP_RE
     const outsider = { id: staffOf[twoId]! }
 
     // The middleware pair as a route sees it: tenant resolution, then a stand-in
-    // for the Clerk middleware that puts the caller's own row on the context.
+    // for the staff auth middleware that puts the caller's own row on the context.
     const app = new Hono()
     app.use('*', resolveTenant)
     app.use('*', async (c, next) => {

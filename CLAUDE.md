@@ -9,7 +9,7 @@ A **multi-tenant** booking & management platform for yoga studios. One deploymen
 - **Shared schema, row scoping, Row-Level Security.** One Postgres database. `tenant_id` on all 53 domain tables, `NOT NULL` with no default. One more table carries it nullable: the sign-in audit log `auth_events`, whose null rows are the super portal's (`PLATFORM_ROWS` in `be/src/db/roles.ts`). Postgres policies (migration `0033`) are the fail-closed backstop for a query that forgets to scope. See `docs/adr/0002-shared-schema-row-level-security.md`.
 - **The app must not connect as the table owner.** Postgres exempts superusers and owners from RLS, so the server connects as the non-owning `booking_app` role via `DATABASE_APP_URL`. `DATABASE_URL` (the owner) is for migrations and seeds only.
 - **Tenant context is transaction-local.** `withTenant` (`be/src/db/index.ts`) sets `app.tenant_id` per transaction — session scope would ride a pooled connection into the next request.
-- **The API's own hostname carries no Tenant.** The frontends read the slug from their hostname and send `X-Tenant-Slug`; the backend corroborates it against the browser `Origin` or the Clerk Organization claim. See `docs/md/spec-tenant-resolution.md`.
+- **The API's own hostname carries no Tenant.** The frontends read the slug from their hostname and send `X-Tenant-Slug`; the backend corroborates it against the browser `Origin` or the Tenant claim on the caller's session. See `docs/md/spec-tenant-resolution.md`.
 - Domain glossary for these terms: `be/CONTEXT.md` § Tenancy. Plan and status: `docs/md/multi-tenancy-plan.md`.
 
 ## Structure
@@ -18,7 +18,7 @@ A **multi-tenant** booking & management platform for yoga studios. One deploymen
 |---|---|---|
 | `fe-client/` | Member-facing booking app, port 3000, hits `/api/v1/{me,public}/*` | Next.js App Router + Tailwind + shadcn/ui |
 | `fe-portal/` | Staff app (admin + instructor), port 3001, hits `/api/v1/portal/{admin,instructor}/*` | same |
-| `be/` | Backend | Hono (NOT Express) + Drizzle + Postgres + Clerk (2 apps) + Stripe + R2 + Resend (mail) |
+| `be/` | Backend | Hono (NOT Express) + Drizzle + Postgres + Better Auth (self-hosted, 3 pools) + Stripe + R2 + Resend (mail) |
 | `cdn/` | Edge proxy fronting the R2 bucket at `cdn.reservetoday.app` | Vercel edge function (no framework) |
 | `docs/md/` | Canonical specs | — |
 
@@ -26,7 +26,7 @@ BE layout: routes split by audience (`routes/portal/{admin,instructor}/`, `route
 
 ## Spec docs (`docs/md/`)
 
-`prd.md` (product requirements) · `fe-client-features.md` (source of truth for fe-client) · `admin-restructure.md` (source of truth for fe-portal) · `backend-architecture.md` (BE spine — stack, folders, DB schema, integrations, jobs) · `be-portal.md` / `be-client.md` (route surfaces) · `deployment.md` (Vercel + VPS deploy, envs, CORS, Clerk apps, CI settings).
+`prd.md` (product requirements) · `fe-client-features.md` (source of truth for fe-client) · `admin-restructure.md` (source of truth for fe-portal) · `backend-architecture.md` (BE spine — stack, folders, DB schema, integrations, jobs) · `be-portal.md` / `be-client.md` (route surfaces) · `deployment.md` (Vercel + VPS deploy, envs, CORS, auth, CI settings).
 
 ## Conventions
 

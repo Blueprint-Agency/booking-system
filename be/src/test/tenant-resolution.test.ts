@@ -12,9 +12,9 @@ import { startTestApp, integrationTestsEnabled, SKIP_REASON, type TestApp } from
  * public request can carry: the browser's own `Origin`, which under the
  * subdomain scheme contains the tenant and which a page cannot lie about.
  *
- * The authenticated half — the Clerk organization claim — is proven in
- * `services/tenants/org-claim.test.ts`, on the pure decision itself, because
- * this harness cannot mint a Clerk JWT to drive the middleware with.
+ * The authenticated half — the session's Tenant claim — is proven over HTTP in
+ * `isolation-sessions.test.ts`, and on the pure decision itself in
+ * `services/tenants/session-claim.test.ts`.
  */
 describe('tenant resolution', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
   let harness!: TestApp
@@ -164,9 +164,8 @@ describe('tenant resolution', { skip: integrationTestsEnabled ? false : SKIP_REA
     // new member", writing one into the studio the header named. A valid token
     // for studio A plus `X-Tenant-Slug: B` would have bought a membership at B.
     //
-    // Driven one layer below HTTP, because this harness cannot mint a Clerk JWT:
-    // the gate itself is what is under test, on the two facts the middleware
-    // reads.
+    // Driven one layer below HTTP: the gate itself is what is under test, on the
+    // two facts the middleware reads.
     const { Hono } = await import('hono')
     const { resolveTenant, tenantCorroborated, tenantId } = await import('../middleware/tenant')
 

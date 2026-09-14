@@ -40,8 +40,7 @@ if (PLATFORM_ADMINS.length === 0) {
  *  1. **A `platform` pool session.** The super portal signs in through its own
  *     Better Auth instance, whose users are rows no studio can write. A studio
  *     session — staff or member, superadmin or not — is a row this pool has
- *     never seen, so it never reaches the allowlist at all. Nor does a Clerk
- *     JWT: the super portal reads no Clerk session any more.
+ *     never seen, so it never reaches the allowlist at all.
  *  2. **The session's email on `PLATFORM_ADMIN_EMAILS`.** Read from the session
  *     on every request and remembered nowhere, so an address taken off the list
  *     is refused on its next request.
