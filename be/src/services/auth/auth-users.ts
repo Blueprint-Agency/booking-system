@@ -58,7 +58,12 @@ type Deleter = Pick<PostgresJsDatabase<typeof schema>, 'delete'>
 
 /** Does this staff auth user have a password yet? */
 export async function hasStaffPassword(db: Reader, userId: string): Promise<boolean> {
-  const accounts = schema.staffAuthAccounts
+  return hasPassword(db, 'staff', userId)
+}
+
+/** Does this auth user, in one of the password pools, have a password yet? */
+export async function hasPassword(db: Reader, pool: 'staff' | 'platform', userId: string): Promise<boolean> {
+  const accounts = pool === 'staff' ? schema.staffAuthAccounts : schema.platformAuthAccounts
   const [row] = await db
     .select({ id: accounts.id })
     .from(accounts)

@@ -18,8 +18,9 @@ import { ensureAuthUser } from '../../services/auth/auth-users'
  * superadmin cannot become one by any write path (see
  * services/tenants/platform-admin.ts).
  *
- * **Passwordless, by design.** The user is created with no credential and the
- * operator sets their own via "Forgot password" on first sign-in. That keeps
+ * **Passwordless, by design.** The user is created with no credential; on first
+ * sign-in the super portal mails the operator a link to set their own
+ * (`services/auth/platform-first-sign-in.ts`). That keeps
  * the password out of `.env`, out of CI logs, and off the deployer's disk — the
  * operator owns it and the deployer never sees it.
  *
@@ -39,7 +40,7 @@ export async function seedPlatformAdmins(db: Parameters<typeof ensureAuthUser>[0
     // The address is its own name until the operator says otherwise.
     const authUserId = await ensureAuthUser(db, 'platform', { email, name: email })
     console.log(
-      `[seed] platform admin ${email} present in the platform auth pool (${authUserId}) — set the password via "Forgot password" on first sign-in`,
+      `[seed] platform admin ${email} present in the platform auth pool (${authUserId}) — enter the email at the super portal to be mailed a set-password link`,
     )
   }
 }

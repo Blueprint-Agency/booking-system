@@ -484,6 +484,30 @@ export async function mailStaffSetPasswordLink(from: Headers, email: string, por
   if (!res.ok) throw new Error(`mailStaffSetPasswordLink: the staff pool refused (${res.status}): ${await res.text()}`)
 }
 
+/**
+ * Mail a super portal operator the link that sets their password — the platform
+ * pool's own reset, which creates the credential when the account has none.
+ *
+ * Through the pool's handler, as `mailStaffSetPasswordLink` is, so the origin
+ * check, the rate limit and the mail hook are the ones "Forgot password" meets.
+ * `origin` is the super portal page that asked, and where the link lands.
+ */
+export async function mailPlatformSetPasswordLink(from: Headers, email: string, origin: string): Promise<void> {
+  const headers = new Headers({ 'content-type': 'application/json', origin })
+  for (const name of FORWARDED_HEADERS.filter(h => h === 'x-forwarded-for' || h === 'user-agent')) {
+    const value = from.get(name)
+    if (value) headers.set(name, value)
+  }
+  const res = await platformAuth.handler(
+    new Request(`${env.BETTER_AUTH_URL}${AUTH_BASE_PATH.platform}/request-password-reset`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ email, redirectTo: `${origin}/login` }),
+    }),
+  )
+  if (!res.ok) throw new Error(`mailPlatformSetPasswordLink: the platform pool refused (${res.status}): ${await res.text()}`)
+}
+
 /** Why a member's emailed code was not accepted — Better Auth's own codes. */
 export type MemberCodeRefusal = 'INVALID_OTP' | 'OTP_EXPIRED' | 'TOO_MANY_ATTEMPTS'
 

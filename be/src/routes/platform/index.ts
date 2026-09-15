@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { requirePlatformAdmin } from '../../middleware/platform-admin'
+import signIn, { SIGN_IN_STEP_PATH } from './sign-in'
 import tenants from './tenants'
 import transfer from './transfer'
 
@@ -14,8 +15,13 @@ import transfer from './transfer'
  * exceptions into the middleware every tenant-scoped request depends on, which
  * is how a tenancy gate stops being a gate.
  *
- * So: one gate, `requirePlatformAdmin`, and no tenant context at all.
+ * So: one gate, `requirePlatformAdmin`, and no tenant context at all. The one
+ * route outside it is the sign-in step, which runs before there is a session.
  */
-const app = new Hono().use('*', requirePlatformAdmin).route('/', tenants).route('/', transfer)
+const app = new Hono()
+  .use('*', (c, next) => (c.req.path.endsWith(`/platform${SIGN_IN_STEP_PATH}`) ? next() : requirePlatformAdmin(c, next)))
+  .route('/', signIn)
+  .route('/', tenants)
+  .route('/', transfer)
 
 export default app
