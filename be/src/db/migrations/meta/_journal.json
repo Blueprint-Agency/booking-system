@@ -379,6 +379,13 @@
       "when": 1789382853516,
       "tag": "0053_drop_clerk_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1789499596151,
+      "tag": "0054_drop_empty_placeholder_tenant",
+      "breakpoints": true
     }
   ]
 }

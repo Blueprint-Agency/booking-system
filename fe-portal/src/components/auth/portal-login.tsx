@@ -14,6 +14,10 @@
  *     mailed a code, so preferring it would send a mail on every sign-in.
  *   - **A reset is a link, not a code.** Better Auth mails a link that comes
  *     back to this page as `?token=…`, and the new password is chosen here.
+ *
+ * The super portal asks for the email first. An operator who has never set a
+ * password is mailed the link to set one straight away, and never sees a
+ * password field they cannot fill (`be/src/services/auth/platform-first-sign-in.ts`).
  */
 import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -22,6 +26,7 @@ import { Button, Input, Label } from "@/components/ui";
 import { ErrorNote } from "@/components/auth/auth-card";
 import { OtpInput } from "@/components/auth/otp-input";
 import { PasswordInput } from "@/components/auth/password-input";
+import { ApiError, apiFetch } from "@/lib/api";
 import { safeNextPath, signedInRedirectTarget } from "@/lib/auth-redirect";
 import { portalHomePath } from "@/lib/super-portal";
 import { portalAuth, usePortalSession } from "@/lib/portal-auth";
@@ -29,6 +34,12 @@ import { portalAuth, usePortalSession } from "@/lib/portal-auth";
 type SecondFactor = "totp" | "otp" | "backup";
 
 type AuthError = { status?: number; code?: string; message?: string } | null | undefined;
+
+type SignInStep =
+  | { step: "password" }
+  | { step: "set_password"; sent: boolean; retryAfterSeconds: number };
+
+const noToken = async () => null;
 
 /** A refused auth call, in words. */
 function errorMessage(error: AuthError, fallback: string): string {
@@ -48,11 +59,16 @@ export function PortalLogin({ superPortal }: { superPortal: boolean }) {
   const resetToken = searchParams.get("token");
   const resetLinkBroken = searchParams.get("error") === "INVALID_TOKEN";
 
-  const [view, setView] = useState<"signin" | "mfa" | "forgot" | "sent" | "reset" | "resetDone">(
-    resetToken ? "reset" : "signin",
-  );
+  const [view, setView] = useState<
+    "signin" | "mfa" | "forgot" | "sent" | "reset" | "resetDone" | "firstSignIn"
+  >(resetToken ? "reset" : "signin");
 
   const [email, setEmail] = useState("");
+  // The super portal shows the password field only once the email step says so.
+  const [emailConfirmed, setEmailConfirmed] = useState(!superPortal);
+  // When the next set-password link may be asked for, as epoch ms.
+  const [resendAt, setResendAt] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
   const [password, setPassword] = useState("");
   const [factor, setFactor] = useState<SecondFactor>("totp");
   const [methods, setMethods] = useState<string[]>([]);
@@ -77,6 +93,18 @@ export function PortalLogin({ superPortal }: { superPortal: boolean }) {
     if (redirectTarget) router.replace(redirectTarget);
   }, [redirectTarget, router]);
 
+  // Tick the resend countdown while one is running.
+  const resendIn = Math.max(0, Math.ceil((resendAt - now) / 1000));
+  useEffect(() => {
+    if (resendAt <= Date.now()) return;
+    const timer = setInterval(() => {
+      const at = Date.now();
+      setNow(at);
+      if (at >= resendAt) clearInterval(timer);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendAt]);
+
   async function run(step: () => Promise<void>) {
     setError(null);
     setSubmitting(true);
@@ -100,6 +128,57 @@ export function PortalLogin({ superPortal }: { superPortal: boolean }) {
       if (sendErr) setError(errorMessage(sendErr, "Could not send a verification code."));
     }
     setView("mfa");
+  }
+
+  /** Ask the backend what comes after this email; mails the set-password link when owed. */
+  async function askSignInStep(): Promise<SignInStep | null> {
+    try {
+      return await apiFetch<SignInStep>("/platform/sign-in/step", noToken, {
+        method: "POST",
+        body: { email: email.trim() },
+      });
+    } catch (err) {
+      if (!(err instanceof ApiError)) throw err;
+      setError(
+        err.status === 429
+          ? "Too many attempts. Wait a minute, then try again."
+          : err.status === 400
+            ? "Enter a valid email address."
+            : "We couldn't continue. Please try again.",
+      );
+      return null;
+    }
+  }
+
+  function applySetPasswordStep(result: Extract<SignInStep, { step: "set_password" }>) {
+    setNow(Date.now());
+    setResendAt(Date.now() + result.retryAfterSeconds * 1000);
+    setPassword("");
+    setView("firstSignIn");
+  }
+
+  function handleEmailStep(e: React.FormEvent) {
+    e.preventDefault();
+    void run(async () => {
+      const result = await askSignInStep();
+      if (!result) return;
+      if (result.step === "set_password") applySetPasswordStep(result);
+      else setEmailConfirmed(true);
+    });
+  }
+
+  function resendSetPasswordLink() {
+    void run(async () => {
+      const result = await askSignInStep();
+      if (result?.step === "set_password") applySetPasswordStep(result);
+    });
+  }
+
+  function changeEmail() {
+    setEmailConfirmed(false);
+    setPassword("");
+    setError(null);
+    setView("signin");
   }
 
   function handleSignIn(e: React.FormEvent) {
@@ -346,6 +425,81 @@ export function PortalLogin({ superPortal }: { superPortal: boolean }) {
     );
   }
 
+  const passwordField = (
+    <div className="space-y-1.5">
+      <Label htmlFor="password">Password</Label>
+      <PasswordInput
+        id="password"
+        autoComplete="current-password"
+        value={password}
+        onChange={ev => setPassword(ev.target.value)}
+        autoFocus={superPortal}
+      />
+    </div>
+  );
+
+  if (view === "firstSignIn") {
+    return (
+      <>
+        <h1 className="mb-1 text-lg font-semibold text-ink">Check your email</h1>
+        <p className="mb-5 text-sm text-muted">
+          This is your first sign-in. We sent a link to {email.trim()} to set your password. It works once, for
+          one hour. Once your password is set, sign in with it here.
+        </p>
+        <form onSubmit={handleSignIn} className="space-y-4">
+          {passwordField}
+          {error && <ErrorNote message={error} />}
+          <Button type="submit" disabled={submitting} className="w-full">
+            {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+            Sign in
+          </Button>
+        </form>
+        <div className="mt-4 flex flex-wrap gap-3 text-sm">
+          <button
+            type="button"
+            onClick={resendSetPasswordLink}
+            disabled={submitting || resendIn > 0}
+            className={`${linkButton} disabled:cursor-not-allowed disabled:text-muted`}
+          >
+            {resendIn > 0 ? `Resend link in ${resendIn}s` : "Didn't get it? Resend link"}
+          </button>
+          <button type="button" onClick={changeEmail} className={linkButton}>
+            Use a different email
+          </button>
+        </div>
+      </>
+    );
+  }
+
+  // The super portal's first screen: the email alone.
+  if (!emailConfirmed) {
+    return (
+      <>
+        <h1 className="mb-5 text-lg font-semibold text-ink">
+          {view === "resetDone" ? "Password updated — sign in" : "Welcome back"}
+        </h1>
+        <form onSubmit={handleEmailStep} className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="email">Email</Label>
+            <Input
+              id="email"
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={ev => setEmail(ev.target.value)}
+            />
+          </div>
+          {error && <ErrorNote message={error} />}
+          <Button type="submit" disabled={submitting} className="w-full">
+            {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+            Continue
+          </Button>
+        </form>
+      </>
+    );
+  }
+
   return (
     <>
       <h1 className="mb-5 text-lg font-semibold text-ink">
@@ -359,24 +513,22 @@ export function PortalLogin({ superPortal }: { superPortal: boolean }) {
             type="email"
             autoComplete="email"
             value={email}
+            readOnly={superPortal}
             onChange={ev => setEmail(ev.target.value)}
           />
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="password">Password</Label>
-          <PasswordInput
-            id="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={ev => setPassword(ev.target.value)}
-          />
-        </div>
+        {passwordField}
         {error && <ErrorNote message={error} />}
         <Button type="submit" disabled={submitting} className="w-full">
           {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
           Sign in
         </Button>
       </form>
+      {superPortal && (
+        <button type="button" onClick={changeEmail} className={`mt-4 mr-4 text-sm ${linkButton}`}>
+          Use a different email
+        </button>
+      )}
       <button
         type="button"
         onClick={() => {

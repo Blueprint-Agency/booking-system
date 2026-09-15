@@ -56,25 +56,26 @@ carried no mail records at all.
 display name, with the tenant's address as `Reply-To`.**
 
 ```
-From:     "A Studio" <hello@reservetoday.app>
+From:     "A Studio" <noreply@reservetoday.app>
 Reply-To: hello@a-studio.com
 ```
 
-The platform has **two** envelope addresses, chosen by who is reading, never
-by which studio is speaking:
+The platform sends from **one** envelope address, for members and staff alike,
+never chosen by which studio is speaking:
 
 | Recipient | Envelope | Env |
 |---|---|---|
-| A member (`userKind: 'client'`) | `hello@reservetoday.app` | `MAIL_FROM_EMAIL` |
-| Staff — admin or instructor (`userKind: 'staff'`) | `portal@reservetoday.app` | `MAIL_FROM_PORTAL_EMAIL` |
+| A member (`userKind: 'client'`) | `noreply@reservetoday.app` | `MAIL_FROM_EMAIL` |
+| Staff — admin or instructor (`userKind: 'staff'`) | `noreply@reservetoday.app` | `MAIL_FROM_PORTAL_EMAIL`, left blank so it falls back to `MAIL_FROM_EMAIL` |
 
-Both are in the one verified domain, so authentication is identical. The split
-is for the *staff* inbox: an admin can filter platform operations (cancellation
-notices, leave requests, invitations) away from anything a member might send to
-`hello@`. `sendTemplatedEmail` picks the address from the recipient's
-`userKind`, so no call site chooses — and cannot choose wrongly. Both addresses
-are env, not tenant data, because they belong to the platform's domain and are
-the same for every studio.
+One address is the conventional setup for transactional mail: the recipient
+reads the studio's display name, and a reply goes to the studio's `Reply-To`,
+so the envelope address carries nothing worth splitting. The split stays
+available: set `MAIL_FROM_PORTAL_EMAIL` to a second address in the same verified
+domain and staff mail moves onto it, because `sendTemplatedEmail` picks the
+address from the recipient's `userKind` — no call site chooses. Both are env,
+not tenant data, because they belong to the platform's domain and are the same
+for every studio.
 
 - **The display name is what a recipient actually sees.** Every mail client
   shows the name, not the address, in the inbox list. This is the part that

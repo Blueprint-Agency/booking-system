@@ -114,8 +114,8 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
   try {
     // The studio's identity, not the platform's: the envelope address is shared
     // and authenticated, the display name and Reply-To are this tenant's own.
-    // `userKind` picks which of the platform's two addresses that envelope is —
-    // a member's mail comes from `hello@`, a staff member's from `portal@`.
+    // `userKind` picks which platform address that envelope is — by default
+    // both resolve to the one `noreply@` (MAIL_FROM_PORTAL_EMAIL left blank).
     const identity = await tenantMailIdentity(tenantId)
     const result = await sendMail({
       to: recipient.email,

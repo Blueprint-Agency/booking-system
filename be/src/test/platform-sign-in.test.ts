@@ -13,9 +13,10 @@ import {
 
 const run = Date.now().toString(36)
 const OPERATOR = `operator-${run}@platform.test`
+const FIRST_TIMER = `first-timer-${run}@platform.test`
 
 // Read once when the platform gate is first imported, so it is set before the app is.
-process.env.PLATFORM_ADMIN_EMAILS = OPERATOR
+process.env.PLATFORM_ADMIN_EMAILS = `${OPERATOR},${FIRST_TIMER}`
 
 /**
  * The super portal signs in through its own pool (#116).
@@ -31,7 +32,7 @@ describe('super portal sign-in', { skip: integrationTestsEnabled ? false : SKIP_
 
   const SUPERADMIN = `superadmin-${run}@platform.test`
   const STRANGER = `stranger-${run}@platform.test`
-  const EMAILS = [OPERATOR, SUPERADMIN, STRANGER]
+  const EMAILS = [OPERATOR, SUPERADMIN, STRANGER, FIRST_TIMER]
 
   const tenants = (headers: Record<string, string>) =>
     harness.app.request('/api/v1/platform/tenants', { headers: { Authorization: headers.Authorization! } })
@@ -117,6 +118,46 @@ describe('super portal sign-in', { skip: integrationTestsEnabled ? false : SKIP_
     // email is read from the session every time, with nothing remembered.
     const stranger = await harness.signInAs('platform', STRANGER, null)
     await expectStatus(await tenants(stranger), 404, 'not_found')
+  })
+
+  test('the email-first step mails a seeded operator their set-password link, and nobody else', async () => {
+    const { ensureAuthUser } = await import('../services/auth/auth-users')
+    const { discardedMail } = await import('../lib/mailer')
+    await ensureAuthUser(harness.db, 'platform', { email: FIRST_TIMER, name: FIRST_TIMER })
+    await harness.signInAs('platform', OPERATOR, null)
+
+    const step = async (email: string, origin = frontendOrigin('platform', null)) => {
+      const res = await harness.app.request('/api/v1/platform/sign-in/step', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Origin: origin, 'X-Forwarded-For': harnessAddress() },
+        body: JSON.stringify({ email }),
+      })
+      return { status: res.status, body: (await res.json()) as Record<string, unknown> }
+    }
+    const mailsTo = (email: string) => discardedMail.filter(m => m.to === email).length
+
+    // An operator with a password, a stranger, and an unknown address all just get the password field.
+    for (const email of [OPERATOR, STRANGER, `nobody-${run}@platform.test`]) {
+      assert.deepEqual(await step(email), { status: 200, body: { step: 'password' } })
+    }
+
+    // The seeded, passwordless operator is mailed the link once; a quick repeat waits.
+    const first = await step(FIRST_TIMER.toUpperCase())
+    assert.equal(first.status, 200)
+    assert.deepEqual(first.body, { step: 'set_password', sent: true, retryAfterSeconds: 60 })
+    assert.equal(mailsTo(FIRST_TIMER), 1)
+    assert.ok(
+      discardedMail.at(-1)!.html.includes(`callbackURL=${encodeURIComponent('http://admin.portal.localhost:3001/login')}`),
+      'the link lands back on the super portal sign-in',
+    )
+
+    const again = await step(FIRST_TIMER)
+    assert.equal(again.body.step, 'set_password')
+    assert.equal(again.body.sent, false)
+    assert.equal(mailsTo(FIRST_TIMER), 1, 'no second mail inside the cooldown')
+
+    // A page that is not ours cannot choose where the link lands.
+    assert.equal((await step(FIRST_TIMER, 'https://evil.example')).status, 400)
   })
 
   test('a token no pool issued is refused, whatever its shape', async () => {

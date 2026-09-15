@@ -11,10 +11,11 @@ import { env } from '../env'
  *   - MAIL_FROM_PORTAL_EMAIL  — the address *staff* see mail arrive from
  *   - MAIL_FROM_NAME          — the display name when a tenant has none
  *
- * Two envelope addresses, one domain, one key. Both live in the platform's
- * verified zone, so SPF, DKIM and DMARC pass for either. A member sees the
- * studio's name over `hello@`; an admin sees the same name over `portal@`, so
- * a staff inbox can filter platform operations away from customer traffic.
+ * One envelope address, one domain, one key. `noreply@` lives in the
+ * platform's verified zone, so SPF, DKIM and DMARC pass, and members and staff
+ * both get mail from it: what they actually read is the studio's name and its
+ * Reply-To, not the address. MAIL_FROM_PORTAL_EMAIL can split staff mail onto
+ * a second address in the same zone, but is left blank by default.
  *
  * The *tenant's* half of the identity is not here. One sender serves every
  * studio, and each studio's mail wears its own display name and `Reply-To` —
@@ -27,8 +28,8 @@ export type MailAudience = 'client' | 'staff'
 /** The envelope address for each audience. */
 export const PLATFORM_MAIL_FROM_EMAIL: Record<MailAudience, string> = {
   client: env.MAIL_FROM_EMAIL,
-  // Blank falls back to the member address: one address is a valid setup, two
-  // is the intended one.
+  // Blank falls back to the member address — the default: one `noreply@` for
+  // everyone.
   staff: env.MAIL_FROM_PORTAL_EMAIL ?? env.MAIL_FROM_EMAIL,
 }
 /** Shown only when a tenant has no name of its own to put there. */
