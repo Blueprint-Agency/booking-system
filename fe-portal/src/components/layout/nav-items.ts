@@ -78,9 +78,7 @@ export const NAV_ITEMS: NavItem[] = [
   // Corporate Requests is workspace-AGNOSTIC: no location_id until scheduled, so it is
   // NOT filtered by the workspace switcher (contrast PT Requests above).
   { group: "People", label: "Corporate Requests", href: "/admin/corporate-requests", icon: HandHeart, scope: "both", badgeKey: "corporateRequestsPending" },
-  // Admins reach Staff too — they can edit profiles of their own rank and below.
-  // Invite/archive/unarchive/delete stay superadmin-only on the page and at the BE
-  // (spec-instructor-leave-pools.md § Permissions).
+  // Admins manage all staff here: invite, edit, change role, archive, delete.
   { group: "People", label: "Staff", href: "/admin/staff", icon: UserCog, scope: "both" },
   // Leave is instructor-wide and has no location, so it is not workspace-scoped.
   // Both roles decide requests (spec-instructor-leave.md § Access and visibility).

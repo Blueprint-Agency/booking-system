@@ -4,42 +4,39 @@ import { staffEditRefusal } from './staff-rank'
 const plain = { touchesPrivilegeFields: false }
 const privileged = { touchesPrivilegeFields: true }
 
-// --- higher rank is refused, equal and lower rank are allowed ---------------
-assert.strictEqual(
-  staffEditRefusal({ actorRole: 'admin', targetRole: 'superadmin', ...plain }),
-  'outranked_staff_edit_forbidden',
-)
+// --- an instructor cannot edit an admin -------------------------------------
 assert.strictEqual(
   staffEditRefusal({ actorRole: 'instructor', targetRole: 'admin', ...plain }),
   'outranked_staff_edit_forbidden',
 )
-assert.strictEqual(staffEditRefusal({ actorRole: 'admin', targetRole: 'admin', ...plain }), null)
 assert.strictEqual(
-  staffEditRefusal({ actorRole: 'admin', targetRole: 'instructor', ...plain }),
-  null,
+  staffEditRefusal({ actorRole: 'instructor', targetRole: 'superadmin', ...plain }),
+  'outranked_staff_edit_forbidden',
 )
 assert.strictEqual(
-  staffEditRefusal({ actorRole: 'superadmin', targetRole: 'superadmin', ...plain }),
+  staffEditRefusal({ actorRole: 'instructor', targetRole: 'instructor', ...plain }),
   null,
 )
 
-// --- role / location grants: superadmin only, refused for anyone else -------
+// --- an admin can edit anyone, a superadmin included -------------------------
+for (const targetRole of ['superadmin', 'admin', 'instructor'] as const) {
+  assert.strictEqual(staffEditRefusal({ actorRole: 'admin', targetRole, ...plain }), null)
+  assert.strictEqual(staffEditRefusal({ actorRole: 'superadmin', targetRole, ...plain }), null)
+}
+
+// --- only an admin (or the superadmin it is replacing) changes a role --------
+for (const targetRole of ['superadmin', 'admin', 'instructor'] as const) {
+  assert.strictEqual(staffEditRefusal({ actorRole: 'admin', targetRole, ...privileged }), null)
+  assert.strictEqual(staffEditRefusal({ actorRole: 'superadmin', targetRole, ...privileged }), null)
+}
+// the escalation path: an instructor patching their own role
 assert.strictEqual(
-  staffEditRefusal({ actorRole: 'admin', targetRole: 'instructor', ...privileged }),
-  'privilege_fields_superadmin_only',
-)
-// the escalation path: admin patching their own role
-assert.strictEqual(
-  staffEditRefusal({ actorRole: 'admin', targetRole: 'admin', ...privileged }),
-  'privilege_fields_superadmin_only',
-)
-assert.strictEqual(
-  staffEditRefusal({ actorRole: 'superadmin', targetRole: 'admin', ...privileged }),
-  null,
+  staffEditRefusal({ actorRole: 'instructor', targetRole: 'instructor', ...privileged }),
+  'privilege_fields_admin_only',
 )
 
 // --- rank is checked before the privilege fields ----------------------------
 assert.strictEqual(
-  staffEditRefusal({ actorRole: 'admin', targetRole: 'superadmin', ...privileged }),
+  staffEditRefusal({ actorRole: 'instructor', targetRole: 'admin', ...privileged }),
   'outranked_staff_edit_forbidden',
 )

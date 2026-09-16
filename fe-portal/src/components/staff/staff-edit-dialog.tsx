@@ -83,6 +83,7 @@ export interface StaffEditPatch {
   gender?: "female" | "male" | "non_binary" | "prefer_not_to_say" | null;
   bio?: string | null;
   languages?: string[];
+  role?: StaffEditableFields["role"];
   annual_leave_days?: number;
   medical_leave_days?: number;
   study_leave_days?: number;
@@ -122,6 +123,7 @@ export interface StaffAccessActions {
 export function StaffEditDialog({
   staff,
   canEdit,
+  canChangeRole,
   access,
   onSubmit,
   onClose,
@@ -130,6 +132,9 @@ export function StaffEditDialog({
   /** Whether this viewer outranks the target. Computed by the page (same rule
    *  as the row's Edit button); a viewer without it still gets the full view. */
   canEdit: boolean;
+  /** Admin viewing someone other than themselves. The last-admin guard is the
+   *  server's; its refusal comes back as the save's error. */
+  canChangeRole: boolean;
   access: StaffAccessActions;
   /** Returns the PATCHed row (the API echoes the whole staff record, leave
    *  figures included) or null when the save failed. */
@@ -172,6 +177,7 @@ export function StaffEditDialog({
       {editing ? (
         <StaffProfileForm
           staff={current}
+          canChangeRole={canChangeRole}
           submitting={submitting}
           onSubmit={save}
           onCancel={() => setEditing(false)}
@@ -401,15 +407,18 @@ function LeaveRow({
 
 function StaffProfileForm({
   staff,
+  canChangeRole,
   submitting,
   onSubmit,
   onCancel,
 }: {
   staff: StaffEditableFields;
+  canChangeRole: boolean;
   submitting: boolean;
   onSubmit: (patch: StaffEditPatch) => void | Promise<void>;
   onCancel: () => void;
 }) {
+  const [role, setRole] = useState(staff.role);
   const [firstName, setFirstName] = useState(staff.first_name ?? "");
   const [lastName, setLastName] = useState(staff.last_name ?? "");
   const [phone, setPhone] = useState(staff.phone ?? "");
@@ -463,6 +472,8 @@ function StaffProfileForm({
         .split(",")
         .map(l => l.trim())
         .filter(Boolean),
+      // Only a real change: the server refuses `role` from anyone but an admin.
+      ...(canChangeRole && role !== staff.role ? { role } : {}),
       // Every leave field goes only if the admin moved it off what the server
       // sent — never off a placeholder.
       ...(assigned && annualLeave !== staff.annual_leave_days
@@ -513,6 +524,28 @@ function StaffProfileForm({
         <Label htmlFor="edit-email">Email</Label>
         <Input id="edit-email" value={staff.email} disabled readOnly />
       </div>
+
+      {canChangeRole && (
+        <div className="space-y-1.5">
+          <Label htmlFor="edit-role">Role</Label>
+          <Select
+            id="edit-role"
+            value={role}
+            onChange={e => setRole(e.target.value as typeof role)}
+          >
+            {/* Superadmin is listed only for someone who already holds it,
+                so it can be kept or changed but never newly picked. */}
+            {(staff.role === "superadmin"
+              ? (["superadmin", "admin", "instructor"] as const)
+              : (["admin", "instructor"] as const)
+            ).map(r => (
+              <option key={r} value={r}>
+                {ROLE_LABEL[r]}
+              </option>
+            ))}
+          </Select>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">

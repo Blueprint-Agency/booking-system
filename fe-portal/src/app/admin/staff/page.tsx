@@ -55,7 +55,6 @@ interface StaffApiRow {
   invited_at: string | null;
   accepted_at: string | null;
   archived_at: string | null;
-  is_seeded_superadmin: boolean;
   /** Assigned Days — sent for instructors only, absent on everyone else. */
   annual_leave_days?: number;
   medical_leave_days?: number;
@@ -131,17 +130,17 @@ export default function StaffPage() {
     void refresh();
   }, [refresh]);
 
-  const isSuperadmin = currentStaff?.role === "superadmin";
-  const isSeededSuperadmin = currentStaff?.isSeededSuperadmin === true;
-
-  // Mirrors the backend rank rule (be/src/services/auth/staff-rank.ts): you may
-  // edit your own rank and below, never above. The BE is the enforcement point;
-  // this only keeps the button off rows that would 403.
+  // Mirrors the backend rank rule (be/src/services/auth/staff-rank.ts): an admin
+  // (or superadmin, until that role goes) manages everyone, other admins
+  // included. The BE is the enforcement point — including the last-admin guard,
+  // whose refusal is shown as an error — this only keeps buttons off rows that
+  // would 403.
   const RANK: Record<StaffApiRow["role"], number> = {
-    superadmin: 3,
+    superadmin: 2,
     admin: 2,
     instructor: 1,
   };
+  const canManageStaff = currentStaff !== null && currentStaff.role !== "instructor";
 
   function canEditTarget(target: StaffApiRow): boolean {
     if (!currentStaff) return false;
@@ -149,20 +148,13 @@ export default function StaffPage() {
   }
 
   function canArchiveTarget(target: StaffApiRow): boolean {
-    if (!isSuperadmin) return false;
+    if (!canManageStaff) return false;
     if (target.status === "archived") return false;
-    if (target.id === currentStaff?.id) return false;
-    if (target.is_seeded_superadmin) return false;
-    if (target.role === "superadmin" && !isSeededSuperadmin) return false;
-    return true;
+    return target.id !== currentStaff?.id;
   }
 
   function canManageArchived(target: StaffApiRow): boolean {
-    if (!isSuperadmin) return false;
-    if (target.status !== "archived") return false;
-    if (target.is_seeded_superadmin) return false;
-    if (target.role === "superadmin" && !isSeededSuperadmin) return false;
-    return true;
+    return canManageStaff && target.status === "archived";
   }
 
   async function handleUnarchive(target: StaffApiRow) {
@@ -347,7 +339,7 @@ export default function StaffPage() {
         title="Staff"
         description="Admins and instructors. Roles are mutually exclusive — one email holds one staff account. Archived accounts can never be hard-deleted (audit log integrity)."
         actions={
-          isSuperadmin ? (
+          canManageStaff ? (
             <Button onClick={() => setInviteDialog(true)}>
               <Plus className="h-4 w-4" /> Invite staff
             </Button>
@@ -430,7 +422,7 @@ export default function StaffPage() {
                         </div>
                       </div>
                       <Badge tone="warning">Pending</Badge>
-                      {isSuperadmin && (
+                      {canManageStaff && (
                         <div className="ml-auto flex flex-wrap items-center justify-end gap-1">
                           <Button
                             size="sm"
@@ -564,12 +556,14 @@ export default function StaffPage() {
         <StaffEditDialog
           staff={editTarget}
           canEdit={canEditTarget(editTarget)}
-          // Signing out, resending and blocking are superadmin-only on the BE,
-          // with archive's own guards on who may block whom. Block and unblock
-          // close this dialog: archive has its confirm, and both refresh the list.
+          canChangeRole={canManageStaff && editTarget.id !== currentStaff?.id}
+          // Signing out, resending and blocking are an admin's on the BE, with
+          // archive's own guards (not yourself, not the last admin). Block and
+          // unblock close this dialog: archive has its confirm, and both refresh
+          // the list.
           access={{
-            canRevoke: isSuperadmin,
-            canResend: isSuperadmin && editTarget.status !== "archived",
+            canRevoke: canManageStaff,
+            canResend: canManageStaff && editTarget.status !== "archived",
             onBlock: canArchiveTarget(editTarget)
               ? () => {
                   setEditTarget(null);
@@ -654,9 +648,6 @@ function StaffRow({
             <Badge tone="warning">
               <ShieldCheck className="mr-0.5 h-3 w-3" /> Superadmin
             </Badge>
-          )}
-          {staff.is_seeded_superadmin && (
-            <Badge tone="neutral">Main</Badge>
           )}
           {staff.role === "admin" && (
             <Badge tone="accent">
@@ -907,8 +898,7 @@ function InviteAdminDialog({
         {role === "superadmin" && (
           <p className="rounded-lg border border-border bg-paper px-3 py-2 text-xs text-muted">
             Superadmins have full access across all locations and can manage other
-            staff, including other superadmins. The main seeded superadmin is set
-            via the <code className="text-ink">SUPERADMIN_EMAIL</code> env var.
+            staff, including other superadmins.
           </p>
         )}
 

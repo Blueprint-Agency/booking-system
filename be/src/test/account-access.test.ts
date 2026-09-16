@@ -204,10 +204,11 @@ describe('account access from the detail views', { skip: integrationTestsEnabled
     assert.equal(event.pool, 'staff')
   })
 
-  test('only a superadmin signs staff out', async () => {
+  test('an instructor cannot sign staff out', async () => {
+    const actor = await staffAt(one, at('instructor-actor'), 'instructor')
     const target = await staffAt(one, at('instructor'), 'instructor')
     await expectStatus(
-      await send(`/api/v1/portal/admin/staff/${target.row.id}/sessions/revoke`, { body: {}, headers: admin.headers }),
+      await send(`/api/v1/portal/admin/staff/${target.row.id}/sessions/revoke`, { body: {}, headers: actor.headers }),
       403,
     )
   })
