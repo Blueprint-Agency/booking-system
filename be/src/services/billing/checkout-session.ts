@@ -8,6 +8,7 @@
  * and hands the lines over already priced.
  */
 import { statementDescriptorSuffix, stripe } from '../../lib/stripe'
+import { outbound } from '../../lib/outbound'
 import { tenantDisplayName } from '../tenants/mail-identity'
 
 export interface CheckoutLine {
@@ -73,7 +74,7 @@ export async function createCheckoutSession(input: CheckoutSessionInput): Promis
   const studioName = await tenantDisplayName(input.tenantId)
   const suffix = statementDescriptorSuffix(studioName)
   const tenantMetadata = { tenant_id: input.tenantId, client_id: input.metadata.client_id ?? '' }
-  const session = await stripe.checkout.sessions.create({
+  const session = await outbound('stripe', 'checkout.sessions.create', () => stripe.checkout.sessions.create({
     mode: 'payment',
     customer_email: input.email,
     // Metadata does not flow from a session to its intent on its own, and the
@@ -99,6 +100,6 @@ export async function createCheckoutSession(input: CheckoutSessionInput): Promis
     metadata: { ...input.metadata, tenant_id: input.tenantId },
     success_url: input.successUrl,
     cancel_url: input.cancelUrl,
-  })
+  }))
   return session.url
 }

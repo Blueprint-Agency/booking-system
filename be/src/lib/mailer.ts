@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm'
 import { env } from '../env'
 import { db } from '../db'
 import { logger, reportError } from '../shared/logger'
+import { outbound } from './outbound'
 import {
   createSendGate,
   type MailKind,
@@ -161,9 +162,16 @@ export function createResendTransport(
   }
 }
 
+/**
+ * The Resend call itself, under the outbound deadline. Below the gate and with
+ * no retry of its own: a timeout throws, the gate reads it as a network failure,
+ * and the gate's backoff decides whether to go again.
+ */
 function resendClient(apiKey: string): ResendClient {
   const resend = new Resend(apiKey)
-  return { send: (payload, options) => resend.emails.send(payload, options) }
+  return {
+    send: (payload, options) => outbound('resend', 'emails.send', () => resend.emails.send(payload, options)),
+  }
 }
 
 export let transport: MailTransport =

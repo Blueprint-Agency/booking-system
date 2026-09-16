@@ -1,9 +1,22 @@
 import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
+import { outbound, VENDOR_DEADLINE_MS } from './outbound'
 
+/**
+ * Every network call on this client goes through `outbound`. A signed URL is
+ * computed here, with no call to R2, so it does not.
+ */
 export const r2 = new S3Client({
   region: 'auto',
   endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  // Short connect and socket timeouts, so a stalled bucket fails inside the
+  // wrapper's deadline rather than past it. The wrapper retries when asked; the
+  // SDK does not.
+  requestHandler: {
+    connectionTimeout: 3_000,
+    socketTimeout: VENDOR_DEADLINE_MS.storage,
+  },
+  maxAttempts: 1,
   // R2 does not implement the SDK's flexible checksums. From @aws-sdk v3.729 the
   // default is `WHEN_SUPPORTED`, which signs the request and then adds
   // `x-amz-checksum-crc32` + `x-amz-sdk-checksum-algorithm` — R2 answers 403
@@ -44,13 +57,16 @@ export function publicObjectUrl(key: string | null | undefined): string | null {
 }
 
 export async function putObject(key: string, body: Uint8Array, contentType: string): Promise<void> {
-  await r2.send(
-    new PutObjectCommand({
-      Bucket: R2_BUCKET,
-      Key: key,
-      Body: body,
-      ContentType: contentType,
-    }),
+  await outbound('storage', 'putObject', abortSignal =>
+    r2.send(
+      new PutObjectCommand({
+        Bucket: R2_BUCKET,
+        Key: key,
+        Body: body,
+        ContentType: contentType,
+      }),
+      { abortSignal },
+    ),
   )
 }
 

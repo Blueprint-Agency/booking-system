@@ -6,7 +6,7 @@ import { logger } from '../shared/logger'
 
 export class AppError extends HTTPException {
   constructor(
-    status: 400 | 401 | 403 | 404 | 409 | 422,
+    status: 400 | 401 | 403 | 404 | 409 | 422 | 503,
     public code: ErrorCode,
     public details?: Record<string, unknown>,
   ) {

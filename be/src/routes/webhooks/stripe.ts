@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { stripe } from '../../lib/stripe'
+import { OFF_REQUEST_RETRY } from '../../lib/outbound'
 import { handleStripeEvent } from '../../services/billing/webhook-handler'
 import { ERROR_CODES } from '../../shared/error-codes'
 import { logger, setLogContext } from '../../shared/logger'
@@ -21,7 +22,8 @@ const app = new Hono().post('/stripe', async c => {
   }
 
   try {
-    await handleStripeEvent(event)
+    // Off the request path: the provider waits for the answer, not a member.
+    await handleStripeEvent(event, { retry: OFF_REQUEST_RETRY })
   } catch (err) {
     logger.error({ err, eventId: event?.id, eventType: event?.type }, 'stripe-webhook handler error')
     return c.json({ error: ERROR_CODES.handler_failed }, 500)

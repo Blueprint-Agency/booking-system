@@ -24,6 +24,7 @@ import { classTypes } from '../../db/schema/catalog'
 import { clients } from '../../db/schema/identity'
 import { requireTenantUrl } from '../tenants/urls'
 import { stripe } from '../../lib/stripe'
+import { outbound } from '../../lib/outbound'
 import { reportError } from '../../shared/logger'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { cancelBooking } from '../bookings/cancel'
@@ -355,9 +356,11 @@ async function refundAtProviderAndAudit(args: {
   attendedCount: number
   override: boolean
 }): Promise<void> {
-  await stripe.refunds.create(
-    { payment_intent: args.paymentIntentId },
-    { idempotencyKey: `refund:${args.paymentIntentId}` },
+  await outbound('stripe', 'refunds.create', () =>
+    stripe.refunds.create(
+      { payment_intent: args.paymentIntentId },
+      { idempotencyKey: `refund:${args.paymentIntentId}` },
+    ),
   )
   try {
     await db.insert(auditLog).values({

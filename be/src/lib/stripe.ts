@@ -1,8 +1,17 @@
 import Stripe from 'stripe'
 import { env } from '../env'
+import { VENDOR_DEADLINE_MS } from './outbound'
 
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
+/**
+ * Every network call on this client goes through `outbound` (`./outbound.ts`).
+ * The SDK's own timeout matches the wrapper's deadline, and it never retries on
+ * its own: a retry inside the SDK would run past that deadline unseen. Where a
+ * retry is wanted — webhooks and cron, never a route — the wrapper does it.
+ */
+export const stripe = new Stripe(env.STRIPE_SECRET_KEY!, {
   apiVersion: '2023-10-16',
+  timeout: VENDOR_DEADLINE_MS.stripe,
+  maxNetworkRetries: 0,
 })
 
 /**

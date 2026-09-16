@@ -2,9 +2,10 @@ import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { stripe } from '../../lib/stripe'
+import { outbound, VendorTimeoutError } from '../../lib/outbound'
 import { AppError, NotFoundError } from '../../shared/errors'
-import { quoteCrossLocationAddOn } from '../../services/packages/purchase'
 import { ERROR_CODES } from '../../shared/error-codes'
+import { quoteCrossLocationAddOn } from '../../services/packages/purchase'
 import {
   beginCrossLocationCheckout,
   beginPackageCheckout,
@@ -224,8 +225,11 @@ const app = new Hono()
 
     let session: Awaited<ReturnType<typeof stripe.checkout.sessions.retrieve>>
     try {
-      session = await stripe.checkout.sessions.retrieve(session_id)
-    } catch {
+      session = await outbound('stripe', 'checkout.sessions.retrieve', () =>
+        stripe.checkout.sessions.retrieve(session_id),
+      )
+    } catch (err) {
+      if (err instanceof VendorTimeoutError) throw err
       throw new NotFoundError('session_not_found')
     }
 
