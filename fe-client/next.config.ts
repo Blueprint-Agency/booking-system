@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
+import { securityHeaders } from "./src/lib/security-headers";
 
 const nextConfig: NextConfig = {
   // Workspace-root pinning is a LOCAL-ONLY workaround: a stray lockfile in the
@@ -53,6 +54,19 @@ const nextConfig: NextConfig = {
   },
   async redirects() {
     return [{ source: "/classes", destination: "/", permanent: true }];
+  },
+  // Hardening headers and the Content-Security-Policy on every response (#142).
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: securityHeaders({
+          apiUrl: process.env.NEXT_PUBLIC_API_URL,
+          sentryDsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
+          dev: process.env.NODE_ENV !== "production",
+        }),
+      },
+    ];
   },
 };
 
