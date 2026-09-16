@@ -55,7 +55,19 @@ async function payWithTestCard(page: Page) {
   await form.getByRole('textbox', { name: /expiration/i }).fill('12 / 34')
   await form.getByRole('textbox', { name: /CVC/ }).fill('123')
   await form.getByRole('textbox', { name: 'Cardholder name' }).fill('E2E Buyer')
+
+  // Stripe shapes the form by where the browser appears to be. From a US runner
+  // it defaults the country to the United States (asking for a ZIP) and ticks
+  // "Save my information" for Link, which then requires a phone number and
+  // leaves Pay doing nothing. So the country is set to the studio's own, and
+  // Link is declined — the journey is paying by card, not signing up to Link.
+  const country = form.getByRole('combobox', { name: 'Country or region' })
+  if (await country.isVisible().catch(() => false)) await country.selectOption({ label: 'Singapore' })
   const postal = form.getByRole('textbox', { name: /postal|ZIP/i })
-  if (await postal.isVisible().catch(() => false)) await postal.fill('50000')
+  if (await postal.isVisible().catch(() => false)) await postal.fill('018956')
+  for (const frame of page.frames()) {
+    const saveForLink = frame.getByRole('checkbox', { name: /Save my information/i })
+    if ((await saveForLink.count()) && (await saveForLink.isChecked())) await saveForLink.uncheck()
+  }
   await form.getByRole('button', { name: 'Pay', exact: true }).click()
 }
