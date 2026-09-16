@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { currentTenantId } from '../../db'
 import { PLATFORM_MAIL_FROM_NAME, sendMail } from '../../lib/mailer'
 import { sendTemplatedEmail } from '../notifications/send'
@@ -9,8 +10,8 @@ import { sendTemplatedEmail } from '../notifications/send'
  * **A studio pool's mail is that studio's mail.** It goes through
  * `sendTemplatedEmail` like every other message, so it is worded by the
  * Tenant's own `email_templates` row (editable in the portal), wears the
- * Tenant's display name and `Reply-To`, leaves on the member or portal envelope
- * by `userKind`, and files an `email_log` row. The Tenant is the one whose
+ * Tenant's display name and `Reply-To`, leaves on the platform's one envelope
+ * address ahead of any everyday mail at the send gate, and files an `email_log` row. The Tenant is the one whose
  * context the request opened: `/api/v1/auth/{client,staff}/*` runs behind
  * `resolveTenant`, so a code is always sent on behalf of the studio whose
  * hostname asked for it. No context means a caller bug, and it throws rather
@@ -67,20 +68,26 @@ export async function mailStaffPasswordReset(user: MailUser, resetUrl: string): 
  * The super portal has no Tenant, so its mail has no studio to speak for: no
  * template row to word it, no studio name to wear, and no `email_log` to file
  * it under (`tenant_id` is `NOT NULL` there). It is platform mail — the
- * platform's name on the portal envelope, in copy that lives here because it
+ * platform's name on the platform's envelope, in copy that lives here because it
  * belongs to no studio.
  */
 
 const escapeHtml = (value: string) =>
   value.replace(/[&<>"']/g, ch => `&#${ch.charCodeAt(0)};`)
 
-async function mailPlatform(to: string, subject: string, lines: string[]): Promise<void> {
+async function mailPlatform(
+  slug: 'platform_two_factor_code' | 'platform_password_reset',
+  to: string,
+  subject: string,
+  lines: string[],
+): Promise<void> {
   const html = lines.map(line => `<p>${line}</p>`).join('\n')
-  await sendMail({ to, subject, html, audience: 'staff' })
+  // No `email_log` row to key on, so the key is made here, once per message.
+  await sendMail({ to, subject, html, slug, tenantId: null, idempotencyKey: `platform-mail/${randomUUID()}` })
 }
 
 export async function mailPlatformTwoFactorCode(user: MailUser, code: string): Promise<void> {
-  await mailPlatform(user.email, `Your ${PLATFORM_MAIL_FROM_NAME} super portal verification code`, [
+  await mailPlatform('platform_two_factor_code', user.email, `Your ${PLATFORM_MAIL_FROM_NAME} super portal verification code`, [
     `Hi ${escapeHtml(user.name)},`,
     'Your password was accepted for the super portal. Enter this code to finish signing in:',
     `<strong style="font-size:24px;letter-spacing:0.18em;">${escapeHtml(code)}</strong>`,
@@ -90,7 +97,7 @@ export async function mailPlatformTwoFactorCode(user: MailUser, code: string): P
 
 export async function mailPlatformPasswordReset(user: MailUser, resetUrl: string): Promise<void> {
   const href = escapeHtml(resetUrl)
-  await mailPlatform(user.email, `Set your ${PLATFORM_MAIL_FROM_NAME} super portal password`, [
+  await mailPlatform('platform_password_reset', user.email, `Set your ${PLATFORM_MAIL_FROM_NAME} super portal password`, [
     `Hi ${escapeHtml(user.name)},`,
     `Use this link to choose your super portal password: <a href="${href}">${href}</a>`,
     "The link works once and expires in one hour. If you didn't ask for it, ignore this email.",

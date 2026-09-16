@@ -12,7 +12,7 @@ The single backend serves **both** `fe-portal` and `fe-client`. `fe-portal` is t
 - `/api/v1/me/*` — `client` pool session (see `be-client.md`)
 - `/api/v1/portal/admin/*` and `/api/v1/portal/instructor/*` — `staff` pool session (see `be-portal.md`)
 - `/api/v1/platform/*` — `platform` pool session + `PLATFORM_ADMIN_EMAILS`
-- `/api/v1/webhooks/*` — Stripe signed webhook
+- `/api/v1/webhooks/*` — Stripe and Resend signed webhooks
 
 ---
 
@@ -129,8 +129,8 @@ be/
     │   │
     │   └── webhooks/                  # Public endpoints with vendor signature verification
     │       ├── index.ts
-    │       └── stripe.ts              # payment_intent.succeeded → grant; charge.refunded → mark
-    │                                  # (no SMTP bounce webhook — failures captured via Nodemailer rejection in email_log)
+    │       ├── stripe.ts              # payment_intent.succeeded → grant; charge.refunded → mark
+    │       └── resend.ts              # delivered / bounced / complained / suppressed → email_log status, with alerts
     │
     ├── services/                      # Per-feature — jointly owned, single source of domain rules
     │   ├── bookings/
@@ -894,7 +894,7 @@ trial_pass_purchase_confirmed          # NEW — distinct from package_purchase_
 
 #### `email_log`
 
-id, template_slug (text), recipient_email (text), recipient_user_id (uuid, nullable), recipient_user_kind enum (`client`, `staff`), subject_rendered (text), body_rendered (text), status enum (`queued`, `sent`, `failed`), smtp_message_id (text, nullable — RFC 5322 `Message-ID` header returned by Nodemailer), smtp_response (text, nullable — last line of SMTP server response), error (text, nullable), queued_at, sent_at.
+id, template_slug (text), recipient_email (text), recipient_user_id (uuid, nullable), recipient_user_kind enum (`client`, `staff`), subject_rendered (text), body_rendered (text), status enum (`queued`, `sent`, `failed`, then Resend's webhook outcomes `delivery_delayed`, `delivered`, `bounced`, `complained`, `suppressed` — outcomes only move forward), smtp_message_id (text, nullable — the Resend email id the webhook matches on), smtp_response (text, nullable — last line of SMTP server response), error (text, nullable), queued_at, sent_at, outcome_at (nullable — when the webhook last moved status past `sent`).
 
 **Indexes:** `(recipient_user_id, queued_at desc)`, `(status)`, `(template_slug, queued_at desc)`.
 
@@ -1036,7 +1036,7 @@ See `docs/adr/0004-self-hosted-auth-with-better-auth.md` for the decision.
 
 ### 6d. Mail (Resend)
 
-- **Transport.** `lib/mailer.ts` constructs one Resend client at boot from `RESEND_API_KEY`. One envelope address in the domain verified on Resend, `MAIL_FROM_EMAIL` (`noreply@reservetoday.app`), for members and staff alike. `MAIL_FROM_PORTAL_EMAIL` stays blank and falls back to it; set it and staff mail moves to that address, picked by the recipient's `userKind` in `sendTemplatedEmail`. A Tenant's display name and `Reply-To` are applied per send (`docs/md/mail-identity.md`). Under `NODE_ENV=test` a null transport accepts and discards every message.
+- **Transport.** `lib/mailer.ts` constructs one Resend client at boot from `RESEND_API_KEY`. One envelope address in the domain verified on Resend, the constant `noreply@reservetoday.app`, for members and staff alike. Every send passes through one in-process send gate (`lib/send-gate.ts`): paced under Resend's team rate limit, credential mail (codes, resets) ahead of everyday mail, bounded retries on rate-limit / 5xx / network failures, no retry on quota refusals, an idempotency key and `kind` / `template` / `tenant` tags on every message. A Tenant's display name and `Reply-To` are applied per send (`docs/md/mail-identity.md`). Under `NODE_ENV=test` a null transport accepts and discards every message.
 - **Provider swap** is confined to the `MailTransport` interface in `lib/mailer.ts`; callers see `sendMail()` only.
 - **Server-side rendering** via `services/notifications/render.ts`:
   - Parse template body for `{{variable}}` tokens

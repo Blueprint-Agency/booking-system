@@ -102,32 +102,13 @@ const schema = z.object({
    */
   STRIPE_STATEMENT_DESCRIPTOR_PREFIX: z.string().optional(),
 
-  // Mail — one Resend API key and the platform's envelope identity. The
-  // *tenant* half of the from-identity is not env at all: it is per-studio data
-  // on `tenant_settings` (docs/md/mail-identity.md).
+  // Mail — one Resend API key. The platform's envelope address and name are
+  // constants in lib/mailer.ts; the *tenant* half of the from-identity is
+  // per-studio data on `tenant_settings` (docs/md/mail-identity.md).
   RESEND_API_KEY: z.string().min(1, 'RESEND_API_KEY is required'),
-  // The two envelope addresses, both in the domain verified on Resend. A
-  // member's mail leaves on MAIL_FROM_EMAIL; a staff member's on
-  // MAIL_FROM_PORTAL_EMAIL, which falls back to the first when blank.
-  //
-  // Read as "blank means unset": the deploy workflow writes the line
-  // unconditionally, so an unset repository variable arrives as an empty string
-  // rather than as an absent key, and `.optional()` alone would let that empty
-  // string through to `.email()` and fail the boot.
-  MAIL_FROM_EMAIL: z
-    .string()
-    .transform(v => v.trim())
-    .pipe(z.string().email('MAIL_FROM_EMAIL must be a valid email')),
-  MAIL_FROM_PORTAL_EMAIL: z
-    .string()
-    .optional()
-    .transform(v => v?.trim() || undefined)
-    .pipe(z.string().email('MAIL_FROM_PORTAL_EMAIL must be a valid email').optional()),
-  // Shown only when a tenant has no name of its own to put there.
-  MAIL_FROM_NAME: z
-    .string()
-    .optional()
-    .transform(v => v?.trim() || 'ReserveToday'),
+  // Signing secret (`whsec_…`) of the Resend webhook that reports delivery,
+  // bounce and complaint outcomes. Unset, that route answers "not configured".
+  RESEND_WEBHOOK_SECRET: z.string().optional(),
   R2_ACCOUNT_ID: z.string().optional(),
   R2_ACCESS_KEY_ID: z.string().optional(),
   R2_SECRET_ACCESS_KEY: z.string().optional(),

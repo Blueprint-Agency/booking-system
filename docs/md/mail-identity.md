@@ -63,19 +63,41 @@ Reply-To: hello@a-studio.com
 The platform sends from **one** envelope address, for members and staff alike,
 never chosen by which studio is speaking:
 
-| Recipient | Envelope | Env |
-|---|---|---|
-| A member (`userKind: 'client'`) | `noreply@reservetoday.app` | `MAIL_FROM_EMAIL` |
-| Staff — admin or instructor (`userKind: 'staff'`) | `noreply@reservetoday.app` | `MAIL_FROM_PORTAL_EMAIL`, left blank so it falls back to `MAIL_FROM_EMAIL` |
+`noreply@reservetoday.app`, with the name `ReserveToday` where no studio speaks
+(super portal mail). Both are constants in `be/src/lib/mailer.ts`
+(`PLATFORM_MAIL_FROM_EMAIL`, `PLATFORM_MAIL_FROM_NAME`) — not env, and not
+tenant data, because they belong to the platform's domain and are the same for
+every studio and every reader.
 
 One address is the conventional setup for transactional mail: the recipient
 reads the studio's display name, and a reply goes to the studio's `Reply-To`,
-so the envelope address carries nothing worth splitting. The split stays
-available: set `MAIL_FROM_PORTAL_EMAIL` to a second address in the same verified
-domain and staff mail moves onto it, because `sendTemplatedEmail` picks the
-address from the recipient's `userKind` — no call site chooses. Both are env,
-not tenant data, because they belong to the platform's domain and are the same
-for every studio.
+so the envelope address carries nothing worth splitting.
+
+## Sending: one gate, two kinds
+
+Every message leaves through one in-process send gate (`be/src/lib/send-gate.ts`):
+
+- **Two kinds.** *Credential* mail — sign-in code, staff second factor, staff
+  password reset, super portal sign-in mail — and *everyday* mail, everything
+  else. `mailKind()` in `lib/mailer.ts` decides from the template slug, in one
+  place. The kind sets queue priority and a Resend tag; it never changes the
+  address.
+- **Paced** under Resend's per-team rate limit (`SEND_RATE_PER_SECOND`, 8).
+  Credential mail takes the next free slot ahead of waiting everyday mail.
+- **Retries** a rate-limit refusal, a 5xx or a network failure, after Resend's
+  `retry-after` or exponential backoff with jitter, a bounded number of times.
+  A quota refusal (`daily_quota_exceeded`, `monthly_quota_exceeded`) is never
+  retried: the send is `failed` in `email_log` and reported as
+  `mail_quota_exhausted`. Any other refusal fails at once.
+- **Idempotent.** Every send carries a key — the `email_log` row id, or a
+  generated one for super portal mail — reused on every retry.
+- **Tagged** with `kind`, `template` and `tenant` (no tenant on super portal mail).
+- **Watches headroom.** Resend's `x-resend-monthly-quota` header is logged, with
+  `mail_quota_monthly_high` past 80% of the month; today's `sent` rows across
+  every tenant (`email_log_sent_today()`, migration 0057) raise
+  `mail_quota_daily_high` at 80 of Free's 100.
+
+One process only: a second backend instance would double the pace.
 
 - **The display name is what a recipient actually sees.** Every mail client
   shows the name, not the address, in the inbox list. This is the part that
@@ -139,9 +161,8 @@ the display name and `Reply-To` are already per-tenant.
 | Var | Where | Meaning |
 |---|---|---|
 | `RESEND_API_KEY` | environment secret | Sending-access key for the platform's verified domain. |
-| `MAIL_FROM_EMAIL` | environment variable | The envelope address a member sees. Required. |
-| `MAIL_FROM_PORTAL_EMAIL` | environment variable | The envelope address staff see. Blank falls back to `MAIL_FROM_EMAIL`. |
-| `MAIL_FROM_NAME` | environment variable | Display name used only when a tenant has no name of its own. Defaults to `ReserveToday`. |
+
+The sender address and platform name are code, not env (see above).
 
 Under test (`NODE_ENV=test`) the mailer swaps in a transport that accepts and
 discards every message — `.env` holds a live key and the harness cannot tell a
