@@ -33,11 +33,9 @@ import impersonate from './impersonate'
  * Role gating for the portal /admin subtree: a studio's admins run the whole
  * studio (#148), so every surface here takes the same gate. Instructors have
  * their own subtree and are refused all of this one.
- *
- * `superadmin` passes too until the role itself is removed (#150).
  */
 const app = new Hono()
-  .use('*', requireRole('superadmin', 'admin'))
+  .use('*', requireRole('admin'))
 
   // ── Route mounts ────────────────────────────────────────────────────────
   .route('/locations', locations)

@@ -16,7 +16,7 @@ export type ManualAdjustmentRow = typeof manualAdjustments.$inferSelect
 export interface ListClientsOptions {
   q?: string
   status?: 'active' | 'suspended'
-  // Default: hide soft-deleted rows. Superadmin "Deleted" view passes true.
+  // Default: hide soft-deleted rows. The admin "Deleted" view passes true.
   includeDeleted?: boolean
 }
 
@@ -211,7 +211,7 @@ export interface SoftDeleteClientInput {
 }
 
 /**
- * Soft-delete a client (superadmin-only — route enforces). Sets deletedAt +
+ * Soft-delete a client (admin-only — route enforces). Sets deletedAt +
  * deletedByStaffId on the row and ends the member's sessions at this studio, so
  * they're booted immediately and cannot sign in here again. The DB row, all
  * bookings, packages, credit ledger entries, and the auth user are preserved so

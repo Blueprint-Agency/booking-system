@@ -24,7 +24,7 @@ import { tenantId } from '../../../middleware/tenant'
 // instructor's own Teaching log stays where it is.
 // See docs/md/spec-finance.md and be/docs/adr/0002-finance-replaces-payroll.md.
 //
-// Shared read/write for superadmin + admin (gated in routes/portal/admin/index.ts).
+// Read/write for admins (gated in routes/portal/admin/index.ts).
 // Only Instructor Pay and Manual Entries are writable — there is deliberately no
 // endpoint that edits a purchase or a Refund, because those are the payment
 // provider's record and not ours to restate.

@@ -9,8 +9,8 @@ import {
 } from './harness'
 
 /**
- * A studio admin manages every staff member, other admins included, without a
- * superadmin (#147). Each test runs in a studio of its own, provisioned with no
+ * A studio admin manages every staff member, other admins included (#147).
+ * Each test runs in a studio of its own, provisioned with no
  * staff, so "how many admins does this studio have" is the test's to state and
  * not whatever another suite left in the shared fixtures.
  */

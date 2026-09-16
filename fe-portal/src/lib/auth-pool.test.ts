@@ -10,7 +10,7 @@ test("a studio's portal signs in on the staff pool", () => {
 });
 
 test("the super portal signs in on its own platform pool", () => {
-  // Its own pool, not the staff one: a studio superadmin's credentials do not
+  // Its own pool, not the staff one: a studio admin's credentials do not
   // exist there, so they cannot produce a super portal session at all.
   assert.equal(portalAuthPool("admin.portal.localhost:3001", ROOT), "platform");
   assert.equal(portalAuthBasePath("admin.portal.localhost:3001", ROOT), "/auth/platform");

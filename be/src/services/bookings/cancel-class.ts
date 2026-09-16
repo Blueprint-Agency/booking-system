@@ -4,7 +4,7 @@
  *
  * Two actors reach this, and they get the SAME outcome for members — only the
  * recorded provenance differs (`source`):
- *   - `admin`      — any admin/superadmin, no reason required.
+ *   - `admin`      — any admin, no reason required.
  *   - `instructor` — the class's MAIN instructor cancelling their own class
  *                    (spec-instructor-leave.md § instructor-initiated class
  *                    cancellation). Reason required; no notice window; all

@@ -1096,7 +1096,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
           two.tenantId,
           one.workshopId,
           two.instructorId,
-          'superadmin',
+          'admin',
         ),
       (err: { code?: string }) => err.code === 'workshop_not_found',
     )

@@ -21,7 +21,7 @@
  *
  * None of this is authorisation. The backend's `requirePlatformAdmin` is, and it
  * answers `404` to everyone who is not on the platform allowlist, including a
- * studio's own superadmin. This only decides which UI a hostname gets.
+ * studio's own admin. This only decides which UI a hostname gets.
  */
 
 /** Where the super portal's own pages live in the `app/` tree. */

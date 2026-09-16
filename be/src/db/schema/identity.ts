@@ -35,7 +35,7 @@ export const clients = pgTable(
     dob: date('dob'),
     status: clientStatusEnum('status').notNull().default('active'),
     suspendedAt: timestamp('suspended_at', { withTimezone: true }),
-    // Soft-delete (superadmin-only). When set, the row is filtered out of every
+    // Soft-delete (admin-only). When set, the row is filtered out of every
     // admin/client read path, and the member's sessions here end so they can't
     // sign in. Restore clears it. Hard erase (GDPR) is a separate Purge
     // action that anonymises PII — not implemented in this slice.
@@ -85,13 +85,6 @@ export const staffUsers = pgTable(
     languages: text('languages').array().notNull().default(sql`'{}'`),
     role: staffRoleEnum('role').notNull(),
     status: staffStatusEnum('status').notNull().default('pending'),
-    // Workspace grants per admin-restructure.md §15a. Empty array = "all active locations"
-    // (superadmin / implicit grant). Each entry FKs locations.id at the app layer because
-    // Postgres arrays cannot enforce FK. Instructor role ignores this column.
-    grantedLocationIds: uuid('granted_location_ids')
-      .array()
-      .notNull()
-      .default(sql`'{}'::uuid[]`),
     archivedAt: timestamp('archived_at', { withTimezone: true }),
     archivedByStaffId: uuid('archived_by_staff_id'),
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
@@ -108,9 +101,6 @@ export const staffUsers = pgTable(
     tenantEmailUnique: unique('staff_users_tenant_email_unique').on(table.tenantId, table.email),
     roleStatusIdx: index('staff_role_status_idx').on(table.tenantId, table.role, table.status),
     deletedIdx: index('staff_users_deleted_idx').on(table.tenantId, table.deletedAt),
-    // GIN on the uuid[] column for workspace membership filters (§4a indexes).
-    grantedLocationsGinIdx: index('staff_users_granted_locations_gin_idx')
-      .using('gin', table.grantedLocationIds),
     archiverFk: foreignKey({
       columns: [table.archivedByStaffId],
       foreignColumns: [table.id],
@@ -125,15 +115,8 @@ export const staffInvitations = pgTable(
     tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
     email: text('email').notNull(),
-    // Role is enforced at the app layer to `admin` only in v1 — superadmin is seeded and
-    // instructors are created indirectly via the /instructors route (§4a / §15a).
+    // Copied onto the resulting staff_users row on accept (§4a).
     role: staffRoleEnum('role').notNull(),
-    // Copied onto resulting staff_users row on accept (§4a). Empty array = inherit inviter's
-    // grants on accept (if inviter is superadmin → all locations).
-    grantedLocationIds: uuid('granted_location_ids')
-      .array()
-      .notNull()
-      .default(sql`'{}'::uuid[]`),
     // Unique per Tenant — see `tokenUnique` below.
     token: text('token').notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),

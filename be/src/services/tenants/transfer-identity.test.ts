@@ -51,7 +51,7 @@ test('references are rewritten and unknown uuids are left alone', () => {
 })
 
 test('uuid arrays are rewritten element by element', () => {
-  // `staff_users.granted_location_ids` — a reference like any other.
+  // A uuid array column is a reference like any other.
   const map = new Map([[A, B]])
   assert.deepEqual(remapValue([A, C], map), [B, C])
 })

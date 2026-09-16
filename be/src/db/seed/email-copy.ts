@@ -495,7 +495,7 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
   /* ── Staff-facing ────────────────────────────────────────────────────── */
 
   /**
-   * Sent to every active admin/superadmin when an instructor cancels their own
+   * Sent to every active admin when an instructor cancels their own
    * class — the whole point is that it names the class, the instructor and the
    * reason.
    */

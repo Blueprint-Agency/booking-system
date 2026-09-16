@@ -32,7 +32,7 @@ import {
  *
  * **Three instances, not one.** Separate user pools are the property being
  * kept: a member must never be able to sign
- * into a portal, and a studio superadmin's credentials must not exist in the
+ * into a portal, and a studio admin's credentials must not exist in the
  * pool the super portal reads. So each pool is its own instance over its own
  * tables (`db/schema/auth.ts`) on its own base path, and a token one pool
  * issued is a row the other two have never seen.
@@ -203,7 +203,7 @@ const clientAuth = betterAuth({
     modelName: 'clientAuthSessions',
     additionalFields: {
       ...tenantClaimField,
-      // Who opened this session as the member, when a superadmin did (#118).
+      // Who opened this session as the member, when a studio admin did (#118).
       impersonatedBy: { type: 'string', required: false, input: false },
     },
   },
@@ -394,12 +394,12 @@ export async function readPoolSession(pool: AuthPool, bearerToken: string): Prom
 }
 
 /**
- * Open a real `client` pool session for a member on a superadmin's behalf, log
+ * Open a real `client` pool session for a member on a studio admin's behalf, log
  * its start, and return its bearer token (#118).
  *
  * The admin plugin's impersonation, minus its endpoint: that endpoint wants the
  * caller signed into the *same* pool with an admin role, and nobody in the member
- * pool is, or ever should be, an admin. The superadmin is in the staff pool, so
+ * pool is, or ever should be, an admin. The studio admin is in the staff pool, so
  * the session is created the way the plugin creates it — through the pool's
  * internal adapter, which runs the pool's session hooks — with `impersonatedBy`
  * set, living exactly as long as the grant that goes with it.
@@ -410,7 +410,7 @@ export async function readPoolSession(pool: AuthPool, bearerToken: string): Prom
  *
  * The start is logged here because no endpoint ran for the auth-audit plugin
  * to see; the end is the plugin's, when the session is signed out. `from` is the
- * superadmin's request, whose address and user agent the row records.
+ * studio admin's request, whose address and user agent the row records.
  */
 export async function openImpersonationSession(input: {
   memberAuthUserId: string

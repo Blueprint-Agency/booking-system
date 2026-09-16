@@ -9,9 +9,9 @@
  *
  * These used to be keyed on a deploy-time email variable: one address, seeded into the
  * one studio a deployment had, protected from archival and the only account
- * allowed to touch another superadmin. Studios now arrive by provisioning or
+ * allowed to touch another top-rank account. Studios now arrive by provisioning or
  * restore and carry no seeded address, so that check answered `false` for every
- * real row — which turned "only the main superadmin may archive a superadmin"
+ * real row — which turned "only the main account may archive its peers"
  * into "nobody may, ever". The rule that was actually wanted is the one below:
  * count the admins, and refuse to reach zero.
  *
@@ -283,7 +283,6 @@ export interface UpdateStaffProfileInput {
     bio?: string | null
     languages?: string[]
     role?: StaffUserRow['role']
-    grantedLocationIds?: string[]
     /** Assigned Days. Deliberately NOT privilege fields — an admin may set
      *  them — and they land on `instructors`, so an instructor target only. */
     annualLeaveDays?: number
@@ -330,8 +329,7 @@ export async function updateStaffProfile(input: UpdateStaffProfileInput): Promis
   const refusal = staffEditRefusal({
     actorRole: actor.role,
     targetRole: target.role,
-    touchesPrivilegeFields:
-      patch.role !== undefined || patch.grantedLocationIds !== undefined,
+    touchesPrivilegeFields: patch.role !== undefined,
   })
   if (refusal) {
     throw new ForbiddenError(refusal, { message: STAFF_EDIT_REFUSAL_MESSAGE[refusal] })
@@ -368,7 +366,6 @@ export async function updateStaffProfile(input: UpdateStaffProfileInput): Promis
   if (patch.bio !== undefined) set.bio = patch.bio
   if (patch.languages !== undefined) set.languages = patch.languages
   if (patch.role !== undefined) set.role = patch.role
-  if (patch.grantedLocationIds !== undefined) set.grantedLocationIds = patch.grantedLocationIds
 
   const assigned = {
     ...(patch.annualLeaveDays !== undefined ? { annualLeaveDays: patch.annualLeaveDays } : {}),

@@ -14,10 +14,9 @@ import { tenantId } from '../../middleware/tenant'
 const app = new Hono().get('/me', async c => {
   const row = c.get('staffRow')
 
-  const granted = row.grantedLocationIds ?? []
   // Every staff member sees all of THIS studio's active locations — never every
-  // studio on the platform. Location grants no longer narrow it (#148); this
-  // response is what the portal renders its location switcher from.
+  // studio on the platform. This response is what the portal renders its
+  // location switcher from.
   const activeLocations = await db
     .select()
     .from(locations)
@@ -29,7 +28,6 @@ const app = new Hono().get('/me', async c => {
     name: row.name,
     role: row.role,
     status: row.status,
-    granted_location_ids: granted,
     locations: activeLocations
       .filter(l => l.archivedAt === null)
       .map(l => ({

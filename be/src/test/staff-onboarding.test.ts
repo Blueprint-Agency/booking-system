@@ -31,11 +31,11 @@ describe('staff onboarding', { skip: integrationTestsEnabled ? false : SKIP_REAS
 
   const run = Date.now().toString(36)
   const DOMAIN = `onboarding-${run}.test`
-  const SUPERADMIN = `superadmin@${DOMAIN}`
+  const ADMIN = `admin@${DOMAIN}`
   const at = (name: string) => `${name}@${DOMAIN}`
   const NEW_PASSWORD = 'a password of their own'
 
-  let superadmin!: Record<string, string>
+  let admin!: Record<string, string>
 
   const portalHeaders = (tenant: { slug: string }): Record<string, string> => ({
     'X-Tenant-Slug': tenant.slug,
@@ -87,7 +87,7 @@ describe('staff onboarding', { skip: integrationTestsEnabled ? false : SKIP_REAS
 
   const invite = async (email: string, role: 'admin' | 'instructor' = 'admin') =>
     expectStatus(
-      await send('/api/v1/portal/admin/staff/invite', { body: { email, role }, headers: superadmin }),
+      await send('/api/v1/portal/admin/staff/invite', { body: { email, role }, headers: admin}),
       201,
     )
 
@@ -113,15 +113,15 @@ describe('staff onboarding', { skip: integrationTestsEnabled ? false : SKIP_REAS
     ;({ discardedMail } = await import('../lib/mailer'))
     ;({ one, two } = harness.tenants)
 
-    superadmin = await harness.signInAs('staff', SUPERADMIN, one)
-    const superadminUser = await authUser(SUPERADMIN)
+    admin = await harness.signInAs('staff', ADMIN, one)
+    const adminUser = await authUser(ADMIN)
     await harness.db.insert(schema.staffUsers).values({
       tenantId: one.id,
-      email: SUPERADMIN,
-      name: 'Probe Superadmin',
-      role: 'superadmin',
+      email: ADMIN,
+      name: 'Probe Admin',
+      role: 'admin',
       status: 'active',
-      authUserId: superadminUser!.id,
+      authUserId: adminUser!.id,
     })
   })
 
@@ -221,7 +221,7 @@ describe('staff onboarding', { skip: integrationTestsEnabled ? false : SKIP_REAS
       .from(schema.staffInvitations)
       .where(eq(schema.staffInvitations.staffUserId, row!.id))
     await expectStatus(
-      await send(`/api/v1/portal/admin/staff/invitations/${invitation!.id}/resend`, { body: {}, headers: superadmin }),
+      await send(`/api/v1/portal/admin/staff/invitations/${invitation!.id}/resend`, { body: {}, headers: admin}),
       200,
     )
     const resent = invitationMail(email)
@@ -244,7 +244,7 @@ describe('staff onboarding', { skip: integrationTestsEnabled ? false : SKIP_REAS
     await expectStatus(
       await send('/api/v1/portal/admin/instructors', {
         body: { email, name: 'Probe Instructor' },
-        headers: superadmin,
+        headers: admin,
       }),
       201,
     )
@@ -267,7 +267,7 @@ describe('staff onboarding', { skip: integrationTestsEnabled ? false : SKIP_REAS
     const invitation = await invite(email)
 
     await expectStatus(
-      await send(`/api/v1/portal/admin/staff/invitations/${invitation.id}/revoke`, { body: {}, headers: superadmin }),
+      await send(`/api/v1/portal/admin/staff/invitations/${invitation.id}/revoke`, { body: {}, headers: admin}),
       200,
     )
     assert.equal(await staffRow(one.id, email), null)
@@ -297,7 +297,7 @@ describe('staff onboarding', { skip: integrationTestsEnabled ? false : SKIP_REAS
 
     const row = await staffRow(one.id, email)
     await expectStatus(
-      await send(`/api/v1/portal/admin/staff/${row!.id}/archive`, { body: {}, headers: superadmin }),
+      await send(`/api/v1/portal/admin/staff/${row!.id}/archive`, { body: {}, headers: admin}),
       200,
     )
 

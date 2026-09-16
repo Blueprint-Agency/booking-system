@@ -267,7 +267,7 @@ export interface Booking {
 
 // --- Identity (§15, §16) ---
 
-export type StaffRole = "superadmin" | "admin" | "instructor";
+export type StaffRole = "admin" | "instructor";
 export type StaffStatus = "pending" | "active" | "archived";
 
 export interface StaffUser {
@@ -276,13 +276,6 @@ export interface StaffUser {
   email: string;
   role: StaffRole;
   status: StaffStatus;
-  /**
-   * Locations the user can access.
-   * Empty for superadmin (their grants are implicit — all active locations).
-   * Explicit list for admin.
-   * Unused for instructor role.
-   */
-  grantedLocationIds: string[];
 }
 
 export interface Client {

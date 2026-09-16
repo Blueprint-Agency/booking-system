@@ -10,24 +10,18 @@ assert.strictEqual(
   'outranked_staff_edit_forbidden',
 )
 assert.strictEqual(
-  staffEditRefusal({ actorRole: 'instructor', targetRole: 'superadmin', ...plain }),
-  'outranked_staff_edit_forbidden',
-)
-assert.strictEqual(
   staffEditRefusal({ actorRole: 'instructor', targetRole: 'instructor', ...plain }),
   null,
 )
 
-// --- an admin can edit anyone, a superadmin included -------------------------
-for (const targetRole of ['superadmin', 'admin', 'instructor'] as const) {
+// --- an admin can edit anyone, another admin included ------------------------
+for (const targetRole of ['admin', 'instructor'] as const) {
   assert.strictEqual(staffEditRefusal({ actorRole: 'admin', targetRole, ...plain }), null)
-  assert.strictEqual(staffEditRefusal({ actorRole: 'superadmin', targetRole, ...plain }), null)
 }
 
-// --- only an admin (or the superadmin it is replacing) changes a role --------
-for (const targetRole of ['superadmin', 'admin', 'instructor'] as const) {
+// --- only an admin changes a role --------------------------------------------
+for (const targetRole of ['admin', 'instructor'] as const) {
   assert.strictEqual(staffEditRefusal({ actorRole: 'admin', targetRole, ...privileged }), null)
-  assert.strictEqual(staffEditRefusal({ actorRole: 'superadmin', targetRole, ...privileged }), null)
 }
 // the escalation path: an instructor patching their own role
 assert.strictEqual(

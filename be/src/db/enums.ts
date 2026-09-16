@@ -7,7 +7,7 @@ export const tenantStatusEnum = pgEnum('tenant_status', ['active', 'suspended', 
 // Identity
 export const clientStatusEnum = pgEnum('client_status', ['active', 'suspended'])
 export const clientGenderEnum = pgEnum('client_gender', ['female', 'male', 'non_binary', 'prefer_not_to_say'])
-export const staffRoleEnum = pgEnum('staff_role', ['superadmin', 'admin', 'instructor'])
+export const staffRoleEnum = pgEnum('staff_role', ['admin', 'instructor'])
 export const staffStatusEnum = pgEnum('staff_status', ['pending', 'active', 'archived'])
 export const invitationStatusEnum = pgEnum('invitation_status', ['pending', 'accepted', 'revoked', 'expired'])
 

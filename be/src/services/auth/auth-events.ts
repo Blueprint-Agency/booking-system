@@ -112,7 +112,7 @@ export function authAudit(pool: AuthPool) {
               before: async (session: { userId: string; impersonatedBy?: string | null }, ctx: EndpointContext | null) => {
                 if (ctx?.path !== '/sign-out') return
                 // Signing an impersonation session out is how it stops (#118):
-                // filed like its start, as the superadmin's act on the member.
+                // filed like its start, as the studio admin's act on the member.
                 if (session.impersonatedBy) {
                   await recordAuthEvent({
                     pool: 'staff',

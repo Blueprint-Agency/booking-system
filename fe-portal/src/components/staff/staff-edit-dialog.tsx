@@ -24,13 +24,11 @@ const GENDER_OPTIONS = [
 ] as const;
 
 const ROLE_LABEL = {
-  superadmin: "Superadmin",
   admin: "Admin",
   instructor: "Instructor",
 } as const;
 
 const ROLE_TONE = {
-  superadmin: "warning",
   admin: "accent",
   instructor: "cyan",
 } as const;
@@ -56,7 +54,7 @@ export interface StaffEditableFields {
   gender: "female" | "male" | "non_binary" | "prefer_not_to_say" | null;
   bio: string | null;
   languages: string[] | null;
-  role: "superadmin" | "admin" | "instructor";
+  role: "admin" | "instructor";
   status: "pending" | "active" | "archived";
   /** Assigned Days — sent by the API for instructors only. */
   annual_leave_days?: number;
@@ -533,12 +531,7 @@ function StaffProfileForm({
             value={role}
             onChange={e => setRole(e.target.value as typeof role)}
           >
-            {/* Superadmin is listed only for someone who already holds it,
-                so it can be kept or changed but never newly picked. */}
-            {(staff.role === "superadmin"
-              ? (["superadmin", "admin", "instructor"] as const)
-              : (["admin", "instructor"] as const)
-            ).map(r => (
+            {(["admin", "instructor"] as const).map(r => (
               <option key={r} value={r}>
                 {ROLE_LABEL[r]}
               </option>

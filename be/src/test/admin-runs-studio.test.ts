@@ -6,7 +6,7 @@ import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from
 /**
  * A studio admin runs the whole studio (#148), over real HTTP.
  *
- * Every portal surface that only a superadmin could write to opens to admins;
+ * Every portal surface that used to be closed to admins opens to them;
  * clients, workshops and rooms stop being read-only for them. An instructor
  * keeps exactly what they had: none of it.
  */
@@ -112,7 +112,7 @@ describe('admins run the studio', { skip: integrationTestsEnabled ? false : SKIP
     await harness.close()
   })
 
-  /** One write in each group that used to be superadmin-only or admin-read-only. */
+  /** One write in each group that used to be closed or read-only to admins. */
   const writes = (): Array<{ group: string; method: string; path: string; body?: unknown }> => [
     { group: 'locations', method: 'POST', path: '/locations', body: { name: `${TAG} Studio` } },
     { group: 'class types', method: 'POST', path: '/class-types', body: { name: `${TAG} Flow` } },
@@ -245,17 +245,13 @@ describe('admins run the studio', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(row?.deletedAt, null)
   })
 
-  test("an admin sees every active location, whatever their grants say", async () => {
-    await harness.db
-      .update(schema.staffUsers)
-      .set({ grantedLocationIds: [location.id] })
-      .where(eq(schema.staffUsers.id, admin.row.id))
+  test('an admin sees every active location', async () => {
     const extra = await ok(await send('/locations', admin.headers, 'POST', { name: `${TAG} Annex` }))
 
     const res = await harness.app.request('/api/v1/portal/auth/me', { headers: admin.headers })
     const me = (await res.json()) as { locations: Array<{ id: string }> }
     const ids = me.locations.map(l => l.id)
     assert.ok(ids.includes(location.id))
-    assert.ok(ids.includes(extra.id), 'a location outside the grants is listed')
+    assert.ok(ids.includes(extra.id), 'a newly added location is listed')
   })
 })

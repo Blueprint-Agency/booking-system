@@ -30,7 +30,7 @@ import {
 /**
  * The leave queue — every instructor's requests, and the decision on each.
  *
- * Admin and superadmin both land here; the backend gates the mount, so there is
+ * Admins land here; the backend gates the mount, so there is
  * no role branch in this file. Whether a request can be approved, rejected or
  * revoked is the server's call — the buttons below mirror those rules so the
  * common mistake is hard to make, and the server refuses regardless.

@@ -11,7 +11,7 @@ import catalog from './catalog'
 import leave from './leave'
 
 const app = new Hono()
-  .use('*', requireRole('instructor', 'admin', 'superadmin'))
+  .use('*', requireRole('instructor', 'admin'))
   .route('/schedule', schedule)
   .route('/', roster)
   .route('/check-in', checkIn)

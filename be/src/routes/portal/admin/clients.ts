@@ -231,7 +231,7 @@ const app = new Hono()
       workshop_purchases: workshopPurchases.map(workshopPurchaseView),
     })
   })
-  // ---- package wallet edits (admin/superadmin) ----
+  // ---- package wallet edits (admin) ----
   .post('/:id/packages/:pid/adjust', zValidator('param', idPkgParam), zValidator('json', adjustSchema), async c => {
     const { id, pid } = c.req.valid('param')
     const body = c.req.valid('json')

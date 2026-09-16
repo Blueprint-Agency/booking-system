@@ -13,14 +13,14 @@ const app = new Hono().post(
   async c => {
     const { id } = c.req.valid('param')
     const staffRow = c.get('staffRow')
-    if (staffRow.role !== 'admin' && staffRow.role !== 'superadmin') {
-      return c.json({ error: 'impersonation_requires_superadmin' }, 403)
+    if (staffRow.role !== 'admin') {
+      return c.json({ error: 'impersonation_requires_admin' }, 403)
     }
     try {
       const res = await mintClientImpersonation({
         tenantId: tenantId(c),
         clientId: id,
-        superadmin: staffRow,
+        admin: staffRow,
         from: c.req.raw.headers,
       })
       c.set('auditTarget' as any, { table: 'clients', id })

@@ -22,7 +22,7 @@ export async function cancelWorkshop(
   staffId: string,
   actorRole: string,
 ) {
-  if (actorRole !== 'admin' && actorRole !== 'superadmin') {
+  if (actorRole !== 'admin') {
     throw new ForbiddenError('forbidden_role', { required: ['admin'], actual: actorRole })
   }
   return db.transaction(async tx => {

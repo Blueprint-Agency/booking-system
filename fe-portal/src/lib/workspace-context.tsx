@@ -33,7 +33,6 @@ interface AuthMePayload {
   name: string;
   role: StaffRole;
   status: "pending" | "active" | "archived";
-  granted_location_ids: string[];
   locations: Array<{ id: string; name: string; address: string | null }>;
 }
 
@@ -61,7 +60,7 @@ interface WorkspaceContextValue {
   loading: boolean;
   currentStaff: StaffUser | null;
   role: StaffRole | null;
-  locations: Location[]; // all locations (incl archived) for superadmin views
+  locations: Location[]; // all locations (incl archived) for admin views
   accessibleLocations: Location[];
   activeLocation: Location | null;
   activeLocationId: string | null;
@@ -167,7 +166,6 @@ export function WorkspaceProvider({
         email: me.email,
         role: me.role,
         status: me.status,
-        grantedLocationIds: me.granted_location_ids,
       });
       setLocations(accessible);
       setDenied(null);

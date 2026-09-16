@@ -107,7 +107,7 @@ interface LeavePool {
  *  - The locked select of the instructor row is the FIRST statement, and it is
  *    the same lock the submission path already takes — not a second one. It is
  *    one row per instructor, so two instructors never wait on each other.
- *  - It doubles as the permission check: admins and superadmins have no
+ *  - It doubles as the permission check: admins have no
  *    `instructors` row and no leave concept at all.
  *  - Insert-ignoring-conflicts and re-reading (rather than trusting the insert)
  *    means a concurrent first read cannot produce a second Pool or a failure —
@@ -584,7 +584,7 @@ export async function submitLeaveRequest(
 
     // FIRST statement, and the reason there is a transaction at all: its first
     // statement takes this instructor's row lock, and it is also the permission
-    // check — admins and superadmins have no `instructors` row. It returns the
+    // check — admins have no `instructors` row. It returns the
     // Pool this submission is measured against, materialising it if this is the
     // first anyone has touched `leaveYear`, all under that one lock.
     const pool = await leavePoolsFor(tx, tenantId, input.instructorId, leaveYear)
@@ -835,8 +835,8 @@ export async function attachSupportingDocument(input: {
 /**
  * A short-lived signed GET for one Supporting Document.
  *
- * Same visibility rule as the calendar read (`listLeaveCalendar`): an admin or
- * superadmin sees any of them, an instructor only their own. The ownership check
+ * Same visibility rule as the calendar read (`listLeaveCalendar`): an admin
+ * sees any of them, an instructor only their own. The ownership check
  * comes BEFORE the "is there one" check, so a colleague cannot even learn
  * whether a Supporting Document exists.
  */
@@ -911,7 +911,7 @@ export interface LeaveCalendarEntry {
   half_day: LeaveRequestRow['halfDay']
   /** Only ever `pending` or `approved` — see the query below. */
   status: rules.LeaveStatus
-  /** Admins and superadmins on every row; an instructor on their own rows only. */
+  /** Admins on every row; an instructor on their own rows only. */
   detail: {
     type: rules.LeaveType
     days: number
@@ -933,7 +933,7 @@ export interface LeaveCalendarEntry {
 
 export interface LeaveCalendarViewer {
   staffUserId: string
-  role: 'superadmin' | 'admin' | 'instructor'
+  role: 'admin' | 'instructor'
   /** The studio the caller belongs to — the cap and the declared pairs are both
    *  per-tenant, so the over-cap flag has to be measured against their own. */
   tenantId: string

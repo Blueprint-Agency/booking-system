@@ -21,8 +21,7 @@ import { sessionView } from '../session-view'
 
 const inviteSchema = z.object({
   email: z.string().email().max(254),
-  role: z.enum(['admin', 'superadmin', 'instructor']).optional(), // default 'admin' in the service
-  granted_location_ids: z.array(z.string().uuid()).optional(),
+  role: z.enum(['admin', 'instructor']).optional(), // default 'admin' in the service
 })
 
 const genderEnum = z.enum(['female', 'male', 'non_binary', 'prefer_not_to_say'])
@@ -35,8 +34,7 @@ const updateStaffSchema = z.object({
   gender: genderEnum.nullable().optional(),
   bio: z.string().max(4000).nullable().optional(),
   languages: z.array(z.string().trim().min(1).max(60)).optional(),
-  role: z.enum(['admin', 'superadmin', 'instructor']).optional(),
-  granted_location_ids: z.array(z.string().uuid()).optional(),
+  role: z.enum(['admin', 'instructor']).optional(),
   // Assigned Days — instructors only; the service refuses them on anyone else.
   annual_leave_days: z.number().int().min(0).max(365).optional(),
   medical_leave_days: z.number().int().min(0).max(365).optional(),
@@ -66,7 +64,6 @@ function serializeStaff(row: StaffProfileRow) {
     languages: row.languages,
     role: row.role,
     status: row.status,
-    granted_location_ids: row.grantedLocationIds,
     invited_at: row.invitedAt,
     accepted_at: row.acceptedAt,
     archived_at: row.archivedAt,
@@ -105,7 +102,6 @@ function serializeInvitation(
     email: inv.email,
     role: inv.role,
     status: inv.status,
-    granted_location_ids: inv.grantedLocationIds,
     expires_at: inv.expiresAt,
     created_at: inv.createdAt,
     invited_by_staff_name: inv.invitedByStaffName,
@@ -113,11 +109,10 @@ function serializeInvitation(
 }
 
 const app = new Hono()
-  // Every staff route is an admin's, other admins included: an admin can do on
-  // staff everything a superadmin could. The rules that are not about role —
-  // who may edit whom, not yourself, never the last admin — live in the
-  // services, so this gate is coarse on purpose.
-  .use('*', requireRole('superadmin', 'admin'))
+  // Every staff route is an admin's, other admins included. The rules that are
+  // not about role — who may edit whom, not yourself, never the last admin —
+  // live in the services, so this gate is coarse on purpose.
+  .use('*', requireRole('admin'))
   .get('/', async c => {
     const { staff, invitations } = await svc.listStaffAndInvitations(tenantId(c))
     return c.json({
@@ -132,7 +127,6 @@ const app = new Hono()
       tenantId: tenantId(c),
       email: body.email,
       role: body.role,
-      grantedLocationIds: body.granted_location_ids,
       invitedByStaffId: actor,
     })
     c.set('auditTarget' as any, { table: 'staff_invitations', id: inv.id })
@@ -173,9 +167,6 @@ const app = new Hono()
         ...(body.bio !== undefined ? { bio: body.bio } : {}),
         ...(body.languages !== undefined ? { languages: body.languages } : {}),
         ...(body.role !== undefined ? { role: body.role } : {}),
-        ...(body.granted_location_ids !== undefined
-          ? { grantedLocationIds: body.granted_location_ids }
-          : {}),
         ...(body.annual_leave_days !== undefined
           ? { annualLeaveDays: body.annual_leave_days }
           : {}),

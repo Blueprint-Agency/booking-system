@@ -4,7 +4,7 @@ import { tenantMailIdentity } from '../tenants/mail-identity'
 import { db } from '../../db'
 import { emailTemplates, emailLog } from '../../db/schema/content'
 import { staffUsers } from '../../db/schema/identity'
-import { and, eq, inArray } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { reportError } from '../../shared/logger'
 
 export type TemplateSlug =
@@ -182,7 +182,7 @@ export async function emailEveryAdmin(
       .where(
         and(
           eq(staffUsers.tenantId, tenantId),
-          inArray(staffUsers.role, ['admin', 'superadmin']),
+          eq(staffUsers.role, 'admin'),
           eq(staffUsers.status, 'active'),
         ),
       )

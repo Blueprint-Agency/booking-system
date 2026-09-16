@@ -8,15 +8,15 @@ import { tenantId } from './tenant'
  *
  *   - Neither a grant nor an impersonation session → no-op (normal request).
  *   - An impersonation session with no valid grant → 401. The grant is what
- *     names the superadmin on every call; without it their calls would pass as
+ *     names the admin on every call; without it their calls would pass as
  *     the member's own. The two live exactly as long as each other.
  *   - A grant on a request not signed in through an impersonation session → 401.
  *   - Grant sub ≠ the session's user → 401 (tampering or a cross-wired session;
  *     never silent).
  *   - Grant minted in another tenant → 401. A grant turns a request into "a
- *     superadmin acting as this member", so one minted at one studio and
+ *     an admin acting as this member", so one minted at one studio and
  *     presented at another would be impersonation across the isolation boundary.
- *   - Everything matches → sets `impersonatedBy` (the superadmin's
+ *   - Everything matches → sets `impersonatedBy` (the admin's
  *     `staff_users.id`, from the grant) + `impersonatedClientId` (the member's
  *     clients row).
  *

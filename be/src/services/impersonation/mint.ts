@@ -7,14 +7,14 @@ import { openImpersonationSession } from '../auth/better-auth'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
 
 export interface MintImpersonationInput {
-  /** The superadmin's own studio. Impersonating across studios is not a feature
+  /** The admin's own studio. Impersonating across studios is not a feature
    *  this has ever had, and the lookup is what makes that true. */
   tenantId: string
   clientId: string
-  /** The superadmin's `staff_users` row: its id goes in the grant, its auth user
+  /** The admin's `staff_users` row: its id goes in the grant, its auth user
    *  on the session and in the sign-in log. */
-  superadmin: { id: string; authUserId: string }
-  /** The superadmin's request headers, for the sign-in log. */
+  admin: { id: string; authUserId: string }
+  /** The admin's request headers, for the sign-in log. */
   from: Headers
 }
 
@@ -41,8 +41,8 @@ export interface MintImpersonationResult {
 export async function mintClientImpersonation(
   input: MintImpersonationInput,
 ): Promise<MintImpersonationResult> {
-  // The session and the log name the superadmin's staff auth user.
-  const staffAuthUserId = input.superadmin.authUserId
+  // The session and the log name the admin's staff auth user.
+  const staffAuthUserId = input.admin.authUserId
 
   const [row] = await db
     .select()
@@ -68,7 +68,7 @@ export async function mintClientImpersonation(
 
   const grant = signGrant({
     clientAuthUserId: row.authUserId,
-    superadminStaffId: input.superadmin.id,
+    adminStaffId: input.admin.id,
     // Stamped into the grant so the studio it was minted in is the only studio
     // it works against — the lookup above is what makes it true here, and the
     // claim is what keeps it true on every request the grant is later presented

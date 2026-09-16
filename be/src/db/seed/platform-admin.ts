@@ -15,7 +15,7 @@ import { ensureAuthUser } from '../../services/auth/auth-users'
  * `platform` pool — the one the super portal signs in against (#116) — and
  * nothing else. There is no `staff_users` row to write: platform administration
  * deliberately lives outside every studio's rows, so that a studio's own
- * superadmin cannot become one by any write path (see
+ * admin cannot become one by any write path (see
  * services/tenants/platform-admin.ts).
  *
  * **Passwordless, by design.** The user is created with no credential; on first

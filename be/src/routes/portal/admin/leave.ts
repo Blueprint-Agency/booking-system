@@ -10,7 +10,7 @@ import { tenantId } from '../../../middleware/tenant'
  * Approve / reject / revoke are mounted HERE and nowhere else. The instructor
  * subtree (routes/portal/instructor/leave.ts) carries withdraw and cancel and
  * nothing more, so an instructor has no route to decide anything — including his
- * own request. Role gating for this mount (admin + superadmin) sits with the
+ * own request. Role gating for this mount (admin) sits with the
  * rest in ./index.ts.
  *
  * This is the admin view, so it serialises the restricted fields — leave type,

@@ -3,11 +3,10 @@ import type { StaffRole } from "@/types";
 
 /**
  * Whether this staff member runs the studio: every admin surface, every
- * location, every action. An admin does everything a superadmin could (#148);
- * `superadmin` stays in until the role itself is removed.
+ * location, every action.
  */
 export function runsStudio(role: StaffRole | null | undefined): boolean {
-  return role === "admin" || role === "superadmin";
+  return role === "admin";
 }
 
 /** Whether a nav item shows for `role`: studio admins see all of them. */

@@ -29,10 +29,10 @@ describe('member sign-in', { skip: integrationTestsEnabled ? false : SKIP_REASON
 
   const run = Date.now().toString(36)
   const DOMAIN = `members-${run}.test`
-  const SUPERADMIN = `superadmin@${DOMAIN}`
+  const ADMIN = `admin@${DOMAIN}`
   const at = (name: string) => `${name}@${DOMAIN}`
 
-  let superadmin!: Record<string, string>
+  let admin!: Record<string, string>
 
   const memberHeaders = (tenant: { slug: string }): Record<string, string> => ({
     'X-Tenant-Slug': tenant.slug,
@@ -127,16 +127,16 @@ describe('member sign-in', { skip: integrationTestsEnabled ? false : SKIP_REASON
     ;({ discardedMail } = await import('../lib/mailer'))
     ;({ one, two } = harness.tenants)
 
-    superadmin = await harness.signInAs('staff', SUPERADMIN, one)
+    admin = await harness.signInAs('staff', ADMIN, one)
     const [staffUser] = await harness.db
       .select()
       .from(schema.staffAuthUsers)
-      .where(eq(schema.staffAuthUsers.email, SUPERADMIN))
+      .where(eq(schema.staffAuthUsers.email, ADMIN))
     await harness.db.insert(schema.staffUsers).values({
       tenantId: one.id,
-      email: SUPERADMIN,
-      name: 'Probe Superadmin',
-      role: 'superadmin',
+      email: ADMIN,
+      name: 'Probe Admin',
+      role: 'admin',
       status: 'active',
       authUserId: staffUser!.id,
     })
@@ -224,7 +224,7 @@ describe('member sign-in', { skip: integrationTestsEnabled ? false : SKIP_REASON
     const created = await expectStatus(
       await send('/api/v1/portal/admin/clients', {
         body: { name: 'Grace Hopper', email, phone: '+6598765432' },
-        headers: superadmin,
+        headers: admin,
       }),
       201,
     )
@@ -246,7 +246,7 @@ describe('member sign-in', { skip: integrationTestsEnabled ? false : SKIP_REASON
     await expectStatus(
       await send('/api/v1/portal/admin/clients', {
         body: { name: 'Again', email, phone: '+6598765432' },
-        headers: superadmin,
+        headers: admin,
       }),
       409,
       'email_in_use',
@@ -259,7 +259,7 @@ describe('member sign-in', { skip: integrationTestsEnabled ? false : SKIP_REASON
     const row = await clientRow(one.id, email)
 
     await expectStatus(
-      await send(`/api/v1/portal/admin/clients/${row!.id}`, { method: 'DELETE', headers: superadmin }),
+      await send(`/api/v1/portal/admin/clients/${row!.id}`, { method: 'DELETE', headers: admin }),
       200,
     )
     await expectStatus(await me(headers), 401)
@@ -268,7 +268,7 @@ describe('member sign-in', { skip: integrationTestsEnabled ? false : SKIP_REASON
     assert.equal(refused.headers.get('set-auth-token'), null)
 
     await expectStatus(
-      await send(`/api/v1/portal/admin/clients/${row!.id}/restore`, { method: 'POST', headers: superadmin }),
+      await send(`/api/v1/portal/admin/clients/${row!.id}/restore`, { method: 'POST', headers: admin }),
       200,
     )
     const restored = await signedInAt(one, email)
@@ -282,7 +282,7 @@ describe('member sign-in', { skip: integrationTestsEnabled ? false : SKIP_REASON
     const row = await clientRow(one.id, email)
 
     await expectStatus(
-      await send(`/api/v1/portal/admin/clients/${row!.id}`, { method: 'DELETE', headers: superadmin }),
+      await send(`/api/v1/portal/admin/clients/${row!.id}`, { method: 'DELETE', headers: admin }),
       200,
     )
     await expectStatus(await me(atTwo), 200)

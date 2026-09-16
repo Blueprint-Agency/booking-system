@@ -4,12 +4,14 @@ import { env } from '../env'
 
 /**
  * BE-signed grant JWT proving that a /api/v1/me/* call is being made by a
- * superadmin impersonating a specific client. Separate from the member's session
- * (which carries the *target client's* identity): the grant is the proof that a
- * superadmin is behind it, and names them for the audit log (#118).
+ * studio admin impersonating a specific client. Separate from the member's session
+ * (which carries the *target client's* identity): the grant is the proof that an
+ * admin is behind it, and names them for the audit log (#118).
  *
  *   sub — the impersonated client's `client` pool auth user id (the session's user)
- *   sas — superadmin staff_users.id (UUID) — the actor for audit
+ *   sas — the admin's staff_users.id (UUID) — the actor for audit. The claim's
+ *         name predates the admin role taking this over, and is kept so grants
+ *         already issued stay readable.
  *   tid — the tenant the grant was minted in, and the ONLY tenant it is good
  *         for. Without it a grant is a bearer token that says "somebody is
  *         impersonating somebody", and a caller could present it against another
@@ -31,12 +33,12 @@ export const GRANT_TTL_SECONDS = 60 * 60
 
 export function signGrant(input: {
   clientAuthUserId: string
-  superadminStaffId: string
+  adminStaffId: string
   tenantId: string
 }): string {
   const payload: Omit<ImpersonationGrant, 'iat' | 'exp'> = {
     sub: input.clientAuthUserId,
-    sas: input.superadminStaffId,
+    sas: input.adminStaffId,
     tid: input.tenantId,
     jti: randomUUID(),
   }
