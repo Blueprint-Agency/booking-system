@@ -244,7 +244,6 @@ function stubEnvironment() {
   process.env.TENANT_ORIGIN_PATTERNS ??=
     'http://*.localhost:3000,http://*.portal.localhost:3001,http://localhost:3000,http://localhost:3001'
   process.env.RESEND_API_KEY ??= 're_test_harness'
-  process.env.MAIL_FROM_EMAIL ??= 'hello@example.test'
 }
 
 /**

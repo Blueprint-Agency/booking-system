@@ -1037,7 +1037,7 @@ See `docs/adr/0004-self-hosted-auth-with-better-auth.md` for the decision.
 
 ### 6d. Mail (Resend)
 
-- **Transport.** `lib/mailer.ts` constructs one Resend client at boot from `RESEND_API_KEY`. One envelope address in the domain verified on Resend, `MAIL_FROM_EMAIL` (`noreply@reservetoday.app`), for members and staff alike. `MAIL_FROM_PORTAL_EMAIL` stays blank and falls back to it; set it and staff mail moves to that address, picked by the recipient's `userKind` in `sendTemplatedEmail`. A Tenant's display name and `Reply-To` are applied per send (`docs/md/mail-identity.md`). Under `NODE_ENV=test` a null transport accepts and discards every message.
+- **Transport.** `lib/mailer.ts` constructs one Resend client at boot from `RESEND_API_KEY`. One envelope address in the domain verified on Resend, the constant `noreply@reservetoday.app`, for members and staff alike. Every send passes through one in-process send gate (`lib/send-gate.ts`): paced under Resend's team rate limit, credential mail (codes, resets) ahead of everyday mail, bounded retries on rate-limit / 5xx / network failures, no retry on quota refusals, an idempotency key and `kind` / `template` / `tenant` tags on every message. A Tenant's display name and `Reply-To` are applied per send (`docs/md/mail-identity.md`). Under `NODE_ENV=test` a null transport accepts and discards every message.
 - **Provider swap** is confined to the `MailTransport` interface in `lib/mailer.ts`; callers see `sendMail()` only.
 - **Server-side rendering** via `services/notifications/render.ts`:
   - Parse template body for `{{variable}}` tokens

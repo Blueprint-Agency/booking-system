@@ -1,53 +1,73 @@
 import { Resend } from 'resend'
+import { sql } from 'drizzle-orm'
 import { env } from '../env'
+import { db } from '../db'
+import { logger, reportError } from '../shared/logger'
+import {
+  createSendGate,
+  type MailKind,
+  type MailReporter,
+  type MailTag,
+  type ResendClient,
+  type SendGate,
+  type SendGateDeps,
+} from './send-gate'
+
+export type { MailKind } from './send-gate'
 
 /**
  * Outbound mail leaves through Resend's HTTP API — no SMTP, no credentials
- * beyond one API key.
+ * beyond `RESEND_API_KEY`, and every call through the one send gate in
+ * `./send-gate.ts`.
  *
- * Env-driven (secrets / per-environment):
- *   - RESEND_API_KEY          — the key, scoped to the platform's verified domain
- *   - MAIL_FROM_EMAIL         — the address a *member* sees mail arrive from
- *   - MAIL_FROM_PORTAL_EMAIL  — the address *staff* see mail arrive from
- *   - MAIL_FROM_NAME          — the display name when a tenant has none
- *
- * One envelope address, one domain, one key. `noreply@` lives in the
- * platform's verified zone, so SPF, DKIM and DMARC pass, and members and staff
- * both get mail from it: what they actually read is the studio's name and its
- * Reply-To, not the address. MAIL_FROM_PORTAL_EMAIL can split staff mail onto
- * a second address in the same zone, but is left blank by default.
+ * The platform's half of the identity is fixed, so it is code, not env: one
+ * envelope address in the domain verified on Resend, for members and staff
+ * alike, and the platform's name for mail no studio speaks for. SPF, DKIM and
+ * DMARC pass on that address; what a recipient actually reads is the studio's
+ * name and its Reply-To.
  *
  * The *tenant's* half of the identity is not here. One sender serves every
  * studio, and each studio's mail wears its own display name and `Reply-To` —
  * see docs/md/mail-identity.md and services/tenants/mail-identity.ts.
  */
+export const PLATFORM_MAIL_FROM_EMAIL = 'noreply@reservetoday.app'
+/** Shown only when no studio name applies — and on super portal mail. */
+export const PLATFORM_MAIL_FROM_NAME = 'ReserveToday'
 
-/** Which of the platform's two addresses a message leaves on. */
-export type MailAudience = 'client' | 'staff'
+/**
+ * The one place a message's kind is decided. Credential mail is what someone
+ * is waiting on to get in; it takes the next slot at the gate. The kind sets
+ * queue priority and a tag, never the address.
+ */
+const CREDENTIAL_SLUGS: ReadonlySet<string> = new Set([
+  'sign_in_code',
+  'staff_two_factor_code',
+  'staff_password_reset',
+  'platform_two_factor_code',
+  'platform_password_reset',
+])
 
-/** The envelope address for each audience. */
-export const PLATFORM_MAIL_FROM_EMAIL: Record<MailAudience, string> = {
-  client: env.MAIL_FROM_EMAIL,
-  // Blank falls back to the member address — the default: one `noreply@` for
-  // everyone.
-  staff: env.MAIL_FROM_PORTAL_EMAIL ?? env.MAIL_FROM_EMAIL,
+export function mailKind(slug: string): MailKind {
+  return CREDENTIAL_SLUGS.has(slug) ? 'credential' : 'everyday'
 }
-/** Shown only when a tenant has no name of its own to put there. */
-export const PLATFORM_MAIL_FROM_NAME = env.MAIL_FROM_NAME
 
 export interface SendMailInput {
   to: string
   subject: string
   html: string
+  /** The template slug — or the super portal's own — which decides the kind. */
+  slug: string
+  /** Null for super portal mail, which no studio sends. */
+  tenantId: string | null
+  /**
+   * Stable for this one message: the `email_log` row id, or a generated one
+   * for super portal mail. Resend drops a repeat for 24 hours.
+   */
+  idempotencyKey: string
   /** The studio's name, shown in the recipient's inbox before the address. */
   fromName?: string
   /** The studio's own address, so a reply reaches the studio and not the platform. */
   replyTo?: string | null
-  /**
-   * Who is reading: picks the envelope address. Defaults to `client`, the
-   * safer of the two — a member should never see `portal@`.
-   */
-  audience?: MailAudience
 }
 
 export interface SendMailResult {
@@ -62,6 +82,9 @@ export interface OutboundMessage {
   subject: string
   html: string
   replyTo?: string
+  kind: MailKind
+  idempotencyKey: string
+  tags: MailTag[]
 }
 
 export interface MailTransport {
@@ -96,43 +119,64 @@ export const discardedMail: OutboundMessage[] = []
 const DISCARDED_MAIL_KEPT = 50
 
 /**
- * Resend allows 2 requests a second and the SDK does not retry a refusal.
- * `emailEveryAdmin` sends one message per admin back to back, so the third
- * admin of a studio would otherwise be refused and filed as `failed` — and
- * never told. Three waits is enough for any admin list a studio has.
+ * Sent rows across every tenant since midnight UTC. Through migration 0055's
+ * function, because Row-Level Security shows the application role one tenant's
+ * `email_log` at most.
  */
-const RATE_LIMIT_RETRIES = 3
-const RATE_LIMIT_WAIT_MS = 600
+async function sentTodayAcrossTenants(): Promise<number> {
+  // In its own savepoint: this runs inside the caller's Tenant transaction, and
+  // a failed count must not abort the transaction the `email_log` update and
+  // the business action still need.
+  return db.transaction(async tx => {
+    const rows = (await tx.execute(sql`SELECT public.email_log_sent_today() AS sent`)) as unknown as {
+      sent: number
+    }[]
+    return Number(rows[0]?.sent ?? 0)
+  })
+}
 
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+const loggingReporter: MailReporter = {
+  warn: (code, context) => logger.warn({ code, ...context }, `mail: ${code}`),
+  alert: (code, err, context) => reportError(err, `mail: ${code}`, { code, ...context }),
+  usage: context => logger.info(context, 'mail: resend monthly usage'),
+}
 
 /**
- * Resend does not throw on a refused send — it returns `{ error }` — so the
- * refusal is turned into a throw here, where `sendTemplatedEmail` already has
- * a catch that files it under `email_log.status = 'failed'`. A rate-limit
- * refusal is the one kind waited out first, because it says nothing about the
- * message.
+ * Resend behind the send gate. Takes the client so a test can hand it a
+ * scripted fake; everything else defaults to the real clock, logger and count.
  */
-function resendTransport(apiKey: string): MailTransport {
-  const client = new Resend(apiKey)
+export function createResendTransport(
+  client: ResendClient,
+  options: Partial<Omit<SendGateDeps, 'client'>> = {},
+): MailTransport {
+  const gate: SendGate = createSendGate({
+    client,
+    report: loggingReporter,
+    sentToday: sentTodayAcrossTenants,
+    ...options,
+  })
   return {
     name: 'resend',
-    async send(message) {
-      for (let attempt = 0; ; attempt++) {
-        const { data, error } = await client.emails.send(message)
-        if (!error) return { messageId: data?.id ?? null, response: null }
-        if (error.name === 'rate_limit_exceeded' && attempt < RATE_LIMIT_RETRIES) {
-          await sleep(RATE_LIMIT_WAIT_MS * (attempt + 1))
-          continue
-        }
-        throw new Error(`resend:${error.name}: ${error.message}`)
-      }
-    },
+    send: ({ kind, idempotencyKey, ...payload }) => gate.send({ kind, idempotencyKey, payload }),
   }
 }
 
-export const transport: MailTransport =
-  env.NODE_ENV === 'test' ? nullTransport : resendTransport(env.RESEND_API_KEY)
+function resendClient(apiKey: string): ResendClient {
+  const resend = new Resend(apiKey)
+  return { send: (payload, options) => resend.emails.send(payload, options) }
+}
+
+export let transport: MailTransport =
+  env.NODE_ENV === 'test' ? nullTransport : createResendTransport(resendClient(env.RESEND_API_KEY))
+
+/** Swap the live transport — for tests. Returns the undo. */
+export function useTransport(next: MailTransport): () => void {
+  const previous = transport
+  transport = next
+  return () => {
+    transport = previous
+  }
+}
 
 /**
  * A display name safe to put in a `From` header.
@@ -146,6 +190,9 @@ function fromHeader(name: string, email: string): string {
   return safe ? `"${safe}" <${email}>` : email
 }
 
+/** Resend accepts only ASCII letters, digits, `_` and `-` in a tag. */
+const tagValue = (value: string) => value.replace(/[^A-Za-z0-9_-]/g, '_')
+
 /**
  * Thin wrapper around the live transport.
  *
@@ -154,12 +201,19 @@ function fromHeader(name: string, email: string): string {
  * `tenantMailIdentity()`; ones that do not send platform-branded mail.
  */
 export async function sendMail(input: SendMailInput): Promise<SendMailResult> {
-  const email = PLATFORM_MAIL_FROM_EMAIL[input.audience ?? 'client']
+  const kind = mailKind(input.slug)
   return transport.send({
-    from: fromHeader(input.fromName ?? PLATFORM_MAIL_FROM_NAME, email),
+    from: fromHeader(input.fromName ?? PLATFORM_MAIL_FROM_NAME, PLATFORM_MAIL_FROM_EMAIL),
     ...(input.replyTo ? { replyTo: input.replyTo } : {}),
     to: input.to,
     subject: input.subject,
     html: input.html,
+    kind,
+    idempotencyKey: input.idempotencyKey,
+    tags: [
+      { name: 'kind', value: kind },
+      { name: 'template', value: tagValue(input.slug) },
+      ...(input.tenantId ? [{ name: 'tenant', value: tagValue(input.tenantId) }] : []),
+    ],
   })
 }

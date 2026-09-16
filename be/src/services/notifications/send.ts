@@ -114,16 +114,18 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
   try {
     // The studio's identity, not the platform's: the envelope address is shared
     // and authenticated, the display name and Reply-To are this tenant's own.
-    // `userKind` picks which platform address that envelope is — by default
-    // both resolve to the one `noreply@` (MAIL_FROM_PORTAL_EMAIL left blank).
+    // The log row's id is the idempotency key, so a retry at the send gate can
+    // never deliver this message twice.
     const identity = await tenantMailIdentity(tenantId)
     const result = await sendMail({
       to: recipient.email,
       subject,
       html: body,
+      slug,
+      tenantId,
+      idempotencyKey: logRow.id,
       fromName: identity.fromName,
       replyTo: identity.replyTo,
-      audience: recipient.userKind,
     })
     await db
       .update(emailLog)

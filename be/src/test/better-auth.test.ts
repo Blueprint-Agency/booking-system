@@ -4,11 +4,6 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import { totp } from './totp'
 
-// Before the mailer is first imported: it reads the envelope addresses once, at
-// module load, and the portal envelope is half of what is asserted below.
-process.env.MAIL_FROM_EMAIL = 'hello@example.test'
-process.env.MAIL_FROM_PORTAL_EMAIL = 'portal@example.test'
-
 /**
  * The Better Auth foundation (#112), over real HTTP, in-process.
  *
@@ -198,7 +193,8 @@ describe('better auth pools', { skip: integrationTestsEnabled ? false : SKIP_REA
       .from(schema.tenants)
       .where(eq(schema.tenants.id, tenant.id))
 
-    assert.equal(message.from, `"${studio!.name}" <hello@example.test>`)
+    assert.equal(message.from, `"${studio!.name}" <noreply@reservetoday.app>`)
+    assert.equal(message.kind, 'credential', 'a sign-in code jumps the send queue')
     assert.equal(message.replyTo, REPLY_TO)
     assert.ok(message.html.includes(studio!.name), "worded by the studio's own template")
 
@@ -222,7 +218,7 @@ describe('better auth pools', { skip: integrationTestsEnabled ? false : SKIP_REA
     await setFirstPassword('staff', STAFF)
 
     const reset = lastMailTo(STAFF)
-    assert.match(reset.from, /<portal@example\.test>$/, 'staff mail leaves on the portal envelope')
+    assert.match(reset.from, /<noreply@reservetoday\.app>$/, 'staff mail leaves on the one envelope')
     assert.equal(reset.replyTo, REPLY_TO)
     const [row] = await logRows(STAFF)
     assert.equal(row?.templateSlug, 'staff_password_reset')
@@ -250,8 +246,11 @@ describe('better auth pools', { skip: integrationTestsEnabled ? false : SKIP_REA
     await setFirstPassword('platform', PLATFORM)
 
     const reset = lastMailTo(PLATFORM)
-    assert.match(reset.from, /<portal@example\.test>$/)
+    assert.equal(reset.from, '"ReserveToday" <noreply@reservetoday.app>')
     assert.equal(reset.replyTo, undefined, "no studio's Reply-To on platform mail")
+    assert.equal(reset.kind, 'credential')
+    assert.ok(!reset.tags.some(t => t.name === 'tenant'), 'super portal mail carries no tenant tag')
+    assert.match(reset.idempotencyKey, /^platform-mail\//)
 
     platformToken = await tokenOf(
       await call('platform', '/sign-in/email', { body: { email: PLATFORM, password: PASSWORD } }),
@@ -320,7 +319,7 @@ describe('better auth pools', { skip: integrationTestsEnabled ? false : SKIP_REA
     const sent = await call('staff', '/two-factor/send-otp', { body: {}, headers: cookie })
     assert.equal(sent.status, 200, await sent.clone().text())
     const mail = lastMailTo(STAFF)
-    assert.match(mail.from, /<portal@example\.test>$/)
+    assert.match(mail.from, /<noreply@reservetoday\.app>$/)
     assert.equal(mail.replyTo, REPLY_TO)
     const rows = await logRows(STAFF)
     assert.ok(rows.some(r => r.templateSlug === 'staff_two_factor_code'), 'the second factor is logged')
