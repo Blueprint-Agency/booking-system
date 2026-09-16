@@ -1,0 +1,18 @@
+-- A Purchase outlives the member it belonged to.
+--
+-- Permanent member deletion (#144) keeps the studio's accounts and removes the
+-- member's identity from them — `client_packages`, `stripe_payments`,
+-- `merch_orders` and `promo_code_redemptions` all have their `client_id` set to
+-- NULL rather than being deleted. `purchases` (#91) arrived after that rule and
+-- did not follow it: its `client_id` was `NOT NULL`, so deletion could neither
+-- empty the row nor remove it.
+--
+-- Removing it was never an option either. Every foreign key pointing at a
+-- Purchase — `stripe_payments.purchase_id`, `client_packages.purchase_id`,
+-- `bookings.purchase_id` — is `ON DELETE RESTRICT`, and all three tables are
+-- kept as accounts. So the Purchase has to stay and be emptied, which is what
+-- the other four already do.
+--
+-- This only widens what the column accepts. Nothing that creates a Purchase may
+-- leave it null; the one writer of NULL is the deletion path.
+ALTER TABLE "purchases" ALTER COLUMN "client_id" DROP NOT NULL;

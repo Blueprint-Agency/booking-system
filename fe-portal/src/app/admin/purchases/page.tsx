@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Button, EmptyState, PageHeader } from "@/components/ui";
 import { RefundDialog } from "@/components/clients/refund-dialog";
 import { useWorkspace } from "@/lib/workspace-context";
+import { runsStudio } from "@/lib/staff-role";
 import { ApiError } from "@/lib/api";
 import { formatDate } from "@/lib/formatters";
 
@@ -44,7 +45,9 @@ interface ApiSilentPurchase {
 
 export default function UnfinishedPurchasesPage() {
   const { api, role } = useWorkspace();
-  const canRefund = role === "superadmin";
+  // The same gate the member detail page puts on its Refund buttons — the role
+  // split this was written against (superadmin) no longer exists.
+  const canRefund = runsStudio(role);
 
   const [rows, setRows] = useState<ApiSilentPurchase[]>([]);
   const [silentAfterDays, setSilentAfterDays] = useState<number | null>(null);

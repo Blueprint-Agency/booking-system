@@ -494,6 +494,12 @@ export async function listSilentPartPaidPurchases(
   const out: SilentPurchaseView[] = []
   for (const row of rows) {
     if (!row.lastPaymentAt) continue
+    // A Purchase whose member was permanently deleted (#144) keeps the sale and
+    // loses the person — there is nobody left to chase, and the join that names
+    // them returns nothing. Skipping it here says so in the one place the type
+    // makes it unavoidable, rather than leaving a row with no name on a list
+    // whose whole purpose is telling an admin who to contact.
+    if (!row.purchase.clientId) continue
     const lastPaymentAt = new Date(row.lastPaymentAt)
     if (!isSilent(lastPaymentAt, now)) continue
     const outstanding = outstandingCents(
