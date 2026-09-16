@@ -119,6 +119,12 @@ backend suite means no image is built and neither stack is touched.
   A manual `workflow_dispatch` always runs the tests, then deploys.
 - **Same Node as the image.** The `test` job runs on the Node major `be/Dockerfile` ships (22) and
   fails at once if the two drift apart — bump both together.
+- **Schema drift gates it too.** A `drift` job, which `deploy` also needs, migrates an empty
+  `postgres:16` from nothing and then runs `npm run db:generate`, which must answer *"No schema
+  changes, nothing to migrate"* and leave `be/src/db/migrations/` untouched. A schema edit committed
+  without its migration fails here. The job reads that line rather than the exit code: drizzle-kit
+  exits 0 both when it writes a migration and when it crashes wanting to ask about a rename. Fix
+  it on the branch with `npm run db:generate` in `be/` — `be/src/db/migrations/README.md`.
 
 **Frontend checks are advisory.** The same workflow runs `npm run check` in `fe-client/` and
 `fe-portal/` when their paths change, so a broken frontend test shows a red check on the commit or
@@ -174,6 +180,39 @@ restore command and what it does are the infrastructure repo's
 [`docs/backup-restore.md`](https://github.com/Blueprint-Agency/infrastructure/blob/main/docs/backup-restore.md).
 A deploy failing with `Pre-migration snapshot FAILED (backup.sh exit 2)` most often met the
 nightly backup (03:30 KL) mid-run: re-run it.
+
+### Rolling back the backend
+
+The deploy still pushes two tags — the floating `staging` / `latest` and the commit sha — but the
+stack runs **the sha**. After the new image passes its smoke test, the deploy writes it into the
+stack's `.env` as `IMAGE_TAG`, and moves the sha that was there to `PREVIOUS_IMAGE_TAG`. The deploy
+log prints both. So rolling the code back is one edit:
+
+```bash
+ssh bp-bpvps2
+cd /root/stacks/booking-staging          # booking-prod for production
+grep IMAGE_TAG .env                      # IMAGE_TAG=<bad sha>  PREVIOUS_IMAGE_TAG=<good sha>
+# swap the two values
+sed -i -e 's/^IMAGE_TAG=/SWAP_IMAGE_TAG=/' -e 's/^PREVIOUS_IMAGE_TAG=/IMAGE_TAG=/' \
+       -e 's/^SWAP_IMAGE_TAG=/PREVIOUS_IMAGE_TAG=/' .env
+docker compose up -d
+docker compose ps                        # booking-be healthy, on the good sha
+```
+
+Rolling forward again is the same swap. So is the next normal deploy, which writes its own sha and
+keeps whatever was running as `PREVIOUS_IMAGE_TAG`.
+
+- **This moves the code, never the data.** The rolled-back image runs against the database the
+  bad deploy already migrated. That is safe only because migrations only add (the golden rule in
+  `be/src/db/migrations/README.md`): an older build ignores a column it does not know. If the
+  migration itself broke data, the way back is the pre-migrate snapshot above
+  (`restore-live.sh`), not this.
+- **The first deploy after this change** records the floating tag the stack was on (`staging` or
+  `latest`) as `PREVIOUS_IMAGE_TAG`. On Docker Hub that tag already names the new build, so a
+  rollback to it lands on the old image only until anything re-pulls — do not count on it. There is
+  a real way back from the second deploy on.
+- A re-run of the same commit leaves `PREVIOUS_IMAGE_TAG` alone; a deploy that fails before the
+  smoke test passes does not touch either value.
 
 > **Every staging/production URL is a real domain — do not test against `*.vercel.app`.**
 > The generated aliases still exist and still resolve, but the backend's CORS allowlist contains
@@ -310,7 +349,7 @@ Notes:
 - `env vars` (set in **both** Environments): `PORT`, `TENANT_ORIGIN_PATTERNS`, `PLATFORM_ADMIN_EMAILS` (optional)
 - `org secrets`: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`
 - `repo/env secrets`: `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_APP_PASSWORD`, `DOCKERHUB_TOKEN`, `SSH_PRIVATE_KEY`, `IMPERSONATION_SECRET` (≥32 chars), `BETTER_AUTH_SECRET` (≥32 chars — required in **both** Environments; the backend fails Zod validation at boot without it), `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET` (the `whsec_…` signing secret of the Resend webhook pointed at `/api/v1/webhooks/resend`; unset, that route answers "not configured"), `SENTRY_DSN` (optional — error monitoring), `R2_*` (×5 — required in **both** Environments; see the `R2_PUBLIC_URL` note above), plus deferred `STRIPE_*`.
-- `NODE_ENV` (always `production`), `APP_ENV`, `ENV_NAME`, `STACK_DIR`, `BOOKING_FQDN` and `IMAGE_TAG` are derived from the branch in the workflow's `env:` block, not from repo settings. `BETTER_AUTH_URL` is derived too, as `https://$BOOKING_FQDN`.
+- `NODE_ENV` (always `production`), `APP_ENV`, `ENV_NAME`, `STACK_DIR`, `BOOKING_FQDN` and `IMAGE_TAG` are derived from the branch in the workflow's `env:` block, not from repo settings. `BETTER_AUTH_URL` is derived too, as `https://$BOOKING_FQDN`. The workflow's `IMAGE_TAG` is the floating tag it pushes (`staging` / `latest`); the stack's own `.env` on the host gets the commit sha instead — see [Rolling back the backend](#rolling-back-the-backend).
 - `ENABLE_JOBS` is hardcoded `true` in the workflow — the background cron jobs (`be/src/jobs/index.ts`) are not optional on a deployed server. With it off, pending PT requests never expire and members' session credits are never auto-refunded.
 
 **Two database connections, and why.** `DATABASE_URL` is the owner role (`DB_USER`) and is used for migrations and seeds only. The running server connects with `DATABASE_APP_URL`, built from `DB_APP_PASSWORD` for the `booking_app` role that `npm run db:migrate` provisions (`be/src/db/roles.ts`). This is not cosmetic: Postgres exempts superusers and table owners from Row-Level Security, so pointing the server at `DATABASE_URL` would leave the tenant policies (migration 0033) enforcing nothing while every request still succeeded. **`DB_APP_PASSWORD` must be set as an environment secret in BOTH `staging` and `Production` before the first deploy carrying this change** — without it the backend fails Zod validation at boot, which is the intended failure for a missing security control. The reasoning is recorded in `docs/adr/0002-shared-schema-row-level-security.md`.
