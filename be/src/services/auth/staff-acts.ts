@@ -5,10 +5,15 @@ import { staffUsers } from '../../db/schema/identity'
 import { recordAuthEvent } from './auth-events'
 import { requestAddress } from './better-auth'
 
-/** What a staff member can do to someone else's account from their detail view (#119, #143). */
+/** What a staff member can do to someone else's account from their detail view (#119, #143, #144). */
 export type StaffActKind = Extract<
   AuthEventKind,
-  'sessions_revoked' | 'user_blocked' | 'user_unblocked' | 'invitation_resent' | 'member_data_exported'
+  | 'sessions_revoked'
+  | 'user_blocked'
+  | 'user_unblocked'
+  | 'invitation_resent'
+  | 'member_data_exported'
+  | 'member_deleted'
 >
 
 /**

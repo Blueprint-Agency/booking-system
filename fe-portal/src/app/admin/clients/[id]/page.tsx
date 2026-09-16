@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useState } from "react";
 import {
   ArrowLeft,
@@ -12,6 +13,7 @@ import {
   RotateCcw,
   AlertTriangle,
   Download,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, Badge, Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
@@ -131,6 +133,7 @@ export default function ClientProfilePage({
 }) {
   const { id } = use(params);
   const { api, role } = useWorkspace();
+  const router = useRouter();
   const canEdit = runsStudio(role);
 
   const [profile, setProfile] = useState<ApiProfile | null>(null);
@@ -147,6 +150,7 @@ export default function ClientProfilePage({
   const [refundFor, setRefundFor] = useState<ApiPackage | null>(null);
   const [workshopRefundFor, setWorkshopRefundFor] = useState<ApiWorkshopPurchase | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [permanentDeleteOpen, setPermanentDeleteOpen] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [exporting, setExporting] = useState(false);
 
@@ -337,6 +341,16 @@ export default function ClientProfilePage({
                 className="text-error hover:bg-error/10 hover:text-error"
               >
                 <ShieldOff className="h-3.5 w-3.5" /> Block
+              </Button>
+            )}
+            {canEdit && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setPermanentDeleteOpen(true)}
+                className="text-error hover:bg-error/10 hover:text-error"
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Delete permanently
               </Button>
             )}
           </header>
@@ -809,7 +823,123 @@ export default function ClientProfilePage({
           }}
         />
       )}
+
+      {canEdit && permanentDeleteOpen && profile && (
+        <DeleteClientDialog
+          email={profile.email}
+          name={profile.name}
+          exporting={exporting}
+          onDownload={downloadData}
+          onClose={() => setPermanentDeleteOpen(false)}
+          onConfirm={async () => {
+            if (!api) return;
+            try {
+              await api.del(`/portal/admin/clients/${id}/permanently`);
+              toast.success("Customer deleted.");
+              router.replace("/admin/clients");
+            } catch (err) {
+              toast.error(
+                err instanceof ApiError
+                  ? `Delete failed (HTTP ${err.status}).`
+                  : "Delete failed.",
+              );
+            }
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+/**
+ * Permanent deletion (#144), beside blocking. Nothing about the member is left
+ * to restore, so the dialog offers the download first and asks for the email
+ * typed out, as blocking does.
+ */
+function DeleteClientDialog({
+  email,
+  name,
+  exporting,
+  onDownload,
+  onClose,
+  onConfirm,
+}: {
+  email: string;
+  name: string;
+  exporting: boolean;
+  onDownload: () => Promise<void>;
+  onClose: () => void;
+  onConfirm: () => Promise<void>;
+}) {
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+  const matches = typed.trim().toLowerCase() === email.trim().toLowerCase();
+  return (
+    <Dialog
+      open
+      onOpenChange={(o) => !o && onClose()}
+      title={`Delete ${name} permanently?`}
+      description="Everything this studio holds about them is deleted and cannot be restored. Payments, refunds and package sales stay in your accounts with their name removed. If they only want to stop booking, block them instead."
+    >
+      <form
+        className="space-y-4"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          if (!matches || busy) return;
+          setBusy(true);
+          try {
+            await onConfirm();
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-paper px-3 py-2 text-sm">
+          <span className="text-muted">Answering a data request? Download their data first.</span>
+          <Button type="button" variant="ghost" size="sm" onClick={onDownload} disabled={exporting || busy}>
+            {exporting ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Download className="h-3.5 w-3.5" />
+            )}
+            Download data
+          </Button>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="confirm-delete-email">
+            Type <span className="text-ink">{email}</span> to confirm
+          </Label>
+          <Input
+            id="confirm-delete-email"
+            autoFocus
+            autoComplete="off"
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            placeholder={email}
+          />
+        </div>
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            disabled={!matches || busy}
+            className="bg-error text-white hover:bg-error/90"
+          >
+            {busy ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" /> Deleting…
+              </>
+            ) : (
+              <>
+                <Trash2 className="h-4 w-4" /> Delete permanently
+              </>
+            )}
+          </Button>
+        </DialogFooter>
+      </form>
+    </Dialog>
   );
 }
 

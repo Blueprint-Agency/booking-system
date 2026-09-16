@@ -30,7 +30,7 @@ export async function exportMember(input: {
   const tenant = await loadTenantById(tenantId)
   if (!tenant) throw new NotFoundError('tenant_not_found')
 
-  const key = { clientId: member.id, authUserId: member.authUserId }
+  const key = { clientId: member.id, authUserId: member.authUserId, email: member.email }
   const rows: MemberArchive['rows'] = {}
   const counts: Record<string, number> = {}
   for (const entry of MEMBER_TABLES) {

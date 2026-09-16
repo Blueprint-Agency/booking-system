@@ -195,7 +195,8 @@ export interface PtSessionAttendee {
 
 export interface PtSessionDetail {
   id: string
-  ptRequestId: string
+  /** Null once the member who requested it is permanently deleted (#144). */
+  ptRequestId: string | null
   lifecycle: 'active' | 'cancelled'
   startsAt: Date
   endsAt: Date

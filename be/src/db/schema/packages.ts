@@ -279,9 +279,8 @@ export const promoCodeRedemptions = pgTable(
     promoCodeId: uuid('promo_code_id')
       .notNull()
       .references(() => promoCodes.id, { onDelete: 'restrict' }),
-    clientId: uuid('client_id')
-      .notNull()
-      .references(() => clients.id, { onDelete: 'restrict' }),
+    // Null once the member is permanently deleted (#144); the money taken off stays.
+    clientId: uuid('client_id').references(() => clients.id, { onDelete: 'restrict' }),
     status: promoCodeRedemptionStatusEnum('status').notNull(),
     /** When the Hold lapses. Set to the payment session's own expiry. */
     heldUntil: timestamp('held_until', { withTimezone: true }).notNull(),
@@ -312,9 +311,9 @@ export const clientPackages = pgTable(
   {
     tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-    clientId: uuid('client_id')
-      .notNull()
-      .references(() => clients.id, { onDelete: 'restrict' }),
+    // Null once the member is permanently deleted (#144): what was sold, and for
+    // how much, stays in the studio's accounts without saying to whom.
+    clientId: uuid('client_id').references(() => clients.id, { onDelete: 'restrict' }),
     kind: clientPackageKindEnum('kind').notNull(),
     sourceClassPackageId: uuid('source_class_package_id').references(() => classPackages.id, {
       onDelete: 'restrict',

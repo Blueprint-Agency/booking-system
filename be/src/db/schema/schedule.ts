@@ -418,9 +418,11 @@ export const ptSessions = pgTable(
   {
     tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-    // NOT NULL, UNIQUE — every session traces back to a request. No DB FK declared here to
-    // avoid the circular FK at create time; the FK is added below via foreignKey().
-    ptRequestId: uuid('pt_request_id').notNull(),
+    // UNIQUE — every session is scheduled from a request. Null only once the member who
+    // made the request is permanently deleted (#144): the request goes with them, and
+    // the session, which is the instructor's and any partner's too, stays. No DB FK
+    // declared here to avoid the circular FK at create time; it is added below via foreignKey().
+    ptRequestId: uuid('pt_request_id'),
     instructorId: uuid('instructor_id')
       .notNull()
       .references(() => instructors.staffUserId, { onDelete: 'restrict' }),

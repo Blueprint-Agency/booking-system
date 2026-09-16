@@ -107,9 +107,8 @@ export const merchOrders = pgTable(
   {
     tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-    clientId: uuid('client_id')
-      .notNull()
-      .references(() => clients.id, { onDelete: 'restrict' }),
+    // Null once the member is permanently deleted (#144); the sale stays.
+    clientId: uuid('client_id').references(() => clients.id, { onDelete: 'restrict' }),
     merchId: uuid('merch_id').references(() => merch.id, { onDelete: 'set null' }),
     title: text('title').notNull(),
     amountSgd: numeric('amount_sgd', { precision: 10, scale: 2 }).notNull(),

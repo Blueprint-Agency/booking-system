@@ -14,7 +14,8 @@ export const invitationStatusEnum = pgEnum('invitation_status', ['pending', 'acc
 // Sign-in audit log (`auth_events`, #114). The pools are the three Better Auth
 // instances. The two impersonation kinds are written from #118 on; the last four
 // are a staff member's act on someone else's account (#119), and downloading a
-// member's data is one more (#143).
+// member's data is one more (#143), and permanently deleting a member another —
+// the one staff act written with no subject, because the member is gone (#144).
 export const authPoolEnum = pgEnum('auth_pool', ['client', 'staff', 'platform'])
 export const authEventKindEnum = pgEnum('auth_event_kind', [
   'sign_in',
@@ -29,6 +30,7 @@ export const authEventKindEnum = pgEnum('auth_event_kind', [
   'user_unblocked',
   'invitation_resent',
   'member_data_exported',
+  'member_deleted',
 ])
 export type AuthPool = (typeof authPoolEnum.enumValues)[number]
 export type AuthEventKind =(typeof authEventKindEnum.enumValues)[number]

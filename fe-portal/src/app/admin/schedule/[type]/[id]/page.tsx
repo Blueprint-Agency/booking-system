@@ -646,6 +646,11 @@ function PtDetail({ id }: { id: string }) {
 
   async function handleCancelPt() {
     if (!api || !data) return;
+    if (!data.pt_request_id) {
+      setActionError("The member who requested this session was deleted, so it cannot be cancelled here.");
+      return;
+    }
+    const ptRequestId = data.pt_request_id;
     if (
       !confirm(
         "Cancel this private session? Customer bookings will be cancelled and credits returned.",
@@ -657,7 +662,7 @@ function PtDetail({ id }: { id: string }) {
     setActionError(null);
     try {
       // Cancellation is against the PT request, not this session.
-      await cancelPtRequest(api, data.pt_request_id);
+      await cancelPtRequest(api, ptRequestId);
       await load();
     } catch (err) {
       setActionError(detailError(err, "Private session not found."));
