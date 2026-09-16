@@ -27,6 +27,7 @@ import { createAuthClient } from "better-auth/react";
 import { twoFactorClient } from "better-auth/client/plugins";
 import { getApiBaseUrl } from "@/lib/api-url";
 import { portalAuthBasePath, portalAuthPool } from "@/lib/auth-pool";
+import { clearTelemetryUser } from "@/lib/telemetry";
 import { tenantRequestHeaders } from "@/lib/tenant-host";
 
 /**
@@ -118,6 +119,7 @@ export async function signOutPortal(): Promise<void> {
   } finally {
     storePortalToken(null);
     challenge = null;
+    clearTelemetryUser();
     // The session atom re-reads on sign-out, but only when the call succeeded.
     portalAuth.$store.notify("$sessionSignal");
   }
@@ -125,6 +127,8 @@ export async function signOutPortal(): Promise<void> {
 
 /** The session as the portal reads it. */
 export interface PortalSession {
+  /** The auth user's id — what telemetry tags events with (`lib/telemetry.ts`). */
+  userId: string;
   email: string;
   name: string;
   /** The studio stamped on the session at sign-in (`session-tenant.ts`); null on the super portal. */
@@ -145,6 +149,7 @@ export function usePortalSession(): {
   const { data, isPending } = portalAuth.useSession();
   const session = data
     ? {
+        userId: data.user.id,
         email: data.user.email,
         name: data.user.name,
         claimedTenantId:

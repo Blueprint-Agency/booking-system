@@ -7,9 +7,9 @@
  * What the page loads, and so what the policy admits:
  *
  *  - scripts, styles, fonts: this origin only. `next/font` self-hosts the font.
- *  - fetches: the API (`NEXT_PUBLIC_API_URL`) only. Uploads go through the API,
- *    not straight to R2. There is no analytics or error-monitoring script to
- *    admit.
+ *  - fetches: the API (`NEXT_PUBLIC_API_URL`), and the Grafana Faro collector
+ *    (`NEXT_PUBLIC_FARO_COLLECTOR_URL`) when one is configured. Uploads go
+ *    through the API, not straight to R2.
  *  - images: any https host. A studio's logo, a merch photo or an avatar is a
  *    URL the studio owns — the CDN, an R2 public bucket, its own marketing site —
  *    so no fixed list is exact.
@@ -25,6 +25,8 @@
 
 export type SecurityHeaderInput = {
   apiUrl: string | undefined;
+  /** The Faro collector, when telemetry is on (`lib/telemetry.ts`). */
+  faroUrl?: string;
   dev: boolean;
 };
 
@@ -39,8 +41,9 @@ function originOf(url: string | undefined): string | null {
   }
 }
 
-export function contentSecurityPolicy({ apiUrl, dev }: SecurityHeaderInput): string {
-  const connect = ["'self'", originOf(apiUrl) ?? LOCAL_API];
+export function contentSecurityPolicy({ apiUrl, faroUrl, dev }: SecurityHeaderInput): string {
+  const faroOrigin = originOf(faroUrl);
+  const connect = ["'self'", originOf(apiUrl) ?? LOCAL_API, ...(faroOrigin ? [faroOrigin] : [])];
   const directives: Record<string, string[]> = {
     "default-src": ["'self'"],
     "script-src": ["'self'", "'unsafe-inline'", ...(dev ? ["'unsafe-eval'"] : [])],

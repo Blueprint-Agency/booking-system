@@ -4,8 +4,8 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 
 | App | Target | How it deploys |
 |---|---|---|
-| `fe-client/` | Vercel project `booking-system` (Root Directory = `fe-client/`) | `main` → `https://{slug}.reservetoday.app` (wildcard `*.reservetoday.app`); `staging` → `https://{slug}.dev.reservetoday.app` (wildcard `*.dev.reservetoday.app`). Env vars: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_ROOT_DOMAIN` — set **twice**, once per scope (Production / Preview). Members sign in through the backend's Better Auth `client` pool, and so does a studio admin impersonating one, so nothing auth-related is set here. |
-| `fe-portal/` | Vercel project `booking-system-admin` (Root Directory = `fe-portal/`) | `main` → `https://{slug}.portal.reservetoday.app` (wildcard `*.portal.reservetoday.app`); `staging` → `https://{slug}.portal.dev.reservetoday.app`. Same env shape as fe-client, with its own `NEXT_PUBLIC_ROOT_DOMAIN` (the `portal.` one). Staff and the super portal sign in through the backend's `staff` / `platform` pools, so nothing auth-related is set here either. |
+| `fe-client/` | Vercel project `booking-system` (Root Directory = `fe-client/`) | `main` → `https://{slug}.reservetoday.app` (wildcard `*.reservetoday.app`); `staging` → `https://{slug}.dev.reservetoday.app` (wildcard `*.dev.reservetoday.app`). Env vars: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_ROOT_DOMAIN` — set **twice**, once per scope (Production / Preview). `NEXT_PUBLIC_FARO_COLLECTOR_URL` (Grafana Faro collector for browser errors and Web Vitals) is optional; unset, the app sends no telemetry. Members sign in through the backend's Better Auth `client` pool, and so does a studio admin impersonating one, so nothing auth-related is set here. |
+| `fe-portal/` | Vercel project `booking-system-admin` (Root Directory = `fe-portal/`) | `main` → `https://{slug}.portal.reservetoday.app` (wildcard `*.portal.reservetoday.app`); `staging` → `https://{slug}.portal.dev.reservetoday.app`. Same env shape as fe-client, with its own `NEXT_PUBLIC_ROOT_DOMAIN` (the `portal.` one) and its own `NEXT_PUBLIC_FARO_COLLECTOR_URL`. Staff and the super portal sign in through the backend's `staff` / `platform` pools, so nothing auth-related is set here either. |
 | `cdn/` | Vercel project `booking-cdn` (Root Directory = `cdn/`) | Edge proxy fronting the R2 bucket at `https://cdn.reservetoday.app`. One env var, `R2_ORIGIN`, the bucket's `pub-<hash>.r2.dev` URL. No DNS record needed — the zone's `*` ALIAS already resolves the name. **Not Git-connected**: deployed with `vercel deploy --prod` from `cdn/`, not on push. |
 | `be/` | bpvps2 (Docker) | Auto-deploy on push to `staging` **or** `main` (paths-filtered to `be/**`), **only after the backend test suite passes** — see [Tests gate the backend deploy](#tests-gate-the-backend-deploy). `.github/workflows/deploy-be.yml` builds the image, pushes to Docker Hub (`blueprintagency/booking-be`), SSHes to bpvps2 over Tailscale, writes `.env.booking-be` from the branch's GitHub Environment, and runs migrate/seed + `docker compose up -d`. |
 
@@ -471,7 +471,7 @@ revoke the old one. Both keys work in between, so nothing breaks. The rows that 
 
 - be, GH env vars: `PORT`, `PLATFORM_ADMIN_EMAIL`, `FRONTEND_URLS`, `STRIPE_STATEMENT_DESCRIPTOR_PREFIX`.
 - be, derived in the workflow: `NODE_ENV`, `APP_ENV`, `BETTER_AUTH_URL`, `DATABASE_URL` and `DATABASE_APP_URL` (built from the DB secrets above).
-- fe-client and fe-portal, Vercel: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_ROOT_DOMAIN`, `NEXT_PUBLIC_APP_ENV`. `NEXT_PUBLIC_API_URL` also feeds the CSP — see below.
+- fe-client and fe-portal, Vercel: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_ROOT_DOMAIN`, `NEXT_PUBLIC_APP_ENV`, `NEXT_PUBLIC_FARO_COLLECTOR_URL` (optional). `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_FARO_COLLECTOR_URL` also feed the CSP — see below.
 - Deploy, GH org vars: `BPVPS2_TAILSCALE_HOST`, `DOCKERHUB_USERNAME`.
 
 ### Security headers
@@ -487,8 +487,8 @@ The CSP admits what the pages actually load: scripts, styles and fonts from thei
 to the API origin, read from `NEXT_PUBLIC_API_URL` at **build** time — so changing it needs a Vercel
 redeploy anyway; images from any `https:` host, because a studio's logo is a URL the studio owns.
 Stripe needs no entry: checkout is a full-page redirect to Stripe's hosted page, and nothing loads
-Stripe.js. Nothing frames the apps and they frame nothing. There is no analytics or error-monitoring
-script to admit.
+Stripe.js. Nothing frames the apps and they frame nothing. When `NEXT_PUBLIC_FARO_COLLECTOR_URL` is
+set, its origin is admitted to `connect-src` too, also at build time.
 
 Known gap: `script-src` still allows `'unsafe-inline'`. The App Router streams its payload in inline
 scripts, and removing it means a per-request nonce set in `proxy.ts`, which renders every page
