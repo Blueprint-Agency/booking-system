@@ -132,7 +132,7 @@ describe('booking lifecycle over HTTP', { skip: integrationTestsEnabled ? false 
       .returning({ id: schema.clients.id })
     await purchaseSvc.grantPackage(at.id, {
       clientId: client!.id,
-      paymentIntentId: null,
+      purchaseId: null,
       amountSgd: '200.00',
       packageKind: 'class',
       packageId: at.classPackageId,

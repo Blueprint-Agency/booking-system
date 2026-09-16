@@ -80,7 +80,7 @@ describe('package activation', { skip: integrationTestsEnabled ? false : SKIP_RE
   const grantBundle = (clientId: string) =>
     purchaseSvc.grantPackage(tenantId, {
       clientId,
-      paymentIntentId: null,
+      purchaseId: null,
       amountSgd: '200.00',
       packageKind: 'class',
       packageId: bundleCatalogId,
@@ -89,7 +89,7 @@ describe('package activation', { skip: integrationTestsEnabled ? false : SKIP_RE
   const grantPt = (clientId: string, packageId = ptCatalogId) =>
     purchaseSvc.grantPackage(tenantId, {
       clientId,
-      paymentIntentId: null,
+      purchaseId: null,
       amountSgd: '500.00',
       packageKind: 'pt',
       packageId,

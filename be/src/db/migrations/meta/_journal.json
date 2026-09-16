@@ -477,6 +477,13 @@
       "when": 1789554891533,
       "tag": "0067_payment_records_its_account",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1789554892533,
+      "tag": "0068_purchase_survives_its_member",
+      "breakpoints": true
     }
   ]
 }

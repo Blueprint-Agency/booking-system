@@ -825,6 +825,12 @@ async function abandonPurchase(tenantId: string, purchase: PurchaseRow): Promise
 
   if (!(await markPurchaseAbandoned(tenantId, purchase.id))) return
 
+  // The money has gone back and the Purchase is closed; the only thing left is
+  // telling the member, and a member permanently deleted (#144) is not there to
+  // be told. The sale survives them with their identity removed, so there is no
+  // address to write to and nothing further to do.
+  if (!purchase.clientId) return
+
   const [client] = await db
     .select({ name: clients.name, email: clients.email })
     .from(clients)

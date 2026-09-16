@@ -88,6 +88,14 @@ export const MEMBER_TABLES: readonly MemberTable[] = [
   // Credit movements with a staff member's free-text reason: no money, and the
   // reason may well name the member.
   byClientId('manual_adjustments'),
+  // What was bought, what it cost and how much of it was paid (#91). It is the
+  // sale itself, so it is kept for the same reason every other accounts row is —
+  // including one still open, whose money the studio is holding and may yet have
+  // to return. The metadata is dropped with the member: it carries the ids the
+  // webhook granted from, and one of them is theirs.
+  byClientId('purchases', [
+    { keptBecause: ACCOUNTS, set: sql`client_id = NULL, metadata = '{}'::jsonb`, where: clientIdIs },
+  ]),
   // The booking the payment was for is deleted; the receipt link opens a page
   // that shows who paid. The payment intent stays, which is how the studio
   // matches this row to the payment provider's own record.

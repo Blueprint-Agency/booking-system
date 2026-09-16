@@ -33,9 +33,12 @@ export const purchases = pgTable(
   {
     tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-    clientId: uuid('client_id')
-      .notNull()
-      .references(() => clients.id, { onDelete: 'restrict' }),
+    // Nullable for one reason only: a member may be permanently deleted (#144),
+    // and every row FK-referencing a Purchase is `restrict` and kept as the
+    // studio's accounts — so the Purchase cannot go with them and is emptied of
+    // them instead. `client_packages.client_id` is nullable for the same reason.
+    // Nothing that creates a Purchase may leave it null.
+    clientId: uuid('client_id').references(() => clients.id, { onDelete: 'restrict' }),
     kind: purchaseKindEnum('kind').notNull(),
     /**
      * Frozen at creation and never recomputed. The member is told what they owe
