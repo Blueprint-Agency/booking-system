@@ -16,7 +16,7 @@ interface ApiSession {
   expires_at: string;
   ip: string | null;
   user_agent: string | null;
-  /** A superadmin opened it as this member. */
+  /** A studio admin opened it as this member. */
   impersonated: boolean;
 }
 

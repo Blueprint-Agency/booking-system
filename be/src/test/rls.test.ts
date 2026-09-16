@@ -41,7 +41,7 @@ describe('row-level security', { skip: integrationTestsEnabled ? false : SKIP_RE
 
   const TENANT_SETTING = sql`current_setting('app.tenant_id', true)`
 
-  /** One member and one superadmin in each studio — the least a "can one studio
+  /** One member and one admin in each studio — the least a "can one studio
    *  see the other's people?" question needs to be answerable at all. Written on
    *  the owner connection, which is the only thing here allowed to write across
    *  tenants, and removed again in `after`. */
@@ -63,7 +63,7 @@ describe('row-level security', { skip: integrationTestsEnabled ? false : SKIP_RE
           tenantId,
           email: `${PROBE}-staff-${label}@example.test`,
           name: `${PROBE} staff ${label}`,
-          role: 'superadmin',
+          role: 'admin',
           status: 'active',
           authUserId: `${PROBE}-staff-${label}`,
         })
@@ -295,7 +295,7 @@ describe('row-level security', { skip: integrationTestsEnabled ? false : SKIP_RE
     const grant = verifyGrant(
       signGrant({
         clientAuthUserId: 'user_probe',
-        superadminStaffId: '00000000-0000-0000-0000-0000000000bb',
+        adminStaffId: '00000000-0000-0000-0000-0000000000bb',
         tenantId: oneId,
       }),
     )
@@ -312,12 +312,12 @@ describe('row-level security', { skip: integrationTestsEnabled ? false : SKIP_RE
     assert.equal(verifyGrant(untenanted), null)
   })
 
-  test("a superadmin cannot impersonate another studio's staff", async () => {
+  test("an admin cannot impersonate another studio's staff", async () => {
     const { resolveTenant, TENANT_SLUG_HEADER } = await import('../middleware/tenant')
     const { impersonate } = await import('../middleware/impersonate')
 
-    const superadmin = { id: staffOf[oneId]! }
-    const ownColleague = superadmin
+    const admin = { id: staffOf[oneId]! }
+    const ownColleague = admin
     const outsider = { id: staffOf[twoId]! }
 
     // The middleware pair as a route sees it: tenant resolution, then a stand-in
@@ -325,7 +325,7 @@ describe('row-level security', { skip: integrationTestsEnabled ? false : SKIP_RE
     const app = new Hono()
     app.use('*', resolveTenant)
     app.use('*', async (c, next) => {
-      c.set('staffRow', { id: superadmin.id, role: 'superadmin' } as never)
+      c.set('staffRow', { id: admin.id, role: 'admin' } as never)
       await next()
     })
     app.use('*', impersonate)
@@ -360,7 +360,7 @@ describe('row-level security', { skip: integrationTestsEnabled ? false : SKIP_RE
           mintClientImpersonation({
             tenantId: oneId,
             clientId: outsider.id,
-            superadmin: { id: '00000000-0000-0000-0000-0000000000bb', authUserId: 'staff_probe' },
+            admin: { id: '00000000-0000-0000-0000-0000000000bb', authUserId: 'staff_probe' },
             from: new Headers(),
           }),
         ),

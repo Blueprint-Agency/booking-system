@@ -1,10 +1,10 @@
 /**
- * What the portal hands the member app when a superadmin impersonates a member
+ * What the portal hands the member app when a studio admin impersonates a member
  * (#118): `/impersonate#token=…&grant=…`.
  *
  * - `token` is a real session in the backend's `client` pool, opened for the
  *   member. It becomes this hostname's member session, like any sign-in.
- * - `grant` is the backend-signed proof that a superadmin is behind it. It is
+ * - `grant` is the backend-signed proof that a studio admin is behind it. It is
  *   kept in a cookie so the server layout can show the banner, and sent on every
  *   member API call as `x-impersonation-grant` (`lib/api.ts`).
  *

@@ -22,8 +22,8 @@ export async function cancelWorkshop(
   staffId: string,
   actorRole: string,
 ) {
-  if (actorRole !== 'superadmin') {
-    throw new ForbiddenError('forbidden_role', { required: ['superadmin'], actual: actorRole })
+  if (actorRole !== 'admin') {
+    throw new ForbiddenError('forbidden_role', { required: ['admin'], actual: actorRole })
   }
   return db.transaction(async tx => {
     const [existing] = await tx

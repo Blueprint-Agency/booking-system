@@ -267,7 +267,7 @@ export interface Booking {
 
 // --- Identity (§15, §16) ---
 
-export type StaffRole = "superadmin" | "admin" | "instructor";
+export type StaffRole = "admin" | "instructor";
 export type StaffStatus = "pending" | "active" | "archived";
 
 export interface StaffUser {
@@ -276,20 +276,6 @@ export interface StaffUser {
   email: string;
   role: StaffRole;
   status: StaffStatus;
-  /**
-   * Locations the user can access.
-   * Empty for superadmin (their grants are implicit — all active locations).
-   * Explicit list for admin.
-   * Unused for instructor role.
-   */
-  grantedLocationIds: string[];
-  /**
-   * True when this row is the "main" superadmin — the staff_users row whose
-   * email matches the backend's SUPERADMIN_EMAIL env. This row cannot be
-   * archived from the app, and is the only one allowed to archive other
-   * superadmins.
-   */
-  isSeededSuperadmin: boolean;
 }
 
 export interface Client {

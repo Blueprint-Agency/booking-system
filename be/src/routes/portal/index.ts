@@ -14,8 +14,8 @@ import instructor from './instructor'
  *
  *   /api/v1/portal/auth/*    — staff session + active gate only (no role gate)
  *   /api/v1/portal/leave-calendar — same: every staff member sees who is away
- *   /api/v1/portal/admin/*   — auth + active + admin/superadmin role
- *   /api/v1/portal/instructor/* — auth + active + instructor/admin/superadmin role
+ *   /api/v1/portal/admin/*   — auth + active + admin role
+ *   /api/v1/portal/instructor/* — auth + active + instructor/admin role
  *
  * All branches share staffAuth + requireActiveStaff. Impersonate + audit
  * apply only to the admin / instructor branches (auth/me is a pure read of the

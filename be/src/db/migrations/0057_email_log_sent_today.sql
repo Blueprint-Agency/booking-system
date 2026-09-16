@@ -10,6 +10,12 @@
 -- one narrow question — a single number, never a row — with src/lib/mailer.ts
 -- as its only caller.
 --
+-- Counted by `sent_at`, not by `status`: since 0056 a sent row moves on to
+-- delivered, bounced, complained, delivery_delayed or suppressed when Resend's
+-- webhook reports its outcome (#154), and every one of those still used a slot
+-- of the daily cap. `sent_at` is written only when Resend accepted the message
+-- and is never cleared; a queued or failed row has none.
+--
 -- `search_path` is pinned for the reason 0034 pins it: a SECURITY DEFINER
 -- function without it is a privilege-escalation hole.
 --
@@ -24,7 +30,6 @@ SET search_path = public, pg_temp
 AS $$
   SELECT count(*)::int
   FROM email_log
-  WHERE status = 'sent'
-    AND sent_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
+  WHERE sent_at >= date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
 $$;--> statement-breakpoint
 REVOKE EXECUTE ON FUNCTION public.email_log_sent_today() FROM PUBLIC;

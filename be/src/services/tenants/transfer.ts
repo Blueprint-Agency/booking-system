@@ -177,15 +177,29 @@ export type ImportSummary = {
 /**
  * Columns an archive may still carry that the schema has since dropped, per
  * table. Exports are `SELECT *`, so an archive written before migration 0053
- * has `clerk_user_id` on every identity row; nothing else about the format
- * changed, so those archives are read, and the retired column is left behind.
- * Named rather than inferred: a column the archive has and the table lacks for
- * any *other* reason is still an error, not data quietly discarded.
+ * has `clerk_user_id` on every identity row, and one written before 0055 has
+ * `granted_location_ids` on staff and their invitations; nothing else about the
+ * format changed, so those archives are read, and the retired column is left
+ * behind. Named rather than inferred: a column the archive has and the table
+ * lacks for any *other* reason is still an error, not data quietly discarded.
  */
 const RETIRED_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   clients: ['clerk_user_id'],
-  staff_users: ['clerk_user_id'],
+  staff_users: ['clerk_user_id', 'granted_location_ids'],
+  staff_invitations: ['granted_location_ids'],
 }
+
+/**
+ * Staff roles an archive may still carry that `staff_role` has since dropped,
+ * and what each became. Migration 0055 folded the old top role into `admin`, so
+ * an archive taken before it restores the way the database was migrated.
+ * Named, like the columns above: a role that is neither current nor listed here
+ * still fails on the enum rather than being guessed into a privilege.
+ */
+const RETIRED_STAFF_ROLES: Readonly<Record<string, string>> = {
+  superadmin: 'admin',
+}
+const STAFF_ROLE_TABLES = ['staff_users', 'staff_invitations']
 
 /** The tables whose rows must name the account their person signs in with. */
 const ACCOUNT_TABLES = ['clients', 'staff_users']
@@ -293,6 +307,9 @@ export async function importTenant(
         // value for it must not survive into another studio.
         const values: Record<string, unknown> = remapRow(row, identity)
         for (const column of RETIRED_COLUMNS[table] ?? []) delete values[column]
+        if (STAFF_ROLE_TABLES.includes(table) && typeof values.role === 'string') {
+          values.role = RETIRED_STAFF_ROLES[values.role] ?? values.role
+        }
         values.tenant_id = targetTenantId
         for (const column of hold) values[column] = null
         try {
@@ -444,8 +461,8 @@ async function insertRow(
  *    take a plain object in, because it cannot tell JSON from a composite type.
  *  - **Arrays.** The `sql` template renders an array parameter as a value list —
  *    `(a, b)`, which is an `IN` clause and not an array — and an *empty* one as
- *    `()`, which is not valid SQL at all. `staff_users.granted_location_ids` is
- *    empty on most rows, so this is the common path rather than an edge.
+ *    `()`, which is not valid SQL at all. `staff_users.languages` is empty on
+ *    most rows, so this is the common path rather than an edge.
  *
  * Guessing from the value would get both wrong in the same direction: a JSON
  * array would be sent as a Postgres array, and would restore as the wrong type.

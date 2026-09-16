@@ -2,25 +2,28 @@
  * Archive a staff user. Guards (per user direction 2026-05-19):
  *
  *   - Cannot archive yourself.
- *   - Cannot archive the seeded superadmin (the row whose email matches
- *     SUPERADMIN_EMAIL). That row is the recovery anchor; removing it
- *     would lock the org out if no other superadmin is around.
- *   - Archiving a superadmin requires the actor to BE the seeded
- *     superadmin. Other (invited) superadmins can archive admins and
- *     instructors but not each other.
+ *   - Cannot archive the studio's last active admin — that is the lockout the
+ *     guards exist to prevent. Any admin may archive a peer, because a studio
+ *     with two of them has a way back in either way.
  *   - Already-archived target is a no-op (idempotent).
+ *
+ * These used to be keyed on a deploy-time email variable: one address, seeded into the
+ * one studio a deployment had, protected from archival and the only account
+ * allowed to touch another top-rank account. Studios now arrive by provisioning or
+ * restore and carry no seeded address, so that check answered `false` for every
+ * real row — which turned "only the main account may archive its peers"
+ * into "nobody may, ever". The rule that was actually wanted is the one below:
+ * count the admins, and refuse to reach zero.
  *
  * After the DB flip the target's Better Auth sessions at this studio are
  * deleted, in the same transaction, so they're booted from the portal
  * immediately. requireActiveStaff also blocks archived rows on the next request,
  * so that is defense-in-depth, not load-bearing.
  */
-import { and, eq, isNull, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { staffUsers } from '../../db/schema/identity'
-import { TENANT_ONE_ID } from '../../db/schema/tenancy'
 import { instructors } from '../../db/schema/catalog'
-import { env } from '../../env'
 import { joinName } from '../../lib/name'
 import {
   BadRequestError,
@@ -37,7 +40,7 @@ import {
 } from '../leave/requests'
 import { endStaffSessionsAt } from './auth-users'
 import { recordStaffAct } from './staff-acts'
-import { STAFF_EDIT_REFUSAL_MESSAGE, staffEditRefusal } from './staff-rank'
+import { isTopRank, STAFF_EDIT_REFUSAL_MESSAGE, staffEditRefusal, TOP_RANK_ROLES } from './staff-rank'
 
 export type StaffUserRow = typeof staffUsers.$inferSelect
 
@@ -55,23 +58,46 @@ export type StaffProfileRow = StaffUserRow & {
 }
 
 /**
- * Is this row the platform's own bootstrap superadmin?
+ * Refuse the change that would leave a studio with no active admin.
  *
- * `SUPERADMIN_EMAIL` names one address, and the protections keyed on it —
- * cannot be archived, deleted, or have its role changed — exist so the account
- * that bootstraps the platform cannot be locked out of it from inside the app.
+ * Applied to archive and demotion — the paths that take an admin out of
+ * circulation. Deletion needs an already-archived row, so archive is where it
+ * bites; signing someone out is not guarded, because they can sign back in.
  *
- * **Scoped to Tenant #1**, and that is the whole point of taking a row rather
- * than an address. The email alone was safe while every deployment had exactly
- * one studio, seeded from this variable. It is not safe now: studios arrive by
- * provisioning or by restoring an archive, so any studio may hold a staff member
- * at this address — the same person consulting for two studios is the obvious
- * case — and matching on the address alone would make that person un-archivable
- * and role-locked at a studio the platform never seeded.
+ * Counts the rows that can actually reach the portal: top rank, not archived,
+ * not soft-deleted. `requireActiveStaff` refuses the other two, so an archived
+ * admin is no way back in and does not count towards the one that must remain.
+ *
+ * **Locks those rows before counting.** The request is one READ COMMITTED
+ * transaction, and a plain count would let two admins archiving each other at
+ * once both read `2` and both win. `FOR UPDATE` makes the second wait for the
+ * first to commit, then re-checks the rows it waited on — the one just archived
+ * no longer matches, so it reads `1` and is refused. The lock is held until the
+ * caller's write commits, which is the whole point.
  */
-export function isSeededSuperadmin(staff: { tenantId: string | null; email: string }): boolean {
-  if ((staff.tenantId ?? TENANT_ONE_ID) !== TENANT_ONE_ID) return false
-  return staff.email.trim().toLowerCase() === env.SUPERADMIN_EMAIL.trim().toLowerCase()
+async function assertNotLastAdmin(
+  tenantId: string,
+  target: { role: StaffUserRow['role']; status: StaffUserRow['status'] },
+  code: 'cannot_archive_last_admin' | 'cannot_demote_last_admin',
+  message: string,
+): Promise<void> {
+  if (!isTopRank(target.role) || target.status !== 'active') return
+  const activeAdmins = await db
+    .select({ id: staffUsers.id })
+    .from(staffUsers)
+    .where(
+      and(
+        eq(staffUsers.tenantId, tenantId),
+        inArray(staffUsers.role, TOP_RANK_ROLES),
+        eq(staffUsers.status, 'active'),
+        isNull(staffUsers.deletedAt),
+      ),
+    )
+    .orderBy(staffUsers.id)
+    .for('update')
+  if (activeAdmins.length > 1) return
+  // 409, not 403: the actor may do this in general; the studio's state is what refuses it.
+  throw new ConflictError(code, { message })
 }
 
 export interface ArchiveStaffInput {
@@ -109,32 +135,12 @@ export async function archiveStaff(input: ArchiveStaffInput): Promise<StaffUserR
     return target
   }
 
-  if (isSeededSuperadmin(target)) {
-    throw new ForbiddenError('cannot_archive_seeded_superadmin', {
-      message:
-        'The main superadmin (set via SUPERADMIN_EMAIL) cannot be archived from the app.',
-    })
-  }
-
-  if (target.role === 'superadmin') {
-    const [actor] = await db
-      .select()
-      .from(staffUsers)
-      .where(
-        and(
-          eq(staffUsers.tenantId, tenantId),
-          eq(staffUsers.id, actorStaffId),
-          isNull(staffUsers.deletedAt),
-        ),
-      )
-      .limit(1)
-    if (!actor) throw new ForbiddenError('actor_not_found')
-    if (!isSeededSuperadmin(actor)) {
-      throw new ForbiddenError('only_seeded_can_archive_superadmin', {
-        message: 'Only the main superadmin can archive another superadmin.',
-      })
-    }
-  }
+  await assertNotLastAdmin(
+    tenantId,
+    target,
+    'cannot_archive_last_admin',
+    'This is the only admin left. Promote someone else to admin before archiving this account.',
+  )
 
   const now = new Date()
   const [updated] = await db
@@ -210,8 +216,6 @@ export async function unarchiveStaff(input: {
 /**
  * Soft-delete a staff user. Row must be currently archived AND not yet
  * deleted. Sets deleted_at = now(); the row stays in DB for audit trail.
- *
- * The seeded superadmin can never be soft-deleted (same guard as archive).
  */
 export async function softDeleteStaff(input: {
   tenantId: string
@@ -242,32 +246,9 @@ export async function softDeleteStaff(input: {
     throw new BadRequestError('staff_not_archived', { status: target.status })
   }
 
-  if (isSeededSuperadmin(target)) {
-    throw new ForbiddenError('cannot_delete_seeded_superadmin', {
-      message:
-        'The main superadmin (set via SUPERADMIN_EMAIL) cannot be deleted from the app.',
-    })
-  }
-
-  if (target.role === 'superadmin') {
-    const [actor] = await db
-      .select()
-      .from(staffUsers)
-      .where(
-        and(
-          eq(staffUsers.tenantId, tenantId),
-          eq(staffUsers.id, actorStaffId),
-          isNull(staffUsers.deletedAt),
-        ),
-      )
-      .limit(1)
-    if (!actor) throw new ForbiddenError('actor_not_found')
-    if (!isSeededSuperadmin(actor)) {
-      throw new ForbiddenError('only_seeded_can_delete_superadmin', {
-        message: 'Only the main superadmin can delete another superadmin.',
-      })
-    }
-  }
+  // No last-admin check here: deletion requires an already-archived row
+  // (asserted above), and archiving is where that guard bites. An archived
+  // admin is not one the studio can sign in with, so it was never the last.
 
   await db
     .update(staffUsers)
@@ -277,22 +258,17 @@ export async function softDeleteStaff(input: {
 
 /**
  * Update a staff profile (name/contact/bio fields, role, location grants).
- * Reachable by admin as well as superadmin (spec-instructor-leave-pools.md
- * § Permissions), so the rank rules are enforced HERE, not in the route:
+ * The rank rules are enforced HERE, not in the route:
  *
  *   - Editing a target of higher rank is refused; role and location grants are
- *     superadmin-only and their mere presence refuses the request. Both live in
+ *     admin-only and their mere presence refuses the request. Both live in
  *     staffEditRefusal() so they stay testable.
  *
- * On top of that, the seeded-superadmin guards, scoped to *role changes* only —
- * editing your own or the seeded superadmin's non-role profile fields
- * (phone, bio, etc.) is fine; only a role change is locked down:
+ * On top of that, two guards scoped to *role changes* only — editing your own
+ * non-role profile fields (phone, bio, etc.) is fine:
  *
  *   - Cannot change your own role (self_role_edit_forbidden).
- *   - Cannot change the seeded superadmin's role at all.
- *   - Changing an existing superadmin's role requires the actor to BE the
- *     seeded superadmin (same "only seeded can touch a superadmin" rule
- *     archive/delete enforce).
+ *   - Cannot demote the studio's last active admin (cannot_demote_last_admin).
  */
 export interface UpdateStaffProfileInput {
   tenantId: string
@@ -307,7 +283,6 @@ export interface UpdateStaffProfileInput {
     bio?: string | null
     languages?: string[]
     role?: StaffUserRow['role']
-    grantedLocationIds?: string[]
     /** Assigned Days. Deliberately NOT privilege fields — an admin may set
      *  them — and they land on `instructors`, so an instructor target only. */
     annualLeaveDays?: number
@@ -354,8 +329,7 @@ export async function updateStaffProfile(input: UpdateStaffProfileInput): Promis
   const refusal = staffEditRefusal({
     actorRole: actor.role,
     targetRole: target.role,
-    touchesPrivilegeFields:
-      patch.role !== undefined || patch.grantedLocationIds !== undefined,
+    touchesPrivilegeFields: patch.role !== undefined,
   })
   if (refusal) {
     throw new ForbiddenError(refusal, { message: STAFF_EDIT_REFUSAL_MESSAGE[refusal] })
@@ -368,16 +342,13 @@ export async function updateStaffProfile(input: UpdateStaffProfileInput): Promis
         message: 'You cannot change your own role.',
       })
     }
-    if (isSeededSuperadmin(target)) {
-      throw new ForbiddenError('cannot_edit_seeded_superadmin_role', {
-        message:
-          'The main superadmin (set via SUPERADMIN_EMAIL) cannot have its role changed.',
-      })
-    }
-    if (target.role === 'superadmin' && !isSeededSuperadmin(actor)) {
-      throw new ForbiddenError('only_seeded_can_edit_superadmin_role', {
-        message: "Only the main superadmin can change another superadmin's role.",
-      })
+    if (!isTopRank(patch.role!)) {
+      await assertNotLastAdmin(
+        tenantId,
+        target,
+        'cannot_demote_last_admin',
+        'This is the only admin left. Promote someone else to admin before changing this role.',
+      )
     }
   }
 
@@ -395,7 +366,6 @@ export async function updateStaffProfile(input: UpdateStaffProfileInput): Promis
   if (patch.bio !== undefined) set.bio = patch.bio
   if (patch.languages !== undefined) set.languages = patch.languages
   if (patch.role !== undefined) set.role = patch.role
-  if (patch.grantedLocationIds !== undefined) set.grantedLocationIds = patch.grantedLocationIds
 
   const assigned = {
     ...(patch.annualLeaveDays !== undefined ? { annualLeaveDays: patch.annualLeaveDays } : {}),

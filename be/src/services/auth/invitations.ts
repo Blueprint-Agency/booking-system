@@ -1,9 +1,8 @@
 /**
- * Staff invitation lifecycle (admin, superadmin, or instructor). The very first
- * superadmin is seeded from SUPERADMIN_EMAIL; additional superadmins are invited
- * via this flow (per user direction, overriding the original "superadmin not
- * invitable" line in `admin-restructure.md` §15a). Instructors share the same
- * email-invite path as admins. See `be-portal.md` §3a.
+ * Staff invitation lifecycle. A studio's first staff member arrives with the
+ * studio, when the super portal creates or restores it; everyone after that is
+ * invited through this flow. Instructors share the same email-invite path as
+ * admins. See `be-portal.md` §3a.
  *
  * **Invitation-only, in fact (#115).** Nobody signs up. An invitation writes
  * everything a staff member is, in one transaction:
@@ -52,13 +51,12 @@ const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000
 export type StaffUserRow = typeof staffUsers.$inferSelect
 export type StaffInvitationRow = typeof staffInvitations.$inferSelect
 
-export type InvitableRole = 'admin' | 'superadmin' | 'instructor'
+export type InvitableRole = 'admin' | 'instructor'
 
 export interface InviteAdminInput {
   tenantId: string
   email: string
   role?: InvitableRole
-  grantedLocationIds?: string[]
   invitedByStaffId: string
 }
 
@@ -94,7 +92,6 @@ export interface PendingStaffInput {
   email: string
   name: string
   role: InvitableRole
-  grantedLocationIds?: string[]
   /** Null for a studio's first admin, whom nobody on its staff invited. */
   invitedByStaffId: string | null
   bio?: string | null
@@ -117,9 +114,6 @@ export async function writePendingStaff(
 ): Promise<{ staff: StaffUserRow; invitation: StaffInvitationRow }> {
   const email = input.email.trim().toLowerCase()
   const now = new Date()
-  // Superadmin ignores granted_location_ids (implicit grant = all locations).
-  // Instructors don't carry location grants — they teach where assigned.
-  const grants = input.role === 'admin' ? (input.grantedLocationIds ?? []) : []
   const { firstName, lastName } = splitName(input.name)
 
   const authUserId = await ensureAuthUser(tx, 'staff', { email, name: input.name })
@@ -134,7 +128,6 @@ export async function writePendingStaff(
       lastName,
       role: input.role,
       status: 'pending',
-      grantedLocationIds: grants,
       invitedAt: now,
       authUserId,
       bio: input.bio ?? null,
@@ -160,7 +153,6 @@ export async function writePendingStaff(
       tenantId: input.tenantId,
       email,
       role: input.role,
-      grantedLocationIds: grants,
       token: cryptoRandomBase64Url(32),
       expiresAt: new Date(now.getTime() + INVITE_TTL_MS),
       status: 'pending',
@@ -396,7 +388,7 @@ export async function inviteAdmin(input: InviteAdminInput): Promise<StaffInvitat
 
   const invitation = await db.transaction(async tx => {
     // Existing staff with this email blocks invitation. Active or pending = already in use;
-    // archived = explicitly refuse re-use (audit log integrity — superadmin should restore
+    // archived = explicitly refuse re-use (audit log integrity — an admin should restore
     // archived accounts via a separate path, not by re-inviting).
     //
     // Platform-wide rather than per-tenant, for the same reason as
@@ -426,7 +418,6 @@ export async function inviteAdmin(input: InviteAdminInput): Promise<StaffInvitat
       email,
       name: emailLocalPart(email),
       role,
-      grantedLocationIds: input.grantedLocationIds,
       invitedByStaffId: input.invitedByStaffId,
     })
     return invitation
@@ -501,7 +492,6 @@ export async function listStaffAndInvitations(
       id: staffInvitations.id,
       email: staffInvitations.email,
       role: staffInvitations.role,
-      grantedLocationIds: staffInvitations.grantedLocationIds,
       token: staffInvitations.token,
       expiresAt: staffInvitations.expiresAt,
       status: staffInvitations.status,

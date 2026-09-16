@@ -760,7 +760,7 @@ export type AdminLeaveAction = 'approve' | 'reject' | 'revoke'
 const DECIDED = { approve: 'approved', reject: 'rejected' } as const
 
 /**
- * What an admin or superadmin may do to a request, and when.
+ * What an admin may do to a request, and when.
  *
  * Approve and reject settle a request that is still awaiting a decision, and
  * nothing else — a request that was already decided, withdrawn or cancelled is

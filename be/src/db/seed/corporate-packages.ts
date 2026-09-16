@@ -16,10 +16,9 @@ import type { SeededTenant } from './tenants'
  * scope for a seed-only change.
  *
  * `created_by_staff_id` is NOT NULL, so each row is attributed to the tenant's
- * OWN superadmin — never another studio's, which would be a foreign key pointing
- * across the isolation boundary. A tenant with no superadmin of its own (today:
- * every tenant but #1, since the bootstrap superadmin is tenant #1's) simply
- * gets no corporate packages seeded.
+ * OWN earliest admin — never another studio's, which would be a foreign key
+ * pointing across the isolation boundary. A tenant with no admin of its own
+ * simply gets no corporate packages seeded.
  *
  * A catalogue belongs to a studio, so this runs once per provisioned tenant and
  * is idempotent on (tenant, name). To start clean, TRUNCATE corporate_packages
@@ -45,9 +44,10 @@ export async function seedCorporatePackages(
       INSERT INTO corporate_packages (tenant_id, name, description, price_sgd, status, created_by_staff_id)
       SELECT ${tenant.id}::uuid, ${r.name}, ${r.description}, ${r.priceSgd}, 'active',
              (SELECT id FROM staff_users
-              WHERE tenant_id = ${tenant.id}::uuid AND role = 'superadmin' LIMIT 1)
+              WHERE tenant_id = ${tenant.id}::uuid AND role = 'admin'
+              ORDER BY created_at LIMIT 1)
       WHERE EXISTS (
-          SELECT 1 FROM staff_users WHERE tenant_id = ${tenant.id}::uuid AND role = 'superadmin'
+          SELECT 1 FROM staff_users WHERE tenant_id = ${tenant.id}::uuid AND role = 'admin'
         )
         AND NOT EXISTS (
           SELECT 1 FROM corporate_packages WHERE tenant_id = ${tenant.id}::uuid AND name = ${r.name}

@@ -5,7 +5,7 @@ import { tenants } from './tenancy'
 /**
  * The three Better Auth user pools: `client` (members), `staff` (studio
  * portals) and `platform` (the super portal). Each pool owns its own four or
- * five tables, so a member cannot sign into a portal and a studio superadmin's
+ * five tables, so a member cannot sign into a portal and a studio admin's
  * credentials do not exist in the pool the super portal reads — separation
  * kept by table rather than by vendor account.
  * The instances that read these tables are in `services/auth/better-auth.ts`.
@@ -110,8 +110,8 @@ export const clientAuthSessions = pgTable(
     ...sessionColumns(clientUserId),
     claimedTenantId: claimedTenantId(),
     /**
-     * Set on a session a studio superadmin opened as this member (#118): the
-     * superadmin's `staff` pool auth user id. The admin plugin's field name, and
+     * Set on a session a studio admin opened as this member (#118): the
+     * admin's `staff` pool auth user id. The admin plugin's field name, and
      * no foreign key — it names a user in another pool's table.
      */
     impersonatedBy: text('impersonated_by'),
@@ -215,7 +215,7 @@ export const platformAuthTwoFactors = pgTable(
  * three of them, and the record should outlive the account. The subject is
  * the user acted on, when it is not the actor: the member an impersonation
  * signed in as. An impersonation row is filed under `staff` (#118): its actor is
- * the superadmin's staff auth user, its subject the member's client auth user.
+ * the studio admin's staff auth user, its subject the member's client auth user.
  */
 export const authEvents = pgTable(
   'auth_events',

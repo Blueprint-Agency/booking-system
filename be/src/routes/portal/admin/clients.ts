@@ -1,7 +1,6 @@
 import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
-import { requireRole } from '../../../middleware/require-role'
 import { tenantId } from '../../../middleware/tenant'
 import {
   listClients,
@@ -199,10 +198,7 @@ function editedPackageView(p: ClientPackageRow) {
 const app = new Hono()
   .get('/', zValidator('query', listQuery), async c => {
     const q = c.req.valid('query')
-    // Only superadmins can see the deleted view; non-superadmins silently get
-    // the default filtered list regardless of the query param.
-    const role = c.get('staffRow')?.role
-    const includeDeleted = q.include_deleted === 'true' && role === 'superadmin'
+    const includeDeleted = q.include_deleted === 'true'
     const rows = await listClients(tenantId(c), { q: q.q, status: q.status, includeDeleted })
     return c.json({ clients: rows.map(clientListRow) })
   })
@@ -235,7 +231,7 @@ const app = new Hono()
       workshop_purchases: workshopPurchases.map(workshopPurchaseView),
     })
   })
-  // ---- package wallet edits (admin/superadmin) ----
+  // ---- package wallet edits (admin) ----
   .post('/:id/packages/:pid/adjust', zValidator('param', idPkgParam), zValidator('json', adjustSchema), async c => {
     const { id, pid } = c.req.valid('param')
     const body = c.req.valid('json')
@@ -374,8 +370,8 @@ const app = new Hono()
   // Blocking is DELETE /:id + POST /:id/restore below — there is deliberately no
   // separate suspend mechanism.
   .post('/:id/packages/issue', c => c.json({ todo: 'admin grants complimentary package' }, 501))
-  // ---- soft delete + restore (superadmin-only) ----
-  .delete('/:id', requireRole('superadmin'), zValidator('param', idParam), async c => {
+  // ---- soft delete + restore ----
+  .delete('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const row = await softDeleteClient({
       tenantId: tenantId(c),
@@ -386,7 +382,7 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'clients', id })
     return c.json(clientRow(row))
   })
-  .post('/:id/restore', requireRole('superadmin'), zValidator('param', idParam), async c => {
+  .post('/:id/restore', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const row = await restoreClient({
       tenantId: tenantId(c),
@@ -397,8 +393,7 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'clients', id })
     return c.json(clientRow(row))
   })
-  // ---- sessions (#119): read by admin and superadmin, ended by superadmin
-  // (every non-GET under /clients is, through adminReadOnly) ----
+  // ---- sessions (#119) ----
   .get('/:id/sessions', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const sessions = await listMemberSessions(tenantId(c), id)

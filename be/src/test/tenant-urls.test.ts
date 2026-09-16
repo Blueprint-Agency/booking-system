@@ -69,7 +69,7 @@ describe('per-studio URLs', { skip: integrationTestsEnabled ? false : SKIP_REASO
         tenantId: two.id,
         email: INVITER_EMAIL,
         name: 'Urls Inviter',
-        role: 'superadmin',
+        role: 'admin',
         status: 'active',
         authUserId: `auth_urls_inviter_${Date.now()}`,
       })

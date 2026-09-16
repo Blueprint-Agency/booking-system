@@ -142,7 +142,7 @@ export type SessionAtStudio = {
   expiresAt: Date
   ip: string | null
   userAgent: string | null
-  /** Opened by a superadmin impersonating the member; always false for staff. */
+  /** Opened by a studio admin impersonating the member; always false for staff. */
   impersonated: boolean
 }
 

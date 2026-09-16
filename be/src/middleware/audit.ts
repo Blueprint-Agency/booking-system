@@ -9,7 +9,7 @@ const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
  * Writes one audit_log row per successful mutating request, after the handler commits.
  *
  *   - Staff request: actor = staffRow.id (or impersonatedBy override for staff→staff impersonation).
- *   - Client request during impersonation: actor = impersonatedBy (the superadmin's staff id);
+ *   - Client request during impersonation: actor = impersonatedBy (the admin's staff id);
  *     payload.impersonatedClientId records who was being impersonated.
  *   - Normal client request (no impersonation): no row written.
  *
@@ -28,7 +28,7 @@ export const audit: MiddlewareHandler = async (c, next) => {
 
   // Determine the actor staff id. Either:
   //  - Staff request (with optional staff→staff impersonation): use impersonatedBy ?? staffRow.id
-  //  - Client request being impersonated by a superadmin: use impersonatedBy
+  //  - Client request being impersonated by an admin: use impersonatedBy
   //  - Anything else (e.g. normal client mutation): skip
   let actorStaffId: string | undefined
   if (staffRow) {

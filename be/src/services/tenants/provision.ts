@@ -201,8 +201,8 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
       // archive can be imported into.
       if (!adminEmail || !adminName) return { tenant, admin: null }
 
-      // `admin`, not `superadmin`: the studio's first staff member runs the
-      // studio. Platform administration is not a role in this table at all —
+      // `admin`: the studio's first staff member runs the studio. Platform
+      // administration is not a role in this table at all —
       // see services/tenants/platform-admin.ts. Invited by nobody on the
       // studio's staff, because there is nobody yet.
       const admin = await writePendingStaff(tx, {

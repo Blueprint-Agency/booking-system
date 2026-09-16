@@ -37,7 +37,7 @@ Meanwhile the system already knows how to answer "is this instructor busy" — i
 
 ## Solution
 
-Instructors apply for leave in the portal. Two types, annual and medical, each drawn from that instructor's own **Pool** of days for the Leave Year. An admin or superadmin approves or rejects. Approved leave is not a note on a calendar — it makes the instructor genuinely unavailable, enforced by the same rule that already stops an instructor being booked into two places at once, so every scheduling screen refuses him for those dates without any screen having to know that leave exists.
+Instructors apply for leave in the portal. Two types, annual and medical, each drawn from that instructor's own **Pool** of days for the Leave Year. An admin approves or rejects. Approved leave is not a note on a calendar — it makes the instructor genuinely unavailable, enforced by the same rule that already stops an instructor being booked into two places at once, so every scheduling screen refuses him for those dates without any screen having to know that leave exists.
 
 The guarantee runs both ways. Leave cannot be requested for a date the instructor is already assigned to teach — the request is refused and names the events in the way. To clear them he cancels his own classes, which he can now do.
 
@@ -95,12 +95,12 @@ No money is involved anywhere. Instructors are paid per class, so a leave day pa
 41. As an admin, I want an email when an instructor submits a request, so that requests do not sit unread.
 42. As an admin, I want an email when an instructor cancels one of his classes, so that a class disappearing from the timetable is never a surprise.
 43. As an admin, I want an instructor's cancellation recorded as an instructor cancellation and not an admin one, so that the audit trail says who actually did it.
-44. As an admin or superadmin, I want to set an individual instructor's Assigned annual and medical days on their own profile, so that leave matches what was agreed with that person rather than one number standing for everyone. *(Reversed 2026-08-12 — this story previously said the opposite. See `spec-instructor-leave-pools.md` for the per-instructor model and the superadmin-only carry-over cap that replaced the two global figures.)*
+44. As an admin, I want to set an individual instructor's Assigned annual and medical days on their own profile, so that leave matches what was agreed with that person rather than one number standing for everyone. *(Reversed 2026-08-12 — this story previously said the opposite. See `spec-instructor-leave-pools.md` for the per-instructor model and the admin-only carry-over cap that replaced the two global figures.)*
 45. As an admin, I want a new Leave Year to open without anyone running anything, so that January does not need an administrative ritual.
 46. As an admin, I want last year's leave counts to stay as they were when I change an instructor's Assigned Days, so that history does not move.
 47. As an admin, I want backdated medical leave to record the absence without disturbing classes that already happened, so that filing an MC late does not rewrite the past.
 48. As an admin, I want cancelled classes ignored when checking clashes, so that a class nobody is teaching does not block leave.
-49. As a superadmin, I want the same leave powers as an admin, so that I am never the person who cannot act.
+49. *(Retired 2026-09-16 — the portal has two staff roles, admin and instructor, so there is no higher role left to share the leave powers with. See `be/docs/adr/0006-two-staff-roles.md`.)*
 50. As a member, I want the class I booked to have an instructor who is not on leave, so that the class actually runs.
 51. As a member, I want my credit returned when a class is cancelled by its instructor, so that I am not out of pocket for someone else's absence.
 52. As a developer, I want "instructor is unavailable" to be decided in one module whether the cause is a clash or leave, so that a new reason for unavailability does not have to be added to six write paths.
@@ -112,7 +112,7 @@ No money is involved anywhere. Instructors are paid per class, so a leave day pa
 
 ### Scope
 
-- Instructors only. Admins and superadmins do not apply for leave in this system; their absence has no effect on the schedule.
+- Instructors only. Admins do not apply for leave in this system; their absence has no effect on the schedule.
 - ~~Two leave types: annual and medical.~~ **Superseded (2026-08-17).** A third Leave Type, **study**, has shipped — see "Study leave, and the two Leave Caps" below. No unpaid type, no compassionate type.
 - Quota only. Nothing in this feature reads or writes pay, payroll entries, or any money field. An instructor on leave simply has no classes, and per-class pay already handles that by producing nothing.
 
@@ -128,7 +128,7 @@ No money is involved anywhere. Instructors are paid per class, so a leave day pa
 
 **Rewritten 2026-08-12.** The detail lives in `spec-instructor-leave-pools.md`; what follows is only enough that this document is not misleading read on its own.
 
-- The yearly figure is **Assigned Days** — two integer columns on `instructors`, one annual, one medical, defaulting to 14 each and set per instructor on the staff profile by an admin or superadmin. It is not on the global policy singleton and it is not one number for everyone.
+- The yearly figure is **Assigned Days** — two integer columns on `instructors`, one annual, one medical, defaulting to 14 each and set per instructor on the staff profile by an admin. It is not on the global policy singleton and it is not one number for everyone.
 - Each Leave Year an instructor is given a **Pool**: their Assigned Days plus any **Carried Days** from the year before, capped by the one studio-wide carry-over cap that *does* live on the policy singleton. The Pool is stored — one row per instructor, per Leave Type, per Leave Year — and frozen the first time that year is read. Medical never carries.
 - **The Pool is a stored grant, not a stored balance.** **Taken** (approved days) and **Committed** (approved plus pending) are still derived by summing requests. No counter can drift, no restore-on-cancel logic is needed, and a new year opens on first read rather than by a scheduled job.
 - **Remaining is Pool minus Committed** — pending counts, which is what an instructor is shown and what a new request is measured against. It is not clamped: a figure lowered below what is already Committed shows an honest negative.
@@ -197,15 +197,15 @@ This is the load-bearing decision, and it reuses machinery that already exists.
 - Optional, on a **medical or a study** request — never an annual one, which has nothing to evidence. jpg, png or pdf, up to 5MB. One request holds one document; a second upload replaces the first.
 - **This is the first object-storage write path in the backend** — before it, the storage client existed and the presigner package was already a dependency, but nothing uploaded or signed. It is now implemented: the file is POSTed to the API, validated server-side, and written to the one R2 bucket, with retrieval as a signed GET (see `backend-architecture.md` §6c). Instructor photo upload remains deferred.
 - ~~The certificate goes to a **private** bucket, separate from the existing public one.~~ **Superseded (2026-08-11), and confirmed by the owner again on 2026-08-17: this is staying as is.** One bucket holds both, and it is public. See §6c and `spec-instructor-leave-remediation.md`.
-- Admins and superadmins read it through a short-lived signed URL generated on demand. Nobody else — including the instructor's colleagues — can retrieve it.
+- Admins read it through a short-lived signed URL generated on demand. Nobody else — including the instructor's colleagues — can retrieve it.
 - **Objects already in the bucket from before the rename are not moved.** The key is stored per request rather than recomputed, so old rows keep their existing paths and resolve exactly as before; only new uploads take the new prefix.
 - **Superseded (2026-08-11).** This section originally specified a separate private bucket, added as `R2_PRIVATE_BUCKET_NAME`. That variable was removed at the owner's direction: certificates now go in the same public bucket as imagery, named by `R2_BUCKET_NAME`. The consequence is recorded in `backend-architecture.md` §6c — a certificate is readable by anyone holding its key, and the two UUIDs in that key are the only protection. Upload still degrades to unavailable rather than crashing boot when the bucket is unset.
 
 ### Access and visibility
 
-- Every staff member — admin, superadmin, instructor — can see the leave calendar, showing who is away on which dates.
-- Colleagues see the person and the dates only. The leave type, the instructor's reason, the decision reason and the Supporting Document are visible to admins and superadmins only, and to the instructor for his own requests. A cap-exceeded flag on a medical entry is visible to the same audience — the redaction is the same object, so it costs nothing extra to withhold.
-- Approve, reject and revoke are admin and superadmin. Withdraw and cancel are the owning instructor.
+- Every staff member — admin or instructor — can see the leave calendar, showing who is away on which dates.
+- Colleagues see the person and the dates only. The leave type, the instructor's reason, the decision reason and the Supporting Document are visible to admins only, and to the instructor for his own requests. A cap-exceeded flag on a medical entry is visible to the same audience — the redaction is the same object, so it costs nothing extra to withhold.
+- Approve, reject and revoke are admin. Withdraw and cancel are the owning instructor.
 - Read paths must not leak the restricted fields to instructor callers — this is a serialisation decision in the read module, not something the frontend hides.
 
 ### Notifications and audit
@@ -218,8 +218,8 @@ This is the load-bearing decision, and it reuses machinery that already exists.
 
 - An admin leave page: the pending queue plus a calendar, reusing the existing schedule calendar component rather than introducing a second calendar implementation.
 - An instructor leave page: the **three** Pools with their Remaining figures (annual, medical, study), the submission form, the instructor's own request history, and the same all-staff read-only calendar.
-- Assigned Days are set per instructor on the staff profile, which an admin can open as well as a superadmin — the person who approves the leave is the person who sets the number. That profile also shows the Leave Year's Carried, Pool and Remaining, and Remaining is directly editable for the current year, bounded by that year's Pool.
-- The policy screen keeps the studio-wide carry-over cap, and gains the `study_leave_cap` field plus a **Leave conflicts** section: a bounded list of declared pairs, each removable, with two instructor pickers and an Add button beneath it. The pickers exclude the person chosen on the other side and every already-declared combination, so an invalid pair cannot be constructed. Conflict edits are draft state — they make the page dirty, Reset abandons them, and one Save applies the pairs and the numeric fields together or not at all. All superadmin-only like every other setting on it.
+- Assigned Days are set per instructor on the staff profile, which an admin can open — the person who approves the leave is the person who sets the number. That profile also shows the Leave Year's Carried, Pool and Remaining, and Remaining is directly editable for the current year, bounded by that year's Pool.
+- The policy screen keeps the studio-wide carry-over cap, and gains the `study_leave_cap` field plus a **Leave conflicts** section: a bounded list of declared pairs, each removable, with two instructor pickers and an Add button beneath it. The pickers exclude the person chosen on the other side and every already-declared combination, so an invalid pair cannot be constructed. Conflict edits are draft state — they make the page dirty, Reset abandons them, and one Save applies the pairs and the numeric fields together or not at all. All admin-only like every other setting on it.
 - The leave calendar marks a medical entry that breaches a conflict or the cap so an admin can see the pressure as well as be told about it in the submission email.
 - A cancel action on the instructor's schedule screen, with a required reason and a confirmation that states how many members will be refunded.
 - The instructor picker on scheduling screens greys out and labels an instructor who is on leave for the chosen date. Before a date is chosen, nobody is greyed. The picker is a hint; the server refusal is the enforcement.
@@ -246,7 +246,7 @@ This is the load-bearing decision, and it reuses machinery that already exists.
 
 ## Out of Scope
 
-- Leave for admins, superadmins or any non-instructor staff.
+- Leave for admins or any non-instructor staff.
 - Accrual, and pro-rating for mid-year joiners. An instructor gets their full Assigned figure on day one and on every 1 January.
 - ~~Carry-forward and year-end rollover. The allowance is a flat yearly number and unused days expire.~~ **Shipped 2026-08-12.** Unused *annual* days now carry into the next Leave Year up to a studio-wide cap; medical still does not carry. See `spec-instructor-leave-pools.md`.
 - ~~Per-instructor allowances. One global pair covers everyone; an exception is handled by an admin's judgement at approval, not by data.~~ **Shipped 2026-08-12.** Assigned Days are per instructor and set on the staff profile; an exception is now data rather than judgement. `be/docs/adr/0001-per-instructor-leave-pools-with-carry-over.md` records why both non-goals were reversed.

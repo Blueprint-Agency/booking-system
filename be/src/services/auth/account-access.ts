@@ -18,12 +18,11 @@
 import { and, eq, isNull } from 'drizzle-orm'
 import { db } from '../../db'
 import { clients, staffInvitations, staffUsers } from '../../db/schema/identity'
-import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
+import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { requireTenantUrl } from '../tenants/urls'
 import { endClientSessionsAt, endStaffSessionsAt, listSessionsAt, type SessionAtStudio } from './auth-users'
 import { mailStaffSetPasswordLink } from './better-auth'
 import { resendInvitation } from './invitations'
-import { isSeededSuperadmin } from './staff-archive'
 import { recordStaffAct } from './staff-acts'
 
 /* ── members ───────────────────────────────────────────────────────────── */
@@ -84,9 +83,10 @@ export async function listStaffSessions(tenantId: string, staffId: string): Prom
 /**
  * End every session a staff member holds at this studio, and log it.
  *
- * Signing another superadmin out takes the seeded superadmin, the rule archive
- * already applies to touching a peer. Yourself is allowed — it is how you end
- * the session on a phone you have lost — and signs out this tab too.
+ * Any admin may sign any staff member out, another admin included. Unlike archival
+ * it is not a lockout risk in the first place: the person signed out can sign
+ * straight back in. Yourself is allowed — it is how you end the session on a
+ * phone you have lost — and signs out this tab too.
  */
 export async function signStaffOutEverywhere(input: {
   tenantId: string
@@ -95,14 +95,6 @@ export async function signStaffOutEverywhere(input: {
   from?: Headers
 }): Promise<number> {
   const target = await staffTarget(input.tenantId, input.targetStaffId)
-  if (target.role === 'superadmin' && target.id !== input.actorStaffId) {
-    const actor = await staffTarget(input.tenantId, input.actorStaffId)
-    if (!isSeededSuperadmin(actor)) {
-      throw new ForbiddenError('only_seeded_can_sign_out_superadmin', {
-        message: 'Only the main superadmin can sign another superadmin out.',
-      })
-    }
-  }
   const ended = target.authUserId ? await endStaffSessionsAt(db, input.tenantId, target.authUserId) : 0
   await recordStaffAct({
     tenantId: input.tenantId,

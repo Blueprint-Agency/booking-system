@@ -94,8 +94,8 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
       .select()
       .from(schema.staffUsers)
       .where(eq(schema.staffUsers.tenantId, found.tenant.id))
-    // `admin`, not `superadmin`: running a studio is not administering the
-    // platform. Pending until they accept.
+    // A studio `admin`: running a studio is not administering the platform.
+    // Pending until they accept.
     assert.equal(admin!.role, 'admin')
     assert.equal(admin!.status, 'pending')
     assert.ok(admin!.invitedAt)

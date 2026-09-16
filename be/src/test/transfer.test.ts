@@ -225,6 +225,53 @@ test('an archive exported while identity rows still carried clerk_user_id import
   assert.equal(summary.written.clients, archive.rows.clients!.length)
 })
 
+test('an archive taken while the superadmin role existed restores its staff as admins', options, async () => {
+  // Migration 0055 folded the role into `admin` and dropped location grants.
+  // An archive written the day before carries both, and must restore the way
+  // the database itself was migrated.
+  const source = await studioWithData(`oldrolesrc-${Date.now()}`)
+  const archive = await transfer.exportTenant(source)
+  const staffId = randomUUID()
+  archive.rows.staff_users = [
+    {
+      id: staffId,
+      tenant_id: source,
+      auth_user_id: randomUUID(),
+      email: 'owner@oldrole.test',
+      name: 'Old Owner',
+      languages: [],
+      role: 'superadmin',
+      status: 'active',
+      granted_location_ids: [],
+    },
+  ]
+  archive.rows.staff_invitations = [
+    {
+      id: randomUUID(),
+      tenant_id: source,
+      email: 'invited@oldrole.test',
+      role: 'superadmin',
+      granted_location_ids: [],
+      token: 'old-role-token',
+      expires_at: new Date(Date.now() + 86_400_000).toISOString(),
+      status: 'pending',
+      invited_by_staff_id: staffId,
+    },
+  ]
+
+  const target = await emptyTenant(`oldroledst-${Date.now()}`)
+  await transfer.importTenant(target, archive)
+
+  const staff = await harness.db.execute<{ role: string }>(sql`
+    SELECT role::text FROM staff_users WHERE tenant_id = ${target}
+  `)
+  assert.deepEqual([...staff].map(r => r.role), ['admin'])
+  const invitations = await harness.db.execute<{ role: string }>(sql`
+    SELECT role::text FROM staff_invitations WHERE tenant_id = ${target}
+  `)
+  assert.deepEqual([...invitations].map(r => r.role), ['admin'])
+})
+
 test('an archive row with no auth_user_id is refused by name', options, async () => {
   const source = await studioWithData(`noauthsrc-${Date.now()}`)
   const archive = await transfer.exportTenant(source)

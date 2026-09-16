@@ -15,7 +15,6 @@ const booleanEnv = z.preprocess(value => {
 /**
  * Zod-validated env loader. Required vars cover:
  *   - DB connection
- *   - Superadmin bootstrap email (passwordless — see seed/superadmin.ts)
  *   - Better Auth (session signing secret + the backend's own origin)
  *   - Tenant origin patterns (CORS, links)
  *   - Resend (staff invitations + outbound transactional email)
@@ -45,16 +44,14 @@ const schema = z.object({
   // where that URL's password comes from — see src/db/url.ts.
   DB_APP_PASSWORD: z.string().optional(),
 
-  SUPERADMIN_EMAIL: z.string().email('SUPERADMIN_EMAIL must be a valid email'),
-
   // Comma-separated addresses that may operate the **super portal** —
   // `/api/v1/platform/*`, where studios are created, listed and suspended.
   //
   // Not a role in `staff_users`: that column says what someone may do inside one
-  // studio, and a studio's own superadmin must not be able to suspend another
-  // studio. This is the *whole* allowlist — `SUPERADMIN_EMAIL` is no longer
-  // folded in, because folding a studio's superadmin into the platform gate is
-  // exactly that escalation. Unset means a super portal nobody can reach, which
+  // studio, and a studio's own admin must not be able to suspend another
+  // studio. This is the *whole* allowlist — no studio staff account is folded
+  // in, because folding one into the platform gate is exactly that escalation.
+  // Unset means a super portal nobody can reach, which
   // is announced at boot. See services/tenants/platform-admin.ts.
   PLATFORM_ADMIN_EMAILS: z.string().optional(),
 

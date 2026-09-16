@@ -233,7 +233,6 @@ function stubEnvironment() {
   // Never 'production': that is what gates the second tenant, and a one-tenant
   // fixture would let every isolation test pass vacuously.
   process.env.APP_ENV = 'development'
-  process.env.SUPERADMIN_EMAIL ??= 'superadmin@example.test'
   process.env.IMPERSONATION_SECRET ??= 'test-harness-impersonation-secret-key'
   process.env.BETTER_AUTH_SECRET ??= 'test-harness-better-auth-secret-key-0123456789'
   process.env.BETTER_AUTH_URL ??= 'http://localhost:4000'

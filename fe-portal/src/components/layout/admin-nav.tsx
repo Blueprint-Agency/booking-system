@@ -9,6 +9,7 @@ import { NAV_ITEMS, NAV_GROUP_ORDER, type NavItem, type NavGroup } from "./nav-i
 import { inboxItems } from "@/data";
 import { cn } from "@/lib/utils";
 import { StudioMark } from "@/components/brand/studio-mark";
+import { visibleToRole } from "@/lib/staff-role";
 import { useWorkspace } from "@/lib/workspace-context";
 
 type BadgeMap = Partial<Record<NonNullable<NavItem["badgeKey"]>, number | undefined>>;
@@ -213,11 +214,7 @@ function NavContent({ pathname, onNavigate }: { pathname: string; onNavigate?: (
     corporateRequestsPending: corporatePending,
   };
 
-  const visibleItems = NAV_ITEMS.filter((item) => {
-    if (item.scope === "both") return true;
-    if (role === "superadmin") return true; // superadmin sees everything
-    return item.scope === "workspace"; // admin sees workspace + both
-  });
+  const visibleItems = NAV_ITEMS.filter((item) => visibleToRole(item, role));
 
   // Workspace zone: switcher-controlled surfaces, rendered first under the active location name.
   const workspaceItems = visibleItems.filter((i) => i.workspaceScoped);

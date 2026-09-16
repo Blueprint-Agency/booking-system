@@ -46,7 +46,7 @@ describe('account access from the detail views', { skip: integrationTestsEnabled
   const staffAt = async (
     tenant: { id: string; slug: string },
     email: string,
-    role: 'superadmin' | 'admin' | 'instructor',
+    role: 'admin' | 'instructor',
   ): Promise<StaffFixture> => {
     const headers = await harness.signInAs('staff', email, tenant)
     const [user] = await harness.db.select().from(schema.staffAuthUsers).where(eq(schema.staffAuthUsers.email, email))
@@ -80,18 +80,19 @@ describe('account access from the detail views', { skip: integrationTestsEnabled
 
   type SessionView = { id: string; user_agent: string | null; last_seen_at: string; signed_in_at: string }
 
-  let superadmin!: StaffFixture
+  /** Two admins at studio one, so one can act on the other. */
+  let owner!: StaffFixture
   let admin!: StaffFixture
-  let superadminTwo!: StaffFixture
+  let adminTwo!: StaffFixture
 
   before(async () => {
     harness = await startTestApp()
     schema = await import('../db/schema')
     ;({ discardedMail } = await import('../lib/mailer'))
     ;({ one, two } = harness.tenants)
-    superadmin = await staffAt(one, at('superadmin'), 'superadmin')
+    owner = await staffAt(one, at('owner'), 'admin')
     admin = await staffAt(one, at('admin'), 'admin')
-    superadminTwo = await staffAt(two, at('superadmin-two'), 'superadmin')
+    adminTwo = await staffAt(two, at('admin-two'), 'admin')
   })
 
   after(async () => {
@@ -127,7 +128,7 @@ describe('account access from the detail views', { skip: integrationTestsEnabled
   })
 
   test('member detail lists the member\'s sessions here; signing them out everywhere makes their next request 401', async () => {
-    const member = await memberAt(one, superadmin.headers, at('member'))
+    const member = await memberAt(one, owner.headers, at('member'))
     // A second device.
     const phone = await harness.signInAs('client', at('member'), one)
 
@@ -143,14 +144,9 @@ describe('account access from the detail views', { skip: integrationTestsEnabled
       assert.ok('user_agent' in s)
     }
 
-    // Reading is open to an admin; revoking a member's access is not (/clients is read-only for them).
-    await expectStatus(
-      await send(`/api/v1/portal/admin/clients/${member.id}/sessions/revoke`, { body: {}, headers: admin.headers }),
-      403,
-    )
-
+    // An admin signs the member out.
     const revoked = await expectStatus(
-      await send(`/api/v1/portal/admin/clients/${member.id}/sessions/revoke`, { body: {}, headers: superadmin.headers }),
+      await send(`/api/v1/portal/admin/clients/${member.id}/sessions/revoke`, { body: {}, headers: admin.headers }),
       200,
     )
     assert.equal(revoked.revoked, 2)
@@ -165,24 +161,24 @@ describe('account access from the detail views', { skip: integrationTestsEnabled
 
     const [event] = await eventsFor(member.authUserId, 'sessions_revoked')
     assert.ok(event, 'sessions_revoked was written')
-    assert.equal(event.actorUserId, superadmin.authUserId)
+    assert.equal(event.actorUserId, admin.authUserId)
     assert.equal(event.tenantId, one.id)
   })
 
   test('signing a member out at one studio leaves their session at another', async () => {
-    const member = await memberAt(one, superadmin.headers, at('two-studios'))
-    const elsewhere = await memberAt(two, superadminTwo.headers, at('two-studios'))
+    const member = await memberAt(one, owner.headers, at('two-studios'))
+    const elsewhere = await memberAt(two, adminTwo.headers, at('two-studios'))
     assert.equal(elsewhere.authUserId, member.authUserId, 'one auth user, two rows')
 
     await expectStatus(
-      await send(`/api/v1/portal/admin/clients/${member.id}/sessions/revoke`, { body: {}, headers: superadmin.headers }),
+      await send(`/api/v1/portal/admin/clients/${member.id}/sessions/revoke`, { body: {}, headers: owner.headers }),
       200,
     )
     await expectStatus(await send('/api/v1/me', { headers: member.headers }), 401)
     await expectStatus(await send('/api/v1/me', { headers: elsewhere.headers }), 200)
   })
 
-  test('staff detail lists a staff member\'s sessions; a superadmin signs an admin out everywhere', async () => {
+  test('staff detail lists a staff member\'s sessions; an admin signs another admin out everywhere', async () => {
     const target = await staffAt(one, at('signed-out-admin'), 'admin')
 
     const listed = await expectStatus(
@@ -192,7 +188,7 @@ describe('account access from the detail views', { skip: integrationTestsEnabled
     assert.equal((listed.sessions as SessionView[]).length, 1)
 
     const revoked = await expectStatus(
-      await send(`/api/v1/portal/admin/staff/${target.row.id}/sessions/revoke`, { body: {}, headers: superadmin.headers }),
+      await send(`/api/v1/portal/admin/staff/${target.row.id}/sessions/revoke`, { body: {}, headers: owner.headers }),
       200,
     )
     assert.equal(revoked.revoked, 1)
@@ -200,37 +196,38 @@ describe('account access from the detail views', { skip: integrationTestsEnabled
 
     const [event] = await eventsFor(target.authUserId, 'sessions_revoked')
     assert.ok(event, 'sessions_revoked was written')
-    assert.equal(event.actorUserId, superadmin.authUserId)
+    assert.equal(event.actorUserId, owner.authUserId)
     assert.equal(event.pool, 'staff')
   })
 
-  test('only a superadmin signs staff out', async () => {
+  test('an instructor cannot sign staff out', async () => {
+    const actor = await staffAt(one, at('instructor-actor'), 'instructor')
     const target = await staffAt(one, at('instructor'), 'instructor')
     await expectStatus(
-      await send(`/api/v1/portal/admin/staff/${target.row.id}/sessions/revoke`, { body: {}, headers: admin.headers }),
+      await send(`/api/v1/portal/admin/staff/${target.row.id}/sessions/revoke`, { body: {}, headers: actor.headers }),
       403,
     )
   })
 
   test('blocking a member ends their sessions and is logged; unblocking reverses it', async () => {
-    const member = await memberAt(one, superadmin.headers, at('blocked'))
+    const member = await memberAt(one, owner.headers, at('blocked'))
 
     await expectStatus(
-      await send(`/api/v1/portal/admin/clients/${member.id}`, { method: 'DELETE', headers: superadmin.headers }),
+      await send(`/api/v1/portal/admin/clients/${member.id}`, { method: 'DELETE', headers: owner.headers }),
       200,
     )
     await expectStatus(await send('/api/v1/me', { headers: member.headers }), 401)
     const [blocked] = await eventsFor(member.authUserId, 'user_blocked')
     assert.ok(blocked, 'user_blocked was written')
-    assert.equal(blocked.actorUserId, superadmin.authUserId)
+    assert.equal(blocked.actorUserId, owner.authUserId)
 
     await expectStatus(
-      await send(`/api/v1/portal/admin/clients/${member.id}/restore`, { body: {}, headers: superadmin.headers }),
+      await send(`/api/v1/portal/admin/clients/${member.id}/restore`, { body: {}, headers: owner.headers }),
       200,
     )
     const [unblocked] = await eventsFor(member.authUserId, 'user_unblocked')
     assert.ok(unblocked, 'user_unblocked was written')
-    assert.equal(unblocked.actorUserId, superadmin.authUserId)
+    assert.equal(unblocked.actorUserId, owner.authUserId)
     const again = await harness.signInAs('client', at('blocked'), one)
     await expectStatus(await send('/api/v1/me', { headers: again }), 200)
   })
@@ -239,16 +236,16 @@ describe('account access from the detail views', { skip: integrationTestsEnabled
     const target = await staffAt(one, at('archived-admin'), 'admin')
 
     await expectStatus(
-      await send(`/api/v1/portal/admin/staff/${target.row.id}/archive`, { body: {}, headers: superadmin.headers }),
+      await send(`/api/v1/portal/admin/staff/${target.row.id}/archive`, { body: {}, headers: owner.headers }),
       200,
     )
     await expectStatus(await send('/api/v1/portal/admin/staff', { headers: target.headers }), 401)
     const [blocked] = await eventsFor(target.authUserId, 'user_blocked')
     assert.ok(blocked, 'user_blocked was written')
-    assert.equal(blocked.actorUserId, superadmin.authUserId)
+    assert.equal(blocked.actorUserId, owner.authUserId)
 
     await expectStatus(
-      await send(`/api/v1/portal/admin/staff/${target.row.id}/unarchive`, { body: {}, headers: superadmin.headers }),
+      await send(`/api/v1/portal/admin/staff/${target.row.id}/unarchive`, { body: {}, headers: owner.headers }),
       200,
     )
     const [unblocked] = await eventsFor(target.authUserId, 'user_unblocked')
@@ -260,7 +257,7 @@ describe('account access from the detail views', { skip: integrationTestsEnabled
   test('resend from staff detail re-mails a pending invitation\'s set-password link', async () => {
     const email = at('invitee')
     await expectStatus(
-      await send('/api/v1/portal/admin/staff/invite', { body: { email, role: 'admin' }, headers: superadmin.headers }),
+      await send('/api/v1/portal/admin/staff/invite', { body: { email, role: 'admin' }, headers: owner.headers }),
       201,
     )
     const [pending] = await harness.db
@@ -270,7 +267,7 @@ describe('account access from the detail views', { skip: integrationTestsEnabled
     const before = discardedMail.filter(m => m.to === email).length
 
     const res = await expectStatus(
-      await send(`/api/v1/portal/admin/staff/${pending!.id}/resend-invitation`, { body: {}, headers: superadmin.headers }),
+      await send(`/api/v1/portal/admin/staff/${pending!.id}/resend-invitation`, { body: {}, headers: owner.headers }),
       200,
     )
     assert.equal(res.sent, 'invitation')
@@ -280,13 +277,13 @@ describe('account access from the detail views', { skip: integrationTestsEnabled
 
     const [event] = await eventsFor(pending!.authUserId!, 'invitation_resent')
     assert.ok(event, 'invitation_resent was written')
-    assert.equal(event.actorUserId, superadmin.authUserId)
+    assert.equal(event.actorUserId, owner.authUserId)
   })
 
   test('resend for a staff member with no invitation pending mails a set-password link', async () => {
     const target = await staffAt(one, at('no-invite'), 'admin')
     const res = await expectStatus(
-      await send(`/api/v1/portal/admin/staff/${target.row.id}/resend-invitation`, { body: {}, headers: superadmin.headers }),
+      await send(`/api/v1/portal/admin/staff/${target.row.id}/resend-invitation`, { body: {}, headers: owner.headers }),
       200,
     )
     assert.equal(res.sent, 'set_password')
@@ -295,19 +292,19 @@ describe('account access from the detail views', { skip: integrationTestsEnabled
     assert.match(mail.html, /reset-password\//)
     const [event] = await eventsFor(target.authUserId, 'invitation_resent')
     assert.ok(event, 'invitation_resent was written')
-    assert.equal(event.actorUserId, superadmin.authUserId)
+    assert.equal(event.actorUserId, owner.authUserId)
   })
 
   test('a studio cannot list or revoke the sessions of another studio\'s member or staff (404)', async () => {
-    const member = await memberAt(two, superadminTwo.headers, at('elsewhere'))
+    const member = await memberAt(two, adminTwo.headers, at('elsewhere'))
     const staff = await staffAt(two, at('elsewhere-admin'), 'admin')
 
     for (const path of [`/api/v1/portal/admin/clients/${member.id}/sessions`, `/api/v1/portal/admin/staff/${staff.row.id}/sessions`]) {
-      await expectStatus(await send(path, { headers: superadmin.headers }), 404)
-      await expectStatus(await send(`${path}/revoke`, { body: {}, headers: superadmin.headers }), 404)
+      await expectStatus(await send(path, { headers: owner.headers }), 404)
+      await expectStatus(await send(`${path}/revoke`, { body: {}, headers: owner.headers }), 404)
     }
     await expectStatus(
-      await send(`/api/v1/portal/admin/staff/${staff.row.id}/resend-invitation`, { body: {}, headers: superadmin.headers }),
+      await send(`/api/v1/portal/admin/staff/${staff.row.id}/resend-invitation`, { body: {}, headers: owner.headers }),
       404,
     )
 

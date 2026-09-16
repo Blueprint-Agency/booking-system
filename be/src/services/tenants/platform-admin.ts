@@ -1,9 +1,9 @@
 /**
  * Who is allowed to operate the super portal.
  *
- * A platform administrator is *not* a Tenant's superadmin. `staff_users.role`
+ * A platform administrator is *not* a Tenant's admin. `staff_users.role`
  * says what someone may do inside one studio; this says who may create studios
- * at all, and the two must not be the same thing — a studio's own superadmin
+ * at all, and the two must not be the same thing — a studio's own admin
  * reaching the super portal would be able to create, list and suspend every
  * other studio on the platform.
  *
@@ -17,15 +17,15 @@
  *    every tenant has no honest tenant context to be fenced by.
  *  - The dev team is a handful of people who change about never.
  *
- * `PLATFORM_ADMIN_EMAILS` is the whole of the list. `SUPERADMIN_EMAIL` used to
- * be folded in by the caller, as a bootstrap convenience so that a deployment
+ * `PLATFORM_ADMIN_EMAILS` is the whole of the list. A studio staff address used
+ * to be folded in by the caller, as a bootstrap convenience so that a deployment
  * setting nothing new kept one platform admin rather than none. That
  * convenience was the escalation described above, granted by default: it made
- * the first studio's superadmin an operator of every studio on the platform.
+ * the first studio's top staff account an operator of every studio.
  *
  * An empty allowlist is therefore allowed, and means a super portal nobody can
  * reach. That is the right failure for an unset environment variable — refusing
- * everyone is recoverable, admitting a studio's superadmin to the whole platform
+ * everyone is recoverable, admitting a studio's admin to the whole platform
  * is not — and `middleware/platform-admin.ts` announces it at boot rather than
  * leaving it to be discovered at the door.
  */

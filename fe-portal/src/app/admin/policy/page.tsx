@@ -55,7 +55,7 @@ const pairKey = (p: ConflictPair) => `${p.instructor_a_id}:${p.instructor_b_id}`
 interface StaffRow {
   id: string;
   name: string;
-  role: "superadmin" | "admin" | "instructor";
+  role: "admin" | "instructor";
   status: "pending" | "active" | "archived";
 }
 

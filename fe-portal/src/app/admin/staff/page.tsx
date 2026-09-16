@@ -7,7 +7,6 @@ import {
   RefreshCw,
   X,
   Shield,
-  ShieldCheck,
   Sparkles,
   RotateCcw,
   Trash2,
@@ -49,13 +48,11 @@ interface StaffApiRow {
   gender: "female" | "male" | "non_binary" | "prefer_not_to_say" | null;
   bio: string | null;
   languages: string[] | null;
-  role: "superadmin" | "admin" | "instructor";
+  role: "admin" | "instructor";
   status: "pending" | "active" | "archived";
-  granted_location_ids: string[];
   invited_at: string | null;
   accepted_at: string | null;
   archived_at: string | null;
-  is_seeded_superadmin: boolean;
   /** Assigned Days — sent for instructors only, absent on everyone else. */
   annual_leave_days?: number;
   medical_leave_days?: number;
@@ -76,15 +73,14 @@ interface StaffApiRow {
 interface InvitationApiRow {
   id: string;
   email: string;
-  role: "superadmin" | "admin" | "instructor";
+  role: "admin" | "instructor";
   status: "pending" | "accepted" | "revoked" | "expired";
-  granted_location_ids: string[];
   expires_at: string;
   created_at: string;
   invited_by_staff_name: string | null;
 }
 
-type InvitableRole = "admin" | "superadmin" | "instructor";
+type InvitableRole = "admin" | "instructor";
 
 interface StaffListResponse {
   staff: StaffApiRow[];
@@ -96,7 +92,7 @@ interface StaffListResponse {
 type StaffTab = "admin" | "instructors";
 
 export default function StaffPage() {
-  const { api, currentStaff, locations } = useWorkspace();
+  const { api, currentStaff } = useWorkspace();
   const [staff, setStaff] = useState<StaffApiRow[]>([]);
   const [invites, setInvites] = useState<InvitationApiRow[]>([]);
   const [tab, setTab] = useState<StaffTab>("admin");
@@ -131,17 +127,15 @@ export default function StaffPage() {
     void refresh();
   }, [refresh]);
 
-  const isSuperadmin = currentStaff?.role === "superadmin";
-  const isSeededSuperadmin = currentStaff?.isSeededSuperadmin === true;
-
-  // Mirrors the backend rank rule (be/src/services/auth/staff-rank.ts): you may
-  // edit your own rank and below, never above. The BE is the enforcement point;
-  // this only keeps the button off rows that would 403.
+  // Mirrors the backend rank rule (be/src/services/auth/staff-rank.ts): an admin
+  // manages everyone, other admins included. The BE is the enforcement point —
+  // including the last-admin guard, whose refusal is shown as an error — this
+  // only keeps buttons off rows that would 403.
   const RANK: Record<StaffApiRow["role"], number> = {
-    superadmin: 3,
     admin: 2,
     instructor: 1,
   };
+  const canManageStaff = currentStaff !== null && currentStaff.role !== "instructor";
 
   function canEditTarget(target: StaffApiRow): boolean {
     if (!currentStaff) return false;
@@ -149,20 +143,13 @@ export default function StaffPage() {
   }
 
   function canArchiveTarget(target: StaffApiRow): boolean {
-    if (!isSuperadmin) return false;
+    if (!canManageStaff) return false;
     if (target.status === "archived") return false;
-    if (target.id === currentStaff?.id) return false;
-    if (target.is_seeded_superadmin) return false;
-    if (target.role === "superadmin" && !isSeededSuperadmin) return false;
-    return true;
+    return target.id !== currentStaff?.id;
   }
 
   function canManageArchived(target: StaffApiRow): boolean {
-    if (!isSuperadmin) return false;
-    if (target.status !== "archived") return false;
-    if (target.is_seeded_superadmin) return false;
-    if (target.role === "superadmin" && !isSeededSuperadmin) return false;
-    return true;
+    return canManageStaff && target.status === "archived";
   }
 
   async function handleUnarchive(target: StaffApiRow) {
@@ -254,7 +241,7 @@ export default function StaffPage() {
     }
   }
   const roleInTab = (role: StaffApiRow["role"], t: StaffTab) =>
-    t === "instructors" ? role === "instructor" : role === "admin" || role === "superadmin";
+    t === "instructors" ? role === "instructor" : role === "admin";
 
   const tabStaff = staff.filter(s => roleInTab(s.role, tab));
   // Pending staff are already represented by their invitation row above,
@@ -271,20 +258,10 @@ export default function StaffPage() {
     s => s.status === "active" && roleInTab(s.role, "instructors"),
   ).length;
 
-  async function handleInvite(
-    email: string,
-    role: InvitableRole,
-    grantedLocationIds: string[],
-  ) {
+  async function handleInvite(email: string, role: InvitableRole) {
     if (!api) return;
     try {
-      await api.post("/portal/admin/staff/invite", {
-        email,
-        role,
-        // Superadmin/instructor don't carry location grants — only admin does.
-        granted_location_ids:
-          role === "admin" && grantedLocationIds.length ? grantedLocationIds : undefined,
-      });
+      await api.post("/portal/admin/staff/invite", { email, role });
       toast.success(`Invitation sent to ${email}.`);
       setInviteDialog(false);
       await refresh();
@@ -347,7 +324,7 @@ export default function StaffPage() {
         title="Staff"
         description="Admins and instructors. Roles are mutually exclusive — one email holds one staff account. Archived accounts can never be hard-deleted (audit log integrity)."
         actions={
-          isSuperadmin ? (
+          canManageStaff ? (
             <Button onClick={() => setInviteDialog(true)}>
               <Plus className="h-4 w-4" /> Invite staff
             </Button>
@@ -417,11 +394,7 @@ export default function StaffPage() {
                         <div className="min-w-0">
                           <div className="font-medium break-all text-ink">{inv.email}</div>
                           <div className="text-xs text-muted">
-                            {inv.role === "superadmin"
-                              ? "Superadmin"
-                              : inv.role === "admin"
-                              ? "Admin"
-                              : "Instructor"}{" "}
+                            {inv.role === "admin" ? "Admin" : "Instructor"}{" "}
                             · sent{" "}
                             {formatRelative(inv.created_at)} · expires{" "}
                             {formatRelative(inv.expires_at)}
@@ -430,7 +403,7 @@ export default function StaffPage() {
                         </div>
                       </div>
                       <Badge tone="warning">Pending</Badge>
-                      {isSuperadmin && (
+                      {canManageStaff && (
                         <div className="ml-auto flex flex-wrap items-center justify-end gap-1">
                           <Button
                             size="sm"
@@ -522,9 +495,6 @@ export default function StaffPage() {
       {inviteDialog && (
         <InviteAdminDialog
           defaultRole={tab === "instructors" ? "instructor" : "admin"}
-          locations={locations
-            .filter(l => !l.archivedAt)
-            .map(l => ({ id: l.id, name: l.name }))}
           onSubmit={handleInvite}
           onClose={() => setInviteDialog(false)}
         />
@@ -535,11 +505,7 @@ export default function StaffPage() {
           open
           onOpenChange={o => !o && !archiveBusy && setArchiveTarget(null)}
           title="Archive staff?"
-          description={
-            archiveTarget.role === "superadmin"
-              ? `This will archive superadmin ${archiveTarget.name} (${archiveTarget.email}) and immediately sign them out. They will lose all portal access. Their audit trail is preserved — this cannot be hard-deleted.`
-              : `This will archive ${archiveTarget.name} (${archiveTarget.email}) and immediately sign them out. Their audit trail is preserved — this cannot be hard-deleted.`
-          }
+          description={`This will archive ${archiveTarget.name} (${archiveTarget.email}) and immediately sign them out. Their audit trail is preserved — this cannot be hard-deleted.`}
         >
           <DialogFooter>
             <Button
@@ -564,12 +530,14 @@ export default function StaffPage() {
         <StaffEditDialog
           staff={editTarget}
           canEdit={canEditTarget(editTarget)}
-          // Signing out, resending and blocking are superadmin-only on the BE,
-          // with archive's own guards on who may block whom. Block and unblock
-          // close this dialog: archive has its confirm, and both refresh the list.
+          canChangeRole={canManageStaff && editTarget.id !== currentStaff?.id}
+          // Signing out, resending and blocking are an admin's on the BE, with
+          // archive's own guards (not yourself, not the last admin). Block and
+          // unblock close this dialog: archive has its confirm, and both refresh
+          // the list.
           access={{
-            canRevoke: isSuperadmin,
-            canResend: isSuperadmin && editTarget.status !== "archived",
+            canRevoke: canManageStaff,
+            canResend: canManageStaff && editTarget.status !== "archived",
             onBlock: canArchiveTarget(editTarget)
               ? () => {
                   setEditTarget(null);
@@ -650,14 +618,6 @@ function StaffRow({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="font-medium break-words text-ink">{staff.name}</span>
-          {staff.role === "superadmin" && (
-            <Badge tone="warning">
-              <ShieldCheck className="mr-0.5 h-3 w-3" /> Superadmin
-            </Badge>
-          )}
-          {staff.is_seeded_superadmin && (
-            <Badge tone="neutral">Main</Badge>
-          )}
           {staff.role === "admin" && (
             <Badge tone="accent">
               <Shield className="mr-0.5 h-3 w-3" /> Admin
@@ -756,37 +716,23 @@ function TabCount({ n, active }: { n: number; active: boolean }) {
 
 function InviteAdminDialog({
   defaultRole,
-  locations,
   onSubmit,
   onClose,
 }: {
   defaultRole: InvitableRole;
-  locations: Array<{ id: string; name: string }>;
-  onSubmit: (
-    email: string,
-    role: InvitableRole,
-    grantedLocationIds: string[],
-  ) => void | Promise<void>;
+  onSubmit: (email: string, role: InvitableRole) => void | Promise<void>;
   onClose: () => void;
 }) {
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<InvitableRole>(defaultRole);
-  const [grantedIds, setGrantedIds] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
-  const allLocations = grantedIds.length === 0;
-
-  function toggleLocation(id: string) {
-    setGrantedIds(prev =>
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id],
-    );
-  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!email.trim()) return;
     setSubmitting(true);
     try {
-      await onSubmit(email.trim(), role, grantedIds);
+      await onSubmit(email.trim(), role);
     } finally {
       setSubmitting(false);
     }
@@ -815,9 +761,9 @@ function InviteAdminDialog({
 
         <div className="space-y-1.5">
           <Label>Role</Label>
-          {/* One card per row on a phone — three side by side leaves no room
-              for the role descriptions. */}
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {/* One card per row on a phone — side by side leaves no room for
+              the role descriptions. */}
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <button
               type="button"
               onClick={() => setRole("admin")}
@@ -831,23 +777,7 @@ function InviteAdminDialog({
                 <Shield className="h-3.5 w-3.5" /> Admin
               </div>
               <div className="mt-0.5 text-xs text-muted">
-                Workspace-scoped ops staff.
-              </div>
-            </button>
-            <button
-              type="button"
-              onClick={() => setRole("superadmin")}
-              className={`rounded-lg border px-3 py-2 text-left text-sm transition ${
-                role === "superadmin"
-                  ? "border-accent bg-accent/5 text-ink"
-                  : "border-border bg-card text-muted hover:text-ink"
-              }`}
-            >
-              <div className="flex items-center gap-1.5 font-medium">
-                <ShieldCheck className="h-3.5 w-3.5" /> Superadmin
-              </div>
-              <div className="mt-0.5 text-xs text-muted">
-                Full access, all locations.
+                Runs the studio, all locations.
               </div>
             </button>
             <button
@@ -870,45 +800,9 @@ function InviteAdminDialog({
         </div>
 
         {role === "admin" && (
-          <div className="space-y-1.5">
-            <Label>Location access</Label>
-            {locations.length === 0 ? (
-              <p className="text-xs text-muted">
-                No active locations — the admin will have access to all locations.
-              </p>
-            ) : (
-              <>
-                <p className="text-xs text-muted">
-                  Leave all unchecked to grant access to all locations.
-                </p>
-                <div className="space-y-1 rounded-lg border border-border bg-paper p-2">
-                  {locations.map(loc => (
-                    <label
-                      key={loc.id}
-                      className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-warm"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={grantedIds.includes(loc.id)}
-                        onChange={() => toggleLocation(loc.id)}
-                        className="h-4 w-4 rounded border-border accent-accent"
-                      />
-                      <span className={allLocations ? "text-muted" : "text-ink"}>
-                        {loc.name}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {role === "superadmin" && (
           <p className="rounded-lg border border-border bg-paper px-3 py-2 text-xs text-muted">
-            Superadmins have full access across all locations and can manage other
-            staff, including other superadmins. The main seeded superadmin is set
-            via the <code className="text-ink">SUPERADMIN_EMAIL</code> env var.
+            Admins have full access across all locations and can manage other
+            staff, including other admins.
           </p>
         )}
 

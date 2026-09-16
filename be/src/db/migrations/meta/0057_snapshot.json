@@ -1,6 +1,6 @@
 {
-  "id": "29520e06-db8b-4889-b2b3-02d50bfd3cce",
-  "prevId": "97620e6e-1312-47eb-a2cb-16747d41e7d4",
+  "id": "400b728c-ac1f-41d2-bfb8-5d87f7b4b16f",
+  "prevId": "e6c02351-e495-4694-a2f8-5d3e44ab36ba",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -485,13 +485,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "granted_location_ids": {
-          "name": "granted_location_ids",
-          "type": "uuid[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::uuid[]"
-        },
         "token": {
           "name": "token",
           "type": "text",
@@ -756,13 +749,6 @@
           "notNull": true,
           "default": "'pending'"
         },
-        "granted_location_ids": {
-          "name": "granted_location_ids",
-          "type": "uuid[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::uuid[]"
-        },
         "archived_at": {
           "name": "archived_at",
           "type": "timestamp with time zone",
@@ -855,21 +841,6 @@
           "isUnique": false,
           "with": {},
           "method": "btree",
-          "concurrently": false
-        },
-        "staff_users_granted_locations_gin_idx": {
-          "name": "staff_users_granted_locations_gin_idx",
-          "columns": [
-            {
-              "expression": "granted_location_ids",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "with": {},
-          "method": "gin",
           "concurrently": false
         }
       },
@@ -10754,7 +10725,6 @@
       "name": "staff_role",
       "schema": "public",
       "values": [
-        "superadmin",
         "admin",
         "instructor"
       ]

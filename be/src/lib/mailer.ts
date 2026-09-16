@@ -119,7 +119,7 @@ export const discardedMail: OutboundMessage[] = []
 const DISCARDED_MAIL_KEPT = 50
 
 /**
- * Sent rows across every tenant since midnight UTC. Through migration 0055's
+ * Sent rows across every tenant since midnight UTC. Through migration 0057's
  * function, because Row-Level Security shows the application role one tenant's
  * `email_log` at most.
  */

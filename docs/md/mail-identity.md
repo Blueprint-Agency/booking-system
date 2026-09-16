@@ -94,7 +94,7 @@ Every message leaves through one in-process send gate (`be/src/lib/send-gate.ts`
 - **Tagged** with `kind`, `template` and `tenant` (no tenant on super portal mail).
 - **Watches headroom.** Resend's `x-resend-monthly-quota` header is logged, with
   `mail_quota_monthly_high` past 80% of the month; today's `sent` rows across
-  every tenant (`email_log_sent_today()`, migration 0055) raise
+  every tenant (`email_log_sent_today()`, migration 0057) raise
   `mail_quota_daily_high` at 80 of Free's 100.
 
 One process only: a second backend instance would double the pace.

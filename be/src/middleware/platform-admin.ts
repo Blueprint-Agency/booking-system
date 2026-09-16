@@ -13,17 +13,17 @@ declare module 'hono' {
 /**
  * The allowlist, read once at boot.
  *
- * `PLATFORM_ADMIN_EMAILS` alone — a Tenant's own `SUPERADMIN_EMAIL` is **not**
- * folded in. It used to be, as a bootstrap convenience so that an environment
- * setting nothing new still had one platform admin rather than none. That
- * convenience was the escalation this module's own docstring warns about: it
- * made the first studio's superadmin able to create, list and suspend every
- * other studio on the platform. The platform operator is a level above any
+ * `PLATFORM_ADMIN_EMAILS` alone — no studio's staff account is folded in. One
+ * used to be, as a bootstrap convenience so that an environment setting nothing
+ * new still had one platform admin rather than none. That convenience was the
+ * escalation this module's own docstring warns about: it made one studio's
+ * staff able to create, list and suspend every other studio on the platform.
+ * The platform operator is a level above any
  * studio, so it is named explicitly or not at all.
  *
  * Empty is allowed and means a super portal nobody can reach. That is the safe
  * failure for a missing environment variable — refusing everyone is recoverable,
- * admitting a studio's superadmin to the whole platform is not — and it is
+ * admitting a studio's admin to the whole platform is not — and it is
  * announced at boot rather than discovered at the door.
  */
 const PLATFORM_ADMINS = parsePlatformAdmins(env.PLATFORM_ADMIN_EMAILS)
@@ -39,13 +39,13 @@ if (PLATFORM_ADMINS.length === 0) {
  *
  *  1. **A `platform` pool session.** The super portal signs in through its own
  *     Better Auth instance, whose users are rows no studio can write. A studio
- *     session — staff or member, superadmin or not — is a row this pool has
+ *     session — staff or member, admin or not — is a row this pool has
  *     never seen, so it never reaches the allowlist at all.
  *  2. **The session's email on `PLATFORM_ADMIN_EMAILS`.** Read from the session
  *     on every request and remembered nowhere, so an address taken off the list
  *     is refused on its next request.
  *
- * No `staff_users` row is read and no tenant is resolved. Being the superadmin
+ * No `staff_users` row is read and no tenant is resolved. Being an admin
  * of a studio is a role inside that studio; it says nothing about the platform.
  *
  * The refusal body is `not_found`, not `forbidden`: a signed-in staff member

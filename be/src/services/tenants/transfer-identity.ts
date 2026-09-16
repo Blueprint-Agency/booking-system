@@ -12,8 +12,7 @@
  *
  *  - **Every reference between a studio's rows is a uuid.** So one map from old
  *    id to new id, applied to every uuid-shaped value in the archive, rewrites
- *    the foreign keys, the self-references, the uuid arrays
- *    (`staff_users.granted_location_ids`) and the polymorphic ones
+ *    the foreign keys, the self-references, any uuid array and the polymorphic ones
  *    (`promo_code_products.product_id`, `audit_log.target_id`) in a single pass
  *    — with no foreign-key metadata to keep in step with the schema.
  *  - **A uuid that is not a row id is left alone.** Values are replaced only if

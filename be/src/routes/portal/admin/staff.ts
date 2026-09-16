@@ -6,7 +6,6 @@ import { tenantId } from '../../../middleware/tenant'
 import * as svc from '../../../services/auth/invitations'
 import {
   archiveStaff,
-  isSeededSuperadmin,
   softDeleteStaff,
   unarchiveStaff,
   updateStaffProfile,
@@ -22,8 +21,7 @@ import { sessionView } from '../session-view'
 
 const inviteSchema = z.object({
   email: z.string().email().max(254),
-  role: z.enum(['admin', 'superadmin', 'instructor']).optional(), // default 'admin' in the service
-  granted_location_ids: z.array(z.string().uuid()).optional(),
+  role: z.enum(['admin', 'instructor']).optional(), // default 'admin' in the service
 })
 
 const genderEnum = z.enum(['female', 'male', 'non_binary', 'prefer_not_to_say'])
@@ -36,8 +34,7 @@ const updateStaffSchema = z.object({
   gender: genderEnum.nullable().optional(),
   bio: z.string().max(4000).nullable().optional(),
   languages: z.array(z.string().trim().min(1).max(60)).optional(),
-  role: z.enum(['admin', 'superadmin', 'instructor']).optional(),
-  granted_location_ids: z.array(z.string().uuid()).optional(),
+  role: z.enum(['admin', 'instructor']).optional(),
   // Assigned Days — instructors only; the service refuses them on anyone else.
   annual_leave_days: z.number().int().min(0).max(365).optional(),
   medical_leave_days: z.number().int().min(0).max(365).optional(),
@@ -67,7 +64,6 @@ function serializeStaff(row: StaffProfileRow) {
     languages: row.languages,
     role: row.role,
     status: row.status,
-    granted_location_ids: row.grantedLocationIds,
     invited_at: row.invitedAt,
     accepted_at: row.acceptedAt,
     archived_at: row.archivedAt,
@@ -95,8 +91,6 @@ function serializeStaff(row: StaffProfileRow) {
           study_remaining_days: row.leave.study.remaining_days,
         }
       : {}),
-    is_seeded_superadmin:
-      row.role === 'superadmin' && isSeededSuperadmin(row),
   }
 }
 
@@ -108,22 +102,17 @@ function serializeInvitation(
     email: inv.email,
     role: inv.role,
     status: inv.status,
-    granted_location_ids: inv.grantedLocationIds,
     expires_at: inv.expiresAt,
     created_at: inv.createdAt,
     invited_by_staff_name: inv.invitedByStaffName,
   }
 }
 
-const superadminOnly = requireRole('superadmin')
-
 const app = new Hono()
-  // The list and the profile PATCH are reachable by admin as well as superadmin
-  // (spec-instructor-leave-pools.md § Permissions). Everything that changes an
-  // account's existence or privileges carries superadminOnly on its own route.
-  // The rank rules (who may edit whom, and that role/grants are superadmin-only)
-  // live in the service — this gate is coarse on purpose.
-  .use('*', requireRole('superadmin', 'admin'))
+  // Every staff route is an admin's, other admins included. The rules that are
+  // not about role — who may edit whom, not yourself, never the last admin —
+  // live in the services, so this gate is coarse on purpose.
+  .use('*', requireRole('admin'))
   .get('/', async c => {
     const { staff, invitations } = await svc.listStaffAndInvitations(tenantId(c))
     return c.json({
@@ -131,27 +120,26 @@ const app = new Hono()
       invitations: invitations.map(serializeInvitation),
     })
   })
-  .post('/invite', superadminOnly, zValidator('json', inviteSchema), async c => {
+  .post('/invite', zValidator('json', inviteSchema), async c => {
     const body = c.req.valid('json')
     const actor = c.get('staffUserId')
     const inv = await svc.inviteAdmin({
       tenantId: tenantId(c),
       email: body.email,
       role: body.role,
-      grantedLocationIds: body.granted_location_ids,
       invitedByStaffId: actor,
     })
     c.set('auditTarget' as any, { table: 'staff_invitations', id: inv.id })
     return c.json(serializeInvitation({ ...inv, invitedByStaffName: null }), 201)
   })
-  .post('/invitations/:id/revoke', superadminOnly, zValidator('param', idParam), async c => {
+  .post('/invitations/:id/revoke', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const actor = c.get('staffUserId')
     const inv = await svc.revokeInvitation(tenantId(c), id, actor)
     c.set('auditTarget' as any, { table: 'staff_invitations', id })
     return c.json(serializeInvitation({ ...inv, invitedByStaffName: null }))
   })
-  .post('/invitations/:id/resend', superadminOnly, zValidator('param', idParam), async c => {
+  .post('/invitations/:id/resend', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const inv = await resendStaffInvitation({
       tenantId: tenantId(c),
@@ -179,9 +167,6 @@ const app = new Hono()
         ...(body.bio !== undefined ? { bio: body.bio } : {}),
         ...(body.languages !== undefined ? { languages: body.languages } : {}),
         ...(body.role !== undefined ? { role: body.role } : {}),
-        ...(body.granted_location_ids !== undefined
-          ? { grantedLocationIds: body.granted_location_ids }
-          : {}),
         ...(body.annual_leave_days !== undefined
           ? { annualLeaveDays: body.annual_leave_days }
           : {}),
@@ -205,7 +190,7 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'staff_users', id })
     return c.json(serializeStaff(row))
   })
-  .post('/:id/archive', superadminOnly, zValidator('param', idParam), async c => {
+  .post('/:id/archive', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const actor = c.get('staffUserId')
     const row = await archiveStaff({
@@ -217,7 +202,7 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'staff_users', id })
     return c.json(serializeStaff(row))
   })
-  .post('/:id/unarchive', superadminOnly, zValidator('param', idParam), async c => {
+  .post('/:id/unarchive', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const actor = c.get('staffUserId')
     const row = await unarchiveStaff({
@@ -229,14 +214,12 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'staff_users', id })
     return c.json(serializeStaff(row))
   })
-  // Sessions (#119): listed for admin and superadmin, like the staff list;
-  // ending them and re-mailing the set-password link are superadmin-only.
   .get('/:id/sessions', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const sessions = await listStaffSessions(tenantId(c), id)
     return c.json({ sessions: sessions.map(sessionView) })
   })
-  .post('/:id/sessions/revoke', superadminOnly, zValidator('param', idParam), async c => {
+  .post('/:id/sessions/revoke', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const revoked = await signStaffOutEverywhere({
       tenantId: tenantId(c),
@@ -247,7 +230,7 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'staff_users', id })
     return c.json({ revoked })
   })
-  .post('/:id/resend-invitation', superadminOnly, zValidator('param', idParam), async c => {
+  .post('/:id/resend-invitation', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const sent = await resendStaffSetPassword({
       tenantId: tenantId(c),
@@ -258,7 +241,7 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'staff_users', id })
     return c.json({ sent })
   })
-  .delete('/:id', superadminOnly, zValidator('param', idParam), async c => {
+  .delete('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const actor = c.get('staffUserId')
     await softDeleteStaff({

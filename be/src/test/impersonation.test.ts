@@ -11,10 +11,10 @@ import {
 } from './harness'
 
 /**
- * A studio superadmin impersonates a member (#118), over real HTTP.
+ * A studio admin impersonates a member (#118), over real HTTP.
  *
  * The portal route creates a real `client` pool session for the member and a
- * BE-signed grant naming the superadmin behind it. The member app presents both;
+ * BE-signed grant naming the admin behind it. The member app presents both;
  * `/me/*` then runs as the member with `impersonatedBy` set, and signing that
  * session out is what stops the impersonation.
  */
@@ -52,7 +52,7 @@ describe('member impersonation', { skip: integrationTestsEnabled ? false : SKIP_
   })
 
   /** A staff member of `tenant` with `role`, signed in on its portal. */
-  const staffAt = async (tenant: { id: string; slug: string }, email: string, role: 'superadmin' | 'admin') => {
+  const staffAt = async (tenant: { id: string; slug: string }, email: string, role: 'admin' | 'instructor') => {
     const headers = await harness.signInAs('staff', email, tenant)
     const [user] = await harness.db.select().from(schema.staffAuthUsers).where(eq(schema.staffAuthUsers.email, email))
     const [row] = await harness.db
@@ -85,17 +85,17 @@ describe('member impersonation', { skip: integrationTestsEnabled ? false : SKIP_
     return body as { token: string; grant: string; fe_client_url: string }
   }
 
-  let superadmin!: Awaited<ReturnType<typeof staffAt>>
   let admin!: Awaited<ReturnType<typeof staffAt>>
-  let superadminTwo!: Awaited<ReturnType<typeof staffAt>>
+  let instructor!: Awaited<ReturnType<typeof staffAt>>
+  let adminTwo!: Awaited<ReturnType<typeof staffAt>>
 
   before(async () => {
     harness = await startTestApp()
     schema = await import('../db/schema')
     ;({ one, two } = harness.tenants)
-    superadmin = await staffAt(one, at('superadmin'), 'superadmin')
     admin = await staffAt(one, at('admin'), 'admin')
-    superadminTwo = await staffAt(two, at('superadmin-two'), 'superadmin')
+    instructor = await staffAt(one, at('instructor'), 'instructor')
+    adminTwo = await staffAt(two, at('admin-two'), 'admin')
   })
 
   after(async () => {
@@ -121,9 +121,9 @@ describe('member impersonation', { skip: integrationTestsEnabled ? false : SKIP_
     await harness.close()
   })
 
-  test('a superadmin impersonates a member: /me works, carries impersonatedBy, and the audit rows name both', async () => {
-    const member = await memberAt(one, superadmin.headers, at('member'))
-    const { token, grant, fe_client_url } = await impersonate(superadmin.headers, member.id)
+  test('an admin impersonates a member: /me works, carries impersonatedBy, and the audit rows name both', async () => {
+    const member = await memberAt(one, admin.headers, at('member'))
+    const { token, grant, fe_client_url } = await impersonate(admin.headers, member.id)
 
     // The member app opens on the studio's own hostname, and the token rides the
     // fragment, which a browser never sends to a server.
@@ -139,7 +139,7 @@ describe('member impersonation', { skip: integrationTestsEnabled ? false : SKIP_
     const profile = await expectStatus(await send('/api/v1/me', { headers: memberApp(one, token, grant) }), 200)
     assert.equal(profile.email, member.email)
 
-    // A write made while impersonating is audited as the superadmin, about the member.
+    // A write made while impersonating is audited as the admin, about the member.
     await expectStatus(
       await send('/api/v1/me', { method: 'PATCH', body: { name: 'Augusta King' }, headers: memberApp(one, token, grant) }),
       200,
@@ -147,23 +147,23 @@ describe('member impersonation', { skip: integrationTestsEnabled ? false : SKIP_
     const [write] = await harness.db
       .select()
       .from(schema.auditLog)
-      .where(and(eq(schema.auditLog.actorStaffId, superadmin.row.id), eq(schema.auditLog.action, 'PATCH /api/v1/me')))
+      .where(and(eq(schema.auditLog.actorStaffId, admin.row.id), eq(schema.auditLog.action, 'PATCH /api/v1/me')))
     assert.ok(write, 'the impersonated write was audited')
     assert.equal((write.payload as Record<string, unknown>).impersonatedClientId, member.id)
 
-    // The sign-in log names the superadmin as actor and the member as subject.
+    // The sign-in log names the admin as actor and the member as subject.
     const [started] = await harness.db
       .select()
       .from(schema.authEvents)
-      .where(and(eq(schema.authEvents.actorUserId, superadmin.authUserId), eq(schema.authEvents.kind, 'impersonation_started')))
+      .where(and(eq(schema.authEvents.actorUserId, admin.authUserId), eq(schema.authEvents.kind, 'impersonation_started')))
     assert.ok(started, 'impersonation_started was written')
     assert.equal(started.subjectUserId, member.authUserId)
     assert.equal(started.tenantId, one.id)
   })
 
   test('stopping revokes the session, so a sibling tab is signed out on its next request, and the end is logged', async () => {
-    const member = await memberAt(one, superadmin.headers, at('stopped'))
-    const { token, grant } = await impersonate(superadmin.headers, member.id)
+    const member = await memberAt(one, admin.headers, at('stopped'))
+    const { token, grant } = await impersonate(admin.headers, member.id)
     await expectStatus(await send('/api/v1/me', { headers: memberApp(one, token, grant) }), 200)
 
     await expectStatus(await send('/api/v1/auth/client/sign-out', { body: {}, headers: memberApp(one, token) }), 200)
@@ -174,7 +174,7 @@ describe('member impersonation', { skip: integrationTestsEnabled ? false : SKIP_
       .from(schema.authEvents)
       .where(
         and(
-          eq(schema.authEvents.actorUserId, superadmin.authUserId),
+          eq(schema.authEvents.actorUserId, admin.authUserId),
           eq(schema.authEvents.subjectUserId, member.authUserId!),
           eq(schema.authEvents.kind, 'impersonation_ended'),
         ),
@@ -183,14 +183,14 @@ describe('member impersonation', { skip: integrationTestsEnabled ? false : SKIP_
   })
 
   test('a grant minted at one studio is refused at another', async () => {
-    const member = await memberAt(one, superadmin.headers, at('cross-studio'))
-    const { grant } = await impersonate(superadmin.headers, member.id)
+    const member = await memberAt(one, admin.headers, at('cross-studio'))
+    const { grant } = await impersonate(admin.headers, member.id)
 
     // The same person, a member at studio two, impersonated there too: same
     // subject, so only the grant's studio can tell the two apart.
-    const atTwo = await memberAt(two, superadminTwo.headers, member.email)
+    const atTwo = await memberAt(two, adminTwo.headers, member.email)
     assert.equal(atTwo.authUserId, member.authUserId, 'one auth user, two rows')
-    const there = await impersonate(superadminTwo.headers, atTwo.id)
+    const there = await impersonate(adminTwo.headers, atTwo.id)
 
     await expectStatus(
       await send('/api/v1/me', { headers: memberApp(two, there.token, grant) }),
@@ -200,8 +200,8 @@ describe('member impersonation', { skip: integrationTestsEnabled ? false : SKIP_
   })
 
   test('a grant and an impersonation session only work together', async () => {
-    const member = await memberAt(one, superadmin.headers, at('pairing'))
-    const { token, grant } = await impersonate(superadmin.headers, member.id)
+    const member = await memberAt(one, admin.headers, at('pairing'))
+    const { token, grant } = await impersonate(admin.headers, member.id)
 
     // The impersonation session without its grant would pass as the member's own.
     await expectStatus(await send('/api/v1/me', { headers: memberApp(one, token) }), 401, 'impersonation_grant_mismatch')
@@ -218,10 +218,10 @@ describe('member impersonation', { skip: integrationTestsEnabled ? false : SKIP_
   })
 
   test('a grant is scoped to one member: presented with another member\'s session it is refused', async () => {
-    const target = await memberAt(one, superadmin.headers, at('target'))
-    const bystander = await memberAt(one, superadmin.headers, at('bystander'))
-    const { grant } = await impersonate(superadmin.headers, target.id)
-    const other = await impersonate(superadmin.headers, bystander.id)
+    const target = await memberAt(one, admin.headers, at('target'))
+    const bystander = await memberAt(one, admin.headers, at('bystander'))
+    const { grant } = await impersonate(admin.headers, target.id)
+    const other = await impersonate(admin.headers, bystander.id)
 
     await expectStatus(
       await send('/api/v1/me', { headers: memberApp(one, other.token, grant) }),
@@ -230,32 +230,32 @@ describe('member impersonation', { skip: integrationTestsEnabled ? false : SKIP_
     )
   })
 
-  test('the lookup is tenant-scoped: a superadmin cannot impersonate another studio\'s member', async () => {
-    const member = await memberAt(two, superadminTwo.headers, at('elsewhere'))
+  test('the lookup is tenant-scoped: an admin cannot impersonate another studio\'s member', async () => {
+    const member = await memberAt(two, adminTwo.headers, at('elsewhere'))
     await expectStatus(
-      await send(`/api/v1/portal/admin/clients/${member.id}/impersonate`, { body: {}, headers: superadmin.headers }),
+      await send(`/api/v1/portal/admin/clients/${member.id}/impersonate`, { body: {}, headers: admin.headers }),
       404,
       'client_not_found',
     )
   })
 
   test('a member the studio has blocked cannot be impersonated', async () => {
-    const member = await memberAt(one, superadmin.headers, at('blocked'))
+    const member = await memberAt(one, admin.headers, at('blocked'))
     await expectStatus(
-      await send(`/api/v1/portal/admin/clients/${member.id}`, { method: 'DELETE', headers: superadmin.headers }),
+      await send(`/api/v1/portal/admin/clients/${member.id}`, { method: 'DELETE', headers: admin.headers }),
       200,
     )
     await expectStatus(
-      await send(`/api/v1/portal/admin/clients/${member.id}/impersonate`, { body: {}, headers: superadmin.headers }),
+      await send(`/api/v1/portal/admin/clients/${member.id}/impersonate`, { body: {}, headers: admin.headers }),
       422,
       'client_blocked',
     )
   })
 
-  test('only a superadmin may impersonate', async () => {
-    const member = await memberAt(one, superadmin.headers, at('admin-tries'))
+  test('an instructor may not impersonate', async () => {
+    const member = await memberAt(one, admin.headers, at('instructor-tries'))
     await expectStatus(
-      await send(`/api/v1/portal/admin/clients/${member.id}/impersonate`, { body: {}, headers: admin.headers }),
+      await send(`/api/v1/portal/admin/clients/${member.id}/impersonate`, { body: {}, headers: instructor.headers }),
       403,
     )
   })

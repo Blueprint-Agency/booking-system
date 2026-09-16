@@ -8,7 +8,7 @@ import { ROOT_DOMAIN, isSuperPortalHost } from "./tenant-host";
  *
  *   - `staff`    — `{slug}.portal.…`, every studio's portal.
  *   - `platform` — `admin.portal.…`, the super portal. Its users are rows no
- *                  studio can write, so a studio superadmin's email and password
+ *                  studio can write, so a studio admin's email and password
  *                  are refused there with no session issued.
  *
  * Separate sessions in one browser follow from the bearer tokens being kept in
