@@ -13,6 +13,7 @@ import {
   Label,
   PageHeader,
 } from "@/components/ui";
+import { runsStudio } from "@/lib/staff-role";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { formatDate } from "@/lib/formatters";
@@ -42,7 +43,7 @@ interface ApiClient {
 
 export default function ClientsPage() {
   const { api, currentStaff } = useWorkspace();
-  const isSuperadmin = currentStaff?.role === "superadmin";
+  const isAdmin = runsStudio(currentStaff?.role);
   const [clients, setClients] = useState<ApiClient[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -55,10 +56,9 @@ export default function ClientsPage() {
     setLoading(true);
     setError(null);
     try {
-      // Blocked clients are filtered out server-side unless asked for, and the
-      // BE only honours the flag for superadmins.
+      // Blocked clients are filtered out server-side unless asked for.
       const res = await api.get<{ clients: ApiClient[] }>("/portal/admin/clients", {
-        include_deleted: isSuperadmin ? "true" : undefined,
+        include_deleted: isAdmin ? "true" : undefined,
       });
       setClients(res.clients);
     } catch (err) {
@@ -66,7 +66,7 @@ export default function ClientsPage() {
     } finally {
       setLoading(false);
     }
-  }, [api, isSuperadmin]);
+  }, [api, isAdmin]);
 
   useEffect(() => {
     void load();
@@ -88,7 +88,7 @@ export default function ClientsPage() {
       } else if (err instanceof ApiError && err.status === 422) {
         toast.error("This customer hasn't activated their account yet.");
       } else if (err instanceof ApiError && err.status === 403) {
-        toast.error("Only superadmins can impersonate.");
+        toast.error("Only admins can impersonate.");
       } else {
         toast.error("Failed to start impersonation.");
       }
@@ -138,7 +138,7 @@ export default function ClientsPage() {
           />
         </div>
         <div className="flex gap-1.5 text-xs">
-          {((isSuperadmin
+          {((isAdmin
             ? ["all", "active", "trials", "blocked"]
             : ["all", "active", "trials"]) as StatusFilter[]).map((s) => (
             <button
@@ -207,7 +207,7 @@ export default function ClientsPage() {
                         </span>
                       </div>
                     </div>
-                    {isSuperadmin && !c.deleted_at && (
+                    {isAdmin && !c.deleted_at && (
                       <Button
                         variant="secondary"
                         size="sm"
@@ -240,7 +240,7 @@ export default function ClientsPage() {
                     </th>
                     {showTrials && <th className="px-5 py-3 font-medium">Attended</th>}
                     <th className="px-5 py-3 font-medium">Status</th>
-                    {isSuperadmin && <th className="px-5 py-3 font-medium" />}
+                    {isAdmin && <th className="px-5 py-3 font-medium" />}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -282,7 +282,7 @@ export default function ClientsPage() {
                           <Badge tone="sage">Active</Badge>
                         )}
                       </td>
-                      {isSuperadmin && (
+                      {isAdmin && (
                         <td className="px-5 py-3 text-right">
                           {!c.deleted_at && (
                             <Button

@@ -52,7 +52,7 @@ describe('member impersonation', { skip: integrationTestsEnabled ? false : SKIP_
   })
 
   /** A staff member of `tenant` with `role`, signed in on its portal. */
-  const staffAt = async (tenant: { id: string; slug: string }, email: string, role: 'superadmin' | 'admin') => {
+  const staffAt = async (tenant: { id: string; slug: string }, email: string, role: 'superadmin' | 'admin' | 'instructor') => {
     const headers = await harness.signInAs('staff', email, tenant)
     const [user] = await harness.db.select().from(schema.staffAuthUsers).where(eq(schema.staffAuthUsers.email, email))
     const [row] = await harness.db
@@ -87,6 +87,7 @@ describe('member impersonation', { skip: integrationTestsEnabled ? false : SKIP_
 
   let superadmin!: Awaited<ReturnType<typeof staffAt>>
   let admin!: Awaited<ReturnType<typeof staffAt>>
+  let instructor!: Awaited<ReturnType<typeof staffAt>>
   let superadminTwo!: Awaited<ReturnType<typeof staffAt>>
 
   before(async () => {
@@ -95,6 +96,7 @@ describe('member impersonation', { skip: integrationTestsEnabled ? false : SKIP_
     ;({ one, two } = harness.tenants)
     superadmin = await staffAt(one, at('superadmin'), 'superadmin')
     admin = await staffAt(one, at('admin'), 'admin')
+    instructor = await staffAt(one, at('instructor'), 'instructor')
     superadminTwo = await staffAt(two, at('superadmin-two'), 'superadmin')
   })
 
@@ -252,10 +254,11 @@ describe('member impersonation', { skip: integrationTestsEnabled ? false : SKIP_
     )
   })
 
-  test('only a superadmin may impersonate', async () => {
+  test('an admin may impersonate too; an instructor may not', async () => {
     const member = await memberAt(one, superadmin.headers, at('admin-tries'))
+    await impersonate(admin.headers, member.id)
     await expectStatus(
-      await send(`/api/v1/portal/admin/clients/${member.id}/impersonate`, { body: {}, headers: admin.headers }),
+      await send(`/api/v1/portal/admin/clients/${member.id}/impersonate`, { body: {}, headers: instructor.headers }),
       403,
     )
   })

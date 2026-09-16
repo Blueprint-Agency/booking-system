@@ -143,14 +143,9 @@ describe('account access from the detail views', { skip: integrationTestsEnabled
       assert.ok('user_agent' in s)
     }
 
-    // Reading is open to an admin; revoking a member's access is not (/clients is read-only for them).
-    await expectStatus(
-      await send(`/api/v1/portal/admin/clients/${member.id}/sessions/revoke`, { body: {}, headers: admin.headers }),
-      403,
-    )
-
+    // An admin signs the member out, as a superadmin could (#148).
     const revoked = await expectStatus(
-      await send(`/api/v1/portal/admin/clients/${member.id}/sessions/revoke`, { body: {}, headers: superadmin.headers }),
+      await send(`/api/v1/portal/admin/clients/${member.id}/sessions/revoke`, { body: {}, headers: admin.headers }),
       200,
     )
     assert.equal(revoked.revoked, 2)
@@ -165,7 +160,7 @@ describe('account access from the detail views', { skip: integrationTestsEnabled
 
     const [event] = await eventsFor(member.authUserId, 'sessions_revoked')
     assert.ok(event, 'sessions_revoked was written')
-    assert.equal(event.actorUserId, superadmin.authUserId)
+    assert.equal(event.actorUserId, admin.authUserId)
     assert.equal(event.tenantId, one.id)
   })
 

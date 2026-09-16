@@ -27,7 +27,7 @@ export interface NavItem {
   href: string;
   icon: LucideIcon;
   group: NavGroup;
-  /** Role visibility: who can see the item (superadmin vs admin). NOT location filtering. */
+  /** Role visibility (see `visibleToRole`): studio admins see every scope. NOT location filtering. */
   scope: NavScope;
   /**
    * True when the surface's data changes with the topbar workspace switcher

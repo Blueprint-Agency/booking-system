@@ -1,6 +1,7 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
 import { MapPin, Check, Plus, Settings, ChevronDown, Info } from "lucide-react";
+import { runsStudio } from "@/lib/staff-role";
 import { useWorkspace } from "@/lib/workspace-context";
 import { LocationFormDialog } from "@/components/locations/location-form-dialog";
 import { ManageLocationsDialog } from "./manage-locations-dialog";
@@ -142,7 +143,7 @@ export function WorkspaceSwitcher() {
               ))}
             </div>
 
-            {role === "superadmin" && (
+            {runsStudio(role) && (
               <>
                 <div className="border-t border-border" />
                 <div className="p-1">
@@ -169,11 +170,11 @@ export function WorkspaceSwitcher() {
                 </div>
               </>
             )}
-            {role === "admin" && (
+            {role && !runsStudio(role) && (
               <>
                 <div className="border-t border-border" />
                 <p className="px-3 py-2 text-[11px] text-muted">
-                  Contact your superadmin to request more workspace access.
+                  Contact an admin to request more workspace access.
                 </p>
               </>
             )}

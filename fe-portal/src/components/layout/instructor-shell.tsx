@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import { InstructorNav, InstructorMobileNavTrigger } from "./instructor-nav";
 import { WorkspaceSwitcher } from "./workspace-switcher";
 import { DevRoleSwitcher } from "./dev-role-switcher";
+import { runsStudio } from "@/lib/staff-role";
 import { useWorkspace } from "@/lib/workspace-context";
 
 function InstructorTopBar() {
@@ -25,10 +26,9 @@ export function InstructorShell({ children }: { children: React.ReactNode }) {
   const { loading, currentStaff } = useWorkspace();
   const router = useRouter();
 
-  // Admins/superadmins don't use the instructor surface — send them to /admin.
+  // Admins don't use the instructor surface — send them to /admin.
   // (Role lives in the BE, not the session, so this resolves client-side.)
-  const isStaffAdmin =
-    currentStaff?.role === "admin" || currentStaff?.role === "superadmin";
+  const isStaffAdmin = runsStudio(currentStaff?.role);
   useEffect(() => {
     if (isStaffAdmin) router.replace("/admin/schedule");
   }, [isStaffAdmin, router]);

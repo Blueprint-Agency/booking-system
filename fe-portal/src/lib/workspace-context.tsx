@@ -13,6 +13,7 @@ import { AccessDenied } from "@/components/auth/access-denied";
 import { authFailure } from "@/lib/access-refusal";
 import { ApiError, makeApi, type Api } from "@/lib/api";
 import { reportError } from "@/lib/report-error";
+import { runsStudio } from "@/lib/staff-role";
 import { sessionTenantRefusal } from "@/lib/session-tenant";
 import { getPortalToken, signOutPortal, usePortalSession } from "@/lib/portal-auth";
 import type { Location, StaffRole, StaffUser } from "@/types";
@@ -230,10 +231,10 @@ export function WorkspaceProvider({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoaded, isSignedIn, tenantRefusal, loadMe, router]);
 
-  // For superadmin, additionally fetch ALL locations (incl. archived) so the
+  // For a studio admin, additionally fetch ALL locations (incl. archived) so the
   // Locations page + manage dialog can render archived rows.
   const refreshAllLocations = useCallback(async () => {
-    if (!api || !currentStaff || currentStaff.role !== "superadmin") return;
+    if (!api || !currentStaff || !runsStudio(currentStaff.role)) return;
     try {
       const data = await api.get<{ locations: LocationApiRow[] }>(
         "/portal/admin/locations",
@@ -250,17 +251,10 @@ export function WorkspaceProvider({
   }, [refreshAllLocations]);
 
   const accessibleLocations = useMemo(() => {
-    const active = locations.filter(l => !l.archivedAt);
     if (!currentStaff) return [];
-    // Empty grants = "all active locations" — matches the BE /auth/me rule.
-    // This covers superadmin AND instructors (who carry no location grants);
-    // without it an instructor resolves to zero workspaces and a dead shell.
-    if (
-      currentStaff.role === "superadmin" ||
-      currentStaff.grantedLocationIds.length === 0
-    )
-      return active;
-    return active.filter(l => currentStaff.grantedLocationIds.includes(l.id));
+    // Every staff member works across all of the studio's active locations —
+    // matches the BE /auth/me rule. Location grants no longer narrow it.
+    return locations.filter(l => !l.archivedAt);
   }, [locations, currentStaff]);
 
   // Keep activeLocationId valid as accessible locations change.

@@ -1,6 +1,5 @@
 import { Hono } from 'hono'
 import { requireRole } from '../../../middleware/require-role'
-import { adminReadOnly } from '../../../middleware/admin-read-only'
 
 import locations from './locations'
 import rooms from './rooms'
@@ -31,68 +30,14 @@ import featureFlags from './feature-flags'
 import impersonate from './impersonate'
 
 /**
- * Role gating for the portal /admin subtree.
+ * Role gating for the portal /admin subtree: a studio's admins run the whole
+ * studio (#148), so every surface here takes the same gate. Instructors have
+ * their own subtree and are refused all of this one.
  *
- * Three buckets, per docs/md/admin-restructure.md §1 & §14a:
- *
- *   1. Superadmin-only — global catalog + policy + governance. Admin role
- *      gets 403 on any method.
- *   2. Shared read/write — operations surfaces both roles drive.
- *   3. Admin read-only, superadmin full — admin can view but every non-GET
- *      method 403s for them (manual package adjustments, workshop CRUD, etc.).
- *
- * Path-prefix `.use()` runs before the matching route handler in Hono, so each
- * mount carries its own gate instead of relying on a single subtree-wide one.
+ * `superadmin` passes too until the role itself is removed (#150).
  */
-
-const superadminOnly = requireRole('superadmin')
-const staffAny = requireRole('superadmin', 'admin')
-
 const app = new Hono()
-  // ── Superadmin-only (global catalog, policy, governance) ────────────────
-  .use('/locations/*', superadminOnly)
-  .use('/class-types/*', superadminOnly)
-  .use('/instructors/*', superadminOnly)
-  .use('/policy/*', superadminOnly)
-  .use('/class-packages/*', superadminOnly)
-  .use('/pt-packages/*', superadminOnly)
-  .use('/corporate-packages/*', superadminOnly)
-  // Promo Codes are catalogue governance, like the products they cut the price of.
-  .use('/promo-codes/*', superadminOnly)
-  .use('/corporate-sessions/*', superadminOnly)
-  .use('/bookings/*', superadminOnly)
-  .use('/notifications/*', superadminOnly)
-  .use('/waiver/*', superadminOnly)
-  .use('/marketing/*', superadminOnly)
-  .use('/feature-flags/*', superadminOnly)
-
-  // ── Shared read/write (workspace-scoped operations) ─────────────────────
-  .use('/schedule/*', staffAny)
-  .use('/pt-sessions/*', staffAny)
-  // Corporate requests are driven from the schedule (staffAny), so both roles
-  // operate the queue — unlike corporate-packages/-sessions (superadmin-only).
-  .use('/corporate-requests/*', staffAny)
-  .use('/check-in/*', staffAny)
-  // Merch is shop-floor stock, not catalogue governance — either role adds it.
-  .use('/merch/*', staffAny)
-  .use('/inbox/*', staffAny)
-  // Finance: both roles read every Money Event and edit Instructor Pay. Deliberately
-  // NOT superadmin-only and deliberately not read-only for superadmin — see
-  // be/docs/adr/0002-finance-replaces-payroll.md, which strikes the PRD's
-  // "no edit affordances on a superadmin report surface" principle.
-  .use('/finance/*', staffAny)
-  // Leave: approve/reject/revoke are admin AND superadmin
-  // (spec-instructor-leave.md § Access and visibility).
-  .use('/leave/*', staffAny)
-  // Staff: list + profile edit are admin AND superadmin; invite, archive,
-  // unarchive and delete stay superadmin-only, gated per-route inside
-  // ./staff (spec-instructor-leave-pools.md § Permissions).
-  .use('/staff/*', staffAny)
-
-  // ── Admin read-only; superadmin full ────────────────────────────────────
-  .use('/clients/*', staffAny, adminReadOnly)
-  .use('/workshops/*', staffAny, adminReadOnly)
-  .use('/rooms/*', staffAny, adminReadOnly)
+  .use('*', requireRole('superadmin', 'admin'))
 
   // ── Route mounts ────────────────────────────────────────────────────────
   .route('/locations', locations)

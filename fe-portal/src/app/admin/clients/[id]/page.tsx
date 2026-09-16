@@ -21,6 +21,7 @@ import { BoundInstructorDialog } from "@/components/clients/bound-instructor-dia
 import { PackageSetBalanceDialog } from "@/components/clients/package-set-balance-dialog";
 import { RefundDialog } from "@/components/clients/refund-dialog";
 import { SessionsPanel } from "@/components/access/sessions-panel";
+import { runsStudio } from "@/lib/staff-role";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { formatDate, formatRelative } from "@/lib/formatters";
@@ -127,8 +128,7 @@ export default function ClientProfilePage({
 }) {
   const { id } = use(params);
   const { api, role } = useWorkspace();
-  const canEdit = role === "admin" || role === "superadmin";
-  const isSuperadmin = role === "superadmin";
+  const canEdit = runsStudio(role);
 
   const [profile, setProfile] = useState<ApiProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -235,10 +235,10 @@ export default function ClientProfilePage({
                 </div>
                 <div className="mt-0.5 text-xs text-muted">
                   This customer cannot sign in. Bookings, packages, and credit
-                  history are preserved. Superadmins can unblock them.
+                  history are preserved. Admins can unblock them.
                 </div>
               </div>
-              {isSuperadmin && (
+              {canEdit && (
                 <Button
                   size="sm"
                   variant="secondary"
@@ -299,7 +299,7 @@ export default function ClientProfilePage({
                 <span>Joined {formatDate(profile.joined_at)}</span>
               </div>
             </div>
-            {isSuperadmin && !profile.deleted_at && (
+            {canEdit && !profile.deleted_at && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -311,12 +311,10 @@ export default function ClientProfilePage({
             )}
           </header>
 
-          {/* Reading is open to an admin; ending sessions, like blocking, is a
-              superadmin's (every non-GET under /clients is). Remounted by the
-              block state: blocking ends their sessions too. */}
+          {/* Remounted by the block state: blocking ends their sessions too. */}
           <SessionsPanel
             path={`/portal/admin/clients/${id}`}
-            canRevoke={isSuperadmin}
+            canRevoke={canEdit}
             refreshKey={profile.deleted_at}
           />
 
@@ -358,17 +356,10 @@ export default function ClientProfilePage({
                   const canAdjustDelta = p.kind !== "unlimited";
                   // Only an Unlimited Plan has a Home Location to extend.
                   const canEditCrossLocation = p.kind === "unlimited";
-                  // Moving a Home Location needs the studio list, which is
-                  // superadmin-only — so is the write itself. Offering it to an
-                  // admin would open a dialog with nothing to pick.
-                  const canMoveHomeLocation = p.kind === "unlimited" && isSuperadmin;
+                  const canMoveHomeLocation = p.kind === "unlimited";
                   // Only a PT Package has a Bound Instructor, and every one of
                   // them does — a package sold open is bound later from here.
-                  // Superadmin-only for the same reason as the Home Location
-                  // move: the picker needs the instructor roster, which is
-                  // superadmin-only, and `/clients/*` is read-only for a plain
-                  // admin, so the save would 403 anyway.
-                  const canBindInstructor = p.kind === "pt" && isSuperadmin;
+                  const canBindInstructor = p.kind === "pt";
                   const showMenu =
                     canEdit &&
                     (canEditExpiry ||
@@ -694,7 +685,7 @@ export default function ClientProfilePage({
         />
       )}
 
-      {isSuperadmin && homeLocationFor && (
+      {canEdit && homeLocationFor && (
         <HomeLocationDialog
           packageName={homeLocationFor.package_name}
           currentLocation={homeLocationFor.unlimited_location}
@@ -712,7 +703,7 @@ export default function ClientProfilePage({
         />
       )}
 
-      {isSuperadmin && boundInstructorFor && (
+      {canEdit && boundInstructorFor && (
         <BoundInstructorDialog
           packageName={boundInstructorFor.package_name}
           currentInstructor={boundInstructorFor.bound_instructor}
@@ -766,7 +757,7 @@ export default function ClientProfilePage({
         />
       )}
 
-      {isSuperadmin && deleteOpen && profile && (
+      {canEdit && deleteOpen && profile && (
         <BlockClientDialog
           email={profile.email}
           name={profile.name}
@@ -811,7 +802,7 @@ function BlockClientDialog({
       open
       onOpenChange={(o) => !o && onClose()}
       title={`Block ${name}?`}
-      description="The customer will be locked out of the booking app and hidden from the directory. Bookings, packages, and credit history are kept. A superadmin can unblock them later."
+      description="The customer will be locked out of the booking app and hidden from the directory. Bookings, packages, and credit history are kept. An admin can unblock them later."
     >
       <form
         className="space-y-4"

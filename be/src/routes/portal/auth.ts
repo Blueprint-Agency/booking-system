@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { and, eq, inArray, isNull } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
 import { db } from '../../db'
 import { locations } from '../../db/schema/catalog'
 import { tenantId } from '../../middleware/tenant'
@@ -8,37 +8,20 @@ import { tenantId } from '../../middleware/tenant'
  * GET /api/v1/portal/auth/me
  *
  * Returns the staff_users row the session authenticated, plus the denormalised
- * `locations` they have access to (empty granted_location_ids → all active
- * locations, per §4a). Auth (staffAuth + requireActiveStaff) is applied
+ * studio's active `locations`. Auth (staffAuth + requireActiveStaff) is applied
  * by the parent router (routes/portal/index.ts).
  */
 const app = new Hono().get('/me', async c => {
   const row = c.get('staffRow')
 
   const granted = row.grantedLocationIds ?? []
-  let activeLocations: Array<typeof locations.$inferSelect> = []
-
-  if (granted.length === 0) {
-    // "All active locations" — superadmin or implicit grant.
-    // "All active locations" means all of THIS studio's — a superadmin's
-    // implicit grant has never meant every studio on the platform, and this
-    // response is what the portal renders its location switcher from.
-    activeLocations = await db
-      .select()
-      .from(locations)
-      .where(and(eq(locations.tenantId, tenantId(c)), isNull(locations.deletedAt)))
-  } else {
-    activeLocations = await db
-      .select()
-      .from(locations)
-      .where(
-        and(
-          eq(locations.tenantId, tenantId(c)),
-          inArray(locations.id, granted),
-          isNull(locations.deletedAt),
-        ),
-      )
-  }
+  // Every staff member sees all of THIS studio's active locations — never every
+  // studio on the platform. Location grants no longer narrow it (#148); this
+  // response is what the portal renders its location switcher from.
+  const activeLocations = await db
+    .select()
+    .from(locations)
+    .where(and(eq(locations.tenantId, tenantId(c)), isNull(locations.deletedAt)))
 
   return c.json({
     id: row.id,

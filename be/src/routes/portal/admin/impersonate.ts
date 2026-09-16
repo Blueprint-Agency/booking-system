@@ -13,7 +13,7 @@ const app = new Hono().post(
   async c => {
     const { id } = c.req.valid('param')
     const staffRow = c.get('staffRow')
-    if (staffRow.role !== 'superadmin') {
+    if (staffRow.role !== 'admin' && staffRow.role !== 'superadmin') {
       return c.json({ error: 'impersonation_requires_superadmin' }, 403)
     }
     try {

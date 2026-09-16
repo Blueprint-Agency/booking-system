@@ -3,6 +3,7 @@ import { useState } from "react";
 import { MapPin, Lock } from "lucide-react";
 import { Button } from "@/components/ui";
 import { LocationFormDialog } from "@/components/locations/location-form-dialog";
+import { runsStudio } from "@/lib/staff-role";
 import { useWorkspace } from "@/lib/workspace-context";
 
 export function LocationGate({ children }: { children: React.ReactNode }) {
@@ -12,7 +13,7 @@ export function LocationGate({ children }: { children: React.ReactNode }) {
   if (accessibleLocations.length > 0) return <>{children}</>;
   if (!role) return null;
 
-  if (role === "superadmin") {
+  if (runsStudio(role)) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center p-6">
         <div className="max-w-lg rounded-2xl border border-border bg-card p-8 shadow-soft">
@@ -38,15 +39,14 @@ export function LocationGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // role === "admin" (or instructor, treated the same — no workspace access)
+  // Anyone who doesn't run the studio has no way to add a location.
   return (
     <div className="flex min-h-[60vh] items-center justify-center p-6">
       <div className="max-w-lg rounded-2xl border border-border bg-card p-8 shadow-soft">
         <Lock className="mb-4 h-8 w-8 text-muted" />
         <h2 className="mb-2 text-lg font-semibold text-ink">No workspace access</h2>
         <p className="text-sm text-muted">
-          Your account isn&apos;t granted to any location yet. Contact your superadmin to
-          be added to one or more workspaces.
+          Your studio has no locations yet. Contact an admin to add one.
         </p>
       </div>
     </div>

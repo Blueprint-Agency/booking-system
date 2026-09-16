@@ -4,6 +4,7 @@ import { Plus, Archive, RotateCcw, MapPin, Phone, ExternalLink, Trash2 } from "l
 import { toast } from "sonner";
 import { Button, PageHeader, Badge, EmptyState, Tabs, TabsList, TabsTrigger } from "@/components/ui";
 import { LocationFormDialog } from "@/components/locations/location-form-dialog";
+import { runsStudio } from "@/lib/staff-role";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import type { Location } from "@/types";
@@ -80,7 +81,7 @@ export default function LocationsPage() {
     }
   }
 
-  if (role !== "superadmin") {
+  if (!runsStudio(role)) {
     return (
       <div className="mx-auto max-w-5xl">
         <PageHeader
@@ -88,9 +89,9 @@ export default function LocationsPage() {
           description="Studio addresses surfaced in the schedule, session detail pages, and on the customer app."
         />
         <div className="rounded-xl border border-border bg-card px-6 py-12 text-center shadow-soft">
-          <h2 className="text-sm font-semibold text-ink">Superadmin only</h2>
+          <h2 className="text-sm font-semibold text-ink">Admins only</h2>
           <p className="mt-1 text-xs text-muted">
-            Only superadmins can manage studio locations.
+            Only admins can manage studio locations.
           </p>
         </div>
       </div>
