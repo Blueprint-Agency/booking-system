@@ -156,10 +156,14 @@ jobs:
       # and a skipped test is a passing one — so a broken env here would turn the
       # gate green while testing nothing. Nothing else in the suite skips, so any
       # skip at all fails the job.
+      #
+      # --test-force-exit: a test file whose `after` hook throws before it
+      # reaches harness.close() leaves Postgres sockets open, and the process
+      # then sits at the job timeout instead of reporting the failure.
       - name: Backend tests (serial)
         shell: bash
         run: |
-          node --import tsx --test --test-concurrency=1 --test-reporter=tap "src/**/*.test.ts" | tee test-output.tap
+          node --import tsx --test --test-concurrency=1 --test-force-exit --test-reporter=tap "src/**/*.test.ts" | tee test-output.tap
           if ! grep -qx '# skipped 0' test-output.tap; then
             echo "::error::Tests were skipped — the integration suite did not run against Postgres."
             grep -E '^# (tests|pass|fail|skipped)' test-output.tap

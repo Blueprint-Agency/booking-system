@@ -70,6 +70,16 @@ describe('admins run the studio', { skip: integrationTestsEnabled ? false : SKIP
 
   after(async () => {
     if (!harness) return
+    // Whatever cleanup throws, the pools close: an open socket keeps the test
+    // process alive, and CI then sits at the job timeout instead of failing.
+    try {
+      await cleanUp()
+    } finally {
+      await harness.close()
+    }
+  })
+
+  const cleanUp = async () => {
     const staff = await harness.db
       .select({ id: schema.staffUsers.id })
       .from(schema.staffUsers)
@@ -84,13 +94,15 @@ describe('admins run the studio', { skip: integrationTestsEnabled ? false : SKIP
       DELETE FROM inbox_items WHERE payload->>'workshopId' IN (SELECT id::text FROM workshops WHERE name LIKE ${pattern})`)
     await harness.db.execute(sql`DELETE FROM workshop_instructors WHERE workshop_id IN (SELECT id FROM workshops WHERE name LIKE ${pattern})`)
     await harness.db.execute(sql`DELETE FROM workshops WHERE name LIKE ${pattern}`)
+    // Sessions before rooms: a corporate session may sit in this run's room,
+    // and rooms.id is ON DELETE restrict.
+    await harness.db.execute(sql`DELETE FROM corporate_sessions WHERE client_name LIKE ${pattern}`)
+    await harness.db.execute(sql`DELETE FROM corporate_packages WHERE name LIKE ${pattern}`)
     await harness.db.execute(sql`DELETE FROM rooms WHERE name LIKE ${pattern}`)
     await harness.db.execute(sql`DELETE FROM locations WHERE name LIKE ${pattern}`)
     await harness.db.execute(sql`DELETE FROM class_types WHERE name LIKE ${pattern}`)
     await harness.db.execute(sql`DELETE FROM class_packages WHERE name LIKE ${pattern}`)
     await harness.db.execute(sql`DELETE FROM pt_packages WHERE name LIKE ${pattern}`)
-    await harness.db.execute(sql`DELETE FROM corporate_sessions WHERE client_name LIKE ${pattern}`)
-    await harness.db.execute(sql`DELETE FROM corporate_packages WHERE name LIKE ${pattern}`)
     await harness.db.execute(sql`DELETE FROM promo_codes WHERE label LIKE ${pattern}`)
     if (auth.length) {
       await harness.db.delete(schema.authEvents).where(inArray(schema.authEvents.actorUserId, auth.map(a => a.id)))
@@ -109,8 +121,7 @@ describe('admins run the studio', { skip: integrationTestsEnabled ? false : SKIP
     await harness.db.delete(schema.emailLog).where(like(schema.emailLog.recipientEmail, `%@${DOMAIN}`))
     await harness.db.delete(schema.clientAuthUsers).where(like(schema.clientAuthUsers.email, `%@${DOMAIN}`))
     await harness.db.delete(schema.staffAuthUsers).where(like(schema.staffAuthUsers.email, `%@${DOMAIN}`))
-    await harness.close()
-  })
+  }
 
   /** One write in each group that used to be closed or read-only to admins. */
   const writes = (): Array<{ group: string; method: string; path: string; body?: unknown }> => [
@@ -180,7 +191,9 @@ describe('admins run the studio', { skip: integrationTestsEnabled ? false : SKIP
     const [room] = await harness.db
       .select({ id: schema.rooms.id })
       .from(schema.rooms)
-      .where(eq(schema.rooms.locationId, location.id))
+      // Not this run's own `${TAG} Room`: without an ORDER BY Postgres hands back
+      // whichever row it likes, and a session in that room blocks its cleanup.
+      .where(and(eq(schema.rooms.locationId, location.id), sql`${schema.rooms.name} NOT LIKE ${`${TAG}%`}`))
       .limit(1)
     assert.ok(room, 'the seeded location has a room')
     const pkg = await ok(await send('/corporate-packages', admin.headers, 'POST', { name: `${TAG} Offsite`, price_sgd: '900.00' }))
