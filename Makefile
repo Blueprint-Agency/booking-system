@@ -51,9 +51,26 @@ build:
 studio:
 	cd be && npm run db:studio
 
-init: ensure-db
+# Fresh machine to runnable, in order: dependencies first (migrate and seed run
+# through the backend's node_modules), then the database, then the build.
+#
+# The steps are the recipe, not prerequisites, so `make -j` cannot reorder them.
+# They are spelled out rather than calling $(MAKE): GnuWin32 make lives under
+# `Program Files (x86)`, and a recursive call through that path fails on Windows.
+# Keep them in step with `install`, `ensure-db`, `migrate`, `seed` and `build`.
+init:
+	(cd fe-client && npm install) & \
+	(cd fe-portal && npm install) & \
+	(cd be && npm install) & \
+	wait
+	docker compose --env-file be/.env up -d --wait
+	docker exec reservetoday-db createdb -U postgres reservetoday 2>/dev/null || true
 	cd be && npm run db:migrate
 	cd be && npm run db:seed
+	(cd fe-client && npm run build) & \
+	(cd fe-portal && npm run build) & \
+	(cd be && npm run build) & \
+	wait
 
 # Bring up Postgres and ensure the reservetoday database exists.
 # Postgres auto-creates POSTGRES_DB on first volume init only; for an existing
