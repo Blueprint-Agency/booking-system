@@ -114,10 +114,9 @@ jobs:
       NODE_ENV: test
       APP_ENV: development
       SUPERADMIN_EMAIL: superadmin@example.test
-      CLERK_STAFF_PUBLISHABLE_KEY: pk_test_harness
-      CLERK_STAFF_SECRET_KEY: sk_test_harness
-      CLERK_STAFF_WEBHOOK_SECRET: whsec_test_harness
       IMPERSONATION_SECRET: test-harness-impersonation-secret-key
+      BETTER_AUTH_SECRET: test-harness-better-auth-secret-key-32chars
+      BETTER_AUTH_URL: http://localhost:4000
       TENANT_ORIGIN_PATTERNS: http://*.localhost:3000,http://*.portal.localhost:3001,http://localhost:3000,http://localhost:3001
       RESEND_API_KEY: re_test_harness
       MAIL_FROM_EMAIL: hello@example.test

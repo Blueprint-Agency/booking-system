@@ -1,18 +1,40 @@
-.PHONY: dev start install build studio init reset generate up down migrate ensure-db seed
+.PHONY: dev start urls install build studio init reset generate up down migrate ensure-db seed
 
-dev:
+dev: urls
 	(cd fe-client && npm run dev) & \
 	(cd fe-portal && npm run dev) & \
 	(cd be && npm run dev) & \
 	wait
 
-# Serve the production builds. Run `make build` first — each app's `start`
-# runs compiled output, not sources.
-start: ensure-db
+# Serve the frontends' production builds. Run `make build` first — `next start`
+# needs `.next/` to exist. The backend runs its sources under tsx here and in
+# production alike (see be/Dockerfile); there is no compiled backend to serve.
+start: ensure-db urls
 	(cd fe-client && npm run start) & \
 	(cd fe-portal && npm run start) & \
 	(cd be && npm run start) & \
 	wait
+
+# Next prints `http://localhost:3000` and `:3001`, which is where nothing is: a
+# Tenant is read from the subdomain, and the bare host names none. These are the
+# hosts that actually resolve. No studio is named because a fresh platform has
+# none — the super portal is where the first one is created.
+#
+# The `&&` chain is load-bearing on Windows: GNU Make runs a simple recipe line
+# through CreateProcess directly, and `echo` there is a cmd builtin rather than
+# an executable, so a bare `@echo` fails with "cannot find the file specified".
+# An operator in the line forces Make through the shell, where echo exists —
+# which is also why every other recipe in this file happens to work.
+urls:
+	@echo '' && \
+	echo '  Super portal   http://admin.portal.localhost:3001   <- start here' && \
+	echo '  Staff portal   http://<slug>.portal.localhost:3001' && \
+	echo '  Client         http://<slug>.localhost:3000' && \
+	echo '  API            http://localhost:4000' && \
+	echo '' && \
+	echo '  <slug> is a studio created from the super portal. Bare' && \
+	echo '  localhost:3000 / :3001 resolve no Tenant and will 404.' && \
+	echo ''
 
 install:
 	(cd fe-client && npm install) & \
