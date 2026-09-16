@@ -32,8 +32,6 @@ import {
   type RefundState,
   type WorkshopPurchase,
 } from '../../../services/billing/refunds'
-import { listMemberSessions, signMemberOutEverywhere } from '../../../services/auth/account-access'
-import { sessionView } from '../session-view'
 
 const idParam = z.object({ id: z.string().uuid() })
 const idPkgParam = z.object({ id: z.string().uuid(), pid: z.string().uuid() })
@@ -381,7 +379,6 @@ const app = new Hono()
       tenantId: tenantId(c),
       targetClientId: id,
       actorStaffId: c.get('staffUserId'),
-      from: c.req.raw.headers,
     })
     c.set('auditTarget' as any, { table: 'clients', id })
     return c.json(clientRow(row))
@@ -392,28 +389,9 @@ const app = new Hono()
       tenantId: tenantId(c),
       targetClientId: id,
       actorStaffId: c.get('staffUserId'),
-      from: c.req.raw.headers,
     })
     c.set('auditTarget' as any, { table: 'clients', id })
     return c.json(clientRow(row))
-  })
-  // ---- sessions (#119): read by admin and superadmin, ended by superadmin
-  // (every non-GET under /clients is, through adminReadOnly) ----
-  .get('/:id/sessions', zValidator('param', idParam), async c => {
-    const { id } = c.req.valid('param')
-    const sessions = await listMemberSessions(tenantId(c), id)
-    return c.json({ sessions: sessions.map(sessionView) })
-  })
-  .post('/:id/sessions/revoke', zValidator('param', idParam), async c => {
-    const { id } = c.req.valid('param')
-    const revoked = await signMemberOutEverywhere({
-      tenantId: tenantId(c),
-      clientId: id,
-      actorStaffId: c.get('staffUserId'),
-      from: c.req.raw.headers,
-    })
-    c.set('auditTarget' as any, { table: 'clients', id })
-    return c.json({ revoked })
   })
 
 export default app

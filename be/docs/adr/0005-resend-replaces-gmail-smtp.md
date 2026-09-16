@@ -27,12 +27,6 @@ Two envelope addresses, chosen by **who is reading**, never by which studio is s
 | A member (`recipient.userKind = 'client'`) | `hello@reservetoday.app` | `MAIL_FROM_EMAIL` |
 | Staff — admin or instructor (`'staff'`) | `portal@reservetoday.app` | `MAIL_FROM_PORTAL_EMAIL` |
 
-> **Superseded (#153).** This table no longer holds. All mail leaves from one address,
-> `noreply@reservetoday.app`, and it and the platform name `ReserveToday` are constants in
-> `be/src/lib/mailer.ts`. `MAIL_FROM_EMAIL`, `MAIL_FROM_PORTAL_EMAIL` and `MAIL_FROM_NAME` are
-> gone from env. Every send goes through one paced queue (`be/src/lib/send-gate.ts`); see
-> `docs/md/mail-identity.md`.
-
 `sendTemplatedEmail` picks the address from the recipient's `userKind`, which every call site
 already declares, so no caller chooses — and cannot choose wrongly. Both are env, not
 `tenant_settings`: they belong to the platform's domain and are the same for every studio. The

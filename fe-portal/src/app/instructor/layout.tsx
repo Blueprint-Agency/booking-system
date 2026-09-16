@@ -1,17 +1,13 @@
-import { headers } from "next/headers";
 import { InstructorShell } from "@/components/layout/instructor-shell";
-import { TENANT_ID_HEADER } from "@/lib/tenant-host";
 import { WorkspaceProvider } from "@/lib/workspace-context";
 
-export default async function InstructorLayout({
+export default function InstructorLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  // The studio this hostname resolved to, as the proxy left it on the request.
-  const hostTenantId = (await headers()).get(TENANT_ID_HEADER);
   return (
-    <WorkspaceProvider hostTenantId={hostTenantId}>
+    <WorkspaceProvider>
       <InstructorShell>{children}</InstructorShell>
     </WorkspaceProvider>
   );

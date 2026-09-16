@@ -1,5 +1,7 @@
 "use client";
 import { useState } from "react";
+import { useClerk } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui";
 import { StudioMark } from "@/components/brand/studio-mark";
@@ -22,14 +24,13 @@ export function AccessDenied({
   email,
   reason,
   onRetry,
-  onSignOut,
 }: {
   email: string | null;
   reason: string | null;
   onRetry: () => void;
-  /** End the session and go to the login page. */
-  onSignOut: () => Promise<void>;
 }) {
+  const { signOut } = useClerk();
+  const router = useRouter();
   const [leaving, setLeaving] = useState(false);
   const [signOutFailed, setSignOutFailed] = useState(false);
 
@@ -39,9 +40,9 @@ export function AccessDenied({
     setLeaving(true);
     setSignOutFailed(false);
     try {
-      await onSignOut();
+      await signOut(() => router.push("/login"));
     } catch (err) {
-      // Offline, or the API is unwell. Without this the button would stay
+      // Offline, or Clerk is unwell. Without this the button would stay
       // disabled behind a spinner forever, and this screen has no other exit.
       reportError(err, { scope: "access-denied-sign-out" });
       setSignOutFailed(true);

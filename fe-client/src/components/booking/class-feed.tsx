@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useMemberSession } from "@/lib/member-auth";
+import { useUser } from "@clerk/nextjs";
 import { useClasses, useLocations, useCanBookClass, toLocalDateStr, type ApiClassCard } from "@/lib/classes";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { SectionHeading } from "@/components/booking/section-heading";
@@ -54,7 +54,7 @@ export function ClassFeed() {
   // and a default only fires for undefined.
   const { data: locationData } = useLocations();
   const locations = useMemo(() => locationData ?? [], [locationData]);
-  const { isSignedIn } = useMemberSession();
+  const { isSignedIn } = useUser();
   const brand = useBrand();
 
   // The studio and its own premises — both per Tenant, so a second studio's

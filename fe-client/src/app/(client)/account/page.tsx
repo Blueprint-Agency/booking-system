@@ -14,7 +14,7 @@ import { SectionHeading } from "@/components/booking/section-heading";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { QrBadge } from "@/components/account/qr-badge";
-import { useAppUser } from "@/lib/auth";
+import { useUser } from "@clerk/nextjs";
 import { useApi } from "@/lib/api";
 import { reportError } from "@/lib/report-error";
 import { useClientPackages, type LivePackage } from "@/lib/use-client-packages";
@@ -37,7 +37,7 @@ function dormantLine(pkg: LivePackage): string {
 }
 
 export default function AccountOverview() {
-  const { user } = useAppUser();
+  const { user } = useUser();
   const api = useApi();
   const {
     classCredits,

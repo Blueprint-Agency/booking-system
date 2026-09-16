@@ -2,7 +2,7 @@
 
 /**
  * Live API helpers for PT session requests.
- * Auth pattern: `useApi()` from api.ts (member session token → `Authorization: Bearer`).
+ * Auth pattern: `useApi()` from api.ts (Clerk `getToken` → `Authorization: Bearer`).
  * Errors: non-2xx throws `ApiError`; callers can inspect `err.body` for BE error codes
  * (e.g. `{ error: "insufficient_pt_credit" }`).
  */
@@ -112,7 +112,7 @@ export function makePtSessionsApi(api: Api) {
   };
 }
 
-/** Hook: authed PT sessions API bound to the member's session. */
+/** Hook: authed PT sessions API bound to the current Clerk session. */
 export function usePtSessionsApi() {
   const api = useApi();
   return makePtSessionsApi(api);

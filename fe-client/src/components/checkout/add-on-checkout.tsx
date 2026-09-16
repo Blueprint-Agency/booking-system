@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { addMonths, differenceInDays } from "date-fns";
 import { AlertCircle } from "lucide-react";
-import { getMemberToken } from "@/lib/member-auth";
+import { useAuth } from "@clerk/nextjs";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { fetchApi } from "@/lib/api-url";
@@ -54,7 +54,7 @@ interface AddOnQuote {
  * page carries the block, the arithmetic the server quoted, and Pay.
  */
 export function AddOnCheckout({ planId }: { planId: string | null }) {
-  const getToken = getMemberToken;
+  const { getToken } = useAuth();
   const { packages, crossLocation, loading: packagesLoading } = useClientPackages();
   const { data: locations } = useLocations();
   const [quote, setQuote] = useState<AddOnQuote | null>(null);

@@ -1,9 +1,6 @@
 # Members are not Clerk Organization members
 
-**Status**: superseded (2026-09-14) by
-[ADR 0004](0004-self-hosted-auth-with-better-auth.md) — Clerk is gone, and the member side now has
-the signed Tenant statement this ADR said it could not afford. Kept as history.
-Originally accepted (2026-08-31). Resolves issue #73, under parent #55. Spans the backend and
+**Status**: accepted (2026-08-31). Resolves issue #73, under parent #55. Spans the backend and
 both frontends' auth model, which is why it lives in the root `docs/adr/` rather than in
 `be/docs/adr/`. Amends ADR 0002's account of how a request proves which Tenant it is about.
 

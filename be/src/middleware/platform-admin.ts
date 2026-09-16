@@ -1,8 +1,9 @@
 import type { MiddlewareHandler } from 'hono'
-import { readPoolSession } from '../services/auth/better-auth'
+import { getClerkPlatformApp, isPlatformAppConfigured, verifyPlatformToken } from '../lib/clerk'
 import { env } from '../env'
 import { isPlatformAdmin, parsePlatformAdmins } from '../services/tenants/platform-admin'
 import { logger } from '../shared/logger'
+import { captureException } from '../instrument'
 
 declare module 'hono' {
   interface ContextVariableMap {
@@ -34,19 +35,52 @@ if (PLATFORM_ADMINS.length === 0) {
   )
 }
 
+// Announced at boot rather than discovered in a browser. Without its own Clerk
+// application the super portal shares the staff app's `__client` cookie, so
+// `admin.portal.…` and `{slug}.portal.…` are one signed-in person and cannot be
+// two — the allowlist still refuses the wrong account at the API, but the two
+// hostnames cannot hold separate sessions in one browser.
+if (!isPlatformAppConfigured()) {
+  logger.warn(
+    'CLERK_PLATFORM_SECRET_KEY is unset — the super portal shares the STAFF Clerk app, so it shares one browser session with every studio portal.',
+  )
+}
+
 /**
- * The gate on the super portal: two locks, in order (#116).
+ * Short memo of clerk user id → primary email. The gate runs on every super
+ * portal request and the answer changes about never; without it every list
+ * refresh is a round trip to Clerk before it is a round trip to us.
  *
- *  1. **A `platform` pool session.** The super portal signs in through its own
- *     Better Auth instance, whose users are rows no studio can write. A studio
- *     session — staff or member, superadmin or not — is a row this pool has
- *     never seen, so it never reaches the allowlist at all.
- *  2. **The session's email on `PLATFORM_ADMIN_EMAILS`.** Read from the session
- *     on every request and remembered nowhere, so an address taken off the list
- *     is refused on its next request.
+ * Positive-only and short, for the same reason as the tenant memo: an unknown
+ * id must not be able to pin arbitrary strings in memory, and an address removed
+ * from a Clerk account must stop working promptly.
+ */
+const EMAIL_TTL_MS = 60_000
+const emailCache = new Map<string, { at: number; email: string | null }>()
+
+async function primaryEmail(clerkUserId: string): Promise<string | null> {
+  const cached = emailCache.get(clerkUserId)
+  if (cached && Date.now() - cached.at < EMAIL_TTL_MS) return cached.email
+  if (cached) emailCache.delete(clerkUserId)
+
+  const user = await getClerkPlatformApp().users.getUser(clerkUserId)
+  const primary =
+    user.emailAddresses.find(address => address.id === user.primaryEmailAddressId) ?? null
+  const email = primary?.emailAddress ?? null
+  if (email) emailCache.set(clerkUserId, { at: Date.now(), email })
+  return email
+}
+
+/**
+ * The gate on the super portal.
  *
- * No `staff_users` row is read and no tenant is resolved. Being the superadmin
- * of a studio is a role inside that studio; it says nothing about the platform.
+ * A valid Clerk staff token gets you as far as this line and no further: what
+ * decides the outcome is whether the *account behind it* is on the platform
+ * allowlist. That is the whole difference between this and `clerkStaffAuth` —
+ * no `staff_users` row is read, no tenant is resolved, and a studio's own
+ * superadmin is refused here exactly as flatly as a stranger is. Being the
+ * superadmin of a studio is a role inside that studio; it says nothing about
+ * the platform.
  *
  * The refusal body is `not_found`, not `forbidden`: a signed-in staff member
  * poking at `/api/v1/platform/*` should learn nothing about whether the super
@@ -58,14 +92,28 @@ export const requirePlatformAdmin: MiddlewareHandler = async (c, next) => {
   const token = header.slice(7).trim()
   if (!token) return c.json({ error: 'not_found' }, 404)
 
-  const session = await readPoolSession('platform', token)
-  if (!session) return c.json({ error: 'not_found' }, 404)
-
-  if (!isPlatformAdmin(session.email, PLATFORM_ADMINS)) {
-    logger.warn({ userId: session.userId, path: c.req.path }, 'platform-admin: refused')
+  let sub: string
+  try {
+    ;({ sub } = await verifyPlatformToken(token))
+  } catch {
     return c.json({ error: 'not_found' }, 404)
   }
 
-  c.set('platformAdminEmail', session.email.trim().toLowerCase())
+  let email: string | null
+  try {
+    email = await primaryEmail(sub)
+  } catch (err) {
+    // A Clerk outage must not become an open door. Refuse, loudly.
+    logger.error({ err, clerkUserId: sub }, 'platform-admin: could not read the caller’s email')
+    captureException(err, { scope: 'platform-admin-gate' })
+    return c.json({ error: 'not_found' }, 404)
+  }
+
+  if (!isPlatformAdmin(email, PLATFORM_ADMINS)) {
+    logger.warn({ clerkUserId: sub, path: c.req.path }, 'platform-admin: refused')
+    return c.json({ error: 'not_found' }, 404)
+  }
+
+  c.set('platformAdminEmail', email!.trim().toLowerCase())
   await next()
 }

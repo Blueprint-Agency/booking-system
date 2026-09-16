@@ -125,8 +125,9 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
       );
       onCreated();
     } catch (err) {
-      // The backend is atomic: a failure here left no studio behind. Say what
-      // went wrong and let them try again.
+      // The backend is atomic: a failure here left no studio behind, in the
+      // database or in either Clerk application. Say what went wrong and let
+      // them try again.
       const code =
         err instanceof ApiError && err.body && typeof err.body === "object"
           ? (err.body as { error?: string }).error
@@ -148,7 +149,7 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
       open={open}
       onOpenChange={onOpenChange}
       title="New studio"
-      description="Creates the studio, and invites a first admin if you name one. Its URLs work immediately."
+      description="Creates the studio and its Clerk organization, and invites a first admin if you name one. Its URLs work immediately."
     >
       <form className="flex flex-col gap-4" onSubmit={submit}>
         <div className="flex flex-col gap-1.5">

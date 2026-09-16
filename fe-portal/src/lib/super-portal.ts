@@ -3,7 +3,7 @@
  *
  * One deployment serves two different products. `{slug}.portal.…` is a studio's
  * staff portal; `admin.portal.…` is the super portal, where the dev team creates
- * and manages studios. They share a codebase and sign in separately, and are
+ * and manages studios. They share a Clerk application and a codebase, and are
  * told apart by hostname alone.
  *
  * Keeping that split as a pure function, rather than a handful of checks spread

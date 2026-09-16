@@ -10,8 +10,8 @@ import { PLATFORM_MAIL_FROM_NAME } from '../../lib/mailer'
  * from the moment its row exists. The **envelope address is not here at all**,
  * because it is not the tenant's to choose: sending as `hello@a-studio.com`
  * through the platform's Resend domain fails that domain's SPF and carries no
- * DKIM for it, so `sendMail` always uses the platform's own address
- * (`PLATFORM_MAIL_FROM_EMAIL`, the same for every studio and every reader).
+ * DKIM for it, so `sendMail` always uses one of the platform's own addresses
+ * (`PLATFORM_MAIL_FROM_EMAIL`, picked by who is reading, never by studio).
  *
  * `tenant_settings.mail_from_email` therefore exists as a column and is
  * deliberately **not read**. Returning it would be worse than ignoring it: a

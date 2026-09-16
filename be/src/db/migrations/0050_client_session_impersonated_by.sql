@@ -1,1 +1,0 @@
-ALTER TABLE "client_auth_sessions" ADD COLUMN "impersonated_by" text;

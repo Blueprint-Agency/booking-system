@@ -65,14 +65,13 @@ describe('row-level security', { skip: integrationTestsEnabled ? false : SKIP_RE
           name: `${PROBE} staff ${label}`,
           role: 'superadmin',
           status: 'active',
-          authUserId: `${PROBE}-staff-${label}`,
         })
         .returning({ id: staffUsers.id })
       const [client] = await harness.db
         .insert(clients)
         .values({
           tenantId,
-          authUserId: `${PROBE}-client-${label}`,
+          clerkUserId: `${PROBE}-client-${label}`,
           email: `${PROBE}-client-${label}@example.test`,
           name: `${PROBE} member ${label}`,
           phone: '+6580000000',
@@ -294,7 +293,7 @@ describe('row-level security', { skip: integrationTestsEnabled ? false : SKIP_RE
 
     const grant = verifyGrant(
       signGrant({
-        clientAuthUserId: 'user_probe',
+        clientClerkUserId: 'user_probe',
         superadminStaffId: '00000000-0000-0000-0000-0000000000bb',
         tenantId: oneId,
       }),
@@ -321,7 +320,7 @@ describe('row-level security', { skip: integrationTestsEnabled ? false : SKIP_RE
     const outsider = { id: staffOf[twoId]! }
 
     // The middleware pair as a route sees it: tenant resolution, then a stand-in
-    // for the staff auth middleware that puts the caller's own row on the context.
+    // for the Clerk middleware that puts the caller's own row on the context.
     const app = new Hono()
     app.use('*', resolveTenant)
     app.use('*', async (c, next) => {
@@ -360,8 +359,7 @@ describe('row-level security', { skip: integrationTestsEnabled ? false : SKIP_RE
           mintClientImpersonation({
             tenantId: oneId,
             clientId: outsider.id,
-            superadmin: { id: '00000000-0000-0000-0000-0000000000bb', authUserId: 'staff_probe' },
-            from: new Headers(),
+            superadminStaffId: '00000000-0000-0000-0000-0000000000bb',
           }),
         ),
       (err: { message?: string }) => err.message === 'client_not_found',

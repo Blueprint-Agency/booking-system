@@ -1,6 +1,6 @@
 "use client";
 
-import { getMemberToken, useMemberSession } from "@/lib/member-auth";
+import { useAuth } from "@clerk/nextjs";
 import {
   createContext,
   useState,
@@ -201,9 +201,17 @@ function mapPackagesResponse(raw: RawPackagesResponse): ClientPackagesData {
   };
 }
 
+async function getAuthToken(getToken: () => Promise<string | null>) {
+  let token = await getToken();
+  if (!token) {
+    await new Promise((r) => setTimeout(r, 150));
+    token = await getToken();
+  }
+  return token;
+}
+
 export function ClientPackagesProvider({ children }: { children: ReactNode }) {
-  const { isSignedIn, isLoaded, session } = useMemberSession();
-  const userId = session?.userId ?? null;
+  const { getToken, isSignedIn, isLoaded, userId } = useAuth();
   const pathname = usePathname();
   const [data, setData] = useState<ClientPackagesData | null>(null);
   // Starts true: on the first paint nothing has been fetched yet, and a consumer
@@ -219,7 +227,7 @@ export function ClientPackagesProvider({ children }: { children: ReactNode }) {
     }
     setLoading(true);
     try {
-      const token = await getMemberToken();
+      const token = await getAuthToken(getToken);
       if (!token) return;
 
       const res = await fetchApi("/me/packages", {
@@ -239,7 +247,7 @@ export function ClientPackagesProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [isSignedIn, userId]);
+  }, [isSignedIn, userId, getToken]);
 
   useEffect(() => {
     if (!isLoaded) return;

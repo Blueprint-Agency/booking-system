@@ -5,20 +5,29 @@
  * The distinction this file exists to hold is between **no session** and **the
  * wrong session**, because the portal used to treat them as one thing. A 403
  * meant "sign out and go to /login" — but a 403 is the answer to "may *this*
- * account be on *this* hostname", and the account it refuses is usually a real
- * one with a real reason to exist: invited and not yet active, staff at another
- * studio, or a studio's own staff while the studio is suspended. Signing it out
- * without a word sent the person to a login page with nothing on screen to
- * explain why they were back there.
+ * account be on *this* hostname", and the account it refuses is usually
+ * perfectly valid somewhere else. Signing it out sent the browser to a login
+ * page that handed the same session straight back, which produced the same 403:
+ * a loop with nothing on screen to explain it.
+ *
+ * The commonest way in is by design, not accident. Clerk's cookie for the
+ * portal is scoped to `*.portal.<root>`, so `admin.portal.…` (the super portal)
+ * and `{slug}.portal.…` (a studio's) share one session — and platform admins
+ * deliberately have no `staff_users` row at any studio, because folding them in
+ * would make the first studio's superadmin an operator of every studio. So a
+ * platform admin opening a studio's portal is a *supported* thing to do that
+ * the backend must refuse, and the app has to say so rather than thrash.
  *
  * Not every 403 is about the account, though, and that is the second thing this
- * file is for. `tenant_suspended` is about the *studio*: offering "sign out and
- * use another account" would be advice that cannot work, since it is the same
- * for every account. So each refusal carries its own words and its own way out.
+ * file is for. `tenant_suspended` is about the *studio*, and
+ * `organization_required` is usually about nothing at all — a Clerk membership
+ * list this tab has not caught up with. Offering "sign out and use another
+ * account" to either would be advice that cannot work: the first is the same
+ * for every account, and the second clears itself. So each refusal carries its
+ * own words and its own way out.
  *
- * The session itself is a Better Auth staff session, stamped with the studio it
- * signed in at (`session-tenant.ts`). Kept pure and separate from the provider
- * so all of this is testable without a session at all.
+ * Kept pure and separate from the provider so all of that is testable without
+ * mounting Clerk.
  */
 
 /** The `error` code on a refusal body, when there is one. */
@@ -43,9 +52,9 @@ export type AuthFailure =
  * `ApiError` is `other` and should be reported, not acted on.
  */
 export function authFailure(status: number | null, body: unknown): AuthFailure {
-  // 401 is the session's answer, not the studio's: the token is missing, was
-  // signed out elsewhere, expired, or ended when the account was archived. There
-  // is no account to name, so there is nothing to offer but a fresh sign-in.
+  // 401 is Clerk's answer, not the studio's: the token is missing, expired or
+  // rejected outright. There is no account to name, so there is nothing to
+  // offer but a fresh sign-in.
   if (status === 401) return { kind: "sign-out" };
   if (status === 403) return { kind: "denied", reason: refusalCode(body) };
   return { kind: "other" };
@@ -80,18 +89,17 @@ export function accessDeniedCopy(reason: string | null): AccessDeniedCopy {
         offerSwitch: false,
         offerRetry: true,
       };
-    case "tenant_required":
-      // A session that names no studio. The backend never issues one on the
-      // staff pool, so the only way here is a session from before that rule or
-      // from somewhere it should not have come from — a fresh sign-in on this
-      // hostname is the fix, and trying again with the same one is not.
+    case "organization_required":
+      // Reached only once the provider's retries are spent. The cause is a
+      // Clerk membership list this tab has not caught up with, which is
+      // transient — so the useful button is "try again", not "sign out".
       return {
         title: "We couldn't finish signing you in",
         detail:
-          "isn't signed in to this studio. Sign out and sign in again here.",
+          "hasn't been matched to this studio yet. That usually clears on its own — try again.",
         namesAccount: true,
         offerSwitch: true,
-        offerRetry: false,
+        offerRetry: true,
       };
     case "staff_inactive":
       return {

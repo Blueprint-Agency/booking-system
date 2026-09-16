@@ -5,14 +5,12 @@ The structural spine for the ReserveToday backend (`/be`). Stack, folder structu
 - **`be-portal.md`** — staff backend (admin + instructor scopes), maps `admin-restructure.md` behaviour onto routes/services.
 - **`be-client.md`** — client backend (`/me/*` and public reads), maps `fe-client-features.md` behaviour onto routes/services.
 
-The single backend serves **both** `fe-portal` and `fe-client`. `fe-portal` is the staff app (admin + instructor views) signing in on the `staff` auth pool; `fe-client` is the client app signing in on the separate `client` pool; the super portal signs in on the `platform` pool. URL prefixes:
+The single backend serves **both** `fe-portal` and `fe-client`. `fe-portal` is the staff app (admin + instructor views) using one Clerk staff app; `fe-client` is the client app using a separate Clerk app. URL prefixes:
 
 - `/api/v1/public/*` — unauthenticated reads (catalog, marketing, referral resolve)
-- `/api/v1/auth/{client,staff,platform}/*` — the three Better Auth pools (sign-in, sign-out, codes, password reset, 2FA)
-- `/api/v1/me/*` — `client` pool session (see `be-client.md`)
-- `/api/v1/portal/admin/*` and `/api/v1/portal/instructor/*` — `staff` pool session (see `be-portal.md`)
-- `/api/v1/platform/*` — `platform` pool session + `PLATFORM_ADMIN_EMAILS`
-- `/api/v1/webhooks/*` — Stripe and Resend signed webhooks
+- `/api/v1/me/*` — client Clerk app (see `be-client.md`)
+- `/api/v1/portal/admin/*` and `/api/v1/portal/instructor/*` — staff Clerk app (see `be-portal.md`)
+- `/api/v1/webhooks/*` — Clerk + Stripe signed webhooks
 
 ---
 
@@ -24,7 +22,7 @@ The single backend serves **both** `fe-portal` and `fe-client`. `fe-portal` is t
 | ORM | **Drizzle** (pg dialect, `postgres-js` driver) |
 | Database | **Postgres** |
 | Validation | **Zod** |
-| Auth | **Better Auth**, self-hosted — three pools on separate tables: `client`, `staff`, `platform` (per §15b session isolation). Bearer sessions. See `docs/adr/0004-self-hosted-auth-with-better-auth.md` |
+| Auth | **Clerk** — two applications: client app + staff app (per §15b session isolation) |
 | File storage | **Cloudflare R2** (S3-compatible via `@aws-sdk/client-s3`) — presigned PUT for public imagery, server-side upload + signed GET for private documents (§6c) |
 | Background jobs | **`node-cron`** for non-critical periodic jobs (reminders, expiry sweeps); **BullMQ** (Redis-backed) added when the durable refund flow lands. Until then, no Redis dependency. |
 | Email | **Resend** HTTP API (transactional, 22 templates per §17). One API key, two envelope addresses on the platform's verified domain — see §6d. |
@@ -36,7 +34,7 @@ The single backend serves **both** `fe-portal` and `fe-client`. `fe-portal` is t
 
 The layout splits **routes by audience** (single-owner folders → minimal merge collisions between the two devs working in parallel) and **services by feature** (one source of domain rules → admin force-cancel and client self-cancel hit the same `services/bookings/cancel.ts`, so policy can't drift between flows).
 
-Top-level audience split is **portal vs client vs public vs webhooks**. `portal/` groups admin + instructor since they share the `staff` auth pool and a single `staff_users` identity (role differentiates at middleware). `client/` is the separate `client` pool.
+Top-level audience split is **portal vs client vs public vs webhooks**. `portal/` groups admin + instructor since they share the staff Clerk app and a single `staff_users` identity (role differentiates at middleware). `client/` is the separate client Clerk app.
 
 ```
 be/
@@ -78,7 +76,7 @@ be/
     │   └── migrations/                # drizzle-kit-generated SQL
     │
     ├── routes/                        # Audience-split — single-owner folders
-    │   ├── portal/                    # Staff pool (admin + instructor share `staff_users`)
+    │   ├── portal/                    # Staff Clerk app (admin + instructor share `staff_users`)
     │   │   ├── index.ts               # Mounts /admin and /instructor under shared staff auth
     │   │   ├── admin/                 # Owned by fe-portal dev — gated by require-role('admin'|'superadmin')
     │   │   │   ├── index.ts           # Mounts all admin routers
@@ -111,7 +109,7 @@ be/
     │   │       │  # availability.ts   # REMOVED — Availability system gone (§4f)
     │   │       └── profile.ts         # own bio / photo
     │   │
-    │   ├── client/                    # Owned by fe-client dev — client pool session + require-active
+    │   ├── client/                    # Owned by fe-client dev — client Clerk app + require-active
     │   │   ├── index.ts               # Mounts all client routers under /api/v1/me
     │   │   ├── me.ts                  # profile, dashboard (§16, fe-client /account)
     │   │   ├── catalog.ts             # browse classes, workshops, packages, instructor availability for PT picker
@@ -122,7 +120,7 @@ be/
     │   │   ├── waiver.ts              # read for sign + sign endpoint
     │   │   └── referral.ts            # own referral code + conversion stats
     │   │
-    │   ├── public/                    # Unauthenticated reads — no session required
+    │   ├── public/                    # Unauthenticated reads — no Clerk required
     │   │   ├── index.ts
     │   │   ├── catalog.ts             # locations, classes, workshops, packages (browse)
     │   │   ├── marketing.ts           # hero / testimonials / pricing blurb / footer
@@ -130,8 +128,9 @@ be/
     │   │
     │   └── webhooks/                  # Public endpoints with vendor signature verification
     │       ├── index.ts
-    │       ├── stripe.ts              # payment_intent.succeeded → grant; charge.refunded → mark
-    │       └── resend.ts              # delivered / bounced / complained / suppressed → email_log status, with alerts
+    │       ├── clerk.ts               # user.created/updated → upsert clients or staff_users
+    │       └── stripe.ts              # payment_intent.succeeded → grant; charge.refunded → mark
+    │                                  # (no SMTP bounce webhook — failures captured via Nodemailer rejection in email_log)
     │
     ├── services/                      # Per-feature — jointly owned, single source of domain rules
     │   ├── bookings/
@@ -166,9 +165,8 @@ be/
     │   │   ├── evaluate-cancellation.ts # `evaluateCancellation(client, kind, sessionStartsAt, now)` (§4)
     │   │   └── event-state.ts         # `computeEventState({ starts_at, ends_at, lifecycle, now })`
     │   ├── auth/
-    │   │   ├── better-auth.ts         # The three Better Auth pools + session reader
-    │   │   ├── auth-users.ts          # Passwordless pool users for seeds + invitations
-    │   │   └── invitations.ts         # Pending staff + auth user + token, mailed set-password link
+    │   │   ├── invitations.ts         # Token issue + Clerk invitation API call
+    │   │   └── webhook-sync.ts        # Clerk user.* → upsert clients or staff_users
     │   ├── clients/
     │   │   ├── profile.ts             # GET/PATCH self profile
     │   │   ├── dashboard.ts           # Next-up + balances aggregation
@@ -180,9 +178,8 @@ be/
     │   └── feature-flags.ts           # Read (cached) + toggle
     │
     ├── middleware/
-    │   ├── client-auth.ts             # `client` pool session + Tenant claim → load `clients` row
-    │   ├── staff-auth.ts              # `staff` pool session + Tenant claim → load `staff_users` row
-    │   ├── platform-admin.ts          # `platform` pool session + PLATFORM_ADMIN_EMAILS
+    │   ├── clerk-client.ts            # Verify client Clerk JWT → load `clients` row → ctx.client
+    │   ├── clerk-staff.ts             # Verify staff Clerk JWT → load `staff_users` row → ctx.staff
     │   ├── require-role.ts            # Factory: `requireRole('admin' | 'superadmin' | 'instructor')`
     │   ├── require-active.ts          # Block suspended clients / archived staff
     │   ├── impersonate.ts             # Superadmin acts-as admin (sets ctx.actingAs + audit)
@@ -193,6 +190,7 @@ be/
     │   └── request-id.ts              # Trace ID per request
     │
     ├── lib/
+    │   ├── clerk.ts                   # Two Clerk SDK instances (client + staff app keys)
     │   ├── stripe.ts                  # Stripe SDK + signed webhook verification
     │   ├── r2.ts                      # S3 client + private-bucket put + signed-GET helpers
     │   ├── mailer.ts                  # Resend transport (API key + two from-addresses from env) + send wrapper
@@ -242,14 +240,14 @@ app.route('/api/v1/portal',   portalRoutes);        // see be-portal.md
 app.route('/api/v1/webhooks', webhookRoutes);
 ```
 
-The `portal/*` prefix mirrors the `staff` pool boundary: one auth gate for both admin and instructor; role-specific gates added per sub-router. A session from another pool (member session presented to `/portal`, staff session to `/me`) is a row that pool has never seen, and is rejected 401 at `staffAuth` / `clientAuth`.
+The `portal/*` prefix mirrors the staff Clerk app boundary: one auth gate for both admin and instructor; role-specific gates added per sub-router. Cross-app tokens (client JWT presented to `/portal`, staff JWT to `/me`) are rejected at the `clerkStaffAuth` / `clerkClientAuth` middleware.
 
 **Hard rule for every route file:** `auth → zod parse → call service → format response`. Business logic lives in `services/<feature>/*`, not in route files. This is what lets admin and client share the same domain rules without drift.
 
 Per-audience endpoint enumeration, mount internals, middleware stacks, and business flows are documented in:
 
-- **`be-portal.md`** — staff auth (admin + instructor), endpoint tables per route file, portal-driven flows (staff invitations, schedule create, admin cancel + refund fanout, manual adjustments, PT approval, inbox, etc.).
-- **`be-client.md`** — member auth + verification gate, public reads, client endpoints, client-driven flows (registration, booking, self-cancel, purchases, referral conversion).
+- **`be-portal.md`** — staff Clerk auth (admin + instructor), endpoint tables per route file, portal-driven flows (staff invitations, schedule create, admin cancel + refund fanout, manual adjustments, PT approval, inbox, etc.).
+- **`be-client.md`** — client Clerk auth + verification gate, public reads, client endpoints, client-driven flows (registration, booking, self-cancel, purchases, referral conversion).
 
 ### File ownership
 
@@ -270,7 +268,7 @@ All tables use `id uuid primary key default gen_random_uuid()` unless noted. Tim
 | Column | Type | Constraints |
 |---|---|---|
 | id | uuid | PK |
-| auth_user_id | text | not null, unique per tenant — the member's `client_auth_users` id |
+| clerk_user_id | text | unique, not null — from client Clerk app |
 | email | text | unique, not null |
 | name | text | not null |
 | phone | text | not null |
@@ -283,16 +281,16 @@ All tables use `id uuid primary key default gen_random_uuid()` unless noted. Tim
 | joined_at | timestamptz | not null, default now() |
 | created_at, updated_at | timestamptz | not null, default now() |
 
-**Indexes:** `(tenant_id, auth_user_id) unique`, `(tenant_id, email) unique`, `(status)`, `(referred_by_client_id)`, `(lower(name))` for case-insensitive search.
+**Indexes:** `(clerk_user_id) unique`, `(email) unique`, `(status)`, `(referred_by_client_id)`, `(lower(name))` for case-insensitive search.
 
-**Phone/email verification state — not stored on `clients`.** Members sign in by emailed code, so a session proves the email. Phone verification (`fe-client-features.md`) is not built; its state would belong on the `client` pool user.
+**Phone/email verification state — not stored.** Pre-booking verification (`half-verified → fully verified` per `fe-client-features.md`) is enforced by reading `phone_verified` / `email_verified` claims from the Clerk session token at request time. We do not duplicate verification state on `clients`.
 
 #### `staff_users`
 
 | Column | Type | Constraints |
 |---|---|---|
 | id | uuid | PK |
-| auth_user_id | text | not null, unique per tenant — the `staff_auth_users` id, written by the invitation or seed that made the row |
+| clerk_user_id | text | unique, nullable — null until invite accepted |
 | email | text | unique, not null |
 | name | text | not null |
 | role | enum `staff_role` | not null — `superadmin`, `admin`, `instructor` |
@@ -303,7 +301,7 @@ All tables use `id uuid primary key default gen_random_uuid()` unless noted. Tim
 | invited_at, accepted_at | timestamptz | nullable |
 | created_at, updated_at | timestamptz | not null, default now() |
 
-**Indexes:** `(tenant_id, auth_user_id) unique`, `(tenant_id, email) unique`, `(role, status)`, GIN index on `granted_location_ids` for membership filters on workspace-scoped reads.
+**Indexes:** `(clerk_user_id) unique`, `(email) unique`, `(role, status)`, GIN index on `granted_location_ids` for membership filters on workspace-scoped reads.
 
 **Hard delete: never** (per §15c). Archive only. Email uniqueness enforces "one email = one staff account."
 
@@ -883,7 +881,7 @@ trial_pass_purchase_confirmed          # NEW — distinct from package_purchase_
 
 | Slug | Where the sender belongs |
 |---|---|
-| `welcome`, `password_reset` | Sign-in mail is the auth pools' own (`services/auth/sign-in-mail.ts`); wire these only if the studio wants its own. |
+| `welcome`, `password_reset` | Clerk owns both flows today; wire only if the studio wants its own. |
 | `class_booking_confirmed` | `services/bookings/book.ts`, after commit. |
 | `class_cancelled_*`, `pt_cancelled_*` | `services/bookings/cancel.ts` — the forfeited pair needs `reason_line` from `policy/evaluate-cancellation.ts:forfeitLine`. |
 | `admin_cancel_class`, `admin_cancel_pt`, `admin_cancel_workshop` | the admin cancel services. `admin_cancel_workshop` must not claim an automatic refund — `services/workshops/cancel.ts` marks bookings `refund_outcome='n_a'`. |
@@ -895,7 +893,7 @@ trial_pass_purchase_confirmed          # NEW — distinct from package_purchase_
 
 #### `email_log`
 
-id, template_slug (text), recipient_email (text), recipient_user_id (uuid, nullable), recipient_user_kind enum (`client`, `staff`), subject_rendered (text), body_rendered (text), status enum (`queued`, `sent`, `failed`, then Resend's webhook outcomes `delivery_delayed`, `delivered`, `bounced`, `complained`, `suppressed` — outcomes only move forward), smtp_message_id (text, nullable — the Resend email id the webhook matches on), smtp_response (text, nullable — last line of SMTP server response), error (text, nullable), queued_at, sent_at, outcome_at (nullable — when the webhook last moved status past `sent`).
+id, template_slug (text), recipient_email (text), recipient_user_id (uuid, nullable), recipient_user_kind enum (`client`, `staff`), subject_rendered (text), body_rendered (text), status enum (`queued`, `sent`, `failed`), smtp_message_id (text, nullable — RFC 5322 `Message-ID` header returned by Nodemailer), smtp_response (text, nullable — last line of SMTP server response), error (text, nullable), queued_at, sent_at.
 
 **Indexes:** `(recipient_user_id, queued_at desc)`, `(status)`, `(template_slug, queued_at desc)`.
 
@@ -998,17 +996,16 @@ Idempotency keys on `stripe-refund` jobs (booking_id) prevent double refund on r
 
 ## 6. External Integrations
 
-### 6a. Auth (Better Auth, self-hosted)
+### 6a. Clerk
 
-See `docs/adr/0004-self-hosted-auth-with-better-auth.md` for the decision.
-
-- **Three pools.** `client` (members, emailed one-time code), `staff` (studio portals, email + password + second factor), `platform` (the super portal). Each is its own Better Auth instance over its own tables (`db/schema/auth.ts`) on its own base path `/api/v1/auth/{pool}` — enforces §15b "staff and client spaces are independent." One `BETTER_AUTH_SECRET` signs all three.
-- **Bearer, not cookies.** A session travels as `Authorization: Bearer <token>`, returned in the `set-auth-token` header and held per origin by the frontend.
-- **The session carries its Tenant.** A `client` or `staff` session is stamped at sign-in with `claimed_tenant_id`; `clientAuth` / `staffAuth` refuse it at any other studio. The auth user tables carry no `tenant_id` — one person is one auth user with a row per studio.
-- **Identity glue.** `clients.auth_user_id` and `staff_users.auth_user_id` (both `NOT NULL`) link our rows to pool users. We own profile + role + relationships; the pool owns credentials, sessions and 2FA.
-- **No sign-up for staff, no webhooks.** A staff account exists because an invitation (`services/auth/invitations.ts`) or a seed wrote it, together with its `staff_users` row; the invitee sets a password through our own token link. A member's account and `clients` row are written together at registration (`services/clients/register.ts`).
-- **Force-logout on archive** (§15c) — archiving deletes the person's sessions at that studio (`endStaffSessionsAt` / `endClientSessionsAt`); the same account stays signed in at any other studio.
-- **Pre-booking verification gate.** `fe-client-features.md` requires `phone_verified` AND `email_verified` before booking. Not built: the emailed-code sign-in already proves the email; phone verification has no source yet.
+- **Two applications.** Separate publishable + secret keys, separate JWT issuers, separate user pools — enforces §15b "staff and client spaces are independent."
+- **Middleware split.** `/api/v1/me/*` uses `clerk-client.ts`; `/api/v1/portal/*` uses `clerk-staff.ts`. Each verifies its own JWT issuer; cross-app tokens are rejected.
+- **Identity glue.** Our DB stores `clerk_user_id` on `clients` and `staff_users`. Clerk owns auth state (password, sessions, MFA); we own profile + role + relationships.
+- **`user.created` webhook** upserts the `clients` (or `staff_users`) row on first sign-in. For staff, it pairs with a pending `staff_invitations` row by email.
+- **Profile edits** flow through Clerk (name, password). `user.updated` webhook syncs name/email back to our row.
+- **Force-logout on archive** (§15c) — admin-archive route calls Clerk's `revokeAllSessions(userId)` API.
+- **Staff invitations.** We own the `staff_invitations` row (token, role, audit). Clerk's invitation API handles email + accept-link UX. On accept, the webhook fires and we link `clerk_user_id` to the matching `staff_users.id`.
+- **Pre-booking verification gate.** `fe-client-features.md` requires `phone_verified` AND `email_verified` before any booking action. Read these directly from the Clerk session token claims on the request — no `clients` columns. The `/me/bookings/*` route handlers reject with `403 verification_required` when either claim is false; fe-client surfaces the appropriate verify CTA.
 
 ### 6b. Stripe
 
@@ -1037,7 +1034,7 @@ See `docs/adr/0004-self-hosted-auth-with-better-auth.md` for the decision.
 
 ### 6d. Mail (Resend)
 
-- **Transport.** `lib/mailer.ts` constructs one Resend client at boot from `RESEND_API_KEY`. One envelope address in the domain verified on Resend, the constant `noreply@reservetoday.app`, for members and staff alike. Every send passes through one in-process send gate (`lib/send-gate.ts`): paced under Resend's team rate limit, credential mail (codes, resets) ahead of everyday mail, bounded retries on rate-limit / 5xx / network failures, no retry on quota refusals, an idempotency key and `kind` / `template` / `tenant` tags on every message. A Tenant's display name and `Reply-To` are applied per send (`docs/md/mail-identity.md`). Under `NODE_ENV=test` a null transport accepts and discards every message.
+- **Transport.** `lib/mailer.ts` constructs one Resend client at boot from `RESEND_API_KEY`. Two envelope addresses, both in the domain verified on Resend: `MAIL_FROM_EMAIL` (`hello@reservetoday.app`) for members, `MAIL_FROM_PORTAL_EMAIL` (`portal@reservetoday.app`) for staff — `sendTemplatedEmail` picks by the recipient's `userKind`. A Tenant's display name and `Reply-To` are applied per send (`docs/md/mail-identity.md`). Under `NODE_ENV=test` a null transport accepts and discards every message.
 - **Provider swap** is confined to the `MailTransport` interface in `lib/mailer.ts`; callers see `sendMail()` only.
 - **Server-side rendering** via `services/notifications/render.ts`:
   - Parse template body for `{{variable}}` tokens
@@ -1135,7 +1132,7 @@ The "first paid" gate is implicit: the referee's first successful Stripe payment
 ### Seed (`db/seed/`)
 
 Run idempotently on fresh deployment:
-- **superadmin.ts** — reads `SUPERADMIN_EMAIL` env, creates `staff_users` row with role=`superadmin`, status=`active`, linked to a passwordless `staff` pool user (the operator sets a password via "Forgot password")
+- **superadmin.ts** — reads `SUPERADMIN_EMAIL` env, creates `staff_users` row with role=`superadmin`, status=`pending` (real activation via Clerk first-login)
 - **email-templates.ts** — inserts the 22 templates with default subject + body
 - **waiver.ts** — inserts the singleton waiver row with placeholder body
 - **policy.ts** — inserts singleton `global_policy` and `pt_booking_config` with sensible defaults

@@ -24,10 +24,9 @@ export const clients = pgTable(
   {
     tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-    // The member's `client_auth_users` id. Unique per Tenant, not per platform:
-    // one person may be a member of two studios, and gets an independent record
-    // at each.
-    authUserId: text('auth_user_id').notNull(),
+    // Unique per Tenant, not per platform — see migration 0035. One person may
+    // be a member of two studios, and gets an independent record at each.
+    clerkUserId: text('clerk_user_id').notNull(),
     email: text('email').notNull(),
     name: text('name').notNull(),
     phone: text('phone').notNull(),
@@ -36,8 +35,8 @@ export const clients = pgTable(
     status: clientStatusEnum('status').notNull().default('active'),
     suspendedAt: timestamp('suspended_at', { withTimezone: true }),
     // Soft-delete (superadmin-only). When set, the row is filtered out of every
-    // admin/client read path, and the member's sessions here end so they can't
-    // sign in. Restore clears it. Hard erase (GDPR) is a separate Purge
+    // admin/client read path; Clerk user is banned in parallel so the member
+    // can't log in. Restore clears both. Hard erase (GDPR) is a separate Purge
     // action that anonymises PII — not implemented in this slice.
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedByStaffId: uuid('deleted_by_staff_id'),
@@ -48,9 +47,9 @@ export const clients = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
-    tenantAuthUserUnique: unique('clients_tenant_auth_user_unique').on(
+    tenantClerkUserUnique: unique('clients_tenant_clerk_user_unique').on(
       table.tenantId,
-      table.authUserId,
+      table.clerkUserId,
     ),
     tenantEmailUnique: unique('clients_tenant_email_unique').on(table.tenantId, table.email),
     statusIdx: index('clients_status_idx').on(table.tenantId, table.status),
@@ -70,10 +69,9 @@ export const staffUsers = pgTable(
   {
     tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-    // The `staff_auth_users` id. Written by the invitation or seed that made the
-    // row, so a pending row has one too. Unique per Tenant, not per platform: the
-    // same person may be an instructor at one studio and an admin at another.
-    authUserId: text('auth_user_id').notNull(),
+    // Unique per Tenant, not per platform — see migration 0035. The same person
+    // may be an instructor at one studio and an admin at another.
+    clerkUserId: text('clerk_user_id'),
     email: text('email').notNull(),
     name: text('name').notNull(),
     firstName: text('first_name'),
@@ -101,9 +99,9 @@ export const staffUsers = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
-    tenantAuthUserUnique: unique('staff_users_tenant_auth_user_unique').on(
+    tenantClerkUserUnique: unique('staff_users_tenant_clerk_user_unique').on(
       table.tenantId,
-      table.authUserId,
+      table.clerkUserId,
     ),
     tenantEmailUnique: unique('staff_users_tenant_email_unique').on(table.tenantId, table.email),
     roleStatusIdx: index('staff_role_status_idx').on(table.tenantId, table.role, table.status),
@@ -138,10 +136,9 @@ export const staffInvitations = pgTable(
     token: text('token').notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     status: invitationStatusEnum('status').notNull().default('pending'),
-    // Null for a studio's first admin, invited from the super portal: the studio
-    // has no staff yet to have done the inviting, and the mail is signed by the
-    // studio itself (`inviterNameFor`).
-    invitedByStaffId: uuid('invited_by_staff_id').references(() => staffUsers.id, { onDelete: 'restrict' }),
+    invitedByStaffId: uuid('invited_by_staff_id')
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: 'restrict' }),
     staffUserId: uuid('staff_user_id').references(() => staffUsers.id, { onDelete: 'cascade' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     acceptedAt: timestamp('accepted_at', { withTimezone: true }),

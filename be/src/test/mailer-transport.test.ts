@@ -21,6 +21,12 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp } from './harness'
 
+// Set before the mailer is ever imported — it reads env once, at module load,
+// and the module is shared by every test in this file. `.env` is loaded by the
+// harness without overriding, so these win over whatever it holds.
+process.env.MAIL_FROM_EMAIL = 'hello@example.test'
+process.env.MAIL_FROM_PORTAL_EMAIL = 'portal@example.test'
+
 test(
   'the mailer under test is not a live transport',
   { skip: !integrationTestsEnabled && SKIP_REASON },
@@ -33,6 +39,21 @@ test(
         'null',
         'tests must not be able to deliver mail — see lib/mailer.ts',
       )
+    } finally {
+      await app.close()
+    }
+  },
+)
+
+test(
+  'a member and a staff member are written to from different addresses',
+  { skip: !integrationTestsEnabled && SKIP_REASON },
+  async () => {
+    const app = await startTestApp()
+    try {
+      const { PLATFORM_MAIL_FROM_EMAIL } = await import('../lib/mailer')
+      assert.equal(PLATFORM_MAIL_FROM_EMAIL.client, 'hello@example.test')
+      assert.equal(PLATFORM_MAIL_FROM_EMAIL.staff, 'portal@example.test')
     } finally {
       await app.close()
     }

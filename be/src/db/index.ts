@@ -44,7 +44,7 @@ const scope = new AsyncLocalStorage<TenantScope>()
  * `src/test/rls.test.ts` pins that down.
  *
  * The cost is that a request holds a pooled connection for its whole life,
- * including any Stripe or mail call inside it. That is the price of a database
+ * including any Stripe or Clerk call inside it. That is the price of a database
  * that can refuse a cross-tenant read; if it starts to bite, the fix is to move
  * the external call out of the request path, not to widen the context.
  */

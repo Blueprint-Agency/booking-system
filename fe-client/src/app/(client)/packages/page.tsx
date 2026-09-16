@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Loader2, MessageCircle } from "lucide-react";
-import { useMemberSession } from "@/lib/member-auth";
+import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { useAuthGate } from "@/components/auth/auth-gate";
 import { BuyButton } from "@/components/checkout/buy-button";
@@ -729,7 +729,7 @@ function TrialCard({
   isClaiming: boolean;
   onRequestPurchase: () => void;
 }) {
-  const { isSignedIn } = useMemberSession();
+  const { isSignedIn } = useUser();
   const { requireAuth, gate } = useAuthGate("buy a package");
   const credits = pkg.credits ?? 1;
   const isFree = Number(pkg.effective_price_sgd) === 0;
@@ -961,7 +961,7 @@ function CorporateSection({ items }: { items: ApiCorporatePackage[] }) {
 }
 
 function CorporateCard({ pkg }: { pkg: ApiCorporatePackage }) {
-  const { isSignedIn } = useMemberSession();
+  const { isSignedIn } = useUser();
   const { requireAuth, gate } = useAuthGate("buy a package");
   const api = useApi();
   const router = useRouter();

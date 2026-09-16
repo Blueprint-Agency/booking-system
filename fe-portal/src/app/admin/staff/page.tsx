@@ -564,25 +564,6 @@ export default function StaffPage() {
         <StaffEditDialog
           staff={editTarget}
           canEdit={canEditTarget(editTarget)}
-          // Signing out, resending and blocking are superadmin-only on the BE,
-          // with archive's own guards on who may block whom. Block and unblock
-          // close this dialog: archive has its confirm, and both refresh the list.
-          access={{
-            canRevoke: isSuperadmin,
-            canResend: isSuperadmin && editTarget.status !== "archived",
-            onBlock: canArchiveTarget(editTarget)
-              ? () => {
-                  setEditTarget(null);
-                  setArchiveTarget(editTarget);
-                }
-              : undefined,
-            onUnblock: canManageArchived(editTarget)
-              ? () => {
-                  setEditTarget(null);
-                  void handleUnarchive(editTarget);
-                }
-              : undefined,
-          }}
           onSubmit={handleEdit}
           onClose={() => setEditTarget(null)}
         />

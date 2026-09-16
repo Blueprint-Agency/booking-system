@@ -12,13 +12,6 @@ import {
   updateStaffProfile,
   type StaffProfileRow,
 } from '../../../services/auth/staff-archive'
-import {
-  listStaffSessions,
-  resendStaffInvitation,
-  resendStaffSetPassword,
-  signStaffOutEverywhere,
-} from '../../../services/auth/account-access'
-import { sessionView } from '../session-view'
 
 const inviteSchema = z.object({
   email: z.string().email().max(254),
@@ -153,12 +146,8 @@ const app = new Hono()
   })
   .post('/invitations/:id/resend', superadminOnly, zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    const inv = await resendStaffInvitation({
-      tenantId: tenantId(c),
-      invitationId: id,
-      actorStaffId: c.get('staffUserId'),
-      from: c.req.raw.headers,
-    })
+    const actor = c.get('staffUserId')
+    const inv = await svc.resendInvitation(tenantId(c), id, actor)
     c.set('auditTarget' as any, { table: 'staff_invitations', id })
     return c.json(serializeInvitation({ ...inv, invitedByStaffName: null }))
   })
@@ -212,7 +201,6 @@ const app = new Hono()
       tenantId: tenantId(c),
       targetStaffId: id,
       actorStaffId: actor,
-      from: c.req.raw.headers,
     })
     c.set('auditTarget' as any, { table: 'staff_users', id })
     return c.json(serializeStaff(row))
@@ -224,39 +212,9 @@ const app = new Hono()
       tenantId: tenantId(c),
       targetStaffId: id,
       actorStaffId: actor,
-      from: c.req.raw.headers,
     })
     c.set('auditTarget' as any, { table: 'staff_users', id })
     return c.json(serializeStaff(row))
-  })
-  // Sessions (#119): listed for admin and superadmin, like the staff list;
-  // ending them and re-mailing the set-password link are superadmin-only.
-  .get('/:id/sessions', zValidator('param', idParam), async c => {
-    const { id } = c.req.valid('param')
-    const sessions = await listStaffSessions(tenantId(c), id)
-    return c.json({ sessions: sessions.map(sessionView) })
-  })
-  .post('/:id/sessions/revoke', superadminOnly, zValidator('param', idParam), async c => {
-    const { id } = c.req.valid('param')
-    const revoked = await signStaffOutEverywhere({
-      tenantId: tenantId(c),
-      targetStaffId: id,
-      actorStaffId: c.get('staffUserId'),
-      from: c.req.raw.headers,
-    })
-    c.set('auditTarget' as any, { table: 'staff_users', id })
-    return c.json({ revoked })
-  })
-  .post('/:id/resend-invitation', superadminOnly, zValidator('param', idParam), async c => {
-    const { id } = c.req.valid('param')
-    const sent = await resendStaffSetPassword({
-      tenantId: tenantId(c),
-      targetStaffId: id,
-      actorStaffId: c.get('staffUserId'),
-      from: c.req.raw.headers,
-    })
-    c.set('auditTarget' as any, { table: 'staff_users', id })
-    return c.json({ sent })
   })
   .delete('/:id', superadminOnly, zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')

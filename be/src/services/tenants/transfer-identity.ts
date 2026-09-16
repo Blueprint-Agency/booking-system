@@ -17,7 +17,7 @@
  *    (`promo_code_products.product_id`, `audit_log.target_id`) in a single pass
  *    — with no foreign-key metadata to keep in step with the schema.
  *  - **A uuid that is not a row id is left alone.** Values are replaced only if
- *    they are *in* the map, so a `tenant_id`, an `auth_user_id` or a piece of free text
+ *    they are *in* the map, so a `tenant_id`, a Clerk id or a piece of free text
  *    passes through untouched. The map is built from `id` columns alone.
  *
  * What deliberately does **not** change is anything a member holds: booking

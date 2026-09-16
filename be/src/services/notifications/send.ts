@@ -42,9 +42,6 @@ export type TemplateSlug =
   | 'client_invite'
   | 'checkin_nag'
   | 'referral_credited'
-  | 'sign_in_code'
-  | 'staff_two_factor_code'
-  | 'staff_password_reset'
 
 export interface TemplateRecipient {
   email: string
@@ -60,16 +57,7 @@ export interface SendInput {
   slug: TemplateSlug
   recipient: TemplateRecipient
   variables: Record<string, string>
-  /**
-   * Variables that are credentials — a sign-in code, a reset link. They are
-   * sent, but the `email_log` copy shows them redacted: a code hashed at rest in
-   * the auth tables and readable in plain text in the mail log is not hashed at
-   * rest.
-   */
-  secretVariables?: readonly string[]
 }
-
-const REDACTED = '[redacted]'
 
 /**
  * Look up a template by (tenant, slug), render `{{var}}` substitutions, send
@@ -83,7 +71,7 @@ const REDACTED = '[redacted]'
  * failure: sending another studio's wording is worse than sending nothing.
  */
 export async function sendTemplatedEmail(input: SendInput): Promise<void> {
-  const { tenantId, slug, recipient, variables, secretVariables = [] } = input
+  const { tenantId, slug, recipient, variables } = input
   const [tpl] = await db
     .select()
     .from(emailTemplates)
@@ -93,8 +81,6 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
 
   const subject = renderTemplate(tpl.subject, variables)
   const body = renderTemplate(tpl.bodyHtml, variables)
-  const logged = { ...variables }
-  for (const name of secretVariables) if (name in logged) logged[name] = REDACTED
 
   const [logRow] = await db
     .insert(emailLog)
@@ -104,8 +90,8 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
       recipientEmail: recipient.email,
       recipientUserId: recipient.userId ?? null,
       recipientUserKind: recipient.userKind,
-      subjectRendered: renderTemplate(tpl.subject, logged),
-      bodyRendered: renderTemplate(tpl.bodyHtml, logged),
+      subjectRendered: subject,
+      bodyRendered: body,
       status: 'queued',
     })
     .returning()
@@ -114,18 +100,16 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
   try {
     // The studio's identity, not the platform's: the envelope address is shared
     // and authenticated, the display name and Reply-To are this tenant's own.
-    // The log row's id is the idempotency key, so a retry at the send gate can
-    // never deliver this message twice.
+    // `userKind` picks which of the platform's two addresses that envelope is —
+    // a member's mail comes from `hello@`, a staff member's from `portal@`.
     const identity = await tenantMailIdentity(tenantId)
     const result = await sendMail({
       to: recipient.email,
       subject,
       html: body,
-      slug,
-      tenantId,
-      idempotencyKey: logRow.id,
       fromName: identity.fromName,
       replyTo: identity.replyTo,
+      audience: recipient.userKind,
     })
     await db
       .update(emailLog)

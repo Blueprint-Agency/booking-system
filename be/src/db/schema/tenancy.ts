@@ -48,6 +48,10 @@ export const tenants = pgTable(
     // IANA zone. Drives every "daily at 01:00" job — "Asia/Singapore" is only
     // right for tenant #1.
     timezone: text('timezone').notNull().default('Asia/Singapore'),
+    // One Clerk Organization per tenant in each of the two Clerk applications
+    // (client + portal). Null until the org is provisioned.
+    clerkClientOrgId: text('clerk_client_org_id').unique(),
+    clerkPortalOrgId: text('clerk_portal_org_id').unique(),
     status: tenantStatusEnum('status').notNull().default('active'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

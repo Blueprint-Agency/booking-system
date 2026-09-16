@@ -5,18 +5,12 @@ import { rateLimiter } from 'hono-rate-limiter'
 import { sql } from 'drizzle-orm'
 import { db } from './db'
 import { originAllowed } from './lib/allowed-origins'
-import { errorBoundary, onAppError } from './middleware/error'
+import { errorBoundary } from './middleware/error'
 import { requestId } from './middleware/request-id'
 import { requestLogger } from './middleware/logger'
 import { resolveTenant } from './middleware/tenant'
 
 import { requireActiveTenant } from './middleware/require-active-tenant'
-import {
-  AUTH_BASE_PATH,
-  authPools,
-  type AuthPool,
-  type AuthPoolHandler,
-} from './services/auth/better-auth'
 
 import publicRoutes from './routes/public'
 import clientRoutes from './routes/client'
@@ -29,17 +23,17 @@ const app = new Hono()
 app.use('*', requestId)
 app.use('*', requestLogger)
 app.use('*', errorBoundary)
-app.onError(onAppError)
 app.use('*', secureHeaders())
 
 // CORS — every tenant subdomain in this environment, plus the single-valued
 // origins that predate tenancy. A tenant is created by inserting a row, so its
 // origin cannot be listed in advance; `TENANT_ORIGIN_PATTERNS` carries the
 // wildcards and lib/origin.ts does the matching, one label deep. The same
-// allowlist backs the auth pools' trusted origins and the public-route slug
-// validation — see lib/allowed-origins.ts.
+// allowlist backs the Clerk `azp` check and the public-route slug validation —
+// see lib/allowed-origins.ts.
 //
-// Sessions travel as bearer tokens, not cookies (services/auth/better-auth.ts).
+// Credentials required because Clerk uses cookies on the auth handshake; the
+// frontend then carries the bearer JWT.
 app.use(
   '*',
   cors({
@@ -53,12 +47,7 @@ app.use(
       'X-Impersonation-Grant',
       'X-Request-Id',
       'X-Tenant-Slug',
-      'X-Two-Factor-Challenge',
     ],
-    // Better Auth hands a new session's bearer token back in this header, and a
-    // cross-origin page cannot read a header CORS does not expose. The
-    // second-factor challenge travels the same way (`two-factor-challenge.ts`).
-    exposeHeaders: ['set-auth-token', 'set-two-factor-challenge'],
   }),
 )
 
@@ -107,30 +96,23 @@ app.use('/api/v1/platform/*', authedLimiter)
 //   - the slug lookup reads only `tenants`, which carries no policy — and it
 //     sits on every request the frontends make, at a budget of 6,000/min, so
 //     wrapping it would buy a transaction per page view for nothing.
-//   - the payment provider's webhook resolves its OWN tenant, off the signed
-//     body's payment intent (services/billing/webhook-handler.ts). Opening a
-//     context here would wrap the real one in an unrelated transaction and hold
-//     two pooled connections for the length of a call to the provider — and,
-//     worse, would give an event that names no tenant a tenant anyway. The mail
-//     provider's webhook is exempt for the same reason: it reads its tenant off
-//     the event's signed tag (services/notifications/delivery-outcomes.ts).
+//   - both webhooks resolve their OWN tenant, off the signed body: the payment
+//     provider's off the payment intent (services/billing/webhook-handler.ts),
+//     Clerk's off the organization on the event
+//     (services/auth/webhook-tenant.ts). Opening a tenant-#1 context here would
+//     wrap the real one in an unrelated transaction and hold two pooled
+//     connections for the length of a call to the provider — and, worse, would
+//     give an event that names no tenant a tenant anyway.
 //   - the super portal's own branch is cross-tenant by definition: it lists
 //     every studio and creates the ones that do not exist yet, so there is no
 //     single tenant to resolve and no honest context to open. Its gate is
-//     `requirePlatformAdmin`, which reads no tenant at all. Its auth pool is
-//     exempt for the same reason: the super portal signs in on no studio.
-//   - a staff password-reset link. It is opened from an inbox, so it carries
-//     no `X-Tenant-Slug` and no `Origin`; it only checks the token and
-//     redirects to the portal page that sets the password, which does run
-//     inside a context. The mail was sent from inside one when it was asked for.
+//     `requirePlatformAdmin`, which reads no tenant at all.
 const TENANT_CONTEXT_EXEMPT = (path: string) =>
   path === '/api/v1/healthz' ||
   path === '/api/v1/webhooks/stripe' ||
-  path === '/api/v1/webhooks/resend' ||
+  path === '/api/v1/webhooks/clerk' ||
   path === '/api/v1/platform' ||
   path.startsWith('/api/v1/platform/') ||
-  path.startsWith(`${AUTH_BASE_PATH.platform}/`) ||
-  path.startsWith(`${AUTH_BASE_PATH.staff}/reset-password/`) ||
   isTenantLookup(path)
 
 app.use('/api/v1/*', (c, next) =>
@@ -168,14 +150,6 @@ app.route('/api/v1/me', clientRoutes)
 app.route('/api/v1/portal', portalRoutes)
 app.route('/api/v1/platform', platformRoutes)
 app.route('/api/v1/webhooks', webhookRoutes)
-
-// The three Better Auth pools (services/auth/better-auth.ts), each answering on
-// its own base path, mounted the way Better Auth's Hono integration describes.
-// `client` and `staff` run inside the Tenant context `resolveTenant` opened, so
-// the codes they mail are worded and signed by that studio.
-for (const [pool, auth] of Object.entries(authPools) as Array<[AuthPool, AuthPoolHandler]>) {
-  app.on(['GET', 'POST'], `${AUTH_BASE_PATH[pool]}/*`, c => auth.handler(c.req.raw))
-}
 
 // Unmatched routes — consistent JSON shape instead of Hono's default text 404.
 app.notFound(c => c.json({ error: 'not_found' }, 404))

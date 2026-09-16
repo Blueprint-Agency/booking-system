@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
-import { getMemberToken, useMemberSession } from "@/lib/member-auth";
+import { useAuth, useUser } from "@clerk/nextjs";
 import { useAuthGate } from "@/components/auth/auth-gate";
 import { fetchApi } from "@/lib/api-url";
 import { cn } from "@/lib/utils";
@@ -53,8 +53,8 @@ export function BuyButton({
   loadingLabel?: string;
 }) {
   const router = useRouter();
-  const getToken = getMemberToken;
-  const { isSignedIn } = useMemberSession();
+  const { getToken } = useAuth();
+  const { isSignedIn } = useUser();
   const { requireAuth, gate } = useAuthGate(context);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

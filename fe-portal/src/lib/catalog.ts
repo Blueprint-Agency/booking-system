@@ -10,7 +10,7 @@
 //
 // Takes the backend handle as a parameter rather than reaching for React
 // context, following `ManualPayrollDialog` — which also makes these callable
-// without a session.
+// without a Clerk session.
 
 import type { Api } from "@/lib/api";
 

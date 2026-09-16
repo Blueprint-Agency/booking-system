@@ -715,7 +715,7 @@ Two staff role types in the system. (The `instructor` role is reserved in the sc
 Two states: **Active** and **Blocked**.
 
 - **Active** — default. Client can browse, book, and cancel normally.
-- **Blocked** — client is locked out of the booking app entirely (their sessions at the studio ended, refused a new one, and rejected by `requireActiveClient`) and hidden from the default directory listing. Existing upcoming bookings are unaffected (not auto-cancelled).
+- **Blocked** — client is locked out of the booking app entirely (banned in Clerk, sessions revoked, and rejected by `requireActiveClient`) and hidden from the default directory listing. Existing upcoming bookings are unaffected (not auto-cancelled).
 
 Superadmins block from the client profile ("Block") and reverse it from the banner on the same page ("Unblock"). Blocked clients are reachable via the superadmin-only **Blocked** filter on the clients list. No reason note required (internal action).
 

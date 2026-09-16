@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
+import clerk from './clerk'
 import stripe from './stripe'
-import resend from './resend'
 
-const app = new Hono().route('/', stripe).route('/', resend)
+const app = new Hono().route('/', clerk).route('/', stripe)
 
 export default app

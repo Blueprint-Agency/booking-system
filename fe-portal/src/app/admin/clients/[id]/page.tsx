@@ -20,7 +20,6 @@ import { HomeLocationDialog } from "@/components/clients/home-location-dialog";
 import { BoundInstructorDialog } from "@/components/clients/bound-instructor-dialog";
 import { PackageSetBalanceDialog } from "@/components/clients/package-set-balance-dialog";
 import { RefundDialog } from "@/components/clients/refund-dialog";
-import { SessionsPanel } from "@/components/access/sessions-panel";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { formatDate, formatRelative } from "@/lib/formatters";
@@ -310,15 +309,6 @@ export default function ClientProfilePage({
               </Button>
             )}
           </header>
-
-          {/* Reading is open to an admin; ending sessions, like blocking, is a
-              superadmin's (every non-GET under /clients is). Remounted by the
-              block state: blocking ends their sessions too. */}
-          <SessionsPanel
-            path={`/portal/admin/clients/${id}`}
-            canRevoke={isSuperadmin}
-            refreshKey={profile.deleted_at}
-          />
 
           <section>
             <header className="mb-3 flex items-center justify-between">

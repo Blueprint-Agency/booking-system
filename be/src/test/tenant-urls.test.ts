@@ -14,8 +14,8 @@ import {
  *
  * The platform used to have one `PORTAL_ORIGIN` and one `CLIENT_ORIGIN`, so it
  * had one studio's two hostnames and mailed them to everybody: staff invited to
- * the second studio were sent into the first studio's portal, where their
- * invitation does not exist; members of the second
+ * the second studio were sent into the first studio's portal, where their Clerk
+ * organization does not match and the token is refused; members of the second
  * studio were sent to the first studio's account page, which they cannot sign
  * into. Both are silent — nothing fails until somebody clicks.
  *
@@ -71,7 +71,6 @@ describe('per-studio URLs', { skip: integrationTestsEnabled ? false : SKIP_REASO
         name: 'Urls Inviter',
         role: 'superadmin',
         status: 'active',
-        authUserId: `auth_urls_inviter_${Date.now()}`,
       })
       .returning()
     inviterStaffId = inviter!.id
@@ -80,7 +79,7 @@ describe('per-studio URLs', { skip: integrationTestsEnabled ? false : SKIP_REASO
       .insert(schema.clients)
       .values({
         tenantId: two.id,
-        authUserId: `auth_urls_member_${Date.now()}`,
+        clerkUserId: `user_urls_${Date.now()}`,
         email: MEMBER_EMAIL,
         name: 'Urls Member',
         phone: '+6580000000',
@@ -127,7 +126,6 @@ describe('per-studio URLs', { skip: integrationTestsEnabled ? false : SKIP_REASO
     if (memberId) await harness.db.delete(schema.clients).where(eq(schema.clients.id, memberId))
     for (const email of [INVITER_EMAIL, INVITEE_EMAIL]) {
       await harness.db.delete(schema.staffUsers).where(eq(schema.staffUsers.email, email))
-      await harness.db.delete(schema.staffAuthUsers).where(eq(schema.staffAuthUsers.email, email))
     }
     await harness.close()
   })
@@ -176,8 +174,8 @@ describe('per-studio URLs', { skip: integrationTestsEnabled ? false : SKIP_REASO
     assert.notEqual(link, invites.buildSignUpUrl(portalHost(one.slug), 'a+b@example.test', 'tok en'))
     // A trailing slash on the origin must not double up into `//signup`.
     assert.equal(
-      invites.buildSignUpUrl(`${portalHost(two.slug)}/`, 'x@example.test', 't'),
-      `${portalHost(two.slug)}/signup?invite_email=x%40example.test&invite_token=t`,
+      invites.buildSignUpUrl(`${portalHost(two.slug)}/`, 'x@example.test'),
+      `${portalHost(two.slug)}/signup?invite_email=x%40example.test`,
     )
   })
 
@@ -189,10 +187,7 @@ describe('per-studio URLs', { skip: integrationTestsEnabled ? false : SKIP_REASO
       invitedByStaffId: inviterStaffId,
     })
 
-    // Read off the message, not the log: the link sets a password, so `email_log`
-    // keeps it redacted.
-    const { discardedMail } = await import('../lib/mailer')
-    const body = [...discardedMail].reverse().find(m => m.to === INVITEE_EMAIL)?.html ?? ''
+    const body = await bodyOf('admin_invite', INVITEE_EMAIL)
     assert.ok(
       body.includes(`${portalHost(two.slug)}/signup?invite_email=`),
       "the sign-up link is on the inviting studio's own portal",

@@ -19,7 +19,7 @@ Turn the single-tenant booking system into a productized multi-tenant SaaS
 - **1 client app** — all tenants' members, at `{tenant}.reservetoday.app`
 
 When the super portal creates a tenant, its portal + client URLs work **instantly** —
-no new deployment, no DNS change, no new auth account.
+no new deployment, no DNS change, no new Clerk account.
 
 ## Core mental model (the key correction)
 
@@ -31,13 +31,13 @@ the URLs resolve; `tenant_id` scoping makes the data isolate. Never infra-per-te
 | Topic | Decision |
 |---|---|
 | Architecture | Single shared deployment per app, single Postgres, `tenant_id` column scoping, with Postgres RLS as the fail-closed backstop. ⚠️ RLS only works if the app stops connecting as the table owner — see "Verification pass". Instance-per-tenant rejected. |
-| Auth | **Better Auth, self-hosted, 3 pools** (client, staff, platform) on our own tables; count never grows with tenants. A tenant is not an auth object: a studio-pool session carries the Tenant it signed in on (`claimed_tenant_id`), and the auth user tables carry no `tenant_id`. See `docs/adr/0004-self-hosted-auth-with-better-auth.md`. |
+| Clerk | **2 applications forever** (client + portal), each with dev + prod instances = the 4 "projects" already in the dashboard today. Nothing to restructure; count never grows with tenants. Each tenant = a **Clerk Organization** in both apps; org ID maps to `tenant_id`. Satellite domains NOT needed (same root domain). App-per-tenant ("Clerk for Platforms") rejected — sales-gated, wrong use case. |
 | Subdomain scheme | `{tenant}.reservetoday.app` → fe-client via `*.reservetoday.app`; `{tenant}.portal.reservetoday.app` → fe-portal via `*.portal.reservetoday.app`. **The label order is forced, not a preference:** RFC 4592 requires the asterisk to be the *leftmost* label, so today's `portal.{tenant}.…` shape would need `portal.*.reservetoday.app` — not a legal DNS record, therefore impossible to wildcard. ⚠️ **The live production portal URL must therefore change** (Phase 5). The fe-client production URL `{slug}.reservetoday.app` already matches the target scheme and does **not** change. |
 | Frontends | Stay on **Vercel** (Platforms pattern: one deployment, Host-header middleware). Moving FEs to the VPS gains nothing — rejected. |
 | DNS | **Option A (preferred): move `reservetoday.app` nameservers from Cloudflare to Vercel** to get true wildcards. Vercel DNS is a full DNS host — recreate `api` A record + MX/TXT there. Fallback Option B (if NS can't move): keep Cloudflare, no wildcard, super portal makes 2 API calls per tenant (Cloudflare CNAME + Vercel Domains API). |
 | Backend | Stays on Hostinger VPS at `api.reservetoday.app`, as an A record in Vercel DNS. ✅ **No cert work needed** — Traefik on bpvps2 already issues a genuine Let's Encrypt cert via its `le-tls` resolver (TLS-ALPN-01), and `api*` records are already DNS-only *on purpose*, because that challenge cannot complete through a proxied host. Since the resolver needs only an A record, the NS move does not threaten the cert. |
 | Cloudflare for SaaS | Only needed later, if a tenant brings their **own** custom domain (100 free hostnames, then ~$0.10/mo). Not needed for our subdomains. |
-| Per-tenant auth branding | Sign-in screens are our own UI on each studio's hostname, and sign-in mail is worded by the studio whose context is open. |
+| Per-tenant auth branding | Known Clerk limitation: tenant subdomains authenticate fine, but per-tenant sign-in branding / vanity auth domains aren't supported on standard plans. Acceptable for v1 — theme our own UI around Clerk components. |
 | Stripe | Per-tenant via **Stripe Connect** (payouts to each studio) rather than one shared account. |
 
 ## Validation record (2026-08-31, primary sources)
@@ -53,6 +53,7 @@ Every pillar of this plan was re-checked against vendor documentation. All confi
 | `{tenant}.portal.…` ordering is mandatory | ✅ Confirmed — wildcard asterisk must be the leftmost label | RFC 4592 §2.1.1 |
 | Root-domain env var + suffix-strip is the right slug algorithm | ✅ Confirmed — it is Vercel's own reference implementation (`hostname.endsWith('.'+rootDomain)` → `hostname.replace(...)`) | vercel.com/docs/platforms/examples/multi-tenant-template |
 | `{tenant}.localhost:PORT` is the right local-dev shape | ✅ Confirmed — Vercel's template ships exactly this | same |
+| Clerk: 2 apps forever, tenant = Organization | ✅ Confirmed | clerk.com/docs/guides/how-clerk-works/multi-tenant-architecture |
 | Stripe Connect is the right payments model | ✅ Confirmed — "Build a SaaS platform: Provide platform services to businesses that collect payments from their own customers" | docs.stripe.com/connect |
 
 **Three corrections this validation produced:**
@@ -95,10 +96,12 @@ the tenant with a direct DB call from the proxy, and that pattern was carried ac
 exposes a public, cacheable slug-resolution route and the proxy calls it — which makes the cache
 and the backend-outage behaviour load-bearing, since it sits on every request.
 
-**3. Webhooks cannot resolve a tenant from the hostname.** A webhook hits one endpoint on a
-hostname carrying no tenant, so something in its signed body has to route it. The payment
-provider's routes off the payment intent (migration 0034). The auth webhook this item was first
-written about no longer exists — auth is self-hosted and writes our rows directly (ADR 0004).
+**3. Webhooks cannot resolve a tenant, and it needs a decision.** The Clerk webhook is one
+endpoint serving both Clerk apps; its own comments note the payload cannot identify the app, only
+the signing secret can. Multi-tenancy repeats that a level deeper: `user.created` carries no
+organization, yet the handler inserts a row that will need a `tenant_id`. Options are organization
+events instead of user events, tenant in sign-up metadata, or an endpoint per tenant — they differ
+for a member of two studios, so the choice must be recorded rather than defaulted into.
 
 **4. Policies and context must land in the same change.** The moment RLS is enabled, every query
 needs a tenant setting present or `current_setting` errors and the app returns nothing. HTTP-level
@@ -171,7 +174,7 @@ longer names a second host — see the Phase 5 checklist for the off-repo remnan
 - **The API hostname never contains the tenant.** One backend serves everyone at
   `api.reservetoday.app`, so its own Host header carries no tenant information. The frontend
   must send it: `proxy.ts` resolves the slug and forwards `X-Tenant-Slug` on every API call;
-  the BE validates it against the session's Tenant claim on authenticated routes and against `Origin`
+  the BE validates it against the Clerk org claim on authenticated routes and against `Origin`
   on public ones. **Never trust an inbound `X-Tenant-*` header** — strip and overwrite it on
   every path through the proxy, per Vercel's explicit warning.
 - **Reserve slugs from day one.** Block `admin`, `api`, `portal`, `www`, `dev`, `staging`,
@@ -206,7 +209,7 @@ isolation bugs surface the day they are written, not the day tenant #2 signs up.
       production outage.** Recorded here because the next zone migration must not repeat it.
       Reconciled retroactively on 2026-08-31 from a Cloudflare zone export, since the deactivated
       zone retains its records: 18 existed, 2 were recreated by hand during the outage, 4 are
-      covered by the `*` ALIAS, and **12 were lost** — 10 auth-provider custom-domain CNAMEs, the `cdn`
+      covered by the `*` ALIAS, and **12 were lost** — 10 Clerk custom-domain CNAMEs, the `cdn`
       R2 host, and `_dmarc`. Full reconciliation and the constraints it produced are in
       `docs/adr/0001-reservetoday-app-on-vercel-nameservers.md`.
 
@@ -238,8 +241,8 @@ isolation bugs surface the day they are written, not the day tenant #2 signs up.
   > The general rule, which the sibling zone learned the hard way too (bpvps2 Stalwart README:
   > `blueprintdigital.my` had no MX for three weeks): **on any zone migration, inventory first,
   > recreate second, switch NS last.**
-- [x] Verify remaining UNVERIFIED items in `research-multi-tenancy.md`. *Vercel wildcard
-      plan-gating is resolved — all plans. The auth-vendor items are moot since ADR 0004.*
+- [ ] Verify remaining UNVERIFIED items in `research-multi-tenancy.md` (Clerk Platform API
+      surface, current Clerk pricing). *Vercel wildcard plan-gating is now resolved — all plans.*
 
 ### Spike 1 — wildcard precedence across two projects — ✅ **RESOLVED 2026-08-31: precedence holds**
 
@@ -315,7 +318,7 @@ bypass), and that decision makes staging publicly reachable — it needs to be a
 
 ✅ **Settled.** Both projects now report `ssoProtection: null`, and the staging tenant hostnames
 answer 200/307 with no SSO hop. Staging is deliberately public: it is where studio staff and
-testers are meant to look, and it runs on its own database and auth pools, so a public
+testers are meant to look, and it now runs on its own Clerk development instances, so a public
 staging URL exposes no production account.
 
 ✅ **Resolved: branch-tracked wildcards work.** The spike's test used `vercel alias set`, which
@@ -349,7 +352,7 @@ retired.**
 ## Implementation checklist (in order)
 
 ### Phase 1 — Data model (the big one)
-- [ ] `tenants` table (slug, name, timezone, status) + `tenant_settings`
+- [ ] `tenants` table (slug, name, timezone, Clerk org IDs, status) + `tenant_settings`
       (branding, copy, mail-from, theme, waiver text).
 - [ ] Reserved-slug list enforced at tenant creation (`admin`, `api`, `portal`, `www`, `dev`,
       `staging`, `app`, `mail`, `clerk`, `assets`).
@@ -386,22 +389,24 @@ retired.**
       unknown slug → 404. Delete inbound `x-tenant-*` headers on **every** path, including
       paths that skip resolution.
 - [ ] FE forwards `X-Tenant-Slug` on every BE call; BE never infers tenant from its own Host.
-- [x] BE middleware: resolve tenant from `X-Tenant-Slug`, validated against the session's
-      Tenant claim (authenticated routes) or `Origin` (public routes) → attach to context.
-      **Done (#65, #113)** — see `docs/md/spec-tenant-resolution.md`.
+- [x] BE middleware: resolve tenant from `X-Tenant-Slug`, validated against the Clerk org
+      claim (authenticated routes) or `Origin` (public routes) → attach to context.
+      **Done (#65)** — see `docs/md/spec-tenant-resolution.md`.
 - [x] CORS becomes pattern-based (`*.reservetoday.app`, `*.dev.reservetoday.app`) instead of
-      single-valued `PORTAL_ORIGIN`/`CLIENT_ORIGIN`.
-      **Done (#65)** — new `TENANT_ORIGIN_PATTERNS`, matched by `be/src/lib/origin.ts`, which also
-      feeds the auth pools' trusted origins. `PORTAL_ORIGIN` / `CLIENT_ORIGIN` are deleted
-      outright, along with the per-studio links that were built from them.
-- [x] Enforce studio membership on authenticated routes. **Done** — a studio-pool session is
-      stamped with its Tenant at sign-in and refused anywhere else, for staff and members alike
-      (#113; ADR 0004).
-- [x] **Webhook tenant resolution decided and recorded** (verification-pass item 3): an event
-      that names no studio is a logged no-op, never a guess. `docs/md/spec-tenant-resolution.md`.
-- [x] **One person, two studios.** `clients` / `staff_users` identity and `email` uniques
-      widened to `(tenant_id, …)` in migration 0035 — the platform-wide version was the same
-      sentence as "nobody may belong to two studios". `auth_user_id` follows the same shape.
+      single-valued `PORTAL_ORIGIN`/`CLIENT_ORIGIN`; same for `CLERK_STAFF_AUTHORIZED_PARTIES`.
+      **Done (#65)** — new `TENANT_ORIGIN_PATTERNS`, matched by `be/src/lib/origin.ts`. Clerk's
+      own `authorizedParties` is exact-match and cannot express a per-tenant subdomain, so the
+      `azp` claim is checked against the same allowlist instead. `PORTAL_ORIGIN` / `CLIENT_ORIGIN`
+      are now deleted outright, along with the per-studio links that were built from them.
+- [x] Map Clerk Organization ↔ `tenant_id`; enforce org membership on portal routes.
+      **Done (#65)**, with a one-way rollout seam: enforcement turns on for a tenant the moment
+      its org id is written to its row. Provisioning the organizations is still #58.
+- [x] **Webhook tenant resolution decided and recorded** (verification-pass item 3). The Clerk
+      Organization is the authority; `user.*` events are identity only; an event that names no
+      studio is a logged no-op, never a guess. `docs/md/spec-tenant-resolution.md`.
+- [x] **One person, two studios.** `clients` / `staff_users` uniques on `clerk_user_id` and
+      `email` widened to `(tenant_id, …)` in migration 0035 — the platform-wide version was the
+      same sentence as "nobody may belong to two studios".
 - [ ] Cache the slug→tenant lookup (short TTL, bust on write) — it runs on every request.
 
 ### Phase 3 — De-hardcode branding + tenant-aware jobs
@@ -433,9 +438,9 @@ retired.**
       Explicit `*.dev` and `*.portal.dev` CNAMEs were required: `api.dev` already made `dev` a node
       in the zone, and RFC 4592 stops a wildcard reaching past a node that exists.
 - [x] **Portal URL flip:** `portal.{slug}.reservetoday.app` →
-      `{slug}.portal.reservetoday.app`, a 301 with path and query preserved. Auth needed
-      nothing: the new host was already covered by the portal wildcard, and a redirect never
-      reaches the API. fe-client's URL is unchanged, and
+      `{slug}.portal.reservetoday.app`, a 301 with path and query preserved. Clerk needed
+      nothing: the new host was already covered by the portal wildcard, already authenticated by
+      the portal instance, and a redirect never reaches the API. fe-client's URL is unchanged, and
       `PORTAL_ORIGIN` is gone. **Staff comms still owed** — the old host had already been 404ing,
       so the redirect is a repair as much as a move.
 - [x] Rename BE staging host `api.staging.…` → `api.dev.…`. `BOOKING_FQDN` names only `api.dev`,
@@ -455,15 +460,15 @@ retired.**
 
 ### Phase 6 — Super portal (the easy part, last)
 - [x] Platform-admin-gated section in fe-portal at `admin.portal.…`: create tenant
-      (DB row + settings + email copy + an invited first admin, in one transaction; the
-      invitation mails after the commit), list/suspend tenants.
+      (DB row + settings + Clerk org in both apps + invite first admin, atomically —
+      the Clerk half is compensated on any failure), list/suspend tenants.
       Backend: `/api/v1/platform/*`, exempt from tenant resolution because it is
       cross-tenant by definition.
 - [x] Migrate the existing studio itself to be tenant #1.
 - [ ] Billing overview. Deferred — there is no per-tenant billing to overview yet.
 
-**The gate is not a staff role.** A `platform` pool session is required, and
-`PLATFORM_ADMIN_EMAILS` alone is the allowlist, checked against that session's
+**The gate is not a staff role.** `PLATFORM_ADMIN_EMAILS` (plus `SUPERADMIN_EMAIL`,
+always) is the allowlist, checked against the signed-in Clerk account's primary
 email. `staff_users.role = 'superadmin'` says what someone may do *inside one
 studio*; a studio's own superadmin must not be able to suspend another studio, so
 platform administration deliberately lives outside the database. Refusals answer

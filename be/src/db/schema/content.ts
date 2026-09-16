@@ -55,8 +55,6 @@ export const emailLog = pgTable(
     error: text('error'),
     queuedAt: timestamp('queued_at', { withTimezone: true }).notNull().defaultNow(),
     sentAt: timestamp('sent_at', { withTimezone: true }),
-    /** When Resend's webhook last moved `status` past `sent` — delivered, bounced and so on. */
-    outcomeAt: timestamp('outcome_at', { withTimezone: true }),
   },
   table => ({
     recipientQueuedIdx: index('email_log_recipient_queued_idx').on(table.tenantId, table.recipientUserId, table.queuedAt),

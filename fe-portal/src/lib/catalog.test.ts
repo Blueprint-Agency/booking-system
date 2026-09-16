@@ -7,7 +7,7 @@ import type { Api } from "./api";
 beforeEach(() => clearCatalogCache());
 
 // The module takes the backend handle as a parameter, so a stub handle is all
-// this needs — no session, no React.
+// this needs — no Clerk session, no React.
 function stubApi(instructors: unknown[]): Api {
   return {
     get: async (path: string) => {

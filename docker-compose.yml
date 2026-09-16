@@ -1,8 +1,3 @@
-# One shared stack for every worktree. Without a pinned project name Compose
-# derives it from the directory, so a second worktree tries to create a second
-# container using the same container_name and collides with the running one.
-name: reservetoday
-
 services:
   db:
     image: postgres:16
@@ -21,6 +16,4 @@ services:
       start_period: 5s
 
 volumes:
-  # Pinned so it is not prefixed into reservetoday_reservetoday_pgdata.
   reservetoday_pgdata:
-    name: reservetoday_pgdata

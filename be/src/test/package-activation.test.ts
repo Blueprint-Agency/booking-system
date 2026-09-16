@@ -70,7 +70,7 @@ describe('package activation', { skip: integrationTestsEnabled ? false : SKIP_RE
         email: `member-${n}@activation.test`,
         name: `Activation Member ${n}`,
         phone: '+6580000000',
-        authUserId: `auth_activation_member_${n}`,
+        clerkUserId: `clerk_activation_member_${n}`,
       })
       .returning()
     clientIds.push(client!.id)
@@ -161,7 +161,7 @@ describe('package activation', { skip: integrationTestsEnabled ? false : SKIP_RE
         name: 'Activation Instructor',
         role: 'instructor',
         status: 'active',
-        authUserId: 'auth_activation_instructor',
+        clerkUserId: 'clerk_activation_instructor',
       })
       .returning()
     staffId = staff!.id

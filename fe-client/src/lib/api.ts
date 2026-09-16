@@ -3,15 +3,16 @@
 /**
  * Thin fetch wrapper for the member-facing backend.
  *
- * Auth: a `getToken` callback is invoked on every request, and the member's
- * session token it returns (`lib/member-auth.ts`) is sent as
- * `Authorization: Bearer ...`. Public endpoints pass one that returns null.
+ * Auth: a `getToken` callback (from Clerk's `useAuth()`) is invoked on every
+ * request; the resulting JWT is sent as `Authorization: Bearer ...`. Public
+ * endpoints can pass a getToken that always returns null.
  *
  * Errors: non-2xx responses throw an `ApiError` that carries `status` plus the
  * parsed JSON body (if any) so callers can render structured copy.
  */
+import { useAuth } from "@clerk/nextjs";
+import { useMemo } from "react";
 import { getApiBaseUrl } from "@/lib/api-url";
-import { getMemberToken } from "@/lib/member-auth";
 import { reportError } from "@/lib/report-error";
 import { tenantRequestHeaders } from "@/lib/tenant-host";
 
@@ -128,15 +129,10 @@ export function makeApi(getToken: TokenGetter) {
 
 export type Api = ReturnType<typeof makeApi>;
 
-/**
- * The member's API client, bound to this hostname's session token. One
- * instance: the token is read on every call, so there is nothing to rebind
- * when the session changes.
- */
-const memberApi: Api = makeApi(getMemberToken);
-
+/** Authed API client bound to the current Clerk session. */
 export function useApi(): Api {
-  return memberApi;
+  const { getToken } = useAuth();
+  return useMemo(() => makeApi(() => getToken()), [getToken]);
 }
 
 /** Anonymous API client — for /public endpoints. */

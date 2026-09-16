@@ -32,20 +32,6 @@ export const TENANT_SLUG_HEADER = "x-tenant-slug";
 export const TENANT_ID_HEADER = "x-tenant-id";
 
 /**
- * A copy of `headers` with every `x-tenant-*` header removed — the first thing
- * the proxy does with a request, on every path through it. They are the app's
- * own trusted channel, so a caller must never be able to supply one and name
- * itself a Tenant (Vercel's explicit warning about proxy-set headers).
- */
-export function withoutTenantHeaders(headers: Headers): Headers {
-  const copy = new Headers(headers);
-  for (const key of [...copy.keys()]) {
-    if (key.startsWith(TENANT_HEADER_PREFIX)) copy.delete(key);
-  }
-  return copy;
-}
-
-/**
  * Labels that sit on the root domain but are not Tenants — something else
  * already answers there. A deliberate mirror of the backend's reserved-slug
  * list (`be/src/services/tenants/slug.ts`), which refuses these at Tenant

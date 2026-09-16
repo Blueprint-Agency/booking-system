@@ -2,8 +2,8 @@ import type { Context, MiddlewareHandler } from 'hono'
 import { withTenant } from '../db'
 import { originTenantSlug } from '../lib/allowed-origins'
 import { normaliseSlug } from '../services/tenants/slug'
-import { resolveTenantBySlug } from '../services/tenants/tenants'
-import { sessionClaimVerdict } from '../services/tenants/session-claim'
+import { loadTenantById, resolveTenantByClerkOrg, resolveTenantBySlug } from '../services/tenants/tenants'
+import { orgClaimVerdict, orgIdFromClaims } from '../services/tenants/org-claim'
 import { logger } from '../shared/logger'
 
 declare module 'hono' {
@@ -34,10 +34,9 @@ export const TENANT_SLUG_HEADER = 'x-tenant-slug'
  *   An origin that names no tenant (a server-side call from the proxy, which
  *   sends none at all; the bare local `http://localhost:3000`) is not evidence
  *   and refuses nothing.
- * - **The session claim, later.** Authenticated routes carry a statement of
- *   which studio the caller is signed into that the caller cannot edit: the
- *   Tenant stamped on their session row at sign-in (`assertTenantSessionClaim`,
- *   staff and members). The middlewares run it at the point they have it.
+ * - **The Clerk organization claim, later.** Authenticated routes carry a
+ *   signed statement of which studio the caller is signed into; the two Clerk
+ *   middlewares run `assertTenantOrgClaim` at the point they have it.
  *
  * A request that names no tenant at all is refused with `tenant_required`. The
  * paths that genuinely have no tenant never reach here — `app.ts` exempts them
@@ -103,13 +102,17 @@ export const resolveTenant: MiddlewareHandler = async (c, next) => {
 /**
  * Has anything other than the header itself vouched for this tenant?
  *
- * True when the browser's `Origin` named it.
+ * True when the browser's `Origin` named it, when the Clerk organization claim
+ * named it (`assertTenantOrgClaim` sets this on its way through), or when the
+ * request claimed no tenant at all and fell back to tenant #1 — where there is
+ * nothing to have forged.
  *
  * False means the *only* statement about the tenant is the header, which every
  * caller can set. Reads in that state are already fenced by Row-Level Security,
  * so the gate exists for the one thing a read cannot undo: **creating a row.**
- * Joining a studio on the strength of a header nobody corroborated is how a
- * forged header stops being a failed read and becomes a write.
+ * Provisioning a member into a studio is joining it, and joining a studio on the
+ * strength of a header nobody corroborated is how a forged header stops being a
+ * failed read and becomes a write.
  */
 export function tenantCorroborated(c: Context): boolean {
   return c.get('tenantCorroborated') === true
@@ -132,7 +135,7 @@ export function tenantId(c: Context): string {
  * Does the tenant this request claims match the tenant the authenticated caller
  * actually belongs to?
  *
- * Called from the two studio auth middlewares, at the first moment the caller's own
+ * Called from the two Clerk middlewares, at the first moment the caller's own
  * row is in hand. A null `rowTenantId` used to be read as tenant #1 — the right
  * reading while the column was still nullable and an un-backfilled row really
  * did belong to the first studio. `tenant_id` is `NOT NULL` on all 53 tables
@@ -145,26 +148,55 @@ export function tenantMatches(c: Context, rowTenantId: string | null): boolean {
 }
 
 /**
- * The authenticated half of the check: was this session signed in on the Tenant
- * the request resolved to?
+ * The organization half of the check: is the caller's Clerk session actually
+ * inside this tenant's organization?
  *
- * Returns a refusal reason, or null when the request may proceed. Runs on
- * **both** studio middlewares — the claim is a column on our own session row, so
- * the member side gets it for nothing.
+ * Returns a refusal reason, or null when the request may proceed. The rules and
+ * the rollout seam are in `services/tenants/org-claim.ts`; this only does the
+ * two lookups that turn ids into tenants.
  *
- * A matching claim does **not** mark the Tenant corroborated. The claim is
- * whatever Tenant the sign-in resolved, and a
- * sign-in can resolve from `X-Tenant-Slug` alone — so it proves the session
- * belongs here, not that anything but a header ever vouched for "here". The
- * session path provisions nothing, so no write gate needs it today.
+ * This is the membership enforcement the spec asks for: a staff member of one
+ * studio who reaches another studio's portal presents a token whose
+ * organization belongs to their own, and is refused here — before the
+ * `staff_users` row is even read, and regardless of what the header said.
+ *
+ * **Portal only.** The client application has no organizations at all
+ * (`docs/adr/0003-no-client-side-clerk-organizations.md`), so for a member token
+ * this check could never *grant* anything — no claim can match an organization
+ * no tenant has. It could only refuse, and it would: a member left over in some
+ * organization the platform no longer maps carries that id on their token and
+ * would be turned away from their own studio with `tenant_mismatch`, on every
+ * request, with no way to recover. So member requests do not consult it. Their
+ * tenant is corroborated by `Origin` and fenced by Row-Level Security.
  */
-export function assertTenantSessionClaim(
+export async function assertTenantOrgClaim(
   c: Context,
-  claimedTenantId: string | null,
-): 'tenant_mismatch' | 'tenant_required' | null {
+  claims: unknown,
+): Promise<'tenant_mismatch' | 'organization_required' | null> {
   const requestTenantId = tenantId(c)
-  const verdict = sessionClaimVerdict({ requestTenantId, claimedTenantId })
-  if (verdict === 'ok') return null
-  logger.warn({ requestTenantId, claimedTenantId, verdict }, 'tenant: session claim refused')
+  const claimedOrgId = orgIdFromClaims(claims)
+
+  const [tenant, claimedTenant] = await Promise.all([
+    loadTenantById(requestTenantId),
+    claimedOrgId ? resolveTenantByClerkOrg('portal', claimedOrgId) : Promise.resolve(null),
+  ])
+
+  const verdict = orgClaimVerdict({
+    requestTenantId,
+    configuredOrgId: tenant?.clerkPortalOrgId ?? null,
+    claimedOrgId,
+    claimedOrgTenantId: claimedTenant?.id ?? null,
+  })
+  if (verdict === 'ok') {
+    // A claim that named this tenant is corroboration in its own right — the
+    // strongest kind, since it came out of a signature.
+    if (claimedTenant?.id === requestTenantId) c.set('tenantCorroborated', true)
+    return null
+  }
+
+  logger.warn(
+    { requestTenantId, claimedOrgId, claimedTenantId: claimedTenant?.id ?? null, verdict },
+    'tenant: clerk organization claim refused',
+  )
   return verdict
 }

@@ -1,5 +1,5 @@
 import { Hono } from 'hono'
-import { clientAuth, requireActiveClient } from '../../middleware/client-auth'
+import { clerkClientAuth, requireActiveClient } from '../../middleware/clerk-client'
 import { clientImpersonation } from '../../middleware/client-impersonation'
 import { audit } from '../../middleware/audit'
 
@@ -13,7 +13,7 @@ import waiver from './waiver'
 import referral from './referral'
 
 const app = new Hono()
-  .use('*', clientAuth, requireActiveClient)
+  .use('*', clerkClientAuth, requireActiveClient)
   .use('*', clientImpersonation, audit)
   .route('/', me)
   .route('/', catalog)

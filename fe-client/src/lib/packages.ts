@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useMemberSession } from "./member-auth";
+import { useUser } from "@clerk/nextjs";
 import { ApiError, publicApi, useApi } from "./api";
 
 // ── Wire types (snake_case as returned by BE) ────────────────────────────────
@@ -81,7 +81,7 @@ export function usePackagesCatalog(): {
   error: ApiError | Error | null;
   refresh: () => Promise<void>;
 } {
-  const { isSignedIn, isLoaded } = useMemberSession();
+  const { isSignedIn, isLoaded } = useUser();
   const api = useApi();
   const [data, setData] = useState<PackagesCatalog | null>(null);
   const [loading, setLoading] = useState(true);

@@ -1,8 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Pencil, RotateCcw, ShieldOff } from "lucide-react";
-import { ResendInvitationButton } from "@/components/access/resend-invitation-button";
-import { SessionsPanel } from "@/components/access/sessions-panel";
+import { Pencil } from "lucide-react";
 import {
   Badge,
   Button,
@@ -110,19 +108,9 @@ function hasLeaveYear(s: StaffEditableFields) {
   );
 }
 
-/** What this viewer may do to the person's access, from the detail view (#119). */
-export interface StaffAccessActions {
-  canRevoke: boolean;
-  canResend: boolean;
-  /** Archive — how a staff member is blocked. Absent when not allowed. */
-  onBlock?: () => void;
-  onUnblock?: () => void;
-}
-
 export function StaffEditDialog({
   staff,
   canEdit,
-  access,
   onSubmit,
   onClose,
 }: {
@@ -130,7 +118,6 @@ export function StaffEditDialog({
   /** Whether this viewer outranks the target. Computed by the page (same rule
    *  as the row's Edit button); a viewer without it still gets the full view. */
   canEdit: boolean;
-  access: StaffAccessActions;
   /** Returns the PATCHed row (the API echoes the whole staff record, leave
    *  figures included) or null when the save failed. */
   onSubmit: (
@@ -180,7 +167,6 @@ export function StaffEditDialog({
         <StaffProfileView
           staff={current}
           canEdit={canEdit}
-          access={access}
           onEdit={() => setEditing(true)}
           onClose={onClose}
         />
@@ -194,13 +180,11 @@ export function StaffEditDialog({
 function StaffProfileView({
   staff,
   canEdit,
-  access,
   onEdit,
   onClose,
 }: {
   staff: StaffEditableFields;
   canEdit: boolean;
-  access: StaffAccessActions;
   onEdit: () => void;
   onClose: () => void;
 }) {
@@ -240,27 +224,6 @@ function StaffProfileView({
       </dl>
 
       {isInstructor && <LeaveView staff={staff} />}
-
-      <SessionsPanel
-        path={`/portal/admin/staff/${staff.id}`}
-        canRevoke={access.canRevoke}
-        refreshKey={staff.status}
-        actions={
-          <>
-            {access.canResend && <ResendInvitationButton staffId={staff.id} email={staff.email} />}
-            {access.onBlock && (
-              <Button size="sm" variant="ghost" onClick={access.onBlock}>
-                <ShieldOff className="h-3.5 w-3.5" /> Block
-              </Button>
-            )}
-            {access.onUnblock && (
-              <Button size="sm" variant="ghost" onClick={access.onUnblock}>
-                <RotateCcw className="h-3.5 w-3.5" /> Unblock
-              </Button>
-            )}
-          </>
-        }
-      />
 
       <DialogFooter>
         <Button type="button" variant="ghost" onClick={onClose}>

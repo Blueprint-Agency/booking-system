@@ -1,4 +1,4 @@
-import type { Context, MiddlewareHandler } from 'hono'
+import type { MiddlewareHandler } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { ZodError } from 'zod'
 import { logger } from '../shared/logger'
@@ -14,40 +14,26 @@ export class AppError extends HTTPException {
   }
 }
 
-/**
- * The app's `onError`, and the one that actually answers.
- *
- * Hono catches a thrown error at the layer that threw it and hands it to the
- * app's error handler right there, so the `try` in `errorBoundary` below never
- * sees one: without this, an `AppError` went out as its bare code in plain text,
- * and a caller reading `{ error }` off the body found nothing.
- */
-export const onAppError = (err: Error, c: Context) => errorResponse(err, c)
-
 export const errorBoundary: MiddlewareHandler = async (c, next) => {
   try {
     await next()
   } catch (err) {
-    return errorResponse(err, c)
+    if (err instanceof AppError) {
+      return c.json({ error: err.code, ...(err.details ?? {}) }, err.status)
+    }
+    if (err instanceof HTTPException) {
+      return c.json({ error: err.message }, err.status)
+    }
+    if (err instanceof ZodError) {
+      return c.json({ error: 'invalid_request', issues: err.issues }, 400)
+    }
+    // Unknown / programmer error: log with full context, report to Sentry (if
+    // configured), and return a generic body — but include the requestId so a
+    // user/support can quote it and we can grep the matching log line.
+    const requestId = c.get('requestId')
+    const log = c.get('log') ?? logger
+    log.error({ err, method: c.req.method, path: c.req.path }, 'unhandled error')
+    captureException(err, { requestId, method: c.req.method, path: c.req.path })
+    return c.json({ error: 'internal_error', requestId }, 500)
   }
-}
-
-function errorResponse(err: unknown, c: Context) {
-  if (err instanceof AppError) {
-    return c.json({ error: err.code, ...(err.details ?? {}) }, err.status)
-  }
-  if (err instanceof HTTPException) {
-    return c.json({ error: err.message }, err.status)
-  }
-  if (err instanceof ZodError) {
-    return c.json({ error: 'invalid_request', issues: err.issues }, 400)
-  }
-  // Unknown / programmer error: log with full context, report to Sentry (if
-  // configured), and return a generic body — but include the requestId so a
-  // user/support can quote it and we can grep the matching log line.
-  const requestId = c.get('requestId')
-  const log = c.get('log') ?? logger
-  log.error({ err, method: c.req.method, path: c.req.path }, 'unhandled error')
-  captureException(err, { requestId, method: c.req.method, path: c.req.path })
-  return c.json({ error: 'internal_error', requestId }, 500)
 }

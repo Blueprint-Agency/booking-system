@@ -3,25 +3,16 @@ import assert from "node:assert/strict";
 import { accessDeniedCopy, authFailure, refusalCode } from "./access-refusal";
 
 test("no session at all is a sign-out", () => {
-  // A token the staff pool no longer knows: signed out in another tab, expired,
-  // or ended when the account was archived.
-  assert.deepEqual(authFailure(401, { error: "invalid_token" }), { kind: "sign-out" });
   assert.deepEqual(authFailure(401, null), { kind: "sign-out" });
 });
 
-test("a refused session is denied, not signed out", () => {
-  // A real staff session with no row at this studio. Signing it out without a
-  // word put the person back on the login page with no idea why.
+test("a refused session is denied, not signed out — this is the loop", () => {
+  // The bug: a platform admin on a studio's portal shares the portal's Clerk
+  // cookie, so signing them out and reopening /login handed back the same
+  // session and the same 403, forever.
   assert.deepEqual(authFailure(403, { error: "staff_not_provisioned" }), {
     kind: "denied",
     reason: "staff_not_provisioned",
-  });
-});
-
-test("a session from another studio is denied with the backend's own reason", () => {
-  assert.deepEqual(authFailure(403, { error: "tenant_mismatch" }), {
-    kind: "denied",
-    reason: "tenant_mismatch",
   });
 });
 
@@ -54,13 +45,12 @@ test("a suspended studio is not the account's fault, and offers no switch", () =
   assert.match(copy.detail, /suspended/);
 });
 
-test("a session that names no studio is fixed by signing in again, not by retrying", () => {
-  // The claim is written once, at sign-in, so asking again with the same
-  // session gets the same answer. Only a new session can carry this studio.
-  const copy = accessDeniedCopy("tenant_required");
-  assert.equal(copy.offerRetry, false);
+test("a stale organization claim is transient, so it offers the retry", () => {
+  // Reached only once the provider's automatic retries are spent. A genuine
+  // staff member can land here, so the screen must not be a dead end.
+  const copy = accessDeniedCopy("organization_required");
+  assert.equal(copy.offerRetry, true);
   assert.equal(copy.offerSwitch, true);
-  assert.match(copy.detail, /sign in again/);
 });
 
 test("the account-shaped refusals each get their own words", () => {
@@ -87,7 +77,7 @@ test("every refusal offers at least one way out", () => {
   // trap with no exit but a hard reload.
   for (const reason of [
     "tenant_suspended",
-    "tenant_required",
+    "organization_required",
     "staff_inactive",
     "tenant_mismatch",
     "staff_not_provisioned",

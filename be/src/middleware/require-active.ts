@@ -2,7 +2,7 @@ import type { MiddlewareHandler } from 'hono'
 
 /**
  * Rejects when the loaded staff row is not status='active' (i.e. pending or
- * archived). staffAuth must run first to populate `staffRow`.
+ * archived). clerkStaffAuth must run first to populate `staffRow`.
  */
 export const requireActiveStaff: MiddlewareHandler = async (c, next) => {
   const row = c.get('staffRow')

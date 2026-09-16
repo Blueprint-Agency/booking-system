@@ -1,6 +1,6 @@
 "use client";
 
-import { useAppUser } from "@/lib/auth";
+import { useUser } from "@clerk/nextjs";
 
 function initialsOf(first?: string | null, last?: string | null, email?: string | null): string {
   const s = `${first?.[0] ?? ""}${last?.[0] ?? ""}`.toUpperCase();
@@ -9,11 +9,11 @@ function initialsOf(first?: string | null, last?: string | null, email?: string 
 }
 
 export function AccountHeader() {
-  const { user, isLoaded } = useAppUser();
+  const { user, isLoaded } = useUser();
 
   const first = user?.firstName ?? "";
   const last = user?.lastName ?? "";
-  const email = user?.email ?? "";
+  const email = user?.primaryEmailAddress?.emailAddress ?? "";
   const name =
     `${first} ${last}`.trim() || (email ? email.split("@")[0] : "Member");
   const initials = initialsOf(first, last, email);

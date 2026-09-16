@@ -10,7 +10,7 @@ type OtpInputProps = {
 };
 
 /**
- * Segmented one-time-code input — one box per digit.
+ * Segmented one-time-code input — one box per digit, like Clerk's prebuilt OTP.
  * Supports auto-advance on type, backspace-to-previous, arrow navigation, and
  * pasting the full code into any box. Styled to match the auth form inputs.
  */

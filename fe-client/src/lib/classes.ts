@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useMemberSession } from "./member-auth";
+import { useUser } from "@clerk/nextjs";
 import { ApiError, publicApi, useApi } from "./api";
 
 export interface ApiClassLocation {
@@ -52,15 +52,15 @@ export function useClasses(filters: ClassFilters): {
   loading: boolean;
   error: ApiError | Error | null;
 } {
-  const { isLoaded, isSignedIn } = useMemberSession();
+  const { isLoaded, isSignedIn } = useUser();
   const api = useApi();
   const [data, setData] = useState<ApiClassCard[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | Error | null>(null);
 
   const key = JSON.stringify(filters);
-  // Fetch the public feed immediately instead of waiting for the session read —
-  // anonymous visitors get classes ~a second sooner. When it resolves a
+  // Fetch the public feed immediately instead of waiting for Clerk to boot —
+  // anonymous visitors get classes ~a second sooner. When Clerk resolves a
   // session this flips false→true and the effect re-fetches /me/classes for
   // booked-state; for anonymous visitors it stays false, so no double fetch.
   const signedIn = isLoaded && isSignedIn === true;
@@ -252,7 +252,7 @@ export function useCanBookClass(): {
   loaded: boolean;
   entitlements: ClassEntitlements | null;
 } {
-  const { isLoaded, isSignedIn } = useMemberSession();
+  const { isLoaded, isSignedIn } = useUser();
   const api = useApi();
   const [ent, setEnt] = useState<ClassEntitlements | null>(null);
   const [loaded, setLoaded] = useState(false);

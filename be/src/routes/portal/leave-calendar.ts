@@ -8,7 +8,7 @@ import { leaveViewer, listLeaveCalendar } from '../../services/leave/requests'
  *
  * Who is away, for everybody on staff. Mounted at the portal ROOT rather than in
  * the admin or instructor subtree because it is the one leave surface with no
- * role gate at all — the parent's staffAuth + requireActiveStaff is the
+ * role gate at all — the parent's clerkStaffAuth + requireActiveStaff is the
  * whole of its access control (see routes/portal/index.ts).
  *
  * What each caller may see is decided by the read itself: the service returns

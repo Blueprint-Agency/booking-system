@@ -8,9 +8,9 @@ import { tenantId } from '../../middleware/tenant'
 /**
  * GET /api/v1/portal/auth/me
  *
- * Returns the staff_users row the session authenticated, plus the denormalised
+ * Returns the staff_users row Clerk has authenticated, plus the denormalised
  * `locations` they have access to (empty granted_location_ids → all active
- * locations, per §4a). Auth (staffAuth + requireActiveStaff) is applied
+ * locations, per §4a). Auth (clerkStaffAuth + requireActiveStaff) is applied
  * by the parent router (routes/portal/index.ts).
  */
 const app = new Hono().get('/me', async c => {

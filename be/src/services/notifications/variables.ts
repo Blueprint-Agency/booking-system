@@ -61,9 +61,4 @@ export const TEMPLATE_VARIABLES: Record<TemplateSlug, readonly string[]> = {
   client_invite: ['name', 'invitee_email', 'login_url'],
   checkin_nag: ['instructor_name', 'session_label', 'pending_count'],
   referral_credited: ['referrer_name', 'referee_name', 'credits_granted'],
-  // Sign-in (services/auth/better-auth.ts). `code` and `reset_url` are credentials and
-  // are sent as `secretVariables`, so `email_log` keeps them redacted.
-  sign_in_code: ['code'],
-  staff_two_factor_code: ['name', 'code'],
-  staff_password_reset: ['name', 'reset_url'],
 }

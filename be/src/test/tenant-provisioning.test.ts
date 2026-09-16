@@ -1,26 +1,73 @@
 import assert from 'node:assert'
-import { randomBytes } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
 import { eq } from 'drizzle-orm'
 import { startTestApp, integrationTestsEnabled, SKIP_REASON, type TestApp } from './harness'
+import type { ClerkOrgPort } from '../services/tenants/provision'
 
 /**
  * "Creation is atomic; a failure at any step leaves no partial Tenant."
  *
- * A real Postgres, with the real Row-Level Security policies live. Creating a
- * studio calls nothing outside the platform: the rows are ours, the first
- * admin's account is a row in our own `staff` pool, and their invitation is our
- * own token, mailed through the null transport the harness runs under — which
- * keeps what it "sent", so the invitation is a thing the test can read.
+ * The unit tests next to `provision.ts` prove the compensation *ordering* with a
+ * fake Clerk and no database. This file is the other half: a real Postgres, with
+ * the real Row-Level Security policies live, asserting that what is left behind
+ * after a failure is **nothing** — no `tenants` row, no `tenant_settings`, no
+ * pending `staff_users` row, and no Clerk organization still holding the slug.
+ *
+ * Clerk itself stays faked, because there is no test Clerk account to create
+ * eighty throwaway organizations in. What is real is everything the fake cannot
+ * paper over: the transaction, the policies, and the unique constraints that
+ * actually decide whether a second attempt on the same slug is a conflict.
  */
+
+/** A Clerk that records what exists, so "no organization left behind" is a
+ *  question the test can actually ask. */
+/**
+ * Shared across every fake, and unique per run, because `clerk_portal_org_id`
+ * is unique platform-wide and the scratch database is not dropped between runs.
+ * A per-fake counter would hand the second test the first test's id; a
+ * per-process one would hand this run the last run's, and either way the test
+ * fails on a constraint that has nothing to do with what it is testing.
+ */
+const ORG_RUN = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+let orgSeq = 0
+
+function fakeClerk(overrides: Partial<ClerkOrgPort> = {}) {
+  const live = new Set<string>()
+  const invited: string[] = []
+  /** Organization id → the tenant stamped on it, so "the link was written" is
+   *  also a question the test can ask. */
+  const linked = new Map<string, string>()
+
+  const port: ClerkOrgPort = {
+    async createOrganization() {
+      const id = `org_portal_${ORG_RUN}_${++orgSeq}`
+      live.add(id)
+      return id
+    },
+    async deleteOrganization(id) {
+      live.delete(id)
+    },
+    async linkOrganizationToTenant({ organizationId, tenantId }) {
+      linked.set(organizationId, tenantId)
+    },
+    async inviteOrgAdmin({ email }) {
+      invited.push(email)
+    },
+    ...overrides,
+  }
+  return { port, live, invited, linked }
+}
+
 describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
   let harness!: TestApp
   let provision!: typeof import('../services/tenants/provision')
   let tenantsService!: typeof import('../services/tenants/tenants')
-  let invitations!: typeof import('../services/auth/invitations')
-  let withTenant!: typeof import('../db')['withTenant']
-  let discardedMail!: typeof import('../lib/mailer')['discardedMail']
-  let schema!: typeof import('../db/schema')
+  let schema!: {
+    tenants: typeof import('../db/schema/tenancy')['tenants']
+    tenantSettings: typeof import('../db/schema/tenancy')['tenantSettings']
+    staffUsers: typeof import('../db/schema/identity')['staffUsers']
+    emailTemplates: typeof import('../db/schema/content')['emailTemplates']
+  }
   let declaredTemplateSlugs!: string[]
 
   before(async () => {
@@ -29,10 +76,15 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
     // build a pool from the stubbed environment at import time.
     provision = await import('../services/tenants/provision')
     tenantsService = await import('../services/tenants/tenants')
-    invitations = await import('../services/auth/invitations')
-    ;({ withTenant } = await import('../db'))
-    ;({ discardedMail } = await import('../lib/mailer'))
-    schema = await import('../db/schema')
+    const tenancy = await import('../db/schema/tenancy')
+    const identity = await import('../db/schema/identity')
+    const content = await import('../db/schema/content')
+    schema = {
+      tenants: tenancy.tenants,
+      tenantSettings: tenancy.tenantSettings,
+      staffUsers: identity.staffUsers,
+      emailTemplates: content.emailTemplates,
+    }
     const { TEMPLATE_VARIABLES } = await import('../services/notifications/variables')
     declaredTemplateSlugs = Object.keys(TEMPLATE_VARIABLES)
   })
@@ -49,7 +101,7 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
       .from(schema.tenants)
       .where(eq(schema.tenants.slug, slug))
     const tenant = rows[0]
-    if (!tenant) return { tenant: null, settings: 0, staff: 0, invitations: 0 }
+    if (!tenant) return { tenant: null, settings: 0, staff: 0 }
 
     const settings = await harness.db
       .select()
@@ -59,35 +111,35 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
       .select()
       .from(schema.staffUsers)
       .where(eq(schema.staffUsers.tenantId, tenant.id))
-    const invited = await harness.db
-      .select()
-      .from(schema.staffInvitations)
-      .where(eq(schema.staffInvitations.tenantId, tenant.id))
-    return { tenant, settings: settings.length, staff: staff.length, invitations: invited.length }
+    return { tenant, settings: settings.length, staff: staff.length }
   }
 
-  /** Invitations mailed to an address since the test began. */
-  const mailedTo = (email: string, since: number) =>
-    discardedMail.slice(since).filter(m => m.to === email)
-
-  test('a studio is created whole: row, settings, and an invited admin with an account', async () => {
+  test('a studio is created whole: row, settings, the portal org, and an invited admin', async () => {
+    const clerk = fakeClerk();
     const slug = `prov-ok-${Date.now()}`
-    const sent = discardedMail.length
 
-    const result = await provision.provisionTenant({
-      slug,
-      name: 'Provision OK',
-      adminEmail: 'Owner@Example.Test',
-    })
+    const result = await provision.provisionTenant(
+      { slug, name: 'Provision OK', adminEmail: 'Owner@Example.Test' },
+      clerk.port,
+    )
 
     const found = await traces(slug)
     assert.ok(found.tenant, 'the tenant row exists')
     assert.equal(found.settings, 1, 'settings row created alongside it')
     assert.equal(found.staff, 1, 'the first admin exists')
-    assert.equal(found.tenant.status, 'active')
+
+    // The portal application is wired. A null here is the half-created Tenant
+    // that `orgClaimVerdict` would read as "enforcement not switched on yet".
+    assert.ok(found.tenant.clerkPortalOrgId, 'portal organization recorded')
+    // The client application is deliberately *not* wired, and must stay that
+    // way: a non-null id here would demand an organization claim from every
+    // member and lock the whole studio's members out. See the ADR.
+    assert.equal(found.tenant.clerkClientOrgId, null, 'no client organization')
+    assert.equal(clerk.live.size, 1)
 
     // The address is normalised on the way in, so the invitation and the row
     // agree about who was invited.
+    assert.deepEqual(clerk.invited, ['owner@example.test'])
     assert.equal(result.admin?.email, 'owner@example.test')
 
     const [admin] = await harness.db
@@ -99,70 +151,6 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
     assert.equal(admin!.role, 'admin')
     assert.equal(admin!.status, 'pending')
     assert.ok(admin!.invitedAt)
-
-    // Linked to an account in the staff pool from the start, as every staff row
-    // is: there is nothing left to match them to later.
-    const [account] = await harness.db
-      .select()
-      .from(schema.staffAuthUsers)
-      .where(eq(schema.staffAuthUsers.id, admin!.authUserId))
-    assert.equal(account?.email, 'owner@example.test')
-
-    // An invitation nobody on the studio's staff made — there is nobody yet.
-    const [invitation] = await harness.db
-      .select()
-      .from(schema.staffInvitations)
-      .where(eq(schema.staffInvitations.tenantId, found.tenant.id))
-    assert.equal(invitation?.staffUserId, admin!.id)
-    assert.equal(invitation?.invitedByStaffId, null)
-    assert.equal(invitation?.status, 'pending')
-
-    // And it was mailed, pointing at this studio's own portal.
-    const mail = mailedTo('owner@example.test', sent)
-    assert.equal(mail.length, 1, 'one invitation mailed')
-    assert.ok(
-      mail[0]!.html.includes(`http://${slug}.portal.localhost:3001/signup?`),
-      'the set-password link is on the new studio’s portal',
-    )
-  })
-
-  test('the first admin accepts the invitation and reaches their portal', async () => {
-    const slug = `prov-accept-${Date.now()}`
-    const email = `owner-${Date.now()}@accept.test`
-    const { tenant } = await provision.provisionTenant({ slug, name: 'Accepting Studio', adminEmail: email })
-
-    const [invitation] = await harness.db
-      .select()
-      .from(schema.staffInvitations)
-      .where(eq(schema.staffInvitations.tenantId, tenant.id))
-    await withTenant(tenant.id, () =>
-      invitations.acceptInvitation({ tenantId: tenant.id, token: invitation!.token, password: 'a-first-password' }),
-    )
-
-    const headers = await harness.signInAs('staff', email, { slug })
-    const me = await harness.app.request('/api/v1/portal/auth/me', { headers })
-    assert.equal(me.status, 200, await me.clone().text())
-  })
-
-  test('a new studio can send email at all: it is created with its own copy', async () => {
-    // The bug this covers: nothing seeded a provisioned studio's templates, and
-    // `sendTemplatedEmail` throws on a missing (tenant, slug) row rather than
-    // reach for another studio's wording — so every staff invitation, booking
-    // confirmation and refund notice the studio ever sent failed.
-    const slug = `prov-copy-${Date.now()}`
-
-    const created = await provision.provisionTenant({
-      slug,
-      name: 'Copy Studio',
-      adminEmail: 'owner@copy.test',
-    })
-
-    const rows = await templatesOf(created.tenant.id)
-    assert.deepEqual(
-      rows.map(r => r.slug).sort(),
-      [...declaredTemplateSlugs].sort(),
-      'every slug a sender knows has a row in the new studio',
-    )
   })
 
   /** Every template row a studio holds, by slug. */
@@ -173,18 +161,39 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
       .where(eq(schema.emailTemplates.tenantId, tenantId))
   }
 
+  test('a new studio can send email at all: it is created with its own copy', async () => {
+    // The bug this covers: nothing seeded a provisioned studio's templates, and
+    // `sendTemplatedEmail` throws on a missing (tenant, slug) row rather than
+    // reach for another studio's wording — so every staff invitation, booking
+    // confirmation and refund notice the studio ever sent failed.
+    const clerk = fakeClerk()
+    const slug = `prov-copy-${Date.now()}`
+
+    const created = await provision.provisionTenant(
+      { slug, name: 'Copy Studio', adminEmail: 'owner@copy.test' },
+      clerk.port,
+    )
+
+    const rows = await templatesOf(created.tenant.id)
+    assert.deepEqual(
+      rows.map(r => r.slug).sort(),
+      [...declaredTemplateSlugs].sort(),
+      'every slug a sender knows has a row in the new studio',
+    )
+  })
+
   test('a new studio’s emails link to its own hostnames, never the platform’s', async () => {
     // The coupled defect: the copy used to bake in `CLIENT_URL` and
     // `PORTAL_ORIGIN`, two single global values naming one studio's apps. The
     // second studio's instructor got an "Open the schedule" button pointing at
     // the first studio's portal.
+    const clerk = fakeClerk()
     const slug = `prov-links-${Date.now()}`
 
-    const created = await provision.provisionTenant({
-      slug,
-      name: 'Links Studio',
-      adminEmail: 'owner@links.test',
-    })
+    const created = await provision.provisionTenant(
+      { slug, name: 'Links Studio', adminEmail: 'owner@links.test' },
+      clerk.port,
+    )
 
     const html = (await templatesOf(created.tenant.id)).map(r => r.bodyHtml).join('\n')
     // The harness configures the same wildcards the local frontends use, so the
@@ -196,20 +205,21 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
   })
 
   test('a studio can be created with no first admin, ready to import into', async () => {
-    // The state `importTenant` requires: the studio exists and `staff_users` is
-    // empty, because the archive brings its own and the import refuses to merge
-    // into rows already there.
+    // The state `importTenant` requires: the studio exists and is wired to its
+    // organization, and `staff_users` is empty, because the archive brings its
+    // own and the import refuses to merge into rows already there.
+    const clerk = fakeClerk()
     const slug = `prov-noadmin-${Date.now()}`
-    const sent = discardedMail.length
 
-    const result = await provision.provisionTenant({ slug, name: 'Empty Studio' })
+    const result = await provision.provisionTenant({ slug, name: 'Empty Studio' }, clerk.port)
 
     const found = await traces(slug)
     assert.ok(found.tenant, 'the tenant row exists')
     assert.equal(found.settings, 1, 'settings row created alongside it')
     assert.equal(found.staff, 0, 'no staff row — that is the point')
-    assert.equal(found.invitations, 0)
-    assert.equal(discardedMail.length, sent, 'nobody was emailed')
+    assert.ok(found.tenant.clerkPortalOrgId, 'still wired to its portal organization')
+    assert.equal(clerk.live.size, 1)
+    assert.deepEqual(clerk.invited, [], 'nobody was emailed')
     assert.equal(result.admin, null)
 
     // And it is closed. A studio nobody can sign in to must not answer on its
@@ -225,18 +235,20 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
   })
 
   test('inviting the first admin is what opens the studio', async () => {
+    const clerk = fakeClerk()
     const slug = `prov-firstadmin-${Date.now()}`
-    const created = await provision.provisionTenant({ slug, name: 'Waiting Studio' })
+    const created = await provision.provisionTenant({ slug, name: 'Waiting Studio' }, clerk.port)
     assert.equal(created.tenant.status, 'suspended')
-    const sent = discardedMail.length
 
-    const admin = await provision.inviteFirstAdmin(created.tenant.id, { email: 'Owner@Waiting.Test' })
+    const admin = await provision.inviteFirstAdmin(
+      created.tenant.id,
+      { email: 'Owner@Waiting.Test' },
+      clerk.port,
+    )
 
     assert.equal(admin.email, 'owner@waiting.test', 'normalised on the way in')
-    const found = await traces(slug)
-    assert.equal(found.staff, 1)
-    assert.equal(found.invitations, 1)
-    assert.equal(mailedTo('owner@waiting.test', sent).length, 1, 'the invitation was mailed')
+    assert.deepEqual(clerk.invited, ['owner@waiting.test'])
+    assert.equal((await traces(slug)).staff, 1)
 
     // Giving it an admin is the moment "an archive is coming" stops being true,
     // so this is where the copy provisioning held back gets written — otherwise
@@ -259,8 +271,9 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
     // studio whose staff were all archived looks staff-less to the bootstrap,
     // but its templates are its own edited wording. Shipping copy over it would
     // replace what a studio wrote with what the platform ships.
+    const clerk = fakeClerk()
     const slug = `prov-keepcopy-${Date.now()}`
-    const created = await provision.provisionTenant({ slug, name: 'Restored Studio' })
+    const created = await provision.provisionTenant({ slug, name: 'Restored Studio' }, clerk.port)
 
     await harness.db.insert(schema.emailTemplates).values({
       tenantId: created.tenant.id,
@@ -269,7 +282,7 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
       bodyHtml: '<p>theirs</p>',
     })
 
-    await provision.inviteFirstAdmin(created.tenant.id, { email: 'owner@restored.test' })
+    await provision.inviteFirstAdmin(created.tenant.id, { email: 'owner@restored.test' }, clerk.port)
 
     const rows = await templatesOf(created.tenant.id)
     assert.equal(rows.length, 1, 'nothing was seeded alongside what was already there')
@@ -279,40 +292,39 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
   test('a studio that already has staff refuses a first admin', async () => {
     // The bootstrap must not keep working after the boot: adding staff to a
     // working studio is that studio's own job, with its roles and grants.
+    const clerk = fakeClerk()
     const slug = `prov-secondadmin-${Date.now()}`
-    const created = await provision.provisionTenant({
-      slug,
-      name: 'Staffed Studio',
-      adminEmail: 'first@staffed.test',
-    })
-    const sent = discardedMail.length
+    const created = await provision.provisionTenant(
+      { slug, name: 'Staffed Studio', adminEmail: 'first@staffed.test' },
+      clerk.port,
+    )
 
     await assert.rejects(
-      () => provision.inviteFirstAdmin(created.tenant.id, { email: 'second@staffed.test' }),
+      () => provision.inviteFirstAdmin(created.tenant.id, { email: 'second@staffed.test' }, clerk.port),
       (err: { code?: string; message?: string }) =>
         err?.code === 'tenant_already_has_staff' ||
         /tenant_already_has_staff/.test(String(err?.message)),
     )
 
-    assert.equal(mailedTo('second@staffed.test', sent).length, 0, 'the second was never emailed')
-    const found = await traces(slug)
-    assert.equal(found.staff, 1)
-    assert.equal(found.invitations, 1)
+    assert.deepEqual(clerk.invited, ['first@staffed.test'], 'the second was never emailed')
+    assert.equal((await traces(slug)).staff, 1)
   })
 
   test('a studio suspended for its own reasons is not reopened by an invitation', async () => {
     // `activateAfterFirstStaff` only ever lifts a suspension a studio was opened
     // under. Here the studio was suspended deliberately, with staff already in
     // it, so the invitation is refused and nothing moves.
+    const clerk = fakeClerk()
     const slug = `prov-stayshut-${Date.now()}`
-    const created = await provision.provisionTenant({
-      slug,
-      name: 'Deliberately Shut',
-      adminEmail: 'owner@shut.test',
-    })
+    const created = await provision.provisionTenant(
+      { slug, name: 'Deliberately Shut', adminEmail: 'owner@shut.test' },
+      clerk.port,
+    )
     await tenantsService.setTenantStatus(created.tenant.id, 'suspended')
 
-    await assert.rejects(() => provision.inviteFirstAdmin(created.tenant.id, { email: 'other@shut.test' }))
+    await assert.rejects(() =>
+      provision.inviteFirstAdmin(created.tenant.id, { email: 'other@shut.test' }, clerk.port),
+    )
 
     const [row] = await harness.db
       .select()
@@ -322,12 +334,15 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
   })
 
   test('the list says which studios nobody can get into', async () => {
-    const empty = await provision.provisionTenant({ slug: `prov-count-empty-${Date.now()}`, name: 'Empty' })
-    const staffed = await provision.provisionTenant({
-      slug: `prov-count-staffed-${Date.now()}`,
-      name: 'Staffed',
-      adminEmail: 'a@counted.test',
-    })
+    const clerk = fakeClerk()
+    const empty = await provision.provisionTenant(
+      { slug: `prov-count-empty-${Date.now()}`, name: 'Empty' },
+      clerk.port,
+    )
+    const staffed = await provision.provisionTenant(
+      { slug: `prov-count-staffed-${Date.now()}`, name: 'Staffed', adminEmail: 'a@counted.test' },
+      fakeClerk().port,
+    )
 
     const rows = await tenantsService.listTenants()
     const byId = new Map(rows.map(r => [r.id, r]))
@@ -336,88 +351,108 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
   })
 
   test('a blank admin email is read as "none", not refused', async () => {
+    const clerk = fakeClerk()
     const slug = `prov-blank-${Date.now()}`
 
-    const result = await provision.provisionTenant({ slug, name: 'Blank Admin', adminEmail: '  ' })
+    const result = await provision.provisionTenant(
+      { slug, name: 'Blank Admin', adminEmail: '  ' },
+      clerk.port,
+    )
 
     assert.equal(result.admin, null)
-    const found = await traces(slug)
-    assert.equal(found.staff, 0)
-    assert.equal(found.invitations, 0)
+    assert.equal((await traces(slug)).staff, 0)
+    assert.deepEqual(clerk.invited, [])
   })
 
-  test('a reserved slug is refused before anything is written', async () => {
+  test('a reserved slug is refused before Clerk is touched at all', async () => {
+    const clerk = fakeClerk()
+
     await assert.rejects(
-      provision.provisionTenant({ slug: 'admin', name: 'Impostor', adminEmail: 'impostor@example.test' }),
+      provision.provisionTenant(
+        { slug: 'admin', name: 'Impostor', adminEmail: 'a@example.test' },
+        clerk.port,
+      ),
       (err: any) => err?.code === 'slug_reserved' || /slug_reserved/.test(String(err?.message)),
     )
 
+    // Not merely "no tenant row" — no organization was created and then tidied
+    // up, because the gate runs before anything external.
+    assert.equal(clerk.live.size, 0)
     assert.equal((await traces('admin')).tenant, null)
-    const [account] = await harness.db
-      .select()
-      .from(schema.staffAuthUsers)
-      .where(eq(schema.staffAuthUsers.email, 'impostor@example.test'))
-    assert.equal(account, undefined, 'no account made for a studio that was never created')
   })
 
-  test('a taken slug leaves nothing behind', async () => {
+  test('a taken slug leaves nothing behind, in the database or in Clerk', async () => {
     const slug = `prov-dup-${Date.now()}`
-    const second = `second-${Date.now()}@example.test`
-    await provision.provisionTenant({ slug, name: 'First', adminEmail: 'first@example.test' })
-    const sent = discardedMail.length
+    const first = fakeClerk()
+    await provision.provisionTenant(
+      { slug, name: 'First', adminEmail: 'first@example.test' },
+      first.port,
+    )
 
+    const second = fakeClerk()
     await assert.rejects(
-      provision.provisionTenant({ slug, name: 'Second', adminEmail: second }),
+      provision.provisionTenant(
+        { slug, name: 'Second', adminEmail: 'second@example.test' },
+        second.port,
+      ),
       (err: any) => err?.code === 'slug_taken' || /slug_taken/.test(String(err?.message)),
     )
 
-    assert.equal(mailedTo(second, sent).length, 0, 'nobody was emailed about a studio that does not exist')
-    const [account] = await harness.db
-      .select()
-      .from(schema.staffAuthUsers)
-      .where(eq(schema.staffAuthUsers.email, second))
-    assert.equal(account, undefined, 'the second admin’s account went with the rollback')
+    // The second attempt's organization was rolled back; the first's remains.
+    assert.equal(second.live.size, 0, 'no orphan organization holding the slug')
+    assert.equal(second.invited.length, 0, 'nobody was emailed about a studio that does not exist')
+    assert.equal(first.live.size, 1)
 
     // And the winner is untouched: one tenant, one settings row, one admin.
     const found = await traces(slug)
     assert.equal(found.tenant!.name, 'First')
     assert.equal(found.settings, 1)
     assert.equal(found.staff, 1)
-    assert.equal(found.invitations, 1)
   })
 
-  test('a failure inside the transaction unwinds the whole thing', async () => {
-    // An address the shallow format check lets through and Postgres cannot
-    // index: the admin's account insert refuses it, after the tenant, its
-    // settings and its copy have all been written in the same transaction.
-    const slug = `prov-unwind-${Date.now()}`
-    const sent = discardedMail.length
-    const email = `${randomBytes(10_000).toString('hex')}@unwind.test`
+  test('a failure at the invitation — the last step — unwinds the whole thing', async () => {
+    const slug = `prov-invite-${Date.now()}`
+    const clerk = fakeClerk({
+      async inviteOrgAdmin() {
+        throw new Error('clerk refused the invitation')
+      },
+    })
 
-    await assert.rejects(provision.provisionTenant({ slug, name: 'Unwinds', adminEmail: email }))
+    await assert.rejects(
+      provision.provisionTenant(
+        { slug, name: 'Invite Fails', adminEmail: 'nope@example.test' },
+        clerk.port,
+      ),
+      /clerk refused the invitation/,
+    )
 
-    assert.equal((await traces(slug)).tenant, null, 'no tenant row survives')
-    assert.equal(discardedMail.length, sent, 'nobody was emailed')
+    // The transaction had already inserted three rows by this point. All of them
+    // are gone, and so is the organization.
+    const found = await traces(slug)
+    assert.equal(found.tenant, null, 'no tenant row survives')
+    assert.equal(clerk.live.size, 0, 'no organization survives')
   })
 
   test('a malformed admin email is refused before anything is created', async () => {
+    const clerk = fakeClerk()
     const slug = `prov-bademail-${Date.now()}`
 
     await assert.rejects(
-      provision.provisionTenant({ slug, name: 'Bad Email', adminEmail: 'not-an-email' }),
+      provision.provisionTenant({ slug, name: 'Bad Email', adminEmail: 'not-an-email' }, clerk.port),
       (err: any) =>
         err?.code === 'admin_email_invalid' || /admin_email_invalid/.test(String(err?.message)),
     )
+    assert.equal(clerk.live.size, 0)
     assert.equal((await traces(slug)).tenant, null)
   })
 
   test('suspending retains every row, and reactivating is the same call back', async () => {
     const slug = `prov-suspend-${Date.now()}`
-    const { tenant } = await provision.provisionTenant({
-      slug,
-      name: 'Suspendable',
-      adminEmail: 'owner@suspendable.test',
-    })
+    const clerk = fakeClerk()
+    const { tenant } = await provision.provisionTenant(
+      { slug, name: 'Suspendable', adminEmail: 'owner@suspendable.test' },
+      clerk.port,
+    )
 
     const suspended = await tenantsService.setTenantStatus(tenant.id, 'suspended')
     assert.equal(suspended?.status, 'suspended')
@@ -437,6 +472,8 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
   })
 
   test('it refuses to run inside another Tenant’s context', async () => {
+    const { withTenant } = await import('../db')
+    const clerk = fakeClerk()
     const slug = `prov-nested-${Date.now()}`
 
     // Inside `withTenant`, `db` *is* that transaction, so the inner
@@ -446,25 +483,30 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
     // acceptable failure.
     await assert.rejects(
       withTenant(harness.tenants.one.id, () =>
-        provision.provisionTenant({ slug, name: 'Nested', adminEmail: 'nested@example.test' }),
+        provision.provisionTenant(
+          { slug, name: 'Nested', adminEmail: 'nested@example.test' },
+          clerk.port,
+        ),
       ),
       /must not run inside a Tenant context/,
     )
 
+    assert.equal(clerk.live.size, 0)
     assert.equal((await traces(slug)).tenant, null)
   })
 
   test('a suspended studio is refused over HTTP, and stops being refused when it comes back', async () => {
     const slug = `prov-refuse-${Date.now()}`
-    const { tenant } = await provision.provisionTenant({
-      slug,
-      name: 'Refusable',
-      adminEmail: 'owner@refusable.test',
-    })
+    const clerk = fakeClerk()
+    const { tenant } = await provision.provisionTenant(
+      { slug, name: 'Refusable', adminEmail: 'owner@refusable.test' },
+      clerk.port,
+    )
 
-    // Unauthenticated on purpose: the suspension gate runs ahead of the staff
-    // auth middleware, so an active studio gets as far as that middleware and is
-    // refused for the ordinary reason.
+    // Unauthenticated on purpose: the suspension gate runs ahead of the Clerk
+    // middleware, which is what lets this be asserted at all — the harness
+    // cannot mint a staff JWT. An active studio gets as far as that middleware
+    // and is refused for the ordinary reason.
     const call = () =>
       harness.app.request(`/api/v1/portal/auth/me`, {
         headers: { 'X-Tenant-Slug': slug },
@@ -487,11 +529,11 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
 
   test('the list shows every studio, Tenant #1 first, archived ones included', async () => {
     const slug = `prov-list-${Date.now()}`
-    const { tenant } = await provision.provisionTenant({
-      slug,
-      name: 'Listable',
-      adminEmail: 'owner@listable.test',
-    })
+    const clerk = fakeClerk()
+    const { tenant } = await provision.provisionTenant(
+      { slug, name: 'Listable', adminEmail: 'owner@listable.test' },
+      clerk.port,
+    )
     await tenantsService.setTenantStatus(tenant.id, 'archived')
 
     const rows = await tenantsService.listTenants()
