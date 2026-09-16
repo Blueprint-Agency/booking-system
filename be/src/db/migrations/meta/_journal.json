@@ -407,6 +407,13 @@
       "when": 1789554881533,
       "tag": "0057_email_log_sent_today",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1789554882533,
+      "tag": "0058_auth_event_member_export",
+      "breakpoints": true
     }
   ]
 }

@@ -6,9 +6,8 @@
  * their role and their location grants — none of which a platform admin has.
  * They belong to no studio; that is the whole point of them.
  */
-import { ApiError, type Api } from "@/lib/api";
-import { getApiBaseUrl } from "@/lib/api-url";
-import { tenantRequestHeaders } from "@/lib/tenant-host";
+import type { Api } from "@/lib/api";
+import { downloadFile } from "@/lib/download";
 
 export type TenantStatus = "active" | "suspended" | "archived";
 
@@ -107,49 +106,15 @@ export interface ImportSummary {
   opened: boolean;
 }
 
-/**
- * Download a studio's whole archive.
- *
- * Not through `api.get`, which parses JSON — this answers with a zip, and the
- * filename the operator should see is on the `Content-Disposition` header rather
- * than in a body. So the fetch is done here and the browser is handed a blob.
- *
- * A link with `download` cannot carry the `Authorization` header the platform
- * gate needs, which is why this is a fetch and a synthesised click rather than
- * an anchor pointing at the route.
- */
-export async function exportTenant(
+/** Download a studio's whole archive. */
+export function exportTenant(
   getToken: () => Promise<string | null>,
   tenant: PlatformTenant,
 ): Promise<void> {
-  const token = await getToken();
-  const res = await fetch(`${getApiBaseUrl()}/platform/tenants/${tenant.id}/export`, {
-    headers: {
-      ...tenantRequestHeaders(),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
+  return downloadFile(getToken, `/platform/tenants/${tenant.id}/export`, {
+    fallbackName: `${tenant.slug}.zip`,
+    failure: "The studio could not be exported.",
   });
-  if (!res.ok) {
-    throw new ApiError(res.status, undefined, "The studio could not be exported.");
-  }
-
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = filenameFrom(res) ?? `${tenant.slug}.zip`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  // Revoked on the next tick: released immediately, the click may not have read
-  // it yet in some browsers.
-  setTimeout(() => URL.revokeObjectURL(url), 0);
-}
-
-/** The name the server chose, if it offered one. */
-function filenameFrom(res: Response): string | null {
-  const header = res.headers.get("Content-Disposition");
-  return header?.match(/filename="([^"]+)"/)?.[1] ?? null;
 }
 
 /** Put an archive back into an empty studio. */

@@ -11,6 +11,7 @@ import {
   Loader2,
   RotateCcw,
   AlertTriangle,
+  Download,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, Badge, Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
@@ -24,6 +25,8 @@ import { SessionsPanel } from "@/components/access/sessions-panel";
 import { runsStudio } from "@/lib/staff-role";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
+import { downloadFile } from "@/lib/download";
+import { getPortalToken } from "@/lib/portal-auth";
 import { formatDate, formatRelative } from "@/lib/formatters";
 import type { ClientPackage } from "@/types";
 
@@ -145,6 +148,23 @@ export default function ClientProfilePage({
   const [workshopRefundFor, setWorkshopRefundFor] = useState<ApiWorkshopPurchase | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
+  // Everything the studio holds about this member, for an access request (#143).
+  // Logged as a staff act on the member.
+  const downloadData = async () => {
+    setExporting(true);
+    try {
+      await downloadFile(getPortalToken, `/portal/admin/clients/${id}/export`, {
+        fallbackName: `member-${id.slice(0, 8)}.zip`,
+        failure: "The member's data could not be downloaded.",
+      });
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "The member's data could not be downloaded.");
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const load = useCallback(async () => {
     if (!api) return;
@@ -299,6 +319,16 @@ export default function ClientProfilePage({
                 <span>Joined {formatDate(profile.joined_at)}</span>
               </div>
             </div>
+            {canEdit && (
+              <Button variant="ghost" size="sm" onClick={downloadData} disabled={exporting}>
+                {exporting ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Download className="h-3.5 w-3.5" />
+                )}
+                Download data
+              </Button>
+            )}
             {canEdit && !profile.deleted_at && (
               <Button
                 variant="ghost"

@@ -30,5 +30,24 @@ export type TenantArchive = {
   rows: Record<string, Record<string, unknown>[]>
 }
 
+/**
+ * One member's rows at one studio (#143): the same zip, for reading rather than
+ * restoring — so no write order and nothing deferred, and it names the member.
+ */
+export type MemberManifest = {
+  version: number
+  kind: 'member'
+  exportedAt: string
+  tenant: { id: string; slug: string; name: string }
+  member: { id: string; name: string; email: string }
+  tables: string[]
+  counts: Record<string, number>
+}
+
+export type MemberArchive = {
+  manifest: MemberManifest
+  rows: Record<string, Record<string, unknown>[]>
+}
+
 /** A file the operator handed us that we cannot use, and why. */
 export class ArchiveError extends Error {}
