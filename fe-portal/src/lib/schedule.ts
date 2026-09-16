@@ -105,8 +105,11 @@ export interface SchedulePtAttendee {
 
 export interface SchedulePtDetail {
   id: string;
-  /** Cancellation posts against this, NOT `id`. See `cancelPtRequest`. */
-  pt_request_id: string;
+  /**
+   * Cancellation posts against this, NOT `id`. See `cancelPtRequest`. Null once
+   * the member who requested the session was permanently deleted.
+   */
+  pt_request_id: string | null;
   lifecycle: "active" | "cancelled";
   starts_at: string;
   ends_at: string;

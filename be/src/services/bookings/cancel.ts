@@ -34,7 +34,7 @@ export interface CancelInput {
   actorStaffId?: string
   /**
    * The package that paid for this booking has been **Voided** by a Refund
-   * (§14). The seat is released and the waitlist promotes as usual, but nothing
+   * (§14). The seat is released as usual (there is no class waitlist to promote yet — #152), but nothing
    * is returned: putting a credit back into a package that no longer exists is
    * meaningless, and a `credit_returned` outcome would falsely read as the
    * member being made whole twice on top of their money back. The outcome is

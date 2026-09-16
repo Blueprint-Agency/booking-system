@@ -1,0 +1,1 @@
+ALTER TABLE "pt_sessions" ALTER COLUMN "pt_request_id" DROP NOT NULL;

@@ -32,6 +32,9 @@ import {
   type WorkshopPurchase,
 } from '../../../services/billing/refunds'
 import { listMemberSessions, signMemberOutEverywhere } from '../../../services/auth/account-access'
+import { exportMember } from '../../../services/clients/member-export'
+import { deleteMemberPermanently } from '../../../services/clients/member-delete'
+import { memberArchiveFilename, packArchive } from '../../../services/tenants/transfer-archive'
 import { sessionView } from '../session-view'
 
 const idParam = z.object({ id: z.string().uuid() })
@@ -393,6 +396,20 @@ const app = new Hono()
     c.set('auditTarget' as any, { table: 'clients', id })
     return c.json(clientRow(row))
   })
+  // ---- permanent delete (#144): the member's rows go, the studio's accounts
+  // stay without them. Admin only. Not audited by id: the
+  // audit row names the route, and the staff act names nobody.
+  .delete('/:id/permanently', zValidator('param', idParam), async c => {
+    const { id } = c.req.valid('param')
+    await deleteMemberPermanently({
+      tenantId: tenantId(c),
+      clientId: id,
+      actorStaffId: c.get('staffUserId'),
+      from: c.req.raw.headers,
+    })
+    c.set('auditPath' as any, c.req.routePath)
+    return c.json({ deleted: true })
+  })
   // ---- sessions (#119) ----
   .get('/:id/sessions', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
@@ -409,6 +426,24 @@ const app = new Hono()
     })
     c.set('auditTarget' as any, { table: 'clients', id })
     return c.json({ revoked })
+  })
+  // ---- member export (#143): everything the studio holds about the member, as
+  // a zip, for an access request. Admin only; logged as a staff act.
+  .get('/:id/export', zValidator('param', idParam), async c => {
+    const { id } = c.req.valid('param')
+    const archive = await exportMember({
+      tenantId: tenantId(c),
+      clientId: id,
+      actorStaffId: c.get('staffUserId'),
+      from: c.req.raw.headers,
+    })
+    const bytes = await packArchive(archive)
+    const filename = memberArchiveFilename(archive.manifest.tenant.slug, id, archive.manifest.exportedAt)
+    c.header('Content-Type', 'application/zip')
+    c.header('Content-Disposition', `attachment; filename="${filename}"`)
+    c.header('Access-Control-Expose-Headers', 'Content-Disposition')
+    // Copies off Node's shared buffer pool, as the studio export does.
+    return c.newResponse(new Uint8Array(bytes))
   })
 
 export default app

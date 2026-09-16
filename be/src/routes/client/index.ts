@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { clientAuth, requireActiveClient } from '../../middleware/client-auth'
 import { clientImpersonation } from '../../middleware/client-impersonation'
 import { audit } from '../../middleware/audit'
+import { checkoutRateLimit } from '../../middleware/checkout-rate-limit'
 
 import me from './me'
 import catalog from './catalog'
@@ -15,6 +16,7 @@ import referral from './referral'
 const app = new Hono()
   .use('*', clientAuth, requireActiveClient)
   .use('*', clientImpersonation, audit)
+  .use('/checkout/*', checkoutRateLimit)
   .route('/', me)
   .route('/', catalog)
   .route('/bookings', bookings)

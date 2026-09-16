@@ -12,12 +12,37 @@ was collapsed into it because no deployed database needed that history preserved
 
 ## Golden rules
 
+0. **Migrations only add.** A migration may add a table, a nullable column (or one with
+   a default), an index, an enum value. It does not rename or drop anything the build
+   currently running still reads. Two reasons, both about the deploy:
+
+   - The deploy migrates **before** it swaps the container, so for a minute the old build
+     serves against the new schema.
+   - Rolling back (`docs/md/deployment.md` § Rolling back the backend) moves the code,
+     never the data — the previous image runs against the already-migrated database.
+
+   Both are harmless when the migration only added: an older build ignores a column it
+   does not know. Both break when it renamed or dropped: the older build queries a column
+   that is gone.
+
+   A rename or a drop is therefore **expand → backfill → contract**, over at least two
+   deploys:
+
+   1. **Expand** — add the new column/table beside the old one. Ship code that writes
+      both and reads the new one where it is filled.
+   2. **Backfill** — copy the old data across (a `--custom` migration; see rule 3).
+   3. **Contract** — drop the old column/table, in a **later migration shipped in a later
+      deploy**, once no running build and no `PREVIOUS_IMAGE_TAG` reads it.
+
+   Never expand and contract in the same migration or the same deploy. The CI `drift` job
+   checks that the schema and the migrations agree; it cannot check this — review does.
+
 1. **`generate` is never automatic.** `make init` only runs `db:migrate` + `db:seed`.
    Never add `db:generate` to an automated target — it would regenerate against the
    live schema on every run.
 
-2. **Pure DDL change** (add/drop column, table, index, enum value with no data
-   backfill): edit `src/db/schema/`, then:
+2. **Pure DDL change** (add a column, table, index, enum value with no data
+   backfill — or the contract step of rule 0): edit `src/db/schema/`, then:
    ```
    npm run db:generate     # writes the next NNNN_*.sql + snapshot
    npm run db:migrate

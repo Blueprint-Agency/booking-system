@@ -1,0 +1,1 @@
+ALTER TYPE "public"."auth_event_kind" ADD VALUE 'member_data_exported';

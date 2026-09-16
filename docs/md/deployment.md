@@ -119,6 +119,12 @@ backend suite means no image is built and neither stack is touched.
   A manual `workflow_dispatch` always runs the tests, then deploys.
 - **Same Node as the image.** The `test` job runs on the Node major `be/Dockerfile` ships (22) and
   fails at once if the two drift apart — bump both together.
+- **Schema drift gates it too.** A `drift` job, which `deploy` also needs, migrates an empty
+  `postgres:16` from nothing and then runs `npm run db:generate`, which must answer *"No schema
+  changes, nothing to migrate"* and leave `be/src/db/migrations/` untouched. A schema edit committed
+  without its migration fails here. The job reads that line rather than the exit code: drizzle-kit
+  exits 0 both when it writes a migration and when it crashes wanting to ask about a rename. Fix
+  it on the branch with `npm run db:generate` in `be/` — `be/src/db/migrations/README.md`.
 
 **Frontend checks are advisory.** The same workflow runs `npm run check` in `fe-client/` and
 `fe-portal/` when their paths change, so a broken frontend test shows a red check on the commit or
@@ -174,6 +180,39 @@ restore command and what it does are the infrastructure repo's
 [`docs/backup-restore.md`](https://github.com/Blueprint-Agency/infrastructure/blob/main/docs/backup-restore.md).
 A deploy failing with `Pre-migration snapshot FAILED (backup.sh exit 2)` most often met the
 nightly backup (03:30 KL) mid-run: re-run it.
+
+### Rolling back the backend
+
+The deploy still pushes two tags — the floating `staging` / `latest` and the commit sha — but the
+stack runs **the sha**. After the new image passes its smoke test, the deploy writes it into the
+stack's `.env` as `IMAGE_TAG`, and moves the sha that was there to `PREVIOUS_IMAGE_TAG`. The deploy
+log prints both. So rolling the code back is one edit:
+
+```bash
+ssh bp-bpvps2
+cd /root/stacks/booking-staging          # booking-prod for production
+grep IMAGE_TAG .env                      # IMAGE_TAG=<bad sha>  PREVIOUS_IMAGE_TAG=<good sha>
+# swap the two values
+sed -i -e 's/^IMAGE_TAG=/SWAP_IMAGE_TAG=/' -e 's/^PREVIOUS_IMAGE_TAG=/IMAGE_TAG=/' \
+       -e 's/^SWAP_IMAGE_TAG=/PREVIOUS_IMAGE_TAG=/' .env
+docker compose up -d
+docker compose ps                        # booking-be healthy, on the good sha
+```
+
+Rolling forward again is the same swap. So is the next normal deploy, which writes its own sha and
+keeps whatever was running as `PREVIOUS_IMAGE_TAG`.
+
+- **This moves the code, never the data.** The rolled-back image runs against the database the
+  bad deploy already migrated. That is safe only because migrations only add (the golden rule in
+  `be/src/db/migrations/README.md`): an older build ignores a column it does not know. If the
+  migration itself broke data, the way back is the pre-migrate snapshot above
+  (`restore-live.sh`), not this.
+- **The first deploy after this change** records the floating tag the stack was on (`staging` or
+  `latest`) as `PREVIOUS_IMAGE_TAG`. On Docker Hub that tag already names the new build, so a
+  rollback to it lands on the old image only until anything re-pulls — do not count on it. There is
+  a real way back from the second deploy on.
+- A re-run of the same commit leaves `PREVIOUS_IMAGE_TAG` alone; a deploy that fails before the
+  smoke test passes does not touch either value.
 
 > **Every staging/production URL is a real domain — do not test against `*.vercel.app`.**
 > The generated aliases still exist and still resolve, but the backend's CORS allowlist contains
@@ -310,11 +349,75 @@ Notes:
 - `env vars` (set in **both** Environments): `PORT`, `TENANT_ORIGIN_PATTERNS`, `PLATFORM_ADMIN_EMAILS` (optional)
 - `org secrets`: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`
 - `repo/env secrets`: `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_APP_PASSWORD`, `DOCKERHUB_TOKEN`, `SSH_PRIVATE_KEY`, `IMPERSONATION_SECRET` (≥32 chars), `BETTER_AUTH_SECRET` (≥32 chars — required in **both** Environments; the backend fails Zod validation at boot without it), `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET` (the `whsec_…` signing secret of the Resend webhook pointed at `/api/v1/webhooks/resend`; unset, that route answers "not configured"), `SENTRY_DSN` (optional — error monitoring), `R2_*` (×5 — required in **both** Environments; see the `R2_PUBLIC_URL` note above), plus deferred `STRIPE_*`.
-- `NODE_ENV` (always `production`), `APP_ENV`, `ENV_NAME`, `STACK_DIR`, `BOOKING_FQDN` and `IMAGE_TAG` are derived from the branch in the workflow's `env:` block, not from repo settings. `BETTER_AUTH_URL` is derived too, as `https://$BOOKING_FQDN`.
+- `NODE_ENV` (always `production`), `APP_ENV`, `ENV_NAME`, `STACK_DIR`, `BOOKING_FQDN` and `IMAGE_TAG` are derived from the branch in the workflow's `env:` block, not from repo settings. `BETTER_AUTH_URL` is derived too, as `https://$BOOKING_FQDN`. The workflow's `IMAGE_TAG` is the floating tag it pushes (`staging` / `latest`); the stack's own `.env` on the host gets the commit sha instead — see [Rolling back the backend](#rolling-back-the-backend).
 - `ENABLE_JOBS` is hardcoded `true` in the workflow — the background cron jobs (`be/src/jobs/index.ts`) are not optional on a deployed server. With it off, pending PT requests never expire and members' session credits are never auto-refunded.
 
 **Two database connections, and why.** `DATABASE_URL` is the owner role (`DB_USER`) and is used for migrations and seeds only. The running server connects with `DATABASE_APP_URL`, built from `DB_APP_PASSWORD` for the `booking_app` role that `npm run db:migrate` provisions (`be/src/db/roles.ts`). This is not cosmetic: Postgres exempts superusers and table owners from Row-Level Security, so pointing the server at `DATABASE_URL` would leave the tenant policies (migration 0033) enforcing nothing while every request still succeeded. **`DB_APP_PASSWORD` must be set as an environment secret in BOTH `staging` and `Production` before the first deploy carrying this change** — without it the backend fails Zod validation at boot, which is the intended failure for a missing security control. The reasoning is recorded in `docs/adr/0002-shared-schema-row-level-security.md`.
 
 **Outbound mail leaves on the platform's domain, and it must be one Resend has verified.** Every tenant's transactional mail is sent through Resend as `reservetoday.app`, wearing that tenant's display name and its own `Reply-To` — a tenant's *own* domain on the `From` line would fail that domain's SPF and DKIM, because Resend is not authorised there. One envelope address for members and staff alike, `noreply@reservetoday.app`, and the platform name `ReserveToday` — both constants in `be/src/lib/mailer.ts`, not env, so there is no mail identity to set per Environment. Every send goes through one paced queue that puts sign-in codes first and alerts on quota (`mail_quota_exhausted`, `mail_quota_daily_high`, `mail_quota_monthly_high` in the logs). The decision, the send gate and the upgrade path are in `docs/md/mail-identity.md`. **After deploying #153, delete the `MAIL_FROM_EMAIL`, `MAIL_FROM_PORTAL_EMAIL` and `MAIL_FROM_NAME` variables from both GitHub Environments** — nothing reads them.
 
-**Env changes must update `.github/workflows/deploy-be.yml`** whenever a BE env var is added, renamed, or removed. The workflow's required-settings comment block AND the `echo "FOO=..."` lines that write `.env.booking-be` must both match `be/src/env.ts` exactly — and `be/.env.example` should reflect the same shape. Forgetting any of these makes prod boot fail Zod validation or silently miss a value. Same rule applies to fe-client/fe-portal env: if you add a `NEXT_PUBLIC_*` var, remember it also has to be set in the Vercel project dashboard.
+**Env changes must update `.github/workflows/deploy-be.yml`** whenever a BE env var is added, renamed, or removed. The workflow's required-settings comment block AND the `echo "FOO=..."` lines that write `.env.booking-be` must both match `be/src/env.ts` exactly — and `be/.env.example` should reflect the same shape, and the [Secret rotation](#secret-rotation) table should gain its row. Forgetting any of these makes prod boot fail Zod validation or silently miss a value. Same rule applies to fe-client/fe-portal env: if you add a `NEXT_PUBLIC_*` var, remember it also has to be set in the Vercel project dashboard.
+
+### Secret rotation
+
+Every value the three apps and their deploy read. No values here — only where each lives and what
+it costs to change. "GH env" is the branch's GitHub Environment (`staging` / `Production`, set in
+both); "GH org" is the Blueprint-Agency organization; "host `.env`" is `.env.booking-be` on bpvps2,
+which the deploy **rewrites from GitHub on every run** — so a backend secret is rotated in GitHub
+and takes effect on the next deploy, never by editing the host file (it would be overwritten).
+
+The general order for a key issued by a vendor: create the new key, set it, redeploy, check, *then*
+revoke the old one. Both keys work in between, so nothing breaks. The rows that cannot overlap say so.
+
+**Secrets**
+
+| Variable | Used by | Lives in | Rotated by | How often | What breaks while it rotates |
+|---|---|---|---|---|---|
+| `BETTER_AUTH_SECRET` | be | GH env → host `.env` | Backend dev | On suspected leak only | It signs every session and encrypts staff/platform authenticator-app (TOTP) secrets. **No overlap:** every member, staff and super-portal session is signed out, and authenticator apps enrolled under the old secret stop verifying — those users fall back to the emailed code and re-enrol. Rehearse on `staging` first. |
+| `IMPERSONATION_SECRET` | be | GH env → host `.env` | Backend dev | On suspected leak only | Signs impersonation grants (`be/src/lib/impersonation-grant.ts`). No overlap: an impersonation in progress ends; start it again. |
+| `DB_PASSWORD` (+ `DB_USER`, `DB_NAME`) | be (`DATABASE_URL`, migrations and seeds), Postgres container | GH env → host `.env` | Backend dev | Yearly, and on leak | The deploy also writes it as the container's `POSTGRES_PASSWORD`, but Postgres reads that only when its data volume is first created — so changing the secret alone breaks the next deploy's migrate step. `ALTER ROLE … PASSWORD` in the running database first, then update the secret and deploy. |
+| `DB_APP_PASSWORD` | be (`DATABASE_APP_URL`, the `booking_app` role) | GH env → host `.env` | Backend dev | Yearly, and on leak | The deploy's migrate step re-sets the role's password (`be/src/db/roles.ts`) just before the new container starts, so the old container loses new connections for the seconds in between. |
+| `STRIPE_SECRET_KEY` | be | GH env → host `.env` | Backend dev (Stripe account admin) | Yearly, and on leak | Roll in the Stripe dashboard with an expiry on the old key; checkout and refunds keep working until it expires. |
+| `STRIPE_WEBHOOK_SECRET` | be | GH env → host `.env` | Backend dev (Stripe account admin) | On leak | Roll the endpoint's signing secret with an overlap window. Without one, webhooks fail their signature check and Stripe retries them — purchases complete late, not never. |
+| `RESEND_API_KEY` | be | GH env → host `.env` | Backend dev | Yearly, and on leak | New key first. If the old one is revoked before the deploy, every mail — sign-in codes included — fails, so nobody can sign in. |
+| `RESEND_WEBHOOK_SECRET` | be (`/api/v1/webhooks/resend`) | GH env → host `.env` | Backend dev | On suspected leak only | **No overlap:** Resend has one signing secret per webhook. Between rolling it in Resend and the deploy, deliveries fail verification and are retried by Resend, so bounce and complaint outcomes arrive late, not lost. Mail still sends. |
+| `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | be | GH env → host `.env` | Backend dev (Cloudflare admin) | Yearly, and on leak | New token first. Revoked early, uploads fail; images already on the CDN keep loading. |
+| `R2_ACCOUNT_ID` / `R2_BUCKET_NAME` / `R2_PUBLIC_URL` | be | GH env → host `.env` | — | Not rotated (identifiers) | Kept as secrets, but not credentials. Changing them moves where images are read from. |
+| `SENTRY_DSN` | be | GH env → host `.env` | Backend dev | On leak (it is public by design) | Errors are dropped until the new DSN deploys. |
+| `NEXT_PUBLIC_SENTRY_DSN` | fe-client, fe-portal | Vercel (each project, Production and Preview) | Frontend dev | With `SENTRY_DSN` | Public — baked into the browser bundle. Needs a Vercel redeploy; the CSP's `connect-src` is built from it at build time, so it cannot drift. |
+| `SENTRY_AUTH_TOKEN` (+ `SENTRY_ORG`, `SENTRY_PROJECT`) | fe-client, fe-portal builds | Vercel, if set | Frontend dev | Yearly, and on leak | Only source-map upload. Without it the build still passes; stack traces are minified. |
+| `DOCKERHUB_TOKEN` | deploy | GH repo | Backend dev | Yearly, and on leak | Deploys fail at image push until updated. The running app is untouched. |
+| `SSH_PRIVATE_KEY` | deploy | GH repo | Backend dev (bpvps2 admin) | Yearly, and when someone with access leaves | Add the new public key to `deploy@bpvps2` before removing the old one, or deploys fail at SSH. |
+| `TS_OAUTH_CLIENT_ID` / `TS_OAUTH_SECRET` | deploy | GH org | Org admin (Tailscale) | Yearly, and on leak | Deploys of every repo using them fail to join the tailnet. The running app is untouched. |
+| `CF_DNS_API_TOKEN` | Traefik (shared, bpvps2) | host `.env` only — the deploy leaves it untouched | bpvps2 admin | Yearly, and on leak | Certificate issuance and renewal (DNS challenge) fail. Live certificates keep working until they expire, so there are weeks of slack. |
+| `TRAEFIK_DASHBOARD_AUTH` | Traefik (shared, bpvps2) | host `.env` only | bpvps2 admin | When someone with access leaves | Dashboard login only. Needs the Traefik container restarted. |
+| `R2_ORIGIN` | cdn | Vercel (`booking-cdn`) | Frontend dev | Not rotated (a URL) | Changing it points the CDN at another bucket; needs `vercel deploy --prod` from `cdn/`. |
+
+**Configuration, not secrets** — not rotated, listed so the table covers the whole env schema
+(`be/src/env.ts`) and both frontends' public values:
+
+- be, GH env vars: `PORT`, `PLATFORM_ADMIN_EMAILS`, `TENANT_ORIGIN_PATTERNS`, `STRIPE_STATEMENT_DESCRIPTOR_PREFIX`.
+- be, derived in the workflow: `NODE_ENV`, `APP_ENV`, `ENABLE_JOBS`, `BETTER_AUTH_URL`, `DATABASE_URL` and `DATABASE_APP_URL` (built from the DB secrets above).
+- fe-client and fe-portal, Vercel: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_ROOT_DOMAIN`, `NEXT_PUBLIC_APP_ENV`. `NEXT_PUBLIC_API_URL` also feeds the CSP — see below.
+- Deploy, GH org vars: `BPVPS2_TAILSCALE_HOST`, `DOCKERHUB_USERNAME`.
+
+### Security headers
+
+Both frontends send the same hardening headers on every response, from `headers()` in their
+`next.config.ts` (policy in `src/lib/security-headers.ts`, one copy per app): HSTS (two years,
+subdomains), `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`,
+`X-Frame-Options: DENY`, a `Permissions-Policy` that turns off camera, microphone, geolocation and
+payment (a camera check-in scanner will need `camera=(self)` on the portal), and an **enforced**
+Content-Security-Policy.
+
+The CSP admits what the pages actually load: scripts, styles and fonts from their own origin; fetches
+to the API origin and Sentry's ingest host, both read from `NEXT_PUBLIC_*` at **build** time — so
+changing either needs a Vercel redeploy, which a `NEXT_PUBLIC_*` change needs anyway; images from any
+`https:` host, because a studio's logo is a URL the studio owns. Stripe needs no entry: checkout is a
+full-page redirect to Stripe's hosted page, and nothing loads Stripe.js. Nothing frames the apps and
+they frame nothing. There is no analytics script to admit.
+
+Known gap: `script-src` still allows `'unsafe-inline'`. The App Router streams its payload in inline
+scripts, and removing it means a per-request nonce set in `proxy.ts`, which renders every page
+dynamically. That is the next step if the policy is to stop injected inline script, not only
+off-origin script.

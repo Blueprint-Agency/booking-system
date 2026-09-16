@@ -1129,7 +1129,7 @@ The "first paid" gate is implicit: the referee's first successful Stripe payment
 
 ### Migrations
 
-`drizzle-kit generate` → SQL committed to `db/migrations/` → `drizzle-kit migrate` on deploy. Schema-additive only by default. Destructive changes (drops, type narrowing) require explicit data-migration scripts checked in alongside.
+`drizzle-kit generate` → SQL committed to `db/migrations/` → `drizzle-kit migrate` on deploy. Migrations only add; a rename or drop is expand → backfill → contract across deploys — the rule and why are in `be/src/db/migrations/README.md` § Golden rules.
 
 ### Seed (`db/seed/`)
 

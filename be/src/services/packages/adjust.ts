@@ -90,7 +90,7 @@ export async function adjustBalance(input: AdjustInput): Promise<ClientPackageRo
     })
     // Topping up a spent package while the next one in its family runs
     // returns it to Dormant rather than tripping the one-Activated index.
-    const patch = await revivalPatch(tx, pkg, nextActive, new Date())
+    const patch = await revivalPatch(tx, { ...pkg, clientId: input.clientId }, nextActive, new Date())
 
     await tx
       .update(clientPackages)
