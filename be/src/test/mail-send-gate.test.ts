@@ -154,5 +154,19 @@ describe('mail through the send gate', { skip: integrationTestsEnabled ? false :
       })
     }
     assert.equal(await count(), before + 2, "the other studio's mail counts too")
+
+    // Resend's webhook moves a sent row on to its outcome; the slot stays used.
+    await harness.db.insert(schema.emailLog).values({
+      tenantId: one.id,
+      templateSlug: 'welcome',
+      recipientEmail: at('counted-delivered'),
+      recipientUserKind: 'client',
+      subjectRendered: 's',
+      bodyRendered: 'b',
+      status: 'delivered',
+      sentAt: new Date(),
+      outcomeAt: new Date(),
+    })
+    assert.equal(await count(), before + 3, 'delivered mail still counts')
   })
 })

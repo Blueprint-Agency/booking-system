@@ -145,7 +145,18 @@ export const emailRecipientKindEnum = pgEnum('email_recipient_kind', ['client', 
 // Spec §4j uses `email_log` with a `status` column. The pgEnum is named `email_log_status` per
 // backend-architecture.md §4 enum list; the existing migration named the pg enum `email_status`
 // — we rename here to track the spec. The column reference is updated in `content.ts`.
-export const emailLogStatusEnum = pgEnum('email_log_status', ['queued', 'sent', 'failed'])
+// The last four are what Resend's webhook reports after a send (#154); see
+// services/notifications/delivery-outcomes.ts for the order they move in.
+export const emailLogStatusEnum = pgEnum('email_log_status', [
+  'queued',
+  'sent',
+  'failed',
+  'delivered',
+  'bounced',
+  'complained',
+  'delivery_delayed',
+  'suppressed',
+])
 
 // Inbox — `pt_request` value REMOVED per §4l. PT triage moved to `/admin/pt-requests`.
 export const inboxItemTypeEnum = pgEnum('inbox_item_type', [

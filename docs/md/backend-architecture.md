@@ -12,7 +12,7 @@ The single backend serves **both** `fe-portal` and `fe-client`. `fe-portal` is t
 - `/api/v1/me/*` — `client` pool session (see `be-client.md`)
 - `/api/v1/portal/admin/*` and `/api/v1/portal/instructor/*` — `staff` pool session (see `be-portal.md`)
 - `/api/v1/platform/*` — `platform` pool session + `PLATFORM_ADMIN_EMAILS`
-- `/api/v1/webhooks/*` — Stripe signed webhook
+- `/api/v1/webhooks/*` — Stripe and Resend signed webhooks
 
 ---
 
@@ -130,8 +130,8 @@ be/
     │   │
     │   └── webhooks/                  # Public endpoints with vendor signature verification
     │       ├── index.ts
-    │       └── stripe.ts              # payment_intent.succeeded → grant; charge.refunded → mark
-    │                                  # (no SMTP bounce webhook — failures captured via Nodemailer rejection in email_log)
+    │       ├── stripe.ts              # payment_intent.succeeded → grant; charge.refunded → mark
+    │       └── resend.ts              # delivered / bounced / complained / suppressed → email_log status, with alerts
     │
     ├── services/                      # Per-feature — jointly owned, single source of domain rules
     │   ├── bookings/
@@ -895,7 +895,7 @@ trial_pass_purchase_confirmed          # NEW — distinct from package_purchase_
 
 #### `email_log`
 
-id, template_slug (text), recipient_email (text), recipient_user_id (uuid, nullable), recipient_user_kind enum (`client`, `staff`), subject_rendered (text), body_rendered (text), status enum (`queued`, `sent`, `failed`), smtp_message_id (text, nullable — RFC 5322 `Message-ID` header returned by Nodemailer), smtp_response (text, nullable — last line of SMTP server response), error (text, nullable), queued_at, sent_at.
+id, template_slug (text), recipient_email (text), recipient_user_id (uuid, nullable), recipient_user_kind enum (`client`, `staff`), subject_rendered (text), body_rendered (text), status enum (`queued`, `sent`, `failed`, then Resend's webhook outcomes `delivery_delayed`, `delivered`, `bounced`, `complained`, `suppressed` — outcomes only move forward), smtp_message_id (text, nullable — the Resend email id the webhook matches on), smtp_response (text, nullable — last line of SMTP server response), error (text, nullable), queued_at, sent_at, outcome_at (nullable — when the webhook last moved status past `sent`).
 
 **Indexes:** `(recipient_user_id, queued_at desc)`, `(status)`, `(template_slug, queued_at desc)`.
 

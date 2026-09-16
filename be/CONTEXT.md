@@ -54,7 +54,7 @@ _Avoid_: db user, service account
 **Tenant routing**:
 Answering "whose is this?" for a caller that arrives with no Tenant at all — a webhook, which hits one endpoint on a hostname carrying none. Something in the *signed body* is the routing key, and looking it up is a cross-Tenant read the application role cannot make, so it goes through an owner-owned `SECURITY DEFINER` function (migration 0034) that returns Tenant ids and nothing else. Everything after runs inside `withTenant`. Narrow steps, deliberately, rather than a standing exemption.
 
-The payment provider's webhook, the only one, routes off the payment intent. An event that names no Tenant is a logged no-op — never a default.
+The payment provider's webhook routes off the payment intent. The mail provider's webhook needs no lookup: the send path stamped the Tenant id on the message as a tag, the event carries it back under the provider's signature, and `withTenant` on that id lets RLS confine the update to that Tenant's `email_log`. An event that names no Tenant is a logged no-op — never a default.
 _Avoid_: webhook tenant, tenant lookup
 
 **Per-Tenant identity**:

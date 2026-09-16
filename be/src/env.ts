@@ -109,6 +109,9 @@ const schema = z.object({
   // constants in lib/mailer.ts; the *tenant* half of the from-identity is
   // per-studio data on `tenant_settings` (docs/md/mail-identity.md).
   RESEND_API_KEY: z.string().min(1, 'RESEND_API_KEY is required'),
+  // Signing secret (`whsec_…`) of the Resend webhook that reports delivery,
+  // bounce and complaint outcomes. Unset, that route answers "not configured".
+  RESEND_WEBHOOK_SECRET: z.string().optional(),
   R2_ACCOUNT_ID: z.string().optional(),
   R2_ACCESS_KEY_ID: z.string().optional(),
   R2_SECRET_ACCESS_KEY: z.string().optional(),

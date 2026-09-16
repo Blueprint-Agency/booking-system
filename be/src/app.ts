@@ -111,7 +111,9 @@ app.use('/api/v1/platform/*', authedLimiter)
 //     body's payment intent (services/billing/webhook-handler.ts). Opening a
 //     context here would wrap the real one in an unrelated transaction and hold
 //     two pooled connections for the length of a call to the provider — and,
-//     worse, would give an event that names no tenant a tenant anyway.
+//     worse, would give an event that names no tenant a tenant anyway. The mail
+//     provider's webhook is exempt for the same reason: it reads its tenant off
+//     the event's signed tag (services/notifications/delivery-outcomes.ts).
 //   - the super portal's own branch is cross-tenant by definition: it lists
 //     every studio and creates the ones that do not exist yet, so there is no
 //     single tenant to resolve and no honest context to open. Its gate is
@@ -124,6 +126,7 @@ app.use('/api/v1/platform/*', authedLimiter)
 const TENANT_CONTEXT_EXEMPT = (path: string) =>
   path === '/api/v1/healthz' ||
   path === '/api/v1/webhooks/stripe' ||
+  path === '/api/v1/webhooks/resend' ||
   path === '/api/v1/platform' ||
   path.startsWith('/api/v1/platform/') ||
   path.startsWith(`${AUTH_BASE_PATH.platform}/`) ||
