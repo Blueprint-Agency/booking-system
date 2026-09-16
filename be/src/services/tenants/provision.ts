@@ -35,7 +35,6 @@ import { isUniqueViolation } from '../../db/unique-violation'
 import { tenantOrigin } from '../../lib/allowed-origins'
 import { BadRequestError, ConflictError } from '../../shared/errors'
 import { logger } from '../../shared/logger'
-import { captureException } from '../../instrument'
 import { inviterNameFor, mailInvitation, writePendingStaff, type StaffInvitationRow } from '../auth/invitations'
 import { assertUsableSlug } from './slug'
 import { activateAfterFirstStaff, forgetCachedTenants, loadTenantById } from './tenants'
@@ -115,7 +114,6 @@ async function mailFirstAdmin(input: {
     )
   } catch (err) {
     logger.error({ err, tenantId: input.tenantId }, 'tenant provisioning: first admin invitation not mailed')
-    captureException(err, { scope: 'tenant-provision-invite-mail' })
   }
 }
 

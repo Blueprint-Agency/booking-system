@@ -6,8 +6,8 @@
  * What the page loads, and so what the policy admits:
  *
  *  - scripts, styles, fonts: this origin only. `next/font` self-hosts the font.
- *  - fetches: the API (`NEXT_PUBLIC_API_URL`) and Sentry's ingest host, read off
- *    `NEXT_PUBLIC_SENTRY_DSN`. There is no analytics script to admit.
+ *  - fetches: the API (`NEXT_PUBLIC_API_URL`) only. There is no analytics or
+ *    error-monitoring script to admit.
  *  - images: any https host. A studio's logo is a URL the studio owns — the CDN,
  *    an R2 public bucket, its own marketing site — so no fixed list is exact.
  *  - Stripe: nothing. Checkout is a full-page redirect to Stripe's hosted page,
@@ -20,7 +20,6 @@
 
 export type SecurityHeaderInput = {
   apiUrl: string | undefined;
-  sentryDsn: string | undefined;
   dev: boolean;
 };
 
@@ -35,10 +34,8 @@ function originOf(url: string | undefined): string | null {
   }
 }
 
-export function contentSecurityPolicy({ apiUrl, sentryDsn, dev }: SecurityHeaderInput): string {
-  const connect = ["'self'", originOf(apiUrl) ?? LOCAL_API, originOf(sentryDsn)].filter(
-    (source): source is string => source !== null,
-  );
+export function contentSecurityPolicy({ apiUrl, dev }: SecurityHeaderInput): string {
+  const connect = ["'self'", originOf(apiUrl) ?? LOCAL_API];
   const directives: Record<string, string[]> = {
     "default-src": ["'self'"],
     "script-src": ["'self'", "'unsafe-inline'", ...(dev ? ["'unsafe-eval'"] : [])],

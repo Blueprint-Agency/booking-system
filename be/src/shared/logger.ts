@@ -1,6 +1,5 @@
 import { pino } from 'pino'
 import { env } from '../env'
-import { captureException } from '../instrument'
 
 /**
  * Centralized structured logger (Pino).
@@ -43,9 +42,9 @@ export const logger = pino({
 export type Logger = typeof logger
 
 /**
- * The swallowed-error pair, written once: log the error OBJECT (Pino serialises
- * its stack — a flattened `err.message` throws that away) and report it to the
- * error monitor, exactly as middleware/error.ts and jobs/index.ts already do.
+ * The swallowed-error helper, written once: log the error OBJECT (Pino
+ * serialises its stack — a flattened `err.message` throws that away) with
+ * full context, exactly as middleware/error.ts and jobs/index.ts already do.
  *
  * For failures that must NOT undo work which has already committed — a
  * notification that fails after the decision it announces was written. The
@@ -57,5 +56,4 @@ export function reportError(
   context?: Record<string, unknown>,
 ): void {
   logger.error({ err, ...context }, message)
-  captureException(err, context)
 }

@@ -8,7 +8,6 @@ import { refundCredits } from '../packages/ledger'
 import { ptSessionCost } from './cost'
 import { AppError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { logger } from '../../shared/logger'
-import { captureException } from '../../instrument'
 
 /**
  * Cancel a PT request, branching on its current status. Single entry point for
@@ -287,9 +286,7 @@ export async function expireStaleSessions(): Promise<void> {
     } catch (err) {
       // A request that raced into a terminal/scheduled state between the scan and
       // the lock is fine to skip — the sweep is best-effort and idempotent.
-      const msg = err instanceof Error ? err.message : String(err)
-      logger.error({ ptRequestId: row.id, err: msg }, 'pt-expiry: failed to expire request')
-      captureException(err, { scope: 'pt-expiry', ptRequestId: row.id })
+      logger.error({ ptRequestId: row.id, err }, 'pt-expiry: failed to expire request')
     }
   }
 }

@@ -8,14 +8,14 @@ import { z } from 'zod'
  *   - Tenant origin patterns (CORS, links)
  *   - Resend (staff invitations + outbound transactional email)
  *
- * Anything not in this slice (Stripe, R2, Sentry) is *optional* — the
- * relevant lib will fail at use-site if missing rather than blocking boot.
+ * Anything not in this slice (Stripe, R2) is *optional* — the relevant lib
+ * will fail at use-site if missing rather than blocking boot.
  */
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   // Deployment environment NAME — separate from NODE_ENV (which stays
-  // 'production' on any server). Drives the Sentry environment tag + whether
-  // Sentry reports. 'staging' now; 'production' once that server exists.
+  // 'production' on any server). 'staging' now; 'production' once that server
+  // exists.
   APP_ENV: z.enum(['development', 'staging', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(4000),
 
@@ -102,10 +102,6 @@ const schema = z.object({
   R2_SECRET_ACCESS_KEY: z.string().optional(),
   R2_BUCKET_NAME: z.string().optional(),
   R2_PUBLIC_URL: z.string().optional(),
-
-  // Error monitoring (optional). Set to a Sentry DSN to turn on error
-  // reporting; leave blank and the app no-ops (see src/instrument.ts).
-  SENTRY_DSN: z.string().url().optional(),
 })
 
 const parsed = schema.safeParse(process.env)

@@ -1,5 +1,4 @@
 import type { NextConfig } from "next";
-import { withSentryConfig } from "@sentry/nextjs";
 import { securityHeaders } from "./src/lib/security-headers";
 
 const nextConfig: NextConfig = {
@@ -13,12 +12,6 @@ const nextConfig: NextConfig = {
   ...(process.env.VERCEL
     ? {}
     : { turbopack: { root: __dirname }, outputFileTracingRoot: __dirname }),
-  // Sentry's Node SDK (loaded by the instrumentation hook) relies on these
-  // module-loader shims. Turbopack otherwise externalizes them under a hashed
-  // virtual name that fails at runtime ("Failed to load external module
-  // require-in-the-middle-<hash>"). Listing them keeps them as real Node
-  // externals required by their actual name.
-  serverExternalPackages: ["require-in-the-middle", "import-in-the-middle"],
   // Every tenant is a different hostname, so local development is spent on
   // `{slug}.localhost:3000` rather than `localhost:3000`. Next's dev server
   // treats those as cross-origin and refuses to serve its internal assets to
@@ -62,7 +55,6 @@ const nextConfig: NextConfig = {
         source: "/:path*",
         headers: securityHeaders({
           apiUrl: process.env.NEXT_PUBLIC_API_URL,
-          sentryDsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
           dev: process.env.NODE_ENV !== "production",
         }),
       },
@@ -70,14 +62,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-// Wrapped for Sentry. Without SENTRY_AUTH_TOKEN/org/project the build simply
-// skips source-map upload — it never fails the build. Error capture itself is
-// gated on NEXT_PUBLIC_SENTRY_DSN in the sentry.*.config files.
-export default withSentryConfig(nextConfig, {
-  silent: true,
-  webpack: {
-    treeshake: {
-      removeDebugLogging: true,
-    },
-  },
-});
+export default nextConfig;

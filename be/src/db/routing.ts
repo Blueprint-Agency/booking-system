@@ -1,6 +1,5 @@
 import { sql } from 'drizzle-orm'
 import { db } from './index'
-import { captureException } from '../instrument'
 import { logger } from '../shared/logger'
 
 /**
@@ -44,13 +43,7 @@ export async function tenantForPaymentIntent(
   // one would unwind a plan in a studio the money may not have come from — so
   // refuse, loudly, and let a human do it in the right studio.
   const err = new Error('payment intent is held by more than one tenant — routing refused')
-  logger.error({ paymentIntentId, tenantIds, claimedTenantId }, err.message)
-  captureException(err, {
-    scope: 'stripe-webhook-routing',
-    paymentIntentId,
-    tenantIds,
-    claimedTenantId,
-  })
+  logger.error({ err, paymentIntentId, tenantIds, claimedTenantId }, err.message)
   return null
 }
 

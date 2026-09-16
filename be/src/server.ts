@@ -1,8 +1,3 @@
-// NOTE: './instrument' MUST be the first import so Sentry (when SENTRY_DSN is
-// set) initializes and auto-instruments the runtime before the HTTP server and
-// the rest of the app are loaded. captureException is imported from it; the
-// import itself triggers Sentry.init.
-import { captureException } from './instrument'
 import { env } from './env'
 import { serve } from '@hono/node-server'
 import app from './app'
@@ -10,9 +5,9 @@ import { logger } from './shared/logger'
 import { closeDb } from './db'
 
 /**
- * Node entry point. `instrument` runs first (error monitoring), then `env` is
- * validated up front — if anything required is missing, boot fails loudly with
- * a Zod error report before we open the HTTP socket.
+ * Node entry point. `env` is validated up front — if anything required is
+ * missing, boot fails loudly with a Zod error report before we open the HTTP
+ * socket.
  *
  * Background lifecycle jobs always start here — they are not optional. Tests
  * import `app`, not this file, so they never run them.
@@ -28,7 +23,6 @@ void import('./jobs')
   })
   .catch(err => {
     logger.error({ err }, 'failed to register background jobs')
-    captureException(err)
   })
 
 // ---- Graceful shutdown -------------------------------------------------------
@@ -58,16 +52,14 @@ process.on('SIGTERM', () => shutdown(0, 'SIGTERM'))
 process.on('SIGINT', () => shutdown(0, 'SIGINT'))
 
 // ---- Process-level safety nets -----------------------------------------------
-// An unhandled rejection is logged + reported but kept alive (often recoverable).
+// An unhandled rejection is logged but kept alive (often recoverable).
 process.on('unhandledRejection', reason => {
   logger.error({ err: reason }, 'unhandledRejection')
-  captureException(reason)
 })
 
-// An uncaught exception means unknown state (a programmer error) — log, report,
-// then exit so the container restarts clean rather than limping along.
+// An uncaught exception means unknown state (a programmer error) — log, then
+// exit so the container restarts clean rather than limping along.
 process.on('uncaughtException', err => {
   logger.fatal({ err }, 'uncaughtException — exiting')
-  captureException(err)
   shutdown(1, 'uncaughtException')
 })

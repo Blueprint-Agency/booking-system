@@ -4,7 +4,7 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 
 | App | Target | How it deploys |
 |---|---|---|
-| `fe-client/` | Vercel project `booking-system` (Root Directory = `fe-client/`) | `main` → `https://{slug}.reservetoday.app` (wildcard `*.reservetoday.app`); `staging` → `https://{slug}.dev.reservetoday.app` (wildcard `*.dev.reservetoday.app`). Env vars: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_ROOT_DOMAIN`, `NEXT_PUBLIC_SENTRY_DSN`, `NEXT_PUBLIC_APP_ENV` — set **twice**, once per scope (Production / Preview). Members sign in through the backend's Better Auth `client` pool, and so does a studio admin impersonating one, so nothing auth-related is set here. |
+| `fe-client/` | Vercel project `booking-system` (Root Directory = `fe-client/`) | `main` → `https://{slug}.reservetoday.app` (wildcard `*.reservetoday.app`); `staging` → `https://{slug}.dev.reservetoday.app` (wildcard `*.dev.reservetoday.app`). Env vars: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_ROOT_DOMAIN` — set **twice**, once per scope (Production / Preview). Members sign in through the backend's Better Auth `client` pool, and so does a studio admin impersonating one, so nothing auth-related is set here. |
 | `fe-portal/` | Vercel project `booking-system-admin` (Root Directory = `fe-portal/`) | `main` → `https://{slug}.portal.reservetoday.app` (wildcard `*.portal.reservetoday.app`); `staging` → `https://{slug}.portal.dev.reservetoday.app`. Same env shape as fe-client, with its own `NEXT_PUBLIC_ROOT_DOMAIN` (the `portal.` one). Staff and the super portal sign in through the backend's `staff` / `platform` pools, so nothing auth-related is set here either. |
 | `cdn/` | Vercel project `booking-cdn` (Root Directory = `cdn/`) | Edge proxy fronting the R2 bucket at `https://cdn.reservetoday.app`. One env var, `R2_ORIGIN`, the bucket's `pub-<hash>.r2.dev` URL. No DNS record needed — the zone's `*` ALIAS already resolves the name. **Not Git-connected**: deployed with `vercel deploy --prod` from `cdn/`, not on push. |
 | `be/` | bpvps2 (Docker) | Auto-deploy on push to `staging` **or** `main` (paths-filtered to `be/**`), **only after the backend test suite passes** — see [Tests gate the backend deploy](#tests-gate-the-backend-deploy). `.github/workflows/deploy-be.yml` builds the image, pushes to Docker Hub (`blueprintagency/booking-be`), SSHes to bpvps2 over Tailscale, writes `.env.booking-be` from the branch's GitHub Environment, and runs migrate/seed + `docker compose up -d`. |
@@ -270,7 +270,7 @@ Notes:
 - The proxy also **deletes every inbound `x-tenant-*` header** before setting its own, on every
   path, so Tenant context cannot be forged by a caller.
 
-`NODE_ENV` stays `production` on any server/build, incl. Vercel previews (build flag — enables optimizations + JSON logging); the environment NAME lives in `APP_ENV` (backend) / `NEXT_PUBLIC_APP_ENV` (frontend). Sentry reports from any deployed env (`APP_ENV !== development`) and is off in local dev.
+`NODE_ENV` stays `production` on any server/build, incl. Vercel previews (build flag — enables optimizations + JSON logging); the backend's environment NAME lives in `APP_ENV`.
 
 > **`booking-staging` carries the real data.** It predates `booking-prod`, which is a fresh
 > database. Migrating that data is a separate job — don't assume prod is populated.
@@ -348,7 +348,7 @@ Notes:
 - `org vars`: `BPVPS2_TAILSCALE_HOST`, `DOCKERHUB_USERNAME`
 - `env vars` (set in **both** Environments): `PORT`, `FRONTEND_URLS`, `PLATFORM_ADMIN_EMAIL` (optional)
 - `org secrets`: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`
-- `repo/env secrets`: `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_APP_PASSWORD`, `DOCKERHUB_TOKEN`, `SSH_PRIVATE_KEY`, `IMPERSONATION_SECRET` (≥32 chars), `BETTER_AUTH_SECRET` (≥32 chars — required in **both** Environments; the backend fails Zod validation at boot without it), `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET` (the `whsec_…` signing secret of the Resend webhook pointed at `/api/v1/webhooks/resend`; unset, that route answers "not configured"), `SENTRY_DSN` (optional — error monitoring), `R2_*` (×5 — required in **both** Environments; see the `R2_PUBLIC_URL` note above), plus deferred `STRIPE_*`.
+- `repo/env secrets`: `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_APP_PASSWORD`, `DOCKERHUB_TOKEN`, `SSH_PRIVATE_KEY`, `IMPERSONATION_SECRET` (≥32 chars), `BETTER_AUTH_SECRET` (≥32 chars — required in **both** Environments; the backend fails Zod validation at boot without it), `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET` (the `whsec_…` signing secret of the Resend webhook pointed at `/api/v1/webhooks/resend`; unset, that route answers "not configured"), `R2_*` (×5 — required in **both** Environments; see the `R2_PUBLIC_URL` note above), plus deferred `STRIPE_*`.
 - `NODE_ENV` (always `production`), `APP_ENV`, `ENV_NAME`, `STACK_DIR`, `BOOKING_FQDN` and `IMAGE_TAG` are derived from the branch in the workflow's `env:` block, not from repo settings. `BETTER_AUTH_URL` is derived too, as `https://$BOOKING_FQDN`. The workflow's `IMAGE_TAG` is the floating tag it pushes (`staging` / `latest`); the stack's own `.env` on the host gets the commit sha instead — see [Rolling back the backend](#rolling-back-the-backend).
 - The background cron jobs (`be/src/jobs/index.ts`) always start with the server — there is no env switch. Without them, pending PT requests never expire and members' session credits are never auto-refunded. Every server process runs them, so run one backend instance per database.
 
@@ -383,9 +383,6 @@ revoke the old one. Both keys work in between, so nothing breaks. The rows that 
 | `RESEND_WEBHOOK_SECRET` | be (`/api/v1/webhooks/resend`) | GH env → host `.env` | Backend dev | On suspected leak only | **No overlap:** Resend has one signing secret per webhook. Between rolling it in Resend and the deploy, deliveries fail verification and are retried by Resend, so bounce and complaint outcomes arrive late, not lost. Mail still sends. |
 | `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` | be | GH env → host `.env` | Backend dev (Cloudflare admin) | Yearly, and on leak | New token first. Revoked early, uploads fail; images already on the CDN keep loading. |
 | `R2_ACCOUNT_ID` / `R2_BUCKET_NAME` / `R2_PUBLIC_URL` | be | GH env → host `.env` | — | Not rotated (identifiers) | Kept as secrets, but not credentials. Changing them moves where images are read from. |
-| `SENTRY_DSN` | be | GH env → host `.env` | Backend dev | On leak (it is public by design) | Errors are dropped until the new DSN deploys. |
-| `NEXT_PUBLIC_SENTRY_DSN` | fe-client, fe-portal | Vercel (each project, Production and Preview) | Frontend dev | With `SENTRY_DSN` | Public — baked into the browser bundle. Needs a Vercel redeploy; the CSP's `connect-src` is built from it at build time, so it cannot drift. |
-| `SENTRY_AUTH_TOKEN` (+ `SENTRY_ORG`, `SENTRY_PROJECT`) | fe-client, fe-portal builds | Vercel, if set | Frontend dev | Yearly, and on leak | Only source-map upload. Without it the build still passes; stack traces are minified. |
 | `DOCKERHUB_TOKEN` | deploy | GH repo | Backend dev | Yearly, and on leak | Deploys fail at image push until updated. The running app is untouched. |
 | `SSH_PRIVATE_KEY` | deploy | GH repo | Backend dev (bpvps2 admin) | Yearly, and when someone with access leaves | Add the new public key to `deploy@bpvps2` before removing the old one, or deploys fail at SSH. |
 | `TS_OAUTH_CLIENT_ID` / `TS_OAUTH_SECRET` | deploy | GH org | Org admin (Tailscale) | Yearly, and on leak | Deploys of every repo using them fail to join the tailnet. The running app is untouched. |
@@ -411,11 +408,11 @@ payment (a camera check-in scanner will need `camera=(self)` on the portal), and
 Content-Security-Policy.
 
 The CSP admits what the pages actually load: scripts, styles and fonts from their own origin; fetches
-to the API origin and Sentry's ingest host, both read from `NEXT_PUBLIC_*` at **build** time — so
-changing either needs a Vercel redeploy, which a `NEXT_PUBLIC_*` change needs anyway; images from any
-`https:` host, because a studio's logo is a URL the studio owns. Stripe needs no entry: checkout is a
-full-page redirect to Stripe's hosted page, and nothing loads Stripe.js. Nothing frames the apps and
-they frame nothing. There is no analytics script to admit.
+to the API origin, read from `NEXT_PUBLIC_API_URL` at **build** time — so changing it needs a Vercel
+redeploy anyway; images from any `https:` host, because a studio's logo is a URL the studio owns.
+Stripe needs no entry: checkout is a full-page redirect to Stripe's hosted page, and nothing loads
+Stripe.js. Nothing frames the apps and they frame nothing. There is no analytics or error-monitoring
+script to admit.
 
 Known gap: `script-src` still allows `'unsafe-inline'`. The App Router streams its payload in inline
 scripts, and removing it means a per-request nonce set in `proxy.ts`, which renders every page

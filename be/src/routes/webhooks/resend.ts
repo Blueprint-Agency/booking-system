@@ -3,7 +3,6 @@ import { Resend } from 'resend'
 import { env } from '../../env'
 import { handleResendEvent } from '../../services/notifications/delivery-outcomes'
 import { logger } from '../../shared/logger'
-import { captureException } from '../../instrument'
 
 // Only for its `webhooks.verify` (Svix signatures); nothing is sent from here.
 const resend = new Resend(env.RESEND_API_KEY)
@@ -32,8 +31,7 @@ const app = new Hono().post('/resend', async c => {
   try {
     await handleResendEvent(event)
   } catch (err) {
-    logger.error({ err }, 'resend-webhook handler error')
-    captureException(err, { webhook: 'resend', eventType: event?.type })
+    logger.error({ err, eventType: event?.type }, 'resend-webhook handler error')
     return c.json({ error: 'handler_failed' }, 500)
   }
 

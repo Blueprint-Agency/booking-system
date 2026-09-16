@@ -1,6 +1,5 @@
 import cron from 'node-cron'
 import { logger } from '../shared/logger'
-import { captureException } from '../instrument'
 import { withTenant } from '../db'
 import { listJobTenants, type JobTenant } from '../services/tenants/tenants'
 import { SLOT_CRON, isDailySlot } from './local-time'
@@ -10,10 +9,10 @@ import { flagExpiredWaivers } from '../services/waiver'
 import { loadFeatureFlags } from '../services/feature-flags'
 
 /**
- * Wrap a cron handler so a thrown error (or rejected promise) is caught,
- * logged, and reported — instead of bubbling up as an unhandledRejection that
- * could take the process down. A failed run is logged; the schedule keeps
- * ticking, so the next run proceeds normally.
+ * Wrap a cron handler so a thrown error (or rejected promise) is caught and
+ * logged — instead of bubbling up as an unhandledRejection that could take
+ * the process down. A failed run is logged; the schedule keeps ticking, so
+ * the next run proceeds normally.
  */
 function safeJob(name: string, fn: () => Promise<unknown> | unknown) {
   return async () => {
@@ -23,7 +22,6 @@ function safeJob(name: string, fn: () => Promise<unknown> | unknown) {
       logger.debug({ job: name, ms: Math.round(performance.now() - start) }, 'cron job ok')
     } catch (err) {
       logger.error({ job: name, err }, 'cron job failed')
-      captureException(err, { job: name })
     }
   }
 }
@@ -63,7 +61,6 @@ function perTenant(
         })
       } catch (err) {
         logger.error({ job: name, tenantId, err }, 'cron job failed for tenant')
-        captureException(err, { job: name, tenantId })
       }
     }
   }
