@@ -260,11 +260,12 @@ Notes:
 
 > **Retiring Clerk (#121) — once per environment, staging first.**
 >
-> 1. **The user import (#120) must already have completed on that environment.** Migration 0052
->    refuses to run while any `clients` or `staff_users` row lacks `auth_user_id`, naming the
->    counts; 0053 then drops `clerk_user_id` and the two `tenants` organization columns. The import
->    script is gone from the tree — it lives in git history at commit `517af28`
->    (`npm run auth:import-clerk`); check that commit out to run it if an environment still needs it.
+> 1. **No user import is needed.** #120 settled on a fresh database per environment, so there are
+>    no Clerk-era rows to carry across: migration 0052 finds no `clients` or `staff_users` row
+>    lacking `auth_user_id` and passes, and 0053 drops `clerk_user_id` and the two `tenants`
+>    organization columns. The import script is gone from the tree — it lives in git history at
+>    commit `517af28` (`npm run auth:import-clerk`), kept for the record in case an environment is
+>    ever restored from a Clerk-era dump instead.
 > 2. **Take a database backup** before the deploy.
 > 3. **Deploy at a quiet time.** The migrate step runs before the container swap, so for the
 >    minute or so until the new container is up the old server still selects the dropped columns
