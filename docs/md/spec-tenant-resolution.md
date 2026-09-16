@@ -75,7 +75,7 @@ rather than a gap:
 None of the three is evidence about which tenant the caller meant, so none may
 override the header.
 
-Patterns come from `TENANT_ORIGIN_PATTERNS` and the wildcard is the **leftmost
+Patterns come from `FRONTEND_URLS` and the wildcard is the **leftmost
 label, exactly one label deep** — the boundary the certificates already enforce
 (RFC 6125), which is why `a.b.reservetoday.app` is unserveable in production and
 is not allowlisted here either. `lib/origin.ts` is the matcher; the same
@@ -172,7 +172,7 @@ same account.
 
 | Var | Meaning |
 |---|---|
-| `TENANT_ORIGIN_PATTERNS` | Comma-separated tenant subdomain origins, wildcard leftmost, plus any exact origin an environment needs. Backs CORS, the `Origin` check and the auth pools' trusted origins. |
+| `FRONTEND_URLS` | Comma-separated tenant subdomain origins, wildcard leftmost, plus any exact origin an environment needs. Backs CORS, the `Origin` check and the auth pools' trusted origins. |
 
 Values per environment:
 
@@ -183,7 +183,7 @@ production  https://*.reservetoday.app,https://*.portal.reservetoday.app
 ```
 
 Set together in `.github/workflows/deploy-be.yml`, `be/.env.example` and
-`be/src/env.ts`, per repo convention. `TENANT_ORIGIN_PATTERNS` is a GitHub
+`be/src/env.ts`, per repo convention. `FRONTEND_URLS` is a GitHub
 Environment **variable** (not a secret) in both environments.
 
 ## What this ticket did not do

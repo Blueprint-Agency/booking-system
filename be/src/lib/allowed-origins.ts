@@ -13,7 +13,7 @@ import {
  * pools' trusted origins and the public-route slug validation must agree about
  * which origins are ours, or one of them becomes the hole in the other two.
  *
- * `TENANT_ORIGIN_PATTERNS` — the tenant subdomain wildcards, one per environment
+ * `FRONTEND_URLS` — the tenant subdomain wildcards, one per environment
  * (`https://*.reservetoday.app`, `https://*.portal.dev.…`, …), plus any exact
  * origin that names no tenant, such as the bare local `http://localhost:3000`.
  *
@@ -21,10 +21,10 @@ import {
  * studio's two apps, which the wildcards already cover, and they were read
  * elsewhere as link bases — which is how a studio's identity got into platform
  * configuration and out again into other studios' emails. An environment that
- * really does need an extra exact origin puts it in `TENANT_ORIGIN_PATTERNS`,
+ * really does need an extra exact origin puts it in `FRONTEND_URLS`,
  * which has always accepted one.
  */
-export const allowedOriginPatterns = parseOriginPatterns(env.TENANT_ORIGIN_PATTERNS)
+export const allowedOriginPatterns = parseOriginPatterns(env.FRONTEND_URLS)
 
 /**
  * Both apps must be expressible, or the process does not start.
@@ -45,7 +45,7 @@ export const allowedOriginPatterns = parseOriginPatterns(env.TENANT_ORIGIN_PATTE
 for (const app of ['client', 'portal'] as const) {
   if (!tenantOriginFor(app, 'any-slug', allowedOriginPatterns)) {
     throw new Error(
-      `TENANT_ORIGIN_PATTERNS configures no ${app} wildcard, so no studio's ${app} URL ` +
+      `FRONTEND_URLS configures no ${app} wildcard, so no studio's ${app} URL ` +
         'can be derived and every link the backend mails would fail. Add one, with the ' +
         `wildcard as the leftmost label (${
           app === 'portal' ? 'https://*.portal.example.com' : 'https://*.example.com'

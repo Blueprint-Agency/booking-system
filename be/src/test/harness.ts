@@ -56,7 +56,7 @@ export type TestApp = {
 /** The password every harness-made staff and platform account signs in with. */
 export const HARNESS_PASSWORD = 'harness-password-not-a-secret'
 
-/** The origins the local frontends use; `TENANT_ORIGIN_PATTERNS` below admits them. */
+/** The origins the local frontends use; `FRONTEND_URLS` below admits them. */
 export const frontendOrigin = (pool: AuthPool, tenant: { slug: string } | null): string => {
   if (pool === 'platform') return 'http://admin.portal.localhost:3001'
   if (!tenant) throw new Error(`signInAs: the ${pool} pool signs in on a studio, and none was named`)
@@ -240,7 +240,7 @@ function stubEnvironment() {
   // real `Origin` and have it name a tenant — which is the whole of the
   // validation on public routes. The two exact origins are the bare local
   // hosts, which name no tenant and fall back to tenant #1.
-  process.env.TENANT_ORIGIN_PATTERNS ??=
+  process.env.FRONTEND_URLS ??=
     'http://*.localhost:3000,http://*.portal.localhost:3001,http://localhost:3000,http://localhost:3001'
   process.env.RESEND_API_KEY ??= 're_test_harness'
 }

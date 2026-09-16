@@ -11,7 +11,7 @@ import { ensureAuthUser } from '../../services/auth/auth-users'
  * on it arrives afterwards: created from the super portal, or restored from an
  * archive.
  *
- * So this seeds the people on `PLATFORM_ADMIN_EMAILS` into the Better Auth
+ * So this seeds the people on `PLATFORM_ADMIN_EMAIL` into the Better Auth
  * `platform` pool — the one the super portal signs in against (#116) — and
  * nothing else. There is no `staff_users` row to write: platform administration
  * deliberately lives outside every studio's rows, so that a studio's own
@@ -28,10 +28,10 @@ import { ensureAuthUser } from '../../services/auth/auth-users'
  * already exists is left exactly as they are.
  */
 export async function seedPlatformAdmins(db: Parameters<typeof ensureAuthUser>[0]) {
-  const admins = parsePlatformAdmins(process.env.PLATFORM_ADMIN_EMAILS)
+  const admins = parsePlatformAdmins(process.env.PLATFORM_ADMIN_EMAIL)
   if (admins.length === 0) {
     console.warn(
-      '[seed] PLATFORM_ADMIN_EMAILS is unset — nobody can reach the super portal, so no studio can be created.',
+      '[seed] PLATFORM_ADMIN_EMAIL is unset — nobody can reach the super portal, so no studio can be created.',
     )
     return
   }

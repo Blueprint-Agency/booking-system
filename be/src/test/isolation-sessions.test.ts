@@ -7,7 +7,7 @@ const run = Date.now().toString(36)
 const OPERATOR = `operator-${run}@sessions.test`
 
 // Read once when the platform gate is first imported, so it is set before the app is.
-process.env.PLATFORM_ADMIN_EMAILS = OPERATOR
+process.env.PLATFORM_ADMIN_EMAIL = OPERATOR
 
 /**
  * Tenant isolation for signed-in callers (#113), over real HTTP.

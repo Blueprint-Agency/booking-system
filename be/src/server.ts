@@ -14,23 +14,22 @@ import { closeDb } from './db'
  * validated up front — if anything required is missing, boot fails loudly with
  * a Zod error report before we open the HTTP socket.
  *
- * Background lifecycle jobs are opt-in through ENABLE_JOBS=true.
+ * Background lifecycle jobs always start here — they are not optional. Tests
+ * import `app`, not this file, so they never run them.
  */
 const server = serve({ fetch: app.fetch, port: env.PORT }, info => {
   logger.info({ port: info.port, env: env.NODE_ENV }, 'reservetoday-be started')
 })
 
-if (env.ENABLE_JOBS) {
-  void import('./jobs')
-    .then(({ registerJobs }) => registerJobs())
-    .then(() => {
-      logger.info('background jobs registered')
-    })
-    .catch(err => {
-      logger.error({ err }, 'failed to register background jobs')
-      captureException(err)
-    })
-}
+void import('./jobs')
+  .then(({ registerJobs }) => registerJobs())
+  .then(() => {
+    logger.info('background jobs registered')
+  })
+  .catch(err => {
+    logger.error({ err }, 'failed to register background jobs')
+    captureException(err)
+  })
 
 // ---- Graceful shutdown -------------------------------------------------------
 // Docker sends SIGTERM on `stop`/redeploy; drain in-flight requests, then exit.

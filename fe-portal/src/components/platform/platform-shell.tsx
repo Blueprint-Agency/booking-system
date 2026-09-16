@@ -17,7 +17,7 @@ import { signOutPortal, usePortalSession } from "@/lib/portal-auth";
  * hostname's storage (`lib/portal-auth.ts`), which the edge never sees, so a
  * visitor with none is sent to `/login` from here, remembering where they were
  * going. Whether a session may *use* the super portal is the backend's call
- * (`PLATFORM_ADMIN_EMAILS`), and the page renders its refusal.
+ * (`PLATFORM_ADMIN_EMAIL`), and the page renders its refusal.
  */
 export function PlatformShell({ children }: { children: React.ReactNode }) {
   const { isLoaded, session } = usePortalSession();

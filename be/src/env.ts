@@ -1,17 +1,6 @@
 import './db/url'
 import { z } from 'zod'
 
-const booleanEnv = z.preprocess(value => {
-  if (value === undefined || value === '') return false
-  if (typeof value === 'boolean') return value
-  if (typeof value === 'string') {
-    const normalized = value.toLowerCase()
-    if (['1', 'true', 'yes', 'on'].includes(normalized)) return true
-    if (['0', 'false', 'no', 'off'].includes(normalized)) return false
-  }
-  return value
-}, z.boolean())
-
 /**
  * Zod-validated env loader. Required vars cover:
  *   - DB connection
@@ -29,7 +18,6 @@ const schema = z.object({
   // Sentry reports. 'staging' now; 'production' once that server exists.
   APP_ENV: z.enum(['development', 'staging', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(4000),
-  ENABLE_JOBS: booleanEnv,
 
   // Two connection strings to the same database, on purpose. DATABASE_URL is the
   // owner — migrations and seeds only. DATABASE_APP_URL is the `booking_app`
@@ -53,7 +41,7 @@ const schema = z.object({
   // in, because folding one into the platform gate is exactly that escalation.
   // Unset means a super portal nobody can reach, which
   // is announced at boot. See services/tenants/platform-admin.ts.
-  PLATFORM_ADMIN_EMAILS: z.string().optional(),
+  PLATFORM_ADMIN_EMAIL: z.string().optional(),
 
   IMPERSONATION_SECRET: z
     .string()
@@ -86,9 +74,9 @@ const schema = z.object({
   // the environment makes about which origins are ours, so an environment that
   // sets none has an empty allowlist and serves nobody — a boot failure is the
   // honest form of that.
-  TENANT_ORIGIN_PATTERNS: z
+  FRONTEND_URLS: z
     .string()
-    .min(1, 'TENANT_ORIGIN_PATTERNS is required — e.g. https://*.example.app,https://*.portal.example.app'),
+    .min(1, 'FRONTEND_URLS is required — e.g. https://*.example.app,https://*.portal.example.app'),
 
   // Optional / deferred — accept anything (or empty string)
   STRIPE_SECRET_KEY: z.string().optional(),

@@ -32,7 +32,7 @@ describe('per-studio URLs', { skip: integrationTestsEnabled ? false : SKIP_REASO
   let purchaseMail!: typeof import('../services/notifications/send-purchase-email')
   let schema!: typeof import('../db/schema')
 
-  /** What the local `TENANT_ORIGIN_PATTERNS` serves each studio at. */
+  /** What the local `FRONTEND_URLS` serves each studio at. */
   const clientHost = (slug: string) => `http://${slug}.localhost:3000`
   const portalHost = (slug: string) => `http://${slug}.portal.localhost:3001`
 
@@ -163,7 +163,7 @@ describe('per-studio URLs', { skip: integrationTestsEnabled ? false : SKIP_REASO
     // removed.
     await assert.rejects(
       () => urls.requireTenantUrl('portal', nobody),
-      /TENANT_ORIGIN_PATTERNS/,
+      /FRONTEND_URLS/,
       'the refusal should name the variable an operator has to set',
     )
   })

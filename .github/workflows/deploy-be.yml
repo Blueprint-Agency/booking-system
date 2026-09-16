@@ -116,7 +116,7 @@ jobs:
       IMPERSONATION_SECRET: test-harness-impersonation-secret-key
       BETTER_AUTH_SECRET: test-harness-better-auth-secret-key-32chars
       BETTER_AUTH_URL: http://localhost:4000
-      TENANT_ORIGIN_PATTERNS: http://*.localhost:3000,http://*.portal.localhost:3001,http://localhost:3000,http://localhost:3001
+      FRONTEND_URLS: http://*.localhost:3000,http://*.portal.localhost:3001,http://localhost:3000,http://localhost:3001
       RESEND_API_KEY: re_test_harness
 
     defaults:
@@ -344,8 +344,8 @@ jobs:
             # Required GitHub settings:
             #   org vars:    BPVPS2_TAILSCALE_HOST, DOCKERHUB_USERNAME
             #   org secrets: TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET, SSH_PRIVATE_KEY, DOCKERHUB_TOKEN
-            #   env vars:    PORT, TENANT_ORIGIN_PATTERNS,
-            #            PLATFORM_ADMIN_EMAILS,
+            #   env vars:    PORT, FRONTEND_URLS,
+            #            PLATFORM_ADMIN_EMAIL,
             #            (optional) STRIPE_STATEMENT_DESCRIPTOR_PREFIX
             #   env secrets: DB_USER, DB_PASSWORD, DB_NAME, DB_APP_PASSWORD,
             #            IMPERSONATION_SECRET, BETTER_AUTH_SECRET, RESEND_API_KEY, RESEND_WEBHOOK_SECRET,
@@ -358,9 +358,6 @@ jobs:
               echo "NODE_ENV=production"
               echo "APP_ENV=${{ env.APP_ENV }}"
               echo "PORT=${{ vars.PORT }}"
-              # Background cron jobs (be/src/jobs/index.ts). Off means pending PT
-              # requests never expire and members' credits are never auto-refunded.
-              echo "ENABLE_JOBS=true"
               echo "TZ=Asia/Kuala_Lumpur"
               echo "DATABASE_URL=postgres://${{ secrets.DB_USER }}:${{ secrets.DB_PASSWORD }}@db-booking:5432/${{ secrets.DB_NAME }}"
               # Same database, reached as the `booking_app` role instead of the
@@ -381,7 +378,7 @@ jobs:
               # nobody can reach (the backend warns at boot and refuses everyone),
               # which is the safe failure but is almost certainly not what you
               # wanted.
-              echo "PLATFORM_ADMIN_EMAILS=${{ vars.PLATFORM_ADMIN_EMAILS }}"
+              echo "PLATFORM_ADMIN_EMAIL=${{ vars.PLATFORM_ADMIN_EMAIL }}"
               # Tenant subdomain origins, comma-separated, wildcard leftmost —
               # every studio is a subdomain and a studio is created by inserting
               # a row, so the allowlist has to be a pattern. Backs CORS, the
@@ -394,7 +391,7 @@ jobs:
               # studio's apps to every studio's members.
               #   staging:    https://*.dev.reservetoday.app,https://*.portal.dev.reservetoday.app
               #   production: https://*.reservetoday.app,https://*.portal.reservetoday.app
-              echo "TENANT_ORIGIN_PATTERNS=${{ vars.TENANT_ORIGIN_PATTERNS }}"
+              echo "FRONTEND_URLS=${{ vars.FRONTEND_URLS }}"
               # Impersonation grant signing — HS256 secret for the BE-signed JWT
               # that proves a /api/v1/me/* call is being made by a superadmin
               # impersonating a client. Must be at least 32 chars.

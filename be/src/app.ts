@@ -34,7 +34,7 @@ app.use('*', secureHeaders())
 
 // CORS — every tenant subdomain in this environment, plus the single-valued
 // origins that predate tenancy. A tenant is created by inserting a row, so its
-// origin cannot be listed in advance; `TENANT_ORIGIN_PATTERNS` carries the
+// origin cannot be listed in advance; `FRONTEND_URLS` carries the
 // wildcards and lib/origin.ts does the matching, one label deep. The same
 // allowlist backs the auth pools' trusted origins and the public-route slug
 // validation — see lib/allowed-origins.ts.

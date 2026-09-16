@@ -391,7 +391,7 @@ retired.**
       **Done (#65, #113)** — see `docs/md/spec-tenant-resolution.md`.
 - [x] CORS becomes pattern-based (`*.reservetoday.app`, `*.dev.reservetoday.app`) instead of
       single-valued `PORTAL_ORIGIN`/`CLIENT_ORIGIN`.
-      **Done (#65)** — new `TENANT_ORIGIN_PATTERNS`, matched by `be/src/lib/origin.ts`, which also
+      **Done (#65)** — new `FRONTEND_URLS`, matched by `be/src/lib/origin.ts`, which also
       feeds the auth pools' trusted origins. `PORTAL_ORIGIN` / `CLIENT_ORIGIN` are deleted
       outright, along with the per-studio links that were built from them.
 - [x] Enforce studio membership on authenticated routes. **Done** — a studio-pool session is
@@ -463,7 +463,7 @@ retired.**
 - [ ] Billing overview. Deferred — there is no per-tenant billing to overview yet.
 
 **The gate is not a staff role.** A `platform` pool session is required, and
-`PLATFORM_ADMIN_EMAILS` alone is the allowlist, checked against that session's
+`PLATFORM_ADMIN_EMAIL` alone is the allowlist, checked against that session's
 email. `staff_users.role = 'superadmin'` says what someone may do *inside one
 studio*; a studio's own superadmin must not be able to suspend another studio, so
 platform administration deliberately lives outside the database. Refusals answer

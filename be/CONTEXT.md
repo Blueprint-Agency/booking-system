@@ -83,7 +83,7 @@ An Admin signing in as one of the studio's members, to see what they see. It ope
 _Avoid_: act-as, masquerade, login-as
 
 **Platform administrator**:
-The operator of the super portal, signed in through the `platform` pool and named by `PLATFORM_ADMIN_EMAILS`. Not a staff member of any Tenant, holds no **Staff role**, and has no row in `staff_users` — creating or restoring a studio is the platform administrator's; running one is its Admins'. Never confused with an Admin: an Admin's powers stop at their own studio, and a platform administrator's start outside every studio.
+The operator of the super portal, signed in through the `platform` pool and named by `PLATFORM_ADMIN_EMAIL`. Not a staff member of any Tenant, holds no **Staff role**, and has no row in `staff_users` — creating or restoring a studio is the platform administrator's; running one is its Admins'. Never confused with an Admin: an Admin's powers stop at their own studio, and a platform administrator's start outside every studio.
 _Avoid_: root, platform owner, bare "admin" (which is the studio role)
 
 ### Packages and locations

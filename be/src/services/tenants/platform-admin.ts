@@ -17,7 +17,7 @@
  *    every tenant has no honest tenant context to be fenced by.
  *  - The dev team is a handful of people who change about never.
  *
- * `PLATFORM_ADMIN_EMAILS` is the whole of the list. A studio staff address used
+ * `PLATFORM_ADMIN_EMAIL` is the whole of the list. A studio staff address used
  * to be folded in by the caller, as a bootstrap convenience so that a deployment
  * setting nothing new kept one platform admin rather than none. That
  * convenience was the escalation described above, granted by default: it made
@@ -41,7 +41,7 @@ function fold(email: string): string {
 }
 
 /**
- * `PLATFORM_ADMIN_EMAILS` is a comma-separated list. Blank entries are dropped
+ * `PLATFORM_ADMIN_EMAIL` is a comma-separated list. Blank entries are dropped
  * rather than kept as empty strings — a trailing comma must not admit a caller
  * whose email failed to parse.
  */

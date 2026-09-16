@@ -14,17 +14,17 @@ describe('auth bootstrap seeds', { skip: integrationTestsEnabled ? false : SKIP_
   const run = Date.now().toString(36)
   const OPERATOR = `seed-operator-${run}@auth.test`
   const saved = {
-    platformAdmins: process.env.PLATFORM_ADMIN_EMAILS,
+    platformAdmins: process.env.PLATFORM_ADMIN_EMAIL,
   }
 
   before(async () => {
     harness = await startTestApp()
     schema = await import('../db/schema')
-    process.env.PLATFORM_ADMIN_EMAILS = OPERATOR
+    process.env.PLATFORM_ADMIN_EMAIL = OPERATOR
   })
 
   after(async () => {
-    process.env.PLATFORM_ADMIN_EMAILS = saved.platformAdmins
+    process.env.PLATFORM_ADMIN_EMAIL = saved.platformAdmins
     if (!harness) return
     await harness.db.delete(schema.platformAuthUsers).where(eq(schema.platformAuthUsers.email, OPERATOR))
     await harness.close()

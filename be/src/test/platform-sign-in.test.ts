@@ -16,14 +16,14 @@ const OPERATOR = `operator-${run}@platform.test`
 const FIRST_TIMER = `first-timer-${run}@platform.test`
 
 // Read once when the platform gate is first imported, so it is set before the app is.
-process.env.PLATFORM_ADMIN_EMAILS = `${OPERATOR},${FIRST_TIMER}`
+process.env.PLATFORM_ADMIN_EMAIL = `${OPERATOR},${FIRST_TIMER}`
 
 /**
  * The super portal signs in through its own pool (#116).
  *
  * `platform` is a Better Auth instance of its own, so a studio admin's
  * credentials are rows it has never seen: they cannot even produce a session
- * there, let alone reach `PLATFORM_ADMIN_EMAILS`. The allowlist is the second
+ * there, let alone reach `PLATFORM_ADMIN_EMAIL`. The allowlist is the second
  * gate, keyed on the session's email on every request.
  */
 describe('super portal sign-in', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
@@ -112,7 +112,7 @@ describe('super portal sign-in', { skip: integrationTestsEnabled ? false : SKIP_
     await expectStatus(await tenants(atStudio), 404, 'not_found')
   })
 
-  test('a platform account that is not on PLATFORM_ADMIN_EMAILS is refused', async () => {
+  test('a platform account that is not on PLATFORM_ADMIN_EMAIL is refused', async () => {
     // A valid session in the right pool: the allowlist is what refuses it. This
     // is where an address taken off the list lands on its next request — the
     // email is read from the session every time, with nothing remembered.

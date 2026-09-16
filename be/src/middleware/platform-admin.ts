@@ -13,7 +13,7 @@ declare module 'hono' {
 /**
  * The allowlist, read once at boot.
  *
- * `PLATFORM_ADMIN_EMAILS` alone — no studio's staff account is folded in. One
+ * `PLATFORM_ADMIN_EMAIL` alone — no studio's staff account is folded in. One
  * used to be, as a bootstrap convenience so that an environment setting nothing
  * new still had one platform admin rather than none. That convenience was the
  * escalation this module's own docstring warns about: it made one studio's
@@ -26,11 +26,11 @@ declare module 'hono' {
  * admitting a studio's admin to the whole platform is not — and it is
  * announced at boot rather than discovered at the door.
  */
-const PLATFORM_ADMINS = parsePlatformAdmins(env.PLATFORM_ADMIN_EMAILS)
+const PLATFORM_ADMINS = parsePlatformAdmins(env.PLATFORM_ADMIN_EMAIL)
 
 if (PLATFORM_ADMINS.length === 0) {
   logger.warn(
-    'PLATFORM_ADMIN_EMAILS is unset — the super portal has no administrators and will refuse everyone.',
+    'PLATFORM_ADMIN_EMAIL is unset — the super portal has no administrators and will refuse everyone.',
   )
 }
 
@@ -41,7 +41,7 @@ if (PLATFORM_ADMINS.length === 0) {
  *     Better Auth instance, whose users are rows no studio can write. A studio
  *     session — staff or member, admin or not — is a row this pool has
  *     never seen, so it never reaches the allowlist at all.
- *  2. **The session's email on `PLATFORM_ADMIN_EMAILS`.** Read from the session
+ *  2. **The session's email on `PLATFORM_ADMIN_EMAIL`.** Read from the session
  *     on every request and remembered nowhere, so an address taken off the list
  *     is refused on its next request.
  *

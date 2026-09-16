@@ -34,7 +34,7 @@ export interface MintImpersonationResult {
  *   - NotFoundError('client_not_found') if the row is missing
  *   - BadRequestError('client_origin_not_configured') if this environment can
  *     build no member-app origin for the studio (no client wildcard in
- *     TENANT_ORIGIN_PATTERNS)
+ *     FRONTEND_URLS)
  *   - BadRequestError('client_blocked') for a member the studio has blocked —
  *     the pool's session hook refuses them, as it does their own sign-in
  */

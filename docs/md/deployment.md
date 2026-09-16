@@ -20,7 +20,7 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 | fe-portal | `https://{slug}.portal.dev.reservetoday.app` | `https://{slug}.portal.reservetoday.app` |
 | Super portal | `https://admin.portal.dev.reservetoday.app` | `https://admin.portal.reservetoday.app` |
 | Vercel target | **preview** (branch-pinned domain) | **production** |
-| `TENANT_ORIGIN_PATTERNS` | `https://*.dev.reservetoday.app,https://*.portal.dev.reservetoday.app` | `https://*.reservetoday.app,https://*.portal.reservetoday.app` |
+| `FRONTEND_URLS` | `https://*.dev.reservetoday.app,https://*.portal.dev.reservetoday.app` | `https://*.reservetoday.app,https://*.portal.reservetoday.app` |
 | Auth | the staging backend's own three Better Auth pools (`/api/v1/auth/{client,staff,platform}`) | the production backend's own three pools — separate databases, so separate users and sessions |
 | `APP_ENV` / `NEXT_PUBLIC_APP_ENV` | `staging` | `production` |
 
@@ -47,7 +47,7 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 > is old enough that a 404 is the more honest answer.
 >
 > Nothing was needed on the backend for any of it. A removal only stops Vercel
-> answering for a name; `TENANT_ORIGIN_PATTERNS` and every link the backend
+> answering for a name; `FRONTEND_URLS` and every link the backend
 > builds already named the `{slug}.[portal.][dev.]reservetoday.app` forms and nothing else.
 >
 > The first studio's own `{slug}.portal.reservetoday.app` row went with them. It had been attached explicitly only
@@ -246,17 +246,17 @@ Notes:
 
 **CORS:** the BE allowlist is assembled from one env var, and the same list also backs the public-route `Origin` check and the auth pools' trusted origins — see `docs/md/spec-tenant-resolution.md`. If they disagreed, one would become the hole in the other two.
 
-- `TENANT_ORIGIN_PATTERNS` (**required**, `vars.TENANT_ORIGIN_PATTERNS`) — comma-separated tenant subdomain origins. **A tenant is created by inserting a row**, so its origin cannot be listed in advance; this is the pattern that admits a studio which did not exist when the backend was deployed. The `*` must be the **leftmost** label and covers **exactly one** label — the same boundary the certificates enforce (RFC 6125), so `a.b.reservetoday.app` is unserveable in production and is not allowlisted either. An exact origin (no `*`) is accepted too, for a host that names no tenant — e.g. the bare local `http://localhost:3000` — or any extra origin an environment needs to pin.
+- `FRONTEND_URLS` (**required**, `vars.FRONTEND_URLS`) — comma-separated tenant subdomain origins. **A tenant is created by inserting a row**, so its origin cannot be listed in advance; this is the pattern that admits a studio which did not exist when the backend was deployed. The `*` must be the **leftmost** label and covers **exactly one** label — the same boundary the certificates enforce (RFC 6125), so `a.b.reservetoday.app` is unserveable in production and is not allowlisted either. An exact origin (no `*`) is accepted too, for a host that names no tenant — e.g. the bare local `http://localhost:3000` — or any extra origin an environment needs to pin.
   - staging: `https://*.dev.reservetoday.app,https://*.portal.dev.reservetoday.app`
   - production: `https://*.reservetoday.app,https://*.portal.reservetoday.app`
   - It is also read **backwards** (`be/src/services/tenants/urls.ts`): a slug plus an app gives back the origin serving that studio, which is the base of every invitation link, member login link, account link and Stripe redirect the backend builds. That is why the link handed out and the origin the backend trusts cannot drift apart.
-- `PORTAL_ORIGIN` and `CLIENT_ORIGIN` are **gone**. They were one value each for the whole platform, so they could only ever name one studio's two apps — and everything built from them (staff invite links, member login links, Stripe redirects) pointed at the first studio whichever studio the code was acting for. The wildcards already cover those two hostnames; an environment that genuinely needs an extra exact origin adds it to `TENANT_ORIGIN_PATTERNS`.
+- `PORTAL_ORIGIN` and `CLIENT_ORIGIN` are **gone**. They were one value each for the whole platform, so they could only ever name one studio's two apps — and everything built from them (staff invite links, member login links, Stripe redirects) pointed at the first studio whichever studio the code was acting for. The wildcards already cover those two hostnames; an environment that genuinely needs an extra exact origin adds it to `FRONTEND_URLS`.
 
-> ⚠️ **The allowlist is shared, so a wildcard in it widens auth too.** Adding something like `https://*.vercel.app` to `TENANT_ORIGIN_PATTERNS` for preview URLs does not affect CORS alone: it also makes every Vercel preview host a trusted origin for sign-in and password-reset redirects, and — since the list is read backwards for link bases — a candidate origin to mail people. Add preview hosts only if that tradeoff is understood.
+> ⚠️ **The allowlist is shared, so a wildcard in it widens auth too.** Adding something like `https://*.vercel.app` to `FRONTEND_URLS` for preview URLs does not affect CORS alone: it also makes every Vercel preview host a trusted origin for sign-in and password-reset redirects, and — since the list is read backwards for link bases — a candidate origin to mail people. Add preview hosts only if that tradeoff is understood.
 
 **Auth:** self-hosted Better Auth, three pools on separate tables — `client` (members), `staff` (studio portals), `platform` (the super portal) — at `/api/v1/auth/{pool}`. Sessions are bearer tokens, and a studio-pool session carries the Tenant it signed in on. Two backend env vars: `BETTER_AUTH_SECRET` (environment secret, ≥32 chars; signs sessions and encrypts 2FA secrets for all three pools, so rotating it signs everyone out) and `BETTER_AUTH_URL` (derived in the workflow as `https://$BOOKING_FQDN`, the base of every link the pools mail). The frontends set nothing. See `docs/adr/0004-self-hosted-auth-with-better-auth.md`.
 
-**The super portal signs in through the `platform` pool.** fe-portal picks the pool by hostname (`fe-portal/src/lib/auth-pool.ts`): `admin.portal.…` signs in on `/api/v1/auth/platform`, every `{slug}.portal.…` on `/api/v1/auth/staff`. The two pools are separate user tables, so a studio staff member's email and password are refused at the super portal with no session issued, and `PLATFORM_ADMIN_EMAILS` stays the second gate on the session's email. Sessions are bearer tokens kept in each hostname's own `localStorage`, so the super portal and every studio portal hold separate sessions in one browser, and signing out of one leaves the others. There is nothing to configure on fe-portal for it; `npm run db:seed` creates each `PLATFORM_ADMIN_EMAILS` address in the platform pool without a password. The super portal's sign-in asks for the email first (`POST /api/v1/platform/sign-in/step`); an operator with no password yet is mailed the set-password link right there, and signs in once it is set.
+**The super portal signs in through the `platform` pool.** fe-portal picks the pool by hostname (`fe-portal/src/lib/auth-pool.ts`): `admin.portal.…` signs in on `/api/v1/auth/platform`, every `{slug}.portal.…` on `/api/v1/auth/staff`. The two pools are separate user tables, so a studio staff member's email and password are refused at the super portal with no session issued, and `PLATFORM_ADMIN_EMAIL` stays the second gate on the session's email. Sessions are bearer tokens kept in each hostname's own `localStorage`, so the super portal and every studio portal hold separate sessions in one browser, and signing out of one leaves the others. There is nothing to configure on fe-portal for it; `npm run db:seed` creates each `PLATFORM_ADMIN_EMAIL` address in the platform pool without a password. The super portal's sign-in asks for the email first (`POST /api/v1/platform/sign-in/step`); an operator with no password yet is mailed the set-password link right there, and signs in once it is set.
 
 > **Retiring Clerk (#121) — once per environment, staging first.**
 >
@@ -275,7 +275,7 @@ Notes:
 >    `CLERK_STAFF_WEBHOOK_SECRET`, `CLERK_STAFF_AUTHORIZED_PARTIES`, `CLERK_CLIENT_PUBLISHABLE_KEY`,
 >    `CLERK_CLIENT_SECRET_KEY`, `CLERK_CLIENT_WEBHOOK_SECRET`, `CLERK_PLATFORM_PUBLISHABLE_KEY`,
 >    `CLERK_PLATFORM_SECRET_KEY`) — moving any `CLERK_STAFF_AUTHORIZED_PARTIES` value into
->    `TENANT_ORIGIN_PATTERNS` first; delete `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and
+>    `FRONTEND_URLS` first; delete `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and
 >    `CLERK_SECRET_KEY` from the fe-client Vercel project, and `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`,
 >    `CLERK_SECRET_KEY`, `NEXT_PUBLIC_CLERK_PLATFORM_PUBLISHABLE_KEY` and
 >    `CLERK_PLATFORM_SECRET_KEY` (and `CLERK_ENCRYPTION_KEY`, if still there) from fe-portal, both
@@ -307,11 +307,11 @@ Notes:
 
 **GitHub repo settings driving `deploy-be.yml`** (see the comment block at the top of the workflow for the canonical list). The workflow job runs in the GitHub Environment named by the branch (`staging` / `Production`), so repo/environment settings can override organization-level settings with the same name. Shared deploy settings should live under the **Blueprint-Agency organization** and grant access to `booking-system`.
 - `org vars`: `BPVPS2_TAILSCALE_HOST`, `DOCKERHUB_USERNAME`
-- `env vars` (set in **both** Environments): `PORT`, `TENANT_ORIGIN_PATTERNS`, `PLATFORM_ADMIN_EMAILS` (optional)
+- `env vars` (set in **both** Environments): `PORT`, `FRONTEND_URLS`, `PLATFORM_ADMIN_EMAIL` (optional)
 - `org secrets`: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`
 - `repo/env secrets`: `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_APP_PASSWORD`, `DOCKERHUB_TOKEN`, `SSH_PRIVATE_KEY`, `IMPERSONATION_SECRET` (≥32 chars), `BETTER_AUTH_SECRET` (≥32 chars — required in **both** Environments; the backend fails Zod validation at boot without it), `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET` (the `whsec_…` signing secret of the Resend webhook pointed at `/api/v1/webhooks/resend`; unset, that route answers "not configured"), `SENTRY_DSN` (optional — error monitoring), `R2_*` (×5 — required in **both** Environments; see the `R2_PUBLIC_URL` note above), plus deferred `STRIPE_*`.
 - `NODE_ENV` (always `production`), `APP_ENV`, `ENV_NAME`, `STACK_DIR`, `BOOKING_FQDN` and `IMAGE_TAG` are derived from the branch in the workflow's `env:` block, not from repo settings. `BETTER_AUTH_URL` is derived too, as `https://$BOOKING_FQDN`.
-- `ENABLE_JOBS` is hardcoded `true` in the workflow — the background cron jobs (`be/src/jobs/index.ts`) are not optional on a deployed server. With it off, pending PT requests never expire and members' session credits are never auto-refunded.
+- The background cron jobs (`be/src/jobs/index.ts`) always start with the server — there is no env switch. Without them, pending PT requests never expire and members' session credits are never auto-refunded. Every server process runs them, so run one backend instance per database.
 
 **Two database connections, and why.** `DATABASE_URL` is the owner role (`DB_USER`) and is used for migrations and seeds only. The running server connects with `DATABASE_APP_URL`, built from `DB_APP_PASSWORD` for the `booking_app` role that `npm run db:migrate` provisions (`be/src/db/roles.ts`). This is not cosmetic: Postgres exempts superusers and table owners from Row-Level Security, so pointing the server at `DATABASE_URL` would leave the tenant policies (migration 0033) enforcing nothing while every request still succeeded. **`DB_APP_PASSWORD` must be set as an environment secret in BOTH `staging` and `Production` before the first deploy carrying this change** — without it the backend fails Zod validation at boot, which is the intended failure for a missing security control. The reasoning is recorded in `docs/adr/0002-shared-schema-row-level-security.md`.
 

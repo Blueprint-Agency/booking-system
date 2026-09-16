@@ -19,7 +19,7 @@ may, ever", and the admins who run a studio were locked out of running it.
 
 The name was also a hazard. "Superadmin" reads as the **platform administrator** who operates the
 super portal, a different thing entirely: signed in through the `platform` pool, named by
-`PLATFORM_ADMIN_EMAILS`, and outside every studio's rows.
+`PLATFORM_ADMIN_EMAIL`, and outside every studio's rows.
 
 ## Decision
 
@@ -74,5 +74,5 @@ workflow, the test harness, and `db/seed/`.
   location-scoped admins are needed again, that is a new decision, and grants would come back
   with a role that reads them.
 - **Platform administrators are untouched** — the super portal, the `platform` pool and
-  `PLATFORM_ADMIN_EMAILS` do not change, and neither role is ever called by the platform's name.
+  `PLATFORM_ADMIN_EMAIL` do not change, and neither role is ever called by the platform's name.
 - Historical plans under `docs/superpowers/` keep the old word; they are records of past decisions.

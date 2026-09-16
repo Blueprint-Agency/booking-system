@@ -10,7 +10,7 @@ import { mailPlatformSetPasswordLink } from './better-auth'
  * The super portal's sign-in asks for the email first, and decides the next
  * step from it:
  *
- *   - `set_password` — an operator on `PLATFORM_ADMIN_EMAILS` whose seeded
+ *   - `set_password` — an operator on `PLATFORM_ADMIN_EMAIL` whose seeded
  *     account has no password yet (`db/seed/platform-admin.ts`). The link that
  *     sets one is mailed right away, so there is no password field to fail at
  *     and no "Forgot password" to find.
@@ -31,7 +31,7 @@ export type FirstSignInStep =
 
 export const RESEND_COOLDOWN_MS = 60_000
 
-const PLATFORM_ADMINS = parsePlatformAdmins(env.PLATFORM_ADMIN_EMAILS)
+const PLATFORM_ADMINS = parsePlatformAdmins(env.PLATFORM_ADMIN_EMAIL)
 
 /** When each address was last mailed a link. One process serves the API, so memory is enough. */
 const lastSent = new Map<string, number>()

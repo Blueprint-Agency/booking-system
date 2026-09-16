@@ -133,7 +133,7 @@ const CODE_DIGITS = 6
 
 /**
  * The origins a request may name, in a redirect or in its `Origin` — the same
- * allowlist CORS reads (`TENANT_ORIGIN_PATTERNS`).
+ * allowlist CORS reads (`FRONTEND_URLS`).
  *
  * Handed over as a function returning concrete origins rather than as the
  * wildcard strings: Better Auth's own `*` also matches across dots, so

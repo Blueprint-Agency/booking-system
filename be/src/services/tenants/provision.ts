@@ -89,7 +89,7 @@ function normaliseEmail(raw: string): string {
  */
 function requirePortalUrl(slug: string): string {
   const url = tenantOrigin('portal', slug)
-  if (!url) throw new Error('TENANT_ORIGIN_PATTERNS configures no portal wildcard — no invitation link can be built')
+  if (!url) throw new Error('FRONTEND_URLS configures no portal wildcard — no invitation link can be built')
   return url
 }
 

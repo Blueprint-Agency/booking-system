@@ -11,7 +11,7 @@ The single backend serves **both** `fe-portal` and `fe-client`. `fe-portal` is t
 - `/api/v1/auth/{client,staff,platform}/*` — the three Better Auth pools (sign-in, sign-out, codes, password reset, 2FA)
 - `/api/v1/me/*` — `client` pool session (see `be-client.md`)
 - `/api/v1/portal/admin/*` and `/api/v1/portal/instructor/*` — `staff` pool session (see `be-portal.md`)
-- `/api/v1/platform/*` — `platform` pool session + `PLATFORM_ADMIN_EMAILS`
+- `/api/v1/platform/*` — `platform` pool session + `PLATFORM_ADMIN_EMAIL`
 - `/api/v1/webhooks/*` — Stripe and Resend signed webhooks
 
 ---
@@ -181,7 +181,7 @@ be/
     ├── middleware/
     │   ├── client-auth.ts             # `client` pool session + Tenant claim → load `clients` row
     │   ├── staff-auth.ts              # `staff` pool session + Tenant claim → load `staff_users` row
-    │   ├── platform-admin.ts          # `platform` pool session + PLATFORM_ADMIN_EMAILS
+    │   ├── platform-admin.ts          # `platform` pool session + PLATFORM_ADMIN_EMAIL
     │   ├── require-role.ts            # Factory: `requireRole('admin' | 'instructor')`
     │   ├── require-active.ts          # Block suspended clients / archived staff
     │   ├── impersonate.ts             # Admin acts as a member (sets ctx.actingAs + audit)

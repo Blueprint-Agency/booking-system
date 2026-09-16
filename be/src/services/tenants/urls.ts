@@ -10,7 +10,7 @@
  * studio's app after paying.
  *
  * The origins come from the tenant's own slug through `tenantOrigin`, which
- * reads the same `TENANT_ORIGIN_PATTERNS` wildcards CORS and the auth pools'
+ * reads the same `FRONTEND_URLS` wildcards CORS and the auth pools'
  * trusted origins accept. That is the point of deriving rather than configuring: the link
  * handed out and the origin the backend trusts cannot drift apart, and creating
  * a studio stays a row insert with no deploy behind it.
@@ -56,7 +56,7 @@ export async function requireTenantUrl(app: TenantApp, tenantId: string): Promis
     throw new Error(
       `no ${app} URL for tenant ${tenantId}: either the tenant does not exist or this ` +
         `environment configures no tenant origin wildcard for the ${app} app. ` +
-        'Set TENANT_ORIGIN_PATTERNS.',
+        'Set FRONTEND_URLS.',
     )
   }
   return url

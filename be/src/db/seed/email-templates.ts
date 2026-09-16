@@ -35,7 +35,7 @@ type TemplateWriter = Pick<PostgresJsDatabase<typeof schema>, 'execute'>
  * one studio's apps — so the second studio's instructor got an "Open the
  * schedule" button pointing at the first studio's portal, baked into
  * `body_html` where nothing would notice until it was clicked. `tenantOrigin`
- * reads the same `TENANT_ORIGIN_PATTERNS` wildcards CORS accepts, so the link
+ * reads the same `FRONTEND_URLS` wildcards CORS accepts, so the link
  * mailed out and the origin the backend trusts cannot drift apart.
  *
  * **An environment with no wildcard for an app is refused, not fallen back
@@ -62,7 +62,7 @@ export async function seedEmailTemplates(db: TemplateWriter, tenant: SeededTenan
     throw new Error(
       `cannot seed email templates for ${tenant.slug}: this environment configures no tenant ` +
         `origin wildcard for the ${clientUrl ? 'portal' : 'client'} app, so there is no honest ` +
-        'URL to bake into the copy. Set TENANT_ORIGIN_PATTERNS.',
+        'URL to bake into the copy. Set FRONTEND_URLS.',
     )
   }
 
