@@ -115,6 +115,7 @@ const parsed = schema.safeParse(process.env)
 if (!parsed.success) {
   const issues = parsed.error.issues.map(i => `  - ${i.path.join('.') || '(root)'}: ${i.message}`).join('\n')
   console.error('[env] invalid environment:\n' + issues)
+  // Invariant: boot-time configuration — the process does not start on a bad environment.
   throw new Error('Environment validation failed')
 }
 

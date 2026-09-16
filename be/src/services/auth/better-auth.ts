@@ -10,7 +10,7 @@ import { clients } from '../../db/schema/identity'
 import { env } from '../../env'
 import { originAllowed } from '../../lib/allowed-origins'
 import { GRANT_TTL_SECONDS } from '../../lib/impersonation-grant'
-import { BadRequestError } from '../../shared/errors'
+import { BadRequestError, ForbiddenError } from '../../shared/errors'
 import { PLATFORM_MAIL_FROM_NAME } from '../../lib/mailer'
 import { authAudit, recordAuthEvent } from './auth-events'
 import { verifyPoolPassword } from './password-hash'
@@ -433,6 +433,7 @@ export async function openImpersonationSession(input: {
     if (err instanceof APIError && err.message === 'client_blocked') throw new BadRequestError('client_blocked')
     throw err
   }
+  // Invariant: `createSession` returns the row it wrote or throws — never nothing.
   if (!session) throw new Error('openImpersonationSession: the client pool created no session')
 
   await recordAuthEvent({
@@ -481,7 +482,21 @@ export async function mailStaffSetPasswordLink(from: Headers, email: string, por
       body: JSON.stringify({ email, redirectTo: `${origin}/login` }),
     }),
   )
-  if (!res.ok) throw new Error(`mailStaffSetPasswordLink: the staff pool refused (${res.status}): ${await res.text()}`)
+  if (!res.ok) await refusePasswordLink('staff', res)
+}
+
+/**
+ * A set-password request the pool turned down. A refusal a person can meet — a
+ * rate limit, an origin it would not trust — is named; anything else means we
+ * built the request wrong, or the pool crashed, and stays a 500.
+ */
+async function refusePasswordLink(pool: 'staff' | 'platform', res: Response): Promise<never> {
+  const detail = await res.text()
+  if (res.status === 429 || res.status === 403) {
+    throw new ForbiddenError('password_link_refused', { status: res.status })
+  }
+  // Invariant: the request above is well-formed and the pool does not crash on one — anything else is our bug.
+  throw new Error(`${pool} pool failed a set-password request (${res.status}): ${detail}`)
 }
 
 /**
@@ -505,7 +520,7 @@ export async function mailPlatformSetPasswordLink(from: Headers, email: string, 
       body: JSON.stringify({ email, redirectTo: `${origin}/login` }),
     }),
   )
-  if (!res.ok) throw new Error(`mailPlatformSetPasswordLink: the platform pool refused (${res.status}): ${await res.text()}`)
+  if (!res.ok) await refusePasswordLink('platform', res)
 }
 
 /** Why a member's emailed code was not accepted — Better Auth's own codes. */

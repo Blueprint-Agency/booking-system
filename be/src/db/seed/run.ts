@@ -37,6 +37,7 @@ import { seedPlatformAdmins } from './platform-admin'
  * studios to run it for.
  */
 async function main() {
+  // Invariant: the seed script's own configuration — run by an operator, never a request.
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL is required to seed')
 
   // As the owner, like every seed: the auth pools carry no Row-Level Security,

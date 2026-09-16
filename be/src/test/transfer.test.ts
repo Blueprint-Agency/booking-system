@@ -34,6 +34,10 @@ after(async () => {
 
 const options = { skip: integrationTestsEnabled ? false : SKIP_REASON }
 
+/** An `import_refused` whose reason, which the operator reads, matches. */
+const refusedFor = (reason: RegExp) => (err: { code?: string; details?: { message?: string } }) =>
+  err.code === 'import_refused' && reason.test(String(err.details?.message))
+
 /** A third, empty Tenant to restore into — never one of the fixture pair. */
 async function emptyTenant(slug: string) {
   const [row] = await harness.db.execute<{ id: string }>(sql`
@@ -278,7 +282,7 @@ test('an archive row with no auth_user_id is refused by name', options, async ()
   archive.rows.clients![0]!.auth_user_id = null
 
   const target = await emptyTenant(`noauthdst-${Date.now()}`)
-  await assert.rejects(() => transfer.importTenant(target, archive), /auth_user_id/)
+  await assert.rejects(() => transfer.importTenant(target, archive), refusedFor(/auth_user_id/))
 })
 
 test('a studio that already has rows refuses the import', options, async () => {
@@ -288,7 +292,7 @@ test('a studio that already has rows refuses the import', options, async () => {
   // rather than guess which of two rows wins.
   await assert.rejects(
     () => transfer.importTenant(harness.tenants.one.id, source),
-    /already has rows/,
+    refusedFor(/already has rows/),
     'importing over a live studio must be refused',
   )
 })

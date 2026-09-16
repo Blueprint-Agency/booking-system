@@ -8,6 +8,7 @@ import {
 } from '../../services/tenants/transfer-archive'
 import { activateAfterFirstStaff, loadTenantById } from '../../services/tenants/tenants'
 import { ERROR_CODES } from '../../shared/error-codes'
+import { AppError } from '../../shared/errors'
 import { logger } from '../../shared/logger'
 
 /**
@@ -86,9 +87,10 @@ app.post('/tenants/:id/import', async c => {
     if (err instanceof ArchiveError) {
       return c.json({ error: ERROR_CODES.unreadable_archive, message: err.message }, 400)
     }
-    // A studio that already has rows, or a schema the archive predates. Both are
-    // the operator's to fix and both are worth saying out loud rather than
-    // returning a bare 500.
+    // Already named by the service, reason and all (`import_refused`, `not_found`).
+    if (err instanceof AppError) throw err
+    // Anything else the database refused mid-import. Still the operator's to
+    // look at, and worth saying out loud rather than returning a bare 500.
     const message = err instanceof Error ? err.message : 'The import could not be completed.'
     logger.warn({ tenant: tenant.slug, err }, 'tenant import refused')
     return c.json({ error: ERROR_CODES.import_refused, message }, 409)

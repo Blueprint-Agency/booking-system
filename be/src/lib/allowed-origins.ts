@@ -44,6 +44,7 @@ export const allowedOriginPatterns = parseOriginPatterns(env.FRONTEND_URLS)
  */
 for (const app of ['client', 'portal'] as const) {
   if (!tenantOriginFor(app, 'any-slug', allowedOriginPatterns)) {
+    // Invariant: boot-time configuration — the process does not start without a wildcard per app.
     throw new Error(
       `FRONTEND_URLS configures no ${app} wildcard, so no studio's ${app} URL ` +
         'can be derived and every link the backend mails would fail. Add one, with the ' +

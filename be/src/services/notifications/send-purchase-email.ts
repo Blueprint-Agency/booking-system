@@ -20,6 +20,7 @@ import { stripePayments } from '../../db/schema/ledger'
 import { workshops, workshopDays, workshopTierDays } from '../../db/schema/schedule'
 import { requireTenantUrl } from '../tenants/urls'
 import { reportError } from '../../shared/logger'
+import { NotFoundError } from '../../shared/errors'
 import { sgFormat } from '../../lib/time'
 import { composePurchaseEmail } from './purchase-email'
 import { sendTemplatedEmail } from './send'
@@ -96,7 +97,7 @@ export async function sendPackagePurchaseEmail(
       )
       .where(and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.id, clientPackageId)))
       .limit(1)
-    if (!row) throw new Error(`client_package_not_found:${clientPackageId}`)
+    if (!row) throw new NotFoundError('client_package_not_found', { clientPackageId })
 
     const { slug, variables } = composePurchaseEmail({
       kind: row.kind,
@@ -162,7 +163,7 @@ export async function sendWorkshopPurchaseEmail(
         ),
       )
       .limit(1)
-    if (!row) throw new Error(`workshop_booking_not_found:${bookingId}`)
+    if (!row) throw new NotFoundError('workshop_booking_not_found', { bookingId })
 
     // The tier's first day is the date the member needs; the rest are on the
     // booking page the QR link points at.

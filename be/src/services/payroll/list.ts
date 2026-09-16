@@ -456,6 +456,7 @@ export async function createManualPayroll(
     })
     .returning()
   const row = rows[0]
+  // Invariant: an insert that succeeds returns its row; a refused one throws.
   if (!row) throw new Error('insert returned no rows')
   return row
 }

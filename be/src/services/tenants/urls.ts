@@ -53,6 +53,7 @@ export async function tenantUrl(app: TenantApp, tenantId: string): Promise<strin
 export async function requireTenantUrl(app: TenantApp, tenantId: string): Promise<string> {
   const url = await tenantUrl(app, tenantId)
   if (!url) {
+    // Invariant: callers pass a Tenant that exists, and boot refuses a `FRONTEND_URLS` with no wildcard.
     throw new Error(
       `no ${app} URL for tenant ${tenantId}: either the tenant does not exist or this ` +
         `environment configures no tenant origin wildcard for the ${app} app. ` +

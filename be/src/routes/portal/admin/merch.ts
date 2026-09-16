@@ -16,7 +16,7 @@ const idParam = z.object({ id: z.string().uuid() })
 
 const priceField = z.union([z.string(), z.number()]).transform(v => {
   const n = typeof v === 'string' ? Number(v) : v
-  if (!Number.isFinite(n) || n < 0) throw new Error('price must be a non-negative number')
+  if (!Number.isFinite(n) || n < 0) throw new BadRequestError('invalid_price')
   return n.toFixed(2)
 })
 

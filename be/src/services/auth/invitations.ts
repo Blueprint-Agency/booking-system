@@ -134,6 +134,7 @@ export async function writePendingStaff(
       phone: input.phone ?? null,
     })
     .returning()
+  // Invariant: an insert that succeeds returns its row; a refused one throws.
   if (!staff) throw new Error('staff_users_insert_failed')
 
   // Instructor role requires a profile row so the catalog INNER JOIN in
@@ -161,6 +162,7 @@ export async function writePendingStaff(
       createdAt: now,
     })
     .returning()
+  // Invariant: an insert that succeeds returns its row; a refused one throws.
   if (!invitation) throw new Error('staff_invitations_insert_failed')
 
   return { staff, invitation }
@@ -597,7 +599,8 @@ export async function resendInvitation(
     .set({ createdAt: now, expiresAt })
     .where(and(eq(staffInvitations.tenantId, tenantId), eq(staffInvitations.id, invitationId)))
     .returning()
-  if (!updated) throw new Error('staff_invitations_update_failed')
+  // Found above, in another statement — so deleted since, by someone else.
+  if (!updated) throw new NotFoundError('invitation_not_found')
 
   const [invitee] = inv.staffUserId
     ? await db

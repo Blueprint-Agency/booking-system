@@ -19,6 +19,7 @@ import * as schema from './schema'
  * isolation would be nothing but a comment.
  */
 const url = process.env.DATABASE_APP_URL
+// Invariant: boot-time configuration — the process does not start without it.
 if (!url) throw new Error('DATABASE_APP_URL is required')
 
 const client = postgres(url)

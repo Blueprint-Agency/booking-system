@@ -59,6 +59,7 @@ export async function seedEmailTemplates(db: TemplateWriter, tenant: SeededTenan
   const clientUrl = tenantOrigin('client', tenant.slug)
   const portalUrl = tenantOrigin('portal', tenant.slug)
   if (!clientUrl || !portalUrl) {
+    // Invariant: `FRONTEND_URLS` names a wildcard per app — boot checks it (`lib/allowed-origins.ts`).
     throw new Error(
       `cannot seed email templates for ${tenant.slug}: this environment configures no tenant ` +
         `origin wildcard for the ${clientUrl ? 'portal' : 'client'} app, so there is no honest ` +

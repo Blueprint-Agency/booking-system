@@ -37,6 +37,7 @@ export type AuthEvent = {
 export async function recordAuthEvent(event: AuthEvent): Promise<void> {
   const tenantId = event.pool === 'platform' ? null : currentTenantId()
   if (event.pool !== 'platform' && !tenantId) {
+    // Invariant: studio pool requests run behind `resolveTenant` — a caller bug otherwise, not a request's.
     throw new Error(`recordAuthEvent: a ${event.pool} event outside a Tenant context would be filed as the platform's`)
   }
   await db.insert(authEvents).values({

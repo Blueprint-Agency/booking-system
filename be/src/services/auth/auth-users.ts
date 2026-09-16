@@ -45,6 +45,7 @@ export async function ensureAuthUser(
     .onConflictDoNothing({ target: users.email })
 
   const [row] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1)
+  // Invariant: the insert above either wrote this address or found it already there.
   if (!row) throw new Error(`ensureAuthUser: no ${pool} user for ${email} after insert`)
   return row.id
 }

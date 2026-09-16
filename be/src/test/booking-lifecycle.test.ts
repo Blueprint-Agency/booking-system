@@ -412,4 +412,21 @@ describe('booking lifecycle over HTTP', { skip: integrationTestsEnabled ? false 
     assert.equal(await creditsLeft(jay), 9)
     assert.equal(await creditsLeft(kim), 10)
   })
+
+  test('a studio with no cancellation policy refuses a cancel by name, not with a 500', async () => {
+    const lou = await member(two, 'lou')
+    const bookingId = await bookOk(lou, await addClass(two, 3 * DAY))
+    const policy = await policyOf(two)
+
+    await harness.db.delete(schema.globalPolicy).where(eq(schema.globalPolicy.tenantId, two.id))
+    try {
+      const res = await cancel(lou, bookingId)
+      const text = await res.text()
+      assert.equal(res.status, 404, text)
+      assert.equal((JSON.parse(text) as { error: string }).error, 'policy_not_seeded')
+    } finally {
+      await harness.db.insert(schema.globalPolicy).values(policy)
+    }
+    assert.equal((await bookingRow(bookingId)).state, 'confirmed')
+  })
 })

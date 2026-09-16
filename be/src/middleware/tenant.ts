@@ -126,6 +126,7 @@ export function tenantCorroborated(c: Context): boolean {
  */
 export function tenantId(c: Context): string {
   const id = c.get('tenantId')
+  // Invariant: only routes mounted behind `resolveTenant` call this — a wiring bug otherwise.
   if (!id) throw new Error('tenant not resolved — is the resolveTenant middleware mounted?')
   return id
 }

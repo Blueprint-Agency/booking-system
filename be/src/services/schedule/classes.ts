@@ -246,8 +246,8 @@ export async function updateClass(
         .set(set)
         .where(and(eq(classes.tenantId, tenantId), eq(classes.id, id)))
         .returning()
-      // Unreachable DB invariant (row existence checked above) — see note above.
-      if (!rows[0]) throw new Error('update returned no rows')
+      // Read above, outside this transaction — so deleted since, by someone else.
+      if (!rows[0]) throw new NotFoundError('class_not_found')
       row = rows[0]
     }
 
