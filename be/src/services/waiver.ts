@@ -1,8 +1,3 @@
-/** Insert waiver_signatures row. Unique on client_id — second call returns 409. */
-export async function signWaiver(_clientId: string): Promise<void> {
-  throw new Error('not implemented')
-}
-
 /**
  * Daily cron: surface clients whose waiver signature is older than the current
  * waiver.updated_at (i.e. they signed an older version of the text). v1 just

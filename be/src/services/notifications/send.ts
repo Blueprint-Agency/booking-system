@@ -201,8 +201,3 @@ export async function emailEveryAdmin(
     reportError(err, 'admin notification failed', { tenantId, slug, ...context })
   }
 }
-
-/** Back-compat shim. Older callers (none in v0 yet) used the throwing variant. */
-export async function enqueueEmail(input: SendInput): Promise<void> {
-  await sendTemplatedEmail(input)
-}

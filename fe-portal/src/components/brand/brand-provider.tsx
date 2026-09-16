@@ -33,18 +33,6 @@ export function useBrand(): Brand {
 }
 
 /**
- * One overridable string, by key, falling back to the copy written here.
- *
- * The fallback is an argument rather than a lookup table because the sentence
- * belongs next to the component that says it — a table of default copy is a
- * second place for the words to live and a first place for them to drift.
- */
-export function useBrandCopy(key: string, fallback: string): string {
-  const brand = useBrand();
-  return brand.copy[key]?.trim() || fallback;
-}
-
-/**
  * Only tokens the studio actually set — anything else must fall through.
  *
  * A key is emitted verbatim with a `--` prefix, so it has to be the name the

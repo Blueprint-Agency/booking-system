@@ -29,12 +29,3 @@ export function generateBookingCodes(): { qrToken: string; code: string } {
   }
   return { qrToken, code }
 }
-
-/** Normalize manual code entry: uppercase + map common misreads. */
-export function normalizeCode(input: string): string {
-  return input
-    .trim()
-    .toUpperCase()
-    .replace(/I|L/g, '1')
-    .replace(/O/g, '0')
-}

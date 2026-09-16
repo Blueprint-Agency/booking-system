@@ -52,8 +52,3 @@ export function img(key: string): ImageEntry {
   if (!found) throw new Error(`Unknown image key: ${key}`);
   return found;
 }
-
-/** Helper: filter by category. */
-export function imgsByCategory(category: ImageEntry["category"]): ImageEntry[] {
-  return IMAGES.filter((i) => i.category === category);
-}

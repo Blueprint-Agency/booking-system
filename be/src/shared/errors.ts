@@ -10,12 +10,6 @@ export class BadRequestError extends AppError {
   }
 }
 
-export class UnauthorizedError extends AppError {
-  constructor(code = 'unauthorized', details?: Record<string, unknown>) {
-    super(401, code, details)
-  }
-}
-
 export class ForbiddenError extends AppError {
   constructor(code = 'forbidden', details?: Record<string, unknown>) {
     super(403, code, details)

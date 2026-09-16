@@ -1,7 +1,6 @@
 import { and, desc, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { corporatePackages } from '../../db/schema/packages'
-import { corporateSessions } from '../../db/schema/schedule'
 import { BadRequestError } from '../../shared/errors'
 
 export type CorporatePackageRow = typeof corporatePackages.$inferSelect
@@ -125,31 +124,6 @@ export async function unarchiveCorporatePackage(
     .where(and(eq(corporatePackages.tenantId, tenantId), eq(corporatePackages.id, id)))
     .returning()
   return row ?? null
-}
-
-/**
- * Legacy hard-delete. Kept only because the PATCH-driven UI predates the
- * uniform soft-delete contract. New callers should use softDeleteCorporatePackage.
- */
-export async function deleteCorporatePackage(
-  tenantId: string,
-  id: string,
-): Promise<'ok' | 'in_use'> {
-  const [used] = await db
-    .select({ id: corporateSessions.id })
-    .from(corporateSessions)
-    .where(
-      and(
-        eq(corporateSessions.tenantId, tenantId),
-        eq(corporateSessions.corporatePackageId, id),
-      ),
-    )
-    .limit(1)
-  if (used) return 'in_use'
-  await db
-    .delete(corporatePackages)
-    .where(and(eq(corporatePackages.tenantId, tenantId), eq(corporatePackages.id, id)))
-  return 'ok'
 }
 
 /**
