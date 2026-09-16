@@ -161,6 +161,82 @@ merging.
 > `docker image inspect blueprintagency/booking-be:latest --format '{{.Id}}'`. A healthy container
 > is not evidence of a current one.
 
+### Browser journeys gate the production deploy
+
+Three golden paths run in a real browser (Playwright, `e2e/` — its own `package.json`, sharing
+nothing with the apps) against **staging**:
+
+1. A member buys a plan with a Stripe test card (`4242…`, on Stripe's hosted Checkout) and books a class.
+2. An admin creates a class in the portal, and the instructor sees it on their schedule.
+3. A member cancels inside the window, and the credit comes back.
+
+`.github/workflows/e2e.yml` runs them. `deploy-be.yml` calls it as the `e2e` job on a **`main`** push
+(or dispatch), and `deploy` needs it there: **red journeys mean the production backend deploy does not
+start.** On `staging` the job is skipped — staging is what they run against, so a staging deploy
+cannot wait on them. Before starting, the job waits for any staging deploy still in flight, then
+**fails unless staging runs this commit's backend** (its `IMAGE_TAG` sha has the same `be/` as the
+commit being deployed). So a commit that skipped `staging`, or whose staging deploy failed and left the
+old image serving, cannot reach production on journeys that tested something else. Deploy it to
+staging first, then re-run.
+
+- **No retries.** The journeys change their studio as they go, so a second attempt meets a different
+  studio. For a network blip, re-run the workflow — it makes a fresh studio.
+- **A failed teardown is a warning, not a red gate.** The next run's setup sweeps what was left.
+- **Manual runs use their own concurrency group**, so starting one by hand can never displace a
+  queued production gate (which would skip that push's deploy, not fail it).
+
+- **Their own studio, every run.** The job SSHes to bpvps2 and runs
+  `docker compose run --rm -T booking-be npm run -s e2e:studio -- setup` in the staging stack
+  (`be/src/e2e/`). That makes a studio with slug `e2e-<run>` — a prefix the super portal refuses for
+  real studios (`services/tenants/slug.ts`) — with an admin, an instructor, two members on Resend's
+  `delivered+…@resend.dev` sink, a plan, class types and classes. Teardown deletes every row carrying
+  that studio's `tenant_id` and the auth users on those addresses, and refuses any other slug. Setup
+  also sweeps e2e studios older than two hours, which a killed run leaves behind. No real studio or
+  member is read or written, and production refuses the command outright.
+- **Members are signed in by token.** The command registers them in-process with the null mail
+  transport (it runs with `NODE_ENV=test`) and hands the journeys their session tokens; signing in by
+  emailed code is not one of the journeys. Staff sign in through the portal's own form.
+- **The staging image must contain `be/src/e2e/`**, since the command runs in it. A `main` deploy
+  follows a staging one, so it does.
+- **Run by hand:** Actions → *E2E Journeys* → *Run workflow*. Deploys nothing. On failure the run
+  uploads `playwright-report` (traces, screenshots, video).
+- **Run locally** against a local stack (backend + both frontends up):
+
+  ```bash
+  cd e2e && npm ci && npx playwright install chromium
+  E2E_STUDIO_CMD="npm --prefix ../be run -s e2e:studio --" npx playwright test
+  ```
+
+  `E2E_KEEP_STUDIO=1` leaves the studio in place to look at afterwards.
+- **Vercel is not gated.** The frontends still deploy on their own (see above); the journeys gate the
+  backend image only.
+
+### Staging matches production — the parity checklist
+
+Compared item by item on **2026-09-17**, from the GitHub environments, the Vercel projects and the
+two running stacks on bpvps2. Re-run it when an environment is added or a vendor mode changes. Every
+row either matches or says why it deliberately does not.
+
+| Item | Staging | Production | Verdict |
+|---|---|---|---|
+| GitHub env **variable** names | `FRONTEND_URLS`, `PLATFORM_ADMIN_EMAIL`, `PORT`, `STRIPE_STATEMENT_DESCRIPTOR_PREFIX` | same four | Match |
+| GitHub env **secret** names | `BETTER_AUTH_SECRET`, `DB_APP_PASSWORD`, `DB_NAME`, `DB_PASSWORD`, `DB_USER`, `IMPERSONATION_SECRET`, `R2_*` ×5, `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `SENTRY_DSN`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | same sixteen | Match. **Gap:** `SENTRY_DSN` is dead in both since Sentry was removed — delete from both. |
+| Vercel `booking-system` env names | Preview: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_ROOT_DOMAIN` (branch `staging`) | Production: same two | Match. **Gap:** both scopes still hold dead `NEXT_PUBLIC_APP_ENV`, `NEXT_PUBLIC_SENTRY_DSN` (Sentry removed), `CLERK_SECRET_KEY` and `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` — nothing reads them; delete from both. |
+| Vercel `booking-system-admin` env names | Preview: the same two | Production: the same two | Match. **Gap:** both scopes hold dead `NEXT_PUBLIC_APP_ENV`, `NEXT_PUBLIC_SENTRY_DSN` and `CLERK_*` keys (`CLERK_SECRET_KEY`, `CLERK_ENCRYPTION_KEY`, `CLERK_PLATFORM_SECRET_KEY`, and the two `NEXT_PUBLIC_CLERK_*`) — delete from both. |
+| Frontend Node (Vercel) | 24.x | 24.x (same project) | Match |
+| Backend image and Node | `blueprintagency/booking-be:<sha>`, Node 22.23.2 | Node 22.23.2 | Match — one Dockerfile, both built by `deploy-be.yml`. |
+| Backend `.env.booking-be` key names | the current schema (`FRONTEND_URLS`, `PLATFORM_ADMIN_EMAIL`, `BETTER_AUTH_*`, …) | **stale** — still `TENANT_ORIGIN_PATTERNS`, `PLATFORM_ADMIN_EMAILS`, `ENABLE_JOBS`, `MAIL_FROM_*`, `SUPERADMIN_EMAIL`, `CLERK_*`, running image tag `latest` | **Gap, closes itself:** production has not been deployed since these renames. The next `main` deploy rewrites the file from GitHub and runs the sha. Check the key names again after it. |
+| Postgres | `postgres:16-alpine`, 16.14 | `postgres:16-alpine`, 16.14 | Match |
+| Role the app connects as | `booking_app` via `DATABASE_APP_URL`, `NOSUPERUSER NOBYPASSRLS` | same | Match — migrations and seeds as the owner in both. |
+| CDN | `cdn.reservetoday.app` → one R2 bucket (`R2_PUBLIC_URL`) | the same host and bucket | Deliberate: one shared bucket for both (`cdn/README.md`). Keys are UUID-based so they do not collide, but deleting an object on staging deletes it for production too. The journeys upload nothing. |
+| Stripe mode | test (`sk_test_…`) | **test** (`sk_test_…`) | Match today. **Deliberate difference from cutover:** production moves to a live key (and its own webhook secret) when members start paying; staging stays test forever — the journeys pay with a test card. |
+| Mail sender | `noreply@reservetoday.app`, "ReserveToday" | same | Match — constants in `be/src/lib/mailer.ts`, not env. One Resend account and verified domain for both. |
+| `TZ` | `Asia/Kuala_Lumpur` | `Asia/Kuala_Lumpur` | Match |
+| `APP_ENV` | `staging` | `production` | Deliberate — it is the environment's name. |
+| `FRONTEND_URLS`, `BETTER_AUTH_URL`, API host | `*.dev.` / `*.portal.dev.`, `api.dev.reservetoday.app` | `*.` / `*.portal.`, `api.reservetoday.app` | Deliberate — separate hostnames per environment. |
+| Database contents | real studios and members until cutover, plus the Mindbody dry-run import as realistic data | real | Deliberate. No generated data goes into staging; the journeys' `e2e-` studios are removed after every run. The Mindbody dry run lands with #130. |
+| Backend deploy gates | tests, drift | tests, drift, **browser journeys** | Deliberate — the journeys run against staging, so they can only gate the step after it. |
+
 ### Every deploy snapshots the database before it migrates
 
 Immediately before `db:migrate`, the deploy runs the host's backup job for the instance it is

@@ -20,6 +20,9 @@ export const RESERVED_SLUGS: readonly string[] = [
   'assets',
 ]
 
+/** Every slug the browser journeys' throwaway studios take, and only those. */
+export const E2E_SLUG_PREFIX = 'e2e-'
+
 /** A slug is one DNS label, so the label rules are the slug rules. */
 const MIN_LENGTH = 3
 const MAX_LENGTH = 63
@@ -49,6 +52,9 @@ export function checkSlug(input: string): SlugCheck {
   // different name than it reads as.
   if (slug.startsWith('xn--')) return { ok: false, reason: 'slug_malformed' }
   if (RESERVED_SLUGS.includes(slug)) return { ok: false, reason: 'slug_reserved' }
+  // The browser journeys' throwaway studios, which their teardown deletes by
+  // this prefix (be/src/e2e/studio.ts). No real studio may take one.
+  if (slug.startsWith(E2E_SLUG_PREFIX)) return { ok: false, reason: 'slug_reserved' }
 
   return { ok: true, slug }
 }
