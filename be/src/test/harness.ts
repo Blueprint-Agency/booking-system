@@ -49,7 +49,45 @@ export type TestApp = {
    * `tenant` is null for the `platform` pool, which signs in on no studio.
    */
   signInAs: (pool: AuthPool, email: string, tenant: { slug: string } | null) => Promise<Record<string, string>>
+  /**
+   * Every line the app logged, parsed, since the last `clear()`. The root logger
+   * writes here instead of stdout (`useLogDestination`), synchronously, so the
+   * lines a request produced are all present once `app.request()` resolves.
+   */
+  logs: { lines: () => Array<Record<string, unknown>>; clear: () => void }
   close: () => Promise<void>
+}
+
+/**
+ * Routes that exist only under the harness, for what no real route does on
+ * demand. Under `/api/v1/me/`, so the member middlewares run in front of them
+ * exactly as they do for a real member route.
+ */
+export const HARNESS_ROUTES = {
+  /** Throws a plain `Error` — an unhandled error, as the error boundary sees one. */
+  throw: '/api/v1/me/__harness/throw',
+  /** Writes one `info` line through the root logger, from outside any middleware. */
+  log: '/api/v1/me/__harness/log',
+} as const
+
+export const HARNESS_SERVICE_LOG_MESSAGE = 'harness: a line from a service'
+
+let harnessRoutesMounted = false
+
+async function mountHarnessRoutes(app: Hono): Promise<void> {
+  if (harnessRoutesMounted) return
+  harnessRoutesMounted = true
+  const { logger } = await import('../shared/logger')
+  // The shape of a service: a plain function that logs with the root logger and
+  // is handed nothing about the request.
+  const service = () => logger.info(HARNESS_SERVICE_LOG_MESSAGE)
+  app.get(HARNESS_ROUTES.throw, () => {
+    throw new Error('harness: deliberately unhandled')
+  })
+  app.get(HARNESS_ROUTES.log, c => {
+    service()
+    return c.json({ ok: true })
+  })
 }
 
 
@@ -287,8 +325,21 @@ export async function startTestApp(): Promise<TestApp> {
     await client`select pg_advisory_unlock(${HARNESS_SETUP_LOCK})`
   }
 
+  // Before the app is imported, so even its load-time lines are captured.
+  const { useLogDestination } = await import('../shared/logger')
+  let logged: string[] = []
+  useLogDestination({
+    write: (line: string) => {
+      logged.push(line)
+      // An unhandled error still reaches the terminal, or a test failing on a
+      // 500 would say nothing about why.
+      if (line.includes('"level":"error"')) process.stderr.write(line)
+    },
+  })
+
   const { default: app } = await import('../app')
   const { closeDb } = await import('../db')
+  await mountHarnessRoutes(app)
 
   return {
     app,
@@ -298,6 +349,12 @@ export async function startTestApp(): Promise<TestApp> {
       two: { id: SECOND_TENANT_ID, slug: SECOND_TENANT_SLUG },
     },
     signInAs: (pool, email, tenant) => signInAs(app, db, pool, email, tenant),
+    logs: {
+      lines: () => logged.map(line => JSON.parse(line) as Record<string, unknown>),
+      clear: () => {
+        logged = []
+      },
+    },
     close: async () => {
       await closeDb()
       await client.end({ timeout: 5 })

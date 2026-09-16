@@ -70,14 +70,22 @@ Observability spans **both**, combined in one view:
 ### Backend (`be/`)
 - **Structured logging** — `src/shared/logger.ts` (Pino). JSON to stdout in prod
   (Docker captures it); pretty-printed in dev. Set `LOG_LEVEL` to override.
-- **Per-request logger + access log** — `src/middleware/logger.ts` attaches a
-  child logger tagged with `requestId` to every request (`c.get('log')`) and
-  logs one line per request (method/path/status/ms).
-- **Central error handler** — `src/middleware/error.ts` logs unknown errors
-  with full context and returns the `requestId` in the 500 body so a
-  user/support can quote it to find the log.
+- **Log context (#162)** — every line written during a request carries
+  `requestId`, `tenantId` once resolved and `actorId` + `pool` once
+  authenticated (`impersonatedBy` under an impersonation grant), without the
+  caller passing anything: an `AsyncLocalStorage` store in `src/shared/logger.ts`
+  read by Pino's `mixin`. Webhook lines add `webhook`, cron lines `job`. The
+  field names are fixed (alert rules key on them) and listed in that file's header.
+- **Access log** — `src/middleware/logger.ts` logs one `info` line per request
+  (method/path/status/ms), whatever the status.
+- **Central error handler** — `src/middleware/error.ts` writes exactly one
+  `error` line per unknown error (with its stack and the context ids) and
+  returns the `requestId` in the 500 body so a user/support can quote it to find
+  the log. Typed errors are answered, not logged. A refused webhook signature is
+  one `warn` line.
 - **Cron safety** — `src/jobs/index.ts` wraps every job in `safeJob()`: a thrown
-  error is logged, never an unhandled crash. (Jobs remain dormant —
+  error is logged, never an unhandled crash, and a run that finished writes one
+  `info` line with `outcome=ok`. (Jobs remain dormant —
   `registerJobs` is still not called — but are now safe for when they're enabled.)
 - **Process safety nets + graceful shutdown** — `src/server.ts` handles
   `unhandledRejection` / `uncaughtException` and drains on `SIGTERM`/`SIGINT`.

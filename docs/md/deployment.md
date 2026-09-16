@@ -427,7 +427,7 @@ Notes:
 
 **GitHub repo settings driving `deploy-be.yml`** (see the comment block at the top of the workflow for the canonical list). The workflow job runs in the GitHub Environment named by the branch (`staging` / `Production`), so repo/environment settings can override organization-level settings with the same name. Shared deploy settings should live under the **Blueprint-Agency organization** and grant access to `booking-system`.
 - `org vars`: `BPVPS2_TAILSCALE_HOST`, `DOCKERHUB_USERNAME`
-- `env vars` (set in **both** Environments): `PORT`, `FRONTEND_URLS`, `PLATFORM_ADMIN_EMAIL` (optional)
+- `env vars` (set in **both** Environments): `PORT`, `FRONTEND_URLS`, `PLATFORM_ADMIN_EMAIL` (optional), `LOG_LEVEL` (optional; blank = `info`)
 - `org secrets`: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`
 - `repo/env secrets`: `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_APP_PASSWORD`, `DOCKERHUB_TOKEN`, `SSH_PRIVATE_KEY`, `IMPERSONATION_SECRET` (≥32 chars), `BETTER_AUTH_SECRET` (≥32 chars — required in **both** Environments; the backend fails Zod validation at boot without it), `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET` (the `whsec_…` signing secret of the Resend webhook pointed at `/api/v1/webhooks/resend`; unset, that route answers "not configured"), `R2_*` (×5 — required in **both** Environments; see the `R2_PUBLIC_URL` note above), plus deferred `STRIPE_*`.
 - `NODE_ENV` (always `production`), `APP_ENV`, `ENV_NAME`, `STACK_DIR`, `BOOKING_FQDN` and `IMAGE_TAG` are derived from the branch in the workflow's `env:` block, not from repo settings. `BETTER_AUTH_URL` is derived too, as `https://$BOOKING_FQDN`. The workflow's `IMAGE_TAG` is the floating tag it pushes (`staging` / `latest`); the stack's own `.env` on the host gets the commit sha instead — see [Rolling back the backend](#rolling-back-the-backend).
@@ -474,7 +474,7 @@ revoke the old one. Both keys work in between, so nothing breaks. The rows that 
 **Configuration, not secrets** — not rotated, listed so the table covers the whole env schema
 (`be/src/env.ts`) and both frontends' public values:
 
-- be, GH env vars: `PORT`, `PLATFORM_ADMIN_EMAIL`, `FRONTEND_URLS`, `STRIPE_STATEMENT_DESCRIPTOR_PREFIX`.
+- be, GH env vars: `PORT`, `PLATFORM_ADMIN_EMAIL`, `FRONTEND_URLS`, `STRIPE_STATEMENT_DESCRIPTOR_PREFIX`, `LOG_LEVEL`.
 - be, derived in the workflow: `NODE_ENV`, `APP_ENV`, `BETTER_AUTH_URL`, `DATABASE_URL` and `DATABASE_APP_URL` (built from the DB secrets above).
 - fe-client and fe-portal, Vercel: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_ROOT_DOMAIN`, `NEXT_PUBLIC_APP_ENV`, `NEXT_PUBLIC_FARO_COLLECTOR_URL` (optional). `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_FARO_COLLECTOR_URL` also feed the CSP — see below.
 - Deploy, GH org vars: `BPVPS2_TAILSCALE_HOST`, `DOCKERHUB_USERNAME`.

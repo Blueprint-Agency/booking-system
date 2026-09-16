@@ -5,7 +5,7 @@ import { normaliseSlug } from '../services/tenants/slug'
 import { resolveTenantBySlug } from '../services/tenants/tenants'
 import { sessionClaimVerdict } from '../services/tenants/session-claim'
 import { ERROR_CODES } from '../shared/error-codes'
-import { logger } from '../shared/logger'
+import { logger, setLogContext } from '../shared/logger'
 
 declare module 'hono' {
   interface ContextVariableMap {
@@ -98,6 +98,7 @@ export const resolveTenant: MiddlewareHandler = async (c, next) => {
 
   c.set('tenantId', resolved.tenant.id)
   c.set('tenantCorroborated', originSlug !== null)
+  setLogContext({ tenantId: resolved.tenant.id })
   await withTenant(resolved.tenant.id, () => next())
 }
 

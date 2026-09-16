@@ -1,6 +1,7 @@
 import type { MiddlewareHandler } from 'hono'
 import { verifyGrant } from '../lib/impersonation-grant'
 import { ERROR_CODES } from '../shared/error-codes'
+import { setLogContext } from '../shared/logger'
 import { tenantId } from './tenant'
 
 /**
@@ -45,5 +46,8 @@ export const clientImpersonation: MiddlewareHandler = async (c, next) => {
 
   c.set('impersonatedBy', grant.sas)
   c.set('impersonatedClientId', c.get('clientId'))
+  // The log names the admin by Better Auth user id, like `actorId` — the
+  // session's own record of who opened it — not by the grant's staff row id.
+  setLogContext({ impersonatedBy: session.impersonatedBy })
   await next()
 }

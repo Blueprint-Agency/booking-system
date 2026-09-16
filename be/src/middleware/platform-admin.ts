@@ -3,7 +3,7 @@ import { readPoolSession } from '../services/auth/better-auth'
 import { env } from '../env'
 import { isPlatformAdmin, parsePlatformAdmins } from '../services/tenants/platform-admin'
 import { ERROR_CODES } from '../shared/error-codes'
-import { logger } from '../shared/logger'
+import { logger, setLogContext } from '../shared/logger'
 
 declare module 'hono' {
   interface ContextVariableMap {
@@ -61,6 +61,7 @@ export const requirePlatformAdmin: MiddlewareHandler = async (c, next) => {
 
   const session = await readPoolSession('platform', token)
   if (!session) return c.json({ error: ERROR_CODES.not_found }, 404)
+  setLogContext({ actorId: session.userId, pool: 'platform' })
 
   if (!isPlatformAdmin(session.email, PLATFORM_ADMINS)) {
     logger.warn({ userId: session.userId, path: c.req.path }, 'platform-admin: refused')

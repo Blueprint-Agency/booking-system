@@ -3,12 +3,13 @@ import { Resend } from 'resend'
 import { env } from '../../env'
 import { handleResendEvent } from '../../services/notifications/delivery-outcomes'
 import { ERROR_CODES } from '../../shared/error-codes'
-import { logger } from '../../shared/logger'
+import { logger, setLogContext } from '../../shared/logger'
 
 // Only for its `webhooks.verify` (Svix signatures); nothing is sent from here.
 const resend = new Resend(env.RESEND_API_KEY)
 
 const app = new Hono().post('/resend', async c => {
+  setLogContext({ webhook: 'resend' })
   const secret = process.env.RESEND_WEBHOOK_SECRET
   if (!secret) return c.json({ error: ERROR_CODES.webhook_not_configured }, 500)
 
@@ -25,7 +26,8 @@ const app = new Hono().post('/resend', async c => {
       headers: { id: header('id'), timestamp: header('timestamp'), signature: header('signature') },
       webhookSecret: secret,
     })
-  } catch {
+  } catch (err) {
+    logger.warn({ reason: (err as Error)?.message }, 'resend-webhook: signature refused')
     return c.json({ error: ERROR_CODES.invalid_webhook_signature }, 400)
   }
 

@@ -4,7 +4,7 @@ import { logger } from '../shared/logger'
 
 declare module 'hono' {
   interface ContextVariableMap {
-    /** Request-scoped child logger, pre-tagged with the requestId. */
+    /** Request-scoped logger. Its lines carry the request's log context. */
     log: Logger
   }
 }
@@ -12,16 +12,23 @@ declare module 'hono' {
 /**
  * Per-request logger + access log.
  *
- * Creates a child logger tagged with the requestId (set upstream by the
- * `requestId` middleware) and stashes it on the context as `log`, so any handler
- * can do `c.get('log').info(...)` and have it correlate to the request. After
- * the response resolves it emits one access-log line with method/path/status/ms.
+ * Stashes the root logger on the context as `log`, so a handler can do
+ * `c.get('log').info(...)`. It binds nothing of its own: the request, tenant and
+ * actor ids come from the log context the root logger reads on every line
+ * (shared/logger.ts), and binding `requestId` here too would write it twice.
+ * After the response resolves it emits one access-log line with
+ * method/path/status/ms.
+ *
+ * The access line is `info` whatever the status. It is a record of the request,
+ * not an alert: an unhandled error already has its own `error` line from the
+ * error boundary, and a refusal worth watching has its own `warn` — a second
+ * line at the same level would count every failure twice.
  *
  * Must run AFTER `requestId` and OUTSIDE `errorBoundary` so the final status
  * (including a 500 produced by the boundary) is the one we log.
  */
 export const requestLogger: MiddlewareHandler = async (c, next) => {
-  const log = logger.child({ requestId: c.get('requestId') })
+  const log = logger
   c.set('log', log)
 
   const start = performance.now()
@@ -32,13 +39,5 @@ export const requestLogger: MiddlewareHandler = async (c, next) => {
 
   const ms = Math.round(performance.now() - start)
 
-  const payload = {
-    method: c.req.method,
-    path: c.req.path,
-    status: c.res.status,
-    ms,
-  }
-  if (c.res.status >= 500) log.error(payload, 'request failed')
-  else if (c.res.status >= 400) log.warn(payload, 'request rejected')
-  else log.info(payload, 'request')
+  log.info({ method: c.req.method, path: c.req.path, status: c.res.status, ms }, 'request')
 }

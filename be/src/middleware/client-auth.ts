@@ -4,6 +4,7 @@ import { db } from '../db'
 import { clients } from '../db/schema/identity'
 import { readPoolSession, type PoolSession } from '../services/auth/better-auth'
 import { ERROR_CODES } from '../shared/error-codes'
+import { setLogContext } from '../shared/logger'
 import { assertTenantSessionClaim, tenantId, tenantMatches } from './tenant'
 
 declare module 'hono' {
@@ -42,6 +43,7 @@ export const clientAuth: MiddlewareHandler = async (c, next) => {
 
   const session = await readPoolSession('client', token)
   if (!session) return c.json({ error: ERROR_CODES.invalid_token }, 401)
+  setLogContext({ actorId: session.userId, pool: 'client' })
 
   const claimRefusal = assertTenantSessionClaim(c, session.claimedTenantId)
   if (claimRefusal) return c.json({ error: claimRefusal }, 403)

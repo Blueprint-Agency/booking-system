@@ -2,9 +2,10 @@ import { Hono } from 'hono'
 import { stripe } from '../../lib/stripe'
 import { handleStripeEvent } from '../../services/billing/webhook-handler'
 import { ERROR_CODES } from '../../shared/error-codes'
-import { logger } from '../../shared/logger'
+import { logger, setLogContext } from '../../shared/logger'
 
 const app = new Hono().post('/stripe', async c => {
+  setLogContext({ webhook: 'stripe' })
   const secret = process.env.STRIPE_WEBHOOK_SECRET
   if (!secret) return c.json({ error: ERROR_CODES.webhook_not_configured }, 500)
 
@@ -14,7 +15,8 @@ const app = new Hono().post('/stripe', async c => {
   let event: any
   try {
     event = stripe.webhooks.constructEvent(body, sig, secret)
-  } catch {
+  } catch (err) {
+    logger.warn({ reason: (err as Error)?.message }, 'stripe-webhook: signature refused')
     return c.json({ error: ERROR_CODES.invalid_webhook_signature }, 400)
   }
 
