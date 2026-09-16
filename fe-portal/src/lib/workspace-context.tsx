@@ -5,17 +5,16 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
-import { useRouter } from "next/navigation";
-import { useAuth, useClerk, useUser } from "@clerk/nextjs";
+import { usePathname, useRouter } from "next/navigation";
 import { AccessDenied } from "@/components/auth/access-denied";
-import { authFailure, refusalCode } from "@/lib/access-refusal";
+import { authFailure } from "@/lib/access-refusal";
 import { ApiError, makeApi, type Api } from "@/lib/api";
 import { reportError } from "@/lib/report-error";
-import { useActiveOrganization } from "@/lib/use-active-organization";
+import { sessionTenantRefusal } from "@/lib/session-tenant";
+import { getPortalToken, signOutPortal, usePortalSession } from "@/lib/portal-auth";
 import type { Location, StaffRole, StaffUser } from "@/types";
 
 /**
@@ -26,13 +25,6 @@ import type { Location, StaffRole, StaffUser } from "@/types";
  * browser had remembered, which the picker re-asks for on the next visit.
  */
 export const STORAGE_KEY_LOC = "rt.activeLocationId";
-
-const ORG_RETRY_LIMIT = 3;
-
-/** The backend's refusal for a token that carries no organization claim. */
-function isOrganizationRequired(body: unknown): boolean {
-  return refusalCode(body) === "organization_required";
-}
 
 interface AuthMePayload {
   id: string;
@@ -80,7 +72,7 @@ interface WorkspaceContextValue {
   // false when the admin backed out of the strand warning.
   archiveLocation: (id: string) => Promise<boolean>;
   restoreLocation: (id: string) => Promise<void> | void;
-  // Kept for compat with DevRoleSwitcher (now a no-op — real auth via Clerk).
+  // Kept for compat with DevRoleSwitcher (now a no-op — real auth is the staff session).
   switchStaff: (id: string) => void;
   updateStaffGrants: (ids: string[]) => void;
   allStaff: StaffUser[]; // unused in prod; kept for DevRoleSwitcher compat
@@ -90,25 +82,29 @@ interface WorkspaceContextValue {
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);
 
-export function WorkspaceProvider({ children }: { children: ReactNode }) {
-  const { isLoaded, isSignedIn, getToken } = useAuth();
-  const { user } = useUser();
-  const { signOut } = useClerk();
+/**
+ * The signed-in staff member at this studio, and the gate in front of every
+ * studio page.
+ *
+ * **This is the gate.** The Next proxy cannot see a bearer token, so it lets
+ * every studio route through; here, no session means `/login?next=…`, and a
+ * session is only used once it is known to belong to this studio.
+ *
+ * `hostTenantId` is the studio the hostname resolved to, read by the layout off
+ * the header the proxy set — the one input this needs that a client component
+ * cannot work out for itself.
+ */
+export function WorkspaceProvider({
+  children,
+  hostTenantId,
+}: {
+  children: ReactNode;
+  hostTenantId: string | null;
+}) {
+  const { isLoaded, session } = usePortalSession();
+  const isSignedIn = session !== null;
   const router = useRouter();
-
-  // The token has to carry this studio's Clerk organization before the first
-  // call, or the backend answers 403 and a staff member with a perfectly good
-  // row is told they have none. See `active-organization.ts`.
-  const { status: orgStatus, refreshMemberships } = useActiveOrganization(
-    isLoaded && isSignedIn === true,
-  );
-  // How many times a refused `organization_required` has been answered by
-  // re-reading memberships. The backend grants the membership on that very
-  // refusal, so one retry is normally enough; the cap is what stops an account
-  // that genuinely has no place here from re-reading forever. Spending it ends
-  // on the denial screen, which offers the retry back by hand.
-  const orgRetries = useRef(0);
-  const [orgRetryTick, setOrgRetryTick] = useState(0);
+  const pathname = usePathname();
 
   const [loading, setLoading] = useState(true);
   /**
@@ -123,11 +119,26 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     null,
   );
 
-  // Bound API instance — stable for the provider's lifetime.
+  // Bound API instance — stable for as long as someone is signed in.
   const api = useMemo<Api | null>(() => {
     if (!isLoaded || !isSignedIn) return null;
-    return makeApi(() => getToken());
-  }, [isLoaded, isSignedIn, getToken]);
+    return makeApi(getPortalToken);
+  }, [isLoaded, isSignedIn]);
+
+  const claimedTenantId = session?.claimedTenantId ?? null;
+  // Worked out before any request: a session signed in at another studio would
+  // only be refused, so it goes straight to the screen that says so.
+  const tenantRefusal = isSignedIn
+    ? sessionTenantRefusal({ hostTenantId, claimedTenantId })
+    : null;
+
+  const signOutToLogin = useCallback(async () => {
+    try {
+      await signOutPortal();
+    } finally {
+      router.push("/login");
+    }
+  }, [router]);
 
   // Hydrate activeLocationId from localStorage on mount (workspace selection
   // persists across reloads — it's a fe-only concern).
@@ -160,30 +171,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         grantedLocationIds: me.granted_location_ids,
       });
       setLocations(accessible);
-      orgRetries.current = 0;
       setDenied(null);
     } catch (err) {
-      if (
-        err instanceof ApiError &&
-        err.status === 403 &&
-        isOrganizationRequired(err.body) &&
-        orgRetries.current < ORG_RETRY_LIMIT
-      ) {
-        // Signed in, staff row in place, but the session is in no organization
-        // for this studio yet. The backend has just granted the membership;
-        // Clerk's list in this tab predates it. Re-read, which flips the
-        // activation verdict and re-runs this load with a token that carries
-        // the claim.
-        // No delay: the backend granted the membership *before* it answered
-        // this 403, so there is nothing to wait for — only Clerk's copy of the
-        // list in this tab is behind, and re-reading it is the whole fix.
-        orgRetries.current += 1;
-        await refreshMemberships();
-        // Re-runs the load effect below, whether or not the activation verdict
-        // moved — a list that is still empty must end in a sign-out, not silence.
-        setOrgRetryTick(tick => tick + 1);
-        return;
-      }
       const failure =
         err instanceof ApiError
           ? authFailure(err.status, err.body)
@@ -197,7 +186,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }
       }
       if (failure.kind === "sign-out") {
-        await signOut(() => router.push("/login"));
+        // The token is dead — signed out elsewhere, expired, or ended when the
+        // account was archived. Forget it here too, or the login page would
+        // hand the same dead token straight back.
+        await signOutToLogin();
         return;
       }
       if (failure.kind === "denied") {
@@ -212,12 +204,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [api, router, signOut, refreshMemberships]);
+  }, [api, signOutToLogin]);
 
-  // Once Clerk + API are ready, fetch /auth/me. Held back until the active
-  // organization has settled — `settling` is the window in which a request
-  // would be refused for carrying no organization claim yet, and this provider
-  // answers a refusal by signing out.
+  // Once the session is known, fetch /auth/me — or send a signed-out visitor to
+  // sign in, remembering where they were going.
   useEffect(() => {
     if (!isLoaded) return;
     if (!isSignedIn) {
@@ -225,13 +215,22 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setCurrentStaff(null);
       setLocations([]);
       setDenied(null);
+      const next = `${pathname ?? ""}${window.location.search}`;
+      router.replace(`/login?next=${encodeURIComponent(next)}`);
       return;
     }
-    // `unavailable` still goes through: the backend is the authority on whether
-    // this account may be here, and its refusal is the honest answer.
-    if (orgStatus === "settling") return;
+    if (tenantRefusal) {
+      setLoading(false);
+      setCurrentStaff(null);
+      setLocations([]);
+      setDenied({ reason: tenantRefusal });
+      return;
+    }
     void loadMe();
-  }, [isLoaded, isSignedIn, orgStatus, orgRetryTick, loadMe]);
+    // `pathname` is read, not watched: moving between pages while signed out is
+    // already a redirect, and re-running the load on every navigation is not.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoaded, isSignedIn, tenantRefusal, loadMe, router]);
 
   // For superadmin, additionally fetch ALL locations (incl. archived) so the
   // Locations page + manage dialog can render archived rows.
@@ -356,18 +355,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [api, refreshAllLocations],
   );
 
-  // The way out of a refusal that was never about the account. A spent
-  // `organization_required` retry budget and a suspended studio both land on
-  // the denial screen, and both can stop being true without the session
-  // changing — so the budget is restored along with the attempt, or the button
-  // would work once and then look broken.
+  // The way out of a refusal that was never about the account: a suspended
+  // studio can reopen without the session changing.
   const retryAfterDenial = useCallback(() => {
-    orgRetries.current = 0;
     setDenied(null);
     void loadMe();
   }, [loadMe]);
 
-  // Compat no-ops (real auth lives in Clerk; the DevRoleSwitcher was a v0
+  // Compat no-ops (real auth is the staff session; the DevRoleSwitcher was a v0
   // affordance only).
   const switchStaff = useCallback(() => {}, []);
   const updateStaffGrants = useCallback(() => {}, []);
@@ -402,9 +397,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   if (denied) {
     return (
       <AccessDenied
-        email={user?.primaryEmailAddress?.emailAddress ?? null}
+        email={session?.email ?? null}
         reason={denied.reason}
         onRetry={retryAfterDenial}
+        onSignOut={signOutToLogin}
       />
     );
   }

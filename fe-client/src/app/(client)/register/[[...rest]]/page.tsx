@@ -1,15 +1,24 @@
 "use client";
-
+/**
+ * Member registration (#117): details and an email, then the one-time code
+ * mailed to it.
+ *
+ * The code is asked of the `client` Better Auth pool, and spent by the backend's
+ * own register route (`POST /public/members/register`), which writes the auth
+ * user, this studio's `clients` row and the session together and answers with
+ * the session token. So a member is never signed in without an account here.
+ */
 import { Suspense, useEffect, useState } from "react";
-import { useAuth, useClerk, useSignUp } from "@clerk/nextjs";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import PhoneInput, { isValidPhoneNumber } from "react-phone-number-input";
 import "react-phone-number-input/style.css";
 import Link from "next/link";
+import { ApiError, publicApi } from "@/lib/api";
 import { safeNextPath, signedInRedirectTarget } from "@/lib/auth-redirect";
+import { memberAuthMessage } from "@/lib/auth-messages";
+import { adoptMemberSession, memberAuth, useMemberSession } from "@/lib/member-auth";
 import { AuthSplitShell } from "@/components/auth/auth-split-shell";
 import { OtpInput } from "@/components/auth/otp-input";
-import { PasswordInput } from "@/components/auth/password-input";
 
 const inputClass =
   "rounded-xl border border-ink/10 bg-paper px-4 py-3 text-sm w-full focus:border-accent focus:outline-none";
@@ -18,62 +27,14 @@ const labelClass =
 const primaryBtnClass =
   "w-full rounded-full bg-ink text-paper py-3 text-sm font-medium hover:bg-ink/90 mt-2 disabled:opacity-50";
 
-// Map a Clerk error to a readable message.
-function clerkErrorMessage(err: unknown): string {
-  const e = err as {
-    code?: string;
-    errors?: Array<{ code?: string; longMessage?: string; message?: string }>;
-    longMessage?: string;
-    message?: string;
-  };
-  const first = e?.errors?.[0];
-  if (first?.code === "form_identifier_exists") {
-    return "An account with this email already exists. Try signing in instead.";
-  }
-  return (
-    first?.longMessage ??
-    first?.message ??
-    e?.longMessage ??
-    e?.message ??
-    first?.code ??
-    e?.code ??
-    "We couldn't create your account. Please check your details and try again."
-  );
-}
-
-function clerkApiError(err: { code?: string; message?: string } | null | undefined): string | null {
-  if (!err) return null;
-  if (err.code === "form_identifier_exists") {
-    return "An account with this email already exists. Try signing in instead.";
-  }
-  return err.message ?? "We couldn't create your account. Please check your details and try again.";
-}
-
-function isAlreadySignedInError(err: unknown): boolean {
-  const errors = (err as { errors?: Array<{ code?: string; message?: string }> })?.errors ?? [err as { code?: string; message?: string }];
-  return errors.some((e) => {
-    const code = String(e?.code ?? "").toLowerCase();
-    const message = String(e?.message ?? "").toLowerCase();
-    return (
-      code.includes("session_exists") ||
-      code.includes("already_signed") ||
-      /already.*sign(ed)? in/.test(message) ||
-      /sign(ed)? in.*already/.test(message) ||
-      /already.*logged in/.test(message)
-    );
-  });
-}
+const IMAGE_KEY = "hero-pilates-01";
+const QUOTE = "Every student begins with a single breath.";
 
 function RegisterContent() {
-  const { signUp } = useSignUp();
-  const { isLoaded: authLoaded, isSignedIn } = useAuth();
-  const { setActive } = useClerk();
+  const { isLoaded, isSignedIn } = useMemberSession();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  // `safeNextPath` is the same sanitiser the edge uses — internal paths only,
-  // never an absolute or protocol-relative URL, and never an auth page — so a
-  // `?next=` this page honours is one `proxy.ts` would have honoured too.
   const next = safeNextPath(searchParams) ?? "/";
 
   const [view, setView] = useState<"form" | "verify">("form");
@@ -82,153 +43,97 @@ function RegisterContent() {
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState<string | undefined>(undefined);
-  const [password, setPassword] = useState("");
-  const [confirm, setConfirm] = useState("");
   const [code, setCode] = useState("");
 
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Nobody signed in needs to create an account. The form could only fail for
-  // them ("You're already signed in"), so send them where they were going.
-  //
-  // Asked of `proxy.ts`'s own rule rather than of `signedIn` alone, so the
-  // ticket exemption holds here too: the edge deliberately lets a
-  // `?__clerk_ticket=` through on `/register`, and a redirect of our own would
-  // burn the ticket on the way past.
-  const signedIn = authLoaded && isSignedIn === true;
-  const redirectTarget = signedIn
-    ? signedInRedirectTarget(pathname ?? "", searchParams)
-    : null;
+  // Nobody signed in needs to create an account; send them where they were going.
+  const redirectTarget =
+    isSignedIn && !submitting ? signedInRedirectTarget(pathname ?? "", searchParams) : null;
   useEffect(() => {
-    if (!redirectTarget) return;
-    router.replace(redirectTarget);
+    if (redirectTarget) router.replace(redirectTarget);
   }, [redirectTarget, router]);
 
-  async function runAuthStep<T extends { error: { code?: string; message?: string } | null }>(
-    step: () => Promise<T>,
-  ): Promise<T> {
+  async function run(step: () => Promise<void>) {
+    setError(null);
+    setSubmitting(true);
     try {
-      const result = await step();
-      if (!result.error || !isAlreadySignedInError(result.error)) return result;
-      await setActive({ session: null });
-      return step();
-    } catch (err) {
-      if (!isAlreadySignedInError(err)) throw err;
-      await setActive({ session: null });
-      return step();
+      await step();
+    } catch {
+      setError("We couldn't reach the server. Check your connection and try again.");
+    } finally {
+      setSubmitting(false);
     }
   }
 
-  function navigateAfterAuth(destination: string) {
-    return async ({ decorateUrl }: { decorateUrl: (url: string) => string }) => {
-      const url = decorateUrl(destination);
-      if (/^https?:\/\//i.test(url)) {
-        window.location.href = url;
-        return;
-      }
-      router.push(url);
-    };
+  async function sendCode(): Promise<boolean> {
+    const { error: sendErr } = await memberAuth.emailOtp.sendVerificationOtp({
+      email: email.trim(),
+      type: "sign-in",
+    });
+    if (sendErr) {
+      setError(memberAuthMessage(sendErr, "Could not send a verification code."));
+      return false;
+    }
+    return true;
   }
 
-  async function handleCreate(e: React.FormEvent) {
+  function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
-
     if (!firstName.trim() || !lastName.trim()) {
       setError("Please enter your first and last name.");
+      return;
+    }
+    if (!email.trim()) {
+      setError("Please enter your email.");
       return;
     }
     if (!phone || !isValidPhoneNumber(phone)) {
       setError("Please enter a valid phone number.");
       return;
     }
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters.");
-      return;
-    }
-    if (password !== confirm) {
-      setError("Passwords do not match.");
-      return;
-    }
-    if (!signUp) return;
-
-    setSubmitting(true);
-    try {
-      const { error: createErr } = await runAuthStep(() => signUp.create({
-        emailAddress: email.trim(),
-        password,
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        unsafeMetadata: { phone },
-      }));
-      if (createErr) {
-        setError(clerkApiError(createErr) ?? "Could not create account.");
-        return;
-      }
-
-      const { error: sendErr } = await signUp.verifications.sendEmailCode();
-      if (sendErr) {
-        setError(clerkApiError(sendErr) ?? "Could not send verification code.");
-        return;
-      }
-
+    void run(async () => {
+      if (!(await sendCode())) return;
+      setCode("");
       setView("verify");
-    } catch (err) {
-      setError(clerkErrorMessage(err));
-    } finally {
-      setSubmitting(false);
-    }
+    });
   }
 
-  async function handleVerify(e: React.FormEvent) {
+  function handleVerify(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
-    if (!signUp) return;
-
-    setSubmitting(true);
-    try {
-      const { error: verifyErr } = await signUp.verifications.verifyEmailCode({ code: code.trim() });
-      if (verifyErr) {
-        setError(clerkApiError(verifyErr) ?? "Invalid or expired code.");
-        return;
+    void run(async () => {
+      try {
+        const { token } = await publicApi.post<{ token: string }>("/public/members/register", {
+          email: email.trim(),
+          otp: code.trim(),
+          first_name: firstName.trim(),
+          last_name: lastName.trim(),
+          phone,
+        });
+        adoptMemberSession(token);
+        router.replace(next);
+      } catch (err) {
+        if (!(err instanceof ApiError)) throw err;
+        setError(
+          memberAuthMessage(
+            { status: err.status, ...(err.body as object | null) },
+            "We couldn't create your account. Please check your details and try again.",
+          ),
+        );
       }
-
-      const { error: finalErr } = await signUp.finalize({
-        navigate: navigateAfterAuth(next),
-      });
-      if (finalErr) {
-        setError(clerkApiError(finalErr) ?? "Could not complete sign-up.");
-        return;
-      }
-    } catch (err) {
-      setError(clerkErrorMessage(err));
-    } finally {
-      setSubmitting(false);
-    }
+    });
   }
 
-  async function handleResend() {
-    setError(null);
-    if (!signUp) return;
-    try {
-      const { error: sendErr } = await signUp.verifications.sendEmailCode();
-      if (sendErr) {
-        setError(clerkApiError(sendErr) ?? "Could not resend code.");
-      }
-    } catch (err) {
-      setError(clerkErrorMessage(err));
-    }
+  function handleResend() {
+    void run(async () => {
+      await sendCode();
+    });
   }
 
-  // Either the redirect above is about to run, or Clerk has not said yet
-  // whether it needs to. Neither is a moment to show a form.
-  if (!authLoaded || redirectTarget) {
+  if (!isLoaded || redirectTarget) {
     return (
-      <AuthSplitShell
-        imageKey="hero-pilates-01"
-        quote="Every student begins with a single breath."
-      >
+      <AuthSplitShell imageKey={IMAGE_KEY} quote={QUOTE}>
         <h1 className="text-3xl font-extrabold tracking-tight text-ink mb-2">
           One moment…
         </h1>
@@ -236,12 +141,13 @@ function RegisterContent() {
     );
   }
 
+  const errorNote = error ? (
+    <p className="text-sm text-error rounded-xl border border-error/30 bg-error/10 px-3 py-2">{error}</p>
+  ) : null;
+
   if (view === "verify") {
     return (
-      <AuthSplitShell
-        imageKey="hero-pilates-01"
-        quote="Every student begins with a single breath."
-      >
+      <AuthSplitShell imageKey={IMAGE_KEY} quote={QUOTE}>
         <h1 className="text-3xl font-extrabold tracking-tight text-ink mb-2">
           Check your email
         </h1>
@@ -255,27 +161,29 @@ function RegisterContent() {
             </label>
             <OtpInput value={code} onChange={setCode} autoFocus />
           </div>
-          {error ? <p className="text-sm text-error rounded-xl border border-error/30 bg-error/10 px-3 py-2">{error}</p> : null}
+          {errorNote}
           <button type="submit" disabled={submitting} className={primaryBtnClass}>
             {submitting ? "Verifying…" : "Verify & create account"}
           </button>
         </form>
-        <button
-          type="button"
-          onClick={handleResend}
-          className="mt-4 text-sm text-accent-deep font-medium"
-        >
-          Resend code
-        </button>
+        <div className="mt-4 flex flex-wrap gap-4 text-sm">
+          <button type="button" onClick={handleResend} disabled={submitting} className="font-medium text-accent-deep">
+            Resend code
+          </button>
+          <button
+            type="button"
+            onClick={() => { setView("form"); setError(null); }}
+            className="font-medium text-accent-deep"
+          >
+            Change details
+          </button>
+        </div>
       </AuthSplitShell>
     );
   }
 
   return (
-    <AuthSplitShell
-      imageKey="hero-pilates-01"
-      quote="Every student begins with a single breath."
-    >
+    <AuthSplitShell imageKey={IMAGE_KEY} quote={QUOTE}>
       <h1 className="text-3xl font-extrabold tracking-tight text-ink mb-8">
         Create your account
       </h1>
@@ -308,24 +216,11 @@ function RegisterContent() {
             className="phone-input"
           />
         </div>
-        <div>
-          <label htmlFor="password" className={labelClass}>Password</label>
-          <PasswordInput id="password" autoComplete="new-password" className={inputClass}
-            value={password} onChange={(ev) => setPassword(ev.target.value)} />
-        </div>
-        <div>
-          <label htmlFor="confirm" className={labelClass}>Confirm password</label>
-          <PasswordInput id="confirm" autoComplete="new-password" className={inputClass}
-            value={confirm} onChange={(ev) => setConfirm(ev.target.value)} />
-        </div>
 
-        {error ? <p className="text-sm text-error rounded-xl border border-error/30 bg-error/10 px-3 py-2">{error}</p> : null}
-
-        {/* Clerk Smart CAPTCHA mounts here (required for custom sign-up flows). */}
-        <div id="clerk-captcha" />
+        {errorNote}
 
         <button type="submit" disabled={submitting} className={primaryBtnClass}>
-          {submitting ? "Creating…" : "Create account"}
+          {submitting ? "Sending code…" : "Create account"}
         </button>
       </form>
       <p className="mt-6 text-sm text-muted">

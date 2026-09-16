@@ -49,8 +49,8 @@ function serializeClientPackage(r: Awaited<ReturnType<typeof listClientPackages>
   }
 }
 
-// Editable BE-owned profile fields. Email lives on Clerk (read-only here);
-// password/2FA are managed via Clerk's hosted UserProfile UI, not this API.
+// Editable profile fields. The row is the source of truth for a member's name at
+// this studio; the email is the account's sign-in address and is read-only here.
 const patchSchema = z
   .object({
     name: z.string().min(1).max(160).optional(),
@@ -62,7 +62,7 @@ const patchSchema = z
 
 const app = new Hono()
   .get('/', c => {
-    // clientRow is attached by clerkClientAuth — middleware already loaded it.
+    // clientRow is attached by clientAuth — middleware already loaded it.
     return c.json(serializeProfile(c.get('clientRow')))
   })
   .patch('/', zValidator('json', patchSchema), async c => {

@@ -6,7 +6,7 @@ import { Lock, ShoppingCart, Tag, Check, AlertCircle, MapPin, UserRound } from "
 import { cn, formatCurrency, formatDurationMonths } from "@/lib/utils";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { EmptyState } from "@/components/ui/empty-state";
-import { useAuth } from "@clerk/nextjs";
+import { getMemberToken, useMemberSession } from "@/lib/member-auth";
 import { fetchApi } from "@/lib/api-url";
 import { useInstructors, useLocations } from "@/lib/classes";
 import { CrossLocationBlock } from "@/components/checkout/cross-location-block";
@@ -41,7 +41,8 @@ function subtitleForPackage(pkg: PackageInfo): string {
 function CheckoutContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { getToken, isSignedIn, isLoaded } = useAuth();
+  const { isSignedIn, isLoaded } = useMemberSession();
+  const getToken = getMemberToken;
 
   const packageId = searchParams.get("package");
   const packageKind = (searchParams.get("kind") ?? "class") as "class" | "pt";
@@ -143,7 +144,7 @@ function CheckoutContent() {
     setPromoLoading(true);
     setPromoError(null);
     try {
-      // /me/* routes require the Clerk token — without it the BE 401s and the
+      // /me/* routes require the session token — without it the BE 401s and the
       // promo would always read as invalid.
       const token = await getToken();
       const res = await fetchApi("/me/checkout/validate-promo", {

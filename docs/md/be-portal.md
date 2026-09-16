@@ -11,21 +11,21 @@ The staff-side backend surface. Implements the admin and instructor scopes of th
 ## 1. Mount & Auth
 
 ```
-/api/v1/portal/admin/*       — require Clerk staff JWT + role in {admin, superadmin}
-/api/v1/portal/instructor/*  — require Clerk staff JWT + role in {instructor, admin, superadmin}
+/api/v1/portal/admin/*       — require staff session + role in {admin, superadmin}
+/api/v1/portal/instructor/*  — require staff session + role in {instructor, admin, superadmin}
 ```
 
-Both subtrees mount under `routes/portal/index.ts`, which applies a single `clerk-staff.ts` middleware (verifies the staff Clerk app's JWT issuer; rejects client-app tokens). Role-specific gates live on the subtrees:
+Both subtrees mount under `routes/portal/index.ts`, which applies a single `staffAuth` middleware (`middleware/staff-auth.ts`: reads a Better Auth `staff` pool bearer session, checks its Tenant claim is this studio, and loads the `staff_users` row linked by `auth_user_id`). Role-specific gates live on the subtrees:
 
 ```ts
 const portalRoutes = new Hono()
-  .use('*', clerkStaffAuth, requireActiveStaff)
+  .use('*', staffAuth, requireActiveStaff)
   .use('*', auditMiddleware)
   .route('/admin',      adminRoutes)        // .use('*', requireRole('admin', 'superadmin'))
   .route('/instructor', instructorRoutes);  // .use('*', requireRole('instructor', 'admin', 'superadmin'))
 ```
 
-`requireActiveStaff` rejects any `staff_users.status` not equal to `'active'` (i.e. `pending` or `archived`). Cross-app tokens (a client JWT presented to `/portal/*`) are rejected by the Clerk staff verifier.
+`requireActiveStaff` rejects any `staff_users.status` not equal to `'active'` (i.e. `pending` or `archived`). A member or platform session presented to `/portal/*` is a row the staff pool has never seen: 401 `invalid_token`. A staff session signed in at another studio is 403 `tenant_mismatch`.
 
 `auditMiddleware` writes one `audit_log` row per successful mutating request (`POST | PUT | PATCH | DELETE`). Idempotent reads do not audit.
 
@@ -88,7 +88,7 @@ Same CRUD shape as locations. Archive is blocked if any non-archived `instructor
 | GET | `/instructors/:id` | Detail incl. `instructor_class_types` eligibility, photo presigned URL |
 | POST | `/instructors` | Create `staff_users` row (role=`instructor`, status=`pending`) + `instructors` row + `instructor_class_types` rows + auto-fires staff invitation (see §3a) |
 | PATCH | `/instructors/:id` | Update bio, phone override, eligible class types. Photo upload via presigned R2 PUT URL flow (see `backend-architecture.md` §6c). |
-| POST | `/instructors/:id/archive` | Set `staff_users.archived_at`, call Clerk `revokeAllSessions(clerk_user_id)`. Blocks on active future sessions where this instructor is assigned. |
+| POST | `/instructors/:id/archive` | Set `staff_users.archived_at` and delete the instructor's Better Auth sessions at this studio (`endStaffSessionsAt`). Blocks on active future sessions where this instructor is assigned. |
 | POST | `/instructors/:id/resend-invite` | Re-issue invitation (§3a) — only if `status='pending'` |
 
 ### `policy.ts`
@@ -310,10 +310,14 @@ Per `admin-restructure.md` §15a, **admin role is read-only on Clients**. Mutati
 |---|---|---|---|
 | GET | `/clients` | admin+superadmin | List with search, status filter. Each row also carries the trial funnel — `trial_started_at` (first trial purchase, `null` = never bought one), `attended` (classes turned up to, all time) and `converted` (bought anything that isn't another trial) — which is what the portal's **Trials** filter counts. |
 | GET | `/clients/:id` | admin+superadmin | Profile incl. packages (including any trial pass + active promotion frozen at purchase), booking history, cancellation count, attendance, referrals, waiver. Admin views are workspace-agnostic — Clients is global. |
-| DELETE | `/clients/:id` | superadmin | **Block** — sets `deleted_at`, bans the user in Clerk and revokes sessions. Nothing is erased; bookings/packages/ledger are preserved. |
-| POST | `/clients/:id/restore` | superadmin | **Unblock** — clears `deleted_at`, unbans in Clerk. |
+| DELETE | `/clients/:id` | superadmin | **Block** — sets `deleted_at` and ends the member's sessions at this studio; the client pool refuses their next sign-in here (`client_blocked`). Nothing is erased; bookings/packages/ledger are preserved. Logs `user_blocked`. |
+| POST | `/clients/:id/restore` | superadmin | **Unblock** — clears `deleted_at`, which is all it takes to sign in again. Logs `user_unblocked`. |
+| GET | `/clients/:id/sessions` | admin+superadmin | The member's live sessions **at this studio** (#119): `{ sessions: [{ id, signed_in_at, last_seen_at, expires_at, ip, user_agent, impersonated }] }`, newest first. `last_seen_at` moves when the session is refreshed, about once a day. 404 `client_not_found` for another studio's member. |
+| POST | `/clients/:id/sessions/revoke` | superadmin | **Sign out everywhere** — ends every session the member holds at this studio, on every device; their next request is 401. Another studio's sessions for the same person are left alone. `{ revoked: n }`. Logs `sessions_revoked`. |
 
-There is no separate suspend/unsuspend surface — blocking is the single mechanism. `requireActiveClient` rejects a blocked client on `deleted_at` as well as `status`, so a failed Clerk ban can't leave them with API access.
+There is no separate suspend/unsuspend surface — blocking is the single mechanism. `requireActiveClient` rejects a blocked client on `deleted_at` as well as `status`.
+
+Block, unblock and sign-out are **per studio**, not Better Auth's admin-plugin ban or revoke-all: those are keyed on the auth user, and one person is one auth user at every studio they belong to. Each act writes an `auth_events` row filed under `staff`, with the acting staff member's auth user as actor and the member's client auth user as subject.
 | POST | `/clients/:id/credits/adjust` | superadmin | `{ client_package_id, delta, reason }` — manual credit adjust. Valid for `kind in ('credit_bundle', 'unlimited', 'trial')`. See §3d. |
 | POST | `/clients/:id/sessions/adjust` | superadmin | Same shape, for PT session balance (`kind='pt'`) |
 | POST | `/clients/:id/packages/:client_package_id/expiry` | superadmin | `{ expires_at, reason }` — edit expiry on `client_packages` (per `admin-restructure.md` §16 "Edit expiry" action, applies to `credit_bundle`, `unlimited`, `trial`). A **null `expires_at` returns the plan to Dormant** (spec-pre-launch-batch.md §8) — the escape hatch the one-way activation rule depends on — and is accepted for **every kind** (ADR 0004 — every package starts Dormant). Giving a Dormant package a date is an Activation by hand: 409 `family_already_activated` while another package in the same family is running. Writes a `manual_adjustments` row with `delta=0` and the reason note, which renders a null expiry as "Dormant". |
@@ -329,7 +333,10 @@ There is no separate suspend/unsuspend surface — blocking is the single mechan
 | POST | `/staff/invite` | `{ email, role: 'admin', granted_location_ids: uuid[] }`. **Role restricted to `admin` in v1** — instructor invitations land via `POST /instructors` (which auto-fires an internally-typed invitation). Inviter's `granted_location_ids` must cover the requested set (superadmin always passes). See §3a. |
 | POST | `/staff/invitations/:id/revoke` | Set `status='revoked'`. Re-invite requires fresh row. |
 | PATCH | `/staff/:id/grants` | `{ granted_location_ids: uuid[] }` — superadmin shrinks/expands an admin's workspace grants without archiving (`admin-restructure.md` §15b "softer alternative"). Effective on next page load (no session revoke). |
-| POST | `/staff/:id/archive` | Soft delete + Clerk session revoke. Superadmin cannot be archived. |
+| POST | `/staff/:id/archive` | **Block** a staff member: status `archived`, and their sessions at this studio end. Only the seeded superadmin archives another superadmin. Logs `user_blocked`; `/staff/:id/unarchive` logs `user_unblocked`. |
+| GET | `/staff/:id/sessions` | admin+superadmin. The staff member's live sessions at this studio, same shape as `/clients/:id/sessions` (`impersonated` always false). 404 `staff_not_found` for another studio's staff. |
+| POST | `/staff/:id/sessions/revoke` | superadmin. **Sign out everywhere** at this studio; their next request is 401. Signing out another superadmin takes the seeded superadmin (403 `only_seeded_can_sign_out_superadmin`); yourself is allowed. `{ revoked: n }`. Logs `sessions_revoked`. |
+| POST | `/staff/:id/resend-invitation` | superadmin. Re-mails the set-password link: the pending invitation when there is one (as `/staff/invitations/:id/resend`), otherwise Better Auth's reset link on the studio's portal, which sets a first password as readily as it replaces one. `{ sent: 'invitation' \| 'set_password' }`. 409 `staff_archived`. Logs `invitation_resent`, as does `/staff/invitations/:id/resend`. |
 
 ### `notifications.ts`
 | Method | Path | Effect |
@@ -365,18 +372,25 @@ There is no separate suspend/unsuspend surface — blocking is the single mechan
 
 Triggered from: `POST /staff/invite` (admin/superadmin) or auto-fired during `POST /instructors`.
 
+Invitation-only in fact (#115): there is no staff sign-up, and nothing links a stranger's account to a row by address.
+
 ```
-services/auth/invitations.ts:invite({ email, role, invited_by_staff_id })
-  ↓
-1. Insert staff_users row: { email, role, status='pending', clerk_user_id=NULL }
-2. Insert staff_invitations row: { email, role, token, expires_at = now + 7d, status='pending', invited_by_staff_id, staff_user_id=staff_users.id }
-3. Call Clerk's invitation API with redirect URL = fe-portal accept page + ?token=…
-4. enqueueEmail('admin_invite' | 'instructor_invite', { email }, { invite_url, expires_at })
+services/auth/invitations.ts:inviteAdmin / catalog/instructors.ts:createInstructor
+  ↓  one transaction (writePendingStaff)
+1. Find or create the `staff` pool auth user for the address (no password)
+2. Insert staff_users row: { email, role, status='pending', auth_user_id }
+3. Insert staff_invitations row: { email, role, token, expires_at = now + 7d, status='pending', invited_by_staff_id, staff_user_id }
+  ↓  after commit
+4. Mail 'admin_invite' | 'instructor_invite' with invite_url = {studio portal}/signup?invite_email=…&invite_token=… (redacted in email_log)
 ```
 
-When the invitee clicks the link and signs in via Clerk:
-- Clerk fires `user.created` webhook → `services/auth/webhook-sync.ts` matches by email, sets `staff_users.clerk_user_id` and `status='active'`, sets `staff_invitations.status='accepted'` and `accepted_at=now()`.
-- If the email matches no pending invitation: webhook short-circuits (we don't auto-create staff from rogue sign-ins).
+When the invitee opens the link (`fe-portal` `/signup`, on the inviting studio's hostname):
+- `GET /public/staff-invitation?token=` → status, email, role, `password_set`.
+- `POST /public/staff-invitation/accept { token, password, first_name, last_name }` sets the first password (only if the account has none — a token never replaces one), sets `staff_users.status='active'`, and marks the invitation accepted. The page then signs in with that password.
+- Resend (`/staff/invitations/:id/resend`) re-mails the same link with a fresh 7-day expiry. Revoke before acceptance deletes the pending staff row (and with it the invitation) and the auth user if it never had a password.
+- Archiving a staff member deletes their Better Auth sessions **at that studio** (`endStaffSessionsAt`); the same account stays signed in at any other studio it works at.
+
+A studio's *first* admin, invited from the super portal (at provisioning, or later through `POST /api/v1/platform/tenants/:id/admin`), goes through this same flow: `writePendingStaff` writes the auth user, the pending row and the invitation inside the provisioning transaction, with `invited_by_staff_id` null — nobody on the studio's staff did the inviting — and the mail, signed by the studio, goes after the commit. A mail that fails is logged and the invitation can be resent from the staff list.
 
 ### 3b. Cancellation paths — admin vs. client
 

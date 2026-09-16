@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useUser } from "@clerk/nextjs";
+import { useMemberSession } from "./member-auth";
 import { ApiError, publicApi, useApi } from "./api";
 
 // ── Wire types (mirror BE serialization) ─────────────────────────────────────
@@ -98,7 +98,7 @@ export function useWorkshops(): {
   loading: boolean;
   error: ApiError | Error | null;
 } {
-  const { isLoaded, isSignedIn } = useUser();
+  const { isLoaded, isSignedIn } = useMemberSession();
   const api = useApi();
   const [data, setData] = useState<ApiWorkshopCard[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -136,7 +136,7 @@ export function useWorkshop(id: string | undefined): {
   loading: boolean;
   error: ApiError | Error | null;
 } {
-  const { isLoaded, isSignedIn } = useUser();
+  const { isLoaded, isSignedIn } = useMemberSession();
   const api = useApi();
   const [data, setData] = useState<ApiWorkshopDetail | null>(null);
   const [loading, setLoading] = useState(true);

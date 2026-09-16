@@ -1,20 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useUser } from "@clerk/nextjs";
+import { useAppUser } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { useClientPackages } from "@/lib/use-client-packages";
 import { useBrand } from "@/components/brand/brand-provider";
 
 export function AppTopBar({ impersonating = false }: { impersonating?: boolean }) {
   const brand = useBrand();
-  const { user, isSignedIn } = useUser();
-  const isAuth = !!isSignedIn;
+  const { user, isSignedIn: isAuth } = useAppUser();
   const { classCredits, pt1on1, pt2on1, isUnlimited: unlimited } = useClientPackages();
   const sessionCredits = pt1on1 + pt2on1;
   const firstName = user?.firstName ?? "";
   const lastName = user?.lastName ?? "";
-  const userInitials = isAuth ? (firstName.charAt(0) + lastName.charAt(0)).toUpperCase() || "U" : "";
+  const userInitials = isAuth
+    ? (firstName.charAt(0) + lastName.charAt(0)).toUpperCase() || (user?.email.charAt(0).toUpperCase() ?? "U")
+    : "";
 
   return (
     <header

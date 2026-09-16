@@ -12,27 +12,20 @@ The client-side backend surface. Implements the `/me/*` scope of the client app 
 
 ```
 /api/v1/public/*  — unauthenticated
-/api/v1/me/*      — require Clerk client JWT + require-active + verification gate (booking endpoints only)
+/api/v1/me/*      — require a member session + require-active + verification gate (booking endpoints only)
 ```
 
-`/me/*` mounts under `routes/client/index.ts` with `clerk-client.ts` middleware (verifies the **client** Clerk app's JWT issuer; rejects staff-app tokens). `requireActiveClient` rejects `clients.status='suspended'`.
+`/me/*` mounts under `routes/client/index.ts` with `clientAuth` (`middleware/client-auth.ts`): a Better Auth `client` pool bearer session whose Tenant claim is this studio, and the member's `clients` row at this studio, linked by `auth_user_id` (404 `client_not_found` otherwise — nothing is provisioned on a request). Any other token is 401 `invalid_token`. Staff and platform sessions are rows the client pool has never seen, so they are 401. `requireActiveClient` rejects `clients.status='suspended'` and blocked (`deleted_at`) members.
+
+### Impersonation (#118)
+
+A studio superadmin impersonates a member from the portal: `POST /api/v1/portal/admin/clients/:id/impersonate` (superadmin only; the lookup is scoped to the superadmin's studio, so another studio's member is 404; a blocked member is 422 `client_blocked`) opens a real `client` pool session for the member — `client_auth_sessions.impersonated_by` set to the superadmin's staff auth user, one hour, stamped with the studio's claim — and returns `{ token, grant, fe_client_url }`. `fe_client_url` is `{studio member app}/impersonate#token=…&grant=…`; the fragment keeps the token out of every server log.
+
+The member app adopts the token as its session and sends the grant on every call as `X-Impersonation-Grant`. `client-impersonation.ts` checks it after the session: the two only work together — an impersonation session without a valid grant, or a grant on a session that is not an impersonation, is 401 `impersonation_grant_mismatch`; a grant whose subject is not the session's auth user is 401 `impersonation_subject_mismatch`, one minted at another studio 401 `impersonation_tenant_mismatch`; a match sets `impersonatedBy` (the superadmin's `staff_users.id`) and `impersonatedClientId`, and `audit_log` names both on every write. Stopping signs the session out through the client pool (`/api/v1/auth/client/sign-out`), so a sibling tab is 401 on its next request. Start and end are `auth_events` rows (`impersonation_started`, `impersonation_ended`), filed under the `staff` pool with the superadmin as actor and the member as subject.
 
 ### Verification gate
 
-`fe-client-features.md` §Auth requires `phone_verified` AND `email_verified` before any booking action. The gate reads the claims directly off the Clerk session token — there are no `clients` columns to mirror. Implementation:
-
-```ts
-// middleware/require-verified.ts
-export const requireVerified: MiddlewareHandler = async (c, next) => {
-  const claims = c.get('clerkClaims');
-  if (!claims.email_verified || !claims.phone_verified) {
-    return c.json({ error: 'verification_required', missing: { email: !claims.email_verified, phone: !claims.phone_verified }}, 403);
-  }
-  await next();
-};
-```
-
-Applied to `bookings.ts`, `pt-sessions.ts`, `purchases.ts` only. Profile reads and waiver sign do **not** require verification (otherwise users couldn't progress past half-verified state).
+`fe-client-features.md` §Auth requires `phone_verified` AND `email_verified` before any booking action. **Not built.** A member signs in only by a code mailed to their address, so every session already proves the email; phone verification has no source yet, and when it gets one it belongs on the `client` pool user, not in `clients`. When built, it applies to `bookings.ts`, `pt-sessions.ts`, `purchases.ts` only — profile reads and waiver sign must not require it (otherwise users couldn't progress past half-verified state).
 
 ---
 
@@ -93,8 +86,8 @@ All endpoints prefixed with `/api/v1/me`.
 ### `me.ts`
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/` | Own profile: `{ name, email, phone, gender, dob, joined_at, status, waiver_signed, verification_status }`. `verification_status` is read from Clerk claims, not DB. |
-| PATCH | `/` | Update `name`, `phone`, `gender`, `dob`. Email + password edits flow through Clerk directly (fe-client links to Clerk-hosted account page). |
+| GET | `/` | Own profile: `{ name, email, phone, gender, dob, joined_at, status, waiver_signed }`. |
+| PATCH | `/` | Update `name`, `phone`, `gender`, `dob`. There is no password to edit — members sign in by emailed code — and changing the email is not offered. |
 | GET | `/dashboard` | Aggregated home payload: next-up booking, package balances (credits + sessions remaining + days to expiry), referral conversions count. One round-trip for the `/account` landing page. |
 | GET | `/packages` | List `client_packages` for this client with each linked source (class_packages or pt_packages) and the `applied_promotion` frozen at purchase (if any). Each row carries `cross_location_paid_sgd` — null means the plan Covers its Home Location only. The `entitlements` block also carries `unlimited_plan_id` (the plan a **Cross-Location Add-On** would attach to), `unlimited_covers_both` (it already carries one) and `cross_location_rate_sgd` (the Global Policy rate right now), which is what the member surfaces quote the Add-On at. The same three appear on `/me/class-packages`, where the schedule's blocked-class nudge reads them. |
 | GET | `/packages/eligibility` | `{ trial_used: bool, holds_active_bundle: bool, holds_active_unlimited: bool }` — drives fe-client `/packages` gating per `fe-client-features.md` §6.1. `trial_used` is `true` if any `client_packages WHERE client_id=me AND kind='trial'` exists (active or expired). `holds_active_bundle` / `holds_active_unlimited` derive the "Bundle excludes Unlimited and vice versa" rule. Cheap query — call on every `/packages` page load. |
@@ -493,19 +486,17 @@ The client then tracks the request on `/account/corporate` (`fe-client-features.
 
 ### 4f. Registration flow
 
-Not a single endpoint — orchestrated across Clerk + our backend:
+Members sign up and sign in with an emailed one-time code through the Better Auth `client` pool (#117). No webhook and no provisioning on first request: the account and the studio's row are written together.
 
-1. fe-client `/register` collects `{ email, password, name, phone, gender?, dob?, referral_code? }`.
-2. fe-client calls Clerk's signUp API → Clerk creates the user, sends email + SMS verification.
-3. **Webhook `user.created`** fires from Clerk → `services/auth/webhook-sync.ts`:
-   - Looks for an existing `clients` row by email (idempotency).
-   - If absent: insert `clients` row with `clerk_user_id`, name, phone, gender, dob, referred_by_client_id (resolved via the public referral endpoint at fe-client step 1 if a code was entered).
-   - Returns 200 to Clerk.
-4. fe-client redirects to `/waiver`. Client signs → `POST /me/waiver/sign` → inserts `waiver_signatures`.
-5. fe-client surfaces verification CTA until both Clerk verifications complete.
-6. Once both verifications complete, the verification gate (§1) lets booking endpoints through.
+1. fe-client `/register` collects `{ first_name, last_name, email, phone }` and asks the pool for a code: `POST /api/v1/auth/client/email-otp/send-verification-otp` `{ email, type: 'sign-in' }`.
+2. It sends the code with the details to **`POST /api/v1/public/members/register`** `{ email, otp, first_name, last_name, phone }` (`services/clients/register.ts`):
+   - 409 `already_member` if this studio already has a `clients` row for the address — sign in instead.
+   - The code is checked without being spent; a wrong one is 400 `invalid_otp` / `otp_expired` (403 `too_many_attempts`) and writes nothing but the attempt.
+   - Then, in one savepoint: the `client_auth_users` row (found, not duplicated, when the person is already a member at another studio), the `clients` row with `auth_user_id`, and the session — the code spent through the pool's own sign-in, so it meets the same origin check, rate limit, audit row and Tenant stamp as any sign-in.
+   - Answers `{ token }` (also in `set-auth-token`): the member is signed in at this studio.
+3. An existing member signs in at `POST /api/v1/auth/client/sign-in/email-otp` `{ email, otp }`. A member this studio has blocked is refused there, 403 `client_blocked` (the pool's session hook reads `clients.deleted_at` at the resolved Tenant).
 
-The dual-claim verification check on every booking request is the only gate; we do not store verification state.
+An admin adding a member (`POST /portal/admin/clients`) writes the same two rows in one transaction; the member signs in by code. Blocking deletes the member's sessions **at that studio only** and restoring lets them sign in again — a block is one studio's decision, and the same auth user may be a member elsewhere.
 
 ### 4g. Referral conversion (cross-link)
 

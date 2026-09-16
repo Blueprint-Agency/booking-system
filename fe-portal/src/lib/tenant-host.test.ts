@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isSuperPortalHost, tenantSlugFromHost } from "./tenant-host";
+import { isSuperPortalHost, tenantSlugFromHost, withoutTenantHeaders } from "./tenant-host";
 
 const LOCAL = "portal.localhost:3001";
 const STAGING = "portal.dev.reservetoday.app";
@@ -108,4 +108,30 @@ test("a studio's hostname is never the super portal", () => {
 
 test("`admin` is not a tenant slug, so the two questions cannot both be yes", () => {
   assert.equal(tenantSlugFromHost("admin.portal.reservetoday.app", PROD), null);
+});
+
+// Both halves of the proxy — the studio portal's and the super portal's — start
+// from this, so neither can forget that a caller must never name its own Tenant.
+
+test("inbound tenant headers are dropped, whatever their casing", () => {
+  const headers = withoutTenantHeaders(
+    new Headers({
+      "X-Tenant-Id": "forged",
+      "x-tenant-slug": "acme",
+      "X-TENANT-anything": "1",
+      host: "acme.portal.reservetoday.app",
+      authorization: "Bearer kept",
+    }),
+  );
+  assert.equal(headers.get("x-tenant-id"), null);
+  assert.equal(headers.get("x-tenant-slug"), null);
+  assert.equal(headers.get("x-tenant-anything"), null);
+  assert.equal(headers.get("host"), "acme.portal.reservetoday.app");
+  assert.equal(headers.get("authorization"), "Bearer kept");
+});
+
+test("the headers handed in are not changed", () => {
+  const inbound = new Headers({ "x-tenant-id": "forged" });
+  withoutTenantHeaders(inbound);
+  assert.equal(inbound.get("x-tenant-id"), "forged");
 });

@@ -5,7 +5,7 @@
  * `services/notifications/purchase-email.ts` is separate from its `send-`
  * sibling: the seeder derives the studio's real origins from `../../env`, which
  * zod-parses the WHOLE backend env at import — right for a booting server, and
- * wrong for a copy file whose check has no database, Clerk key or SMTP password
+ * wrong for a copy file whose check has no database, auth secret or mail key
  * in sight. The origins arrive as an argument instead.
  *
  * Two rules bind everything below:
@@ -221,7 +221,7 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
     ],
     {
       cta: { href: '{{login_url}}', label: 'Sign in to your account' },
-      note: 'Your account email is <strong>{{invitee_email}}</strong>. Use "Forgot password" on the sign-in screen to set your password the first time. If the button doesn\'t work, paste this into your browser: {{login_url}}',
+      note: 'Your account email is <strong>{{invitee_email}}</strong>. Sign in with it and we\'ll email you a one-time code — there is no password to remember. If the button doesn\'t work, paste this into your browser: {{login_url}}',
     },
   )
 
@@ -244,6 +244,53 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
     {
       cta: { href: '{{reset_url}}', label: 'Choose a new password' },
       note: "If you didn't ask for this, ignore this email — your password stays as it is. If the button doesn't work, paste this into your browser: {{reset_url}}",
+    },
+  )
+
+  /* ── Sign-in: the codes and the staff password reset ─────────────────── */
+
+  /** The code itself, set apart so it can be read off a phone at a glance. */
+  const code = `<span style="display:inline-block;font-size:28px;font-weight:700;letter-spacing:0.18em;color:#1f1d1b;">{{code}}</span>`
+
+  /**
+   * A member's one-time code (the `client` pool's email OTP). Worded for any
+   * reason a code is asked for — signing in and confirming an address are one
+   * email to a member — so the plugin's request type needs no branch here.
+   */
+  const SIGN_IN_CODE_BODY = body(
+    'Your one-time code',
+    [`Use this code to sign in to your ${STUDIO_HTML} account:`, code],
+    {
+      note: "The code works once and expires in five minutes. If you didn't ask for it, ignore this email — nobody can sign in with your address without it.",
+    },
+  )
+
+  /** A staff member's emailed second factor, after their password was accepted. */
+  const TWO_FACTOR_CODE_BODY = body(
+    'Your verification code',
+    [
+      'Hi {{name}},',
+      `Your password was accepted for the ${STUDIO_HTML} portal. Enter this code to finish signing in:`,
+      code,
+    ],
+    {
+      note: "The code works once and expires in five minutes. If you didn't just sign in, someone has your password — change it from the portal's sign-in screen.",
+    },
+  )
+
+  /**
+   * Staff choose their own password: an account created by a seed or an
+   * invitation has none, and this is how the first one is set.
+   */
+  const STAFF_PASSWORD_RESET_BODY = body(
+    'Set your portal password',
+    [
+      'Hi {{name}},',
+      `We received a request to set the password for your ${STUDIO_HTML} portal account. Use the button below to choose one.`,
+    ],
+    {
+      cta: { href: '{{reset_url}}', label: 'Choose a password' },
+      note: "The link works once and expires in one hour. If you didn't ask for this, ignore this email — your password stays as it is. If the button doesn't work, paste this into your browser: {{reset_url}}",
     },
   )
 
@@ -650,6 +697,17 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
       slug: 'trial_pass_purchase_confirmed',
       subject: `Welcome to ${STUDIO}`,
       bodyHtml: TRIAL_PASS_PURCHASE_BODY,
+    },
+    { slug: 'sign_in_code', subject: `Your ${STUDIO} sign-in code`, bodyHtml: SIGN_IN_CODE_BODY },
+    {
+      slug: 'staff_two_factor_code',
+      subject: `Your ${STUDIO} portal verification code`,
+      bodyHtml: TWO_FACTOR_CODE_BODY,
+    },
+    {
+      slug: 'staff_password_reset',
+      subject: `Set your ${STUDIO} portal password`,
+      bodyHtml: STAFF_PASSWORD_RESET_BODY,
     },
   ]
 }

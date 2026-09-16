@@ -43,7 +43,7 @@ test('a row with no id column is skipped — its key is other tables ids', () =>
 test('references are rewritten and unknown uuids are left alone', () => {
   const map = new Map([[A, B]])
   assert.equal(remapValue(A, map), B)
-  // A tenant id, a Clerk id, free text: not in the map, so not touched.
+  // A tenant id, an auth user id, free text: not in the map, so not touched.
   assert.equal(remapValue(C, map), C)
   assert.equal(remapValue('user_2abc', map), 'user_2abc')
   assert.equal(remapValue(null, map), null)

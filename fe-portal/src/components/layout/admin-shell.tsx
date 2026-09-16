@@ -12,8 +12,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   // Role-aware landing: instructors don't use the admin surface. Bounce them to
-  // their own tree once their role is known (role lives in the BE, not the Clerk
-  // token, so this can only happen client-side after /auth/me resolves). The BE
+  // their own tree once their role is known (role lives in the BE, not the
+  // session, so this can only happen client-side after /auth/me resolves). The BE
   // role gates remain the real security boundary.
   const isInstructor = currentStaff?.role === "instructor";
   useEffect(() => {

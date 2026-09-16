@@ -17,16 +17,17 @@ import {
  * Two halves, for one reason:
  *
  * - **Reads go through `app.request()`.** The public catalogue is the whole of
- *   these surfaces that a request can reach without a Clerk token, and it is a
+ *   these surfaces that a request can reach without a session, and it is a
  *   real end-to-end proof: hostname → `X-Tenant-Slug` → middleware → service →
  *   SQL. Tenant `acme` asking for classes, locations, instructors, class types
  *   or merch must never see northwind's.
  *
- * - **Writes go through the services.** Every portal route is behind a verified
- *   Clerk JWT, and this harness has no way to mint one — the backend-resolution
- *   ticket (#65) is what brings an auth seam a test can drive. Until then the
- *   refusals are asserted one layer below the HTTP boundary, on exactly the
- *   functions those routes call, with the tenant the route would have passed.
+ * - **Writes go through the services.** These were written while every portal
+ *   route sat behind a vendor JWT this harness could not mint, so the refusals are
+ *   asserted one layer below the HTTP boundary, on exactly the functions those
+ *   routes call, with the tenant the route would have passed. The harness's
+ *   `signInAs` now signs in for real (#113); the signed-in half of isolation —
+ *   a session from one studio refused at another — is `isolation-sessions.test.ts`.
  */
 
 const SOON = () => new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
@@ -127,7 +128,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
         name: `${slug} Instructor`,
         role: 'instructor',
         status: 'active',
-        clerkUserId: `clerk_${slug}_instructor`,
+        authUserId: `auth_${slug}_instructor`,
       })
       .returning()
     assert.ok(staff)
@@ -165,7 +166,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
         email: `member-${slug}@isolation.test`,
         name: `${slug} Member`,
         phone: '+6580000000',
-        clerkUserId: `clerk_${slug}_member`,
+        authUserId: `auth_${slug}_member`,
       })
       .returning()
     assert.ok(client)
@@ -424,7 +425,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     flagsSvc = await import('../services/feature-flags')
 
     // A run killed mid-flight leaves its fixtures behind, and their emails and
-    // Clerk ids are unique — so clear anything this file wrote before writing
+    // account ids are unique — so clear anything this file wrote before writing
     // it again, rather than failing on the leftovers.
     await purgeFixtures()
 
@@ -668,7 +669,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
         name: 'Partner',
         role: 'instructor',
         status: 'active',
-        clerkUserId: `clerk_${two.slug}_partner`,
+        authUserId: `auth_${two.slug}_partner`,
       })
       .returning()
     assert.ok(second)

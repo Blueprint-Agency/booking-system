@@ -10,18 +10,16 @@
  *     instructors but not each other.
  *   - Already-archived target is a no-op (idempotent).
  *
- * After the DB flip we best-effort revoke all Clerk sessions for the
- * target so they're booted from the portal immediately. requireActiveStaff
- * also blocks archived rows on the next request, so the Clerk revoke is
- * defense-in-depth, not load-bearing — a transient Clerk failure must not
- * roll back the archive.
+ * After the DB flip the target's Better Auth sessions at this studio are
+ * deleted, in the same transaction, so they're booted from the portal
+ * immediately. requireActiveStaff also blocks archived rows on the next request,
+ * so that is defense-in-depth, not load-bearing.
  */
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { staffUsers } from '../../db/schema/identity'
 import { TENANT_ONE_ID } from '../../db/schema/tenancy'
 import { instructors } from '../../db/schema/catalog'
-import { clerkStaffApp } from '../../lib/clerk'
 import { env } from '../../env'
 import { joinName } from '../../lib/name'
 import {
@@ -37,6 +35,8 @@ import {
   withLeaveFigures,
   type InstructorLeaveFigures,
 } from '../leave/requests'
+import { endStaffSessionsAt } from './auth-users'
+import { recordStaffAct } from './staff-acts'
 import { STAFF_EDIT_REFUSAL_MESSAGE, staffEditRefusal } from './staff-rank'
 
 export type StaffUserRow = typeof staffUsers.$inferSelect
@@ -78,6 +78,8 @@ export interface ArchiveStaffInput {
   tenantId: string
   targetStaffId: string
   actorStaffId: string
+  /** The acting staff member's request, for the `auth_events` row (#119). */
+  from?: Headers
 }
 
 export async function archiveStaff(input: ArchiveStaffInput): Promise<StaffUserRow> {
@@ -147,24 +149,11 @@ export async function archiveStaff(input: ArchiveStaffInput): Promise<StaffUserR
     .returning()
   if (!updated) throw new ConflictError('staff_archive_failed')
 
-  if (target.clerkUserId) {
-    try {
-      const sessions = await clerkStaffApp.sessions.getSessionList({
-        userId: target.clerkUserId,
-      })
-      await Promise.allSettled(
-        sessions.data.map(s => clerkStaffApp.sessions.revokeSession(s.id)),
-      )
-    } catch (err) {
-      logger.warn(
-        {
-          staffId: targetStaffId,
-          err: err instanceof Error ? err.message : String(err),
-        },
-        'archiveStaff: Clerk session revoke failed',
-      )
-    }
-  }
+  // Their Better Auth sessions at this studio end in the request's transaction,
+  // with the flip. Only this studio's: the same account may still be staff elsewhere.
+  await endStaffSessionsAt(db, tenantId, target.authUserId)
+  // Archiving is how a staff member is blocked, so it is logged as one.
+  await recordStaffAct({ tenantId, actorStaffId, kind: 'user_blocked', subjectUserId: target.authUserId, from: input.from })
 
   return updated
 }
@@ -177,6 +166,7 @@ export async function unarchiveStaff(input: {
   tenantId: string
   targetStaffId: string
   actorStaffId: string
+  from?: Headers
 }): Promise<StaffUserRow> {
   const { tenantId, targetStaffId } = input
   const [target] = await db
@@ -207,6 +197,13 @@ export async function unarchiveStaff(input: {
     .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, targetStaffId)))
     .returning()
   if (!updated) throw new ConflictError('staff_unarchive_failed')
+  await recordStaffAct({
+    tenantId,
+    actorStaffId: input.actorStaffId,
+    kind: 'user_unblocked',
+    subjectUserId: target.authUserId,
+    from: input.from,
+  })
   return updated
 }
 

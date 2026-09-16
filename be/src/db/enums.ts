@@ -11,6 +11,26 @@ export const staffRoleEnum = pgEnum('staff_role', ['superadmin', 'admin', 'instr
 export const staffStatusEnum = pgEnum('staff_status', ['pending', 'active', 'archived'])
 export const invitationStatusEnum = pgEnum('invitation_status', ['pending', 'accepted', 'revoked', 'expired'])
 
+// Sign-in audit log (`auth_events`, #114). The pools are the three Better Auth
+// instances. The two impersonation kinds are written from #118 on; the last four
+// are a staff member's act on someone else's account (#119).
+export const authPoolEnum = pgEnum('auth_pool', ['client', 'staff', 'platform'])
+export const authEventKindEnum = pgEnum('auth_event_kind', [
+  'sign_in',
+  'sign_out',
+  'sign_in_failed',
+  'code_sent',
+  'code_failed',
+  'impersonation_started',
+  'impersonation_ended',
+  'sessions_revoked',
+  'user_blocked',
+  'user_unblocked',
+  'invitation_resent',
+])
+export type AuthPool = (typeof authPoolEnum.enumValues)[number]
+export type AuthEventKind =(typeof authEventKindEnum.enumValues)[number]
+
 // Packages
 export const classPackageKindEnum = pgEnum('class_package_kind', ['credit_bundle', 'unlimited', 'trial'])
 export const ptSessionTypeEnum = pgEnum('pt_session_type', ['1on1', '2on1'])
@@ -125,7 +145,18 @@ export const emailRecipientKindEnum = pgEnum('email_recipient_kind', ['client', 
 // Spec §4j uses `email_log` with a `status` column. The pgEnum is named `email_log_status` per
 // backend-architecture.md §4 enum list; the existing migration named the pg enum `email_status`
 // — we rename here to track the spec. The column reference is updated in `content.ts`.
-export const emailLogStatusEnum = pgEnum('email_log_status', ['queued', 'sent', 'failed'])
+// The last four are what Resend's webhook reports after a send (#154); see
+// services/notifications/delivery-outcomes.ts for the order they move in.
+export const emailLogStatusEnum = pgEnum('email_log_status', [
+  'queued',
+  'sent',
+  'failed',
+  'delivered',
+  'bounced',
+  'complained',
+  'delivery_delayed',
+  'suppressed',
+])
 
 // Inbox — `pt_request` value REMOVED per §4l. PT triage moved to `/admin/pt-requests`.
 export const inboxItemTypeEnum = pgEnum('inbox_item_type', [

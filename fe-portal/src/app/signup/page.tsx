@@ -1,35 +1,34 @@
 "use client";
+/**
+ * Accept a staff invitation: choose a password, and arrive signed in (#115).
+ *
+ * There is no open sign-up. Every staff account was already written by the
+ * invitation — the auth user and the staff row — and this page is where the
+ * invitee turns the link in their email into a password. The link's token is
+ * the proof they are who was invited; the backend checks it, sets the password
+ * and activates the row, and the page signs in with the password just chosen.
+ *
+ * Someone who already has a password here — staff at another studio, one
+ * account — keeps it: accepting just opens this studio to it, and they sign in
+ * as they always do.
+ */
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { Suspense, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
-import { useClerk, useSignUp } from "@clerk/nextjs";
 import { Loader2 } from "lucide-react";
 import { Button, Input, Label } from "@/components/ui";
-import { OtpInput } from "@/components/auth/otp-input";
+import { AuthShell, ErrorNote } from "@/components/auth/auth-card";
 import { PasswordInput } from "@/components/auth/password-input";
-import { StudioMark } from "@/components/brand/studio-mark";
+import { refusalCode } from "@/lib/access-refusal";
 import { fetchApi } from "@/lib/api-url";
+import { portalAuth } from "@/lib/portal-auth";
 
 type InviteStatus = "valid" | "expired" | "used" | "revoked" | "not_found";
 interface InviteLookup {
   status: InviteStatus;
   email: string | null;
   role: string | null;
-}
-
-function Shell({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-paper px-4 py-8 sm:px-6">
-      <div className="w-full max-w-md">
-        <div className="mb-6 flex items-center justify-center gap-2.5">
-          <StudioMark size="auth" badge="Staff" />
-        </div>
-        <div className="rounded-2xl border border-border bg-card p-6 shadow-soft">
-          {children}
-        </div>
-      </div>
-    </div>
-  );
+  password_set: boolean;
 }
 
 function InviteNotice({
@@ -57,116 +56,53 @@ function InviteNotice({
   );
 }
 
-function clerkErrorMessage(err: unknown): string {
-  const e = err as {
-    code?: string;
-    errors?: Array<{ code?: string; longMessage?: string; message?: string }>;
-    longMessage?: string;
-    message?: string;
-  };
-  const first = e?.errors?.[0];
-  if (first?.code === "form_identifier_exists") {
-    return "An account with this email already exists. Sign in instead.";
+/** A refused acceptance, in words. */
+function acceptError(status: number, body: unknown): string {
+  switch (refusalCode(body)) {
+    case "invitation_expired":
+      return "This invitation has expired. Ask an admin to resend it, then use the new link.";
+    case "invitation_used":
+      return "This invitation was already used. Sign in with the password you chose.";
+    case "invitation_revoked":
+    case "invitation_not_found":
+      return "This invitation is no longer valid. Ask an admin if you think this is a mistake.";
+    case "password_too_short":
+      return "Password must be at least 8 characters.";
+    case "password_too_long":
+      return "Password must be at most 128 characters.";
+    default:
+      return status === 429
+        ? "Too many attempts. Wait a minute, then try again."
+        : "We couldn't set up your account. Please try again.";
   }
-  return (
-    first?.longMessage ??
-    first?.message ??
-    e?.longMessage ??
-    e?.message ??
-    first?.code ??
-    e?.code ??
-    "We couldn't create your account. Please check your details and try again."
-  );
 }
 
-function clerkApiError(
-  err: { code?: string; message?: string } | null | undefined,
-): string | null {
-  if (!err) return null;
-  if (err.code === "form_identifier_exists") {
-    return "An account with this email already exists. Sign in instead.";
-  }
-  return err.message ?? "We couldn't create your account. Please check your details and try again.";
-}
-
-function isAlreadySignedInError(err: unknown): boolean {
-  const errors = (err as { errors?: Array<{ code?: string; message?: string }> })?.errors ?? [err as { code?: string; message?: string }];
-  return errors.some((e) => {
-    const code = String(e?.code ?? "").toLowerCase();
-    const message = String(e?.message ?? "").toLowerCase();
-    return (
-      code.includes("session_exists") ||
-      code.includes("already_signed") ||
-      /already.*sign(ed)? in/.test(message) ||
-      /sign(ed)? in.*already/.test(message) ||
-      /already.*logged in/.test(message)
-    );
+async function postAccept(body: Record<string, string>): Promise<string | null> {
+  const res = await fetchApi("/public/staff-invitation/accept", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    cache: "no-store",
   });
+  if (res.ok) return null;
+  const parsed: unknown = await res.json().catch(() => null);
+  return acceptError(res.status, parsed);
 }
 
-function ErrorNote({ message }: { message: string }) {
-  return (
-    <p className="rounded-lg border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
-      {message}
-    </p>
-  );
-}
-
-function SignupForm({ email }: { email?: string }) {
-  const { signUp } = useSignUp();
-  const { setActive } = useClerk();
+function SetPasswordForm({ token, email }: { token: string; email: string }) {
   const router = useRouter();
-  const [view, setView] = useState<"form" | "verify">("form");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [emailValue, setEmailValue] = useState(email ?? "");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const emailLocked = Boolean(email);
 
-  async function runAuthStep<T extends { error: { code?: string; message?: string } | null }>(
-    step: () => Promise<T>,
-  ): Promise<T> {
-    try {
-      const result = await step();
-      if (!result.error || !isAlreadySignedInError(result.error)) return result;
-      await setActive({ session: null });
-      return step();
-    } catch (err) {
-      if (!isAlreadySignedInError(err)) throw err;
-      await setActive({ session: null });
-      return step();
-    }
-  }
-
-  function navigateAfterAuth(destination: string) {
-    return async ({ decorateUrl }: { decorateUrl: (url: string) => string }) => {
-      const url = decorateUrl(destination);
-      if (/^https?:\/\//i.test(url)) {
-        window.location.href = url;
-        return;
-      }
-      router.push(url);
-    };
-  }
-
-  useEffect(() => {
-    if (email) setEmailValue(email);
-  }, [email]);
-
-  async function handleCreate(event: FormEvent) {
+  async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setError(null);
-
     if (!firstName.trim() || !lastName.trim()) {
       setError("Please enter your first and last name.");
-      return;
-    }
-    if (!emailValue.trim()) {
-      setError("Please enter your email.");
       return;
     }
     if (password.length < 8) {
@@ -177,120 +113,38 @@ function SignupForm({ email }: { email?: string }) {
       setError("Passwords do not match.");
       return;
     }
-    if (!signUp) return;
 
     setSubmitting(true);
     try {
-      const normalizedEmail = emailValue.trim().toLowerCase();
-      const { error: createErr } = await runAuthStep(() => signUp.create({
-        emailAddress: normalizedEmail,
+      const refused = await postAccept({
+        token,
         password,
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-      }));
-      if (createErr) {
-        setError(clerkApiError(createErr) ?? "Could not create account.");
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+      });
+      if (refused) {
+        setError(refused);
         return;
       }
-
-      const { error: sendErr } = await signUp.verifications.sendEmailCode();
-      if (sendErr) {
-        setError(clerkApiError(sendErr) ?? "Could not send verification code.");
-        return;
-      }
-
-      setView("verify");
-    } catch (err) {
-      setError(clerkErrorMessage(err));
+      const { error: signInErr } = await portalAuth.signIn.email({ email, password });
+      // The account is set up either way; if signing in did not follow, the
+      // login page is one step away with the password they just chose.
+      router.replace(signInErr ? "/login" : "/admin");
+    } catch {
+      setError("We couldn't reach the server. Check your connection and try again.");
     } finally {
       setSubmitting(false);
     }
-  }
-
-  async function handleVerify(event: FormEvent) {
-    event.preventDefault();
-    setError(null);
-    if (!signUp) return;
-
-    setSubmitting(true);
-    try {
-      const { error: verifyErr } = await signUp.verifications.verifyEmailCode({
-        code: code.trim(),
-      });
-      if (verifyErr) {
-        setError(clerkApiError(verifyErr) ?? "Invalid or expired code.");
-        return;
-      }
-
-      const { error: finalErr } = await signUp.finalize({
-        navigate: navigateAfterAuth("/admin"),
-      });
-      if (finalErr) {
-        setError(clerkApiError(finalErr) ?? "Could not complete sign-up.");
-        return;
-      }
-    } catch (err) {
-      setError(clerkErrorMessage(err));
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
-  async function handleResend() {
-    setError(null);
-    if (!signUp) return;
-    try {
-      const { error: sendErr } = await signUp.verifications.sendEmailCode();
-      if (sendErr) {
-        setError(clerkApiError(sendErr) ?? "Could not resend code.");
-      }
-    } catch (err) {
-      setError(clerkErrorMessage(err));
-    }
-  }
-
-  if (view === "verify") {
-    return (
-      <>
-        <h1 className="text-lg font-semibold text-ink">Check your email</h1>
-        <p className="mt-1 text-sm text-muted">
-          We sent a 6-digit code to {emailValue.trim()}.
-        </p>
-        <form onSubmit={handleVerify} className="mt-5 space-y-4">
-          <div className="space-y-1.5">
-            <Label>Verification code</Label>
-            <OtpInput value={code} onChange={setCode} autoFocus />
-          </div>
-          {error && <ErrorNote message={error} />}
-          <Button type="submit" disabled={submitting} className="w-full">
-            {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            Verify and continue
-          </Button>
-        </form>
-        <button
-          type="button"
-          onClick={handleResend}
-          className="mt-4 text-sm font-medium text-accent hover:text-accent-deep"
-        >
-          Resend code
-        </button>
-      </>
-    );
   }
 
   return (
     <>
-      {email && (
-        <p className="mb-4 rounded-lg border border-border bg-paper px-3 py-2 text-center text-xs text-muted">
-          Setting up the staff account for{" "}
-          <span className="font-medium text-ink">{email}</span>
-        </p>
-      )}
-      <h1 className="text-lg font-semibold text-ink">Create your staff account</h1>
-      <p className="mt-1 text-sm text-muted">
-        Use the invited email address and set your own password.
+      <p className="mb-4 rounded-lg border border-border bg-paper px-3 py-2 text-center text-xs text-muted">
+        Setting up the staff account for <span className="font-medium text-ink">{email}</span>
       </p>
-      <form onSubmit={handleCreate} className="mt-5 space-y-4">
+      <h1 className="text-lg font-semibold text-ink">Create your staff account</h1>
+      <p className="mt-1 text-sm text-muted">Choose the password you&apos;ll sign in with.</p>
+      <form onSubmit={handleSubmit} className="mt-5 space-y-4">
         <div className="grid grid-cols-2 gap-3">
           <div className="space-y-1.5">
             <Label htmlFor="firstName">First name</Label>
@@ -298,7 +152,7 @@ function SignupForm({ email }: { email?: string }) {
               id="firstName"
               autoComplete="given-name"
               value={firstName}
-              onChange={(ev) => setFirstName(ev.target.value)}
+              onChange={ev => setFirstName(ev.target.value)}
             />
           </div>
           <div className="space-y-1.5">
@@ -307,21 +161,13 @@ function SignupForm({ email }: { email?: string }) {
               id="lastName"
               autoComplete="family-name"
               value={lastName}
-              onChange={(ev) => setLastName(ev.target.value)}
+              onChange={ev => setLastName(ev.target.value)}
             />
           </div>
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="email">Email</Label>
-          <Input
-            id="email"
-            type="email"
-            autoComplete="email"
-            readOnly={emailLocked}
-            value={emailValue}
-            onChange={(ev) => setEmailValue(ev.target.value)}
-            className={emailLocked ? "bg-paper text-muted" : undefined}
-          />
+          <Input id="email" type="email" autoComplete="username" readOnly value={email} className="bg-paper text-muted" />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="password">Password</Label>
@@ -329,7 +175,7 @@ function SignupForm({ email }: { email?: string }) {
             id="password"
             autoComplete="new-password"
             value={password}
-            onChange={(ev) => setPassword(ev.target.value)}
+            onChange={ev => setPassword(ev.target.value)}
           />
         </div>
         <div className="space-y-1.5">
@@ -338,13 +184,10 @@ function SignupForm({ email }: { email?: string }) {
             id="confirm"
             autoComplete="new-password"
             value={confirm}
-            onChange={(ev) => setConfirm(ev.target.value)}
+            onChange={ev => setConfirm(ev.target.value)}
           />
         </div>
         {error && <ErrorNote message={error} />}
-
-        <div id="clerk-captcha" />
-
         <Button type="submit" disabled={submitting} className="w-full">
           {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
           Create account
@@ -360,33 +203,69 @@ function SignupForm({ email }: { email?: string }) {
   );
 }
 
+function ExistingAccountForm({ token, email }: { token: string; email: string }) {
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleAccept() {
+    setError(null);
+    setSubmitting(true);
+    try {
+      const refused = await postAccept({ token });
+      if (refused) {
+        setError(refused);
+        return;
+      }
+      router.replace("/login");
+    } catch {
+      setError("We couldn't reach the server. Check your connection and try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="text-center">
+      <h1 className="text-base font-semibold text-ink">You already have a staff account</h1>
+      <p className="mt-2 text-sm text-muted">
+        <span className="font-medium text-ink">{email}</span> already has a password. Accept the
+        invitation, then sign in with it as usual.
+      </p>
+      {error && (
+        <div className="mt-4">
+          <ErrorNote message={error} />
+        </div>
+      )}
+      <Button onClick={() => void handleAccept()} disabled={submitting} className="mt-4 w-full">
+        {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+        Accept and sign in
+      </Button>
+    </div>
+  );
+}
+
 function SignupInner() {
   const params = useSearchParams();
-  const inviteEmail = params?.get("invite_email") ?? undefined;
-  const inviteToken = params?.get("invite_token") ?? undefined;
+  const inviteToken = params?.get("invite_token") ?? null;
 
   const [lookup, setLookup] = useState<InviteLookup | null>(null);
-  const [checking, setChecking] = useState<boolean>(Boolean(inviteToken));
+  const [failed, setFailed] = useState(false);
 
-  // When the link carries a token, validate it so we can render the right state
-  // (and use the canonical invited email, not whatever's in the URL).
   useEffect(() => {
     if (!inviteToken) return;
     let cancelled = false;
-    setChecking(true);
     void (async () => {
       try {
         const res = await fetchApi(
           `/public/staff-invitation?token=${encodeURIComponent(inviteToken)}`,
           { cache: "no-store" },
         );
+        if (!res.ok) throw new Error(`lookup ${res.status}`);
         const data = (await res.json()) as InviteLookup;
         if (!cancelled) setLookup(data);
       } catch {
-        // Network error — fall back to the email-only form rather than blocking.
-        if (!cancelled) setLookup(null);
-      } finally {
-        if (!cancelled) setChecking(false);
+        if (!cancelled) setFailed(true);
       }
     })();
     return () => {
@@ -394,76 +273,66 @@ function SignupInner() {
     };
   }, [inviteToken]);
 
-  // No token → legacy email-only link. Show the form as before.
+  // No token: there is no account to set up without an invitation.
   if (!inviteToken) {
     return (
-      <Shell>
-        <SignupForm email={inviteEmail} />
-      </Shell>
+      <InviteNotice
+        title="Staff accounts are invite-only"
+        body="Open the link in your invitation email to set up your account. If you don't have one, ask a studio admin to invite you."
+        showSignIn
+      />
     );
   }
 
-  if (checking) {
+  if (failed) {
     return (
-      <Shell>
-        <div className="py-2 text-center text-sm text-muted">Checking your invitation...</div>
-      </Shell>
+      <InviteNotice
+        title="We couldn't check your invitation"
+        body="Check your connection and reload this page."
+      />
     );
   }
 
-  // Lookup failed (network) — degrade to the email-only form.
   if (!lookup) {
-    return (
-      <Shell>
-        <SignupForm email={inviteEmail} />
-      </Shell>
-    );
+    return <div className="py-2 text-center text-sm text-muted">Checking your invitation...</div>;
   }
 
   switch (lookup.status) {
     case "valid":
-      return (
-        <Shell>
-          <SignupForm email={lookup.email ?? inviteEmail} />
-        </Shell>
+      return lookup.password_set ? (
+        <ExistingAccountForm token={inviteToken} email={lookup.email ?? ""} />
+      ) : (
+        <SetPasswordForm token={inviteToken} email={lookup.email ?? ""} />
       );
     case "expired":
       return (
-        <Shell>
-          <InviteNotice
-            title="This invitation has expired"
-            body="Invitation links are valid for 7 days. Ask an admin to resend yours, then use the new link."
-          />
-        </Shell>
+        <InviteNotice
+          title="This invitation has expired"
+          body="Invitation links are valid for 7 days. Ask an admin to resend yours, then use the new link."
+        />
       );
     case "used":
       return (
-        <Shell>
-          <InviteNotice
-            title="This invitation was already used"
-            body="Your staff account is set up. Sign in with the email and password you created."
-            showSignIn
-          />
-        </Shell>
+        <InviteNotice
+          title="This invitation was already used"
+          body="Your staff account is set up. Sign in with the email and password you created."
+          showSignIn
+        />
       );
     case "revoked":
       return (
-        <Shell>
-          <InviteNotice
-            title="This invitation was revoked"
-            body="This invite is no longer valid. Contact an admin if you think this is a mistake."
-          />
-        </Shell>
+        <InviteNotice
+          title="This invitation was revoked"
+          body="This invite is no longer valid. Contact an admin if you think this is a mistake."
+        />
       );
     case "not_found":
     default:
       return (
-        <Shell>
-          <InviteNotice
-            title="Invalid invitation link"
-            body="We couldn't find this invitation. Check that you used the full link from your email, or ask an admin to resend it."
-          />
-        </Shell>
+        <InviteNotice
+          title="Invalid invitation link"
+          body="We couldn't find this invitation. Check that you used the full link from your email, or ask an admin to resend it."
+        />
       );
   }
 }
@@ -472,7 +341,9 @@ export default function SignupPage() {
   // useSearchParams requires Suspense in app router builds.
   return (
     <Suspense fallback={<div className="min-h-screen bg-paper" />}>
-      <SignupInner />
+      <AuthShell>
+        <SignupInner />
+      </AuthShell>
     </Suspense>
   );
 }

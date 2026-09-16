@@ -1,6 +1,5 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useAuth } from "@clerk/nextjs";
 import {
   Download,
   ExternalLink,
@@ -16,7 +15,6 @@ import { Button, EmptyState, PageHeader, StatusBadge } from "@/components/ui";
 import { CreateTenantDialog } from "@/components/platform/create-tenant-dialog";
 import { InviteFirstAdminDialog } from "@/components/platform/invite-first-admin-dialog";
 import { ApiError, makeApi } from "@/lib/api";
-import { useActiveOrganization } from "@/lib/use-active-organization";
 import {
   exportTenant,
   importTenant,
@@ -24,6 +22,7 @@ import {
   setTenantStatus,
   type PlatformTenant,
 } from "@/lib/platform";
+import { getPortalToken, usePortalSession } from "@/lib/portal-auth";
 
 /**
  * Every studio on the platform, and the two things that are done to one from
@@ -35,12 +34,9 @@ import {
  * drift.
  */
 export default function PlatformPage() {
-  const { getToken, isLoaded, isSignedIn } = useAuth();
-  const api = useMemo(() => makeApi(getToken), [getToken]);
-  // The super portal belongs to no studio, so its session must be active in no
-  // organization. An operator who visited a studio's portal first would
-  // otherwise still be carrying that studio's claim. See `active-organization.ts`.
-  const { status: orgStatus } = useActiveOrganization(isLoaded && isSignedIn === true);
+  const { isLoaded, session } = usePortalSession();
+  const isSignedIn = session !== null;
+  const api = useMemo(() => makeApi(getPortalToken), []);
 
   const [tenants, setTenants] = useState<PlatformTenant[] | null>(null);
   /** Set when the backend says this account may not be here — a 404, because the
@@ -71,8 +67,8 @@ export default function PlatformPage() {
   }, [api]);
 
   useEffect(() => {
-    if (isLoaded && isSignedIn && orgStatus !== "settling") void load();
-  }, [isLoaded, isSignedIn, orgStatus, load]);
+    if (isLoaded && isSignedIn) void load();
+  }, [isLoaded, isSignedIn, load]);
 
   /**
    * Is anything in flight for this studio?
@@ -113,7 +109,7 @@ export default function PlatformPage() {
   async function downloadArchive(tenant: PlatformTenant) {
     setBusyId(`export:${tenant.id}`);
     try {
-      await exportTenant(getToken, tenant);
+      await exportTenant(getPortalToken, tenant);
       toast.success(`${tenant.name} exported.`);
     } catch {
       toast.error(`Could not export ${tenant.name}.`);
@@ -213,12 +209,6 @@ export default function PlatformPage() {
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium text-ink">{tenant.name}</span>
                   <StatusBadge status={tenant.status} />
-                  {/* A studio missing its portal organization cannot authenticate
-                      staff at all. It should be impossible — provisioning is
-                      atomic — so say so loudly if it ever happens. */}
-                  {!tenant.clerk.portal && (
-                    <StatusBadge status="incomplete" label="Clerk incomplete" />
-                  )}
                   {/* A studio with no staff is one nobody can sign in to. It is
                       a legitimate step — a studio created to receive an archive
                       starts here, and is created suspended for exactly this

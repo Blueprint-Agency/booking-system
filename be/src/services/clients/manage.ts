@@ -4,11 +4,11 @@ import { clients } from '../../db/schema/identity'
 import { clientPackages } from '../../db/schema/packages'
 import { bookings } from '../../db/schema/bookings'
 import { manualAdjustments } from '../../db/schema/ledger'
-import { getClerkClientApp } from '../../lib/clerk'
+import { endClientSessionsAt, ensureAuthUser } from '../auth/auth-users'
+import { recordStaffAct } from '../auth/staff-acts'
 import { requireTenantUrl } from '../tenants/urls'
 import { sendTemplatedEmail } from '../notifications/send'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
-import { logger } from '../../shared/logger'
 
 export type ClientRow = typeof clients.$inferSelect
 export type ManualAdjustmentRow = typeof manualAdjustments.$inferSelect
@@ -127,32 +127,24 @@ export interface CreateClientInput {
   invitedByStaffId: string
 }
 
-function splitName(full: string): { firstName: string; lastName?: string } {
-  const parts = full.trim().split(/\s+/)
-  if (parts.length <= 1) return { firstName: parts[0] ?? '' }
-  return { firstName: parts[0]!, lastName: parts.slice(1).join(' ') }
-}
-
 /**
  * Where the new member signs in — their own studio's app.
  *
  * It used to be the platform's single `CLIENT_ORIGIN`, which named one studio,
  * so a member added by the second studio's admin was invited to sign in at the
- * first studio's app: a hostname their Clerk account is not for and their
- * bookings are not on.
+ * first studio's app: a hostname their bookings are not on.
  */
 function buildClientLoginUrl(tenantId: string): Promise<string> {
   return requireTenantUrl('client', tenantId).then(base => `${base}/login`)
 }
 
 /**
- * Admin-creates a member: provisions a Clerk user in the CLIENT app (so we get a
- * clerk_user_id immediately — clients.clerk_user_id is NOT NULL), inserts the
- * clients row, then emails a branded "your account is ready" invite. The invitee
- * sets their password via the client app's "forgot password" flow on first sign-in.
+ * Admin-creates a member: the `client` pool's auth user and the clients row in
+ * one transaction, then a branded "your account is ready" invite. The member
+ * signs in with an emailed code, so there is no password to set first.
  *
- * The phone is stored on our row only — not sent to Clerk — so a non-E.164 number
- * never blocks account creation.
+ * The auth user is found rather than created when the address already has one —
+ * the same person, a member at another studio — and this studio gets its own row.
  */
 export async function createClientWithInvite(input: CreateClientInput): Promise<ClientRow> {
   const name = input.name.trim()
@@ -162,19 +154,16 @@ export async function createClientWithInvite(input: CreateClientInput): Promise<
   if (!email) throw new BadRequestError('email_required')
   if (!phone) throw new BadRequestError('phone_required')
 
-  // Resolved before Clerk is touched: an invite email nobody can act on is not
-  // worth a Clerk account and a member row to go with it.
+  // Resolved before anything is written: an invite email nobody can act on is
+  // not worth an account and a member row to go with it.
   const loginUrl = await buildClientLoginUrl(input.tenantId)
 
-  // Reject duplicates before touching Clerk so we don't orphan a Clerk user.
-  // Deliberately platform-wide, not per-tenant: `clients.email` still carries a
-  // global unique index, so scoping this would only turn a clean 409 into a
-  // unique violation. One person as a member of two studios is a schema change
-  // that belongs with the Clerk organization work (#65).
+  // Per studio, like the unique index (`clients_tenant_email_unique`): one
+  // person may be a member of two studios, with a record at each.
   const [existing] = await db
     .select({ id: clients.id })
     .from(clients)
-    .where(sql`lower(${clients.email}) = ${email}`)
+    .where(and(eq(clients.tenantId, input.tenantId), sql`lower(${clients.email}) = ${email}`))
     .limit(1)
   if (existing) {
     throw new ConflictError('email_in_use', {
@@ -182,46 +171,21 @@ export async function createClientWithInvite(input: CreateClientInput): Promise<
     })
   }
 
-  const clerk = getClerkClientApp()
-  const { firstName, lastName } = splitName(name)
-
-  let clerkUserId: string
-  try {
-    const created = await clerk.users.createUser({
-      emailAddress: [email],
-      firstName: firstName || undefined,
-      lastName: lastName || undefined,
-      skipPasswordRequirement: true,
-      skipPasswordChecks: true,
-    })
-    clerkUserId = created.id
-  } catch (err) {
-    // Clerk rejects duplicate emails (and other policy violations) — surface as 409.
-    const msg = err instanceof Error ? err.message : 'clerk_create_user_failed'
-    throw new ConflictError('clerk_create_failed', {
-      message: `Could not create the Clerk account: ${msg}`,
-    })
-  }
-
-  let row: ClientRow
-  try {
-    const [inserted] = await db
+  const row = await db.transaction(async tx => {
+    const authUserId = await ensureAuthUser(tx, 'client', { email, name })
+    const [inserted] = await tx
       .insert(clients)
       .values({
         tenantId: input.tenantId,
-        clerkUserId,
+        authUserId,
         email,
         name,
         phone,
         status: 'active',
       })
       .returning()
-    row = inserted!
-  } catch (err) {
-    // Roll back the Clerk user so a failed insert doesn't leave an orphan account.
-    await clerk.users.deleteUser(clerkUserId).catch(() => {})
-    throw err
-  }
+    return inserted!
+  })
 
   // Best-effort invite email (failures land in email_log, never block creation).
   await sendTemplatedEmail({
@@ -242,18 +206,20 @@ export interface SoftDeleteClientInput {
   tenantId: string
   targetClientId: string
   actorStaffId: string
+  /** The acting staff member's request, for the `auth_events` row (#119). */
+  from?: Headers
 }
 
 /**
  * Soft-delete a client (superadmin-only — route enforces). Sets deletedAt +
- * deletedByStaffId on the row and bans + revokes all sessions on the Clerk
- * user so they're booted immediately and cannot re-sign-in. The DB row, all
- * bookings, packages, credit ledger entries, and the clerk_user_id are
- * preserved so the action is fully reversible via restoreClient.
+ * deletedByStaffId on the row and ends the member's sessions at this studio, so
+ * they're booted immediately and cannot sign in here again. The DB row, all
+ * bookings, packages, credit ledger entries, and the auth user are preserved so
+ * the action is fully reversible via restoreClient.
  *
- * Clerk side is best-effort: a transient Clerk failure must NOT roll back the
- * DB flip (admin-read-only filters and the deleted_at check on every read are
- * the load-bearing guard; banning is defense-in-depth).
+ * At this studio only, not through Better Auth's admin ban, which is keyed on the
+ * auth user: the same person may be a member at another studio, and blocking
+ * them here is not this studio's to do there.
  *
  * Idempotent: already-deleted target returns the existing row unchanged.
  */
@@ -280,30 +246,11 @@ export async function softDeleteClient(input: SoftDeleteClientInput): Promise<Cl
     .returning()
   if (!updated) throw new ConflictError('client_delete_failed')
 
-  // Best-effort Clerk ban + session revoke. Failures are logged, not thrown —
-  // the DB flip is what locks the client out of the BE; Clerk is belt-and-braces.
-  try {
-    const clerk = getClerkClientApp()
-    await clerk.users.banUser(target.clerkUserId).catch(err => {
-      logger.warn(
-        {
-          clientId: targetClientId,
-          err: err instanceof Error ? err.message : String(err),
-        },
-        'softDeleteClient: Clerk banUser failed',
-      )
-    })
-    const sessions = await clerk.sessions.getSessionList({ userId: target.clerkUserId })
-    await Promise.allSettled(sessions.data.map(s => clerk.sessions.revokeSession(s.id)))
-  } catch (err) {
-    logger.warn(
-      {
-        clientId: targetClientId,
-        err: err instanceof Error ? err.message : String(err),
-      },
-      'softDeleteClient: Clerk client app unavailable',
-    )
-  }
+  // Their sessions here end now rather than at the next request's
+  // `requireActiveClient`. The flip above stays the load-bearing guard: it is
+  // what refuses the next sign-in (the client pool's session hook reads it).
+  if (target.authUserId) await endClientSessionsAt(db, tenantId, target.authUserId)
+  await recordStaffAct({ tenantId, actorStaffId, kind: 'user_blocked', subjectUserId: target.authUserId, from: input.from })
 
   return updated
 }
@@ -312,11 +259,13 @@ export interface RestoreClientInput {
   tenantId: string
   targetClientId: string
   actorStaffId: string
+  /** The acting staff member's request, for the `auth_events` row (#119). */
+  from?: Headers
 }
 
 /**
- * Reverse a soft-delete. Clears deletedAt + deletedByStaffId and unbans the
- * Clerk user so they can sign back in. Idempotent for non-deleted targets.
+ * Reverse a soft-delete. Clears deletedAt + deletedByStaffId, which is what
+ * lets the member sign back in. Idempotent for non-deleted targets.
  * The actorStaffId is accepted for symmetry with softDelete and audit-log
  * consistency even though it's not persisted on the row (the audit middleware
  * captures the actor).
@@ -344,26 +293,13 @@ export async function restoreClient(input: RestoreClientInput): Promise<ClientRo
     .returning()
   if (!updated) throw new ConflictError('client_restore_failed')
 
-  try {
-    const clerk = getClerkClientApp()
-    await clerk.users.unbanUser(target.clerkUserId).catch(err => {
-      logger.warn(
-        {
-          clientId: targetClientId,
-          err: err instanceof Error ? err.message : String(err),
-        },
-        'restoreClient: Clerk unbanUser failed',
-      )
-    })
-  } catch (err) {
-    logger.warn(
-      {
-        clientId: targetClientId,
-        err: err instanceof Error ? err.message : String(err),
-      },
-      'restoreClient: Clerk client app unavailable',
-    )
-  }
-
+  // Nothing to undo on the auth side: the sign-in refusal reads the flag cleared above.
+  await recordStaffAct({
+    tenantId,
+    actorStaffId: input.actorStaffId,
+    kind: 'user_unblocked',
+    subjectUserId: target.authUserId,
+    from: input.from,
+  })
   return updated
 }

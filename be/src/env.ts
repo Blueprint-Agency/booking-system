@@ -16,11 +16,11 @@ const booleanEnv = z.preprocess(value => {
  * Zod-validated env loader. Required vars cover:
  *   - DB connection
  *   - Superadmin bootstrap email (passwordless — see seed/superadmin.ts)
- *   - Clerk staff app (publishable + secret + webhook signing secret)
- *   - CORS origin for fe-portal
+ *   - Better Auth (session signing secret + the backend's own origin)
+ *   - Tenant origin patterns (CORS, links)
  *   - Resend (staff invitations + outbound transactional email)
  *
- * Anything not in this slice (Stripe, R2, client Clerk app) is *optional* — the
+ * Anything not in this slice (Stripe, R2, Sentry) is *optional* — the
  * relevant lib will fail at use-site if missing rather than blocking boot.
  */
 const schema = z.object({
@@ -58,44 +58,27 @@ const schema = z.object({
   // is announced at boot. See services/tenants/platform-admin.ts.
   PLATFORM_ADMIN_EMAILS: z.string().optional(),
 
-  CLERK_STAFF_PUBLISHABLE_KEY: z.string().min(1, 'CLERK_STAFF_PUBLISHABLE_KEY is required'),
-  CLERK_STAFF_SECRET_KEY: z.string().min(1, 'CLERK_STAFF_SECRET_KEY is required'),
-  CLERK_STAFF_WEBHOOK_SECRET: z.string().min(1, 'CLERK_STAFF_WEBHOOK_SECRET is required'),
   IMPERSONATION_SECRET: z
     .string()
     .min(32, 'IMPERSONATION_SECRET must be at least 32 chars (used to sign HS256 grant JWTs)'),
-  CLERK_STAFF_AUTHORIZED_PARTIES: z.string().optional(),
 
-  // Third Clerk application, backing the **super portal** at
-  // `admin.portal.<root domain>` and nothing else.
-  //
-  // It exists for a reason cookies cannot express. Clerk's session material is
-  // the `__client` cookie, and Clerk scopes it to the instance's own Frontend
-  // API host — `Domain=clerk.portal.reservetoday.app` for the staff app. So two
-  // hostnames served by ONE Clerk application share one `__client`, which means
-  // they share one signed-in person: sign into `admin.portal.…` and
-  // `{slug}.portal.…` is already signed in as the same account, and vice versa.
-  // That is not a bug in the cookie, it is what one Clerk application means.
-  //
-  // The super portal operates every studio on the platform, so it is the one
-  // surface where that conflation is worth a whole extra Clerk application:
-  // its own Frontend API host, its own `__client`, its own user pool. A studio
-  // superadmin's staff token is then not merely refused by the allowlist below
-  // — it fails signature verification, because it was minted by a different
-  // Clerk instance.
-  //
-  // Optional, and unset is the pre-existing behaviour: the super portal falls
-  // back to the STAFF app and shares its session, which is what shipped before
-  // this. `PLATFORM_ADMIN_EMAILS` remains the authorisation either way.
-  CLERK_PLATFORM_PUBLISHABLE_KEY: z.string().optional(),
-  CLERK_PLATFORM_SECRET_KEY: z.string().optional(),
+  // Better Auth (self-hosted). One secret signs the session tokens and encrypts
+  // the second-factor secrets of all three pools (services/auth/better-auth.ts);
+  // rotating it signs everyone out.
+  BETTER_AUTH_SECRET: z
+    .string()
+    .min(32, 'BETTER_AUTH_SECRET must be at least 32 chars (signs sessions and encrypts 2FA secrets)'),
+  // The backend's own public origin — `https://api.reservetoday.app`. Every
+  // link Better Auth builds (a password reset, above all) starts here, under
+  // the pool's base path `/api/v1/auth/{client,staff,platform}`.
+  BETTER_AUTH_URL: z.string().url('BETTER_AUTH_URL must be the backend origin, e.g. https://api.example.app'),
 
   // Comma-separated origin patterns for the tenant subdomains, one line per
   // environment — e.g.
   //   https://*.reservetoday.app,https://*.portal.reservetoday.app
   // A tenant is created by inserting a row, so its origin cannot be enumerated
-  // in advance; the wildcard is what makes CORS and the Clerk `azp` check work
-  // for a studio that did not exist when the backend was deployed. The `*` must
+  // in advance; the wildcard is what makes CORS and the auth pools' trusted
+  // origins work for a studio that did not exist when the backend was deployed. The `*` must
   // be the leftmost label and covers exactly one label — see lib/origin.ts.
   // Exact origins are accepted too, for a host that names no tenant.
   //
@@ -111,9 +94,6 @@ const schema = z.object({
     .min(1, 'TENANT_ORIGIN_PATTERNS is required — e.g. https://*.example.app,https://*.portal.example.app'),
 
   // Optional / deferred — accept anything (or empty string)
-  CLERK_CLIENT_PUBLISHABLE_KEY: z.string().optional(),
-  CLERK_CLIENT_SECRET_KEY: z.string().optional(),
-  CLERK_CLIENT_WEBHOOK_SECRET: z.string().optional(),
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   /**
@@ -125,32 +105,13 @@ const schema = z.object({
    */
   STRIPE_STATEMENT_DESCRIPTOR_PREFIX: z.string().optional(),
 
-  // Mail — one Resend API key and the platform's envelope identity. The
-  // *tenant* half of the from-identity is not env at all: it is per-studio data
-  // on `tenant_settings` (docs/md/mail-identity.md).
+  // Mail — one Resend API key. The platform's envelope address and name are
+  // constants in lib/mailer.ts; the *tenant* half of the from-identity is
+  // per-studio data on `tenant_settings` (docs/md/mail-identity.md).
   RESEND_API_KEY: z.string().min(1, 'RESEND_API_KEY is required'),
-  // The two envelope addresses, both in the domain verified on Resend. A
-  // member's mail leaves on MAIL_FROM_EMAIL; a staff member's on
-  // MAIL_FROM_PORTAL_EMAIL, which falls back to the first when blank.
-  //
-  // Read as "blank means unset": the deploy workflow writes the line
-  // unconditionally, so an unset repository variable arrives as an empty string
-  // rather than as an absent key, and `.optional()` alone would let that empty
-  // string through to `.email()` and fail the boot.
-  MAIL_FROM_EMAIL: z
-    .string()
-    .transform(v => v.trim())
-    .pipe(z.string().email('MAIL_FROM_EMAIL must be a valid email')),
-  MAIL_FROM_PORTAL_EMAIL: z
-    .string()
-    .optional()
-    .transform(v => v?.trim() || undefined)
-    .pipe(z.string().email('MAIL_FROM_PORTAL_EMAIL must be a valid email').optional()),
-  // Shown only when a tenant has no name of its own to put there.
-  MAIL_FROM_NAME: z
-    .string()
-    .optional()
-    .transform(v => v?.trim() || 'ReserveToday'),
+  // Signing secret (`whsec_…`) of the Resend webhook that reports delivery,
+  // bounce and complaint outcomes. Unset, that route answers "not configured".
+  RESEND_WEBHOOK_SECRET: z.string().optional(),
   R2_ACCOUNT_ID: z.string().optional(),
   R2_ACCESS_KEY_ID: z.string().optional(),
   R2_SECRET_ACCESS_KEY: z.string().optional(),

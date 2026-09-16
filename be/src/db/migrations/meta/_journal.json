@@ -330,6 +330,83 @@
       "when": 1789220884267,
       "tag": "0046_activation_on_first_booking",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1789286228962,
+      "tag": "0047_better_auth_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1789311645362,
+      "tag": "0048_auth_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1789324012586,
+      "tag": "0049_client_clerk_user_id_nullable",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1789355677908,
+      "tag": "0050_client_session_impersonated_by",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1789368974708,
+      "tag": "0051_auth_event_staff_actions",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1789382830294,
+      "tag": "0052_auth_user_id_required",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1789382853516,
+      "tag": "0053_drop_clerk_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1789499596151,
+      "tag": "0054_drop_empty_placeholder_tenant",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1789549153978,
+      "tag": "0055_email_log_sent_today",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1789550620617,
+      "tag": "0056_email_log_delivery_outcomes",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1789550637692,
+      "tag": "0057_email_log_sent_today_counts_outcomes",
+      "breakpoints": true
     }
   ]
 }

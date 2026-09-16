@@ -3,7 +3,9 @@
 // (as `.env.example` documents) would silently get a skipped integration suite
 // and a green `npm run check`.
 import 'dotenv/config'
+import { randomUUID } from 'node:crypto'
 import path from 'node:path'
+import { and, eq } from 'drizzle-orm'
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import postgres from 'postgres'
@@ -12,6 +14,8 @@ import * as schema from '../db/schema'
 import { APP_ROLE, ensureAppRole, ensureTenantIsolation } from '../db/roles'
 import { TENANT_ONE_ID, SECOND_TENANT_ID } from '../db/schema/tenancy'
 import { TENANT_ONE_SLUG, SECOND_TENANT_SLUG } from '../db/seed/provisioning'
+// Type-only: loading the auth module itself before `stubEnvironment` would fail.
+import type { AuthPool } from '../services/auth/better-auth'
 
 /**
  * The one integration seam: the real Hono app, invoked in-process with
@@ -39,7 +43,112 @@ export type TestApp = {
     one: { id: string; slug: string }
     two: { id: string; slug: string }
   }
+  /**
+   * Sign in through the real auth server, in-process, and get back the headers
+   * a frontend on that studio's hostname would send — ready for `app.request()`.
+   * `tenant` is null for the `platform` pool, which signs in on no studio.
+   */
+  signInAs: (pool: AuthPool, email: string, tenant: { slug: string } | null) => Promise<Record<string, string>>
   close: () => Promise<void>
+}
+
+
+/** The password every harness-made staff and platform account signs in with. */
+export const HARNESS_PASSWORD = 'harness-password-not-a-secret'
+
+/** The origins the local frontends use; `TENANT_ORIGIN_PATTERNS` below admits them. */
+export const frontendOrigin = (pool: AuthPool, tenant: { slug: string } | null): string => {
+  if (pool === 'platform') return 'http://admin.portal.localhost:3001'
+  if (!tenant) throw new Error(`signInAs: the ${pool} pool signs in on a studio, and none was named`)
+  return pool === 'client' ? `http://${tenant.slug}.localhost:3000` : `http://${tenant.slug}.portal.localhost:3001`
+}
+
+/**
+ * The sign-in a person makes, done by the harness.
+ *
+ * - `client` asks for an emailed code on the studio's hostname and reads it back
+ *   from the null mail transport — the one place a code exists in clear. The
+ *   first code for an address creates the member's auth user.
+ * - `staff` and `platform` get their auth user and a credential with the harness
+ *   password written directly (a seeded account has no password, and the reset
+ *   flow is `better-auth.test.ts`'s to prove), then sign in with it over HTTP.
+ *
+ * Every step goes through the app, so the session is stamped by the same hook a
+ * real sign-in is. What it does not do is link the auth user to a `clients` or
+ * `staff_users` row: which rows a person has is the test's fixture to state.
+ */
+async function signInAs(
+  app: Hono,
+  db: PostgresJsDatabase<typeof schema>,
+  pool: AuthPool,
+  email: string,
+  tenant: { slug: string } | null,
+): Promise<Record<string, string>> {
+  const origin = frontendOrigin(pool, tenant)
+  // A client address of its own, as the proxy in front of the API would set.
+  // Without one every sign-in in a test process shares the limiter's single
+  // no-address bucket (#114), and a suite that signs in a dozen people is
+  // throttled for doing so.
+  const forwardedFor = harnessAddress()
+  const fromFrontend: Record<string, string> =
+    pool === 'platform'
+      ? { Origin: origin, 'X-Forwarded-For': forwardedFor }
+      : { Origin: origin, 'X-Tenant-Slug': tenant!.slug, 'X-Forwarded-For': forwardedFor }
+  const post = (path: string, body: unknown) =>
+    app.request(`/api/v1/auth/${pool}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...fromFrontend },
+      body: JSON.stringify(body),
+    })
+
+  let signedIn: Response
+  if (pool === 'client') {
+    const { discardedMail } = await import('../lib/mailer')
+    const sent = await post('/email-otp/send-verification-otp', { email, type: 'sign-in' })
+    if (sent.status !== 200) throw new Error(`signInAs: code request refused (${sent.status}): ${await sent.text()}`)
+    const message = [...discardedMail].reverse().find(m => m.to === email)
+    const otp = message?.html.match(/>(\d{6})</)?.[1]
+    if (!otp) throw new Error(`signInAs: no sign-in code was mailed to ${email}`)
+    signedIn = await post('/sign-in/email-otp', { email, otp })
+  } else {
+    await ensureCredential(db, pool, email)
+    signedIn = await post('/sign-in/email', { email, password: HARNESS_PASSWORD })
+  }
+
+  const token = signedIn.headers.get('set-auth-token')
+  if (signedIn.status !== 200 || !token) {
+    throw new Error(`signInAs: ${pool} sign-in for ${email} failed (${signedIn.status}): ${await signedIn.text()}`)
+  }
+  return { ...fromFrontend, Authorization: `Bearer ${token}` }
+}
+
+/**
+ * A client address no other request in this process has used: one from the
+ * 198.18.0.0/15 benchmarking range, which no real client comes from.
+ */
+let harnessAddresses = Math.floor(Math.random() * 60_000)
+export function harnessAddress(): string {
+  const n = harnessAddresses++
+  return `198.${18 + ((n >> 16) & 1)}.${(n >> 8) & 255}.${n & 255}`
+}
+
+async function ensureCredential(
+  db: PostgresJsDatabase<typeof schema>,
+  pool: 'staff' | 'platform',
+  email: string,
+): Promise<void> {
+  const { ensureAuthUser } = await import('../services/auth/auth-users')
+  const { hashPassword } = await import('better-auth/crypto')
+  const accounts = pool === 'staff' ? schema.staffAuthAccounts : schema.platformAuthAccounts
+  const userId = await ensureAuthUser(db, pool, { email, name: email.split('@')[0]! })
+  await db.delete(accounts).where(and(eq(accounts.userId, userId), eq(accounts.providerId, 'credential')))
+  await db.insert(accounts).values({
+    id: randomUUID(),
+    accountId: userId,
+    providerId: 'credential',
+    userId,
+    password: await hashPassword(HARNESS_PASSWORD),
+  })
 }
 
 /**
@@ -73,8 +182,8 @@ function tenantNamedBy(arg: unknown): string | null {
  * Wrap a service module so each call runs inside the Tenant context it names —
  * the same context `resolveTenant` opens for a real request.
  *
- * Tests reach past HTTP because the portal routes are behind a Clerk JWT this
- * harness cannot mint (see the note at the top of isolation.test.ts). A service
+ * Tests written before `signInAs` existed reach past HTTP, because the portal
+ * routes were behind a vendor JWT this harness could not mint. A service
  * called that way has no request, and with Row-Level Security live a query with
  * no context set sees nothing — so the test would fail for the wrong reason, on
  * every assertion at once, and stop saying anything about isolation.
@@ -125,10 +234,9 @@ function stubEnvironment() {
   // fixture would let every isolation test pass vacuously.
   process.env.APP_ENV = 'development'
   process.env.SUPERADMIN_EMAIL ??= 'superadmin@example.test'
-  process.env.CLERK_STAFF_PUBLISHABLE_KEY ??= 'pk_test_harness'
-  process.env.CLERK_STAFF_SECRET_KEY ??= 'sk_test_harness'
-  process.env.CLERK_STAFF_WEBHOOK_SECRET ??= 'whsec_test_harness'
   process.env.IMPERSONATION_SECRET ??= 'test-harness-impersonation-secret-key'
+  process.env.BETTER_AUTH_SECRET ??= 'test-harness-better-auth-secret-key-0123456789'
+  process.env.BETTER_AUTH_URL ??= 'http://localhost:4000'
   // The tenant subdomain shape the local frontends use, so a test can send a
   // real `Origin` and have it name a tenant — which is the whole of the
   // validation on public routes. The two exact origins are the bare local
@@ -136,7 +244,6 @@ function stubEnvironment() {
   process.env.TENANT_ORIGIN_PATTERNS ??=
     'http://*.localhost:3000,http://*.portal.localhost:3001,http://localhost:3000,http://localhost:3001'
   process.env.RESEND_API_KEY ??= 're_test_harness'
-  process.env.MAIL_FROM_EMAIL ??= 'hello@example.test'
 }
 
 /**
@@ -191,6 +298,7 @@ export async function startTestApp(): Promise<TestApp> {
       one: { id: TENANT_ONE_ID, slug: TENANT_ONE_SLUG },
       two: { id: SECOND_TENANT_ID, slug: SECOND_TENANT_SLUG },
     },
+    signInAs: (pool, email, tenant) => signInAs(app, db, pool, email, tenant),
     close: async () => {
       await closeDb()
       await client.end({ timeout: 5 })

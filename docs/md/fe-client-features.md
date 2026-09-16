@@ -70,6 +70,8 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
 
 ### 1.1 Register `/register`
 
+> **As built (#117):** members have no password. Register takes first name, last name, email and phone, emails a 6-digit code, and the code creates the account and the studio's member record together (`POST /public/members/register`, `be-client.md` §4f). Login is email → emailed code. There is no reset-password flow (§1.4) because there is no password. The fuller journey below (phone OTP, T&C, referral, Google) is not built yet.
+
 **Business logic**
 - Required fields: First name, phone, email, password (≥8), confirm password, T&C accepted.
 - Optional: gender, DOB, referral code (auto-prefilled from `?ref=` link).
@@ -107,7 +109,7 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
 ### 1.3 Login `/login`
 
 **Business logic**
-- Email + password.
+- Email → a 6-digit code emailed to it (#117). An address with no member record at this studio is sent to register; a member the studio has blocked is refused.
 - "Remember me" extends session.
 - `?next=` query string preserves intended destination after login (e.g., from a CTA on Classes).
 
@@ -122,6 +124,8 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
 - Admin needs to disable login (suspend account).
 
 ### 1.4 Forgot / Reset Password `/forgot-password`, `/reset-password`
+
+> Not applicable since #117: members sign in by emailed code and hold no password.
 
 **Business logic**
 - Step 1: phone number → send OTP.

@@ -1,8 +1,10 @@
 /**
  * Thin fetch wrapper for the staff portal backend.
  *
- * Auth: a `getToken` callback (from Clerk's `useAuth()`) is invoked on every
- * request; the resulting JWT is sent as `Authorization: Bearer ...`.
+ * Auth: a `getToken` callback is invoked on every request, and the token it
+ * returns is sent as `Authorization: Bearer ...` — the portal session token
+ * (`lib/portal-auth.ts`): the staff pool's on a studio's portal, the platform
+ * pool's on the super portal.
  *
  * Errors: non-2xx responses throw an `ApiError` that carries `status` plus the
  * parsed JSON body (if any) so callers can render structured copy.

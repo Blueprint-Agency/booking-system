@@ -2,7 +2,7 @@ import { Hono } from 'hono'
 import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { mintClientImpersonation } from '../../../services/impersonation/mint'
-import { BadRequestError, NotFoundError } from '../../../shared/errors'
+import { BadRequestError, ForbiddenError, NotFoundError } from '../../../shared/errors'
 import { tenantId } from '../../../middleware/tenant'
 
 const idParam = z.object({ id: z.string().uuid() })
@@ -20,15 +20,19 @@ const app = new Hono().post(
       const res = await mintClientImpersonation({
         tenantId: tenantId(c),
         clientId: id,
-        superadminStaffId: staffRow.id,
+        superadmin: staffRow,
+        from: c.req.raw.headers,
       })
       c.set('auditTarget' as any, { table: 'clients', id })
       return c.json({
-        ticket: res.ticket,
+        token: res.token,
         grant: res.grant,
         fe_client_url: res.feClientUrl,
       })
     } catch (err) {
+      if (err instanceof ForbiddenError) {
+        return c.json({ error: err.message }, 403)
+      }
       if (err instanceof NotFoundError) {
         return c.json({ error: 'client_not_found' }, 404)
       }

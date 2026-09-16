@@ -5,26 +5,46 @@
  * invitable" line in `admin-restructure.md` §15a). Instructors share the same
  * email-invite path as admins. See `be-portal.md` §3a.
  *
- * Flow:
- *   1. Superadmin POSTs /portal/admin/staff/invite { email, granted_location_ids? }
- *   2. We insert one `staff_users` row (status='pending') + one `staff_invitations`
- *      row (token, expires_at = now+7d) in a single transaction
- *   3. Email the invitee a sign-up link to `{studio portal origin}/signup?invite_email=…`
- *      (NOT a token-gated landing — they sign up with Clerk normally; the
- *      Clerk webhook matches by email and links them to the pending row)
+ * **Invitation-only, in fact (#115).** Nobody signs up. An invitation writes
+ * everything a staff member is, in one transaction:
+ *
+ *   1. the `staff` pool auth user (Better Auth), with no password
+ *   2. the `staff_users` row (status='pending'), linked to it by `auth_user_id`
+ *   3. the `staff_invitations` row (token, expires_at = now+7d)
+ *
+ * and then mails a link to `{studio portal origin}/signup?invite_token=…`. That
+ * page is where the invitee chooses a password: `acceptInvitation` checks the
+ * token, sets the password and activates the row, and the portal signs in with
+ * it. There is no webhook matching a stranger's sign-up to a row by address.
+ *
+ * The link is our token, not a Better Auth reset link, for two reasons: the
+ * invitation lives for a week and a reset token for an hour, and the mail is the
+ * studio's own invitation copy (`admin_invite` / `instructor_invite`), not a
+ * password-reset notice.
  */
 import { randomBytes } from 'node:crypto'
 import { and, desc, eq, isNull, sql } from 'drizzle-orm'
+import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import { db } from '../../db'
+import type * as schema from '../../db/schema'
 import { staffUsers, staffInvitations } from '../../db/schema/identity'
 import { instructors } from '../../db/schema/catalog'
 import { tenantDisplayName } from '../tenants/mail-identity'
 import { requireTenantUrl } from '../tenants/urls'
-import { ConflictError, NotFoundError } from '../../shared/errors'
+import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import { sendTemplatedEmail } from '../notifications/send'
 import { splitName, joinName } from '../../lib/name'
 import { sgFormat } from '../../lib/time'
 import { withLeaveFigures } from '../leave/requests'
+import {
+  ensureAuthUser,
+  hasStaffPassword,
+  MAX_PASSWORD_LENGTH,
+  MIN_PASSWORD_LENGTH,
+  removeUnusedStaffUser,
+  renameStaffUser,
+  setFirstStaffPassword,
+} from './auth-users'
 import type { StaffProfileRow } from './staff-archive'
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000
@@ -42,6 +62,9 @@ export interface InviteAdminInput {
   invitedByStaffId: string
 }
 
+/** A handle an invitation can be written through — `db`, or a transaction on it. */
+type Writer = Pick<PostgresJsDatabase<typeof schema>, 'insert' | 'select'>
+
 function cryptoRandomBase64Url(byteLen: number): string {
   return randomBytes(byteLen).toString('base64url')
 }
@@ -52,21 +75,159 @@ function emailLocalPart(email: string): string {
 }
 
 /**
- * The sign-up link, on the **inviting studio's own portal**.
+ * The set-password link, on the **inviting studio's own portal**.
  *
  * `portalUrl` is that studio's origin, from `requireTenantUrl('portal', …)`, and
  * is a parameter rather than read here so the lookup that can fail happens
  * before the invitation row is written — an admin gets a refusal instead of a
  * committed invitation nobody could be told about.
  *
- * It used to be `env.PORTAL_ORIGIN`, one value for the whole platform. Staff of
- * the second studio were invited into the first studio's portal, where their
- * Clerk organization does not match and the token is refused on arrival: an
- * invitation that cannot be accepted, with nothing in it saying why.
+ * On the studio's own hostname because that is the only place the token is
+ * found: an invitation is looked up inside the Tenant it was issued for.
  */
-export function buildSignUpUrl(portalUrl: string, email: string, token?: string): string {
-  const base = `${portalUrl.replace(/\/+$/, '')}/signup?invite_email=${encodeURIComponent(email)}`
-  return token ? `${base}&invite_token=${encodeURIComponent(token)}` : base
+export function buildSignUpUrl(portalUrl: string, email: string, token: string): string {
+  return `${portalUrl.replace(/\/+$/, '')}/signup?invite_email=${encodeURIComponent(email)}&invite_token=${encodeURIComponent(token)}`
+}
+
+export interface PendingStaffInput {
+  tenantId: string
+  email: string
+  name: string
+  role: InvitableRole
+  grantedLocationIds?: string[]
+  /** Null for a studio's first admin, whom nobody on its staff invited. */
+  invitedByStaffId: string | null
+  bio?: string | null
+  phone?: string | null
+  photoR2Key?: string | null
+}
+
+/**
+ * Write a staff member who has been invited and not yet arrived: the auth user,
+ * the pending `staff_users` row linked to it, the instructor profile when the
+ * role needs one, and the invitation. Through `tx`, so a caller's transaction
+ * takes all of it or none.
+ *
+ * The auth user is found by address when it already exists — a person who is
+ * staff at another studio has one account — and made otherwise.
+ */
+export async function writePendingStaff(
+  tx: Writer,
+  input: PendingStaffInput,
+): Promise<{ staff: StaffUserRow; invitation: StaffInvitationRow }> {
+  const email = input.email.trim().toLowerCase()
+  const now = new Date()
+  // Superadmin ignores granted_location_ids (implicit grant = all locations).
+  // Instructors don't carry location grants — they teach where assigned.
+  const grants = input.role === 'admin' ? (input.grantedLocationIds ?? []) : []
+  const { firstName, lastName } = splitName(input.name)
+
+  const authUserId = await ensureAuthUser(tx, 'staff', { email, name: input.name })
+
+  const [staff] = await tx
+    .insert(staffUsers)
+    .values({
+      tenantId: input.tenantId,
+      email,
+      name: joinName(firstName, lastName),
+      firstName,
+      lastName,
+      role: input.role,
+      status: 'pending',
+      grantedLocationIds: grants,
+      invitedAt: now,
+      authUserId,
+      bio: input.bio ?? null,
+      phone: input.phone ?? null,
+    })
+    .returning()
+  if (!staff) throw new Error('staff_users_insert_failed')
+
+  // Instructor role requires a profile row so the catalog INNER JOIN in
+  // listInstructors/loadById matches. Profile fields are populated later
+  // when the instructor edits their bio/photo.
+  if (input.role === 'instructor') {
+    await tx.insert(instructors).values({
+      tenantId: input.tenantId,
+      staffUserId: staff.id,
+      photoR2Key: input.photoR2Key ?? null,
+    })
+  }
+
+  const [invitation] = await tx
+    .insert(staffInvitations)
+    .values({
+      tenantId: input.tenantId,
+      email,
+      role: input.role,
+      grantedLocationIds: grants,
+      token: cryptoRandomBase64Url(32),
+      expiresAt: new Date(now.getTime() + INVITE_TTL_MS),
+      status: 'pending',
+      invitedByStaffId: input.invitedByStaffId,
+      staffUserId: staff.id,
+      createdAt: now,
+    })
+    .returning()
+  if (!invitation) throw new Error('staff_invitations_insert_failed')
+
+  return { staff, invitation }
+}
+
+// Human-readable SGT-friendly format for the email body.
+const expiresAtFormat = sgFormat('en-SG', { dateStyle: 'long', timeStyle: 'short' })
+
+/**
+ * Mail an invitation's set-password link, in the studio's own invitation copy
+ * for the role.
+ *
+ * Best-effort, and called OUTSIDE the transaction that wrote the invitation, so
+ * a transient mail failure doesn't roll the invitation back. Failures land in
+ * `email_log`, and resending is the way to try again.
+ */
+export async function mailInvitation(input: {
+  tenantId: string
+  invitation: StaffInvitationRow
+  portalUrl: string
+  name: string
+  inviterName: string
+}): Promise<void> {
+  const { invitation } = input
+  const link = buildSignUpUrl(input.portalUrl, invitation.email, invitation.token)
+  await sendTemplatedEmail({
+    tenantId: input.tenantId,
+    slug: invitation.role === 'instructor' ? 'instructor_invite' : 'admin_invite',
+    recipient: { email: invitation.email, userId: invitation.staffUserId, userKind: 'staff' },
+    variables: {
+      // Canonical variables from services/notifications/variables.ts
+      name: input.name,
+      invite_url: link,
+      expires_at: expiresAtFormat.format(invitation.expiresAt),
+      // Friendly extras — unknown {{}} are left as-is per spec, but the
+      // seeded template uses these for richer copy.
+      invitee_email: invitation.email,
+      inviter_name: input.inviterName,
+      sign_up_url: link,
+    },
+    // The link is the way into a staff account, so the log keeps it redacted.
+    secretVariables: ['invite_url', 'sign_up_url'],
+  })
+}
+
+/**
+ * The name that signs an invitation: the inviting colleague's, or — when there
+ * is none, as for a studio's first admin — the studio's. Never the platform's,
+ * and never another tenant's.
+ */
+export async function inviterNameFor(tenantId: string, invitation: StaffInvitationRow): Promise<string> {
+  const [inviter] = invitation.invitedByStaffId
+    ? await db
+        .select({ name: staffUsers.name })
+        .from(staffUsers)
+        .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, invitation.invitedByStaffId)))
+        .limit(1)
+    : []
+  return inviter?.name ?? tenantDisplayName(tenantId)
 }
 
 export type InvitationLookupStatus = 'valid' | 'expired' | 'used' | 'revoked' | 'not_found'
@@ -75,56 +236,157 @@ export interface InvitationLookup {
   status: InvitationLookupStatus
   email: string | null
   role: InvitableRole | null
+  /**
+   * Whether the invitee already has a password — they are staff at another
+   * studio, say — so the page asks them to sign in with it rather than choose
+   * one. Always false unless the invitation is `valid`.
+   */
+  passwordSet: boolean
 }
 
 /**
- * Public (unauthenticated) lookup used by the signup page to render the right
- * state for an invite link. Expiry is computed from `expires_at`, NOT persisted:
- * the row stays `pending` so it remains visible in the admin invitation list and
- * a resend (which extends `expires_at`) revives the link. This also keeps the
- * public endpoint read-only.
+ * The invitation a token names, at the studio whose context is open.
  *
- * Not tenant-scoped, deliberately: the token IS the credential and is unique
- * across the platform, so holding one already identifies exactly one tenant's
- * invitation. There is also no trustworthy tenant on this route — it is called
- * before anybody has signed in.
+ * Expiry is computed from `expires_at`, NOT persisted: the row stays `pending`
+ * so it remains visible in the admin invitation list and a resend (which extends
+ * `expires_at`) revives the link.
+ *
+ * Tenant-scoped by the request's context: tokens are unique per Tenant, and the
+ * link was mailed on the inviting studio's own hostname, so a token presented at
+ * any other studio finds nothing.
  */
-export async function lookupInvitationByToken(token: string): Promise<InvitationLookup> {
+async function findInvitation(tenantId: string, token: string) {
   const [inv] = await db
     .select()
     .from(staffInvitations)
-    .where(eq(staffInvitations.token, token))
+    .where(and(eq(staffInvitations.tenantId, tenantId), eq(staffInvitations.token, token)))
     .limit(1)
-  if (!inv) return { status: 'not_found', email: null, role: null }
-
-  const role = inv.role as InvitableRole
-  if (inv.status === 'accepted') return { status: 'used', email: inv.email, role }
-  if (inv.status === 'revoked') return { status: 'revoked', email: inv.email, role }
-
+  if (!inv) return { inv: null, status: 'not_found' as const }
+  if (inv.status === 'accepted') return { inv, status: 'used' as const }
+  if (inv.status === 'revoked') return { inv, status: 'revoked' as const }
   // pending (or a legacy 'expired' status) — treat a past-due invite as expired
   // by comparison, without mutating the row.
   if (inv.status === 'expired' || inv.expiresAt.getTime() < Date.now()) {
-    return { status: 'expired', email: inv.email, role }
+    return { inv, status: 'expired' as const }
   }
-
-  return { status: 'valid', email: inv.email, role }
+  return { inv, status: 'valid' as const }
 }
 
-// Human-readable SGT-friendly format for the email body.
-const expiresAtFormat = sgFormat('en-SG', { dateStyle: 'long', timeStyle: 'short' })
+/**
+ * Public (unauthenticated) lookup used by the set-password page to render the
+ * right state for an invite link. Read-only.
+ */
+export async function lookupInvitationByToken(tenantId: string, token: string): Promise<InvitationLookup> {
+  const { inv, status } = await findInvitation(tenantId, token)
+  if (!inv) return { status, email: null, role: null, passwordSet: false }
+
+  let passwordSet = false
+  if (status === 'valid' && inv.staffUserId) {
+    const [staff] = await db
+      .select({ authUserId: staffUsers.authUserId })
+      .from(staffUsers)
+      .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, inv.staffUserId)))
+      .limit(1)
+    if (staff?.authUserId) passwordSet = await hasStaffPassword(db, staff.authUserId)
+  }
+  return { status, email: inv.email, role: inv.role as InvitableRole, passwordSet }
+}
+
+const ACCEPT_REFUSALS = {
+  used: 'invitation_used',
+  revoked: 'invitation_revoked',
+  expired: 'invitation_expired',
+} as const
 
 /**
- * Create a pending admin invitation + send the invite email.
+ * Accept an invitation: the link's holder chooses a password, and the pending
+ * staff member becomes an active one.
+ *
+ * Holding the token is the proof. It was mailed to the invited address and
+ * nowhere else, which is the same proof a password-reset link rests on.
+ *
+ * A person who already has a password — staff at another studio, with one
+ * account — keeps it: `password` is ignored, and they sign in with the one they
+ * have. A token can set a first password; it can never replace one.
+ *
+ * In one transaction, with the invitation claimed first by a conditional update,
+ * so two tabs submitting the same link cannot both get through.
+ */
+export async function acceptInvitation(input: {
+  tenantId: string
+  token: string
+  password?: string
+  /** The name they go by, replacing the placeholder an invitation starts with. Both or neither. */
+  firstName?: string
+  lastName?: string
+}): Promise<{ email: string }> {
+  const { tenantId } = input
+  return db.transaction(async tx => {
+    const { inv, status } = await findInvitation(tenantId, input.token)
+    if (!inv) throw new NotFoundError('invitation_not_found')
+    if (status !== 'valid') throw new ConflictError(ACCEPT_REFUSALS[status])
+
+    const [staff] = inv.staffUserId
+      ? await tx
+          .select()
+          .from(staffUsers)
+          .where(
+            and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, inv.staffUserId), isNull(staffUsers.deletedAt)),
+          )
+          .limit(1)
+      : []
+    if (!staff) throw new NotFoundError('invitation_not_found')
+
+    const now = new Date()
+    const [claimed] = await tx
+      .update(staffInvitations)
+      .set({ status: 'accepted', acceptedAt: now })
+      .where(
+        and(
+          eq(staffInvitations.tenantId, tenantId),
+          eq(staffInvitations.id, inv.id),
+          eq(staffInvitations.status, 'pending'),
+        ),
+      )
+      .returning({ id: staffInvitations.id })
+    if (!claimed) throw new ConflictError('invitation_used')
+
+    // An invitation written before invitations made the auth user (#115), or one
+    // whose auth user was removed when a sibling invitation at another studio was
+    // revoked, is linked here instead.
+    const authUserId =
+      staff.authUserId ?? (await ensureAuthUser(tx, 'staff', { email: staff.email, name: staff.name }))
+
+    if (!(await hasStaffPassword(tx, authUserId))) {
+      const password = input.password ?? ''
+      if (!password) throw new BadRequestError('password_required')
+      if (password.length < MIN_PASSWORD_LENGTH) throw new BadRequestError('password_too_short')
+      if (password.length > MAX_PASSWORD_LENGTH) throw new BadRequestError('password_too_long')
+      await setFirstStaffPassword(tx, authUserId, password)
+    }
+
+    const named =
+      input.firstName && input.lastName
+        ? { firstName: input.firstName, lastName: input.lastName, name: joinName(input.firstName, input.lastName) }
+        : {}
+    await tx
+      .update(staffUsers)
+      .set({ ...named, authUserId, status: 'active', acceptedAt: staff.acceptedAt ?? now, updatedAt: now })
+      .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, staff.id)))
+    // The account's name too, so mail the auth pool sends greets them by it.
+    if (named.name) await renameStaffUser(tx, authUserId, named.name)
+
+    return { email: staff.email }
+  })
+}
+
+/**
+ * Create a pending invitation + send the invite email.
  * Returns the inserted invitation row.
  */
 export async function inviteAdmin(input: InviteAdminInput): Promise<StaffInvitationRow> {
   const email = input.email.trim().toLowerCase()
   const role: InvitableRole = input.role ?? 'admin'
-  // Superadmin ignores granted_location_ids (implicit grant = all locations).
-  // Instructors don't carry location grants — they teach where assigned.
-  const grants = role === 'admin' ? (input.grantedLocationIds ?? []) : []
-  const now = new Date()
-  const expiresAt = new Date(now.getTime() + INVITE_TTL_MS)
 
   // Resolved before anything is written. The link is the whole point of an
   // invitation, so a studio the platform cannot build a portal URL for must fail
@@ -132,7 +394,7 @@ export async function inviteAdmin(input: InviteAdminInput): Promise<StaffInvitat
   // never told about either.
   const portalUrl = await requireTenantUrl('portal', input.tenantId)
 
-  const { invitation, inviterName } = await db.transaction(async tx => {
+  const invitation = await db.transaction(async tx => {
     // Existing staff with this email blocks invitation. Active or pending = already in use;
     // archived = explicitly refuse re-use (audit log integrity — superadmin should restore
     // archived accounts via a separate path, not by re-inviting).
@@ -157,86 +419,25 @@ export async function inviteAdmin(input: InviteAdminInput): Promise<StaffInvitat
       })
     }
 
-    // No first/last name is collected at invite time (just email + role). We
-    // still split the email-derived placeholder so `name` stays derived via
-    // joinName(firstName, lastName) — same single source of truth the
-    // profile-edit path (updateStaffProfile) writes through.
-    const { firstName, lastName } = splitName(emailLocalPart(email))
-    const [staffRow] = await tx
-      .insert(staffUsers)
-      .values({
-        tenantId: input.tenantId,
-        email,
-        name: joinName(firstName, lastName),
-        firstName,
-        lastName,
-        role,
-        status: 'pending',
-        grantedLocationIds: grants,
-        invitedAt: now,
-      })
-      .returning()
-    if (!staffRow) throw new Error('staff_users_insert_failed')
-
-    // Instructor role requires a profile row so the catalog INNER JOIN in
-    // listInstructors/loadById matches. Profile fields are populated later
-    // when the instructor edits their bio/photo.
-    if (role === 'instructor') {
-      await tx.insert(instructors).values({
-        tenantId: input.tenantId,
-        staffUserId: staffRow.id,
-        photoR2Key: null,
-      })
-    }
-
-    const [inv] = await tx
-      .insert(staffInvitations)
-      .values({
-        tenantId: input.tenantId,
-        email,
-        role,
-        grantedLocationIds: grants,
-        token: cryptoRandomBase64Url(32),
-        expiresAt,
-        status: 'pending',
-        invitedByStaffId: input.invitedByStaffId,
-        staffUserId: staffRow.id,
-        createdAt: now,
-      })
-      .returning()
-    if (!inv) throw new Error('staff_invitations_insert_failed')
-
-    const [inviter] = await tx
-      .select({ name: staffUsers.name })
-      .from(staffUsers)
-      .where(
-        and(eq(staffUsers.tenantId, input.tenantId), eq(staffUsers.id, input.invitedByStaffId)),
-      )
-      .limit(1)
-
-    // No named inviter means the invitation came from the studio itself, so the
-    // studio's name is what stands in — never the platform's, and never another
-    // tenant's.
-    return { invitation: inv, inviterName: inviter?.name ?? (await tenantDisplayName(input.tenantId)) }
+    // No first/last name is collected at invite time (just email + role), so the
+    // address's local part stands in until the person edits their profile.
+    const { invitation } = await writePendingStaff(tx, {
+      tenantId: input.tenantId,
+      email,
+      name: emailLocalPart(email),
+      role,
+      grantedLocationIds: input.grantedLocationIds,
+      invitedByStaffId: input.invitedByStaffId,
+    })
+    return invitation
   })
 
-  // Email is best-effort and runs OUTSIDE the transaction so a transient SMTP
-  // failure doesn't roll back the invitation. Failures land in `email_log`.
-  await sendTemplatedEmail({
+  await mailInvitation({
     tenantId: input.tenantId,
-    slug: 'admin_invite',
-    recipient: { email, userId: invitation.staffUserId, userKind: 'staff' },
-    variables: {
-      // Canonical variables from services/notifications/variables.ts
-      name: emailLocalPart(email),
-      invite_url: buildSignUpUrl(portalUrl, email, invitation.token),
-      expires_at: expiresAtFormat.format(expiresAt),
-      // Friendly extras — unknown {{}} are left as-is per spec, but the
-      // seeded template uses these for richer copy.
-      invitee_email: email,
-      inviter_name: inviterName,
-      sign_up_url: buildSignUpUrl(portalUrl, email, invitation.token),
-    },
+    invitation,
+    portalUrl,
+    name: emailLocalPart(email),
+    inviterName: await inviterNameFor(input.tenantId, invitation),
   })
 
   return invitation
@@ -321,9 +522,9 @@ export async function listStaffAndInvitations(
 }
 
 /**
- * Revoke a pending invitation. If the matching staff_users row is still
- * pending + unlinked from Clerk, delete it (clean revocation). If the
- * invitation has already been accepted, return 409.
+ * Revoke a pending invitation, taking with it what the invitation made: the
+ * still-pending staff row, and the auth user if nobody ever set a password on
+ * it. If the invitation has already been accepted, return 409.
  */
 export async function revokeInvitation(
   tenantId: string,
@@ -355,18 +556,19 @@ export async function revokeInvitation(
       .returning()
 
     if (inv.staffUserId) {
-      // Only delete the staff_users row if it never linked to a Clerk user —
-      // otherwise the user did sign up and we should keep the audit trail.
-      await tx
+      // Only a row that is still pending — anyone who did arrive keeps their
+      // audit trail.
+      const [removed] = await tx
         .delete(staffUsers)
         .where(
           and(
             eq(staffUsers.tenantId, tenantId),
             eq(staffUsers.id, inv.staffUserId),
             eq(staffUsers.status, 'pending'),
-            isNull(staffUsers.clerkUserId),
           ),
         )
+        .returning({ authUserId: staffUsers.authUserId })
+      if (removed?.authUserId) await removeUnusedStaffUser(tx, removed.authUserId)
     }
 
     return updated!
@@ -374,8 +576,8 @@ export async function revokeInvitation(
 }
 
 /**
- * Re-fire the admin_invite email. Token is unchanged; expires_at extended
- * to now + 7d so the sign-up link works again.
+ * Re-fire the invitation email. Token is unchanged; expires_at extended
+ * to now + 7d so the set-password link works again.
  */
 export async function resendInvitation(
   tenantId: string,
@@ -407,25 +609,22 @@ export async function resendInvitation(
     .returning()
   if (!updated) throw new Error('staff_invitations_update_failed')
 
-  // Look up inviter name for the email body.
-  const [inviter] = await db
-    .select({ name: staffUsers.name })
-    .from(staffUsers)
-    .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, inv.invitedByStaffId)))
-    .limit(1)
+  const [invitee] = inv.staffUserId
+    ? await db
+        .select({ name: staffUsers.name, role: staffUsers.role })
+        .from(staffUsers)
+        .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, inv.staffUserId)))
+        .limit(1)
+    : []
 
-  await sendTemplatedEmail({
+  await mailInvitation({
     tenantId,
-    slug: 'admin_invite',
-    recipient: { email: inv.email, userId: inv.staffUserId, userKind: 'staff' },
-    variables: {
-      name: emailLocalPart(inv.email),
-      invite_url: buildSignUpUrl(portalUrl, inv.email, inv.token),
-      expires_at: expiresAtFormat.format(expiresAt),
-      invitee_email: inv.email,
-      inviter_name: inviter?.name ?? (await tenantDisplayName(tenantId)),
-      sign_up_url: buildSignUpUrl(portalUrl, inv.email, inv.token),
-    },
+    invitation: updated,
+    portalUrl,
+    // An instructor was created with a real name; an invited admin has only the
+    // address's local part until they edit their profile.
+    name: invitee?.role === 'instructor' ? invitee.name : emailLocalPart(inv.email),
+    inviterName: await inviterNameFor(tenantId, updated),
   })
 
   return updated

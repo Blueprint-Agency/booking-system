@@ -175,6 +175,22 @@ export type ImportSummary = {
 }
 
 /**
+ * Columns an archive may still carry that the schema has since dropped, per
+ * table. Exports are `SELECT *`, so an archive written before migration 0053
+ * has `clerk_user_id` on every identity row; nothing else about the format
+ * changed, so those archives are read, and the retired column is left behind.
+ * Named rather than inferred: a column the archive has and the table lacks for
+ * any *other* reason is still an error, not data quietly discarded.
+ */
+const RETIRED_COLUMNS: Readonly<Record<string, readonly string[]>> = {
+  clients: ['clerk_user_id'],
+  staff_users: ['clerk_user_id'],
+}
+
+/** The tables whose rows must name the account their person signs in with. */
+const ACCOUNT_TABLES = ['clients', 'staff_users']
+
+/**
  * Write a studio's archive into a Tenant.
  *
  * The target must be **empty**. Merging an archive into a studio that already
@@ -226,6 +242,17 @@ export async function importTenant(
     )
   }
 
+  // Before anything is written: a person with no account could never sign in,
+  // and the column is NOT NULL — refused by name rather than by constraint.
+  for (const table of ACCOUNT_TABLES) {
+    const unlinked = (archive.rows[table] ?? []).filter(row => row.auth_user_id == null).length
+    if (unlinked > 0) {
+      throw new Error(
+        `${unlinked} ${table} row(s) in this archive have no auth_user_id — it predates the user import (#120) and cannot be restored`,
+      )
+    }
+  }
+
   const { order, deferred } = await tenantTableOrder()
   const written: Record<string, number> = {}
 
@@ -265,6 +292,7 @@ export async function importTenant(
         // `tenant_id` last: it is set, never remapped, and the archive's own
         // value for it must not survive into another studio.
         const values: Record<string, unknown> = remapRow(row, identity)
+        for (const column of RETIRED_COLUMNS[table] ?? []) delete values[column]
         values.tenant_id = targetTenantId
         for (const column of hold) values[column] = null
         try {

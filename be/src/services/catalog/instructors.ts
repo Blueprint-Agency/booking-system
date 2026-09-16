@@ -5,8 +5,8 @@ import { instructors } from '../../db/schema/catalog'
 import { classes, ptSessions, workshops, workshopInstructors } from '../../db/schema/schedule'
 import { ConflictError, NotFoundError, BadRequestError } from '../../shared/errors'
 import { assertOwnObjectKeys } from '../../lib/object-key'
-import { sendTemplatedEmail } from '../notifications/send'
-import { buildSignUpUrl } from '../auth/invitations'
+import { inviterNameFor, mailInvitation, writePendingStaff } from '../auth/invitations'
+import { endStaffSessionsAt } from '../auth/auth-users'
 import { requireTenantUrl } from '../tenants/urls'
 
 export type StaffRow = typeof staffUsers.$inferSelect
@@ -99,17 +99,16 @@ export interface CreateInstructorInput {
   bio?: string | null
   phone?: string | null
   photoR2Key?: string | null
+  /** The admin creating them, who signs the invitation. */
+  invitedByStaffId: string
 }
 
 /**
- * Create an instructor + send the branded invite email.
- *  - staff_users (role=instructor, status=pending, invited_at=now, clerk_user_id=NULL)
- *  - instructors (profile)
- *
- * Like the admin-invite flow, we do NOT pre-create a Clerk user. The pending
- * staff_users row links up when the invited email signs into the staff Clerk
- * app and the `user.created` webhook fires (matched by email). The invite email
- * carries a `{studio portal origin}/signup?invite_email=…` link.
+ * Create an instructor + send the branded invite email. Exactly the admin
+ * invitation (`services/auth/invitations.ts`), with a name and profile up front:
+ * the staff auth user, the pending staff_users row linked to it, the instructors
+ * profile and the invitation are written together, and the mail carries a link
+ * that sets the instructor's password.
  *
  * Class-type eligibility (instructor_class_types) is no longer modelled in the
  * UI — instructors are assignable to any class type at scheduling time.
@@ -128,11 +127,11 @@ export async function createInstructor(
   // anything if there is a portal of this studio's own to point it at.
   const portalUrl = await requireTenantUrl('portal', tenantId)
 
-  const view = await db.transaction(async tx => {
+  const { view, invitation } = await db.transaction(async tx => {
     // Deliberately *not* tenant-scoped: `staff_users.email` still carries a
     // platform-wide unique index, so scoping this check would only trade a
     // clean 409 for a unique violation. Making one person staff at two tenants
-    // is a schema change, and it belongs with the Clerk organization work (#65).
+    // is a schema change of its own (#65).
     const existing = await tx
       .select({ id: staffUsers.id })
       .from(staffUsers)
@@ -140,53 +139,40 @@ export async function createInstructor(
       .limit(1)
     if (existing.length) throw new ConflictError('staff_email_exists')
 
-    const [staffRow] = await tx
-      .insert(staffUsers)
-      .values({
-        tenantId,
-        email,
-        name: input.name,
-        role: 'instructor',
-        status: 'pending',
-        clerkUserId: null,
-        invitedAt: new Date(),
-        bio: input.bio ?? null,
-        phone: input.phone ?? null,
-      })
-      .returning()
-
-    await tx.insert(instructors).values({
+    const { staff, invitation } = await writePendingStaff(tx, {
       tenantId,
-      staffUserId: staffRow!.id,
-      photoR2Key: input.photoR2Key ?? null,
+      email,
+      name: input.name,
+      role: 'instructor',
+      invitedByStaffId: input.invitedByStaffId,
+      bio: input.bio,
+      phone: input.phone,
+      photoR2Key: input.photoR2Key,
     })
 
-    return {
-      id: staffRow!.id,
-      email: staffRow!.email,
-      name: staffRow!.name,
-      status: staffRow!.status,
-      archivedAt: staffRow!.archivedAt,
-      invitedAt: staffRow!.invitedAt,
-      acceptedAt: staffRow!.acceptedAt,
+    const view: InstructorView = {
+      id: staff.id,
+      email: staff.email,
+      name: staff.name,
+      status: staff.status,
+      archivedAt: staff.archivedAt,
+      invitedAt: staff.invitedAt,
+      acceptedAt: staff.acceptedAt,
       bio: input.bio ?? null,
       phone: input.phone ?? null,
       photoR2Key: input.photoR2Key ?? null,
     }
+    return { view, invitation }
   })
 
-  // Email is best-effort and runs OUTSIDE the transaction so a transient SMTP
-  // failure doesn't roll back the instructor record. Failures land in `email_log`.
-  await sendTemplatedEmail({
+  // Outside the transaction, as in `inviteAdmin`: a transient mail failure must
+  // not roll back the instructor record. Failures land in `email_log`.
+  await mailInvitation({
     tenantId,
-    slug: 'instructor_invite',
-    recipient: { email, userId: view.id, userKind: 'staff' },
-    variables: {
-      name: view.name,
-      invite_url: buildSignUpUrl(portalUrl, email),
-      invitee_email: email,
-      sign_up_url: buildSignUpUrl(portalUrl, email),
-    },
+    invitation,
+    portalUrl,
+    name: view.name,
+    inviterName: await inviterNameFor(tenantId, invitation),
   })
 
   return view
@@ -281,10 +267,14 @@ export async function archiveInstructor(tenantId: string, id: string): Promise<I
     })
   }
 
-  await db
+  const [archived] = await db
     .update(staffUsers)
     .set({ status: 'archived', archivedAt: now, updatedAt: now })
     .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, id)))
+    .returning({ authUserId: staffUsers.authUserId })
+  // Signed out here, as `archiveStaff` does; `requireActiveStaff` refuses the
+  // archived row on its next request either way.
+  if (archived?.authUserId) await endStaffSessionsAt(db, tenantId, archived.authUserId)
 
   return loadById(tenantId, id)
 }

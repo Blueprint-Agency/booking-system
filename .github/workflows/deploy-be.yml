@@ -114,13 +114,11 @@ jobs:
       NODE_ENV: test
       APP_ENV: development
       SUPERADMIN_EMAIL: superadmin@example.test
-      CLERK_STAFF_PUBLISHABLE_KEY: pk_test_harness
-      CLERK_STAFF_SECRET_KEY: sk_test_harness
-      CLERK_STAFF_WEBHOOK_SECRET: whsec_test_harness
+      BETTER_AUTH_SECRET: test-harness-better-auth-secret-key-0123456789
+      BETTER_AUTH_URL: http://localhost:4000
       IMPERSONATION_SECRET: test-harness-impersonation-secret-key
       TENANT_ORIGIN_PATTERNS: http://*.localhost:3000,http://*.portal.localhost:3001,http://localhost:3000,http://localhost:3001
       RESEND_API_KEY: re_test_harness
-      MAIL_FROM_EMAIL: hello@example.test
 
     defaults:
       run:
@@ -348,14 +346,10 @@ jobs:
             #   org vars:    BPVPS2_TAILSCALE_HOST, DOCKERHUB_USERNAME
             #   org secrets: TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET, SSH_PRIVATE_KEY, DOCKERHUB_TOKEN
             #   env vars:    PORT, TENANT_ORIGIN_PATTERNS,
-            #            SUPERADMIN_EMAIL, PLATFORM_ADMIN_EMAILS, MAIL_FROM_EMAIL,
-            #            (optional) MAIL_FROM_PORTAL_EMAIL, MAIL_FROM_NAME,
+            #            SUPERADMIN_EMAIL, PLATFORM_ADMIN_EMAILS,
             #            (optional) STRIPE_STATEMENT_DESCRIPTOR_PREFIX
             #   env secrets: DB_USER, DB_PASSWORD, DB_NAME, DB_APP_PASSWORD,
-            #            CLERK_STAFF_PUBLISHABLE_KEY, CLERK_STAFF_SECRET_KEY, CLERK_STAFF_WEBHOOK_SECRET,
-            #            CLERK_CLIENT_PUBLISHABLE_KEY, CLERK_CLIENT_SECRET_KEY, CLERK_CLIENT_WEBHOOK_SECRET,
-            #            (optional) CLERK_PLATFORM_PUBLISHABLE_KEY, CLERK_PLATFORM_SECRET_KEY,
-            #            IMPERSONATION_SECRET, RESEND_API_KEY,
+            #            IMPERSONATION_SECRET, BETTER_AUTH_SECRET, RESEND_API_KEY, RESEND_WEBHOOK_SECRET,
             #            STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
             #            R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME, R2_PUBLIC_URL,
             #            (optional) SENTRY_DSN
@@ -400,7 +394,7 @@ jobs:
               # Tenant subdomain origins, comma-separated, wildcard leftmost —
               # every studio is a subdomain and a studio is created by inserting
               # a row, so the allowlist has to be a pattern. Backs CORS, the
-              # Clerk `azp` check and the public-route `Origin` validation, and
+              # auth pools' trusted origins and the public-route `Origin` validation, and
               # is read backwards to build every per-studio link the backend
               # mails or redirects to.
               #
@@ -410,36 +404,23 @@ jobs:
               #   staging:    https://*.dev.reservetoday.app,https://*.portal.dev.reservetoday.app
               #   production: https://*.reservetoday.app,https://*.portal.reservetoday.app
               echo "TENANT_ORIGIN_PATTERNS=${{ vars.TENANT_ORIGIN_PATTERNS }}"
-              # Clerk — staff app (admin + instructor)
-              echo "CLERK_STAFF_PUBLISHABLE_KEY=${{ secrets.CLERK_STAFF_PUBLISHABLE_KEY }}"
-              echo "CLERK_STAFF_SECRET_KEY=${{ secrets.CLERK_STAFF_SECRET_KEY }}"
-              echo "CLERK_STAFF_WEBHOOK_SECRET=${{ secrets.CLERK_STAFF_WEBHOOK_SECRET }}"
               # Impersonation grant signing — HS256 secret for the BE-signed JWT
               # that proves a /api/v1/me/* call is being made by a superadmin
               # impersonating a client. Must be at least 32 chars.
               echo "IMPERSONATION_SECRET=${{ secrets.IMPERSONATION_SECRET }}"
-              # Clerk — client app (fe-client; separate Clerk application from staff)
-              echo "CLERK_CLIENT_PUBLISHABLE_KEY=${{ secrets.CLERK_CLIENT_PUBLISHABLE_KEY }}"
-              echo "CLERK_CLIENT_SECRET_KEY=${{ secrets.CLERK_CLIENT_SECRET_KEY }}"
-              echo "CLERK_CLIENT_WEBHOOK_SECRET=${{ secrets.CLERK_CLIENT_WEBHOOK_SECRET }}"
-              # Clerk — super portal app (admin.portal.<root domain>; a THIRD
-              # Clerk application). Optional: blank leaves the super portal
-              # sharing the staff app's `__client` cookie, which means it shares
-              # one browser session with every studio portal. Set it and the two
-              # hostnames hold two separate sessions. The backend warns at boot
-              # when it is unset. See be/.env.example.
-              echo "CLERK_PLATFORM_PUBLISHABLE_KEY=${{ secrets.CLERK_PLATFORM_PUBLISHABLE_KEY }}"
-              echo "CLERK_PLATFORM_SECRET_KEY=${{ secrets.CLERK_PLATFORM_SECRET_KEY }}"
-              # Mail — one Resend API key plus the platform's two envelope
-              # addresses, both in the domain verified on Resend. A member's
-              # mail leaves on MAIL_FROM_EMAIL, a staff member's on
-              # MAIL_FROM_PORTAL_EMAIL (blank falls back to the first). The
-              # studio's own name and Reply-To are per-tenant data, not env —
+              # Better Auth (self-hosted, three pools — docs/adr/0004). The secret
+              # signs sessions and encrypts 2FA secrets for all three pools; at
+              # least 32 chars, and rotating it signs everyone out. The URL is
+              # this backend's own origin, the base of every link Better Auth mails.
+              echo "BETTER_AUTH_SECRET=${{ secrets.BETTER_AUTH_SECRET }}"
+              echo "BETTER_AUTH_URL=https://${{ env.BOOKING_FQDN }}"
+              # Mail — one Resend API key. The envelope address
+              # (noreply@reservetoday.app) is a constant in be/src/lib/mailer.ts;
+              # the studio's own name and Reply-To are per-tenant data, not env —
               # see docs/md/mail-identity.md.
               echo "RESEND_API_KEY=${{ secrets.RESEND_API_KEY }}"
-              echo "MAIL_FROM_EMAIL=${{ vars.MAIL_FROM_EMAIL }}"
-              echo "MAIL_FROM_PORTAL_EMAIL=${{ vars.MAIL_FROM_PORTAL_EMAIL }}"
-              echo "MAIL_FROM_NAME=${{ vars.MAIL_FROM_NAME }}"
+              # Signs Resend's delivery/bounce/complaint webhook (#154).
+              echo "RESEND_WEBHOOK_SECRET=${{ secrets.RESEND_WEBHOOK_SECRET }}"
               echo "STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }}"
               echo "STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}"
               # Not a secret — it must match the prefix set on the Stripe account.

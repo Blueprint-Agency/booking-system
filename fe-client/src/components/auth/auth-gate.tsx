@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useCallback, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { useUser } from "@clerk/nextjs";
+import { useMemberSession } from "@/lib/member-auth";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 
 type AuthGateContext = "buy a package" | "buy merch" | "book a class" | "book a workshop" | "book a private session" | "continue";
@@ -106,7 +106,7 @@ function LoginRequiredModal({
 }
 
 export function useAuthGate(context: AuthGateContext = "continue") {
-  const { isSignedIn } = useUser();
+  const { isSignedIn } = useMemberSession();
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
   const [pendingHref, setPendingHref] = useState<string>("/");
@@ -148,7 +148,7 @@ type GatedLinkProps = {
 };
 
 export function GatedLink({ href, context, className, children, onAuthedClick }: GatedLinkProps) {
-  const { isSignedIn } = useUser();
+  const { isSignedIn } = useMemberSession();
   const { isAuthed, requireAuth, gate } = useAuthGate(context);
 
   if (isSignedIn) {

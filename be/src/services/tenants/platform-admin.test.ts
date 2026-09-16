@@ -31,7 +31,7 @@ import { isPlatformAdmin, parsePlatformAdmins } from './platform-admin'
 {
   // A blank allowlist admits nobody, however the address is spelled.
   assert.equal(isPlatformAdmin('dev@teeko.ai', []), false)
-  // A Clerk account with no primary email must not match a blank entry.
+  // A caller with no address must not match a blank entry.
   assert.equal(isPlatformAdmin(null, parsePlatformAdmins('a@x.com,,')), false)
   assert.equal(isPlatformAdmin('', parsePlatformAdmins('a@x.com,,')), false)
   assert.equal(isPlatformAdmin('   ', parsePlatformAdmins('a@x.com,,')), false)
