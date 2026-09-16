@@ -3,6 +3,7 @@ import { and, eq, isNull } from 'drizzle-orm'
 import { db } from '../db'
 import { staffUsers } from '../db/schema/identity'
 import { readPoolSession } from '../services/auth/better-auth'
+import { ERROR_CODES } from '../shared/error-codes'
 import { assertTenantSessionClaim, tenantId, tenantMatches } from './tenant'
 
 declare module 'hono' {
@@ -34,15 +35,15 @@ declare module 'hono' {
 export const staffAuth: MiddlewareHandler = async (c, next) => {
   const header = c.req.header('authorization')
   if (!header?.startsWith('Bearer ')) {
-    return c.json({ error: 'missing_bearer_token' }, 401)
+    return c.json({ error: ERROR_CODES.missing_bearer_token }, 401)
   }
   const token = header.slice(7).trim()
   if (!token) {
-    return c.json({ error: 'missing_bearer_token' }, 401)
+    return c.json({ error: ERROR_CODES.missing_bearer_token }, 401)
   }
 
   const session = await readPoolSession('staff', token)
-  if (!session) return c.json({ error: 'invalid_token' }, 401)
+  if (!session) return c.json({ error: ERROR_CODES.invalid_token }, 401)
 
   const claimRefusal = assertTenantSessionClaim(c, session.claimedTenantId)
   if (claimRefusal) return c.json({ error: claimRefusal }, 403)
@@ -61,13 +62,13 @@ export const staffAuth: MiddlewareHandler = async (c, next) => {
       ),
     )
     .limit(1)
-  if (!row) return c.json({ error: 'staff_not_provisioned' }, 403)
+  if (!row) return c.json({ error: ERROR_CODES.staff_not_provisioned }, 403)
 
   // Belt to the session claim's braces. The lookup above already ran inside
   // this tenant's Row-Level Security context, so a row from another studio
   // should be unreachable rather than merely wrong — and this says so out loud
   // instead of trusting that it stays true.
-  if (!tenantMatches(c, row.tenantId)) return c.json({ error: 'tenant_mismatch' }, 403)
+  if (!tenantMatches(c, row.tenantId)) return c.json({ error: ERROR_CODES.tenant_mismatch }, 403)
 
   c.set('staffUserId', row.id)
   c.set('staffRow', row)

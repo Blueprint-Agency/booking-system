@@ -41,6 +41,7 @@ import {
 } from '../../db/schema/schedule'
 import { instructors } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
+import type { ErrorCode } from '../../shared/error-codes'
 import { BadRequestError, NotFoundError } from '../../shared/errors'
 import { mergeRoster, unpricedArrivals, type RosterEntry, type RosterPatch } from './roster-merge'
 
@@ -58,7 +59,7 @@ export interface RosterRef {
 }
 
 /** Error identity for "that event doesn't exist", one per kind. */
-const notFoundCode: Record<RosterEventKind, string> = {
+const notFoundCode: Record<RosterEventKind, ErrorCode> = {
   class: 'class_not_found',
   workshop: 'workshop_not_found',
   pt_session: 'pt_session_not_found',

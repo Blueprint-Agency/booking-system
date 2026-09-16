@@ -11,6 +11,7 @@ import { cn, formatDurationMonths } from "@/lib/utils";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { SectionHeading } from "@/components/booking/section-heading";
 import { useApi } from "@/lib/api";
+import { ERROR_CODES } from "@/lib/error-codes";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { useLocations } from "@/lib/classes";
 import {
@@ -178,9 +179,9 @@ export default function PackagesPage() {
           ? String((body as { error: unknown }).error)
           : "";
       const text =
-        code === "trial_already_used"
+        code === ERROR_CODES.trial_already_used
           ? "You've already used your trial pass."
-          : code === "trial_not_eligible"
+          : code === ERROR_CODES.trial_not_eligible
             ? "The trial pass is for new members only — it looks like you already have a package."
             : "Couldn't start the trial purchase. Please try again.";
       setTrialMessage({ kind: "err", text });

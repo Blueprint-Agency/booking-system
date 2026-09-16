@@ -4,6 +4,7 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as svc from '../../../services/catalog/merch'
 import { BadRequestError } from '../../../shared/errors'
+import { ERROR_CODES } from '../../../shared/error-codes'
 import { tenantId } from '../../../middleware/tenant'
 
 /**
@@ -73,7 +74,7 @@ const app = new Hono()
       onError: c =>
         c.json(
           {
-            error: 'image_too_large',
+            error: ERROR_CODES.image_too_large,
             message: `A merch photo can be at most ${svc.MERCH_IMAGE_MAX_BYTES / (1024 * 1024)}MB.`,
           },
           413,

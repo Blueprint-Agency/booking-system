@@ -2,6 +2,7 @@ import type { MiddlewareHandler } from 'hono'
 import { readPoolSession } from '../services/auth/better-auth'
 import { env } from '../env'
 import { isPlatformAdmin, parsePlatformAdmins } from '../services/tenants/platform-admin'
+import { ERROR_CODES } from '../shared/error-codes'
 import { logger } from '../shared/logger'
 
 declare module 'hono' {
@@ -54,16 +55,16 @@ if (PLATFORM_ADMINS.length === 0) {
  */
 export const requirePlatformAdmin: MiddlewareHandler = async (c, next) => {
   const header = c.req.header('authorization')
-  if (!header?.startsWith('Bearer ')) return c.json({ error: 'not_found' }, 404)
+  if (!header?.startsWith('Bearer ')) return c.json({ error: ERROR_CODES.not_found }, 404)
   const token = header.slice(7).trim()
-  if (!token) return c.json({ error: 'not_found' }, 404)
+  if (!token) return c.json({ error: ERROR_CODES.not_found }, 404)
 
   const session = await readPoolSession('platform', token)
-  if (!session) return c.json({ error: 'not_found' }, 404)
+  if (!session) return c.json({ error: ERROR_CODES.not_found }, 404)
 
   if (!isPlatformAdmin(session.email, PLATFORM_ADMINS)) {
     logger.warn({ userId: session.userId, path: c.req.path }, 'platform-admin: refused')
-    return c.json({ error: 'not_found' }, 404)
+    return c.json({ error: ERROR_CODES.not_found }, 404)
   }
 
   c.set('platformAdminEmail', session.email.trim().toLowerCase())

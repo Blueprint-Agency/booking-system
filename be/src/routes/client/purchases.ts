@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { stripe } from '../../lib/stripe'
 import { AppError, NotFoundError } from '../../shared/errors'
 import { quoteCrossLocationAddOn } from '../../services/packages/purchase'
+import { ERROR_CODES } from '../../shared/error-codes'
 import {
   beginCrossLocationCheckout,
   beginPackageCheckout,
@@ -229,7 +230,7 @@ const app = new Hono()
     }
 
     if (session.metadata?.client_id !== clientId) {
-      return c.json({ error: 'forbidden' }, 403)
+      return c.json({ error: ERROR_CODES.forbidden }, 403)
     }
 
     if (session.payment_status !== 'paid') {

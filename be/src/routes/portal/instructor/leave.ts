@@ -5,6 +5,7 @@ import { z } from 'zod'
 import * as svc from '../../../services/leave/requests'
 import { SUPPORTING_DOCUMENT_MAX_BYTES } from '../../../services/leave/rules'
 import { BadRequestError } from '../../../shared/errors'
+import { ERROR_CODES } from '../../../shared/error-codes'
 import { tenantId } from '../../../middleware/tenant'
 
 /**
@@ -93,7 +94,7 @@ const app = new Hono()
       onError: c =>
         c.json(
           {
-            error: 'document_too_large',
+            error: ERROR_CODES.document_too_large,
             message: `A Supporting Document can be at most ${SUPPORTING_DOCUMENT_MAX_BYTES / (1024 * 1024)}MB.`,
           },
           413,

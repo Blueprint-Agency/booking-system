@@ -20,6 +20,7 @@
  * signed in at (`session-tenant.ts`). Kept pure and separate from the provider
  * so all of this is testable without a session at all.
  */
+import { ERROR_CODES } from "./error-codes";
 
 /** The `error` code on a refusal body, when there is one. */
 export function refusalCode(body: unknown): string | null {
@@ -68,7 +69,7 @@ export interface AccessDeniedCopy {
 /** A refusal code, in words the person reading it can act on. */
 export function accessDeniedCopy(reason: string | null): AccessDeniedCopy {
   switch (reason) {
-    case "tenant_suspended":
+    case ERROR_CODES.tenant_suspended:
       // Nothing about the session is wrong, and every one of this studio's
       // staff sees it. Telling them to try another account would be advice
       // that cannot work, so this is the one case that offers no switch.
@@ -80,7 +81,7 @@ export function accessDeniedCopy(reason: string | null): AccessDeniedCopy {
         offerSwitch: false,
         offerRetry: true,
       };
-    case "tenant_required":
+    case ERROR_CODES.tenant_required:
       // A session that names no studio. The backend never issues one on the
       // staff pool, so the only way here is a session from before that rule or
       // from somewhere it should not have come from — a fresh sign-in on this
@@ -93,7 +94,7 @@ export function accessDeniedCopy(reason: string | null): AccessDeniedCopy {
         offerSwitch: true,
         offerRetry: false,
       };
-    case "staff_inactive":
+    case ERROR_CODES.staff_inactive:
       return {
         title: "This account isn't active here",
         detail:
@@ -102,7 +103,7 @@ export function accessDeniedCopy(reason: string | null): AccessDeniedCopy {
         offerSwitch: true,
         offerRetry: false,
       };
-    case "tenant_mismatch":
+    case ERROR_CODES.tenant_mismatch:
       return {
         title: "This account has no access here",
         detail: "belongs to a different studio.",

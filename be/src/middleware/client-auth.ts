@@ -3,6 +3,7 @@ import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { clients } from '../db/schema/identity'
 import { readPoolSession, type PoolSession } from '../services/auth/better-auth'
+import { ERROR_CODES } from '../shared/error-codes'
 import { assertTenantSessionClaim, tenantId, tenantMatches } from './tenant'
 
 declare module 'hono' {
@@ -32,15 +33,15 @@ declare module 'hono' {
 export const clientAuth: MiddlewareHandler = async (c, next) => {
   const header = c.req.header('authorization')
   if (!header?.startsWith('Bearer ')) {
-    return c.json({ error: 'missing_bearer_token' }, 401)
+    return c.json({ error: ERROR_CODES.missing_bearer_token }, 401)
   }
   const token = header.slice(7).trim()
   if (!token) {
-    return c.json({ error: 'missing_bearer_token' }, 401)
+    return c.json({ error: ERROR_CODES.missing_bearer_token }, 401)
   }
 
   const session = await readPoolSession('client', token)
-  if (!session) return c.json({ error: 'invalid_token' }, 401)
+  if (!session) return c.json({ error: ERROR_CODES.invalid_token }, 401)
 
   const claimRefusal = assertTenantSessionClaim(c, session.claimedTenantId)
   if (claimRefusal) return c.json({ error: claimRefusal }, 403)
@@ -52,8 +53,8 @@ export const clientAuth: MiddlewareHandler = async (c, next) => {
     .from(clients)
     .where(and(eq(clients.tenantId, tenantId(c)), eq(clients.authUserId, session.userId)))
     .limit(1)
-  if (!row) return c.json({ error: 'client_not_found' }, 404)
-  if (!tenantMatches(c, row.tenantId)) return c.json({ error: 'tenant_mismatch' }, 403)
+  if (!row) return c.json({ error: ERROR_CODES.client_not_found }, 404)
+  if (!tenantMatches(c, row.tenantId)) return c.json({ error: ERROR_CODES.tenant_mismatch }, 403)
 
   c.set('clientSession', session)
   c.set('clientId', row.id)
@@ -66,7 +67,7 @@ export const requireActiveClient: MiddlewareHandler = async (c, next) => {
   // Blocking sets deleted_at and ends the member's sessions; a session that
   // outlived that (or a status flipped by hand) is still refused here.
   if (row.deletedAt || row.status !== 'active') {
-    return c.json({ error: 'client_blocked' }, 403)
+    return c.json({ error: ERROR_CODES.client_blocked }, 403)
   }
   await next()
 }

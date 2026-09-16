@@ -119,6 +119,11 @@ backend suite means no image is built and neither stack is touched.
   A manual `workflow_dispatch` always runs the tests, then deploys.
 - **Same Node as the image.** The `test` job runs on the Node major `be/Dockerfile` ships (22) and
   fails at once if the two drift apart — bump both together.
+- **Error catalogues match.** Before installing, the `test` job runs `scripts/check-error-codes.mjs`
+  (and its unit test): the backend's `ERROR_CODES` (`be/src/shared/error-codes.ts`) and the copy in
+  each frontend (`src/lib/error-codes.ts`) must list the same codes, or it names what is missing or
+  extra and fails. The `fe-client` / `fe-portal` jobs run the same check, so a frontend-only change
+  to its copy is caught too — there as a signal, since Vercel does not wait for it.
 - **Schema drift gates it too.** A `drift` job, which `deploy` also needs, migrates an empty
   `postgres:16` from nothing and then runs `npm run db:generate`, which must answer *"No schema
   changes, nothing to migrate"* and leave `be/src/db/migrations/` untouched. A schema edit committed

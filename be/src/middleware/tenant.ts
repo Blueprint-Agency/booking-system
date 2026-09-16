@@ -4,6 +4,7 @@ import { originTenantSlug } from '../lib/allowed-origins'
 import { normaliseSlug } from '../services/tenants/slug'
 import { resolveTenantBySlug } from '../services/tenants/tenants'
 import { sessionClaimVerdict } from '../services/tenants/session-claim'
+import { ERROR_CODES } from '../shared/error-codes'
 import { logger } from '../shared/logger'
 
 declare module 'hono' {
@@ -66,7 +67,7 @@ export const resolveTenant: MiddlewareHandler = async (c, next) => {
       { headerSlug, originSlug, origin, path: c.req.path },
       'tenant: X-Tenant-Slug disagrees with Origin',
     )
-    return c.json({ error: 'tenant_mismatch' }, 403)
+    return c.json({ error: ERROR_CODES.tenant_mismatch }, 403)
   }
 
   // Either may stand alone. The origin is preferred when only it names a tenant
@@ -87,13 +88,13 @@ export const resolveTenant: MiddlewareHandler = async (c, next) => {
     // branch, tenant lookup (`TENANT_CONTEXT_EXEMPT` in app.ts) — so anything
     // arriving here without a tenant is a bug in the caller, and saying so is
     // the only way it gets fixed rather than silently mis-answered.
-    return c.json({ error: 'tenant_required' }, 400)
+    return c.json({ error: ERROR_CODES.tenant_required }, 400)
   }
 
   // An unknown slug is a 404 carrying the same body as any other 404 on this
   // API, so the header cannot be used to enumerate tenants.
   const resolved = await resolveTenantBySlug(slug)
-  if (!resolved) return c.json({ error: 'not_found' }, 404)
+  if (!resolved) return c.json({ error: ERROR_CODES.not_found }, 404)
 
   c.set('tenantId', resolved.tenant.id)
   c.set('tenantCorroborated', originSlug !== null)

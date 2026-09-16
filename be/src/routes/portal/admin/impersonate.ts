@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { mintClientImpersonation } from '../../../services/impersonation/mint'
 import { BadRequestError, ForbiddenError, NotFoundError } from '../../../shared/errors'
+import { ERROR_CODES } from '../../../shared/error-codes'
 import { tenantId } from '../../../middleware/tenant'
 
 const idParam = z.object({ id: z.string().uuid() })
@@ -14,7 +15,7 @@ const app = new Hono().post(
     const { id } = c.req.valid('param')
     const staffRow = c.get('staffRow')
     if (staffRow.role !== 'admin') {
-      return c.json({ error: 'impersonation_requires_admin' }, 403)
+      return c.json({ error: ERROR_CODES.impersonation_requires_admin }, 403)
     }
     try {
       const res = await mintClientImpersonation({
@@ -34,7 +35,7 @@ const app = new Hono().post(
         return c.json({ error: err.message }, 403)
       }
       if (err instanceof NotFoundError) {
-        return c.json({ error: 'client_not_found' }, 404)
+        return c.json({ error: ERROR_CODES.client_not_found }, 404)
       }
       if (err instanceof BadRequestError) {
         return c.json({ error: err.message }, 422)

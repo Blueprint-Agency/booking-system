@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { resolveTenantBySlug, type ResolvedTenant } from '../../services/tenants/tenants'
+import { ERROR_CODES } from '../../shared/error-codes'
 
 /**
  * Slug resolution for the frontend proxies.
@@ -44,7 +45,7 @@ function serialize({ tenant, settings }: ResolvedTenant) {
 
 const app = new Hono().get('/tenants/by-slug/:slug', async c => {
   const resolved = await resolveTenantBySlug(c.req.param('slug'))
-  if (!resolved) return c.json({ error: 'not_found' }, 404)
+  if (!resolved) return c.json({ error: ERROR_CODES.not_found }, 404)
 
   c.header('Cache-Control', CACHE_CONTROL)
   return c.json(serialize(resolved))

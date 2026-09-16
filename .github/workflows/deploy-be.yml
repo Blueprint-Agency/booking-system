@@ -21,6 +21,7 @@ on:
       - 'be/**'
       - 'fe-client/**'
       - 'fe-portal/**'
+      - 'scripts/check-error-codes*'
       - '.github/workflows/deploy-be.yml'
   pull_request:
     branches: [staging, main]
@@ -28,6 +29,7 @@ on:
       - 'be/**'
       - 'fe-client/**'
       - 'fe-portal/**'
+      - 'scripts/check-error-codes*'
       - '.github/workflows/deploy-be.yml'
   workflow_dispatch:
 
@@ -63,6 +65,7 @@ jobs:
           filters: |
             be:
               - 'be/**'
+              - 'scripts/check-error-codes*'
               - '.github/workflows/deploy-be.yml'
             fe-client:
               - 'fe-client/**'
@@ -148,6 +151,15 @@ jobs:
             echo "::error::CI tests on Node $ci but be/Dockerfile ships Node ${image:-?}. Keep them on the same major."
             exit 1
           fi
+
+      # The backend's error codes and the copy each frontend keeps must list the
+      # same codes (be/src/shared/error-codes.ts). No dependencies, so it runs
+      # before the install and fails fast.
+      - name: Error catalogues match
+        working-directory: .
+        run: |
+          node --test scripts/check-error-codes.test.mjs
+          node scripts/check-error-codes.mjs
 
       - run: npm ci
 
@@ -258,6 +270,11 @@ jobs:
           cache-dependency-path: fe-client/package-lock.json
       - run: npm ci
       - run: npm run check
+      # A frontend-only change skips the backend `test` job, so its copy of the
+      # error catalogue is checked here too.
+      - name: Error catalogues match
+        working-directory: .
+        run: node scripts/check-error-codes.mjs
 
   fe-portal:
     needs: changes
@@ -276,6 +293,9 @@ jobs:
           cache-dependency-path: fe-portal/package-lock.json
       - run: npm ci
       - run: npm run check
+      - name: Error catalogues match
+        working-directory: .
+        run: node scripts/check-error-codes.mjs
 
   # The browser journeys against staging (#145), before a PRODUCTION deploy only.
   # Staging is what they run against, so a staging deploy cannot wait on them —

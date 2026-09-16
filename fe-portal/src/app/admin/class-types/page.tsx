@@ -18,6 +18,7 @@ import {
 } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
+import { ERROR_CODES } from "@/lib/error-codes";
 import type { ClassType, ClassTypeDifficulty } from "@/types";
 
 // Shared difficulty presentation. `general` = "all levels".
@@ -115,15 +116,15 @@ export default function ClassTypesPage() {
       if (err instanceof ApiError) {
         const body = err.body as { error?: string } | null;
         const code = body?.error ?? "";
-        if (code === "parent_must_be_root") {
+        if (code === ERROR_CODES.parent_must_be_root) {
           toast.error("That parent is itself a child — only top-level class types can be parents.");
           return;
         }
-        if (code === "class_type_has_children") {
+        if (code === ERROR_CODES.class_type_has_children) {
           toast.error("This class type has children — remove or reparent them before turning it into a child.");
           return;
         }
-        if (code === "parent_self_reference") {
+        if (code === ERROR_CODES.parent_self_reference) {
           toast.error("A class type can't be its own parent.");
           return;
         }
@@ -149,7 +150,7 @@ export default function ClassTypesPage() {
     } catch (err) {
       if (err instanceof ApiError) {
         const body = err.body as { error?: string } | null;
-        if (body?.error === "class_type_in_use") {
+        if (body?.error === ERROR_CODES.class_type_in_use) {
           toast.error("In use — assigned to active classes, workshops, or instructors. Reassign first.");
           return;
         }

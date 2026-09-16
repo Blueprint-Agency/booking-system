@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as svc from '../../../services/corporate/requests'
 import { tenantId } from '../../../middleware/tenant'
+import { ERROR_CODES } from '../../../shared/error-codes'
 
 // Corporate request triage for staff. Mirrors the PT request flow: no approve/
 // decline — admin negotiates over WhatsApp, then schedules (the implicit
@@ -86,7 +87,7 @@ const app = new Hono()
   .get('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const row = await svc.getCorporateRequest(tenantId(c), id)
-    if (!row) return c.json({ error: 'not_found' }, 404)
+    if (!row) return c.json({ error: ERROR_CODES.not_found }, 404)
     return c.json({ corporate_request: serialize(row) })
   })
   // Schedule a pending request → creates the corporate_session, flips to scheduled.
@@ -117,7 +118,7 @@ const app = new Hono()
     const { id } = c.req.valid('param')
     const actor = c.get('staffUserId') as string
     const row = await svc.cancelCorporateRequest(tenantId(c), id, actor)
-    if (!row) return c.json({ error: 'not_found' }, 404)
+    if (!row) return c.json({ error: ERROR_CODES.not_found }, 404)
     c.set('auditTarget' as any, { table: 'corporate_requests', id })
     const hydrated = await svc.getCorporateRequest(tenantId(c), id)
     return c.json({ corporate_request: hydrated ? serialize(hydrated) : null })
@@ -126,7 +127,7 @@ const app = new Hono()
     const { id } = c.req.valid('param')
     const actor = c.get('staffUserId') as string
     const row = await svc.markCorporateRequestAttended(tenantId(c), id, actor)
-    if (!row) return c.json({ error: 'not_found' }, 404)
+    if (!row) return c.json({ error: ERROR_CODES.not_found }, 404)
     c.set('auditTarget' as any, { table: 'corporate_requests', id })
     const hydrated = await svc.getCorporateRequest(tenantId(c), id)
     return c.json({ corporate_request: hydrated ? serialize(hydrated) : null })

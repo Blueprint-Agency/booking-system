@@ -7,6 +7,7 @@ import {
   unpackArchive,
 } from '../../services/tenants/transfer-archive'
 import { activateAfterFirstStaff, loadTenantById } from '../../services/tenants/tenants'
+import { ERROR_CODES } from '../../shared/error-codes'
 import { logger } from '../../shared/logger'
 
 /**
@@ -31,7 +32,7 @@ const app = new Hono()
 app.get('/tenants/:id/export', async c => {
   const tenantId = c.req.param('id')
   const tenant = await loadTenantById(tenantId)
-  if (!tenant) return c.json({ error: 'not_found' }, 404)
+  if (!tenant) return c.json({ error: ERROR_CODES.not_found }, 404)
 
   const archive = await exportTenant(tenantId)
   const bytes = await packArchive(archive)
@@ -69,12 +70,12 @@ app.get('/tenants/:id/export', async c => {
 app.post('/tenants/:id/import', async c => {
   const tenantId = c.req.param('id')
   const tenant = await loadTenantById(tenantId)
-  if (!tenant) return c.json({ error: 'not_found' }, 404)
+  if (!tenant) return c.json({ error: ERROR_CODES.not_found }, 404)
 
   const form = await c.req.parseBody()
   const file = form.archive
   if (!(file instanceof File)) {
-    return c.json({ error: 'archive_required', message: 'Attach the studio zip as `archive`.' }, 400)
+    return c.json({ error: ERROR_CODES.archive_required, message: 'Attach the studio zip as `archive`.' }, 400)
   }
 
   let summary
@@ -83,14 +84,14 @@ app.post('/tenants/:id/import', async c => {
     summary = await importTenant(tenantId, archive)
   } catch (err) {
     if (err instanceof ArchiveError) {
-      return c.json({ error: 'unreadable_archive', message: err.message }, 400)
+      return c.json({ error: ERROR_CODES.unreadable_archive, message: err.message }, 400)
     }
     // A studio that already has rows, or a schema the archive predates. Both are
     // the operator's to fix and both are worth saying out loud rather than
     // returning a bare 500.
     const message = err instanceof Error ? err.message : 'The import could not be completed.'
     logger.warn({ tenant: tenant.slug, err }, 'tenant import refused')
-    return c.json({ error: 'import_refused', message }, 409)
+    return c.json({ error: ERROR_CODES.import_refused, message }, 409)
   }
 
   // A studio provisioned to receive an archive opens `suspended`, because until

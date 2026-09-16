@@ -1,6 +1,7 @@
 import type { MiddlewareHandler } from 'hono'
 import { loadTenantById } from '../services/tenants/tenants'
 import { tenantId } from './tenant'
+import { ERROR_CODES } from '../shared/error-codes'
 import { logger } from '../shared/logger'
 
 /**
@@ -26,14 +27,14 @@ export const requireActiveTenant: MiddlewareHandler = async (c, next) => {
   // Unreachable in practice — resolution already found the row — but a missing
   // tenant here means the request has no honest tenant at all, and proceeding
   // would be worse than refusing.
-  if (!tenant) return c.json({ error: 'not_found' }, 404)
+  if (!tenant) return c.json({ error: ERROR_CODES.not_found }, 404)
 
   if (tenant.status !== 'active') {
     logger.info(
       { tenantId: id, slug: tenant.slug, status: tenant.status, path: c.req.path },
       'tenant: refused a request to a studio that is not active',
     )
-    return c.json({ error: 'tenant_suspended', status: tenant.status }, 403)
+    return c.json({ error: ERROR_CODES.tenant_suspended, status: tenant.status }, 403)
   }
 
   await next()

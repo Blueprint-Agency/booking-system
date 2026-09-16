@@ -1,5 +1,6 @@
 import type { MiddlewareHandler } from 'hono'
 import { verifyGrant } from '../lib/impersonation-grant'
+import { ERROR_CODES } from '../shared/error-codes'
 import { tenantId } from './tenant'
 
 /**
@@ -31,15 +32,15 @@ export const clientImpersonation: MiddlewareHandler = async (c, next) => {
 
   const grant = header ? verifyGrant(header) : null
   if (!grant || !session.impersonatedBy) {
-    return c.json({ error: 'impersonation_grant_mismatch' }, 401)
+    return c.json({ error: ERROR_CODES.impersonation_grant_mismatch }, 401)
   }
 
   if (grant.sub !== session.userId) {
-    return c.json({ error: 'impersonation_subject_mismatch' }, 401)
+    return c.json({ error: ERROR_CODES.impersonation_subject_mismatch }, 401)
   }
 
   if (grant.tid !== tenantId(c)) {
-    return c.json({ error: 'impersonation_tenant_mismatch' }, 401)
+    return c.json({ error: ERROR_CODES.impersonation_tenant_mismatch }, 401)
   }
 
   c.set('impersonatedBy', grant.sas)
