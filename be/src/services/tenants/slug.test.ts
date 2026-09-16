@@ -33,6 +33,16 @@ import { RESERVED_SLUGS, checkSlug, assertUsableSlug } from './slug'
   }
 }
 
+// ---------- e2e namespace ----------
+{
+  // The browser journeys make and delete their own studios under this prefix
+  // (be/src/e2e/studio.ts), and deletion keys on it. A real studio must never
+  // be able to take one, or a teardown could remove it.
+  assert.deepEqual(checkSlug('e2e-northwind'), { ok: false, reason: 'slug_reserved' })
+  assert.deepEqual(checkSlug(' E2E-Acme '), { ok: false, reason: 'slug_reserved' })
+  assert.deepEqual(checkSlug('e2enorthwind'), { ok: true, slug: 'e2enorthwind' })
+}
+
 // ---------- malformed ----------
 {
   assert.deepEqual(checkSlug(''), { ok: false, reason: 'slug_too_short' })

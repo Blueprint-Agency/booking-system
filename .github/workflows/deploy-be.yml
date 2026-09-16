@@ -7,7 +7,9 @@ name: BE Deploy
 # databases, keyed off ENV_NAME in the compose file.
 #
 # The deploy is gated on the backend test suite and the schema drift check:
-# `deploy` needs `test` and `drift`, so a red one never reaches either stack. The same workflow runs both frontends'
+# `deploy` needs `test` and `drift`, so a red one never reaches either stack. A
+# `main` (production) deploy also needs `e2e` — the browser journeys, green
+# against staging (e2e.yml). The same workflow runs both frontends'
 # `check` scripts when their paths change — but Vercel deploys the frontends on
 # its own and does not wait for GitHub checks, so for them a red check is a
 # signal, not a gate. Pull requests into `staging`/`main` run every check and
@@ -275,11 +277,35 @@ jobs:
       - run: npm ci
       - run: npm run check
 
-  deploy:
-    needs: [changes, test, drift]
-    # Push or manual dispatch only — a pull request runs the tests and stops.
-    # `needs: [test, drift]` is the gate: a failed or skipped one skips this job.
+  # The browser journeys against staging (#145), before a PRODUCTION deploy only.
+  # Staging is what they run against, so a staging deploy cannot wait on them —
+  # they would be testing the build it is about to replace. See e2e.yml.
+  e2e:
+    needs: changes
     if: >-
+      github.event_name != 'pull_request' &&
+      github.ref_name == 'main' &&
+      (github.event_name == 'workflow_dispatch' || needs.changes.outputs.be == 'true')
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/e2e.yml
+    secrets: inherit
+
+  deploy:
+    needs: [changes, test, drift, e2e]
+    # Push or manual dispatch only — a pull request runs the tests and stops.
+    #
+    # The gate: `test` and `drift` must pass, and on `main` so must `e2e`. The
+    # results are spelled out because `e2e` is *skipped* on `staging`, and a
+    # skipped need would otherwise skip this job too; `!cancelled()` is what lets
+    # the condition be read at all once a need was skipped. A failed or skipped
+    # `e2e` on `main` still skips the production deploy.
+    if: >-
+      !cancelled() &&
+      needs.test.result == 'success' &&
+      needs.drift.result == 'success' &&
+      (needs.e2e.result == 'success' || (github.ref_name != 'main' && needs.e2e.result == 'skipped')) &&
       github.event_name != 'pull_request' &&
       (github.ref_name == 'staging' || github.ref_name == 'main') &&
       (github.event_name == 'workflow_dispatch' || needs.changes.outputs.be == 'true')

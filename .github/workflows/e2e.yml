@@ -1,0 +1,135 @@
+name: E2E Journeys
+
+# The three golden paths (#145) — buy and book, schedule a class, cancel and get
+# the credit back — in a real browser against STAGING.
+#
+# Two ways in:
+#   - Called by deploy-be.yml before a `main` (production) backend deploy. The
+#     deploy needs this job, so red journeys mean production is not touched.
+#   - Run by hand (Actions → E2E Journeys → Run workflow) to check staging, or
+#     to prove the gate goes red. A manual run deploys nothing.
+#
+# Each run makes its own throwaway studio on staging (`e2e-…`, a slug no real
+# studio can take) with its own people, and deletes it afterwards — see
+# be/src/e2e/studio.ts. Real studios and members on staging are never read or
+# written.
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # To see whether a staging deploy is still running.
+  actions: read
+
+jobs:
+  journeys:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # One gate run at a time. Keyed on the calling workflow, so a run started by
+    # hand ("E2E Journeys") never shares a group with the production gate
+    # ("BE Deploy"): GitHub keeps one pending run per group, and a manual run
+    # displacing a queued gate would cancel it — which skips that push's
+    # production deploy rather than failing it. Runs in different groups can
+    # overlap on staging; each has its own studio, so they do not collide.
+    concurrency:
+      group: booking-e2e-${{ github.workflow }}
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: e2e
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history, to compare staging's running build with this commit.
+          fetch-depth: 0
+
+      # Merging to `staging` and fast-forwarding `main` fires the staging deploy
+      # and this job within a minute of each other. Journeys that run while the
+      # staging container is being replaced fail for the wrong reason — and test
+      # the build being replaced, not the one production is about to get.
+      - name: Wait for any staging deploy to finish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          for _ in $(seq 1 60); do
+            busy=$(gh run list -R "$GITHUB_REPOSITORY" --workflow deploy-be.yml --branch staging \
+              --json status --jq '[.[] | select(.status != "completed")] | length')
+            [ "$busy" = "0" ] && exit 0
+            echo "A staging deploy is still running — waiting…"
+            sleep 30
+          done
+          echo "::error::A staging deploy has been running for 30 minutes; not running the journeys against it."
+          exit 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - run: npm ci
+      - run: npm run check
+      - run: npx playwright install --with-deps chromium
+
+      # The studio is made where the database is: inside the staging stack on
+      # bpvps2, reached the same way the deploy reaches it.
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+          ping: ${{ vars.BPVPS2_TAILSCALE_HOST }}
+
+      - name: Setup SSH
+        working-directory: .
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" | tr -d '\r' > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+
+      # Green journeys only vouch for this commit if staging is running its
+      # backend. A staging deploy that failed (smoke test, migration) leaves the
+      # old image serving, and a commit can reach `main` without passing through
+      # `staging` at all. Compared on `be/` rather than by sha: a later
+      # frontend-only commit does not redeploy the backend, and should not have to.
+      - name: Staging runs this commit's backend
+        working-directory: .
+        shell: bash
+        run: |
+          staging=$(ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking=accept-new "deploy@${{ vars.BPVPS2_TAILSCALE_HOST }}" \
+            "sed -n 's/^IMAGE_TAG=//p' /root/stacks/booking-staging/.env | tail -n1")
+          echo "Staging runs: ${staging:-?}   This run: ${{ github.sha }}"
+          if ! git cat-file -e "${staging}^{commit}" 2>/dev/null; then
+            echo "::error::Staging runs '${staging:-nothing}', which is not a commit in this repository. Deploy this commit to staging first."
+            exit 1
+          fi
+          if ! git diff --quiet "$staging" "${{ github.sha }}" -- be/; then
+            echo "::error::Staging's backend ($staging) is not this commit's. Deploy it to staging first, then re-run."
+            git diff --stat "$staging" "${{ github.sha }}" -- be/ | tail -n 5
+            exit 1
+          fi
+
+      - name: Journeys
+        env:
+          CI: 'true'
+          # `setup` / `teardown <slug>` is appended. The quoted && goes to the
+          # remote shell, not this one.
+          E2E_STUDIO_CMD: >-
+            ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking=accept-new
+            deploy@${{ vars.BPVPS2_TAILSCALE_HOST }}
+            cd /root/stacks/booking-staging '&&'
+            docker compose run --rm -T booking-be npm run -s e2e:studio --
+        run: npx playwright test
+
+      - name: Report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 14
