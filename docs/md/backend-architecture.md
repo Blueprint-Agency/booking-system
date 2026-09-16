@@ -70,7 +70,6 @@ be/
     │   │   └── relations.ts           # All Drizzle `relations()` declarations
     │   ├── seed/
     │   │   ├── run.ts                 # Orchestrator (idempotent)
-    │   │   ├── superadmin.ts          # Bootstrap initial superadmin from SUPERADMIN_EMAIL env
     │   │   ├── email-templates.ts     # Seed 22 default templates per §17b
     │   │   ├── waiver.ts              # Seed placeholder waiver body per §18a
     │   │   ├── marketing.ts           # Seed marketing_content singleton with placeholder copy
@@ -80,7 +79,7 @@ be/
     ├── routes/                        # Audience-split — single-owner folders
     │   ├── portal/                    # Staff pool (admin + instructor share `staff_users`)
     │   │   ├── index.ts               # Mounts /admin and /instructor under shared staff auth
-    │   │   ├── admin/                 # Owned by fe-portal dev — gated by require-role('admin'|'superadmin')
+    │   │   ├── admin/                 # Owned by fe-portal dev — gated by require-role('admin')
     │   │   │   ├── index.ts           # Mounts all admin routers
     │   │   │   ├── locations.ts
     │   │   │   ├── class-types.ts
@@ -102,7 +101,7 @@ be/
     │   │   │   ├── waiver.ts          # edit waiver text + signed count (§18)
     │   │   │   ├── marketing.ts       # edit hero / pricing / footer copy
     │   │   │   └── feature-flags.ts   # toggle ops flags
-    │   │   └── instructor/            # gated by require-role('instructor'|'admin'|'superadmin')
+    │   │   └── instructor/            # gated by require-role('instructor'|'admin')
     │   │       ├── index.ts
     │   │       ├── schedule.ts        # own schedule view
     │   │       ├── roster.ts          # own session rosters
@@ -183,9 +182,9 @@ be/
     │   ├── client-auth.ts             # `client` pool session + Tenant claim → load `clients` row
     │   ├── staff-auth.ts              # `staff` pool session + Tenant claim → load `staff_users` row
     │   ├── platform-admin.ts          # `platform` pool session + PLATFORM_ADMIN_EMAILS
-    │   ├── require-role.ts            # Factory: `requireRole('admin' | 'superadmin' | 'instructor')`
+    │   ├── require-role.ts            # Factory: `requireRole('admin' | 'instructor')`
     │   ├── require-active.ts          # Block suspended clients / archived staff
-    │   ├── impersonate.ts             # Superadmin acts-as admin (sets ctx.actingAs + audit)
+    │   ├── impersonate.ts             # Admin acts as a member (sets ctx.actingAs + audit)
     │   ├── audit.ts                   # Auto-write audit_log on mutating staff requests
     │   ├── validate.ts                # `@hono/zod-validator` wrapper conventions
     │   ├── rate-limit.ts              # Hono rate-limiter (public + authenticated tiers)
@@ -295,19 +294,20 @@ All tables use `id uuid primary key default gen_random_uuid()` unless noted. Tim
 | auth_user_id | text | not null, unique per tenant — the `staff_auth_users` id, written by the invitation or seed that made the row |
 | email | text | unique, not null |
 | name | text | not null |
-| role | enum `staff_role` | not null — `superadmin`, `admin`, `instructor` |
+| role | enum `staff_role` | not null — `admin`, `instructor`. Rank is admin > instructor: nobody edits a staff member who outranks them, and only an admin changes a role (`services/auth/staff-rank.ts`). See `be/docs/adr/0006-two-staff-roles.md`. |
 | status | enum `staff_status` | not null, default `'pending'` — `pending`, `active`, `archived` |
-| granted_location_ids | uuid[] | not null, default `'{}'` — workspace grants per `admin-restructure.md` §15a. Empty array means "all active locations" (superadmin / implicit grant). Each entry FKs `locations.id` at app layer (Postgres arrays can't enforce FK). Instructor role ignores this column. |
 | archived_at | timestamptz | nullable |
 | archived_by_staff_id | uuid | FK → staff_users.id, nullable |
 | invited_at, accepted_at | timestamptz | nullable |
 | created_at, updated_at | timestamptz | not null, default now() |
 
-**Indexes:** `(tenant_id, auth_user_id) unique`, `(tenant_id, email) unique`, `(role, status)`, GIN index on `granted_location_ids` for membership filters on workspace-scoped reads.
+**Indexes:** `(tenant_id, auth_user_id) unique`, `(tenant_id, email) unique`, `(role, status)`.
 
 **Hard delete: never** (per §15c). Archive only. Email uniqueness enforces "one email = one staff account."
 
-**Workspace semantics.** `locations.id` doubles as the workspace identifier referenced here. All workspace-scoped portal reads (Schedule, Workshops, Check-in, Inbox) filter by `granted_location_ids` membership — see `be-portal.md` §1 for the middleware contract.
+**Workspace semantics.** `locations.id` doubles as the workspace identifier referenced here. All workspace-scoped portal reads (Schedule, Workshops, Check-in, Inbox) filter by the selected location — see `be-portal.md` §1 for the middleware contract. An admin may select any of the studio's active locations; there are no per-staff location grants (the `granted_location_ids` column was dropped in the two-roles migration — ADR 0006).
+
+**Last-admin guard.** Archiving a staff member, or changing their role away from `admin`, is refused when the target is the studio's only active admin — `role = 'admin'`, `status = 'active'`, not soft-deleted. The count and the write run in one transaction, so two concurrent removals cannot both pass. Delete requires an already-archived row and so needs no check of its own; signing a staff member out everywhere is not guarded. Changing your own role and archiving yourself stay refused. The guard lives in one place in the staff service, and every removal path calls it.
 
 #### `staff_invitations`
 
@@ -315,8 +315,7 @@ All tables use `id uuid primary key default gen_random_uuid()` unless noted. Tim
 |---|---|---|
 | id | uuid | PK |
 | email | text | not null |
-| role | enum `staff_role` | not null — **`admin` only in v1**. Superadmin is seeded, not invitable (§15a). Instructor is reserved but not invitable in v1 — instructors are created indirectly via the `POST /instructors` route which auto-fires an admin-typed invitation under the hood. App layer rejects `role='instructor'` at the invite endpoint until self-service instructor invitations land. |
-| granted_location_ids | uuid[] | not null, default `'{}'` — copied onto the resulting `staff_users` row on accept. Empty array = inherits inviter's grants on accept (if inviter is superadmin, that's all locations). |
+| role | enum `staff_role` | not null — `admin` or `instructor`, defaulting to `admin`. Only an admin may send an invitation. |
 | token | text | unique, not null — opaque random string |
 | expires_at | timestamptz | not null — issuance + 7 days (§15b) |
 | status | enum `invitation_status` | not null, default `'pending'` — `pending`, `accepted`, `revoked`, `expired` |
@@ -357,7 +356,7 @@ id, name (text, not null), description (text, nullable — short blurb shown to 
 | photo_r2_key | text | nullable |
 | bio | text | nullable |
 | phone | text | nullable — overrides staff_users.phone if needed (admin doc §3 lists this) |
-| annual_leave_days | int | not null, default 14 — **Assigned Days**, annual. Per instructor, set on the staff profile by admin or superadmin. The input to next year's Pool, not a balance. |
+| annual_leave_days | int | not null, default 14 — **Assigned Days**, annual. Per instructor, set on the staff profile by an admin. The input to next year's Pool, not a balance. |
 | medical_leave_days | int | not null, default 14 — Assigned Days, medical. |
 | study_leave_days | int | not null, default 7 — Assigned Days, study. The third Leave Type; backfilled on every existing row rather than granted per instructor, because study leave is for everyone. |
 
@@ -652,7 +651,7 @@ The simplified v1 flow has **no in-app back-and-forth** — all negotiation is o
 
 **Indexes:** `(status, created_at desc)` — drives the `/admin/pt-requests` triage queue; `(client_id, status)` for client's own list; `(class_type_id)` for class-type filters; `(expires_at) WHERE status='pending'` for the expiry sweep.
 
-**Workspace scope.** PT requests are workspace-agnostic per `admin-restructure.md` Overview — every admin sees the same triage queue regardless of `granted_location_ids`.
+**Workspace scope.** PT requests are workspace-agnostic per `admin-restructure.md` Overview — every admin sees the same triage queue regardless of the selected location.
 
 #### `pt_request_slots` (1..N proposed slots per request)
 
@@ -1033,7 +1032,7 @@ See `docs/adr/0004-self-hosted-auth-with-better-auth.md` for the decision.
 - **Imagery — presigned PUT (intended, not yet built).** Backend issues presigned PUT URL with content-type and 5 MB cap → fe uploads directly → fe POSTs the returned key back to backend, backend stores in `instructors.photo_r2_key` / `workshops.cover_r2_key` / `workshop_images.r2_key`. No code writes these keys yet; instructor photo upload is deferred (`spec-instructor-leave.md` Out of Scope).
 - **Supporting Documents — server-side upload (implemented).** The file is POSTed to the API as multipart, field `file` (`POST /portal/instructor/leave/:id/document`), and is accepted on a medical or study request and never on an annual one → Hono's `bodyLimit` refuses an oversized body before it is buffered at all → the service validates the declared content type and the *real* byte length against the allow-list (`image/jpeg`, `image/png`, `application/pdf`; 5 MB) → `lib/r2.ts#putObject` writes the object → the key is written to `leave_requests.supporting_document_r2_key` only once the object is safely in the bucket.
   - **Why this one is not presigned.** Type and size are checked at a trust boundary the server controls rather than announced to a browser.
-- **Supporting Document reads — signed GET.** `lib/r2.ts#signedObjectUrl` mints a 5-minute signed URL per request, generated on demand and never stored, after the service has decided the caller may see the row (the owning instructor, or any admin/superadmin). On a public bucket the expiry is a courtesy: the same object is reachable unsigned through `R2_PUBLIC_URL`.
+- **Supporting Document reads — signed GET.** `lib/r2.ts#signedObjectUrl` mints a 5-minute signed URL per request, generated on demand and never stored, after the service has decided the caller may see the row (the owning instructor, or any admin). On a public bucket the expiry is a courtesy: the same object is reachable unsigned through `R2_PUBLIC_URL`.
 
 ### 6d. Mail (Resend)
 
@@ -1072,7 +1071,7 @@ Used by `services/bookings/cancel.ts` (client path). Admin path bypasses this �
 
 `services/billing/refunds.ts` — a Refund voids the purchase it paid for, cancels every future booking on it, and hands any Promo Code redemption back. There is no partial refund and no separate admin revoke; the full amount is the only amount.
 
-`issueRefund()` is the portal button (`routes/portal/admin/clients.ts POST /clients/:id/packages/:packageId/refund`, superadmin, mandatory typed reason): it calls `stripe.refunds.create` and returns — nothing is unwound here. `unwindRefund()`, driven entirely by the `charge.refunded` webhook, does all of it: stamps `stripe_payments.status='refunded'`, sets `client_packages.active=false` (the same lever the nightly expiry sweep already pulls), cancels every future booking the purchase paid for through the existing cancel service (`source: 'admin'`, so waitlist promotion comes free), and returns the redemption row to `refunded` (not deleted — the ledger is the only record of a buy-refund-buy loop). Because the dashboard route and the button route both resolve to the same webhook, **a refund issued from Stripe's own dashboard unwinds identically to one issued from the portal** — the two are indistinguishable by construction, and every step is a no-op on a second delivery.
+`issueRefund()` is the portal button (`routes/portal/admin/clients.ts POST /clients/:id/packages/:packageId/refund`, admin, mandatory typed reason): it calls `stripe.refunds.create` and returns — nothing is unwound here. `unwindRefund()`, driven entirely by the `charge.refunded` webhook, does all of it: stamps `stripe_payments.status='refunded'`, sets `client_packages.active=false` (the same lever the nightly expiry sweep already pulls), cancels every future booking the purchase paid for through the existing cancel service (`source: 'admin'`, so waitlist promotion comes free), and returns the redemption row to `refunded` (not deleted — the ledger is the only record of a buy-refund-buy loop). Because the dashboard route and the button route both resolve to the same webhook, **a refund issued from Stripe's own dashboard unwinds identically to one issued from the portal** — the two are indistinguishable by construction, and every step is a no-op on a second delivery.
 
 Eligibility is a notice, not a gate: `refundStatesFor()` computes whether a purchase is **Untouched** (no booking on it attended or no-showed) and the portal shows a warning above the button when it is not, but the button stays clickable — the override is recorded on the audit row rather than blocked by the database.
 
@@ -1135,7 +1134,6 @@ The "first paid" gate is implicit: the referee's first successful Stripe payment
 ### Seed (`db/seed/`)
 
 Run idempotently on fresh deployment:
-- **superadmin.ts** — reads `SUPERADMIN_EMAIL` env, creates `staff_users` row with role=`superadmin`, status=`active`, linked to a passwordless `staff` pool user (the operator sets a password via "Forgot password")
 - **email-templates.ts** — inserts the 22 templates with default subject + body
 - **waiver.ts** — inserts the singleton waiver row with placeholder body
 - **policy.ts** — inserts singleton `global_policy` and `pt_booking_config` with sensible defaults
@@ -1145,14 +1143,14 @@ Run idempotently on fresh deployment:
 ## 8. Phase Boundaries
 
 **This phase (in scope):**
-- All schema in §4 (including amendments: `clients.gender`/`dob`, `marketing_content`, `stripe_payments.receipt_url`, `feature_flags`, **`staff_users.granted_location_ids`**, **`promotions`**, **`workshop_days`** + **`workshop_tier_days`**, **`pt_requests`** split out from `pt_sessions`, **`class_packages.kind='trial'`** + one-trial-per-client partial unique index, decomposed capacity on `classes` / `workshop_days` / `pt_sessions`).
+- All schema in §4 (including amendments: `clients.gender`/`dob`, `marketing_content`, `stripe_payments.receipt_url`, `feature_flags`, **`promotions`**, **`workshop_days`** + **`workshop_tier_days`**, **`pt_requests`** split out from `pt_sessions`, **`class_packages.kind='trial'`** + one-trial-per-client partial unique index, decomposed capacity on `classes` / `workshop_days` / `pt_sessions`).
 - All routes in §2: `routes/portal/admin/*`, `routes/portal/instructor/*` (read-only views), `routes/client/*`, `routes/public/*`, `routes/webhooks/*`.
 - All cron handlers in §5 (run via `node-cron`), including the new **`pt-request-expiry`** hourly sweep.
 - Referral chain populated AND reward-grant logic wired (see §7 Referral conversion crediting).
 - **Promotions** (admin-published, best-price-wins resolved at purchase) — see §4d `promotions`. **Promo Codes** (typed by the member, crossing products, capped) ship separately in migration `0016` — see `spec-pre-launch-batch.md` §9–§11.
 - **Trial Pass** as a first-class `class_packages.kind` with server-enforced one-per-client.
 - **Multi-day workshops** with derived tier capacity and per-day waitlist scaffolding (waitlist *promotion* behaviour itself remains deferred).
-- **Workspace scoping** — `granted_location_ids` filter on all workspace-scoped portal reads.
+- **Workspace scoping** — selected-location filter on all workspace-scoped portal reads.
 - `audit_log` table populated; admin-facing read views deferred.
 
 **Next phase (per `admin-restructure.md` §19):**

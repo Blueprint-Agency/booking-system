@@ -13,12 +13,12 @@ declare module 'hono' {
 /**
  * The allowlist, read once at boot.
  *
- * `PLATFORM_ADMIN_EMAILS` alone — a Tenant's own `SUPERADMIN_EMAIL` is **not**
- * folded in. It used to be, as a bootstrap convenience so that an environment
- * setting nothing new still had one platform admin rather than none. That
- * convenience was the escalation this module's own docstring warns about: it
- * made the first studio's superadmin able to create, list and suspend every
- * other studio on the platform. The platform operator is a level above any
+ * `PLATFORM_ADMIN_EMAILS` alone — no studio's staff account is folded in. One
+ * used to be, as a bootstrap convenience so that an environment setting nothing
+ * new still had one platform admin rather than none. That convenience was the
+ * escalation this module's own docstring warns about: it made one studio's
+ * staff able to create, list and suspend every other studio on the platform.
+ * The platform operator is a level above any
  * studio, so it is named explicitly or not at all.
  *
  * Empty is allowed and means a super portal nobody can reach. That is the safe

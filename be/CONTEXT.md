@@ -39,7 +39,7 @@ The Tenant a Better Auth session was signed in on, written onto the session row 
 _Avoid_: tenant_id (the column is deliberately not named that — see `db/schema/auth.ts`), org claim
 
 **Auth event**:
-One row in `auth_events`: a sign-in, sign-out, failed sign-in (a refused password), code sent, code failed (a refused one-time code or second factor), or impersonation start or end, with the pool, the actor's auth user id, the subject for impersonation, the client address and user agent. Written from each pool's Better Auth hooks (`services/auth/auth-events.ts`), in the request's own transaction. Never the address tried, a password or a code: a failed sign-in for an address with no account names no actor. A studio pool's event is filed under the Tenant whose context is open; a `platform` event under none — the one **Platform row**. An impersonation is filed under `staff`: the superadmin's staff auth user is the actor, the member's client auth user the subject. Its start is written by `openImpersonationSession` (`services/auth/better-auth.ts`), which opens the session outside any endpoint; its end by the hook, when that session is signed out. A staff member's act on someone else's account from their detail view — `sessions_revoked`, `user_blocked`, `user_unblocked`, `invitation_resent` — has the same shape: filed under `staff`, the acting staff member as actor, the member or staff member acted on as subject (`recordStaffAct`, `services/auth/staff-acts.ts`).
+One row in `auth_events`: a sign-in, sign-out, failed sign-in (a refused password), code sent, code failed (a refused one-time code or second factor), or impersonation start or end, with the pool, the actor's auth user id, the subject for impersonation, the client address and user agent. Written from each pool's Better Auth hooks (`services/auth/auth-events.ts`), in the request's own transaction. Never the address tried, a password or a code: a failed sign-in for an address with no account names no actor. A studio pool's event is filed under the Tenant whose context is open; a `platform` event under none — the one **Platform row**. An impersonation is filed under `staff`: the acting **Admin**'s staff auth user is the actor, the member's client auth user the subject. Its start is written by `openImpersonationSession` (`services/auth/better-auth.ts`), which opens the session outside any endpoint; its end by the hook, when that session is signed out. A staff member's act on someone else's account from their detail view — `sessions_revoked`, `user_blocked`, `user_unblocked`, `invitation_resent` — has the same shape: filed under `staff`, the acting staff member as actor, the member or staff member acted on as subject (`recordStaffAct`, `services/auth/staff-acts.ts`).
 _Avoid_: login log; bare "audit log" when `audit_log` (staff actions on domain rows) could be meant — say "sign-in audit log"
 
 **Platform row**:
@@ -59,6 +59,32 @@ _Avoid_: webhook tenant, tenant lookup
 
 **Per-Tenant identity**:
 `clients` and `staff_users` are unique on `(tenant_id, auth_user_id)` and `(tenant_id, email)`, not on either column alone (migrations 0035 and 0047). `auth_user_id` is `NOT NULL` (0052): every row is linked to a pool user by whatever wrote it. The platform-wide version was the same sentence as "nobody may belong to two studios" — a case the spec wants to work — and it failed at sign-up as a duplicate-key error. One person, two studios, two independent records, one at each.
+
+### Staff
+
+**Staff role**:
+What a staff member of one Tenant may do in that studio's portal — exactly two, **Admin** and **Instructor**, and nothing else (`staff_role` in Postgres). Ranked Admin above Instructor: nobody may edit a staff member who outranks them, and only an Admin may change anyone's role. A role is per Tenant, like the `staff_users` row it sits on. See `docs/adr/0006-two-staff-roles.md`.
+_Avoid_: owner, main admin, permission level
+
+**Admin**:
+A staff member who runs the studio: its catalogue, locations, policy, waiver, notifications and feature flags; its staff, including other Admins; its members, read and write; and **Impersonation**. Sees every active location of the studio — there are no per-location grants. The first staff member of a Tenant created or restored from the super portal is an Admin.
+_Avoid_: studio owner, manager
+
+**Instructor**:
+A staff member who teaches. Reaches the instructor surfaces only, is refused every admin-only surface, and is the only role that applies for leave.
+_Avoid_: teacher, coach, trainer
+
+**Last-admin guard**:
+The rule that a studio always keeps one active Admin. Archiving a staff member, or changing their role away from Admin, is refused when they are the studio's only active Admin — role Admin, status active, not soft-deleted. The count and the write share one transaction, so two concurrent removals cannot both pass. Deleting needs an already-archived row, so it needs no check of its own; signing someone out is not guarded, because they can sign back in. Separately, nobody may change their own role or archive themselves.
+_Avoid_: owner lock
+
+**Impersonation**:
+An Admin signing in as one of the studio's members, to see what they see. It opens a `client` pool session on the member's behalf, carrying a signed grant that names the acting staff member, and is recorded as an **Auth event** under `staff` at start and end.
+_Avoid_: act-as, masquerade, login-as
+
+**Platform administrator**:
+The operator of the super portal, signed in through the `platform` pool and named by `PLATFORM_ADMIN_EMAILS`. Not a staff member of any Tenant, holds no **Staff role**, and has no row in `staff_users` — creating or restoring a studio is the platform administrator's; running one is its Admins'. Never confused with an Admin: an Admin's powers stop at their own studio, and a platform administrator's start outside every studio.
+_Avoid_: root, platform owner, bare "admin" (which is the studio role)
 
 ### Packages and locations
 

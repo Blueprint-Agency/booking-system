@@ -11,8 +11,8 @@ The staff-side backend surface. Implements the admin and instructor scopes of th
 ## 1. Mount & Auth
 
 ```
-/api/v1/portal/admin/*       — require staff session + role in {admin, superadmin}
-/api/v1/portal/instructor/*  — require staff session + role in {instructor, admin, superadmin}
+/api/v1/portal/admin/*       — require staff session + role in {admin}
+/api/v1/portal/instructor/*  — require staff session + role in {instructor, admin}
 ```
 
 Both subtrees mount under `routes/portal/index.ts`, which applies a single `staffAuth` middleware (`middleware/staff-auth.ts`: reads a Better Auth `staff` pool bearer session, checks its Tenant claim is this studio, and loads the `staff_users` row linked by `auth_user_id`). Role-specific gates live on the subtrees:
@@ -21,8 +21,8 @@ Both subtrees mount under `routes/portal/index.ts`, which applies a single `staf
 const portalRoutes = new Hono()
   .use('*', staffAuth, requireActiveStaff)
   .use('*', auditMiddleware)
-  .route('/admin',      adminRoutes)        // .use('*', requireRole('admin', 'superadmin'))
-  .route('/instructor', instructorRoutes);  // .use('*', requireRole('instructor', 'admin', 'superadmin'))
+  .route('/admin',      adminRoutes)        // .use('*', requireRole('admin'))
+  .route('/instructor', instructorRoutes);  // .use('*', requireRole('instructor', 'admin'))
 ```
 
 `requireActiveStaff` rejects any `staff_users.status` not equal to `'active'` (i.e. `pending` or `archived`). A member or platform session presented to `/portal/*` is a row the staff pool has never seen: 401 `invalid_token`. A staff session signed in at another studio is 403 `tenant_mismatch`.
@@ -31,22 +31,17 @@ const portalRoutes = new Hono()
 
 ### Workspace scoping & role gates
 
-Per `admin-restructure.md` Overview + §15a, admin surfaces partition into three buckets:
+There are exactly two staff roles, **admin** and **instructor**, ranked admin > instructor. Every router under `/portal/admin/*` is gated `requireRole('admin')`: there is no higher staff role and no read-only admin mode, so admins write to Clients, Workshops and Rooms like every other surface. A 403 from a role gate carries `required: ['admin']`. (The **platform administrator** who signs in to the super portal and calls `/api/v1/platform/*` is not a staff role and never reaches these routes.)
+
+Per `admin-restructure.md` Overview, admin surfaces partition into three buckets, which differ only in how they filter by location:
 
 | Bucket | Surfaces | Gate |
 |---|---|---|
-| **Global (superadmin-only)** | Locations, Rooms, Class Types, Class Packages, Workshops, PT Packages, Promotions, Promo Codes, Global Policy, Notifications, Waiver, Staff | `requireRole('superadmin')` on the entire router |
-| **Workspace-scoped** | Schedule, Check-in, Inbox | `requireRole('admin', 'superadmin')` **+ `requireWorkspaceScope`** middleware (below). Reads filter by `granted_location_ids`; writes reject if the target `location_id` is not in the set. |
-| **Workspace-agnostic** | PT Requests, Clients (read-only for admin) | `requireRole('admin', 'superadmin')`. No location filter. |
+| **Global** | Locations, Rooms, Class Types, Class Packages, Workshops, PT Packages, Promotions, Promo Codes, Global Policy, Notifications, Waiver, Staff | `requireRole('admin')` on the entire router |
+| **Workspace-scoped** | Schedule, Check-in, Inbox | `requireRole('admin')`. Reads filter to the location the portal has selected as the active workspace; any active location may be selected. |
+| **Workspace-agnostic** | PT Requests, Clients | `requireRole('admin')`. No location filter. |
 
-```ts
-// middleware/require-workspace-scope.ts
-// For workspace-scoped writes: assert the target location_id is in ctx.staff.granted_location_ids.
-// For reads: inject a WHERE filter on the resolved location_id, treating empty granted_location_ids
-//           as "all active locations" (superadmin / implicit grant).
-```
-
-Superadmin always passes the workspace gate regardless of `granted_location_ids` (empty array = all locations is the explicit semantics; superadmin's row is seeded with `'{}'`).
+**Location grants are retired.** There is no per-staff location allow-list: `granted_location_ids` is not set on invite, edit or invitation accept, and the column is dropped. An admin sees and writes to every active location; the workspace is a view filter, not a permission.
 
 ---
 
@@ -98,7 +93,7 @@ Same CRUD shape as locations. Archive is blocked if any non-archived `instructor
 | PATCH | `/policy/global` | `{ cancel_cap_count, cancel_cap_cycle_days, class_window_hours, pt_window_hours }` | Update singleton row |
 | PATCH | `/policy/pt` | `{ book_in_advance_days }` | Update singleton row |
 
-### `class-packages.ts` (superadmin-only)
+### `class-packages.ts` (admin)
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/class-packages` | List with `?status`, `?kind=credit_bundle\|unlimited\|trial`. Default sort: trial first, then credit_bundle, then unlimited (matches fe-client `/packages` ordering). |
@@ -108,10 +103,10 @@ Same CRUD shape as locations. Archive is blocked if any non-archived `instructor
 
 **Trial Pass semantics.** `kind='trial'` is just another row — there is no separate route. The one-per-client gate lives at purchase time (`be-client.md` §4e), enforced by the `client_packages(client_id) WHERE kind='trial'` unique partial index. Admin **may** publish multiple active Trial Pass definitions (e.g. for A/B testing), but a single client can hold at most one across all of them.
 
-### `pt-packages.ts` (superadmin-only)
+### `pt-packages.ts` (admin)
 Same shape as class-packages, with PT-specific fields. Adds `description` column edits.
 
-### `promotions.ts` (superadmin-only — `admin-restructure.md` §5d, §19, `fe-client-features.md` §6.1)
+### `promotions.ts` (admin — `admin-restructure.md` §5d, §19, `fe-client-features.md` §6.1)
 
 Promotions are nested under their parent (class package, PT package, or workshop). There is no top-level Promotions page in the admin nav — the editor lives inside the package/workshop dialog. The API mirrors that shape.
 
@@ -128,7 +123,7 @@ Promotions are nested under their parent (class package, PT package, or workshop
 
 **Validation warnings (non-blocking).** When a promotion's effective price is higher than the parent's regular price, the API returns `200` with a `warnings: ['promotion_higher_than_regular']` field so the fe surfaces it but allows the write — best-price-wins simply ignores the row at purchase.
 
-### `promo-codes.ts` (superadmin-only — `spec-pre-launch-batch.md` §9–§11)
+### `promo-codes.ts` (admin — `spec-pre-launch-batch.md` §9–§11)
 
 **Not nested, unlike `promotions.ts` above.** A Promotion belongs to exactly one product so its editor lives inside that product's dialog; a Promo Code crosses products and cannot, so it gets a top-level router and a page of its own under Packages. Rules live in `services/packages/promo-codes.ts` (pure — refusals returned, not thrown); the database half is `services/packages/promo-code-admin.ts`.
 
@@ -147,16 +142,16 @@ Promotions are nested under their parent (class package, PT package, or workshop
 ### `schedule.ts` (workspace-scoped)
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/schedule` | Unified timetable: union of `classes`, `workshop_days` (one tile per day with `Day N/M` chip per `admin-restructure.md` §7c), confirmed `pt_sessions`. **Filtered by `granted_location_ids`** at the middleware. Query filters: `?instructor_id`, `?class_type_id`, `?from`, `?to`, `?type=class\|workshop\|pt`. Each row carries `event_state` computed at read time per `services/policy/event-state.ts`. |
-| POST | `/schedule/classes` | Create class instance. Body includes `capacity_online`, `capacity_waitlist`, `capacity_buffer` (the structured capacity per `admin-restructure.md` §7d) and optional `instructor_pay_sgd` (pay to the main instructor — see `payroll.ts`). `location_id` must be in `granted_location_ids`. |
+| GET | `/schedule` | Unified timetable: union of `classes`, `workshop_days` (one tile per day with `Day N/M` chip per `admin-restructure.md` §7c), confirmed `pt_sessions`. **Filtered to the active workspace location.** Query filters: `?instructor_id`, `?class_type_id`, `?from`, `?to`, `?type=class\|workshop\|pt`. Each row carries `event_state` computed at read time per `services/policy/event-state.ts`. |
+| POST | `/schedule/classes` | Create class instance. Body includes `capacity_online`, `capacity_waitlist`, `capacity_buffer` (the structured capacity per `admin-restructure.md` §7d) and optional `instructor_pay_sgd` (pay to the main instructor — see `payroll.ts`). `location_id` must be an active location. |
 | PATCH | `/schedule/classes/:id` | Edit (rejects if any confirmed bookings AND material change, e.g. moving start time more than 15 min) |
 | POST | `/schedule/classes/:id/cancel` | Admin cancellation — see §3b |
 | POST | `/schedule/workshops/:id/cancel` | Admin cancellation of an entire workshop (all days, all tiers) + Stripe refund fanout to attendees — see §3b. **No** workshop create/edit here; those live in `workshops.ts`. |
 | GET | `/schedule/workshops/picker` | Lists workshops in the active workspace that have at least one future `workshop_day`. Powers the "+ Workshop" picker in the scheduler per `admin-restructure.md` §7c — selecting from this list **does not create anything**; it just navigates to the workshop's days. |
 
-### `merch.ts` (global — both roles)
+### `merch.ts` (global)
 
-Studio goods the member pays for online and collects in person. No stock count, no location, no fulfilment state: the `merch_orders` row IS the purchase history line the front desk hands the item over against. Both `admin` and `superadmin` manage it — shop-floor stock, not catalogue governance.
+Studio goods the member pays for online and collects in person. No stock count, no location, no fulfilment state: the `merch_orders` row IS the purchase history line the front desk hands the item over against. Admins manage it like every other global surface.
 
 | Method | Path | Effect |
 |---|---|---|
@@ -172,11 +167,11 @@ Workshops are configured under Packages (not Schedule). Three-stage editor: **Ba
 
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/workshops` | List workshops in the active workspace (filtered by `granted_location_ids`). `?status=active\|cancelled`, `?has_future_days=true`. |
+| GET | `/workshops` | List workshops in the active workspace (filtered to the selected location). `?status=active\|cancelled`, `?has_future_days=true`. |
 | GET | `/workshops/:id` | Detail with `days[]`, `tiers[]`, `tier_days{}`, `images[]`, `instructors[]`, `promotions[]`. |
-| POST | `/workshops` | **Basics stage** — `{ name, description_html, class_type_id, location_id, instructor_ids[], cover_r2_key?, images[]? }`. Returns the workshop id; days + tiers added in follow-up calls. `location_id` must be in `granted_location_ids`. |
+| POST | `/workshops` | **Basics stage** — `{ name, description_html, class_type_id, location_id, instructor_ids[], cover_r2_key?, images[]? }`. Returns the workshop id; days + tiers added in follow-up calls. `location_id` must be an active location. |
 | PATCH | `/workshops/:id` | Edit basics. `location_id` is **immutable** once `workshop_days` exist (changing workspace mid-flight is unsafe). |
-| POST | `/workshops/:id/cancel` | Same as `schedule.ts:POST /schedule/workshops/:id/cancel` — exposed here too so the cancel action is reachable from the workshops surface. |
+| POST | `/workshops/:id/cancel` | Admin. Same as `schedule.ts:POST /schedule/workshops/:id/cancel` — exposed here too so the cancel action is reachable from the workshops surface. |
 | **Days** | | |
 | POST | `/workshops/:id/days` | `{ ord, starts_at, ends_at, base_price_sgd, capacity_online, capacity_waitlist, capacity_buffer }`. CHECK enforces `sum > 0`. |
 | PATCH | `/workshops/:id/days/:day_id` | Edit. Capacity reductions reject if `count(confirmed bookings via tier→day join) > new capacity_online`. |
@@ -193,13 +188,13 @@ Workshops are configured under Packages (not Schedule). Three-stage editor: **Ba
 
 PT requests are the actionable entity. **No back-and-forth in app — all negotiation is on WhatsApp.** The portal exposes exactly two terminal actions: **schedule** (the implicit approval) and **cancel**. There is no decline-with-note path and no approve button.
 
-PT requests carry a `location_id` chosen by the client at submission time, so the triage queue is **workspace-scoped** — filtered by the acting admin's `granted_location_ids` (superadmin sees all). The portal scopes the list to the staff's active workspace location.
+PT requests carry a `location_id` chosen by the client at submission time, so the triage queue is **workspace-scoped** — the portal scopes the list to the staff's active workspace location, and any admin may select any active location.
 
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/pt-requests` | Triage queue, **filtered by `granted_location_ids`**. Default `?status=pending`, ordered `created_at desc`. Filters: `?status`, `?location_id` (must be in scope), `?class_type_id`, `?client_id`, `?session_type`, `?from`, `?to`. |
+| GET | `/pt-requests` | Triage queue, **filtered to the active workspace location**. Default `?status=pending`, ordered `created_at desc`. Filters: `?status`, `?location_id`, `?class_type_id`, `?client_id`, `?session_type`, `?from`, `?to`. |
 | GET | `/pt-requests/:id` | Detail incl. client profile snapshot, class type, all proposed slots (`pt_request_slots`), co-client (resolved `co_client_id` OR free-text `co_client_name + co_client_email`), message, expiry. |
-| POST | `/pt-requests/:id/schedule` | Convert request → `pt_sessions` row. Body: `{ instructor_id, location_id, room_id, starts_at, ends_at, instructor_pay_sgd?, capacity_online?, capacity_waitlist?, capacity_buffer? }` (`instructor_pay_sgd` = pay to the instructor — see `payroll.ts`). Calls `services/pt-sessions/schedule.ts:schedulePtRequest()` — see §3c. `location_id` must be in the acting admin's `granted_location_ids`. **For 2on1 requests with no `co_client_id` yet** the call rejects with 409 — admin must create the partner's client first via `/admin/clients`, the FE then re-opens the schedule dialog with `co_client_id` resolved. |
+| POST | `/pt-requests/:id/schedule` | Convert request → `pt_sessions` row. Body: `{ instructor_id, location_id, room_id, starts_at, ends_at, instructor_pay_sgd?, capacity_online?, capacity_waitlist?, capacity_buffer? }` (`instructor_pay_sgd` = pay to the instructor — see `payroll.ts`). Calls `services/pt-sessions/schedule.ts:schedulePtRequest()` — see §3c. `location_id` must be an active location. **For 2on1 requests with no `co_client_id` yet** the call rejects with 409 — admin must create the partner's client first via `/admin/clients`, the FE then re-opens the schedule dialog with `co_client_id` resolved. |
 | POST | `/pt-requests/:id/cancel` | Admin cancel. Branches on current status: `pending` → `cancelled_before_scheduled` + refund (1 session for 1on1, 2 for 2on1) to the originating client package; `scheduled` → `cancelled_after_scheduled`, cascade-cancel the linked `pt_sessions` row + every booking on it (state='cancelled', refund_outcome='forfeited'), **no refund** (v1 policy). Emits `admin_cancel_class_pt` inbox row and emails the affected client(s). Idempotent — calling on an already-terminal request is a no-op. |
 
 Every row on both the list and the detail carries `bound_instructor` (`{ id, name }` or null) — the **Bound Instructor** of the package the request was debited from. The admin queue shows all requests with the binding visible; the schedule dialog pre-selects that instructor and allows an override.
@@ -208,7 +203,7 @@ Every row on both the list and the detail carries `bound_instructor` (`{ id, nam
 
 Admin-side PT actions all flow through `/pt-requests/*`. Cancellation of a scheduled session goes via `POST /pt-requests/:id/cancel` (branches as documented above) so the request and session stay in lockstep. Listing scheduled `pt_sessions` for the schedule view is handled by `schedule.ts:listScheduleItems`.
 
-### `corporate-requests.ts` (gated `staffAny` — admin + superadmin, like pt-requests)
+### `corporate-requests.ts` (gated `requireRole('admin')`, like pt-requests)
 
 Corporate moved from **admin-direct-create** (admin made a `corporate_sessions` row with a freeform client name on the schedule) to a **request-driven flow mirroring PT**. A member buys a corporate package; the Stripe webhook auto-creates ONE pending `corporate_requests` row (no client form — negotiation is on WhatsApp). The portal exposes **schedule** (the implicit approval — no approve/decline step), **cancel**, and **mark attended**.
 
@@ -249,7 +244,7 @@ The old "+ corporate" package dropdown and the `/admin/schedule/new/corporate` d
 | POST | `/bookings/:id/cancel` | Admin force-cancel (always full refund, bypasses cap — see §3b client-vs-admin path table) |
 | POST | `/bookings/:id/no-show` | Mark `state='no_show'`, `check_in_state='no_show'`, fire forfeit logic |
 
-### `finance.ts` (gated `staffAny` — admin + superadmin)
+### `finance.ts` (gated `requireRole('admin')`)
 
 Every **Money Event** in a period, money in and money out, with the studio's five figures over it. Replaces the admin `payroll.ts` surface; the instructor's own Teaching log (`portal/instructor/payroll.ts`) is unchanged. See `docs/md/spec-finance.md`, `be/docs/adr/0002-finance-replaces-payroll.md` and `be/docs/adr/0003-finance-reads-as-a-general-ledger.md`.
 
@@ -294,7 +289,7 @@ Unpriced sessions therefore still occur by design. They are cleared by hand thro
 
 ### `inbox.ts` (workspace-scoped)
 
-Per `admin-restructure.md` §13, the Inbox is now a **read-only notification feed**. PT request triage moved to its dedicated page (`pt-requests.ts` above). Inbox items are filtered by `granted_location_ids` — admins see notifications for cancellations on their workspace's sessions only.
+Per `admin-restructure.md` §13, the Inbox is now a **read-only notification feed**. PT request triage moved to its dedicated page (`pt-requests.ts` above). Inbox items are filtered to the active workspace location — admins see notifications for cancellations on that location's sessions.
 
 | Method | Path | Effect |
 |---|---|---|
@@ -304,39 +299,40 @@ Per `admin-restructure.md` §13, the Inbox is now a **read-only notification fee
 
 ### `clients.ts`
 
-Per `admin-restructure.md` §15a, **admin role is read-only on Clients**. Mutating endpoints below require `requireRole('superadmin')`; reads are open to both.
+Every endpoint below requires `requireRole('admin')`, reads and writes alike — there is no read-only admin mode on Clients.
 
 | Method | Path | Role | Effect |
 |---|---|---|---|
-| GET | `/clients` | admin+superadmin | List with search, status filter. Each row also carries the trial funnel — `trial_started_at` (first trial purchase, `null` = never bought one), `attended` (classes turned up to, all time) and `converted` (bought anything that isn't another trial) — which is what the portal's **Trials** filter counts. |
-| GET | `/clients/:id` | admin+superadmin | Profile incl. packages (including any trial pass + active promotion frozen at purchase), booking history, cancellation count, attendance, referrals, waiver. Admin views are workspace-agnostic — Clients is global. |
-| DELETE | `/clients/:id` | superadmin | **Block** — sets `deleted_at` and ends the member's sessions at this studio; the client pool refuses their next sign-in here (`client_blocked`). Nothing is erased; bookings/packages/ledger are preserved. Logs `user_blocked`. |
-| POST | `/clients/:id/restore` | superadmin | **Unblock** — clears `deleted_at`, which is all it takes to sign in again. Logs `user_unblocked`. |
-| GET | `/clients/:id/sessions` | admin+superadmin | The member's live sessions **at this studio** (#119): `{ sessions: [{ id, signed_in_at, last_seen_at, expires_at, ip, user_agent, impersonated }] }`, newest first. `last_seen_at` moves when the session is refreshed, about once a day. 404 `client_not_found` for another studio's member. |
-| POST | `/clients/:id/sessions/revoke` | superadmin | **Sign out everywhere** — ends every session the member holds at this studio, on every device; their next request is 401. Another studio's sessions for the same person are left alone. `{ revoked: n }`. Logs `sessions_revoked`. |
+| GET | `/clients` | admin | List with search, status filter. Each row also carries the trial funnel — `trial_started_at` (first trial purchase, `null` = never bought one), `attended` (classes turned up to, all time) and `converted` (bought anything that isn't another trial) — which is what the portal's **Trials** filter counts. |
+| GET | `/clients/:id` | admin | Profile incl. packages (including any trial pass + active promotion frozen at purchase), booking history, cancellation count, attendance, referrals, waiver. Admin views are workspace-agnostic — Clients is global. |
+| DELETE | `/clients/:id` | admin | **Block** — sets `deleted_at` and ends the member's sessions at this studio; the client pool refuses their next sign-in here (`client_blocked`). Nothing is erased; bookings/packages/ledger are preserved. Logs `user_blocked`. |
+| POST | `/clients/:id/restore` | admin | **Unblock** — clears `deleted_at`, which is all it takes to sign in again. Logs `user_unblocked`. |
+| GET | `/clients/:id/sessions` | admin | The member's live sessions **at this studio** (#119): `{ sessions: [{ id, signed_in_at, last_seen_at, expires_at, ip, user_agent, impersonated }] }`, newest first. `last_seen_at` moves when the session is refreshed, about once a day. 404 `client_not_found` for another studio's member. |
+| POST | `/clients/:id/sessions/revoke` | admin | **Sign out everywhere** — ends every session the member holds at this studio, on every device; their next request is 401. Another studio's sessions for the same person are left alone. `{ revoked: n }`. Logs `sessions_revoked`. |
 
 There is no separate suspend/unsuspend surface — blocking is the single mechanism. `requireActiveClient` rejects a blocked client on `deleted_at` as well as `status`.
 
 Block, unblock and sign-out are **per studio**, not Better Auth's admin-plugin ban or revoke-all: those are keyed on the auth user, and one person is one auth user at every studio they belong to. Each act writes an `auth_events` row filed under `staff`, with the acting staff member's auth user as actor and the member's client auth user as subject.
-| POST | `/clients/:id/credits/adjust` | superadmin | `{ client_package_id, delta, reason }` — manual credit adjust. Valid for `kind in ('credit_bundle', 'unlimited', 'trial')`. See §3d. |
-| POST | `/clients/:id/sessions/adjust` | superadmin | Same shape, for PT session balance (`kind='pt'`) |
-| POST | `/clients/:id/packages/:client_package_id/expiry` | superadmin | `{ expires_at, reason }` — edit expiry on `client_packages` (per `admin-restructure.md` §16 "Edit expiry" action, applies to `credit_bundle`, `unlimited`, `trial`). A **null `expires_at` returns the plan to Dormant** (spec-pre-launch-batch.md §8) — the escape hatch the one-way activation rule depends on — and is accepted for **every kind** (ADR 0004 — every package starts Dormant). Giving a Dormant package a date is an Activation by hand: 409 `family_already_activated` while another package in the same family is running. Writes a `manual_adjustments` row with `delta=0` and the reason note, which renders a null expiry as "Dormant". |
-| POST | `/clients/:id/packages/:client_package_id/cross-location` | superadmin | `{ paid_sgd: number \| null, reason }` — attach (amount) or remove (`null`) the **Cross-Location Add-On** on one Unlimited Plan (spec-pre-launch-batch.md §5). 400 `cross_location_requires_unlimited` for every other kind. Writes a `manual_adjustments` row with `delta=0` and the reason, exactly as the expiry edit does. |
-| POST | `/clients/:id/packages/:client_package_id/location` | superadmin | `{ location_id, reason }` — move a member's **Home Location** (spec-pre-launch-batch.md §7), the correction for a studio picked wrong at checkout. Moves the member's Activated plan **and** any Dormant renewal in one transaction, so the two can never disagree and re-open the two-Activated-plans hole §6 closes. **Bookings are untouched**, including bookings at the Location being left. 400 `home_location_requires_unlimited` for every other kind, 400 `home_location_unchanged`, 400 `home_location_plan_not_live` on a plan that has already ended, 404 `location_not_found`, 400 `location_archived`. Writes one `manual_adjustments` row per plan moved, `delta=0`, naming both Locations and the reason. |
-| POST | `/clients/:id/packages/:client_package_id/bound-instructor` | superadmin | `{ instructor_id: uuid \| null, reason }` — bind a purchased PT Package to an instructor, move it to another, or clear it back to open (`null`) (#110, spec #107 §33-§37). 400 `bound_instructor_requires_pt` for every other kind, 400 `instructor_not_active` for a staff id that is not an active instructor of the Tenant, 400 `bound_instructor_unchanged` for a no-op. **Sessions already scheduled are untouched** — the binding decides who may pick up future requests. Writes a `manual_adjustments` row with `delta=0` naming the before and after instructors and the reason, exactly as the expiry edit does. The instructor being moved *away* from is named even when archived, and is not required to be active: a package bound to a leaver stays bound until an admin rebinds it. |
-| POST | `/clients/:id/packages/issue` | superadmin | Admin grants a complimentary package (any kind). Inserts `client_packages` row with `amount_paid_sgd=0`, `stripe_payment_intent_id=NULL`. **Trial issue is gated by the `(client_id) WHERE kind='trial'` unique partial index** — returns `409 trial_already_used` if the client already holds a trial. |
+| POST | `/clients/:id/credits/adjust` | admin | `{ client_package_id, delta, reason }` — manual credit adjust. Valid for `kind in ('credit_bundle', 'unlimited', 'trial')`. See §3d. |
+| POST | `/clients/:id/sessions/adjust` | admin | Same shape, for PT session balance (`kind='pt'`) |
+| POST | `/clients/:id/packages/:client_package_id/expiry` | admin | `{ expires_at, reason }` — edit expiry on `client_packages` (per `admin-restructure.md` §16 "Edit expiry" action, applies to `credit_bundle`, `unlimited`, `trial`). A **null `expires_at` returns the plan to Dormant** (spec-pre-launch-batch.md §8) — the escape hatch the one-way activation rule depends on — and is accepted for **every kind** (ADR 0004 — every package starts Dormant). Giving a Dormant package a date is an Activation by hand: 409 `family_already_activated` while another package in the same family is running. Writes a `manual_adjustments` row with `delta=0` and the reason note, which renders a null expiry as "Dormant". |
+| POST | `/clients/:id/packages/:client_package_id/cross-location` | admin | `{ paid_sgd: number \| null, reason }` — attach (amount) or remove (`null`) the **Cross-Location Add-On** on one Unlimited Plan (spec-pre-launch-batch.md §5). 400 `cross_location_requires_unlimited` for every other kind. Writes a `manual_adjustments` row with `delta=0` and the reason, exactly as the expiry edit does. |
+| POST | `/clients/:id/packages/:client_package_id/location` | admin | `{ location_id, reason }` — move a member's **Home Location** (spec-pre-launch-batch.md §7), the correction for a studio picked wrong at checkout. Moves the member's Activated plan **and** any Dormant renewal in one transaction, so the two can never disagree and re-open the two-Activated-plans hole §6 closes. **Bookings are untouched**, including bookings at the Location being left. 400 `home_location_requires_unlimited` for every other kind, 400 `home_location_unchanged`, 400 `home_location_plan_not_live` on a plan that has already ended, 404 `location_not_found`, 400 `location_archived`. Writes one `manual_adjustments` row per plan moved, `delta=0`, naming both Locations and the reason. |
+| POST | `/clients/:id/packages/:client_package_id/bound-instructor` | admin | `{ instructor_id: uuid \| null, reason }` — bind a purchased PT Package to an instructor, move it to another, or clear it back to open (`null`) (#110, spec #107 §33-§37). 400 `bound_instructor_requires_pt` for every other kind, 400 `instructor_not_active` for a staff id that is not an active instructor of the Tenant, 400 `bound_instructor_unchanged` for a no-op. **Sessions already scheduled are untouched** — the binding decides who may pick up future requests. Writes a `manual_adjustments` row with `delta=0` naming the before and after instructors and the reason, exactly as the expiry edit does. The instructor being moved *away* from is named even when archived, and is not required to be active: a package bound to a leaver stays bound until an admin rebinds it. |
+| POST | `/clients/:id/packages/issue` | admin | Admin grants a complimentary package (any kind). Inserts `client_packages` row with `amount_paid_sgd=0`, `stripe_payment_intent_id=NULL`. **Trial issue is gated by the `(client_id) WHERE kind='trial'` unique partial index** — returns `409 trial_already_used` if the client already holds a trial. |
 
-### `staff.ts` (superadmin-only)
+### `staff.ts` (admin)
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/staff` | List staff_users + open invitations. Each row exposes `granted_location_ids` (resolved to `locations` rows in the response). |
-| POST | `/staff/invite` | `{ email, role: 'admin', granted_location_ids: uuid[] }`. **Role restricted to `admin` in v1** — instructor invitations land via `POST /instructors` (which auto-fires an internally-typed invitation). Inviter's `granted_location_ids` must cover the requested set (superadmin always passes). See §3a. |
+| GET | `/staff` | List staff_users + open invitations. Each row carries `role` (`admin \| instructor`); there is no seeded or main admin, so rows carry no seeded flag and no `granted_location_ids`. |
+| POST | `/staff/invite` | `{ email, role: 'admin' }`. **Role restricted to `admin` in v1** — instructor invitations land via `POST /instructors` (which auto-fires an internally-typed invitation). No location grants are set. See §3a. |
 | POST | `/staff/invitations/:id/revoke` | Set `status='revoked'`. Re-invite requires fresh row. |
-| PATCH | `/staff/:id/grants` | `{ granted_location_ids: uuid[] }` — superadmin shrinks/expands an admin's workspace grants without archiving (`admin-restructure.md` §15b "softer alternative"). Effective on next page load (no session revoke). |
-| POST | `/staff/:id/archive` | **Block** a staff member: status `archived`, and their sessions at this studio end. Only the seeded superadmin archives another superadmin. Logs `user_blocked`; `/staff/:id/unarchive` logs `user_unblocked`. |
-| GET | `/staff/:id/sessions` | admin+superadmin. The staff member's live sessions at this studio, same shape as `/clients/:id/sessions` (`impersonated` always false). 404 `staff_not_found` for another studio's staff. |
-| POST | `/staff/:id/sessions/revoke` | superadmin. **Sign out everywhere** at this studio; their next request is 401. Signing out another superadmin takes the seeded superadmin (403 `only_seeded_can_sign_out_superadmin`); yourself is allowed. `{ revoked: n }`. Logs `sessions_revoked`. |
-| POST | `/staff/:id/resend-invitation` | superadmin. Re-mails the set-password link: the pending invitation when there is one (as `/staff/invitations/:id/resend`), otherwise Better Auth's reset link on the studio's portal, which sets a first password as readily as it replaces one. `{ sent: 'invitation' \| 'set_password' }`. 409 `staff_archived`. Logs `invitation_resent`, as does `/staff/invitations/:id/resend`. |
+| PATCH | `/staff/:id` | Edit a staff profile (name, contact, bio, languages, leave allowances) and `role`. Rank is admin > instructor: editing someone who outranks you is 403 `outranked_staff_edit_forbidden`, and a patch carrying `role` from a non-admin is 403 `privilege_fields_admin_only`. Changing your own role is refused. **Last-admin guard:** changing the role of the studio's only active admin (role `admin`, status `active`, not soft-deleted) away from `admin` is 409 `cannot_demote_last_admin`; the count and the write run in one transaction. |
+| POST | `/staff/:id/archive` | **Block** a staff member: status `archived`, and their sessions at this studio end. Archiving yourself is refused. **Last-admin guard:** archiving the studio's only active admin is 409 `cannot_archive_last_admin`, counted and written in one transaction. Logs `user_blocked`; `/staff/:id/unarchive` logs `user_unblocked`. |
+| DELETE | `/staff/:id` | Soft-delete. Requires the row to be archived first (400 `staff_not_archived`), so the last-admin guard on archive already covers it — no separate check. |
+| GET | `/staff/:id/sessions` | The staff member's live sessions at this studio, same shape as `/clients/:id/sessions` (`impersonated` always false). 404 `staff_not_found` for another studio's staff. |
+| POST | `/staff/:id/sessions/revoke` | **Sign out everywhere** at this studio; their next request is 401. Any admin may sign out any staff member, including another admin or themselves; the last-admin guard does not apply (the admin can sign in again). `{ revoked: n }`. Logs `sessions_revoked`. |
+| POST | `/staff/:id/resend-invitation` | Re-mails the set-password link: the pending invitation when there is one (as `/staff/invitations/:id/resend`), otherwise Better Auth's reset link on the studio's portal, which sets a first password as readily as it replaces one. `{ sent: 'invitation' \| 'set_password' }`. 409 `staff_archived`. Logs `invitation_resent`, as does `/staff/invitations/:id/resend`. |
 
 ### `notifications.ts`
 | Method | Path | Effect |
@@ -370,7 +366,7 @@ Block, unblock and sign-out are **per studio**, not Better Auth's admin-plugin b
 
 ### 3a. Staff invitation flow
 
-Triggered from: `POST /staff/invite` (admin/superadmin) or auto-fired during `POST /instructors`.
+Triggered from: `POST /staff/invite` (admin) or auto-fired during `POST /instructors`.
 
 Invitation-only in fact (#115): there is no staff sign-up, and nothing links a stranger's account to a row by address.
 
@@ -458,7 +454,7 @@ tx start
    ON — main or supporting — overlaps [starts_at, ends_at]
    → if conflict: 409 schedule_conflict
 4. Room check: services/schedule/room-conflicts.ts (assertRoomInLocation + assertRoomAvailable)
-5. Workspace check: location_id ∈ actor's granted_location_ids (superadmin bypasses)
+5. Location check: location_id is an active location of this studio (no per-staff grants)
 6. Insert pt_sessions row: pt_request_id=X, instructor_id, location_id, room_id, starts_at, ends_at,
    session_type (copied from request), capacity_online (default 1 for 1on1, 2 for 2on1),
    lifecycle='active', scheduled_at=now(), scheduled_by_staff_id=actor_staff_id

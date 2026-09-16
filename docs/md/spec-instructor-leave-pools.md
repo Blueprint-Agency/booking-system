@@ -4,6 +4,8 @@ Supersedes the allowance model in `spec-instructor-leave.md`. See `be/docs/adr/0
 
 > **Partly superseded (2026-08-17).** This document was written when there were two Leave Types, annual and medical. A third, **study**, has shipped — one more Assigned figure (`instructors.study_leave_days`, default 7), one more row in the Pool triple per instructor per Leave Year, drawn from and Committed against by exactly the machinery this document describes. Study never carries, same as medical. Nothing about *how* a Pool is built, materialised or spent changed — the carry function, the lazy-open-on-first-read, the per-instructor row lock and the derived Committed/Taken/Remaining are all unchanged and apply to study as a third row rather than a special case. Everywhere below that names "annual and medical" as the two types, read it as "the type list", now three long. Full detail on study leave, the Leave Cap and the Leave Conflicts it ships alongside is `docs/md/spec-pre-launch-batch.md` §16–§17.
 
+> **Partly superseded (2026-09-16).** This document was written when the portal had a staff role above admin. It now has exactly two, **admin** and **instructor**, ranked admin > instructor, and admin holds every power the higher role had — see `be/docs/adr/0006-two-staff-roles.md`. The permissions below are rewritten to match: what was reserved for the higher role is now admin's, rank still refuses editing someone who outranks you (so an instructor cannot edit an admin), role changes require admin, and location grants are gone.
+
 ## Problem Statement
 
 Leave is a term of an individual instructor's engagement, not a studio-wide policy. Today it is the opposite: one pair of numbers on the global policy singleton gives every instructor the same 14 annual and 14 medical days, and the only way to give one person a different figure is for an admin to exercise judgement at approval time and let them go over. That is invisible, unauditable, and it means the number an instructor sees is not the number they actually have.
@@ -11,12 +13,12 @@ Leave is a term of an individual instructor's engagement, not a studio-wide poli
 Three further things are wrong with the current model:
 
 - **Unused annual days evaporate on 31 December.** An instructor who works through a quiet year loses the leave they did not take, which is not what the studio intends to promise.
-- **Only a superadmin can change the figure**, on a screen an admin cannot open, so the person who approves the leave cannot adjust the person's entitlement.
+- **The figure lives on the Global Policy screen**, away from the instructor's profile where leave is approved, so the person who approves the leave cannot adjust the person's entitlement there.
 - **The Remaining figure on the instructor's own page is wrong.** It subtracts approved days but not pending ones, so an instructor with 14 days and 5 pending is shown "14 of 14 days left" and only discovers otherwise when a submission is refused.
 
 ## Solution
 
-Assigned Days move onto each instructor's own profile, defaulting to 14 for annual, 14 for medical, and (added with the third Leave Type — see the banner above) 7 for study, editable by any admin or superadmin. Each Leave Year an instructor is given a **Pool** — their Assigned Days plus any Carried Days from the previous year — and every Leave Request draws from that Pool. Unused annual days carry into the following year up to a studio-wide cap; medical and study days do not carry and reset flat each year.
+Assigned Days move onto each instructor's own profile, defaulting to 14 for annual, 14 for medical, and (added with the third Leave Type — see the banner above) 7 for study, editable by any admin. Each Leave Year an instructor is given a **Pool** — their Assigned Days plus any Carried Days from the previous year — and every Leave Request draws from that Pool. Unused annual days carry into the following year up to a studio-wide cap; medical and study days do not carry and reset flat each year.
 
 Because a live year's Pool is already part-spent, editing Assigned Days applies from the next 1 January rather than moving a balance mid-flight. When an admin needs to change a live year they edit the instructor's **Remaining** figure directly, which is bounded by that year's Pool.
 
@@ -66,8 +68,8 @@ The Remaining figure is corrected everywhere to subtract Committed days — pend
 29. As an admin, I want the Remaining I type to be what the instructor then sees, so that I am not doing arithmetic in my head against days already taken.
 30. As an admin, I want to see an instructor's Assigned, Carried, Pool and Remaining figures when I open their profile, so that I can see the whole picture before changing anything.
 31. As an admin, I want the leave figures to appear only for instructors, so that a staff profile that can never take leave is not cluttered with numbers that mean nothing.
-32. As a superadmin, I want to set the studio-wide carry-over cap on the Global Policy screen, so that there is one place that decides how much surplus anyone can bank.
-33. As a superadmin, I want the carry-over cap expressed in days, so that I do not have to reason about multipliers.
+32. As an admin, I want to set the studio-wide carry-over cap on the Global Policy screen, so that there is one place that decides how much surplus anyone can bank.
+33. As an admin, I want the carry-over cap expressed in days, so that I do not have to reason about multipliers.
 34. As an admin, I want changing the carry-over cap to affect future year boundaries only, so that Pools already opened do not move.
 
 ### Admin — approving
@@ -83,10 +85,10 @@ The Remaining figure is corrected everywhere to subtract Committed days — pend
 ### Access and permissions
 
 42. As an admin, I want to reach the staff page and edit staff profiles, so that I can maintain the people I already manage the leave of.
-43. As an admin, I want to be refused when I try to edit a superadmin's profile, so that the account that outranks me cannot be rewritten from below.
-44. As a superadmin, I want role changes and location grants to remain mine alone, so that an admin cannot promote themselves.
-45. As a superadmin, I want archiving, unarchiving and deleting staff to remain mine alone, so that account lifecycle stays with the people accountable for it.
-46. As a superadmin, I want the Global Policy screen to stay superadmin-only, so that studio-wide settings keep the gating every other setting on it has.
+43. As an instructor, I want to be refused when I try to edit an admin's profile, so that the account that outranks me cannot be rewritten from below.
+44. As an admin, I want role changes to remain admin-only, so that an instructor cannot promote themselves. *(Location grants, once part of this story, are retired — admins see every active location.)*
+45. As an admin, I want archiving, unarchiving and deleting staff to remain admin-only, and to be refused when archiving or demoting would leave the studio with no active admin, so that account lifecycle stays with the people accountable for it and the studio can never lock itself out.
+46. As an admin, I want the Global Policy screen to stay admin-only, so that studio-wide settings keep the gating every other setting on it has.
 47. As an instructor, I want to be unable to see or change my own Assigned Days, so that entitlement is set by the studio rather than negotiated in the app.
 
 ### Correctness and history
@@ -145,11 +147,11 @@ Where no previous year's Pool exists — a newly onboarded instructor, or the fi
 
 ### Permissions
 
-- The staff page and the staff profile edit become available to admin as well as superadmin, including the leave figures.
-- Editing a staff member of higher rank is refused at the service, not merely hidden in the UI. Admins may edit instructors and other admins; superadmin profiles remain superadmin-only.
-- Role changes and location grants stay superadmin-only at the route, refused for admin callers even though the form does not offer them — the endpoint accepts them today and opening the route without this guard is a privilege-escalation path.
-- Archive, unarchive and delete stay superadmin-only.
-- Global Policy stays superadmin-only in full.
+- The staff page and the staff profile edit are available to admin, including the leave figures.
+- Rank is admin > instructor. Editing a staff member of higher rank is refused at the service, not merely hidden in the UI. Admins may edit anyone; instructors may not edit admins.
+- Role changes require admin at the service, refused for instructor callers even if a request carries them — opening the route without this guard is a privilege-escalation path. Nobody may change their own role. Location grants are retired.
+- Archive, unarchive and delete are admin-only. Archiving, or changing a role away from admin, is refused when the target is the studio's only active admin (the last-admin guard — see `backend-architecture.md` `staff_users`). Nobody may archive themselves.
+- Global Policy is admin-only in full.
 
 ### Portal surfaces
 
@@ -179,7 +181,7 @@ The portal is verified as the repo already verifies it: `tsc --noEmit`, a produc
 
 ## Out of Scope
 
-- Leave for admins, superadmins or any non-instructor staff.
+- Leave for admins or any non-instructor staff.
 - Accrual, and pro-rating for mid-year joiners. An instructor gets their full Assigned figure on day one and on every 1 January.
 - Carry-over for medical or study leave.
 - A per-instructor carry-over cap. One studio-wide cap covers everyone; an exception is handled by adjusting that person's Remaining.
@@ -189,7 +191,7 @@ The portal is verified as the repo already verifies it: `tsc --noEmit`, a produc
 - Public-holiday and working-pattern awareness. Every calendar date in a range still consumes a day, weekends included.
 - Half days at the ends of a multi-day range.
 - Un-approving leave that has already started, in any form.
-- Admins gaining role management, location grants, or the staff account lifecycle.
+- Instructors gaining role management or the staff account lifecycle.
 - The known gap that workshop write paths never adopted the occupancy module and therefore do not check leave. Unchanged by this spec.
 
 ## Further Notes
@@ -198,4 +200,4 @@ The cheap half of this change is the half the request appeared to be about. "Ded
 
 Carry-over is the expensive half. It is what forces a stored Pool, and it undoes the property the original design was built around — that a balance was one number minus one sum, with no state to drift and no job to run. The Pool is a stored grant rather than a stored balance, which preserves the important half of that property: refunds still cost nothing. A future change that stores Taken or Remaining would give that up entirely and should be resisted.
 
-`spec-instructor-leave.md` still describes the old model in its Allowance-and-balance section, its Portal-surfaces section, user story 44 and its Out of Scope list, and `spec-instructor-leave-remediation.md` records a correction stating that allowances are superadmin-only. Both need rewriting as part of this work, not afterwards.
+`spec-instructor-leave.md` still describes the old model in its Allowance-and-balance section, its Portal-surfaces section, user story 44 and its Out of Scope list, and `spec-instructor-leave-remediation.md` records a correction stating that allowances are set only on the policy screen. Both need rewriting as part of this work, not afterwards.

@@ -113,7 +113,6 @@ jobs:
       DATABASE_APP_URL: postgres://booking_app:booking_app_test@localhost:5432/booking_test
       NODE_ENV: test
       APP_ENV: development
-      SUPERADMIN_EMAIL: superadmin@example.test
       IMPERSONATION_SECRET: test-harness-impersonation-secret-key
       BETTER_AUTH_SECRET: test-harness-better-auth-secret-key-32chars
       BETTER_AUTH_URL: http://localhost:4000
@@ -347,7 +346,7 @@ jobs:
             #   org vars:    BPVPS2_TAILSCALE_HOST, DOCKERHUB_USERNAME
             #   org secrets: TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET, SSH_PRIVATE_KEY, DOCKERHUB_TOKEN
             #   env vars:    PORT, TENANT_ORIGIN_PATTERNS,
-            #            SUPERADMIN_EMAIL, PLATFORM_ADMIN_EMAILS, MAIL_FROM_EMAIL,
+            #            PLATFORM_ADMIN_EMAILS, MAIL_FROM_EMAIL,
             #            (optional) MAIL_FROM_PORTAL_EMAIL, MAIL_FROM_NAME,
             #            (optional) STRIPE_STATEMENT_DESCRIPTOR_PREFIX
             #   env secrets: DB_USER, DB_PASSWORD, DB_NAME, DB_APP_PASSWORD,
@@ -375,20 +374,12 @@ jobs:
               # `npm run db:migrate` creates the role with DB_APP_PASSWORD.
               echo "DATABASE_APP_URL=postgres://booking_app:${{ secrets.DB_APP_PASSWORD }}@db-booking:5432/${{ secrets.DB_NAME }}"
               echo "DB_APP_PASSWORD=${{ secrets.DB_APP_PASSWORD }}"
-              # Tenant #1's own bootstrap superadmin. The seed no longer creates
-              # it — a fresh install seeds platform admins only, and studios
-              # arrive by being provisioned or restored — so what this still does
-              # is name the one staff account in Tenant #1 that the app refuses to
-              # archive, delete or demote (services/auth/staff-archive.ts).
-              # It is NOT a platform admin: see PLATFORM_ADMIN_EMAILS below.
-              echo "SUPERADMIN_EMAIL=${{ vars.SUPERADMIN_EMAIL }}"
               # Who may operate the super portal (/api/v1/platform/*) — the dev
               # team, comma-separated. Deliberately not a staff role: a studio's
-              # own superadmin must not be able to suspend another studio.
+              # own admin must not be able to suspend another studio.
               #
-              # REQUIRED. This is the whole allowlist — SUPERADMIN_EMAIL is NOT
-              # folded in any more, because doing so handed the first studio's
-              # superadmin the run of every studio. Blank means a super portal
+              # REQUIRED. This is the whole allowlist — no studio staff account is
+              # folded in. Blank means a super portal
               # nobody can reach (the backend warns at boot and refuses everyone),
               # which is the safe failure but is almost certainly not what you
               # wanted.

@@ -4,14 +4,15 @@
 
 ### Role model (two staff roles)
 
-Staff identity is `superadmin` or `admin`. The `instructor` role is reserved in the schema but deferred — there is no instructor sidebar or instructor session in v1.
+Staff identity is `admin` or `instructor` — a studio's portal has exactly these two roles, ranked admin > instructor.
 
 | Role | Authority |
 |---|---|
-| **Superadmin** | Global catalog + policy owner. Creates locations, edits class types, configures all packages (Classes + Private Sessions) and their promotions, edits Global Policy, manages Staff/Notifications/Waiver. Full read/write across every workspace. |
-| **Admin** | Operations staff scoped to one or more granted workspaces via `staff_users.granted_location_ids: string[]`. Sees only their granted locations' Schedule / Workshops / Check-in / Inbox. **Read-only** on Clients. Cannot reach Class Types, Packages (Classes + Private Sessions), Global Policy, Notifications, Waiver, Staff, or Locations. |
+| **Admin** | Runs the studio. Global catalog + policy owner: creates locations, edits class types, configures all packages and their promotions, promo codes, Global Policy, Waiver, Notifications, Marketing and feature flags. Manages Staff (including other admins), Clients, Workshops and Rooms with full read/write — nothing is read-only — and can impersonate a member. Sees every active location of the studio. |
+| **Instructor** | Teaching staff. Uses the instructor portal (`/instructor/*`; routes in `be-portal.md` §4) scoped to their own sessions. Cannot reach any `/admin/*` surface. |
 
-- Superadmin grants are **implicit** — an empty `granted_location_ids` means "all active locations".
+- There are no location grants: an admin's accessible locations are all of the studio's active locations.
+- The **platform administrator** who operates the super portal is not a studio staff role and is out of scope for this doc.
 - See §14 for invitation + archive rules.
 
 ### Workspace boundary (global vs workspace-scoped)
@@ -20,23 +21,22 @@ Locations are workspaces. Surfaces are partitioned as follows:
 
 | Tier | Surfaces |
 |---|---|
-| **Global (superadmin-only)** | Locations CRUD, Class Types, Rooms, Packages → Classes, Packages → Workshops, Packages → Private Sessions, Promotions (nested in packages), Global Policy, Notifications, Waiver, Staff |
+| **Global (admin-only)** | Locations CRUD, Class Types, Rooms, Packages → Classes, Packages → Workshops, Packages → Private Sessions, Promotions (nested in packages), Global Policy, Notifications, Waiver, Staff |
 | **Workspace-scoped** | Schedule, Check-in, Inbox, PT Requests (clients pick a `location_id` at request time — see §9) |
-| **Cross-workspace (global, read-only for admin)** | Clients — cross-location credits mean a client record spans workspaces; admin sees all clients but cannot mutate (no kebab actions, no expiry edits, no set-balance, no manual adjustments, no suspend/reactivate) |
+| **Cross-workspace (global)** | Clients — cross-location credits mean a client record spans workspaces; admin sees and manages every client (kebab actions, expiry edits, set-balance, manual adjustments, block/unblock) |
 
 > **Workshops are a global package surface.** Like Classes and Private Sessions, Packages → Workshops is **not** filtered by the topbar workspace switcher — it lists every workshop across all locations. Each workshop still carries a `location_id` chosen in the editor (its days' rooms come from that location); the surface is simply not workspace-scoped.
 
 ### Workspace switcher (topbar)
 
-- The admin shell topbar carries a `<WorkspaceSwitcher />` dropdown listing the user's accessible locations. The sidebar **no longer has a "Locations" entry** — moved into this dropdown's "Manage locations" modal (superadmin only).
+- The admin shell topbar carries a `<WorkspaceSwitcher />` dropdown listing the studio's active locations. The sidebar **no longer has a "Locations" entry** — moved into this dropdown's "Manage locations" modal.
 - The active location is global state, persisted in localStorage under `rt.activeLocationId`. All workspace-scoped pages (Schedule, Rooms, Check-in, Inbox) read it directly — there are **no per-page LocationFilterChips** and **no CheckinLocationPill**. (Workshops is **not** workspace-scoped — see the Workshops note above.)
 - Dropdown contents:
-  - List of accessible locations (current marked).
-  - Superadmin extras: "+ Add location" and "Manage locations" (modal CRUD reusing `LocationFormDialog`).
-  - Admin footer hint: "Contact your superadmin to request more workspace access."
-- `LocationGate` (cold start guard) is role-aware:
-  - Superadmin with zero active locations → "Add your first location" CTA card.
-  - Admin with zero accessible locations → "No workspace access — contact your superadmin" empty state.
+  - List of the studio's active locations (current marked).
+  - "+ Add location" and "Manage locations" (modal CRUD reusing `LocationFormDialog`).
+- `LocationGate` (cold start guard):
+  - Admin with zero active locations → "Add your first location" CTA card.
+  - Anyone else with no location to open → "No workspace access — contact an admin" empty state.
   - Otherwise pass-through.
 
 ### Sidebar structure
@@ -45,12 +45,12 @@ Locations are workspaces. Surfaces are partitioned as follows:
 
 - **Finance**: Finance (§20) — first, because it is the surface an owner opens most and the one every other page eventually reports into.
 - **Config**: Class Types, Promo Codes. **A Promo Code sits in Config, not Packages**: it crosses products, so it belongs with the building blocks rather than inside any one catalogue (contrast a Promotion, which belongs to exactly one product and is edited there).
-- **Packages**: Classes, Workshops, Private Sessions, Corporate, Merch (global, shared across locations). **Merch is the one Packages item both roles manage** — it is shop-floor stock (mats, props, apparel) rather than catalogue governance.
+- **Packages**: Classes, Workshops, Private Sessions, Corporate, Merch (global, shared across locations). Merch is shop-floor stock (mats, props, apparel) rather than catalogue governance, but like the rest of Packages it is managed by admins.
 - **People**: Customers, Corporate Requests, Staff, Leave (members + staff accounts). **Corporate Requests sits here, not in the workspace zone** — a request records no `location_id` until it is scheduled, so there is nothing for the switcher to filter it by; it is a person asking, which is what People is.
-- **Settings**: Global Policy, Notifications, Waiver (location-independent policy + config). **Instructors are merged into Staff** — the Staff page has **Admin** and **Instructors** tabs. "+ Invite staff" (Admin tab) invites admin/superadmin; "+ Add instructor" (Instructors tab) routes to the instructor creation flow (which still captures bio, photo, and eligible class types). Instructor rows link to their detail page. There is no separate "Instructors" sidebar item.
+- **Settings**: Global Policy, Notifications, Waiver (location-independent policy + config). **Instructors are merged into Staff** — the Staff page has **Admin** and **Instructors** tabs. "+ Invite staff" (Admin tab) invites a staff member, and its role picker offers only Admin and Instructor; "+ Add instructor" (Instructors tab) routes to the instructor creation flow (which still captures bio, photo, and eligible class types). Instructor rows link to their detail page. There is no separate "Instructors" sidebar item.
 - **Workspace zone** (bottom, separated by a divider, under a header showing the active location's name): **Schedule, Rooms, Check-in, Inbox, PT Requests**. All are filtered by `activeLocationId`; flipping the switcher reloads them. **PT Requests is workspace-scoped** — clients pick a `location_id` at request time, so the triage queue shows only the active location's requests.
 
-`NavItem.workspaceScoped` marks the workspace-zone items; it is distinct from `NavItem.scope`, which only governs role visibility (admin vs superadmin). The build-order below is the recommended *setup* sequence, not the visual order.
+`NavItem.workspaceScoped` marks the workspace-zone items; it is distinct from `NavItem.scope`, which only governs role visibility (admin vs instructor). The build-order below is the recommended *setup* sequence, not the visual order.
 
 **Building Blocks** (set up first — prereqs for everything else):
 1. Class Types  *(locations moved to topbar switcher)*
@@ -107,7 +107,7 @@ Locations are workspaces. Surfaces are partitioned as follows:
 
 ## 1. Locations (Workspaces)
 
-**Surface:** Topbar `<WorkspaceSwitcher />` dropdown → "Manage locations" modal. **Superadmin-only.** There is no sidebar entry for Locations.
+**Surface:** Topbar `<WorkspaceSwitcher />` dropdown → "Manage locations" modal. **Admin-only.** There is no sidebar entry for Locations.
 
 Locations are the workspace boundary — every scoped surface (Schedule, Workshops, Check-in, Inbox) reads `rt.activeLocationId` from localStorage and renders only data tied to it.
 
@@ -120,7 +120,7 @@ Locations are the workspace boundary — every scoped surface (Schedule, Worksho
 **Modal behaviour:**
 - List active locations as cards; archived locations at the bottom with an "Archived" badge + Restore button.
 - "+ Add location" opens the shared `LocationFormDialog`.
-- Cold start (zero active locations): superadmin sees the "Add your first location" CTA card via `LocationGate`; admin sees "No workspace access — contact your superadmin".
+- Cold start (zero active locations): admin sees the "Add your first location" CTA card via `LocationGate`.
 
 **Deletion rules:**
 - **Hard delete** — only if zero linked data exists across all tables (location has never been used).
@@ -132,7 +132,7 @@ Locations are the workspace boundary — every scoped surface (Schedule, Worksho
 
 ## 2. Class Types
 
-**Sidebar position:** Top-level building block item. **Superadmin-only** (global catalog).
+**Sidebar position:** Top-level building block item. **Admin-only** (global catalog).
 
 **Purpose:** Shared catalogue of session types (e.g. Chair Yoga, Vinyasa Flow, Aerial Yoga). Used as a dropdown when creating a class/workshop/PT session, and as a multi-select on instructor profiles to indicate teaching eligibility.
 
@@ -233,7 +233,7 @@ Single source of truth for client-initiated class and PT cancellation. Workshops
 
 ## 5. Classes (Config Page — Packages Only)
 
-**Purpose:** Pre-requisite config. Admin sets up class packages here before any class sessions can be created on the Schedule. No scheduling happens here. **Superadmin-only.**
+**Purpose:** Pre-requisite config. Admin sets up class packages here before any class sessions can be created on the Schedule. No scheduling happens here. **Admin-only.**
 
 **Cancellation policy lives in §4 Global Policy — not configured here.**
 
@@ -289,7 +289,7 @@ A standalone, quota-based pack that any client may purchase **once only** — en
 
 ## 6. Private Sessions (Config Page — Packages Only)
 
-**Purpose:** Pre-requisite config. Admin sets up PT packages here before any private sessions can be created. No scheduling happens here. **Superadmin-only.**
+**Purpose:** Pre-requisite config. Admin sets up PT packages here before any private sessions can be created. No scheduling happens here. **Admin-only.**
 
 **Cancellation policy lives in §4 Global Policy — not configured here.**
 
@@ -311,7 +311,7 @@ The catalogue list shows each package's session count and validity.
 
 ## 6b. Merch (Config Page — Packages)
 
-Studio goods surfaced in the member app at `/merch`. **Both `admin` and `superadmin`** manage them — see `be-portal.md` §`merch.ts` for the route surface.
+Studio goods surfaced in the member app at `/merch`. **Admins** manage them — see `be-portal.md` §`merch.ts` for the route surface.
 
 - Fields: **Title, Description, Price (SGD), Photo** (JPG/PNG/WebP, max 5MB, stored in R2). Nothing else: no stock count, no location, no promotions, no Promo Code scope.
 - **Archive** hides an item from the member app and refuses new checkouts; **Delete** is permanent and stays available because nothing references a merch row — a member's purchase history keeps its own frozen title and amount.
@@ -426,7 +426,7 @@ The Availability system is gone (§8). PT sessions now exist only as the resolut
 
 ### 9b. Workspace-scoped
 
-PT Requests carry a `location_id` chosen by the client at request time. The `/admin/pt-requests` queue is therefore **filtered by the active workspace location** (superadmin sees all); flipping the workspace switcher re-scopes the list, and the page shows a banner naming the active location. At scheduling time the resulting `PtSession.location_id` defaults to the requested location (admin can still change it in `ScheduleFromRequestDialog`).
+PT Requests carry a `location_id` chosen by the client at request time. The `/admin/pt-requests` queue is therefore **filtered by the active workspace location**; flipping the workspace switcher re-scopes the list, and the page shows a banner naming the active location. At scheduling time the resulting `PtSession.location_id` defaults to the requested location (admin can still change it in `ScheduleFromRequestDialog`).
 
 ### 9c. Triage UI (`/admin/pt-requests`)
 
@@ -616,36 +616,36 @@ PT request triage **does not live here** — it has its own dedicated page (`/ad
 
 ### 14a. Role model
 
-Two staff role types in the system. (The `instructor` role is reserved in the schema for a later phase and is not invitable in v1.)
+Two staff roles in the system: `admin` and `instructor`. The `staff_role` type holds nothing else.
 
 | Role | How created | Authority |
 |---|---|---|
-| **Superadmin** | Seeded into fresh deployment — not invitable via UI | Global catalog + policy owner across all workspaces. Can manage Locations, Class Types, all Packages + Promotions, Global Policy, Notifications, Waiver, Staff. Implicit access to every active location. Can archive other staff accounts. |
-| **Admin** | Invited by superadmin (or another admin) | Operations staff scoped to one or more workspaces via `staff_users.granted_location_ids: string[]`. Sees only granted-location Schedule / Workshops / Check-in / Inbox. **Read-only on Clients.** Cannot reach Class Types, Packages, Global Policy, Notifications, Waiver, Staff, or Locations. |
+| **Admin** | A studio's first admin arrives with the studio (created or restored through the super portal); further admins are invited by an admin | Everything in the portal: Locations, Class Types, all Packages + Promotions, Promo Codes, Global Policy, Waiver, Notifications, Marketing, feature flags, Staff (including other admins), Clients, Workshops, Rooms, and member impersonation. Sees every active location of the studio. |
+| **Instructor** | Invited by an admin | The instructor portal only, scoped to their own sessions. Unchanged by this spec. |
 
 - Roles are **mutually exclusive** — one email = one staff account = one role.
-- Superadmin grants are implicit: an empty `granted_location_ids` array means "all active locations".
-- Admin's accessible-locations list is reflected in the topbar `<WorkspaceSwitcher />` (see Overview).
-- The superadmin label is a deployment artifact — there is no ongoing visual distinction in chrome beyond the surfaces a superadmin can reach.
+- **Rank:** admin > instructor. Nobody can edit a staff member who outranks them (instructors cannot edit admins; admins can edit anyone), and changing a role requires admin.
+- Every admin sees all of the studio's active locations in the topbar `<WorkspaceSwitcher />` (see Overview). There are no per-admin location grants.
+- The Staff list shows only **Admin** and **Instructor** badges. No staff member is "main" or seeded with powers beyond their role.
+- A studio archive taken while the portal still had a third, now-retired staff role restores those staff rows and invitations as admins.
 
 ### 14b. Invitation rules
 
 **Who can invite whom:**
-- Superadmin can invite admins (and other superadmins).
-- Admins can invite other admins, but only scoped to a subset of their own granted locations.
-- Instructor profiles (§3) are catalog records — they are not invited into the staff app in v1.
+- Admins invite admins and instructors.
+- Instructors cannot invite.
 
-**Admin invitation flow:**
-- Inviter enters the invitee's email, role (Admin), and `granted_location_ids` (must be a subset of the inviter's own grants unless inviter is superadmin).
-- System sends a magic-link invite email. Invitee clicks link → sets password → lands on `/admin` (dashboard, with their first accessible location selected in the topbar switcher).
+**Invitation flow:**
+- Inviter enters the invitee's email and role (Admin or Instructor). No locations are captured.
+- System sends a magic-link invite email. Invitee clicks link → sets password → lands on `/admin` (dashboard, with the first active location selected in the topbar switcher).
 
 **Invite token:**
 - Expires after **7 days** (hardcoded).
 - On expiry: token invalid; invitee record stays `pending` until admin resends or revokes.
 - Resend generates a fresh 7-day token.
-- Admin can revoke a pending invite at any time.
+- Admin can revoke or resend a pending invite at any time.
 
-**Post-acceptance default:** Admin (and superadmin) → lands on `/admin` (dashboard).
+**Post-acceptance default:** Admin → lands on `/admin` (dashboard); Instructor → lands on `/instructor`.
 
 **Email uniqueness:**
 - Emails are unique within the **staff space.** One email = one staff account.
@@ -653,14 +653,12 @@ Two staff role types in the system. (The `instructor` role is reserved in the sc
 
 ### 14c. Archive & removal rules
 
-**Staff accounts (admin + superadmin):**
-- **Hard delete: never.** Staff records are never permanently deleted — audit log integrity depends on actor identity surviving.
-- **Archive (soft delete):** the only removal path. On archive: active sessions force-logged-out immediately; pending invites the staff member sent remain valid.
-- **Only superadmin can archive another staff account.** Admins cannot archive each other.
-- **No self-archive** — a staff member cannot archive their own account.
-- **No minimum-staff guardrail** — all staff (including superadmin) can be archived, potentially leaving the system staff-less. Recovery requires deployment-level re-seeding.
-
-**Granted-location revocation** is a softer alternative: superadmin may shrink an admin's `granted_location_ids` without archiving them. Effective on next page load.
+**Staff accounts (admin + instructor):**
+- **Archive:** active sessions are force-logged-out immediately; pending invites the staff member sent remain valid. An archived account can be unarchived.
+- **Delete:** a soft delete, allowed only on an already-archived account — audit log integrity depends on actor identity surviving.
+- **Admins manage every staff account, including other admins:** archive, unarchive, delete, change role, and sign out everywhere. Instructors can do none of these.
+- **No self-archive and no self role-change** — a staff member cannot archive their own account or change their own role.
+- **Last-admin guard:** archiving a staff member, or changing their role away from admin, is refused when they are the studio's only active admin (role admin, status active, not soft-deleted); the error tells the caller to promote someone first. The count and the write share a transaction, so two concurrent removals cannot both pass. Delete needs an archived account, so it needs no separate check. Signing out everywhere is not guarded — the admin can sign back in.
 
 ---
 
@@ -669,7 +667,7 @@ Two staff role types in the system. (The `instructor` role is reserved in the sc
 ### 15a. Client List (`/admin/clients`)
 
 - Searchable by name or email.
-- Filterable by status (All / Active / **Trials** / Blocked — the Blocked pill is superadmin-only).
+- Filterable by status (All / Active / **Trials** / Blocked — the Blocked pill is admin-only).
 - Each row shows: name, email, join date, active package count, upcoming booking count, status chip.
 
 **Trials filter — the trial funnel.** Selecting **Trials** narrows the list to members who bought a Trial Pass and answers the three questions about them in one screen: how many bought a trial, how many attended it, how many converted. Three tiles sit above the list (each with its share of trials), and the table swaps Joined for **Trial started**, adds **Attended**, and reads the status column as **Converted** / **Follow up**.
@@ -717,13 +715,13 @@ Two states: **Active** and **Blocked**.
 - **Active** — default. Client can browse, book, and cancel normally.
 - **Blocked** — client is locked out of the booking app entirely (their sessions at the studio ended, refused a new one, and rejected by `requireActiveClient`) and hidden from the default directory listing. Existing upcoming bookings are unaffected (not auto-cancelled).
 
-Superadmins block from the client profile ("Block") and reverse it from the banner on the same page ("Unblock"). Blocked clients are reachable via the superadmin-only **Blocked** filter on the clients list. No reason note required (internal action).
+Admins block from the client profile ("Block") and reverse it from the banner on the same page ("Unblock"). Blocked clients are reachable via the admin-only **Blocked** filter on the clients list. No reason note required (internal action).
 
 No hard delete — client records are never permanently removed (preserves booking history, check-in records, refund audit trail).
 
 ### 15d. Manual Package Adjustments
 
-**Superadmin-only.** Admin sees the read-only banner on every client profile and cannot trigger any of the kebab actions below.
+**Admin-only.** There is no read-only mode on client profiles; instructors cannot reach them at all.
 
 The actions on a client's active-package kebab, all written into the same immutable `manual_adjustments` audit ledger:
 
@@ -741,9 +739,9 @@ The actions on a client's active-package kebab, all written into the same immuta
 
 **Rules:**
 - Balance cannot go below zero — adjustment / set-balance is blocked if it would result in a negative balance.
-- Every action is recorded with timestamp, acting superadmin, package, delta, reason — immutable.
+- Every action is recorded with timestamp, acting admin, package, delta, reason — immutable.
 - The audit list (renamed **"Package adjustments"**) discriminates row type by `reason.startsWith(...)` and renders tone-coded badges: `Expiry` / `Set N` / `+N` / `−N`.
-- Adjustments do not affect cancellation cap counter (§4) — they are a superadmin override, not a client action.
+- Adjustments do not affect cancellation cap counter (§4) — they are an admin override, not a client action.
 
 ---
 
@@ -926,7 +924,7 @@ The following sections are out of scope for this phase and will be defined in th
 The studio's money in one place, replacing the admin Payroll surface. Full behaviour, and the reasoning behind the layout, live in `docs/md/spec-finance.md` and `be/docs/adr/0003-finance-reads-as-a-general-ledger.md`; what matters for the nav is:
 
 - **Its own sidebar group, at the top.** Not Packages (it is not a catalogue) and not Settings (it is not config).
-- **Both roles.** Admin and superadmin both read the records; both edit instructor pay.
+- **Admin.** Admins read the records and edit instructor pay.
 - **Workspace-agnostic.** Most purchases record no Location at all, so filtering the ledger by the switcher would silently drop them; the Location filter on the page carries an explicit **Unattributed** bucket instead.
 - **The overview reads a period and nothing else.** The other filters narrow the table below them and never the figures above — a headline that moved because of a control the reader has scrolled past reads as a fact.
 - The trial funnel is **not** here; it is the Customers page's Trials filter (§15a).

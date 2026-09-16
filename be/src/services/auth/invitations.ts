@@ -1,9 +1,8 @@
 /**
- * Staff invitation lifecycle (admin, superadmin, or instructor). The very first
- * superadmin is seeded from SUPERADMIN_EMAIL; additional superadmins are invited
- * via this flow (per user direction, overriding the original "superadmin not
- * invitable" line in `admin-restructure.md` §15a). Instructors share the same
- * email-invite path as admins. See `be-portal.md` §3a.
+ * Staff invitation lifecycle. A studio's first staff member arrives with the
+ * studio, when the super portal creates or restores it; everyone after that is
+ * invited through this flow. Instructors share the same email-invite path as
+ * admins. See `be-portal.md` §3a.
  *
  * **Invitation-only, in fact (#115).** Nobody signs up. An invitation writes
  * everything a staff member is, in one transaction:

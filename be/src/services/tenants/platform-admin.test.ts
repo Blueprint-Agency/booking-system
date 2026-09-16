@@ -13,8 +13,8 @@ import { isPlatformAdmin, parsePlatformAdmins } from './platform-admin'
   assert.deepEqual(parsePlatformAdmins(' A@X.com , B@Y.com '), ['a@x.com', 'b@y.com'])
   // A trailing comma must not leave a blank entry that a blank email matches.
   assert.deepEqual(parsePlatformAdmins('a@x.com,,'), ['a@x.com'])
-  // Several sources fold into one list, de-duplicated: SUPERADMIN_EMAIL is
-  // always included and may well also appear in PLATFORM_ADMIN_EMAILS.
+  // Several sources fold into one list, de-duplicated: the same address may
+  // well appear in more than one of them.
   assert.deepEqual(parsePlatformAdmins('a@x.com,b@y.com', 'A@x.com'), ['a@x.com', 'b@y.com'])
 }
 
