@@ -38,14 +38,17 @@ export const audit: MiddlewareHandler = async (c, next) => {
   }
   if (!actorStaffId) return
 
+  // A handler whose path names someone who must not be named afterwards — a
+  // permanently deleted member (#144) — records the route pattern instead.
+  const path = (c.get('auditPath' as any) as string | undefined) ?? c.req.path
   const target = (c.get('auditTarget' as any) as { table: string; id: string } | undefined) ?? {
-    table: c.req.path,
+    table: path,
     id: '00000000-0000-0000-0000-000000000000',
   }
 
   const payload: Record<string, unknown> = {
     method: c.req.method,
-    path: c.req.path,
+    path,
   }
   const actingAs = c.get('actingAs')
   if (actingAs) payload.actingAs = actingAs
@@ -58,7 +61,7 @@ export const audit: MiddlewareHandler = async (c, next) => {
     tenantId: tenantId(c),
     actorStaffId,
     actorType: 'staff',
-    action: `${c.req.method} ${c.req.path}`,
+    action: `${c.req.method} ${path}`,
     targetTable: target.table,
     targetId: target.id,
     payload,

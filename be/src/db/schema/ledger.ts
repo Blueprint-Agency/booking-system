@@ -59,9 +59,9 @@ export const stripePayments = pgTable(
     paymentIntentId: text('payment_intent_id').notNull(),
     amountSgd: numeric('amount_sgd', { precision: 10, scale: 2 }).notNull(),
     kind: stripePaymentKindEnum('kind').notNull(),
-    clientId: uuid('client_id')
-      .notNull()
-      .references(() => clients.id, { onDelete: 'restrict' }),
+    // Null once the member is permanently deleted (#144): the payment is the
+    // studio's to keep for its accounts, the member's identity is not.
+    clientId: uuid('client_id').references(() => clients.id, { onDelete: 'restrict' }),
     bookingId: uuid('booking_id').references(() => bookings.id, { onDelete: 'restrict' }),
     clientPackageId: uuid('client_package_id').references(() => clientPackages.id, {
       onDelete: 'restrict',

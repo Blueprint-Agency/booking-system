@@ -6,8 +6,8 @@ name: BE Deploy
 # They share nothing but Traefik — separate containers, volumes, networks and
 # databases, keyed off ENV_NAME in the compose file.
 #
-# The deploy is gated on the backend test suite: `deploy` needs `test`, so a red
-# suite never reaches either stack. The same workflow runs both frontends'
+# The deploy is gated on the backend test suite and the schema drift check:
+# `deploy` needs `test` and `drift`, so a red one never reaches either stack. The same workflow runs both frontends'
 # `check` scripts when their paths change — but Vercel deploys the frontends on
 # its own and does not wait for GitHub checks, so for them a red check is a
 # signal, not a gate. Pull requests into `staging`/`main` run every check and
@@ -170,6 +170,74 @@ jobs:
             exit 1
           fi
 
+  # The schema in `be/src/db/schema/` and the migration history must describe the
+  # same database. A schema edit committed without its migration passes every
+  # test — the harness migrates, and the code that reads the new column simply
+  # is not exercised — and then fails in production against a table that lacks it.
+  #
+  # Two halves. Migrating an empty Postgres proves every migration still applies
+  # from nothing. `db:generate` is drizzle's drift check: it diffs the schema
+  # against the latest migration snapshot and must find nothing to write.
+  #
+  # Not `drizzle-kit push` against the migrated database, which looks like the
+  # more direct comparison. It reports ~150 differences on a clean branch —
+  # the RLS policies migrate.ts adds, expression indexes, foreign-key names
+  # Postgres truncates at 63 characters — so a real drift would be lost in it.
+  drift:
+    needs: changes
+    if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.be == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: booking_drift
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d booking_drift"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/booking_drift
+
+    defaults:
+      run:
+        working-directory: be
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: be/package-lock.json
+      - run: npm ci
+
+      - name: Every migration applies to an empty database
+        run: npm run db:migrate
+
+      # Read the words, not the exit code. drizzle-kit exits 0 when it writes a
+      # new migration, and 0 again when it crashes on a rename it wanted to ask
+      # about (no TTY here to ask on) — so only its "nothing to migrate" line,
+      # plus an untouched migrations folder, counts as green.
+      - name: Schema matches the migrations
+        shell: bash
+        run: |
+          npm run db:generate < /dev/null 2>&1 | tee drift-output.txt || true
+          dirty=$(git status --porcelain -- 'src/db/migrations/*.sql' src/db/migrations/meta)
+          if ! grep -q 'No schema changes, nothing to migrate' drift-output.txt || [ -n "$dirty" ]; then
+            echo "::error::src/db/schema/ has changes no migration describes. Run \`npm run db:generate\` in be/, review the SQL, and commit it. See be/src/db/migrations/README.md."
+            [ -n "$dirty" ] && echo "$dirty"
+            exit 1
+          fi
+
   fe-client:
     needs: changes
     if: needs.changes.outputs.fe-client == 'true'
@@ -208,9 +276,9 @@ jobs:
       - run: npm run check
 
   deploy:
-    needs: [changes, test]
+    needs: [changes, test, drift]
     # Push or manual dispatch only — a pull request runs the tests and stops.
-    # `needs: test` is the gate: a failed or skipped test job skips this one.
+    # `needs: [test, drift]` is the gate: a failed or skipped one skips this job.
     if: >-
       github.event_name != 'pull_request' &&
       (github.ref_name == 'staging' || github.ref_name == 'main') &&
@@ -333,13 +401,16 @@ jobs:
             # reason as BOOKING_HOST: a key nothing reads is a key that gets read
             # back as though it meant something.
             sed -i '/^BOOKING_FQDN_ALIAS=/d' .env 2>/dev/null || true
+            # IMAGE_TAG is written further down, once the new image has passed
+            # its smoke test.
             for kv in "ENV_NAME=${{ env.ENV_NAME }}" \
-                      "BOOKING_FQDN=${{ env.BOOKING_FQDN }}" \
-                      "IMAGE_TAG=${{ env.IMAGE_TAG }}"; do
+                      "BOOKING_FQDN=${{ env.BOOKING_FQDN }}"; do
               k="${kv%%=*}"
               sed -i "/^${k}=/d" .env 2>/dev/null || true
               echo "$kv" >> .env
             done
+            # The image this deploy ships, by commit — the floating tag moves.
+            NEW_TAG=${{ github.sha }}
 
             # Backend env. DATABASE_URL is assembled from the same DB_* secrets that
             # configure the Postgres container — single source of truth.
@@ -434,7 +505,7 @@ jobs:
             } > .env.booking-db
             chmod 600 .env.booking-db
 
-            docker pull blueprintagency/booking-be:${{ env.IMAGE_TAG }}
+            docker pull "blueprintagency/booking-be:$NEW_TAG"
 
             # ── Snapshot the database this deploy is about to migrate, so a bad
             # schema change is reversible. The host's `backup` container (infra
@@ -464,7 +535,9 @@ jobs:
             # db dependency (waiting on its healthcheck via depends_on) but NOT the
             # server, so the migrate/seed tsx never overlaps with the server tsx.
             # Both steps are idempotent — they run on every deploy.
-            docker compose run --rm -T booking-be sh -c "npm run db:migrate && npm run db:seed"
+            # IMAGE_TAG from the shell, which compose prefers over .env: the new
+            # image's migrations, while .env still names the image serving now.
+            IMAGE_TAG="$NEW_TAG" docker compose run --rm -T booking-be sh -c "npm run db:migrate && npm run db:seed"
 
             # ── Smoke-test the freshly pulled image BEFORE recreating the live
             # container. Boot it as a throwaway on this instance's network with the
@@ -474,12 +547,12 @@ jobs:
             # never takes the API down. (Traefik 404s only when NO container is
             # running for that host; this guarantees one always is.)
             SMOKE=booking-be-smoke-${{ env.ENV_NAME }}
-            echo "Smoke-testing blueprintagency/booking-be:${{ env.IMAGE_TAG }} ..."
+            echo "Smoke-testing blueprintagency/booking-be:$NEW_TAG ..."
             docker rm -f "$SMOKE" >/dev/null 2>&1 || true
             docker run -d --name "$SMOKE" \
               --env-file "$STACK/.env.booking-be" \
               --network booking-${{ env.ENV_NAME }}-network \
-              blueprintagency/booking-be:${{ env.IMAGE_TAG }} >/dev/null
+              "blueprintagency/booking-be:$NEW_TAG" >/dev/null
             smoke_ok=0
             for _ in $(seq 1 20); do
               if docker exec "$SMOKE" node -e "fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" >/dev/null 2>&1; then
@@ -500,6 +573,24 @@ jobs:
             fi
             docker rm -f "$SMOKE" >/dev/null 2>&1 || true
             echo "Smoke test passed."
+
+            # ── Point the stack at the new image by sha, and keep the sha it
+            # replaces as PREVIOUS_IMAGE_TAG. Rolling back is then one edit: swap
+            # the two values, `docker compose up -d` (docs/md/deployment.md §
+            # Rolling back). A floating tag cannot be rolled back to — it already
+            # names the build being rolled back from. Written only after the smoke
+            # test, so a build that never served cannot become "previous"; and a
+            # re-run of the same sha leaves PREVIOUS alone rather than making the
+            # two equal. The first deploy after this change records the floating
+            # tag the stack was on as PREVIOUS — not a sha, and not a way back.
+            current_tag=$(sed -n 's/^IMAGE_TAG=//p' .env | tail -n1)
+            if [ -n "$current_tag" ] && [ "$current_tag" != "$NEW_TAG" ]; then
+              sed -i '/^PREVIOUS_IMAGE_TAG=/d' .env
+              echo "PREVIOUS_IMAGE_TAG=$current_tag" >> .env
+            fi
+            sed -i '/^IMAGE_TAG=/d' .env
+            echo "IMAGE_TAG=$NEW_TAG" >> .env
+            echo "IMAGE_TAG=$NEW_TAG  PREVIOUS_IMAGE_TAG=$(sed -n 's/^PREVIOUS_IMAGE_TAG=//p' .env)"
 
             # Recreate the API server now that the new image is verified and the
             # schema is up to date. --wait blocks until the container is HEALTHY

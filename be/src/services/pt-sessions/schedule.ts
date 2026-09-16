@@ -479,6 +479,9 @@ export async function updatePtSession(
       if (!locked) throw new NotFoundError('pt_session_not_found')
       // Setting the type to what it already is is a no-op, not a second debit.
       if (locked.sessionType !== patch.sessionType) {
+        // A session whose requester was permanently deleted (#144) has no request
+        // left to reconcile credits against.
+        if (!locked.ptRequestId) throw new ConflictError('pt_requester_deleted')
         await reconcileSessionType(tx, tenantId, {
           sessionId: id,
           ptRequestId: locked.ptRequestId,

@@ -407,6 +407,34 @@
       "when": 1789554881533,
       "tag": "0057_email_log_sent_today",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1789554882533,
+      "tag": "0058_auth_event_member_export",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1789554883533,
+      "tag": "0059_member_delete",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1789554884533,
+      "tag": "0060_client_auth_user_is_member",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1789554885533,
+      "tag": "0061_pt_session_request_nullable",
+      "breakpoints": true
     }
   ]
 }

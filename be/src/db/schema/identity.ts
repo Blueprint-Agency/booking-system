@@ -37,8 +37,8 @@ export const clients = pgTable(
     suspendedAt: timestamp('suspended_at', { withTimezone: true }),
     // Soft-delete (admin-only). When set, the row is filtered out of every
     // admin/client read path, and the member's sessions here end so they can't
-    // sign in. Restore clears it. Hard erase (GDPR) is a separate Purge
-    // action that anonymises PII — not implemented in this slice.
+    // sign in. Restore clears it. Permanent deletion is separate and removes the
+    // row (`services/clients/member-delete.ts`, #144).
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
     deletedByStaffId: uuid('deleted_by_staff_id'),
     referredByClientId: uuid('referred_by_client_id'),

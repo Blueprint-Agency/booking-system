@@ -2,6 +2,7 @@ import JSZip from 'jszip'
 import {
   ARCHIVE_VERSION,
   ArchiveError,
+  type MemberArchive,
   type TenantArchive,
   type TenantManifest,
 } from './transfer-shape'
@@ -27,8 +28,8 @@ export { ArchiveError }
 const MANIFEST = 'manifest.json'
 const TABLE_DIR = 'tables'
 
-/** Pack an archive into zip bytes. */
-export async function packArchive(archive: TenantArchive): Promise<Buffer> {
+/** Pack an archive — a whole studio, or one member of it — into zip bytes. */
+export async function packArchive(archive: TenantArchive | MemberArchive): Promise<Buffer> {
   const zip = new JSZip()
   zip.file(MANIFEST, JSON.stringify(archive.manifest, null, 2))
 
@@ -78,6 +79,11 @@ export async function unpackArchive(bytes: Buffer | Uint8Array): Promise<TenantA
       `This archive was written by a different version of the platform (${manifest.version}, expected ${ARCHIVE_VERSION}).`,
     )
   }
+  // A member's export is the same zip, and restoring one as a studio would
+  // replay a handful of rows in no particular order.
+  if ((manifest as { kind?: string }).kind === 'member') {
+    throw new ArchiveError('This is one member’s data export, not a studio export.')
+  }
   if (!Array.isArray(manifest.tables)) {
     throw new ArchiveError(`${MANIFEST} does not list any tables.`)
   }
@@ -117,4 +123,9 @@ export async function unpackArchive(bytes: Buffer | Uint8Array): Promise<TenantA
 export function archiveFilename(slug: string, exportedAt: string): string {
   const day = exportedAt.slice(0, 10)
   return `${slug}-${day}.zip`
+}
+
+/** `{slug}-member-1a2b3c4d-2026-09-05.zip` — a member's id, not their name, in a filename. */
+export function memberArchiveFilename(slug: string, clientId: string, exportedAt: string): string {
+  return `${slug}-member-${clientId.slice(0, 8)}-${exportedAt.slice(0, 10)}.zip`
 }
