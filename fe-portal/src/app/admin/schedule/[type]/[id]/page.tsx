@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ArrowLeft, Ban, Check, Loader2, Save } from "lucide-react";
 import { Badge, Button, Input, Label } from "@/components/ui";
 import { LocationRoomFields } from "@/components/schedule/location-room-fields";
+import { SeriesPanel } from "@/components/schedule/series-panel";
 import {
   SupportingInstructorsField,
   type SupportingRow,
@@ -207,6 +208,14 @@ function ClassDetail({ id }: { id: string }) {
           />
         </dl>
       </section>
+
+      {data.series_id && (
+        <SeriesPanel
+          seriesId={data.series_id}
+          classDate={localDay(data.starts_at)}
+          onChanged={load}
+        />
+      )}
 
       <div className="grid gap-3 sm:grid-cols-3">
         <Stat label="Booked" value={`${data.booked_count} / ${capacity}`} />

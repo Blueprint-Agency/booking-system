@@ -25,6 +25,8 @@ export interface ApiScheduleEntry {
   event_state: EventState;
   day_index: number | null;
   day_count: number | null;
+  /** The Class Series a class was created by; null for anything else. */
+  series_id: string | null;
 }
 
 /**
@@ -47,6 +49,7 @@ export type ScheduleEntry =
       bookedCount: number;
       eventState: EventState;
       raw: { id: string };
+      seriesId: string | null;
     }
   | {
       kind: "workshop";
@@ -121,6 +124,7 @@ function fromApi(e: ApiScheduleEntry): ScheduleEntry {
       bookedCount: e.booked_count ?? 0,
       eventState: e.event_state,
       raw: { id: e.id },
+      seriesId: e.series_id ?? null,
     };
   }
   if (e.kind === "workshop") {
