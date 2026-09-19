@@ -1,4 +1,4 @@
-import { pgTable, uuid, integer, numeric, timestamp, check, uniqueIndex } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, boolean, integer, numeric, timestamp, check, uniqueIndex } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { tenantIdColumn } from './tenancy'
 import { staffUsers } from './identity'
@@ -40,6 +40,11 @@ export const globalPolicy = pgTable(
     crossLocationRateSgd: numeric('cross_location_rate_sgd', { precision: 10, scale: 2 })
       .notNull()
       .default('30.00'),
+    // **Part Payment** (#93): may a member split one Purchase across two cards?
+    // Off unless the studio turns it on, and turning it off again only hides the
+    // checkbox — a Purchase already open can still be resumed and finished, since
+    // the alternative is money held against a Balance nobody can clear.
+    partPaymentEnabled: boolean('part_payment_enabled').notNull().default(false),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     updatedByStaffId: uuid('updated_by_staff_id').references(() => staffUsers.id, {
       onDelete: 'restrict',

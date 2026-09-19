@@ -16,18 +16,38 @@ export function RefundDialog({
   packageName,
   kind = "package",
   notice,
+  paymentCount = 1,
   onConfirm,
   onClose,
 }: {
   packageName: string;
   /** What is being refunded, so the copy names it. The unwind is the same
-   *  operation either way — only the sentence differs. */
-  kind?: "package" | "workshop";
+   *  operation either way — only the sentence differs.
+   *
+   *  `unfinished` is a Purchase the member part-paid and never came back to
+   *  (#95). Nothing was ever issued on it, so the copy must not promise to
+   *  cancel a package or a place — there is none, and an admin who reads that
+   *  will go looking for what was taken away. */
+  kind?: "package" | "workshop" | "unfinished";
   notice: string | null;
+  /**
+   * How many payments this purchase holds (#93). One is the ordinary case and
+   * says nothing extra. More than one means several returns will appear on the
+   * statement from one press of this button, and the admin is told before they
+   * press it rather than by a bookkeeper a week later.
+   */
+  paymentCount?: number;
   onConfirm: (reason: string) => Promise<void>;
   onClose: () => void;
 }) {
   const isWorkshop = kind === "workshop";
+  const isUnfinished = kind === "unfinished";
+  const splitPayments = paymentCount > 1;
+  const description = isUnfinished
+    ? "Everything the customer has paid towards this goes back to them, and the purchase is closed. Nothing was ever issued on it, so there is no package to stop and no booking to cancel."
+    : isWorkshop
+      ? "The full amount goes back to the customer. Their place on the workshop is cancelled."
+      : "The full amount goes back to the customer. The package stops covering bookings and every class still ahead of them on it is cancelled.";
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   return (
@@ -35,11 +55,7 @@ export function RefundDialog({
       open
       onOpenChange={(o) => !o && onClose()}
       title={`Refund ${packageName}?`}
-      description={
-        isWorkshop
-          ? "The full amount goes back to the customer. Their place on the workshop is cancelled."
-          : "The full amount goes back to the customer. The package stops covering bookings and every class still ahead of them on it is cancelled."
-      }
+      description={description}
     >
       <form
         className="space-y-4"
@@ -54,6 +70,20 @@ export function RefundDialog({
           }
         }}
       >
+        {splitPayments && (
+          <div className="flex items-start gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
+            <div>
+              <div className="font-medium text-ink">
+                This was paid with {paymentCount} cards.
+              </div>
+              <div className="text-xs text-muted">
+                One refund, {paymentCount} separate returns — one back to each card,
+                so {paymentCount} lines will appear on the statement.
+              </div>
+            </div>
+          </div>
+        )}
         {notice && (
           <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/5 px-3 py-2 text-sm">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
@@ -89,7 +119,7 @@ export function RefundDialog({
             className="bg-error text-white hover:bg-error/90"
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Refund in full
+            {isUnfinished ? "Refund and close" : "Refund in full"}
           </Button>
         </DialogFooter>
       </form>

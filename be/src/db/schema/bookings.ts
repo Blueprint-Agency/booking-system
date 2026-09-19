@@ -1,9 +1,12 @@
-import { pgTable, uuid, text, timestamp, integer, numeric, boolean, index, uniqueIndex, check } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, timestamp, integer, numeric, boolean, index, uniqueIndex, check, type AnyPgColumn } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { tenantIdColumn } from './tenancy'
 import { clients, staffUsers } from './identity'
 import { classes, workshops, workshopTiers, ptSessions } from './schedule'
 import { clientPackages, promoCodes, promotions } from './packages'
+// See the note on the same import in `./packages` — the cycle is deliberate and
+// every reference across it is lazy.
+import { purchases } from './ledger'
 import {
   bookingKindEnum,
   bookingStateEnum,
@@ -53,7 +56,15 @@ export const bookings = pgTable(
     checkInState: checkinStateEnum('check_in_state').notNull().default('pending'),
     qrToken: text('qr_token').notNull(),
     code: text('code').notNull(),
-    stripePaymentIntentId: text('stripe_payment_intent_id'),
+    /**
+     * The sale that bought this seat (#92) — set only on a workshop booking,
+     * whose booking IS the purchase. A class or PT booking is paid for by a
+     * plan, so its money hangs off `client_package_id` and this stays null,
+     * exactly as the payment intent it replaces did.
+     */
+    purchaseId: uuid('purchase_id').references((): AnyPgColumn => purchases.id, {
+      onDelete: 'restrict',
+    }),
     bookedAt: timestamp('booked_at', { withTimezone: true }).notNull().defaultNow(),
     cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
   },
@@ -72,10 +83,12 @@ export const bookings = pgTable(
     qrTokenUnique: uniqueIndex('bookings_qr_token_unique').on(table.tenantId, table.qrToken),
     codeUnique: uniqueIndex('bookings_code_unique').on(table.tenantId, table.code),
     checkInStateIdx: index('bookings_check_in_state_idx').on(table.tenantId, table.checkInState),
-    // Partial unique — stripe_payment_intent_id is nullable for non-workshop bookings.
-    stripeIntentUnique: uniqueIndex('bookings_stripe_intent_unique')
-      .on(table.tenantId, table.stripePaymentIntentId)
-      .where(sql`${table.stripePaymentIntentId} IS NOT NULL`),
+    // One booking per Purchase — the index that decides a redelivery race, in
+    // the place the payment intent's used to. Partial: only a workshop booking
+    // is a purchase of its own, so every other booking leaves it null.
+    purchaseUnique: uniqueIndex('bookings_purchase_unique')
+      .on(table.tenantId, table.purchaseId)
+      .where(sql`${table.purchaseId} IS NOT NULL`),
     kindFkClass: check(
       'bookings_kind_class_fk',
       sql`${table.kind} <> 'class' OR (${table.classId} IS NOT NULL AND ${table.workshopId} IS NULL AND ${table.ptSessionId} IS NULL)`,

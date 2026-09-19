@@ -90,10 +90,9 @@ export async function sendPackagePurchaseEmail(
       .leftJoin(staffUsers, eq(staffUsers.id, clientPackages.boundInstructorId))
       .leftJoin(classPackages, eq(classPackages.id, clientPackages.sourceClassPackageId))
       .leftJoin(ptPackages, eq(ptPackages.id, clientPackages.sourcePtPackageId))
-      .leftJoin(
-        stripePayments,
-        eq(stripePayments.paymentIntentId, clientPackages.stripePaymentIntentId),
-      )
+      // Through the sale, not the intent (#92). One payment per Purchase today,
+      // so this picks the same row it always did.
+      .leftJoin(stripePayments, eq(stripePayments.purchaseId, clientPackages.purchaseId))
       .where(and(eq(clientPackages.tenantId, tenantId), eq(clientPackages.id, clientPackageId)))
       .limit(1)
     if (!row) throw new Error(`client_package_not_found:${clientPackageId}`)
@@ -153,7 +152,7 @@ export async function sendWorkshopPurchaseEmail(
       .from(bookings)
       .innerJoin(clients, eq(clients.id, bookings.clientId))
       .innerJoin(workshops, eq(workshops.id, bookings.workshopId))
-      .leftJoin(stripePayments, eq(stripePayments.paymentIntentId, bookings.stripePaymentIntentId))
+      .leftJoin(stripePayments, eq(stripePayments.purchaseId, bookings.purchaseId))
       .where(
         and(
           eq(bookings.tenantId, tenantId),

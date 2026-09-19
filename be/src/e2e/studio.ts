@@ -236,7 +236,7 @@ export async function createE2eStudio({ app, db }: { app: Hono; db: Db }): Promi
   await withTenant(tenant.id, () =>
     grantPackage(tenant.id, {
       clientId: cancellerRow!.id,
-      paymentIntentId: null,
+      purchaseId: null,
       amountSgd: catalogue.packagePriceSgd,
       packageKind: 'class',
       packageId: classPackage.id,

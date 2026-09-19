@@ -19,6 +19,8 @@ import { useApi } from "@/lib/api";
 import { reportError } from "@/lib/report-error";
 import { useClientPackages, type LivePackage } from "@/lib/use-client-packages";
 import type { ApiBooking } from "@/components/account/class-bookings";
+import { OpenPurchases } from "@/components/account/open-purchases";
+import { usePartPaymentOptions, useOpenPurchases } from "@/lib/open-purchases";
 
 const PAGE_SIZE = 5;
 
@@ -51,6 +53,10 @@ export default function AccountOverview() {
     loading: pkgLoading,
   } = useClientPackages();
   const { data: locations } = useLocations();
+  // A balance the member left outstanding (#93). It sits above the packages
+  // because it is the one thing on this page waiting on them.
+  const { purchases: openPurchases, failed: openPurchasesFailed } = useOpenPurchases();
+  const partPayment = usePartPaymentOptions();
   const ptSessionsRemaining = pt1on1 + pt2on1;
   const firstName = user?.firstName || "there";
   const [nextUpVisible, setNextUpVisible] = useState(PAGE_SIZE);
@@ -117,6 +123,13 @@ export default function AccountOverview() {
           </p>
         </div>
       </div>
+
+      {/* Unfinished purchases — money paid that has granted nothing yet. */}
+      <OpenPurchases
+        purchases={openPurchases}
+        partPayment={partPayment}
+        failed={openPurchasesFailed}
+      />
 
       {/* Next up — upcoming classes (live) */}
       <div className="mt-6 rounded-2xl bg-paper border border-ink/10 p-6">

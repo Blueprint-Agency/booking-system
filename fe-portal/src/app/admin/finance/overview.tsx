@@ -76,6 +76,17 @@ export function OverviewPanel({
               value={String(members.joined)}
               hint="New members in the period"
             />
+            {/* Money the studio is holding against nothing granted (#93). It is
+                deliberately outside the money chain above: it is not revenue and
+                must not move Gross or Net, but it is cash in the account and
+                leaving it off the page entirely would be its own kind of lie. */}
+            {data.held_on_open_purchases_sgd > 0 && (
+              <Tile
+                label="Held on unfinished purchases"
+                value={formatSgd(data.held_on_open_purchases_sgd)}
+                hint="Part payments — not revenue, not in Net, not period-scoped"
+              />
+            )}
           </div>
           <ByInstructor data={data} />
         </div>

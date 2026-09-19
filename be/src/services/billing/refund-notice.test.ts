@@ -1,9 +1,16 @@
 import assert from 'node:assert'
 import {
+  SILENT_AFTER_DAYS,
+  abandonedLine,
+  abandonedReturnLine,
   attendedNotice,
   cancelledClassesLine,
+  composeAbandonedRefundEmail,
   composeRefundEmail,
+  daysSilent,
+  isSilent,
   isUntouched,
+  silenceNotice,
   voidedLine,
 } from './refund-notice'
 
@@ -106,6 +113,72 @@ const SINCE = new Date('2026-06-11T16:00:00Z')
   assert.ok(
     variables.cancelled_line?.includes('Vinyasa Flow'),
     'the cancelled class reaches the email',
+  )
+}
+
+// --- silence (#95) ----------------------------------------------------------
+// The clock runs from the LAST payment. A member who paid a second card
+// yesterday is mid-purchase; one who paid once a month ago has gone quiet.
+{
+  const now = new Date('2026-09-07T00:00:00Z')
+  const yesterday = new Date('2026-09-06T00:00:00Z')
+  const monthAgo = new Date('2026-08-07T00:00:00Z')
+
+  assert.strictEqual(daysSilent(yesterday, now), 1)
+  assert.strictEqual(isSilent(yesterday, now), false, 'a day is not silence')
+  assert.strictEqual(isSilent(monthAgo, now), true, 'a month is')
+
+  // The boundary is inclusive: on the fourteenth day it is raised, not on the
+  // fifteenth. One place decides it, so the list and the notice cannot disagree.
+  const onTheDay = new Date(now.getTime() - SILENT_AFTER_DAYS * 86_400_000)
+  assert.strictEqual(isSilent(onTheDay, now), true, 'the threshold day counts as silent')
+  const dayBefore = new Date(onTheDay.getTime() + 1)
+  assert.strictEqual(isSilent(dayBefore, now), false, 'a moment short of it does not')
+}
+
+// The notice names both the length of the silence and the date, because an
+// admin chasing this needs the second to find it on a statement.
+{
+  const now = new Date('2026-09-07T00:00:00Z')
+  const line = silenceNotice(new Date('2026-08-07T00:00:00Z'), now)
+  assert.ok(line.includes('31 days'), 'the silence is counted in days')
+  assert.ok(line.includes('7 Aug 2026'), 'the last payment date is read in Singapore')
+}
+
+// --- what an abandoned refund returned --------------------------------------
+// The count and the total together: one button becomes one provider call per
+// payment, so a split purchase puts two lines on the statement.
+{
+  assert.strictEqual(abandonedReturnLine(1, '50.00'), '1 payment returned, totalling S$50.00')
+  assert.strictEqual(abandonedReturnLine(2, '120.00'), '2 payments returned, totalling S$120.00')
+}
+
+// The abandoned sentence must NOT claim a package stopped covering bookings —
+// there was never one to end.
+{
+  const line = abandonedLine('10-Class Pack', '50.00')
+  assert.ok(line.includes('S$50.00'), 'the amount returned is named')
+  assert.ok(line.includes('10-Class Pack'), 'what they were buying is named')
+  assert.ok(!line.includes('no longer covers'), 'nothing was ever covering anything')
+}
+
+// --- the abandoned email ----------------------------------------------------
+// Same template, different sentences. Every declared variable is filled — an
+// empty one renders as a hole, and `cancelled_line` has no list to print.
+{
+  const { slug, variables } = composeAbandonedRefundEmail({
+    clientName: 'Sarah',
+    itemName: '10-Class Pack',
+    amountSgd: '50.00',
+    accountUrl: 'https://example.test/account',
+  })
+  assert.strictEqual(slug, 'purchase_refunded', 'it reuses the refund template')
+  for (const [k, v] of Object.entries(variables)) {
+    assert.ok(v.length > 0, `variable ${k} is filled`)
+  }
+  assert.ok(
+    variables.cancelled_line?.includes('nothing to cancel'),
+    'the member is told plainly that nothing was taken away',
   )
 }
 

@@ -1,0 +1,26 @@
+-- Part Payment (#93) — a member may settle one Purchase with two cards.
+--
+-- Two columns, and neither changes a single existing sale.
+--
+-- `global_policy.part_payment_enabled` is the studio's own switch, defaulting
+-- to **off**: this is the front desk's problem before it is anybody else's, and
+-- a studio that has not decided to offer it should not find a checkbox on its
+-- checkout page overnight. It lives beside the cancellation caps and the Add-On
+-- rate because those are the same kind of thing — one studio's terms of
+-- business — and not in `feature_flags`, which is the platform's own rollout
+-- switchboard rather than something an owner opens.
+--
+-- `purchases.part_paid_at` stamps the first payment that left a Balance behind.
+-- It is not derivable: `amount_paid_sgd` says what is held right now, so a
+-- Purchase resumed and settled an hour later looks — from the columns alone —
+-- exactly like one paid in full at the first attempt. The portal has to tell
+-- those apart, because a member who part-paid is a person the front desk will
+-- meet, and the finance figure for money held against nothing granted has to
+-- say since when.
+--
+-- No index comes with them. The studio-wide "held" figure is
+-- `(tenant_id, status)`, already covered by `purchases_status_idx`; a member's
+-- own unfinished purchases are `(tenant_id, client_id, …)` ordered by
+-- `created_at`, already covered by `purchases_client_created_idx`.
+ALTER TABLE "global_policy" ADD COLUMN "part_payment_enabled" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "purchases" ADD COLUMN "part_paid_at" timestamp with time zone;

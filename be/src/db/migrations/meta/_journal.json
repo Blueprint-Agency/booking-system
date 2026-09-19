@@ -435,6 +435,55 @@
       "when": 1789554885533,
       "tag": "0061_pt_session_request_nullable",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1789554886533,
+      "tag": "0062_purchase_owns_the_money",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1789554887533,
+      "tag": "0063_refunds_route_on_the_purchase",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1789554888533,
+      "tag": "0064_intent_pointers_come_off",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1789554889533,
+      "tag": "0065_part_payment",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1789554890533,
+      "tag": "0066_tenant_payment_credentials",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1789554891533,
+      "tag": "0067_payment_records_its_account",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1789554892533,
+      "tag": "0068_purchase_survives_its_member",
+      "breakpoints": true
     }
   ]
 }

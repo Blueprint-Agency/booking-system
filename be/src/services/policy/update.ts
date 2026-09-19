@@ -31,6 +31,24 @@ export async function readPolicy(tenantId: string): Promise<{
   return { global_policy: gp, pt_booking_config: pt }
 }
 
+/**
+ * Does this studio offer Part Payment (#93)?
+ *
+ * Its own read rather than a field off `readPolicy`, because the checkout path
+ * asks this on every sale and does not want the PT booking config or a throw
+ * for a studio whose policy has not been seeded. A studio with no policy row
+ * has not turned anything on, which is `false` — the same answer the default
+ * gives, and the safe one: an unasked-for checkbox is worse than a missing one.
+ */
+export async function partPaymentEnabled(tenantId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ enabled: globalPolicy.partPaymentEnabled })
+    .from(globalPolicy)
+    .where(eq(globalPolicy.tenantId, tenantId))
+    .limit(1)
+  return row?.enabled ?? false
+}
+
 export interface UpdateGlobalPolicyInput {
   cancelCapCount?: number
   cancelCapCycleDays?: number
@@ -40,6 +58,15 @@ export interface UpdateGlobalPolicyInput {
   studyLeaveCap?: number
   /** The Cross-Location Add-On's monthly rate (§5), as "30.00". */
   crossLocationRateSgd?: string
+  /**
+   * Whether members may split a purchase across two cards (#93).
+   *
+   * Turning it **off** hides the checkbox on new checkouts and nothing else. A
+   * Purchase already open keeps its Balance and stays resumable, because the
+   * alternative is money the studio has taken against a debt it has just
+   * forbidden anyone to clear.
+   */
+  partPaymentEnabled?: boolean
   /** Every declared **Leave Conflict**, as one replacement set. Absent leaves
    *  the declared pairs alone; present replaces them entirely. */
   leaveConflictPairs?: readonly LeaveConflictPair[]
