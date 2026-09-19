@@ -1,0 +1,14 @@
+<META http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<!-- Invented fixture: no real studio or person. Layout follows Mindbody's Referral Types detail export. -->
+<table class="mainText" width="100%">
+	<tr>
+		<td><strong>Client</strong></td>
+		<td><strong>Barcode</strong></td>
+		<td><strong>Entry Date</strong></td>
+	</tr>
+	<tr><td>Lee, Sam</td><td>100000004</td><td>15/8/2024 9:30:00 am</td></tr>
+	<tr><td>Poe, Pat</td><td>100000003</td><td>29/5/2023</td></tr>
+	<tr><td>Reuse, Ada</td><td>100000006</td><td>1/2/2025 12:15:00 pm</td></tr>
+	<tr><td>&#26519;, Mei</td><td>100000008</td><td>30/12/2025 11:59:59 pm</td></tr>
+	<tr><td colspan="2">Total# of Clients Referred By 0:</td><td>4</td></tr>
+</table>

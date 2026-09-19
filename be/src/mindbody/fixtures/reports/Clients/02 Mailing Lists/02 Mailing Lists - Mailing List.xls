@@ -1,0 +1,114 @@
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+		<META http-equiv="Content-Type" content="text/html; charset=UTF-8">
+		<!-- Invented fixture: no real studio or person. Layout follows Mindbody's Mailing List export. -->
+												<table class="mainText bbg cp1" width="100%" cellspacing="1" style="background-color:#CCCCCC;"	>
+																	<tr align="left" style="background-color:#FFFFFF;">
+                                                        <td><div class="center-ch"><strong>Last name</strong></div></td>
+														<td><div class="center-ch"><strong>First name</strong></div></td>
+                                                        <td><div class="center-ch"><strong><!-- JM-51_2725 -->Nickname</strong></div></td>
+																		<td><div class="center-ch"><strong>ID</strong></div></td>
+																		<td><div class="center-ch"><strong>Address</strong></div></td>
+																		<td><div class="center-ch"><strong>City</strong></div></td>
+																		<td><div class="center-ch"><strong>State</strong></div></td>
+																		<td><div class="center-ch"><strong>Postal code</strong></div></td>
+																		<td><div class="center-ch"><strong>Country</strong></div></td>
+																	    <td><div class="center-ch"><strong>Mobile phone</strong></div></td>
+																	    <td><div class="center-ch"><strong>Home phone</strong></div></td>
+																	    <td><div class="center-ch"><strong>Work phone</strong></div></td>
+																			<td><div class="center-ch"><strong>Email</strong></div></td>
+																	</tr>
+																	<tr class="resultRow" style="background-color:#FFFFFF;">
+																			<td>.</td>
+																			<td>Legacy </td>
+																			<td></td>
+                                                                            <td style="mso-number-format:\@">AB123456</td>
+																			<td></td><td>Singapore</td><td></td><td></td><td>SG</td>
+                                                        <td style="mso-number-format:\@"  nowrap align="left">10000000000</td>
+                                                        <td style="mso-number-format:\@"  nowrap align="left">10000000000</td>
+                                                        <td style="mso-number-format:\@"  nowrap align="left">10000000000</td>
+																			<td>Legacy.Member@Example.test </td>
+																  </tr>
+																	<tr class="resultRow" style="background-color:#FFFFFF;">
+																			<td>Doe </td>
+																			<td>Jane</td>
+																			<td></td>
+                                                                            <td style="mso-number-format:\@">100000001</td>
+																			<td></td><td>Singapore</td><td></td><td></td><td>SG</td>
+                                                        <td style="mso-number-format:\@"  nowrap align="left">91234567</td>
+                                                        <td style="mso-number-format:\@"  nowrap align="left">10000000000</td>
+                                                        <td style="mso-number-format:\@"  nowrap align="left">10000000000</td>
+																			<td>Jane.Doe@Example.test</td>
+																  </tr>
+																	<tr class="resultRow" style="background-color:#FFFFFF;">
+																			<td>Lee</td>
+																			<td>Kim</td>
+																			<td></td>
+                                                                            <td style="mso-number-format:\@">100000005</td>
+																			<td></td><td></td><td></td><td></td><td>SG</td>
+                                                        <td style="mso-number-format:\@"  nowrap align="left">98765432</td>
+                                                        <td style="mso-number-format:\@"  nowrap align="left"></td>
+                                                        <td style="mso-number-format:\@"  nowrap align="left"></td>
+																			<td>family@example.test</td>
+																  </tr>
+																	<tr class="resultRow" style="background-color:#FFFFFF;">
+																			<td>Lee</td>
+																			<td>Sam</td>
+																			<td></td>
+                                                                            <td style="mso-number-format:\@">100000004</td>
+																			<td></td><td></td><td></td><td></td><td>SG</td>
+                                                        <td style="mso-number-format:\@"  nowrap align="left">98765431</td>
+                                                        <td style="mso-number-format:\@"  nowrap align="left"></td>
+                                                        <td style="mso-number-format:\@"  nowrap align="left"></td>
+																			<td> FAMILY@example.test</td>
+																  </tr>
+																	<tr class="resultRow" style="background-color:#FFFFFF;">
+																			<td>Poe</td>
+																			<td>Pat</td>
+																			<td></td>
+                                                                            <td style="mso-number-format:\@">100000003</td>
+																			<td></td><td></td><td></td><td></td><td></td>
+                                                        <td style="mso-number-format:\@"  nowrap align="left">+6581112222</td>
+                                                        <td style="mso-number-format:\@"  nowrap align="left"></td>
+                                                        <td style="mso-number-format:\@"  nowrap align="left"></td>
+																			<td>-</td>
+																  </tr>
+																	<tr class="resultRow" style="background-color:#FFFFFF;">
+																			<td>Reuse</td>
+																			<td>Ada</td>
+																			<td></td>
+                                                                            <td style="mso-number-format:\@">100000006</td>
+																			<td></td><td></td><td></td><td></td><td>SG</td>
+                                                        <td style="mso-number-format:\@"  nowrap align="left">93334444</td>
+                                                        <td style="mso-number-format:\@"  nowrap align="left"></td>
+                                                        <td style="mso-number-format:\@"  nowrap align="left"></td>
+																			<td>ada.reuse@example.test</td>
+																  </tr>
+																	<tr class="resultRow" style="background-color:#FFFFFF;">
+																			<td>Roe</td>
+																			<td>Rick</td>
+																			<td></td>
+                                                                            <td style="mso-number-format:\@">100000002</td>
+																			<td></td><td></td><td></td><td></td><td>SG</td>
+                                                        <td style="mso-number-format:\@"  nowrap align="left">10000000000</td>
+                                                        <td style="mso-number-format:\@"  nowrap align="left">10000000000</td>
+                                                        <td style="mso-number-format:\@"  nowrap align="left">10000000000</td>
+																			<td>rick.roe@example.test</td>
+																  </tr>
+																	<tr class="resultRow" style="background-color:#FFFFFF;">
+																			<td>&#26519;</td>
+																			<td>Mei</td>
+																			<td></td>
+                                                                            <td style="mso-number-format:\@">100000008</td>
+																			<td></td><td></td><td></td><td></td><td>SG</td>
+                                                        <td style="mso-number-format:\@"  nowrap align="left">85556666</td>
+                                                        <td style="mso-number-format:\@"  nowrap align="left"></td>
+                                                        <td style="mso-number-format:\@"  nowrap align="left"></td>
+																			<td>mei@example.test</td>
+																  </tr>
+																	<tr style="background-color:#FFFFFF;">
+																		<td colspan="20"><strong>Total clients: 8</strong></td>
+																	</tr>
+												</table>

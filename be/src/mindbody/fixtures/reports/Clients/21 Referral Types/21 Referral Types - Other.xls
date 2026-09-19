@@ -1,0 +1,35 @@
+<META http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<!-- Invented fixture: no real studio or person. Layout follows Mindbody's Referral Types detail export. -->
+<table class="mainText" width="100%">
+	<tr><td colspan="5">&nbsp;</td></tr>
+	<tr>
+		<td><strong>Client</strong></td>
+		<td><strong>Barcode</strong></td>
+		<td><strong>Entry Date</strong></td>
+	</tr>
+	<tr>
+		<td>., Legacy</td>
+		<td>AB123456</td>
+		<td>3/1/2023</td>
+	</tr>
+	<tr><td colspan="5"><strong>CLASSPASS</strong></td></tr>
+	<tr>
+		<td>Doe, Jane</td>
+		<td>100000001</td>
+		<td>24/4/2023 8:38:19 am</td>
+	</tr>
+		<td>Roe, Rick</td>
+		<td>100000002</td>
+		<td>13/5/2023 6:29:20 pm</td>
+	</tr>
+	<tr><td colspan="2">Total# of Clients Referred By CLASSPASS:</td><td>2</td></tr>
+	<tr><td colspan="5">&nbsp</td></tr>
+	<tr><td colspan="5"><strong>ANOTHER CLIENT</strong></td></tr>
+	<tr>
+		<td>Lee, Kim</td>
+		<td>100000005</td>
+		<td>15/8/2024 10:00:00 am</td>
+	</tr>
+	<tr><td colspan="2">Total# of Clients Referred By ANOTHER CLIENT:</td><td>1</td></tr>
+	<tr><td>Total# of Clients Referred:</td><td>4</td></tr>
+</table>

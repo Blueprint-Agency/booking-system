@@ -1,0 +1,33 @@
+<META http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<!-- Invented fixture: no real studio or person. Layout follows Mindbody's Retention Management export. -->
+<table class="mainText" width="100%">
+	<tr>
+		<td><strong>Location</strong></td><td><strong>ID</strong></td><td><strong>Last name</strong></td>
+		<td><strong>First name</strong></td><td><strong>Birthday</strong></td><td><strong>Gender</strong></td>
+		<td><strong>Member Since</strong></td><td><strong>Home phone</strong></td><td><strong>Email</strong></td>
+		<td><strong>Status</strong></td><td><strong>Freeze</strong></td><td><strong>Membership Type</strong></td>
+		<td><strong>Membership Expiration</strong></td><td><strong>Last</strong></td>
+		<td><strong>Check Ins YTD</strong></td><td><strong>Check Ins 30 Day</strong></td>
+		<td><strong>Check Ins 90 Day</strong></td><td><strong>Check Ins 365 Day</strong></td>
+	</tr>
+	<tr>
+		<td>1</td><td>100000001</td><td>Doe</td><td>Jane</td><td>1/1/1900</td><td> F </td>
+		<td>24/4/2023</td><td>-</td><td>jane.doe@example.test</td><td>Active</td><td>No</td>
+		<td>Unlimited 3</td><td>11/26/2026</td><td>16/9/2026</td><td>71</td><td>10</td><td>30</td><td>71</td>
+	</tr>
+	<tr>
+		<td>2</td><td>100000002</td><td>Roe</td><td>Rick</td><td>-</td><td> M </td>
+		<td>13/5/2023</td><td>-</td><td>rick.roe@example.test</td><td>Active</td><td>No</td>
+		<td>PT - Bundle of 10</td><td>12/7/2026</td><td>-</td><td>0</td><td>0</td><td>0</td><td>0</td>
+	</tr>
+	<tr>
+		<td>1</td><td>100000004</td><td>Lee</td><td>Sam</td><td>-</td><td>-</td>
+		<td>15/8/2024</td><td>-</td><td>family@example.test</td><td>Active</td><td>No</td>
+		<td>Unlimited 3</td><td>10/1/2026</td><td>2/6/2026</td><td>3</td><td>0</td><td>1</td><td>3</td>
+	</tr>
+	<tr>
+		<td>1</td><td>100000005</td><td>Lee</td><td>Kim</td><td>-</td><td> F </td>
+		<td>15/8/2024</td><td>-</td><td>family@example.test</td><td>Active</td><td>No</td>
+		<td>Unlimited 3</td><td>10/1/2026</td><td>14/9/2026</td><td>40</td><td>8</td><td>20</td><td>40</td>
+	</tr>
+</table>
