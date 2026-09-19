@@ -266,6 +266,7 @@ export const ERROR_CODES = {
   tenant_suspended: 'tenant_suspended',
   tier_must_cover_at_least_one_day: 'tier_must_cover_at_least_one_day',
   too_many_attempts: 'too_many_attempts',
+  too_many_requests: 'too_many_requests',
   trial_already_used: 'trial_already_used',
   trial_disallows_duration_months: 'trial_disallows_duration_months',
   trial_is_not_free: 'trial_is_not_free',

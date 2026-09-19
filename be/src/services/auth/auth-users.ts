@@ -50,7 +50,7 @@ export async function ensureAuthUser(
   return row.id
 }
 
-/** The shortest and longest password the staff pool accepts — Better Auth's defaults. */
+/** The shortest and longest password every pool accepts — Better Auth's defaults. */
 export const MIN_PASSWORD_LENGTH = 8
 export const MAX_PASSWORD_LENGTH = 128
 
@@ -80,6 +80,28 @@ export async function hasPassword(db: Reader, pool: 'staff' | 'platform', userId
  */
 export async function setFirstStaffPassword(db: UserWriter, userId: string, password: string): Promise<void> {
   await db.insert(schema.staffAuthAccounts).values({
+    id: randomUUID(),
+    accountId: userId,
+    providerId: 'credential',
+    userId,
+    password: await hashPassword(password),
+  })
+}
+
+/**
+ * Give a member auth user the password they chose at registration (#173),
+ * replacing any they had: registration has just proved the email with a code,
+ * which is as much as a reset link proves. One account per email serves every
+ * studio, so the password is the same one everywhere they are a member.
+ */
+export async function setMemberPassword(
+  db: UserWriter & Deleter,
+  userId: string,
+  password: string,
+): Promise<void> {
+  const accounts = schema.clientAuthAccounts
+  await db.delete(accounts).where(and(eq(accounts.userId, userId), eq(accounts.providerId, 'credential')))
+  await db.insert(accounts).values({
     id: randomUUID(),
     accountId: userId,
     providerId: 'credential',

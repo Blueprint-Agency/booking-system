@@ -221,7 +221,7 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
     ],
     {
       cta: { href: '{{login_url}}', label: 'Sign in to your account' },
-      note: 'Your account email is <strong>{{invitee_email}}</strong>. Sign in with it and we\'ll email you a one-time code — there is no password to remember. If the button doesn\'t work, paste this into your browser: {{login_url}}',
+      note: 'Your account email is <strong>{{invitee_email}}</strong>. Enter it to sign in and we\'ll email you a link to set your password. If the button doesn\'t work, paste this into your browser: {{login_url}}',
     },
   )
 
@@ -235,15 +235,17 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
     { cta: { href: CLASSES_URL, label: 'Browse the timetable' } },
   )
 
+  // Sent both to set a first password (an imported or invited member signing in
+  // for the first time) and to replace a forgotten one (#173), so it says "set".
   const PASSWORD_RESET_BODY = body(
-    'Reset your password',
+    'Set your password',
     [
       'Hi {{client_name}},',
-      `We received a request to reset your ${STUDIO_HTML} password. Use the button below to choose a new one.`,
+      `Use the button below to set your ${STUDIO_HTML} password. You'll be signed in straight away. The link works once, for 30 minutes.`,
     ],
     {
-      cta: { href: '{{reset_url}}', label: 'Choose a new password' },
-      note: "If you didn't ask for this, ignore this email — your password stays as it is. If the button doesn't work, paste this into your browser: {{reset_url}}",
+      cta: { href: '{{reset_url}}', label: 'Set your password' },
+      note: "If you didn't ask for this, ignore this email — nothing changes. If the button doesn't work, paste this into your browser: {{reset_url}}",
     },
   )
 

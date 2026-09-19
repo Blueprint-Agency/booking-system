@@ -284,7 +284,7 @@ All tables use `id uuid primary key default gen_random_uuid()` unless noted. Tim
 
 **Indexes:** `(tenant_id, auth_user_id) unique`, `(tenant_id, email) unique`, `(status)`, `(referred_by_client_id)`, `(lower(name))` for case-insensitive search.
 
-**Phone/email verification state — not stored on `clients`.** Members sign in by emailed code, so a session proves the email. Phone verification (`fe-client-features.md`) is not built; its state would belong on the `client` pool user.
+**Phone/email verification state — not stored on `clients`.** A member's email is proven by the code at registration, or by the set-password link they followed (#173). Phone verification (`fe-client-features.md`) is not built; its state would belong on the `client` pool user.
 
 #### `staff_users`
 
@@ -882,7 +882,7 @@ trial_pass_purchase_confirmed          # NEW — distinct from package_purchase_
 
 | Slug | Where the sender belongs |
 |---|---|
-| `welcome`, `password_reset` | Sign-in mail is the auth pools' own (`services/auth/sign-in-mail.ts`); wire these only if the studio wants its own. |
+| `welcome` | Sign-in mail is the auth pools' own (`services/auth/sign-in-mail.ts`); wire this only if the studio wants its own. (`password_reset` is sent: it is the member's set-password link, #173.) |
 | `class_booking_confirmed` | `services/bookings/book.ts`, after commit. |
 | `class_cancelled_*`, `pt_cancelled_*` | `services/bookings/cancel.ts` — the forfeited pair needs `reason_line` from `policy/evaluate-cancellation.ts:forfeitLine`. |
 | `admin_cancel_class`, `admin_cancel_pt`, `admin_cancel_workshop` | the admin cancel services. `admin_cancel_workshop` must not claim an automatic refund — `services/workshops/cancel.ts` marks bookings `refund_outcome='n_a'`. |
@@ -1001,7 +1001,7 @@ Idempotency keys on `stripe-refund` jobs (booking_id) prevent double refund on r
 
 See `docs/adr/0004-self-hosted-auth-with-better-auth.md` for the decision.
 
-- **Three pools.** `client` (members, emailed one-time code), `staff` (studio portals, email + password + second factor), `platform` (the super portal). Each is its own Better Auth instance over its own tables (`db/schema/auth.ts`) on its own base path `/api/v1/auth/{pool}` — enforces §15b "staff and client spaces are independent." One `BETTER_AUTH_SECRET` signs all three.
+- **Three pools.** `client` (members, email + password, first password through a mailed link — `docs/adr/0005-member-passwords.md`), `staff` (studio portals, email + password + second factor), `platform` (the super portal). Each is its own Better Auth instance over its own tables (`db/schema/auth.ts`) on its own base path `/api/v1/auth/{pool}` — enforces §15b "staff and client spaces are independent." One `BETTER_AUTH_SECRET` signs all three.
 - **Bearer, not cookies.** A session travels as `Authorization: Bearer <token>`, returned in the `set-auth-token` header and held per origin by the frontend.
 - **The session carries its Tenant.** A `client` or `staff` session is stamped at sign-in with `claimed_tenant_id`; `clientAuth` / `staffAuth` refuse it at any other studio. The auth user tables carry no `tenant_id` — one person is one auth user with a row per studio.
 - **Identity glue.** `clients.auth_user_id` and `staff_users.auth_user_id` (both `NOT NULL`) link our rows to pool users. We own profile + role + relationships; the pool owns credentials, sessions and 2FA.

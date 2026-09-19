@@ -120,10 +120,10 @@ app.use('/api/v1/platform/*', authedLimiter)
 //     single tenant to resolve and no honest context to open. Its gate is
 //     `requirePlatformAdmin`, which reads no tenant at all. Its auth pool is
 //     exempt for the same reason: the super portal signs in on no studio.
-//   - a staff password-reset link. It is opened from an inbox, so it carries
-//     no `X-Tenant-Slug` and no `Origin`; it only checks the token and
-//     redirects to the portal page that sets the password, which does run
-//     inside a context. The mail was sent from inside one when it was asked for.
+//   - a staff or member password-reset link. It is opened from an inbox, so it
+//     carries no `X-Tenant-Slug` and no `Origin`; it only checks the token and
+//     redirects to the page that sets the password, which does run inside a
+//     context. The mail was sent from inside one when it was asked for.
 const TENANT_CONTEXT_EXEMPT = (path: string) =>
   path === '/api/v1/healthz' ||
   path === '/api/v1/webhooks/stripe' ||
@@ -132,6 +132,7 @@ const TENANT_CONTEXT_EXEMPT = (path: string) =>
   path.startsWith('/api/v1/platform/') ||
   path.startsWith(`${AUTH_BASE_PATH.platform}/`) ||
   path.startsWith(`${AUTH_BASE_PATH.staff}/reset-password/`) ||
+  path.startsWith(`${AUTH_BASE_PATH.client}/reset-password/`) ||
   isTenantLookup(path)
 
 app.use('/api/v1/*', (c, next) =>

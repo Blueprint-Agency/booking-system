@@ -1,23 +1,25 @@
 "use client";
 /**
- * Member sign-in: an email, then the one-time code mailed to it (#117), against
- * the `client` Better Auth pool on this studio's hostname.
+ * Member sign-in (#173): the email first, then the password — or, for an
+ * address with no password yet, "check your email" while a set-password link
+ * goes out (`POST /public/members/sign-in-step`). The link lands on
+ * `/set-password`. "Forgot password?" mails the same link.
  *
- * A code signs in any address, but an address is a member only where it has a
- * `clients` row. So once the session exists the page asks for the profile, and
- * an address with no account at this studio is signed straight back out and
- * pointed at registration — rather than left signed in to an app that answers
- * every request with `client_not_found`.
+ * A password signs in any member account, but an address is a member only
+ * where it has a `clients` row. So once the session exists the page asks for
+ * the profile, and an address with no account at this studio is signed straight
+ * back out and pointed at registration — rather than left signed in to an app
+ * that answers every request with `client_not_found`.
  */
 import { Suspense, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { ApiError, publicApi } from "@/lib/api";
 import { safeNextPath, signedInRedirectTarget } from "@/lib/auth-redirect";
 import { memberAuthMessage } from "@/lib/auth-messages";
 import { fetchApi } from "@/lib/api-url";
 import { memberAuth, readMemberToken, signOutMember, useMemberSession } from "@/lib/member-auth";
 import { AuthSplitShell } from "@/components/auth/auth-split-shell";
-import { OtpInput } from "@/components/auth/otp-input";
 
 const inputClass =
   "rounded-xl border border-ink/10 bg-paper px-4 py-3 text-sm w-full focus:border-accent focus:outline-none";
@@ -38,6 +40,8 @@ async function accountHere(): Promise<"yes" | "none" | "unknown"> {
   return res.status === 404 ? "none" : "unknown";
 }
 
+type Step = { next: "password" } | { next: "link_sent" };
+
 function LoginContent() {
   const { isLoaded, isSignedIn } = useMemberSession();
   const router = useRouter();
@@ -45,9 +49,9 @@ function LoginContent() {
   const searchParams = useSearchParams();
   const next = safeNextPath(searchParams) ?? "/";
 
-  const [view, setView] = useState<"email" | "code">("email");
+  const [view, setView] = useState<"email" | "password" | "link">("email");
   const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [noAccount, setNoAccount] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -67,23 +71,15 @@ function LoginContent() {
     setSubmitting(true);
     try {
       await step();
-    } catch {
-      setError("We couldn't reach the server. Check your connection and try again.");
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setError(memberAuthMessage({ status: err.status, ...(err.body as object | null) }, "Something went wrong. Please try again."));
+      } else {
+        setError("We couldn't reach the server. Check your connection and try again.");
+      }
     } finally {
       setSubmitting(false);
     }
-  }
-
-  async function sendCode(): Promise<boolean> {
-    const { error: sendErr } = await memberAuth.emailOtp.sendVerificationOtp({
-      email: email.trim(),
-      type: "sign-in",
-    });
-    if (sendErr) {
-      setError(memberAuthMessage(sendErr, "Could not send a sign-in code."));
-      return false;
-    }
-    return true;
   }
 
   function handleEmail(e: React.FormEvent) {
@@ -93,18 +89,18 @@ function LoginContent() {
       return;
     }
     void run(async () => {
-      if (!(await sendCode())) return;
-      setCode("");
-      setView("code");
+      const step = await publicApi.post<Step>("/public/members/sign-in-step", { email: email.trim() });
+      setPassword("");
+      setView(step.next === "password" ? "password" : "link");
     });
   }
 
-  function handleCode(e: React.FormEvent) {
+  function handlePassword(e: React.FormEvent) {
     e.preventDefault();
     void run(async () => {
-      const { error: signInErr } = await memberAuth.signIn.emailOtp({
+      const { error: signInErr } = await memberAuth.signIn.email({
         email: email.trim(),
-        otp: code.trim(),
+        password,
       });
       if (signInErr) {
         setError(memberAuthMessage(signInErr, "We couldn't sign you in. Please try again."));
@@ -122,10 +118,17 @@ function LoginContent() {
     });
   }
 
-  function handleResend() {
+  function sendLink() {
     void run(async () => {
-      await sendCode();
+      await publicApi.post<Step>("/public/members/password-link", { email: email.trim() });
+      setView("link");
     });
+  }
+
+  function useDifferentEmail() {
+    setView("email");
+    setPassword("");
+    setError(null);
   }
 
   // Either the redirect above is about to run, or the session has not been
@@ -144,34 +147,58 @@ function LoginContent() {
     <p className="text-sm text-error rounded-xl border border-error/30 bg-error/10 px-3 py-2">{error}</p>
   ) : null;
 
-  if (view === "code") {
+  if (view === "link") {
     return (
       <AuthSplitShell imageKey={IMAGE_KEY} quote={QUOTE}>
         <h1 className="text-3xl font-extrabold tracking-tight text-ink mb-2">
           Check your email
         </h1>
         <p className="text-sm text-muted mb-8">
-          We sent a 6-digit code to {email.trim()}.
+          If {email.trim()} has an account at this studio, we&apos;ve sent it a link to set your
+          password. The link works once, for 30 minutes.
         </p>
-        <form onSubmit={handleCode} className="space-y-4">
+        {errorNote}
+        <div className="mt-4 flex flex-wrap gap-4 text-sm">
+          <button type="button" onClick={sendLink} disabled={submitting} className="font-medium text-accent-deep">
+            {submitting ? "Sending…" : "Send the link again"}
+          </button>
+          <button type="button" onClick={useDifferentEmail} className="font-medium text-accent-deep">
+            Use a different email
+          </button>
+        </div>
+        <p className="mt-6 text-sm text-muted">
+          New here?{" "}
+          <Link href="/register" className="text-accent-deep font-medium">Create an account</Link>
+        </p>
+      </AuthSplitShell>
+    );
+  }
+
+  if (view === "password") {
+    return (
+      <AuthSplitShell imageKey={IMAGE_KEY} quote={QUOTE}>
+        <h1 className="text-3xl font-extrabold tracking-tight text-ink mb-2">
+          Enter your password
+        </h1>
+        <p className="text-sm text-muted mb-8">Signing in as {email.trim()}.</p>
+        <form onSubmit={handlePassword} className="space-y-4">
+          {/* For the browser's password manager: which account this password is for. */}
+          <input type="email" autoComplete="username" value={email} readOnly hidden />
           <div>
-            <label className={labelClass}>Sign-in code</label>
-            <OtpInput value={code} onChange={setCode} autoFocus />
+            <label htmlFor="password" className={labelClass}>Password</label>
+            <input id="password" type="password" autoComplete="current-password" autoFocus
+              className={inputClass} value={password} onChange={(ev) => setPassword(ev.target.value)} />
           </div>
           {errorNote}
-          <button type="submit" disabled={submitting} className={primaryBtnClass}>
+          <button type="submit" disabled={submitting || !password} className={primaryBtnClass}>
             {submitting ? "Signing in…" : "Sign in"}
           </button>
         </form>
         <div className="mt-4 flex flex-wrap gap-4 text-sm">
-          <button type="button" onClick={handleResend} disabled={submitting} className="font-medium text-accent-deep">
-            Resend code
+          <button type="button" onClick={sendLink} disabled={submitting} className="font-medium text-accent-deep">
+            Forgot password?
           </button>
-          <button
-            type="button"
-            onClick={() => { setView("email"); setError(null); }}
-            className="font-medium text-accent-deep"
-          >
+          <button type="button" onClick={useDifferentEmail} className="font-medium text-accent-deep">
             Use a different email
           </button>
         </div>
@@ -185,12 +212,12 @@ function LoginContent() {
         Welcome back
       </h1>
       <p className="text-sm text-muted mb-8">
-        Enter your email and we&apos;ll send you a code to sign in.
+        Enter your email to sign in.
       </p>
       <form onSubmit={handleEmail} className="space-y-4">
         <div>
           <label htmlFor="email" className={labelClass}>Email</label>
-          <input id="email" type="email" autoComplete="email" className={inputClass}
+          <input id="email" type="email" autoComplete="username" className={inputClass}
             value={email} onChange={(ev) => setEmail(ev.target.value)} />
         </div>
         {noAccount ? (
@@ -206,7 +233,7 @@ function LoginContent() {
         ) : null}
         {errorNote}
         <button type="submit" disabled={submitting} className={primaryBtnClass}>
-          {submitting ? "Sending…" : "Email me a code"}
+          {submitting ? "One moment…" : "Continue"}
         </button>
       </form>
       <p className="mt-6 text-sm text-muted">

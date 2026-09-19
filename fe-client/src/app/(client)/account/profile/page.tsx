@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Lock } from "lucide-react";
+import { ChangePasswordCard } from "@/components/account/change-password-card";
 import { SectionHeading } from "@/components/booking/section-heading";
 import { ApiError, useApi } from "@/lib/api";
 import { refreshAppUser } from "@/lib/auth";
@@ -209,6 +210,8 @@ export default function ProfilePage() {
             </div>
           </section>
         </form>
+
+        <ChangePasswordCard />
       </div>
     </div>
   );

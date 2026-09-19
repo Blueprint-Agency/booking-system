@@ -79,8 +79,16 @@ The rule that a studio always keeps one active Admin. Archiving a staff member, 
 _Avoid_: owner lock
 
 **Impersonation**:
-An Admin signing in as one of the studio's members, to see what they see. It opens a `client` pool session on the member's behalf, carrying a signed grant that names the acting staff member, and is recorded as an **Auth event** under `staff` at start and end.
+An Admin signing in as one of the studio's members, to see what they see. It opens a `client` pool session on the member's behalf, carrying a signed grant that names the acting staff member, and is recorded as an **Auth event** under `staff` at start and end. It never needs the member's password, and an impersonated session cannot change it.
 _Avoid_: act-as, masquerade, login-as
+
+**Member sign-in**:
+Email first, then the password (#173). The email step (`POST /public/members/sign-in-step`) answers `password` when the address has a password in the `client` pool, and `link_sent` for any other address. For `link_sent`, a **Set-password link** is mailed if the address is an unblocked member of this studio, and nothing is mailed otherwise, so the answer never says who is a member. Sign-up takes name, email, phone and password, and the account is written only once the emailed 6-digit code proves the email. The code does nothing else: it signs nobody in. One account per email, platform-wide, so a member of two studios has one password. See `docs/adr/0005-member-passwords.md`, which supersedes the member half of ADR 0004.
+_Avoid_: login code, magic link, OTP sign-in
+
+**Set-password link**:
+A single-use, 30-minute link that sets a member's password. It sets a first password as readily as it replaces a forgotten one: an imported or admin-added member has an account with no password, and their first sign-in sends them one. It is Better Auth's own reset on the `client` pool. It is mailed with the studio's `password_reset` template, and only to a member of the studio that asked (`mailClientPasswordReset`). Opening it lands on the member app's `/set-password`, and setting the password signs the member in with that studio's **Session claim**. It is sent by the email step, by "forgot password", and by an Admin from the member's detail view. The Admin's send is filed as `invitation_resent`, the Auth event kind for a re-mailed set-password link to anyone. It is honoured only at a studio where its owner is an unblocked member. Requests are limited per address and per email.
+_Avoid_: reset link (when it is a member's first password)
 
 **Platform administrator**:
 The operator of the super portal, signed in through the `platform` pool and named by `PLATFORM_ADMIN_EMAIL`. Not a staff member of any Tenant, holds no **Staff role**, and has no row in `staff_users` — creating or restoring a studio is the platform administrator's; running one is its Admins'. Never confused with an Admin: an Admin's powers stop at their own studio, and a platform administrator's start outside every studio.

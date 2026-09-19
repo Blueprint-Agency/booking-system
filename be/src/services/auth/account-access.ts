@@ -1,7 +1,7 @@
 /**
  * A person's access to this studio, as an admin manages it from their detail
  * view (#119): the sessions they hold here, signing them out everywhere, and
- * resending a staff member's set-password mail. Blocking and unblocking are the
+ * resending a staff member's or a member's set-password mail. Blocking and unblocking are the
  * existing acts — `softDeleteClient` / `restoreClient` for a member,
  * `archiveStaff` / `unarchiveStaff` for staff. Every one of them is logged in
  * `auth_events` as the acting staff member's (`recordStaffAct`).
@@ -22,6 +22,7 @@ import { BadRequestError, ConflictError, NotFoundError } from '../../shared/erro
 import { requireTenantUrl } from '../tenants/urls'
 import { endClientSessionsAt, endStaffSessionsAt, listSessionsAt, type SessionAtStudio } from './auth-users'
 import { mailStaffSetPasswordLink } from './better-auth'
+import { mailLinkOrThrow } from './member-passwords'
 import { resendInvitation } from './invitations'
 import { recordStaffAct } from './staff-acts'
 
@@ -60,6 +61,37 @@ export async function signMemberOutEverywhere(input: {
     from: input.from,
   })
   return ended
+}
+
+/**
+ * Mail a member the link that sets their password (#173) — for a member who
+ * never received theirs, or lost it. The same link their own email step or
+ * "forgot password" sends, landing on this studio's member app. A blocked
+ * member is refused: the link would lead to a sign-in their block refuses.
+ */
+export async function sendMemberSetPasswordLink(input: {
+  tenantId: string
+  clientId: string
+  actorStaffId: string
+  from: Headers
+}): Promise<void> {
+  const [target] = await db
+    .select({ email: clients.email, authUserId: clients.authUserId, deletedAt: clients.deletedAt })
+    .from(clients)
+    .where(and(eq(clients.tenantId, input.tenantId), eq(clients.id, input.clientId)))
+    .limit(1)
+  if (!target) throw new NotFoundError('client_not_found')
+  if (target.deletedAt) throw new ConflictError('client_blocked')
+  if (!target.authUserId) throw new BadRequestError('client_not_provisioned')
+
+  await mailLinkOrThrow(input.from, target.email, input.tenantId)
+  await recordStaffAct({
+    tenantId: input.tenantId,
+    actorStaffId: input.actorStaffId,
+    kind: 'invitation_resent',
+    subjectUserId: target.authUserId,
+    from: input.from,
+  })
 }
 
 /* ── staff ─────────────────────────────────────────────────────────────── */

@@ -23,6 +23,7 @@ import { HomeLocationDialog } from "@/components/clients/home-location-dialog";
 import { BoundInstructorDialog } from "@/components/clients/bound-instructor-dialog";
 import { PackageSetBalanceDialog } from "@/components/clients/package-set-balance-dialog";
 import { RefundDialog } from "@/components/clients/refund-dialog";
+import { SendSetPasswordButton } from "@/components/access/send-set-password-button";
 import { SessionsPanel } from "@/components/access/sessions-panel";
 import { runsStudio } from "@/lib/staff-role";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -360,6 +361,11 @@ export default function ClientProfilePage({
             path={`/portal/admin/clients/${id}`}
             canRevoke={canEdit}
             refreshKey={profile.deleted_at}
+            actions={
+              canEdit && !profile.deleted_at ? (
+                <SendSetPasswordButton clientId={id} email={profile.email} />
+              ) : null
+            }
           />
 
           <section>

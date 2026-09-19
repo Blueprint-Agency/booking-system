@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto'
-import { currentTenantId } from '../../db'
+import { and, eq } from 'drizzle-orm'
+import { currentTenantId, db } from '../../db'
+import { clients } from '../../db/schema/identity'
 import { PLATFORM_MAIL_FROM_NAME, sendMail } from '../../lib/mailer'
 import { sendTemplatedEmail } from '../notifications/send'
 
@@ -42,6 +44,36 @@ export async function mailClientCode(email: string, code: string): Promise<void>
     recipient: { email, userKind: 'client' },
     variables: { code },
     secretVariables: ['code'],
+  })
+}
+
+/**
+ * A member's set-password link (#173) — the same mail whether they have never
+ * had a password or forgot theirs, worded by the studio's `password_reset`
+ * template.
+ *
+ * **Only a member of this studio gets one.** The client pool is one per email
+ * platform-wide, so Better Auth would mail a link to anyone with an account
+ * anywhere; the studio asking is the one whose name the mail wears. So the
+ * `clients` row at the Tenant in context is looked up here, and an address
+ * with none — or one this studio has blocked — is mailed nothing. The caller's
+ * answer is the same either way, which is the point: it must never say who is
+ * a member.
+ */
+export async function mailClientPasswordReset(user: MailUser & { id: string }, resetUrl: string): Promise<void> {
+  const tenantId = tenantInContext('client')
+  const [member] = await db
+    .select({ id: clients.id, name: clients.name, deletedAt: clients.deletedAt })
+    .from(clients)
+    .where(and(eq(clients.tenantId, tenantId), eq(clients.authUserId, user.id)))
+    .limit(1)
+  if (!member || member.deletedAt) return
+  await sendTemplatedEmail({
+    tenantId,
+    slug: 'password_reset',
+    recipient: { email: user.email, userId: member.id, userKind: 'client' },
+    variables: { client_name: member.name, reset_url: resetUrl },
+    secretVariables: ['reset_url'],
   })
 }
 

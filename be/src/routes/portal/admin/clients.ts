@@ -31,7 +31,11 @@ import {
   type RefundState,
   type WorkshopPurchase,
 } from '../../../services/billing/refunds'
-import { listMemberSessions, signMemberOutEverywhere } from '../../../services/auth/account-access'
+import {
+  listMemberSessions,
+  sendMemberSetPasswordLink,
+  signMemberOutEverywhere,
+} from '../../../services/auth/account-access'
 import { exportMember } from '../../../services/clients/member-export'
 import { deleteMemberPermanently } from '../../../services/clients/member-delete'
 import { memberArchiveFilename, packArchive } from '../../../services/tenants/transfer-archive'
@@ -426,6 +430,18 @@ const app = new Hono()
     })
     c.set('auditTarget' as any, { table: 'clients', id })
     return c.json({ revoked })
+  })
+  // ---- set-password link (#173) ----
+  .post('/:id/send-set-password', zValidator('param', idParam), async c => {
+    const { id } = c.req.valid('param')
+    await sendMemberSetPasswordLink({
+      tenantId: tenantId(c),
+      clientId: id,
+      actorStaffId: c.get('staffUserId'),
+      from: c.req.raw.headers,
+    })
+    c.set('auditTarget' as any, { table: 'clients', id })
+    return c.json({ sent: true })
   })
   // ---- member export (#143): everything the studio holds about the member, as
   // a zip, for an access request. Admin only; logged as a staff act.

@@ -4,7 +4,8 @@
 both frontends, which is why it lives in the root `docs/adr/` rather than in `be/docs/adr/` (whose
 own `0004` and `0005` are unrelated — ADR numbers are per context). **Supersedes
 [ADR 0003](0003-no-client-side-clerk-organizations.md)**, and amends ADR 0002's account of how a
-request proves which Tenant it is about.
+request proves which Tenant it is about. **Its member sign-in is superseded by
+[ADR 0005](0005-member-passwords.md)** (members sign in with email and password).
 
 Authentication runs in our own backend, on our own Postgres, through
 [Better Auth](https://www.better-auth.com). Clerk is gone: no vendor SDK, no webhook, no
@@ -33,7 +34,7 @@ Organization, no `clerk_user_id`.
 
 | Pool | Who | Path | Sign-in |
 |---|---|---|---|
-| `client` | members | `/api/v1/auth/client` | emailed one-time code; the first code creates the account |
+| `client` | members | `/api/v1/auth/client` | emailed one-time code; the first code creates the account — **superseded by [ADR 0005](0005-member-passwords.md)**: email + password, first password through a mailed link |
 | `staff` | studio portals | `/api/v1/auth/staff` | email + password, TOTP / backup / emailed second factor; invitation-only |
 | `platform` | the super portal | `/api/v1/auth/platform` | as staff, on a pool no studio can write |
 

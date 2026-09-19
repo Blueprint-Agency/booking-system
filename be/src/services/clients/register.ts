@@ -2,9 +2,9 @@ import { and, eq, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { isUniqueViolation } from '../../db/unique-violation'
 import { clients } from '../../db/schema/identity'
-import { ensureAuthUser } from '../auth/auth-users'
-import { checkMemberCode, signInMemberByCode } from '../auth/better-auth'
-import type { ErrorCode } from '../../shared/error-codes'
+import { ensureAuthUser, setMemberPassword } from '../auth/auth-users'
+import { checkMemberCode, signInMemberWithPassword, spendMemberCode } from '../auth/better-auth'
+import { memberAuthError } from '../auth/member-passwords'
 import { BadRequestError, ConflictError, ForbiddenError } from '../../shared/errors'
 
 export interface RegisterMemberInput {
@@ -14,27 +14,30 @@ export interface RegisterMemberInput {
   firstName: string
   lastName: string
   phone: string
+  password: string
   /** The member's own request headers — their `Origin` and address go with the sign-in. */
   headers: Headers
 }
 
 /**
- * A member joins a studio: the code mailed to their address, spent on an
- * account there (#117).
+ * A member joins a studio: the code mailed to their address proves it, and the
+ * account is made with the password they chose (#117, #173).
  *
- * The `client` pool's auth user and the studio's `clients` row are written
- * together with the session, so there is no moment at which a member is signed
- * in with nothing to be signed in to. One person joining a second
- * studio reuses their auth user and gets a second, independent row.
+ * The `client` pool's auth user, its password and the studio's `clients` row
+ * are written together with the session, so there is no moment at which a
+ * member is signed in with nothing to be signed in to, and no account exists
+ * before its email is proven. One person joining a second studio reuses their
+ * auth user — and, having proven the email, sets its one password — and gets a
+ * second, independent row.
  *
  * In order:
  *
  *   1. Already a member here — 409 `already_member`, before the code is looked
  *      at. Signing in is the way back, and it does not need this code spent.
- *   2. The code is checked, not spent. A wrong one counts against the address
- *      and writes nothing else.
- *   3. User, row and session, in one savepoint. If the sign-in is refused (a
- *      race spent the code, the limiter said no) the user and row go with it.
+ *   2. The code is checked. A wrong one counts against the address and writes
+ *      nothing else.
+ *   3. User, password, row and session, in one savepoint, then the code spent.
+ *      If the sign-in is refused (the limiter said no) everything goes with it.
  */
 export async function registerMember(input: RegisterMemberInput): Promise<{ token: string }> {
   const email = input.email.trim().toLowerCase()
@@ -63,15 +66,14 @@ export async function registerMember(input: RegisterMemberInput): Promise<{ toke
         phone,
         status: 'active',
       })
+      await setMemberPassword(tx, authUserId, input.password)
 
-      const signedIn = await signInMemberByCode(input.headers, email, input.otp)
-      if ('token' in signedIn) return signedIn
-      // Relayed from Better Auth, not decided here: our own hooks refuse with
-      // `client_blocked` / `tenant_required`, both catalogued. Anything else it
-      // says passes through as before, unchecked.
-      const message = ((signedIn.body as { message?: string } | null)?.message ??
-        'sign_in_failed') as ErrorCode
-      throw signedIn.status === 403 ? new ForbiddenError(message) : new BadRequestError(message)
+      const signedIn = await signInMemberWithPassword(input.headers, email, input.password)
+      if (!('token' in signedIn)) throw memberAuthError(signedIn)
+      // Spent only once the account is made: a refused sign-in rolls the rows
+      // back and leaves the code usable for the retry.
+      await spendMemberCode(email)
+      return signedIn
     })
   } catch (err) {
     // Two registrations for one address racing past the check above: the

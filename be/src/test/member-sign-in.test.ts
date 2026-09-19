@@ -11,7 +11,8 @@ import {
 } from './harness'
 
 /**
- * Members sign in through Better Auth (#117), over real HTTP.
+ * Members sign in through Better Auth (#117), over real HTTP, with the password
+ * they chose at registration or through the set-password link (#173).
  *
  * A member's account at a studio is two rows written together: the `client`
  * pool's auth user and the studio's `clients` row. Self-registration writes both
@@ -73,17 +74,19 @@ describe('member sign-in', { skip: integrationTestsEnabled ? false : SKIP_REASON
   const register = (tenant: { slug: string }, body: Record<string, string>) =>
     send('/api/v1/public/members/register', { body, headers: memberHeaders(tenant) })
 
-  const signIn = (tenant: { slug: string }, email: string, otp: string) =>
-    send('/api/v1/auth/client/sign-in/email-otp', { body: { email, otp }, headers: memberHeaders(tenant) })
+  const PASSWORD = 'member-password-1'
+
+  const signIn = (tenant: { slug: string }, email: string, password = PASSWORD) =>
+    send('/api/v1/auth/client/sign-in/email', { body: { email, password }, headers: memberHeaders(tenant) })
 
   const bearerAt = (tenant: { slug: string }, token: string) => ({
     ...memberHeaders(tenant),
     Authorization: `Bearer ${token}`,
   })
 
-  /** Sign in by code and return the headers the member app would then send. */
+  /** Sign in with the password and return the headers the member app would then send. */
   const signedInAt = async (tenant: { slug: string }, email: string) => {
-    const res = await signIn(tenant, email, await requestCode(tenant, email))
+    const res = await signIn(tenant, email)
     await expectStatus(res, 200)
     const token = res.headers.get('set-auth-token')
     assert.ok(token, 'the sign-in issued no token')
@@ -111,6 +114,7 @@ describe('member sign-in', { skip: integrationTestsEnabled ? false : SKIP_REASON
     first_name: 'Ada',
     last_name: 'Lovelace',
     phone: '+6591234567',
+    password: PASSWORD,
   })
 
   /** Register `email` at `tenant` and return the member's bearer headers there. */
@@ -219,7 +223,7 @@ describe('member sign-in', { skip: integrationTestsEnabled ? false : SKIP_REASON
     await expectStatus(await me({ ...atOne, ...memberHeaders(two) }), 403, 'tenant_mismatch')
   })
 
-  test('an admin adding a member writes a Better Auth user, and that member signs in by code', async () => {
+  test('an admin adding a member writes a Better Auth user, and that member sets a password through the link', async () => {
     const email = at('added-by-admin')
     const created = await expectStatus(
       await send('/api/v1/portal/admin/clients', {
@@ -235,8 +239,22 @@ describe('member sign-in', { skip: integrationTestsEnabled ? false : SKIP_REASON
     assert.equal(row?.id, created.id)
     assert.equal(row?.authUserId, user.id)
 
-    const headers = await signedInAt(one, email)
-    const profile = await expectStatus(await me(headers), 200)
+    const step = await expectStatus(
+      await send('/api/v1/public/members/sign-in-step', { body: { email }, headers: memberHeaders(one) }),
+      200,
+    )
+    assert.deepEqual(step, { next: 'link_sent' }, 'an added member has no password yet')
+    const link = new URL(
+      [...discardedMail].reverse().find(m => m.to === email)!.html.match(/href="([^"]*\/reset-password\/[^"]+)"/)![1]!
+        .replace(/&amp;/g, '&'),
+    )
+    const opened = await harness.app.request(link.pathname + link.search)
+    const token = new URL(opened.headers.get('location')!).searchParams.get('token')
+    const set = await expectStatus(
+      await send('/api/v1/public/members/set-password', { body: { token, password: PASSWORD }, headers: memberHeaders(one) }),
+      200,
+    )
+    const profile = await expectStatus(await me(bearerAt(one, set.token as string)), 200)
     assert.equal(profile.name, 'Grace Hopper')
   })
 
@@ -263,7 +281,7 @@ describe('member sign-in', { skip: integrationTestsEnabled ? false : SKIP_REASON
       200,
     )
     await expectStatus(await me(headers), 401)
-    const refused = await signIn(one, email, await requestCode(one, email))
+    const refused = await signIn(one, email)
     await expectStatus(refused, 403, 'client_blocked')
     assert.equal(refused.headers.get('set-auth-token'), null)
 

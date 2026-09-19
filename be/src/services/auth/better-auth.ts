@@ -1,6 +1,6 @@
-import { betterAuth, type BetterAuthOptions } from 'better-auth'
+import { betterAuth, type BetterAuthOptions, type BetterAuthPlugin } from 'better-auth'
 import { drizzleAdapter } from 'better-auth/adapters/drizzle'
-import { APIError, getIP } from 'better-auth/api'
+import { APIError, createAuthMiddleware, getIP } from 'better-auth/api'
 import { hashPassword } from 'better-auth/crypto'
 import { bearer, emailOTP, twoFactor } from 'better-auth/plugins'
 import { and, eq } from 'drizzle-orm'
@@ -13,11 +13,13 @@ import { GRANT_TTL_SECONDS } from '../../lib/impersonation-grant'
 import { BadRequestError, ForbiddenError } from '../../shared/errors'
 import { PLATFORM_MAIL_FROM_NAME } from '../../lib/mailer'
 import { authAudit, recordAuthEvent } from './auth-events'
+import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from './auth-users'
 import { verifyPoolPassword } from './password-hash'
-import { authRateLimit } from './rate-limit'
+import { authRateLimit, emailRateLimit } from './rate-limit'
 import { twoFactorChallengeHeader } from './two-factor-challenge'
 import {
   mailClientCode,
+  mailClientPasswordReset,
   mailPlatformPasswordReset,
   mailPlatformTwoFactorCode,
   mailStaffPasswordReset,
@@ -37,8 +39,9 @@ import {
  * tables (`db/schema/auth.ts`) on its own base path, and a token one pool
  * issued is a row the other two have never seen.
  *
- *   - `client`   — members, `/api/v1/auth/client`. Email one-time code, sign-up
- *                  allowed: the first code a new address asks for creates it.
+ *   - `client`   — members, `/api/v1/auth/client`. Email + password (#173);
+ *                  the first password is set through a mailed link. An emailed
+ *                  code only proves an address at registration.
  *   - `staff`    — studio portals, `/api/v1/auth/staff`. Email + password, with
  *                  TOTP, backup codes or an emailed code as the second factor.
  *                  No self sign-up: accounts are seeded or invited.
@@ -131,6 +134,38 @@ const memberSessionHooks = {
 const CODE_TTL_SECONDS = 5 * 60
 const CODE_DIGITS = 6
 
+/** How long a member's set-password link works: short, and once (#173). */
+export const MEMBER_LINK_TTL_SECONDS = 30 * 60
+
+/**
+ * Impersonation opens a real member session (#118), so without this the admin
+ * holding it could change the member's password — taking over the account
+ * they were only meant to act in. A session with `impersonatedBy` is refused
+ * the one endpoint that replaces a password; the reset link is not a session
+ * act, and goes to the member's inbox.
+ */
+function impersonationKeepsPassword() {
+  return {
+    id: 'impersonation-keeps-password',
+    hooks: {
+      before: [
+        {
+          matcher: (ctx: { path?: string }) => ctx.path === '/change-password',
+          handler: createAuthMiddleware(async ctx => {
+            // Read through `readPoolSession`, not `getSessionFromCtx`: the bearer
+            // plugin's before-hook has not yet turned the token into a session
+            // cookie for the hooks that run beside it, so from here the request
+            // would look signed out.
+            const token = ctx.headers?.get('authorization')?.match(/^Bearer\s+(.+)$/i)?.[1]
+            const session = token ? await readPoolSession('client', token) : null
+            if (session?.impersonatedBy) throw new APIError('FORBIDDEN', { message: 'impersonation_forbidden' })
+          }),
+        },
+      ],
+    },
+  } satisfies BetterAuthPlugin
+}
+
 /**
  * The origins a request may name, in a redirect or in its `Origin` — the same
  * allowlist CORS reads (`FRONTEND_URLS`).
@@ -210,15 +245,43 @@ const clientAuth = betterAuth({
   databaseHooks: memberSessionHooks,
   account: { modelName: 'clientAuthAccounts' },
   verification: { modelName: 'clientAuthVerifications' },
+  emailAndPassword: {
+    enabled: true,
+    // An account is made by registration (`services/clients/register.ts`),
+    // which proves the email with a code first, or by an admin or an import.
+    disableSignUp: true,
+    minPasswordLength: MIN_PASSWORD_LENGTH,
+    maxPasswordLength: MAX_PASSWORD_LENGTH,
+    password: { hash: hashPassword, verify: verifyPoolPassword },
+    resetPasswordTokenExpiresIn: MEMBER_LINK_TTL_SECONDS,
+    sendResetPassword: async ({ user, url }) => mailClientPasswordReset(user, url),
+  },
+  // The emailed code only proves an address at registration now (#173): it no
+  // longer signs anyone in, and the plugin's own password reset and email
+  // change by code are not ours — a member's password is set through the link.
+  disabledPaths: [
+    '/sign-in/email-otp',
+    '/email-otp/verify-email',
+    '/email-otp/request-password-reset',
+    '/forget-password/email-otp',
+    '/email-otp/reset-password',
+    '/email-otp/request-email-change',
+    '/email-otp/change-email',
+  ],
   plugins: [
     bearer(),
     emailOTP({
       otpLength: CODE_DIGITS,
       expiresIn: CODE_TTL_SECONDS,
       storeOTP: 'hashed',
+      // Off, so a code is mailed to an address with no account yet — that is
+      // exactly the registration a code is for. It signs nobody up by itself:
+      // its sign-in endpoint is disabled above.
       disableSignUp: false,
       sendVerificationOTP: async ({ email, otp }) => mailClientCode(email, otp),
     }),
+    emailRateLimit(),
+    impersonationKeepsPassword(),
     authAudit('client'),
   ],
 })
@@ -461,7 +524,7 @@ export async function requestAddress(from: Headers): Promise<{ ip: string | null
  * admin (#119) — Better Auth's own reset, which creates the credential when the
  * account has none.
  *
- * Through the pool's handler, as `signInMemberByCode` is, so the origin check
+ * Through the pool's handler, as `mailMemberSetPasswordLink` is, so the origin check
  * and the pool's mail hook are the ones a person asking for it meets. The
  * request is made as from the studio's own portal (`portalUrl`), which is where
  * the link lands, inside the caller's Tenant context, which is whose copy words
@@ -551,31 +614,47 @@ export async function checkMemberCode(email: string, otp: string): Promise<Membe
 const FORWARDED_HEADERS = ['origin', 'x-tenant-slug', 'x-forwarded-for', 'user-agent'] as const
 
 /**
- * Spend a member's code on a session, in-process, as if their browser had.
- *
- * Through the pool's own handler rather than `api.signInEmailOTP`, so it meets
- * everything a real sign-in does — the origin check, the rate limit, the audit
- * row and the session hooks above. The caller's `Origin` and address go with it.
+ * Spend a member's registration code, once the account it proves is written:
+ * it has done its one job, and must not be offered again. The code no longer
+ * signs anyone in (`disabledPaths`), so nothing else would spend it.
  */
-export async function signInMemberByCode(
-  from: Headers,
-  email: string,
-  otp: string,
-): Promise<{ token: string } | { status: number; body: unknown }> {
-  const headers = new Headers({ 'content-type': 'application/json' })
-  for (const name of FORWARDED_HEADERS) {
+export async function spendMemberCode(email: string): Promise<void> {
+  const context = await clientAuth.$context
+  await context.internalAdapter.deleteVerificationByIdentifier(`sign-in-otp-${email.trim().toLowerCase()}`)
+}
+
+/** A refused call to the member pool: its status and its body, as the browser would have had them. */
+export type MemberAuthRefusal = { status: number; body: unknown }
+
+/**
+ * Call the member pool's handler in-process, as if the member's browser had.
+ *
+ * Through the handler rather than `clientAuth.api.*`, so the call meets
+ * everything a real one does — the origin check, the rate limits, the audit
+ * row and the session hooks above. `headers` says who it comes from.
+ */
+async function callMemberPool(path: string, headers: Headers, body: unknown): Promise<Response> {
+  headers.set('content-type', 'application/json')
+  return clientAuth.handler(
+    new Request(`${env.BETTER_AUTH_URL}${AUTH_BASE_PATH.client}${path}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    }),
+  )
+}
+
+/** The caller's `Origin`, Tenant and address — or just `names` of them — for a call made on their behalf. */
+function forwardedFrom(from: Headers, names: readonly string[] = FORWARDED_HEADERS): Headers {
+  const headers = new Headers()
+  for (const name of names) {
     const value = from.get(name)
     if (value) headers.set(name, value)
   }
-  const res = await clientAuth.handler(
-    new Request(`${env.BETTER_AUTH_URL}${AUTH_BASE_PATH.client}/sign-in/email-otp`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ email, otp }),
-    }),
-  )
-  const token = res.headers.get('set-auth-token')
-  if (res.ok && token) return { token }
+  return headers
+}
+
+async function refusal(res: Response): Promise<MemberAuthRefusal> {
   const text = await res.text()
   let body: unknown = text
   try {
@@ -584,4 +663,96 @@ export async function signInMemberByCode(
     // Not JSON; the text is the body.
   }
   return { status: res.status, body }
+}
+
+/** Sign a member in with their password, in-process, on the caller's behalf. */
+export async function signInMemberWithPassword(
+  from: Headers,
+  email: string,
+  password: string,
+): Promise<{ token: string } | MemberAuthRefusal> {
+  const res = await callMemberPool('/sign-in/email', forwardedFrom(from), { email, password })
+  const token = res.headers.get('set-auth-token')
+  if (res.ok && token) return { token }
+  return refusal(res)
+}
+
+/**
+ * Does this address have a member password? The one thing the email step of
+ * the sign-in form reveals (#173) — and so, that an account exists somewhere
+ * on the platform, the accepted cost of an email-first form (ADR 0005). It says
+ * nothing about whether the address is a member of the studio asking.
+ */
+export async function memberHasPassword(email: string): Promise<boolean> {
+  const context = await clientAuth.$context
+  const found = await context.internalAdapter.findUserByEmail(email.trim().toLowerCase(), { includeAccounts: true })
+  return Boolean(found?.accounts.some(account => account.providerId === 'credential' && account.password))
+}
+
+/**
+ * Ask the member pool to mail a set-password link (#173) — Better Auth's own
+ * reset, which creates the credential when there is none and replaces it when
+ * there is. Whether anything is mailed is `mailClientPasswordReset`'s call:
+ * only a member of the studio in context gets one.
+ *
+ * The link lands on `appUrl`'s `/set-password`, the studio's member app. The
+ * request is made as from that app, with the caller's address and user agent,
+ * so the per-address and per-email budgets are the ones the caller spends.
+ */
+export async function mailMemberSetPasswordLink(
+  from: Headers,
+  email: string,
+  appUrl: string,
+): Promise<'requested' | 'rate_limited'> {
+  const origin = new URL(appUrl).origin
+  const headers = forwardedFrom(from, ['x-forwarded-for', 'user-agent'])
+  headers.set('origin', origin)
+  const res = await callMemberPool('/request-password-reset', headers, {
+    email: email.trim().toLowerCase(),
+    redirectTo: `${origin}/set-password`,
+  })
+  if (res.status === 429) return 'rate_limited'
+  if (!res.ok) throw new Error(`mailMemberSetPasswordLink: the client pool refused (${res.status}): ${await res.text()}`)
+  return 'requested'
+}
+
+/** Why a set-password link was not accepted. */
+export type SetPasswordRefusal = 'invalid_token' | 'password_too_short' | 'password_too_long'
+
+/**
+ * Whose set-password link this is, or null for one that is used, expired or
+ * never existed. Read without spending it, so the caller can decide whether
+ * this studio may use it before anything changes.
+ */
+export async function memberLinkOwner(token: string): Promise<{ id: string; email: string } | null> {
+  const context = await clientAuth.$context
+  const verification = await context.internalAdapter.findVerificationValue(`reset-password:${token}`)
+  if (!verification || verification.expiresAt < new Date()) return null
+  const user = await context.internalAdapter.findUserById(verification.value)
+  return user ? { id: user.id, email: user.email } : null
+}
+
+/**
+ * Set a member's password from the mailed link and sign them in (#173): the
+ * link's first use is their first sign-in, so it ends in a session at the
+ * studio the page is on, stamped with its claim like any other. Better Auth's
+ * reset spends the token, and refuses a used or expired one. `email` is the
+ * owner's, from `memberLinkOwner`, for the sign-in that follows.
+ */
+export async function setMemberPasswordFromLink(
+  from: Headers,
+  token: string,
+  password: string,
+  email: string,
+): Promise<{ token: string } | SetPasswordRefusal | MemberAuthRefusal> {
+  const reset = await callMemberPool('/reset-password', forwardedFrom(from), { token, newPassword: password })
+  if (!reset.ok) {
+    const refused = await refusal(reset)
+    const code = (refused.body as { code?: string } | null)?.code
+    if (code === 'INVALID_TOKEN') return 'invalid_token'
+    if (code === 'PASSWORD_TOO_SHORT') return 'password_too_short'
+    if (code === 'PASSWORD_TOO_LONG') return 'password_too_long'
+    return refused
+  }
+  return signInMemberWithPassword(from, email, password)
 }

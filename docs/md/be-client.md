@@ -87,7 +87,7 @@ All endpoints prefixed with `/api/v1/me`.
 | Method | Path | Effect |
 |---|---|---|
 | GET | `/` | Own profile: `{ name, email, phone, gender, dob, joined_at, status, waiver_signed }`. |
-| PATCH | `/` | Update `name`, `phone`, `gender`, `dob`. There is no password to edit — members sign in by emailed code — and changing the email is not offered. |
+| PATCH | `/` | Update `name`, `phone`, `gender`, `dob`. The password is changed through the auth pool (§4f), not here, and changing the email is not offered. |
 | GET | `/dashboard` | Aggregated home payload: next-up booking, package balances (credits + sessions remaining + days to expiry), referral conversions count. One round-trip for the `/account` landing page. |
 | GET | `/packages` | List `client_packages` for this client with each linked source (class_packages or pt_packages) and the `applied_promotion` frozen at purchase (if any). Each row carries `cross_location_paid_sgd` — null means the plan Covers its Home Location only. The `entitlements` block also carries `unlimited_plan_id` (the plan a **Cross-Location Add-On** would attach to), `unlimited_covers_both` (it already carries one) and `cross_location_rate_sgd` (the Global Policy rate right now), which is what the member surfaces quote the Add-On at. The same three appear on `/me/class-packages`, where the schedule's blocked-class nudge reads them. |
 | GET | `/packages/eligibility` | `{ trial_used: bool, holds_active_bundle: bool, holds_active_unlimited: bool }` — drives fe-client `/packages` gating per `fe-client-features.md` §6.1. `trial_used` is `true` if any `client_packages WHERE client_id=me AND kind='trial'` exists (active or expired). `holds_active_bundle` / `holds_active_unlimited` derive the "Bundle excludes Unlimited and vice versa" rule. Cheap query — call on every `/packages` page load. |
@@ -486,17 +486,24 @@ The client then tracks the request on `/account/corporate` (`fe-client-features.
 
 ### 4f. Registration flow
 
-Members sign up and sign in with an emailed one-time code through the Better Auth `client` pool (#117). No webhook and no provisioning on first request: the account and the studio's row are written together.
+Members sign in with email and password through the Better Auth `client` pool (#173, `docs/adr/0005-member-passwords.md`). The emailed one-time code only proves an address at sign-up. No webhook and no provisioning on first request: the account and the studio's row are written together.
 
-1. fe-client `/register` collects `{ first_name, last_name, email, phone }` and asks the pool for a code: `POST /api/v1/auth/client/email-otp/send-verification-otp` `{ email, type: 'sign-in' }`.
-2. It sends the code with the details to **`POST /api/v1/public/members/register`** `{ email, otp, first_name, last_name, phone }` (`services/clients/register.ts`):
+1. fe-client `/register` collects `{ first_name, last_name, email, phone, password }` (password 8–128 characters) and asks the pool for a code: `POST /api/v1/auth/client/email-otp/send-verification-otp` `{ email, type: 'sign-in' }`.
+2. It sends the code with the details to **`POST /api/v1/public/members/register`** `{ email, otp, first_name, last_name, phone, password }` (`services/clients/register.ts`):
    - 409 `already_member` if this studio already has a `clients` row for the address — sign in instead.
-   - The code is checked without being spent; a wrong one is 400 `invalid_otp` / `otp_expired` (403 `too_many_attempts`) and writes nothing but the attempt.
-   - Then, in one savepoint: the `client_auth_users` row (found, not duplicated, when the person is already a member at another studio), the `clients` row with `auth_user_id`, and the session — the code spent through the pool's own sign-in, so it meets the same origin check, rate limit, audit row and Tenant stamp as any sign-in.
+   - The code is checked; a wrong one is 400 `invalid_otp` / `otp_expired` (403 `too_many_attempts`) and writes nothing but the attempt.
+   - Then, in one savepoint: the `client_auth_users` row (found, not duplicated, when the person is already a member at another studio), its password (replacing any — the code just proved the email), the `clients` row with `auth_user_id`, the code spent, and the session — signed in through the pool's own `/sign-in/email`, so it meets the same origin check, rate limits, audit row and Tenant stamp as any sign-in.
    - Answers `{ token }` (also in `set-auth-token`): the member is signed in at this studio.
-3. An existing member signs in at `POST /api/v1/auth/client/sign-in/email-otp` `{ email, otp }`. A member this studio has blocked is refused there, 403 `client_blocked` (the pool's session hook reads `clients.deleted_at` at the resolved Tenant).
+3. An existing member signs in in two steps:
+   - **`POST /api/v1/public/members/sign-in-step`** `{ email }` → `{ next: 'password' }` when the address has a password, else `{ next: 'link_sent' }`. For `link_sent` a set-password link is mailed if the address is an unblocked member of this studio, and nothing otherwise — the answer is the same.
+   - With a password: `POST /api/v1/auth/client/sign-in/email` `{ email, password }`. A wrong one is 401 `INVALID_EMAIL_OR_PASSWORD` and a `sign_in_failed` Auth event. A member this studio has blocked is refused, 403 `client_blocked` (the pool's session hook reads `clients.deleted_at` at the resolved Tenant).
+4. The link (`password_reset` template, single use, 30 minutes) opens `/api/v1/auth/client/reset-password/:token`, which redirects to the member app's `/set-password?token=`. That page sends **`POST /api/v1/public/members/set-password`** `{ token, password }` → `{ token }`: the password is set and the member signed in at this studio. 400 `invalid_token` (used or expired) / `password_too_short` / `password_too_long`; 403 `client_blocked`.
+5. "Forgot password": **`POST /api/v1/public/members/password-link`** `{ email }` → `{ next: 'link_sent' }`, the same link.
+6. Change password: `POST /api/v1/auth/client/change-password` `{ currentPassword, newPassword }` (the pool's own). Refused to an impersonated session, 403 `impersonation_forbidden`.
 
-An admin adding a member (`POST /portal/admin/clients`) writes the same two rows in one transaction; the member signs in by code. Blocking deletes the member's sessions **at that studio only** and restoring lets them sign in again — a block is one studio's decision, and the same auth user may be a member elsewhere.
+Link requests and password attempts are limited per address and per email (`services/auth/rate-limit.ts`); over budget is 429. The pool's `/sign-in/email-otp` and the email-OTP plugin's own password-reset and email-change endpoints are disabled.
+
+An admin adding a member (`POST /portal/admin/clients`) writes the same two rows in one transaction, with no password; the member's first sign-in mails them the link, and an admin can send it from the member detail (`POST /portal/admin/clients/:id/send-set-password`). Blocking deletes the member's sessions **at that studio only** and restoring lets them sign in again — a block is one studio's decision, and the same auth user may be a member elsewhere.
 
 ### 4g. Referral conversion (cross-link)
 

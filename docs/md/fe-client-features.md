@@ -70,7 +70,7 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
 
 ### 1.1 Register `/register`
 
-> **As built (#117):** members have no password. Register takes first name, last name, email and phone, emails a 6-digit code, and the code creates the account and the studio's member record together (`POST /public/members/register`, `be-client.md` §4f). Login is email → emailed code. There is no reset-password flow (§1.4) because there is no password. The fuller journey below (phone OTP, T&C, referral, Google) is not built yet.
+> **As built (#117, #173):** Register takes first name, last name, email, phone and a password (8 characters or more), emails a 6-digit code, and the code proves the email before the account and the studio's member record are created together (`POST /public/members/register`, `be-client.md` §4f). Login is email first, then the password, or "check your email" when the address has no password yet and a set-password link goes out (§1.4). The fuller journey below (phone OTP, T&C, referral, Google) is not built yet.
 
 **Business logic**
 - Required fields: First name, phone, email, password (≥8), confirm password, T&C accepted.
@@ -125,7 +125,7 @@ Reschedule is implemented as cancel + rebook — re-evaluated against policy.
 
 ### 1.4 Forgot / Reset Password `/forgot-password`, `/reset-password`
 
-> Not applicable since #117: members sign in by emailed code and hold no password.
+> **As built (#173):** "Forgot password?" on the password step mails a set-password link, and so does the email step when the address has no password yet. The link is single use and lasts 30 minutes. It lands on `/set-password`, and setting the password signs the member in. The profile page (`/account/profile`) has a "change password" card: current password plus the new one. See `be-client.md` §4f.
 
 **Business logic**
 - Step 1: phone number → send OTP.
