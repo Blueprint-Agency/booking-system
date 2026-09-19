@@ -8,6 +8,7 @@ import {
 } from '../../../services/pt-sessions/list'
 import { linkPtRequestPartner } from '../../../services/pt-sessions/request'
 import { tenantId } from '../../../middleware/tenant'
+import { ERROR_CODES } from '../../../shared/error-codes'
 import { schedulePtRequest, updatePtSession } from '../../../services/pt-sessions/schedule'
 import { statusForScheduleError } from '../pt-schedule-status'
 import { cancelPtRequest } from '../../../services/pt-sessions/cancel'
@@ -139,7 +140,7 @@ const app = new Hono()
   })
   .get('/:id', zValidator('param', idParam), async c => {
     const row = await getPtRequestForAdmin(tenantId(c), c.req.valid('param').id)
-    if (!row) return c.json({ error: 'not_found' }, 404)
+    if (!row) return c.json({ error: ERROR_CODES.not_found }, 404)
     return c.json({ pt_request: serialize(row) })
   })
   // Schedule a pending request → creates pt_session + bookings, flips to scheduled.

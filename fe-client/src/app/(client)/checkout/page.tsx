@@ -8,6 +8,7 @@ import { BookingSurface } from "@/components/booking/booking-surface";
 import { EmptyState } from "@/components/ui/empty-state";
 import { getMemberToken, useMemberSession } from "@/lib/member-auth";
 import { fetchApi } from "@/lib/api-url";
+import { ERROR_CODES } from "@/lib/error-codes";
 import { useInstructors, useLocations } from "@/lib/classes";
 import { CrossLocationBlock } from "@/components/checkout/cross-location-block";
 import { AddOnCheckout } from "@/components/checkout/add-on-checkout";
@@ -214,7 +215,7 @@ function CheckoutContent() {
         // The server refuses a bad code rather than charging full price. Drop
         // the code from the screen at the same time, so the interface can never
         // show it accepted while the purchase was refused for it.
-        if (data.error === "promo_code_invalid") {
+        if (data.error === ERROR_CODES.promo_code_invalid) {
           setPromoApplied(null);
           setPromoError(data.message ?? "That code can't be used on this purchase.");
         } else {

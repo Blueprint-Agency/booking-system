@@ -37,6 +37,7 @@ function literal(value: string): string {
  * rotated secret takes effect on the next deploy rather than locking the app out.
  */
 export async function ensureAppRole(sql: Sql, password: string): Promise<void> {
+  // Invariant: migrations and seeds pass the configured role password — never a request.
   if (!password) throw new Error('ensureAppRole: a password is required')
 
   const role = APP_ROLE

@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as svc from '../../../services/corporate/sessions'
 import { tenantId } from '../../../middleware/tenant'
+import { ERROR_CODES } from '../../../shared/error-codes'
 
 const isoDate = z
   .string()
@@ -80,7 +81,7 @@ const app = new Hono()
   .get('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const row = await svc.getCorporateSession(tenantId(c), id)
-    if (!row) return c.json({ error: 'not_found' }, 404)
+    if (!row) return c.json({ error: ERROR_CODES.not_found }, 404)
     return c.json({ corporate_session: serializeHydrated(row) })
   })
   .post('/', zValidator('json', createSchema), async c => {
@@ -126,7 +127,7 @@ const app = new Hono()
 
     const result = await svc.rescheduleCorporateSession(tenantId(c), id, patch)
     if (!result.ok) {
-      if (result.error === 'not_found') return c.json({ error: 'not_found' }, 404)
+      if (result.error === ERROR_CODES.not_found) return c.json({ error: ERROR_CODES.not_found }, 404)
       return c.json({ error: result.error }, statusFor(result.error))
     }
     c.set('auditTarget' as any, { table: 'corporate_sessions', id })
@@ -136,7 +137,7 @@ const app = new Hono()
     const { id } = c.req.valid('param')
     const actor = c.get('staffUserId') as string
     const row = await svc.cancelCorporateSession(tenantId(c), id, actor)
-    if (!row) return c.json({ error: 'not_found_or_already_cancelled' }, 404)
+    if (!row) return c.json({ error: ERROR_CODES.not_found_or_already_cancelled }, 404)
     c.set('auditTarget' as any, { table: 'corporate_sessions', id })
     return c.json({ corporate_session: serialize(row) })
   })

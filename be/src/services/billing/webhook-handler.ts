@@ -16,6 +16,7 @@ import { stripePayments } from '../../db/schema/ledger'
 import { clients } from '../../db/schema/identity'
 import { and, eq } from 'drizzle-orm'
 import { stripe } from '../../lib/stripe'
+import { outbound, type RetryPolicy } from '../../lib/outbound'
 import { applyCrossLocationAddOn, grantPackage } from '../packages/purchase'
 import { consumePromoCodeHold } from '../packages/promo-redemption'
 import { unwindRefund } from './refunds'
@@ -38,11 +39,15 @@ import { NotFoundError } from '../../shared/errors'
  */
 async function receiptUrlPatch(
   paymentIntentId: string,
+  retry: RetryPolicy | undefined,
 ): Promise<{ receiptUrl?: string }> {
   try {
-    const intent = await stripe.paymentIntents.retrieve(paymentIntentId, {
-      expand: ['latest_charge'],
-    })
+    const intent = await outbound(
+      'stripe',
+      'paymentIntents.retrieve',
+      () => stripe.paymentIntents.retrieve(paymentIntentId, { expand: ['latest_charge'] }),
+      { retry },
+    )
     const charge = intent.latest_charge
     const url = typeof charge === 'object' && charge !== null ? charge.receipt_url : null
     // Absent rather than null, so a redelivery that comes back empty leaves the
@@ -111,9 +116,15 @@ async function existingPayment(tenantId: string, paymentIntentId: string) {
  * itself off the payment intent, because the same unwind is reached from the
  * portal's refund button and from the provider's dashboard, and it has to land
  * in the same studio either way.
+ *
+ * `retry` is for vendor calls made while handling the event. The webhook passes
+ * one; the member's confirmation page, which reaches here on a request, does not.
  */
-export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
-  if (event.type !== 'checkout.session.completed') return dispatchStripeEvent(event)
+export async function handleStripeEvent(
+  event: Stripe.Event,
+  { retry }: { retry?: RetryPolicy } = {},
+): Promise<void> {
+  if (event.type !== 'checkout.session.completed') return dispatchStripeEvent(event, retry)
 
   const session = event.data.object as Stripe.Checkout.Session
   const clientId = (session.metadata ?? {}).client_id
@@ -125,10 +136,10 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<void> {
   // must land in front of a human, not vanish — see `tenantForClient` below.
   if (!tenantId) throw new NotFoundError('client_not_found', { clientId })
 
-  await withTenant(tenantId, () => dispatchStripeEvent(event))
+  await withTenant(tenantId, () => dispatchStripeEvent(event, retry))
 }
 
-async function dispatchStripeEvent(event: Stripe.Event): Promise<void> {
+async function dispatchStripeEvent(event: Stripe.Event, retry: RetryPolicy | undefined): Promise<void> {
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session
     const meta = session.metadata ?? {}
@@ -200,7 +211,7 @@ async function dispatchStripeEvent(event: Stripe.Event): Promise<void> {
       // at the `status === 'succeeded'` guard above instead of double-granting.
       // The receipt URL lands in the same write — the column the confirmation
       // email reads (§13).
-      const receipt = await receiptUrlPatch(paymentIntentId)
+      const receipt = await receiptUrlPatch(paymentIntentId, retry)
       await db
         .update(stripePayments)
         .set({ status: 'succeeded', clientPackageId: granted.clientPackageId, ...receipt })
@@ -272,7 +283,7 @@ async function dispatchStripeEvent(event: Stripe.Event): Promise<void> {
         )
       }
 
-      const receipt = await receiptUrlPatch(paymentIntentId)
+      const receipt = await receiptUrlPatch(paymentIntentId, retry)
       await db
         .update(stripePayments)
         .set({ status: 'succeeded', clientPackageId, ...receipt })
@@ -324,7 +335,7 @@ async function dispatchStripeEvent(event: Stripe.Event): Promise<void> {
         paymentIntentId,
       })
 
-      const receipt = await receiptUrlPatch(paymentIntentId)
+      const receipt = await receiptUrlPatch(paymentIntentId, retry)
       await db
         .update(stripePayments)
         .set({ status: 'succeeded', ...receipt })
@@ -382,7 +393,7 @@ async function dispatchStripeEvent(event: Stripe.Event): Promise<void> {
 
       // Written before the email is composed — it is where `receipt_url` comes
       // from (§13).
-      const receipt = await receiptUrlPatch(paymentIntentId)
+      const receipt = await receiptUrlPatch(paymentIntentId, retry)
       if (receipt.receiptUrl) {
         await db
           .update(stripePayments)

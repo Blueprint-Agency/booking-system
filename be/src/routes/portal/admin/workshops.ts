@@ -6,6 +6,7 @@ import * as daysSvc from '../../../services/workshops/days'
 import * as tiersSvc from '../../../services/workshops/tiers'
 import * as cancelSvc from '../../../services/workshops/cancel'
 import { tenantId } from '../../../middleware/tenant'
+import { BadRequestError } from '../../../shared/errors'
 import {
   listManagedPromotionsFor,
   replacePromotionsForParent,
@@ -25,7 +26,7 @@ const lifecycleEnum = z.enum(['active', 'cancelled'])
 
 const priceField = z.union([z.string(), z.number()]).transform(v => {
   const n = typeof v === 'string' ? Number(v) : v
-  if (!Number.isFinite(n) || n < 0) throw new Error('price must be a non-negative number')
+  if (!Number.isFinite(n) || n < 0) throw new BadRequestError('invalid_price')
   return n.toFixed(2)
 })
 

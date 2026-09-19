@@ -1,5 +1,6 @@
 import type { MiddlewareHandler } from 'hono'
 import { rateLimiter } from 'hono-rate-limiter'
+import { ERROR_CODES } from '../shared/error-codes'
 
 /**
  * Checkout's own budget (#142): every `/api/v1/me/checkout/*` call opens or
@@ -17,5 +18,5 @@ export const CHECKOUT_RATE_LIMIT = { windowMs: 60_000, limit: 10 } as const
 export const checkoutRateLimit: MiddlewareHandler = rateLimiter({
   ...CHECKOUT_RATE_LIMIT,
   keyGenerator: c => `${c.get('tenantId')}:${c.get('clientId')}`,
-  handler: c => c.json({ error: 'rate_limited' }, 429),
+  handler: c => c.json({ error: ERROR_CODES.rate_limited }, 429),
 })

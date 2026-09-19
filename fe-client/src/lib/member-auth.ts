@@ -21,6 +21,7 @@
 import { createAuthClient } from "better-auth/react";
 import { emailOTPClient } from "better-auth/client/plugins";
 import { getApiBaseUrl } from "@/lib/api-url";
+import { clearTelemetryUser } from "@/lib/telemetry";
 import { tenantRequestHeaders } from "@/lib/tenant-host";
 
 /** Where this hostname keeps its session token. */
@@ -96,6 +97,7 @@ export async function signOutMember(): Promise<void> {
     await memberAuth.signOut();
   } finally {
     storeMemberToken(null);
+    clearTelemetryUser();
     // The session atom re-reads on sign-out, but only when the call succeeded.
     memberAuth.$store.notify("$sessionSignal");
   }
@@ -105,6 +107,8 @@ export async function signOutMember(): Promise<void> {
 export interface MemberSession {
   userId: string;
   email: string;
+  /** The studio stamped on the session at sign-in, when it carries one. */
+  claimedTenantId: string | null;
 }
 
 /**
@@ -120,6 +124,13 @@ export function useMemberSession(): {
   session: MemberSession | null;
 } {
   const { data, isPending } = memberAuth.useSession();
-  const session = data ? { userId: data.user.id, email: data.user.email } : null;
+  const session = data
+    ? {
+        userId: data.user.id,
+        email: data.user.email,
+        claimedTenantId:
+          (data.session as { claimedTenantId?: string | null }).claimedTenantId ?? null,
+      }
+    : null;
   return { isLoaded: !isPending || data !== null, isSignedIn: session !== null, session };
 }

@@ -4,8 +4,8 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 
 | App | Target | How it deploys |
 |---|---|---|
-| `fe-client/` | Vercel project `booking-system` (Root Directory = `fe-client/`) | `main` → `https://{slug}.reservetoday.app` (wildcard `*.reservetoday.app`); `staging` → `https://{slug}.dev.reservetoday.app` (wildcard `*.dev.reservetoday.app`). Env vars: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_ROOT_DOMAIN` — set **twice**, once per scope (Production / Preview). Members sign in through the backend's Better Auth `client` pool, and so does a studio admin impersonating one, so nothing auth-related is set here. |
-| `fe-portal/` | Vercel project `booking-system-admin` (Root Directory = `fe-portal/`) | `main` → `https://{slug}.portal.reservetoday.app` (wildcard `*.portal.reservetoday.app`); `staging` → `https://{slug}.portal.dev.reservetoday.app`. Same env shape as fe-client, with its own `NEXT_PUBLIC_ROOT_DOMAIN` (the `portal.` one). Staff and the super portal sign in through the backend's `staff` / `platform` pools, so nothing auth-related is set here either. |
+| `fe-client/` | Vercel project `booking-system` (Root Directory = `fe-client/`) | `main` → `https://{slug}.reservetoday.app` (wildcard `*.reservetoday.app`); `staging` → `https://{slug}.dev.reservetoday.app` (wildcard `*.dev.reservetoday.app`). Env vars: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_ROOT_DOMAIN` — set **twice**, once per scope (Production / Preview). `NEXT_PUBLIC_FARO_COLLECTOR_URL` (Grafana Faro collector for browser errors and Web Vitals) is optional; unset, the app sends no telemetry. Members sign in through the backend's Better Auth `client` pool, and so does a studio admin impersonating one, so nothing auth-related is set here. |
+| `fe-portal/` | Vercel project `booking-system-admin` (Root Directory = `fe-portal/`) | `main` → `https://{slug}.portal.reservetoday.app` (wildcard `*.portal.reservetoday.app`); `staging` → `https://{slug}.portal.dev.reservetoday.app`. Same env shape as fe-client, with its own `NEXT_PUBLIC_ROOT_DOMAIN` (the `portal.` one) and its own `NEXT_PUBLIC_FARO_COLLECTOR_URL`. Staff and the super portal sign in through the backend's `staff` / `platform` pools, so nothing auth-related is set here either. |
 | `cdn/` | Vercel project `booking-cdn` (Root Directory = `cdn/`) | Edge proxy fronting the R2 bucket at `https://cdn.reservetoday.app`. One env var, `R2_ORIGIN`, the bucket's `pub-<hash>.r2.dev` URL. No DNS record needed — the zone's `*` ALIAS already resolves the name. **Not Git-connected**: deployed with `vercel deploy --prod` from `cdn/`, not on push. |
 | `be/` | bpvps2 (Docker) | Auto-deploy on push to `staging` **or** `main` (paths-filtered to `be/**`), **only after the backend test suite passes** — see [Tests gate the backend deploy](#tests-gate-the-backend-deploy). `.github/workflows/deploy-be.yml` builds the image, pushes to Docker Hub (`blueprintagency/booking-be`), SSHes to bpvps2 over Tailscale, writes `.env.booking-be` from the branch's GitHub Environment, and runs migrate/seed + `docker compose up -d`. |
 
@@ -119,6 +119,11 @@ backend suite means no image is built and neither stack is touched.
   A manual `workflow_dispatch` always runs the tests, then deploys.
 - **Same Node as the image.** The `test` job runs on the Node major `be/Dockerfile` ships (22) and
   fails at once if the two drift apart — bump both together.
+- **Error catalogues match.** Before installing, the `test` job runs `scripts/check-error-codes.mjs`
+  (and its unit test): the backend's `ERROR_CODES` (`be/src/shared/error-codes.ts`) and the copy in
+  each frontend (`src/lib/error-codes.ts`) must list the same codes, or it names what is missing or
+  extra and fails. The `fe-client` / `fe-portal` jobs run the same check, so a frontend-only change
+  to its copy is caught too — there as a signal, since Vercel does not wait for it.
 - **Schema drift gates it too.** A `drift` job, which `deploy` also needs, migrates an empty
   `postgres:16` from nothing and then runs `npm run db:generate`, which must answer *"No schema
   changes, nothing to migrate"* and leave `be/src/db/migrations/` untouched. A schema edit committed
@@ -422,7 +427,7 @@ Notes:
 
 **GitHub repo settings driving `deploy-be.yml`** (see the comment block at the top of the workflow for the canonical list). The workflow job runs in the GitHub Environment named by the branch (`staging` / `Production`), so repo/environment settings can override organization-level settings with the same name. Shared deploy settings should live under the **Blueprint-Agency organization** and grant access to `booking-system`.
 - `org vars`: `BPVPS2_TAILSCALE_HOST`, `DOCKERHUB_USERNAME`
-- `env vars` (set in **both** Environments): `PORT`, `FRONTEND_URLS`, `PLATFORM_ADMIN_EMAIL` (optional)
+- `env vars` (set in **both** Environments): `PORT`, `FRONTEND_URLS`, `PLATFORM_ADMIN_EMAIL` (optional), `LOG_LEVEL` (optional; blank = `info`)
 - `org secrets`: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`
 - `repo/env secrets`: `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_APP_PASSWORD`, `DOCKERHUB_TOKEN`, `SSH_PRIVATE_KEY`, `IMPERSONATION_SECRET` (≥32 chars), `BETTER_AUTH_SECRET` (≥32 chars — required in **both** Environments; the backend fails Zod validation at boot without it), `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET` (the `whsec_…` signing secret of the Resend webhook pointed at `/api/v1/webhooks/resend`; unset, that route answers "not configured"), `R2_*` (×5 — required in **both** Environments; see the `R2_PUBLIC_URL` note above), plus deferred `STRIPE_*`.
 - `NODE_ENV` (always `production`), `APP_ENV`, `ENV_NAME`, `STACK_DIR`, `BOOKING_FQDN` and `IMAGE_TAG` are derived from the branch in the workflow's `env:` block, not from repo settings. `BETTER_AUTH_URL` is derived too, as `https://$BOOKING_FQDN`. The workflow's `IMAGE_TAG` is the floating tag it pushes (`staging` / `latest`); the stack's own `.env` on the host gets the commit sha instead — see [Rolling back the backend](#rolling-back-the-backend).
@@ -469,9 +474,9 @@ revoke the old one. Both keys work in between, so nothing breaks. The rows that 
 **Configuration, not secrets** — not rotated, listed so the table covers the whole env schema
 (`be/src/env.ts`) and both frontends' public values:
 
-- be, GH env vars: `PORT`, `PLATFORM_ADMIN_EMAIL`, `FRONTEND_URLS`, `STRIPE_STATEMENT_DESCRIPTOR_PREFIX`.
+- be, GH env vars: `PORT`, `PLATFORM_ADMIN_EMAIL`, `FRONTEND_URLS`, `STRIPE_STATEMENT_DESCRIPTOR_PREFIX`, `LOG_LEVEL`.
 - be, derived in the workflow: `NODE_ENV`, `APP_ENV`, `BETTER_AUTH_URL`, `DATABASE_URL` and `DATABASE_APP_URL` (built from the DB secrets above).
-- fe-client and fe-portal, Vercel: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_ROOT_DOMAIN`, `NEXT_PUBLIC_APP_ENV`. `NEXT_PUBLIC_API_URL` also feeds the CSP — see below.
+- fe-client and fe-portal, Vercel: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_ROOT_DOMAIN`, `NEXT_PUBLIC_APP_ENV`, `NEXT_PUBLIC_FARO_COLLECTOR_URL` (optional). `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_FARO_COLLECTOR_URL` also feed the CSP — see below.
 - Deploy, GH org vars: `BPVPS2_TAILSCALE_HOST`, `DOCKERHUB_USERNAME`.
 
 ### Security headers
@@ -487,8 +492,8 @@ The CSP admits what the pages actually load: scripts, styles and fonts from thei
 to the API origin, read from `NEXT_PUBLIC_API_URL` at **build** time — so changing it needs a Vercel
 redeploy anyway; images from any `https:` host, because a studio's logo is a URL the studio owns.
 Stripe needs no entry: checkout is a full-page redirect to Stripe's hosted page, and nothing loads
-Stripe.js. Nothing frames the apps and they frame nothing. There is no analytics or error-monitoring
-script to admit.
+Stripe.js. Nothing frames the apps and they frame nothing. When `NEXT_PUBLIC_FARO_COLLECTOR_URL` is
+set, its origin is admitted to `connect-src` too, also at build time.
 
 Known gap: `script-src` still allows `'unsafe-inline'`. The App Router streams its payload in inline
 scripts, and removing it means a per-request nonce set in `proxy.ts`, which renders every page

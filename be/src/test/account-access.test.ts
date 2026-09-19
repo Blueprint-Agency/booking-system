@@ -295,6 +295,15 @@ describe('account access from the detail views', { skip: integrationTestsEnabled
     assert.equal(event.actorUserId, owner.authUserId)
   })
 
+  test('a set-password link the pool rate-limits is a named refusal, not a 500', async () => {
+    const target = await staffAt(one, at('link-limited'), 'admin')
+    // An address of its own, so this bucket is nobody else's: the pool allows three a minute.
+    const headers = { ...owner.headers, 'X-Forwarded-For': '203.0.113.165' }
+    const resend = () => send(`/api/v1/portal/admin/staff/${target.row.id}/resend-invitation`, { body: {}, headers })
+    for (let i = 0; i < 3; i++) await expectStatus(await resend(), 200)
+    await expectStatus(await resend(), 403, 'password_link_refused')
+  })
+
   test('a studio cannot list or revoke the sessions of another studio\'s member or staff (404)', async () => {
     const member = await memberAt(two, adminTwo.headers, at('elsewhere'))
     const staff = await staffAt(two, at('elsewhere-admin'), 'admin')

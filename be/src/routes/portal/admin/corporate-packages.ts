@@ -3,6 +3,7 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as svc from '../../../services/packages/corporate-packages'
 import { tenantId } from '../../../middleware/tenant'
+import { ERROR_CODES } from '../../../shared/error-codes'
 
 const statusEnum = z.enum(['active', 'archived'])
 
@@ -51,7 +52,7 @@ const app = new Hono()
   .get('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const row = await svc.getCorporatePackage(tenantId(c), id)
-    if (!row) return c.json({ error: 'not_found' }, 404)
+    if (!row) return c.json({ error: ERROR_CODES.not_found }, 404)
     return c.json({ corporatePackage: serialize(row) })
   })
   .post('/', zValidator('json', createSchema), async c => {
@@ -82,21 +83,21 @@ const app = new Hono()
         ...(body.description !== undefined ? { description: body.description ?? null } : {}),
         ...(body.price_sgd !== undefined ? { priceSgd: body.price_sgd } : {}),
       })
-      if (!row) return c.json({ error: 'not_found' }, 404)
+      if (!row) return c.json({ error: ERROR_CODES.not_found }, 404)
     }
 
     if (body.status === 'archived') {
       row = await svc.archiveCorporatePackage(tenantId(c), id)
-      if (!row) return c.json({ error: 'not_found' }, 404)
+      if (!row) return c.json({ error: ERROR_CODES.not_found }, 404)
     } else if (body.status === 'active') {
       row = await svc.unarchiveCorporatePackage(tenantId(c), id)
-      if (!row) return c.json({ error: 'not_found' }, 404)
+      if (!row) return c.json({ error: ERROR_CODES.not_found }, 404)
     }
 
     if (!row) {
       // No fields and no status: just return the current row.
       row = await svc.getCorporatePackage(tenantId(c), id)
-      if (!row) return c.json({ error: 'not_found' }, 404)
+      if (!row) return c.json({ error: ERROR_CODES.not_found }, 404)
     }
 
     c.set('auditTarget' as any, { table: 'corporate_packages', id })
@@ -105,7 +106,7 @@ const app = new Hono()
   .post('/:id/unarchive', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
     const row = await svc.unarchiveCorporatePackage(tenantId(c), id)
-    if (!row) return c.json({ error: 'not_found' }, 404)
+    if (!row) return c.json({ error: ERROR_CODES.not_found }, 404)
     c.set('auditTarget' as any, { table: 'corporate_packages', id })
     return c.json({ corporatePackage: serialize(row) })
   })

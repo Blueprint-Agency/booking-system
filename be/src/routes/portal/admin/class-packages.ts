@@ -10,6 +10,7 @@ import {
   type PromotionWriteInput,
 } from '../../../services/packages/promotions'
 import { tenantId } from '../../../middleware/tenant'
+import { BadRequestError } from '../../../shared/errors'
 
 const kindEnum = z.enum(['credit_bundle', 'unlimited', 'trial'])
 const statusEnum = z.enum(['active', 'archived'])
@@ -18,7 +19,7 @@ const statusEnum = z.enum(['active', 'archived'])
 // Normalise to a 2dp string for the numeric column.
 const priceField = z.union([z.string(), z.number()]).transform(v => {
   const n = typeof v === 'string' ? Number(v) : v
-  if (!Number.isFinite(n) || n < 0) throw new Error('price must be a non-negative number')
+  if (!Number.isFinite(n) || n < 0) throw new BadRequestError('invalid_price')
   return n.toFixed(2)
 })
 

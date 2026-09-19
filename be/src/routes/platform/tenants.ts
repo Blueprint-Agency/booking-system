@@ -11,6 +11,7 @@ import {
   staffCountFor,
   type TenantRowSummary,
 } from '../../services/tenants/tenants'
+import { ERROR_CODES } from '../../shared/error-codes'
 import { logger } from '../../shared/logger'
 
 /**
@@ -140,10 +141,10 @@ const app = new Hono()
     // Parsed, not passed through: a malformed id must be a 400 here rather than
     // a Postgres cast error surfacing as a 500.
     const id = z.string().uuid().safeParse(c.req.param('id'))
-    if (!id.success) return c.json({ error: 'not_found' }, 404)
+    if (!id.success) return c.json({ error: ERROR_CODES.not_found }, 404)
     const { status } = c.req.valid('json')
     const updated = await setTenantStatus(id.data, status)
-    if (!updated) return c.json({ error: 'not_found' }, 404)
+    if (!updated) return c.json({ error: ERROR_CODES.not_found }, 404)
 
     logger.warn(
       { tenantId: id.data, slug: updated.slug, status, by: c.get('platformAdminEmail') },
@@ -161,7 +162,7 @@ const app = new Hono()
    */
   .post('/tenants/:id/admin', zValidator('json', firstAdminBody), async c => {
     const id = z.string().uuid().safeParse(c.req.param('id'))
-    if (!id.success) return c.json({ error: 'not_found' }, 404)
+    if (!id.success) return c.json({ error: ERROR_CODES.not_found }, 404)
     const body = c.req.valid('json')
 
     const admin = await inviteFirstAdmin(id.data, {
@@ -177,7 +178,7 @@ const app = new Hono()
     // Re-read rather than reuse: the invitation may have lifted the suspension
     // a studio with nobody in it was opened under, and the list has to show that.
     const tenant = await loadTenantById(id.data)
-    if (!tenant) return c.json({ error: 'not_found' }, 404)
+    if (!tenant) return c.json({ error: ERROR_CODES.not_found }, 404)
     return c.json({ admin, tenant: serialize(tenant, 1) }, 201)
   })
 

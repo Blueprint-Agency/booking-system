@@ -5,6 +5,7 @@ import { corporatePackages } from '../../db/schema/packages'
 import { assertRoomAvailable, assertRoomInLocation } from '../schedule/room-conflicts'
 import { assertInstructorsAvailable, plannedInstructorIds } from '../schedule/occupancy'
 import { ensureInstructors, readRoster, replaceRoster } from '../schedule/roster'
+import { NotFoundError } from '../../shared/errors'
 
 export type CorporateSessionRow = typeof corporateSessions.$inferSelect
 
@@ -121,6 +122,7 @@ export async function createCorporateSession(
       })
       .returning()
     const row = rows[0]
+    // Invariant: an insert that succeeds returns its row; a refused one throws.
     if (!row) throw new Error('insert returned no rows')
 
     // Instructor validation, dedup and the main-cannot-be-supporting rule all
@@ -345,7 +347,8 @@ export async function rescheduleCorporateSession(
         .set(set)
         .where(and(eq(corporateSessions.tenantId, tenantId), eq(corporateSessions.id, id)))
         .returning()
-      if (!rows[0]) throw new Error('update returned no rows')
+      // Read above, outside this transaction — so deleted since, by someone else.
+      if (!rows[0]) throw new NotFoundError('corporate_session_not_found')
       row = rows[0]
     }
 

@@ -3,6 +3,7 @@ import { Manrope } from "next/font/google";
 import { Toaster } from "sonner";
 import { getBrand } from "@/lib/brand";
 import { BrandProvider } from "@/components/brand/brand-provider";
+import { TelemetryUser } from "@/components/telemetry-user";
 import "./globals.css";
 
 const sans = Manrope({ subsets: ["latin"], variable: "--font-sans" });
@@ -32,6 +33,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang="en" className={sans.variable}>
       <body className="font-sans antialiased bg-paper text-ink">
         <BrandProvider brand={brand}>{children}</BrandProvider>
+        <TelemetryUser />
         <Toaster position="top-right" richColors />
       </body>
     </html>

@@ -9,7 +9,11 @@
  *
  * Errors: non-2xx responses throw an `ApiError` that carries `status` plus the
  * parsed JSON body (if any) so callers can render structured copy.
+ *
+ * Deadline and failure reporting: `lib/api-request.ts`. Pass `signal` to set
+ * your own deadline in place of the default.
  */
+import { sendApiRequest } from "@/lib/api-request";
 import { getApiBaseUrl } from "@/lib/api-url";
 import { getMemberToken } from "@/lib/member-auth";
 import { reportError } from "@/lib/report-error";
@@ -71,46 +75,18 @@ export async function apiFetch<T = unknown>(
   const impGrant = readImpGrant();
   if (impGrant) headers["x-impersonation-grant"] = impGrant;
 
-  const method = opts.method ?? "GET";
-  let res: Response;
-  try {
-    res = await fetch(buildUrl(path, opts.query), {
-      method,
+  const answer = await sendApiRequest(
+    buildUrl(path, opts.query),
+    {
+      method: opts.method ?? "GET",
       headers,
       body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
       signal: opts.signal,
-    });
-  } catch (err) {
-    reportError(new Error("Client API network request failed"), {
-      scope: "api-fetch-network",
-      method,
-      errorType: err instanceof Error ? err.name : typeof err,
-    });
-    throw err;
-  }
-
-  let parsed: unknown = null;
-  const text = await res.text();
-  if (text) {
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      parsed = text;
-    }
-  }
-
-  if (!res.ok) {
-    const error = new ApiError(res.status, parsed);
-    if (res.status >= 500) {
-      reportError(new Error(`Client API returned ${res.status}`), {
-        scope: "api-fetch-5xx",
-        method,
-        status: res.status,
-      });
-    }
-    throw error;
-  }
-  return parsed as T;
+    },
+    { report: reportError, label: "Client API" },
+  );
+  if (!answer.ok) throw new ApiError(answer.status, answer.body);
+  return answer.body as T;
 }
 
 export function makeApi(getToken: TokenGetter) {

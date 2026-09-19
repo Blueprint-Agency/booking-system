@@ -10,6 +10,7 @@ import { and, eq, gte, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { globalPolicy } from '../../db/schema/policy'
 import { cancellations } from '../../db/schema/bookings'
+import { NotFoundError } from '../../shared/errors'
 
 export type CancellationKind = 'class' | 'pt'
 
@@ -47,7 +48,7 @@ export async function evaluateCancellation(input: EvaluateInput): Promise<Evalua
     .from(globalPolicy)
     .where(eq(globalPolicy.tenantId, tenantId))
     .limit(1)
-  if (!policy) throw new Error('global_policy_missing')
+  if (!policy) throw new NotFoundError('policy_not_seeded')
 
   // Window: the booking must be cancelled at least N hours before it starts.
   const windowHours = kind === 'class' ? policy.classWindowHours : policy.ptWindowHours

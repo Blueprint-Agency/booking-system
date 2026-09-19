@@ -1,5 +1,5 @@
 import cron from 'node-cron'
-import { logger } from '../shared/logger'
+import { logContext, logger, runWithLogContext } from '../shared/logger'
 import { withTenant } from '../db'
 import { listJobTenants, type JobTenant } from '../services/tenants/tenants'
 import { SLOT_CRON, isDailySlot } from './local-time'
@@ -13,17 +13,22 @@ import { loadFeatureFlags } from '../services/feature-flags'
  * logged — instead of bubbling up as an unhandledRejection that could take
  * the process down. A failed run is logged; the schedule keeps ticking, so
  * the next run proceeds normally.
+ *
+ * The run gets a log context of its own carrying `job`, so every line written
+ * inside it says which job wrote it. A run that finished leaves one `info` line
+ * with `outcome=ok` — the heartbeat that says the job ran at all.
  */
-function safeJob(name: string, fn: () => Promise<unknown> | unknown) {
-  return async () => {
-    const start = performance.now()
-    try {
-      await fn()
-      logger.debug({ job: name, ms: Math.round(performance.now() - start) }, 'cron job ok')
-    } catch (err) {
-      logger.error({ job: name, err }, 'cron job failed')
-    }
-  }
+export function safeJob(name: string, fn: () => Promise<unknown> | unknown) {
+  return () =>
+    runWithLogContext({ job: name }, async () => {
+      const start = performance.now()
+      try {
+        await fn()
+        logger.info({ outcome: 'ok', ms: Math.round(performance.now() - start) }, 'cron job ok')
+      } catch (err) {
+        logger.error({ outcome: 'error', err }, 'cron job failed')
+      }
+    })
 }
 
 /**
@@ -56,9 +61,14 @@ function perTenant(
         // Inside the try: an unknown IANA zone on one tenant's row must not
         // stop the sweep for the others.
         if (due && !due(tenant, at)) continue
-        await withTenant(tenantId, async () => {
-          await fn()
-        })
+        // A context per step, so the Tenant's id is on this step's lines and
+        // gone again before the next Tenant's.
+        // `job` again because the boot-time sweep runs outside `safeJob`.
+        await runWithLogContext({ ...logContext(), job: name, tenantId }, () =>
+          withTenant(tenantId, async () => {
+            await fn()
+          }),
+        )
       } catch (err) {
         logger.error({ job: name, tenantId, err }, 'cron job failed for tenant')
       }
@@ -68,7 +78,7 @@ function perTenant(
 
 /** Both wrappers, in the order they have to nest: per-tenant inside the
  *  catch-all, so a thrown error can never reach the cron scheduler. */
-function tenantJob(name: string, fn: () => Promise<unknown> | unknown) {
+export function tenantJob(name: string, fn: () => Promise<unknown> | unknown) {
   return safeJob(name, perTenant(name, fn))
 }
 

@@ -39,6 +39,17 @@ test("the policy lets the page reach the API, and nothing else", () => {
   assert.ok(!csp.get("script-src")!.includes("'unsafe-eval'"), "no eval outside dev");
 });
 
+test("the Faro collector is admitted when one is configured, and only then", () => {
+  const withFaro = directives(
+    contentSecurityPolicy({ ...STAGING, faroUrl: "https://faro-collector.grafana.net/collect/abc" }),
+  );
+  assert.deepEqual(withFaro.get("connect-src"), [
+    "'self'",
+    "https://api.dev.reservetoday.app",
+    "https://faro-collector.grafana.net",
+  ]);
+});
+
 test("local dev reaches the local API and allows the dev server's eval", () => {
   const csp = directives(contentSecurityPolicy({ apiUrl: undefined, dev: true }));
   assert.deepEqual(csp.get("connect-src"), ["'self'", "http://localhost:4000"]);

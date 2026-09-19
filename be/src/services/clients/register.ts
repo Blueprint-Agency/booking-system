@@ -4,6 +4,7 @@ import { isUniqueViolation } from '../../db/unique-violation'
 import { clients } from '../../db/schema/identity'
 import { ensureAuthUser } from '../auth/auth-users'
 import { checkMemberCode, signInMemberByCode } from '../auth/better-auth'
+import type { ErrorCode } from '../../shared/error-codes'
 import { BadRequestError, ConflictError, ForbiddenError } from '../../shared/errors'
 
 export interface RegisterMemberInput {
@@ -65,7 +66,11 @@ export async function registerMember(input: RegisterMemberInput): Promise<{ toke
 
       const signedIn = await signInMemberByCode(input.headers, email, input.otp)
       if ('token' in signedIn) return signedIn
-      const message = (signedIn.body as { message?: string } | null)?.message ?? 'sign_in_failed'
+      // Relayed from Better Auth, not decided here: our own hooks refuse with
+      // `client_blocked` / `tenant_required`, both catalogued. Anything else it
+      // says passes through as before, unchecked.
+      const message = ((signedIn.body as { message?: string } | null)?.message ??
+        'sign_in_failed') as ErrorCode
       throw signedIn.status === 403 ? new ForbiddenError(message) : new BadRequestError(message)
     })
   } catch (err) {

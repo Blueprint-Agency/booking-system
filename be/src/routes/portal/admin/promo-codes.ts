@@ -3,13 +3,14 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as svc from '../../../services/packages/promo-code-admin'
 import { tenantId } from '../../../middleware/tenant'
+import { BadRequestError } from '../../../shared/errors'
 
 const productTypeEnum = z.enum(['class_package', 'pt_package', 'workshop'])
 const statusEnum = z.enum(['active', 'archived'])
 
 const amountField = z.union([z.string(), z.number()]).transform(v => {
   const n = typeof v === 'string' ? Number(v) : v
-  if (!Number.isFinite(n) || n <= 0) throw new Error('amount must be a positive number')
+  if (!Number.isFinite(n) || n <= 0) throw new BadRequestError('invalid_promo_amount')
   return n.toFixed(2)
 })
 

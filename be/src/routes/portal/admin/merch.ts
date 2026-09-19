@@ -4,6 +4,7 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import * as svc from '../../../services/catalog/merch'
 import { BadRequestError } from '../../../shared/errors'
+import { ERROR_CODES } from '../../../shared/error-codes'
 import { tenantId } from '../../../middleware/tenant'
 
 /**
@@ -15,7 +16,7 @@ const idParam = z.object({ id: z.string().uuid() })
 
 const priceField = z.union([z.string(), z.number()]).transform(v => {
   const n = typeof v === 'string' ? Number(v) : v
-  if (!Number.isFinite(n) || n < 0) throw new Error('price must be a non-negative number')
+  if (!Number.isFinite(n) || n < 0) throw new BadRequestError('invalid_price')
   return n.toFixed(2)
 })
 
@@ -73,7 +74,7 @@ const app = new Hono()
       onError: c =>
         c.json(
           {
-            error: 'image_too_large',
+            error: ERROR_CODES.image_too_large,
             message: `A merch photo can be at most ${svc.MERCH_IMAGE_MAX_BYTES / (1024 * 1024)}MB.`,
           },
           413,

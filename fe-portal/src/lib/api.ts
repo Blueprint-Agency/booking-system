@@ -8,7 +8,11 @@
  *
  * Errors: non-2xx responses throw an `ApiError` that carries `status` plus the
  * parsed JSON body (if any) so callers can render structured copy.
+ *
+ * Deadline and failure reporting: `lib/api-request.ts`. Pass `signal` to set
+ * your own deadline in place of the default.
  */
+import { DEFAULT_API_TIMEOUT_MS, UPLOAD_TIMEOUT_MS, sendApiRequest } from "@/lib/api-request";
 import { getApiBaseUrl } from "@/lib/api-url";
 import { reportError } from "@/lib/report-error";
 import { tenantRequestHeaders } from "@/lib/tenant-host";
@@ -63,11 +67,10 @@ export async function apiFetch<T = unknown>(
   const isFormData = opts.body instanceof FormData;
   if (opts.body !== undefined && !isFormData) headers["Content-Type"] = "application/json";
 
-  const method = opts.method ?? "GET";
-  let res: Response;
-  try {
-    res = await fetch(buildUrl(path, opts.query), {
-      method,
+  const answer = await sendApiRequest(
+    buildUrl(path, opts.query),
+    {
+      method: opts.method ?? "GET",
       headers,
       body:
         opts.body === undefined
@@ -79,38 +82,15 @@ export async function apiFetch<T = unknown>(
       // This is an authenticated API client — auth/role responses must never be
       // served from the HTTP/bfcache. Always hit the network with the live token.
       cache: "no-store",
-    });
-  } catch (err) {
-    reportError(new Error("Portal API network request failed"), {
-      scope: "api-fetch-network",
-      method,
-      errorType: err instanceof Error ? err.name : typeof err,
-    });
-    throw err;
-  }
-
-  let parsed: unknown = null;
-  const text = await res.text();
-  if (text) {
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      parsed = text;
-    }
-  }
-
-  if (!res.ok) {
-    const error = new ApiError(res.status, parsed);
-    if (res.status >= 500) {
-      reportError(new Error(`Portal API returned ${res.status}`), {
-        scope: "api-fetch-5xx",
-        method,
-        status: res.status,
-      });
-    }
-    throw error;
-  }
-  return parsed as T;
+    },
+    {
+      report: reportError,
+      label: "Portal API",
+      timeoutMs: isFormData ? UPLOAD_TIMEOUT_MS : DEFAULT_API_TIMEOUT_MS,
+    },
+  );
+  if (!answer.ok) throw new ApiError(answer.status, answer.body);
+  return answer.body as T;
 }
 
 /**
