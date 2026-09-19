@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { redirectForFormerSlug } from '../../services/tenants/former-slugs'
 import { resolveTenantBySlug, type ResolvedTenant } from '../../services/tenants/tenants'
 import { ERROR_CODES } from '../../shared/error-codes'
 
@@ -44,11 +45,25 @@ function serialize({ tenant, settings }: ResolvedTenant) {
 }
 
 const app = new Hono().get('/tenants/by-slug/:slug', async c => {
-  const resolved = await resolveTenantBySlug(c.req.param('slug'))
-  if (!resolved) return c.json({ error: ERROR_CODES.not_found }, 404)
+  const slug = c.req.param('slug')
+  const resolved = await resolveTenantBySlug(slug)
+  if (resolved) {
+    c.header('Cache-Control', CACHE_CONTROL)
+    return c.json(serialize(resolved))
+  }
 
-  c.header('Cache-Control', CACHE_CONTROL)
-  return c.json(serialize(resolved))
+  // A renamed studio's old address, still inside its redirect window. The
+  // answer is where it went and nothing else — no Tenant, so a proxy has
+  // nothing to open a context with and can only redirect. It discloses no
+  // more than the redirect itself will: anyone following the old link lands on
+  // the new address anyway.
+  const movedTo = await redirectForFormerSlug(slug)
+  if (movedTo) {
+    c.header('Cache-Control', CACHE_CONTROL)
+    return c.json({ moved_to: { slug: movedTo } })
+  }
+
+  return c.json({ error: ERROR_CODES.not_found }, 404)
 })
 
 export default app

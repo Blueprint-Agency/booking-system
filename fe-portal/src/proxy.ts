@@ -4,6 +4,7 @@ import {
   TENANT_ID_HEADER,
   TENANT_SLUG_HEADER,
   isSuperPortalHost,
+  renamedTenantUrl,
   tenantSlugFromHost,
   withoutTenantHeaders,
 } from "@/lib/tenant-host";
@@ -43,12 +44,29 @@ async function tenantContext(
   if (!slug) return { headers, blocked: null };
 
   const outcome = await resolveTenant(slug);
+  if (outcome.kind === "moved") return { headers, blocked: movedResponse(req, outcome.slug) };
   if (outcome.kind === "unknown") return { headers, blocked: tenantNotFoundResponse() };
   if (outcome.kind === "unavailable") return { headers, blocked: tenantUnavailableResponse() };
 
   headers.set(TENANT_SLUG_HEADER, outcome.tenant.slug);
   headers.set(TENANT_ID_HEADER, outcome.tenant.id);
   return { headers, blocked: null };
+}
+
+/**
+ * A renamed studio's old address: a permanent redirect to the same path and
+ * query on its new one. 308 rather than 301, so a form posted to the old host
+ * is re-posted rather than silently turned into a GET. Staff sign in once at
+ * the new address — their session token lives in the old host's storage.
+ */
+function movedResponse(req: NextRequest, slug: string) {
+  const { pathname, search } = req.nextUrl;
+  const host = req.headers.get("host") ?? req.nextUrl.host;
+  // Behind a TLS-terminating proxy the request Next sees is plain http; the
+  // scheme the visitor used is the forwarded one.
+  const forwarded = req.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const protocol = forwarded ? `${forwarded}:` : req.nextUrl.protocol;
+  return NextResponse.redirect(renamedTenantUrl({ protocol, host, pathname, search }, slug), 308);
 }
 
 /**

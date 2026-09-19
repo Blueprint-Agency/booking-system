@@ -16,8 +16,9 @@ import {
  * Onboarding a studio, as one form.
  *
  * The slug is the load-bearing field: it becomes two hostnames the moment the
- * studio exists, and it can never be changed without breaking every link the
- * studio has handed out. So it is checked while the operator types — reserved,
+ * studio exists, and changing it later (a rename) sends every link the studio
+ * has handed out through a redirect for 90 days. So it is checked while the
+ * operator types — reserved,
  * malformed and taken slugs all become a message under the field rather than a
  * failed submit — and the check is the backend's, not a second copy of the
  * rules living here.
@@ -188,7 +189,7 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
               // response rather than being guessed here.
               <span className="text-sage">“{slug}” is free.</span>
             ) : (
-              "Becomes the studio’s two hostnames. It cannot be changed later."
+              "Becomes the studio’s two hostnames. Renaming later is possible, but old links then redirect for 90 days."
             )}
           </p>
         </div>

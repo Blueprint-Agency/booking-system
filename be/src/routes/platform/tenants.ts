@@ -3,7 +3,8 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { tenantOrigin } from '../../lib/allowed-origins'
 import { checkSlug } from '../../services/tenants/slug'
-import { inviteFirstAdmin, provisionTenant, slugAvailable } from '../../services/tenants/provision'
+import { inviteFirstAdmin, provisionTenant, slugConflictFor } from '../../services/tenants/provision'
+import { renameTenant } from '../../services/tenants/rename'
 import {
   listTenants,
   loadTenantById,
@@ -16,8 +17,9 @@ import { logger } from '../../shared/logger'
 
 /**
  * The super portal's route surface: create a studio, list them, change one's
- * status. Three routes, because onboarding a studio should be a one-minute job
- * and everything else about a studio is administered from inside it.
+ * status or its address. Few routes, because onboarding a studio should be a
+ * one-minute job and everything else about a studio is administered from inside
+ * it.
  *
  * Every route here is cross-tenant, which is why the whole branch is exempt from
  * `resolveTenant` in app.ts — there is no single tenant these requests are
@@ -84,6 +86,8 @@ const statusBody = z.object({
   status: z.enum(['active', 'suspended', 'archived']),
 })
 
+const renameBody = z.object({ slug: z.string().min(1) })
+
 const app = new Hono()
   .get('/tenants', async c => {
     const rows = await listTenants()
@@ -100,11 +104,18 @@ const app = new Hono()
   .get('/tenants/slug-check/:slug', async c => {
     const verdict = checkSlug(c.req.param('slug'))
     if (!verdict.ok) return c.json({ available: false, reason: verdict.reason })
-    const free = await slugAvailable(verdict.slug)
+    const conflict = await slugConflictFor(verdict.slug)
     return c.json({
-      available: free,
+      available: conflict === null,
       slug: verdict.slug,
-      ...(free ? {} : { reason: 'slug_taken' as const }),
+      ...(conflict ? { reason: conflict } : {}),
+      // The addresses the slug would give a studio — what the rename form's
+      // confirm step shows beside the old ones, so a typo is seen before it is
+      // made.
+      urls: {
+        client: tenantOrigin('client', verdict.slug),
+        portal: tenantOrigin('portal', verdict.slug),
+      },
     })
   })
 
@@ -151,6 +162,31 @@ const app = new Hono()
       'platform: tenant status changed',
     )
     return c.json({ tenant: serialize(updated, await staffCountFor(id.data)) })
+  })
+
+  /**
+   * Rename a studio's Slug — change its web address.
+   *
+   * The old address keeps redirecting for 90 days and is held from every other
+   * studio meanwhile; see services/tenants/rename.ts. Platform administrators
+   * only: a studio's own admins ask the operator.
+   */
+  .post('/tenants/:id/slug', zValidator('json', renameBody), async c => {
+    const id = z.string().uuid().safeParse(c.req.param('id'))
+    if (!id.success) return c.json({ error: 'not_found' }, 404)
+    const { slug } = c.req.valid('json')
+    const by = c.get('platformAdminEmail')
+
+    const { tenant, former } = await renameTenant({ tenantId: id.data, slug, renamedBy: by })
+
+    logger.warn(
+      { tenantId: tenant.id, from: former.slug, to: tenant.slug, by },
+      'platform: tenant slug renamed',
+    )
+    return c.json({
+      tenant: serialize(tenant, await staffCountFor(tenant.id)),
+      former: { slug: former.slug, redirect_until: former.redirectUntil.toISOString() },
+    })
   })
 
   /**

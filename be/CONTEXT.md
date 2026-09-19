@@ -17,7 +17,13 @@ _Avoid_: account, org, workspace, customer, client (a Client is a member — see
 
 **Slug**:
 A Tenant's leftmost DNS label, and the only thing the frontends can read a Tenant from — the API's own hostname never carries one. Validated as a hostname label and checked against the reserved list (`admin`, `api`, `portal`, `www`, `dev`, `staging`, `app`, `mail`, `clerk`, `assets`) at creation, because a Tenant that took the slug `admin` would take over the super portal's hostname. See `services/tenants/slug.ts`.
+
+A platform administrator can **rename** a Slug from the super portal (`services/tenants/rename.ts`); a studio's own admins cannot. The new Slug passes the creation rules and must be neither a Tenant's current Slug nor a live **Former slug**. The rename moves `tenants.slug`, records the old one (plus a lasting `tenant.slug_renamed` entry in the studio's `audit_log`, naming the platform administrator), and rewrites stored email template bodies from the old addresses to the new — one transaction. Links built at send time already read the Slug by id. Sessions carry the Tenant id, not the Slug, so they stay valid, but their tokens live on the old host: members and staff sign in once at the new address.
 _Avoid_: subdomain, handle, tenant name
+
+**Former slug**:
+A Slug a Tenant was renamed away from, kept in `former_slugs` for 90 days with who renamed it, when, and to what. Inside that window it is a redirect and nothing more: the public tenant-by-slug lookup answers it with the Tenant's *current* Slug and both frontends' proxies send a permanent redirect to the same path and query there; the API's Tenant resolution never accepts it, so nothing authenticated runs on an old host; and no Tenant may be created on it or renamed to it. Afterwards it counts for nothing, and the nightly release deletes the row. Platform data like `tenants` — it names its Tenant as `renamed_tenant_id`, so it has no `tenant_id`, no policy, and no place in the studio archive. See `services/tenants/former-slugs.ts`.
+_Avoid_: alias, old slug (in code), redirect slug
 
 **`tenant_id`**:
 The column on all 53 domain tables recording which Tenant a row belongs to — including pure join tables, because Row-Level Security needs a column on every table to key a policy on. `NOT NULL`, with **no default**: an insert that does not name its Tenant fails loudly rather than filing somebody else's row under the first Tenant. Every non-unique index leads with it. (The tenant-#1 default that made the migrate batches safe was scaffolding, and migration 0032 dropped it along with the seed pass that used to claim unclaimed rows.) The one nullable `tenant_id` outside those is `auth_events`, whose null rows are **Platform rows**.

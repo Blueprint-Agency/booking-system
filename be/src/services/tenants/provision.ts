@@ -24,7 +24,7 @@
  * lost. That leaves a complete, working Tenant and a caller who does not know
  * it; retrying the same slug returns `slug_taken`, which is the correct answer.
  */
-import { and, isNull, ne, eq, sql } from 'drizzle-orm'
+import { and, isNull, ne, sql } from 'drizzle-orm'
 import { currentTenantId, db, withTenant } from '../../db'
 import { seedEmailTemplates } from '../../db/seed/email-templates'
 import { emailTemplates } from '../../db/schema/content'
@@ -36,6 +36,7 @@ import { tenantOrigin } from '../../lib/allowed-origins'
 import { BadRequestError, ConflictError } from '../../shared/errors'
 import { logger } from '../../shared/logger'
 import { inviterNameFor, mailInvitation, writePendingStaff, type StaffInvitationRow } from '../auth/invitations'
+import { claimSlug, slugConflict, type SlugConflict } from './former-slugs'
 import { assertUsableSlug } from './slug'
 import { activateAfterFirstStaff, forgetCachedTenants, loadTenantById } from './tenants'
 
@@ -158,6 +159,10 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
 
   try {
     const created = await db.transaction(async tx => {
+      // A renamed studio's old address is held while it redirects, and no
+      // constraint spans the two tables that say so — see `claimSlug`.
+      await claimSlug(tx, slug)
+
       const [tenant] = await tx
         .insert(tenants)
         .values({
@@ -335,18 +340,14 @@ export async function inviteFirstAdmin(
 }
 
 /**
- * Is a slug free? Answers the super portal's create form before it submits.
+ * Is a slug free? Null when it is; otherwise why not — a studio answers on it,
+ * or it is a renamed studio's old address, still redirecting. Answers the super
+ * portal's create and rename forms before they submit.
  *
  * Deliberately a *platform admin* route only. The same question asked publicly
  * would enumerate every studio on the platform, which is precisely what the
  * public resolver's uniform 404 exists to prevent.
  */
-export async function slugAvailable(slug: string): Promise<boolean> {
-  const normalised = assertUsableSlug(slug)
-  const [row] = await db
-    .select({ id: tenants.id })
-    .from(tenants)
-    .where(eq(tenants.slug, normalised))
-    .limit(1)
-  return !row
+export async function slugConflictFor(slug: string): Promise<SlugConflict | null> {
+  return slugConflict(db, assertUsableSlug(slug))
 }

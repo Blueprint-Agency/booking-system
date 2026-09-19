@@ -5,6 +5,7 @@ import type { TenantRow, TenantSettingsRow } from '../../db/schema/tenancy'
 import type { TenantStatus } from '../../db/enums'
 import { isUniqueViolation } from '../../db/unique-violation'
 import { ConflictError } from '../../shared/errors'
+import { claimSlug } from './former-slugs'
 import { assertUsableSlug, normaliseSlug } from './slug'
 
 /**
@@ -303,6 +304,8 @@ export async function createTenant(input: CreateTenantInput): Promise<ResolvedTe
 
   try {
     return await db.transaction(async tx => {
+      await claimSlug(tx, slug)
+
       const [tenant] = await tx
         .insert(tenants)
         .values({

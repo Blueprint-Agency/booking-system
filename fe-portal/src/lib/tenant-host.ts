@@ -162,6 +162,22 @@ export function isSuperPortalHost(
 }
 
 /**
+ * Where a request to a renamed studio's old address should go: the same path
+ * and query, on the host that carries the studio's new slug instead.
+ *
+ * Only the leading label — the old slug, which `tenantSlugFromHost` read off
+ * this same host — changes, so the port and the root domain, whatever this
+ * environment's are, come along untouched.
+ */
+export function renamedTenantUrl(
+  url: { protocol: string; host: string; pathname: string; search: string },
+  toSlug: string,
+): string {
+  const host = url.host.trim().toLowerCase();
+  return `${url.protocol}//${toSlug}${host.slice(host.indexOf("."))}${url.pathname}${url.search}`;
+}
+
+/**
  * `X-Tenant-Slug` for a browser-side API call.
  *
  * The API hostname never contains the Tenant — one backend serves everyone at

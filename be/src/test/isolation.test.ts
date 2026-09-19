@@ -501,6 +501,34 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     assert.deepEqual(await res.json(), { error: 'not_found' })
   })
 
+  test('a former slug never opens a Tenant context', async () => {
+    // A renamed studio's old address still redirects, so its slug is a live row
+    // pointing at a real Tenant. It is a redirect target for the proxies and
+    // nothing more: the API must refuse it exactly as it refuses a slug that
+    // never existed, so nothing authenticated ever runs on an old host.
+    const former = `former-${two.slug}-${Date.now().toString(36)}`
+    await harness.db.insert(schema.formerSlugs).values({
+      slug: former,
+      renamedTenantId: two.tenantId,
+      newSlug: two.slug,
+      renamedBy: 'isolation@test',
+      redirectUntil: new Date(Date.now() + 24 * HOUR),
+    })
+    try {
+      for (const headers of <Record<string, string>[]>[
+        { 'X-Tenant-Slug': former },
+        { Origin: `http://${former}.localhost:3000` },
+        { Origin: `http://${former}.portal.localhost:3001` },
+      ]) {
+        const res = await harness.app.request('/api/v1/public/locations', { headers })
+        assert.equal(res.status, 404)
+        assert.deepEqual(await res.json(), { error: 'not_found' })
+      }
+    } finally {
+      await harness.db.delete(schema.formerSlugs).where(eq(schema.formerSlugs.slug, former))
+    }
+  })
+
   test('a request that names no tenant is refused, not answered as tenant #1', async () => {
     // This asserted the opposite while the platform still had one studio, and
     // the assertion was the bug: answering as tenant #1 meant a caller that

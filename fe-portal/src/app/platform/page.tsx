@@ -5,6 +5,7 @@ import {
   ExternalLink,
   Loader2,
   Pause,
+  PenLine,
   Play,
   Plus,
   Upload,
@@ -14,6 +15,7 @@ import { toast } from "sonner";
 import { Button, EmptyState, PageHeader, StatusBadge } from "@/components/ui";
 import { CreateTenantDialog } from "@/components/platform/create-tenant-dialog";
 import { InviteFirstAdminDialog } from "@/components/platform/invite-first-admin-dialog";
+import { RenameTenantDialog } from "@/components/platform/rename-tenant-dialog";
 import { ApiError, makeApi } from "@/lib/api";
 import {
   exportTenant,
@@ -25,8 +27,8 @@ import {
 import { getPortalToken, usePortalSession } from "@/lib/portal-auth";
 
 /**
- * Every studio on the platform, and the two things that are done to one from
- * outside it: create, and suspend.
+ * Every studio on the platform, and the few things that are done to one from
+ * outside it: create, suspend, rename, and move its data in or out.
  *
  * Everything else about a studio is administered from inside the studio, by its
  * own admins. This page stays deliberately thin — a super portal that grew a
@@ -45,6 +47,8 @@ export default function PlatformPage() {
   const [creating, setCreating] = useState(false);
   /** The studio the invite dialog is open for, or null. */
   const [inviting, setInviting] = useState<PlatformTenant | null>(null);
+  /** The studio the rename dialog is open for, or null. */
+  const [renaming, setRenaming] = useState<PlatformTenant | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   /** One file input serves every row; this is the studio the picker is for. */
   const [importTarget, setImportTarget] = useState<PlatformTenant | null>(null);
@@ -288,6 +292,17 @@ export default function PlatformPage() {
                   Import
                 </Button>
 
+                {tenant.status !== "archived" && (
+                  <Button
+                    variant="secondary"
+                    disabled={isBusy(tenant.id)}
+                    onClick={() => setRenaming(tenant)}
+                  >
+                    <PenLine className="h-4 w-4" />
+                    Rename
+                  </Button>
+                )}
+
                 {/* Archived studios are terminal here: bringing one back is a
                     decision with data-retention consequences, not a toggle. */}
                 {tenant.status !== "archived" && (
@@ -333,6 +348,20 @@ export default function PlatformPage() {
         onCreated={() => {
           setCreating(false);
           void load();
+        }}
+      />
+
+      <RenameTenantDialog
+        // Keyed on the studio for the same reason as the invite dialog below.
+        key={`rename:${renaming?.id ?? "none"}`}
+        api={api}
+        tenant={renaming}
+        onOpenChange={open => {
+          if (!open) setRenaming(null);
+        }}
+        onRenamed={updated => {
+          setRenaming(null);
+          setTenants(rows => (rows ?? []).map(row => (row.id === updated.id ? updated : row)));
         }}
       />
 

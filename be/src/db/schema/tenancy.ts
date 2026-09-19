@@ -58,6 +58,42 @@ export const tenants = pgTable(
 )
 
 /**
+ * A Slug a Tenant used to answer on, kept while its old addresses redirect.
+ *
+ * Written by a rename (`services/tenants/rename.ts`). For `redirect_until` the
+ * former Slug is a redirect target for the frontends' proxies and nothing more —
+ * the API never resolves it as a Tenant — and no other Tenant may take it, so
+ * nobody can stand up on a studio's old address while its bookmarks, emails
+ * and posters still point there. The nightly release deletes it afterwards.
+ *
+ * Platform data like `tenants`, not Tenant data: the Tenant is named by
+ * `renamed_tenant_id`, never `tenant_id`, so neither the Row-Level Security
+ * sweep (`ensureTenantIsolation`) nor the studio archive picks it up — both
+ * find their tables by that column name.
+ */
+export const formerSlugs = pgTable(
+  'former_slugs',
+  {
+    slug: text('slug').primaryKey(),
+    renamedTenantId: uuid('renamed_tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    // What the Tenant was renamed *to* at the time — a record of the rename.
+    // Redirects read the Tenant's current slug instead, so a second rename
+    // does not strand the first one's old address.
+    newSlug: text('new_slug').notNull(),
+    renamedAt: timestamp('renamed_at', { withTimezone: true }).notNull().defaultNow(),
+    redirectUntil: timestamp('redirect_until', { withTimezone: true }).notNull(),
+    // The platform administrator's email. Not a foreign key: the platform pool's
+    // accounts come and go, and the record must outlive the account.
+    renamedBy: text('renamed_by').notNull(),
+  },
+  table => ({
+    tenantIdx: index('former_slugs_renamed_tenant_id_idx').on(table.renamedTenantId),
+  }),
+)
+
+/**
  * Everything a tenant can re-skin: branding, copy, the from-identity on its
  * mail, its theme tokens and its waiver text. Split from `tenants` because the
  * identity row sits on the request path (slug resolution) while this is the
@@ -117,3 +153,4 @@ export const tenantIdColumn = () =>
 
 export type TenantRow = typeof tenants.$inferSelect
 export type TenantSettingsRow = typeof tenantSettings.$inferSelect
+export type FormerSlugRow = typeof formerSlugs.$inferSelect
