@@ -379,21 +379,51 @@ export async function findOccupancyConflicts(
 }
 
 /** Room name / instructor name for the refusal message. Failure path only. */
-async function subjectLabel(tenantId: string, subject: OccupancySubject): Promise<string> {
+async function subjectLabel(tenantId: string, subject: OccupancySubject, tx?: Tx): Promise<string> {
   if (subject.kind === 'room') {
-    const [room] = await db
+    const [room] = await exec(tx)
       .select({ name: rooms.name })
       .from(rooms)
       .where(and(eq(rooms.tenantId, tenantId), eq(rooms.id, subject.id)))
       .limit(1)
     return room ? `Room ${room.name}` : 'That room'
   }
-  const [staff] = await db
+  const [staff] = await exec(tx)
     .select({ name: staffUsers.name })
     .from(staffUsers)
     .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, subject.id)))
     .limit(1)
   return staff?.name ?? 'That instructor'
+}
+
+/** A busy subject: the `schedule_conflict` error payload. Serialised as-is — do not rename. */
+export interface SubjectClash {
+  subject: OccupancySubject['kind']
+  subject_id: string
+  message: string
+  conflicts: OccupancyConflict[]
+}
+
+/**
+ * The clash `assertAvailable` would refuse with, returned rather than thrown —
+ * for a caller asking about many windows at once (a Class Series preview), which
+ * has to report every clash instead of stopping at the first. Null = free.
+ */
+export async function findClash(
+  tenantId: string,
+  subject: OccupancySubject,
+  window: TimeWindow,
+  exclude?: EventRef,
+  tx?: Tx,
+): Promise<SubjectClash | null> {
+  const conflicts = await findOccupancyConflicts(tenantId, subject, window, exclude, tx)
+  if (conflicts.length === 0) return null
+  return {
+    subject: subject.kind,
+    subject_id: subject.id,
+    message: conflictMessage(await subjectLabel(tenantId, subject, tx), conflicts),
+    conflicts,
+  }
 }
 
 /**
@@ -409,14 +439,8 @@ export async function assertAvailable(
   window: TimeWindow,
   exclude?: EventRef,
 ): Promise<void> {
-  const conflicts = await findOccupancyConflicts(tenantId, subject, window, exclude)
-  if (conflicts.length === 0) return
-  throw new ConflictError('schedule_conflict', {
-    subject: subject.kind,
-    subject_id: subject.id,
-    message: conflictMessage(await subjectLabel(tenantId, subject), conflicts),
-    conflicts,
-  })
+  const clash = await findClash(tenantId, subject, window, exclude)
+  if (clash) throw new ConflictError('schedule_conflict', { ...clash })
 }
 
 /** Everyone being put on the event has to be free, not just whoever leads it. */

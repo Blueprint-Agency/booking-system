@@ -54,6 +54,8 @@ export interface ClassDetail {
   attendees: ClassAttendee[]
   createdAt: Date
   scheduledBy: NamedRef | null
+  /** The Class Series that created this class, if any. */
+  seriesId: string | null
 }
 
 export async function getClassDetail(tenantId: string, id: string): Promise<ClassDetail> {
@@ -82,6 +84,7 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
       createdAt: classes.createdAt,
       scheduledById: classes.createdByStaffId,
       scheduledByName: creator.name,
+      seriesId: classes.seriesId,
     })
     .from(classes)
     .leftJoin(classTypes, eq(classTypes.id, classes.classTypeId))
@@ -183,6 +186,7 @@ export async function getClassDetail(tenantId: string, id: string): Promise<Clas
       row.scheduledById && row.scheduledByName
         ? { id: row.scheduledById, name: row.scheduledByName }
         : null,
+    seriesId: row.seriesId,
   }
 }
 

@@ -435,6 +435,13 @@
       "when": 1789554885533,
       "tag": "0061_pt_session_request_nullable",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1789844302818,
+      "tag": "0056_class_series",
+      "breakpoints": true
     }
   ]
 }

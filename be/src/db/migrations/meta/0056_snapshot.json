@@ -1,9 +1,97 @@
 {
+<<<<<<< HEAD
   "id": "e6c02351-e495-4694-a2f8-5d3e44ab36ba",
   "prevId": "953874f7-f21e-49ee-9e36-87bd8fd84fa3",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
+=======
+  "id": "1cb92371-9027-4394-b796-8d1198189eb0",
+  "prevId": "b174673b-7cfa-4f22-9002-e07218908be9",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.former_slugs": {
+      "name": "former_slugs",
+      "schema": "",
+      "columns": {
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "renamed_tenant_id": {
+          "name": "renamed_tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "new_slug": {
+          "name": "new_slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "renamed_at": {
+          "name": "renamed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "redirect_until": {
+          "name": "redirect_until",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "renamed_by": {
+          "name": "renamed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "former_slugs_renamed_tenant_id_idx": {
+          "name": "former_slugs_renamed_tenant_id_idx",
+          "columns": [
+            {
+              "expression": "renamed_tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "former_slugs_renamed_tenant_id_tenants_id_fk": {
+          "name": "former_slugs_renamed_tenant_id_tenants_id_fk",
+          "tableFrom": "former_slugs",
+          "tableTo": "tenants",
+          "columnsFrom": [
+            "renamed_tenant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+>>>>>>> d92fff1 (Class Series backend: weekly repeating classes with preview, extend and end (#175))
     "public.tenant_settings": {
       "name": "tenant_settings",
       "schema": "",
@@ -485,6 +573,16 @@
           "primaryKey": false,
           "notNull": true
         },
+<<<<<<< HEAD
+=======
+        "granted_location_ids": {
+          "name": "granted_location_ids",
+          "type": "uuid[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::uuid[]"
+        },
+>>>>>>> d92fff1 (Class Series backend: weekly repeating classes with preview, extend and end (#175))
         "token": {
           "name": "token",
           "type": "text",
@@ -749,6 +847,16 @@
           "notNull": true,
           "default": "'pending'"
         },
+<<<<<<< HEAD
+=======
+        "granted_location_ids": {
+          "name": "granted_location_ids",
+          "type": "uuid[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::uuid[]"
+        },
+>>>>>>> d92fff1 (Class Series backend: weekly repeating classes with preview, extend and end (#175))
         "archived_at": {
           "name": "archived_at",
           "type": "timestamp with time zone",
@@ -842,6 +950,24 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+<<<<<<< HEAD
+=======
+        },
+        "staff_users_granted_locations_gin_idx": {
+          "name": "staff_users_granted_locations_gin_idx",
+          "columns": [
+            {
+              "expression": "granted_location_ids",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "gin",
+          "with": {}
+>>>>>>> d92fff1 (Class Series backend: weekly repeating classes with preview, extend and end (#175))
         }
       },
       "foreignKeys": {
@@ -3463,6 +3589,380 @@
       },
       "isRLSEnabled": false
     },
+<<<<<<< HEAD
+=======
+    "public.class_series": {
+      "name": "class_series",
+      "schema": "",
+      "columns": {
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "class_type_id": {
+          "name": "class_type_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "main_instructor_id": {
+          "name": "main_instructor_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "instructor_pay_sgd": {
+          "name": "instructor_pay_sgd",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "location_id": {
+          "name": "location_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "room_id": {
+          "name": "room_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "weekday": {
+          "name": "weekday",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "start_time": {
+          "name": "start_time",
+          "type": "time",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "end_time": {
+          "name": "end_time",
+          "type": "time",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "capacity_online": {
+          "name": "capacity_online",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "capacity_waitlist": {
+          "name": "capacity_waitlist",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "capacity_buffer": {
+          "name": "capacity_buffer",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "credit_cost": {
+          "name": "credit_cost",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "first_date": {
+          "name": "first_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_date": {
+          "name": "last_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "excluded_dates": {
+          "name": "excluded_dates",
+          "type": "date[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
+        },
+        "ended_from": {
+          "name": "ended_from",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by_staff_id": {
+          "name": "created_by_staff_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "class_series_class_type_idx": {
+          "name": "class_series_class_type_idx",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "class_type_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "class_series_tenant_id_tenants_id_fk": {
+          "name": "class_series_tenant_id_tenants_id_fk",
+          "tableFrom": "class_series",
+          "tableTo": "tenants",
+          "columnsFrom": [
+            "tenant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "class_series_class_type_id_class_types_id_fk": {
+          "name": "class_series_class_type_id_class_types_id_fk",
+          "tableFrom": "class_series",
+          "tableTo": "class_types",
+          "columnsFrom": [
+            "class_type_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "class_series_main_instructor_id_instructors_staff_user_id_fk": {
+          "name": "class_series_main_instructor_id_instructors_staff_user_id_fk",
+          "tableFrom": "class_series",
+          "tableTo": "instructors",
+          "columnsFrom": [
+            "main_instructor_id"
+          ],
+          "columnsTo": [
+            "staff_user_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "class_series_location_id_locations_id_fk": {
+          "name": "class_series_location_id_locations_id_fk",
+          "tableFrom": "class_series",
+          "tableTo": "locations",
+          "columnsFrom": [
+            "location_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "class_series_room_id_rooms_id_fk": {
+          "name": "class_series_room_id_rooms_id_fk",
+          "tableFrom": "class_series",
+          "tableTo": "rooms",
+          "columnsFrom": [
+            "room_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "class_series_created_by_staff_id_staff_users_id_fk": {
+          "name": "class_series_created_by_staff_id_staff_users_id_fk",
+          "tableFrom": "class_series",
+          "tableTo": "staff_users",
+          "columnsFrom": [
+            "created_by_staff_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "class_series_weekday_range": {
+          "name": "class_series_weekday_range",
+          "value": "\"class_series\".\"weekday\" BETWEEN 1 AND 7"
+        },
+        "class_series_ends_after_starts": {
+          "name": "class_series_ends_after_starts",
+          "value": "\"class_series\".\"end_time\" > \"class_series\".\"start_time\""
+        },
+        "class_series_last_not_before_first": {
+          "name": "class_series_last_not_before_first",
+          "value": "\"class_series\".\"last_date\" >= \"class_series\".\"first_date\""
+        },
+        "class_series_capacity_non_negative": {
+          "name": "class_series_capacity_non_negative",
+          "value": "\"class_series\".\"capacity_online\" >= 0 AND \"class_series\".\"capacity_waitlist\" >= 0 AND \"class_series\".\"capacity_buffer\" >= 0"
+        },
+        "class_series_capacity_sum_positive": {
+          "name": "class_series_capacity_sum_positive",
+          "value": "\"class_series\".\"capacity_online\" + \"class_series\".\"capacity_waitlist\" + \"class_series\".\"capacity_buffer\" > 0"
+        },
+        "class_series_credit_non_negative": {
+          "name": "class_series_credit_non_negative",
+          "value": "\"class_series\".\"credit_cost\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.class_series_supporting_instructors": {
+      "name": "class_series_supporting_instructors",
+      "schema": "",
+      "columns": {
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "series_id": {
+          "name": "series_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "instructor_id": {
+          "name": "instructor_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pay_sgd": {
+          "name": "pay_sgd",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "class_series_supporting_instructors_instructor_idx": {
+          "name": "class_series_supporting_instructors_instructor_idx",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "instructor_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "class_series_supporting_instructors_tenant_id_tenants_id_fk": {
+          "name": "class_series_supporting_instructors_tenant_id_tenants_id_fk",
+          "tableFrom": "class_series_supporting_instructors",
+          "tableTo": "tenants",
+          "columnsFrom": [
+            "tenant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "class_series_supporting_instructors_series_id_class_series_id_fk": {
+          "name": "class_series_supporting_instructors_series_id_class_series_id_fk",
+          "tableFrom": "class_series_supporting_instructors",
+          "tableTo": "class_series",
+          "columnsFrom": [
+            "series_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "class_series_supporting_instructors_instructor_id_instructors_staff_user_id_fk": {
+          "name": "class_series_supporting_instructors_instructor_id_instructors_staff_user_id_fk",
+          "tableFrom": "class_series_supporting_instructors",
+          "tableTo": "instructors",
+          "columnsFrom": [
+            "instructor_id"
+          ],
+          "columnsTo": [
+            "staff_user_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "class_series_supporting_instructors_series_id_instructor_id_pk": {
+          "name": "class_series_supporting_instructors_series_id_instructor_id_pk",
+          "columns": [
+            "series_id",
+            "instructor_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+>>>>>>> d92fff1 (Class Series backend: weekly repeating classes with preview, extend and end (#175))
     "public.class_supporting_instructors": {
       "name": "class_supporting_instructors",
       "schema": "",
@@ -3675,6 +4175,15 @@
           "primaryKey": false,
           "notNull": false
         },
+<<<<<<< HEAD
+=======
+        "series_id": {
+          "name": "series_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+>>>>>>> d92fff1 (Class Series backend: weekly repeating classes with preview, extend and end (#175))
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -3711,6 +4220,36 @@
           "method": "btree",
           "with": {}
         },
+<<<<<<< HEAD
+=======
+        "classes_series_starts_idx": {
+          "name": "classes_series_starts_idx",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "series_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "starts_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+>>>>>>> d92fff1 (Class Series backend: weekly repeating classes with preview, extend and end (#175))
         "classes_main_instructor_starts_idx": {
           "name": "classes_main_instructor_starts_idx",
           "columns": [
@@ -3920,6 +4459,22 @@
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
+<<<<<<< HEAD
+=======
+        "classes_series_id_class_series_id_fk": {
+          "name": "classes_series_id_class_series_id_fk",
+          "tableFrom": "classes",
+          "tableTo": "class_series",
+          "columnsFrom": [
+            "series_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+>>>>>>> d92fff1 (Class Series backend: weekly repeating classes with preview, extend and end (#175))
         "classes_created_by_staff_id_staff_users_id_fk": {
           "name": "classes_created_by_staff_id_staff_users_id_fk",
           "tableFrom": "classes",
@@ -7903,12 +8458,15 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+<<<<<<< HEAD
         },
         "outcome_at": {
           "name": "outcome_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+=======
+>>>>>>> d92fff1 (Class Series backend: weekly repeating classes with preview, extend and end (#175))
         }
       },
       "indexes": {
@@ -10550,12 +11108,16 @@
       "values": [
         "queued",
         "sent",
+<<<<<<< HEAD
         "failed",
         "delivered",
         "bounced",
         "complained",
         "delivery_delayed",
         "suppressed"
+=======
+        "failed"
+>>>>>>> d92fff1 (Class Series backend: weekly repeating classes with preview, extend and end (#175))
       ]
     },
     "public.email_recipient_kind": {
@@ -10725,6 +11287,10 @@
       "name": "staff_role",
       "schema": "public",
       "values": [
+<<<<<<< HEAD
+=======
+        "superadmin",
+>>>>>>> d92fff1 (Class Series backend: weekly repeating classes with preview, extend and end (#175))
         "admin",
         "instructor"
       ]

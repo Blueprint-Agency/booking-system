@@ -71,6 +71,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
   let roomsSvc: typeof import('../services/catalog/rooms')
   let merchSvc: typeof import('../services/catalog/merch')
   let classesSvc: typeof import('../services/schedule/classes')
+  let seriesSvc: typeof import('../services/schedule/series')
   let policySvc: typeof import('../services/policy/update')
   let clientsSvc: typeof import('../services/clients/manage')
   let staffSvc: typeof import('../services/auth/staff-archive')
@@ -297,6 +298,12 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
         SELECT id FROM class_types WHERE name LIKE '% Flow'
       )
     `)
+    // After the classes: each one's series_id restricts its series' delete.
+    await harness.db.execute(sql`
+      DELETE FROM class_series WHERE class_type_id IN (
+        SELECT id FROM class_types WHERE name LIKE '% Flow'
+      )
+    `)
     await harness.db.execute(sql`DELETE FROM class_types WHERE name LIKE '% Flow'`)
 
     // The remaining-surfaces fixtures, innermost outwards.
@@ -395,6 +402,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     roomsSvc = inTenantContext(await import('../services/catalog/rooms'))
     merchSvc = inTenantContext(await import('../services/catalog/merch'))
     classesSvc = inTenantContext(await import('../services/schedule/classes'))
+    seriesSvc = inTenantContext(await import('../services/schedule/series'))
     policySvc = inTenantContext(await import('../services/policy/update'))
     clientsSvc = inTenantContext(await import('../services/clients/manage'))
     staffSvc = inTenantContext(await import('../services/auth/staff-archive'))
@@ -653,6 +661,81 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
       .from(schema.classes)
       .where(eq(schema.classes.id, one.classId))
     assert.equal(untouched?.capacityOnline, 10)
+  })
+
+  test("a Class Series stays inside its tenant: its template can't borrow, its series can't be reached", async () => {
+    // Far out, on a Monday, so no fixture class or leave can clash.
+    const base = plainDate(new Date(Date.now() + 500 * 24 * HOUR))
+    const firstDate = plainDate(
+      new Date(Date.parse(`${base}T00:00:00Z`) + ((8 - new Date(`${base}T00:00:00Z`).getUTCDay()) % 7) * 24 * HOUR),
+    )
+    const lastDate = plainDate(new Date(Date.parse(`${firstDate}T00:00:00Z`) + 7 * 24 * HOUR))
+    const template = (f: Fixture) => ({
+      classTypeId: f.classTypeId,
+      mainInstructorId: f.instructorId,
+      instructorPaySgd: 50,
+      supportingInstructors: [],
+      locationId: f.locationId,
+      roomId: f.roomId,
+      weekday: 1 as const,
+      startTime: '09:00',
+      endTime: '10:00',
+      capacityOnline: 10,
+      capacityWaitlist: 0,
+      capacityBuffer: 0,
+      creditCost: 1,
+      firstDate,
+      lastDate,
+      excludedDates: [],
+    })
+
+    const own = await seriesSvc.createSeries(one.tenantId, {
+      ...template(one),
+      createdByStaffId: one.instructorId,
+    })
+    assert.equal(own.classIds.length, 2)
+
+    for (const attempt of [
+      () => seriesSvc.getSeries(two.tenantId, own.series.id),
+      () => seriesSvc.previewExtend(two.tenantId, own.series.id, { lastDate: firstDate }),
+      () =>
+        seriesSvc.extendSeries(two.tenantId, own.series.id, {
+          lastDate: firstDate,
+          actorStaffId: two.instructorId,
+        }),
+      () =>
+        seriesSvc.endSeries(two.tenantId, own.series.id, {
+          fromDate: firstDate,
+          actorStaffId: two.instructorId,
+        }),
+    ]) {
+      await assert.rejects(attempt, (err: { code?: string }) => err.code === 'series_not_found')
+    }
+    const theirs = await harness.db
+      .select()
+      .from(schema.classes)
+      .where(eq(schema.classes.seriesId, own.series.id))
+    assert.ok(theirs.every(c => c.lifecycle === 'active'), "tenant two's end reached nothing")
+
+    const borrow = (overrides: Partial<ReturnType<typeof template>>) =>
+      seriesSvc.previewSeries(two.tenantId, { ...template(two), ...overrides })
+    await assert.rejects(
+      () => borrow({ roomId: one.roomId, locationId: one.locationId }),
+      (err: { code?: string }) => err.code === 'room_not_found',
+    )
+    await assert.rejects(
+      () => borrow({ classTypeId: one.classTypeId }),
+      (err: { code?: string }) => err.code === 'class_type_not_found',
+    )
+    await assert.rejects(
+      () =>
+        seriesSvc.createSeries(two.tenantId, {
+          ...template(two),
+          mainInstructorId: one.instructorId,
+          createdByStaffId: two.instructorId,
+        }),
+      (err: { code?: string }) => err.code === 'invalid_instructor_id',
+    )
   })
 
   test("merch reads and writes stop at the tenant's own catalogue", async () => {
