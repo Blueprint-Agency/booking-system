@@ -157,12 +157,17 @@ To map an `app_id` that is not in the table, open the Faro app in Grafana
 > `environment:"production"`. A silent production query is therefore no longer
 > explained by a missing env var.
 >
-> Still open: **no production event has ever arrived.** Every event in Loki is
-> `deployment_environment=staging`, and the config above means the only thing
-> left is that nobody has loaded a production page in a real browser since the
-> redeploy — the E2E suite drives staging only. Loading
-> `www.reservetoday.app` and `admin.portal.reservetoday.app` once is what proves
-> it end to end. One stray event names an app
+> **Proven end to end the same day.** Both production pages were loaded in a
+> browser and the events landed within the hour: `1340` / `fe-client` 41 events
+> and 8 measurements, `1339` / `fe-portal` 8 and 8, all
+> `deployment_environment=production`. So Web Vitals flow in production too, and
+> production traffic goes to the two **current** apps — `1337` and `1338`
+> received nothing in that hour, which is what tells you they are fed only by old
+> Preview builds under the E2E suite.
+>
+> **The E2E suite drives staging only, so production is silent until a human
+> visits.** A quiet production query outside working hours is therefore normal on
+> a pre-launch site, not an outage. One stray event names an app
 > `reservetoday-client`, which no current code emits — a stale tab, and proof
 > the app name is baked in at build time. Tracked in the issues linked from
 > [#124](https://github.com/Blueprint-Agency/booking-system/issues/124).
