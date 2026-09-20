@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { clients } from '../../db/schema/identity'
+import type { ErrorCode } from '../../shared/error-codes'
 import { AppError, BadRequestError, ForbiddenError } from '../../shared/errors'
 import { requireTenantUrl } from '../tenants/urls'
 import {
@@ -96,6 +97,9 @@ export async function setPasswordFromLink(input: {
 /** A refusal from the member pool, as the error our routes answer with. */
 export function memberAuthError(refused: MemberAuthRefusal): AppError {
   if (refused.status === 429) return tooManyRequests()
-  const message = (refused.body as { message?: string } | null)?.message ?? 'sign_in_failed'
+  // Relayed from Better Auth, not decided here: our own hooks refuse with
+  // catalogued codes, and anything else it says passes through as it came.
+  const message = ((refused.body as { message?: string } | null)?.message ??
+    'sign_in_failed') as ErrorCode
   return refused.status === 403 ? new ForbiddenError(message) : new BadRequestError(message)
 }
