@@ -437,17 +437,10 @@
       "breakpoints": true
     },
     {
-      "idx": 56,
+      "idx": 62,
       "version": "7",
-      "when": 1789844302818,
-      "tag": "0056_class_series",
-      "breakpoints": true
-    },
-    {
-      "idx": 57,
-      "version": "7",
-      "when": 1789873706486,
-      "tag": "0057_complimentary_package",
+      "when": 1789888775091,
+      "tag": "0062_slug_rename_class_series_complimentary",
       "breakpoints": true
     }
   ]

@@ -1,9 +1,89 @@
 {
-  "id": "e6c02351-e495-4694-a2f8-5d3e44ab36ba",
-  "prevId": "953874f7-f21e-49ee-9e36-87bd8fd84fa3",
+  "id": "c612580f-e934-4016-b762-aa7cd9379e0b",
+  "prevId": "38a6bacb-9a59-4233-9b49-dc9fe521004a",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
+    "public.former_slugs": {
+      "name": "former_slugs",
+      "schema": "",
+      "columns": {
+        "slug": {
+          "name": "slug",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "renamed_tenant_id": {
+          "name": "renamed_tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "new_slug": {
+          "name": "new_slug",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "renamed_at": {
+          "name": "renamed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "redirect_until": {
+          "name": "redirect_until",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "renamed_by": {
+          "name": "renamed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "former_slugs_renamed_tenant_id_idx": {
+          "name": "former_slugs_renamed_tenant_id_idx",
+          "columns": [
+            {
+              "expression": "renamed_tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "former_slugs_renamed_tenant_id_tenants_id_fk": {
+          "name": "former_slugs_renamed_tenant_id_tenants_id_fk",
+          "tableFrom": "former_slugs",
+          "tableTo": "tenants",
+          "columnsFrom": [
+            "renamed_tenant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.tenant_settings": {
       "name": "tenant_settings",
       "schema": "",
@@ -1557,7 +1637,7 @@
           "name": "client_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "merch_id": {
           "name": "merch_id",
@@ -2248,7 +2328,7 @@
           "name": "client_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "kind": {
           "name": "kind",
@@ -2354,6 +2434,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "complimentary": {
+          "name": "complimentary",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         }
       },
       "indexes": {
@@ -2592,6 +2679,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "client_packages_complimentary_free": {
+          "name": "client_packages_complimentary_free",
+          "value": "NOT \"client_packages\".\"complimentary\" OR (\"client_packages\".\"amount_paid_sgd\" = 0 AND \"client_packages\".\"stripe_payment_intent_id\" IS NULL)"
+        },
         "client_packages_non_negative_balance": {
           "name": "client_packages_non_negative_balance",
           "value": "\"client_packages\".\"credits_or_sessions_remaining\" IS NULL OR \"client_packages\".\"credits_or_sessions_remaining\" >= 0"
@@ -2856,7 +2947,7 @@
           "name": "client_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "status": {
           "name": "status",
@@ -3463,6 +3554,377 @@
       },
       "isRLSEnabled": false
     },
+    "public.class_series": {
+      "name": "class_series",
+      "schema": "",
+      "columns": {
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "class_type_id": {
+          "name": "class_type_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "main_instructor_id": {
+          "name": "main_instructor_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "instructor_pay_sgd": {
+          "name": "instructor_pay_sgd",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "location_id": {
+          "name": "location_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "room_id": {
+          "name": "room_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "weekday": {
+          "name": "weekday",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "start_time": {
+          "name": "start_time",
+          "type": "time",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "end_time": {
+          "name": "end_time",
+          "type": "time",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "capacity_online": {
+          "name": "capacity_online",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "capacity_waitlist": {
+          "name": "capacity_waitlist",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "capacity_buffer": {
+          "name": "capacity_buffer",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "credit_cost": {
+          "name": "credit_cost",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "first_date": {
+          "name": "first_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_date": {
+          "name": "last_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "excluded_dates": {
+          "name": "excluded_dates",
+          "type": "date[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
+        },
+        "ended_from": {
+          "name": "ended_from",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_by_staff_id": {
+          "name": "created_by_staff_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "class_series_class_type_idx": {
+          "name": "class_series_class_type_idx",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "class_type_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "class_series_tenant_id_tenants_id_fk": {
+          "name": "class_series_tenant_id_tenants_id_fk",
+          "tableFrom": "class_series",
+          "tableTo": "tenants",
+          "columnsFrom": [
+            "tenant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "class_series_class_type_id_class_types_id_fk": {
+          "name": "class_series_class_type_id_class_types_id_fk",
+          "tableFrom": "class_series",
+          "tableTo": "class_types",
+          "columnsFrom": [
+            "class_type_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "class_series_main_instructor_id_instructors_staff_user_id_fk": {
+          "name": "class_series_main_instructor_id_instructors_staff_user_id_fk",
+          "tableFrom": "class_series",
+          "tableTo": "instructors",
+          "columnsFrom": [
+            "main_instructor_id"
+          ],
+          "columnsTo": [
+            "staff_user_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "class_series_location_id_locations_id_fk": {
+          "name": "class_series_location_id_locations_id_fk",
+          "tableFrom": "class_series",
+          "tableTo": "locations",
+          "columnsFrom": [
+            "location_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "class_series_room_id_rooms_id_fk": {
+          "name": "class_series_room_id_rooms_id_fk",
+          "tableFrom": "class_series",
+          "tableTo": "rooms",
+          "columnsFrom": [
+            "room_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "class_series_created_by_staff_id_staff_users_id_fk": {
+          "name": "class_series_created_by_staff_id_staff_users_id_fk",
+          "tableFrom": "class_series",
+          "tableTo": "staff_users",
+          "columnsFrom": [
+            "created_by_staff_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "class_series_weekday_range": {
+          "name": "class_series_weekday_range",
+          "value": "\"class_series\".\"weekday\" BETWEEN 1 AND 7"
+        },
+        "class_series_ends_after_starts": {
+          "name": "class_series_ends_after_starts",
+          "value": "\"class_series\".\"end_time\" > \"class_series\".\"start_time\""
+        },
+        "class_series_last_not_before_first": {
+          "name": "class_series_last_not_before_first",
+          "value": "\"class_series\".\"last_date\" >= \"class_series\".\"first_date\""
+        },
+        "class_series_capacity_non_negative": {
+          "name": "class_series_capacity_non_negative",
+          "value": "\"class_series\".\"capacity_online\" >= 0 AND \"class_series\".\"capacity_waitlist\" >= 0 AND \"class_series\".\"capacity_buffer\" >= 0"
+        },
+        "class_series_capacity_sum_positive": {
+          "name": "class_series_capacity_sum_positive",
+          "value": "\"class_series\".\"capacity_online\" + \"class_series\".\"capacity_waitlist\" + \"class_series\".\"capacity_buffer\" > 0"
+        },
+        "class_series_credit_non_negative": {
+          "name": "class_series_credit_non_negative",
+          "value": "\"class_series\".\"credit_cost\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.class_series_supporting_instructors": {
+      "name": "class_series_supporting_instructors",
+      "schema": "",
+      "columns": {
+        "tenant_id": {
+          "name": "tenant_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "series_id": {
+          "name": "series_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "instructor_id": {
+          "name": "instructor_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pay_sgd": {
+          "name": "pay_sgd",
+          "type": "numeric(10, 2)",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "class_series_supporting_instructors_instructor_idx": {
+          "name": "class_series_supporting_instructors_instructor_idx",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "instructor_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "class_series_supporting_instructors_tenant_id_tenants_id_fk": {
+          "name": "class_series_supporting_instructors_tenant_id_tenants_id_fk",
+          "tableFrom": "class_series_supporting_instructors",
+          "tableTo": "tenants",
+          "columnsFrom": [
+            "tenant_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "class_series_supporting_instructors_series_id_class_series_id_fk": {
+          "name": "class_series_supporting_instructors_series_id_class_series_id_fk",
+          "tableFrom": "class_series_supporting_instructors",
+          "tableTo": "class_series",
+          "columnsFrom": [
+            "series_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "class_series_supporting_instructors_instructor_id_instructors_staff_user_id_fk": {
+          "name": "class_series_supporting_instructors_instructor_id_instructors_staff_user_id_fk",
+          "tableFrom": "class_series_supporting_instructors",
+          "tableTo": "instructors",
+          "columnsFrom": [
+            "instructor_id"
+          ],
+          "columnsTo": [
+            "staff_user_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "class_series_supporting_instructors_series_id_instructor_id_pk": {
+          "name": "class_series_supporting_instructors_series_id_instructor_id_pk",
+          "columns": [
+            "series_id",
+            "instructor_id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.class_supporting_instructors": {
       "name": "class_supporting_instructors",
       "schema": "",
@@ -3675,6 +4137,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "series_id": {
+          "name": "series_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -3695,6 +4163,33 @@
           "columns": [
             {
               "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "starts_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "classes_series_starts_idx": {
+          "name": "classes_series_starts_idx",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "series_id",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -3913,6 +4408,19 @@
           "tableTo": "staff_users",
           "columnsFrom": [
             "cancelled_by_staff_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "classes_series_id_class_series_id_fk": {
+          "name": "classes_series_id_class_series_id_fk",
+          "tableFrom": "classes",
+          "tableTo": "class_series",
+          "columnsFrom": [
+            "series_id"
           ],
           "columnsTo": [
             "id"
@@ -5354,7 +5862,7 @@
           "name": "pt_request_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "instructor_id": {
           "name": "instructor_id",
@@ -7659,7 +8167,7 @@
           "name": "client_id",
           "type": "uuid",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "booking_id": {
           "name": "booking_id",
@@ -10421,7 +10929,9 @@
         "sessions_revoked",
         "user_blocked",
         "user_unblocked",
-        "invitation_resent"
+        "invitation_resent",
+        "member_data_exported",
+        "member_deleted"
       ]
     },
     "public.auth_pool": {
