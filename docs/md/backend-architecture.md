@@ -846,7 +846,7 @@ A studio's **own** payment-provider account: its credentials, so every call on t
 
 **Both secrets are sealed** (AES-256-GCM, `be/src/lib/secret-box.ts`) with `PAYMENT_CREDENTIALS_KEY` from the environment, so a database backup is not a set of live payment keys. `account_id` is deliberately *not* sealed: it names the account rather than opening it, and it is the only thing the super portal ever shows back. No route returns either secret, masked or otherwise.
 
-**Two doors, and only two.** Writes run inside `withTenant`, under the same Row-Level Security policy every other tenant-scoped table carries (migration 0048). Reads go through the owner-owned `tenant_payment_credentials_for(tenant_id)` — because the callers have no Tenant context to open: a background job has no request, and a webhook cannot open one until it knows whose delivery it is holding. The super portal's list reads `tenant_payment_accounts()`, which returns tenant ids and account ids and no sealed value at all.
+**Two doors, and only two.** Writes run inside `withTenant`, under the same Row-Level Security policy every other tenant-scoped table carries (migration 0067). Reads go through the owner-owned `tenant_payment_credentials_for(tenant_id)` — because the callers have no Tenant context to open: a background job has no request, and a webhook cannot open one until it knows whose delivery it is holding. The super portal's list reads `tenant_payment_accounts()`, which returns tenant ids and account ids and no sealed value at all.
 
 ### 4j. Content
 

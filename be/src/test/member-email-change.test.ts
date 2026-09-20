@@ -202,7 +202,7 @@ describe('member email change', { skip: integrationTestsEnabled ? false : SKIP_R
     const member = await newMember('mover')
     const { clientPackageId } = await purchaseSvc.grantPackage(tenantId, {
       clientId: member.id,
-      paymentIntentId: null,
+      purchaseId: null,
       amountSgd: '150.00',
       packageKind: 'class',
       packageId: bundleCatalogId,

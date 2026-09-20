@@ -430,10 +430,12 @@ export const clientPackages = pgTable(
     activatedPtUniquePerClient: uniqueIndex('client_packages_one_activated_pt_per_client')
       .on(table.clientId)
       .where(sql`${table.kind} = 'pt' AND ${table.active} AND ${table.expiresAt} IS NOT NULL`),
-    // A comp took no money and never reached the payment provider.
+    // A comp took no money and never reached the payment provider — so no
+    // Purchase bought it. (Read off the payment intent until #92 took that
+    // column off; migration 0065 re-states the check against `purchase_id`.)
     complimentaryFree: check(
       'client_packages_complimentary_free',
-      sql`NOT ${table.complimentary} OR (${table.amountPaidSgd} = 0 AND ${table.stripePaymentIntentId} IS NULL)`,
+      sql`NOT ${table.complimentary} OR (${table.amountPaidSgd} = 0 AND ${table.purchaseId} IS NULL)`,
     ),
     nonNegBalance: check(
       'client_packages_non_negative_balance',

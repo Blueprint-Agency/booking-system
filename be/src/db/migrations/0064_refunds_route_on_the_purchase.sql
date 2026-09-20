@@ -7,7 +7,7 @@
 --
 -- This migration is the expand step of the swap — it adds the pointers, fills
 -- them from the ledger and closes `stripe_payments.purchase_id`. The old columns
--- come off in 0046, once nothing reads them.
+-- come off in 0065, once nothing reads them.
 
 -- The plan's Purchase, found through the payment that bought it. The intent is
 -- unique per Tenant on both sides, so this pairs each plan with at most one
@@ -22,7 +22,7 @@ ALTER TABLE "bookings" ADD COLUMN "purchase_id" uuid;--> statement-breakpoint
 ALTER TABLE "client_packages" ADD CONSTRAINT "client_packages_purchase_id_purchases_id_fk" FOREIGN KEY ("purchase_id") REFERENCES "public"."purchases"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "bookings" ADD CONSTRAINT "bookings_purchase_id_purchases_id_fk" FOREIGN KEY ("purchase_id") REFERENCES "public"."purchases"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 
--- Any payment 0044 did not reach — one taken between that migration and this
+-- Any payment 0063 did not reach — one taken between that migration and this
 -- one, by a checkout session created before Purchases existed — gets the same
 -- treatment it would have got there: one payment, one Purchase, the payment's
 -- own uuid as its id, so the pairing stays provably one-to-one and this stays

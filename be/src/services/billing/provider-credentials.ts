@@ -76,7 +76,7 @@ type SealedRow = {
  * A Tenant's credentials, or null when it has none and therefore sells on the
  * platform account.
  *
- * The read goes through `tenant_payment_credentials_for()` (migration 0048) because the
+ * The read goes through `tenant_payment_credentials_for()` (migration 0067) because the
  * callers have no Tenant context to open: a background job has no request, and
  * the webhook cannot open a context until it knows whose delivery this is —
  * which is the very question the credentials answer.
@@ -156,7 +156,7 @@ export const NO_PAYMENT_ACCOUNT: ProviderAccountStatus = { configured: false, ac
 /**
  * Every studio that has an account of its own, for the super portal's list.
  *
- * Through `tenant_payment_accounts()` (migration 0048) because the super portal
+ * Through `tenant_payment_accounts()` (migration 0067) because the super portal
  * is cross-tenant and holds no context — and that function returns the tenant
  * id and the account id only, so no sealed value is anywhere near this path.
  */

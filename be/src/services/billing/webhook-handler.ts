@@ -124,7 +124,7 @@ async function tenantForClient(clientId: string): Promise<string> {
  * The session metadata is the normal answer. The payment row is the next one,
  * and it is not merely defensive: a checkout session created before Purchases
  * existed carries no `purchase_id`, but its payment row was given one by the
- * backfill (migration 0044), and without this that Purchase would sit `open`
+ * backfill (migration 0063), and without this that Purchase would sit `open`
  * with nothing paid while its payment succeeded — the one disagreement between
  * `amount_paid_sgd` and the ledger that this record exists to prevent.
  *

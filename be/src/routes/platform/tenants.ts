@@ -287,10 +287,10 @@ const app = new Hono()
    */
   .put('/tenants/:id/payment-credentials', zValidator('json', credentialsBody), async c => {
     const id = z.string().uuid().safeParse(c.req.param('id'))
-    if (!id.success) return c.json({ error: 'not_found' }, 404)
+    if (!id.success) return c.json({ error: ERROR_CODES.not_found }, 404)
 
     const tenant = await loadTenantById(id.data)
-    if (!tenant) return c.json({ error: 'not_found' }, 404)
+    if (!tenant) return c.json({ error: ERROR_CODES.not_found }, 404)
 
     const body = c.req.valid('json')
 
@@ -303,8 +303,8 @@ const app = new Hono()
     } catch (err) {
       if (!(err instanceof ProviderOnboardingError)) throw err
       return err.reason === 'storage_unavailable'
-        ? c.json({ error: 'secret_storage_unavailable' }, 503)
-        : c.json({ error: 'provider_key_rejected' }, 400)
+        ? c.json({ error: ERROR_CODES.secret_storage_unavailable }, 503)
+        : c.json({ error: ERROR_CODES.provider_key_rejected }, 400)
     }
 
     // The account, never the key. This line is the audit trail for "who moved
@@ -340,10 +340,10 @@ const app = new Hono()
    */
   .delete('/tenants/:id/payment-credentials', async c => {
     const id = z.string().uuid().safeParse(c.req.param('id'))
-    if (!id.success) return c.json({ error: 'not_found' }, 404)
+    if (!id.success) return c.json({ error: ERROR_CODES.not_found }, 404)
 
     const tenant = await loadTenantById(id.data)
-    if (!tenant) return c.json({ error: 'not_found' }, 404)
+    if (!tenant) return c.json({ error: ERROR_CODES.not_found }, 404)
 
     const payments = await releaseProviderAccount(id.data)
 

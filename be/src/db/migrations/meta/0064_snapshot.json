@@ -1,6 +1,6 @@
 {
-  "id": "77c003d4-01c7-42ee-982b-06755455d219",
-  "prevId": "4131e4ad-5224-4978-8045-aab4834d23f8",
+  "id": "4131e4ad-5224-4978-8045-aab4834d23f8",
+  "prevId": "ff6c4dc3-4ffc-4b4d-b736-e07a3652ba1c",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2397,6 +2397,12 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
+        },
+        "stripe_payment_intent_id": {
+          "name": "stripe_payment_intent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -2472,6 +2478,28 @@
           ],
           "isUnique": true,
           "where": "\"client_packages\".\"purchase_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "client_packages_stripe_intent_unique": {
+          "name": "client_packages_stripe_intent_unique",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "stripe_payment_intent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"client_packages\".\"stripe_payment_intent_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -6681,6 +6709,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "stripe_payment_intent_id": {
+          "name": "stripe_payment_intent_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "booked_at": {
           "name": "booked_at",
           "type": "timestamp with time zone",
@@ -6879,6 +6913,28 @@
           ],
           "isUnique": true,
           "where": "\"bookings\".\"purchase_id\" IS NOT NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "bookings_stripe_intent_unique": {
+          "name": "bookings_stripe_intent_unique",
+          "columns": [
+            {
+              "expression": "tenant_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "stripe_payment_intent_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"bookings\".\"stripe_payment_intent_id\" IS NOT NULL",
           "concurrently": false,
           "method": "btree",
           "with": {}

@@ -245,7 +245,7 @@ describe('complimentary package', { skip: integrationTestsEnabled ? false : SKIP
     assert.equal(given.amountPaidSgd, '0.00', 'nothing was paid')
     assert.equal(given.listPriceSgd, '200.00', 'the catalogue price is frozen as List Price')
     assert.equal(given.complimentary, true, 'the row says it was given, not sold')
-    assert.equal(given.stripePaymentIntentId, null, 'it never reached the payment provider')
+    assert.equal(given.purchaseId, null, 'no sale bought it — it never reached the payment provider')
     assert.equal(given.expiresAt, null, 'Dormant, like every purchase')
     assert.equal(given.validityDays, 30, 'the catalogue length is frozen')
 

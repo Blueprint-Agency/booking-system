@@ -208,7 +208,7 @@ function MerchSuccess({ stripeSessionId }: { stripeSessionId: string | null }) {
  * provider actually captured against a balance it owns.
  */
 function BalanceSuccess({ stripeSessionId }: { stripeSessionId: string | null }) {
-  const { getToken } = useAuth();
+  const getToken = getMemberToken;
   const { refetch: refetchPackages } = useClientPackages();
   const partPayment = usePartPaymentOptions();
   // Three states, and the third is the point: what this session left owing, or
