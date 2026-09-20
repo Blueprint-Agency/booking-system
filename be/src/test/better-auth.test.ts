@@ -158,31 +158,23 @@ describe('better auth pools', { skip: integrationTestsEnabled ? false : SKIP_REA
     }
   })
 
-  test('a member signs up, then signs in, by emailed code', async () => {
-    const signIn = async () => {
-      const sent = await call('client', '/email-otp/send-verification-otp', {
-        body: { email: MEMBER, type: 'sign-in' },
-      })
-      assert.equal(sent.status, 200, await sent.clone().text())
-      const code = codeIn(lastMailTo(MEMBER).html)
-      return tokenOf(await call('client', '/sign-in/email-otp', { body: { email: MEMBER, otp: code } }))
-    }
+  test('an emailed code creates no member and signs no one in; a password does (#173)', async () => {
+    const sent = await call('client', '/email-otp/send-verification-otp', {
+      body: { email: MEMBER, type: 'sign-in' },
+    })
+    assert.equal(sent.status, 200, await sent.clone().text())
+    const code = codeIn(lastMailTo(MEMBER).html)
+    const byCode = await call('client', '/sign-in/email-otp', { body: { email: MEMBER, otp: code } })
+    assert.equal(byCode.status, 404, 'signing in by code is switched off')
+    const none = await harness.db
+      .select()
+      .from(schema.clientAuthUsers)
+      .where(eq(schema.clientAuthUsers.email, MEMBER))
+    assert.equal(none.length, 0, 'a code alone creates nobody')
 
-    memberToken = await signIn()
+    const headers = await harness.signInAs('client', MEMBER, tenant)
+    memberToken = headers.Authorization!.replace(/^Bearer /, '')
     assert.equal(await sessionEmail('client', memberToken), MEMBER)
-    const [created] = await harness.db
-      .select()
-      .from(schema.clientAuthUsers)
-      .where(eq(schema.clientAuthUsers.email, MEMBER))
-    assert.ok(created, 'the first code created the member')
-
-    // The second time is a sign-in, not a second account.
-    await signIn()
-    const users = await harness.db
-      .select()
-      .from(schema.clientAuthUsers)
-      .where(eq(schema.clientAuthUsers.email, MEMBER))
-    assert.equal(users.length, 1)
   })
 
   test("a member's code is the studio's mail, on the member envelope, logged without the code", async () => {

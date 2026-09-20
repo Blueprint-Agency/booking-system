@@ -138,7 +138,7 @@ export function tenantId(c: Context): string {
  * Called from the two studio auth middlewares, at the first moment the caller's own
  * row is in hand. A null `rowTenantId` used to be read as tenant #1 — the right
  * reading while the column was still nullable and an un-backfilled row really
- * did belong to the first studio. `tenant_id` is `NOT NULL` on all 53 tables
+ * did belong to the first studio. `tenant_id` is `NOT NULL` on all 55 tables
  * now (`tenantIdColumn`), so null is no longer a pre-tenancy row; it is a row
  * that should not exist. Matching it against a studio would let it through, so
  * it matches nothing.

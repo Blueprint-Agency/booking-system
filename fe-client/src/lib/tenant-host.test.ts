@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { tenantSlugFromHost } from "./tenant-host.ts";
+import { renamedTenantUrl, tenantSlugFromHost } from "./tenant-host.ts";
 
 const LOCAL = "localhost:3000";
 const STAGING = "dev.reservetoday.app";
@@ -79,4 +79,22 @@ test("a malformed label is not a slug", () => {
 test("a missing host or root domain yields no slug", () => {
   assert.equal(tenantSlugFromHost(null, PROD), null);
   assert.equal(tenantSlugFromHost("acme.reservetoday.app", ""), null);
+});
+
+test("a renamed studio's old address moves to the same page on the new one", () => {
+  const url = { protocol: "https:", pathname: "/classes/42", search: "?day=mon&x=1" };
+  assert.equal(
+    renamedTenantUrl({ ...url, host: "old-name.reservetoday.app" }, "new-name"),
+    "https://new-name.reservetoday.app/classes/42?day=mon&x=1",
+  );
+});
+
+test("the rename keeps the port and ignores host casing", () => {
+  assert.equal(
+    renamedTenantUrl(
+      { protocol: "http:", host: "Old-Name.localhost:3000", pathname: "/", search: "" },
+      "new-name",
+    ),
+    "http://new-name.localhost:3000/",
+  );
 });

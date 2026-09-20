@@ -94,6 +94,8 @@ export interface ScheduleClassDetail {
   attendees: ScheduleClassAttendee[];
   created_at: string;
   scheduled_by: NamedRef | null;
+  /** The Class Series that created this class, if any. */
+  series_id: string | null;
 }
 
 export interface SchedulePtAttendee {

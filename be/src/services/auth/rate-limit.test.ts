@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import { AUTH_RATE_LIMITS, authRateLimit, authRateLimitStorage } from './rate-limit'
+import { AUTH_EMAIL_RATE_LIMITS, AUTH_RATE_LIMITS, authRateLimit, authRateLimitStorage, emailBudget } from './rate-limit'
 
 describe('auth rate limits', () => {
   test('a budget is spent, refused with the time left, and refilled by the next window', async () => {
@@ -55,6 +55,7 @@ describe('auth rate limits', () => {
     for (const path of ['/email-otp/send-verification-otp', '/two-factor/send-otp']) {
       assert.deepEqual(customRules[path], AUTH_RATE_LIMITS.codeRequest, path)
     }
+    assert.deepEqual(customRules['/request-password-reset'], AUTH_RATE_LIMITS.passwordLink)
     for (const path of [
       '/sign-in/email',
       '/sign-in/email-otp',
@@ -66,5 +67,18 @@ describe('auth rate limits', () => {
     ]) {
       assert.deepEqual(customRules[path], AUTH_RATE_LIMITS.signInAttempt, path)
     }
+  })
+
+  test('a set-password link and a password attempt are also budgeted per email, case-folded (#173)', () => {
+    assert.deepEqual(emailBudget('/request-password-reset', { email: 'Member@Example.com ' }), {
+      key: '/request-password-reset|member@example.com',
+      rule: AUTH_EMAIL_RATE_LIMITS.linkRequest,
+    })
+    assert.deepEqual(emailBudget('/sign-in/email', { email: 'member@example.com', password: 'x' }), {
+      key: '/sign-in/email|member@example.com',
+      rule: AUTH_EMAIL_RATE_LIMITS.signInAttempt,
+    })
+    assert.equal(emailBudget('/sign-out', { email: 'member@example.com' }), null)
+    assert.equal(emailBudget('/sign-in/email', {}), null)
   })
 })

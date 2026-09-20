@@ -45,6 +45,8 @@ export interface ScheduleEntryRow {
   eventState: EventState
   dayIndex: number | null
   dayCount: number | null
+  /** The Class Series a class was created by; null for anything else. */
+  seriesId: string | null
 }
 
 export interface ListScheduleOptions {
@@ -104,6 +106,7 @@ export async function listSchedule(
         capacityWaitlist: classes.capacityWaitlist,
         capacityBuffer: classes.capacityBuffer,
         lifecycle: classes.lifecycle,
+        seriesId: classes.seriesId,
       })
       .from(classes)
       .innerJoin(classTypes, eq(classes.classTypeId, classTypes.id))
@@ -173,6 +176,7 @@ export async function listSchedule(
         }),
         dayIndex: null,
         dayCount: null,
+        seriesId: r.seriesId,
       })
     }
   }
@@ -295,6 +299,7 @@ export async function listSchedule(
         }),
         dayIndex: r.ord,
         dayCount: dayCountMap.get(r.workshopId) ?? 1,
+        seriesId: null,
       })
     }
   }
@@ -371,6 +376,7 @@ export async function listSchedule(
         }),
         dayIndex: null,
         dayCount: null,
+        seriesId: null,
       })
     }
   }
@@ -460,6 +466,7 @@ export async function listSchedule(
         }),
         dayIndex: null,
         dayCount: null,
+        seriesId: null,
       })
     }
   }

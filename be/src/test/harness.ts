@@ -104,12 +104,10 @@ export const frontendOrigin = (pool: AuthPool, tenant: { slug: string } | null):
 /**
  * The sign-in a person makes, done by the harness.
  *
- * - `client` asks for an emailed code on the studio's hostname and reads it back
- *   from the null mail transport — the one place a code exists in clear. The
- *   first code for an address creates the member's auth user.
- * - `staff` and `platform` get their auth user and a credential with the harness
- *   password written directly (a seeded account has no password, and the reset
- *   flow is `better-auth.test.ts`'s to prove), then sign in with it over HTTP.
+ * Every pool gets its auth user and a credential with the harness password
+ * written directly (a seeded or imported account has no password, and the
+ * set-password flows are `better-auth.test.ts`'s and `member-passwords.test.ts`'s
+ * to prove), then signs in with it over HTTP.
  *
  * Every step goes through the app, so the session is stamped by the same hook a
  * real sign-in is. What it does not do is link the auth user to a `clients` or
@@ -139,19 +137,8 @@ async function signInAs(
       body: JSON.stringify(body),
     })
 
-  let signedIn: Response
-  if (pool === 'client') {
-    const { discardedMail } = await import('../lib/mailer')
-    const sent = await post('/email-otp/send-verification-otp', { email, type: 'sign-in' })
-    if (sent.status !== 200) throw new Error(`signInAs: code request refused (${sent.status}): ${await sent.text()}`)
-    const message = [...discardedMail].reverse().find(m => m.to === email)
-    const otp = message?.html.match(/>(\d{6})</)?.[1]
-    if (!otp) throw new Error(`signInAs: no sign-in code was mailed to ${email}`)
-    signedIn = await post('/sign-in/email-otp', { email, otp })
-  } else {
-    await ensureCredential(db, pool, email)
-    signedIn = await post('/sign-in/email', { email, password: HARNESS_PASSWORD })
-  }
+  await ensureCredential(db, pool, email)
+  const signedIn = await post('/sign-in/email', { email, password: HARNESS_PASSWORD })
 
   const token = signedIn.headers.get('set-auth-token')
   if (signedIn.status !== 200 || !token) {
@@ -172,12 +159,16 @@ export function harnessAddress(): string {
 
 async function ensureCredential(
   db: PostgresJsDatabase<typeof schema>,
-  pool: 'staff' | 'platform',
+  pool: AuthPool,
   email: string,
 ): Promise<void> {
   const { ensureAuthUser } = await import('../services/auth/auth-users')
   const { hashPassword } = await import('better-auth/crypto')
-  const accounts = pool === 'staff' ? schema.staffAuthAccounts : schema.platformAuthAccounts
+  const accounts = {
+    client: schema.clientAuthAccounts,
+    staff: schema.staffAuthAccounts,
+    platform: schema.platformAuthAccounts,
+  }[pool]
   const userId = await ensureAuthUser(db, pool, { email, name: email.split('@')[0]! })
   await db.delete(accounts).where(and(eq(accounts.userId, userId), eq(accounts.providerId, 'credential')))
   await db.insert(accounts).values({

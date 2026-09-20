@@ -2,6 +2,7 @@ import cron from 'node-cron'
 import { logContext, logger, runWithLogContext } from '../shared/logger'
 import { withTenant } from '../db'
 import { listJobTenants, type JobTenant } from '../services/tenants/tenants'
+import { releaseExpiredFormerSlugs } from '../services/tenants/former-slugs'
 import { SLOT_CRON, isDailySlot } from './local-time'
 import { expireStaleSessions, completeEndedPtSessions } from '../services/pt-sessions/cancel'
 import { expirePackages, sendLapsingAlerts, sendExpiredNotifications } from '../services/packages/expire'
@@ -126,4 +127,12 @@ export async function registerJobs() {
 
   // Daily 02:00 tenant-local — flag clients with stale waiver signature
   cron.schedule(SLOT_CRON, dailyTenantJob('flagExpiredWaivers', 2, flagExpiredWaivers))
+
+  // Nightly, platform-wide — release renamed studios' old slugs whose redirect
+  // window has ended. Not per tenant: `former_slugs` is platform data with no
+  // `tenant_id`, and an expired row already counts for nothing, so the hour
+  // only decides when the dead row is swept.
+  cron.schedule('0 3 * * *', safeJob('releaseExpiredFormerSlugs', releaseExpiredFormerSlugs), {
+    timezone: 'UTC',
+  })
 }

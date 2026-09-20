@@ -1,12 +1,13 @@
 "use client";
 /**
- * Member registration (#117): details and an email, then the one-time code
- * mailed to it.
+ * Member registration (#117, #173): details, an email and a password, then the
+ * one-time code mailed to the email, which proves it.
  *
  * The code is asked of the `client` Better Auth pool, and spent by the backend's
  * own register route (`POST /public/members/register`), which writes the auth
- * user, this studio's `clients` row and the session together and answers with
- * the session token. So a member is never signed in without an account here.
+ * user, its password, this studio's `clients` row and the session together and
+ * answers with the session token. So no account exists until the email is
+ * proven, and a member is never signed in without an account here.
  */
 import { Suspense, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -17,6 +18,7 @@ import { ApiError, publicApi } from "@/lib/api";
 import { safeNextPath, signedInRedirectTarget } from "@/lib/auth-redirect";
 import { memberAuthMessage } from "@/lib/auth-messages";
 import { adoptMemberSession, memberAuth, useMemberSession } from "@/lib/member-auth";
+import { MIN_PASSWORD_LENGTH } from "@/lib/password";
 import { AuthSplitShell } from "@/components/auth/auth-split-shell";
 import { OtpInput } from "@/components/auth/otp-input";
 
@@ -43,6 +45,7 @@ function RegisterContent() {
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState<string | undefined>(undefined);
+  const [password, setPassword] = useState("");
   const [code, setCode] = useState("");
 
   const [error, setError] = useState<string | null>(null);
@@ -93,6 +96,10 @@ function RegisterContent() {
       setError("Please enter a valid phone number.");
       return;
     }
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      setError(`Choose a password of at least ${MIN_PASSWORD_LENGTH} characters.`);
+      return;
+    }
     void run(async () => {
       if (!(await sendCode())) return;
       setCode("");
@@ -110,6 +117,7 @@ function RegisterContent() {
           first_name: firstName.trim(),
           last_name: lastName.trim(),
           phone,
+          password,
         });
         adoptMemberSession(token);
         router.replace(next);
@@ -215,6 +223,12 @@ function RegisterContent() {
             onChange={setPhone}
             className="phone-input"
           />
+        </div>
+        <div>
+          <label htmlFor="password" className={labelClass}>Password</label>
+          <input id="password" type="password" autoComplete="new-password" className={inputClass}
+            value={password} onChange={(ev) => setPassword(ev.target.value)} />
+          <p className="mt-1 text-xs text-muted">At least {MIN_PASSWORD_LENGTH} characters.</p>
         </div>
 
         {errorNote}

@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Filter as FilterIcon,
   Loader2,
+  Repeat,
 } from "lucide-react";
 import {
   addDays,
@@ -36,7 +37,7 @@ import { useSchedule, type ScheduleEntry } from "@/lib/use-schedule";
 import { slotHref, type Slot } from "@/lib/schedule";
 
 type View = "day" | "week" | "month";
-type AddKind = "class" | "workshop" | "corporate" | "pt";
+type AddKind = "class" | "series" | "workshop" | "corporate" | "pt";
 type FilterType = "all" | "class" | "workshop" | "pt" | "corporate";
 type Entry = ScheduleEntry;
 type Resolver = {
@@ -62,6 +63,7 @@ const TOTAL_HEIGHT = (HOUR_END - HOUR_START) * HOUR_HEIGHT;
 
 const ADD_KINDS: { kind: AddKind; label: string }[] = [
   { kind: "class", label: "Class" },
+  { kind: "series", label: "Class series" },
   { kind: "workshop", label: "Workshop" },
   { kind: "corporate", label: "Corporate" },
   { kind: "pt", label: "PT Session" },
@@ -70,6 +72,8 @@ const ADD_KINDS: { kind: AddKind; label: string }[] = [
 /** Kinds created on their own page; the rest open a picker over the grid. */
 const NEW_PAGE: Partial<Record<AddKind, string>> = {
   class: "/admin/schedule/new/class",
+  // The slot picked becomes the series' weekday, times and first date.
+  series: "/admin/schedule/new/series",
   workshop: "/admin/packages/workshops/new",
 };
 
@@ -650,6 +654,7 @@ function MonthView({
                         {formatTime(e.startsAt).replace("m", "")}
                       </span>
                       <span className="truncate">{e.label}</span>
+                      {e.kind === "class" && e.seriesId && <SeriesMark />}
                     </Link>
                   </li>
                 ))}
@@ -987,6 +992,7 @@ function EventBlock({
         >
           {entry.label}
         </span>
+        {entry.kind === "class" && entry.seriesId && <SeriesMark />}
         {tiny && (
           <span className="ml-auto shrink-0 text-[10px] font-semibold tabular-nums text-ink/60">
             {formatTime(entry.startsAt)}
@@ -1081,6 +1087,18 @@ function kindClasses(entry: Entry): string {
     return "bg-error/10 border-error/40 border-l-error hover:bg-error/15";
   }
   return KIND[entry.kind].chip;
+}
+
+/** A class made by a Class Series — it repeats weekly. */
+function SeriesMark() {
+  return (
+    <Repeat
+      className="mt-0.5 h-3 w-3 shrink-0 text-ink/50"
+      aria-label="Part of a class series"
+    >
+      <title>Part of a class series</title>
+    </Repeat>
+  );
 }
 
 function formatHour(h: number): string {

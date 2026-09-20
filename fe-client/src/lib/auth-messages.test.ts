@@ -30,6 +30,22 @@ test("a studio this session was not signed in on is a mismatch, worded plainly",
   assert.match(memberAuthMessage({ status: 403, error: "tenant_mismatch" }, FALLBACK), /another studio/i);
 });
 
+test("a wrong password says so, without saying whether the email exists (#173)", () => {
+  const message = memberAuthMessage({ status: 401, code: "INVALID_EMAIL_OR_PASSWORD" }, FALLBACK);
+  assert.match(message, /email or password/i);
+  assert.match(memberAuthMessage({ status: 400, code: "INVALID_PASSWORD" }, FALLBACK), /current password/i);
+});
+
+test("a short password names the minimum, from either Better Auth or our routes", () => {
+  assert.match(memberAuthMessage({ status: 400, code: "PASSWORD_TOO_SHORT" }, FALLBACK), /8 characters/);
+  assert.match(memberAuthMessage({ status: 400, error: "password_too_short" }, FALLBACK), /8 characters/);
+});
+
+test("a used or expired set-password link asks for a new one", () => {
+  assert.match(memberAuthMessage({ status: 400, error: "invalid_token" }, FALLBACK), /new link/i);
+  assert.match(memberAuthMessage({ error: "INVALID_TOKEN" }, FALLBACK), /new link/i);
+});
+
 test("anything else falls back to the caller's words, never a raw code", () => {
   assert.equal(memberAuthMessage({ status: 500, message: "internal_error" }, FALLBACK), FALLBACK);
   assert.equal(memberAuthMessage(null, FALLBACK), FALLBACK);

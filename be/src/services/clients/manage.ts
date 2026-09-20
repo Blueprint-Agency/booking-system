@@ -81,6 +81,7 @@ export async function listClients(
         where cp.client_id = "clients"."id"
           and cp.kind <> 'trial'
           and cp.amount_paid_sgd > 0
+          and not cp.complimentary
       )`,
     })
     .from(clients)
@@ -140,8 +141,8 @@ function buildClientLoginUrl(tenantId: string): Promise<string> {
 
 /**
  * Admin-creates a member: the `client` pool's auth user and the clients row in
- * one transaction, then a branded "your account is ready" invite. The member
- * signs in with an emailed code, so there is no password to set first.
+ * one transaction, then a branded "your account is ready" invite. The account
+ * has no password: the member's first sign-in mails them a link to set one (#173).
  *
  * The auth user is found rather than created when the address already has one —
  * the same person, a member at another studio — and this studio gets its own row.

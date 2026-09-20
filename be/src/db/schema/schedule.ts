@@ -12,6 +12,7 @@ import {
   foreignKey,
   date,
   time,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { tenantIdColumn } from './tenancy'
@@ -62,6 +63,11 @@ export const classes = pgTable(
     cancelledByStaffId: uuid('cancelled_by_staff_id').references(() => staffUsers.id, {
       onDelete: 'restrict',
     }),
+    // The Class Series that created this class, if any. Provenance only: the
+    // class is an ordinary class in every other respect.
+    seriesId: uuid('series_id').references((): AnyPgColumn => classSeries.id, {
+      onDelete: 'restrict',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     createdByStaffId: uuid('created_by_staff_id')
       .notNull()
@@ -69,6 +75,7 @@ export const classes = pgTable(
   },
   table => ({
     startsAtIdx: index('classes_starts_at_idx').on(table.tenantId, table.startsAt),
+    seriesStartsIdx: index('classes_series_starts_idx').on(table.tenantId, table.seriesId, table.startsAt),
     mainInstructorStartsIdx: index('classes_main_instructor_starts_idx').on(table.tenantId, table.mainInstructorId, table.startsAt),
     locationStartsIdx: index('classes_location_starts_idx').on(table.tenantId, table.locationId, table.startsAt),
     roomStartsIdx: index('classes_room_starts_idx').on(table.tenantId, table.roomId, table.startsAt),
@@ -117,6 +124,95 @@ export const classSupportingInstructors = pgTable(
   table => ({
     pk: primaryKey({ columns: [table.classId, table.instructorId] }),
     instructorIdx: index('class_supporting_instructors_instructor_idx').on(table.tenantId, table.instructorId),
+  }),
+)
+
+// ============================================================================
+// class_series — a weekly repeating class, defined once, that creates ordinary
+// classes (see be/CONTEXT.md § Class Series). The template below is copied onto
+// each class at creation; editing a class never reaches back here, and changing
+// the template changes only classes created afterwards.
+// ============================================================================
+
+export const classSeries = pgTable(
+  'class_series',
+  {
+    tenantId: tenantIdColumn(),
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    classTypeId: uuid('class_type_id')
+      .notNull()
+      .references(() => classTypes.id, { onDelete: 'restrict' }),
+    mainInstructorId: uuid('main_instructor_id')
+      .notNull()
+      .references(() => instructors.staffUserId, { onDelete: 'restrict' }),
+    // Admin only, so always priced — same figure as classes.instructor_pay_sgd.
+    instructorPaySgd: numeric('instructor_pay_sgd', { precision: 10, scale: 2 }).notNull(),
+    locationId: uuid('location_id')
+      .notNull()
+      .references(() => locations.id, { onDelete: 'restrict' }),
+    roomId: uuid('room_id')
+      .notNull()
+      .references(() => rooms.id, { onDelete: 'restrict' }),
+    // ISO weekday, Monday 1 … Sunday 7. Times are wall-clock in the Tenant's
+    // zone, so a 19:00 class stays at 19:00 across a daylight-saving change.
+    weekday: integer('weekday').notNull(),
+    startTime: time('start_time').notNull(),
+    endTime: time('end_time').notNull(),
+    capacityOnline: integer('capacity_online').notNull(),
+    capacityWaitlist: integer('capacity_waitlist').notNull().default(0),
+    capacityBuffer: integer('capacity_buffer').notNull().default(0),
+    creditCost: integer('credit_cost').notNull(),
+    firstDate: date('first_date').notNull(),
+    // Moves forward on every extend.
+    lastDate: date('last_date').notNull(),
+    // Dates never to create a class on (public holidays), inside any range.
+    excludedDates: date('excluded_dates').array().notNull().default(sql`'{}'`),
+    // Set when the series is ended: no class is created on or after it again.
+    endedFrom: date('ended_from'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    createdByStaffId: uuid('created_by_staff_id')
+      .notNull()
+      .references(() => staffUsers.id, { onDelete: 'restrict' }),
+  },
+  table => ({
+    classTypeIdx: index('class_series_class_type_idx').on(table.tenantId, table.classTypeId),
+    weekdayRange: check('class_series_weekday_range', sql`${table.weekday} BETWEEN 1 AND 7`),
+    endsAfterStarts: check('class_series_ends_after_starts', sql`${table.endTime} > ${table.startTime}`),
+    lastNotBeforeFirst: check(
+      'class_series_last_not_before_first',
+      sql`${table.lastDate} >= ${table.firstDate}`,
+    ),
+    capacityNonNeg: check(
+      'class_series_capacity_non_negative',
+      sql`${table.capacityOnline} >= 0 AND ${table.capacityWaitlist} >= 0 AND ${table.capacityBuffer} >= 0`,
+    ),
+    capacitySumPositive: check(
+      'class_series_capacity_sum_positive',
+      sql`${table.capacityOnline} + ${table.capacityWaitlist} + ${table.capacityBuffer} > 0`,
+    ),
+    creditNonNegative: check('class_series_credit_non_negative', sql`${table.creditCost} >= 0`),
+  }),
+)
+
+/** The supporting instructors every class of a series is created with, and their pay. */
+export const classSeriesSupportingInstructors = pgTable(
+  'class_series_supporting_instructors',
+  {
+    tenantId: tenantIdColumn(),
+    seriesId: uuid('series_id')
+      .notNull()
+      .references(() => classSeries.id, { onDelete: 'cascade' }),
+    instructorId: uuid('instructor_id')
+      .notNull()
+      .references(() => instructors.staffUserId, { onDelete: 'restrict' }),
+    paySgd: numeric('pay_sgd', { precision: 10, scale: 2 }).notNull(),
+  },
+  table => ({
+    pk: primaryKey({ columns: [table.seriesId, table.instructorId] }),
+    instructorIdx: index('class_series_supporting_instructors_instructor_idx').on(
+      table.tenantId,
+      table.instructorId,
+    ),
   }),
 )
 

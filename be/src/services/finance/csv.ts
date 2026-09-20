@@ -29,6 +29,10 @@ export function financeCsv(summary: FinanceSummary): string {
     'money_in_sgd',
     'money_out_sgd',
     'refunded',
+    // A comp reads as a $0 line against a real List Price, which in a
+    // spreadsheet is indistinguishable from a sale discounted to nothing. The
+    // column is what tells the two apart once the rows leave the screen.
+    'complimentary',
   ]
   const cell = (v: string | number | boolean | null) => {
     if (v == null) return ''
@@ -50,6 +54,7 @@ export function financeCsv(summary: FinanceSummary): string {
       r.paid_sgd,
       r.pay_sgd,
       r.refunded ? 'yes' : '',
+      r.complimentary ? 'yes' : '',
     ]
       .map(cell)
       .join(',')

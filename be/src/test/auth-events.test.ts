@@ -96,22 +96,23 @@ describe('auth events and sign-in limits', { skip: integrationTestsEnabled ? fal
     await harness.close()
   })
 
-  test('a member asks for a code, mistypes it, signs in and out: one row of each, at their studio', async () => {
+  test('a member asks for a code, gets a password wrong, signs in and out: one row of each, at their studio', async () => {
     const ip = harnessAddress()
     const member = await userId('client', MEMBER)
+    // Gives the member the harness password, from an address of its own.
+    await harness.signInAs('client', MEMBER, harness.tenants.one)
 
     assert.equal((await call('client', ip, '/email-otp/send-verification-otp', { body: { email: MEMBER, type: 'sign-in' } })).status, 200)
-    const code = lastCodeTo(MEMBER)
-    const wrong = code === '000000' ? '111111' : '000000'
-    assert.notEqual((await call('client', ip, '/sign-in/email-otp', { body: { email: MEMBER, otp: wrong } })).status, 200)
-    const signedIn = await call('client', ip, '/sign-in/email-otp', { body: { email: MEMBER, otp: code } })
+    lastCodeTo(MEMBER)
+    assert.equal((await call('client', ip, '/sign-in/email', { body: { email: MEMBER, password: 'not-the-password' } })).status, 401)
+    const signedIn = await call('client', ip, '/sign-in/email', { body: { email: MEMBER, password: HARNESS_PASSWORD } })
     assert.equal(signedIn.status, 200, await signedIn.clone().text())
     const token = signedIn.headers.get('set-auth-token')!
     const signedOut = await call('client', ip, '/sign-out', { headers: { Authorization: `Bearer ${token}` } })
     assert.equal(signedOut.status, 200, await signedOut.clone().text())
 
     const rows = await eventsFrom(ip)
-    assert.deepEqual(kinds(rows), ['code_failed', 'code_sent', 'sign_in', 'sign_out'])
+    assert.deepEqual(kinds(rows), ['code_sent', 'sign_in', 'sign_in_failed', 'sign_out'])
     for (const row of rows) {
       assert.equal(row.pool, 'client')
       assert.equal(row.tenantId, harness.tenants.one.id, `${row.kind} filed under the wrong studio`)

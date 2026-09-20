@@ -1,3 +1,5 @@
+import { MIN_PASSWORD_LENGTH } from "./password.ts";
+
 /**
  * A refused member auth call, in words.
  *
@@ -33,6 +35,18 @@ export function memberAuthMessage(error: MemberAuthError, fallback: string): str
       return "You already have an account here. Sign in instead.";
     case "tenant_mismatch":
       return "You're signed in at another studio. Sign out, then sign in here.";
+    case "invalid_email_or_password":
+      return "That email or password is incorrect.";
+    case "invalid_password":
+      return "Your current password is incorrect.";
+    case "password_too_short":
+      return `Use at least ${MIN_PASSWORD_LENGTH} characters.`;
+    case "password_too_long":
+      return "That password is too long.";
+    case "impersonation_forbidden":
+      return "A member's password can't be changed while acting as them.";
+    case "invalid_token":
+      return "This link has expired or was already used. Ask for a new link.";
     default:
       return fallback;
   }

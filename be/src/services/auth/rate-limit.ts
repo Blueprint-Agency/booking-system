@@ -1,4 +1,5 @@
-import type { BetterAuthRateLimitOptions } from 'better-auth'
+import type { BetterAuthPlugin, BetterAuthRateLimitOptions } from 'better-auth'
+import { APIError, createAuthMiddleware } from 'better-auth/api'
 
 type RateLimitStorage = NonNullable<BetterAuthRateLimitOptions['customStorage']>
 type Rule = { window: number; max: number }
@@ -17,9 +18,17 @@ export const AUTH_RATE_LIMITS = {
   codeRequest: { window: 60, max: 5 },
   /** A password, a sign-in code or a second factor offered for checking. */
   signInAttempt: { window: 60, max: 10 },
+  /**
+   * A set-password or reset link mailed, on any pool (#173). Tighter than a
+   * code because one link is enough and a second covers the one that went
+   * astray — and because it is the same figure Better Auth applies to this path
+   * by itself, which the staff resend-invitation refusal is written against.
+   */
+  passwordLink: { window: 60, max: 3 },
 } as const satisfies Record<string, Rule>
 
 const CODE_REQUEST_PATHS = ['/email-otp/send-verification-otp', '/two-factor/send-otp']
+const PASSWORD_LINK_PATHS = ['/request-password-reset']
 const SIGN_IN_ATTEMPT_PATHS = [
   '/sign-in/email',
   '/sign-in/email-otp',
@@ -81,7 +90,96 @@ export function authRateLimit() {
     customStorage: authRateLimitStorage(),
     customRules: Object.fromEntries([
       ...CODE_REQUEST_PATHS.map(path => [path, AUTH_RATE_LIMITS.codeRequest]),
+      ...PASSWORD_LINK_PATHS.map(path => [path, AUTH_RATE_LIMITS.passwordLink]),
       ...SIGN_IN_ATTEMPT_PATHS.map(path => [path, AUTH_RATE_LIMITS.signInAttempt]),
     ]) as Record<string, Rule>,
   } satisfies BetterAuthRateLimitOptions
+}
+
+/**
+ * The member pool's budgets per **email** (#173), on top of the per-address
+ * ones above. An address budget stops one machine; it does nothing against
+ * guesses at one member's password spread over many addresses, or against a
+ * flood of set-password links to one inbox. These do.
+ *
+ * Kept small for links — a member needs one, and a second when the first went
+ * astray — and as generous as the address budget for passwords, so a member
+ * who mistypes a few times is not locked out of their own account.
+ */
+export const AUTH_EMAIL_RATE_LIMITS = {
+  /** A set-password link mailed, whether asked for by the email step, "forgot password" or an admin. */
+  linkRequest: { window: 15 * 60, max: 3 },
+  /** A password offered for one email. */
+  signInAttempt: { window: 5 * 60, max: 10 },
+  /** The email step asked about one email — it says whether that email has a password. */
+  signInStep: { window: 5 * 60, max: 10 },
+} as const satisfies Record<string, Rule>
+
+/**
+ * The email step's per-address budget. It is our route, not a pool endpoint,
+ * so Better Auth's limiter never sees the answers that say `password`; this
+ * one does. Roomier than a code request, as a whole class signs in from the
+ * studio's wifi.
+ */
+export const SIGN_IN_STEP_ADDRESS_LIMIT: Rule = { window: 60, max: 20 }
+
+const signInStepStorage = authRateLimitStorage()
+
+/**
+ * Spend the email step's budgets — per address and per email. False when
+ * either is gone. Without an address every caller shares one bucket, which
+ * throttles rather than exempts, as the pools' own limiter does.
+ */
+export async function spendSignInStepBudget(email: string, address: string | null): Promise<boolean> {
+  const byAddress = await signInStepStorage.consume(`address|${address ?? ''}`, SIGN_IN_STEP_ADDRESS_LIMIT)
+  if (!byAddress.allowed) return false
+  const byEmail = await signInStepStorage.consume(
+    `email|${email.trim().toLowerCase()}`,
+    AUTH_EMAIL_RATE_LIMITS.signInStep,
+  )
+  return byEmail.allowed
+}
+
+const EMAIL_BUDGETED_PATHS: Record<string, Rule> = {
+  '/request-password-reset': AUTH_EMAIL_RATE_LIMITS.linkRequest,
+  '/sign-in/email': AUTH_EMAIL_RATE_LIMITS.signInAttempt,
+}
+
+/** Which per-email budget a request spends, if any: keyed on the path and the case-folded email. */
+export function emailBudget(path: string, body: unknown): { key: string; rule: Rule } | null {
+  const rule = EMAIL_BUDGETED_PATHS[path]
+  const email = (body as { email?: unknown } | null)?.email
+  if (!rule || typeof email !== 'string' || !email.trim()) return null
+  return { key: `${path}|${email.trim().toLowerCase()}`, rule }
+}
+
+/**
+ * The per-email budgets as a Better Auth plugin: a before-hook, so it runs
+ * after the per-address limiter has let the request through and before the
+ * endpoint does any work. Its own store, for the reason `authRateLimitStorage`
+ * gives — one per pool.
+ */
+export function emailRateLimit(now: () => number = () => Date.now()) {
+  const storage = authRateLimitStorage(now)
+  return {
+    id: 'email-rate-limit',
+    hooks: {
+      before: [
+        {
+          matcher: (ctx: { path?: string }) => Boolean(ctx.path && ctx.path in EMAIL_BUDGETED_PATHS),
+          handler: createAuthMiddleware(async ctx => {
+            const budget = emailBudget(ctx.path, ctx.body)
+            if (!budget) return
+            const { allowed, retryAfter } = await storage.consume(budget.key, budget.rule)
+            if (allowed) return
+            throw new APIError(
+              'TOO_MANY_REQUESTS',
+              { message: 'too_many_requests' },
+              retryAfter ? { 'X-Retry-After': String(retryAfter) } : undefined,
+            )
+          }),
+        },
+      ],
+    },
+  } satisfies BetterAuthPlugin
 }

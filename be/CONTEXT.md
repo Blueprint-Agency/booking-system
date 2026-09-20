@@ -17,10 +17,16 @@ _Avoid_: account, org, workspace, customer, client (a Client is a member — see
 
 **Slug**:
 A Tenant's leftmost DNS label, and the only thing the frontends can read a Tenant from — the API's own hostname never carries one. Validated as a hostname label and checked against the reserved list (`admin`, `api`, `portal`, `www`, `dev`, `staging`, `app`, `mail`, `clerk`, `assets`) at creation, because a Tenant that took the slug `admin` would take over the super portal's hostname. See `services/tenants/slug.ts`.
+
+A platform administrator can **rename** a Slug from the super portal (`services/tenants/rename.ts`); a studio's own admins cannot. The new Slug passes the creation rules and must be neither a Tenant's current Slug nor a live **Former slug**. The rename moves `tenants.slug`, records the old one (plus a lasting `tenant.slug_renamed` entry in the studio's `audit_log`, naming the platform administrator), and rewrites stored email template bodies from the old addresses to the new — one transaction. Links built at send time already read the Slug by id. Sessions carry the Tenant id, not the Slug, so they stay valid, but their tokens live on the old host: members and staff sign in once at the new address.
 _Avoid_: subdomain, handle, tenant name
 
+**Former slug**:
+A Slug a Tenant was renamed away from, kept in `former_slugs` for 90 days with who renamed it, when, and to what. Inside that window it is a redirect and nothing more: the public tenant-by-slug lookup answers it with the Tenant's *current* Slug and both frontends' proxies send a permanent redirect to the same path and query there; the API's Tenant resolution never accepts it, so nothing authenticated runs on an old host; and no Tenant may be created on it or renamed to it. Afterwards it counts for nothing, and the nightly release deletes the row. Platform data like `tenants` — it names its Tenant as `renamed_tenant_id`, so it has no `tenant_id`, no policy, and no place in the studio archive. See `services/tenants/former-slugs.ts`.
+_Avoid_: alias, old slug (in code), redirect slug
+
 **`tenant_id`**:
-The column on all 53 domain tables recording which Tenant a row belongs to — including pure join tables, because Row-Level Security needs a column on every table to key a policy on. `NOT NULL`, with **no default**: an insert that does not name its Tenant fails loudly rather than filing somebody else's row under the first Tenant. Every non-unique index leads with it. (The tenant-#1 default that made the migrate batches safe was scaffolding, and migration 0032 dropped it along with the seed pass that used to claim unclaimed rows.) The one nullable `tenant_id` outside those is `auth_events`, whose null rows are **Platform rows**.
+The column on all 55 domain tables recording which Tenant a row belongs to — including pure join tables, because Row-Level Security needs a column on every table to key a policy on. `NOT NULL`, with **no default**: an insert that does not name its Tenant fails loudly rather than filing somebody else's row under the first Tenant. Every non-unique index leads with it. (The tenant-#1 default that made the migrate batches safe was scaffolding, and migration 0032 dropped it along with the seed pass that used to claim unclaimed rows.) The one nullable `tenant_id` outside those is `auth_events`, whose null rows are **Platform rows**.
 
 **Tenant context**:
 The Tenant a request is about — held in two places at once, and they are set together.
@@ -79,8 +85,16 @@ The rule that a studio always keeps one active Admin. Archiving a staff member, 
 _Avoid_: owner lock
 
 **Impersonation**:
-An Admin signing in as one of the studio's members, to see what they see. It opens a `client` pool session on the member's behalf, carrying a signed grant that names the acting staff member, and is recorded as an **Auth event** under `staff` at start and end.
+An Admin signing in as one of the studio's members, to see what they see. It opens a `client` pool session on the member's behalf, carrying a signed grant that names the acting staff member, and is recorded as an **Auth event** under `staff` at start and end. It never needs the member's password, and an impersonated session cannot change it.
 _Avoid_: act-as, masquerade, login-as
+
+**Member sign-in**:
+Email first, then the password (#173). The email step (`POST /public/members/sign-in-step`) answers `password` when the address has a password in the `client` pool, and `link_sent` for any other address. For `link_sent`, a **Set-password link** is mailed if the address is an unblocked member of this studio, and nothing is mailed otherwise, so the answer never says who is a member. Sign-up takes name, email, phone and password, and the account is written only once the emailed 6-digit code proves the email. The code does nothing else: it signs nobody in. One account per email, platform-wide, so a member of two studios has one password. See `docs/adr/0005-member-passwords.md`, which supersedes the member half of ADR 0004.
+_Avoid_: login code, magic link, OTP sign-in
+
+**Set-password link**:
+A single-use, 30-minute link that sets a member's password. It sets a first password as readily as it replaces a forgotten one: an imported or admin-added member has an account with no password, and their first sign-in sends them one. It is Better Auth's own reset on the `client` pool. It is mailed with the studio's `password_reset` template, and only to a member of the studio that asked (`mailClientPasswordReset`). Opening it lands on the member app's `/set-password`, and setting the password signs the member in with that studio's **Session claim**. It is sent by the email step, by "forgot password", and by an Admin from the member's detail view. The Admin's send is filed as `invitation_resent`, the Auth event kind for a re-mailed set-password link to anyone. It is honoured only at a studio where its owner is an unblocked member. Requests are limited per address and per email.
+_Avoid_: reset link (when it is a member's first password)
 
 **Platform administrator**:
 The operator of the super portal, signed in through the `platform` pool and named by `PLATFORM_ADMIN_EMAIL`. Not a staff member of any Tenant, holds no **Staff role**, and has no row in `staff_users` — creating or restoring a studio is the platform administrator's; running one is its Admins'. Never confused with an Admin: an Admin's powers stop at their own studio, and a platform administrator's start outside every studio.
@@ -182,6 +196,14 @@ _Avoid_: cancel, revoke, deactivate, reverse, nullify
 The property that makes a purchase refundable without a warning: no class it paid for has been attended or no-showed. A booked class that has not yet been held leaves a purchase Untouched, because refunding simply cancels it. A no-show does not — the class ran and the seat was held. A purchase that is no longer Untouched can still be refunded, but only by an admin who has been told and chosen to anyway.
 _Avoid_: unused, unconsumed, clean, fresh, pristine
 
+**Complimentary Package**:
+A catalogue package an admin gives a member at no charge, with a reason — a comped class, a prize, a correction. It is granted through the same service a purchase uses, so it is a package in every other respect: it lands Dormant, obeys the Family and one-trial rules, and freezes its validity and its List Price. What makes it one is stated on the row, never inferred from "paid nothing" (a $0 catalogue item and a fully discounted sale are paid nothing too): Finance lists it at 0 with its List Price and counts it in **no** total, and a comp never makes a member **Converted**. It is **Removed** rather than refunded — no money moved — and only while it is **Untouched**.
+_Avoid_: comp, freebie, gift, giveaway, promo package, free grant
+
+**Remove** (a Complimentary Package):
+Taking back a Complimentary Package given by mistake: the package row goes, and every class it paid for that has not been held is cancelled. Only ever a comp, and only while Untouched — a purchase is Refunded, and a comp a member has already used is corrected with a balance or expiry edit instead.
+_Avoid_: revoke, delete, cancel, withdraw, claw back
+
 ### Money
 
 **Money Event**:
@@ -251,6 +273,12 @@ _Avoid_: attendance, visits, check-ins, sessions used
 **Converted**:
 A member who has paid for a package that is not another trial — ever, not "after the trial". A second trial is not a conversion, a comped grant is not a conversion (nothing was paid), and someone who bought a bundle before trying a new class is already converted.
 _Avoid_: upgraded, retained, activated, signed up, won
+
+### Schedule
+
+**Class Series**:
+A weekly repeating class, defined once — Class Type, weekday, start and end time in the Tenant's own timezone, instructors and their pay, Location, Room, capacity, credit cost, a first and a last date, and dates to leave out — that creates an ordinary class for every week in its range. A class created by a series is a class in every respect: it is booked, edited, cancelled and restaffed on its own, and changing one never changes the others. The series only records where the class came from and makes more of them: it is **extended** to a later last date (never creating a second class on a date it already has) and **ended** from a date (its unbooked classes from then on are cancelled; booked ones are left for the admin to cancel, which refunds). Both creating and extending are previewed first — every date with its clash result — and commit all or nothing. Admin only.
+_Avoid_: recurring class, repeating event, template, schedule rule, recurrence
 
 ### Instructor leave
 

@@ -218,7 +218,16 @@ export async function createE2eStudio({ app, db }: { app: Hono; db: Db }): Promi
     const registered = await app.request('/api/v1/public/members/register', {
       method: 'POST',
       headers,
-      body: JSON.stringify({ email, otp, first_name: 'E2E', last_name: lastName, phone: '+6580000000' }),
+      // Members choose a password at sign-up (#173); the code still proves the
+      // address. One password for every member of a run, made for that run.
+      body: JSON.stringify({
+        email,
+        otp,
+        first_name: 'E2E',
+        last_name: lastName,
+        phone: '+6580000000',
+        password,
+      }),
     })
     if (registered.status !== 200) {
       throw new Error(`registering ${email} failed (${registered.status}): ${await registered.text()}`)

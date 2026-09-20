@@ -28,16 +28,26 @@ export { ArchiveError }
 const MANIFEST = 'manifest.json'
 const TABLE_DIR = 'tables'
 
-/** Pack an archive — a whole studio, or one member of it — into zip bytes. */
-export async function packArchive(archive: TenantArchive | MemberArchive): Promise<Buffer> {
+/**
+ * Pack an archive — a whole studio, or one member of it — into zip bytes.
+ *
+ * `date` stamps every entry. Left out, the zip library stamps the current time,
+ * so two packs of one archive differ; a caller that must produce the same bytes
+ * from the same inputs (the Mindbody transform) passes its own fixed moment.
+ */
+export async function packArchive(
+  archive: TenantArchive | MemberArchive,
+  options: { date?: Date } = {},
+): Promise<Buffer> {
   const zip = new JSZip()
-  zip.file(MANIFEST, JSON.stringify(archive.manifest, null, 2))
+  // `createFolders: false` because the folder entry the library would add for
+  // `tables/` carries its own timestamp; it is written once, stamped the same.
+  const entry = { createFolders: false, ...(options.date ? { date: options.date } : {}) }
+  zip.file(MANIFEST, JSON.stringify(archive.manifest, null, 2), entry)
+  zip.file(`${TABLE_DIR}/`, null, { ...entry, dir: true })
 
-  const tables = zip.folder(TABLE_DIR)
-  // Invariant: JSZip returns the folder for any non-empty name — `TABLE_DIR` is a constant.
-  if (!tables) throw new Error('could not create the tables folder')
   for (const table of archive.manifest.tables) {
-    tables.file(`${table}.json`, JSON.stringify(archive.rows[table] ?? [], null, 2))
+    zip.file(`${TABLE_DIR}/${table}.json`, JSON.stringify(archive.rows[table] ?? [], null, 2), entry)
   }
 
   return zip.generateAsync({

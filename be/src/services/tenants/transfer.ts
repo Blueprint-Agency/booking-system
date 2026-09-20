@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm'
 import { db, withTenant } from '../../db'
 import { isUniqueViolation } from '../../db/unique-violation'
+import { ensureAuthUser } from '../auth/auth-users'
 import { buildIdentityMap, remapRow } from './transfer-identity'
 import { orderTables, type ForeignKey } from './transfer-order'
 import { ARCHIVE_VERSION, type TenantArchive, type TenantManifest } from './transfer-shape'
@@ -203,8 +204,8 @@ const RETIRED_STAFF_ROLES: Readonly<Record<string, string>> = {
 }
 const STAFF_ROLE_TABLES = ['staff_users', 'staff_invitations']
 
-/** The tables whose rows must name the account their person signs in with. */
-const ACCOUNT_TABLES = ['clients', 'staff_users']
+/** The tables whose rows must name the account their person signs in with, and its pool. */
+const ACCOUNT_TABLES = { clients: 'client', staff_users: 'staff' } as const
 
 /**
  * Write a studio's archive into a Tenant.
@@ -260,7 +261,18 @@ export async function importTenant(
 
   // Before anything is written: a person with no account could never sign in,
   // and the column is NOT NULL — refused by name rather than by constraint.
-  for (const table of ACCOUNT_TABLES) {
+  // Unless the archive asks for its accounts to be ensured, in which case every
+  // row gets one below, whatever it carried.
+  const ensureAccounts = archive.manifest.ensureAccounts === true
+  // Such an archive was built for one studio: its email links and placeholder
+  // addresses name that studio's slug. Written into any other, every link it
+  // mails would point at the wrong address — so it is refused, not copied.
+  if (ensureAccounts && archive.manifest.tenant.slug !== target.slug) {
+    throw new Error(
+      `this archive was built for ${archive.manifest.tenant.slug}, not ${target.slug} — rebuild it with the target's slug`,
+    )
+  }
+  for (const table of ensureAccounts ? [] : Object.keys(ACCOUNT_TABLES)) {
     const unlinked = (archive.rows[table] ?? []).filter(row => row.auth_user_id == null).length
     if (unlinked > 0) {
       throw importRefused(
@@ -272,7 +284,9 @@ export async function importTenant(
   const { order, deferred } = await tenantTableOrder()
   const written: Record<string, number> = {}
 
-  const rows = archive.rows
+  // A shallow copy, so ensuring accounts below replaces tables in this import's
+  // view of the archive rather than in the caller's object.
+  const rows = { ...archive.rows }
   const settings = rows.tenant_settings?.[0]
   const columnKinds = await columnKindsByTable()
   const plain: ColumnKinds = new Map()
@@ -292,6 +306,28 @@ export async function importTenant(
         throw importRefused(
           `${target.slug} already has rows in ${table} — import only into an empty studio`,
         )
+      }
+    }
+
+    // An archive built outside the platform names no accounts: its people have
+    // never signed in here. Each one's account is created, or found when the
+    // email already has one in that pool — the same person a member of another
+    // studio, say — through the helper every other way in uses.
+    //
+    // Inside this transaction, before any row: a failed import leaves neither
+    // the rows nor the accounts made for them. An account that already existed
+    // is only read, so a rollback cannot take it.
+    if (ensureAccounts) {
+      for (const [table, pool] of Object.entries(ACCOUNT_TABLES)) {
+        const linked: Record<string, unknown>[] = []
+        for (const row of rows[table] ?? []) {
+          if (typeof row.email !== 'string' || !row.email.trim()) {
+            throw new Error(`a ${table} row in this archive has no email, so no account can be ensured for it`)
+          }
+          const name = typeof row.name === 'string' && row.name ? row.name : row.email
+          linked.push({ ...row, auth_user_id: await ensureAuthUser(db, pool, { email: row.email, name }) })
+        }
+        rows[table] = linked
       }
     }
 

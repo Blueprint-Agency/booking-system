@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isSuperPortalHost, tenantSlugFromHost, withoutTenantHeaders } from "./tenant-host";
+import {
+  isSuperPortalHost,
+  renamedTenantUrl,
+  tenantSlugFromHost,
+  withoutTenantHeaders,
+} from "./tenant-host";
 
 const LOCAL = "portal.localhost:3001";
 const STAGING = "portal.dev.reservetoday.app";
@@ -134,4 +139,26 @@ test("the headers handed in are not changed", () => {
   const inbound = new Headers({ "x-tenant-id": "forged" });
   withoutTenantHeaders(inbound);
   assert.equal(inbound.get("x-tenant-id"), "forged");
+});
+
+test("a renamed studio's old portal address moves to the same page on the new one", () => {
+  assert.equal(
+    renamedTenantUrl(
+      {
+        protocol: "https:",
+        host: "old-name.portal.reservetoday.app",
+        pathname: "/admin/schedule",
+        search: "?week=2026-09-21",
+      },
+      "new-name",
+    ),
+    "https://new-name.portal.reservetoday.app/admin/schedule?week=2026-09-21",
+  );
+  assert.equal(
+    renamedTenantUrl(
+      { protocol: "http:", host: "old-name.portal.localhost:3001", pathname: "/login", search: "" },
+      "new-name",
+    ),
+    "http://new-name.portal.localhost:3001/login",
+  );
 });

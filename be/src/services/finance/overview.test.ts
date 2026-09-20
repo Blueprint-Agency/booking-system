@@ -17,6 +17,7 @@ function ev(p: Partial<MoneyEvent> & { kind: MoneyEvent['kind']; type: MoneyEven
     paidSgd: null,
     promoCode: null,
     refunded: false,
+    complimentary: false,
     instructorId: null,
     instructorName: null,
     paySgd: null,
@@ -59,6 +60,33 @@ const of = (rows: ReturnType<typeof salesByCategory>, c: string) =>
   const rows = salesByCategory(summary.rows)
   const summed = rows.reduce((n, r) => n + r.gross_sgd, 0)
   assert.strictEqual(summed, summary.totals.gross_sgd)
+}
+
+// -- a Complimentary Package is in no category's sales, and the page still adds
+//    up (#176) --------------------------------------------------------------
+// The tile and the breakdown are the same rows grouped twice, so a comp the
+// headline Gross leaves out and a category Gross counts would be two answers to
+// one question on one screen.
+{
+  const summary = summarizeFinance([
+    ev({ kind: 'purchase', type: 'credit', listPriceSgd: '300.00', paidSgd: '270.00' }),
+    ev({
+      kind: 'purchase',
+      type: 'credit',
+      id: 'comp',
+      listPriceSgd: '200.00',
+      paidSgd: '0.00',
+      complimentary: true,
+    }),
+  ])
+  const rows = salesByCategory(summary.rows)
+  assert.strictEqual(of(rows, 'classes').gross_sgd, 300, 'the comp is not in the category')
+  assert.strictEqual(of(rows, 'classes').count, 1, 'nor counted as a sale')
+  assert.strictEqual(
+    rows.reduce((n, r) => n + r.gross_sgd, 0),
+    summary.totals.gross_sgd,
+    'the breakdown still sums to the Gross tile',
+  )
 }
 
 // -- paying an instructor for a workshop is not selling a workshop ------------

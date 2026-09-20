@@ -58,6 +58,9 @@ export interface TenantSettings {
 export type TenantOutcome =
   /** The slug names a Tenant. `status` may be `suspended`. */
   | { kind: "found"; tenant: Tenant; settings: TenantSettings | null }
+  /** A renamed studio's old slug, still redirecting. Never a Tenant: the only
+   *  thing to do with it is send the visitor to `slug`. */
+  | { kind: "moved"; slug: string }
   /** No such Tenant — indistinguishable from archived, by design. */
   | { kind: "unknown" }
   /** The backend could not answer. Not the same thing as "unknown". */
@@ -72,7 +75,7 @@ const UNKNOWN_MS = 30_000;
 /** A request must not wait on the backend longer than this. */
 const TIMEOUT_MS = 2_000;
 
-type CachedOutcome = Extract<TenantOutcome, { kind: "found" | "unknown" }>;
+type CachedOutcome = Extract<TenantOutcome, { kind: "found" | "moved" | "unknown" }>;
 
 const cache = new Map<string, { outcome: CachedOutcome; freshUntil: number; staleUntil: number }>();
 const inFlight = new Map<string, Promise<TenantOutcome>>();
@@ -97,7 +100,7 @@ export async function resolveTenant(slug: string): Promise<TenantOutcome> {
     return outcome;
   }
 
-  const ttl = outcome.kind === "found" ? FRESH_MS : UNKNOWN_MS;
+  const ttl = outcome.kind === "unknown" ? UNKNOWN_MS : FRESH_MS;
   cache.set(slug, { outcome, freshUntil: now + ttl, staleUntil: now + ttl + STALE_MS });
   return outcome;
 }
@@ -140,7 +143,12 @@ async function lookup(slug: string): Promise<TenantOutcome> {
   }
 
   try {
-    const body = (await res.json()) as { tenant?: Tenant; settings?: TenantSettings };
+    const body = (await res.json()) as {
+      tenant?: Tenant;
+      settings?: TenantSettings;
+      moved_to?: { slug?: string };
+    };
+    if (body?.moved_to?.slug) return { kind: "moved", slug: body.moved_to.slug };
     if (!body?.tenant?.id || !body.tenant.slug) throw new Error("malformed tenant payload");
     // Settings are optional on purpose: a Tenant with no settings row still
     // resolves and still renders, on its own name and the neutral defaults.

@@ -99,6 +99,10 @@ export function salesByCategory(rows: readonly FinanceLine[]): CategorySales[] {
     const category = SALE_CATEGORY[r.type]
     if (!category) continue
     if (r.list_price_sgd == null || r.paid_sgd == null) continue
+    // A Complimentary Package was never sold, so it is in no category's sales
+    // either — the same rule `summarizeFinance` applies to the headline Gross,
+    // and the two have to agree or the page does not add up (#176).
+    if (r.complimentary) continue
     const t = acc.get(category) ?? { gross: 0, collected: 0, count: 0 }
     t.gross += toCents(r.list_price_sgd)
     t.collected += toCents(r.paid_sgd)

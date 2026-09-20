@@ -1,0 +1,71 @@
+<META http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<!-- Invented fixture: no real studio or person. Layout follows Mindbody's Phone Book export. -->
+<table class="mainText" width="100%">
+									<tr style="background-color:#FFFFFF;">
+										<td><strong>Name</strong></td>
+										<td><strong>Home phone</strong></td>
+										<td><strong>Work phone</strong></td>
+										<td><strong>Ext.</strong></td>
+										<td><strong>Mobile phone</strong></td>
+										<td><strong>Email</strong></td>
+										<td><strong>Address</strong></td>
+										<td><strong>City</strong></td>
+										<td><strong>State</strong></td>
+										<td><strong>Postal code</strong></td>
+										<td class="center-ch"><strong>Active</strong></td>
+										<td class="center-ch"><strong>Teacher</strong></td>
+										<td class="center-ch"><strong>Staff</strong></td>
+										</tr>
+										<tr style="background-color:#F2F2F2;">
+											<td>Olive  Owner
+											</a></td>
+											<td></td><td></td><td></td>
+											<td>91110000</td>
+											<td>
+											Owner@Example.test </td>
+											<td></td><td></td><td>0</td><td></td>
+											<td class="center-ch">True</td>
+											<td class="center-ch">True</td>
+											<td class="center-ch">True</td>
+										</tr>
+										<tr style="background-color:#FFFFFF;">
+											<td>Ivy Instructor</a></td>
+											<td></td><td></td><td></td>
+											<td>(912) 222-0000</td>
+											<td>ivy@example.test</td>
+											<td></td><td></td><td></td><td></td>
+											<td class="center-ch">True</td>
+											<td class="center-ch">True</td>
+											<td class="center-ch">True</td>
+										</tr>
+										<tr style="background-color:#F2F2F2;">
+											<td>Frank Front</a></td>
+											<td></td><td></td><td></td>
+											<td></td>
+											<td></td>
+											<td></td><td></td><td></td><td></td>
+											<td class="center-ch">True</td>
+											<td class="center-ch">False</td>
+											<td class="center-ch">True</td>
+										</tr>
+										<tr style="background-color:#FFFFFF;">
+											<td>Old Teacher</a></td>
+											<td></td><td></td><td></td>
+											<td></td>
+											<td></td>
+											<td></td><td></td><td></td><td></td>
+											<td class="center-ch">False</td>
+											<td class="center-ch">True</td>
+											<td class="center-ch">False</td>
+										</tr>
+										<tr style="background-color:#F2F2F2;">
+											<td>Gone Clerk</a></td>
+											<td></td><td></td><td></td>
+											<td></td>
+											<td></td>
+											<td></td><td></td><td></td><td></td>
+											<td class="center-ch">False</td>
+											<td class="center-ch">False</td>
+											<td class="center-ch">True</td>
+										</tr>
+</table>

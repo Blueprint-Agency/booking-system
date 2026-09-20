@@ -374,6 +374,11 @@ export const clientPackages = pgTable(
     listPriceSgd: numeric('list_price_sgd', { precision: 10, scale: 2 }).notNull(),
     // Nullable per §4d — null for admin-issued grants (§16) and free trial passes at 0 SGD.
     stripePaymentIntentId: text('stripe_payment_intent_id'),
+    // A **Complimentary Package** — given by an admin at no charge, not bought.
+    // Stated rather than inferred from "paid 0", because a $0 catalogue item
+    // and a Promo Code that took the price to zero are paid 0 too, and those
+    // are sales. Finance reads it to keep a comp's List Price out of Gross.
+    complimentary: boolean('complimentary').notNull().default(false),
   },
   table => ({
     clientKindIdx: index('client_packages_client_kind_idx').on(table.tenantId, table.clientId, table.kind),
@@ -406,6 +411,11 @@ export const clientPackages = pgTable(
     activatedPtUniquePerClient: uniqueIndex('client_packages_one_activated_pt_per_client')
       .on(table.clientId)
       .where(sql`${table.kind} = 'pt' AND ${table.active} AND ${table.expiresAt} IS NOT NULL`),
+    // A comp took no money and never reached the payment provider.
+    complimentaryFree: check(
+      'client_packages_complimentary_free',
+      sql`NOT ${table.complimentary} OR (${table.amountPaidSgd} = 0 AND ${table.stripePaymentIntentId} IS NULL)`,
+    ),
     nonNegBalance: check(
       'client_packages_non_negative_balance',
       sql`${table.creditsOrSessionsRemaining} IS NULL OR ${table.creditsOrSessionsRemaining} >= 0`,

@@ -95,7 +95,7 @@ const twoFactorColumns = <U>(userId: () => U) => ({
 const claimedTenantId = () =>
   uuid('claimed_tenant_id').references(() => tenants.id, { onDelete: 'cascade' })
 
-/* ── client: members, signed in by emailed code ────────────────────────── */
+/* ── client: members, signed in by email and password ─────────────────── */
 
 export const clientAuthUsers = pgTable('client_auth_users', userColumns())
 

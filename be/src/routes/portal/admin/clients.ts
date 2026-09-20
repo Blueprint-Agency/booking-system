@@ -31,7 +31,16 @@ import {
   type RefundState,
   type WorkshopPurchase,
 } from '../../../services/billing/refunds'
-import { listMemberSessions, signMemberOutEverywhere } from '../../../services/auth/account-access'
+import {
+  giveComplimentaryPackage,
+  removeComplimentaryPackage,
+} from '../../../services/packages/complimentary'
+import { changeClientEmail } from '../../../services/clients/change-email'
+import {
+  listMemberSessions,
+  sendMemberSetPasswordLink,
+  signMemberOutEverywhere,
+} from '../../../services/auth/account-access'
 import { exportMember } from '../../../services/clients/member-export'
 import { deleteMemberPermanently } from '../../../services/clients/member-delete'
 import { memberArchiveFilename, packArchive } from '../../../services/tenants/transfer-archive'
@@ -74,6 +83,12 @@ const crossLocationSchema = z.object({
 const refundSchema = z.object({
   reason: z.string().min(1).max(2000),
 })
+// Removing a **Complimentary Package** (#176) takes a reason and nothing else,
+// like a Refund does — but it is not one, and CONTEXT.md keeps the two words
+// apart, so it gets its own name rather than borrowing that one.
+const removeSchema = z.object({
+  reason: z.string().min(1).max(2000),
+})
 // Moving a member's Home Location (§7). The reason is mandatory and there is no
 // "clear it" — an Unlimited Plan always Covers exactly one Location.
 const homeLocationSchema = z.object({
@@ -87,6 +102,25 @@ const homeLocationSchema = z.object({
 const boundInstructorSchema = z.object({
   instructor_id: z.string().uuid().nullable(),
   reason: z.string().min(1).max(2000),
+})
+// Giving a **Complimentary Package** (#176). The reason is mandatory — a free
+// package with no record of why it was free is the thing this route exists to
+// prevent. Home Location, the Add-On and the Bound Instructor are the same
+// three choices a checkout makes; the grant service refuses the combinations
+// that make no sense, so nothing is conditioned here.
+const issueSchema = z.object({
+  package_kind: z.enum(['class', 'pt']),
+  package_id: z.string().uuid(),
+  reason: z.string().min(1).max(2000),
+  location_id: z.string().uuid().nullish(),
+  /** Give the Cross-Location Add-On with an Unlimited Plan, also at $0. */
+  cross_location: z.boolean().optional(),
+  instructor_id: z.string().uuid().nullish(),
+})
+// Changing a member's email. Trimming and lower-casing are the service's, so
+// one rule covers this route and every other path onto the column.
+const emailSchema = z.object({
+  email: z.string().email().max(254),
 })
 const expirySchema = z.object({
   expires_at: z.string().datetime({ offset: true }).nullable(),
@@ -145,6 +179,10 @@ function packageView(p: ClientPackageWithSource, refund?: RefundState) {
     // The Cross-Location Add-On and what was paid for it (§5, §15) — null means
     // this plan Covers its Home Location only.
     cross_location_paid_sgd: p.crossLocationPaidSgd,
+    // Given by an admin at no charge (#176) — what the portal offers "Remove"
+    // on, and why the row shows S$0 against a real List Price without that
+    // reading as a discount somebody granted at checkout.
+    complimentary: p.complimentary,
     // Which Promo Code the member typed, frozen at purchase (§11). The text is
     // read through the id, so a later relabelling of the code cannot restate it.
     promo_code: p.promoCode,
@@ -370,9 +408,57 @@ const app = new Hono()
       })
     },
   )
+  // A **Complimentary Package** (#176): the catalogue package an admin gives at
+  // no charge, through the same grant a purchase uses. No money, no email — the
+  // reason is what the member is owed, and the admin delivers that themselves.
+  .post('/:id/packages/issue', zValidator('param', idParam), zValidator('json', issueSchema), async c => {
+    const { id } = c.req.valid('param')
+    const body = c.req.valid('json')
+    const { clientPackageId } = await giveComplimentaryPackage(tenantId(c), {
+      clientId: id,
+      packageKind: body.package_kind,
+      packageId: body.package_id,
+      reason: body.reason,
+      locationId: body.location_id ?? null,
+      crossLocation: body.cross_location ?? false,
+      instructorId: body.instructor_id ?? null,
+      actedByStaffId: c.get('staffUserId'),
+    })
+    c.set('auditTarget' as any, { table: 'client_packages', id: clientPackageId })
+    return c.json({ client_package_id: clientPackageId }, 201)
+  })
+  // Removing a Complimentary Package given by mistake, while it is Untouched.
+  // Deliberately not the Refund route: no money moved, so there is nothing to
+  // give back — the row goes and its not-yet-held bookings are cancelled.
+  .post('/:id/packages/:pid/remove', zValidator('param', idPkgParam), zValidator('json', removeSchema), async c => {
+    const { id, pid } = c.req.valid('param')
+    const body = c.req.valid('json')
+    const result = await removeComplimentaryPackage(tenantId(c), {
+      clientId: id,
+      clientPackageId: pid,
+      reason: body.reason,
+      actedByStaffId: c.get('staffUserId'),
+    })
+    c.set('auditTarget' as any, { table: 'client_packages', id: pid })
+    return c.json({ removed: true, cancelled_bookings: result.cancelledBookings })
+  })
+  // The member's email (#176) — the address they sign in with and the one the
+  // studio writes to, moved together.
+  .post('/:id/email', zValidator('param', idParam), zValidator('json', emailSchema), async c => {
+    const { id } = c.req.valid('param')
+    const body = c.req.valid('json')
+    const row = await changeClientEmail({
+      tenantId: tenantId(c),
+      clientId: id,
+      email: body.email,
+      actorStaffId: c.get('staffUserId'),
+      from: c.req.raw.headers,
+    })
+    c.set('auditTarget' as any, { table: 'clients', id })
+    return c.json(clientRow(row))
+  })
   // Blocking is DELETE /:id + POST /:id/restore below — there is deliberately no
   // separate suspend mechanism.
-  .post('/:id/packages/issue', c => c.json({ todo: 'admin grants complimentary package' }, 501))
   // ---- soft delete + restore ----
   .delete('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
@@ -426,6 +512,18 @@ const app = new Hono()
     })
     c.set('auditTarget' as any, { table: 'clients', id })
     return c.json({ revoked })
+  })
+  // ---- set-password link (#173) ----
+  .post('/:id/send-set-password', zValidator('param', idParam), async c => {
+    const { id } = c.req.valid('param')
+    await sendMemberSetPasswordLink({
+      tenantId: tenantId(c),
+      clientId: id,
+      actorStaffId: c.get('staffUserId'),
+      from: c.req.raw.headers,
+    })
+    c.set('auditTarget' as any, { table: 'clients', id })
+    return c.json({ sent: true })
   })
   // ---- member export (#143): everything the studio holds about the member, as
   // a zip, for an access request. Admin only; logged as a staff act.

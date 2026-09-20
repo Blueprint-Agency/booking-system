@@ -17,6 +17,7 @@ function ev(p: Partial<MoneyEvent> & { kind: MoneyEvent['kind'] }): MoneyEvent {
     paidSgd: null,
     promoCode: null,
     refunded: false,
+    complimentary: false,
     instructorId: null,
     instructorName: null,
     paySgd: null,
@@ -49,13 +50,49 @@ const pay = (p: Partial<MoneyEvent> = {}) =>
   assert.strictEqual(s.totals.net_sgd, 150)
 }
 
-// -- a comp grant at $0 is a 100% discount, not an absence --------------------
+// -- a sale taken to $0 is a 100% discount, not an absence -------------------
 // list_price_sgd is NOT NULL on every purchase precisely so this row exists.
+// A Promo Code that wiped the price is still a sale: the studio asked for the
+// money and then gave it away, and both halves belong in the month.
 {
   const s = summarizeFinance([purchase({ listPriceSgd: '120.00', paidSgd: '0.00' })])
   assert.strictEqual(s.totals.gross_sgd, 120)
   assert.strictEqual(s.totals.discounts_sgd, 120)
   assert.strictEqual(s.totals.net_sgd, 0)
+}
+
+// -- a Complimentary Package is listed and counted in nothing (#176) ---------
+// The row above is why the marker exists rather than a test on "paid 0": these
+// two are the same three numbers and different events. A comp was never sold,
+// so its List Price is not Gross, and the gap to zero is not money given away
+// on a sale — it is no sale at all.
+{
+  const s = summarizeFinance([
+    purchase({ listPriceSgd: '200.00', paidSgd: '0.00', complimentary: true }),
+  ])
+  assert.strictEqual(s.rows.length, 1, 'it still shows in the table')
+  assert.strictEqual(s.rows[0]?.list_price_sgd, 200)
+  assert.strictEqual(s.rows[0]?.paid_sgd, 0)
+  assert.strictEqual(s.rows[0]?.complimentary, true)
+  assert.strictEqual(
+    s.rows[0]?.discount_sgd,
+    null,
+    'and no discount — nobody was charged, so nothing was taken off',
+  )
+  assert.strictEqual(s.totals.gross_sgd, 0)
+  assert.strictEqual(s.totals.discounts_sgd, 0)
+  assert.strictEqual(s.totals.net_sgd, 0)
+}
+
+// -- a comp beside a sale leaves the sale's figures alone ---------------------
+{
+  const s = summarizeFinance([
+    purchase({ listPriceSgd: '180.00', paidSgd: '150.00' }),
+    purchase({ listPriceSgd: '200.00', paidSgd: '0.00', complimentary: true }),
+  ])
+  assert.strictEqual(s.totals.gross_sgd, 180)
+  assert.strictEqual(s.totals.discounts_sgd, 30)
+  assert.strictEqual(s.totals.net_sgd, 150)
 }
 
 // -- a corporate sale reports no discount ------------------------------------

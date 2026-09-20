@@ -47,10 +47,12 @@ export interface FinanceLine {
   unattributed: boolean
   list_price_sgd: number | null
   paid_sgd: number | null
-  /** List Price minus amount paid. Null on money-out rows. */
+  /** List Price minus amount paid. Null on money-out rows and on a comp. */
   discount_sgd: number | null
   promo_code: string | null
   refunded: boolean
+  /** Given by an admin at no charge (#176): shown at 0, counted in no total. */
+  complimentary: boolean
   instructor_id: string | null
   instructor_name: string | null
   pay_sgd: number | null
@@ -122,9 +124,14 @@ function serialize(e: MoneyEvent): FinanceLine {
     unattributed: e.locationId == null,
     list_price_sgd: list == null ? null : fromCents(list),
     paid_sgd: paid == null ? null : fromCents(paid),
-    discount_sgd: list == null || paid == null ? null : fromCents(list - paid),
+    // Money off a sale. A Complimentary Package has none: nobody was charged,
+    // so the whole List Price is not a discount somebody granted — and a row
+    // saying "S$200 off" beside a Discounts total that excludes it is two
+    // answers to one question (#176).
+    discount_sgd: e.complimentary || list == null || paid == null ? null : fromCents(list - paid),
     promo_code: e.promoCode,
     refunded: e.refunded,
+    complimentary: e.complimentary,
     instructor_id: e.instructorId,
     instructor_name: e.instructorName,
     pay_sgd: num(e.paySgd),
@@ -152,6 +159,11 @@ export function summarizeFinance(events: readonly MoneyEvent[]): FinanceSummary 
       // Both columns are NOT NULL on a real purchase; a source that can't supply
       // one contributes nothing rather than poisoning the total with NaN.
       if (e.listPriceSgd == null || e.paidSgd == null) continue
+      // A Complimentary Package is listed and not totalled: its List Price is
+      // not Gross (nobody was asked for it) and the gap to zero is not a
+      // discount (there was no sale to take money off). It reaches the table
+      // and the CSV through `rows` below like every other event.
+      if (e.complimentary) continue
       const list = toCents(e.listPriceSgd)
       const paid = toCents(e.paidSgd)
       grossCents += list

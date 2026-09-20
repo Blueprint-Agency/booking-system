@@ -358,6 +358,12 @@ Fields:
 - **Capacity** — structured, see §7d below.
 - Credit cost (set manually per class instance — varies by class type but entered at scheduling time)
 
+### 7b-bis. Class Series (admin only)
+
+`+ Class series` on the Schedule arms the grid like `+ Class`; the slot picked seeds the weekday, times and first date of `/admin/schedule/new/series`. The form takes the same fields as a class plus weekday, first and last date (at most a year). **Preview dates** lists every date with its clashes (room, instructor, leave); clashing dates start unticked, and unticking any date skips it (a public holiday). **Create N classes** is enabled only when no ticked date clashes, and creates all or nothing.
+
+Classes made by a series show a repeat mark on the Schedule. Their detail page shows the series ("Mondays 19:00–20:00 · 1 Oct to 31 Dec") with **Extend** (a new last date → preview → add classes; never repeats a date) and **End series** (from a date: unbooked classes are cancelled, booked ones are listed with a link to cancel each, which refunds). Everything else about a class from a series is edited on the class itself.
+
 ### 7c. Workshops on the Schedule
 
 Workshops are still *configured* under Packages (§7e) — the scheduler only picks when one starts.

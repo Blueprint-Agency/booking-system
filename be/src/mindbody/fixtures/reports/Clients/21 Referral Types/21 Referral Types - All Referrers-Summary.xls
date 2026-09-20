@@ -1,0 +1,9 @@
+<META http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<!-- Invented fixture. The summary view: counts per referral value, no clients. The transform must not read it. -->
+<table class="mainText" width="100%">
+	<tr><td colspan="4">Other</td></tr>
+	<tr><td>Referred By</td><td>Total Referrals</td><td>% of Total</td><td></td></tr>
+	<tr><td>ClassPass</td><td>2</td><td>66.7%</td></tr>
+	<tr><td>Another Client</td><td>1</td><td>33.3%</td></tr>
+	<tr><td>Total Other:</td><td>3</td><td>100%</td><td>&nbsp</td></tr>
+</table>

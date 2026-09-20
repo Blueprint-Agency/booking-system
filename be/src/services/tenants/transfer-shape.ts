@@ -22,6 +22,16 @@ export type TenantManifest = {
   deferred: Record<string, string[]>
   /** Row count per table, so a truncated archive is caught before it is written. */
   counts: Record<string, number>
+  /**
+   * Ask the importer to create or reuse the sign-in account of every `clients`
+   * and `staff_users` row, by email, instead of requiring each row to name one.
+   *
+   * Set by archives built from outside the platform (the Mindbody transform),
+   * whose people have no account yet. Never set by an export: a restore brings
+   * the accounts its rows already name, and a row without one is still refused.
+   * Optional, so the archive version is unchanged.
+   */
+  ensureAccounts?: boolean
 }
 
 export type TenantArchive = {

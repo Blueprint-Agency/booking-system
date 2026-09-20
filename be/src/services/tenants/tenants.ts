@@ -5,6 +5,7 @@ import type { TenantRow, TenantSettingsRow } from '../../db/schema/tenancy'
 import type { TenantStatus } from '../../db/enums'
 import { isUniqueViolation } from '../../db/unique-violation'
 import { ConflictError } from '../../shared/errors'
+import { claimSlug } from './former-slugs'
 import { assertUsableSlug, normaliseSlug } from './slug'
 
 /**
@@ -258,7 +259,7 @@ export async function activateAfterFirstStaff(id: string): Promise<TenantRow | n
  * Status is the *only* thing that changes: suspending retains every row the
  * studio owns, and reactivating is the same call in reverse. Deleting a tenant
  * is deliberately not offered here — `tenant_id` is `ON DELETE RESTRICT`
- * everywhere, so a delete would have to cascade through 53 tables, and the
+ * everywhere, so a delete would have to cascade through 55 tables, and the
  * decision to destroy a business's data is not a button.
  *
  * The memo is dropped afterwards, because every one of those caches would
@@ -303,6 +304,8 @@ export async function createTenant(input: CreateTenantInput): Promise<ResolvedTe
 
   try {
     return await db.transaction(async tx => {
+      await claimSlug(tx, slug)
+
       const [tenant] = await tx
         .insert(tenants)
         .values({

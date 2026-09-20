@@ -47,6 +47,13 @@ is exempted before this middleware runs — `healthz`, the payment webhook, the
 whole super portal branch, and the slug lookup — so an absent tenant is a bug in
 the caller, and 400 is what turns it into one somebody fixes.
 
+A slug resolves only if it is a Tenant's **current** slug. A renamed studio's
+former slug (`former_slugs`, kept 90 days) is a 404 here, from the header and
+from `Origin` alike, so nothing authenticated ever runs on an old host. The only
+thing that reads a former slug is the public slug lookup the frontends' proxies
+call: it answers `{ moved_to: { slug } }`, and the proxy sends a 308 to the
+same path and query on the new host. See `be/CONTEXT.md` § Former slug.
+
 Resolution also opens the database's tenant context — one transaction carrying
 `app.tenant_id`, which the Row-Level Security policies from #63 read back. The
 two are welded together deliberately: a request that reached a query with no

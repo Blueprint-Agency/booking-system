@@ -47,7 +47,16 @@ export interface CreatedTenant {
 export type SlugVerdict = {
   available: boolean;
   slug?: string;
-  reason?: "slug_too_short" | "slug_too_long" | "slug_malformed" | "slug_reserved" | "slug_taken";
+  reason?:
+    | "slug_too_short"
+    | "slug_too_long"
+    | "slug_malformed"
+    | "slug_reserved"
+    | "slug_taken"
+    | "slug_held";
+  /** The addresses a studio on this slug would have. Absent when the slug is
+   *  malformed or reserved; null per app when no wildcard is configured. */
+  urls?: { client: string | null; portal: string | null };
 };
 
 /** Why a slug was refused, in words a human can act on. */
@@ -57,6 +66,9 @@ export const SLUG_REASONS: Record<string, string> = {
   slug_malformed: "Letters, numbers and hyphens only, starting and ending with one.",
   slug_reserved: "Reserved — something else already answers on that address.",
   slug_taken: "Already taken by another studio.",
+  slug_held: "A renamed studio’s old address — it still redirects, and frees up 90 days after the rename.",
+  slug_unchanged: "That is already this studio’s address.",
+  tenant_archived: "An archived studio has no address to change.",
 };
 
 export function listTenants(api: Api) {
@@ -73,6 +85,18 @@ export function createTenant(api: Api, input: CreateTenantInput) {
 
 export function setTenantStatus(api: Api, id: string, status: TenantStatus) {
   return api.patch<{ tenant: PlatformTenant }>(`/platform/tenants/${id}/status`, { status });
+}
+
+/**
+ * Change a studio's slug — its web address. The old addresses redirect to the
+ * new ones for 90 days, and the old slug is held from every other studio
+ * meanwhile.
+ */
+export function renameTenant(api: Api, id: string, slug: string) {
+  return api.post<{
+    tenant: PlatformTenant;
+    former: { slug: string; redirect_until: string };
+  }>(`/platform/tenants/${id}/slug`, { slug });
 }
 
 /**

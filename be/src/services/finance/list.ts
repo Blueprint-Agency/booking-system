@@ -63,6 +63,8 @@ const base = {
   paidSgd: null,
   promoCode: null,
   refunded: false,
+  // Only a package purchase can be one, and only when its row says so.
+  complimentary: false,
   instructorId: null,
   instructorName: null,
   paySgd: null,
@@ -141,6 +143,7 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
       classPackageName: classPackages.name,
       ptPackageName: ptPackages.name,
       paymentIntentId: clientPackages.stripePaymentIntentId,
+      complimentary: clientPackages.complimentary,
     })
     .from(clientPackages)
     .innerJoin(clients, eq(clients.id, clientPackages.clientId))
@@ -293,6 +296,7 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
       paidSgd: r.amountPaidSgd,
       promoCode: r.promoCode,
       refunded: isRefunded(r.paymentIntentId),
+      complimentary: r.complimentary,
     })
     // The Add-On's own line. The column IS what the member paid for it, and it
     // is not part of the plan's List Price, so it is its own Money Event with
@@ -310,6 +314,9 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
         listPriceSgd: r.crossLocationPaidSgd,
         paidSgd: r.crossLocationPaidSgd,
         refunded: isRefunded(r.paymentIntentId),
+        // An Add-On given with a comped plan was given too, at $0. It totals to
+        // nothing either way; saying so keeps the two lines telling one story.
+        complimentary: r.complimentary,
       })
     }
   }
