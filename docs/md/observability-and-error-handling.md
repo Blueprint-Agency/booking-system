@@ -1,8 +1,9 @@
 # Error Handling, Logging & Observability — Guide + Implementation
 
 A plain-English reference for how this app catches failures, records what
-happened, and (later) watches its own health — plus exactly what was built in
-Phase 1 and what's still ahead.
+happened, and watches its own health. This page is the **concepts**. The
+on-call page — URLs, field names, alert rules, commands — is
+[`observability-runbook.md`](./observability-runbook.md).
 
 ---
 
@@ -30,9 +31,9 @@ can't watch directly. A healthy app answers three questions on its own:
   - **Logs** — individual events ("what happened")
   - **Metrics** — numbers over time ("how much / how fast": req/s, error rate, p95 latency, CPU/RAM)
   - **Traces** — one request's journey ("where the time went")
-- **Error monitoring** — a specialized slice that would capture the crash,
-  stack trace, affected users and frequency, and alert you. Not currently
-  used; see § 5 History.
+- **Error monitoring** — a specialized slice that captures the crash, stack
+  trace, affected users and frequency, and alerts you. Here it is not a separate
+  product: the error lines in Loki plus the error-rate alert rule do the job.
 - **Product analytics** (PostHog) — a *separate* category: user behaviour
   (booking funnel, drop-off), not system health.
 
@@ -55,79 +56,33 @@ Observability spans **both**, combined in one view:
 | Layer | Tool (free) | Catches | Where you look |
 |---|---|---|---|
 | In-code error handling | `AppError` + `errorBoundary` + `safeJob` + `error.tsx` | the failure itself | clean JSON to client; user sees toast / fallback page |
-| Structured logs | Pino → stdout | every event w/ requestId | `docker compose logs -f` on the VPS |
-| Backend error monitoring | none (removed — see § 5 History) | — | logs only |
-| Frontend error monitoring | none (removed — see § 5 History) | — | logs only; user sees `error.tsx` |
-| Metrics | New Relic / Grafana | req/s, error rate, p95, CPU | platform dashboard + alerts |
-| Traces | New Relic / Grafana (OTel) | one request's timing | trace waterfall |
-| Uptime | UptimeRobot / Better Stack | "is it up at all?" | uptime dashboard + alert |
+| Structured logs | Pino → stdout → Alloy → Loki | every event w/ requestId | `docker compose logs -f` on the VPS; Grafana Explore |
+| Backend error monitoring | Loki `level=error` + the error-rate alert rule | unhandled errors, w/ stack and ids | Grafana Explore + Discord |
+| Frontend error monitoring | Grafana Faro | browser errors, w/ user and Tenant id | Faro app per frontend; user sees `error.tsx` |
+| Metrics | Grafana Cloud (Alloy) | CPU / memory / disk per container, Postgres | Hosts dashboard + alerts |
+| Traces | none | — | single modular monolith — logs cover it |
+| Uptime | Grafana Synthetic Monitoring | "is it up at all?" | Endpoints dashboard + alert |
 | Product analytics | PostHog (optional) | booking funnel, drop-off | PostHog dashboard |
 
 ---
 
-## 5. Phase 1 — what was implemented (foundation: errors + logs)
+## 5. What was built, and where to go when it breaks
 
-### Backend (`be/`)
-- **Structured logging** — `src/shared/logger.ts` (Pino). JSON to stdout in prod
-  (Docker captures it); pretty-printed in dev. Set `LOG_LEVEL` to override.
-- **Log context (#162)** — every line written during a request carries
-  `requestId`, `tenantId` once resolved and `actorId` + `pool` once
-  authenticated (`impersonatedBy` under an impersonation grant), without the
-  caller passing anything: an `AsyncLocalStorage` store in `src/shared/logger.ts`
-  read by Pino's `mixin`. Webhook lines add `webhook`, cron lines `job`. The
-  field names are fixed (alert rules key on them) and listed in that file's header.
-- **Access log** — `src/middleware/logger.ts` logs one `info` line per request
-  (method/path/status/ms), whatever the status.
-- **Central error handler** — `src/middleware/error.ts` writes exactly one
-  `error` line per unknown error (with its stack and the context ids) and
-  returns the `requestId` in the 500 body so a user/support can quote it to find
-  the log. Typed errors are answered, not logged. A refused webhook signature is
-  one `warn` line.
-- **Cron safety** — `src/jobs/index.ts` wraps every job in `safeJob()`: a thrown
-  error is logged, never an unhandled crash, and a run that finished writes one
-  `info` line with `outcome=ok`. (Jobs remain dormant —
-  `registerJobs` is still not called — but are now safe for when they're enabled.)
-- **Process safety nets + graceful shutdown** — `src/server.ts` handles
-  `unhandledRejection` / `uncaughtException` and drains on `SIGTERM`/`SIGINT`.
-- **Console cleanup** — runtime `console.*` across services/middleware/webhooks
-  replaced with the structured logger (seed/migrate CLI scripts keep `console`).
+All of it was delivered under
+[#124](https://github.com/Blueprint-Agency/booking-system/issues/124) and its
+seven tickets: structured Pino logs carrying request, Tenant and actor ids; one
+`error` line per unhandled error with the `requestId` echoed in the 500 body;
+the outbound-call wrapper with per-vendor deadlines; cron heartbeats; Grafana
+Cloud for logs, metrics, host and database health; four alert rules into one
+Discord channel; synthetic checks; and Grafana Faro on both frontends.
 
-### Frontends (`fe-client/`, `fe-portal/`)
-- **Error boundaries** — `app/error.tsx`, `app/global-error.tsx`, and
-  `app/not-found.tsx` in both apps (on-brand fallback UI instead of a blank page).
-- **Toast infra** — `sonner` + `<Toaster>` added to `fe-client` (fe-portal
-  already had it).
-- **Error sink** — `src/lib/report-error.ts` in both apps: the single place
-  client errors are reported (console).
-- **De-silenced catches** — fe-client's swallowed data-load/checkout catches now
-  route through `report-error.ts` instead of being dropped.
+Sentry (`@sentry/node`, `@sentry/nextjs`) was the original error-monitoring
+layer. It has been removed entirely — SDKs, DSN env vars, `be/src/instrument.ts`,
+`fe-*/src/instrumentation*.ts`, `fe-*/src/sentry.*.config.ts` and the
+`withSentryConfig` wrapper are all gone. Grafana Cloud replaced it.
 
-### Verification
-- `be`: `npx tsc --noEmit` ✅, Pino/pino-pretty boot smoke test ✅
-- `fe-client` / `fe-portal`: `npx tsc --noEmit` ✅ and `next build` ✅
-
-## 5b. History — Sentry (removed)
-
-Sentry (`@sentry/node`, `@sentry/nextjs`) was wired into all three apps as
-Phase 1's error-monitoring layer, gated on `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN`
-so it stayed a no-op unless configured. It has since been removed entirely —
-the SDK, the DSN env vars, `be/src/instrument.ts`,
-`fe-*/src/instrumentation*.ts`, `fe-*/src/sentry.*.config.ts`, and the
-`withSentryConfig` build wrapper are all gone from the repo. `report-error.ts`
-in each app now only logs to the console; unknown backend errors are only
-logged via Pino. There is currently no error-monitoring dashboard or alerting
-— that gap is the same one Phase 2 below (or a re-adoption of Sentry/GlitchTip)
-would close.
-
-## 6. Next step
-- **Uptime monitor** — add the app URLs to UptimeRobot/Better Stack (5 min, free).
-
-## 7. Phase 2 (later — observability platform)
-- Install **one agent** on the VPS (New Relic free tier *or* Grafana Cloud) for
-  metrics + traces + host/DB health. New Relic has a first-class Pino forwarder
-  (`@newrelic/pino-enricher`) that slots onto the logger above.
-- Note: this is a single modular monolith, so traces add the least value — logs +
-  errors + a few metrics already cover the vast majority of incidents.
-
-## 8. Phase 3 (optional — product analytics)
-- **PostHog** for the booking funnel / feature usage. Separate from system health.
+**When something is broken, go to the runbook, not here:**
+[`observability-runbook.md`](./observability-runbook.md) — which Discord channel
+the alert landed in, how to reach the host, the Grafana dashboard and Loki URLs,
+every log field name and what it means, what each of the four alert rules means
+and what to check first, and the first five commands.

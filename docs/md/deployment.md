@@ -226,8 +226,8 @@ row either matches or says why it deliberately does not.
 |---|---|---|---|
 | GitHub env **variable** names | `FRONTEND_URLS`, `PLATFORM_ADMIN_EMAIL`, `PORT`, `STRIPE_STATEMENT_DESCRIPTOR_PREFIX` | same four | Match |
 | GitHub env **secret** names | `BETTER_AUTH_SECRET`, `DB_APP_PASSWORD`, `DB_NAME`, `DB_PASSWORD`, `DB_USER`, `IMPERSONATION_SECRET`, `R2_*` ×5, `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `SENTRY_DSN`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` | same sixteen | Match. **Gap:** `SENTRY_DSN` is dead in both since Sentry was removed — delete from both. |
-| Vercel `booking-system` env names | Preview: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_ROOT_DOMAIN` (branch `staging`) | Production: same two | Match. **Gap:** both scopes still hold dead `NEXT_PUBLIC_APP_ENV`, `NEXT_PUBLIC_SENTRY_DSN` (Sentry removed), `CLERK_SECRET_KEY` and `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` — nothing reads them; delete from both. |
-| Vercel `booking-system-admin` env names | Preview: the same two | Production: the same two | Match. **Gap:** both scopes hold dead `NEXT_PUBLIC_APP_ENV`, `NEXT_PUBLIC_SENTRY_DSN` and `CLERK_*` keys (`CLERK_SECRET_KEY`, `CLERK_ENCRYPTION_KEY`, `CLERK_PLATFORM_SECRET_KEY`, and the two `NEXT_PUBLIC_CLERK_*`) — delete from both. |
+| Vercel `booking-system` env names | Preview: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_ROOT_DOMAIN`, `NEXT_PUBLIC_APP_ENV`, `NEXT_PUBLIC_FARO_COLLECTOR_URL` (branch `staging`) | Production: same four | Match. `NEXT_PUBLIC_APP_ENV` is **live** — Faro tags every browser event with it, and it is the only thing separating staging from production inside the one Faro app. **Gap:** both scopes still hold dead `NEXT_PUBLIC_SENTRY_DSN` (Sentry removed), `CLERK_SECRET_KEY` and `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` — nothing reads them; delete from both. |
+| Vercel `booking-system-admin` env names | Preview: the same four | Production: the same four | Match, same note on `NEXT_PUBLIC_APP_ENV`. **Gap:** both scopes hold dead `NEXT_PUBLIC_SENTRY_DSN` and `CLERK_*` keys (`CLERK_SECRET_KEY`, `CLERK_ENCRYPTION_KEY`, `CLERK_PLATFORM_SECRET_KEY`, and the two `NEXT_PUBLIC_CLERK_*`) — delete from both. |
 | Frontend Node (Vercel) | 24.x | 24.x (same project) | Match |
 | Backend image and Node | `blueprintagency/booking-be:<sha>`, Node 22.23.2 | Node 22.23.2 | Match — one Dockerfile, both built by `deploy-be.yml`. |
 | Backend `.env.booking-be` key names | the current schema (`FRONTEND_URLS`, `PLATFORM_ADMIN_EMAIL`, `BETTER_AUTH_*`, …) | **stale** — still `TENANT_ORIGIN_PATTERNS`, `PLATFORM_ADMIN_EMAILS`, `ENABLE_JOBS`, `MAIL_FROM_*`, `SUPERADMIN_EMAIL`, `CLERK_*`, running image tag `latest` | **Gap, closes itself:** production has not been deployed since these renames. The next `main` deploy rewrites the file from GitHub and runs the sha. Check the key names again after it. |
@@ -263,6 +263,11 @@ A deploy failing with `Pre-migration snapshot FAILED (backup.sh exit 2)` most of
 nightly backup (03:30 KL) mid-run: re-run it.
 
 ### Rolling back the backend
+
+> Rolling back at 2am because something alerted? Start at
+> [`observability-runbook.md`](./observability-runbook.md) — which channel the
+> alert came from, which Grafana query shows you why, and the first five
+> commands (this rollback is the fourth).
 
 The deploy still pushes two tags — the floating `staging` / `latest` and the commit sha — but the
 stack runs **the sha**. After the new image passes its smoke test, the deploy writes it into the

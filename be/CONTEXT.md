@@ -66,6 +66,10 @@ _Avoid_: webhook tenant, tenant lookup
 **Per-Tenant identity**:
 `clients` and `staff_users` are unique on `(tenant_id, auth_user_id)` and `(tenant_id, email)`, not on either column alone (migrations 0035 and 0047). `auth_user_id` is `NOT NULL` (0052): every row is linked to a pool user by whatever wrote it. The platform-wide version was the same sentence as "nobody may belong to two studios" — a case the spec wants to work — and it failed at sign-up as a duplicate-key error. One person, two studios, two independent records, one at each.
 
+**Log context**:
+The ids every log line carries without the caller passing them — an `AsyncLocalStorage` store in `shared/logger.ts` that the root Pino logger reads on every line through its `mixin`, so a service logging with the plain `logger` still writes whose request it was. The middlewares and job wrappers fill it in as they learn things: `requestId` (`middleware/request-id.ts`), `tenantId` once the **Tenant context** resolves (`middleware/tenant.ts`, and the per-Tenant job wrapper, per step), `actorId` and `pool` once authenticated, `impersonatedBy` under an impersonation grant, `job` in a cron wrapper, `webhook` in a webhook route. The names are **fixed** — Grafana alert rules key on them — and listed in that file's header. `tenantId` is an **id only, never a slug or a name**: a studio's name must not reach the log stream, Grafana or a Discord alert. The one id that leaves the building is `requestId`, echoed in the `x-request-id` header and in every 500 body, so a member or support can quote it and the whole request can be pulled back out of Loki. On-call use of all of this is `docs/md/observability-runbook.md`.
+_Avoid_: trace id, correlation id, MDC, request scope
+
 ### Staff
 
 **Staff role**:
