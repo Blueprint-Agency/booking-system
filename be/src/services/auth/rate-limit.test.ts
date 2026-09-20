@@ -52,9 +52,10 @@ describe('auth rate limits', () => {
   test('every sign-in attempt and every code request on a pool is on a named budget', () => {
     const { enabled, customRules } = authRateLimit()
     assert.equal(enabled, true, 'on in every environment, not only production')
-    for (const path of ['/email-otp/send-verification-otp', '/two-factor/send-otp', '/request-password-reset']) {
+    for (const path of ['/email-otp/send-verification-otp', '/two-factor/send-otp']) {
       assert.deepEqual(customRules[path], AUTH_RATE_LIMITS.codeRequest, path)
     }
+    assert.deepEqual(customRules['/request-password-reset'], AUTH_RATE_LIMITS.passwordLink)
     for (const path of [
       '/sign-in/email',
       '/sign-in/email-otp',

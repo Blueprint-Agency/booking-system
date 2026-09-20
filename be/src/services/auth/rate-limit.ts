@@ -18,9 +18,17 @@ export const AUTH_RATE_LIMITS = {
   codeRequest: { window: 60, max: 5 },
   /** A password, a sign-in code or a second factor offered for checking. */
   signInAttempt: { window: 60, max: 10 },
+  /**
+   * A set-password or reset link mailed, on any pool (#173). Tighter than a
+   * code because one link is enough and a second covers the one that went
+   * astray — and because it is the same figure Better Auth applies to this path
+   * by itself, which the staff resend-invitation refusal is written against.
+   */
+  passwordLink: { window: 60, max: 3 },
 } as const satisfies Record<string, Rule>
 
-const CODE_REQUEST_PATHS = ['/email-otp/send-verification-otp', '/two-factor/send-otp', '/request-password-reset']
+const CODE_REQUEST_PATHS = ['/email-otp/send-verification-otp', '/two-factor/send-otp']
+const PASSWORD_LINK_PATHS = ['/request-password-reset']
 const SIGN_IN_ATTEMPT_PATHS = [
   '/sign-in/email',
   '/sign-in/email-otp',
@@ -82,6 +90,7 @@ export function authRateLimit() {
     customStorage: authRateLimitStorage(),
     customRules: Object.fromEntries([
       ...CODE_REQUEST_PATHS.map(path => [path, AUTH_RATE_LIMITS.codeRequest]),
+      ...PASSWORD_LINK_PATHS.map(path => [path, AUTH_RATE_LIMITS.passwordLink]),
       ...SIGN_IN_ATTEMPT_PATHS.map(path => [path, AUTH_RATE_LIMITS.signInAttempt]),
     ]) as Record<string, Rule>,
   } satisfies BetterAuthRateLimitOptions

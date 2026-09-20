@@ -6,7 +6,7 @@ import { and, eq, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, inTenantContext, type TestApp } from './harness'
 
 const OPERATOR = 'mindbody-operator@platform.test'
-process.env.PLATFORM_ADMIN_EMAILS = OPERATOR
+process.env.PLATFORM_ADMIN_EMAIL = OPERATOR
 
 /**
  * The Mindbody migration's first slice, end to end, at the one seam that
