@@ -1,13 +1,14 @@
 import type { StudioConfigInput } from './config'
 import type { MindbodyReports } from './mapper'
 import type { ScheduledClassRow } from './readers'
-import { dayNumber, isoClock, isoWeekday, normaliseClassName, normaliseStaffName, type CalendarDate } from './values'
+import { dayNumber, isoClock, isoWeekday, normaliseClassName, normaliseOptionName, normaliseStaffName, type CalendarDate } from './values'
 
 /**
  * What the timetable implies about a studio, proposed for a person to correct:
  * its Rooms and class names (one entry per spelling, to be merged and given a
- * capacity), which service categories are workshops, what the roster calls a PT
- * appointment, and which classes are weekly.
+ * capacity), which service categories are workshops and which of those are
+ * still to come (with the room types they were sold by), what the roster calls
+ * a PT appointment, and which classes are weekly.
  *
  * With `asOf`, only the timetable from four weeks before it onwards is read —
  * what the studio runs now, not every class it has ever held.
@@ -18,7 +19,9 @@ const WORKSHOP = /workshop|retreat|training|course/i
 const PT = /\bpt\b|personal training/i
 const WEEKS = 4
 
-type Proposal = Required<Pick<StudioConfigInput, 'rooms' | 'classTypes' | 'workshopCategories' | 'ptAppointmentNames' | 'series'>>
+type Proposal = Required<
+  Pick<StudioConfigInput, 'rooms' | 'classTypes' | 'workshopCategories' | 'workshops' | 'ptAppointmentNames' | 'series'>
+>
 
 /** The spelling used most; between equals the first alphabetically, so report order never decides. */
 function commonest(spellings: string[]): string {
@@ -47,6 +50,34 @@ export function proposeSchedule(reports: MindbodyReports, asOf: CalendarDate | n
     mindbodyNames: [...new Set(byName.get(key)!)].sort(),
     capacity: null,
   }))
+
+  // One entry per category with something still to come: a workshop that has
+  // already run has no days to import, and is not worth a decision.
+  const fold = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase()
+  const toCome = new Set(
+    reports.schedule.filter(r => today === null || dayNumber(r.date) >= today).map(r => fold(r.serviceCategory)),
+  )
+  const workshops: Proposal['workshops'] = workshopCategories
+    .filter(category => toCome.has(fold(category)))
+    .map(category => {
+      // The room types it was sold by: the pricing options filed under its own
+      // service category. A deposit or a top-up sold separately is one of these
+      // too, and is moved into the tier it buys by hand.
+      const options = reports.holdings.filter(h => fold(h.serviceCategory) === fold(category))
+      const keys = [...new Set(options.map(h => normaliseOptionName(h.option)))].sort()
+      return {
+        category,
+        // What Mindbody calls the category is the workshop's own name in it.
+        name: category,
+        location: null,
+        capacity: null,
+        migrate: null,
+        tiers: keys.map(key => {
+          const spellings = options.filter(h => normaliseOptionName(h.option) === key).map(h => h.option)
+          return { name: commonest(spellings), mindbodyNames: [...new Set(spellings)].sort(), priceSgd: null }
+        }),
+      }
+    })
 
   const ptAppointmentNames = [...new Set(reports.roster.map(r => r.description).filter(d => PT.test(d)))].sort()
 
@@ -80,5 +111,5 @@ export function proposeSchedule(reports: MindbodyReports, asOf: CalendarDate | n
     }
   }
 
-  return { rooms, classTypes, workshopCategories, ptAppointmentNames, series }
+  return { rooms, classTypes, workshopCategories, workshops, ptAppointmentNames, series }
 }

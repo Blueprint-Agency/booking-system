@@ -78,6 +78,10 @@ async function main() {
         `${counts.class_packages! + counts.pt_packages!} catalogue entries, ${counts.client_packages} packages held.`,
     )
     console.log(
+      `Timetable: ${counts.classes} classes, ${counts.pt_sessions} PT sessions, ` +
+        `${counts.workshops} workshops over ${counts.workshop_days} days, ${counts.bookings} bookings.`,
+    )
+    console.log(
       `Preflight: ${result.preflight.noEmail.length} members with no email, ` +
         `${result.preflight.sharedEmails.length} shared emails, ` +
         `${result.preflight.notMigrated.length} live items not migrated — see ${companions.preflight}.`,

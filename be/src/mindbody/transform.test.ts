@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { packArchive, unpackArchive } from '../services/tenants/transfer-archive'
 import { ConfigError, starterConfig, validateConfig } from './config'
+import { mapStudio } from './mapper'
 import { readReports, transformMindbody, verifyImport } from './transform'
 
 /**
@@ -344,6 +345,11 @@ test('the starter config proposes the catalogue from what was sold', async () =>
     'Class Pack - Bundle of 10',
     'Class Pack - Bundle of 20',
     'ClassPass',
+    // Places on a workshop are proposed like anything else held, and skipped:
+    // a person moves them into `workshops[].tiers` instead.
+    'Handstand Workshop - Twin',
+    'Handstand Workshop - Twin (Deposit)',
+    'Handstand Workshop - Upgrade to Single',
     'MAT STORAGE (1 Year)',
     'PT - Bundle of 10',
     'Riverside Studio Access',
@@ -365,6 +371,7 @@ test('the starter config proposes the catalogue from what was sold', async () =>
   assert.deepEqual([pt.kind, pt.sessionType, pt.credits, pt.validityDays], ['pt', '1on1', 10, 90])
   assert.deepEqual([proposed['ClassPass']!.migrate, proposed['ClassPass']!.priceSgd], ['legacy', 0])
   assert.equal(proposed['MAT STORAGE (1 Year)']!.migrate, 'skip')
+  assert.equal(proposed['Handstand Workshop - Twin']!.migrate, 'skip')
 })
 
 /* ── The timetable to come (#179) ─────────────────────────────────────────── */
@@ -503,7 +510,10 @@ test('the preflight names a booking with no class, and a member who is not in th
     preflight.schedule.join(' | '),
   )
   // Under a workshop category: the workshop import's, not a loose booking.
-  assert.ok(!preflight.schedule.some(n => /Handstand Workshop/.test(n)))
+  assert.ok(
+    !preflight.schedule.some(n => /Handstand Workshop.*not on the timetable/.test(n)),
+    preflight.schedule.join(' | '),
+  )
   assert.ok(preflight.schedule.some(n => /booked twice/.test(n)))
   assert.match(preflightText, /## The timetable and bookings/)
 })
@@ -541,6 +551,31 @@ test('the starter config proposes Rooms, class names, workshops, PT names and th
   assert.deepEqual(starter.workshopCategories, ['Handstand Workshop'])
   assert.deepEqual(starter.ptAppointmentNames, ['Personal Training / PT'])
 
+  // One workshop per category with something still to come, with the room
+  // types it was sold by. Everything a person has to decide is left open.
+  assert.deepEqual(starter.workshops, [
+    {
+      category: 'Handstand Workshop',
+      name: 'Handstand Workshop',
+      location: null,
+      capacity: null,
+      migrate: null,
+      tiers: [
+        { name: 'Handstand Workshop - Twin', mindbodyNames: ['Handstand Workshop - Twin'], priceSgd: null },
+        {
+          name: 'Handstand Workshop - Twin (Deposit)',
+          mindbodyNames: ['Handstand Workshop - Twin (Deposit)'],
+          priceSgd: null,
+        },
+        {
+          name: 'Handstand Workshop - Upgrade to Single',
+          mindbodyNames: ['Handstand Workshop - Upgrade to Single'],
+          priceSgd: null,
+        },
+      ],
+    },
+  ])
+
   // Weekly for each of the four weeks up to the download; Vinyasa ran twice, so it is not proposed.
   assert.deepEqual(starter.series, [
     {
@@ -555,10 +590,180 @@ test('the starter config proposes Rooms, class names, workshops, PT names and th
   ])
 })
 
+/* ── Workshops and retreats to come (#180) ────────────────────────────────── */
+
+test('a future workshop: one Day per occurrence, one Tier per room type, and its instructors', async () => {
+  const { archive, ids } = await run()
+  const [workshop, ...others] = archive.rows.workshops!
+  assert.deepEqual(others, [])
+  assert.equal(workshop!.name, 'Handstand Workshop')
+  assert.equal(workshop!.location_id, ids.locations!['location-1'])
+  assert.equal(workshop!.lifecycle, 'active')
+
+  const roomName = new Map(archive.rows.rooms!.map(r => [r.id, r.name]))
+  assert.deepEqual(
+    archive.rows.workshop_days!.map(d => `${d.ord} ${d.starts_at}–${d.ends_at} ${roomName.get(d.room_id)} ${d.capacity_online}`),
+    [
+      '1 2090-01-07T01:00:00.000Z–2090-01-07T09:00:00.000Z Hot Room 12',
+      '2 2090-01-08T01:00:00.000Z–2090-01-08T09:00:00.000Z Hot Room 12',
+    ],
+    'both days of it, in order, each in the Room the schedule report gives',
+  )
+
+  assert.deepEqual(
+    archive.rows.workshop_tiers!.map(t => `${t.ord} ${t.name} ${t.regular_price_sgd}`),
+    ['1 Twin room 500.00', '2 Single room 700.00'],
+  )
+  // A room type is the whole workshop, so every tier grants every day.
+  assert.equal(archive.rows.workshop_tier_days!.length, 4)
+
+  // Ivy leads both days and Olive one, so Ivy is the main instructor.
+  const staffName = new Map(archive.rows.staff_users!.map(s => [s.id, s.name]))
+  assert.deepEqual(
+    archive.rows.workshop_instructors!.map(i => `${i.role} ${staffName.get(i.instructor_id)} ${i.pay_sgd}`),
+    ['main Ivy Instructor null', 'supporting Olive Owner null'],
+  )
+})
+
+test('a paid attendee is one booking at the tier they bought, for what they paid', async () => {
+  const { archive, ids } = await run()
+  const tierName = new Map(archive.rows.workshop_tiers!.map(t => [t.id, t.name]))
+  const clientName = new Map(archive.rows.clients!.map(c => [c.id, c.name]))
+  const places = archive.rows.bookings!.filter(b => b.kind === 'workshop')
+
+  assert.deepEqual(
+    places.map(b => `${clientName.get(b.client_id)} ${tierName.get(b.workshop_tier_id)} paid ${b.amount_paid_sgd} of ${b.list_price_sgd}`),
+    [
+      // A deposit of 200 on a twin and a 250 top-up to a single: one place, at
+      // the single room, for the 450 that was actually paid.
+      'Jane Doe Single room paid 450.00 of 700.00',
+      'Rick Roe Twin room paid 500.00 of 500.00',
+    ],
+  )
+  for (const place of places) {
+    assert.equal(place.workshop_id, archive.rows.workshops![0]!.id)
+    assert.deepEqual([place.class_id, place.pt_session_id, place.client_package_id], [null, null, null])
+    assert.equal(place.state, 'confirmed')
+    // Bought outright: there is no credit to give back.
+    assert.equal(place.credits_or_sessions_used, null)
+    assert.match(String(place.code), /^RT-[0-9A-Z]{6}$/)
+  }
+  // Every booking in the studio has a reference of its own, classes and places alike.
+  const codes = archive.rows.bookings!.map(b => b.code)
+  assert.equal(new Set(codes).size, codes.length)
+
+  const jane = places.find(b => b.client_id === ids.clients!['100000001'])!
+  assert.equal(ids.bookings![`${archive.rows.workshops![0]!.id}/100000001`], jane.id)
+})
+
+test('a place on a workshop is not a package, and is not left behind either', async () => {
+  const { archive, preflight } = await run()
+  assert.ok(
+    !archive.rows.client_packages!.some(p => /Handstand/i.test(String(p.id))),
+    'no package is written for a workshop place',
+  )
+  assert.ok(
+    !preflight.notMigrated.some(n => /Handstand/.test(n.option)),
+    `a place that came across as a booking is not "not migrated": ${JSON.stringify(preflight.notMigrated)}`,
+  )
+  // Two tiers held by one member is something for a person to look at.
+  assert.ok(
+    preflight.schedule.some(n => /Jane Doe: holds 2 tiers of Handstand Workshop — imported once at Single room, for 450\.00/.test(n)),
+    preflight.schedule.join(' | '),
+  )
+})
+
+test('a workshop with nothing left to come is a preflight line, not an empty Workshop', async () => {
+  const config = fixtureConfig()
+  // Its days are in 2090; asking for them as of 2091 leaves none.
+  config.asOf = '2091-09-17T02:00:00+08:00'
+  const { archive, preflight } = await run(config)
+  assert.deepEqual(archive.rows.workshops, [])
+  assert.deepEqual(archive.rows.workshop_days, [])
+  assert.ok(
+    preflight.schedule.some(n => /workshop Handstand Workshop: nothing under the service category "Handstand Workshop" is still to come/.test(n)),
+    preflight.schedule.join(' | '),
+  )
+
+  // Its options are kept out of the catalogue and out of "not migrated" on the
+  // promise that they arrive as bookings. With no day left to book, the promise
+  // is kept here instead — money still held is never passed over in silence.
+  const reports = await readReports(REPORTS)
+  const stillGood = reports.holdings.map(h =>
+    /^Handstand/.test(h.option) ? { ...h, lastExpiration: { ...h.lastExpiration!, year: 2095 } } : h,
+  )
+  const late = mapStudio({ ...reports, holdings: stillGood }, validateConfig(config), TENANT)
+  assert.deepEqual(
+    late.preflight.schedule.filter(n => /which did not come across/.test(n)),
+    [
+      '100000001 Jane Doe: holds a place on Handstand Workshop worth 450.00, which did not come across',
+      '100000002 Rick Roe: holds a place on Handstand Workshop worth 500.00, which did not come across',
+    ],
+  )
+})
+
+test('a place that is spent, or sold with no expiry date, is named rather than silently dropped', async () => {
+  const reports = await readReports(REPORTS)
+  // Rick's twin place, spent: live no longer, and still 500 of his money.
+  const holdings = reports.holdings.map(h =>
+    h.clientId === '100000002' && h.option === 'Handstand Workshop - Twin'
+      ? { ...h, remaining: { unlimited: false as const, count: 0 }, unbooked: { unlimited: false as const, count: 0 } }
+      : h,
+  )
+  const { archive, preflight } = mapStudio({ ...reports, holdings }, validateConfig(fixtureConfig()), TENANT)
+
+  const places = archive.rows.bookings!.filter(b => b.kind === 'workshop')
+  assert.equal(places.length, 1, 'only Jane keeps a place')
+  assert.ok(
+    preflight.schedule.some(n =>
+      /100000002 Rick Roe: paid 500\.00 towards Handstand Workshop and holds nothing live against it, so no place was imported/.test(n),
+    ),
+    preflight.schedule.join(' | '),
+  )
+})
+
+test('a workshop coming across must name its Location, capacity and tier prices, and keep its category off the timetable', () => {
+  const config = fixtureConfig()
+  config.workshopCategories = []
+  config.workshops.push({
+    category: 'Handstand Workshop',
+    name: null,
+    location: 'nowhere',
+    capacity: null,
+    migrate: true,
+    tiers: [{ name: null, mindbodyNames: ['Class Pack - Bundle of 20'], priceSgd: null }],
+  })
+  assert.throws(
+    () => validateConfig(config),
+    (err: unknown) =>
+      err instanceof ConfigError &&
+      [
+        'workshops[1] (Handstand Workshop): workshops[0] already claims the category "Handstand Workshop"',
+        'workshops[0] (Handstand Workshop).category "Handstand Workshop" is not in workshopCategories, so its days would be imported as classes too',
+        'workshops[1] (Handstand Workshop).name is open',
+        'workshops[1] (Handstand Workshop).location "nowhere" names no Location',
+        'workshops[1] (Handstand Workshop).capacity is open',
+        'workshops[1] (Handstand Workshop).tiers[0].name is open',
+        'workshops[1] (Handstand Workshop).tiers[0].priceSgd is open',
+        'workshops[1] (Handstand Workshop).tiers[0]: "Class Pack - Bundle of 20" is also catalogue[1], which is not skipped — a workshop place is not a package',
+      ].every(p => err.problems.includes(p)),
+  )
+})
+
+test('verify: an attendee lost on the way in is named by workshop', async () => {
+  const { archive, expected } = await run()
+  archive.rows.bookings!.find(b => b.kind === 'workshop')!.state = 'cancelled'
+  const differences = await verifyImport(expected, await packArchive(archive))
+  assert.ok(
+    differences.includes('workshop Handstand Workshop: members booked: expected 2, found 1'),
+    differences.join(' | '),
+  )
+})
+
 test('verify: the archive adds up to its own expected figures, and an altered balance is named by member', async () => {
   const { archive, expected, zip } = await run()
   assert.deepEqual(
-    { ...expected, perMember: undefined, perClass: undefined },
+    { ...expected, perMember: undefined, perClass: undefined, perWorkshop: undefined },
     {
       members: 8,
       staffByRole: { admin: 2, instructor: 2 },
@@ -567,9 +772,12 @@ test('verify: the archive adds up to its own expected figures, and an altered ba
       sessionsLeft: 7,
       classes: 5,
       ptSessions: 1,
-      bookings: 4,
+      workshops: 1,
+      // Four class and PT seats, and the two workshop places.
+      bookings: 6,
       perMember: undefined,
       perClass: undefined,
+      perWorkshop: undefined,
     },
   )
   // Every class is counted, booked or not, and named by what and when it is.
@@ -584,6 +792,10 @@ test('verify: the archive adds up to its own expected figures, and an altered ba
       'Vinyasa Flow at 2090-01-03T02:00:00.000Z: 0',
       'Vinyasa Flow at 2090-01-03T23:00:00.000Z: 0',
     ],
+  )
+  assert.deepEqual(
+    Object.values(expected.perWorkshop).map(w => `${w.name}: ${w.booked}`),
+    ['workshop Handstand Workshop: 2'],
   )
   assert.deepEqual(await verifyImport(expected, zip), [])
 
@@ -604,7 +816,7 @@ test('verify: a class that lost a seat, and a class that lost itself, are both n
   const differences = await verifyImport(expected, await packArchive(archive))
 
   assert.ok(
-    differences.includes('future bookings, in total: expected 4, found 3'),
+    differences.includes('future bookings, in total: expected 6, found 5'),
     `bookings in total must be compared: ${differences.join(' | ')}`,
   )
   assert.ok(differences.some(d => /^future classes: expected 5, found 4$/.test(d)), 'a missing class must be counted')

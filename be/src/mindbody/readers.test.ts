@@ -311,8 +311,8 @@ const staffSchedule = () =>
 
 test('the staff schedule: a class per teacher per day, and nothing else on the page', () => {
   const rows = staffSchedule()
-  // Fifteen time-carrying rows in the fixture; three of them are not a class.
-  assert.equal(rows.length, 12)
+  // Seventeen time-carrying rows in the fixture; three of them are not a class.
+  assert.equal(rows.length, 14)
   assert.ok(
     rows.every(r => !/unavailable/i.test(r.description)),
     'the italic "Unavailable - Teaching Class" block Mindbody writes beside every class is not a class',

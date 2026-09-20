@@ -72,6 +72,38 @@ const seriesSchema = z.object({
   migrate: open(z.boolean()),
 })
 
+/**
+ * One room type a workshop or a retreat was sold by — twin, single, non-resident.
+ * Mindbody sells each as a pricing option of its own; here they are the
+ * workshop's Tiers, and what a member holds of one is their place on it.
+ */
+const workshopTierSchema = z.object({
+  /** The name the platform's workshop page shows. */
+  name: open(z.string().min(1)),
+  /** Every pricing option that buys this tier: the room type itself, its deposit, its top-up. */
+  mindbodyNames: z.array(z.string()).min(1),
+  /** What the tier costs. No report holds a workshop's price list. */
+  priceSgd: open(z.number().min(0)),
+})
+
+/**
+ * A workshop or a retreat still to come, as the platform is to know it.
+ *
+ * Identified by the Mindbody service category its occurrences are scheduled
+ * under — a workshop, a retreat or a course has one of its own — which must
+ * also be in `workshopCategories`, or its days would be imported as classes too.
+ */
+const workshopSchema = z.object({
+  category: z.string().min(1),
+  name: open(z.string().min(1)),
+  /** A Location, by its key. */
+  location: open(z.string().min(1)),
+  /** Seats per day. No report holds a workshop's capacity. */
+  capacity: open(z.number().int().positive()),
+  migrate: open(z.boolean()),
+  tiers: z.array(workshopTierSchema).default([]),
+})
+
 const staffSchema = z.object({
   /** The name as the phone book writes it; matched in any word order and case. */
   mindbodyName: z.string().min(1),
@@ -174,6 +206,12 @@ export const studioConfigSchema = z.object({
    * a class, and is left to the workshop import.
    */
   workshopCategories: z.array(z.string()).default([]),
+  /**
+   * The workshops and retreats still to come that are to be imported, one entry
+   * per `workshopCategories` category. Proposed by the starter config; a person
+   * decides `migrate` and fills in the price of each room type.
+   */
+  workshops: z.array(workshopSchema).default([]),
   /** What the roster calls a personal-training appointment. A roster row under one of these is a PT session, not a class. */
   ptAppointmentNames: z.array(z.string()).default([]),
   /** The Class Type an imported PT appointment's focus is. Created if `classTypes` does not already list it. */
@@ -230,6 +268,14 @@ export type StudioConfig = {
   offSiteVenues: string[]
   classTypes: { name: string; mindbodyNames: string[]; capacity: number | null }[]
   workshopCategories: string[]
+  workshops: {
+    category: string
+    name: string
+    location: string
+    capacity: number
+    migrate: boolean
+    tiers: { name: string; mindbodyNames: string[]; priceSgd: number }[]
+  }[]
   ptAppointmentNames: string[]
   ptClassType: string
   series: {
@@ -403,6 +449,52 @@ export function validateConfig(raw: unknown): StudioConfig {
     if (e.location && !locationKeys.has(e.location)) problems.push(`${label}.location "${e.location}" names no Location`)
   })
 
+  const categories = new Set(c.workshopCategories.map(s => s.trim().toLowerCase()))
+  const claimed = new Map<string, number>()
+  const tierSpellings = new Map<string, number>()
+  c.workshops.forEach((w, i) => {
+    const label = `workshops[${i}] (${w.name ?? w.category})`
+    const category = w.category.trim().toLowerCase()
+    const other = claimed.get(category)
+    if (other !== undefined) problems.push(`${label}: workshops[${other}] already claims the category "${w.category}"`)
+    claimed.set(category, i)
+    need(w.migrate, `${label}.migrate`)
+    if (w.migrate !== true) return
+    // Both lists read the category: one keeps its days off the timetable, the
+    // other turns them into a Workshop. Listed in only one, they arrive twice.
+    if (!categories.has(category)) {
+      problems.push(`${label}.category "${w.category}" is not in workshopCategories, so its days would be imported as classes too`)
+    }
+    need(w.name, `${label}.name`)
+    need(w.location, `${label}.location`)
+    need(w.capacity, `${label}.capacity`)
+    if (w.location && !locationKeys.has(w.location)) problems.push(`${label}.location "${w.location}" names no Location`)
+    if (w.tiers.length === 0) problems.push(`${label}: a workshop coming across needs at least one tier (room type)`)
+    // A Tier's row id is derived from its name, so two of one name would be one
+    // row — caught here rather than by a duplicate key halfway through an import.
+    const tierNames = new Set<string>()
+    w.tiers.forEach((t, j) => {
+      const tierLabel = `${label}.tiers[${j}]${t.name ? ` (${t.name})` : ''}`
+      need(t.name, `${tierLabel}.name`)
+      need(t.priceSgd, `${tierLabel}.priceSgd`)
+      const tierKey = t.name === null ? null : normaliseOptionName(t.name)
+      if (tierKey !== null && tierNames.has(tierKey)) problems.push(`${tierLabel} is listed twice`)
+      if (tierKey !== null) tierNames.add(tierKey)
+      for (const spelling of t.mindbodyNames) {
+        const k = normaliseOptionName(spelling)
+        const twice = tierSpellings.get(k)
+        if (twice !== undefined) problems.push(`${tierLabel}: "${spelling}" is also a tier of workshops[${twice}]`)
+        tierSpellings.set(k, i)
+        // A place on a workshop is not a package. Listed as one that comes
+        // across, a member would arrive holding both the place and credits.
+        const listed = optionSpellings.get(k)
+        if (listed !== undefined && c.catalogue[listed]!.migrate !== 'skip') {
+          problems.push(`${tierLabel}: "${spelling}" is also catalogue[${listed}], which is not skipped — a workshop place is not a package`)
+        }
+      }
+    })
+  })
+
   const roomSpellings = new Set(c.rooms.flatMap(r => [r.name ?? '', ...r.mindbodyNames]).map(s => s.trim().toLowerCase()))
   const classNames = new Set(c.classTypes.flatMap(t => [t.name ?? '', ...t.mindbodyNames]).map(normaliseClassName))
   const instructorsComing = new Set(
@@ -462,6 +554,7 @@ export function starterConfig(reports: MindbodyReports, asOf: string | null = nu
     offSiteVenues: [],
     classTypes: schedule.classTypes,
     workshopCategories: schedule.workshopCategories,
+    workshops: schedule.workshops,
     ptAppointmentNames: schedule.ptAppointmentNames,
     series: schedule.series,
     policy: { classWindowHours: 24, ptWindowHours: 24, cancelCapCount: 3, cancelCapCycleDays: 30, ptBookInAdvanceDays: 7 },

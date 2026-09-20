@@ -26,6 +26,27 @@
     { "name": "Vinyasa Flow", "mindbodyNames": ["Vinyasa flow", "vinyasa  flow"], "capacity": 25 }
   ],
   "workshopCategories": ["Handstand Workshop"],
+  "workshops": [
+    {
+      "category": "Handstand Workshop",
+      "name": "Handstand Workshop",
+      "location": "location-1",
+      "capacity": 12,
+      "migrate": true,
+      "tiers": [
+        {
+          "name": "Twin room",
+          "mindbodyNames": ["Handstand Workshop - Twin", "Handstand Workshop - Twin (Deposit)"],
+          "priceSgd": 500
+        },
+        {
+          "name": "Single room",
+          "mindbodyNames": ["Handstand Workshop - Single", "Handstand Workshop - Upgrade to Single"],
+          "priceSgd": 700
+        }
+      ]
+    }
+  ],
   "ptAppointmentNames": ["Personal Training / PT"],
   "ptClassType": "Personal Training",
   "series": [

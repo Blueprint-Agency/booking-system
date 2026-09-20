@@ -18,8 +18,10 @@ import type {
   SaleRow,
   ScheduledClassRow,
 } from './readers'
+import { bookingCoder } from './booking-codes'
 import { mapSchedule } from './schedule'
 import { normaliseStaffName, zonedToInstant, type LocalDateTime } from './values'
+import { mapWorkshops, workshopOptionKeys } from './workshops'
 
 /**
  * Report rows plus the studio config in, archive rows out. Pure: no clock, no
@@ -57,7 +59,10 @@ export type Preflight = {
   notMigrated: NotMigrated[]
   /** Money on account. The platform keeps no such balance. */
   balances: AccountBalance[]
-  /** The timetable: a booking with no class or no package, a class over capacity, a series with nothing to continue. */
+  /**
+   * The timetable: a booking with no class or no package, a class over
+   * capacity, a series with nothing to continue, a workshop with no days left.
+   */
   schedule: string[]
   /** Members with no usable email: imported under a placeholder, fixed later by an admin. */
   noEmail: { id: string; name: string; placeholder: string }[]
@@ -302,6 +307,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     id,
     ids,
     memberNames,
+    workshopOptions: workshopOptionKeys(config),
   })
   preflight.notMigrated = packages.notMigrated
   preflight.balances = packages.balances
@@ -310,6 +316,10 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
 
   // `validateConfig` has already refused a config whose owner is not among the staff.
   if (!ownerId) throw new Error('the owner is not among the staff coming across')
+  // One coder for the whole archive: a booking reference is unique within a
+  // studio, and a class seat and a workshop place share that one namespace.
+  const codes = bookingCoder(config.secret, tenantId)
+  const instructorIds = new Set(instructors.map(i => i.staff_user_id as string))
   const schedule = mapSchedule({
     schedule: reports.schedule,
     roster: reports.roster,
@@ -320,13 +330,37 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     ids,
     memberNames,
     staffIds,
-    instructorIds: new Set(instructors.map(i => i.staff_user_id as string)),
+    instructorIds,
     ownerId,
     clientPackages: packages.clientPackages,
+    codes,
   })
-  preflight.schedule = schedule.notes
+
+  /* ── Workshops and retreats to come, and who has paid (`./workshops.ts`) ── */
+
+  const workshops = mapWorkshops({
+    schedule: reports.schedule,
+    holdings: reports.holdings,
+    config,
+    tenantId,
+    id,
+    ids,
+    memberNames,
+    staffIds,
+    instructorIds,
+    ownerId,
+    codes,
+  })
+  preflight.schedule = [...schedule.notes, ...workshops.notes]
 
   /* ── The archive ───────────────────────────────────────────────────────── */
+
+  // One profile per staff member, however many things they lead: the timetable
+  // and the workshops each name whoever was not an instructor already.
+  const extraInstructors = new Map<string, Row>()
+  for (const i of [...schedule.instructors, ...workshops.instructors]) {
+    extraInstructors.set(i.staff_user_id as string, i)
+  }
 
   // Parents first, as an export writes them — the importer orders by the
   // schema, but a person reading the zip reads it in this order.
@@ -335,7 +369,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     rooms,
     class_types: [...classTypes, ...schedule.classTypes],
     staff_users: staffUsers,
-    instructors: [...instructors, ...schedule.instructors],
+    instructors: [...instructors, ...extraInstructors.values()],
     staff_invitations: invitations,
     clients,
     class_packages: packages.classPackages,
@@ -346,7 +380,12 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     pt_requests: schedule.ptRequests,
     pt_sessions: schedule.ptSessions,
     pt_session_clients: schedule.ptSessionClients,
-    bookings: schedule.bookings,
+    workshops: workshops.workshops,
+    workshop_days: workshops.workshopDays,
+    workshop_tiers: workshops.workshopTiers,
+    workshop_tier_days: workshops.workshopTierDays,
+    workshop_instructors: workshops.workshopInstructors,
+    bookings: [...schedule.bookings, ...workshops.bookings],
     global_policy: globalPolicy,
     pt_booking_config: ptBookingConfig,
     email_templates: emailTemplates,

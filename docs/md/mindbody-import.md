@@ -50,8 +50,8 @@ npm run mindbody -- verify --expected <studio.expected.json> --export <exported.
   add up to). Send the preflight to the studio.
 - `verify` counts the exported studio the way `transform` counted its own archive — members,
   staff by role, live packages by kind, credits and sessions left in total and per member,
-  future classes and PT sessions, and bookings in total, per member and per class — lists every
-  difference by member or by class, and exits non-zero on any. Run it straight after the
+  future classes, PT sessions and workshops, and bookings in total, per member, per class and per
+  workshop — lists every difference by member, by class or by workshop, and exits non-zero on any. Run it straight after the
   import, before anybody books.
 - **The catalogue** (`catalogue` in the config) is one entry per Mindbody pricing option, proposed
   by `starter` from what was sold: the commonest sessions bought, activation-to-expiry spread and
@@ -89,6 +89,25 @@ npm run mindbody -- verify --expected <studio.expected.json> --export <exported.
   `ptAppointmentNames` name is a PT appointment instead: a scheduled `pt_request` (its focus the
   `ptClassType` Class Type, made if the config has none by that name), a `pt_session` and a
   booking per member. PT pay is a percentage in Mindbody, which no report gives: Unpriced.
+- **Workshops and retreats to come** are one config entry per Mindbody **service category** — a
+  workshop, a retreat or a course has one of its own — proposed by `starter` for every category
+  with something still to come. A person sets `migrate`, the Location, the seats per day and the
+  price of each **tier** (room type: twin, single, non-resident), which Mindbody sells as pricing
+  options; a deposit or a top-up sold under its own option is moved into the tier it buys
+  (`tiers[].mindbodyNames`). The category must also be in `workshopCategories`, or its days would
+  arrive as classes as well — `transform` refuses a config where it is not. A Workshop is written
+  with one **Day** per future occurrence in the schedule report (its Room where the workshop's own
+  Location has one), one Tier per room type granting every day, and its instructors from that
+  report: whoever leads the most days is the main one and the rest are supporting, all Unpriced
+  (Mindbody pays a workshop by agreement, which no report gives).
+- **Workshop attendees** are the members holding a live entitlement on one of those pricing
+  options: one `kind: 'workshop'` booking each, at the tier they bought, with `amount_paid_sgd` =
+  what they paid — so it shows in the member's workshops and in Finance as workshop money on the
+  day of `asOf`. Several holdings (a deposit and its balance, a twin place and a top-up to a
+  single) are one booking whose amount is their sum, at the **dearest** tier held, because a top-up
+  is what moves a member up; holding two tiers is a preflight line. A place is not a package, so
+  no `client_packages` row is written for it and it is not listed as "not migrated"; a workshop
+  with no day left to come is a preflight line instead of an empty Workshop.
 - **Class Series** are proposed by `starter` from what ran at the same weekday, time, Room and
   name in each of the four weeks up to `asOf`. A person sets `migrate` on each; a confirmed one
   is written as a series whose imported classes are linked to it and whose last date is the
@@ -114,7 +133,7 @@ npm run mindbody -- verify --expected <studio.expected.json> --export <exported.
   templates, every member profile, the class and PT catalogue, every live package, staff — the owner (`studio.ownerEmail`) an active Admin,
   other migrated staff pending with an invitation to resend from the portal, `archived` teachers
   with a placeholder email — and the timetable still to come: Class Series, classes, PT requests
-  and sessions, and every booking on them.
+  and sessions, workshops with their days, tiers and instructors, and every booking on them.
 
 The archive's manifest carries `ensureAccounts: true`. On import that makes the importer create
 or reuse the sign-in account of every member and staff row by email, inside the import's

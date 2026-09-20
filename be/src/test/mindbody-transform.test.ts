@@ -490,6 +490,75 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     )
   })
 
+  /* ── Workshops and retreats to come (#180) ─────────────────────────────── */
+
+  test('an imported workshop is in the portal with its days, tiers, instructors and attendees', async () => {
+    const studio = await importedStudio()
+    const owner = await harness.signInAs('staff', 'owner@example.test', studio)
+
+    // One tile per day, as the schedule renders a workshop, each carrying the
+    // number of members with a place — the attendee count the admin sees.
+    const days = (await timetableOf(owner)).filter(e => e.kind === 'workshop')
+    assert.deepEqual(
+      days.map(e => `${e.label} ${e.starts_at} day ${e.day_index} booked ${e.booked_count}`),
+      [
+        'Handstand Workshop 2090-01-07T01:00:00.000Z day 1 booked 2',
+        'Handstand Workshop 2090-01-08T01:00:00.000Z day 2 booked 2',
+      ],
+    )
+
+    const workshopId = studio.archive.rows.workshops![0]!.id as string
+    const detail = await get(`/api/v1/portal/admin/workshops/${workshopId}`, owner)
+    assert.equal(detail.status, 200, await detail.clone().text())
+    const body = (await detail.json()) as Record<string, any>
+    assert.equal(body.name, 'Handstand Workshop')
+    assert.deepEqual(
+      (body.tiers as Record<string, any>[]).map(t => `${t.name}:${t.regular_price_sgd}:${t.day_ids.length}`),
+      ['Twin room:500.00:2', 'Single room:700.00:2'],
+      'both room types, each granting both days',
+    )
+
+    // Ivy leads both days and Olive one, so Ivy is the main instructor.
+    const [ivy, olive] = await Promise.all(
+      ['ivy@example.test', 'owner@example.test'].map(async email => {
+        const [row] = await harness.db
+          .select({ id: schema.staffUsers.id })
+          .from(schema.staffUsers)
+          .where(and(eq(schema.staffUsers.tenantId, studio.tenantId), eq(schema.staffUsers.email, email)))
+        return row!.id
+      }),
+    )
+    assert.equal(body.main_instructor_id, ivy)
+    assert.deepEqual(body.supporting_instructor_ids, [olive])
+  })
+
+  test('a member who paid for a workshop finds their place, and Finance finds the money', async () => {
+    const studio = await importedStudio()
+
+    // A deposit on a twin and a top-up to a single: one place, at the single room.
+    const jane = await harness.signInAs('client', 'jane.doe@example.test', studio)
+    const mine = await get('/api/v1/me/workshop-bookings', jane)
+    assert.equal(mine.status, 200, await mine.clone().text())
+    const places = ((await mine.json()) as { workshop_bookings: Record<string, any>[] }).workshop_bookings
+    assert.equal(places.length, 1)
+    assert.deepEqual(
+      [places[0]!.workshop_name, places[0]!.tier_name, places[0]!.amount_paid_sgd, places[0]!.state],
+      ['Handstand Workshop', 'Single room', '450.00', 'confirmed'],
+    )
+    assert.equal(new Date(places[0]!.starts_at as string).toISOString(), '2090-01-07T01:00:00.000Z')
+    assert.match(String(places[0]!.code), /^RT-[0-9A-Z]{6}$/)
+
+    // Workshop money, on the day of the download: the booking carries it.
+    const owner = await harness.signInAs('staff', 'owner@example.test', studio)
+    const finance = await get('/api/v1/portal/admin/finance?from=2026-09-01&to=2026-09-30', owner)
+    assert.equal(finance.status, 200, await finance.clone().text())
+    const rows = ((await finance.json()) as { rows: Record<string, any>[] }).rows.filter(r => r.kind === 'workshop_ticket')
+    assert.deepEqual(
+      rows.map(r => `${r.variant} ${r.user_name} ${r.paid_sgd} of ${r.list_price_sgd}`).sort(),
+      ['Handstand Workshop Jane Doe 450 of 700', 'Handstand Workshop Rick Roe 500 of 500'],
+    )
+  })
+
   test('verify passes on a clean import, and fails naming the member when one balance is altered', async () => {
     const studio = await importedStudio()
     const exported = async () => {

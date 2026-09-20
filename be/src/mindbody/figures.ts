@@ -12,8 +12,8 @@ import type { TenantArchive } from '../services/tenants/transfer-shape'
 
 export type MemberFigures = { name: string; packages: number; credits: number; sessions: number; bookings: number }
 
-/** Which counts arrived with the timetable (#179), and so may be missing from an older file. */
-type Timetable = 'classes' | 'ptSessions' | 'bookings' | 'perClass'
+/** Which counts arrived with the timetable (#179, #180), and so may be missing from an older file. */
+type Timetable = 'classes' | 'ptSessions' | 'workshops' | 'bookings' | 'perClass' | 'perWorkshop'
 
 /**
  * Figures as an `expected.json` on disk may hold them. `figuresOf` always
@@ -30,15 +30,18 @@ export type Figures = {
   livePackagesByKind: Record<string, number>
   creditsLeft: number
   sessionsLeft: number
-  /** Classes and PT sessions on the timetable, not cancelled. */
+  /** Classes, PT sessions and workshops on the timetable, not cancelled. */
   classes: number
   ptSessions: number
-  /** Seats held: confirmed bookings, of a class or a PT session. */
+  workshops: number
+  /** Seats held: confirmed bookings, of a class, a PT session or a workshop. */
   bookings: number
   /** By client id, which the import keeps as the transform wrote it. Only members holding something. */
   perMember: Record<string, MemberFigures>
   /** By class id: what it is, and how many are booked into it. Every class, booked or not. */
   perClass: Record<string, { name: string; booked: number }>
+  /** By workshop id: its name, and how many have a place on it. Every workshop, sold out or empty. */
+  perWorkshop: Record<string, { name: string; booked: number }>
 }
 
 const tally = (counts: Record<string, number>, key: string, by = 1) => {
@@ -56,9 +59,11 @@ export function figuresOf(archive: TenantArchive): Figures {
     sessionsLeft: 0,
     classes: 0,
     ptSessions: 0,
+    workshops: 0,
     bookings: 0,
     perMember: {},
     perClass: {},
+    perWorkshop: {},
   }
   for (const s of archive.rows.staff_users ?? []) tally(figures.staffByRole, String(s.role))
   const member = (clientId: string) =>
@@ -73,12 +78,19 @@ export function figuresOf(archive: TenantArchive): Figures {
     figures.perClass[String(c.id)] = { name: `${typeNames.get(String(c.class_type_id)) ?? 'class'} at ${at}`, booked: 0 }
   }
   figures.ptSessions = (archive.rows.pt_sessions ?? []).filter(s => s.lifecycle === 'active').length
+  for (const w of archive.rows.workshops ?? []) {
+    if (w.lifecycle !== 'active') continue
+    figures.workshops += 1
+    figures.perWorkshop[String(w.id)] = { name: `workshop ${String(w.name)}`, booked: 0 }
+  }
   for (const b of archive.rows.bookings ?? []) {
     if (b.state !== 'confirmed') continue
     figures.bookings += 1
     member(String(b.client_id)).bookings += 1
     const cls = b.class_id == null ? undefined : figures.perClass[String(b.class_id)]
     if (cls) cls.booked += 1
+    const workshop = b.workshop_id == null ? undefined : figures.perWorkshop[String(b.workshop_id)]
+    if (workshop) workshop.booked += 1
   }
 
   for (const p of archive.rows.client_packages ?? []) {
@@ -121,15 +133,20 @@ export function compareFigures(expected: StoredFigures, actual: Figures): string
   // holds none of these, and is read as a studio with nothing on its timetable.
   differ('future classes', expected.classes ?? 0, actual.classes)
   differ('future PT sessions', expected.ptSessions ?? 0, actual.ptSessions)
+  differ('future workshops', expected.workshops ?? 0, actual.workshops)
   differ('future bookings, in total', expected.bookings ?? 0, actual.bookings)
-  const noClass = { name: '', booked: 0 }
-  for (const classId of keys(expected.perClass ?? {}, actual.perClass)) {
-    const want = expected.perClass?.[classId]
-    const got = actual.perClass[classId]
-    const what = (want ?? got ?? noClass).name
+  const nothing = { name: '', booked: 0 }
+  const attendance = (want: typeof nothing | undefined, got: typeof nothing | undefined, id: string) => {
+    const what = (want ?? got ?? nothing).name || id
     if (!want) differences.push(`${what}: on the timetable, and was not in the archive`)
     else if (!got) differences.push(`${what}: in the archive, and not on the timetable`)
     else differ(`${what}: members booked`, want.booked, got.booked)
+  }
+  for (const classId of keys(expected.perClass ?? {}, actual.perClass)) {
+    attendance(expected.perClass?.[classId], actual.perClass[classId], classId)
+  }
+  for (const workshopId of keys(expected.perWorkshop ?? {}, actual.perWorkshop)) {
+    attendance(expected.perWorkshop?.[workshopId], actual.perWorkshop[workshopId], workshopId)
   }
 
   const nobody: MemberFigures = { name: '', packages: 0, credits: 0, sessions: 0, bookings: 0 }

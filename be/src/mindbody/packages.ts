@@ -101,6 +101,12 @@ export function mapPackages(input: {
   ids: Record<string, Record<string, string>>
   /** Every member being imported, by barcode. */
   memberNames: Map<string, string>
+  /**
+   * The pricing options that buy a place on a workshop coming across
+   * (`./workshops.ts`), normalised. A place is not a package: it is a booking,
+   * so it is neither wanted in the catalogue nor left behind in the preflight.
+   */
+  workshopOptions: Set<string>
 }): MappedPackages {
   const { config, tenantId, id, ids, memberNames } = input
   const tz = config.studio.timezone
@@ -162,7 +168,8 @@ export function mapPackages(input: {
 
   /* ── Who holds what ────────────────────────────────────────────────────── */
 
-  const live = input.holdings.filter(h => isLive(h, today))
+  const onAWorkshop = (h: HoldingRow) => input.workshopOptions.has(normaliseOptionName(h.option))
+  const live = input.holdings.filter(h => isLive(h, today) && !onAWorkshop(h))
   const unlisted = new Map<string, number>()
   for (const h of live) {
     if (!entryOf.has(normaliseOptionName(h.option))) unlisted.set(h.option, (unlisted.get(h.option) ?? 0) + 1)
@@ -192,7 +199,7 @@ export function mapPackages(input: {
   // simply vanish from the reckoning. It is a line in the preflight instead.
   for (const h of input.holdings) {
     const somethingLeft = h.remaining !== null && (h.remaining.unlimited || h.remaining.count > 0)
-    if (somethingLeft && h.lastExpiration === null && memberNames.has(h.clientId)) {
+    if (somethingLeft && h.lastExpiration === null && memberNames.has(h.clientId) && !onAWorkshop(h)) {
       leftBehind(h, 'no expiry date in Mindbody, and no package here runs forever')
     }
   }

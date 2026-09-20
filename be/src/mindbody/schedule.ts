@@ -1,6 +1,5 @@
-import { bookingCodesFrom } from '../services/bookings/qr'
+import type { BookingCoder } from './booking-codes'
 import { ConfigError, type StudioConfig } from './config'
-import { secretBytes } from './ids'
 import type { PayRateRow, RosterRow, ScheduledClassRow } from './readers'
 import {
   dayNumber,
@@ -65,6 +64,8 @@ export function mapSchedule(input: {
   ownerId: string
   /** The `client_packages` rows already mapped: a booking is paid by the member's running one. */
   clientPackages: Row[]
+  /** The archive's one booking coder, shared with the workshop import so that no two bookings take one code. */
+  codes: BookingCoder
 }): MappedSchedule {
   const { config, tenantId, id, ids, memberNames, staffIds } = input
   const tz = config.studio.timezone
@@ -234,7 +235,6 @@ export function mapSchedule(input: {
   ids.classes = {}
   ids.bookings = {}
   const bookings: Row[] = []
-  const codes = new Set<string>()
   const booking = (key: string, clientId: string, target: Row, family: 'class' | 'pt', label: string, startsAt: Date): void => {
     const pkg = runningPackage(clientId, family, startsAt)
     if (!pkg) {
@@ -242,14 +242,7 @@ export function mapSchedule(input: {
       const who = `${clientId} ${memberNames.get(clientId)}`
       notes.push(`${who}: booked into ${label} with no ${what} package that lasts until then to pay for it`)
     }
-    // Keyed by the config's secret, so nobody can work a member's QR token out
-    // from the reports; salted again on the rare code that is already taken.
-    const token = secretBytes(config.secret, `booking-token:${tenantId}:${key}`)
-    let made = bookingCodesFrom(token, secretBytes(config.secret, `booking-code:${tenantId}:${key}`))
-    for (let salt = 1; codes.has(made.code); salt++) {
-      made = bookingCodesFrom(token, secretBytes(config.secret, `booking-code:${tenantId}:${key}:${salt}`))
-    }
-    codes.add(made.code)
+    const made = input.codes(key)
     const row: Row = {
       id: id('booking', key),
       tenant_id: tenantId,
