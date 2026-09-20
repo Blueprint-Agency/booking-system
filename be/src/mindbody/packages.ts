@@ -3,7 +3,9 @@ import { ConfigError, type CatalogueEntry, type StudioConfig } from './config'
 import type { AccountBalanceRow, HoldingRow } from './readers'
 import {
   dayNumber,
+  isoDay,
   localDateOf,
+  money,
   normaliseOptionName,
   zonedToInstant,
   type CalendarDate,
@@ -52,9 +54,6 @@ export type MappedPackages = {
   balances: AccountBalance[]
 }
 
-const money = (n: number) => n.toFixed(2)
-const iso = (d: CalendarDate) =>
-  `${d.year}-${String(d.month).padStart(2, '0')}-${String(d.day).padStart(2, '0')}`
 const catalogueKey = (e: CatalogueEntry) => normaliseOptionName(e.name)
 
 /** A member's holdings of one catalogue entry, as one package: Mindbody combines them the same way. */
@@ -183,7 +182,7 @@ export function mapPackages(input: {
       name: nameOf(h.clientId),
       option: h.option,
       left: h.remaining?.unlimited ? 'unlimited' : `${h.remaining?.count ?? 0} left`,
-      expires: h.lastExpiration ? iso(h.lastExpiration) : 'no expiry date',
+      expires: h.lastExpiration ? isoDay(h.lastExpiration) : 'no expiry date',
       reason,
     })
 

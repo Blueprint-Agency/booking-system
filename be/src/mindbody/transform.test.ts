@@ -367,18 +367,223 @@ test('the starter config proposes the catalogue from what was sold', async () =>
   assert.equal(proposed['MAT STORAGE (1 Year)']!.migrate, 'skip')
 })
 
+/* ── The timetable to come (#179) ─────────────────────────────────────────── */
+
+/** A class by what it is and when, as the timetable would read it. */
+const timetable = (archive: { rows: Record<string, Record<string, unknown>[]> }, ids: Record<string, Record<string, string>>) => {
+  const typeName = new Map(archive.rows.class_types!.map(t => [t.id, t.name]))
+  const roomName = new Map(archive.rows.rooms!.map(r => [r.id, r.name]))
+  const staffName = new Map(archive.rows.staff_users!.map(s => [s.id, s.name]))
+  return archive.rows.classes!.map(c => ({
+    what: `${typeName.get(c.class_type_id)} ${c.starts_at}`,
+    teacher: staffName.get(c.main_instructor_id),
+    room: c.room_id === null ? null : roomName.get(c.room_id),
+    location: Object.keys(ids.locations!).find(k => ids.locations![k] === c.location_id),
+    capacity: c.capacity_online,
+    pay: c.instructor_pay_sgd,
+    credit: c.credit_cost,
+    series: c.series_id,
+  }))
+}
+
+test('future classes: the whole timetable, empty ones and all, with room, capacity and pay', async () => {
+  const { archive, ids } = await run()
+  const classes = timetable(archive, ids)
+  assert.equal(classes.length, 5, 'only what is still to come, and nothing under a workshop category')
+
+  // 7pm Singapore on 2 January 2090.
+  const hatha = classes.find(c => c.what === 'Hatha 2090-01-02T11:00:00.000Z')!
+  assert.deepEqual(hatha, {
+    what: 'Hatha 2090-01-02T11:00:00.000Z',
+    teacher: 'Ivy Instructor',
+    room: 'Hot Room',
+    location: 'location-1',
+    capacity: 15,
+    pay: '35.00',
+    credit: 1,
+    series: hatha.series,
+  })
+  assert.ok(hatha.series, 'it repeats weekly, so it belongs to the imported series')
+
+  // Nobody booked it, and it is still on the timetable.
+  assert.ok(classes.some(c => c.what === 'Hatha 2090-01-23T11:00:00.000Z'))
+
+  // Olive is paid per head, which the platform has no rate for.
+  const covered = classes.find(c => c.what === 'Vinyasa Flow 2090-01-03T02:00:00.000Z')!
+  assert.deepEqual([covered.teacher, covered.pay], ['Olive Owner', null], 'the substitute *** row is taught by the substitute, Unpriced')
+
+  // Held outdoors: no Room, so the capacity comes from the Class Type.
+  const outdoors = classes.find(c => c.what === 'Vinyasa Flow 2090-01-03T23:00:00.000Z')!
+  assert.deepEqual([outdoors.room, outdoors.capacity, outdoors.location], [null, 25, 'location-1'])
+
+  assert.ok(!archive.rows.classes!.some(c => c.starts_at! < '2026-09-17'), 'a class already held is the studio s history, not its timetable')
+})
+
+test('future bookings: a seat per member, paid by their running package, with a code of its own', async () => {
+  const { archive, ids } = await run()
+  const classIdOf = (at: string) => archive.rows.classes!.find(c => c.starts_at === at)!.id
+  const seats = archive.rows.bookings!.filter(b => b.class_id != null)
+  assert.equal(seats.length, 3)
+
+  const jane = seats.find(b => b.client_id === ids.clients!['100000001'])!
+  assert.equal(jane.class_id, classIdOf('2090-01-02T11:00:00.000Z'))
+  assert.deepEqual([jane.kind, jane.state, jane.check_in_state, jane.refund_outcome], ['class', 'confirmed', 'pending', 'n_a'])
+  assert.equal(jane.credits_or_sessions_used, 1, 'cancelling it gives the credit back')
+  assert.ok(jane.client_package_id, 'paid by the package the member is running')
+  assert.match(String(jane.code), /^RT-[0-9A-Z]{6}$/)
+  assert.equal(String(jane.qr_token).length, 43)
+
+  // Rick is on an Unlimited Plan: the seat cost him no credit, so cancelling returns none.
+  const rick = seats.find(b => b.client_id === ids.clients!['100000002'])!
+  assert.equal(rick.credits_or_sessions_used, 0)
+
+  assert.equal(new Set(archive.rows.bookings!.map(b => b.code)).size, archive.rows.bookings!.length, 'a code is unique within the Tenant')
+  assert.equal(new Set(archive.rows.bookings!.map(b => b.qr_token)).size, archive.rows.bookings!.length)
+
+  // One member, two roster rows for the same class (a guest booked beside them): one seat.
+  assert.equal(seats.filter(b => b.client_id === ids.clients!['100000001']).length, 1)
+  // A Late Cancel is not a seat held.
+  assert.ok(!seats.some(b => b.client_id === ids.clients!['100000006']))
+})
+
+test('future PT: a scheduled request, a session and a booking, for the member and the instructor', async () => {
+  const { archive, ids } = await run()
+  assert.equal(archive.rows.pt_sessions!.length, 1)
+  const session = archive.rows.pt_sessions![0]!
+  const request = archive.rows.pt_requests![0]!
+  const booking = archive.rows.bookings!.find(b => b.kind === 'pt')!
+
+  assert.equal(session.starts_at, '2090-01-02T01:00:00.000Z', '9am Singapore')
+  assert.equal(session.instructor_id, ids.staff_users!['Olive Owner'])
+  assert.deepEqual([session.session_type, session.capacity_online, session.lifecycle], ['1on1', 1, 'active'])
+  assert.equal(session.instructor_pay_sgd, null, 'Mindbody pays PT by percentage, which no report gives')
+
+  assert.equal(request.status, 'scheduled')
+  assert.equal(request.scheduled_pt_session_id, session.id)
+  assert.equal(request.client_id, ids.clients!['100000008'])
+  assert.ok(request.debited_client_package_id, 'their PT bundle paid for it')
+  // The focus of a PT request is a Class Type, made where the config has none by that name.
+  assert.equal(archive.rows.class_types!.find(t => t.id === request.class_type_id)!.name, 'Personal Training')
+
+  assert.deepEqual(
+    archive.rows.pt_session_clients!.map(c => c.client_id),
+    [ids.clients!['100000008']],
+    'the member is on the session, so it shows on their side too',
+  )
+  assert.deepEqual([booking.pt_session_id, booking.class_id, booking.state], [session.id, null, 'confirmed'])
+})
+
+test('Class Series: a confirmed weekly class is written with its imported classes linked and the last one as its end', async () => {
+  const { archive, ids } = await run()
+  assert.equal(archive.rows.class_series!.length, 1)
+  const series = archive.rows.class_series![0]!
+  assert.deepEqual(
+    [series.weekday, series.start_time, series.end_time, series.credit_cost, series.capacity_online],
+    [1, '19:00:00', '20:00:00', 1, 15],
+  )
+  assert.equal(series.main_instructor_id, ids.staff_users!['Ivy Instructor'])
+  assert.equal(series.instructor_pay_sgd, '35.00')
+  // Launch day starts with an extend: the series ends on the last class that came across.
+  assert.deepEqual([series.first_date, series.last_date], ['2090-01-02', '2090-01-23'])
+  // The 16th has no class, so the series skips it rather than inventing one.
+  assert.deepEqual(series.excluded_dates, ['2090-01-16'])
+
+  const linked = archive.rows.classes!.filter(c => c.series_id === series.id)
+  assert.deepEqual(
+    linked.map(c => c.starts_at).sort(),
+    ['2090-01-02T11:00:00.000Z', '2090-01-09T11:00:00.000Z', '2090-01-23T11:00:00.000Z'],
+    'extending the series must not duplicate a class that already came across',
+  )
+})
+
+test('the preflight names a booking with no class, and a member who is not in the member list', async () => {
+  const { preflight, preflightText } = await run()
+  assert.ok(
+    preflight.schedule.some(n => /Mystery Class on 2090-01-05 at 08:00, which is not on the timetable/.test(n)),
+    preflight.schedule.join(' | '),
+  )
+  // Under a workshop category: the workshop import's, not a loose booking.
+  assert.ok(!preflight.schedule.some(n => /Handstand Workshop/.test(n)))
+  assert.ok(preflight.schedule.some(n => /booked twice/.test(n)))
+  assert.match(preflightText, /## The timetable and bookings/)
+})
+
+test('a series must name a Room, a Class Type and an instructor who is coming across', () => {
+  const config = fixtureConfig()
+  config.series.push(
+    { className: 'Nowhere', weekday: 2, startTime: '10:00', endTime: '09:00', room: 'Nowhere Room', teacher: 'Frank Front', migrate: true },
+    { className: 'Hatha', weekday: 3, startTime: '10:00', endTime: '11:00', room: 'Hot Room', teacher: 'Ivy Instructor', migrate: null },
+  )
+  assert.throws(
+    () => validateConfig(config),
+    (err: unknown) =>
+      err instanceof ConfigError &&
+      [
+        'series[1] (Nowhere, weekday 2 at 10:00) ends before it starts',
+        'series[1] (Nowhere, weekday 2 at 10:00).room "Nowhere Room" names no Room',
+        'series[1] (Nowhere, weekday 2 at 10:00).className is in no Class Type',
+        'series[1] (Nowhere, weekday 2 at 10:00).teacher "Frank Front" is not a staff member coming across as an active instructor',
+        'series[2] (Hatha, weekday 3 at 10:00).migrate is open',
+      ].every(p => err.problems.includes(p)),
+  )
+})
+
+test('the starter config proposes Rooms, class names, workshops, PT names and the weekly classes', async () => {
+  const starter = starterConfig(await readReports(REPORTS), '2026-09-17T02:00:00+08:00')
+  assert.deepEqual(
+    starter.rooms!.map(r => r.name),
+    ['Outdoor Yoga', 'Studio 1 - Hot Room', 'Studio2-Normal Room'],
+    'one entry per spelling on the timetable — no report says which of them is really an off-site venue, so a person moves that one',
+  )
+  assert.ok(starter.rooms!.every(r => r.capacity === null && r.location === null))
+  assert.deepEqual(starter.classTypes!.map(t => t.name).sort(), ['Hatha', 'Vinyasa flow'])
+  assert.deepEqual(starter.classTypes!.find(t => t.name === 'Hatha')!.mindbodyNames, ['HATHA', 'Hatha'])
+  assert.deepEqual(starter.workshopCategories, ['Handstand Workshop'])
+  assert.deepEqual(starter.ptAppointmentNames, ['Personal Training / PT'])
+
+  // Weekly for each of the four weeks up to the download; Vinyasa ran twice, so it is not proposed.
+  assert.deepEqual(starter.series, [
+    {
+      className: 'Hatha',
+      weekday: 1,
+      startTime: '19:00',
+      endTime: '20:00',
+      room: 'Studio 1 - Hot Room',
+      teacher: 'Ivy Instructor',
+      migrate: null,
+    },
+  ])
+})
+
 test('verify: the archive adds up to its own expected figures, and an altered balance is named by member', async () => {
   const { archive, expected, zip } = await run()
   assert.deepEqual(
-    { ...expected, perMember: undefined },
+    { ...expected, perMember: undefined, perClass: undefined },
     {
       members: 8,
       staffByRole: { admin: 2, instructor: 2 },
       livePackagesByKind: { credit_bundle: 3, unlimited: 1, pt: 1, trial: 1 },
       creditsLeft: 28,
       sessionsLeft: 7,
+      classes: 5,
+      ptSessions: 1,
+      bookings: 4,
       perMember: undefined,
+      perClass: undefined,
     },
+  )
+  // Every class is counted, booked or not, and named by what and when it is.
+  assert.deepEqual(
+    Object.values(expected.perClass)
+      .map(c => `${c.name}: ${c.booked}`)
+      .sort(),
+    [
+      'Hatha at 2090-01-02T11:00:00.000Z: 2',
+      'Hatha at 2090-01-09T11:00:00.000Z: 1',
+      'Hatha at 2090-01-23T11:00:00.000Z: 0',
+      'Vinyasa Flow at 2090-01-03T02:00:00.000Z: 0',
+      'Vinyasa Flow at 2090-01-03T23:00:00.000Z: 0',
+    ],
   )
   assert.deepEqual(await verifyImport(expected, zip), [])
 
@@ -389,4 +594,21 @@ test('verify: the archive adds up to its own expected figures, and an altered ba
     'class credits left, in total: expected 28, found 27',
     'Jane Doe <jane.doe@example.test>: class credits left: expected 25, found 24',
   ])
+})
+
+test('verify: a class that lost a seat, and a class that lost itself, are both named', async () => {
+  const { archive, expected } = await run()
+  const cancelled = archive.rows.bookings!.find(b => b.class_id != null)!
+  cancelled.state = 'cancelled'
+  archive.rows.classes!.at(-1)!.lifecycle = 'cancelled'
+  const differences = await verifyImport(expected, await packArchive(archive))
+
+  assert.ok(
+    differences.includes('future bookings, in total: expected 4, found 3'),
+    `bookings in total must be compared: ${differences.join(' | ')}`,
+  )
+  assert.ok(differences.some(d => /^future classes: expected 5, found 4$/.test(d)), 'a missing class must be counted')
+  assert.ok(differences.some(d => /: in the archive, and not on the timetable$/.test(d)), 'and named')
+  assert.ok(differences.some(d => /members booked: expected \d+, found \d+$/.test(d)), 'a lost seat is named by class')
+  assert.ok(differences.some(d => /: future bookings: expected \d+, found \d+$/.test(d)), 'and by member')
 })

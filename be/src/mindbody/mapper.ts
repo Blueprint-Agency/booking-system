@@ -10,11 +10,15 @@ import type {
   HoldingRow,
   MemberListRow,
   OptionSaleRow,
+  PayRateRow,
   PhoneBookRow,
   ReferralRow,
   RetentionRow,
+  RosterRow,
   SaleRow,
+  ScheduledClassRow,
 } from './readers'
+import { mapSchedule } from './schedule'
 import { normaliseStaffName, zonedToInstant, type LocalDateTime } from './values'
 
 /**
@@ -41,6 +45,11 @@ export type MindbodyReports = {
   sales: SaleRow[]
   /** Money on account, either way. Empty where the report was not downloaded. */
   balances: AccountBalanceRow[]
+  /** The timetable, past and to come, empty classes included. */
+  schedule: ScheduledClassRow[]
+  /** Who is booked into what. Reaches past the download only where it was run over future dates. */
+  roster: RosterRow[]
+  payRates: PayRateRow[]
 }
 
 export type Preflight = {
@@ -48,6 +57,8 @@ export type Preflight = {
   notMigrated: NotMigrated[]
   /** Money on account. The platform keeps no such balance. */
   balances: AccountBalance[]
+  /** The timetable: a booking with no class or no package, a class over capacity, a series with nothing to continue. */
+  schedule: string[]
   /** Members with no usable email: imported under a placeholder, fixed later by an admin. */
   noEmail: { id: string; name: string; placeholder: string }[]
   /** Emails more than one member holds: one keeps it, the others get placeholders. */
@@ -174,7 +185,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     if (m.email) holders.set(m.email, [...(holders.get(m.email) ?? []), m])
   }
 
-  const preflight: Preflight = { noEmail: [], sharedEmails: [], notMigrated: [], balances: [] }
+  const preflight: Preflight = { noEmail: [], sharedEmails: [], notMigrated: [], balances: [], schedule: [] }
   const emailOf = new Map<string, string>()
   for (const m of reports.members) {
     if (!m.email) {
@@ -225,6 +236,8 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
   const staffUsers: Row[] = []
   const instructors: Row[] = []
   const invitations: Row[] = []
+  const staffIds = new Map<string, string>()
+  let ownerId: string | null = null
 
   for (const s of config.staff) {
     if (s.migrate === 'skip') continue
@@ -256,6 +269,8 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
       archived_at: archived ? asOf.toISOString() : null,
     })
     ids.staff_users![s.mindbodyName] = staffId
+    staffIds.set(key, staffId)
+    if (isOwner) ownerId = staffId
 
     if (s.teaches || role === 'instructor') instructors.push({ staff_user_id: staffId, tenant_id: tenantId })
 
@@ -278,6 +293,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
 
   /* ── The catalogue, and what members still hold of it (`./packages.ts`) ─── */
 
+  const memberNames = new Map(reports.members.map(m => [m.id, memberName(m)]))
   const packages = mapPackages({
     holdings: reports.holdings,
     balances: reports.balances,
@@ -285,10 +301,30 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     tenantId,
     id,
     ids,
-    memberNames: new Map(reports.members.map(m => [m.id, memberName(m)])),
+    memberNames,
   })
   preflight.notMigrated = packages.notMigrated
   preflight.balances = packages.balances
+
+  /* ── The timetable to come, and who is booked on it (`./schedule.ts`) ───── */
+
+  // `validateConfig` has already refused a config whose owner is not among the staff.
+  if (!ownerId) throw new Error('the owner is not among the staff coming across')
+  const schedule = mapSchedule({
+    schedule: reports.schedule,
+    roster: reports.roster,
+    payRates: reports.payRates,
+    config,
+    tenantId,
+    id,
+    ids,
+    memberNames,
+    staffIds,
+    instructorIds: new Set(instructors.map(i => i.staff_user_id as string)),
+    ownerId,
+    clientPackages: packages.clientPackages,
+  })
+  preflight.schedule = schedule.notes
 
   /* ── The archive ───────────────────────────────────────────────────────── */
 
@@ -297,14 +333,20 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
   const rows: Record<string, Row[]> = {
     locations,
     rooms,
-    class_types: classTypes,
+    class_types: [...classTypes, ...schedule.classTypes],
     staff_users: staffUsers,
-    instructors,
+    instructors: [...instructors, ...schedule.instructors],
     staff_invitations: invitations,
     clients,
     class_packages: packages.classPackages,
     pt_packages: packages.ptPackages,
     client_packages: packages.clientPackages,
+    class_series: schedule.classSeries,
+    classes: schedule.classes,
+    pt_requests: schedule.ptRequests,
+    pt_sessions: schedule.ptSessions,
+    pt_session_clients: schedule.ptSessionClients,
+    bookings: schedule.bookings,
     global_policy: globalPolicy,
     pt_booking_config: ptBookingConfig,
     email_templates: emailTemplates,
@@ -380,5 +422,8 @@ export function renderPreflight(p: Preflight): string {
   lines.push('', `## Money on account (${p.balances.length})`, '')
   lines.push('The platform keeps no account balance. A negative figure is money the member owes.', '')
   for (const b of p.balances) lines.push(`- ${b.clientId} ${b.name}: ${b.balance}`)
+  lines.push('', `## The timetable and bookings (${p.schedule.length})`, '')
+  lines.push('Imported as far as it could be; each line is something for a person to look at.', '')
+  for (const note of p.schedule) lines.push(`- ${note}`)
   return `${lines.join('\n')}\n`
 }

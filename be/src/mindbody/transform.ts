@@ -7,11 +7,14 @@ import { mapStudio, renderPreflight, type MindbodyReports, type Transformed } fr
 import {
   readAccountBalances,
   readMemberList,
+  readPayRates,
   readPhoneBook,
   readPricingOptionRegister,
   readReferralTypes,
   readRetentionManagement,
+  readRoster,
   readSales,
+  readStaffSchedule,
   readVisitsRemaining,
 } from './readers'
 import { readXlsxTable } from './xlsx'
@@ -37,6 +40,11 @@ const REPORTS = {
   // Accrual is every sale at its sale date; Cash is a subset of it.
   sales: { label: 'Big Spenders — Detail Accrual', test: (f: string) => /big spenders.*detail accrual/i.test(f) },
   balances: { label: 'Account Balances — All balances', test: (f: string) => /account balances.*all balances/i.test(f) },
+  // Every teacher in one file. The per-teacher files repeat it, and "Regular Schedule" is a template nobody fills in.
+  schedule: { label: 'Staff Schedule — ALL, Scheduled', test: (f: string) => /staff schedule - all - scheduled\./i.test(f) },
+  // One workbook per year, because it is large.
+  roster: { label: 'Schedule at a Glance', test: (f: string) => /schedule at a glance/i.test(f) },
+  payRates: { label: 'Pay Rates', test: (f: string) => /pay rates/i.test(f) },
 } as const
 
 async function filesUnder(dir: string): Promise<string[]> {
@@ -56,32 +64,41 @@ export async function readReports(dir: string): Promise<MindbodyReports> {
     return found
   }
   const read = (file: string) => readFile(file, 'utf8')
-  const one = async (kind: keyof typeof REPORTS) => {
-    const found = pick(kind)
+  /** A report downloaded once. Two files of it would be two downloads, and there is no saying which is current. */
+  const only = (kind: keyof typeof REPORTS, found: string[]) => {
     if (found.length > 1) throw new Error(`${dir} has more than one ${REPORTS[kind].label} report: ${found.join(', ')}`)
-    return read(found[0]!)
+    return found[0]
   }
+  const one = async (kind: keyof typeof REPORTS) => read(only(kind, pick(kind))!)
+  /** A report a studio may simply not have downloaded. */
+  const optional = (kind: keyof typeof REPORTS) => only(kind, files.filter(f => REPORTS[kind].test(path.basename(f))))
 
   const referrals = []
   for (const file of pick('referrals')) referrals.push(...readReferralTypes(await read(file)))
 
+  const workbook = async (file: string) => readXlsxTable(await readFile(file))
   // A workbook, where the others are HTML. Exactly one, like them.
-  const holdingsFiles = pick('holdings')
-  if (holdingsFiles.length > 1) {
-    throw new Error(`${dir} has more than one ${REPORTS.holdings.label} report: ${holdingsFiles.join(', ')}`)
-  }
+  const holdingsFile = only('holdings', pick('holdings'))!
   // Optional: a studio with no money on account may not have downloaded it.
-  const balanceFiles = files.filter(f => REPORTS.balances.test(path.basename(f)))
+  const balancesFile = optional('balances')
+  // Optional: without it every imported class is Unpriced, which an admin can settle.
+  const payRatesFile = optional('payRates')
+
+  const roster = []
+  for (const file of pick('roster')) roster.push(...readRoster(await workbook(file)))
 
   return {
     members: readMemberList(await one('members')),
     referrals,
     retention: readRetentionManagement(await one('retention')),
     phoneBook: readPhoneBook(await one('phoneBook')),
-    holdings: readVisitsRemaining(await readXlsxTable(await readFile(holdingsFiles[0]!))),
+    holdings: readVisitsRemaining(await workbook(holdingsFile)),
     optionSales: readPricingOptionRegister(await one('optionSales')),
     sales: readSales(await one('sales')),
-    balances: balanceFiles.length > 0 ? readAccountBalances(await one('balances')) : [],
+    balances: balancesFile ? readAccountBalances(await read(balancesFile)) : [],
+    schedule: readStaffSchedule(await one('schedule')),
+    roster,
+    payRates: payRatesFile ? readPayRates(await workbook(payRatesFile)) : [],
   }
 }
 

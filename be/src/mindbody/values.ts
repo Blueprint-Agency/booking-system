@@ -60,12 +60,75 @@ export function zonedToInstant(local: LocalDateTime, timeZone: string): Date {
   return new Date(instant)
 }
 
+/** A time of day on the studio's clock. */
+export type ClockTime = { hour: number; minute: number }
+
+/**
+ * A workbook's date cell: a count of days since 30 December 1899, as Excel
+ * keeps it. A real workbook date has no D/M or M/D to get wrong.
+ */
+export function excelDate(raw: string): CalendarDate | null {
+  const serial = Number(raw)
+  if (!raw.trim() || !Number.isFinite(serial) || serial < 1) return null
+  const d = new Date(Date.UTC(1899, 11, 30) + Math.floor(serial) * 86_400_000)
+  return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1, day: d.getUTCDate() }
+}
+
+/** A workbook's time cell: the fraction of a day gone, so 0.375 is 9:00. Rounded to the minute. */
+export function excelTime(raw: string): ClockTime | null {
+  const fraction = Number(raw)
+  if (!raw.trim() || !Number.isFinite(fraction) || fraction < 0) return null
+  const minutes = Math.round((fraction % 1) * 1440) % 1440
+  return { hour: Math.floor(minutes / 60), minute: minutes % 60 }
+}
+
+const CLOCK = /^(\d{1,2}):(\d{2})\s*([ap]m)$/i
+
+/** `11:15 am`, `1:45 PM`. */
+export function parseClock(raw: string): ClockTime | null {
+  const m = CLOCK.exec(raw.trim())
+  if (!m) return null
+  let hour = Number(m[1]) % 12
+  if (m[3]!.toLowerCase() === 'pm') hour += 12
+  return { hour, minute: Number(m[2]) }
+}
+
+/**
+ * One key for a class's name, however a report writes it: padded, in two cases,
+ * and — on the staff schedule — with `***` after it where a substitute taught.
+ * NFKC folds the "fancy" bold letters some names are typed in back to plain ones.
+ */
+export function normaliseClassName(raw: string): string {
+  return raw.normalize('NFKC').replace(/\*+\s*$/, '').replace(/\s+/g, ' ').trim().toLowerCase()
+}
+
 /** A day on the studio's calendar. Every `LocalDateTime` is one. */
 export type CalendarDate = { year: number; month: number; day: number }
 
 /** A calendar day as a count of days, for comparing two and measuring between them. */
 export function dayNumber(d: CalendarDate): number {
   return Date.UTC(d.year, d.month - 1, d.day) / 86_400_000
+}
+
+/** A calendar day as `YYYY-MM-DD`: how a `date` column is written, and how days sort. */
+export function isoDay(d: CalendarDate): string {
+  return `${d.year}-${String(d.month).padStart(2, '0')}-${String(d.day).padStart(2, '0')}`
+}
+
+/** A time of day as `HH:MM`: how a `time` column is written, and how times sort. */
+export function isoClock(t: ClockTime): string {
+  return `${String(t.hour).padStart(2, '0')}:${String(t.minute).padStart(2, '0')}`
+}
+
+/** ISO weekday of a calendar day: Monday 1 … Sunday 7. */
+export function isoWeekday(d: CalendarDate): 1 | 2 | 3 | 4 | 5 | 6 | 7 {
+  const js = new Date(Date.UTC(d.year, d.month - 1, d.day)).getUTCDay()
+  return (js === 0 ? 7 : js) as 1 | 2 | 3 | 4 | 5 | 6 | 7
+}
+
+/** An amount as a `numeric(…, 2)` column holds it. */
+export function money(n: number): string {
+  return n.toFixed(2)
 }
 
 /** The day an ISO timestamp names in the offset it was written with: its first ten characters. */

@@ -21,11 +21,20 @@ const CODE_PREFIX = 'RT-'
  * See backend-architecture.md §6 Per-booking codes.
  */
 export function generateBookingCodes(): { qrToken: string; code: string } {
-  const qrToken = randomBytes(32).toString('base64url')
-  const bytes = randomBytes(6)
+  return bookingCodesFrom(randomBytes(32), randomBytes(6))
+}
+
+/**
+ * The same two codes from bytes the caller supplies: 32 for the token, 6 for
+ * the code. For a booking that must get the same codes every time it is
+ * written — the Mindbody transform derives the bytes from a secret — and is
+ * still spelled the one way a booking code is spelled.
+ */
+export function bookingCodesFrom(tokenBytes: Uint8Array, codeBytes: Uint8Array): { qrToken: string; code: string } {
+  const qrToken = Buffer.from(tokenBytes).toString('base64url')
   let code = CODE_PREFIX
   for (let i = 0; i < 6; i++) {
-    code += CROCKFORD[bytes[i]! % 32]
+    code += CROCKFORD[codeBytes[i]! % 32]
   }
   return { qrToken, code }
 }

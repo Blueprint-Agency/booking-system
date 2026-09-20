@@ -46,5 +46,10 @@ export function idsFor(tenantId: string) {
  * are unguessable and still identical on a rerun.
  */
 export function secretToken(secret: string, key: string): string {
-  return createHmac('sha256', secret).update(key).digest('base64url')
+  return secretBytes(secret, key).toString('base64url')
+}
+
+/** The same, as its 32 bytes: a booking's QR token and code are both cut from these. */
+export function secretBytes(secret: string, key: string): Buffer {
+  return createHmac('sha256', secret).update(key).digest()
 }

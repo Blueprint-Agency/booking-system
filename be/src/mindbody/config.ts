@@ -2,7 +2,8 @@ import { randomBytes } from 'node:crypto'
 import { z } from 'zod'
 import { proposeCatalogue } from './catalogue'
 import type { MindbodyReports } from './mapper'
-import { EMAIL, dateOfIso, normaliseOptionName, normaliseStaffName } from './values'
+import { proposeSchedule } from './schedule-proposal'
+import { EMAIL, dateOfIso, normaliseClassName, normaliseOptionName, normaliseStaffName } from './values'
 
 /**
  * The studio config: the facts about a studio that no Mindbody report holds.
@@ -26,6 +27,8 @@ const locationSchema = z.object({
   phone: open(z.string()),
   /** The numeric location ids Mindbody prints for it (Retention Management's "Location"). */
   mindbodyIds: z.array(z.string()).default([]),
+  /** What the schedule and roster reports call it, where that is not `name`. */
+  mindbodyNames: z.array(z.string()).default([]),
 })
 
 const roomSchema = z.object({
@@ -40,6 +43,33 @@ const classTypeSchema = z.object({
   name: open(z.string().min(1)),
   /** The raw class names that are this Class Type. Matched trimmed and case-folded. */
   mindbodyNames: z.array(z.string()).default([]),
+  /**
+   * Seats in a class of this type, where that is not its Room's capacity. No
+   * report has a class's capacity; needed for a class held off-site, which has
+   * no Room to take it from.
+   */
+  capacity: z.number().int().positive().nullable().default(null),
+})
+
+/**
+ * A weekly class, proposed by the starter config from what ran at the same
+ * weekday, time and Room under the same name in each of the last four weeks.
+ * One a person confirms (`migrate: true`) is written as a Class Series, with
+ * the imported future classes it matches linked to it — so the first thing the
+ * studio does after launch is extend it.
+ */
+const seriesSchema = z.object({
+  /** A class name as Mindbody writes it; its Class Type is looked up like any class's. */
+  className: z.string().min(1),
+  /** ISO weekday: Monday 1 … Sunday 7. */
+  weekday: z.number().int().min(1).max(7),
+  startTime: z.string().regex(/^\d{2}:\d{2}$/),
+  endTime: z.string().regex(/^\d{2}:\d{2}$/),
+  /** A Room, by its name or any of its Mindbody spellings. */
+  room: z.string().min(1),
+  /** Who teaches it from now on, as the phone book names them. They must be coming across as an instructor. */
+  teacher: z.string().min(1),
+  migrate: open(z.boolean()),
 })
 
 const staffSchema = z.object({
@@ -138,6 +168,17 @@ export const studioConfigSchema = z.object({
   /** Room spellings that are really off-site venues (outdoors, a company office, a retreat). Not Rooms. */
   offSiteVenues: z.array(z.string()).default([]),
   classTypes: z.array(classTypeSchema).default([]),
+  /**
+   * Mindbody service categories that are a workshop, a retreat or a course of
+   * their own and not the studio's timetable. What is scheduled under one is not
+   * a class, and is left to the workshop import.
+   */
+  workshopCategories: z.array(z.string()).default([]),
+  /** What the roster calls a personal-training appointment. A roster row under one of these is a PT session, not a class. */
+  ptAppointmentNames: z.array(z.string()).default([]),
+  /** The Class Type an imported PT appointment's focus is. Created if `classTypes` does not already list it. */
+  ptClassType: z.string().min(1).default('Personal Training'),
+  series: z.array(seriesSchema).default([]),
   policy: z
     .object({
       classWindowHours: z.number().int().min(0).default(24),
@@ -176,11 +217,30 @@ export type StudioConfig = {
   asOf: string
   secret: string
   originPatterns: string
-  locations: { key: string; name: string; address: string | null; phone: string | null; mindbodyIds: string[] }[]
+  locations: {
+    key: string
+    name: string
+    address: string | null
+    phone: string | null
+    mindbodyIds: string[]
+    mindbodyNames: string[]
+  }[]
   defaultLocation: string
   rooms: { name: string; location: string; capacity: number; mindbodyNames: string[] }[]
   offSiteVenues: string[]
-  classTypes: { name: string; mindbodyNames: string[] }[]
+  classTypes: { name: string; mindbodyNames: string[]; capacity: number | null }[]
+  workshopCategories: string[]
+  ptAppointmentNames: string[]
+  ptClassType: string
+  series: {
+    className: string
+    weekday: 1 | 2 | 3 | 4 | 5 | 6 | 7
+    startTime: string
+    endTime: string
+    room: string
+    teacher: string
+    migrate: boolean
+  }[]
   policy: Parsed['policy']
   staff: (
     | { mindbodyName: string; migrate: 'active'; email: string; role: 'admin' | 'instructor'; teaches: boolean }
@@ -343,6 +403,25 @@ export function validateConfig(raw: unknown): StudioConfig {
     if (e.location && !locationKeys.has(e.location)) problems.push(`${label}.location "${e.location}" names no Location`)
   })
 
+  const roomSpellings = new Set(c.rooms.flatMap(r => [r.name ?? '', ...r.mindbodyNames]).map(s => s.trim().toLowerCase()))
+  const classNames = new Set(c.classTypes.flatMap(t => [t.name ?? '', ...t.mindbodyNames]).map(normaliseClassName))
+  const instructorsComing = new Set(
+    c.staff.filter(s => s.migrate === 'active' && s.role === 'instructor').map(s => normaliseStaffName(s.mindbodyName)),
+  )
+  c.series.forEach((s, i) => {
+    const label = `series[${i}] (${s.className}, weekday ${s.weekday} at ${s.startTime})`
+    need(s.migrate, `${label}.migrate`)
+    if (s.migrate !== true) return
+    if (s.endTime <= s.startTime) problems.push(`${label} ends before it starts`)
+    if (!roomSpellings.has(s.room.trim().toLowerCase())) problems.push(`${label}.room "${s.room}" names no Room`)
+    if (!classNames.has(normaliseClassName(s.className))) problems.push(`${label}.className is in no Class Type`)
+    // The portal only lets an instructor lead a class, so a series led by
+    // anyone else could never be extended.
+    if (!instructorsComing.has(normaliseStaffName(s.teacher))) {
+      problems.push(`${label}.teacher "${s.teacher}" is not a staff member coming across as an active instructor`)
+    }
+  })
+
   if (problems.length > 0) throw new ConfigError(problems)
   return c as unknown as StudioConfig
 }
@@ -369,6 +448,7 @@ export function starterConfig(reports: MindbodyReports, asOf: string | null = nu
     locationIds.length > 0
       ? locationIds.map(id => ({ key: `location-${id}`, name: null, address: null, phone: null, mindbodyIds: [id] }))
       : [{ key: 'main', name: null, address: null, phone: null, mindbodyIds: [] }]
+  const schedule = proposeSchedule(reports, asOf ? dateOfIso(asOf) : null)
 
   return {
     studio: { slug: null, displayName: null, timezone: null, ownerEmail: null, mailReplyTo: null, emailFooter: null },
@@ -376,9 +456,14 @@ export function starterConfig(reports: MindbodyReports, asOf: string | null = nu
     secret: randomBytes(32).toString('base64url'),
     locations,
     defaultLocation: locations[0]!.key,
-    rooms: [],
+    // From the timetable (`./schedule-proposal.ts`): every Room and class name
+    // still to come, one entry per spelling, for a person to merge and fill in.
+    rooms: schedule.rooms,
     offSiteVenues: [],
-    classTypes: [],
+    classTypes: schedule.classTypes,
+    workshopCategories: schedule.workshopCategories,
+    ptAppointmentNames: schedule.ptAppointmentNames,
+    series: schedule.series,
     policy: { classWindowHours: 24, ptWindowHours: 24, cancelCapCount: 3, cancelCapCycleDays: 30, ptBookInAdvanceDays: 7 },
     staff: reports.phoneBook.map(p => ({
       mindbodyName: p.name,

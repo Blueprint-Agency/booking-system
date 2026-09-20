@@ -6,11 +6,14 @@ import { readHtmlTable, type TableRow } from './html-table'
 import {
   readAccountBalances,
   readMemberList,
+  readPayRates,
   readPhoneBook,
   readPricingOptionRegister,
   readReferralTypes,
   readRetentionManagement,
+  readRoster,
   readSales,
+  readStaffSchedule,
   readVisitsRemaining,
 } from './readers'
 import { parseMindbodyDate, cleanPhone, cleanEmail, normaliseOptionName, normaliseStaffName, parseSessions } from './values'
@@ -299,4 +302,79 @@ test('account balances: one row per client, and not the total line', () => {
     readFileSync(path.join(FIXTURES, 'reports', 'Clients', '04 Account Balances', '04 Account Balances - All balances.xls'), 'utf8'),
   )
   assert.deepEqual(balances, [{ clientId: '100000005', balance: -10 }])
+})
+
+/* ── The timetable (#179) ─────────────────────────────────────────────────── */
+
+const staffSchedule = () =>
+  readStaffSchedule(readFileSync(path.join(FIXTURES, 'reports', 'Staff', '34 Staff Schedule', '34 Staff Schedule - ALL - Scheduled.xls'), 'utf8'))
+
+test('the staff schedule: a class per teacher per day, and nothing else on the page', () => {
+  const rows = staffSchedule()
+  // Fifteen time-carrying rows in the fixture; three of them are not a class.
+  assert.equal(rows.length, 12)
+  assert.ok(
+    rows.every(r => !/unavailable/i.test(r.description)),
+    'the italic "Unavailable - Teaching Class" block Mindbody writes beside every class is not a class',
+  )
+  assert.ok(
+    rows.every(r => r.description !== 'Appointment Availability'),
+    'an appointment-availability window has no Location and is not a class',
+  )
+  assert.ok(
+    rows.every(r => !/^TOTAL/i.test(r.description)),
+    'the "TOTAL # OF CLASSES" footer sits in a cell like a day heading and is neither',
+  )
+
+  const first = rows[0]!
+  assert.deepEqual(
+    [first.staff, first.date, first.start, first.end],
+    ['IVY INSTRUCTOR', { year: 2026, month: 8, day: 24 }, { hour: 19, minute: 0 }, { hour: 20, minute: 0 }],
+    'the teacher comes from the "SCHEDULE FOR …" heading and the day from the bold heading above the row',
+  )
+  assert.deepEqual([first.description, first.location, first.serviceCategory, first.room], ['Hatha', 'Main Hall', 'Main Programme', 'Studio 1 - Hot Room'])
+
+  // A teacher with a heading and no days at all ends the report without a row.
+  assert.ok(!rows.some(r => r.staff === 'GONE CLERK'))
+})
+
+test('the staff schedule: *** after a class name is the substitute marker, not part of the name', () => {
+  const rows = staffSchedule()
+  const covered = rows.find(r => r.date.year === 2090 && r.date.month === 1 && r.date.day === 3)!
+  assert.deepEqual(
+    [covered.staff, covered.description, covered.substitute],
+    ['OLIVE OWNER', 'Vinyasa flow', true],
+    'the marked row names the substitute who is actually teaching',
+  )
+  assert.ok(
+    rows.filter(r => r !== covered).every(r => r.substitute === false),
+    'every other class is taught by whoever it is filed under',
+  )
+})
+
+test('the roster: dates and times come back as real workbook values, whatever the cell looks like', async () => {
+  const roster = readRoster(
+    await readXlsxTable(readFileSync(path.join(FIXTURES, 'reports', 'Clients', '17 Schedule at a Glance', '17 Schedule at a Glance - 2090.xlsx'))),
+  )
+  assert.equal(roster.length, 9)
+  const first = roster[0]!
+  assert.deepEqual(
+    [first.date, first.start, first.end],
+    [{ year: 2026, month: 9, day: 10 }, { hour: 19, minute: 0 }, { hour: 20, minute: 0 }],
+    'a day count and a fraction of a day, not a D/M to get the wrong way round',
+  )
+  assert.deepEqual([first.description, first.staff, first.clientId, first.status], ['Hatha', 'Instructor, Ivy', '100000001', 'Signed in'])
+  assert.deepEqual([first.room, first.location], ['Studio 1 - Hot Room', 'Main Hall'])
+  assert.ok(roster.some(r => r.status === 'Late Cancel'), 'a cancelled seat is still a row; what to do with it is the mapper s')
+})
+
+test('pay rates: the per-class rate of each teacher, and null where there is none', async () => {
+  const rates = readPayRates(await readXlsxTable(readFileSync(path.join(FIXTURES, 'reports', 'Staff', '38 Pay Rates', '38 Pay Rates.xlsx'))))
+  assert.deepEqual(rates, [
+    // Under an "Assistant/Per Class Rate" slot, which is still per class.
+    { staff: 'Instructor, Ivy', perClass: 35 },
+    // Paid per head: the platform has no such rate, so the classes are Unpriced.
+    { staff: 'Owner, Olive', perClass: null },
+    { staff: 'Teacher, Old', perClass: 40 },
+  ])
 })

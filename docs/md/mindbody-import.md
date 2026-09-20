@@ -49,8 +49,9 @@ npm run mindbody -- verify --expected <studio.expected.json> --export <exported.
   does not come across; money on account) and `<studio>.expected.json` (what the studio should
   add up to). Send the preflight to the studio.
 - `verify` counts the exported studio the way `transform` counted its own archive — members,
-  staff by role, live packages by kind, credits and sessions left in total and per member —
-  lists every difference by member, and exits non-zero on any. Run it straight after the
+  staff by role, live packages by kind, credits and sessions left in total and per member,
+  future classes and PT sessions, and bookings in total, per member and per class — lists every
+  difference by member or by class, and exits non-zero on any. Run it straight after the
   import, before anybody books.
 - **The catalogue** (`catalogue` in the config) is one entry per Mindbody pricing option, proposed
   by `starter` from what was sold: the commonest sessions bought, activation-to-expiry spread and
@@ -68,6 +69,34 @@ npm run mindbody -- verify --expected <studio.expected.json> --export <exported.
   trial used up long ago comes across spent and inactive, so the one-trial rule holds. A holding
   Mindbody sold with **no expiration at all** cannot be answered for by that rule, and no package
   here runs forever: it does not come across, and is listed in the preflight instead of vanishing.
+- **The timetable to come** is every class on the all-teachers Staff Schedule ("Scheduled")
+  that starts after `asOf`, whether or not anybody booked it. Its Class Type, Room and Location
+  are matched through the config (`classTypes[].mindbodyNames`, `rooms[].mindbodyNames`,
+  `locations[].mindbodyNames`), its capacity is the Room's or the Class Type's own
+  (`classTypes[].capacity`, needed for a class held at an `offSiteVenues` venue, which has no
+  Room), `credit_cost` is 1, and the teacher's pay is their Per Class rate from Pay Rates —
+  where they have none, the class is **Unpriced** for an admin to settle. A name marked `***`
+  is taught by the substitute it is filed under. Anything under a `workshopCategories` service
+  category is left to the workshop import.
+- **Future bookings** come from Schedule at a Glance over future dates, joined to a class on
+  date, start time, class name and teacher — or, where only one class is on at that minute
+  under that name, on that alone, since the two reports disagree about a covered class's teacher
+  and the seat is a real one. Each seat is `confirmed`, paid by the member's running package in
+  that Family — one that lasts until the class; a seat whose only package runs out first comes
+  across unpaid and listed — and carrying the 1 credit it cost, so cancelling returns it
+  (0 on an Unlimited Plan, which was never charged). Its code and QR token are keyed by the
+  config's `secret`, so a rerun writes the same ones. A roster row under a
+  `ptAppointmentNames` name is a PT appointment instead: a scheduled `pt_request` (its focus the
+  `ptClassType` Class Type, made if the config has none by that name), a `pt_session` and a
+  booking per member. PT pay is a percentage in Mindbody, which no report gives: Unpriced.
+- **Class Series** are proposed by `starter` from what ran at the same weekday, time, Room and
+  name in each of the four weeks up to `asOf`. A person sets `migrate` on each; a confirmed one
+  is written as a series whose imported classes are linked to it and whose last date is the
+  last class that came across, so launch day starts with an extend and nothing is duplicated.
+  Its teacher must be coming across as an active instructor, or the portal could never extend it.
+- Whatever could not be matched — a booking with no class, a member not in the member list, a
+  class over its capacity, a series with nothing to continue — is a line in the preflight, and
+  the import goes ahead without it.
 - The Tenant must be provisioned with the config's `studio.slug`: the import refuses an archive
   built for another slug, because its email links name that slug.
 - Staff invitations expire 7 days after `asOf` (the download time). Importing later is fine:
@@ -78,11 +107,14 @@ npm run mindbody -- verify --expected <studio.expected.json> --export <exported.
 - Reads today: Mailing Lists (Mailing List), Referral Types (detail files: creation date),
   Retention Management (gender), Phone Book (staff), Visits Remaining (Detail `.xlsx`: holdings),
   Pricing Option Expirations and Big Spenders (Detail Accrual) — those two only to propose the
-  catalogue — and Account Balances (All balances), if it was downloaded.
+  catalogue — Staff Schedule (ALL, "Scheduled": the timetable), Schedule at a Glance (`.xlsx`,
+  one per year: who is booked into what) and, if they were downloaded, Account Balances
+  (All balances) and Pay Rates (`.xlsx`).
 - Writes: settings, Locations, Rooms, Class Types, policy, PT booking config, all email
-  templates, every member profile, the class and PT catalogue, every live package, and staff — the owner (`studio.ownerEmail`) an active Admin,
+  templates, every member profile, the class and PT catalogue, every live package, staff — the owner (`studio.ownerEmail`) an active Admin,
   other migrated staff pending with an invitation to resend from the portal, `archived` teachers
-  with a placeholder email.
+  with a placeholder email — and the timetable still to come: Class Series, classes, PT requests
+  and sessions, and every booking on them.
 
 The archive's manifest carries `ensureAccounts: true`. On import that makes the importer create
 or reuse the sign-in account of every member and staff row by email, inside the import's

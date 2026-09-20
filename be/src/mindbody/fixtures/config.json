@@ -22,8 +22,22 @@
   ],
   "offSiteVenues": ["Outdoor Yoga", "RETREAT"],
   "classTypes": [
-    { "name": "Hatha", "mindbodyNames": ["hatha", "HATHA "] },
-    { "name": "Vinyasa Flow", "mindbodyNames": ["Vinyasa flow", "vinyasa  flow"] }
+    { "name": "Hatha", "mindbodyNames": ["hatha", "HATHA "], "capacity": null },
+    { "name": "Vinyasa Flow", "mindbodyNames": ["Vinyasa flow", "vinyasa  flow"], "capacity": 25 }
+  ],
+  "workshopCategories": ["Handstand Workshop"],
+  "ptAppointmentNames": ["Personal Training / PT"],
+  "ptClassType": "Personal Training",
+  "series": [
+    {
+      "className": "Hatha",
+      "weekday": 1,
+      "startTime": "19:00",
+      "endTime": "20:00",
+      "room": "Studio 1 - Hot Room",
+      "teacher": "Ivy Instructor",
+      "migrate": true
+    }
   ],
   "policy": { "classWindowHours": 12, "ptWindowHours": 24, "cancelCapCount": 3, "cancelCapCycleDays": 30, "ptBookInAdvanceDays": 7 },
   "staff": [

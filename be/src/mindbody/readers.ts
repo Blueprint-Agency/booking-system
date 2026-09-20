@@ -2,10 +2,15 @@ import { readHtmlTable, type TableRow } from './html-table'
 import {
   cleanEmail,
   cleanPhone,
+  excelDate,
+  excelTime,
+  parseClock,
   parseMindbodyDate,
   parseMoney,
   parseSessions,
   tidy,
+  type CalendarDate,
+  type ClockTime,
   type LocalDateTime,
   type SessionCount,
 } from './values'
@@ -311,6 +316,162 @@ export function readAccountBalances(html: string): AccountBalanceRow[] {
     const balance = parseMoney(cell(row, columns, 'Account balance'))
     if (!id || balance === null) continue // the "Total:" line
     out.push({ clientId: id, balance })
+  }
+  return out
+}
+
+/* ── 34 Staff Schedule — ALL, Scheduled: the timetable, empty classes and all ─ */
+
+export type ScheduledClassRow = {
+  /** The teacher, from the section heading: `FIRST LAST`, upper-case. */
+  staff: string
+  date: CalendarDate
+  start: ClockTime
+  end: ClockTime
+  /** The class name with any trailing `***` removed. */
+  description: string
+  /** `***` after the name: a substitute is teaching, and `staff` is that substitute. */
+  substitute: boolean
+  location: string
+  /** Mindbody's service category: the studio's programme, or a workshop's or a retreat's own. */
+  serviceCategory: string
+  room: string
+}
+
+const SECTION = /^SCHEDULE FOR\s+(.+)$/i
+const DAY_HEADING = /^[A-Za-z]+,\s+(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})$/
+const TIME_RANGE = /^(\d{1,2}:\d{2}\s*[ap]m)\s*-\s*(\d{1,2}:\d{2}\s*[ap]m)$/i
+const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december']
+
+/**
+ * The one report with no header row. It is nested tables: a `SCHEDULE FOR …`
+ * heading per teacher, a bold day heading, then six cells per row — time,
+ * name, location, service category, room, notes — so a heading can share a row
+ * with whatever follows it and every cell is looked at for what it is.
+ *
+ * Three kinds of row carry a time, and one is a class:
+ *  - a class, with its Location filled;
+ *  - the italic "Unavailable - Teaching Class" block Mindbody writes beside
+ *    every class, with everything after the name blank;
+ *  - an appointment-availability window, with no Location either.
+ * The `TOTAL # OF CLASSES` footer sits in a cell like a day heading's and is neither.
+ */
+export function readStaffSchedule(html: string): ScheduledClassRow[] {
+  const out: ScheduledClassRow[] = []
+  let staff: string | null = null
+  let date: CalendarDate | null = null
+  for (const row of readHtmlTable(html)) {
+    for (const [i, text] of row.cells.entries()) {
+      const section = SECTION.exec(text)
+      if (section) {
+        staff = tidy(section[1]!)
+        date = null
+        continue
+      }
+      const day = DAY_HEADING.exec(text)
+      if (day) {
+        const month = MONTHS.indexOf(day[2]!.toLowerCase()) + 1
+        date = month > 0 ? { year: Number(day[3]), month, day: Number(day[1]) } : null
+        continue
+      }
+      const range = TIME_RANGE.exec(text)
+      if (!range || !staff || !date) continue
+      const [start, end] = [parseClock(range[1]!), parseClock(range[2]!)]
+      const name = tidy(row.cells[i + 1] ?? '')
+      const location = tidy(row.cells[i + 2] ?? '')
+      if (!start || !end || !name || !location || /^unavailable\b/i.test(name)) break
+      out.push({
+        staff,
+        date,
+        start,
+        end,
+        description: tidy(name.replace(/\*+\s*$/, '')),
+        substitute: /\*+\s*$/.test(name),
+        location,
+        serviceCategory: tidy(row.cells[i + 3] ?? ''),
+        room: tidy(row.cells[i + 4] ?? ''),
+      })
+      break
+    }
+  }
+  return out
+}
+
+/* ── 17 Schedule at a Glance: the roster, one row per client per class ─────── */
+
+export type RosterRow = {
+  date: CalendarDate
+  start: ClockTime
+  end: ClockTime | null
+  description: string
+  /** `Last, First`. */
+  staff: string
+  room: string
+  location: string
+  clientId: string
+  /** `Reserved`, `Signed in`, `Late Cancel`, … */
+  status: string
+}
+
+/**
+ * Takes a workbook already read into rows (`./xlsx.ts`). Dates and times are
+ * real workbook values here — a day count and a fraction of a day — and are
+ * read as such; a text date is accepted too, D/M like the rest of Mindbody.
+ */
+export function readRoster(rows: TableRow[]): RosterRow[] {
+  const { at, columns } = header(rows, 'Schedule at a Glance', ['Date', 'Start time', 'Description', 'Staff', 'Client ID', 'Status'])
+  const out: RosterRow[] = []
+  for (const row of dataRows(rows, at)) {
+    const id = clientId(row, columns, 'Client ID')
+    const date = excelDate(cell(row, columns, 'Date')) ?? parseMindbodyDate(cell(row, columns, 'Date'), 'DM')
+    const start = excelTime(cell(row, columns, 'Start time')) ?? parseClock(cell(row, columns, 'Start time'))
+    if (!id || !date || !start) continue
+    out.push({
+      date: { year: date.year, month: date.month, day: date.day },
+      start,
+      end: excelTime(cell(row, columns, 'End time')) ?? parseClock(cell(row, columns, 'End time')),
+      description: tidy(cell(row, columns, 'Description')),
+      staff: tidy(cell(row, columns, 'Staff')),
+      room: tidy(cell(row, columns, 'Room')),
+      location: tidy(cell(row, columns, 'Location')),
+      clientId: id,
+      status: tidy(cell(row, columns, 'Status')),
+    })
+  }
+  return out
+}
+
+/* ── 38 Pay Rates: what each teacher is paid for a class ──────────────────── */
+
+export type PayRateRow = {
+  /** `Last, First`. */
+  staff: string
+  /** Dollars per class, or null where the teacher has no per-class rate (paid per head, or not at all). */
+  perClass: number | null
+}
+
+/**
+ * Takes a workbook already read into rows. A block per teacher: a row naming
+ * them and the rate slots, then a `Rate` row of amounts under those slots, then
+ * bonus and tier rows nobody uses. The per-class rate is the first amount above
+ * zero in a slot whose name says "Per Class".
+ */
+export function readPayRates(rows: TableRow[]): PayRateRow[] {
+  const out: PayRateRow[] = []
+  let block: { staff: string; slots: string[] } | null = null
+  for (const row of rows) {
+    const [first = '', second = '', ...rest] = row.cells
+    if (first && !second && rest.some(c => /\brate\b/i.test(c)) && !/^default:/i.test(first)) {
+      block = { staff: tidy(first), slots: rest }
+      continue
+    }
+    if (block && /^rate$/i.test(second)) {
+      const slots = block.slots
+      const amounts = rest.map((c, i) => ({ slot: slots[i] ?? '', amount: parseMoney(c) ?? 0 }))
+      const perClass = amounts.find(a => /per class/i.test(a.slot) && a.amount > 0)?.amount ?? null
+      out.push({ staff: block.staff, perClass })
+      block = null
+    }
   }
   return out
 }

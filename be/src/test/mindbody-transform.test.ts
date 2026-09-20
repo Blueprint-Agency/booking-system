@@ -143,7 +143,8 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
       ['Hot Room:15', 'Riverside Studio:12', 'Studio 2 - Normal Room:20'],
     )
     assert.equal(await count('locations', studio.tenant.id), 2)
-    assert.equal(await count('class_types', studio.tenant.id), 2)
+    // Hatha and Vinyasa Flow, plus the Personal Training focus the PT import needs.
+    assert.equal(await count('class_types', studio.tenant.id), 3)
     assert.equal(await count('email_templates', studio.tenant.id), 33)
     assert.equal(await count('clients', studio.tenant.id), 8)
 
@@ -196,7 +197,11 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
       .from(schema.staffUsers)
       .where(and(eq(schema.staffUsers.tenantId, tenantId), eq(schema.staffUsers.email, 'ivy@example.test')))
     const rooms = await harness.db.select().from(schema.rooms).where(eq(schema.rooms.tenantId, tenantId))
-    const [classType] = await harness.db.select().from(schema.classTypes).where(eq(schema.classTypes.tenantId, tenantId))
+    // By name: the imported PT focus is a Class Type too, and no class is held under it.
+    const [classType] = await harness.db
+      .select()
+      .from(schema.classTypes)
+      .where(and(eq(schema.classTypes.tenantId, tenantId), eq(schema.classTypes.name, 'Hatha')))
     let classes = 0
 
     /** A class a few days out, in the named room. */
@@ -374,6 +379,115 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
       'Bundle of 20 and ClassPass are legacy: held, and not sold',
     )
     assert.deepEqual(body.pt_packages.map(p => `${p.name}:${p.price_sgd}`), ['PT - Bundle of 10:1200.00'])
+  })
+
+  /* ── The timetable to come (#179) ──────────────────────────────────────── */
+
+  /** The whole imported timetable, as the portal lists it. */
+  const timetableOf = async (headers: Record<string, string>, query = '') => {
+    const res = await get(`/api/v1/portal/admin/schedule?from=2089-12-01&to=2090-03-01${query}`, headers)
+    assert.equal(res.status, 200, await res.clone().text())
+    return ((await res.json()) as { entries: Record<string, any>[] }).entries
+  }
+
+  test('the imported timetable is in the portal, empty classes and all, with its room, capacity and pay', async () => {
+    const studio = await importedStudio()
+    const owner = await harness.signInAs('staff', 'owner@example.test', studio)
+    const entries = await timetableOf(owner)
+
+    const classes = entries.filter(e => e.kind === 'class')
+    assert.equal(classes.length, 5)
+    const rooms = await harness.db.select().from(schema.rooms).where(eq(schema.rooms.tenantId, studio.tenantId))
+    const hotRoom = rooms.find(r => r.name === 'Hot Room')!
+
+    const hatha = classes.find(e => e.starts_at === '2090-01-02T11:00:00.000Z')!
+    assert.deepEqual([hatha.label, hatha.room_id, hatha.capacity, hatha.booked_count], ['Hatha', hotRoom.id, 15, 2])
+
+    // Nobody booked it in Mindbody, and it is still on the timetable.
+    const empty = classes.find(e => e.starts_at === '2090-01-23T11:00:00.000Z')!
+    assert.equal(empty.booked_count, 0)
+
+    // The pay is on the class itself, which the list does not carry.
+    const detail = await get(`/api/v1/portal/admin/schedule/classes/${hatha.id}`, owner)
+    assert.equal(detail.status, 200, await detail.clone().text())
+    const body = (await detail.json()) as Record<string, any>
+    assert.equal(body.instructor_pay_sgd, 35)
+    assert.equal(body.credit_cost, 1)
+
+    // Olive is paid per head in Mindbody, which the platform has no rate for.
+    const unpriced = classes.find(e => e.starts_at === '2090-01-03T02:00:00.000Z')!
+    const covered = await get(`/api/v1/portal/admin/schedule/classes/${unpriced.id}`, owner)
+    assert.equal(((await covered.json()) as Record<string, any>).instructor_pay_sgd, null)
+  })
+
+  test('an imported booking is the member s, with a working code, and cancelling it returns the credit', async () => {
+    const studio = await importedStudio()
+    const jane = await studio.member('jane.doe@example.test')
+    const pack = async () => (await jane.packages()).find(p => p.package_name === 'Class Pack - Bundle of 10')!
+
+    const res = await get('/api/v1/me/bookings/upcoming', jane.headers)
+    assert.equal(res.status, 200, await res.clone().text())
+    const bookings = ((await res.json()) as { bookings: Record<string, any>[] }).bookings
+    const imported = bookings.find(b => b.starts_at === '2090-01-02T11:00:00.000Z')!
+    assert.equal(imported.name, 'Hatha')
+    assert.equal(imported.state, 'confirmed')
+    assert.match(String(imported.code), /^RT-[0-9A-Z]{6}$/)
+
+    // The code and token work: the booking reads back by its own id.
+    const one = await get(`/api/v1/me/bookings/${imported.booking_id}`, jane.headers)
+    assert.equal(one.status, 200, await one.clone().text())
+    assert.equal(((await one.json()) as { code: string }).code, imported.code)
+
+    assert.equal((await pack()).credits_or_sessions_remaining, 5, 'the unbooked balance: the seat was already paid for in Mindbody')
+    const cancelled = await jane.cancel(imported.booking_id)
+    assert.equal(cancelled.refund_outcome, 'credit_returned')
+    assert.equal((await pack()).credits_or_sessions_remaining, 6)
+  })
+
+  test('an imported PT appointment is on both sides: the member s list and the instructor s schedule', async () => {
+    const studio = await importedStudio()
+    const mei = await harness.signInAs('client', 'mei@example.test', studio)
+    const mine = await get('/api/v1/me/pt-sessions', mei)
+    assert.equal(mine.status, 200, await mine.clone().text())
+    const requests = ((await mine.json()) as { pt_requests: Record<string, any>[] }).pt_requests
+    assert.equal(requests.length, 1)
+    assert.equal(requests[0]!.status, 'scheduled')
+    assert.equal(requests[0]!.session?.starts_at, '2090-01-02T01:00:00.000Z')
+    assert.match(String(requests[0]!.booking?.code), /^RT-[0-9A-Z]{6}$/)
+
+    // Olive teaches it, and sees it on her own schedule.
+    const olive = await harness.signInAs('staff', 'owner@example.test', studio)
+    const hers = await get('/api/v1/portal/instructor/schedule?from=2089-12-01&to=2090-03-01&type=pt', olive)
+    assert.equal(hers.status, 200, await hers.clone().text())
+    const entries = ((await hers.json()) as { entries: Record<string, any>[] }).entries
+    assert.deepEqual(
+      entries.map(e => e.starts_at),
+      ['2090-01-02T01:00:00.000Z'],
+    )
+  })
+
+  test('an imported series extends from the portal without duplicating a class that already came across', async () => {
+    const studio = await importedStudio()
+    const owner = await harness.signInAs('staff', 'owner@example.test', studio)
+    const seriesId = studio.archive.rows.class_series![0]!.id as string
+
+    const before = (await timetableOf(owner)).filter(e => e.series_id === seriesId).map(e => e.starts_at)
+    assert.deepEqual(before.sort(), ['2090-01-02T11:00:00.000Z', '2090-01-09T11:00:00.000Z', '2090-01-23T11:00:00.000Z'])
+
+    // Back over what is already there and on to the following Monday.
+    const res = await harness.app.request(`/api/v1/portal/admin/schedule/series/${seriesId}/extend`, {
+      method: 'POST',
+      headers: { ...owner, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ last_date: '2090-01-30' }),
+    })
+    assert.equal(res.status, 200, await res.clone().text())
+
+    const after = (await timetableOf(owner)).filter(e => e.series_id === seriesId).map(e => e.starts_at)
+    assert.deepEqual(
+      after.sort(),
+      [...before.sort(), '2090-01-30T11:00:00.000Z'],
+      'the 16th stays excluded and the imported Mondays are not written twice',
+    )
   })
 
   test('verify passes on a clean import, and fails naming the member when one balance is altered', async () => {

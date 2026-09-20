@@ -1113,6 +1113,8 @@ Example: `RT-A4F2K9`. Collision probability over 10⁶ bookings on a 32⁶ ≈ 1
 
 Both index into `bookings` directly — no "wrong session" possible.
 
+A booking that must get the same codes every time it is written derives the bytes instead of drawing them at random, and spells the codes the one way through `qr.ts:bookingCodesFrom(tokenBytes, codeBytes)`. Only the Mindbody transform does this (`mindbody/schedule.ts`): both values are HMACs of the studio config's `secret`, so a rerun on the same reports writes the same archive byte for byte, and no report reveals a member's QR token. Its retry loop salts the code again and sees only the codes in the archive it is building, which is all there is — the transform imports into a Tenant that holds no bookings yet, and the DB unique index still backs it.
+
 ### Capacity enforcement
 
 - **Class:** booked count = `count(bookings WHERE class_id = X AND state = 'confirmed')`. Enforced at book-time (service-layer transaction with `SELECT ... FOR UPDATE` on the class row).
