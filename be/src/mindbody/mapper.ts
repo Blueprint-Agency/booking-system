@@ -4,7 +4,17 @@ import { joinName, splitName } from '../lib/name'
 import { ARCHIVE_VERSION, type TenantArchive } from '../services/tenants/transfer-shape'
 import type { StudioConfig } from './config'
 import { idsFor, secretToken } from './ids'
-import type { MemberListRow, PhoneBookRow, ReferralRow, RetentionRow } from './readers'
+import { mapPackages, type AccountBalance, type NotMigrated } from './packages'
+import type {
+  AccountBalanceRow,
+  HoldingRow,
+  MemberListRow,
+  OptionSaleRow,
+  PhoneBookRow,
+  ReferralRow,
+  RetentionRow,
+  SaleRow,
+} from './readers'
 import { normaliseStaffName, zonedToInstant, type LocalDateTime } from './values'
 
 /**
@@ -24,9 +34,20 @@ export type MindbodyReports = {
   referrals: ReferralRow[]
   retention: RetentionRow[]
   phoneBook: PhoneBookRow[]
+  /** What every client holds of every pricing option. */
+  holdings: HoldingRow[]
+  /** Every pricing option sold, and every sale line: read only to propose the catalogue. */
+  optionSales: OptionSaleRow[]
+  sales: SaleRow[]
+  /** Money on account, either way. Empty where the report was not downloaded. */
+  balances: AccountBalanceRow[]
 }
 
 export type Preflight = {
+  /** Live in Mindbody and not a package here: mat storage, a workshop place, a lone access pass. */
+  notMigrated: NotMigrated[]
+  /** Money on account. The platform keeps no such balance. */
+  balances: AccountBalance[]
   /** Members with no usable email: imported under a placeholder, fixed later by an admin. */
   noEmail: { id: string; name: string; placeholder: string }[]
   /** Emails more than one member holds: one keeps it, the others get placeholders. */
@@ -153,7 +174,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     if (m.email) holders.set(m.email, [...(holders.get(m.email) ?? []), m])
   }
 
-  const preflight: Preflight = { noEmail: [], sharedEmails: [] }
+  const preflight: Preflight = { noEmail: [], sharedEmails: [], notMigrated: [], balances: [] }
   const emailOf = new Map<string, string>()
   for (const m of reports.members) {
     if (!m.email) {
@@ -255,6 +276,20 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     }
   }
 
+  /* ── The catalogue, and what members still hold of it (`./packages.ts`) ─── */
+
+  const packages = mapPackages({
+    holdings: reports.holdings,
+    balances: reports.balances,
+    config,
+    tenantId,
+    id,
+    ids,
+    memberNames: new Map(reports.members.map(m => [m.id, memberName(m)])),
+  })
+  preflight.notMigrated = packages.notMigrated
+  preflight.balances = packages.balances
+
   /* ── The archive ───────────────────────────────────────────────────────── */
 
   // Parents first, as an export writes them — the importer orders by the
@@ -267,6 +302,9 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     instructors,
     staff_invitations: invitations,
     clients,
+    class_packages: packages.classPackages,
+    pt_packages: packages.ptPackages,
+    client_packages: packages.clientPackages,
     global_policy: globalPolicy,
     pt_booking_config: ptBookingConfig,
     email_templates: emailTemplates,
@@ -334,5 +372,13 @@ export function renderPreflight(p: Preflight): string {
     lines.push(`- ${s.email}: kept by ${s.keeper.id} ${s.keeper.name}`)
     for (const o of s.others) lines.push(`  - ${o.id} ${o.name} → ${o.placeholder}`)
   }
+  lines.push('', `## Still live in Mindbody, and not migrated (${p.notMigrated.length})`, '')
+  lines.push('The platform has no package for these. Decide with the studio how each is honoured after launch.', '')
+  for (const n of p.notMigrated) {
+    lines.push(`- ${n.clientId} ${n.name}: ${n.option} — ${n.left}, until ${n.expires} (${n.reason})`)
+  }
+  lines.push('', `## Money on account (${p.balances.length})`, '')
+  lines.push('The platform keeps no account balance. A negative figure is money the member owes.', '')
+  for (const b of p.balances) lines.push(`- ${b.clientId} ${b.name}: ${b.balance}`)
   return `${lines.join('\n')}\n`
 }

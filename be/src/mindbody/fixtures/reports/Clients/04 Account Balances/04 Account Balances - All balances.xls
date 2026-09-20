@@ -1,0 +1,12 @@
+<!-- Invented fixture: no real studio or person. Layout follows Mindbody's Account Balances export. -->
+<table class="mainText" cellspacing="0">
+	<tr><td colspan="4"><b>ACCOUNT ACTIVITY SUMMARY</b></td></tr>
+	<tr>
+		<td><strong>ID</strong></td><td><strong>Client</strong></td><td><strong>Email</strong></td><td><strong>Phone #</strong></td>
+		<td><strong>Account balance</strong></td><td></td>
+		<td><strong>0-29 Days Ago</strong></td><td><strong>30-59 Days Ago</strong></td><td><strong>60-89 Days Ago</strong></td><td><strong>90+ Days Ago</strong></td>
+		<td><strong>Unpaid Sessions</strong></td>
+	</tr>
+	<tr><td>100000005</td><td>Lee, Kim</td><td>family@example.test</td><td>98765432</td><td>-10.00</td><td></td><td>0.00</td><td>0.00</td><td>0.00</td><td>-10.00</td><td></td></tr>
+	<tr><td colspan="4">Total:</td><td>-10.00</td><td></td><td>0.00</td><td>0.00</td><td>0.00</td><td>-10.00</td><td>0 Unpaid(s)</td></tr>
+</table>

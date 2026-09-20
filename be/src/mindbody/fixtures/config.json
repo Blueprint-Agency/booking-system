@@ -33,5 +33,15 @@
     { "mindbodyName": "Old Teacher", "migrate": "archived", "email": null, "role": "instructor", "teaches": true },
     { "mindbodyName": "Gone Clerk", "migrate": "skip", "email": null, "role": null, "teaches": false }
   ],
-  "sharedEmailKeepers": {}
+  "sharedEmailKeepers": {},
+  "catalogue": [
+    { "name": "Class Pack - Bundle of 10", "mindbodyNames": ["Class Pack -  Bundle of 10"], "migrate": "sell", "kind": "credit_bundle", "credits": 10, "validityDays": 60, "priceSgd": 260 },
+    { "name": "Class Pack - Bundle of 20", "mindbodyNames": ["Class Pack - Bundle of 20"], "migrate": "legacy", "kind": "credit_bundle", "credits": 20, "validityDays": 120, "priceSgd": null },
+    { "name": "2 Trial Classes", "mindbodyNames": ["2 Trial Classes for New Joiners", "2 Trial Classes For New Joiners"], "migrate": "sell", "kind": "trial", "credits": 2, "validityDays": 7, "priceSgd": 10 },
+    { "name": "Unlimited 12", "mindbodyNames": ["Unlimited 12"], "migrate": "sell", "kind": "unlimited", "durationMonths": 12, "priceSgd": 1700 },
+    { "name": "Riverside Studio Access", "mindbodyNames": ["Riverside Studio Access"], "migrate": "legacy", "kind": "access_pass", "location": "location-2" },
+    { "name": "PT - Bundle of 10", "mindbodyNames": ["PT - Bundle of 10"], "migrate": "sell", "kind": "pt", "credits": 10, "validityDays": 90, "priceSgd": 1200, "sessionType": "1on1" },
+    { "name": "ClassPass", "mindbodyNames": ["ClassPass"], "migrate": "legacy", "kind": "credit_bundle", "credits": 1, "validityDays": 10, "priceSgd": 0 },
+    { "name": "Mat storage", "mindbodyNames": ["MAT STORAGE (1 Year)"], "migrate": "skip", "kind": null }
+  ]
 }

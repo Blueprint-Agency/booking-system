@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { and, eq, sql } from 'drizzle-orm'
-import { integrationTestsEnabled, SKIP_REASON, startTestApp, inTenantContext, type TestApp } from './harness'
+import { frontendOrigin, integrationTestsEnabled, SKIP_REASON, startTestApp, inTenantContext, type TestApp } from './harness'
 
 const OPERATOR = 'mindbody-operator@platform.test'
 process.env.PLATFORM_ADMIN_EMAIL = OPERATOR
@@ -161,6 +161,238 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
       now: new Date(),
     })
     assert.equal(verdict.windowHours, 12)
+  })
+
+  /* ── Packages (#178) ─────────────────────────────────────────────────────── */
+
+  type MemberPackage = {
+    id: string
+    kind: string
+    package_name: string
+    credits_or_sessions_remaining: number | null
+    expires_at: string | null
+    active: boolean
+    dormant: boolean
+    validity_days: number | null
+    unlimited_location: { name: string } | string | null
+    cross_location_paid_sgd: string | null
+  }
+
+  /** A studio imported and open, with what the tests below need to put a class on its timetable. */
+  async function importedStudio() {
+    const studio = await transformedStudio()
+    const imported = await importZip(studio.tenant.id, studio.zip)
+    assert.equal(imported.status, 200, JSON.stringify(imported.body))
+
+    const tenantId = studio.tenant.id
+    const classesSvc = inTenantContext(await import('../services/schedule/classes'))
+    const [owner] = await harness.db
+      .select({ id: schema.staffUsers.id })
+      .from(schema.staffUsers)
+      .where(and(eq(schema.staffUsers.tenantId, tenantId), eq(schema.staffUsers.email, 'owner@example.test')))
+    // A class is taught by someone whose role is instructor; the owner is an Admin.
+    const [ivy] = await harness.db
+      .select({ id: schema.staffUsers.id })
+      .from(schema.staffUsers)
+      .where(and(eq(schema.staffUsers.tenantId, tenantId), eq(schema.staffUsers.email, 'ivy@example.test')))
+    const rooms = await harness.db.select().from(schema.rooms).where(eq(schema.rooms.tenantId, tenantId))
+    const [classType] = await harness.db.select().from(schema.classTypes).where(eq(schema.classTypes.tenantId, tenantId))
+    let classes = 0
+
+    /** A class a few days out, in the named room. */
+    const newClass = async (roomName: string) => {
+      const room = rooms.find(r => r.name === roomName)!
+      const startsAt = new Date(Date.now() + (3 + classes++) * 24 * 3_600_000)
+      const cls = await classesSvc.createClass(tenantId, {
+        classTypeId: classType!.id,
+        mainInstructorId: ivy!.id,
+        locationId: room.locationId,
+        roomId: room.id,
+        startsAt,
+        endsAt: new Date(startsAt.getTime() + 3_600_000),
+        capacityOnline: 10,
+        capacityWaitlist: 0,
+        capacityBuffer: 0,
+        creditCost: 1,
+        instructorPaySgd: 50,
+        createdByStaffId: owner!.id,
+      })
+      return cls.id
+    }
+
+    const member = async (email: string) => {
+      const headers = await harness.signInAs('client', email, studio)
+      const packages = async () => {
+        const res = await get('/api/v1/me/packages', headers)
+        assert.equal(res.status, 200, await res.clone().text())
+        return ((await res.json()) as { client_packages: MemberPackage[] }).client_packages
+      }
+      const book = async (classId: string) => {
+        const res = await harness.app.request('/api/v1/me/bookings/class', {
+          method: 'POST',
+          headers: { ...headers, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ class_id: classId }),
+        })
+        const body = (await res.json()) as Record<string, any>
+        assert.equal(res.status, 201, JSON.stringify(body))
+        return body.booking_id as string
+      }
+      const cancel = async (bookingId: string) => {
+        const res = await harness.app.request(`/api/v1/me/bookings/${bookingId}`, { method: 'DELETE', headers })
+        assert.equal(res.status, 200, await res.clone().text())
+        return (await res.json()) as { refund_outcome: string }
+      }
+      return { headers, packages, book, cancel }
+    }
+
+    return { ...studio, tenantId, ownerId: owner!.id, newClass, member }
+  }
+
+  test('a migrated class pack keeps its credits and expiry; booking spends one and cancelling returns it', async () => {
+    const studio = await importedStudio()
+    const jane = await studio.member('jane.doe@example.test')
+    const pack = async () => (await jane.packages()).find(p => p.package_name === 'Class Pack - Bundle of 10')!
+
+    const before = await pack()
+    assert.equal(before.credits_or_sessions_remaining, 5, 'six left in Mindbody, one of them already booked')
+    assert.equal(before.expires_at, '2090-03-01T15:59:59.000Z')
+    assert.equal(before.dormant, false)
+
+    const bookingId = await jane.book(await studio.newClass('Hot Room'))
+    assert.equal((await pack()).credits_or_sessions_remaining, 4)
+
+    const cancelled = await jane.cancel(bookingId)
+    assert.equal(cancelled.refund_outcome, 'credit_returned')
+    assert.equal((await pack()).credits_or_sessions_remaining, 5)
+  })
+
+  test('a second live class pack waits Dormant, and starts with the days it had left once the first is gone', async () => {
+    const studio = await importedStudio()
+    const adjust = inTenantContext(await import('../services/packages/adjust'))
+    const jane = await studio.member('jane.doe@example.test')
+    const [client] = await harness.db
+      .select({ id: schema.clients.id })
+      .from(schema.clients)
+      .where(and(eq(schema.clients.tenantId, studio.tenantId), eq(schema.clients.email, 'jane.doe@example.test')))
+
+    const held = await jane.packages()
+    const first = held.find(p => p.package_name === 'Class Pack - Bundle of 10')!
+    const second = held.find(p => p.package_name === 'Class Pack - Bundle of 20')!
+    assert.deepEqual([second.dormant, second.expires_at, second.credits_or_sessions_remaining], [true, null, 20])
+    const daysLeft = second.validity_days!
+    assert.ok(daysLeft > 20_000, 'the days it had left on the day of the download, not the 120 the catalogue sells')
+
+    // While the first runs it is the only one that pays.
+    await jane.book(await studio.newClass('Hot Room'))
+    assert.equal((await jane.packages()).find(p => p.id === second.id)!.credits_or_sessions_remaining, 20)
+
+    // The first is used up; the next booking starts the second.
+    await adjust.setBalance({
+      tenantId: studio.tenantId,
+      clientId: client!.id,
+      clientPackageId: first.id,
+      balance: 0,
+      reason: 'used up, for the test',
+      actedByStaffId: studio.ownerId,
+    })
+    const bookedAt = Date.now()
+    await jane.book(await studio.newClass('Hot Room'))
+    const started = (await jane.packages()).find(p => p.id === second.id)!
+    assert.equal(started.credits_or_sessions_remaining, 19)
+    assert.equal(started.dormant, false)
+    const runsFor = (new Date(started.expires_at!).getTime() - bookedAt) / 86_400_000
+    assert.ok(Math.abs(runsFor - daysLeft) < 1, `runs ${daysLeft} days from its first booking, not ${runsFor}`)
+  })
+
+  test('a migrated Unlimited Plan keeps its expiry and Home Location, and with a migrated access pass covers both', async () => {
+    const studio = await importedStudio()
+    const rick = await studio.member('rick.roe@example.test')
+    const [plan, ...others] = await rick.packages()
+    assert.deepEqual(others, [])
+    assert.deepEqual([plan!.kind, plan!.expires_at, plan!.cross_location_paid_sgd], ['unlimited', '2090-02-01T15:59:59.000Z', '120.00'])
+    assert.match(JSON.stringify(plan!.unlimited_location), /Main Hall/)
+
+    await rick.book(await studio.newClass('Hot Room'))
+    await rick.book(await studio.newClass('Riverside Studio'))
+  })
+
+  test('a migrated PT package keeps its sessions and expiry', async () => {
+    const studio = await importedStudio()
+    const mei = await studio.member('mei@example.test')
+    const [pt] = await mei.packages()
+    assert.deepEqual(
+      [pt!.kind, pt!.package_name, pt!.credits_or_sessions_remaining, pt!.expires_at],
+      ['pt', 'PT - Bundle of 10', 7, '2090-04-01T15:59:59.000Z'],
+    )
+  })
+
+  test('a ClassPass member s live pass is a $0 package that books a class', async () => {
+    const studio = await importedStudio()
+    const ada = await studio.member('ada.reuse@example.test')
+    const [pass] = await ada.packages()
+    assert.deepEqual([pass!.package_name, pass!.credits_or_sessions_remaining], ['ClassPass', 1])
+    await ada.book(await studio.newClass('Hot Room'))
+    assert.equal((await ada.packages())[0]!.credits_or_sessions_remaining, 0)
+  })
+
+  test('a member who had a trial in Mindbody cannot have another', async () => {
+    const studio = await importedStudio()
+    const comp = inTenantContext(await import('../services/packages/complimentary'))
+    const [jane] = await harness.db
+      .select({ id: schema.clients.id })
+      .from(schema.clients)
+      .where(and(eq(schema.clients.tenantId, studio.tenantId), eq(schema.clients.email, 'jane.doe@example.test')))
+    const [trial] = await harness.db
+      .select({ id: schema.classPackages.id })
+      .from(schema.classPackages)
+      .where(and(eq(schema.classPackages.tenantId, studio.tenantId), eq(schema.classPackages.kind, 'trial')))
+
+    await assert.rejects(
+      comp.giveComplimentaryPackage(studio.tenantId, {
+        clientId: jane!.id,
+        packageKind: 'class',
+        packageId: trial!.id,
+        reason: 'a second trial',
+        actedByStaffId: studio.ownerId,
+      }),
+      (err: { code?: string }) => err.code === 'trial_already_used',
+    )
+    const jane2 = await studio.member('jane.doe@example.test')
+    const res = await get('/api/v1/me/packages', jane2.headers)
+    assert.equal(((await res.json()) as { entitlements: { trial_used: boolean } }).entitlements.trial_used, true)
+  })
+
+  test('sell products are on sale at the config s price; legacy ones are not on sale', async () => {
+    const studio = await importedStudio()
+    // Signed out, as the studio's own site would ask.
+    const res = await get('/api/v1/public/packages', { Origin: frontendOrigin('client', studio), 'X-Tenant-Slug': studio.slug })
+    assert.equal(res.status, 200, await res.clone().text())
+    const body = (await res.json()) as { class_packages: { name: string; price_sgd: string }[]; pt_packages: { name: string; price_sgd: string }[] }
+    assert.deepEqual(
+      body.class_packages.map(p => `${p.name}:${p.price_sgd}`).sort(),
+      ['2 Trial Classes:10.00', 'Class Pack - Bundle of 10:260.00', 'Unlimited 12:1700.00'],
+      'Bundle of 20 and ClassPass are legacy: held, and not sold',
+    )
+    assert.deepEqual(body.pt_packages.map(p => `${p.name}:${p.price_sgd}`), ['PT - Bundle of 10:1200.00'])
+  })
+
+  test('verify passes on a clean import, and fails naming the member when one balance is altered', async () => {
+    const studio = await importedStudio()
+    const exported = async () => {
+      const res = await get(`/api/v1/platform/tenants/${studio.tenantId}/export`, operator)
+      assert.equal(res.status, 200, await res.clone().text())
+      return Buffer.from(await res.arrayBuffer())
+    }
+    assert.deepEqual(await transform.verifyImport(studio.expected, await exported()), [])
+
+    await harness.db.execute(sql`
+      UPDATE client_packages SET credits_or_sessions_remaining = 6
+      WHERE tenant_id = ${studio.tenantId} AND kind = 'pt'
+    `)
+    assert.deepEqual(await transform.verifyImport(studio.expected, await exported()), [
+      'PT sessions left, in total: expected 7, found 6',
+      'Mei 林 <mei@example.test>: PT sessions left: expected 7, found 6',
+    ])
   })
 
   test('the same archive without the ensure-accounts flag is refused, as a restore always was', async () => {

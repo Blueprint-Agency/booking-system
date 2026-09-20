@@ -1,8 +1,20 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readHtmlTable } from './html-table'
-import { readMemberList, readReferralTypes, readRetentionManagement, readPhoneBook } from './readers'
-import { parseMindbodyDate, cleanPhone, cleanEmail, normaliseStaffName } from './values'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import { readHtmlTable, type TableRow } from './html-table'
+import {
+  readAccountBalances,
+  readMemberList,
+  readPhoneBook,
+  readPricingOptionRegister,
+  readReferralTypes,
+  readRetentionManagement,
+  readSales,
+  readVisitsRemaining,
+} from './readers'
+import { parseMindbodyDate, cleanPhone, cleanEmail, normaliseOptionName, normaliseStaffName, parseSessions } from './values'
+import { readXlsxTable } from './xlsx'
 
 /**
  * The readers, on snippets shaped like the real exports.
@@ -185,4 +197,106 @@ test('the phone book: First Last names, a US mask on a local number, and the thr
 
 test('a report whose header cannot be found is refused by name, not read as empty', () => {
   assert.throws(() => readPhoneBook('<table><tr><td>Something else</td></tr></table>'), /phone book.*Name/i)
+})
+
+/* ── Packages (#178) ──────────────────────────────────────────────────────── */
+
+const FIXTURES = path.join(__dirname, 'fixtures')
+
+test('a workbook is read by cell reference, so an empty cell does not shift the ones after it', async () => {
+  const written = JSON.parse(readFileSync(path.join(FIXTURES, 'visits-remaining.rows.json'), 'utf8')) as (string | number)[][]
+  const read = await readXlsxTable(
+    readFileSync(path.join(FIXTURES, 'reports', 'Clients', '15 Visits Remaining', '15 Visits Remaining - Detail.xlsx')),
+  )
+  // The workbook is built from these rows (`fixtures/build-workbook.ts`); text is
+  // tidied on the way in, and the trailing blank cells of a row are simply absent.
+  const tidy = (row: (string | number)[]) => {
+    const cells = row.map(v => String(v).replace(/\s+/g, ' ').trim())
+    while (cells.at(-1) === '') cells.pop()
+    return cells
+  }
+  assert.deepEqual(read.map(r => tidy(r.cells)), written.map(tidy))
+})
+
+test('a workbook writes a control character as _x0008_, and it is dropped', async () => {
+  const JSZip = (await import('jszip')).default
+  const zip = new JSZip()
+  zip.file('xl/sharedStrings.xml', '<sst><si><t>_x0008_Main Hall studio access</t></si><si><r><t>Rich </t></r><r><t>text</t></r></si></sst>')
+  zip.file('xl/worksheets/sheet1.xml', '<worksheet><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="C1" t="s"><v>1</v></c></row></sheetData></worksheet>')
+  const rows = await readXlsxTable(await zip.generateAsync({ type: 'nodebuffer' }))
+  assert.deepEqual(rows[0]!.cells, ['Main Hall studio access', '', 'Rich text'])
+})
+
+test('a session count of 9,999, 99,999 or 999,999 — less the visits used, or doubled — is unlimited', () => {
+  for (const sentinel of ['9999', '99999', '999999', '999866', '199998']) {
+    assert.deepEqual(parseSessions(sentinel), { unlimited: true }, sentinel)
+  }
+  assert.deepEqual(parseSessions('172'), { unlimited: false, count: 172 })
+  assert.deepEqual(parseSessions('0'), { unlimited: false, count: 0 })
+  assert.equal(parseSessions(''), null)
+})
+
+test('one pricing option reads the same in either case, with doubled spaces, or behind a control character', () => {
+  const key = normaliseOptionName('2 Trial Classes for New Joiners')
+  assert.equal(normaliseOptionName('2 Trial  Classes For New Joiners '), key)
+  assert.equal(normaliseOptionName('\b2 Trial Classes for New Joiners'), key)
+})
+
+const table = (...rows: (string | number)[][]): TableRow[] =>
+  rows.map(cells => ({ cells: cells.map(String), links: cells.map(() => null) }))
+
+test('visits remaining: what a client holds, the unbooked balance, and the unlimited sentinel', () => {
+  const holdings = readVisitsRemaining(
+    table(
+      ['Client ID', 'Client Name', 'Service Category', 'Pricing option', 'First Activation Date', 'Last Expiration Date', 'Total Amount', 'Visits Remaining', 'Purchased', 'Unbooked'],
+      ['100000001', 'Doe, Jane', 'Class Bundles', 'Class Pack -  Bundle of 10', '1/8/2026', '13/10/2026', '998.462', '6', '10', '5'],
+      ['AB123456', ', Legacy', 'Main Hall', 'Course | 2026', '5/6/2026', '5/12/2026', '3600', '99999', '99999', '99999'],
+    ),
+  )
+  assert.deepEqual(holdings[0], {
+    clientId: '100000001',
+    serviceCategory: 'Class Bundles',
+    option: 'Class Pack - Bundle of 10',
+    firstActivation: { year: 2026, month: 8, day: 1, hour: 0, minute: 0, second: 0 },
+    // D/M: the 13th of October, which no M/D reading could be.
+    lastExpiration: { year: 2026, month: 10, day: 13, hour: 0, minute: 0, second: 0 },
+    totalPaid: 998.462,
+    purchased: { unlimited: false, count: 10 },
+    remaining: { unlimited: false, count: 6 },
+    unbooked: { unlimited: false, count: 5 },
+  })
+  assert.equal(holdings[1]!.option, 'Course | 2026', 'a name with a pipe in it is one name')
+  assert.deepEqual(holdings[1]!.remaining, { unlimited: true })
+})
+
+test('the pricing option register: one purchase per row, under two title rows, money with a symbol', async () => {
+  const sold = readPricingOptionRegister(
+    readFileSync(path.join(FIXTURES, 'reports', 'Clients', '13 Pricing Option Expirations', '13 Pricing Option Expirations.xls'), 'utf8'),
+  )
+  assert.equal(sold.length, 8)
+  const plan = sold.find(s => s.option === 'Unlimited 12')!
+  assert.equal(plan.paid, 1700)
+  assert.deepEqual([plan.activation.day, plan.activation.month, plan.expiration.year], [1, 2, 2027])
+  assert.equal(sold.find(s => s.client === '林, Mei')?.option, 'PT - Bundle of 10')
+})
+
+test('sales: only the sale lines of each client block, dated M/D, a return as minus one', () => {
+  const sales = readSales(
+    readFileSync(path.join(FIXTURES, 'reports', 'Clients', '19 Big Spenders', '19 Big Spenders - Detail Accrual.xls'), 'utf8'),
+  )
+  assert.equal(sales.length, 9, 'client headers, section rows, subtotals and totals are not sales')
+  const first = sales[0]!
+  assert.deepEqual([first.saleId, first.soldAt.month, first.soldAt.day], ['351', 4, 24], 'M/D: the 24th of April')
+  assert.equal(first.description, '2 Trial Classes for New Joiners')
+  assert.equal(first.location, 'Main Hall')
+  const returned = sales.find(s => s.saleId === '5402')!
+  assert.deepEqual([returned.quantity, returned.total], [-1, -250])
+  assert.equal(sales.find(s => s.saleId === '7000')!.total, 1700)
+})
+
+test('account balances: one row per client, and not the total line', () => {
+  const balances = readAccountBalances(
+    readFileSync(path.join(FIXTURES, 'reports', 'Clients', '04 Account Balances', '04 Account Balances - All balances.xls'), 'utf8'),
+  )
+  assert.deepEqual(balances, [{ clientId: '100000005', balance: -10 }])
 })

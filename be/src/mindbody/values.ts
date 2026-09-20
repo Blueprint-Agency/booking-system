@@ -60,6 +60,26 @@ export function zonedToInstant(local: LocalDateTime, timeZone: string): Date {
   return new Date(instant)
 }
 
+/** A day on the studio's calendar. Every `LocalDateTime` is one. */
+export type CalendarDate = { year: number; month: number; day: number }
+
+/** A calendar day as a count of days, for comparing two and measuring between them. */
+export function dayNumber(d: CalendarDate): number {
+  return Date.UTC(d.year, d.month - 1, d.day) / 86_400_000
+}
+
+/** The day an ISO timestamp names in the offset it was written with: its first ten characters. */
+export function dateOfIso(iso: string): CalendarDate {
+  const [year, month, day] = iso.slice(0, 10).split('-').map(Number)
+  return { year: year!, month: month!, day: day! }
+}
+
+/** The day it is at the studio at some instant. */
+export function localDateOf(at: Date, timeZone: string): CalendarDate {
+  const wall = new Date(at.getTime() + offsetMs(at, timeZone))
+  return { year: wall.getUTCFullYear(), month: wall.getUTCMonth() + 1, day: wall.getUTCDate() }
+}
+
 function offsetMs(at: Date, timeZone: string): number {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone,
@@ -99,6 +119,38 @@ export const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 export function cleanEmail(raw: string): string | null {
   const email = raw.trim().toLowerCase()
   return EMAIL.test(email) ? email : null
+}
+
+/** `$1,439.20`, `-850.00`, `3600` — dollars as a number, or null for blank or nonsense. */
+export function parseMoney(raw: string): number | null {
+  const text = raw.replace(/[$,\s]/g, '')
+  if (!/^-?\d+(\.\d+)?$/.test(text)) return null
+  return Number(text)
+}
+
+/**
+ * Mindbody has no "unlimited": it writes 9,999, 99,999 or 999,999 sessions —
+ * doubled where two holdings are combined — and counts down from there. Nobody
+ * holds nine thousand real sessions, so anything from there up is the sentinel.
+ */
+const UNLIMITED_FROM = 9_000
+
+export type SessionCount = { unlimited: true } | { unlimited: false; count: number }
+
+/** A session count, with Mindbody's sentinel read as what it means. Null for blank or nonsense. */
+export function parseSessions(raw: string): SessionCount | null {
+  const n = parseMoney(raw)
+  if (n === null || !Number.isInteger(n)) return null
+  return n >= UNLIMITED_FROM ? { unlimited: true } : { unlimited: false, count: n }
+}
+
+/**
+ * One key for a pricing option's name, however a report writes it: the same
+ * option turns up in two cases, with doubled spaces, and once behind a stray
+ * control character.
+ */
+export function normaliseOptionName(raw: string): string {
+  return raw.replace(/[\u0000-\u001f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase()
 }
 
 /**

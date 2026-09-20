@@ -1,7 +1,8 @@
 import { randomBytes } from 'node:crypto'
 import { z } from 'zod'
+import { proposeCatalogue } from './catalogue'
 import type { MindbodyReports } from './mapper'
-import { EMAIL, normaliseStaffName } from './values'
+import { EMAIL, dateOfIso, normaliseOptionName, normaliseStaffName } from './values'
 
 /**
  * The studio config: the facts about a studio that no Mindbody report holds.
@@ -54,6 +55,47 @@ const staffSchema = z.object({
   role: open(z.enum(['admin', 'instructor'])),
   /** Teaches classes, so gets an instructor profile. */
   teaches: z.boolean().default(false),
+})
+
+/**
+ * One Mindbody pricing option, as the platform is to know it.
+ *
+ * The starter config proposes every value from what was sold; a person corrects
+ * them and decides `migrate`. Merging two entries (an option and its "Copy")
+ * is moving one's spellings into the other's `mindbodyNames`.
+ */
+const catalogueSchema = z.object({
+  /** The name the platform's catalogue shows. */
+  name: open(z.string().min(1)),
+  /** Every spelling Mindbody uses for this option. Matched tidied and case-folded. */
+  mindbodyNames: z.array(z.string()).min(1),
+  /**
+   * `sell` is in the catalogue at `priceSgd` and can be bought; `legacy` is in
+   * the catalogue archived, so what members hold is honoured and nobody can buy
+   * another; `skip` is not a package at all (a workshop place, mat storage) and
+   * whoever holds one is listed in the preflight report.
+   */
+  migrate: open(z.enum(['sell', 'legacy', 'skip'])),
+  /**
+   * `access_pass` is Mindbody's way of letting an Unlimited Plan into the other
+   * Location. It is no catalogue row here: held beside a plan it becomes that
+   * plan's Cross-Location Add-On, and held alone it is listed in the preflight.
+   */
+  kind: open(z.enum(['credit_bundle', 'unlimited', 'trial', 'pt', 'access_pass'])),
+  /** Credits, or sessions for PT. */
+  credits: z.number().int().positive().nullable().default(null),
+  validityDays: z.number().int().positive().nullable().default(null),
+  /** An Unlimited Plan's Duration, in whole calendar months. */
+  durationMonths: z.number().int().positive().nullable().default(null),
+  /** The List Price. Needed to `sell`; on a `legacy` option it is the price it used to have, or nothing. */
+  priceSgd: z.number().min(0).nullable().default(null),
+  sessionType: z.enum(['1on1', '2on1']).nullable().default(null),
+  /**
+   * For an Unlimited Plan, its Home Location; for an access pass, the Location
+   * it opens. Left null on a plan, the Location named inside the option's name
+   * is used, and failing that `defaultLocation`.
+   */
+  location: z.string().nullable().default(null),
 })
 
 export const studioConfigSchema = z.object({
@@ -111,6 +153,11 @@ export const studioConfigSchema = z.object({
    * not named here is decided by the rule in the mapper (most recent visit).
    */
   sharedEmailKeepers: z.record(z.string(), z.string()).default({}),
+  /**
+   * The catalogue: every pricing option a member still holds something of. The
+   * transform refuses a live holding whose option is not listed here.
+   */
+  catalogue: z.array(catalogueSchema).default([]),
 })
 
 export type StudioConfigInput = z.input<typeof studioConfigSchema>
@@ -141,7 +188,20 @@ export type StudioConfig = {
     | { mindbodyName: string; migrate: 'skip'; email: string | null; role: 'admin' | 'instructor' | null; teaches: boolean }
   )[]
   sharedEmailKeepers: Record<string, string>
+  catalogue: CatalogueEntry[]
 }
+
+type CatalogueCommon = { name: string; mindbodyNames: string[]; priceSgd: number | null }
+
+/** A pricing option the config has settled: what it is here, with the fields that kind needs. */
+export type CatalogueEntry =
+  | (CatalogueCommon & { migrate: 'skip' })
+  | (CatalogueCommon & { migrate: 'sell' | 'legacy' } & (
+        | { kind: 'credit_bundle' | 'trial'; credits: number; validityDays: number }
+        | { kind: 'pt'; credits: number; validityDays: number; sessionType: '1on1' | '2on1' }
+        | { kind: 'unlimited'; durationMonths: number; location: string | null }
+        | { kind: 'access_pass'; location: string }
+      ))
 
 /** The config was not usable, and here is every reason, by field. */
 export class ConfigError extends Error {
@@ -256,6 +316,33 @@ export function validateConfig(raw: unknown): StudioConfig {
     problems.push(`studio.ownerEmail ${owner} is not the email of any staff member being migrated as active`)
   }
 
+  const optionSpellings = new Map<string, number>()
+  c.catalogue.forEach((e, i) => {
+    const label = `catalogue[${i}] (${e.name ?? e.mindbodyNames[0]})`
+    for (const spelling of e.mindbodyNames) {
+      const k = normaliseOptionName(spelling)
+      const other = optionSpellings.get(k)
+      if (other !== undefined && other !== i) problems.push(`${label}: "${spelling}" is also listed under catalogue[${other}]`)
+      optionSpellings.set(k, i)
+    }
+    need(e.migrate, `${label}.migrate`)
+    if (e.migrate === null || e.migrate === 'skip') return
+    need(e.name, `${label}.name`)
+    need(e.kind, `${label}.kind`)
+    if (e.kind === 'credit_bundle' || e.kind === 'trial' || e.kind === 'pt') {
+      need(e.credits, `${label}.credits`)
+      need(e.validityDays, `${label}.validityDays`)
+    }
+    if (e.kind === 'pt') need(e.sessionType, `${label}.sessionType`)
+    if (e.kind === 'unlimited') need(e.durationMonths, `${label}.durationMonths`)
+    if (e.kind === 'access_pass') {
+      need(e.location, `${label}.location`)
+      if (e.migrate === 'sell') problems.push(`${label}: an access pass is not sold here — the Cross-Location Add-On is. Mark it legacy`)
+    }
+    if (e.migrate === 'sell') need(e.priceSgd, `${label}.priceSgd`)
+    if (e.location && !locationKeys.has(e.location)) problems.push(`${label}.location "${e.location}" names no Location`)
+  })
+
   if (problems.length > 0) throw new ConfigError(problems)
   return c as unknown as StudioConfig
 }
@@ -269,11 +356,14 @@ export function validateConfig(raw: unknown): StudioConfig {
  * lacks left open too), inactive teachers as
  * archived so history can still name them, and inactive non-teachers skipped.
  * Locations come from the ids the member reports print, named by nobody yet.
+ * The catalogue is proposed from what was sold (`./catalogue.ts`) — for the
+ * options still held on `asOf` where that is given, and otherwise for every
+ * option anybody has anything left of, which is a longer list to skip through.
  *
  * The secret is the one thing written at random. Everything after that reads
  * this file, so it is the last random step the pipeline takes.
  */
-export function starterConfig(reports: MindbodyReports): StudioConfigInput {
+export function starterConfig(reports: MindbodyReports, asOf: string | null = null): StudioConfigInput {
   const locationIds = [...new Set(reports.retention.map(r => r.location).filter(id => id && id !== '0'))].sort()
   const locations =
     locationIds.length > 0
@@ -282,7 +372,7 @@ export function starterConfig(reports: MindbodyReports): StudioConfigInput {
 
   return {
     studio: { slug: null, displayName: null, timezone: null, ownerEmail: null, mailReplyTo: null, emailFooter: null },
-    asOf: null,
+    asOf,
     secret: randomBytes(32).toString('base64url'),
     locations,
     defaultLocation: locations[0]!.key,
@@ -298,5 +388,8 @@ export function starterConfig(reports: MindbodyReports): StudioConfigInput {
       teaches: p.teacher,
     })),
     sharedEmailKeepers: {},
+    // The download's own date, as the studio's clock read it: the offset written
+    // in `asOf` is the studio's, and no timezone has been chosen yet to ask.
+    catalogue: proposeCatalogue(reports, asOf ? dateOfIso(asOf) : null),
   }
 }

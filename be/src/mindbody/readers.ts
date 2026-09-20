@@ -1,5 +1,14 @@
 import { readHtmlTable, type TableRow } from './html-table'
-import { cleanEmail, cleanPhone, parseMindbodyDate, tidy, type LocalDateTime } from './values'
+import {
+  cleanEmail,
+  cleanPhone,
+  parseMindbodyDate,
+  parseMoney,
+  parseSessions,
+  tidy,
+  type LocalDateTime,
+  type SessionCount,
+} from './values'
 
 /**
  * One reader per Mindbody report: a file's text in, typed rows out.
@@ -163,6 +172,145 @@ export function readPhoneBook(html: string): PhoneBookRow[] {
       teacher: flag(row, 'Teacher'),
       staff: flag(row, 'Staff'),
     })
+  }
+  return out
+}
+
+/* ── 15 Visits Remaining — Detail: what every client holds, by pricing option ─ */
+
+export type HoldingRow = {
+  clientId: string
+  serviceCategory: string
+  /** The pricing option's name as written: case and spacing vary, and some contain ` | `. */
+  option: string
+  firstActivation: LocalDateTime | null
+  lastExpiration: LocalDateTime | null
+  /** What was paid for these holdings, in dollars. */
+  totalPaid: number
+  purchased: SessionCount | null
+  remaining: SessionCount | null
+  /** Remaining, less the future visits already booked against it. */
+  unbooked: SessionCount | null
+}
+
+/**
+ * Takes a workbook already read into rows (`./xlsx.ts`). One row per client,
+ * service category and pricing option — a client's holdings of one option are
+ * combined, so this is what they hold and not what they bought.
+ */
+export function readVisitsRemaining(rows: TableRow[]): HoldingRow[] {
+  const { at, columns } = header(rows, 'Visits Remaining', ['Client ID', 'Pricing option', 'Visits Remaining', 'Unbooked'])
+  const out: HoldingRow[] = []
+  for (const row of dataRows(rows, at)) {
+    const id = clientId(row, columns, 'Client ID')
+    const option = tidy(cell(row, columns, 'Pricing option'))
+    if (!id || !option) continue
+    out.push({
+      clientId: id,
+      serviceCategory: tidy(cell(row, columns, 'Service Category')),
+      option,
+      firstActivation: parseMindbodyDate(cell(row, columns, 'First Activation Date'), 'DM'),
+      lastExpiration: parseMindbodyDate(cell(row, columns, 'Last Expiration Date'), 'DM'),
+      totalPaid: parseMoney(cell(row, columns, 'Total Amount')) ?? 0,
+      purchased: parseSessions(cell(row, columns, 'Purchased')),
+      remaining: parseSessions(cell(row, columns, 'Visits Remaining')),
+      unbooked: parseSessions(cell(row, columns, 'Unbooked')),
+    })
+  }
+  return out
+}
+
+/* ── 13 Pricing Option Expirations: every option sold, one row per purchase ── */
+
+export type OptionSaleRow = {
+  /** `Surname, First`. The report carries no client id, not even in a link. */
+  client: string
+  option: string
+  activation: LocalDateTime
+  expiration: LocalDateTime
+  paid: number
+}
+
+export function readPricingOptionRegister(html: string): OptionSaleRow[] {
+  const rows = readHtmlTable(html)
+  const { at, columns } = header(rows, 'Pricing Option Expirations', [
+    'Client',
+    'Pricing Options/Memberships',
+    'Activation Date',
+    'Expiration Date',
+  ])
+  const out: OptionSaleRow[] = []
+  for (const row of dataRows(rows, at)) {
+    const activation = parseMindbodyDate(cell(row, columns, 'Activation Date'), 'DM')
+    const expiration = parseMindbodyDate(cell(row, columns, 'Expiration Date'), 'DM')
+    const option = tidy(cell(row, columns, 'Pricing Options/Memberships'))
+    if (!activation || !expiration || !option) continue
+    out.push({
+      client: tidy(cell(row, columns, 'Client')),
+      option,
+      activation,
+      expiration,
+      paid: parseMoney(cell(row, columns, 'Paid')) ?? 0,
+    })
+  }
+  return out
+}
+
+/* ── 19 Big Spenders — Detail (accrual): every sale line ──────────────────── */
+
+export type SaleRow = {
+  saleId: string
+  soldAt: LocalDateTime
+  description: string
+  location: string
+  /** -1 on a return. */
+  quantity: number
+  total: number
+}
+
+/**
+ * Sale lines only. The report is client blocks — a header row repeated per
+ * client (and again at each page break), a section row, the lines, subtotals
+ * and a total — and a line is the one row whose first cell is a sale number and
+ * whose second is a date. The one report whose dates are M/D.
+ */
+export function readSales(html: string): SaleRow[] {
+  const rows = readHtmlTable(html)
+  const { at, columns } = header(rows, 'Big Spenders (detail)', ['Sale Date', 'Description', 'Quantity', 'Sales Total'])
+  const out: SaleRow[] = []
+  for (const row of dataRows(rows, at)) {
+    const saleId = row.cells[0] ?? ''
+    const soldAt = parseMindbodyDate(cell(row, columns, 'Sale Date'), 'MD')
+    if (!/^\d+$/.test(saleId) || !soldAt) continue
+    out.push({
+      saleId,
+      soldAt,
+      description: tidy(cell(row, columns, 'Description')),
+      location: tidy(cell(row, columns, 'Location')),
+      quantity: parseMoney(cell(row, columns, 'Quantity')) ?? 0,
+      total: parseMoney(cell(row, columns, 'Sales Total')) ?? 0,
+    })
+  }
+  return out
+}
+
+/* ── 04 Account Balances — All balances: money on account, either way ─────── */
+
+export type AccountBalanceRow = {
+  clientId: string
+  /** Negative when the client owes the studio. */
+  balance: number
+}
+
+export function readAccountBalances(html: string): AccountBalanceRow[] {
+  const rows = readHtmlTable(html)
+  const { at, columns } = header(rows, 'Account Balances', ['ID', 'Client', 'Account balance'])
+  const out: AccountBalanceRow[] = []
+  for (const row of dataRows(rows, at)) {
+    const id = clientId(row, columns, 'ID')
+    const balance = parseMoney(cell(row, columns, 'Account balance'))
+    if (!id || balance === null) continue // the "Total:" line
+    out.push({ clientId: id, balance })
   }
   return out
 }

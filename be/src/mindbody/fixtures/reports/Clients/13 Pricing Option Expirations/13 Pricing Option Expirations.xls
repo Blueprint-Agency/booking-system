@@ -1,0 +1,25 @@
+<!-- Invented fixture: no real studio or person. Layout follows Mindbody's Pricing Option Expirations export. -->
+<table class="mainText" cellspacing="0">
+	<tr><td colspan="10"><b>PRICING OPTIONS EXPIRATIONS REPORT</b>&nbsp;|&nbsp;Location: &nbsp;|&nbsp;for the dates between: 1-1-2023 and 9-17-2031</td></tr>
+	<tr><td colspan="10">Factor in On-Deck Series</td></tr>
+	<tr class="whiteHeader">
+		<td><strong>Client</strong></td>
+		<td><strong>Pricing Options/Memberships</strong></td>
+		<td><strong>Payment Ref #</strong></td>
+		<td><strong>Activation Date</strong></td>
+		<td><strong>Expiration Date</strong></td>
+		<td><strong>Paid</strong></td>
+		<td><strong>Remaining</strong></td>
+		<td><strong>Active</strong></td>
+		<td><strong>Rep 1</strong></td>
+		<td colspan="3"><strong>Phone #</strong></td>
+	</tr>
+	<tr style="background-color:#F2F2F2;"><td>Doe, Jane</td><td>2 Trial Classes for New Joiners</td><td>183</td><td>24/4/2023</td><td>30/4/2023</td><td>$10.00</td><td>0</td><td>False</td><td></td><td><img title="Mobile Phone">91234567</td></tr>
+	<tr style="background-color:#FAFAFA;"><td>.,  Legacy</td><td>Class Pack -  Bundle of 10</td><td>240</td><td>1/11/2023</td><td>31/12/2023</td><td>$250.00</td><td>3</td><td>False</td><td></td><td></td></tr>
+	<tr style="background-color:#F2F2F2;"><td>Roe, Rick</td><td>Class Pack -  Bundle of 10</td><td>911</td><td>13/1/2025</td><td>14/3/2025</td><td>$225.00</td><td>-1</td><td>False</td><td></td><td>(912) 345-6789</td></tr>
+	<tr style="background-color:#FAFAFA;"><td>Doe, Jane</td><td>Class Pack -  Bundle of 10</td><td>30210</td><td>1/8/2026</td><td>30/10/2026</td><td>$250.00</td><td>6</td><td>True</td><td></td><td>91234567</td></tr>
+	<tr style="background-color:#F2F2F2;"><td>Doe, Jane</td><td>Class Pack - Bundle of 20</td><td>30344</td><td>20/8/2026</td><td>18/12/2026</td><td>$450.00</td><td>20</td><td>True</td><td></td><td>91234567</td></tr>
+	<tr style="background-color:#FAFAFA;"><td>Lee, Sam</td><td>2 Trial Classes For New Joiners</td><td>30400</td><td>11/9/2026</td><td>17/9/2026</td><td>$10.00</td><td>1</td><td>True</td><td></td><td></td></tr>
+	<tr style="background-color:#F2F2F2;"><td>Roe, Rick</td><td>Unlimited 12</td><td>29001</td><td>1/2/2026</td><td>1/2/2027</td><td>$1,700.00</td><td>999950</td><td>True</td><td>Front, Frank</td><td></td></tr>
+	<tr style="background-color:#FAFAFA;"><td>&#26519;, Mei</td><td>PT - Bundle of 10</td><td>30001</td><td>5/7/2026</td><td>3/10/2026</td><td>$1,200.00</td><td>7</td><td>True</td><td></td><td></td></tr>
+</table>
