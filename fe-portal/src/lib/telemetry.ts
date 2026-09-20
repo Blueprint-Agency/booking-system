@@ -16,8 +16,14 @@
  * super portal, whose sessions carry none), so an event can be traced to a
  * studio and an account without the telemetry holding personal data.
  * `components/telemetry-user.tsx` keeps it in step with the session.
+ *
+ * **And not which studio by name.** This app's hostname *is* the Tenant, so
+ * every URL Faro derives from `location` would carry a studio's slug to a third
+ * party. The `beforeSend` hook below rewrites the Tenant label out of every URL
+ * on an event before it leaves the browser — see `telemetry-redaction.ts`.
  */
 import { faro, getWebInstrumentations, initializeFaro } from "@grafana/faro-web-sdk";
+import { tenantUrlRedactor } from "./telemetry-redaction";
 
 const COLLECTOR_URL = process.env.NEXT_PUBLIC_FARO_COLLECTOR_URL;
 
@@ -30,6 +36,8 @@ export function startTelemetry(): void {
       url: COLLECTOR_URL,
       app: { name: "fe-portal", environment: process.env.NEXT_PUBLIC_APP_ENV },
       instrumentations: getWebInstrumentations({ captureConsole: false }),
+      // The tenancy rule, on the way out: no studio's slug reaches Grafana.
+      beforeSend: tenantUrlRedactor(),
     });
     started = true;
   } catch (err) {
