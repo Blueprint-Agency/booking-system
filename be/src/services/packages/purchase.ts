@@ -422,6 +422,13 @@ export interface GrantPackageInput {
    * from checkout on a purchase a discount took to zero — one rule, both paths.
    */
   instructorId?: string | null
+  /**
+   * A **Complimentary Package** (#176) — given by an admin at no charge rather
+   * than sold. Stated by the caller, never inferred from `amountSgd` being
+   * zero: a $0 catalogue item and a Promo Code that took a sale to zero are
+   * paid 0 too, and Finance must keep counting those in Gross.
+   */
+  complimentary?: boolean
 }
 
 /**
@@ -560,6 +567,7 @@ export async function grantPackage(
         // Discount is always derived (list minus paid); nothing stores it.
         listPriceSgd: source.priceSgd,
         stripePaymentIntentId: input.paymentIntentId,
+        complimentary: input.complimentary ?? false,
       })
       .returning({ id: clientPackages.id })
     return { clientPackageId: row!.id, created: true }

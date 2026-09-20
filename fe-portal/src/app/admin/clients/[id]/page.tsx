@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   Download,
   Trash2,
+  Gift,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, Badge, Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
@@ -23,6 +24,9 @@ import { HomeLocationDialog } from "@/components/clients/home-location-dialog";
 import { BoundInstructorDialog } from "@/components/clients/bound-instructor-dialog";
 import { PackageSetBalanceDialog } from "@/components/clients/package-set-balance-dialog";
 import { RefundDialog } from "@/components/clients/refund-dialog";
+import { GivePackageDialog, type GivePackagePayload } from "@/components/clients/give-package-dialog";
+import { RemovePackageDialog } from "@/components/clients/remove-package-dialog";
+import { ChangeEmailDialog } from "@/components/clients/change-email-dialog";
 import { SendSetPasswordButton } from "@/components/access/send-set-password-button";
 import { SessionsPanel } from "@/components/access/sessions-panel";
 import { runsStudio } from "@/lib/staff-role";
@@ -64,6 +68,11 @@ interface ApiPackage {
   /** There is money at the payment provider to give back (§14). */
   refundable: boolean;
   /**
+   * Given by an admin at no charge (#176). What "Remove" is offered on, and why
+   * S$0 against a real list price is not a discount somebody granted.
+   */
+  complimentary: boolean;
+  /**
    * Backend-composed — "3 classes attended since 12 Jun 2026", or null when the
    * purchase is Untouched. A notice, never a gate: the refund is still allowed.
    */
@@ -104,6 +113,31 @@ interface ApiProfile {
   workshop_purchases: ApiWorkshopPurchase[];
   adjustments: ApiAdjustment[];
 }
+
+/**
+ * The backend's refusals for this page, in words an admin can act on. Every one
+ * of them names a rule they can satisfy — which package, which member, which
+ * address — and none of them re-derives the rule here: the backend decides, and
+ * this only says so. Anything not listed falls back to the status code.
+ */
+const REFUSALS: Record<string, string> = {
+  family_already_activated:
+    "Another package of this type is already running. Only one class package and one PT package can run at a time — return the running one to Dormant first, or wait for it to end.",
+  package_touched:
+    "A class this package paid for has already been held, so it cannot be removed. Adjust the balance or the expiry instead.",
+  package_has_live_bookings:
+    "This package still has a booking on it. Cancel that booking, then remove the package.",
+  not_complimentary:
+    "Only a package given for free can be removed. A purchase is refunded instead.",
+  trial_already_used:
+    "This member has already had a trial, and the one-trial rule holds for free ones too.",
+  unlimited_requires_location: "An unlimited plan needs a home studio.",
+  pt_bound_requires_instructor:
+    "This PT package's sessions go to one instructor — pick who.",
+  email_in_use: "Another member of this studio already uses that email.",
+  email_unchanged: "That is already this member's email.",
+  client_blocked: "This member is blocked. Unblock them first.",
+};
 
 /** List Price minus what was paid, as "S$12.34", or null when there's no discount. */
 function discountOff(listPriceSgd: string, amountPaidSgd: string): string | null {
@@ -149,6 +183,9 @@ export default function ClientProfilePage({
   const [homeLocationFor, setHomeLocationFor] = useState<ApiPackage | null>(null);
   const [boundInstructorFor, setBoundInstructorFor] = useState<ApiPackage | null>(null);
   const [refundFor, setRefundFor] = useState<ApiPackage | null>(null);
+  const [giveOpen, setGiveOpen] = useState(false);
+  const [removeFor, setRemoveFor] = useState<ApiPackage | null>(null);
+  const [emailOpen, setEmailOpen] = useState(false);
   const [workshopRefundFor, setWorkshopRefundFor] = useState<ApiWorkshopPurchase | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [permanentDeleteOpen, setPermanentDeleteOpen] = useState(false);
@@ -207,6 +244,9 @@ export default function ClientProfilePage({
       setBoundInstructorFor(null);
       setRefundFor(null);
       setWorkshopRefundFor(null);
+      setGiveOpen(false);
+      setRemoveFor(null);
+      setEmailOpen(false);
       await load();
     } catch (err) {
       const code =
@@ -214,11 +254,8 @@ export default function ClientProfilePage({
           ? String((err.body as { error: unknown }).error)
           : "";
       const msg =
-        code === "family_already_activated"
-          ? "Another package of this type is already running. Only one class package and one PT package can run at a time — return the running one to Dormant first, or wait for it to end."
-          : err instanceof ApiError
-            ? `Update failed (HTTP ${err.status}).`
-            : "Update failed.";
+        REFUSALS[code] ??
+        (err instanceof ApiError ? `Update failed (HTTP ${err.status}).` : "Update failed.");
       toast.error(msg);
     }
   }
@@ -335,14 +372,21 @@ export default function ClientProfilePage({
               </Button>
             )}
             {canEdit && !profile.deleted_at && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setDeleteOpen(true)}
-                className="text-error hover:bg-error/10 hover:text-error"
-              >
-                <ShieldOff className="h-3.5 w-3.5" /> Block
-              </Button>
+              <div className="flex flex-wrap items-center gap-2">
+                {/* The address the member signs in with (#176) — beside the one
+                    the header shows, because that is the thing being changed. */}
+                <Button variant="ghost" size="sm" onClick={() => setEmailOpen(true)}>
+                  <Mail className="h-3.5 w-3.5" /> Change email
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setDeleteOpen(true)}
+                  className="text-error hover:bg-error/10 hover:text-error"
+                >
+                  <ShieldOff className="h-3.5 w-3.5" /> Block
+                </Button>
+              </div>
             )}
             {canEdit && (
               <Button
@@ -371,7 +415,16 @@ export default function ClientProfilePage({
           <section>
             <header className="mb-3 flex items-center justify-between">
               <h2 className="text-sm font-semibold text-ink">Active packages</h2>
-              <span className="text-xs text-muted">{profile.packages.length} active</span>
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-muted">{profile.packages.length} active</span>
+                {/* A **Complimentary Package** (#176) — beside the wallet it
+                    lands in, not in the block/email row above it. */}
+                {canEdit && !profile.deleted_at && (
+                  <Button size="sm" variant="secondary" onClick={() => setGiveOpen(true)}>
+                    <Gift className="h-3.5 w-3.5" /> Give package
+                  </Button>
+                )}
+              </div>
             </header>
             {profile.packages.length === 0 ? (
               <div className="rounded-xl border border-border bg-card px-5 py-10 text-center text-sm text-muted shadow-soft">
@@ -418,7 +471,8 @@ export default function ClientProfilePage({
                       canEditCrossLocation ||
                       canMoveHomeLocation ||
                       canBindInstructor ||
-                      p.refundable);
+                      p.refundable ||
+                      p.complimentary);
                   return (
                     <div
                       key={p.id}
@@ -427,6 +481,9 @@ export default function ClientProfilePage({
                       <div className="mb-1 flex items-center gap-2">
                         <span className="font-medium text-ink">{p.package_name}</span>
                         <Badge tone={kindTone}>{kindLabel}</Badge>
+                        {/* Said on the row, because "paid S$0" below reads as a
+                            full discount otherwise, and this one was a gift. */}
+                        {p.complimentary && <Badge tone="neutral">Free</Badge>}
                         <div className="flex-1" />
                         {showMenu && (
                           <button
@@ -507,6 +564,19 @@ export default function ClientProfilePage({
                               label="Refund purchase…"
                               onClick={() => {
                                 setRefundFor(p);
+                                setOpenMenuId(null);
+                              }}
+                            />
+                          )}
+                          {/* A comp has no money behind it, so it is removed
+                              rather than refunded. Offered whenever the package
+                              was given — the backend is what knows whether a
+                              class it paid for has been held. */}
+                          {p.complimentary && (
+                            <MenuButton
+                              label="Remove free package…"
+                              onClick={() => {
+                                setRemoveFor(p);
                                 setOpenMenuId(null);
                               }}
                             />
@@ -804,6 +874,49 @@ export default function ClientProfilePage({
             )
           }
           onClose={() => setWorkshopRefundFor(null)}
+        />
+      )}
+
+      {canEdit && giveOpen && profile && (
+        <GivePackageDialog
+          memberName={profile.name}
+          onGive={(payload: GivePackagePayload) =>
+            runEdit(
+              () => api!.post(`/portal/admin/clients/${id}/packages/issue`, payload),
+              "Package given. It waits until their first booking.",
+            )
+          }
+          onClose={() => setGiveOpen(false)}
+        />
+      )}
+
+      {canEdit && removeFor && (
+        <RemovePackageDialog
+          packageName={removeFor.package_name}
+          onConfirm={(reason) =>
+            runEdit(
+              () =>
+                api!.post(`/portal/admin/clients/${id}/packages/${removeFor.id}/remove`, {
+                  reason,
+                }),
+              "Free package removed.",
+            )
+          }
+          onClose={() => setRemoveFor(null)}
+        />
+      )}
+
+      {canEdit && emailOpen && profile && (
+        <ChangeEmailDialog
+          memberName={profile.name}
+          currentEmail={profile.email}
+          onSave={(email) =>
+            runEdit(
+              () => api!.post(`/portal/admin/clients/${id}/email`, { email }),
+              "Email changed. The member signs in with the new address.",
+            )
+          }
+          onClose={() => setEmailOpen(false)}
         />
       )}
 

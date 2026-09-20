@@ -81,6 +81,7 @@ export async function listClients(
         where cp.client_id = "clients"."id"
           and cp.kind <> 'trial'
           and cp.amount_paid_sgd > 0
+          and not cp.complimentary
       )`,
     })
     .from(clients)

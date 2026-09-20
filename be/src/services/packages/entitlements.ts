@@ -188,6 +188,12 @@ export interface ClientPackageWithSource {
   boundInstructor: { id: string; name: string } | null
   /** The Promo Code the member typed at purchase, as text; null if none (§11). */
   promoCode: string | null
+  /**
+   * A **Complimentary Package** (#176) — given by an admin, never bought. Read
+   * from the row rather than worked out from "paid 0", which a $0 catalogue
+   * item and a fully discounted sale also are.
+   */
+  complimentary: boolean
 }
 
 /**
@@ -230,6 +236,7 @@ export async function listClientPackages(
       active: clientPackages.active,
       ptSessionType: ptPackages.sessionType,
       promoCode: promoCodes.code,
+      complimentary: clientPackages.complimentary,
     })
     .from(clientPackages)
     .leftJoin(classPackages, eq(classPackages.id, clientPackages.sourceClassPackageId))
@@ -263,5 +270,6 @@ export async function listClientPackages(
       ? { id: r.boundInstructorId, name: r.boundInstructorName || 'Instructor' }
       : null,
     promoCode: r.promoCode ?? null,
+    complimentary: r.complimentary,
   }))
 }

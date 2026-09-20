@@ -108,6 +108,15 @@ export interface MoneyEvent {
   promoCode: string | null
   /** True on a purchase that has since been refunded. The row stays; it is tagged. */
   refunded: boolean
+  /**
+   * A **Complimentary Package** — given by an admin, never sold (#176). Listed
+   * like a purchase, at 0 against its List Price, and counted in no total:
+   * Gross is the sum of List Price, and a comp would inflate it by money nobody
+   * was ever asked for. Nor is it a discount, which is money given away on a
+   * sale that happened. Carried on the event rather than inferred from "paid
+   * 0", which a $0 catalogue item and a fully discounted sale are too.
+   */
+  complimentary: boolean
 
   // ---- money out ----------------------------------------------------------
   instructorId: string | null

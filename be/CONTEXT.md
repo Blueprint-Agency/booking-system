@@ -196,6 +196,14 @@ _Avoid_: cancel, revoke, deactivate, reverse, nullify
 The property that makes a purchase refundable without a warning: no class it paid for has been attended or no-showed. A booked class that has not yet been held leaves a purchase Untouched, because refunding simply cancels it. A no-show does not — the class ran and the seat was held. A purchase that is no longer Untouched can still be refunded, but only by an admin who has been told and chosen to anyway.
 _Avoid_: unused, unconsumed, clean, fresh, pristine
 
+**Complimentary Package**:
+A catalogue package an admin gives a member at no charge, with a reason — a comped class, a prize, a correction. It is granted through the same service a purchase uses, so it is a package in every other respect: it lands Dormant, obeys the Family and one-trial rules, and freezes its validity and its List Price. What makes it one is stated on the row, never inferred from "paid nothing" (a $0 catalogue item and a fully discounted sale are paid nothing too): Finance lists it at 0 with its List Price and counts it in **no** total, and a comp never makes a member **Converted**. It is **Removed** rather than refunded — no money moved — and only while it is **Untouched**.
+_Avoid_: comp, freebie, gift, giveaway, promo package, free grant
+
+**Remove** (a Complimentary Package):
+Taking back a Complimentary Package given by mistake: the package row goes, and every class it paid for that has not been held is cancelled. Only ever a comp, and only while Untouched — a purchase is Refunded, and a comp a member has already used is corrected with a balance or expiry edit instead.
+_Avoid_: revoke, delete, cancel, withdraw, claw back
+
 ### Money
 
 **Money Event**:

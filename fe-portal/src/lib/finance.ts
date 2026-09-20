@@ -97,6 +97,12 @@ export interface FinanceRow {
   discount_sgd: number | null;
   promo_code: string | null;
   refunded: boolean;
+  /**
+   * A **Complimentary Package** — given by an admin at no charge (#176). It is
+   * listed at S$0 against its list price and counts towards no total, so the
+   * table says so rather than letting the two figures read as a discount.
+   */
+  complimentary: boolean;
   instructor_id: string | null;
   instructor_name: string | null;
   pay_sgd: number | null;

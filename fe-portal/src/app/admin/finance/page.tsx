@@ -405,6 +405,17 @@ export default function FinancePage() {
                             Refunded
                           </span>
                         )}
+                        {/* Given by an admin, never sold (#176). Said on the
+                            row because the numbers beside it — a real list
+                            price against S$0 — otherwise read as a sale
+                            discounted to nothing, which is what the backend's
+                            marker exists to tell apart. It counts towards no
+                            total, here or in the tiles. */}
+                        {row.complimentary && (
+                          <span className="ml-1.5 rounded-full border border-border bg-paper px-1.5 py-0.5 text-[10px] text-muted">
+                            Free
+                          </span>
+                        )}
                       </td>
                       <td className="px-3 py-2.5 text-ink">
                         {row.variant ?? <span className="text-muted">—</span>}

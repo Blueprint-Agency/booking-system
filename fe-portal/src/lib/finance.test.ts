@@ -35,6 +35,7 @@ const row = (p: Partial<FinanceRow>): FinanceRow => ({
   discount_sgd: null,
   promo_code: null,
   refunded: false,
+  complimentary: false,
   instructor_id: "i-1",
   instructor_name: "Anya",
   pay_sgd: null,
