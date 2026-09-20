@@ -88,13 +88,39 @@ labels are `kind` (`exception` \| `event` \| `measurement` \| `log`),
 `app_name` **inside the line**, so it is reached with `| logfmt` and not from the
 selector. Start every Faro query from `kind`, filter by `app_name` after it.
 
-> **Verified against the live stack on 2026-09-20.** Four `app_id`s exist
-> (`1337`–`1340`) for what should be two apps, and every event carries
-> `deployment_environment=staging` — production has never sent one. One stray
-> event names an app `reservetoday-client`, which no current code emits. Tracked
-> in the issues linked from [#124](https://github.com/Blueprint-Agency/booking-system/issues/124);
-> until they are closed, *"no Faro events from production" is expected, not an
-> outage*.
+#### Which Faro app an event belongs to
+`app_id` is a number Grafana assigns per Faro app; it is what appears in Loki,
+and nothing in it says which frontend or which environment it is. The stable
+identifier a human can check is the **collector key** — the 32-hex segment at
+the end of `NEXT_PUBLIC_FARO_COLLECTOR_URL`, which is what the browser posts to
+and therefore what decides the `app_id`.
+
+| Collector key (prefix) | App | Vercel project | Scopes it is set in |
+|---|---|---|---|
+| `a2b45d5f…` | `fe-client` | `booking-system` | Production **and** Preview (`staging`) |
+| `9c8d4d74…` | `fe-portal` | `booking-system-admin` | Production **and** Preview (`staging`) |
+
+**Two keys, so only two Faro apps ever receive data.** Both environments post to
+the same app and are told apart by `deployment_environment`, which comes from
+`NEXT_PUBLIC_APP_ENV`. Any other `app_id` in Loki is a leftover app nothing
+writes to — noise, not a second production. To map an `app_id` you see in Loki
+back to a row above, open the Faro app in Grafana (Frontend Observability →
+Settings) and compare its collector URL.
+
+> **Config verified on 2026-09-20**, from the Vercel API and the shipped
+> bundles. Both production projects carry `NEXT_PUBLIC_FARO_COLLECTOR_URL` and
+> `NEXT_PUBLIC_APP_ENV=production` in the **Production** scope, and both were
+> redeployed after those were set — the JS served by `www.reservetoday.app` and
+> `admin.portal.reservetoday.app` contains the collector URL and
+> `environment:"production"`. A silent production query is therefore no longer
+> explained by a missing env var.
+>
+> Still open: four `app_id`s (`1337`–`1340`) exist for what should be two apps,
+> and the 14 days before that redeploy carry only
+> `deployment_environment=staging`. One stray event names an app
+> `reservetoday-client`, which no current code emits — a stale tab, and proof
+> the app name is baked in at build time. Tracked in the issues linked from
+> [#124](https://github.com/Blueprint-Agency/booking-system/issues/124).
 
 > **No browser events is usually a missing env var, not a healthy frontend.**
 > Faro is a deliberate no-op unless `NEXT_PUBLIC_FARO_COLLECTOR_URL` is set — and
