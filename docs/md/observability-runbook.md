@@ -58,7 +58,8 @@ Grafana stack: **https://blueprintdigital.grafana.net**
 | One request, end to end | `{compose_service="booking-be"} \| json \| requestId="<id>"` |
 | One Tenant | `{compose_service="booking-be"} \| json \| tenantId="<uuid>"` |
 | Cron heartbeat for a job | `{compose_service="booking-be"} \|= "cron job ok" \| json \| job="expirePackages"` |
-| Browser events (Faro) | `{app="fe-client"}` / `{app="fe-portal"}` |
+| Browser exceptions (Faro) — **there is no `app` label; the app's name lives in the line** | `{kind="exception"} \| logfmt \| app_name="fe-client"` |
+| All browser telemetry for one app | `{kind=~"exception\|event\|measurement\|log"} \| logfmt \| app_name="fe-portal"` |
 | Outbound vendor calls that did not succeed (these are `warn`, not `error`) | `{compose_service="booking-be"} \|= "outbound call" \| json \| outcome != "ok"` |
 
 ### Alerting
@@ -77,6 +78,63 @@ Two apps, named by the code in each frontend's `src/lib/telemetry.ts`:
 **`fe-client`** and **`fe-portal`**. Both environments share an app and are split
 by the `environment` attribute, which the app sets from `NEXT_PUBLIC_APP_ENV`.
 Events carry `user_id` and `user_attr_tenantId`.
+
+**How Faro data is actually labelled in Loki**, which is not how the rest of this
+page's queries work and is the thing that wastes ten minutes at 2am. The stream
+labels are `kind` (`exception` \| `event` \| `measurement` \| `log`),
+`app_id` (a **number** Grafana assigns, not a name), `app_key` and
+`deployment_environment`. There is **no `app` label**, and no `container` or
+`compose_service` — these lines never touched a container. The app's name is
+`app_name` **inside the line**, so it is reached with `| logfmt` and not from the
+selector. Start every Faro query from `kind`, filter by `app_name` after it.
+
+#### Which Faro app an event belongs to
+`app_id` is a number Grafana assigns per Faro app; it is what appears in Loki,
+and nothing in it says which frontend or which environment it is. The stable
+identifier a human can check is the **collector key** — the 32-hex segment at
+the end of `NEXT_PUBLIC_FARO_COLLECTOR_URL`, which is what the browser posts to
+and therefore what decides the `app_id`.
+
+| `app_id` | Collector key (prefix) | App | Vercel project | Status |
+|---|---|---|---|---|
+| **`1340`** | `a2b45d5f…` | `fe-client` | `booking-system` | **current** — set in Production and Preview |
+| **`1339`** | `9c8d4d74…` | `fe-portal` | `booking-system-admin` | **current** — set in Production and Preview |
+| `1337` | `38ced930…` | `fe-client` | — | superseded key, still receiving |
+| `1338` | `3553241163…` | `fe-portal` | — | superseded key, still receiving |
+
+Both environments post to the **current** app for their frontend and are told
+apart by `deployment_environment`, which comes from `NEXT_PUBLIC_APP_ENV`.
+
+> **The two superseded apps are not dead, and that is the trap.** Measured
+> 2026-09-20: all four ids received events within the same 24 hours (1337: 66,
+> 1338: 24, 1339: 256, 1340: 269). The collector key is a `NEXT_PUBLIC_*`, so it
+> is **baked in at build time** — every Vercel Preview deployment built before
+> the key changed still posts to the old app, and anything still exercising those
+> URLs (the E2E suite, an open tab) keeps them alive. So a Faro app receiving
+> data is **not** evidence that it is the one your current build uses. Check the
+> collector key, not the traffic. The ids drain on their own as old preview
+> deployments age out.
+
+To map an `app_id` that is not in the table, open the Faro app in Grafana
+(Frontend Observability → Settings) and compare its collector URL.
+
+> **Config verified on 2026-09-20**, from the Vercel API and the shipped
+> bundles. Both production projects carry `NEXT_PUBLIC_FARO_COLLECTOR_URL` and
+> `NEXT_PUBLIC_APP_ENV=production` in the **Production** scope, and both were
+> redeployed after those were set — the JS served by `www.reservetoday.app` and
+> `admin.portal.reservetoday.app` contains the collector URL and
+> `environment:"production"`. A silent production query is therefore no longer
+> explained by a missing env var.
+>
+> Still open: **no production event has ever arrived.** Every event in Loki is
+> `deployment_environment=staging`, and the config above means the only thing
+> left is that nobody has loaded a production page in a real browser since the
+> redeploy — the E2E suite drives staging only. Loading
+> `www.reservetoday.app` and `admin.portal.reservetoday.app` once is what proves
+> it end to end. One stray event names an app
+> `reservetoday-client`, which no current code emits — a stale tab, and proof
+> the app name is baked in at build time. Tracked in the issues linked from
+> [#124](https://github.com/Blueprint-Agency/booking-system/issues/124).
 
 > **No browser events is usually a missing env var, not a healthy frontend.**
 > Faro is a deliberate no-op unless `NEXT_PUBLIC_FARO_COLLECTOR_URL` is set — and
