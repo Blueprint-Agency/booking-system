@@ -58,7 +58,8 @@ Grafana stack: **https://blueprintdigital.grafana.net**
 | One request, end to end | `{compose_service="booking-be"} \| json \| requestId="<id>"` |
 | One Tenant | `{compose_service="booking-be"} \| json \| tenantId="<uuid>"` |
 | Cron heartbeat for a job | `{compose_service="booking-be"} \|= "cron job ok" \| json \| job="expirePackages"` |
-| Browser events (Faro) | `{app="fe-client"}` / `{app="fe-portal"}` |
+| Browser exceptions (Faro) — **there is no `app` label; the app's name lives in the line** | `{kind="exception"} \| logfmt \| app_name="fe-client"` |
+| All browser telemetry for one app | `{kind=~"exception\|event\|measurement\|log"} \| logfmt \| app_name="fe-portal"` |
 | Outbound vendor calls that did not succeed (these are `warn`, not `error`) | `{compose_service="booking-be"} \|= "outbound call" \| json \| outcome != "ok"` |
 
 ### Alerting
@@ -77,6 +78,23 @@ Two apps, named by the code in each frontend's `src/lib/telemetry.ts`:
 **`fe-client`** and **`fe-portal`**. Both environments share an app and are split
 by the `environment` attribute, which the app sets from `NEXT_PUBLIC_APP_ENV`.
 Events carry `user_id` and `user_attr_tenantId`.
+
+**How Faro data is actually labelled in Loki**, which is not how the rest of this
+page's queries work and is the thing that wastes ten minutes at 2am. The stream
+labels are `kind` (`exception` \| `event` \| `measurement` \| `log`),
+`app_id` (a **number** Grafana assigns, not a name), `app_key` and
+`deployment_environment`. There is **no `app` label**, and no `container` or
+`compose_service` — these lines never touched a container. The app's name is
+`app_name` **inside the line**, so it is reached with `| logfmt` and not from the
+selector. Start every Faro query from `kind`, filter by `app_name` after it.
+
+> **Verified against the live stack on 2026-09-20.** Four `app_id`s exist
+> (`1337`–`1340`) for what should be two apps, and every event carries
+> `deployment_environment=staging` — production has never sent one. One stray
+> event names an app `reservetoday-client`, which no current code emits. Tracked
+> in the issues linked from [#124](https://github.com/Blueprint-Agency/booking-system/issues/124);
+> until they are closed, *"no Faro events from production" is expected, not an
+> outage*.
 
 > **No browser events is usually a missing env var, not a healthy frontend.**
 > Faro is a deliberate no-op unless `NEXT_PUBLIC_FARO_COLLECTOR_URL` is set — and
