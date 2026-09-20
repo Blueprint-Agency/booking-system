@@ -96,6 +96,21 @@ function normalizeHost(host: string): string {
 }
 
 /**
+ * Could `label` be a Tenant's slug? A well-formed slug that no reserved label
+ * has already taken.
+ *
+ * The question `tenantSlugFromHost` asks of a hostname's leading label, minus
+ * the hostname. Exported for the Faro URL redaction
+ * (`telemetry-redaction.ts`), which has to decide the same thing about a label
+ * inside an arbitrary URL string rather than about this app's own host.
+ */
+export function isTenantLabel(label: string): boolean {
+  const normalized = label.trim().toLowerCase();
+  if (NON_TENANT_LABELS.has(normalized)) return false;
+  return SLUG.test(normalized);
+}
+
+/**
  * The Tenant slug in `host`, or null when the hostname names no Tenant — the
  * bare root domain, `www`, the super portal at `admin`, a host outside the root
  * domain (a Vercel preview URL), or a label that isn't a well-formed slug.

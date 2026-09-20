@@ -12,6 +12,24 @@ How the code got here is [#124](https://github.com/Blueprint-Agency/booking-syst
 > Tenant by its uuid. A studio's name must not reach Grafana, Discord, or a
 > ticket. If you need to know which studio a `tenantId` is, look the row up in
 > the database yourself — don't paste the answer back.
+>
+> **The browser is the one place the rule needs code, and it has it.** Both
+> frontends are served on `{slug}.…` hostnames, so every URL Faro takes from
+> `location` would carry a studio's slug to Grafana Cloud. Each app's
+> `src/lib/telemetry-redaction.ts` is wired in as Faro's `beforeSend` hook and
+> rewrites the Tenant label of every URL on an event — `page_url`, session and
+> view metadata, captured fetch/XHR urls, referrers, stacktrace filenames — to
+> the placeholder **`_tenant`** before it leaves the browser. Reserved labels —
+> `NON_TENANT_LABELS` in each app's `tenant-host.ts`, `admin` among them — are
+> left alone, so a super-portal error is still recognisable, and so are paths,
+> uuids included. The studio is
+> still on the event, by uuid, as `user_attr_tenantId`.
+> [#188](https://github.com/Blueprint-Agency/booking-system/issues/188).
+>
+> One thing the hook structurally cannot reach: the `Origin` header the browser
+> itself puts on the request to the collector. No page script can change it. It
+> is not part of any event body, so it does not appear in the lines you query —
+> but it is the one place a slug still reaches Grafana's edge.
 
 ---
 
@@ -78,6 +96,19 @@ Two apps, named by the code in each frontend's `src/lib/telemetry.ts`:
 **`fe-client`** and **`fe-portal`**. Both environments share an app and are split
 by the `environment` attribute, which the app sets from `NEXT_PUBLIC_APP_ENV`.
 Events carry `user_id` and `user_attr_tenantId`.
+
+**URLs on these events are redacted**, per the tenancy note at the top of this
+page: a Tenant's hostname label reads `_tenant`, never a studio's slug. To check
+that the redaction is live after a deploy, load a page on a Tenant hostname and
+then look for the placeholder in the newest event:
+
+```logql
+{kind="exception"} | logfmt | app_name="fe-client" | page_url =~ ".*_tenant.*"
+```
+
+A `page_url` with a real slug in it on a line newer than the deploy is a
+regression. The rewriting lives in each app's `src/lib/telemetry-redaction.ts`;
+`src/lib/telemetry.ts` is only where it is hung off Faro's `beforeSend`.
 
 **How Faro data is actually labelled in Loki**, which is not how the rest of this
 page's queries work and is the thing that wastes ten minutes at 2am. The stream
