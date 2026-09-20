@@ -59,8 +59,8 @@ test('a total in cents becomes the numeric string the ledger stores', () => {
 // --- Part Payment (#93) -----------------------------------------------------
 
 const LINES = [
-  { name: 'Unlimited · 6 months', description: 'Yoga Sadhana', amountCents: 600_00 },
-  { name: 'Cross-Location Add-On', description: 'Yoga Sadhana', amountCents: 180_00 },
+  { name: 'Unlimited · 6 months', description: 'Acme Yoga', amountCents: 600_00 },
+  { name: 'Cross-Location Add-On', description: 'Acme Yoga', amountCents: 180_00 },
 ]
 
 const sessionInput = (over: Partial<CheckoutSessionInput> = {}): CheckoutSessionInput => ({
@@ -75,7 +75,7 @@ const sessionInput = (over: Partial<CheckoutSessionInput> = {}): CheckoutSession
 })
 
 test('an ordinary sale is untouched — every line, every payment method', () => {
-  const params = checkoutSessionParams(sessionInput(), 'Yoga Sadhana')
+  const params = checkoutSessionParams(sessionInput(), 'Acme Yoga')
   assert.equal(params.line_items?.length, 2)
   assert.deepEqual(
     params.line_items!.map(l => l.price_data!.unit_amount),
@@ -87,7 +87,7 @@ test('an ordinary sale is untouched — every line, every payment method', () =>
 test('a part payment is ONE line for the instalment, and cards only', () => {
   const params = checkoutSessionParams(
     sessionInput({ partPaymentCents: 300_00 }),
-    'Yoga Sadhana',
+    'Acme Yoga',
   )
   assert.equal(params.line_items?.length, 1)
   assert.equal(params.line_items![0]!.price_data!.unit_amount, 300_00)
@@ -111,4 +111,89 @@ test('an unfinished sale can be named from its Purchase alone', () => {
   assert.equal(itemName(LINES), 'Unlimited · 6 months + 1 more')
   assert.equal(itemName([LINES[0]!]), 'Unlimited · 6 months')
   assert.equal(itemName([]), 'Purchase')
+})
+
+// --- Saved cards (#185) -----------------------------------------------------
+
+test('without a Customer the session is an email, exactly as it always was', () => {
+  const params = checkoutSessionParams(sessionInput(), 'Acme Yoga')
+  assert.equal(params.customer_email, 'member@example.com')
+  assert.equal(params.customer, undefined)
+  assert.equal(params.payment_intent_data?.setup_future_usage, undefined)
+})
+
+test('a Customer replaces the email — Stripe refuses a session carrying both', () => {
+  const params = checkoutSessionParams(sessionInput({ customerId: 'cus_1' }), 'Acme Yoga')
+  assert.equal(params.customer, 'cus_1')
+  assert.equal(params.customer_email, undefined)
+})
+
+test('a card is kept only where the member asked for it to be kept', () => {
+  const asked = checkoutSessionParams(
+    sessionInput({ customerId: 'cus_1', saveCard: true }),
+    'Acme Yoga',
+  )
+  // `on_session`: this card is only ever charged with the member watching, so
+  // the bank can authenticate then rather than up front.
+  assert.equal(asked.payment_intent_data?.setup_future_usage, 'on_session')
+
+  const declined = checkoutSessionParams(
+    sessionInput({ customerId: 'cus_1', saveCard: false }),
+    'Acme Yoga',
+  )
+  assert.equal(declined.payment_intent_data?.setup_future_usage, undefined)
+})
+
+test('consent without a Customer keeps nothing — there is nothing to attach to', () => {
+  const params = checkoutSessionParams(sessionInput({ saveCard: true }), 'Acme Yoga')
+  assert.equal(params.payment_intent_data?.setup_future_usage, undefined)
+  assert.equal(params.customer_email, 'member@example.com')
+})
+
+test('a part payment still carries the Customer — that is the whole point of it', () => {
+  const params = checkoutSessionParams(
+    sessionInput({ customerId: 'cus_1', partPaymentCents: 300_00 }),
+    'Acme Yoga',
+  )
+  assert.equal(params.customer, 'cus_1')
+  assert.deepEqual(params.payment_method_types, ['card'])
+})
+
+test('keeping the card makes a full-price checkout cards-only, and says so here', () => {
+  // `setup_future_usage` makes the provider drop every method it cannot save,
+  // so this would happen anyway — pinned here so it is a stated rule with a
+  // matching sentence on our own page, rather than PayNow quietly vanishing.
+  const keeping = checkoutSessionParams(
+    sessionInput({ customerId: 'cus_1', saveCard: true }),
+    'Acme Yoga',
+  )
+  assert.deepEqual(keeping.payment_method_types, ['card'])
+})
+
+test('PayNow survives a full payment that keeps no card — the default', () => {
+  // The acceptance line this protects: PayNow never appears on a Part Payment,
+  // and does appear on a full one. An untouched `payment_method_types` is what
+  // lets the studio's own enabled methods through.
+  const plain = checkoutSessionParams(sessionInput({ customerId: 'cus_1' }), 'Acme Yoga')
+  assert.equal(plain.payment_method_types, undefined)
+
+  const declined = checkoutSessionParams(
+    sessionInput({ customerId: 'cus_1', saveCard: false }),
+    'Acme Yoga',
+  )
+  assert.equal(declined.payment_method_types, undefined)
+})
+
+test('consent with no Customer narrows nothing — it was never going to save', () => {
+  const params = checkoutSessionParams(sessionInput({ saveCard: true }), 'Acme Yoga')
+  assert.equal(params.payment_method_types, undefined)
+})
+
+test('the metadata a saved card rides in on is still the tenant-stamped one', () => {
+  const params = checkoutSessionParams(
+    sessionInput({ customerId: 'cus_1', saveCard: true }),
+    'Acme Yoga',
+  )
+  assert.equal(params.payment_intent_data?.metadata?.tenant_id, 't1')
+  assert.equal(params.payment_intent_data?.metadata?.client_id, 'c-1')
 })

@@ -49,6 +49,18 @@ const requestedCents = (sgd: number | undefined): number | null =>
   sgd === undefined ? null : Math.round(sgd * 100)
 
 /**
+ * "Save this card for next time" (#185) — the member's consent, carried from
+ * our own checkout page.
+ *
+ * The provider's hosted page has no box of its own on the API version this
+ * platform pins, so the box is ours and this is what it said. Absent is **no**:
+ * a card is only ever kept because somebody asked for it to be, and defaulting
+ * a missing field to true would save a card for every member who is running an
+ * older build of the app.
+ */
+const saveCard = z.boolean().optional()
+
+/**
  * Where Stripe sends the member back to.
  *
  * A whole-price sale lands on its own confirmation — the plan it granted, the
@@ -74,6 +86,7 @@ const checkoutPackageSchema = z.object({
   instructor_id: z.string().uuid().optional(),
   /** Buy the Cross-Location Add-On with the plan — one session, two line items (§5). */
   cross_location_add_on: z.boolean().optional(),
+  save_card: saveCard,
 })
 
 const crossLocationSchema = z.object({
@@ -102,10 +115,11 @@ const checkoutWorkshopSchema = z.object({
   workshop_tier_id: z.string().uuid(),
   promo_code: z.string().optional(),
   part_payment_sgd: partPaymentSgd,
+  save_card: saveCard,
 })
 
 /** Resuming an unfinished Purchase. No amount pays whatever is still owed. */
-const resumeSchema = z.object({ part_payment_sgd: partPaymentSgd })
+const resumeSchema = z.object({ part_payment_sgd: partPaymentSgd, save_card: saveCard })
 
 const purchaseParam = z.object({ id: z.string().uuid() })
 
@@ -195,6 +209,7 @@ const app = new Hono()
       ),
       cancelUrl: `${clientUrl}/checkout?package=${body.package_id}&kind=${body.package_kind}&cancelled=1`,
       requestedPartPaymentCents: requestedCents(body.part_payment_sgd),
+      saveCard: body.save_card,
     })
     return c.json({ url })
   })
@@ -288,6 +303,7 @@ const app = new Hono()
         email: c.get('clientRow').email,
         purchaseId: c.req.valid('param').id,
         requestedCents: requestedCents(c.req.valid('json').part_payment_sgd),
+        saveCard: c.req.valid('json').save_card,
       })
       return c.json({
         url: result.url,
@@ -326,6 +342,7 @@ const app = new Hono()
       ),
       cancelUrl: `${clientUrl}/checkout?workshop=${body.workshop_id}&tier=${body.workshop_tier_id}&cancelled=1`,
       requestedPartPaymentCents: requestedCents(body.part_payment_sgd),
+      saveCard: body.save_card,
     })
     return c.json({ url })
   })

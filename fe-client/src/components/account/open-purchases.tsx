@@ -22,6 +22,7 @@ import {
   type OpenPurchase,
   type PartPaymentOptions,
 } from "@/lib/open-purchases";
+import { SaveCardBlock } from "@/components/checkout/save-card-block";
 
 export function OpenPurchases({
   purchases,
@@ -79,6 +80,11 @@ function OpenPurchaseCard({
   const canSplit = partPayment.enabled && !purchase.must_pay_in_full;
   const [splitting, setSplitting] = useState(false);
   const [amount, setAmount] = useState(purchase.outstanding_sgd);
+  // "Save this card for next time" (#185). Offered here as well as at checkout
+  // because this is the second card on a split purchase — the member is on this
+  // screen precisely because they paid once already, and a third instalment or
+  // a next purchase is exactly what a saved card spares them.
+  const [saveCard, setSaveCard] = useState(false);
   // Same rule as the checkout box: an empty or half-typed amount blocks the
   // button. It must never fall through to "pay it all", which is more money
   // than the member asked to hand over.
@@ -90,7 +96,7 @@ function OpenPurchaseCard({
     setBusy(true);
     setError(null);
     try {
-      await resumePurchase(api, purchase.id, amountSgd);
+      await resumePurchase(api, purchase.id, amountSgd, saveCard);
     } catch (err) {
       reportError(err, { scope: "resume-purchase" });
       const body = (err as { body?: { message?: string } })?.body;
@@ -143,6 +149,15 @@ function OpenPurchaseCard({
           </span>
         </div>
       )}
+
+      {/* Resuming is always a card-only session — the balance cannot wait on a
+          method that settles hours later — so the notice is already made. */}
+      <SaveCardBlock
+        checked={saveCard}
+        onCheckedChange={setSaveCard}
+        resuming
+        alreadyCardOnly
+      />
 
       {error && <p className="mt-3 text-xs text-error">{error}</p>}
 

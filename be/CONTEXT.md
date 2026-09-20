@@ -26,7 +26,7 @@ A Slug a Tenant was renamed away from, kept in `former_slugs` for 90 days with w
 _Avoid_: alias, old slug (in code), redirect slug
 
 **`tenant_id`**:
-The column on all 56 domain tables recording which Tenant a row belongs to — including pure join tables, because Row-Level Security needs a column on every table to key a policy on. `NOT NULL`, with **no default**: an insert that does not name its Tenant fails loudly rather than filing somebody else's row under the first Tenant. Every non-unique index leads with it. (The tenant-#1 default that made the migrate batches safe was scaffolding, and migration 0032 dropped it along with the seed pass that used to claim unclaimed rows.) The one nullable `tenant_id` outside those is `auth_events`, whose null rows are **Platform rows**.
+The column on all 57 domain tables recording which Tenant a row belongs to — including pure join tables, because Row-Level Security needs a column on every table to key a policy on. `NOT NULL`, with **no default**: an insert that does not name its Tenant fails loudly rather than filing somebody else's row under the first Tenant. Every non-unique index leads with it. (The tenant-#1 default that made the migrate batches safe was scaffolding, and migration 0032 dropped it along with the seed pass that used to claim unclaimed rows.) The one nullable `tenant_id` outside those is `auth_events`, whose null rows are **Platform rows**.
 
 **Tenant context**:
 The Tenant a request is about — held in two places at once, and they are set together.
@@ -241,6 +241,14 @@ _Avoid_: API keys, Stripe keys, secrets, tokens
 **Account of Record**:
 The Payment Account a particular payment was taken on, recorded on the payment itself and never afterwards changed. It answers a different question from "which account does this studio sell on?" — the same answer until a studio is moved, and a different one forever after, because no provider will hand a payment intent from one account to another. A studio that moves therefore keeps its history on the account it sold on before, readable, reportable and refundable indefinitely, and a single Purchase can hold payments with two different Accounts of Record — one card before the move, one after. Every provider call about an existing payment — a Refund above all — is made against its Account of Record, not against the studio's current credentials.
 _Avoid_: original account, old account, source account, charge account
+
+**Saved Card**:
+A card a member chose to keep while paying, so a later Purchase — or the second instalment of a Part Payment — is picked from a list instead of typed out again. Kept by the payment provider, never by this platform, which holds only a brand, the last four digits and an expiry so a member can tell their own cards apart. Saved only when the member ticks the box: a card is never kept because somebody did not notice one. It is always picked by the member on the provider's own page, with them watching; nothing here can charge one on its own, so it is not a card on file, a stored payment method for billing, or anything that could produce a charge the member did not start. Removing one stops it being offered again and touches no payment already made with it.
+_Avoid_: card on file, stored card, payment method on file, token, vaulted card
+
+**Provider Customer**:
+A member as the payment provider knows them, and the thing a Saved Card is actually saved against — which is why an email address alone could never keep one. It belongs to a Payment Account and means nothing on any other, so a member has one per account their studio has sold on: a studio that moves leaves its members' old Customers behind exactly as it leaves its payments behind, and the first checkout on the new account makes each member a Customer there. It is not a member's account, their login, or anything they ever see a name for. It is deleted outright, at the provider, when a member is permanently deleted — the studio's payments are its accounts and stay, but the person does not.
+_Avoid_: Stripe customer, billing account, payment profile, member record
 
 **Money Event**:
 One thing that moved money, or that owes money, on the day it happened. A purchase, a Refund, a session's Instructor Pay, or a Manual Entry. Every figure the studio reports is a sum over Money Events; there is no separate stored total.

@@ -164,7 +164,7 @@ describe('the refund call', () => {
   })
 
   /**
-   * The migration, in one assertion (#97). Yoga Sadhana is on its own account
+   * The migration, in one assertion (#97). The studio is on its own account
    * now; this payment was taken before it moved. Reading the studio's *current*
    * credentials would send the refund to an account where the intent does not
    * exist — the member gets nothing back and the error names an id that looks

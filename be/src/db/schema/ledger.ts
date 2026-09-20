@@ -209,3 +209,76 @@ export const stripePayments = pgTable(
     purchaseIdx: index('stripe_payments_purchase_idx').on(table.tenantId, table.purchaseId),
   }),
 )
+
+/**
+ * Who a member is **at the payment provider** — the id their saved cards hang
+ * off (#185).
+ *
+ * A card cannot be saved against an email. It is saved against a Customer, so
+ * until a member is one, every checkout is a card number typed in full, and the
+ * next one is the same number typed again.
+ *
+ * ## One row per member *per account*, which is the whole reason this is a table
+ *
+ * A Customer id belongs to the account it was created on and means nothing
+ * anywhere else. Since #100 a studio can supply its own credentials, so the
+ * account a member's cards live on is not a property of the member — it is a
+ * property of where the studio sells *today*. A studio that moves accounts
+ * leaves its members' old Customers behind, exactly as it leaves its payments
+ * behind (`stripe_payments.provider_account_id`), and the first checkout on the
+ * new account makes each member a Customer there. Both rows then coexist, one
+ * per account, and each is only ever read together with its account.
+ *
+ * That is also what "cards saved at one studio never appear at another" reduces
+ * to here: the lookup is `(tenant_id, client_id, account)`, with Row-Level
+ * Security as the backstop under it. Two studios on the *same* platform account
+ * still get a Customer each, because the Tenant is in the key.
+ *
+ * `provider_account_id` follows the convention `stripe_payments` set: **NULL is
+ * the platform's own account**, not "unknown".
+ *
+ * Nothing here is a secret and nothing here is money. It is a pointer, and if
+ * the whole table were lost the worst that happens is every member is asked to
+ * type a card number once more.
+ */
+export const paymentCustomers = pgTable(
+  'payment_customers',
+  {
+    tenantId: tenantIdColumn(),
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    /**
+     * The member. **NOT NULL**, and deleted rather than emptied when they are
+     * (#144): unlike a payment, this row is not part of the studio's accounts —
+     * it is the member's identity at a third party, which is the one thing
+     * permanent deletion is for. `member-tables.ts` says so in the one list
+     * both deletion and export read.
+     */
+    clientId: uuid('client_id')
+      .notNull()
+      .references(() => clients.id, { onDelete: 'restrict' }),
+    /** The account this Customer exists on; NULL is the platform's own. */
+    providerAccountId: text('provider_account_id'),
+    /** The Customer id itself — `cus_…`. Never reused across accounts. */
+    customerId: text('customer_id').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  table => ({
+    /**
+     * One Customer per member per account — the constraint the whole design
+     * rests on, because a second row would silently split one member's cards
+     * into two piles and show them half of their own wallet.
+     *
+     * `NULLS NOT DISTINCT` is load-bearing, and is written out in the migration
+     * because Drizzle cannot express it: Postgres treats NULLs as distinct in a
+     * unique index by default, and the platform account — the common case, and
+     * the only case until a studio supplies credentials of its own — *is* the
+     * NULL. Without it the constraint would hold for exactly the studios that
+     * least need it.
+     */
+    memberAccountUnique: uniqueIndex('payment_customers_member_account_unique').on(
+      table.tenantId,
+      table.clientId,
+      table.providerAccountId,
+    ),
+  }),
+)

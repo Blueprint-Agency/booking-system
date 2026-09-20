@@ -27,7 +27,7 @@ import { purchases, stripePayments } from '../../db/schema/ledger'
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { toCents } from '../../shared/money'
 import { reportError } from '../../shared/logger'
-import { stripeForTenant } from '../../lib/stripe'
+import { providerAccountForTenant, stripeForTenant } from '../../lib/stripe'
 import { tenantDisplayName } from '../tenants/mail-identity'
 import { requireTenantUrl } from '../tenants/urls'
 import { partPaymentEnabled } from '../policy/update'
@@ -41,6 +41,7 @@ import {
 import { attachCheckoutSession, type PurchaseRow } from './purchases'
 import { heldPaymentCounts } from './refunds'
 import { checkoutSessionParams, type CheckoutLine } from './checkout-session'
+import { createSessionSurvivingStaleCustomer, providerCustomerFor } from './payment-customers'
 import { daysSilent, isSilent, silenceNotice } from './refund-notice'
 
 /** An unfinished Purchase, as every screen that shows one needs to see it. */
@@ -339,6 +340,14 @@ export async function resumePurchaseCheckout(args: {
   email: string
   purchaseId: string
   requestedCents: number | null
+  /**
+   * Did the member ask for this card to be kept? (#185)
+   *
+   * The second instalment is exactly where a saved card earns its keep — the
+   * member is here *because* they paid once already — so this path carries the
+   * Customer and the consent just as the first one does.
+   */
+  saveCard?: boolean
 }): Promise<{ url: string | null; chargedSgd: string; outstandingSgd: string }> {
   const purchase = await lockPurchase(args.tenantId, args.purchaseId)
   if (!purchase) throw new NotFoundError('purchase_not_found')
@@ -375,27 +384,53 @@ export async function resumePurchaseCheckout(args: {
     },
   ]
 
-  const stripe = await stripeForTenant(args.tenantId)
-  const session = await stripe.checkout.sessions.create(
-    checkoutSessionParams(
-      {
-        tenantId: args.tenantId,
-        email: args.email,
-        lines,
-        // An open Purchase does not expire. A Hold that once capped this sale
-        // was Consumed by the first payment and the price locked with it, so
-        // there is nothing left for an expiry to protect.
-        expiresAt: null,
-        metadata: { ...metadata, purchase_id: purchase.id },
-        successUrl: `${clientUrl}/booking/confirmation?type=balance&session_id={CHECKOUT_SESSION_ID}`,
-        cancelUrl: `${clientUrl}/account?resumed=${purchase.id}`,
-        // Always a part-payment session, even when it settles the Balance: it
-        // is the second card on a split purchase either way, and cards-only is
-        // the rule that makes the second card land while the member watches.
-        partPaymentCents: charge,
-      },
-      studioName,
-    ),
+  const [stripe, account, customerId] = await Promise.all([
+    stripeForTenant(args.tenantId),
+    providerAccountForTenant(args.tenantId),
+    providerCustomerFor({
+      tenantId: args.tenantId,
+      clientId: args.clientId,
+      email: args.email,
+    }),
+  ])
+  // A Customer the provider has forgotten is dropped and the session built
+  // again without one, rather than leaving this member unable to finish paying
+  // a Balance the studio is already holding money against (#185).
+  const session = await createSessionSurvivingStaleCustomer(
+    { tenantId: args.tenantId, clientId: args.clientId, customerId },
+    customer =>
+      stripe.checkout.sessions.create(
+        checkoutSessionParams(
+          {
+            tenantId: args.tenantId,
+            email: args.email,
+            lines,
+            // An open Purchase does not expire. A Hold that once capped this
+            // sale was Consumed by the first payment and the price locked with
+            // it, so there is nothing left for an expiry to protect.
+            expiresAt: null,
+            metadata: { ...metadata, purchase_id: purchase.id },
+            successUrl: `${clientUrl}/booking/confirmation?type=balance&session_id={CHECKOUT_SESSION_ID}`,
+            cancelUrl: `${clientUrl}/account?resumed=${purchase.id}`,
+            // Always a part-payment session, even when it settles the Balance:
+            // it is the second card on a split purchase either way, and
+            // cards-only is what makes it land while the member watches.
+            partPaymentCents: charge,
+            // The Customer, so the hosted page lists the cards this member
+            // already kept and the second instalment is a click rather than a
+            // card number (#185). `saveCard` is their answer to our own box.
+            customerId: customer,
+            saveCard: args.saveCard,
+          },
+          studioName,
+          // The studio's own account suppresses the statement suffix (#100).
+          // This path never passed it, so a studio on its own credentials was
+          // having a suffix appended against a prefix this platform cannot
+          // measure — the very thing `checkoutSessionParams` documents as a
+          // refused charge.
+          account !== null,
+        ),
+      ),
   )
   await attachCheckoutSession(args.tenantId, purchase.id, session.id)
 

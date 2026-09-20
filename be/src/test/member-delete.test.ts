@@ -4,6 +4,7 @@ import { and, eq, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import { memberFixtures, type Row, type Staff, type Tenant } from './member-fixtures'
 import { MEMBER_TABLES, eraseSteps, type MemberKey } from '../services/clients/member-tables'
+import { installStripeFake, type StripeFake } from './stripe-fake'
 
 /**
  * A studio permanently deletes a member (#144).
@@ -16,6 +17,7 @@ import { MEMBER_TABLES, eraseSteps, type MemberKey } from '../services/clients/m
  */
 describe('member delete', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
   let harness!: TestApp
+  let stripe: StripeFake | undefined
   let schema!: typeof import('../db/schema')
   let fixtures!: ReturnType<typeof memberFixtures>
   let one!: Tenant
@@ -58,6 +60,11 @@ describe('member delete', { skip: integrationTestsEnabled ? false : SKIP_REASON 
   }
 
   before(async () => {
+    // Deletion asks the payment provider to forget the member's Customer
+    // (#185). Without the fake that is a real network call per fixture — caught
+    // and logged, so the suite still passes, but every run waits out the vendor
+    // deadline for nothing.
+    stripe = installStripeFake()
     harness = await startTestApp()
     schema = await import('../db/schema')
     fixtures = memberFixtures(harness, schema, DOMAIN)
@@ -109,6 +116,7 @@ describe('member delete', { skip: integrationTestsEnabled ? false : SKIP_REASON 
   })
 
   after(async () => {
+    stripe?.restore()
     if (!harness) return
     await fixtures?.cleanup()
     await harness.close()

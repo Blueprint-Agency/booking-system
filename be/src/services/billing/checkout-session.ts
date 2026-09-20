@@ -15,6 +15,7 @@ import { BadRequestError } from '../../shared/errors'
 import { attachCheckoutSession, openPurchase, type PurchaseKind } from './purchases'
 import { partPaymentEnabled } from '../policy/update'
 import { chargeableCents, refusePartPaymentWhenDisabled } from './part-payment'
+import { createSessionSurvivingStaleCustomer, providerCustomerFor } from './payment-customers'
 
 export interface CheckoutLine {
   name: string
@@ -88,6 +89,30 @@ export interface CheckoutSessionInput {
    * read from the database. Nothing here re-decides it.
    */
   partPaymentCents?: number | null
+  /**
+   * The member as a Customer on the provider account this charge is on (#185),
+   * or null where they are not one yet.
+   *
+   * It is what makes a second card unnecessary: a session carrying a Customer
+   * lists that Customer's saved cards on the hosted page for the member to pick
+   * from, and a session carrying only an email cannot, because there is nothing
+   * for a card to have been saved against.
+   *
+   * **Per account, never per member alone.** A Customer id is meaningless on an
+   * account other than the one it was made on, so which id this is depends on
+   * where the studio sells today (#100) — see `providerCustomerFor`, which is
+   * the only thing allowed to answer that.
+   */
+  customerId?: string | null
+  /**
+   * Did the member tick "save this card"? (#185)
+   *
+   * Consent, carried from our own checkout page rather than assumed. This API
+   * version has no checkbox of Stripe's own — `saved_payment_method_options`
+   * arrived after it — so the box is ours, and this is what it said. False, and
+   * the card pays and is forgotten.
+   */
+  saveCard?: boolean
 }
 
 /**
@@ -149,15 +174,42 @@ export function checkoutSessionParams(
     part == null
       ? input.lines
       : [partPaymentLine(input.lines, part, totalCents(input.lines) - part)]
+  const customer = input.customerId ?? null
+  // Keeping the card needs somewhere to keep it. Without a Customer there is
+  // nothing for the provider to attach a payment method to, so consent given on
+  // a session that carries no Customer is consent to nothing — and asking for
+  // it anyway is how a checkout fails at the provider for a reason the member
+  // cannot possibly act on.
+  const keepCard = Boolean(input.saveCard) && customer !== null
+  /**
+   * **Cards only on a session that keeps the card**, said out loud rather than
+   * left to the provider.
+   *
+   * `setup_future_usage` makes the provider drop every method it cannot save,
+   * so ticking "save this card" would quietly take PayNow off a full-price
+   * checkout — a member losing the method they came to use, with no sentence
+   * anywhere explaining why. Pinning it here makes that a stated rule with a
+   * matching sentence on our own page, and stops the provider reshaping the
+   * page behind us; on an account with an explicit method configuration it is
+   * also the difference between a narrowed page and a refused session.
+   *
+   * PayNow on a *full* payment is untouched wherever the box is not ticked,
+   * which is the default and every checkout before this existed.
+   */
+  const cardsOnly = part != null || keepCard
   return {
     mode: 'payment',
-    customer_email: input.email,
+    // A Customer **instead of** an email, never beside it: the provider refuses
+    // a session carrying both. The member's address is already on the Customer,
+    // which is where it came from.
+    ...(customer ? { customer } : { customer_email: input.email }),
     // **Cards only on a part payment.** PayNow and the other one-shot methods
     // settle outside the session and can arrive minutes later or not at all; a
     // Balance being closed by a second instalment cannot wait on that, and a
     // member who has already paid once should not discover the rest of their
     // money is in limbo. The checkout page says so in words before they get here.
-    ...(part == null ? {} : { payment_method_types: ['card' as const] }),
+    // A session that keeps the card is cards-only too — see `cardsOnly`.
+    ...(cardsOnly ? { payment_method_types: ['card' as const] } : {}),
     // Metadata does not flow from a session to its intent on its own, and the
     // intent is what a refund, a dispute and a bank statement point at. The
     // studio's name on the statement is the same reason `saleDescription`
@@ -166,6 +218,12 @@ export function checkoutSessionParams(
     payment_intent_data: {
       metadata: tenantMetadata,
       ...(suffix ? { statement_descriptor_suffix: suffix } : {}),
+      // `on_session`, not `off_session` (#185). This platform never charges a
+      // saved card with nobody watching — the member picks it on the provider's
+      // own page, every time — so the bank is told to authenticate then rather
+      // than up front, which is one less challenge on the card that is paying
+      // now. Saying `off_session` would be claiming a power this has not built.
+      ...(keepCard ? { setup_future_usage: 'on_session' as const } : {}),
     },
     line_items: lines.map(line => ({
       price_data: {
@@ -263,9 +321,10 @@ export async function createCheckoutSession(
     refusePartPaymentWhenDisabled(requested)
   }
   const charge = requested == null ? null : chargeableCents(totalCents(input.lines), requested)
+  const buyer = buyerFor(input.metadata)
   const purchase = await openPurchase({
     tenantId: input.tenantId,
-    clientId: buyerFor(input.metadata),
+    clientId: buyer,
     kind: purchaseKindFor(input.metadata),
     // The whole price, always — never the part being charged now. The Purchase
     // is what is owed; a part payment is one card's worth of paying it.
@@ -277,22 +336,39 @@ export async function createCheckoutSession(
     metadata: { ...input.metadata, item_name: itemName(input.lines) },
   })
 
-  const [stripe, account] = await Promise.all([
+  const [stripe, account, customerId] = await Promise.all([
     stripeForTenant(input.tenantId),
     providerAccountForTenant(input.tenantId),
+    // Made if they are not one yet, and null if the provider would not (#185).
+    // Null is not a failure here: the session falls back to `customer_email`,
+    // which is the shape every sale took before saved cards existed.
+    input.customerId === undefined
+      ? providerCustomerFor({
+          tenantId: input.tenantId,
+          clientId: buyer,
+          email: input.email,
+        })
+      : input.customerId,
   ])
-  const session = await outbound('stripe', 'checkout.sessions.create', () =>
-    stripe.checkout.sessions.create(
-      checkoutSessionParams(
-        {
-          ...input,
-          metadata: { ...input.metadata, purchase_id: purchase.id },
-          partPaymentCents: charge,
-        },
-        studioName,
-        account !== null,
+  // A Customer the provider has forgotten would otherwise fail every future
+  // checkout for this member; this drops the dead pointer and pays without it.
+  const session = await createSessionSurvivingStaleCustomer(
+    { tenantId: input.tenantId, clientId: buyer, customerId },
+    customer =>
+      outbound('stripe', 'checkout.sessions.create', () =>
+        stripe.checkout.sessions.create(
+          checkoutSessionParams(
+            {
+              ...input,
+              metadata: { ...input.metadata, purchase_id: purchase.id },
+              partPaymentCents: charge,
+              customerId: customer,
+            },
+            studioName,
+            account !== null,
+          ),
+        ),
       ),
-    ),
   )
   await attachCheckoutSession(input.tenantId, purchase.id, session.id)
   return session.url
