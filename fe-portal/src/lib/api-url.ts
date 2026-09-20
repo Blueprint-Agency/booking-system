@@ -1,3 +1,4 @@
+import { DEFAULT_API_TIMEOUT_MS } from "@/lib/api-request";
 import { tenantRequestHeaders } from "@/lib/tenant-host";
 
 /** Backend API base URL, always ending with `/api/v1`. */
@@ -17,9 +18,16 @@ export function getApiBaseUrl(): string {
  * makes "on every API call" a property of the code rather than a rule someone
  * has to remember at the next call site. The `api.ts` client does the same for
  * everything that goes through it.
+ *
+ * It carries the same default deadline as `api.ts` (`lib/api-request.ts`), so a
+ * hung backend ends in an error rather than a spinner; pass `signal` to set your own.
  */
 export function fetchApi(path: string, init: RequestInit = {}): Promise<Response> {
   const headers = new Headers(init.headers);
   for (const [name, value] of Object.entries(tenantRequestHeaders())) headers.set(name, value);
-  return fetch(`${getApiBaseUrl()}${path}`, { ...init, headers });
+  return fetch(`${getApiBaseUrl()}${path}`, {
+    ...init,
+    headers,
+    signal: init.signal ?? AbortSignal.timeout(DEFAULT_API_TIMEOUT_MS),
+  });
 }

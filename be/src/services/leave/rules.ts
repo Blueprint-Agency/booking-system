@@ -715,6 +715,9 @@ export function supportingDocumentKey(
 
 // ── The instructor's own transitions ───────────────────────────────────────
 
+/** Why a withdraw, cancel or admin decision is refused — shared by both checks below. */
+export type LeaveTransitionRefusalCode = 'leave_not_pending' | 'leave_not_approved' | 'leave_already_started'
+
 /**
  * Withdraw abandons a request still awaiting a decision; cancel gives back
  * leave that was approved but has not started yet. Both return the days to the
@@ -725,7 +728,7 @@ export function checkOwnLeaveTransition(
   action: 'withdraw' | 'cancel',
   row: { status: LeaveStatus; startDate: PlainDate },
   today: PlainDate,
-): { ok: true; status: 'withdrawn' | 'cancelled' } | { ok: false; code: string; message: string } {
+): { ok: true; status: 'withdrawn' | 'cancelled' } | { ok: false; code: LeaveTransitionRefusalCode; message: string } {
   if (action === 'withdraw') {
     if (row.status !== 'pending') {
       return {
@@ -777,7 +780,7 @@ export function checkAdminLeaveDecision(
   today: PlainDate,
 ):
   | { ok: true; status: 'approved' | 'rejected' | 'revoked' }
-  | { ok: false; code: string; message: string } {
+  | { ok: false; code: LeaveTransitionRefusalCode; message: string } {
   if (action === 'revoke') {
     if (row.status !== 'approved') {
       return {

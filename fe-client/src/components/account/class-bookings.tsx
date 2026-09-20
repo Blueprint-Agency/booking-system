@@ -22,6 +22,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { formatDate, cn } from "@/lib/utils";
 import { formatClassTime } from "@/lib/classes";
 import { ApiError, useApi } from "@/lib/api";
+import { ERROR_CODES } from "@/lib/error-codes";
 import { useClientPackages } from "@/lib/use-client-packages";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { CLASS_CANCELLATION_HOURS } from "@/data/policy";
@@ -137,19 +138,13 @@ export function ClassBookings() {
       await refetchPackages();
     } catch (err) {
       const code = errCode(err);
-      if (code === "session_already_started") {
-        setBanner({
-          tone: "error",
-          text: "This class has already started — it can no longer be cancelled.",
-        });
-        await reload();
-      } else if (code === "cancellation_window_passed") {
+      if (code === ERROR_CODES.cancellation_window_passed) {
         setBanner({
           tone: "error",
           text: `Classes can't be cancelled within ${CLASS_CANCELLATION_HOURS} hours of the start time.`,
         });
         await reload();
-      } else if (code === "not_cancellable") {
+      } else if (code === ERROR_CODES.not_cancellable) {
         setBanner({ tone: "error", text: "This booking can no longer be cancelled." });
         await reload();
       } else {

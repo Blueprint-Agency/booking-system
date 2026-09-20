@@ -18,6 +18,13 @@ const schema = z.object({
   // exists.
   APP_ENV: z.enum(['development', 'staging', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(4000),
+  // Pino's level. Unset means `info` in production and `debug` everywhere else
+  // (src/shared/logger.ts). Blank counts as unset: the deploy writes the line
+  // whether or not the GitHub variable exists.
+  LOG_LEVEL: z.preprocess(
+    v => (v === '' ? undefined : v),
+    z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).optional(),
+  ),
 
   // Two connection strings to the same database, on purpose. DATABASE_URL is the
   // owner — migrations and seeds only. DATABASE_APP_URL is the `booking_app`
@@ -108,6 +115,7 @@ const parsed = schema.safeParse(process.env)
 if (!parsed.success) {
   const issues = parsed.error.issues.map(i => `  - ${i.path.join('.') || '(root)'}: ${i.message}`).join('\n')
   console.error('[env] invalid environment:\n' + issues)
+  // Invariant: boot-time configuration — the process does not start on a bad environment.
   throw new Error('Environment validation failed')
 }
 

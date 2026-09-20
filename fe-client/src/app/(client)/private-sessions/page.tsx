@@ -11,6 +11,7 @@ import { useClientPackages } from "@/lib/use-client-packages";
 import { useLocations, useClassTypes } from "@/lib/classes";
 import { usePtSessionsApi } from "@/lib/pt-sessions";
 import { ApiError } from "@/lib/api";
+import { ERROR_CODES } from "@/lib/error-codes";
 import { formatDate } from "@/lib/utils";
 
 type Slot = { proposedDate: string; startTime: string; endTime: string };
@@ -161,14 +162,14 @@ export default function PrivateSessionsPage() {
     } catch (err: unknown) {
       const code = apiErrorCode(err);
       const msg =
-        code === "insufficient_pt_credit"
+        code === ERROR_CODES.insufficient_pt_credit
           ? `This ${computedSessionType === "2on1" ? "2-on-1" : "1-on-1"} request uses ${requestCost} session${requestCost === 1 ? "" : "s"}. Choose a package with enough sessions or buy another package.`
-          : code === "pt_package_not_current" || code === "family_already_activated"
+          : code === ERROR_CODES.pt_package_not_current || code === ERROR_CODES.family_already_activated
             ? "Another private session package of yours is already running. Only one runs at a time — your next package starts once it ends or is used up."
             : err instanceof Error
             ? err.message
             : "We couldn't submit your request. Please try again.";
-      if (code === "insufficient_pt_credit") setShowBuyPrompt(true);
+      if (code === ERROR_CODES.insufficient_pt_credit) setShowBuyPrompt(true);
       setErrors([msg]);
     } finally {
       setSubmitting(false);

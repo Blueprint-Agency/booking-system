@@ -21,6 +21,7 @@ on:
       - 'be/**'
       - 'fe-client/**'
       - 'fe-portal/**'
+      - 'scripts/check-error-codes*'
       - '.github/workflows/deploy-be.yml'
   pull_request:
     branches: [staging, main]
@@ -28,6 +29,7 @@ on:
       - 'be/**'
       - 'fe-client/**'
       - 'fe-portal/**'
+      - 'scripts/check-error-codes*'
       - '.github/workflows/deploy-be.yml'
   workflow_dispatch:
 
@@ -63,6 +65,7 @@ jobs:
           filters: |
             be:
               - 'be/**'
+              - 'scripts/check-error-codes*'
               - '.github/workflows/deploy-be.yml'
             fe-client:
               - 'fe-client/**'
@@ -148,6 +151,15 @@ jobs:
             echo "::error::CI tests on Node $ci but be/Dockerfile ships Node ${image:-?}. Keep them on the same major."
             exit 1
           fi
+
+      # The backend's error codes and the copy each frontend keeps must list the
+      # same codes (be/src/shared/error-codes.ts). No dependencies, so it runs
+      # before the install and fails fast.
+      - name: Error catalogues match
+        working-directory: .
+        run: |
+          node --test scripts/check-error-codes.test.mjs
+          node scripts/check-error-codes.mjs
 
       - run: npm ci
 
@@ -258,6 +270,11 @@ jobs:
           cache-dependency-path: fe-client/package-lock.json
       - run: npm ci
       - run: npm run check
+      # A frontend-only change skips the backend `test` job, so its copy of the
+      # error catalogue is checked here too.
+      - name: Error catalogues match
+        working-directory: .
+        run: node scripts/check-error-codes.mjs
 
   fe-portal:
     needs: changes
@@ -276,6 +293,9 @@ jobs:
           cache-dependency-path: fe-portal/package-lock.json
       - run: npm ci
       - run: npm run check
+      - name: Error catalogues match
+        working-directory: .
+        run: node scripts/check-error-codes.mjs
 
   # The browser journeys against staging (#145), before a PRODUCTION deploy only.
   # Staging is what they run against, so a staging deploy cannot wait on them —
@@ -447,7 +467,7 @@ jobs:
             #   org secrets: TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET, SSH_PRIVATE_KEY, DOCKERHUB_TOKEN
             #   env vars:    PORT, FRONTEND_URLS,
             #            PLATFORM_ADMIN_EMAIL,
-            #            (optional) STRIPE_STATEMENT_DESCRIPTOR_PREFIX
+            #            (optional) STRIPE_STATEMENT_DESCRIPTOR_PREFIX, LOG_LEVEL
             #   env secrets: DB_USER, DB_PASSWORD, DB_NAME, DB_APP_PASSWORD,
             #            IMPERSONATION_SECRET, BETTER_AUTH_SECRET, RESEND_API_KEY, RESEND_WEBHOOK_SECRET,
             #            STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
@@ -458,6 +478,8 @@ jobs:
               echo "NODE_ENV=production"
               echo "APP_ENV=${{ env.APP_ENV }}"
               echo "PORT=${{ vars.PORT }}"
+              # Pino level; optional, blank means `info` (src/shared/logger.ts).
+              echo "LOG_LEVEL=${{ vars.LOG_LEVEL }}"
               echo "TZ=Asia/Kuala_Lumpur"
               echo "DATABASE_URL=postgres://${{ secrets.DB_USER }}:${{ secrets.DB_PASSWORD }}@db-booking:5432/${{ secrets.DB_NAME }}"
               # Same database, reached as the `booking_app` role instead of the

@@ -89,6 +89,7 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
     .from(emailTemplates)
     .where(and(eq(emailTemplates.tenantId, tenantId), eq(emailTemplates.slug, slug)))
     .limit(1)
+  // Invariant: every studio is seeded every template slug it can be asked to send — see the note above.
   if (!tpl) throw new Error(`unknown_template:${slug}`)
 
   const subject = renderTemplate(tpl.subject, variables)
@@ -109,6 +110,7 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
       status: 'queued',
     })
     .returning()
+  // Invariant: an insert that succeeds returns its row; a refused one throws.
   if (!logRow) throw new Error('email_log_insert_failed')
 
   try {

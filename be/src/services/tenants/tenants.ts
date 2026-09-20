@@ -311,6 +311,7 @@ export async function createTenant(input: CreateTenantInput): Promise<ResolvedTe
           ...(input.timezone ? { timezone: input.timezone } : {}),
         })
         .returning()
+      // Invariant: an insert that succeeds returns its row; a refused one throws.
       if (!tenant) throw new Error('tenant insert returned no row')
 
       const [settings] = await tx

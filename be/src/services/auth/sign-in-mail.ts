@@ -30,6 +30,7 @@ type MailUser = { email: string; name: string }
 
 function tenantInContext(pool: 'client' | 'staff'): string {
   const tenantId = currentTenantId()
+  // Invariant: `/api/v1/auth/{client,staff}/*` runs behind `resolveTenant` — see the note above.
   if (!tenantId) throw new Error(`${pool} sign-in mail requested outside a Tenant context`)
   return tenantId
 }

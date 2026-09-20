@@ -8,6 +8,7 @@ import { getMemberToken } from "@/lib/member-auth";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { fetchApi } from "@/lib/api-url";
+import { ERROR_CODES } from "@/lib/error-codes";
 import { useLocations } from "@/lib/classes";
 import { useClientPackages, type LivePackage } from "@/lib/use-client-packages";
 import { roundsUpAPartMonth } from "@/lib/add-on-months";
@@ -79,13 +80,13 @@ export function AddOnCheckout({ planId }: { planId: string | null }) {
         if (!res.ok) {
           // The server refuses; the block states the refusal as a precondition
           // rather than inventing a verdict of its own.
-          if (data.error === "cross_location_already_added") setReason("already_added");
+          if (data.error === ERROR_CODES.cross_location_already_added) setReason("already_added");
           // Not theirs, not a plan, or no longer live — all of them are the
           // member having nothing to attach an Add-On to.
           else if (
-            data.error === "client_package_not_found" ||
-            data.error === "cross_location_plan_not_live" ||
-            data.error === "cross_location_requires_unlimited"
+            data.error === ERROR_CODES.client_package_not_found ||
+            data.error === ERROR_CODES.cross_location_plan_not_live ||
+            data.error === ERROR_CODES.cross_location_requires_unlimited
           )
             setReason("no_plan");
           else setError("We couldn't price the add-on. Please try again.");

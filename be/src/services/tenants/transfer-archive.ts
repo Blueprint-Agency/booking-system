@@ -34,6 +34,7 @@ export async function packArchive(archive: TenantArchive | MemberArchive): Promi
   zip.file(MANIFEST, JSON.stringify(archive.manifest, null, 2))
 
   const tables = zip.folder(TABLE_DIR)
+  // Invariant: JSZip returns the folder for any non-empty name — `TABLE_DIR` is a constant.
   if (!tables) throw new Error('could not create the tables folder')
   for (const table of archive.manifest.tables) {
     tables.file(`${table}.json`, JSON.stringify(archive.rows[table] ?? [], null, 2))

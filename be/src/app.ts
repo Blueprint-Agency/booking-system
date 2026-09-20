@@ -11,6 +11,7 @@ import { requestLogger } from './middleware/logger'
 import { resolveTenant } from './middleware/tenant'
 
 import { requireActiveTenant } from './middleware/require-active-tenant'
+import { ERROR_CODES } from './shared/error-codes'
 import {
   AUTH_BASE_PATH,
   authPools,
@@ -178,6 +179,6 @@ for (const [pool, auth] of Object.entries(authPools) as Array<[AuthPool, AuthPoo
 }
 
 // Unmatched routes — consistent JSON shape instead of Hono's default text 404.
-app.notFound(c => c.json({ error: 'not_found' }, 404))
+app.notFound(c => c.json({ error: ERROR_CODES.not_found }, 404))
 
 export default app

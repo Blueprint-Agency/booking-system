@@ -1,12 +1,13 @@
 import type { Context, MiddlewareHandler } from 'hono'
 import { HTTPException } from 'hono/http-exception'
 import { ZodError } from 'zod'
+import { ERROR_CODES, type ErrorCode } from '../shared/error-codes'
 import { logger } from '../shared/logger'
 
 export class AppError extends HTTPException {
   constructor(
-    status: 400 | 401 | 403 | 404 | 409 | 422,
-    public code: string,
+    status: 400 | 401 | 403 | 404 | 409 | 422 | 503,
+    public code: ErrorCode,
     public details?: Record<string, unknown>,
   ) {
     super(status, { message: code })
@@ -39,13 +40,13 @@ function errorResponse(err: unknown, c: Context) {
     return c.json({ error: err.message }, err.status)
   }
   if (err instanceof ZodError) {
-    return c.json({ error: 'invalid_request', issues: err.issues }, 400)
+    return c.json({ error: ERROR_CODES.invalid_request, issues: err.issues }, 400)
   }
-  // Unknown / programmer error: log with full context and return a generic
-  // body — but include the requestId so a user/support can quote it and we
-  // can grep the matching log line.
+  // Unknown / programmer error: the one `error` line for it — the error object
+  // (so its stack), and the request/tenant/actor ids from the log context — and
+  // a generic body that includes the requestId, so a user/support can quote it
+  // and we can find the matching line.
   const requestId = c.get('requestId')
-  const log = c.get('log') ?? logger
-  log.error({ err, method: c.req.method, path: c.req.path }, 'unhandled error')
-  return c.json({ error: 'internal_error', requestId }, 500)
+  logger.error({ err, method: c.req.method, path: c.req.path }, 'unhandled error')
+  return c.json({ error: ERROR_CODES.internal_error, requestId }, 500)
 }

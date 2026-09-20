@@ -2,6 +2,7 @@ import type { MiddlewareHandler } from 'hono'
 import { and, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { staffUsers } from '../db/schema/identity'
+import { ERROR_CODES } from '../shared/error-codes'
 import { tenantId } from './tenant'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -26,13 +27,13 @@ export const impersonate: MiddlewareHandler = async (c, next) => {
   if (!target) return next()
 
   if (row.role !== 'admin') {
-    return c.json({ error: 'impersonation_requires_admin' }, 403)
+    return c.json({ error: ERROR_CODES.impersonation_requires_admin }, 403)
   }
 
   // A header is a string; the column is a uuid. Without this an arbitrary value
   // reaches Postgres as a cast error and a 500.
   if (!UUID.test(target)) {
-    return c.json({ error: 'impersonation_requires_admin' }, 403)
+    return c.json({ error: ERROR_CODES.impersonation_requires_admin }, 403)
   }
 
   const [targetRow] = await db
@@ -41,7 +42,7 @@ export const impersonate: MiddlewareHandler = async (c, next) => {
     .where(and(eq(staffUsers.tenantId, tenantId(c)), eq(staffUsers.id, target)))
     .limit(1)
   if (!targetRow) {
-    return c.json({ error: 'impersonation_requires_admin' }, 403)
+    return c.json({ error: ERROR_CODES.impersonation_requires_admin }, 403)
   }
 
   c.set('actingAs', target)

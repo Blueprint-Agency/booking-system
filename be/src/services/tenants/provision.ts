@@ -88,6 +88,7 @@ function normaliseEmail(raw: string): string {
  */
 function requirePortalUrl(slug: string): string {
   const url = tenantOrigin('portal', slug)
+  // Invariant: boot refuses a `FRONTEND_URLS` with no portal wildcard (`lib/allowed-origins.ts`).
   if (!url) throw new Error('FRONTEND_URLS configures no portal wildcard — no invitation link can be built')
   return url
 }
@@ -138,6 +139,7 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
   // from `resolveTenant` precisely so this holds.
   const openTenant = currentTenantId()
   if (openTenant) {
+    // Invariant: only the super portal calls this, outside `resolveTenant` — see above.
     throw new Error(
       `provisionTenant must not run inside a Tenant context (open: ${openTenant}) — ` +
         'it opens its own transaction and sets app.tenant_id for the new studio',
@@ -170,6 +172,7 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
           ...(adminEmail ? {} : { status: 'suspended' as const }),
         })
         .returning()
+      // Invariant: an insert that succeeds returns its row; a refused one throws.
       if (!tenant) throw new Error('tenant insert returned no row')
 
       // From here on this transaction is inside the new Tenant, so the RLS
@@ -261,6 +264,7 @@ export async function inviteFirstAdmin(
 ): Promise<{ id: string; email: string; name: string }> {
   const openTenant = currentTenantId()
   if (openTenant) {
+    // Invariant: only the super portal calls this, outside `resolveTenant`.
     throw new Error(
       `inviteFirstAdmin must not run inside a Tenant context (open: ${openTenant})`,
     )

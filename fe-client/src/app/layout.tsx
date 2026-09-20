@@ -3,6 +3,7 @@ import { Manrope } from "next/font/google";
 import { Toaster } from "sonner";
 import { getBrand } from "@/lib/brand";
 import { BrandProvider } from "@/components/brand/brand-provider";
+import { TelemetryUser } from "@/components/telemetry-user";
 import "./globals.css";
 
 // Self-hosted via next/font (same pattern as fe-portal) — no render-blocking
@@ -52,6 +53,7 @@ export default async function RootLayout({
     <html lang="en" className={sans.variable}>
       <body className="antialiased">
         <BrandProvider brand={brand}>{children}</BrandProvider>
+        <TelemetryUser />
         <Toaster position="top-center" richColors />
       </body>
     </html>

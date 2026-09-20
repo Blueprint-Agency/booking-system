@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { ChevronRight, UserRound, MapPin, Ticket, Loader2, Lock } from "lucide-react";
 import { cn, formatSgd } from "@/lib/utils";
 import { ApiError, useApi } from "@/lib/api";
+import { ERROR_CODES } from "@/lib/error-codes";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 import { useBodyScrollLock } from "@/lib/use-body-scroll-lock";
 import { formatClassTime, type ApiClassCard, type ClassEntitlements } from "@/lib/classes";
@@ -98,18 +99,18 @@ export function ClassRow({
         "error" in err.body
           ? String((err.body as { error: unknown }).error)
           : "";
-      if (code === "insufficient_credits") {
+      if (code === ERROR_CODES.insufficient_credits) {
         setBookError(null);
         setShowNoPackage(true);
-      } else if (code === "already_booked") {
+      } else if (code === ERROR_CODES.already_booked) {
         setBookError(null);
         setBooked(true);
-      } else if (code === "class_full") {
+      } else if (code === ERROR_CODES.class_full) {
         setSpotsLeft(0);
         setBookError({ msg: "Sorry, this class just filled up." });
-      } else if (code === "class_already_started") {
+      } else if (code === ERROR_CODES.class_already_started) {
         setBookError({ msg: "This class has already started." });
-      } else if (code === "location_not_covered") {
+      } else if (code === ERROR_CODES.location_not_covered) {
         // Genuinely the wrong studio. The lock chip below catches this before
         // the click in the normal case; what lands here is entitlements the
         // client read too early or too late.
@@ -118,7 +119,7 @@ export function ClassRow({
             ? `Your plan covers ${planLocation.name} only.`
             : "Your plan doesn't cover this studio.",
         });
-      } else if (code === "plan_expires_before_class") {
+      } else if (code === ERROR_CODES.plan_expires_before_class) {
         // Not a coverage problem: the package does cover this studio, it just
         // runs out first. The Cross-Location Add-On sells Locations, not time,
         // so it is the wrong remedy here — and the next package starts itself

@@ -55,6 +55,7 @@ const nextConfig: NextConfig = {
         source: "/:path*",
         headers: securityHeaders({
           apiUrl: process.env.NEXT_PUBLIC_API_URL,
+          faroUrl: process.env.NEXT_PUBLIC_FARO_COLLECTOR_URL,
           dev: process.env.NODE_ENV !== "production",
         }),
       },

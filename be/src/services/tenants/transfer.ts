@@ -5,6 +5,7 @@ import { buildIdentityMap, remapRow } from './transfer-identity'
 import { orderTables, type ForeignKey } from './transfer-order'
 import { ARCHIVE_VERSION, type TenantArchive, type TenantManifest } from './transfer-shape'
 import { loadTenantById } from './tenants'
+import { ConflictError, NotFoundError } from '../../shared/errors'
 
 // Re-exported so a caller that already reaches for the service keeps working.
 // The declarations live in `transfer-shape.ts`, which carries no database
@@ -85,13 +86,14 @@ export async function tenantTableOrder() {
 /** Read one studio out of the database, whole. */
 export async function exportTenant(tenantId: string): Promise<TenantArchive> {
   const tenant = await loadTenantById(tenantId)
-  if (!tenant) throw new Error(`no such tenant: ${tenantId}`)
+  if (!tenant) throw new NotFoundError('not_found')
 
   const { order, deferred, unbreakable } = await tenantTableOrder()
   if (unbreakable.length > 0) {
     // Exporting would be fine; importing the result would not. Refusing here is
     // the honest place — an archive that cannot be restored is worse than none,
     // because it is only discovered on the day it is needed.
+    // Invariant: the schema's foreign keys form no cycle that no nullable column breaks — a migration bug, not a caller's.
     throw new Error(
       `schema has an unbreakable foreign-key cycle, so an archive could not be restored: ${unbreakable
         .map(c => c.join(' -> '))
@@ -248,10 +250,10 @@ export async function importTenant(
   archive: TenantArchive,
 ): Promise<ImportSummary> {
   const target = await loadTenantById(targetTenantId)
-  if (!target) throw new Error(`no such tenant: ${targetTenantId}`)
+  if (!target) throw new NotFoundError('not_found')
 
   if (archive.manifest.version !== ARCHIVE_VERSION) {
-    throw new Error(
+    throw importRefused(
       `archive version ${archive.manifest.version} cannot be read by this server (expected ${ARCHIVE_VERSION})`,
     )
   }
@@ -261,7 +263,7 @@ export async function importTenant(
   for (const table of ACCOUNT_TABLES) {
     const unlinked = (archive.rows[table] ?? []).filter(row => row.auth_user_id == null).length
     if (unlinked > 0) {
-      throw new Error(
+      throw importRefused(
         `${unlinked} ${table} row(s) in this archive have no auth_user_id — it predates the user import (#120) and cannot be restored`,
       )
     }
@@ -287,7 +289,7 @@ export async function importTenant(
         sql`SELECT count(*)::int AS n FROM ${sql.identifier(table)}`,
       )
       if ((existing?.n ?? 0) > 0) {
-        throw new Error(
+        throw importRefused(
           `${target.slug} already has rows in ${table} — import only into an empty studio`,
         )
       }
@@ -333,6 +335,7 @@ export async function importTenant(
         // address. None exist today; say so rather than emit `WHERE id = NULL`
         // and silently fill nothing in.
         if (row.id == null) {
+          // Invariant: every table with a deferred column has an `id` — a schema bug if not, whatever the archive holds.
           throw new Error(
             `${table} has a deferred column (${columns.join(', ')}) but no id to fill it in by`,
           )
@@ -406,12 +409,20 @@ function duplicateExplained(err: unknown, table: string, sourceSlug: string): Er
   // unwrapped `23505` past — handing the operator the raw constraint message
   // this function exists to replace.
   if (!isUniqueViolation(err)) return err instanceof Error ? err : new Error(String(err))
-  return new Error(
+  return importRefused(
     `${table} refused a row from this archive as a duplicate. The archive came from ${sourceSlug}, ` +
       `which still holds rows this studio may not have alongside it — a unique key on ${table} is ` +
       `platform-wide rather than per-Tenant. Delete ${sourceSlug} first, or import into a database ` +
       `that does not have it.`,
   )
+}
+
+/**
+ * An archive this studio cannot take, and why — the operator's to fix, so a
+ * 409 carrying the reason rather than a 500. The route answers with it as is.
+ */
+function importRefused(message: string): ConflictError {
+  return new ConflictError('import_refused', { message })
 }
 
 /**

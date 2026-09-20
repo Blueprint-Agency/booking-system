@@ -6,8 +6,8 @@
  * What the page loads, and so what the policy admits:
  *
  *  - scripts, styles, fonts: this origin only. `next/font` self-hosts the font.
- *  - fetches: the API (`NEXT_PUBLIC_API_URL`) only. There is no analytics or
- *    error-monitoring script to admit.
+ *  - fetches: the API (`NEXT_PUBLIC_API_URL`), and the Grafana Faro collector
+ *    (`NEXT_PUBLIC_FARO_COLLECTOR_URL`) when one is configured.
  *  - images: any https host. A studio's logo is a URL the studio owns — the CDN,
  *    an R2 public bucket, its own marketing site — so no fixed list is exact.
  *  - Stripe: nothing. Checkout is a full-page redirect to Stripe's hosted page,
@@ -20,6 +20,8 @@
 
 export type SecurityHeaderInput = {
   apiUrl: string | undefined;
+  /** The Faro collector, when telemetry is on (`lib/telemetry.ts`). */
+  faroUrl?: string;
   dev: boolean;
 };
 
@@ -34,8 +36,9 @@ function originOf(url: string | undefined): string | null {
   }
 }
 
-export function contentSecurityPolicy({ apiUrl, dev }: SecurityHeaderInput): string {
-  const connect = ["'self'", originOf(apiUrl) ?? LOCAL_API];
+export function contentSecurityPolicy({ apiUrl, faroUrl, dev }: SecurityHeaderInput): string {
+  const faroOrigin = originOf(faroUrl);
+  const connect = ["'self'", originOf(apiUrl) ?? LOCAL_API, ...(faroOrigin ? [faroOrigin] : [])];
   const directives: Record<string, string[]> = {
     "default-src": ["'self'"],
     "script-src": ["'self'", "'unsafe-inline'", ...(dev ? ["'unsafe-eval'"] : [])],
