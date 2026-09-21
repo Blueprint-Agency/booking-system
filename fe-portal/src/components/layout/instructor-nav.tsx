@@ -1,5 +1,4 @@
 "use client";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
@@ -13,9 +12,9 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { createPortal } from "react-dom";
-import { cn } from "@/lib/utils";
 import { StudioMark } from "@/components/brand/studio-mark";
 import { useWorkspace } from "@/lib/workspace-context";
+import { SidebarBrand, SidebarFrame, SidebarLink } from "./sidebar";
 
 interface InstructorNavItem {
   label: string;
@@ -26,12 +25,9 @@ interface InstructorNavItem {
 
 function NavBrand() {
   return (
-    <Link
-      href="/instructor/schedule"
-      className="group flex items-center gap-2.5 px-4 py-4 text-sm font-semibold tracking-tight text-ink"
-    >
+    <SidebarBrand href="/instructor/schedule">
       <StudioMark />
-    </Link>
+    </SidebarBrand>
   );
 }
 
@@ -51,41 +47,14 @@ function NavLinkList({
           pathname === item.href || pathname.startsWith(item.href + "/");
         return (
           <li key={item.href}>
-            <Link
+            <SidebarLink
               href={item.href}
-              onClick={onNavigate}
-              aria-current={isActive ? "page" : undefined}
-              className={cn(
-                "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-150",
-                isActive
-                  ? "bg-accent/10 font-medium text-accent"
-                  : "text-ink/90 hover:bg-warm/70 hover:text-ink"
-              )}
-            >
-              {isActive && (
-                <span
-                  aria-hidden="true"
-                  className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-accent"
-                />
-              )}
-              <item.icon
-                className={cn(
-                  "h-[18px] w-[18px] shrink-0 transition-colors",
-                  isActive ? "text-accent" : "text-muted group-hover:text-ink"
-                )}
-              />
-              <span className="flex-1 truncate">{item.label}</span>
-              {item.badge !== undefined && item.badge > 0 && (
-                <span
-                  className={cn(
-                    "inline-flex min-w-[20px] justify-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums",
-                    isActive ? "bg-accent/15 text-accent" : "bg-warning/20 text-warning"
-                  )}
-                >
-                  {item.badge}
-                </span>
-              )}
-            </Link>
+              label={item.label}
+              icon={item.icon}
+              active={isActive}
+              badge={item.badge}
+              onNavigate={onNavigate}
+            />
           </li>
         );
       })}
@@ -141,10 +110,9 @@ function NavContent({ onNavigate }: { onNavigate?: () => void }) {
 
 export function InstructorNav() {
   return (
-    <nav className="hidden w-60 shrink-0 border-r border-border bg-card lg:block">
-      <NavBrand />
+    <SidebarFrame brand={<NavBrand />}>
       <NavContent />
-    </nav>
+    </SidebarFrame>
   );
 }
 
