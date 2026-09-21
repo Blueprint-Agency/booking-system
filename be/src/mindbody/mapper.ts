@@ -74,6 +74,8 @@ export type Preflight = {
    * be placed.
    */
   schedule: string[]
+  /** Active staff with no email: imported by name, with no login. */
+  staffWithoutLogin: { name: string; placeholder: string }[]
   /** Members with no usable email: imported under a placeholder, fixed later by an admin. */
   noEmail: { id: string; name: string; placeholder: string }[]
   /** Emails more than one member holds: one keeps it, the others get placeholders. */
@@ -214,7 +216,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     if (m.email) holders.set(m.email, [...(holders.get(m.email) ?? []), m])
   }
 
-  const preflight: Preflight = { noEmail: [], sharedEmails: [], notMigrated: [], balances: [], schedule: [] }
+  const preflight: Preflight = { noEmail: [], sharedEmails: [], notMigrated: [], balances: [], schedule: [], staffWithoutLogin: [] }
   const emailOf = new Map<string, string>()
   for (const m of reports.members) {
     if (!m.email) {
@@ -262,11 +264,14 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
 
   const phoneBook = new Map(reports.phoneBook.map(p => [normaliseStaffName(p.name), p]))
   const owner = config.studio.ownerEmail.trim().toLowerCase()
+  // The owner and every listed admin run the portal from the first minute.
+  const admins = new Set([owner, ...config.studio.admins.map(a => a.email.trim().toLowerCase())])
   const staffUsers: Row[] = []
   const instructors: Row[] = []
   const invitations: Row[] = []
   const staffIds = new Map<string, string>()
   let ownerId: string | null = null
+  const seatedAdmins = new Set<string>()
 
   for (const s of config.staff) {
     if (s.migrate === 'skip') continue
@@ -276,9 +281,18 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     const { firstName, lastName } = splitName(name)
     const staffId = id('staff', key)
     const archived = s.migrate === 'archived'
-    const email = archived ? placeholder('staff', key) : s.email.trim().toLowerCase()
-    const isOwner = !archived && email === owner
-    const role = s.role ?? 'instructor'
+    const real = archived || (s.migrate === 'active' && s.noLogin) ? '' : (s.email?.trim().toLowerCase() ?? '')
+    // No email, no login: they come across by name so their classes and pay
+    // name them, under an address nobody receives, and nobody can sign in as them.
+    const loginless = !archived && !real
+    const email = real || placeholder('staff', key)
+    const isAdmin = !archived && !loginless && admins.has(email)
+    if (isAdmin) seatedAdmins.add(email)
+    const role = isAdmin ? 'admin' : (s.role ?? 'instructor')
+    // Onboarded now: active, no invitation, signing in by setting a password.
+    const onboarded = isAdmin || (!archived && !loginless && config.staffOnboarding === 'active')
+    const pending = !archived && !loginless && !onboarded
+    if (loginless) preflight.staffWithoutLogin.push({ name, placeholder: email })
 
     staffUsers.push({
       id: staffId,
@@ -289,21 +303,22 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
       first_name: firstName,
       last_name: lastName,
       role,
-      // The owner runs the studio from the first minute; everyone else arrives
-      // by invitation, sent or resent by an admin when the studio decides.
-      status: archived ? 'archived' : isOwner ? 'active' : 'pending',
+      // The owner, the admins and — with `staffOnboarding: 'active'` — everyone
+      // with an email run the studio from the first minute; otherwise they
+      // arrive by invitation, sent or resent by an admin when the studio decides.
+      status: archived ? 'archived' : pending ? 'pending' : 'active',
       granted_location_ids: [],
       phone: listed?.phone || null,
-      invited_at: archived || isOwner ? null : asOf.toISOString(),
+      invited_at: pending ? asOf.toISOString() : null,
       archived_at: archived ? asOf.toISOString() : null,
     })
     ids.staff_users![s.mindbodyName] = staffId
     staffIds.set(key, staffId)
-    if (isOwner) ownerId = staffId
+    if (isAdmin && email === owner) ownerId = staffId
 
     if (s.teaches || role === 'instructor') instructors.push({ staff_user_id: staffId, tenant_id: tenantId })
 
-    if (!archived && !isOwner) {
+    if (pending) {
       invitations.push({
         id: id('staff-invitation', key),
         tenant_id: tenantId,
@@ -318,6 +333,32 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
         created_at: asOf.toISOString(),
       })
     }
+  }
+
+  // Admins Mindbody never listed as staff — an owner who never taught, whoever
+  // runs the migration: a staff row each, active, with no invitation to send.
+  for (const email of admins) {
+    if (seatedAdmins.has(email)) continue
+    const listedName = config.studio.admins.find(a => a.email.trim().toLowerCase() === email)?.name?.trim()
+    const { firstName, lastName } = splitName(listedName || email.split('@')[0]!)
+    const staffId = id('staff', `admin:${email}`)
+    staffUsers.push({
+      id: staffId,
+      tenant_id: tenantId,
+      auth_user_id: null,
+      email,
+      name: joinName(firstName, lastName),
+      first_name: firstName,
+      last_name: lastName,
+      role: 'admin',
+      status: 'active',
+      granted_location_ids: [],
+      phone: null,
+      invited_at: null,
+      archived_at: null,
+    })
+    ids.staff_users![email] = staffId
+    if (email === owner) ownerId = staffId
   }
 
   /* ── The catalogue, and what members still hold of it (`./packages.ts`) ─── */
@@ -531,6 +572,9 @@ export function renderPreflight(p: Preflight): string {
     lines.push(`- ${s.email}: kept by ${s.keeper.id} ${s.keeper.name}`)
     for (const o of s.others) lines.push(`  - ${o.id} ${o.name} → ${o.placeholder}`)
   }
+  lines.push('', `## Staff with no email: imported by name, with no login (${p.staffWithoutLogin.length})`, '')
+  lines.push('They teach, are paid and appear on the timetable; nobody can sign in as them until they have a real email.', '')
+  for (const s of p.staffWithoutLogin) lines.push(`- ${s.name} → ${s.placeholder}`)
   lines.push('', `## Still live in Mindbody, and not migrated (${p.notMigrated.length})`, '')
   lines.push('The platform has no package for these. Decide with the studio how each is honoured after launch.', '')
   for (const n of p.notMigrated) {

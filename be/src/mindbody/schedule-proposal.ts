@@ -30,15 +30,21 @@ function commonest(spellings: string[]): string {
   return [...counts].sort(([a, n], [b, m]) => m - n || a.localeCompare(b))[0]![0]
 }
 
-export function proposeSchedule(reports: MindbodyReports, asOf: CalendarDate | null): Proposal {
+export function proposeSchedule(
+  reports: MindbodyReports,
+  asOf: CalendarDate | null,
+  /** The Locations already proposed, by what the timetable calls them: a Room is proposed at the one it holds most classes in. */
+  locationKeys: Map<string, string> = new Map(),
+): Proposal {
   const today = asOf ? dayNumber(asOf) : null
   const recent = reports.schedule.filter(r => today === null || dayNumber(r.date) > today - WEEKS * 7)
   const workshopCategories = [...new Set(recent.map(r => r.serviceCategory).filter(c => WORKSHOP.test(c)))].sort()
   const classes = recent.filter(r => !WORKSHOP.test(r.serviceCategory))
 
-  const rooms = [...new Set(classes.map(r => r.room).filter(Boolean))]
-    .sort()
-    .map(room => ({ name: room, location: null, capacity: null, mindbodyNames: [room] }))
+  const rooms = [...new Set(classes.map(r => r.room).filter(Boolean))].sort().map(room => {
+    const at = classes.filter(r => r.room === room).map(r => r.location.trim())
+    return { name: room, location: at.length ? (locationKeys.get(commonest(at)) ?? null) : null, capacity: null, mindbodyNames: [room] }
+  })
 
   const byName = new Map<string, string[]>()
   for (const r of classes) {
@@ -79,7 +85,11 @@ export function proposeSchedule(reports: MindbodyReports, asOf: CalendarDate | n
       }
     })
 
-  const ptAppointmentNames = [...new Set(reports.roster.map(r => r.description).filter(d => PT.test(d)))].sort()
+  // The roster and the attendance report call one appointment different things
+  // ("Personal Training / PT" beside a bare "PT"); both are PT.
+  const ptAppointmentNames = [
+    ...new Set([...reports.roster, ...reports.attendance].map(r => r.description).filter(d => PT.test(d))),
+  ].sort()
 
   // Weekly: the same weekday, time, Room and name in each of the four weeks
   // that ended on the day of the download.

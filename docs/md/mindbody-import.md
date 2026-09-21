@@ -33,7 +33,7 @@ the freeze — decisions 11 and 12 are fixed **in Mindbody**, so they have to be
 
 | # | Decision | What the studio provides | Default if they have no view |
 |---|---|---|---|
-| 1 | Studio identity | Slug, display name, timezone, owner's admin email | — (required) |
+| 1 | Studio identity | Slug, display name, timezone, owner's admin email, and anyone else who runs the portal from day one (`studio.admins`) | — (required) |
 | 2 | Locations | Name, address, phone for each | — (required) |
 | 3 | Rooms | Which Mindbody room spellings are one Room; capacity of each; which "rooms" are really off-site venues | Off-site venues dropped from Rooms |
 | 4 | Class capacity | Seats per class, per Room, with exceptions per class name | Room capacity |
@@ -77,7 +77,9 @@ the studio. What belongs here is the shape of the profile it runs on the day:
   "Scheduled") and Schedule at a Glance must reach the last date the studio has anything
   scheduled — not "up to today", which is what an ordinary download does, and which would lose
   every future class and every seat already booked on one. A studio bringing its past also needs
-  Attendance and Payroll (Detail) back to the history cutoff from decision 17.
+  **Attendance without Revenue** (View by: Date) and **Payroll** (Detail) back to the history
+  cutoff from decision 17. Only the Date view of Attendance without Revenue is read: its Client,
+  Staff member and Visit type views are the same visits sorted differently.
 - **A capped or refused report is a hard failure.** Mindbody truncates a report that is too large
   and says so quietly. The profile stops the run — not warns — on any report that comes back
   capped, refused or short, because a silently truncated file transforms into a studio that has
@@ -144,6 +146,9 @@ npm run mindbody -- verify --expected <studio.expected.json> --export <exported.
   `locations[].mindbodyNames`), its capacity is the Room's or the Class Type's own
   (`classTypes[].capacity`, needed for a class held at an `offSiteVenues` venue, which has no
   Room), `credit_cost` is 1, and the teacher's pay is their Per Class rate from Pay Rates —
+  where Mindbody files two rooms under one spelling (a studio that relabelled its rooms), each
+  Room but one lists the `rooms[].classTypes` it holds under that spelling and the last takes the
+  rest; a class's Room decides its Location, so a Room at the wrong Location moves its classes —
   where they have none, the class is **Unpriced** for an admin to settle. A name marked `***`
   is taught by the substitute it is filed under. Anything under a `workshopCategories` service
   category is left to the workshop import.
@@ -188,8 +193,11 @@ npm run mindbody -- verify --expected <studio.expected.json> --export <exported.
   what the schedule report holds for those days — empty ones included — and any session only the
   roster reached, because the schedule download may start later than the cutoff. Each carries the
   pay the **payroll Detail** report says the teacher was actually given, matched on date, time and
-  teacher, and is Unpriced where payroll has no line for it. Past bookings come from the
-  **Attendance** report (Date view), one per visit: *signed in* is `confirmed`/`attended` with a
+  teacher, and is Unpriced where payroll has no line for it. A past class with no Room behind it
+  (Mindbody left the room blank) and no capacity of its own is sized like its Location's largest
+  Room rather than dropped. Past bookings come from the **Attendance without Revenue** report
+  (Date view), one per visit, whose `Staff Paid` / `Late Cancel` / `No-show` flags say how it
+  ended: *signed in* (paid, neither flag) is `confirmed`/`attended` with a
   `check_ins` row (manual, by the owner), *absent* or *no-show* is `no_show`/`forfeited`, a
   *late cancel* is `cancelled`/`forfeited` with a `cancellations` row, a seat the studio never
   marked comes across `confirmed` with its check-in still pending, and an **early cancellation is
@@ -239,11 +247,23 @@ npm run mindbody -- verify --expected <studio.expected.json> --export <exported.
   Pricing Option Expirations (the catalogue proposal, and past purchases) and Big Spenders
   (Detail Accrual, the catalogue proposal only), Staff Schedule (ALL, "Scheduled": the
   timetable), Schedule at a Glance (`.xlsx`, one per year: who is booked into what) and, if they
-  were downloaded, Account Balances (All balances), Pay Rates (`.xlsx`), Attendance (Date,
-  `.xlsx`, one per year) and Payroll (Detail). The last two are only read by a studio importing
-  history; without them its past arrives with no visits and every past class Unpriced.
+  were downloaded, Account Balances (All balances), Pay Rates (`.xlsx`), Attendance without
+  Revenue (Date view, `.xlsx`; one file or one per year) and Payroll (Detail, one per year). The
+  last two are only read by a studio importing history; without them its past arrives with no
+  visits and every past class Unpriced. The transform can be pointed at the whole download
+  folder: every other report and view in it is left alone.
+- `starter` names the Locations what the timetable calls them (oldest first, matched to the
+  numbers Retention Management prints) and proposes each Room at the Location it holds most
+  classes in; the PT appointment names come from the roster and the attendance report both.
 - Writes: settings, Locations, Rooms, Class Types, policy, PT booking config, all email
-  templates, every member profile, the class and PT catalogue, every live package, staff — the owner (`studio.ownerEmail`) an active Admin,
+  templates, every member profile, the class and PT catalogue, every live package, staff — the
+  owner (`studio.ownerEmail`) and everyone in `studio.admins` (an owner or an agency Mindbody
+  never listed as staff gets a staff row of their own) an active Admin with no invitation;
+  with `staffOnboarding: "active"` every migrated staff member with an email is active too, with
+  no invitation, and sets a first password through Forgot password (or an admin's set-password
+  link) — importing sends nothing; a staff member marked `noLogin` (no email of their own) is
+  active by name under a `no-email.invalid` placeholder, so they teach and are paid but nobody
+  can sign in as them, and the portal never offers to mail that address;
   other migrated staff pending with an invitation to resend from the portal, `archived` teachers
   with a placeholder email — the timetable still to come: Class Series, classes, PT requests
   and sessions, workshops with their days, tiers and instructors, and every booking on them —

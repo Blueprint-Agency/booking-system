@@ -5,7 +5,7 @@ import path from 'node:path'
 import { packArchive, unpackArchive } from '../services/tenants/transfer-archive'
 import { ConfigError, starterConfig, validateConfig } from './config'
 import { mapStudio } from './mapper'
-import { readReports, transformMindbody, verifyImport } from './transform'
+import { REPORTS as REPORT_FILES, readReports, transformMindbody, verifyImport } from './transform'
 
 /**
  * The transform, from the outside: fixture reports and a fixture config in, an
@@ -1105,4 +1105,127 @@ test('the expected figures gain the studio s past, year by year, and verify comp
 test('with history, the same inputs still give the same zip, byte for byte', async () => {
   const [a, b] = [await run(withHistory(true)), await run(withHistory(true))]
   assert.ok(a.zip.equals(b.zip))
+})
+
+/* ── Admins, shared room spellings, which file is which ───────────────────── */
+
+test('admins: each an active Admin with no invitation, and one Mindbody never listed is a staff row of their own', async () => {
+  const config = fixtureConfig()
+  config.studio.admins = [
+    { email: 'Frank@example.test', name: null },
+    { email: 'helper@agency.example', name: 'Agency Helper' },
+  ]
+  const { archive, ids } = await run(config)
+  const byEmail = (email: string) => archive.rows.staff_users!.find(r => r.email === email)!
+
+  const frank = byEmail('frank@example.test')
+  assert.deepEqual([frank.role, frank.status, frank.invited_at], ['admin', 'active', null], 'a migrated staff member listed as an admin')
+  const helper = byEmail('helper@agency.example')
+  assert.deepEqual([helper.role, helper.status, helper.name, helper.invited_at], ['admin', 'active', 'Agency Helper', null])
+  assert.equal(ids.staff_users!['helper@agency.example'], helper.id)
+  assert.equal(archive.rows.staff_users!.length, 5, 'the four migrated staff, and the one admin Mindbody never listed')
+  assert.deepEqual(
+    archive.rows.staff_invitations!.map(r => r.email),
+    ['ivy@example.test'],
+    'nobody who can already sign in is sent an invitation',
+  )
+  assert.ok(!archive.rows.instructors!.some(r => r.staff_user_id === helper.id), 'an admin who teaches nothing is no instructor')
+})
+
+test('staffOnboarding active: staff with an email are active with no invitation; one with none is active by name with no login', async () => {
+  const config = fixtureConfig()
+  config.staffOnboarding = 'active'
+  config.staff.push({ mindbodyName: 'Nora Noemail', migrate: 'active', email: null, role: 'instructor', teaches: true, noLogin: true })
+  const { archive, ids, preflight, preflightText } = await run(config)
+  const staff = (name: string) => archive.rows.staff_users!.find(r => r.id === ids.staff_users![name])!
+
+  assert.deepEqual([staff('Ivy Instructor').status, staff('Ivy Instructor').invited_at], ['active', null])
+  assert.deepEqual([staff('Frank Front').status, staff('Frank Front').role], ['active', 'admin'])
+  assert.equal(archive.rows.staff_invitations!.length, 0, 'nobody is sent an invitation')
+
+  const nora = staff('Nora Noemail')
+  assert.deepEqual([nora.name, nora.status, nora.role, nora.invited_at], ['Nora Noemail', 'active', 'instructor', null])
+  assert.match(nora.email as string, /@no-email\.invalid$/, 'an address nobody receives, so nobody can sign in as her')
+  assert.ok(archive.rows.instructors!.some(r => r.staff_user_id === nora.id), 'she can lead a class')
+  assert.deepEqual(preflight.staffWithoutLogin.map(s => s.name), ['Nora Noemail'])
+  assert.match(preflightText, /Staff with no email: imported by name, with no login \(1\)/)
+
+  // The default still invites, and a staff member with no email is never invited.
+  const invited = await run((() => {
+    const c = fixtureConfig()
+    c.staff.push({ mindbodyName: 'Nora Noemail', migrate: 'active', email: null, role: 'instructor', teaches: true, noLogin: true })
+    return c
+  })())
+  assert.deepEqual(invited.archive.rows.staff_invitations!.map(r => r.email).sort(), ['frank@example.test', 'ivy@example.test'])
+})
+
+test('the owner may be an admin Mindbody never listed, and is who created what the import writes', async () => {
+  const config = fixtureConfig()
+  config.studio.ownerEmail = 'boss@agency.example'
+  config.studio.admins = [{ email: 'boss@agency.example', name: 'Boss Person' }]
+  const { archive } = await run(config)
+  const boss = archive.rows.staff_users!.find(r => r.email === 'boss@agency.example')!
+  assert.deepEqual([boss.role, boss.status], ['admin', 'active'])
+  assert.ok(archive.rows.classes!.every(c => c.created_by_staff_id === boss.id))
+  const olive = archive.rows.staff_users!.find(r => r.email === 'owner@example.test')!
+  assert.deepEqual([olive.role, olive.status], ['admin', 'pending'], 'no longer the owner, so invited like everyone else')
+
+  const unlisted = fixtureConfig()
+  unlisted.studio.ownerEmail = 'boss@agency.example'
+  assert.throws(() => validateConfig(unlisted), /boss@agency\.example is not the email of any staff member being migrated as active, nor one of studio\.admins/)
+  const teaching = fixtureConfig()
+  teaching.studio.admins = [{ email: 'ivy@example.test', name: null }]
+  assert.throws(() => validateConfig(teaching), /Ivy Instructor\) is in studio\.admins, so their role must be admin/)
+})
+
+test('two Rooms Mindbody files under one spelling are told apart by Class Type', async () => {
+  const config = fixtureConfig()
+  // "Studio2-Normal Room" is now also where Mindbody files the Flow Room's classes.
+  config.rooms.push({ name: 'Flow Room', location: 'location-2', capacity: 9, mindbodyNames: ['Studio2-Normal Room'], classTypes: ['Vinyasa flow'] })
+  const { archive, ids } = await run(config)
+  const classes = timetable(archive, ids)
+  const flow = classes.find(c => c.what === 'Vinyasa Flow 2090-01-03T02:00:00.000Z')!
+  assert.deepEqual([flow.room, flow.location, flow.capacity], ['Flow Room', 'location-2', 25], 'the Class Type decides, and the Room its Location')
+  assert.ok(classes.filter(c => c.what.startsWith('Hatha')).every(c => c.room === 'Hot Room'), 'a spelling one Room holds alone is untouched')
+
+  const twoFallbacks = fixtureConfig()
+  twoFallbacks.rooms.push({ name: 'Flow Room', location: 'location-2', capacity: 9, mindbodyNames: ['Studio2-Normal Room'] })
+  assert.throws(() => validateConfig(twoFallbacks), /room spelling "studio2-normal room" is mapped to two Rooms/)
+  const unknownType = fixtureConfig()
+  unknownType.rooms.push({ name: 'Flow Room', location: 'location-2', capacity: 9, mindbodyNames: ['Studio2-Normal Room'], classTypes: ['Yin'] })
+  assert.throws(() => validateConfig(unknownType), /rooms\[3\] \(Flow Room\)\.classTypes: "Yin" is in no Class Type/)
+})
+
+test('the starter config names the Locations the timetable names, oldest first, and puts each Room at its own', async () => {
+  const reports = await readReports(REPORTS)
+  // The fixture's Outdoor Yoga classes are at a second Location, opened later.
+  const schedule = reports.schedule.map(r => (r.room === 'Outdoor Yoga' ? { ...r, location: 'Riverside' } : r))
+  const starter = starterConfig({ ...reports, schedule }, '2026-09-17T02:00:00+08:00')
+  assert.deepEqual(
+    starter.locations.map(l => [l.key, l.name, l.mindbodyIds, l.mindbodyNames]),
+    [
+      ['location-1', 'Main Hall', ['1'], ['Main Hall']],
+      ['location-2', 'Riverside', ['2'], ['Riverside']],
+    ],
+  )
+  assert.deepEqual(
+    starter.rooms!.map(r => [r.name, r.location]),
+    [
+      ['Outdoor Yoga', 'location-2'],
+      ['Studio 1 - Hot Room', 'location-1'],
+      ['Studio2-Normal Room', 'location-1'],
+    ],
+  )
+})
+
+test('history reads the Date view of Attendance without Revenue, and none of the views that repeat it', () => {
+  const attendance = (f: string) => REPORT_FILES.attendance.test(f)
+  assert.ok(attendance('16 Attendance without Revenue - Date.xlsx'))
+  assert.ok(attendance('16 Attendance - Date - 2026.xlsx'), 'one file per year')
+  for (const copy of ['Client', 'Staff member', 'Visit type', 'No-shows-late cancels', 'Service category', 'Summary', 'Roll sheet']) {
+    assert.ok(!attendance(`16 Attendance without Revenue - ${copy}.xlsx`), copy)
+  }
+  assert.ok(!attendance('12 Attendance Analysis - Day and Time - Detail.xlsx'))
+  assert.ok(REPORT_FILES.payroll.test('32 Payroll - Detail - 2026.xls'))
+  assert.ok(!REPORT_FILES.payroll.test('32 Payroll - Summary by Pay Rate.xls'))
 })

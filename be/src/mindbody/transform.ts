@@ -31,7 +31,7 @@ import { readXlsxTable } from './xlsx'
  * The download script names files `NN <Report> - <View>.xls`; a studio's name is
  * never part of it.
  */
-const REPORTS = {
+export const REPORTS = {
   members: { label: 'Mailing Lists — Mailing List', test: (f: string) => /mailing list\.[a-z]+$/i.test(f) },
   referrals: { label: 'Referral Types (detail files)', test: (f: string) => /referral types/i.test(f) && !/summary/i.test(f) },
   retention: { label: 'Retention Management', test: (f: string) => /retention management/i.test(f) },
@@ -47,9 +47,14 @@ const REPORTS = {
   // One workbook per year, because it is large.
   roster: { label: 'Schedule at a Glance', test: (f: string) => /schedule at a glance/i.test(f) },
   payRates: { label: 'Pay Rates', test: (f: string) => /pay rates/i.test(f) },
-  // History. One workbook per year, like the roster, because a studio's whole
-  // past is far too much for one file.
-  attendance: { label: 'Attendance — Date', test: (f: string) => /attendance.*date/i.test(f) },
+  // History: Attendance without Revenue, Date view — one file, or one per year.
+  // Only the Date view: Client, Staff member and Visit type are the same visits
+  // sorted another way, "No-shows-late cancels" is a copy of Date, and read
+  // beside it every visit would arrive twice. Attendance *Analysis* is totals.
+  attendance: {
+    label: 'Attendance without Revenue — Date',
+    test: (f: string) => /attendance/i.test(f) && !/analysis/i.test(f) && /-\s*date\b/i.test(f),
+  },
   payroll: { label: 'Payroll — Detail', test: (f: string) => /payroll.*detail/i.test(f) },
 } as const
 

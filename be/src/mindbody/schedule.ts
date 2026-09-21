@@ -1,6 +1,6 @@
 import type { BookingCoder } from './booking-codes'
 import { ConfigError, type StudioConfig } from './config'
-import { fold, type ConfigLookups } from './lookups'
+import { fold, roomFor, type ConfigLookups } from './lookups'
 import { ptAppointmentRows, ptClients } from './pt'
 import type { PayRateRow, RosterRow, ScheduledClassRow } from './readers'
 import {
@@ -78,7 +78,7 @@ export function mapSchedule(input: {
 
   /* ── What the config calls things (`./lookups.ts`) ─────────────────────── */
 
-  const { rooms, offSite, locations, types, workshopCategories, ptNames } = input.lookups
+  const { offSite, locations, types, workshopCategories, ptNames } = input.lookups
   const payPerClass = new Map(input.payRates.map(p => [normaliseStaffName(p.staff), p.perClass]))
 
   /** Leading something imported makes a staff member an instructor, if they were not one already. */
@@ -135,7 +135,7 @@ export function mapSchedule(input: {
     if (classes.has(key)) continue
 
     const type = types.get(name)
-    const room = rooms.get(fold(r.room))
+    const room = roomFor(input.lookups, r.room, type?.id)
     const teacherId = staffIds.get(staffKey)
     const location = room?.location ?? locations.get(fold(r.location))
     if (!type) count(unknownNames, r.description)
@@ -346,7 +346,7 @@ export function mapSchedule(input: {
 
     const ptTypeId = input.ensurePtType()
     teaches(instructorId)
-    const room = rooms.get(fold(a.room))
+    const room = roomFor(input.lookups, a.room, ptTypeId)
     const location = room?.location ?? locations.get(fold(a.location)) ?? config.defaultLocation
     const startsAt = instant(a.date, a.start)
     const end = a.end ? instant(a.date, a.end) : startsAt
@@ -392,7 +392,7 @@ export function mapSchedule(input: {
     if (!s.migrate) continue
     const label = `${s.className}, weekday ${s.weekday} at ${s.startTime}`
     const type = types.get(normaliseClassName(s.className))!
-    const room = rooms.get(fold(s.room))!
+    const room = roomFor(input.lookups, s.room, type.id)!
     const teacherId = staffIds.get(normaliseStaffName(s.teacher))!
     const mine = [...classes.values()]
       .filter(

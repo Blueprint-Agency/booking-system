@@ -436,3 +436,74 @@ test('payroll: the teacher from the heading above the table, and what each class
     'the report title, the pay-rate line and the totals are not classes',
   )
 })
+
+const row = (...cells: string[]): TableRow => ({ cells, links: cells.map(() => null) })
+
+test('attendance without revenue: the three flags are how a visit ended, and "n/a" is no option', () => {
+  const header = row(
+    'Date', 'Day', 'Time', 'Client ID', 'Client', 'Visit Service Category', 'Visit Type', 'Type', 'Pricing Option', 'Exp. Date',
+    'Visits Rem.', 'Staff', 'Visit Location', 'Sale Location', 'Staff Paid', 'Late Cancel', 'No-show', 'Booking Method',
+    'Payment Service Category',
+  )
+  // 46282 is 17 September 2026 as a workbook counts days.
+  const visit = (id: string, type: string, option: string, paid: string, late: string, noShow: string) =>
+    row('46282', 'Thursday', '8:45 am', id, 'Doe, Jane', 'Main Hall', 'Stretch', type, option, '46328', '5', 'Instructor, Ivy', 'Main Hall ', 'Online Store', paid, late, noShow, ' MINDBODY app', 'Main Hall')
+  const visits = readAttendance([
+    header,
+    visit('100000001', 'Hatha ', 'Unlimited 12', 'Yes', 'No', 'No'),
+    visit('100000002', 'Hatha', 'Class Pack - Bundle of 10', 'No', 'Yes', 'No'),
+    visit('100000003', 'Hatha', 'ClassPass', 'No', 'No', 'Yes'),
+    visit('100000004', 'Hatha', 'Unlimited 12', 'Yes', 'No', 'Yes'),
+    visit('100000005', 'PT', 'n/a', 'No', 'No', 'No'),
+    row('Grand Total', '', '', '', '', '', '', '', '', 'Paid:', '2', 'Comps:', '3'),
+  ])
+  assert.deepEqual(
+    visits.map(v => [v.clientId, v.status, v.option]),
+    [
+      ['100000001', 'Signed in', 'Unlimited 12'],
+      ['100000002', 'Late Cancel', 'Class Pack - Bundle of 10'],
+      ['100000003', 'No Show', 'ClassPass'],
+      ['100000004', 'No Show', 'Unlimited 12'],
+      ['100000005', 'Reserved', ''],
+    ],
+    'no Status column: it is read from Staff Paid, Late Cancel and No-show, and the grand total is no visit',
+  )
+  const first = visits[0]!
+  assert.deepEqual(
+    [first.date, first.start, first.end, first.description, first.room, first.location],
+    [{ year: 2026, month: 9, day: 17 }, { hour: 8, minute: 45 }, null, 'Hatha', '', 'Main Hall'],
+    'the class name is Type, the Location is Visit Location, and the schedule report supplies the Room and the end',
+  )
+})
+
+test('payroll as Mindbody lays it out: each teacher named between the tables, three kinds of table', () => {
+  const html = `
+    <div class="reportHeader">Thursday, 1 January 2026 – Thursday, 17 September 2026</div>
+    <div class="staffHeader"><span class="staffName">  Instructor, Ivy </span></div>
+    <div class="payscaleHeader"><span class="typeLocation">Class/Courses-- Main Hall</span><span class="payscale">Pay rate: Per Class Rate</span></div>
+    <table class="results">
+      <tr><td>Class Date</td><td>Class Time</td><td>Class name</td><td></td><td># Staff paid</td><td># Staff unpaid</td><td>Base Pay</td><td>Bonus Pay</td><td>Earnings</td></tr>
+      <tr class="odd"><td>6/7/2026</td><td>7:00&nbsp;pm</td><td>Hatha</td><td></td><td>3</td><td>0</td><td>35.00</td><td>0.00</td><td>35.00</td></tr>
+      <tr class="subtotal"><td colspan="6"></td><td>35.00</td><td>0.00</td><td>35.00</td></tr>
+    </table>
+    <table class="locationTotal"><tr><td>Main Hall (1 Services) Total:</td><td>tot 35.00</td></tr></table>
+    <div class="staffHeader"><span class="staffName">Owner, Olive</span></div>
+    <div class="payscaleHeader"><span class="payscale">Pay rate: Percentage Rate (50%)</span></div>
+    <table class="results">
+      <tr><td>Class Date</td><td>Class Time</td><td>Client Name</td><td>Series Used</td><td>Revenue</td><td>Rev. per Session</td><td>Earnings per Client</td><td>Earnings</td></tr>
+      <tr class="odd"><td>8/9/2026</td><td>10:00 am</td><td>Doe, Jane</td><td>Unlimited 12</td><td>10.00</td><td>10.00</td><td>5.00</td><td>5.00</td></tr>
+      <tr class=""><td>8/9/2026</td><td>10:00 am</td><td>Roe, Rick</td><td>Class Pack</td><td>20.00</td><td>20.00</td><td>10.00</td><td>10.00</td></tr>
+    </table>
+    <table class="results appointments">
+      <tr><td>Appointment Date</td><td>Appt. Time</td><td>Client Name</td><td>Series Used</td><td>Revenue</td><td></td><td>Rev. per Session</td><td>Earnings</td></tr>
+      <tr class="odd"><td>Thursday, 10 September 2026</td><td>11:00 am</td><td>J. Doe</td><td>PT - Bundle of 10</td><td>1,200.00</td><td></td><td>120.00</td><td>60.00</td></tr>
+      <tr class=""><td>30/8/2026</td><td>TBD</td><td>R. Roe</td><td>Retreat - Twin</td><td>2,000.00</td><td></td><td>2,000.00</td><td>1,000.00</td></tr>
+    </table>
+    <table class="results staffTotalAsstDisabled"><tr><td># Services</td><td># Staff paid</td><td># Staff unpaid</td><td>Base Earnings</td><td></td><td>Earnings</td></tr>
+      <tr><td>Total for Owner, Olive</td><td>1</td><td>2</td><td>15.00</td><td></td><td>15.00</td></tr></table>`
+  assert.deepEqual(
+    readPayroll(html).map(p => `${p.staff} ${p.date.day}/${p.date.month} ${p.start.hour}:${p.start.minute} ${p.description} ${p.earnings}`),
+    ['Instructor, Ivy 6/7 19:0 Hatha 35', 'Owner, Olive 8/9 10:0  5', 'Owner, Olive 8/9 10:0  10', 'Owner, Olive 10/9 11:0  60'],
+    'a percentage-rate class is a line per client, which the mapper adds up; an appointment writes its day out; a line at no time (a retreat share) and the totals are not classes',
+  )
+})

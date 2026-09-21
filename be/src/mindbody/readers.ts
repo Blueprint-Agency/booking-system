@@ -1,4 +1,4 @@
-import { readHtmlTable, type TableRow } from './html-table'
+import { decodeEntities, readHtmlTable, type TableRow } from './html-table'
 import {
   cleanEmail,
   cleanPhone,
@@ -503,43 +503,66 @@ export type AttendanceRow = {
   option: string
 }
 
+/** The columns of Attendance without Revenue's detail views, which say how a visit ended in three flags rather than a Status. */
+const ATTENDANCE_FLAGS = ['Date', 'Time', 'Type', 'Staff', 'Client ID', 'Pricing Option', 'Staff Paid', 'Late Cancel', 'No-show'] as const
+
 /**
- * Takes a workbook already read into rows (`./xlsx.ts`), like the roster, and
- * like the roster there is one per year: a studio's whole history is far too
- * much for one file.
+ * A visit's Status, from the three Yes/No flags the Attendance without Revenue
+ * report writes instead of one. Late cancel and no-show are what the flags say;
+ * a visit that is neither and counted towards the teacher's pay is one the
+ * member came to; anything else is a seat nobody marked (the report's own
+ * "upcoming" rows, on the day of the download).
+ */
+function statusFromFlags(row: TableRow, columns: Columns): string {
+  const yes = (name: string) => /^yes$/i.test(cell(row, columns, name).trim())
+  if (yes('Late Cancel')) return 'Late Cancel'
+  if (yes('No-show')) return 'No Show'
+  if (yes('Staff Paid')) return 'Signed in'
+  return 'Reserved'
+}
+
+/**
+ * Takes a workbook already read into rows (`./xlsx.ts`), like the roster. One
+ * file, or one per year where a studio's history is too much for one.
  *
- * The Date view is one row per visit — the history that the platform's past
- * bookings, check-ins and cancellations are made from. It is the roster's
- * columns plus the pricing option the visit was taken from, which is what lets
- * an imported booking point at the package that paid for it.
+ * One row per visit — the history that the platform's past bookings, check-ins
+ * and cancellations are made from — with the pricing option the visit was
+ * taken from, which is what lets an imported booking point at the package that
+ * paid for it.
+ *
+ * Mindbody's **Attendance without Revenue** report (any of its detail views:
+ * Date, Client, Staff member, Visit type) writes a visit as `Time`, `Type` (the
+ * class name) and `Visit Location`, and says how it ended in the `Staff Paid`,
+ * `Late Cancel` and `No-show` flags; it has no Room and no end time, which the
+ * schedule report supplies. A roster-shaped export (`Start time`,
+ * `Description`, `Status`) is read too. Early cancellations are in neither: the
+ * reservation is gone from the report once it is cancelled early.
  */
 export function readAttendance(rows: TableRow[]): AttendanceRow[] {
-  const { at, columns } = header(rows, 'Attendance', [
-    'Date',
-    'Start time',
-    'Description',
-    'Staff',
-    'Client ID',
-    'Status',
-    'Pricing option',
-  ])
+  const flagged = rows.some(row => ATTENDANCE_FLAGS.every(name => row.cells.some(c => c.toLowerCase() === name.toLowerCase())))
+  const { at, columns } = flagged
+    ? header(rows, 'Attendance', ATTENDANCE_FLAGS)
+    : header(rows, 'Attendance', ['Date', 'Start time', 'Description', 'Staff', 'Client ID', 'Status', 'Pricing option'])
+  const time = flagged ? 'Time' : 'Start time'
   const out: AttendanceRow[] = []
   for (const row of dataRows(rows, at)) {
     const id = clientId(row, columns, 'Client ID')
     const date = excelDate(cell(row, columns, 'Date')) ?? parseMindbodyDate(cell(row, columns, 'Date'), 'DM')
-    const start = excelTime(cell(row, columns, 'Start time')) ?? parseClock(cell(row, columns, 'Start time'))
+    const start = excelTime(cell(row, columns, time)) ?? parseClock(cell(row, columns, time))
     if (!id || !date || !start) continue
+    // `n/a` is how this report writes "no pricing option".
+    const option = tidy(cell(row, columns, 'Pricing option'))
     out.push({
       date: { year: date.year, month: date.month, day: date.day },
       start,
-      end: excelTime(cell(row, columns, 'End time')) ?? parseClock(cell(row, columns, 'End time')),
-      description: tidy(cell(row, columns, 'Description')),
+      end: flagged ? null : (excelTime(cell(row, columns, 'End time')) ?? parseClock(cell(row, columns, 'End time'))),
+      description: tidy(cell(row, columns, flagged ? 'Type' : 'Description')),
       staff: tidy(cell(row, columns, 'Staff')),
-      room: tidy(cell(row, columns, 'Room')),
-      location: tidy(cell(row, columns, 'Location')),
+      room: flagged ? '' : tidy(cell(row, columns, 'Room')),
+      location: tidy(cell(row, columns, flagged ? 'Visit Location' : 'Location')),
       clientId: id,
-      status: tidy(cell(row, columns, 'Status')),
-      option: tidy(cell(row, columns, 'Pricing option')),
+      status: flagged ? statusFromFlags(row, columns) : tidy(cell(row, columns, 'Status')),
+      option: /^n\/a$/i.test(option) ? '' : option,
     })
   }
   return out
@@ -572,18 +595,48 @@ const NOT_A_TEACHER = /^(pay rate|rate|total|subtotal|grand total|payroll|earnin
  * it is a rate or a total.
  */
 export function readPayroll(html: string): PayrollRow[] {
+  // Mindbody's own layout names each teacher in a `staffName` span *between*
+  // the tables, where no table row can see it: so the file is cut at every
+  // teacher and each piece read with its teacher already known.
+  const STAFF_HEADER = /<div[^>]*class\s*=\s*["']staffHeader["'][^>]*>/i
+  if (STAFF_HEADER.test(html)) {
+    const out: PayrollRow[] = []
+    for (const piece of html.split(STAFF_HEADER).slice(1)) {
+      const name = /<span[^>]*class\s*=\s*["']staffName["'][^>]*>([\s\S]*?)<\/span>/i.exec(piece)
+      const staff = name ? tidy(decodeEntities(name[1]!.replace(/<[^>]*>/g, ' '))) : ''
+      if (staff) out.push(...payrollLines(readHtmlTable(piece), staff))
+    }
+    return out
+  }
+  return payrollLines(readHtmlTable(html), null)
+}
+
+/** The first of these column names a header row has. */
+const PAYROLL_DATE = ['date', 'class date', 'appointment date']
+const PAYROLL_TIME = ['time', 'class time', 'appt. time']
+const PAYROLL_CLASS = ['class', 'class name']
+
+/**
+ * The paid lines under one teacher (`staff`), or — where `staff` is null — under
+ * whichever lone-cell heading last named one. Column positions are re-read at
+ * every header row: a teacher paid two ways has two tables, and the per-class,
+ * percentage and appointment tables each lay their columns out differently. A
+ * percentage-rate class is a line per client; the lines of one class add up.
+ */
+function payrollLines(rows: TableRow[], staff: string | null): PayrollRow[] {
   const out: PayrollRow[] = []
-  let staff: string | null = null
+  let teacher = staff
   let columns: Columns | null = null
-  for (const row of readHtmlTable(html)) {
+  const pick = (names: string[]) => names.find(n => columns && n in columns) ?? names[0]!
+  for (const row of rows) {
     const filled = row.cells.filter(c => c !== '')
-    if (filled.length === 1) {
+    if (staff === null && filled.length === 1) {
       const text = tidy(filled[0]!)
-      if (text && !NOT_A_TEACHER.test(text)) staff = text
+      if (text && !NOT_A_TEACHER.test(text)) teacher = text
       continue
     }
-    const has = (name: string) => row.cells.some(c => c.toLowerCase() === name)
-    if (has('date') && has('earnings')) {
+    const has = (names: string[]) => row.cells.some(c => names.includes(c.toLowerCase()))
+    if (has(PAYROLL_DATE) && has(['earnings'])) {
       const found: Columns = {}
       row.cells.forEach((c, i) => {
         const key = c.toLowerCase()
@@ -592,12 +645,20 @@ export function readPayroll(html: string): PayrollRow[] {
       columns = found
       continue
     }
-    if (!staff || !columns) continue
-    const date = parseMindbodyDate(cell(row, columns, 'Date'), 'DM')
-    const start = parseClock(cell(row, columns, 'Time'))
+    if (!teacher || !columns) continue
+    const rawDate = cell(row, columns, pick(PAYROLL_DATE))
+    // Appointment tables write the day out: `Thursday, 2 January 2025`.
+    const long = DAY_HEADING.exec(rawDate.trim())
+    const month = long ? MONTHS.indexOf(long[2]!.toLowerCase()) + 1 : 0
+    const date = long
+      ? month > 0
+        ? { year: Number(long[3]), month, day: Number(long[1]) }
+        : null
+      : parseMindbodyDate(rawDate, 'DM')
+    const start = parseClock(cell(row, columns, pick(PAYROLL_TIME)))
     const earnings = parseMoney(cell(row, columns, 'Earnings'))
     if (!date || !start || earnings === null) continue
-    out.push({ staff, date, start, description: tidy(cell(row, columns, 'Class')), earnings })
+    out.push({ staff: teacher, date, start, description: tidy(cell(row, columns, pick(PAYROLL_CLASS))), earnings })
   }
   return out
 }

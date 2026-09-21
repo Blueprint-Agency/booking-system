@@ -26,6 +26,9 @@ import { mailLinkOrThrow } from './member-passwords'
 import { resendInvitation } from './invitations'
 import { recordStaffAct } from './staff-acts'
 
+/** An address on the reserved `.invalid` TLD: a placeholder, never a mailbox. */
+export const isPlaceholderEmail = (email: string) => /\.invalid$/i.test(email.trim())
+
 /* ── members ───────────────────────────────────────────────────────────── */
 
 async function memberAuthUserId(tenantId: string, clientId: string): Promise<string | null> {
@@ -207,7 +210,10 @@ export async function resendStaffSetPassword(input: {
     return 'invitation'
   }
 
-  if (!target.authUserId) throw new BadRequestError('staff_not_provisioned')
+  // No login to set a password for: an address under `.invalid` (RFC 2606) is
+  // a placeholder — staff imported with no email of their own — and nothing
+  // sent there reaches anyone.
+  if (!target.authUserId || isPlaceholderEmail(target.email)) throw new BadRequestError('staff_not_provisioned')
   await mailStaffSetPasswordLink(input.from, target.email, await requireTenantUrl('portal', input.tenantId))
   await recordStaffAct({
     tenantId: input.tenantId,

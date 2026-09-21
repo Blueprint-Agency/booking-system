@@ -173,6 +173,88 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     assert.equal(verdict.windowHours, 12)
   })
 
+  test('every admin the config lists signs in to the portal as an Admin, with no invitation to accept', async () => {
+    const studio = await transformedStudio(config => {
+      config.studio.admins = [
+        { email: 'owner@example.test', name: null },
+        { email: 'helper@agency.example', name: 'Agency Helper' },
+      ]
+    })
+    const imported = await importZip(studio.tenant.id, studio.zip)
+    assert.equal(imported.status, 200, JSON.stringify(imported.body))
+
+    for (const email of ['owner@example.test', 'helper@agency.example']) {
+      const admin = await harness.signInAs('staff', email, studio)
+      const me = await get('/api/v1/portal/auth/me', admin)
+      assert.equal(me.status, 200, `${email}: ${await me.clone().text()}`)
+      assert.equal(((await me.json()) as { role: string }).role, 'admin', email)
+    }
+    const helper = await harness.signInAs('staff', 'helper@agency.example', studio)
+    const listed = await get('/api/v1/portal/admin/staff', helper)
+    assert.equal(listed.status, 200, await listed.clone().text())
+    const { invitations } = (await listed.json()) as { invitations: { email: string }[] }
+    assert.ok(!invitations.some(i => i.email === 'helper@agency.example'), 'an admin who can already sign in is not invited')
+  })
+
+  test('staff onboarded on import: active by name, no invitations, a first password by reset; no email means no login', async () => {
+    const studio = await transformedStudio(config => {
+      config.staffOnboarding = 'active'
+      config.staff.push({ mindbodyName: 'Nora Noemail', migrate: 'active', email: null, role: 'instructor', teaches: true, noLogin: true })
+    })
+    const imported = await importZip(studio.tenant.id, studio.zip)
+    assert.equal(imported.status, 200, JSON.stringify(imported.body))
+
+    const owner = await harness.signInAs('staff', 'owner@example.test', studio)
+    const listed = await get('/api/v1/portal/admin/staff', owner)
+    assert.equal(listed.status, 200, await listed.clone().text())
+    const { staff, invitations } = (await listed.json()) as {
+      staff: { id: string; name: string; email: string; role: string; status: string }[]
+      invitations: unknown[]
+    }
+    assert.deepEqual(invitations, [], 'nobody is waiting on an invitation')
+    const byName = new Map(staff.map(s => [s.name, s]))
+    assert.deepEqual([byName.get('Ivy Instructor')?.status, byName.get('Ivy Instructor')?.role], ['active', 'instructor'])
+    const nora = byName.get('Nora Noemail')!
+    assert.deepEqual([nora.status, nora.role], ['active', 'instructor'], 'listed by name among the instructors')
+
+    // Ivy has no password yet: she asks for a reset on her studio's portal, follows the link, and is in.
+    const { discardedMail } = await import('../lib/mailer')
+    const portal = { 'X-Tenant-Slug': studio.slug, Origin: frontendOrigin('staff', studio) }
+    const json = { ...portal, 'Content-Type': 'application/json' }
+    const requested = await harness.app.request('/api/v1/auth/staff/request-password-reset', {
+      method: 'POST',
+      headers: json,
+      body: JSON.stringify({ email: 'ivy@example.test', redirectTo: `${portal.Origin}/reset-password` }),
+    })
+    assert.equal(requested.status, 200, await requested.clone().text())
+    const mail = [...discardedMail].reverse().find(m => m.to === 'ivy@example.test')
+    assert.ok(mail, 'the reset went to Ivy (the test transport, never Resend)')
+    const link = new URL(mail.html.match(/href="([^"]*\/reset-password\/[^"]+)"/)![1]!.replace(/&amp;/g, '&'))
+    const opened = await harness.app.request(link.pathname + link.search)
+    const token = new URL(opened.headers.get('location')!).searchParams.get('token')!
+    const reset = await harness.app.request('/api/v1/auth/staff/reset-password', {
+      method: 'POST',
+      headers: json,
+      body: JSON.stringify({ token, newPassword: 'correct horse battery staple' }),
+    })
+    assert.equal(reset.status, 200, await reset.clone().text())
+    const signedIn = await harness.app.request('/api/v1/auth/staff/sign-in/email', {
+      method: 'POST',
+      headers: json,
+      body: JSON.stringify({ email: 'ivy@example.test', password: 'correct horse battery staple' }),
+    })
+    assert.equal(signedIn.status, 200, await signedIn.clone().text())
+    const me = await get('/api/v1/portal/auth/me', { ...portal, Authorization: `Bearer ${signedIn.headers.get('set-auth-token')}` })
+    assert.equal(me.status, 200, await me.clone().text())
+    assert.equal(((await me.json()) as { role: string }).role, 'instructor')
+
+    // Nora has no mailbox: no set-password link is sent anywhere.
+    const before = discardedMail.length
+    const refused = await post(`/api/v1/portal/admin/staff/${nora.id}/resend-invitation`, owner)
+    assert.equal(refused.status, 400, await refused.clone().text())
+    assert.equal(discardedMail.length, before)
+  })
+
   /* ── Packages (#178) ─────────────────────────────────────────────────────── */
 
   type MemberPackage = {

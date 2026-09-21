@@ -1,6 +1,6 @@
 import type { BookingCoder } from './booking-codes'
 import type { CatalogueEntry, StudioConfig } from './config'
-import { fold, type ConfigLookups } from './lookups'
+import { fold, roomFor, type ConfigLookups } from './lookups'
 import { ptAppointmentRows, ptClients } from './pt'
 import type {
   AttendanceRow,
@@ -329,6 +329,10 @@ export function mapHistory(input: {
   const unknownTeachers = new Map<string, number>()
   const unknownLocations = new Map<string, number>()
 
+  const largestRoomAt = new Map<string, number>()
+  for (const r of config.rooms) largestRoomAt.set(r.location, Math.max(largestRoomAt.get(r.location) ?? 0, r.capacity))
+  const largestRoom = config.rooms.length ? Math.max(...config.rooms.map(r => r.capacity)) : undefined
+
   const payOf = new Map<string, number>()
   for (const p of input.payroll) {
     const key = `${isoDay(p.date)} ${isoClock(p.start)} ${normaliseStaffName(p.staff)}`
@@ -358,7 +362,7 @@ export function mapHistory(input: {
     placed.add(key)
 
     const type = lookups.types.get(name)
-    const room = lookups.rooms.get(fold(s.room))
+    const room = roomFor(lookups, s.room, type?.id)
     const teacherId = staffIds.get(staffKey)
     const location = room?.location ?? lookups.locations.get(fold(s.location)) ?? config.defaultLocation
     if (!type) count(unknownNames, s.description)
@@ -367,7 +371,11 @@ export function mapHistory(input: {
     // Only where the Room did not already answer it: a known Room in a Location
     // spelled some other way is not something a person has to look at.
     if (!room && !lookups.locations.has(fold(s.location))) count(unknownLocations, s.location)
-    const capacity = type?.capacity ?? room?.capacity
+    // A class that has been and gone with no Room behind it (Mindbody left the
+    // room blank, or it was held off-site) and no capacity of its own still ran:
+    // it is sized like the largest Room of its Location, so it and its visits
+    // are kept. Seats on the past are not sold, so the figure only has to hold them.
+    const capacity = type?.capacity ?? room?.capacity ?? largestRoomAt.get(location) ?? largestRoom
     if (!type || !teacherId || !capacity) return
 
     const startsAt = instant(s.date, s.start)
@@ -637,7 +645,7 @@ export function mapHistory(input: {
 
     const ptTypeId = input.ensurePtType()
     teaches(instructorId)
-    const room = lookups.rooms.get(fold(a.room))
+    const room = roomFor(lookups, a.room, ptTypeId)
     const location = room?.location ?? lookups.locations.get(fold(a.location)) ?? config.defaultLocation
     const startsAt = instant(a.date, a.start)
     const end = a.end ? instant(a.date, a.end) : startsAt

@@ -91,6 +91,12 @@ interface StaffListResponse {
 
 type StaffTab = "admin" | "instructors";
 
+/**
+ * A placeholder address on the reserved `.invalid` TLD: someone imported with no
+ * email of their own, who teaches and is paid but has no login to send a link to.
+ */
+const isPlaceholderEmail = (email: string) => /\.invalid$/i.test(email.trim());
+
 export default function StaffPage() {
   const { api, currentStaff } = useWorkspace();
   const [staff, setStaff] = useState<StaffApiRow[]>([]);
@@ -537,7 +543,8 @@ export default function StaffPage() {
           // the list.
           access={{
             canRevoke: canManageStaff,
-            canResend: canManageStaff && editTarget.status !== "archived",
+            canResend:
+              canManageStaff && editTarget.status !== "archived" && !isPlaceholderEmail(editTarget.email),
             onBlock: canArchiveTarget(editTarget)
               ? () => {
                   setEditTarget(null);
@@ -627,7 +634,9 @@ function StaffRow({
           {isPending && <Badge tone="warning">Pending invite</Badge>}
           {isSelf && <span className="text-xs text-muted">(you)</span>}
         </div>
-        <div className="truncate text-xs text-muted">{staff.email}</div>
+        <div className="truncate text-xs text-muted">
+          {isPlaceholderEmail(staff.email) ? "No email — no login" : staff.email}
+        </div>
       </div>
     </div>
   );

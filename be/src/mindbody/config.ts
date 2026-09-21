@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { proposeCatalogue } from './catalogue'
 import type { MindbodyReports } from './mapper'
 import { proposeSchedule } from './schedule-proposal'
-import { EMAIL, dateOfIso, normaliseClassName, normaliseOptionName, normaliseStaffName } from './values'
+import { EMAIL, dateOfIso, dayNumber, normaliseClassName, normaliseOptionName, normaliseStaffName } from './values'
 
 /**
  * The studio config: the facts about a studio that no Mindbody report holds.
@@ -37,6 +37,13 @@ const roomSchema = z.object({
   capacity: open(z.number().int().positive()),
   /** Every spelling Mindbody uses for this one room ("Studio2-Normal Room", "Studio 2 - Normal Room"). */
   mindbodyNames: z.array(z.string()).default([]),
+  /**
+   * For a spelling Mindbody uses for more than one room — a studio that started
+   * filing two rooms under one label — the Class Types (by name) that, under
+   * that spelling, are held in this Room. Of the Rooms sharing a spelling, the
+   * one with no `classTypes` takes every other class.
+   */
+  classTypes: z.array(z.string()).default([]),
 })
 
 const classTypeSchema = z.object({
@@ -137,6 +144,12 @@ const staffSchema = z.object({
   role: open(z.enum(['admin', 'instructor'])),
   /** Teaches classes, so gets an instructor profile. */
   teaches: z.boolean().default(false),
+  /**
+   * Comes across active by name with no login — no email of their own — so
+   * their classes and pay name them and nobody can sign in as them. Any
+   * `email` is ignored.
+   */
+  noLogin: z.boolean().default(false),
 })
 
 /**
@@ -185,8 +198,23 @@ export const studioConfigSchema = z.object({
     slug: open(z.string().min(1)),
     displayName: open(z.string().min(1)),
     timezone: open(z.string().min(1)),
-    /** The owner: imported an active Admin, so the studio has someone in it from the first minute. */
+    /**
+     * The owner: imported an active Admin, so the studio has someone in it from
+     * the first minute, and named as whoever created what the import writes.
+     * Either a staff member coming across as active, or one of `admins`.
+     */
     ownerEmail: open(z.string()),
+    /**
+     * Everyone who is to run the portal from launch day: each is imported an
+     * active Admin who can sign in at once (by setting a password), with no
+     * invitation to send. One whose email is a staff member's coming across as
+     * active is that staff member; anyone else — an owner or an agency Mindbody
+     * never listed as staff — is a staff row of their own, named `name` (or by
+     * their email where that is null).
+     */
+    admins: z
+      .array(z.object({ email: z.string().min(1), name: z.string().min(1).nullable().default(null) }))
+      .default([]),
     mailReplyTo: z.string().nullable().default(null),
     /** Printed at the foot of every email. Optional; naming nothing beats naming the wrong premises. */
     emailFooter: z.string().nullable().default(null),
@@ -250,6 +278,19 @@ export const studioConfigSchema = z.object({
     .default({}),
   staff: z.array(staffSchema),
   /**
+   * How the staff coming across as active get in.
+   *
+   * `invite`: each arrives pending, with an invitation an admin sends (or
+   * resends) from the portal. `active`: each with an email arrives an active
+   * member of staff with no invitation at all — shown by name in the portal
+   * from the first minute, and signing in by setting a password (Forgot
+   * password, or an admin's "send set-password link") when the studio says so.
+   *
+   * Either way, one with no email arrives active by name with no login: they
+   * teach, are paid and appear on the timetable, and nobody can sign in as them.
+   */
+  staffOnboarding: z.enum(['invite', 'active']).default('invite'),
+  /**
    * Who keeps an email that several members share: email → client id. Anyone
    * not named here is decided by the rule in the mapper (most recent visit).
    */
@@ -271,6 +312,7 @@ export type StudioConfig = {
     displayName: string
     timezone: string
     ownerEmail: string
+    admins: { email: string; name: string | null }[]
     mailReplyTo: string | null
     emailFooter: string | null
   }
@@ -286,7 +328,7 @@ export type StudioConfig = {
     mindbodyNames: string[]
   }[]
   defaultLocation: string
-  rooms: { name: string; location: string; capacity: number; mindbodyNames: string[] }[]
+  rooms: { name: string; location: string; capacity: number; mindbodyNames: string[]; classTypes: string[] }[]
   offSiteVenues: string[]
   classTypes: { name: string; mindbodyNames: string[]; capacity: number | null }[]
   workshopCategories: string[]
@@ -312,10 +354,19 @@ export type StudioConfig = {
   history: { from: string; purchases: boolean } | null
   policy: Parsed['policy']
   staff: (
-    | { mindbodyName: string; migrate: 'active'; email: string; role: 'admin' | 'instructor'; teaches: boolean }
+    | {
+        mindbodyName: string
+        migrate: 'active'
+        /** Null only with `noLogin`. */
+        email: string | null
+        role: 'admin' | 'instructor'
+        teaches: boolean
+        noLogin?: boolean
+      }
     | { mindbodyName: string; migrate: 'archived'; email: string | null; role: 'admin' | 'instructor' | null; teaches: boolean }
     | { mindbodyName: string; migrate: 'skip'; email: string | null; role: 'admin' | 'instructor' | null; teaches: boolean }
   )[]
+  staffOnboarding: 'invite' | 'active'
   sharedEmailKeepers: Record<string, string>
   catalogue: CatalogueEntry[]
 }
@@ -397,11 +448,18 @@ export function validateConfig(raw: unknown): StudioConfig {
     roomNames.add(key)
   })
   const spelled = new Map<string, string>()
+  /** Spelling → the Rooms that use it and whether each names the Class Types it takes. */
+  const sharing = new Map<string, { name: string; split: boolean }[]>()
   for (const r of c.rooms) {
-    for (const s of r.mindbodyNames) {
-      const k = s.trim().toLowerCase()
-      if (spelled.has(k) && spelled.get(k) !== r.name) problems.push(`room spelling "${s}" is mapped to two Rooms`)
-      spelled.set(k, r.name ?? '')
+    for (const s of new Set(r.mindbodyNames.map(n => n.trim().toLowerCase()))) {
+      spelled.set(s, r.name ?? '')
+      sharing.set(s, [...(sharing.get(s) ?? []), { name: r.name ?? '', split: r.classTypes.length > 0 }])
+    }
+  }
+  for (const [s, holders] of sharing) {
+    // Shared, a spelling needs every Room but one to say which classes are its.
+    if (holders.length > 1 && holders.filter(h => !h.split).length > 1) {
+      problems.push(`room spelling "${s}" is mapped to two Rooms — give all but one of them the classTypes it holds under that spelling`)
     }
   }
 
@@ -418,9 +476,17 @@ export function validateConfig(raw: unknown): StudioConfig {
   })
 
   const owner = c.studio.ownerEmail?.trim().toLowerCase()
+  const adminEmails = new Set<string>()
+  c.studio.admins.forEach((a, i) => {
+    const email = a.email.trim().toLowerCase()
+    if (!EMAIL.test(email)) problems.push(`studio.admins[${i}].email "${a.email}" is not an email address`)
+    if (adminEmails.has(email)) problems.push(`studio.admins[${i}].email ${email} is listed twice`)
+    adminEmails.add(email)
+  })
   const staffEmails = new Set<string>()
   const staffNames = new Set<string>()
-  let ownerFound = false
+  // The owner may be an admin Mindbody never listed as staff.
+  let ownerFound = !!owner && adminEmails.has(owner)
   c.staff.forEach((s, i) => {
     const label = `staff[${i}] (${s.mindbodyName})`
     need(s.migrate, `${label}.migrate`)
@@ -430,7 +496,8 @@ export function validateConfig(raw: unknown): StudioConfig {
     }
     if (s.migrate !== 'skip') staffNames.add(nameKey)
     if (s.migrate !== 'active') return
-    need(s.email, `${label}.email`)
+    // No email is a decision like any other: `noLogin` says it was made.
+    if (!s.noLogin) need(s.email, `${label}.email`)
     need(s.role, `${label}.role`)
     const email = s.email?.trim().toLowerCase()
     if (email && !EMAIL.test(email)) problems.push(`${label}.email "${s.email}" is not an email address`)
@@ -440,9 +507,12 @@ export function validateConfig(raw: unknown): StudioConfig {
       ownerFound = true
       if (s.role && s.role !== 'admin') problems.push(`${label} is the owner, so their role must be admin`)
     }
+    if (email && email !== owner && adminEmails.has(email) && s.role && s.role !== 'admin') {
+      problems.push(`${label} is in studio.admins, so their role must be admin`)
+    }
   })
   if (owner && !ownerFound) {
-    problems.push(`studio.ownerEmail ${owner} is not the email of any staff member being migrated as active`)
+    problems.push(`studio.ownerEmail ${owner} is not the email of any staff member being migrated as active, nor one of studio.admins`)
   }
 
   const optionSpellings = new Map<string, number>()
@@ -520,6 +590,11 @@ export function validateConfig(raw: unknown): StudioConfig {
 
   const roomSpellings = new Set(c.rooms.flatMap(r => [r.name ?? '', ...r.mindbodyNames]).map(s => s.trim().toLowerCase()))
   const classNames = new Set(c.classTypes.flatMap(t => [t.name ?? '', ...t.mindbodyNames]).map(normaliseClassName))
+  c.rooms.forEach((r, i) => {
+    for (const t of r.classTypes) {
+      if (!classNames.has(normaliseClassName(t))) problems.push(`rooms[${i}] (${r.name}).classTypes: "${t}" is in no Class Type`)
+    }
+  })
   const instructorsComing = new Set(
     c.staff.filter(s => s.migrate === 'active' && s.role === 'instructor').map(s => normaliseStaffName(s.mindbodyName)),
   )
@@ -565,14 +640,34 @@ export function validateConfig(raw: unknown): StudioConfig {
  */
 export function starterConfig(reports: MindbodyReports, asOf: string | null = null): StudioConfigInput {
   const locationIds = [...new Set(reports.retention.map(r => r.location).filter(id => id && id !== '0'))].sort()
+  // What the timetable calls each Location, oldest first. Mindbody numbers its
+  // Locations in the order they were made, so where there are as many names as
+  // numbers the first to hold a class is taken to be number 1 — a proposal, for
+  // a person to confirm, like the rest of this file.
+  const firstHeld = new Map<string, number>()
+  for (const r of reports.schedule) {
+    const name = r.location.trim()
+    if (name && (firstHeld.get(name) ?? Infinity) > dayNumber(r.date)) firstHeld.set(name, dayNumber(r.date))
+  }
+  const named = [...firstHeld].sort(([a, x], [b, y]) => x - y || a.localeCompare(b)).map(([name]) => name)
   const locations =
-    locationIds.length > 0
-      ? locationIds.map(id => ({ key: `location-${id}`, name: null, address: null, phone: null, mindbodyIds: [id] }))
-      : [{ key: 'main', name: null, address: null, phone: null, mindbodyIds: [] }]
-  const schedule = proposeSchedule(reports, asOf ? dateOfIso(asOf) : null)
+    named.length > 0 && (locationIds.length === 0 || named.length === locationIds.length)
+      ? named.map((name, i) => ({
+          key: locationIds[i] ? `location-${locationIds[i]}` : `location-${i + 1}`,
+          name,
+          address: null,
+          phone: null,
+          mindbodyIds: locationIds[i] ? [locationIds[i]!] : [],
+          mindbodyNames: [name],
+        }))
+      : locationIds.length > 0
+        ? locationIds.map(id => ({ key: `location-${id}`, name: null, address: null, phone: null, mindbodyIds: [id] }))
+        : [{ key: 'main', name: null, address: null, phone: null, mindbodyIds: [] }]
+  const locationKeys = new Map(locations.flatMap(l => (l.name ? [[l.name, l.key] as [string, string]] : [])))
+  const schedule = proposeSchedule(reports, asOf ? dateOfIso(asOf) : null, locationKeys)
 
   return {
-    studio: { slug: null, displayName: null, timezone: null, ownerEmail: null, mailReplyTo: null, emailFooter: null },
+    studio: { slug: null, displayName: null, timezone: null, ownerEmail: null, admins: [], mailReplyTo: null, emailFooter: null },
     asOf,
     secret: randomBytes(32).toString('base64url'),
     locations,
