@@ -298,7 +298,8 @@ export function mapPackages(input: {
         // Several holdings combined can have cost more than one List Price, and
         // a List Price below what was paid would read as a negative discount.
         list_price_sgd: money(Math.max(price, h.paid)),
-        stripe_payment_intent_id: null,
+        // No Purchase: Mindbody's sales reached no payment provider here, and none is invented.
+        purchase_id: null,
         complimentary: false,
       }
       clientPackages.push(row)
@@ -344,7 +345,7 @@ export function mapPackages(input: {
       purchased_at: (started > asOf ? asOf : started).toISOString(),
       amount_paid_sgd: money(h.paid),
       list_price_sgd: money(Math.max(entry.priceSgd ?? 0, h.paid)),
-      stripe_payment_intent_id: null,
+      purchase_id: null,
       complimentary: false,
     }
     clientPackages.push(row)

@@ -268,7 +268,7 @@ export function mapHistory(input: {
         purchased_at: zonedToInstant(sale.activation, tz).toISOString(),
         amount_paid_sgd: money(sale.paid),
         list_price_sgd: money(Math.max(entry.priceSgd ?? 0, sale.paid)),
-        stripe_payment_intent_id: null,
+        purchase_id: null,
         complimentary: false,
       }
       clientPackages.push(row)
