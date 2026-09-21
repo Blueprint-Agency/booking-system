@@ -670,36 +670,52 @@ Two staff roles in the system: `admin` and `instructor`. The `staff_role` type h
 
 ## 15. Clients
 
-### 15a. Client List (`/admin/clients`)
+### 15a. Customer List (`/admin/customers`)
 
-- Searchable by name or email.
-- Filterable by status (All / Active / **Trials** / Blocked — the Blocked pill is admin-only).
-- Each row shows: name, email, join date, active package count, upcoming booking count, status chip.
+The page is **Customers** in the nav and lives at `/admin/customers`; `/admin/clients` and `/admin/clients/:id` redirect there permanently (`fe-portal/next.config.ts`). Only the page moved — the API behind it is still `/portal/admin/clients` (`be-portal.md` § `clients.ts`), and the domain word in the backend is still *client*.
+
+- **Paged on the server** (25 / 50 / 100 per page, default 50) with the total shown — a studio migrated from another system arrives with thousands of members, and the list never loads them all.
+- Searchable by name, email or phone — across every member, not the page on screen. The search box is debounced (300 ms) and any change of search, filter, sort or page size goes back to page 1.
+- Filterable by status (All / Active / **Trials** / Blocked — the Blocked pill is admin-only). Sortable by newest joined (default) or name A–Z.
+- The position (search, filter, sort, page, page size) is kept in the address bar (`?q=&filter=&sort=&page=&size=`), so opening a customer and pressing Back returns to the same page.
+- Each row shows: name, email, phone, join date, status chip. Row → the customer's profile.
 
 **Trials filter — the trial funnel.** Selecting **Trials** narrows the list to members who bought a Trial Pass and answers the three questions about them in one screen: how many bought a trial, how many attended it, how many converted. Three tiles sit above the list (each with its share of trials), and the table swaps Joined for **Trial started**, adds **Attended**, and reads the status column as **Converted** / **Follow up**.
 
 - **Attended** is attendance *on the trial package*, never the member's attendance overall — someone who skipped their trial and returned later on a bundle reads zero, and zero is the follow-up signal.
 - **Converted** means they paid for a package that is not another trial. A comped grant is not a conversion; a second trial is not one either.
-- The tiles count the rows currently shown, so a search narrows the figures with the list rather than contradicting it.
+- The tiles count **every member the filter and search match**, across all pages — the backend returns them as `funnel` beside the page — so a search narrows the figures with the list rather than contradicting it, and the page size never changes them.
 - The funnel lives here rather than on Finance because it is a question about a client, not about a period (`be/docs/adr/0003-finance-reads-as-a-general-ledger.md`).
-- "Add client" is not present — clients self-register via the client app. This list is read-only at the list level.
+- "+ Customer" adds a member and emails them an invite (`POST /portal/admin/clients`); most members self-register via the client app or arrive by import.
 
-### 15b. Client Profile (`/admin/clients/[id]`)
+### 15b. Customer Profile (`/admin/customers/[id]`)
+
+One read, `GET /portal/admin/clients/:id`, fills the page.
 
 **Personal details (read-only):**
-- Name, email, phone — sourced from registration; not editable by admin in v1.
-- Join date, referral source (who referred them, if any).
-- Waiver signed date (read-only — see §17).
+- Name, email, phone — sourced from registration or import; the email is changeable (#176), the rest is not editable by admin in v1.
+- Join date, gender and date of birth when given, referral source (who referred them, linked to their profile).
+- Waiver signed date, or "Waiver not signed" (see §17).
+- **Attendance strip** under the name: classes attended, no-shows, late cancels and the last visit, counted over every booking the member has ever had (not just the history listed below).
 
-**Active packages:**
-- Credit bundles: package name, credits remaining, total credits, expiry date.
-- Unlimited passes: package name, valid from / valid to.
-- PT packs: package name, sessions remaining, total sessions.
-- Multiple active packages of the same type are listed separately (e.g. two overlapping credit bundles).
+**Packages & memberships:**
+- **Current** — what the member can still use: running (clock started, something left) first, then **Not started** (Dormant, waiting for a first booking), soonest-ending first. Each card: package name, kind, credits or sessions remaining of total (or "Unlimited"), valid-until date, Home Location and Add-On for an Unlimited Plan, Bound Instructor for PT, bought date and money.
+- **Past** — expired, used up, or ended (refunded / voided), newest first, folded behind "Past packages (n)". Same card, same actions, so an expired pack can still be extended or refunded.
+- Which list a package is in is the backend's `standing` (`running` / `dormant` / `expired` / `used_up` / `ended`); the portal never re-tests dates and balances.
+- **Money line.** A package paid online reads "List S$x · paid S$y · S$z off". A package with **no online payment and not given free** — every package a migration brings over from another system arrives like this, with `purchase_id` null — reads "paid S$y · no online payment on record" with **no discount derived**: the figure is what the old system recorded, and a list-minus-paid there would invent a discount nobody gave.
+- Multiple packages of the same type are listed separately (e.g. two overlapping credit bundles).
 
-**Booking history:**
-- Unified list of all bookings (classes, workshops, PT) — upcoming first, then past.
-- Each row: session name, type, date/time, booking state (`confirmed` / `cancelled` / `no-show`), refund outcome (credit returned / forfeited / n/a).
+**Bookings:**
+- **Upcoming bookings** — everything still booked from now on, soonest first: classes, private sessions and workshops.
+- **Booking history** — the most recent 50 past bookings, newest first, 10 shown until "Show all". Cancelled bookings stay in the list.
+- Each row: date and time, session name (class type, "Private session", or workshop · tier), instructor, location, the package it was booked on, and one outcome chip — Booked / Attended / No-show / Late cancel (credit forfeited) / Cancelled / Not checked in (in the past, confirmed, never marked).
+- Imported history (a migrated studio's past classes, check-ins and late cancels) is ordinary bookings and reads the same.
+
+**Online payments:**
+- Every payment through the payment provider, newest first: date, what it was for, amount, status (Paid / Pending / Refunded / Failed), receipt link.
+- Empty for a member whose packages were all imported or given free — what was paid for those is on the package card, and the empty state says so.
+
+**Notes:** there is no notes field on a member (`clients` has none). Adding one is a schema change, not built.
 
 **Cancellation history:**
 - Running cancellation count vs. the configured cap (§4) for the current cycle.

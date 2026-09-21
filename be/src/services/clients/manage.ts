@@ -1,9 +1,10 @@
-import { and, desc, eq, getTableColumns, ilike, isNull, or, sql, type SQL } from 'drizzle-orm'
+import { and, asc, desc, eq, getTableColumns, ilike, inArray, isNotNull, isNull, or, sql, type SQL } from 'drizzle-orm'
 import { db } from '../../db'
 import { clients } from '../../db/schema/identity'
 import { clientPackages } from '../../db/schema/packages'
 import { bookings } from '../../db/schema/bookings'
 import { manualAdjustments } from '../../db/schema/ledger'
+import { waiverSignatures } from '../../db/schema/content'
 import { endClientSessionsAt, ensureAuthUser } from '../auth/auth-users'
 import { recordStaffAct } from '../auth/staff-acts'
 import { requireTenantUrl } from '../tenants/urls'
@@ -60,8 +61,9 @@ export async function listClients(
   }
   // Correlated rather than joined: each is per-client over all time, and joining
   // them would multiply a client's row by its own matches.
-  // ponytail: three subqueries per row — fine at directory size (low thousands);
-  // move to a grouped CTE if the list ever pages.
+  // Three subqueries per row over the whole studio. The Customers page no longer
+  // reads this — it pages through `listClientsPage` below; this unpaged read is
+  // kept for the callers that want every member.
   const rows = await db
     .select({
       ...getTableColumns(clients),
@@ -88,6 +90,187 @@ export async function listClients(
     .where(and(...conds))
     .orderBy(desc(clients.joinedAt))
   return rows.map(r => ({ ...r, attended: Number(r.attended) }))
+}
+
+export type ClientDirectoryFilter = 'active' | 'trials' | 'blocked'
+export type ClientDirectorySort = 'joined' | 'name'
+
+export interface ListClientsPageOptions extends ListClientsOptions {
+  /**
+   * The Customers page's filter pills. `active` hides blocked members, `blocked`
+   * shows only them, `trials` only members who ever bought a trial. Absent means
+   * "all" — which still honours `includeDeleted`.
+   */
+  filter?: ClientDirectoryFilter
+  sort?: ClientDirectorySort
+  /** 1-based. */
+  page: number
+  pageSize: number
+}
+
+/**
+ * The Trial Funnel over every member the filter matches — not just the page on
+ * screen, which is what the old client-side count silently became the moment
+ * the list paged.
+ */
+export interface TrialFunnel {
+  trials: number
+  attended: number
+  converted: number
+}
+
+export interface ClientDirectoryPage {
+  rows: ClientListRow[]
+  /** Members matching the filter and search, across every page. */
+  total: number
+  /** Only when `filter` is `trials`; null otherwise. */
+  funnel: TrialFunnel | null
+}
+
+// The three trial-funnel facts, as SQL over a client id expression. One
+// definition, read by both the page rows and the funnel totals, so the tiles
+// above the list cannot count differently from the rows under them.
+//
+// Each names the Tenant as well as the member, so Postgres can reach for the
+// `(tenant_id, client_id, …)` indexes — a funnel over a studio with years of
+// imported bookings must not scan `bookings` once per trial.
+const hasTrial = (clientId: SQL) => sql`exists (
+  select 1 from ${clientPackages} cp
+  where cp.client_id = ${clientId} and cp.kind = 'trial'
+)`
+const trialAttendedCount = (tenantId: string, clientId: SQL) => sql`(
+  select count(*) from ${clientPackages} cp
+  join ${bookings} b
+    on b.tenant_id = ${tenantId}::uuid and b.client_id = cp.client_id and b.client_package_id = cp.id
+  where cp.client_id = ${clientId}
+    and cp.kind = 'trial'
+    and b.check_in_state = 'attended'
+)`
+const hasConverted = (tenantId: string, clientId: SQL) => sql`exists (
+  select 1 from ${clientPackages} cp
+  where cp.tenant_id = ${tenantId}::uuid
+    and cp.client_id = ${clientId}
+    and cp.kind <> 'trial'
+    and cp.amount_paid_sgd > 0
+    and not cp.complimentary
+)`
+
+/**
+ * One page of the admin Customers directory, with the total the pager needs.
+ *
+ * Search, filter and sort all run in Postgres, so they apply across every
+ * member rather than to the page already fetched. The trial facts are read for
+ * the page's rows only — one grouped read for up to `pageSize` ids — instead of
+ * three correlated subqueries per member of the whole studio.
+ */
+export async function listClientsPage(
+  tenantId: string,
+  opts: ListClientsPageOptions,
+): Promise<ClientDirectoryPage> {
+  const conds: SQL[] = [eq(clients.tenantId, tenantId)]
+  if (opts.filter === 'blocked') conds.push(isNotNull(clients.deletedAt))
+  else if (opts.filter === 'active' || !opts.includeDeleted) conds.push(isNull(clients.deletedAt))
+  if (opts.filter === 'trials') conds.push(hasTrial(sql`${clients.id}`))
+  if (opts.status) conds.push(eq(clients.status, opts.status))
+  const term = opts.q?.trim()
+  if (term) {
+    const like = `%${term}%`
+    conds.push(or(ilike(clients.name, like), ilike(clients.email, like), ilike(clients.phone, like))!)
+  }
+  const where = and(...conds)
+
+  const order =
+    opts.sort === 'name'
+      ? [asc(sql`lower(${clients.name})`), asc(clients.id)]
+      : [desc(clients.joinedAt), asc(clients.id)]
+
+  const [countRow, members] = await Promise.all([
+    db.select({ n: sql<number>`count(*)::int` }).from(clients).where(where),
+    db
+      .select()
+      .from(clients)
+      .where(where)
+      .orderBy(...order)
+      .limit(opts.pageSize)
+      .offset((opts.page - 1) * opts.pageSize),
+  ])
+
+  const facts = new Map<string, { trialStartedAt: Date | null; attended: number; converted: boolean }>()
+  if (members.length > 0) {
+    const ids = members.map(m => m.id)
+    const rows = await db
+      .select({
+        id: clients.id,
+        trialStartedAt: sql<Date | null>`(
+          select min(cp.purchased_at) from ${clientPackages} cp
+          where cp.client_id = ${clients.id} and cp.kind = 'trial'
+        )`.mapWith(v => (v === null ? null : new Date(v as string))),
+        attended: trialAttendedCount(tenantId, sql`${clients.id}`).mapWith(Number),
+        converted: hasConverted(tenantId, sql`${clients.id}`).mapWith(Boolean),
+      })
+      .from(clients)
+      .where(and(eq(clients.tenantId, tenantId), inArray(clients.id, ids)))
+    for (const r of rows) facts.set(r.id, r)
+  }
+
+  let funnel: TrialFunnel | null = null
+  if (opts.filter === 'trials') {
+    const [f] = await db
+      .select({
+        trials: sql<number>`count(*)::int`,
+        attended: sql<number>`count(*) filter (where ${trialAttendedCount(tenantId, sql`${clients.id}`)} > 0)::int`,
+        converted: sql<number>`count(*) filter (where ${hasConverted(tenantId, sql`${clients.id}`)})::int`,
+      })
+      .from(clients)
+      .where(where)
+    funnel = { trials: f?.trials ?? 0, attended: f?.attended ?? 0, converted: f?.converted ?? 0 }
+  }
+
+  return {
+    rows: members.map(m => ({
+      ...m,
+      trialStartedAt: facts.get(m.id)?.trialStartedAt ?? null,
+      attended: facts.get(m.id)?.attended ?? 0,
+      converted: facts.get(m.id)?.converted ?? false,
+    })),
+    total: countRow[0]?.n ?? 0,
+    funnel,
+  }
+}
+
+/**
+ * The contact facts the customer detail page shows beside the directory row:
+ * the optional profile fields and whether the waiver is signed. Read with the
+ * row itself, so a member of another studio is a 404 here exactly as it is in
+ * `getClientById`.
+ */
+export interface ClientContact {
+  client: ClientRow
+  waiverSignedAt: Date | null
+  referredBy: { id: string; name: string } | null
+}
+
+export async function getClientContact(tenantId: string, id: string): Promise<ClientContact> {
+  const client = await getClientById(tenantId, id)
+  const [waiver, referrer] = await Promise.all([
+    db
+      .select({ signedAt: waiverSignatures.signedAt })
+      .from(waiverSignatures)
+      .where(and(eq(waiverSignatures.tenantId, tenantId), eq(waiverSignatures.clientId, id)))
+      .limit(1),
+    client.referredByClientId
+      ? db
+          .select({ id: clients.id, name: clients.name })
+          .from(clients)
+          .where(and(eq(clients.tenantId, tenantId), eq(clients.id, client.referredByClientId)))
+          .limit(1)
+      : Promise.resolve([]),
+  ])
+  return {
+    client,
+    waiverSignedAt: waiver[0]?.signedAt ?? null,
+    referredBy: referrer[0] ?? null,
+  }
 }
 
 /**

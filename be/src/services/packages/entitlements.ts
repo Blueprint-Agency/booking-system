@@ -3,7 +3,14 @@ import { db } from '../../db'
 import { clientPackages, classPackages, promoCodes, ptPackages } from '../../db/schema/packages'
 import { locations } from '../../db/schema/catalog'
 import { staffUsers } from '../../db/schema/identity'
-import { familyOf, isActivated, isDormant } from './validity'
+import {
+  familyOf,
+  isActivated,
+  isCurrentStanding,
+  isDormant,
+  packageStanding,
+  type PackageStanding,
+} from './validity'
 import { readCrossLocationRateSgd } from './purchase'
 
 export interface ClientEntitlements {
@@ -194,6 +201,38 @@ export interface ClientPackageWithSource {
    * item and a fully discounted sale also are.
    */
   complimentary: boolean
+  /** Where it stands — running, dormant, expired, used up or ended (`packageStanding`). */
+  standing: PackageStanding
+  /**
+   * A Purchase paid for it through the payment provider. False for a comp, a
+   * $0 trial pass and a package brought over from another system — none of
+   * which has an online payment behind it — so a surface can say "paid outside
+   * this app" rather than dressing an imported figure up as a discount.
+   */
+  paidOnline: boolean
+}
+
+/**
+ * A wallet split the way the portal's customer page shows it: what the member
+ * can still use (running first, then waiting, soonest-ending first) and what is
+ * behind them (most recently bought first). `isCurrentStanding` is the fold.
+ */
+export function splitWallet(pkgs: ClientPackageWithSource[]): {
+  current: ClientPackageWithSource[]
+  past: ClientPackageWithSource[]
+} {
+  const current = pkgs
+    .filter(p => isCurrentStanding(p.standing))
+    .sort(
+      (a, b) =>
+        Number(a.standing === 'dormant') - Number(b.standing === 'dormant') ||
+        (a.expiresAt?.getTime() ?? Infinity) - (b.expiresAt?.getTime() ?? Infinity) ||
+        b.purchasedAt.getTime() - a.purchasedAt.getTime(),
+    )
+  const past = pkgs
+    .filter(p => !isCurrentStanding(p.standing))
+    .sort((a, b) => b.purchasedAt.getTime() - a.purchasedAt.getTime())
+  return { current, past }
 }
 
 /**
@@ -237,6 +276,7 @@ export async function listClientPackages(
       ptSessionType: ptPackages.sessionType,
       promoCode: promoCodes.code,
       complimentary: clientPackages.complimentary,
+      purchaseId: clientPackages.purchaseId,
     })
     .from(clientPackages)
     .leftJoin(classPackages, eq(classPackages.id, clientPackages.sourceClassPackageId))
@@ -271,5 +311,12 @@ export async function listClientPackages(
       : null,
     promoCode: r.promoCode ?? null,
     complimentary: r.complimentary,
+    standing: packageStanding({
+      kind: r.kind as ClientPackageWithSource['kind'],
+      expiresAt: r.expiresAt,
+      creditsOrSessionsRemaining: r.creditsOrSessionsRemaining,
+      active: r.active,
+    }),
+    paidOnline: r.purchaseId !== null,
   }))
 }

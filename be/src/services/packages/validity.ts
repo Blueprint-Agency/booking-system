@@ -114,6 +114,37 @@ export function computeActive(p: PackageValidity, now: Date = new Date()): boole
 }
 
 /**
+ * Where a package stands, in one word, for the screens that sort a member's
+ * wallet into "current" and "past" (the portal's customer detail page).
+ *
+ *   - `running`  — Activated, clock running, something left to spend.
+ *   - `dormant`  — bought and waiting for its first booking (§8).
+ *   - `expired`  — its end date has passed, swept or not yet.
+ *   - `used_up`  — every credit or session spent (Unlimited never is).
+ *   - `ended`    — switched off for any other reason: refunded or voided.
+ *
+ * `computeActive` is the rule; this only names which way a package fails it.
+ * Expiry is tested before balance, so a trial that ran out of both reads as
+ * expired — the date is the fact a member remembers.
+ */
+export type PackageStanding = 'running' | 'dormant' | 'expired' | 'used_up' | 'ended'
+
+export function packageStanding(
+  p: PackageValidity & { active: boolean },
+  now: Date = new Date(),
+): PackageStanding {
+  if (p.expiresAt !== null && p.expiresAt <= now) return 'expired'
+  if (p.kind !== 'unlimited' && (p.creditsOrSessionsRemaining ?? 0) <= 0) return 'used_up'
+  if (!p.active) return 'ended'
+  return isDormant(p) ? 'dormant' : 'running'
+}
+
+/** Still the member's to use: running now, or waiting to start. */
+export function isCurrentStanding(s: PackageStanding): boolean {
+  return s === 'running' || s === 'dormant'
+}
+
+/**
  * Whole months of cover left on a plan, which is what a **Cross-Location Add-On**
  * is priced by (§5). A part month is charged as a whole one — the member is told
  * so before they see the total.

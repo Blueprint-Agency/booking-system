@@ -80,7 +80,9 @@ export const NAV_ITEMS: NavItem[] = [
 
   // --- People (members + staff accounts) ---
   // Instructors are managed under Staff → Instructors tab (merged), not a separate item.
-  { group: "People", label: "Customers", href: "/admin/clients", icon: Users, scope: "both" },
+  // The page is /admin/customers; the API behind it stays /portal/admin/clients.
+  // /admin/clients redirects here (next.config.ts) for old bookmarks.
+  { group: "People", label: "Customers", href: "/admin/customers", icon: Users, scope: "both" },
   // Corporate Requests is workspace-AGNOSTIC: no location_id until scheduled, so it is
   // NOT filtered by the workspace switcher (contrast PT Requests above).
   { group: "People", label: "Corporate Requests", href: "/admin/corporate-requests", icon: HandHeart, scope: "both", badgeKey: "corporateRequestsPending" },

@@ -3,9 +3,9 @@ import { zValidator } from '@hono/zod-validator'
 import { z } from 'zod'
 import { tenantId } from '../../../middleware/tenant'
 import {
-  listClients,
+  listClientsPage,
   createClientWithInvite,
-  getClientById,
+  getClientContact,
   listRecentAdjustments,
   softDeleteClient,
   restoreClient,
@@ -13,7 +13,17 @@ import {
   type ClientListRow,
   type ManualAdjustmentRow,
 } from '../../../services/clients/manage'
-import { listClientPackages, type ClientPackageWithSource } from '../../../services/packages/entitlements'
+import {
+  listClientPackages,
+  splitWallet,
+  type ClientPackageWithSource,
+} from '../../../services/packages/entitlements'
+import {
+  listMemberBookings,
+  memberAttendanceSummary,
+  type MemberBookingRow,
+} from '../../../services/bookings/member-history'
+import { listMemberPayments, type MemberPaymentView } from '../../../services/billing/member-payments'
 import {
   adjustBalance,
   setBalance,
@@ -54,11 +64,26 @@ const idParam = z.object({ id: z.string().uuid() })
 const idPkgParam = z.object({ id: z.string().uuid(), pid: z.string().uuid() })
 const idBookingParam = z.object({ id: z.string().uuid(), bid: z.string().uuid() })
 
+// Paged since the first studio arrived with thousands of imported members: the
+// list is one page at a time, and search, filter and sort run on the server so
+// they apply to every member rather than to the page on screen.
+const CLIENTS_PAGE_SIZE_DEFAULT = 50
+const CLIENTS_PAGE_SIZE_MAX = 200
 const listQuery = z.object({
   q: z.string().max(200).optional(),
   status: z.enum(['active', 'suspended']).optional(),
   // Stringly-typed because Hono query params are strings; only "true" enables.
   include_deleted: z.enum(['true', 'false']).optional(),
+  // The Customers page's pills. Absent is "all".
+  filter: z.enum(['active', 'trials', 'blocked']).optional(),
+  sort: z.enum(['joined', 'name']).optional(),
+  page: z.coerce.number().int().min(1).max(100000).default(1),
+  page_size: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(CLIENTS_PAGE_SIZE_MAX)
+    .default(CLIENTS_PAGE_SIZE_DEFAULT),
 })
 
 const createSchema = z.object({
@@ -196,6 +221,48 @@ function packageView(p: ClientPackageWithSource, refund?: RefundState) {
     // anyone. Named even when they have since been archived — a package bound
     // to a leaver stays bound and must show as such until an admin rebinds it.
     bound_instructor: p.boundInstructor,
+    // running | dormant | expired | used_up | ended — backend-derived, so the
+    // portal never re-tests dates and balances to decide which list a row is in.
+    standing: p.standing,
+    // False on a comp, a $0 trial and a package imported from another system:
+    // no online payment stands behind it, so there is no discount to derive.
+    paid_online: p.paidOnline,
+  }
+}
+
+function memberBookingView(b: MemberBookingRow) {
+  return {
+    booking_id: b.bookingId,
+    kind: b.kind,
+    title: b.title,
+    tier_name: b.tierName,
+    session_type: b.sessionType,
+    starts_at: b.startsAt,
+    ends_at: b.endsAt,
+    location: b.location,
+    instructor: b.instructor,
+    state: b.state,
+    check_in_state: b.checkInState,
+    refund_outcome: b.refundOutcome,
+    credits_used: b.creditsUsed,
+    package_name: b.packageName,
+    code: b.code,
+    booked_at: b.bookedAt,
+    cancelled_at: b.cancelledAt,
+  }
+}
+
+function paymentView(p: MemberPaymentView) {
+  return {
+    id: p.id,
+    item_name: p.itemName,
+    kind: p.kind,
+    amount_sgd: p.amountSgd,
+    status: p.status,
+    purchase_status: p.purchaseStatus,
+    receipt_url: p.receiptUrl,
+    refunded_at: p.refundedAt,
+    created_at: p.createdAt,
   }
 }
 
@@ -278,8 +345,24 @@ const app = new Hono()
   .get('/', zValidator('query', listQuery), async c => {
     const q = c.req.valid('query')
     const includeDeleted = q.include_deleted === 'true'
-    const rows = await listClients(tenantId(c), { q: q.q, status: q.status, includeDeleted })
-    return c.json({ clients: rows.map(clientListRow) })
+    const result = await listClientsPage(tenantId(c), {
+      q: q.q,
+      status: q.status,
+      includeDeleted,
+      filter: q.filter,
+      sort: q.sort,
+      page: q.page,
+      pageSize: q.page_size,
+    })
+    return c.json({
+      clients: result.rows.map(clientListRow),
+      total: result.total,
+      page: q.page,
+      page_size: q.page_size,
+      // The Trial Funnel over every member the Trials filter matches, not just
+      // this page. Null under any other filter.
+      funnel: result.funnel,
+    })
   })
   .post('/', zValidator('json', createSchema), async c => {
     const body = c.req.valid('json')
@@ -296,18 +379,53 @@ const app = new Hono()
   })
   .get('/:id', zValidator('param', idParam), async c => {
     const { id } = c.req.valid('param')
-    const [client, packages, adjustments, refunds, workshopPurchases, openPurchases] =
-      await Promise.all([
-        getClientById(tenantId(c), id),
-        listClientPackages(tenantId(c), id, true),
-        listRecentAdjustments(tenantId(c), id),
-        refundStatesFor(tenantId(c), id),
-        listWorkshopPurchases(tenantId(c), id),
-        listOpenPurchases(tenantId(c), id),
-      ])
+    const tid = tenantId(c)
+    // The member first, alone: a member of another studio is a 404 before
+    // anything else about them is read.
+    const contact = await getClientContact(tid, id)
+    const [
+      wallet,
+      adjustments,
+      refunds,
+      workshopPurchases,
+      openPurchases,
+      upcoming,
+      past,
+      attendance,
+      payments,
+    ] = await Promise.all([
+      listClientPackages(tid, id, false),
+      listRecentAdjustments(tid, id),
+      refundStatesFor(tid, id),
+      listWorkshopPurchases(tid, id),
+      listOpenPurchases(tid, id),
+      listMemberBookings(tid, id, 'upcoming'),
+      listMemberBookings(tid, id, 'past'),
+      memberAttendanceSummary(tid, id),
+      listMemberPayments(tid, id),
+    ])
+    const { current, past: pastPackages } = splitWallet(wallet)
     return c.json({
-      ...clientRow(client),
-      packages: packages.map(p => packageView(p, refunds[p.id])),
+      ...clientRow(contact.client),
+      gender: contact.client.gender,
+      dob: contact.client.dob,
+      waiver_signed_at: contact.waiverSignedAt,
+      referred_by: contact.referredBy,
+      // What the member can still use: running, or waiting for a first booking.
+      packages: current.map(p => packageView(p, refunds[p.id])),
+      // Expired, used up, refunded — newest first. Same shape, so the page
+      // renders one card for both.
+      past_packages: pastPackages.map(p => packageView(p, refunds[p.id])),
+      upcoming_bookings: upcoming.map(memberBookingView),
+      // Capped at the most recent PAST_BOOKINGS_LIMIT; `attendance` counts all.
+      past_bookings: past.map(memberBookingView),
+      attendance: {
+        attended: attendance.attended,
+        no_shows: attendance.noShows,
+        late_cancels: attendance.lateCancels,
+        last_attended_at: attendance.lastAttendedAt,
+      },
+      payments: payments.map(paymentView),
       adjustments: adjustments.map(adjustmentView),
       workshop_purchases: workshopPurchases.map(workshopPurchaseView),
       // Money held against nothing granted. Separate from `packages` on
