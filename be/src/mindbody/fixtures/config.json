@@ -60,6 +60,7 @@
       "migrate": true
     }
   ],
+  "history": null,
   "policy": { "classWindowHours": 12, "ptWindowHours": 24, "cancelCapCount": 3, "cancelCapCycleDays": 30, "ptBookInAdvanceDays": 7 },
   "staff": [
     { "mindbodyName": "Olive Owner", "migrate": "active", "email": "owner@example.test", "role": "admin", "teaches": true },

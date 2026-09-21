@@ -1,4 +1,5 @@
 import type { TenantArchive } from '../services/tenants/transfer-shape'
+import { localDateOf } from './values'
 
 /**
  * What a migrated studio should add up to, counted the same way twice: once
@@ -12,16 +13,19 @@ import type { TenantArchive } from '../services/tenants/transfer-shape'
 
 export type MemberFigures = { name: string; packages: number; credits: number; sessions: number; bookings: number }
 
-/** Which counts arrived with the timetable (#179, #180), and so may be missing from an older file. */
-type Timetable = 'classes' | 'ptSessions' | 'workshops' | 'bookings' | 'perClass' | 'perWorkshop'
+/** A studio's year, the three figures that say whether its past came across whole. */
+export type YearFigures = { classes: number; attended: number; noShows: number }
+
+/** Which counts arrived with the timetable (#179, #180) and history (#181), and so may be missing from an older file. */
+type AddedLater = 'classes' | 'ptSessions' | 'workshops' | 'bookings' | 'perClass' | 'perWorkshop' | 'byYear'
 
 /**
  * Figures as an `expected.json` on disk may hold them. `figuresOf` always
  * counts all of these; a file written before the timetable came across holds
  * none of the timetable counts, and `verify` on it must still compare the rest.
  */
-export type StoredFigures = Omit<Figures, Timetable | 'perMember'> &
-  Partial<Pick<Figures, Timetable>> & { perMember: Record<string, Omit<MemberFigures, 'bookings'> & { bookings?: number }> }
+export type StoredFigures = Omit<Figures, AddedLater | 'perMember'> &
+  Partial<Pick<Figures, AddedLater>> & { perMember: Record<string, Omit<MemberFigures, 'bookings'> & { bookings?: number }> }
 
 export type Figures = {
   members: number
@@ -42,6 +46,13 @@ export type Figures = {
   perClass: Record<string, { name: string; booked: number }>
   /** By workshop id: its name, and how many have a place on it. Every workshop, sold out or empty. */
   perWorkshop: Record<string, { name: string; booked: number }>
+  /**
+   * By the studio's own calendar year: classes held, class visits attended and
+   * class no-shows. A studio importing no history has only the year ahead here;
+   * for one that is, this is the figure that says a whole year did not quietly
+   * go missing on the way in.
+   */
+  byYear: Record<string, YearFigures>
 }
 
 const tally = (counts: Record<string, number>, key: string, by = 1) => {
@@ -64,7 +75,14 @@ export function figuresOf(archive: TenantArchive): Figures {
     perMember: {},
     perClass: {},
     perWorkshop: {},
+    byYear: {},
   }
+  // The studio's own year, not UTC's: a class at 8am in Singapore on 1 January
+  // is the new year's, and would otherwise be counted in the old one.
+  const timeZone = archive.manifest.tenant.timezone
+  const yearOf = new Map<string, string>()
+  const tallyForYear = (year: string): YearFigures =>
+    (figures.byYear[year] ??= { classes: 0, attended: 0, noShows: 0 })
   for (const s of archive.rows.staff_users ?? []) tally(figures.staffByRole, String(s.role))
   const member = (clientId: string) =>
     (figures.perMember[clientId] ??= { name: names.get(clientId) ?? clientId, packages: 0, credits: 0, sessions: 0, bookings: 0 })
@@ -76,6 +94,9 @@ export function figuresOf(archive: TenantArchive): Figures {
     // An instant, so it reads the same from the transform's text and the database's.
     const at = new Date(String(c.starts_at)).toISOString()
     figures.perClass[String(c.id)] = { name: `${typeNames.get(String(c.class_type_id)) ?? 'class'} at ${at}`, booked: 0 }
+    const held = String(localDateOf(new Date(at), timeZone).year)
+    yearOf.set(String(c.id), held)
+    tallyForYear(held).classes += 1
   }
   figures.ptSessions = (archive.rows.pt_sessions ?? []).filter(s => s.lifecycle === 'active').length
   for (const w of archive.rows.workshops ?? []) {
@@ -84,6 +105,11 @@ export function figuresOf(archive: TenantArchive): Figures {
     figures.perWorkshop[String(w.id)] = { name: `workshop ${String(w.name)}`, booked: 0 }
   }
   for (const b of archive.rows.bookings ?? []) {
+    // A visit and a no-show are counted by the year of the class they were on,
+    // whatever became of the booking — that is the whole point of the figure.
+    const held = b.class_id == null ? undefined : yearOf.get(String(b.class_id))
+    if (held && b.check_in_state === 'attended') tallyForYear(held).attended += 1
+    if (held && b.state === 'no_show') tallyForYear(held).noShows += 1
     if (b.state !== 'confirmed') continue
     figures.bookings += 1
     member(String(b.client_id)).bookings += 1
@@ -120,6 +146,7 @@ export function compareFigures(expected: StoredFigures, actual: Figures): string
   }
   const keys = (a: object, b: object) => [...new Set([...Object.keys(a), ...Object.keys(b)])].sort()
 
+  const NO_YEAR: YearFigures = { classes: 0, attended: 0, noShows: 0 }
   differ('members', expected.members, actual.members)
   for (const role of keys(expected.staffByRole, actual.staffByRole)) {
     differ(`staff with the role ${role}`, expected.staffByRole[role] ?? 0, actual.staffByRole[role] ?? 0)
@@ -131,10 +158,17 @@ export function compareFigures(expected: StoredFigures, actual: Figures): string
   differ('PT sessions left, in total', expected.sessionsLeft, actual.sessionsLeft)
   // `?? 0`, `?? {}`: an expected file written before the timetable came across
   // holds none of these, and is read as a studio with nothing on its timetable.
-  differ('future classes', expected.classes ?? 0, actual.classes)
-  differ('future PT sessions', expected.ptSessions ?? 0, actual.ptSessions)
-  differ('future workshops', expected.workshops ?? 0, actual.workshops)
-  differ('future bookings, in total', expected.bookings ?? 0, actual.bookings)
+  differ('classes', expected.classes ?? 0, actual.classes)
+  differ('PT sessions', expected.ptSessions ?? 0, actual.ptSessions)
+  differ('workshops', expected.workshops ?? 0, actual.workshops)
+  differ('bookings, in total', expected.bookings ?? 0, actual.bookings)
+  for (const held of keys(expected.byYear ?? {}, actual.byYear)) {
+    const want = expected.byYear?.[held] ?? NO_YEAR
+    const got = actual.byYear[held] ?? NO_YEAR
+    differ(`${held}: classes held`, want.classes, got.classes)
+    differ(`${held}: visits attended`, want.attended, got.attended)
+    differ(`${held}: no-shows`, want.noShows, got.noShows)
+  }
   const nothing = { name: '', booked: 0 }
   const attendance = (want: typeof nothing | undefined, got: typeof nothing | undefined, id: string) => {
     const what = (want ?? got ?? nothing).name || id
@@ -157,7 +191,7 @@ export function compareFigures(expected: StoredFigures, actual: Figures): string
     differ(`${who}: live packages`, want.packages, got.packages)
     differ(`${who}: class credits left`, want.credits, got.credits)
     differ(`${who}: PT sessions left`, want.sessions, got.sessions)
-    differ(`${who}: future bookings`, want.bookings ?? 0, got.bookings)
+    differ(`${who}: bookings`, want.bookings ?? 0, got.bookings)
   }
   return differences
 }

@@ -6,7 +6,9 @@ import { compareFigures, figuresOf, type Figures } from './figures'
 import { mapStudio, renderPreflight, type MindbodyReports, type Transformed } from './mapper'
 import {
   readAccountBalances,
+  readAttendance,
   readMemberList,
+  readPayroll,
   readPayRates,
   readPhoneBook,
   readPricingOptionRegister,
@@ -45,6 +47,10 @@ const REPORTS = {
   // One workbook per year, because it is large.
   roster: { label: 'Schedule at a Glance', test: (f: string) => /schedule at a glance/i.test(f) },
   payRates: { label: 'Pay Rates', test: (f: string) => /pay rates/i.test(f) },
+  // History. One workbook per year, like the roster, because a studio's whole
+  // past is far too much for one file.
+  attendance: { label: 'Attendance — Date', test: (f: string) => /attendance.*date/i.test(f) },
+  payroll: { label: 'Payroll — Detail', test: (f: string) => /payroll.*detail/i.test(f) },
 } as const
 
 async function filesUnder(dir: string): Promise<string[]> {
@@ -87,6 +93,15 @@ export async function readReports(dir: string): Promise<MindbodyReports> {
   const roster = []
   for (const file of pick('roster')) roster.push(...readRoster(await workbook(file)))
 
+  /** Every file of a report a studio may not have downloaded at all. */
+  const optionalSet = (kind: keyof typeof REPORTS) => files.filter(f => REPORTS[kind].test(path.basename(f)))
+  // Optional: only a studio importing history downloads them, and without them
+  // its past arrives with no visits and every past class Unpriced.
+  const attendance = []
+  for (const file of optionalSet('attendance')) attendance.push(...readAttendance(await workbook(file)))
+  const payroll = []
+  for (const file of optionalSet('payroll')) payroll.push(...readPayroll(await read(file)))
+
   return {
     members: readMemberList(await one('members')),
     referrals,
@@ -99,6 +114,8 @@ export async function readReports(dir: string): Promise<MindbodyReports> {
     schedule: readStaffSchedule(await one('schedule')),
     roster,
     payRates: payRatesFile ? readPayRates(await workbook(payRatesFile)) : [],
+    attendance,
+    payroll,
   }
 }
 

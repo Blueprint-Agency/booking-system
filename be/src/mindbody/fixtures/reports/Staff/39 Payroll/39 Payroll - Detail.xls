@@ -1,0 +1,33 @@
+<!-- Invented fixture: no real studio or person. Layout follows Mindbody's Payroll (Detail) export: a teacher, then their pay rate, then the classes they were paid for. -->
+<table class="mainText" cellspacing="0">
+	<tr><td colspan="6"><b>PAYROLL REPORT</b>&nbsp;|&nbsp;for the dates between: 1-1-2026 and 9-17-2026</td></tr>
+	<tr><td colspan="6"><strong>Instructor, Ivy</strong></td></tr>
+	<tr><td colspan="6">Pay Rate: Per Class</td></tr>
+	<tr class="whiteHeader">
+		<td><strong>Date</strong></td>
+		<td><strong>Time</strong></td>
+		<td><strong>Class</strong></td>
+		<td><strong>Clients</strong></td>
+		<td><strong>Rate</strong></td>
+		<td><strong>Earnings</strong></td>
+	</tr>
+	<tr><td>6/7/2026</td><td>7:00 pm</td><td>Hatha</td><td>1</td><td>$35.00</td><td>$35.00</td></tr>
+	<tr><td>24/8/2026</td><td>7:00 pm</td><td>Hatha</td><td>2</td><td>$35.00</td><td>$35.00</td></tr>
+	<tr><td>31/8/2026</td><td>7:00 pm</td><td>Hatha</td><td>1</td><td>$35.00</td><td>$35.00</td></tr>
+	<tr><td>7/9/2026</td><td>7:00 pm</td><td>Hatha</td><td>0</td><td>$38.00</td><td>$38.00</td></tr>
+	<tr><td>10/9/2026</td><td>7:00 pm</td><td>Hatha</td><td>1</td><td>$40.00</td><td>$40.00</td></tr>
+	<tr><td colspan="6"><strong>Total: $183.00</strong></td></tr>
+	<tr><td colspan="6"><strong>Owner, Olive</strong></td></tr>
+	<tr><td colspan="6">Pay Rate: Per Client</td></tr>
+	<tr class="whiteHeader">
+		<td><strong>Date</strong></td>
+		<td><strong>Time</strong></td>
+		<td><strong>Class</strong></td>
+		<td><strong>Clients</strong></td>
+		<td><strong>Rate</strong></td>
+		<td><strong>Earnings</strong></td>
+	</tr>
+	<tr><td>8/9/2026</td><td>10:00 am</td><td>Vinyasa flow</td><td>6</td><td>$8.00</td><td>$48.00</td></tr>
+	<tr><td>15/9/2026</td><td>10:00 am</td><td>Vinyasa flow</td><td>1</td><td>$8.00</td><td>$8.00</td></tr>
+	<tr><td colspan="6"><strong>Total: $56.00</strong></td></tr>
+</table>

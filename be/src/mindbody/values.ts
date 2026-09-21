@@ -143,17 +143,36 @@ export function localDateOf(at: Date, timeZone: string): CalendarDate {
   return { year: wall.getUTCFullYear(), month: wall.getUTCMonth() + 1, day: wall.getUTCDate() }
 }
 
+/**
+ * One formatter per timezone, kept.
+ *
+ * Building an `Intl.DateTimeFormat` is expensive — tens of microseconds — and
+ * every date this transform reads is converted through one, twice. A studio
+ * importing its whole history converts hundreds of thousands of them, and a
+ * fresh formatter each time is most of the run.
+ */
+const FORMATTERS = new Map<string, Intl.DateTimeFormat>()
+
+function formatterFor(timeZone: string): Intl.DateTimeFormat {
+  let formatter = FORMATTERS.get(timeZone)
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hourCycle: 'h23',
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: 'numeric',
+      second: 'numeric',
+    })
+    FORMATTERS.set(timeZone, formatter)
+  }
+  return formatter
+}
+
 function offsetMs(at: Date, timeZone: string): number {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    hourCycle: 'h23',
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: 'numeric',
-    second: 'numeric',
-  }).formatToParts(at)
+  const parts = formatterFor(timeZone).formatToParts(at)
   const get = (type: string) => Number(parts.find(p => p.type === type)?.value)
   const wall = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'))
   return wall - Math.floor(at.getTime() / 1000) * 1000

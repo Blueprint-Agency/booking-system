@@ -81,6 +81,14 @@ async function main() {
       `Timetable: ${counts.classes} classes, ${counts.pt_sessions} PT sessions, ` +
         `${counts.workshops} workshops over ${counts.workshop_days} days, ${counts.bookings} bookings.`,
     )
+    // History, where the config asked for it: the figures the studio will check.
+    if (counts.check_ins || counts.cancellations) {
+      const years = Object.entries(result.expected.byYear).sort(([a], [b]) => a.localeCompare(b))
+      console.log(`History: ${counts.check_ins} check-ins, ${counts.cancellations} late cancels.`)
+      for (const [year, y] of years) {
+        console.log(`  ${year}: ${y.classes} classes, ${y.attended} attended, ${y.noShows} no-shows`)
+      }
+    }
     console.log(
       `Preflight: ${result.preflight.noEmail.length} members with no email, ` +
         `${result.preflight.sharedEmails.length} shared emails, ` +

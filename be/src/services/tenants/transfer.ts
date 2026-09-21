@@ -340,7 +340,7 @@ export async function importTenant(
         continue
       }
       const hold = deferred[table] ?? []
-      for (const row of tableRows) {
+      const prepared = tableRows.map(row => {
         // `tenant_id` last: it is set, never remapped, and the archive's own
         // value for it must not survive into another studio.
         const values: Record<string, unknown> = remapRow(row, identity)
@@ -350,11 +350,12 @@ export async function importTenant(
         }
         values.tenant_id = targetTenantId
         for (const column of hold) values[column] = null
-        try {
-          await insertRow(table, values, columnKinds.get(table) ?? plain)
-        } catch (err) {
-          throw duplicateExplained(err, table, archive.manifest.tenant.slug)
-        }
+        return values
+      })
+      try {
+        await insertRows(table, prepared, columnKinds.get(table) ?? plain)
+      } catch (err) {
+        throw duplicateExplained(err, table, archive.manifest.tenant.slug)
       }
       written[table] = tableRows.length
     }
@@ -474,28 +475,55 @@ function asJsonb(value: unknown): string | null {
 }
 
 /**
- * One row, written by column name.
+ * Postgres takes at most 65535 parameters in one statement, and a batch is
+ * sized by parameters rather than by rows because a wide table spends them
+ * faster. Well under the limit, because a JSON or array value can render as
+ * more than one.
+ */
+const MAX_PARAMETERS = 20_000
+
+/**
+ * A table's rows, written by column name, in as few statements as the
+ * parameter limit allows.
  *
  * Identifiers come from the catalogue and the values are parameters, so the
  * archive's *content* never reaches the query as text — a studio whose class is
  * called `'); drop table clients; --` restores like any other.
+ *
+ * In batches because a studio importing its whole history brings hundreds of
+ * thousands of rows, and a round trip each would be most of the import. Rows
+ * are grouped by their column set first: every row of a table written by an
+ * export or by the transform has the same one, but nothing in the archive
+ * format promises it, and a batch of two shapes would write the wrong columns.
  */
-async function insertRow(
+async function insertRows(
   table: string,
-  row: Record<string, unknown>,
+  rows: readonly Record<string, unknown>[],
   kinds: ColumnKinds,
 ) {
-  const columns = Object.keys(row)
-  await db.execute(sql`
-    INSERT INTO ${sql.identifier(table)} (${sql.join(
-      columns.map(c => sql.identifier(c)),
-      sql`, `,
-    )})
-    VALUES (${sql.join(
-      columns.map(c => literal(row[c], kinds.get(c))),
-      sql`, `,
-    )})
-  `)
+  const shapes = new Map<string, Record<string, unknown>[]>()
+  for (const row of rows) {
+    const shape = Object.keys(row).join('\u0000')
+    const group = shapes.get(shape)
+    if (group) group.push(row)
+    else shapes.set(shape, [row])
+  }
+
+  for (const [shape, group] of shapes) {
+    const columns = shape.split('\u0000')
+    const perBatch = Math.max(1, Math.floor(MAX_PARAMETERS / Math.max(1, columns.length)))
+    const names = sql.join(columns.map(c => sql.identifier(c)), sql`, `)
+    for (let at = 0; at < group.length; at += perBatch) {
+      const batch = group.slice(at, at + perBatch)
+      const tuples = batch.map(
+        row => sql`(${sql.join(columns.map(c => literal(row[c], kinds.get(c))), sql`, `)})`,
+      )
+      await db.execute(sql`
+        INSERT INTO ${sql.identifier(table)} (${names})
+        VALUES ${sql.join(tuples, sql`, `)}
+      `)
+    }
+  }
 }
 
 /**

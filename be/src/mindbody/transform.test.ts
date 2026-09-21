@@ -763,7 +763,7 @@ test('verify: an attendee lost on the way in is named by workshop', async () => 
 test('verify: the archive adds up to its own expected figures, and an altered balance is named by member', async () => {
   const { archive, expected, zip } = await run()
   assert.deepEqual(
-    { ...expected, perMember: undefined, perClass: undefined, perWorkshop: undefined },
+    { ...expected, perMember: undefined, perClass: undefined, perWorkshop: undefined, byYear: undefined },
     {
       members: 8,
       staffByRole: { admin: 2, instructor: 2 },
@@ -778,8 +778,11 @@ test('verify: the archive adds up to its own expected figures, and an altered ba
       perMember: undefined,
       perClass: undefined,
       perWorkshop: undefined,
+      byYear: undefined,
     },
   )
+  // No history is asked for, so every class the studio has is still to come.
+  assert.deepEqual(expected.byYear, { 2090: { classes: 5, attended: 0, noShows: 0 } })
   // Every class is counted, booked or not, and named by what and when it is.
   assert.deepEqual(
     Object.values(expected.perClass)
@@ -816,11 +819,290 @@ test('verify: a class that lost a seat, and a class that lost itself, are both n
   const differences = await verifyImport(expected, await packArchive(archive))
 
   assert.ok(
-    differences.includes('future bookings, in total: expected 6, found 5'),
+    differences.includes('bookings, in total: expected 6, found 5'),
     `bookings in total must be compared: ${differences.join(' | ')}`,
   )
-  assert.ok(differences.some(d => /^future classes: expected 5, found 4$/.test(d)), 'a missing class must be counted')
+  assert.ok(differences.some(d => /^classes: expected 5, found 4$/.test(d)), 'a missing class must be counted')
+  assert.ok(differences.some(d => /^2090: classes held: expected 5, found 4$/.test(d)), 'and counted against its year')
   assert.ok(differences.some(d => /: in the archive, and not on the timetable$/.test(d)), 'and named')
   assert.ok(differences.some(d => /members booked: expected \d+, found \d+$/.test(d)), 'a lost seat is named by class')
-  assert.ok(differences.some(d => /: future bookings: expected \d+, found \d+$/.test(d)), 'and by member')
+  assert.ok(differences.some(d => /: bookings: expected \d+, found \d+$/.test(d)), 'and by member')
+})
+
+/* ── The studio's past (#181) ─────────────────────────────────────────────── */
+
+/** The fixture with history from a cutoff. Purchases are the studio's separate decision. */
+const withHistory = (purchases = false, from = '2026-06-01') => {
+  const config = fixtureConfig()
+  config.history = { from, purchases }
+  return config
+}
+
+const startsAt = (rows: Record<string, any>[], at: string) => rows.find(r => r.starts_at === at)!
+
+test('no history is asked for by default, so a studio starts on launch day with nothing behind it', async () => {
+  const { archive } = await run()
+  assert.ok(
+    !archive.rows.classes!.some(c => String(c.starts_at) < '2026-09-17'),
+    'a class already held is the studio s history, and nobody asked for it',
+  )
+  assert.deepEqual(archive.rows.check_ins, [])
+  assert.deepEqual(archive.rows.cancellations, [])
+  assert.ok(archive.rows.client_packages!.every(p => !String(p.id).startsWith('past/')))
+})
+
+test('past classes: the schedule report, the sessions only the roster reached, and payroll s own pay', async () => {
+  const { archive, ids } = await run(withHistory())
+  const past = archive.rows.classes!.filter(c => String(c.starts_at) < '2026-09-17')
+  const typeName = new Map(archive.rows.class_types!.map(t => [t.id, t.name]))
+  assert.deepEqual(
+    past.map(c => `${c.starts_at} ${typeName.get(c.class_type_id)} pay ${c.instructor_pay_sgd}`).sort(),
+    [
+      // Only the roster knows this one ran: the schedule report was downloaded
+      // from August, and a class a member sat in must not be lost to that.
+      '2026-07-06T11:00:00.000Z Hatha pay 35.00',
+      '2026-08-24T11:00:00.000Z Hatha pay 35.00',
+      '2026-08-31T11:00:00.000Z Hatha pay 35.00',
+      // What payroll paid that night, not the teacher's standing rate.
+      '2026-09-07T11:00:00.000Z Hatha pay 38.00',
+      '2026-09-08T02:00:00.000Z Vinyasa Flow pay 48.00',
+      '2026-09-10T11:00:00.000Z Hatha pay 40.00',
+      // Payroll has no line for it, so it is Unpriced for an admin to settle.
+      '2026-09-14T11:00:00.000Z Hatha pay null',
+      '2026-09-15T02:00:00.000Z Vinyasa Flow pay 8.00',
+    ],
+  )
+  // Olive is paid per head, and the future has no rate for her at all — yet her
+  // past classes carry real money, because payroll says what she was paid.
+  assert.equal(startsAt(past, '2026-09-08T02:00:00.000Z').main_instructor_id, ids.staff_users!['Olive Owner'])
+  // A past class is a class: the same Room, capacity and credit cost as any other.
+  assert.equal(startsAt(past, '2026-08-24T11:00:00.000Z').room_id, ids.rooms!['Hot Room'])
+  assert.deepEqual([startsAt(past, '2026-08-24T11:00:00.000Z').capacity_online, startsAt(past, '2026-08-24T11:00:00.000Z').credit_cost], [15, 1])
+  assert.ok(past.every(c => c.series_id === null), 'a Class Series is extended forwards, never backwards')
+})
+
+test('past bookings: attended is checked in, absent is a no-show, a late cancel is cancelled and forfeited', async () => {
+  const { archive, ids } = await run(withHistory())
+  const classAt = (at: string) => startsAt(archive.rows.classes!, at).id
+  const seat = (barcode: string, at: string) =>
+    archive.rows.bookings!.find(b => b.client_id === ids.clients![barcode] && b.class_id === classAt(at))!
+
+  const attended = seat('100000001', '2026-08-24T11:00:00.000Z')
+  assert.deepEqual([attended.state, attended.check_in_state, attended.refund_outcome], ['confirmed', 'attended', 'n_a'])
+  const checkIn = archive.rows.check_ins!.find(c => c.booking_id === attended.id)!
+  assert.deepEqual([checkIn.method, checkIn.checked_in_by_staff_id], ['manual', ids.staff_users!['Olive Owner']])
+  assert.equal(checkIn.checked_in_at, '2026-08-24T11:00:00.000Z')
+
+  const absent = seat('100000001', '2026-08-31T11:00:00.000Z')
+  assert.deepEqual([absent.state, absent.check_in_state, absent.refund_outcome], ['no_show', 'no_show', 'forfeited'])
+  assert.ok(!archive.rows.check_ins!.some(c => c.booking_id === absent.id), 'nobody came, so nobody was checked in')
+
+  const late = seat('100000006', '2026-09-07T11:00:00.000Z')
+  assert.deepEqual([late.state, late.check_in_state, late.refund_outcome], ['cancelled', 'n_a', 'forfeited'])
+  assert.equal(late.cancelled_at, '2026-09-07T11:00:00.000Z')
+
+  // Booked and never marked either way: a real seat, and not a visit.
+  const unmarked = seat('100000005', '2026-09-15T02:00:00.000Z')
+  assert.deepEqual([unmarked.state, unmarked.check_in_state], ['confirmed', 'pending'])
+
+  // An early cancellation is a thing that did not happen.
+  assert.ok(
+    !archive.rows.bookings!.some(b => b.client_id === ids.clients!['100000003'] && b.class_id === classAt('2026-09-08T02:00:00.000Z')),
+    'an early cancel is not imported',
+  )
+
+  // Every booking in the studio still has a reference of its own, past and future.
+  const codes = archive.rows.bookings!.map(b => b.code)
+  assert.equal(new Set(codes).size, codes.length)
+  assert.equal(new Set(archive.rows.bookings!.map(b => b.qr_token)).size, codes.length)
+})
+
+test('an imported late cancel inside the current cap cycle is the studio s, so no member starts over their allowance', async () => {
+  const { archive, ids } = await run(withHistory())
+  const cancelled = archive.rows.cancellations!
+  assert.deepEqual(
+    cancelled.map(c => `${c.cancelled_at} ${c.source}`).sort(),
+    [
+      // Ten weeks back: outside the 30-day cycle, so it was the member's own.
+      '2026-07-06T11:00:00.000Z client',
+      // Inside the cycle the platform counts against the cap: written as the
+      // studio's, or the member would arrive having spent an allowance here.
+      '2026-09-07T11:00:00.000Z admin',
+    ],
+  )
+  for (const c of cancelled) {
+    assert.deepEqual([c.kind, c.was_within_window, c.was_within_cap, c.refund_fired], ['class', false, true, false])
+    assert.ok(archive.rows.bookings!.some(b => b.id === c.booking_id && b.client_id === c.client_id))
+  }
+  assert.equal(cancelled.find(c => c.source === 'admin')!.client_id, ids.clients!['100000006'])
+})
+
+test('a past booking points at the package that paid for it, and only at one that came across', async () => {
+  const { archive, ids } = await run(withHistory(true))
+  const classAt = (at: string) => startsAt(archive.rows.classes!, at).id
+  const seat = (barcode: string, at: string) =>
+    archive.rows.bookings!.find(b => b.client_id === ids.clients![barcode] && b.class_id === classAt(at))!
+  const packageOf = (booking: Record<string, any>) =>
+    archive.rows.client_packages!.find(p => p.id === booking.client_package_id)
+
+  // Jane's July visit was taken from the pack she had that July, not the one
+  // she holds today: the purchase whose own run covered the day.
+  const july = packageOf(seat('100000001', '2026-07-06T11:00:00.000Z'))!
+  assert.deepEqual([july.active, july.amount_paid_sgd], [false, '250.00'])
+  assert.equal(july.expires_at, '2026-08-30T15:59:59.000Z')
+  // Her August visit falls outside it, so it points at the pack she still holds.
+  assert.equal(packageOf(seat('100000001', '2026-08-31T11:00:00.000Z'))!.active, true)
+
+  // An Unlimited Plan was never charged a credit, so there is none to give back.
+  assert.equal(seat('100000002', '2026-08-24T11:00:00.000Z').credits_or_sessions_used, 0)
+  assert.equal(seat('100000001', '2026-08-24T11:00:00.000Z').credits_or_sessions_used, 1)
+
+  // Mindbody recorded no option for this visit, so the seat names no package
+  // rather than guessing one.
+  assert.equal(seat('100000005', '2026-09-15T02:00:00.000Z').client_package_id, null)
+})
+
+test('past PT is a session, a request that says how it ended, and a booking per member', async () => {
+  const { archive, ids } = await run(withHistory())
+  const session = archive.rows.pt_sessions!.find(s => String(s.starts_at) < '2026-09-17')!
+  assert.equal(session.starts_at, '2026-09-01T01:00:00.000Z', '9am Singapore')
+  assert.equal(session.instructor_id, ids.staff_users!['Olive Owner'])
+  assert.deepEqual([session.session_type, session.lifecycle, session.instructor_pay_sgd], ['1on1', 'active', null])
+
+  const request = archive.rows.pt_requests!.find(r => r.scheduled_pt_session_id === session.id)!
+  assert.equal(request.status, 'attended', 'Mei came, so the request ended attended')
+  assert.equal(request.client_id, ids.clients!['100000008'])
+  assert.ok(request.debited_client_package_id, 'her PT bundle paid for it')
+
+  const booking = archive.rows.bookings!.find(b => b.pt_session_id === session.id)!
+  assert.deepEqual([booking.state, booking.check_in_state], ['confirmed', 'attended'])
+  assert.ok(archive.rows.check_ins!.some(c => c.booking_id === booking.id))
+  assert.deepEqual(
+    archive.rows.pt_session_clients!.filter(c => c.pt_session_id === session.id).map(c => c.client_id),
+    [ids.clients!['100000008']],
+  )
+})
+
+test('past purchases are a separate opt-in, joined to members by name and phone, and never guessed', async () => {
+  const without = await run(withHistory(false))
+  assert.ok(
+    !without.archive.rows.client_packages!.some(p => p.amount_paid_sgd === '250.00' && p.active === false),
+    'without the opt-in the studio has no pre-launch revenue',
+  )
+
+  const { archive, ids, preflight } = await run(withHistory(true))
+  const who = new Map(Object.entries(ids.clients!).map(([barcode, id]) => [id as string, barcode]))
+  const past = archive.rows.client_packages!.filter(p => p.active === false && p.kind === 'credit_bundle')
+  assert.deepEqual(
+    past.map(p => `${who.get(String(p.client_id))} ${p.amount_paid_sgd} ${p.purchased_at} ${p.credits_or_sessions_remaining}`).sort(),
+    [
+      '100000001 250.00 2026-06-30T16:00:00.000Z 0',
+      '100000002 250.00 2026-06-30T16:00:00.000Z 0',
+      // Spent but not yet expired, so Visits Remaining does not hold it either:
+      // without this it would be money the studio took and nobody counted.
+      '100000005 250.00 2026-06-30T16:00:00.000Z 0',
+    ],
+    'used up, and dated when they were bought, so Finance shows the money on that day',
+  )
+  assert.ok(past.every(p => p.source_class_package_id === ids.class_packages!['Class Pack - Bundle of 10']))
+
+  // A register row that matches no member, and an option in no catalogue entry:
+  // both are named for a person, and neither is guessed at.
+  assert.ok(
+    preflight.schedule.some(n => /Nobody, Ghost — Class Pack - Bundle of 10 — 1 purchase\(s\) match no member/.test(n)),
+    preflight.schedule.join(' | '),
+  )
+  assert.ok(
+    preflight.schedule.some(n => /"Towel Service" was sold 1 time\(s\) in the window and is in no catalogue entry/.test(n)),
+    preflight.schedule.join(' | '),
+  )
+  // A purchase still live at the download already came across as a live package.
+  assert.equal(archive.rows.client_packages!.filter(p => p.source_pt_package_id != null).length, 1)
+})
+
+test('history reaching back to a member s trial does not write them a second one', async () => {
+  // A trial bought in 2023, in the window and long used up. A member has one
+  // trial ever — the platform holds them to it — and it came across already.
+  const { archive, ids, preflight } = await run(withHistory(true, '2023-01-01'))
+  const trials = archive.rows.client_packages!.filter(p => p.kind === 'trial')
+  assert.equal(new Set(trials.map(p => p.client_id)).size, trials.length, 'no member holds two trials')
+  assert.equal(trials.filter(p => p.client_id === ids.clients!['100000001']).length, 1)
+  // The money it took is named, so it is not simply missing from Finance.
+  assert.ok(
+    preflight.schedule.some(n => /Doe, Jane — 2 Trial Classes for New Joiners, 10\.00 — 1 trial\(s\) a member has already come across holding/.test(n)),
+    preflight.schedule.join(' | '),
+  )
+
+  // A name Mindbody writes as ".,  Legacy" is the member whose surname is blank,
+  // not a stranger: the fold drops the full stop the missing surname leaves.
+  const legacy = archive.rows.client_packages!.filter(p => p.client_id === ids.clients!.AB123456 && p.active === false)
+  assert.deepEqual(legacy.map(p => p.amount_paid_sgd), ['250.00'])
+})
+
+test('the cutoff is the only thing that decides how far back the studio goes', async () => {
+  const early = await run(withHistory(false, '2026-06-01'))
+  const late = await run(withHistory(false, '2026-09-01'))
+  const pastOf = (archive: { rows: Record<string, Record<string, unknown>[]> }) =>
+    archive.rows.classes!.filter(c => String(c.starts_at) < '2026-09-17').length
+  assert.equal(pastOf(early.archive), 8)
+  assert.equal(pastOf(late.archive), 5, 'only September')
+
+  await assert.rejects(run(withHistory(false, '2027-01-01')), (err: unknown) => {
+    assert.ok(err instanceof ConfigError)
+    assert.ok(err.problems.some(p => /history\.from "2027-01-01" is after the download/.test(p)), err.problems.join(' | '))
+    return true
+  })
+})
+
+test('history that could not be placed is a preflight line, not a refusal', async () => {
+  const { preflight } = await run(withHistory())
+  assert.ok(
+    preflight.schedule.some(n => /history: 1 visit\(s\) on Ghost Class on 2026-08-20 at 08:00, which is not among the classes that came across/.test(n)),
+    preflight.schedule.join(' | '),
+  )
+  // A seat on a class that has been and gone and was never marked either way
+  // is a real seat, and not a visit. It comes across, and it is named.
+  assert.ok(
+    preflight.schedule.some(n =>
+      /history: 1 seat\(s\) on a class that has been and gone are still "Reserved" in Mindbody, so they came across booked and never checked in/.test(n),
+    ),
+    preflight.schedule.join(' | '),
+  )
+})
+
+test('history asked for without the two reports it is made of says so, rather than arriving empty in silence', async () => {
+  const reports = await readReports(REPORTS)
+  const { archive, preflight } = mapStudio(
+    { ...reports, attendance: [], payroll: [] },
+    validateConfig(withHistory()),
+    TENANT,
+  )
+  // The classes still came across — the schedule report has them — with nobody
+  // on them and no pay, which is exactly what the two lines say.
+  assert.ok(archive.rows.classes!.some(c => String(c.starts_at) < '2026-09-17'))
+  assert.deepEqual(archive.rows.check_ins, [])
+  assert.ok(preflight.schedule.some(n => /no Attendance \(Date\) report was downloaded/.test(n)), preflight.schedule.join(' | '))
+  assert.ok(preflight.schedule.some(n => /no Payroll \(Detail\) report was downloaded/.test(n)), preflight.schedule.join(' | '))
+})
+
+test('the expected figures gain the studio s past, year by year, and verify compares them', async () => {
+  const { archive, expected, zip } = await run(withHistory())
+  assert.deepEqual(expected.byYear, {
+    // Eight classes held, three visits, two no-shows — the year the studio is
+    // leaving behind, as its own reports add it up.
+    2026: { classes: 8, attended: 3, noShows: 2 },
+    2090: { classes: 5, attended: 0, noShows: 0 },
+  })
+  assert.deepEqual(await verifyImport(expected, zip), [])
+
+  // A year lost on the way in is named by its year, not buried in one total.
+  const lost = archive.rows.bookings!.find(b => b.check_in_state === 'attended' && b.class_id != null)!
+  lost.check_in_state = 'pending'
+  const differences = await verifyImport(expected, await packArchive(archive))
+  assert.ok(differences.includes('2026: visits attended: expected 3, found 2'), differences.join(' | '))
+})
+
+test('with history, the same inputs still give the same zip, byte for byte', async () => {
+  const [a, b] = [await run(withHistory(true)), await run(withHistory(true))]
+  assert.ok(a.zip.equals(b.zip))
 })

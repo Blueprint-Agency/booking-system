@@ -230,10 +230,17 @@ export function readVisitsRemaining(rows: TableRow[]): HoldingRow[] {
 export type OptionSaleRow = {
   /** `Surname, First`. The report carries no client id, not even in a link. */
   client: string
+  /** Digits only, and empty where the report has no phone column: the tie-break when two members share a name. */
+  phone: string
   option: string
   activation: LocalDateTime
   expiration: LocalDateTime
   paid: number
+  /**
+   * Sessions left on this purchase at the download. Read with the same
+   * sentinel as everywhere else, and null where the report has no such column.
+   */
+  remaining: SessionCount | null
 }
 
 export function readPricingOptionRegister(html: string): OptionSaleRow[] {
@@ -252,10 +259,12 @@ export function readPricingOptionRegister(html: string): OptionSaleRow[] {
     if (!activation || !expiration || !option) continue
     out.push({
       client: tidy(cell(row, columns, 'Client')),
+      phone: cleanPhone(cell(row, columns, 'Phone #') || cell(row, columns, 'Phone') || cell(row, columns, 'Mobile phone')),
       option,
       activation,
       expiration,
       paid: parseMoney(cell(row, columns, 'Paid')) ?? 0,
+      remaining: parseSessions(cell(row, columns, 'Remaining')),
     })
   }
   return out
@@ -472,6 +481,123 @@ export function readPayRates(rows: TableRow[]): PayRateRow[] {
       out.push({ staff: block.staff, perClass })
       block = null
     }
+  }
+  return out
+}
+
+/* ── 16 Attendance — Date: every visit that was booked, and how it ended ──── */
+
+export type AttendanceRow = {
+  date: CalendarDate
+  start: ClockTime
+  end: ClockTime | null
+  description: string
+  /** `Last, First`. */
+  staff: string
+  room: string
+  location: string
+  clientId: string
+  /** `Signed in`, `Absent`, `Late Cancel`, `Early Cancel`, `Reserved`, … */
+  status: string
+  /** The pricing option the visit was taken from, as written. Blank where Mindbody recorded none. */
+  option: string
+}
+
+/**
+ * Takes a workbook already read into rows (`./xlsx.ts`), like the roster, and
+ * like the roster there is one per year: a studio's whole history is far too
+ * much for one file.
+ *
+ * The Date view is one row per visit — the history that the platform's past
+ * bookings, check-ins and cancellations are made from. It is the roster's
+ * columns plus the pricing option the visit was taken from, which is what lets
+ * an imported booking point at the package that paid for it.
+ */
+export function readAttendance(rows: TableRow[]): AttendanceRow[] {
+  const { at, columns } = header(rows, 'Attendance', [
+    'Date',
+    'Start time',
+    'Description',
+    'Staff',
+    'Client ID',
+    'Status',
+    'Pricing option',
+  ])
+  const out: AttendanceRow[] = []
+  for (const row of dataRows(rows, at)) {
+    const id = clientId(row, columns, 'Client ID')
+    const date = excelDate(cell(row, columns, 'Date')) ?? parseMindbodyDate(cell(row, columns, 'Date'), 'DM')
+    const start = excelTime(cell(row, columns, 'Start time')) ?? parseClock(cell(row, columns, 'Start time'))
+    if (!id || !date || !start) continue
+    out.push({
+      date: { year: date.year, month: date.month, day: date.day },
+      start,
+      end: excelTime(cell(row, columns, 'End time')) ?? parseClock(cell(row, columns, 'End time')),
+      description: tidy(cell(row, columns, 'Description')),
+      staff: tidy(cell(row, columns, 'Staff')),
+      room: tidy(cell(row, columns, 'Room')),
+      location: tidy(cell(row, columns, 'Location')),
+      clientId: id,
+      status: tidy(cell(row, columns, 'Status')),
+      option: tidy(cell(row, columns, 'Pricing option')),
+    })
+  }
+  return out
+}
+
+/* ── 39 Payroll — Detail: what each teacher was actually paid, per class ──── */
+
+export type PayrollRow = {
+  /** The teacher, from the heading above their block. */
+  staff: string
+  date: CalendarDate
+  start: ClockTime
+  description: string
+  /** Dollars earned for that one class. */
+  earnings: number
+}
+
+/** A lone-cell heading that is the studio's own furniture rather than a teacher's name. */
+const NOT_A_TEACHER = /^(pay rate|rate|total|subtotal|grand total|payroll|earnings)\b/i
+
+/**
+ * Read top to bottom, because the two things that identify a block — the
+ * teacher and the pay rate they were on — are headings *outside* the table of
+ * classes rather than columns in it. So the reader carries the current teacher
+ * down the file and re-reads the column positions at every header row it meets:
+ * a teacher paid two ways has two tables under one name, and Mindbody repeats
+ * the header at every page break.
+ *
+ * A heading is a row with exactly one filled cell. It names the teacher unless
+ * it is a rate or a total.
+ */
+export function readPayroll(html: string): PayrollRow[] {
+  const out: PayrollRow[] = []
+  let staff: string | null = null
+  let columns: Columns | null = null
+  for (const row of readHtmlTable(html)) {
+    const filled = row.cells.filter(c => c !== '')
+    if (filled.length === 1) {
+      const text = tidy(filled[0]!)
+      if (text && !NOT_A_TEACHER.test(text)) staff = text
+      continue
+    }
+    const has = (name: string) => row.cells.some(c => c.toLowerCase() === name)
+    if (has('date') && has('earnings')) {
+      const found: Columns = {}
+      row.cells.forEach((c, i) => {
+        const key = c.toLowerCase()
+        if (key && !(key in found)) found[key] = i
+      })
+      columns = found
+      continue
+    }
+    if (!staff || !columns) continue
+    const date = parseMindbodyDate(cell(row, columns, 'Date'), 'DM')
+    const start = parseClock(cell(row, columns, 'Time'))
+    const earnings = parseMoney(cell(row, columns, 'Earnings'))
+    if (!date || !start || earnings === null) continue
+    out.push({ staff, date, start, description: tidy(cell(row, columns, 'Class')), earnings })
   }
   return out
 }

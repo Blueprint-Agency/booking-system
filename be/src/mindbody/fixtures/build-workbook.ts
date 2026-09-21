@@ -7,9 +7,9 @@
  * read and reviewed; this writes them the way Mindbody writes a workbook — one
  * sheet, shared strings, numbers as numbers, and no cell at all where a value
  * is empty. Visits Remaining keeps its dates as text, as Mindbody does. The
- * roster's are real workbook values, so a `YYYY-MM-DD` there is written as a day
- * count and an `HH:MM` as a fraction of a day. `readers.test.ts` holds the
- * workbooks and the rows to each other.
+ * roster's and the attendance report's are real workbook values, so a
+ * `YYYY-MM-DD` there is written as a day count and an `HH:MM` as a fraction of a
+ * day. `readers.test.ts` holds the workbooks and the rows to each other.
  */
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
@@ -21,6 +21,7 @@ const WORKBOOKS = [
   { rows: 'visits-remaining.rows.json', sheet: 'Visits Remaining', out: ['Clients', '15 Visits Remaining', '15 Visits Remaining - Detail.xlsx'], typed: false },
   { rows: 'roster.rows.json', sheet: 'Schedule at a Glance', out: ['Clients', '17 Schedule at a Glance', '17 Schedule at a Glance - 2090.xlsx'], typed: true },
   { rows: 'pay-rates.rows.json', sheet: 'Pay Rates', out: ['Staff', '38 Pay Rates', '38 Pay Rates.xlsx'], typed: false },
+  { rows: 'attendance.rows.json', sheet: 'Attendance', out: ['Clients', '16 Attendance', '16 Attendance - Date - 2026.xlsx'], typed: true },
 ]
 
 const escape = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')

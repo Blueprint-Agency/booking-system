@@ -45,20 +45,29 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     await harness?.close()
   })
 
+  /** A change to the fixture config, for a studio that wants something else of it. */
+  type Edit = (config: Record<string, any>) => void
+
   /** The fixture, transformed for one Tenant. */
-  async function transformFor(tenant: { id: string; slug: string }) {
+  async function transformFor(tenant: { id: string; slug: string }, edit?: Edit) {
     const config = JSON.parse(readFileSync(path.join(FIXTURES, 'config.json'), 'utf8')) as Record<string, any>
     config.studio.slug = tenant.slug
     // The links in the email copy are this environment's, as they would be on staging.
     config.originPatterns = process.env.TENANT_ORIGIN_PATTERNS
+    edit?.(config)
     return transform.transformMindbody({ reportsDir: path.join(FIXTURES, 'reports'), config, tenantId: tenant.id })
   }
 
   /** A Tenant provisioned the way the runbook says — no first admin — and the fixture transformed for it. */
-  async function transformedStudio() {
+  async function transformedStudio(edit?: Edit) {
     const slug = `mb-${run}-${++studios}`
     const { tenant } = await provision.provisionTenant({ slug, name: 'Mindbody Fixture Studio' })
-    return { tenant, slug, ...(await transformFor(tenant)) }
+    return { tenant, slug, ...(await transformFor(tenant, edit)) }
+  }
+
+  /** The studio as it is with its past brought across from a cutoff (#181). */
+  const withHistory = (purchases = false): Edit => config => {
+    config.history = { from: '2026-06-01', purchases }
   }
 
   async function importZip(tenantId: string, zip: Buffer) {
@@ -180,8 +189,8 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
   }
 
   /** A studio imported and open, with what the tests below need to put a class on its timetable. */
-  async function importedStudio() {
-    const studio = await transformedStudio()
+  async function importedStudio(edit?: Edit) {
+    const studio = await transformedStudio(edit)
     const imported = await importZip(studio.tenant.id, studio.zip)
     assert.equal(imported.status, 200, JSON.stringify(imported.body))
 
@@ -576,6 +585,110 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
       'PT sessions left, in total: expected 7, found 6',
       'Mei 林 <mei@example.test>: PT sessions left: expected 7, found 6',
     ])
+  })
+
+  /* ── The studio's past (#181) ──────────────────────────────────────────── */
+
+  test('a member s past reads back as it happened: attended, a no-show, and a late cancel that is not a seat', async () => {
+    const studio = await importedStudio(withHistory())
+    const jane = await harness.signInAs('client', 'jane.doe@example.test', studio)
+    const res = await get('/api/v1/me/bookings/past', jane)
+    assert.equal(res.status, 200, await res.clone().text())
+    const past = ((await res.json()) as { bookings: Record<string, any>[] }).bookings
+
+    assert.deepEqual(
+      past.map(b => `${new Date(b.starts_at as string).toISOString()} ${b.name} ${b.state}/${b.check_in_state}`).sort(),
+      [
+        '2026-08-24T11:00:00.000Z Hatha confirmed/attended',
+        '2026-08-31T11:00:00.000Z Hatha no_show/no_show',
+        // Only the roster knew this class ran, and her visit to it came across all the same.
+        '2026-09-10T11:00:00.000Z Hatha confirmed/attended',
+      ],
+      'a late cancel is not a class she went to, and an early cancel never happened at all',
+    )
+
+    // The late cancel is a cancellation of its own, and the studio's rather
+    // than hers, so her allowance on the platform starts clean.
+    const cancelled = await harness.db
+      .select({ source: schema.cancellations.source, at: schema.cancellations.cancelledAt })
+      .from(schema.cancellations)
+      .where(eq(schema.cancellations.tenantId, studio.tenantId))
+    assert.deepEqual(
+      cancelled.map(c => `${c.at.toISOString()} ${c.source}`).sort(),
+      ['2026-07-06T11:00:00.000Z client', '2026-09-07T11:00:00.000Z admin'],
+    )
+  })
+
+  test('Class Popularity counts the imported check-ins, and Finance the pay payroll actually gave', async () => {
+    const studio = await importedStudio(withHistory())
+    const owner = await harness.signInAs('staff', 'owner@example.test', studio)
+
+    const overview = await get('/api/v1/portal/admin/finance/overview?from=2026-08-01&to=2026-09-17', owner)
+    assert.equal(overview.status, 200, await overview.clone().text())
+    const popularity = ((await overview.json()) as { classes: Record<string, any>[] }).classes
+    assert.deepEqual(
+      popularity.map(c => `${c.name}: ${c.attended}`),
+      ['Hatha: 3'],
+      'three members were signed in at a Hatha in that window, and nobody at a Vinyasa Flow',
+    )
+
+    // Historical Instructor Pay is the studio's own money, not a rate applied
+    // after the fact — and Olive, who has no per-class rate at all, still has it.
+    const finance = await get('/api/v1/portal/admin/finance?from=2026-08-01&to=2026-09-17', owner)
+    assert.equal(finance.status, 200, await finance.clone().text())
+    const body = (await finance.json()) as { instructor_totals: Record<string, any>[]; unpriced_count: number }
+    assert.deepEqual(
+      body.instructor_totals.map(i => `${i.instructor_name} ${i.total_sgd} over ${i.session_count}`).sort(),
+      ['Ivy Instructor 148 over 4', 'Olive Owner 56 over 2'],
+    )
+    // The past class payroll has no line for, and the past PT session —
+    // Mindbody pays PT by percentage of the sale, which no report gives.
+    assert.equal(body.unpriced_count, 2)
+  })
+
+  test('past purchases are the studio s own decision: opted in they are pre-launch revenue, and otherwise nothing', async () => {
+    // Narrower than the packages members still hold, which were bought in August
+    // and come across whether or not anybody asked for history.
+    const period = 'from=2026-06-01&to=2026-07-15'
+    const preLaunchSales = async (studio: { tenantId: string; slug: string }) => {
+      const owner = await harness.signInAs('staff', 'owner@example.test', studio)
+      const res = await get(`/api/v1/portal/admin/finance?${period}`, owner)
+      assert.equal(res.status, 200, await res.clone().text())
+      return ((await res.json()) as { rows: Record<string, any>[] }).rows
+        .filter(r => r.kind === 'package_sale' || r.type === 'credit')
+        .map(r => `${r.user_name} ${r.paid_sgd}`)
+        .sort()
+    }
+
+    const without = await importedStudio(withHistory(false))
+    assert.deepEqual(await preLaunchSales(without), [], 'nobody asked for the studio s pre-launch takings')
+
+    const opted = await importedStudio(withHistory(true))
+    assert.deepEqual(
+      await preLaunchSales(opted),
+      // Kim's was used up before launch but had not expired, so Visits Remaining
+      // does not hold it either: money the studio took that nothing else counts.
+      ['Jane Doe 250', 'Kim Lee 250', 'Rick Roe 250'],
+    )
+  })
+
+  test('verify compares the studio s past as well as its future, and names the year that lost something', async () => {
+    const studio = await importedStudio(withHistory(true))
+    const exported = async () => {
+      const res = await get(`/api/v1/platform/tenants/${studio.tenantId}/export`, operator)
+      assert.equal(res.status, 200, await res.clone().text())
+      return Buffer.from(await res.arrayBuffer())
+    }
+    assert.deepEqual(await transform.verifyImport(studio.expected, await exported()), [])
+
+    // A visit lost on the way in is named by the year it happened in.
+    await harness.db.execute(sql`
+      UPDATE bookings SET check_in_state = 'pending'
+      WHERE tenant_id = ${studio.tenantId} AND check_in_state = 'attended'
+        AND class_id IN (SELECT id FROM classes WHERE tenant_id = ${studio.tenantId} AND starts_at < '2026-09-01')
+    `)
+    const differences = await transform.verifyImport(studio.expected, await exported())
+    assert.ok(differences.includes('2026: visits attended: expected 3, found 1'), differences.join(' | '))
   })
 
   test('the same archive without the ensure-accounts flag is refused, as a restore always was', async () => {

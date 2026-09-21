@@ -104,6 +104,26 @@ const workshopSchema = z.object({
   tiers: z.array(workshopTierSchema).default([]),
 })
 
+/**
+ * How much of the studio's past to bring across.
+ *
+ * Absent (`null`) is a studio that starts on launch day with nothing behind it:
+ * the fastest rehearsal, and the default. Given, `from` is the first day of
+ * history to import — every class, booking, check-in, no-show, late cancel and
+ * PT session from that day up to the download — and `purchases` says whether
+ * the packages members bought and used up before then come too, which is what
+ * puts pre-launch money in Finance.
+ *
+ * Not `open(...)`: history is a thing a studio either wants or does not, and
+ * `null` is that answer rather than an unfilled field.
+ */
+const historySchema = z.object({
+  /** The first day to import, `YYYY-MM-DD`, on the studio's own calendar. */
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  /** Past purchases, as inactive packages. Off by default: they show as pre-launch revenue in Finance. */
+  purchases: z.boolean().default(false),
+})
+
 const staffSchema = z.object({
   /** The name as the phone book writes it; matched in any word order and case. */
   mindbodyName: z.string().min(1),
@@ -217,6 +237,8 @@ export const studioConfigSchema = z.object({
   /** The Class Type an imported PT appointment's focus is. Created if `classTypes` does not already list it. */
   ptClassType: z.string().min(1).default('Personal Training'),
   series: z.array(seriesSchema).default([]),
+  /** How far back to bring the studio's past, or `null` for none. */
+  history: historySchema.nullable().default(null),
   policy: z
     .object({
       classWindowHours: z.number().int().min(0).default(24),
@@ -287,6 +309,7 @@ export type StudioConfig = {
     teacher: string
     migrate: boolean
   }[]
+  history: { from: string; purchases: boolean } | null
   policy: Parsed['policy']
   staff: (
     | { mindbodyName: string; migrate: 'active'; email: string; role: 'admin' | 'instructor'; teaches: boolean }
@@ -514,6 +537,12 @@ export function validateConfig(raw: unknown): StudioConfig {
     }
   })
 
+  // A cutoff after the download would bring no history at all, which is what
+  // `history: null` says plainly — so it is a mistake rather than a choice.
+  if (c.history && c.asOf && c.history.from > c.asOf.slice(0, 10)) {
+    problems.push(`history.from "${c.history.from}" is after the download (${c.asOf.slice(0, 10)}), so nothing would come across`)
+  }
+
   if (problems.length > 0) throw new ConfigError(problems)
   return c as unknown as StudioConfig
 }
@@ -557,6 +586,9 @@ export function starterConfig(reports: MindbodyReports, asOf: string | null = nu
     workshops: schedule.workshops,
     ptAppointmentNames: schedule.ptAppointmentNames,
     series: schedule.series,
+    // Nothing behind launch day, because that is the quick rehearsal. A studio
+    // that wants its past writes `{ "from": "2019-01-01", "purchases": false }`.
+    history: null,
     policy: { classWindowHours: 24, ptWindowHours: 24, cancelCapCount: 3, cancelCapCycleDays: 30, ptBookInAdvanceDays: 7 },
     staff: reports.phoneBook.map(p => ({
       mindbodyName: p.name,

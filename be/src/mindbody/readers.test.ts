@@ -5,8 +5,10 @@ import path from 'node:path'
 import { readHtmlTable, type TableRow } from './html-table'
 import {
   readAccountBalances,
+  readAttendance,
   readMemberList,
   readPayRates,
+  readPayroll,
   readPhoneBook,
   readPricingOptionRegister,
   readReferralTypes,
@@ -276,11 +278,19 @@ test('the pricing option register: one purchase per row, under two title rows, m
   const sold = readPricingOptionRegister(
     readFileSync(path.join(FIXTURES, 'reports', 'Clients', '13 Pricing Option Expirations', '13 Pricing Option Expirations.xls'), 'utf8'),
   )
-  assert.equal(sold.length, 8)
+  assert.equal(sold.length, 13)
   const plan = sold.find(s => s.option === 'Unlimited 12')!
+  // The sentinel reads as what it means here too, so "still live" means the
+  // same thing to a purchase as it does to a holding.
+  assert.deepEqual(plan.remaining, { unlimited: true })
+  assert.deepEqual(sold.find(s => s.client === 'Nobody, Ghost')?.remaining, { unlimited: false, count: 0 })
   assert.equal(plan.paid, 1700)
   assert.deepEqual([plan.activation.day, plan.activation.month, plan.expiration.year], [1, 2, 2027])
   assert.equal(sold.find(s => s.client === '林, Mei')?.option, 'PT - Bundle of 10')
+  // The phone, which is how a past purchase is told from another member's of the same name.
+  assert.equal(sold.find(s => s.client === 'Nobody, Ghost')?.phone, '90001111')
+  assert.equal(sold.find(s => s.client === 'Doe, Jane')?.phone, '91234567')
+  assert.equal(plan.phone, '', 'no phone on the row is no phone, not a guess')
 })
 
 test('sales: only the sale lines of each client block, dated M/D, a return as minus one', () => {
@@ -356,7 +366,7 @@ test('the roster: dates and times come back as real workbook values, whatever th
   const roster = readRoster(
     await readXlsxTable(readFileSync(path.join(FIXTURES, 'reports', 'Clients', '17 Schedule at a Glance', '17 Schedule at a Glance - 2090.xlsx'))),
   )
-  assert.equal(roster.length, 9)
+  assert.equal(roster.length, 10)
   const first = roster[0]!
   assert.deepEqual(
     [first.date, first.start, first.end],
@@ -377,4 +387,52 @@ test('pay rates: the per-class rate of each teacher, and null where there is non
     { staff: 'Owner, Olive', perClass: null },
     { staff: 'Teacher, Old', perClass: 40 },
   ])
+})
+
+/* ── History (#181) ───────────────────────────────────────────────────────── */
+
+test('attendance: one row per past visit, with the pricing option it was taken from', async () => {
+  const visits = readAttendance(
+    await readXlsxTable(
+      readFileSync(path.join(FIXTURES, 'reports', 'Clients', '16 Attendance', '16 Attendance - Date - 2026.xlsx')),
+    ),
+  )
+  const first = visits[0]!
+  assert.deepEqual(
+    [first.date, first.start, first.end],
+    [{ year: 2026, month: 7, day: 6 }, { hour: 19, minute: 0 }, { hour: 20, minute: 0 }],
+    'real workbook values, as the roster has them',
+  )
+  assert.deepEqual(
+    [first.clientId, first.status, first.option],
+    ['100000001', 'Late Cancel', 'Class Pack - Bundle of 10'],
+    'the option is what lets the booking point at the package that paid for it — doubled spaces and all, folded by `normaliseOptionName`',
+  )
+  assert.deepEqual([first.description, first.staff, first.room, first.location], ['Hatha', 'Instructor, Ivy', 'Studio 1 - Hot Room', 'Main Hall'])
+  // Every way a visit ends is a row; which of them is history is the mapper's.
+  assert.deepEqual(
+    [...new Set(visits.map(v => v.status))].sort(),
+    ['Absent', 'Early Cancel', 'Late Cancel', 'No Show', 'Reserved', 'Signed in'],
+  )
+  assert.equal(visits.find(v => v.status === 'Reserved' && v.date.year === 2026)!.option, '', 'a visit Mindbody recorded no option for')
+})
+
+test('payroll: the teacher from the heading above the table, and what each class earned', () => {
+  const paid = readPayroll(
+    readFileSync(path.join(FIXTURES, 'reports', 'Staff', '39 Payroll', '39 Payroll - Detail.xls'), 'utf8'),
+  )
+  assert.deepEqual(
+    paid.map(p => `${p.staff} ${p.date.day}/${p.date.month}/${p.date.year} ${p.start.hour}:00 ${p.description} ${p.earnings}`),
+    [
+      'Instructor, Ivy 6/7/2026 19:00 Hatha 35',
+      'Instructor, Ivy 24/8/2026 19:00 Hatha 35',
+      'Instructor, Ivy 31/8/2026 19:00 Hatha 35',
+      'Instructor, Ivy 7/9/2026 19:00 Hatha 38',
+      'Instructor, Ivy 10/9/2026 19:00 Hatha 40',
+      // Paid per client, which is still a real figure for the class that ran.
+      'Owner, Olive 8/9/2026 10:00 Vinyasa flow 48',
+      'Owner, Olive 15/9/2026 10:00 Vinyasa flow 8',
+    ],
+    'the report title, the pay-rate line and the totals are not classes',
+  )
 })

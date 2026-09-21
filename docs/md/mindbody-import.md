@@ -50,9 +50,10 @@ npm run mindbody -- verify --expected <studio.expected.json> --export <exported.
   add up to). Send the preflight to the studio.
 - `verify` counts the exported studio the way `transform` counted its own archive — members,
   staff by role, live packages by kind, credits and sessions left in total and per member,
-  future classes, PT sessions and workshops, and bookings in total, per member, per class and per
-  workshop — lists every difference by member, by class or by workshop, and exits non-zero on any. Run it straight after the
-  import, before anybody books.
+  classes, PT sessions and workshops, bookings in total, per member, per class and per
+  workshop, and — for a studio that brought its past — classes held, visits attended and
+  no-shows per calendar year. It lists every difference by member, by class, by workshop or by
+  year, and exits non-zero on any. Run it straight after the import, before anybody books.
 - **The catalogue** (`catalogue` in the config) is one entry per Mindbody pricing option, proposed
   by `starter` from what was sold: the commonest sessions bought, activation-to-expiry spread and
   sale price. A person sets `migrate` on each — `sell` (active, at `priceSgd`), `legacy`
@@ -113,6 +114,48 @@ npm run mindbody -- verify --expected <studio.expected.json> --export <exported.
   is written as a series whose imported classes are linked to it and whose last date is the
   last class that came across, so launch day starts with an extend and nothing is duplicated.
   Its teacher must be coming across as an active instructor, or the portal could never extend it.
+- **The studio's past** is optional and off by default: `history` in the config is `null` for a
+  quick rehearsal, and `{ "from": "2019-01-01", "purchases": false }` for a launch that wants it.
+  `from` is the first day to bring, on the studio's own calendar. Past classes are the union of
+  what the schedule report holds for those days — empty ones included — and any session only the
+  roster reached, because the schedule download may start later than the cutoff. Each carries the
+  pay the **payroll Detail** report says the teacher was actually given, matched on date, time and
+  teacher, and is Unpriced where payroll has no line for it. Past bookings come from the
+  **Attendance** report (Date view), one per visit: *signed in* is `confirmed`/`attended` with a
+  `check_ins` row (manual, by the owner), *absent* or *no-show* is `no_show`/`forfeited`, a
+  *late cancel* is `cancelled`/`forfeited` with a `cancellations` row, a seat the studio never
+  marked comes across `confirmed` with its check-in still pending, and an **early cancellation is
+  not imported** — it is a booking nobody kept and nobody was charged for. The visit's pricing
+  option names the package that paid for it, and only where that package came across. Past PT is
+  the future-PT shape with the request `attended` or `cancelled_after_scheduled`.
+- An imported late cancel inside the **current cancellation cycle** is written with source
+  `admin`, not `client`. The platform counts a member's own cancellations over a rolling cycle to
+  cap them, and history landing inside that cycle would spend an allowance the member never spent
+  here — so every member starts on the platform with a clean one.
+- **Past purchases** are a second, separate opt-in (`history.purchases`), because they are
+  pre-launch money and they show in Finance on the day they were bought. They are the
+  pricing-option register's rows that were activated after the cutoff and were not still live at
+  the download — live by the same test the packages use, something left *and* not expired, so a
+  pack bought and used up before launch is counted even though its date had not passed. The live
+  ones already came across as packages. Each is written as an inactive, used-up
+  `client_packages` row. The register carries no client id, so they are joined to members by
+  normalised name, and by phone where a name is held by more than one. **Anything unmatched is
+  listed in the preflight, never guessed.** A past *trial* is the one purchase that cannot come
+  across — a member may hold only one trial ever, which the platform enforces with a unique key,
+  and the one they used is already there — so the money it took is a preflight line instead.
+- A past visit points at the package that paid for it only where the attendance report's pricing
+  option is one the member's own history or live holdings actually hold, and where that holding's
+  run covered the day. Anything else and the seat names no package: a wrong package would read
+  worse than none.
+- History is never a refusal. A class name nobody teaches any more, a room that closed, a teacher
+  left out of the config: each is a preflight line and its classes stay behind, so a studio can
+  still launch. A teacher who appears only in history should be migrated `archived`, which is
+  what `starter` proposes for an inactive one.
+- **How long a full history takes.** Measured on a synthetic eight-year studio — 11,693 past
+  classes, 93,455 bookings, 70,084 check-ins: under ten seconds to map, a few more to write the
+  zip (12 MB), and between half a minute and a minute and a half to import. Allow a couple of
+  minutes and do not assume the import has hung. The import writes each table in batches rather
+  than a round trip per row, which is what keeps that last figure in seconds.
 - Whatever could not be matched — a booking with no class, a member not in the member list, a
   class over its capacity, a series with nothing to continue — is a line in the preflight, and
   the import goes ahead without it.
@@ -125,15 +168,20 @@ npm run mindbody -- verify --expected <studio.expected.json> --export <exported.
   `secret`, which `starter` writes once at random.
 - Reads today: Mailing Lists (Mailing List), Referral Types (detail files: creation date),
   Retention Management (gender), Phone Book (staff), Visits Remaining (Detail `.xlsx`: holdings),
-  Pricing Option Expirations and Big Spenders (Detail Accrual) — those two only to propose the
-  catalogue — Staff Schedule (ALL, "Scheduled": the timetable), Schedule at a Glance (`.xlsx`,
-  one per year: who is booked into what) and, if they were downloaded, Account Balances
-  (All balances) and Pay Rates (`.xlsx`).
+  Pricing Option Expirations (the catalogue proposal, and past purchases) and Big Spenders
+  (Detail Accrual, the catalogue proposal only), Staff Schedule (ALL, "Scheduled": the
+  timetable), Schedule at a Glance (`.xlsx`, one per year: who is booked into what) and, if they
+  were downloaded, Account Balances (All balances), Pay Rates (`.xlsx`), Attendance (Date,
+  `.xlsx`, one per year) and Payroll (Detail). The last two are only read by a studio importing
+  history; without them its past arrives with no visits and every past class Unpriced.
 - Writes: settings, Locations, Rooms, Class Types, policy, PT booking config, all email
   templates, every member profile, the class and PT catalogue, every live package, staff — the owner (`studio.ownerEmail`) an active Admin,
   other migrated staff pending with an invitation to resend from the portal, `archived` teachers
-  with a placeholder email — and the timetable still to come: Class Series, classes, PT requests
-  and sessions, workshops with their days, tiers and instructors, and every booking on them.
+  with a placeholder email — the timetable still to come: Class Series, classes, PT requests
+  and sessions, workshops with their days, tiers and instructors, and every booking on them —
+  and, where the config asks for history, the studio's past: the classes it held with the pay
+  payroll gave them, the bookings on them with their check-ins and late cancellations, its past
+  PT, and (on the second opt-in) the packages members bought and used up before launch.
 
 The archive's manifest carries `ensureAccounts: true`. On import that makes the importer create
 or reuse the sign-in account of every member and staff row by email, inside the import's

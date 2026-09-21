@@ -4,13 +4,17 @@ import { joinName, splitName } from '../lib/name'
 import { ARCHIVE_VERSION, type TenantArchive } from '../services/tenants/transfer-shape'
 import type { StudioConfig } from './config'
 import { idsFor, secretToken } from './ids'
+import { mapHistory, type MappedHistory } from './history'
+import { configLookups } from './lookups'
 import { mapPackages, type AccountBalance, type NotMigrated } from './packages'
 import type {
   AccountBalanceRow,
+  AttendanceRow,
   HoldingRow,
   MemberListRow,
   OptionSaleRow,
   PayRateRow,
+  PayrollRow,
   PhoneBookRow,
   ReferralRow,
   RetentionRow,
@@ -20,7 +24,7 @@ import type {
 } from './readers'
 import { bookingCoder } from './booking-codes'
 import { mapSchedule } from './schedule'
-import { normaliseStaffName, zonedToInstant, type LocalDateTime } from './values'
+import { normaliseClassName, normaliseStaffName, zonedToInstant, type LocalDateTime } from './values'
 import { mapWorkshops, workshopOptionKeys } from './workshops'
 
 /**
@@ -52,6 +56,10 @@ export type MindbodyReports = {
   /** Who is booked into what. Reaches past the download only where it was run over future dates. */
   roster: RosterRow[]
   payRates: PayRateRow[]
+  /** Every past visit and how it ended. Empty where the report was not downloaded, or no history is wanted. */
+  attendance: AttendanceRow[]
+  /** What each teacher was actually paid, per past class. Empty where the report was not downloaded. */
+  payroll: PayrollRow[]
 }
 
 export type Preflight = {
@@ -61,7 +69,9 @@ export type Preflight = {
   balances: AccountBalance[]
   /**
    * The timetable: a booking with no class or no package, a class over
-   * capacity, a series with nothing to continue, a workshop with no days left.
+   * capacity, a series with nothing to continue, a workshop with no days left,
+   * and — where history came across — everything about the past that could not
+   * be placed.
    */
   schedule: string[]
   /** Members with no usable email: imported under a placeholder, fixed later by an admin. */
@@ -88,6 +98,20 @@ const PLACEHOLDER_DOMAIN = 'no-email.invalid'
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
 type Row = Record<string, unknown>
+
+/** A studio importing no history: the shape, with nothing in it. */
+const noHistory = (): MappedHistory => ({
+  classes: [],
+  bookings: [],
+  checkIns: [],
+  cancellations: [],
+  ptRequests: [],
+  ptSessions: [],
+  ptSessionClients: [],
+  clientPackages: [],
+  instructors: [],
+  notes: [],
+})
 
 export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenantId: string): Transformed {
   const id = idsFor(tenantId)
@@ -299,6 +323,8 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
   /* ── The catalogue, and what members still hold of it (`./packages.ts`) ─── */
 
   const memberNames = new Map(reports.members.map(m => [m.id, memberName(m)]))
+  // The pricing options that buy a place on a workshop: a booking, never a package.
+  const workshopOptions = workshopOptionKeys(config)
   const packages = mapPackages({
     holdings: reports.holdings,
     balances: reports.balances,
@@ -307,7 +333,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     id,
     ids,
     memberNames,
-    workshopOptions: workshopOptionKeys(config),
+    workshopOptions,
   })
   preflight.notMigrated = packages.notMigrated
   preflight.balances = packages.balances
@@ -317,9 +343,27 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
   // `validateConfig` has already refused a config whose owner is not among the staff.
   if (!ownerId) throw new Error('the owner is not among the staff coming across')
   // One coder for the whole archive: a booking reference is unique within a
-  // studio, and a class seat and a workshop place share that one namespace.
+  // studio, and a class seat, a workshop place and a visit years ago all share
+  // that one namespace.
   const codes = bookingCoder(config.secret, tenantId)
   const instructorIds = new Set(instructors.map(i => i.staff_user_id as string))
+  const lookups = configLookups(config, id)
+
+  // The Class Type a PT appointment's focus is. Made at most once, whichever of
+  // the timetable and the history first needs it, so two PT imports are never
+  // two Class Types of one name.
+  const ptTypeKey = normaliseClassName(config.ptClassType)
+  const ptClassTypes: Row[] = []
+  let ptTypeId = lookups.types.get(ptTypeKey)?.id ?? null
+  const ensurePtType = () => {
+    if (!ptTypeId) {
+      ptTypeId = id('class-type', ptTypeKey)
+      ptClassTypes.push({ id: ptTypeId, tenant_id: tenantId, name: config.ptClassType })
+      ids.class_types![config.ptClassType] = ptTypeId
+    }
+    return ptTypeId
+  }
+
   const schedule = mapSchedule({
     schedule: reports.schedule,
     roster: reports.roster,
@@ -334,6 +378,8 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     ownerId,
     clientPackages: packages.clientPackages,
     codes,
+    lookups,
+    ensurePtType,
   })
 
   /* ── Workshops and retreats to come, and who has paid (`./workshops.ts`) ── */
@@ -351,14 +397,41 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     ownerId,
     codes,
   })
-  preflight.schedule = [...schedule.notes, ...workshops.notes]
+  /* ── The studio's past, if the config asks for it (`./history.ts`) ─────── */
+
+  const history = config.history
+    ? mapHistory({
+        history: config.history,
+        schedule: reports.schedule,
+        roster: reports.roster,
+        attendance: reports.attendance,
+        payroll: reports.payroll,
+        optionSales: reports.optionSales,
+        members: reports.members,
+        config,
+        tenantId,
+        id,
+        ids,
+        memberNames,
+        staffIds,
+        instructorIds,
+        ownerId,
+        lookups,
+        ensurePtType,
+        clientPackages: packages.clientPackages,
+        workshopOptions,
+        codes,
+      })
+    : noHistory()
+
+  preflight.schedule = [...schedule.notes, ...workshops.notes, ...history.notes]
 
   /* ── The archive ───────────────────────────────────────────────────────── */
 
   // One profile per staff member, however many things they lead: the timetable
   // and the workshops each name whoever was not an instructor already.
   const extraInstructors = new Map<string, Row>()
-  for (const i of [...schedule.instructors, ...workshops.instructors]) {
+  for (const i of [...schedule.instructors, ...workshops.instructors, ...history.instructors]) {
     extraInstructors.set(i.staff_user_id as string, i)
   }
 
@@ -367,25 +440,30 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
   const rows: Record<string, Row[]> = {
     locations,
     rooms,
-    class_types: [...classTypes, ...schedule.classTypes],
+    class_types: [...classTypes, ...ptClassTypes],
     staff_users: staffUsers,
     instructors: [...instructors, ...extraInstructors.values()],
     staff_invitations: invitations,
     clients,
     class_packages: packages.classPackages,
     pt_packages: packages.ptPackages,
-    client_packages: packages.clientPackages,
+    client_packages: [...packages.clientPackages, ...history.clientPackages],
     class_series: schedule.classSeries,
-    classes: schedule.classes,
-    pt_requests: schedule.ptRequests,
-    pt_sessions: schedule.ptSessions,
-    pt_session_clients: schedule.ptSessionClients,
+    classes: [...history.classes, ...schedule.classes],
+    pt_requests: [...history.ptRequests, ...schedule.ptRequests],
+    pt_sessions: [...history.ptSessions, ...schedule.ptSessions],
+    pt_session_clients: [...history.ptSessionClients, ...schedule.ptSessionClients],
     workshops: workshops.workshops,
     workshop_days: workshops.workshopDays,
     workshop_tiers: workshops.workshopTiers,
     workshop_tier_days: workshops.workshopTierDays,
     workshop_instructors: workshops.workshopInstructors,
-    bookings: [...schedule.bookings, ...workshops.bookings],
+    bookings: [...history.bookings, ...schedule.bookings, ...workshops.bookings],
+    // After `bookings`, which they point at. The importer sorts the tables it
+    // writes by the schema's own foreign keys, so this order is for a person
+    // reading the zip; it costs nothing to have it read the way it must be written.
+    check_ins: history.checkIns,
+    cancellations: history.cancellations,
     global_policy: globalPolicy,
     pt_booking_config: ptBookingConfig,
     email_templates: emailTemplates,

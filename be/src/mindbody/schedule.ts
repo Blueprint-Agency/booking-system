@@ -1,5 +1,7 @@
 import type { BookingCoder } from './booking-codes'
 import { ConfigError, type StudioConfig } from './config'
+import { fold, type ConfigLookups } from './lookups'
+import { ptAppointmentRows, ptClients } from './pt'
 import type { PayRateRow, RosterRow, ScheduledClassRow } from './readers'
 import {
   dayNumber,
@@ -31,8 +33,6 @@ import {
 type Row = Record<string, unknown>
 
 export type MappedSchedule = {
-  /** The PT Class Type, where the config's Class Types do not already have it. */
-  classTypes: Row[]
   /** Staff who lead something imported and had no instructor profile yet. */
   instructors: Row[]
   classSeries: Row[]
@@ -45,8 +45,6 @@ export type MappedSchedule = {
   notes: string[]
 }
 
-const fold = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase()
-
 export function mapSchedule(input: {
   schedule: ScheduledClassRow[]
   roster: RosterRow[]
@@ -54,6 +52,10 @@ export function mapSchedule(input: {
   config: StudioConfig
   tenantId: string
   id: (kind: string, key: string) => string
+  /** What the config calls Rooms, Locations, Class Types and the rest (`./lookups.ts`). */
+  lookups: ConfigLookups
+  /** The PT Class Type's id, making it if neither this nor the history import has yet. */
+  ensurePtType: () => string
   /** Mindbody key → platform id. Read for Locations, Rooms, Class Types and members; filled in for what is written here. */
   ids: Record<string, Record<string, string>>
   memberNames: Map<string, string>
@@ -74,23 +76,9 @@ export function mapSchedule(input: {
   const notes: string[] = []
   const problems: string[] = []
 
-  /* ── What the config calls things ──────────────────────────────────────── */
+  /* ── What the config calls things (`./lookups.ts`) ─────────────────────── */
 
-  const rooms = new Map<string, { id: string; location: string; capacity: number }>()
-  for (const r of config.rooms) {
-    const room = { id: id('room', `${r.location}/${r.name.trim().toLowerCase()}`), location: r.location, capacity: r.capacity }
-    for (const spelling of [r.name, ...r.mindbodyNames]) rooms.set(fold(spelling), room)
-  }
-  const offSite = new Set(config.offSiteVenues.map(fold))
-  const locations = new Map<string, string>()
-  for (const l of config.locations) for (const s of [l.name, ...l.mindbodyNames]) locations.set(fold(s), l.key)
-  const types = new Map<string, { id: string; capacity: number | null }>()
-  for (const t of config.classTypes) {
-    const type = { id: id('class-type', t.name.trim().toLowerCase()), capacity: t.capacity }
-    for (const s of [t.name, ...t.mindbodyNames]) types.set(normaliseClassName(s), type)
-  }
-  const workshopCategories = new Set(config.workshopCategories.map(fold))
-  const ptNames = new Set(config.ptAppointmentNames.map(normaliseClassName))
+  const { rooms, offSite, locations, types, workshopCategories, ptNames } = input.lookups
   const payPerClass = new Map(input.payRates.map(p => [normaliseStaffName(p.staff), p.perClass]))
 
   /** Leading something imported makes a staff member an instructor, if they were not one already. */
@@ -232,8 +220,10 @@ export function mapSchedule(input: {
         (p.kind === 'pt') === (family === 'pt'),
     )
 
-  ids.classes = {}
-  ids.bookings = {}
+  // `??=`, never `=`: the history import fills the same three maps, and
+  // whichever of the two runs second must add to them rather than empty them.
+  ids.classes ??= {}
+  ids.bookings ??= {}
   const bookings: Row[] = []
   const booking = (key: string, clientId: string, target: Row, family: 'class' | 'pt', label: string, startsAt: Date): void => {
     const pkg = runningPackage(clientId, family, startsAt)
@@ -334,14 +324,10 @@ export function mapSchedule(input: {
 
   /* ── Future PT appointments ────────────────────────────────────────────── */
 
-  // The PT Class Type: the config's own if it lists one by that name.
-  const ptTypeKey = normaliseClassName(config.ptClassType)
-  const classTypes: Row[] = []
-  let ptTypeId = types.get(ptTypeKey)?.id
   const ptRequests: Row[] = []
   const ptSessions: Row[] = []
   const ptSessionClients: Row[] = []
-  ids.pt_sessions = {}
+  ids.pt_sessions ??= {}
 
   for (const key of [...appointments.keys()].sort()) {
     const a = appointments.get(key)!
@@ -358,63 +344,40 @@ export function mapSchedule(input: {
       notes.push(`${extra} ${memberNames.get(extra)}: a third member on ${label} — a PT session here seats two, so this seat was not imported`)
     }
 
-    if (!ptTypeId) {
-      ptTypeId = id('class-type', ptTypeKey)
-      classTypes.push({ id: ptTypeId, tenant_id: tenantId, name: config.ptClassType })
-      ids.class_types![config.ptClassType] = ptTypeId
-    }
+    const ptTypeId = input.ensurePtType()
     teaches(instructorId)
     const room = rooms.get(fold(a.room))
     const location = room?.location ?? locations.get(fold(a.location)) ?? config.defaultLocation
     const startsAt = instant(a.date, a.start)
     const end = a.end ? instant(a.date, a.end) : startsAt
     const endsAt = end > startsAt ? end : new Date(startsAt.getTime() + 3_600_000)
-    const sessionType = partner ? '2on1' : '1on1'
     const sessionId = id('pt-session', key)
-    const requestId = id('pt-request', key)
-
-    ptRequests.push({
-      id: requestId,
-      tenant_id: tenantId,
-      client_id: ids.clients![requester!],
-      class_type_id: ptTypeId,
-      location_id: ids.locations![location],
-      session_type: sessionType,
-      co_client_id: partner ? ids.clients![partner] : null,
-      message: null,
+    const rows = ptAppointmentRows({
+      tenantId,
+      requestId: id('pt-request', key),
+      sessionId,
+      requesterId: ids.clients![requester!]!,
+      partnerId: partner ? ids.clients![partner]! : null,
+      classTypeId: ptTypeId,
+      locationId: ids.locations![location]!,
+      roomId: room?.id ?? null,
+      instructorId,
+      startsAt,
+      endsAt,
+      // Still to come, so it is a session the studio has scheduled and nothing
+      // has yet become of.
       status: 'scheduled',
-      expires_at: startsAt.toISOString(),
-      scheduled_pt_session_id: sessionId,
-      debited_client_package_id: runningPackage(requester!, 'pt', startsAt)?.id ?? null,
-      resolved_at: asOf.toISOString(),
-      resolved_by_staff_id: input.ownerId,
-      created_at: asOf.toISOString(),
+      debitedClientPackageId: (runningPackage(requester!, 'pt', startsAt)?.id as string | undefined) ?? null,
+      ownerId: input.ownerId,
+      settledAt: asOf.toISOString(),
     })
-    ptSessions.push({
-      id: sessionId,
-      tenant_id: tenantId,
-      pt_request_id: requestId,
-      instructor_id: instructorId,
-      location_id: ids.locations![location],
-      room_id: room?.id ?? null,
-      starts_at: startsAt.toISOString(),
-      ends_at: endsAt.toISOString(),
-      session_type: sessionType,
-      // Mindbody pays PT by percentage, which no report gives: Unpriced.
-      instructor_pay_sgd: null,
-      capacity_online: partner ? 2 : 1,
-      capacity_waitlist: 0,
-      capacity_buffer: 0,
-      lifecycle: 'active',
-      scheduled_at: asOf.toISOString(),
-      scheduled_by_staff_id: input.ownerId,
-      created_at: asOf.toISOString(),
-    })
+    ptRequests.push(rows.request)
+    ptSessions.push(rows.session)
+    ptSessionClients.push(...rows.sessionClients)
     ids.pt_sessions[key] = sessionId
     // Each of two members sharing a session was charged from their own package
     // in Mindbody, so each booking gives its own session back if cancelled.
-    for (const clientId of partner ? [requester!, partner] : [requester!]) {
-      ptSessionClients.push({ tenant_id: tenantId, pt_session_id: sessionId, client_id: ids.clients![clientId] })
+    for (const clientId of ptClients({ requesterId: requester!, partnerId: partner ?? null })) {
       booking(`${sessionId}/${clientId}`, clientId, { pt_session_id: sessionId }, 'pt', label, startsAt)
     }
   }
@@ -488,7 +451,6 @@ export function mapSchedule(input: {
   }
 
   return {
-    classTypes,
     instructors: [...extraInstructors].sort().map(staffId => ({ staff_user_id: staffId, tenant_id: tenantId })),
     classSeries,
     classes: [...classes.values()].map(c => c.row),
