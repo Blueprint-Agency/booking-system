@@ -17,6 +17,7 @@ import {
   FileText,
   UserCog,
   Wallet,
+  HandCoins,
   ShoppingBag,
 } from "lucide-react";
 
@@ -55,6 +56,11 @@ export const NAV_ITEMS: NavItem[] = [
 
   // --- Finance (operations surface; both roles view records + edit pay) ---
   { group: "Finance", label: "Finance", href: "/admin/finance", icon: Wallet, scope: "both" },
+  // Unfinished purchases (#95) sit beside Finance rather than inside it: these
+  // are not Money Events but money held against a sale that never happened, and
+  // the page exists to be acted on. Both roles see the list; only a superadmin
+  // refunds, gated at the backend the same way every other Refund is.
+  { group: "Finance", label: "Unfinished", href: "/admin/purchases", icon: HandCoins, scope: "both" },
 
   // --- Config (global building blocks, shared across locations) ---
   { group: "Config", label: "Class Types", href: "/admin/class-types", icon: Tag, scope: "global" },

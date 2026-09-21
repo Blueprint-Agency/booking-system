@@ -14,6 +14,8 @@ interface PolicyState {
   leaveCarryOverCapDays: number;
   studyLeaveCap: number;
   crossLocationRateSgd: number;
+  /** Whether members may split a purchase across two cards (#93). */
+  partPaymentEnabled: boolean;
   bookInAdvanceDays: number;
   updatedAt: string | null;
 }
@@ -27,6 +29,7 @@ interface ApiPolicy {
     leave_carry_over_cap_days: number;
     study_leave_cap: number;
     cross_location_rate_sgd: string;
+    part_payment_enabled: boolean;
     updated_at: string | null;
   };
   pt_booking_config: {
@@ -68,13 +71,14 @@ function emptyPolicy(): PolicyState {
     leaveCarryOverCapDays: 0,
     studyLeaveCap: 1,
     crossLocationRateSgd: 0,
+    partPaymentEnabled: false,
     bookInAdvanceDays: 0,
     updatedAt: null,
   };
 }
 
 function diffGlobal(saved: PolicyState, draft: PolicyState) {
-  const out: Record<string, number> = {};
+  const out: Record<string, number | boolean> = {};
   if (saved.cancelCapCount !== draft.cancelCapCount)
     out.cancel_cap_count = draft.cancelCapCount;
   if (saved.cancelCapCycleDays !== draft.cancelCapCycleDays)
@@ -88,6 +92,8 @@ function diffGlobal(saved: PolicyState, draft: PolicyState) {
   if (saved.studyLeaveCap !== draft.studyLeaveCap) out.study_leave_cap = draft.studyLeaveCap;
   if (saved.crossLocationRateSgd !== draft.crossLocationRateSgd)
     out.cross_location_rate_sgd = draft.crossLocationRateSgd;
+  if (saved.partPaymentEnabled !== draft.partPaymentEnabled)
+    out.part_payment_enabled = draft.partPaymentEnabled;
   return out;
 }
 
@@ -128,6 +134,7 @@ export default function PolicyPage() {
         leaveCarryOverCapDays: r.global_policy.leave_carry_over_cap_days,
         studyLeaveCap: r.global_policy.study_leave_cap,
         crossLocationRateSgd: Number(r.global_policy.cross_location_rate_sgd),
+        partPaymentEnabled: r.global_policy.part_payment_enabled,
         bookInAdvanceDays: r.pt_booking_config.book_in_advance_days,
         updatedAt: r.global_policy.updated_at,
       };
@@ -165,6 +172,7 @@ export default function PolicyPage() {
     conflictsChanged ||
     draft.studyLeaveCap !== policy.studyLeaveCap ||
     draft.crossLocationRateSgd !== policy.crossLocationRateSgd ||
+    draft.partPaymentEnabled !== policy.partPaymentEnabled ||
     draft.cancelCapCount !== policy.cancelCapCount ||
     draft.cancelCapCycleDays !== policy.cancelCapCycleDays ||
     draft.classWindowHours !== policy.classWindowHours ||
@@ -308,6 +316,39 @@ export default function PolicyPage() {
               />
             </div>
           </div>
+        </section>
+
+        <section className="rounded-xl border border-border bg-card p-6 shadow-soft">
+          <header className="mb-4">
+            <h2 className="text-base font-semibold text-ink">Part Payment</h2>
+            <p className="mt-0.5 text-xs text-muted">
+              Let customers split one purchase across two cards, for cards with a
+              daily limit below the price. Off by default. Turning it off hides the
+              option at checkout; purchases already part-paid can still be finished,
+              because the alternative is money you are holding against a balance
+              nobody is allowed to clear.
+            </p>
+          </header>
+          <label className="flex max-w-xl cursor-pointer items-start gap-3">
+            <input
+              type="checkbox"
+              checked={draft.partPaymentEnabled}
+              onChange={(e) =>
+                setDraft({ ...draft, partPaymentEnabled: e.target.checked })
+              }
+              className="mt-0.5 h-4 w-4 rounded border-border"
+            />
+            <span className="min-w-0">
+              <span className="block text-sm font-medium text-ink">
+                Offer Part Payment at checkout
+              </span>
+              <span className="mt-0.5 block text-xs text-muted">
+                Nothing is granted, and no workshop place is held, until the balance
+                reaches zero. A part-paid purchase shows on the customer&apos;s page
+                here as an unfinished purchase.
+              </span>
+            </span>
+          </label>
         </section>
 
         <section className="rounded-xl border border-border bg-card p-6 shadow-soft">

@@ -18,11 +18,11 @@
  * There is no finance_events table and there should not be one: these rows ARE
  * the ledger, and a copy of them would be a second thing to keep true.
  */
-import { and, eq, gte, inArray, isNotNull, lte } from 'drizzle-orm'
+import { and, eq, gte, inArray, isNotNull, lte, notInArray } from 'drizzle-orm'
 import { db } from '../../db'
 import { clientPackages, classPackages, ptPackages, promoCodes } from '../../db/schema/packages'
 import { bookings } from '../../db/schema/bookings'
-import { stripePayments } from '../../db/schema/ledger'
+import { purchases, stripePayments } from '../../db/schema/ledger'
 import { locations, merchOrders } from '../../db/schema/catalog'
 import { workshops } from '../../db/schema/schedule'
 import { clients } from '../../db/schema/identity'
@@ -142,7 +142,7 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
       clientName: clients.name,
       classPackageName: classPackages.name,
       ptPackageName: ptPackages.name,
-      paymentIntentId: clientPackages.stripePaymentIntentId,
+      purchaseId: clientPackages.purchaseId,
       complimentary: clientPackages.complimentary,
     })
     .from(clientPackages)
@@ -169,7 +169,7 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
       locationName: locations.name,
       promoCode: promoCodes.code,
       clientName: clients.name,
-      paymentIntentId: bookings.stripePaymentIntentId,
+      purchaseId: bookings.purchaseId,
     })
     .from(bookings)
     .innerJoin(clients, eq(clients.id, bookings.clientId))
@@ -253,11 +253,30 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
     })
     .from(stripePayments)
     .innerJoin(clients, eq(clients.id, stripePayments.clientId))
+    // The Purchase the payment belongs to, for the settlement test below.
+    .innerJoin(purchases, eq(purchases.id, stripePayments.purchaseId))
     .where(
       and(
         eq(stripePayments.tenantId, tenantId),
         eq(stripePayments.status, 'refunded'),
         isNotNull(stripePayments.refundedAt),
+        // **A Purchase that never settled produces no Refund event** (#93).
+        //
+        // Every money-in row above is read off what a sale *delivered* — a
+        // plan, a booking, a Merch Order — so a Purchase still `open` has
+        // contributed nothing to Gross. Giving that money back is the studio
+        // ceasing to hold cash it never counted as revenue, and reporting it
+        // here would subtract from Net a figure Net never contained, quietly
+        // understating the month by the refunded amount.
+        //
+        // `abandoned` is the same purchase a moment later (#95). An admin
+        // refunding an ungranted Purchase closes it as abandoned rather than
+        // refunded precisely so the two stay apart here: the row was `open`
+        // when the money went back and would be excluded on that ground alone,
+        // and it must keep being excluded once it is closed. Naming both is
+        // what makes that true regardless of which side of the status flip a
+        // finance query happens to run on.
+        notInArray(purchases.status, ['open', 'abandoned']),
         ...within(stripePayments.refundedAt, filter),
       ),
     )
@@ -265,17 +284,23 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
   // Which purchases carry the "Refunded" tag. Read over the WHOLE history, not
   // the filtered window: a purchase in August refunded in September is still a
   // refunded purchase when you look at August.
-  const refunded = new Set(
-    (
-      await db
-        .select({ intent: stripePayments.paymentIntentId })
-        .from(stripePayments)
-        .where(
-          and(eq(stripePayments.tenantId, tenantId), eq(stripePayments.status, 'refunded')),
-        )
-    ).map(r => r.intent),
-  )
-  const isRefunded = (intent: string | null) => intent != null && refunded.has(intent)
+  //
+  // Two keys off one query, because the rows above are keyed two ways: a plan
+  // and a workshop booking name the Purchase (#92), while a corporate payment
+  // and a Merch Order still name the intent. Both come off the same refunded
+  // payment rows, so they cannot disagree.
+  const refundedPayments = await db
+    .select({
+      intent: stripePayments.paymentIntentId,
+      purchaseId: stripePayments.purchaseId,
+    })
+    .from(stripePayments)
+    .where(and(eq(stripePayments.tenantId, tenantId), eq(stripePayments.status, 'refunded')))
+  const refundedIntents = new Set(refundedPayments.map(r => r.intent))
+  const refundedPurchases = new Set(refundedPayments.map(r => r.purchaseId))
+  const isRefunded = (intent: string | null) => intent != null && refundedIntents.has(intent)
+  const purchaseRefunded = (purchaseId: string | null) =>
+    purchaseId != null && refundedPurchases.has(purchaseId)
 
   const events: MoneyEvent[] = []
 
@@ -295,7 +320,7 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
       listPriceSgd: r.listPriceSgd,
       paidSgd: r.amountPaidSgd,
       promoCode: r.promoCode,
-      refunded: isRefunded(r.paymentIntentId),
+      refunded: purchaseRefunded(r.purchaseId),
       complimentary: r.complimentary,
     })
     // The Add-On's own line. The column IS what the member paid for it, and it
@@ -313,7 +338,7 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
         locationName: r.locationName,
         listPriceSgd: r.crossLocationPaidSgd,
         paidSgd: r.crossLocationPaidSgd,
-        refunded: isRefunded(r.paymentIntentId),
+        refunded: purchaseRefunded(r.purchaseId),
         // An Add-On given with a comped plan was given too, at $0. It totals to
         // nothing either way; saying so keeps the two lines telling one story.
         complimentary: r.complimentary,
@@ -335,7 +360,7 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
       listPriceSgd: r.listPriceSgd,
       paidSgd: r.amountPaidSgd,
       promoCode: r.promoCode,
-      refunded: isRefunded(r.paymentIntentId),
+      refunded: purchaseRefunded(r.purchaseId),
     })
   }
 

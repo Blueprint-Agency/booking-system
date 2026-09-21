@@ -30,6 +30,7 @@ import { clients } from '../../db/schema/identity'
 import { auditLog } from '../../db/schema/ledger'
 import { endClientSessionsAt, ensureAuthUser } from '../auth/auth-users'
 import { recordStaffAct } from '../auth/staff-acts'
+import { syncProviderCustomerEmail } from '../billing/payment-customers'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 import type { ClientRow } from './manage'
 
@@ -96,6 +97,18 @@ export async function changeClientEmail(input: ChangeClientEmailInput): Promise<
       }
       throw err
     })
+
+  // The provider's copy of the address moves too (#185).
+  //
+  // Since saved cards, a member with a Customer is sent to checkout as
+  // `customer` **instead of** `customer_email`, so the provider stops reading
+  // the address off the session and reads it off the Customer — the one frozen
+  // at their first checkout. Without this, the front desk corrects a member's
+  // address and every receipt from then on still goes to the wrong one, which
+  // is the kind of wrong that is only discovered by the person not receiving
+  // them. It never throws: the studio's directory is the record that matters,
+  // and a provider that is down must not refuse an address correction.
+  await syncProviderCustomerEmail(input.tenantId, input.clientId, email)
 
   // The sessions the OLD account holds here end now. The member signs in again
   // at the new address; a session left standing would keep the old address

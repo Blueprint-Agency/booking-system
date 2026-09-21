@@ -11,15 +11,18 @@
  */
 import Stripe from 'stripe'
 import { db, withTenant } from '../../db'
-import { tenantForClient as routeToTenant } from '../../db/routing'
+import { tenantForClient as routeToTenant, tenantForPaymentIntent } from '../../db/routing'
 import { stripePayments } from '../../db/schema/ledger'
 import { clients } from '../../db/schema/identity'
-import { and, eq } from 'drizzle-orm'
-import { stripe } from '../../lib/stripe'
+import { and, eq, ne } from 'drizzle-orm'
+import { stripeForProviderAccount } from '../../lib/stripe'
 import { outbound, type RetryPolicy } from '../../lib/outbound'
 import { applyCrossLocationAddOn, grantPackage } from '../packages/purchase'
 import { consumePromoCodeHold } from '../packages/promo-redemption'
 import { unwindRefund } from './refunds'
+import { openPurchase, purchaseById, recomputeBalance, type PurchaseRow } from './purchases'
+import { purchaseKindFor } from './checkout-session'
+import { toCents } from '../../shared/money'
 import { bookWorkshopPaid } from '../workshops/book'
 import { recordMerchOrder } from '../catalog/merch-orders'
 import {
@@ -37,11 +40,20 @@ import { NotFoundError } from '../../shared/errors'
  * Returns null rather than throwing: the confirmation email falls back to the
  * account page, and a receipt lookup must never fail a delivered purchase.
  */
-async function receiptUrlPatch(
+export async function receiptUrlPatch(
+  tenantId: string,
   paymentIntentId: string,
-  retry: RetryPolicy | undefined,
+  /**
+   * The account the intent lives on; null is the platform's (#97). Retrieved
+   * from *there* rather than from wherever the studio sells today — a member
+   * finishing a checkout begun before their studio moved holds an intent the
+   * studio's new key cannot see.
+   */
+  providerAccountId: string | null,
+  retry?: RetryPolicy,
 ): Promise<{ receiptUrl?: string }> {
   try {
+    const stripe = await stripeForProviderAccount(tenantId, providerAccountId)
     const intent = await outbound(
       'stripe',
       'paymentIntents.retrieve',
@@ -58,6 +70,23 @@ async function receiptUrlPatch(
     return {}
   }
 }
+
+/**
+ * What **this session** actually captured, which since #93 is not always the
+ * price of what was bought.
+ *
+ * The ledger records money, and a part payment is one card's worth of it; the
+ * Purchase is what says the sale cost more. Writing the full price on a payment
+ * row that took half of it would make the Balance read as settled on the first
+ * card, and the grant would fire against money the studio does not have.
+ *
+ * `amount_total` is the provider's own figure for the session and needs no
+ * trusting — it is what the charge was, not what our metadata hoped it would
+ * be. On every whole-price sale it equals the fallback exactly, which is why
+ * this is safe to apply to sessions created long before part payment existed.
+ */
+const capturedSgd = (session: Stripe.Checkout.Session, fallbackSgd: string): string =>
+  session.amount_total == null ? fallbackSgd : (session.amount_total / 100).toFixed(2)
 
 /**
  * Which Tenant a completed checkout belongs to.
@@ -85,6 +114,125 @@ async function tenantForClient(clientId: string): Promise<string> {
     throw new NotFoundError('client_not_found', { clientId })
   }
   return row.tenantId
+}
+
+/**
+ * Which Purchase this payment is evidence of part of. **Never null**: since #92
+ * the payment row's `purchase_id` is the only route from money to what the
+ * money bought, so there is no shape of this that a payment may take.
+ *
+ * The session metadata is the normal answer. The payment row is the next one,
+ * and it is not merely defensive: a checkout session created before Purchases
+ * existed carries no `purchase_id`, but its payment row was given one by the
+ * backfill (migration 0063), and without this that Purchase would sit `open`
+ * with nothing paid while its payment succeeded — the one disagreement between
+ * `amount_paid_sgd` and the ledger that this record exists to prevent.
+ *
+ * Failing both, one is opened here and closed by the recompute a moment later.
+ * That is a session created before #91 shipped and completed after #92 did: one
+ * payment for the whole sale, the only shape this system has ever taken, and
+ * the same Purchase the backfill would have given it.
+ *
+ * A `purchase_id` that names nothing is the one case that does **not** get
+ * that: it is far likelier to be a routing bug — the wrong Tenant's context —
+ * than a legacy session, and minting a second sale record for money that
+ * already has one is worse than failing. It throws, so the provider retries and
+ * a human sees it.
+ */
+async function purchaseForPayment(
+  tenantId: string,
+  meta: Record<string, string>,
+  paymentIntentId: string,
+  fallback: { clientId: string; amountSgd: string },
+): Promise<PurchaseRow> {
+  if (meta.purchase_id) {
+    const named = await purchaseById(tenantId, meta.purchase_id)
+    if (!named) throw new NotFoundError('purchase_not_found', { purchaseId: meta.purchase_id })
+    return named
+  }
+  const [row] = await db
+    .select({ purchaseId: stripePayments.purchaseId })
+    .from(stripePayments)
+    .where(
+      and(
+        eq(stripePayments.tenantId, tenantId),
+        eq(stripePayments.paymentIntentId, paymentIntentId),
+      ),
+    )
+    .limit(1)
+  if (row?.purchaseId) {
+    const recorded = await purchaseById(tenantId, row.purchaseId)
+    if (recorded) return recorded
+  }
+  return openPurchase({
+    tenantId,
+    clientId: fallback.clientId,
+    kind: purchaseKindFor(meta),
+    totalCents: toCents(fallback.amountSgd),
+    metadata: meta,
+  })
+}
+
+/**
+ * Write this payment against its Purchase, and say whether the grant may go on.
+ *
+ * It answers a question and it writes — deliberately, and in that order: the
+ * amount paid is recomputed from the payment rows (never added to, which a
+ * provider redelivery would double), and only then is the Balance compared with
+ * zero. Every branch below asks exactly this before it delivers anything, so
+ * **nothing is granted while a Balance is outstanding** is one call rather than
+ * a rule each of the four product kinds has to remember.
+ *
+ * When it answers false the payment is banked here rather than after a grant,
+ * because no grant is coming — and a row left `pending` forever would be money
+ * the next recompute could not see. On the settling payment the flip stays
+ * where it was, after the grant, which is what makes a crash between the two
+ * recoverable by the provider's next redelivery.
+ */
+async function settleAndMayGrant(
+  tenantId: string,
+  purchase: PurchaseRow,
+  paymentIntentId: string,
+  providerAccountId: string | null,
+): Promise<boolean> {
+  const { settled } = await recomputeBalance(tenantId, purchase, paymentIntentId)
+  if (settled) return true
+
+  await bankPayment(
+    tenantId,
+    paymentIntentId,
+    await receiptUrlPatch(tenantId, paymentIntentId, providerAccountId),
+  )
+  return false
+}
+
+/**
+ * Bank the payment: mark it `succeeded` and write whatever the caller learned
+ * along the way — the receipt URL, the package or booking it delivered.
+ *
+ * **Never over a refund.** The provider redelivers `checkout.session.completed`
+ * for days, and the confirmation page's `sync-session` fallback replays it by
+ * hand; a session whose charge was refunded still reports itself paid. Without
+ * the predicate that replay would flip a refunded payment back to `succeeded`,
+ * which since #92 is the column that says what a Refund still has to return —
+ * so a refunded plan would offer its Refund button again and reach the provider
+ * for money already given back.
+ */
+async function bankPayment(
+  tenantId: string,
+  paymentIntentId: string,
+  patch: Partial<typeof stripePayments.$inferInsert> = {},
+): Promise<void> {
+  await db
+    .update(stripePayments)
+    .set({ status: 'succeeded', ...patch })
+    .where(
+      and(
+        eq(stripePayments.tenantId, tenantId),
+        eq(stripePayments.paymentIntentId, paymentIntentId),
+        ne(stripePayments.status, 'refunded'),
+      ),
+    )
 }
 
 /** The payment this system already recorded for an intent, within its Tenant. */
@@ -120,26 +268,116 @@ async function existingPayment(tenantId: string, paymentIntentId: string) {
  * `retry` is for vendor calls made while handling the event. The webhook passes
  * one; the member's confirmation page, which reaches here on a request, does not.
  */
+/**
+ * Which studio does this event's body name, or null when it names none this
+ * system can place.
+ *
+ * Every routing key the handler below uses, asked once and in one place, so the
+ * ownership check and the work cannot disagree about whose event this is. Both
+ * questions go through the owner-owned resolvers (migrations 0034 and 0043),
+ * because a webhook has no Tenant context to read across.
+ */
+async function tenantNamedByEvent(event: Stripe.Event): Promise<string | null> {
+  if (event.type === 'checkout.session.completed') {
+    const clientId = (event.data.object as Stripe.Checkout.Session).metadata?.client_id
+    return clientId ? routeToTenant(clientId) : null
+  }
+  if (event.type === 'charge.refunded') {
+    const charge = event.data.object as Stripe.Charge
+    const intentId = typeof charge.payment_intent === 'string' ? charge.payment_intent : null
+    return intentId ? tenantForPaymentIntent(intentId, charge.metadata?.tenant_id ?? null) : null
+  }
+  return null
+}
+
+/**
+ * Refuse an event that arrived on one studio's endpoint and names another.
+ *
+ * The signature already established which studio sent this; this establishes
+ * that the body agrees. They can only disagree if a studio's own endpoint
+ * received an event belonging to somebody else's members — which, since a
+ * studio holds its own signing secret, is a delivery it could have minted
+ * itself. Without this, one studio's secret would be enough to unwind a
+ * *different* studio's purchase, refund row and entitlements.
+ *
+ * A `null` name is not a mismatch: it is an event this system cannot place at
+ * all, which the handlers below already treat as a silent no-op or a loud
+ * `client_not_found`. Refusing it here would only change which error a human
+ * reads.
+ */
+export function refuseWrongTenant(
+  named: string | null,
+  expectedTenantId: string | undefined,
+  context: Record<string, unknown>,
+): void {
+  if (!expectedTenantId || !named || named === expectedTenantId) return
+  throw new NotFoundError('webhook_tenant_mismatch', { ...context, expectedTenantId, named })
+}
+
 export async function handleStripeEvent(
   event: Stripe.Event,
+  /**
+   * The studio whose endpoint this delivery arrived on, when it arrived on one
+   * (#100). A studio charging on its own account has its own webhook URL and
+   * its own signing secret, so by this point the provider has already proved
+   * *whose* delivery this is — and a body that routes to a different studio is
+   * not a delivery this endpoint may act on.
+   *
+   * Absent for the platform account's shared endpoint, which is what a studio
+   * that has supplied no credentials still uses, and where the body is the only
+   * thing that names a studio.
+   */
+  expectedTenantId?: string,
+  /**
+   * The account that **signed** this delivery, which is the account the money
+   * in it is on (#97). Null is the platform's own, and it is what the shared
+   * endpoint passes.
+   *
+   * It comes from the signature check rather than from a fresh reading of the
+   * studio's credentials, because the signature is where it was proved: the
+   * secret that verified this body is that account's secret. Reading the
+   * credentials here instead would be an unproved second answer to a question
+   * already settled, and it would stamp the wrong account on a payment made
+   * while credentials were being changed — leaving money nobody can refund.
+   */
+  providerAccountId: string | null = null,
+  /**
+   * `retry` is for vendor calls made while handling the event. The webhook
+   * passes one; the member's confirmation page, which reaches here on a
+   * request, does not.
+   */
   { retry }: { retry?: RetryPolicy } = {},
 ): Promise<void> {
-  if (event.type !== 'checkout.session.completed') return dispatchStripeEvent(event, retry)
+  // Every event type, not merely the one that grants: a refund unwinds a
+  // purchase, and a studio able to unwind its neighbour's is the same breach
+  // read backwards.
+  const named = await tenantNamedByEvent(event)
+  refuseWrongTenant(named, expectedTenantId, { eventId: event.id, eventType: event.type })
+
+  if (event.type !== 'checkout.session.completed') {
+    return dispatchStripeEvent(event, expectedTenantId, providerAccountId, retry)
+  }
 
   const session = event.data.object as Stripe.Checkout.Session
   const clientId = (session.metadata ?? {}).client_id
   // No client id means our own checkout never ran — the same silent return the
   // per-kind branches below make on missing metadata.
   if (!clientId) return
-  const tenantId = await routeToTenant(clientId)
   // By this point money has been captured. A charge whose member we cannot place
   // must land in front of a human, not vanish — see `tenantForClient` below.
-  if (!tenantId) throw new NotFoundError('client_not_found', { clientId })
+  if (!named) throw new NotFoundError('client_not_found', { clientId })
 
-  await withTenant(tenantId, () => dispatchStripeEvent(event, retry))
+  await withTenant(named, () =>
+    dispatchStripeEvent(event, expectedTenantId, providerAccountId, retry),
+  )
 }
 
-async function dispatchStripeEvent(event: Stripe.Event, retry: RetryPolicy | undefined): Promise<void> {
+async function dispatchStripeEvent(
+  event: Stripe.Event,
+  expectedTenantId: string | undefined,
+  providerAccountId: string | null,
+  retry: RetryPolicy | undefined,
+): Promise<void> {
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session
     const meta = session.metadata ?? {}
@@ -168,29 +406,51 @@ async function dispatchStripeEvent(event: Stripe.Event, retry: RetryPolicy | und
       const existing = await existingPayment(tenantId, paymentIntentId)
       if (existing?.status === 'succeeded') return
 
+      const purchase = await purchaseForPayment(tenantId, meta, paymentIntentId, {
+        clientId,
+        amountSgd: chargedSgd,
+      })
+
       // Insert the stripe_payments row (we now have the confirmed PaymentIntent ID)
       if (!existing) {
         await db.insert(stripePayments).values({
           tenantId,
           paymentIntentId,
-          // The ledger records what was charged; the split lives on the plan.
-          amountSgd: chargedSgd,
+          purchaseId: purchase.id,
+          // The ledger records what THIS session charged; the split across the
+          // plan and its Add-On lives on the plan, and the price of the whole
+          // sale lives on the Purchase.
+          amountSgd: capturedSgd(session, chargedSgd),
           kind: kind === 'class_package' ? 'class_package' : 'pt_package',
           clientId,
+          providerAccountId,
           status: 'pending',
         }).onConflictDoNothing()
       }
 
       // Payment succeeded, so the Hold becomes a Consumed Redemption, stamped
       // with the moment and the payment intent (§10 step 3).
+      //
+      // **At the FIRST payment, not at settlement** (#93). The price a Promo
+      // Code cut is already frozen on the Purchase, so a member paying with two
+      // cards is paying the discounted price whatever happens next; leaving the
+      // Redemption Held until the second card would let its Hold lapse and put
+      // a capped code's place back in the pool while somebody was mid-purchase
+      // at the discounted price. It only ever touches a Held row, so the second
+      // payment's delivery finds nothing to do.
       const promoCodeId = meta.promo_code_id || null
       if (promoCodeId) {
         await consumePromoCodeHold({ tenantId, promoCodeId, clientId, paymentIntentId })
       }
 
+      // A sale paid in full at the first attempt — every sale before #93 — clears
+      // here and carries on exactly as it did before Purchases existed. A part
+      // payment stops, having banked its money and granted nothing.
+      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId, providerAccountId))) return
+
       const granted = await grantPackage(tenantId, {
         clientId,
-        paymentIntentId,
+        purchaseId: purchase.id,
         amountSgd,
         packageKind: kind === 'class_package' ? 'class' : 'pt',
         packageId,
@@ -211,16 +471,10 @@ async function dispatchStripeEvent(event: Stripe.Event, retry: RetryPolicy | und
       // at the `status === 'succeeded'` guard above instead of double-granting.
       // The receipt URL lands in the same write — the column the confirmation
       // email reads (§13).
-      const receipt = await receiptUrlPatch(paymentIntentId, retry)
-      await db
-        .update(stripePayments)
-        .set({ status: 'succeeded', clientPackageId: granted.clientPackageId, ...receipt })
-        .where(
-          and(
-            eq(stripePayments.tenantId, tenantId),
-            eq(stripePayments.paymentIntentId, paymentIntentId),
-          ),
-        )
+      await bankPayment(tenantId, paymentIntentId, {
+        clientPackageId: granted.clientPackageId,
+        ...(await receiptUrlPatch(tenantId, paymentIntentId, providerAccountId, retry)),
+      })
 
       // One confirmation per purchase, however many times the provider retries:
       // only the delivery that inserted the row sends. The helper cannot throw.
@@ -230,9 +484,9 @@ async function dispatchStripeEvent(event: Stripe.Event, retry: RetryPolicy | und
 
     // A Cross-Location Add-On bought on its own, against a plan the member
     // already holds (§5). No package is granted: the money fills a column on the
-    // named plan. The plan's `stripe_payment_intent_id` is already taken by the
-    // plan's own purchase, so this payment sits in the ledger pointing at the
-    // plan instead — `client_package_id` is what makes it findable.
+    // named plan. The plan's `purchase_id` is already taken by the plan's own
+    // sale, so this payment sits in the ledger under a Purchase of its own,
+    // pointing at the plan — `client_package_id` is what makes it findable.
     if (kind === 'cross_location_add_on') {
       const clientPackageId = meta.client_package_id
       const clientId = meta.client_id
@@ -244,23 +498,32 @@ async function dispatchStripeEvent(event: Stripe.Event, retry: RetryPolicy | und
       const existing = await existingPayment(tenantId, paymentIntentId)
       if (existing?.status === 'succeeded') return
 
+      const purchase = await purchaseForPayment(tenantId, meta, paymentIntentId, {
+        clientId,
+        amountSgd,
+      })
+
       if (!existing) {
         await db
           .insert(stripePayments)
           .values({
             tenantId,
             paymentIntentId,
-            amountSgd,
+            purchaseId: purchase.id,
+            amountSgd: capturedSgd(session, amountSgd),
             // The Add-On extends an Unlimited Plan, which is a class package.
             // The enum gains no fourth arm for it — Add-On revenue is read off
             // `client_packages.cross_location_paid_sgd`, not off this row (§15).
             kind: 'class_package',
             clientId,
             clientPackageId,
+            providerAccountId,
             status: 'pending',
           })
           .onConflictDoNothing()
       }
+
+      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId, providerAccountId))) return
 
       const applied = await applyCrossLocationAddOn(
         tenantId,
@@ -283,16 +546,10 @@ async function dispatchStripeEvent(event: Stripe.Event, retry: RetryPolicy | und
         )
       }
 
-      const receipt = await receiptUrlPatch(paymentIntentId, retry)
-      await db
-        .update(stripePayments)
-        .set({ status: 'succeeded', clientPackageId, ...receipt })
-        .where(
-          and(
-            eq(stripePayments.tenantId, tenantId),
-            eq(stripePayments.paymentIntentId, paymentIntentId),
-          ),
-        )
+      await bankPayment(tenantId, paymentIntentId, {
+        clientPackageId,
+        ...(await receiptUrlPatch(tenantId, paymentIntentId, providerAccountId, retry)),
+      })
       // No confirmation email: an Add-On grants no package, and §13 names four
       // sending paths, none of them this one.
       return
@@ -312,19 +569,28 @@ async function dispatchStripeEvent(event: Stripe.Event, retry: RetryPolicy | und
       const existing = await existingPayment(tenantId, paymentIntentId)
       if (existing?.status === 'succeeded') return
 
+      const purchase = await purchaseForPayment(tenantId, meta, paymentIntentId, {
+        clientId,
+        amountSgd,
+      })
+
       if (!existing) {
         await db
           .insert(stripePayments)
           .values({
             tenantId,
             paymentIntentId,
-            amountSgd,
+            purchaseId: purchase.id,
+            amountSgd: capturedSgd(session, amountSgd),
             kind: 'merch',
             clientId,
+            providerAccountId,
             status: 'pending',
           })
           .onConflictDoNothing()
       }
+
+      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId, providerAccountId))) return
 
       await recordMerchOrder({
         tenantId,
@@ -335,16 +601,11 @@ async function dispatchStripeEvent(event: Stripe.Event, retry: RetryPolicy | und
         paymentIntentId,
       })
 
-      const receipt = await receiptUrlPatch(paymentIntentId, retry)
-      await db
-        .update(stripePayments)
-        .set({ status: 'succeeded', ...receipt })
-        .where(
-          and(
-            eq(stripePayments.tenantId, tenantId),
-            eq(stripePayments.paymentIntentId, paymentIntentId),
-          ),
-        )
+      await bankPayment(
+        tenantId,
+        paymentIntentId,
+        await receiptUrlPatch(tenantId, paymentIntentId, providerAccountId, retry),
+      )
       return
     }
 
@@ -362,30 +623,56 @@ async function dispatchStripeEvent(event: Stripe.Event, retry: RetryPolicy | und
       const existing = await existingPayment(tenantId, paymentIntentId)
       if (existing?.status === 'succeeded') return
 
+      const purchase = await purchaseForPayment(tenantId, meta, paymentIntentId, {
+        clientId,
+        amountSgd,
+      })
+
       if (!existing) {
         await db
           .insert(stripePayments)
           .values({
             tenantId,
             paymentIntentId,
-            amountSgd,
+            purchaseId: purchase.id,
+            amountSgd: capturedSgd(session, amountSgd),
             kind: 'workshop',
             clientId,
+            providerAccountId,
             status: 'pending',
           })
           .onConflictDoNothing()
       }
 
+      // Consumed at the first payment and the price locks with it — see the
+      // package branch above for why it cannot wait for settlement.
       const promoCodeId = meta.promo_code_id || null
       if (promoCodeId) {
         await consumePromoCodeHold({ tenantId, promoCodeId, clientId, paymentIntentId })
       }
+
+      // A workshop place is not held until the Balance reaches zero — the
+      // booking is the grant, and it is not made while anything is outstanding.
+      // The member is told so at checkout and again on their account page.
+      //
+      // ponytail: capacity is checked when checkout starts, and `bookWorkshopPaid`
+      // deliberately does not re-check it — for a sale paid in one go the money is
+      // already captured and the gap is seconds. A part payment stretches that gap
+      // to however long the member takes to come back, so a Balance settled weeks
+      // later can book past a workshop that has since filled, silently. #93's
+      // acceptance criteria say only that no place is held and that the member is
+      // told so, which is what ships here. Upgrade path: a capacity check on the
+      // settling payment that refuses the booking and flags the Purchase for the
+      // studio to refund — which needs a way to refund a Purchase that granted
+      // nothing, and there is none yet (see `refundStatesFor`).
+      if (!(await settleAndMayGrant(tenantId, purchase, paymentIntentId, providerAccountId))) return
 
       const booked = await bookWorkshopPaid(tenantId, {
         clientId,
         workshopId,
         workshopTierId,
         paymentIntentId,
+        purchaseId: purchase.id,
         amountSgd,
         appliedPromotionId,
         appliedPromoCodeId: promoCodeId,
@@ -393,7 +680,7 @@ async function dispatchStripeEvent(event: Stripe.Event, retry: RetryPolicy | und
 
       // Written before the email is composed — it is where `receipt_url` comes
       // from (§13).
-      const receipt = await receiptUrlPatch(paymentIntentId, retry)
+      const receipt = await receiptUrlPatch(tenantId, paymentIntentId, providerAccountId, retry)
       if (receipt.receiptUrl) {
         await db
           .update(stripePayments)
@@ -439,6 +726,13 @@ async function dispatchStripeEvent(event: Stripe.Event, retry: RetryPolicy | und
     // key at checkout, so it is the one statement that says which of the two
     // the money was actually taken for. It is only ever consulted to choose
     // among the tenants the database already named.
-    await unwindRefund(paymentIntentId, charge.metadata?.tenant_id ?? null)
+    //
+    // A delivery that arrived on a studio's OWN endpoint carries a stronger
+    // statement than the metadata does: the studio proved itself with its own
+    // signing secret, which no metadata can. So it is preferred as the
+    // tiebreaker — and, like the metadata, it can only ever choose among the
+    // tenants the database already named, so it cannot route money into a
+    // studio that holds no row for the intent.
+    await unwindRefund(paymentIntentId, expectedTenantId ?? charge.metadata?.tenant_id ?? null)
   }
 }

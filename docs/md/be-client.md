@@ -90,6 +90,8 @@ All endpoints prefixed with `/api/v1/me`.
 | PATCH | `/` | Update `name`, `phone`, `gender`, `dob`. The password is changed through the auth pool (§4f), not here, and changing the email is not offered. |
 | GET | `/dashboard` | Aggregated home payload: next-up booking, package balances (credits + sessions remaining + days to expiry), referral conversions count. One round-trip for the `/account` landing page. |
 | GET | `/packages` | List `client_packages` for this client with each linked source (class_packages or pt_packages) and the `applied_promotion` frozen at purchase (if any). Each row carries `cross_location_paid_sgd` — null means the plan Covers its Home Location only. The `entitlements` block also carries `unlimited_plan_id` (the plan a **Cross-Location Add-On** would attach to), `unlimited_covers_both` (it already carries one) and `cross_location_rate_sgd` (the Global Policy rate right now), which is what the member surfaces quote the Add-On at. The same three appear on `/me/class-packages`, where the schedule's blocked-class nudge reads them. |
+| GET | `/cards` | The member's **Saved Cards** (#185): `{ cards: [{ id, brand, last4, exp_month, exp_year }] }`, read live from the payment provider for the `payment_customers` row matching `(tenant, client, current Payment Account)`. Never a card number — the brand, last four and expiry are the whole of what this platform sees. A member who has saved none, or who is not a Provider Customer yet, gets `{ cards: [] }`: an empty list is the honest answer and not an error. |
+| DELETE | `/cards/:id` | Detach one Saved Card, so it is no longer offered. `:id` is a provider payment-method id (`pm_…`), not a uuid. The service fetches the method and compares its Customer with **this** member's before detaching anything — a card that is not theirs, and an id that does not exist, both answer 404 `card_not_found`, so the route cannot be used to ask whether a given card exists at this studio. Detached, not deleted: the provider keeps its record against the payments already made with it, which Refunds still need. |
 | GET | `/packages/eligibility` | `{ trial_used: bool, holds_active_bundle: bool, holds_active_unlimited: bool }` — drives fe-client `/packages` gating per `fe-client-features.md` §6.1. `trial_used` is `true` if any `client_packages WHERE client_id=me AND kind='trial'` exists (active or expired). `holds_active_bundle` / `holds_active_unlimited` derive the "Bundle excludes Unlimited and vice versa" rule. Cheap query — call on every `/packages` page load. |
 | GET | `/corporate-packages` | List active `corporate_packages`: `{ corporate_packages: [{ id, name, description, price_sgd, status }] }`. Powers the fe-client Corporate catalog (`fe-client-features.md` §6.2). |
 | GET | `/corporate-requests` | The client's own corporate requests: `{ corporate_requests: [{ id, status, package: { id, name }, created_at, session: null \| { starts_at, ends_at, location_name, instructor_name } }] }`. `session` is populated when `status='scheduled'`. Drives the `/account/corporate` status page. |
@@ -129,7 +131,7 @@ Per `admin-restructure.md` §9 and `fe-client-features.md` §5.2, the client-fac
 | POST | `/checkout/cross-location/quote` | `{ client_package_id }` — prices the **Cross-Location Add-On** against a plan the member already holds (§5). Returns `{ client_package_id, months, rate_sgd, price_sgd }`: months is the plan's whole months remaining with part months rounded up, or its full stored Duration while Dormant, and the rate is read from Global Policy at this moment. 400 `cross_location_requires_unlimited`, 400 `cross_location_plan_not_live`, 409 `cross_location_already_added` — one Add-On per plan, never two. |
 | POST | `/checkout/cross-location` | `{ client_package_id }` — the same refusals, then its own Stripe session carrying `kind='cross_location_add_on'` and `client_package_id` in the metadata; the webhook fills `client_packages.cross_location_paid_sgd` on the named plan. Bought **with** a plan instead, it rides `/checkout/package` as `cross_location_add_on: true` — one session, two line items, `amount_sgd` (plan) plus `cross_location_sgd` (Add-On) equalling the charge. A Promo Code discounts the plan line only: the Add-On is a Global Policy rate, not a product. |
 | POST | `/checkout/workshop` | `{ workshop_id, workshop_tier_id }` — same. Server resolves the workshop's best-price-wins promotion plus tier-level early-bird (early_bird wins over regular, then promotion further reduces if applicable — see §4b for the ordering). Free workshops (effective_price = 0) **bypass Stripe entirely** and route through `/workshops/:id/register` semantics inline. |
-| POST | `/workshops/:id/register` | `{ workshop_tier_id }` — explicit free-workshop registration endpoint. Returns 409 if the resolved effective price is non-zero (client must use `/checkout/workshop`). Inserts a `bookings` row with `kind='workshop'`, `state='confirmed'`, `stripe_payment_intent_id=NULL` directly. Convenience: idempotent on `(client_id, workshop_tier_id)` — re-call returns the existing booking instead of erroring. |
+| POST | `/workshops/:id/register` | `{ workshop_tier_id }` — explicit free-workshop registration endpoint. Returns 409 if the resolved effective price is non-zero (client must use `/checkout/workshop`). Inserts a `bookings` row with `kind='workshop'`, `state='confirmed'`, `purchase_id=NULL` directly. Convenience: idempotent on `(client_id, workshop_tier_id)` — re-call returns the existing booking instead of erroring. |
 | POST | `/checkout/merch` | `{ merch_id }` — one item, no Promo Code and no review page: creates a Stripe checkout and returns `{ url }`. 404 `merch_not_found`, 400 `merch_not_available` (archived). A merch item priced at 0 bypasses Stripe and returns `{ outcome: 'granted', order_id, free: true }` with the order already written. The intent metadata carries `kind='merch'`, `merch_id`, `merch_title` and `amount_sgd`; the webhook records a `stripe_payments` row (kind `merch`) plus one `merch_orders` row, idempotent on the payment intent. Nothing is granted and nothing is booked — merch is handed over physically at the studio, which is what the fe-client notice says. |
 | GET | `/merch-orders` | This client's merch purchase history, newest first. Shape: `{ orders: [{ id, merch_id, title, amount_sgd, purchased_at }] }`. `title` and `amount_sgd` are frozen at purchase and `merch_id` goes null if the catalogue row is deleted, so history reads as what was actually bought. |
 
@@ -240,7 +242,7 @@ tx start
    - If status='succeeded': webhook is a retry, no-op (idempotent)
 2. Insert bookings row: kind='workshop', workshop_id, workshop_tier_id, state='confirmed',
    client_package_id=NULL, refund_outcome='n_a', check_in_state='pending',
-   stripe_payment_intent_id=X
+   purchase_id=P            — the sale; a Refund routes on it, not on the intent (#92)
 3. Generate qr_token + code
 4. Update stripe_payments: status='succeeded', receipt_url = paymentIntent.charges.data[0].receipt_url
 5. enqueueEmail('workshop_purchase_confirmed', client.email, { workshop_name, date, qr_url, code, receipt_url })
@@ -257,7 +259,7 @@ When `effective_price = 0`, we skip Stripe entirely:
 tx start
 1. Capacity check (same as above)
 2. Insert bookings row: kind='workshop', workshop_id, workshop_tier_id, state='confirmed',
-   stripe_payment_intent_id=NULL, refund_outcome='n_a', check_in_state='pending'
+   purchase_id=NULL, refund_outcome='n_a', check_in_state='pending'
 3. Generate qr_token + code
 4. enqueueEmail('workshop_purchase_confirmed', { ..., receipt_url=NULL })
 tx commit
@@ -423,7 +425,7 @@ tx start
                 : NULL),
    purchased_at = now(),
    amount_paid_sgd = stripe_payments.amount_sgd,
-   stripe_payment_intent_id = X
+   purchase_id = P
    (Trial unique partial index catches any race — if a concurrent purchase already inserted a trial
     for this client, this INSERT raises 23505 and the webhook handler logs it then no-ops.)
 

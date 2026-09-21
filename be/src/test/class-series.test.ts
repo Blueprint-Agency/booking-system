@@ -343,7 +343,7 @@ describe('class series', { skip: integrationTestsEnabled ? false : SKIP_REASON }
     })
     await purchase.grantPackage(one.id, {
       clientId: client!.id,
-      paymentIntentId: null,
+      purchaseId: null,
       amountSgd: '200.00',
       packageKind: 'class',
       packageId: pkg.id,

@@ -3,6 +3,7 @@ import { serve } from '@hono/node-server'
 import app from './app'
 import { logger } from './shared/logger'
 import { closeDb } from './db'
+import { reportStatementDescriptorPrefix } from './lib/stripe'
 
 /**
  * Node entry point. `env` is validated up front — if anything required is
@@ -12,6 +13,11 @@ import { closeDb } from './db'
  * Background lifecycle jobs always start here — they are not optional. Tests
  * import `app`, not this file, so they never run them.
  */
+// Payment configuration that is wrong but not fatal — an unset statement
+// descriptor prefix means every studio's charges carry the platform's name.
+// Said here, at boot, because the charge path deliberately stays silent.
+reportStatementDescriptorPrefix()
+
 const server = serve({ fetch: app.fetch, port: env.PORT }, info => {
   logger.info({ port: info.port, env: env.NODE_ENV }, 'reservetoday-be started')
 })

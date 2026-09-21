@@ -25,6 +25,11 @@ The tables and what deletion does to each are one list, `MEMBER_TABLES` in `be/s
 | Their sign-ins and staff acts on their account, at this studio | `auth_events` |
 | Their sessions at this studio | `client_auth_sessions` with this studio's claim |
 | Their sign-in account — **only if no other studio still has them** | `client_auth_users`, with its sessions and credentials |
+| Who they are at the payment provider, and so the cards they saved | `payment_customers` — **and the Customer itself, at the provider** |
+
+**The one thing deletion does outside this database.** Since saved cards (#185) a member is also a Customer at the payment provider, with cards kept against them, and neither is a row this studio owns. Deleting the Customer takes its saved cards with it. It happens **before** the rows go, because the rows are how the Customer is found: once `payment_customers` is empty nothing knows the member was ever a Customer, and their cards would sit at the provider with no way to reach them. A studio that has moved onto its own payment account (#100) has one row per account it has ever sold on, and every one of them is dealt with.
+
+A provider that cannot be reached does **not** stop the deletion — the member asked for it, and the rest of it is correct. The failure is logged with the Customer and account ids, so it can be finished by hand. The provider keeps its own record of the *payments*, which no platform can delete, and which is the studio's accounts either way.
 
 ### Kept, identity removed
 

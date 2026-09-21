@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  CreditCard,
   Download,
   ExternalLink,
   Loader2,
@@ -16,6 +17,7 @@ import { Button, EmptyState, PageHeader, StatusBadge } from "@/components/ui";
 import { CreateTenantDialog } from "@/components/platform/create-tenant-dialog";
 import { InviteFirstAdminDialog } from "@/components/platform/invite-first-admin-dialog";
 import { RenameTenantDialog } from "@/components/platform/rename-tenant-dialog";
+import { PaymentCredentialsDialog } from "@/components/platform/payment-credentials-dialog";
 import { ApiError, makeApi } from "@/lib/api";
 import {
   exportTenant,
@@ -49,6 +51,8 @@ export default function PlatformPage() {
   const [inviting, setInviting] = useState<PlatformTenant | null>(null);
   /** The studio the rename dialog is open for, or null. */
   const [renaming, setRenaming] = useState<PlatformTenant | null>(null);
+  /** The studio whose payment account is being set, or null. */
+  const [payingFor, setPayingFor] = useState<PlatformTenant | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   /** One file input serves every row; this is the studio the picker is for. */
   const [importTarget, setImportTarget] = useState<PlatformTenant | null>(null);
@@ -225,6 +229,16 @@ export default function PlatformPage() {
                 <p className="mt-1 truncate text-sm text-muted">
                   {tenant.slug} · {tenant.timezone}
                 </p>
+                {/* Whose account this studio's money lands in. Worth a line of
+                    its own rather than a badge: "the platform's" is a correct,
+                    ordinary state — every studio starts there — and the account
+                    id is the only thing anyone can ever see about a studio's own
+                    credentials, so it is the only way to spot the wrong ones. */}
+                <p className="mt-0.5 truncate text-sm text-muted">
+                  {tenant.payments.configured
+                    ? `Charges on its own account · ${tenant.payments.account_id}`
+                    : "Charges on the platform account"}
+                </p>
                 <div className="mt-2 flex flex-wrap gap-3 text-sm">
                   {tenant.urls.client && (
                     <a
@@ -259,6 +273,19 @@ export default function PlatformPage() {
                   <Button onClick={() => setInviting(tenant)}>
                     <UserPlus className="h-4 w-4" />
                     Invite admin
+                  </Button>
+                )}
+
+                {/* An archived studio takes no money, so there is nothing to
+                    point at an account. */}
+                {tenant.status !== "archived" && (
+                  <Button
+                    variant="secondary"
+                    disabled={isBusy(tenant.id)}
+                    onClick={() => setPayingFor(tenant)}
+                  >
+                    <CreditCard className="h-4 w-4" />
+                    Payments
                   </Button>
                 )}
 
@@ -379,6 +406,26 @@ export default function PlatformPage() {
           // Reloaded rather than patched in place from the response: inviting
           // also lifts the suspension the studio was opened under, and the
           // badge, the status and the Suspend button all read from that.
+          void load();
+        }}
+      />
+
+      <PaymentCredentialsDialog
+        // Keyed on the studio, so closing remounts it empty — a secret key
+        // half-typed for one studio must never still be in the field under
+        // another studio's name.
+        key={payingFor?.id ?? "none"}
+        api={api}
+        // Read back out of the freshly loaded list rather than held as a
+        // snapshot: saving credentials changes what the dialog says about the
+        // studio, and it stays open afterwards to show the webhook URL.
+        tenant={(tenants ?? []).find(row => row.id === payingFor?.id) ?? payingFor}
+        onOpenChange={open => {
+          if (!open) setPayingFor(null);
+        }}
+        onSaved={() => {
+          // The dialog stays open — it has the webhook URL to show — so the row
+          // behind it is refreshed rather than the dialog closed.
           void load();
         }}
       />

@@ -4,6 +4,7 @@ import { and, eq, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import { memberFixtures, type Row, type Staff, type Tenant } from './member-fixtures'
 import { MEMBER_TABLES, eraseSteps, type MemberKey } from '../services/clients/member-tables'
+import type { StripeFake } from './stripe-fake'
 
 /**
  * A studio permanently deletes a member (#144).
@@ -16,6 +17,7 @@ import { MEMBER_TABLES, eraseSteps, type MemberKey } from '../services/clients/m
  */
 describe('member delete', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
   let harness!: TestApp
+  let stripe: StripeFake | undefined
   let schema!: typeof import('../db/schema')
   let fixtures!: ReturnType<typeof memberFixtures>
   let one!: Tenant
@@ -59,6 +61,16 @@ describe('member delete', { skip: integrationTestsEnabled ? false : SKIP_REASON 
 
   before(async () => {
     harness = await startTestApp()
+    // Deletion asks the payment provider to forget the member's Customer
+    // (#185). Without the fake that is a real network call per fixture — caught
+    // and logged, so the suite would still pass, but every run would wait out
+    // the vendor deadline for nothing.
+    //
+    // Imported **here**, not at the top: `stripe-fake` pulls in `lib/stripe`,
+    // which reads the environment at module load. A static import would freeze
+    // it before `startTestApp` has finished writing it, and the first thing to
+    // notice is staff sign-in failing with a 500.
+    stripe = (await import('./stripe-fake')).installStripeFake()
     schema = await import('../db/schema')
     fixtures = memberFixtures(harness, schema, DOMAIN)
     const { at, staffAt, memberAt, fixturesFor, insertRow } = fixtures
@@ -109,6 +121,7 @@ describe('member delete', { skip: integrationTestsEnabled ? false : SKIP_REASON 
   })
 
   after(async () => {
+    stripe?.restore()
     if (!harness) return
     await fixtures?.cleanup()
     await harness.close()
@@ -141,10 +154,23 @@ describe('member delete', { skip: integrationTestsEnabled ? false : SKIP_REASON 
     test('the accounting rows stay, and hold no name, email or phone', async () => {
       // The member's own rows that deletion keeps: those found by their client id
       // and cleared rather than deleted.
+      //
+      // Written out rather than derived twice, so a table that starts being kept
+      // has to be named here on purpose — the list is the assertion. `purchases`
+      // joined it when a Purchase learned to outlive its member (#144 × #91);
+      // `payment_customers` deliberately did **not**, because it is deleted, not
+      // emptied (#185): the studio's accounts keep money, not the member's
+      // identity at a third party.
       const kept = MEMBER_TABLES.filter(
         e => e.columns.join() === 'client_id' && eraseSteps(e).some(s => 'keptBecause' in s),
       ).map(e => e.table)
-      assert.deepEqual(kept, ['client_packages', 'stripe_payments', 'promo_code_redemptions', 'merch_orders'])
+      assert.deepEqual(kept, [
+        'client_packages',
+        'purchases',
+        'stripe_payments',
+        'promo_code_redemptions',
+        'merch_orders',
+      ])
       for (const table of kept) {
         const [row] = await harness.db.execute<Row>(
           sql`SELECT * FROM ${sql.identifier(table)} WHERE id = ${memberRows.get(table)!.id}`,

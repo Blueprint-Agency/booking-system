@@ -17,6 +17,7 @@ import {
   saleDescription,
   type CheckoutQuote,
 } from '../billing/checkout-session'
+import { openSettledPurchase } from '../billing/purchases'
 import { tenantDisplayName } from '../tenants/mail-identity'
 
 export type MerchOrderRow = typeof merchOrders.$inferSelect
@@ -47,6 +48,19 @@ export async function beginMerchCheckout(input: {
       title: item.title,
       amountSgd: '0.00',
       paymentIntentId: null,
+    })
+    // A free item is still a sale — the Purchase opens and closes here, because
+    // a total of zero leaves nothing outstanding.
+    await openSettledPurchase({
+      tenantId: input.tenantId,
+      clientId: input.clientId,
+      kind: 'merch',
+      metadata: {
+        kind: 'merch',
+        merch_id: item.id,
+        client_id: input.clientId,
+        merch_title: item.title,
+      },
     })
     return { outcome: 'granted', orderId: order.id }
   }

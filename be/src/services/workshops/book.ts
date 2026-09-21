@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from 'drizzle-orm'
+import { and, eq, inArray, ne, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { bookings } from '../../db/schema/bookings'
 import {
@@ -117,6 +117,12 @@ export interface BookWorkshopInput {
   workshopTierId: string
   /** stripe payment intent id — null for free workshops. */
   paymentIntentId: string | null
+  /**
+   * The Purchase that bought the place — null for a free workshop, which
+   * reaches no payment provider. A workshop's booking IS the purchase, so this
+   * is the pointer a Refund routes on, in place of the payment intent (#92).
+   */
+  purchaseId?: string | null
   /** amount paid in SGD as "120.00". "0.00" for free workshops. */
   amountSgd: string
   /** frozen promotion applied at purchase; null if none. */
@@ -130,9 +136,9 @@ export interface BookWorkshopInput {
  *  - billing webhook (Stripe-paid workshops) via bookWorkshopPaid
  *  - free workshop checkout (price 0) via bookWorkshopFree
  *
- * Idempotent on paymentIntentId via the partial unique index
- * `bookings_stripe_intent_unique`. Inserts/updates the matching
- * stripe_payments row so refunds can find it.
+ * Idempotent on the Purchase via the partial unique index
+ * `bookings_purchase_unique`. Updates the matching stripe_payments row, still
+ * keyed on the intent, which is the identifier the provider's own calls need.
  *
  * `created` says whether THIS call inserted the booking (§13) — the flag the
  * confirmation email is gated on, so a redelivered webhook confirms once.
@@ -143,9 +149,9 @@ async function insertWorkshopBooking(
 ): Promise<{ bookingId: string; qrToken: string; code: string; created: boolean }> {
   const { qrToken, code } = generateBookingCodes()
 
-  // Idempotency: if a booking already exists for this payment intent, return it.
-  if (input.paymentIntentId) {
-    const existing = await bookingForIntent(tenantId, input.paymentIntentId)
+  // Idempotency: if a booking already exists for this sale, return it.
+  if (input.purchaseId) {
+    const existing = await bookingForPurchase(tenantId, input.purchaseId)
     if (existing) return { ...existing, created: false }
   }
 
@@ -177,7 +183,7 @@ async function insertWorkshopBooking(
         state: 'confirmed',
         qrToken,
         code,
-        stripePaymentIntentId: input.paymentIntentId,
+        purchaseId: input.purchaseId ?? null,
       })
       .returning({ id: bookings.id })
 
@@ -186,6 +192,10 @@ async function insertWorkshopBooking(
     // Only the delivery that inserted writes this, and it is the only writer of
     // `succeeded` for a workshop — the race loser below returns before it,
     // because the winner has already done it.
+    //
+    // Never over a refund: the provider redelivers for days and the
+    // confirmation page can replay the same session by hand, and since #92 this
+    // column is what says what a Refund still has to return.
     if (input.paymentIntentId) {
       await db
         .update(stripePayments)
@@ -194,6 +204,7 @@ async function insertWorkshopBooking(
           and(
             eq(stripePayments.tenantId, tenantId),
             eq(stripePayments.paymentIntentId, input.paymentIntentId),
+            ne(stripePayments.status, 'refunded'),
           ),
         )
     }
@@ -203,35 +214,30 @@ async function insertWorkshopBooking(
     // The idempotency read above lost a race — the webhook and the confirmation
     // page's sync-session both deliver one purchase. The index picks the winner;
     // the loser returns the winner's booking rather than failing the member.
-    if (input.paymentIntentId && isUniqueViolation(err, 'bookings_stripe_intent_unique')) {
-      const existing = await bookingForIntent(tenantId, input.paymentIntentId)
+    if (input.purchaseId && isUniqueViolation(err, 'bookings_purchase_unique')) {
+      const existing = await bookingForPurchase(tenantId, input.purchaseId)
       if (existing) return { ...existing, created: false }
     }
     throw err
   }
 }
 
-/** The booking already made for a payment intent, if any (§13 idempotency). */
-async function bookingForIntent(
+/** The booking already made for a Purchase, if any (§13 idempotency). */
+async function bookingForPurchase(
   tenantId: string,
-  paymentIntentId: string,
+  purchaseId: string,
 ): Promise<{ bookingId: string; qrToken: string; code: string } | undefined> {
   const [row] = await db
     .select({ id: bookings.id, qrToken: bookings.qrToken, code: bookings.code })
     .from(bookings)
-    .where(
-      and(
-        eq(bookings.tenantId, tenantId),
-        eq(bookings.stripePaymentIntentId, paymentIntentId),
-      ),
-    )
+    .where(and(eq(bookings.tenantId, tenantId), eq(bookings.purchaseId, purchaseId)))
     .limit(1)
   return row ? { bookingId: row.id, qrToken: row.qrToken, code: row.code } : undefined
 }
 
 export async function bookWorkshopPaid(
   tenantId: string,
-  input: BookWorkshopInput & { paymentIntentId: string },
+  input: BookWorkshopInput & { paymentIntentId: string; purchaseId: string },
 ): Promise<{ bookingId: string; qrToken: string; code: string; created: boolean }> {
   return insertWorkshopBooking(tenantId, input)
 }
@@ -277,7 +283,7 @@ export async function bookWorkshopFree(
     throw new BadRequestError('workshop_is_not_free')
   }
 
-  // Free bookings carry no payment-intent idempotency key, so gate duplicates
+  // Free bookings carry no Purchase to be idempotent on, so gate duplicates
   // (and capacity) explicitly.
   await assertWorkshopBookable(tenantId, args)
 
@@ -286,13 +292,14 @@ export async function bookWorkshopFree(
     workshopId: args.workshopId,
     workshopTierId: args.workshopTierId,
     paymentIntentId: null,
+    purchaseId: null,
     amountSgd: '0.00',
     appliedPromotionId: eff.appliedPromotionId,
     appliedPromoCodeId: args.appliedPromoCodeId ?? null,
   })
 
   // The worst case in the set (§13): a confirmed booking with a QR code and a
-  // date that used to send nothing at all. No payment intent means nothing to
+  // date that used to send nothing at all. No Purchase means nothing to
   // be idempotent on — `assertWorkshopBookable` above is the duplicate gate —
   // so it sends every time it gets here. The helper cannot throw.
   await sendWorkshopPurchaseEmail(tenantId, booked.bookingId)

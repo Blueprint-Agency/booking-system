@@ -505,12 +505,12 @@ Polymorphic — a promotion belongs to exactly one parent (`class_package`, `pt_
 | expires_at | timestamptz | nullable — null means **Dormant** for an Unlimited Plan (waiting behind a plan still running); set for credit_bundle + unlimited-with-no-live-plan-in-front + trial (when validity_days set); null for pt and trial-without-expiry |
 | purchased_at | timestamptz | not null |
 | amount_paid_sgd | numeric(10, 2) | not null — effective price actually charged (may be 0 for admin-issued grants) |
-| stripe_payment_intent_id | text | unique, **nullable** — null for admin-issued grants (§16 manual issue) and free trial passes priced at 0 SGD |
+| purchase_id | uuid | FK → `purchases`, **nullable** — the sale that bought the plan. Null for admin-issued grants (§16 manual issue) and free trial passes priced at 0 SGD, the same rows the payment intent it replaced (#92) was null for. A plan settled by more than one payment still has exactly one of these |
 | active | boolean | not null, default true — the lever both the nightly expiry sweep and a Refund's Void pull; `false` means expired or refunded, and the payment row records which |
 
 **`client_packages_kind_fields` CHECK** (`spec-pre-launch-batch.md` §1): `kind='unlimited'` requires `location_id` and `duration_months` NOT NULL; every other kind requires both NULL and `expires_at` NOT NULL. Extended in `0045`: `bound_instructor_id` must be NULL on every kind but `pt` — the column is the whole of what "bound" means, so a binding on any other kind would be one no rule in the domain knows how to read. Strict, no grandfathering — the backfill probe found zero Unlimited Plans in either database before this shipped.
 
-**Indexes:** `(client_id, kind)`, `(client_id, expires_at)` for upcoming-expiry sweep, `(stripe_payment_intent_id) unique where not null`, a **unique partial index `(client_id) WHERE kind='trial'`** — enforces the one-trial-per-client-ever invariant from `fe-client-features.md` §6.1 (a previously-purchased trial, active OR expired, blocks any further trial purchase; the purchase service catches the unique-violation and returns `409 trial_already_used`) — and a **unique partial index `(client_id) WHERE kind='unlimited' AND active AND expires_at IS NOT NULL`**, capping a client at one Activated Unlimited Plan (plus, enforced in the purchase path rather than an index, at most one Dormant one).
+**Indexes:** `(client_id, kind)`, `(client_id, expires_at)` for upcoming-expiry sweep, `(purchase_id) unique where not null` — one plan per sale, the index that decides a webhook-redelivery race — a **unique partial index `(client_id) WHERE kind='trial'`** — enforces the one-trial-per-client-ever invariant from `fe-client-features.md` §6.1 (a previously-purchased trial, active OR expired, blocks any further trial purchase; the purchase service catches the unique-violation and returns `409 trial_already_used`) — and a **unique partial index `(client_id) WHERE kind='unlimited' AND active AND expires_at IS NOT NULL`**, capping a client at one Activated Unlimited Plan (plus, enforced in the purchase path rather than an index, at most one Dormant one).
 
 Promo Code tables (`promo_codes`, `promo_code_products`, `promo_code_redemptions`) live beside this table and are documented in full in `spec-pre-launch-batch.md` §9–§11 rather than repeated here — the model is the shipped one, not the used-count-plus-valid-from-window model an earlier draft of this document sketched.
 
@@ -769,7 +769,7 @@ The previously-specified `instructor_availability_recurring` and `instructor_ava
 | check_in_state | enum `checkin_state` | `pending`, `attended`, `no_show`, `n_a` (workshops) |
 | qr_token | text | unique, not null — encoded into QR |
 | code | text | unique, not null — `RT-` + 6 Crockford-base32 chars (e.g. `RT-A4F2K9`); see §7 Per-booking codes for alphabet + lookup rules |
-| stripe_payment_intent_id | text | unique, nullable — for workshops |
+| purchase_id | uuid | FK → `purchases`, unique where not null — set only on a workshop booking, whose booking IS the purchase. Null for class and PT bookings, which a plan paid for (#92) |
 | booked_at | timestamptz | not null |
 | cancelled_at | timestamptz | nullable |
 
@@ -787,7 +787,7 @@ Workshop bookings cover **the tier**, not individual days. Per-day attendance / 
 - `(pt_session_id)` unique partial where kind=`pt` (one booking per PT session for 1-on-1; for 2-on-1 multiple bookings tied via pt_session_clients)
 - `(qr_token) unique`, `(code) unique`
 - `(check_in_state)` for "pending check-in" surfacing (§11)
-- `(stripe_payment_intent_id) unique where not null`
+- `(purchase_id) unique where not null`
 
 #### `cancellations` (drives §4 cap calculation)
 
@@ -835,6 +835,18 @@ id, payment_intent_id (text unique), amount_sgd, kind enum (`workshop`, `class_p
 **Indexes:** `(payment_intent_id) unique`, `(client_id, created_at desc)`.
 
 The fe-client `/account/invoices` "Download" link points directly to `receipt_url`; no PDF generation needed.
+
+#### `tenant_payment_credentials` (#100)
+
+tenant_id (uuid PK, FK → tenants.id on delete cascade), provider (text, not null, default `'stripe'`), account_id (text, not null), secret_key_sealed (text, not null), webhook_secret_sealed (text, not null), created_at, updated_at.
+
+A studio's **own** payment-provider account: its credentials, so every call on that studio's behalf is made against that account rather than the platform's. Not Stripe Connect — there is no connected account and no `Stripe-Account` header; an account here is a *key*. See `be/docs/adr/0004-tenant-supplied-payment-credentials.md`.
+
+**A Tenant with no row here charges on the platform account,** exactly as every Tenant did before, which is what lets studios be moved across one at a time.
+
+**Both secrets are sealed** (AES-256-GCM, `be/src/lib/secret-box.ts`) with `PAYMENT_CREDENTIALS_KEY` from the environment, so a database backup is not a set of live payment keys. `account_id` is deliberately *not* sealed: it names the account rather than opening it, and it is the only thing the super portal ever shows back. No route returns either secret, masked or otherwise.
+
+**Two doors, and only two.** Writes run inside `withTenant`, under the same Row-Level Security policy every other tenant-scoped table carries (migration 0067). Reads go through the owner-owned `tenant_payment_credentials_for(tenant_id)` — because the callers have no Tenant context to open: a background job has no request, and a webhook cannot open one until it knows whose delivery it is holding. The super portal's list reads `tenant_payment_accounts()`, which returns tenant ids and account ids and no sealed value at all.
 
 ### 4j. Content
 
@@ -1018,8 +1030,10 @@ See `docs/adr/0004-self-hosted-auth-with-better-auth.md` for the decision.
   - kind=`corporate_package` → insert **no** `client_packages` row; instead auto-create ONE `corporate_requests` row (status=`pending`, `client_id`, `corporate_package_id` from the intent metadata). The pending request is the entitlement; scheduling happens via the portal (`be-portal.md` §3f). The `checkout.session.completed` path carries the same effect for the corporate branch.
   - Always insert `stripe_payments` row with `status='succeeded'`
 - **Workshop admin-cancel** (§7a) → enqueue one `stripe-refund` job per booking in workshop. Worker calls Stripe Refund API. `charge.refunded` webhook closes the loop.
-- **Free workshops** (`workshop_tiers.regular_price_sgd = 0`) skip Stripe entirely. Booking flow inserts a `bookings` row with `kind='workshop'`, `state='confirmed'`, `stripe_payment_intent_id = null`, and **no** `stripe_payments` row is created. The receipt UI on fe-client suppresses the Download link when `receipt_url` is null.
+- **Free workshops** (`workshop_tiers.regular_price_sgd = 0`) skip Stripe entirely. Booking flow inserts a `bookings` row with `kind='workshop'`, `state='confirmed'`, `purchase_id = null`, and **no** `stripe_payments` row is created. The receipt UI on fe-client suppresses the Download link when `receipt_url` is null.
 - **Idempotency.** Stripe's event IDs are deduplicated against `stripe_payments.payment_intent_id` (and a separate `stripe_webhook_events` table for raw event de-dupe — minor, can add later).
+- **Each studio may charge on its own account (#100).** Every provider call goes through one Tenant-bound accessor, `stripeForTenant` (`be/src/lib/stripe.ts`), and `providerAccountForTenant` is the single place that answers which account it is on: the studio's own credentials when it has supplied them (§4i `tenant_payment_credentials`), otherwise `null` — the platform's account, where a studio that has supplied none still sells. A studio on its own account sends **no statement descriptor suffix**, because the 22-character limit is measured against that account's own prefix, which this platform cannot read.
+- **Webhooks, two endpoints.** `/api/v1/webhooks/stripe` is the platform account's, verified with `STRIPE_WEBHOOK_SECRET`, and the studio is worked out afterwards from the signed body. `/api/v1/webhooks/stripe/{slug}` is a studio's own: its account signs with its own secret, so the studio has to be settled **before** the signature can be checked, and the URL is the only part of a delivery fixed before the body is read. Exactly one secret is tried — no fallback to the platform's, no sweep of every studio — and the tenant the URL named is carried into the handler, which refuses any event whose body routes elsewhere (`refuseWrongTenant`). Every refusal on that endpoint is the same flat 400, so a URL cannot be used to enumerate which studios take their own money.
 - **Known gap, observed but not fixed by `spec-pre-launch-batch.md`:** if the payment provider's own automatic receipt emails are switched on in the dashboard, a paid purchase produces two emails — ours, the branded one carrying the QR code and the activation sentence, and theirs, a bare payment record. Confirm this setting is off before go-live; nothing in the code prevents it either way.
 
 ### 6c. Cloudflare R2
@@ -1117,7 +1131,7 @@ Per `fe-client-features.md`: when a referee makes their **first paid** booking (
 **Flow (`services/referrals.ts:onRefereeFirstPayment(refereeClientId)`)**, called from `services/billing/webhook-handler.ts` inside the same transaction as the package grant or workshop booking insert:
 
 1. Load referee row. Skip if `referred_by_client_id IS NULL` (no referrer) or `referral_credit_granted_at IS NOT NULL` (already credited).
-2. Pick the referrer's most recent active `client_packages` row (`kind in ('credit_bundle','unlimited')`, `expires_at > now()`). If none exists, insert a 90-day "referral credit" `client_packages` row with `kind='credit_bundle'`, `credits = 20 / standard_credit_value_sgd`, `amount_paid_sgd = 0`, `stripe_payment_intent_id = NULL`.
+2. Pick the referrer's most recent active `client_packages` row (`kind in ('credit_bundle','unlimited')`, `expires_at > now()`). If none exists, insert a 90-day "referral credit" `client_packages` row with `kind='credit_bundle'`, `credits = 20 / standard_credit_value_sgd`, `amount_paid_sgd = 0`, `purchase_id = NULL`.
 3. Insert `manual_adjustments` row: `client_id = referrer`, `client_package_id = chosen`, `delta = credits granted`, `reason = 'referral_conversion'`, `acted_by_staff_id = NULL`.
 4. Update referee: `UPDATE clients SET referral_credit_granted_at = now() WHERE id = referee`.
 5. Write `audit_log` row: `actor_type='system'`, `action='referral.converted'`, target = referrer's `clients.id`.

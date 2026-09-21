@@ -8,7 +8,30 @@ import {
   getClientEntitlements,
   listClientPackages,
 } from '../../services/packages/entitlements'
+import {
+  listSavedCards,
+  removeSavedCard,
+  type SavedCard,
+} from '../../services/billing/payment-customers'
 import { tenantId } from '../../middleware/tenant'
+
+/**
+ * A payment method id as the provider writes it (`pm_…`). Not a uuid, so it is
+ * length-bounded and character-bounded instead — enough that a path segment
+ * cannot become a wild string on its way to a provider call, while the real
+ * check of whether it is *this member's* card stays in the service, where the
+ * Customer it must belong to is known.
+ */
+const cardParam = z.object({ id: z.string().min(3).max(255).regex(/^[A-Za-z0-9_]+$/) })
+
+/** What a member may be told about a card of theirs. Never a number. */
+const serializeCard = (card: SavedCard) => ({
+  id: card.id,
+  brand: card.brand,
+  last4: card.last4,
+  exp_month: card.expMonth,
+  exp_year: card.expYear,
+})
 
 function serializeProfile(row: typeof clients.$inferSelect) {
   return {
@@ -107,6 +130,28 @@ const app = new Hono()
         pt_2on1_remaining: ent.pt2on1Remaining,
       },
     })
+  })
+  // ---- saved cards (#185) ----
+  // The member's own cards, and only ever the brand, the last four digits and
+  // the expiry — read live from the provider, because a local copy of a card is
+  // a copy that goes stale in the exact way that makes a member pick one that
+  // no longer works. A member who has saved none gets an empty list, which is
+  // the honest answer and not an error.
+  .get('/cards', async c => {
+    const cards = await listSavedCards(tenantId(c), c.get('clientId'))
+    return c.json({ cards: cards.map(serializeCard) })
+  })
+  // Remove one. The id in the path is a string the browser chose, so the
+  // service checks it against *this* member's Customer at the provider before
+  // detaching anything — without that, this route would let any signed-in
+  // member detach any card at any studio.
+  .delete('/cards/:id', zValidator('param', cardParam), async c => {
+    await removeSavedCard({
+      tenantId: tenantId(c),
+      clientId: c.get('clientId'),
+      paymentMethodId: c.req.valid('param').id,
+    })
+    return c.json({ removed: true })
   })
 
 export default app

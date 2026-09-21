@@ -19,6 +19,7 @@ import { clients } from '../../db/schema/identity'
 import { bookings } from '../../db/schema/bookings'
 import { classes } from '../../db/schema/schedule'
 import { classTypes } from '../../db/schema/catalog'
+import { heldOnOpenPurchases } from '../billing/open-purchases'
 import { isMoneyIn } from './events'
 import { getFinance, type FinanceFilter } from './list'
 import { toCents } from './totals'
@@ -84,6 +85,22 @@ export interface FinanceOverview {
   totals: FinanceTotals
   /** Sessions with no pay set. Excluded from Net, so Net has to say so. */
   unpriced_count: number
+  /**
+   * Money taken against Purchases that have granted nothing yet (#93) — a
+   * member who has paid one card of two and not yet come back for the second.
+   *
+   * **Not revenue, and never in Gross or Net.** A Purchase enters the figures
+   * once, at the moment it closes and the grant fires, at its frozen total; a
+   * part payment must not inflate a month that has not sold anything. It is
+   * reported at all because money the studio is holding is money the studio
+   * should be able to see — the alternative is a figure that is simply missing
+   * from an owner's picture of their own cash.
+   *
+   * A **stock, not a flow**: what is held right now, unscoped by the period
+   * beside it, for the same reason Active Members is — see `memberCounts`.
+   * There is no column that can say what was held on the last day of June.
+   */
+  held_on_open_purchases_sgd: number
   sales_by_category: CategorySales[]
   by_instructor: FinanceInstructorTotal[]
   members: MemberCounts
@@ -240,15 +257,18 @@ export async function getFinanceOverview(
   filter: FinanceFilter,
 ): Promise<FinanceOverview> {
   const period: FinanceFilter = { from: filter.from, to: filter.to }
-  const [finance, members, classPopularityRows] = await Promise.all([
+  const [finance, members, classPopularityRows, held] = await Promise.all([
     getFinance(tenantId, period),
     memberCounts(tenantId, period),
     classPopularity(tenantId, period),
+    // Unscoped by the period on purpose — a stock, like Active Members above.
+    heldOnOpenPurchases(tenantId),
   ])
 
   return {
     totals: finance.totals,
     unpriced_count: finance.unpriced_count,
+    held_on_open_purchases_sgd: held,
     sales_by_category: salesByCategory(finance.rows),
     by_instructor: finance.instructor_totals,
     members,

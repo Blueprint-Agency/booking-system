@@ -88,12 +88,31 @@ export const MEMBER_TABLES: readonly MemberTable[] = [
   // Credit movements with a staff member's free-text reason: no money, and the
   // reason may well name the member.
   byClientId('manual_adjustments'),
+  // What was bought, what it cost and how much of it was paid (#91). It is the
+  // sale itself, so it is kept for the same reason every other accounts row is —
+  // including one still open, whose money the studio is holding and may yet have
+  // to return. The metadata is dropped with the member: it carries the ids the
+  // webhook granted from, and one of them is theirs.
+  byClientId('purchases', [
+    { keptBecause: ACCOUNTS, set: sql`client_id = NULL, metadata = '{}'::jsonb`, where: clientIdIs },
+  ]),
   // The booking the payment was for is deleted; the receipt link opens a page
   // that shows who paid. The payment intent stays, which is how the studio
   // matches this row to the payment provider's own record.
   byClientId('stripe_payments', [
     { keptBecause: ACCOUNTS, set: sql`client_id = NULL, booking_id = NULL, receipt_url = NULL`, where: clientIdIs },
   ]),
+  // Who the member is at the payment provider, and so the cards they kept
+  // (#185). **Deleted, not emptied** — the one row in this neighbourhood that
+  // is, and deliberately: a payment is the studio's accounts, but this is the
+  // member's identity at a third party, which is precisely what permanent
+  // deletion is for. Emptying it would also orphan the id, leaving their cards
+  // on file at the provider with nothing left pointing at them to clean up.
+  //
+  // Deleting the row does not by itself delete the Customer. `member-delete.ts`
+  // reads these rows first and asks the provider to forget each one — a network
+  // call, which is why it cannot be an `erase` step here.
+  byClientId('payment_customers'),
   // The money a Promo Code took off, and a use of that code's limit.
   byClientId('promo_code_redemptions', [{ keptBecause: ACCOUNTS, set: sql`client_id = NULL`, where: clientIdIs }]),
   byClientId('merch_orders', [{ keptBecause: ACCOUNTS, set: sql`client_id = NULL`, where: clientIdIs }]),

@@ -7,6 +7,9 @@ import { getMemberToken } from "@/lib/member-auth";
 import { fetchApi } from "@/lib/api-url";
 import { Check } from "lucide-react";
 import { useClientPackages } from "@/lib/use-client-packages";
+import { OpenPurchases } from "@/components/account/open-purchases";
+import { usePartPaymentOptions, type OpenPurchase } from "@/lib/open-purchases";
+import { reportError } from "@/lib/report-error";
 import { BookingSurface } from "@/components/booking/booking-surface";
 import { SectionHeading } from "@/components/booking/section-heading";
 
@@ -190,6 +193,128 @@ function MerchSuccess({ stripeSessionId }: { stripeSessionId: string | null }) {
   );
 }
 
+// ── Part payment: what is still owed ─────────────────────────────────────────
+/**
+ * Where a part payment lands (#93).
+ *
+ * It cannot say "you're all set", because it does not know that it is: the
+ * payment may have cleared the balance or may have left some of it. So it syncs
+ * the session, asks the server what is still outstanding, and prints the
+ * answer — a remaining balance with the next card offered, or the plain fact
+ * that everything is paid and delivered.
+ *
+ * Asking rather than assuming is the whole point. The member typed an amount
+ * against a price the browser worked out; only the server knows what the
+ * provider actually captured against a balance it owns.
+ */
+function BalanceSuccess({ stripeSessionId }: { stripeSessionId: string | null }) {
+  const getToken = getMemberToken;
+  const { refetch: refetchPackages } = useClientPackages();
+  const partPayment = usePartPaymentOptions();
+  // Three states, and the third is the point: what this session left owing, or
+  // null for nothing, or "we could not find out". The last must never be shown
+  // as the first — see the sync below.
+  const [outcome, setOutcome] = useState<
+    { kind: "pending" } | { kind: "settled" } | { kind: "owing"; purchase: OpenPurchase } | { kind: "unknown" }
+  >({ kind: "pending" });
+
+  // The same sync every other flow does — record the payment now rather than
+  // waiting on webhook delivery. It answers with **this session's** Purchase,
+  // which is the only thing that can say whether the payment just made finished
+  // the job: a member may hold a second unfinished purchase for something else
+  // entirely, and "does this member owe anything" would answer about that one.
+  useEffect(() => {
+    if (!stripeSessionId) { setOutcome({ kind: "unknown" }); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        const res = await fetchApi("/me/checkout/sync-session", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ session_id: stripeSessionId }),
+        });
+        if (!res.ok) throw new Error(`sync failed: ${res.status}`);
+        const data: { purchase: OpenPurchase | null } = await res.json();
+        if (cancelled) return;
+        setOutcome(data.purchase ? { kind: "owing", purchase: data.purchase } : { kind: "settled" });
+      } catch (err) {
+        // The money is safe — the webhook records it whatever happens here —
+        // but we do not know what is left, and saying "all set" on a failed
+        // read is how a member who owes half is told they owe nothing.
+        reportError(err, { scope: "balance-confirmation" });
+        if (!cancelled) setOutcome({ kind: "unknown" });
+      }
+      if (!cancelled) await refetchPackages();
+    })();
+    return () => { cancelled = true; };
+  }, [stripeSessionId, getToken, refetchPackages]);
+
+  const done = outcome.kind !== "pending";
+
+  return (
+    <div id="summary">
+      <BookingSurface maxWidth="md" padding="loose">
+        <div className="text-center mb-6">
+          <div className="w-16 h-16 rounded-full bg-accent/10 flex items-center justify-center mx-auto mb-4">
+            {done ? <Check className="w-8 h-8 text-accent" /> : <Spinner />}
+          </div>
+          <p className="text-sm uppercase tracking-wider text-muted mb-1">Payment received</p>
+          <h1 className="font-serif text-3xl text-ink">
+            {outcome.kind === "pending"
+              ? "Recording your payment…"
+              : outcome.kind === "settled"
+                ? "You're all set!"
+                : outcome.kind === "owing"
+                  ? "Thanks — here's what's left"
+                  : "Thanks — your payment went through"}
+          </h1>
+        </div>
+
+        {outcome.kind === "settled" && (
+          <>
+            <p className="text-center text-lg text-muted">
+              That cleared the balance. Everything you bought is on your account.
+            </p>
+            <div className="mt-10 flex justify-center">
+              <Link
+                href="/account"
+                className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 transition-colors"
+              >
+                View my account
+              </Link>
+            </div>
+          </>
+        )}
+
+        {outcome.kind === "owing" && (
+          <OpenPurchases purchases={[outcome.purchase]} partPayment={partPayment} />
+        )}
+
+        {outcome.kind === "unknown" && (
+          <>
+            <p className="text-center text-lg text-muted">
+              We couldn&apos;t check whether anything is still owed on it just now.
+              Your account page has the up-to-date balance.
+            </p>
+            <div className="mt-10 flex justify-center">
+              <Link
+                href="/account"
+                className="rounded-full bg-ink text-paper px-5 py-3 text-sm font-medium hover:bg-ink/90 transition-colors"
+              >
+                View my account
+              </Link>
+            </div>
+          </>
+        )}
+      </BookingSurface>
+    </div>
+  );
+}
+
 // ── Package post-payment success ──────────────────────────────────────────────
 type PackageKind = "class" | "pt";
 
@@ -347,6 +472,13 @@ function ConfirmationContent() {
   const workshopId = searchParams.get("workshop_id");
   if (type === "workshop" && workshopId) {
     return <WorkshopSuccess workshopId={workshopId} stripeSessionId={stripeSessionId} />;
+  }
+
+  // A part payment, first or resumed — it granted nothing on its own, so the
+  // page asks the server what is still owed rather than congratulating anybody:
+  //   type=balance, session_id=cs_...
+  if (type === "balance") {
+    return <BalanceSuccess stripeSessionId={stripeSessionId} />;
   }
 
   // Merch success — Stripe success_url redirect (paid) or BuyButton (free item):

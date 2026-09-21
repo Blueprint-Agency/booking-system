@@ -140,7 +140,8 @@ describe('log context', { skip: integrationTestsEnabled ? false : SKIP_REASON },
     })
 
     test('a handler that throws is a 500 and one error line', async () => {
-      const { stripe } = await import('../lib/stripe')
+      const { stripePlatform } = await import('../lib/stripe')
+      const stripe = stripePlatform()
       // Money captured for a member nobody can place: the handler refuses loudly.
       const payload = JSON.stringify({
         id: `evt_${randomUUID()}`,

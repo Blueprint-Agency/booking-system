@@ -25,6 +25,17 @@ export interface PlatformTenant {
   /** Live URLs, derived from the same wildcards CORS accepts. Null locally when
    *  the environment configures no wildcard for that app. */
   urls: { client: string | null; portal: string | null };
+  /**
+   * Whether the studio takes its own money, and on which account.
+   *
+   * `configured: false` means it charges on the platform's account, which is
+   * where every studio started and where every studio not yet moved still
+   * charges. `account_id` names the studio's own account when there is one —
+   * and it is the *only* thing this app can ever learn about those credentials.
+   * The secret key and the signing secret are never returned by any route, so
+   * there is nothing to mask, truncate or accidentally render.
+   */
+  payments: { configured: boolean; account_id: string | null };
 }
 
 export interface CreateTenantInput {
@@ -116,6 +127,34 @@ export function inviteFirstAdmin(
     admin: { id: string; email: string; name: string };
     tenant: PlatformTenant;
   }>(`/platform/tenants/${id}/admin`, input);
+}
+
+/**
+ * Move a studio onto its own payment-provider account.
+ *
+ * One way only: these go up and never come back. The backend validates the
+ * secret key against the provider before storing it — so a typo is a message on
+ * the form rather than a member's checkout failing weeks later — and answers
+ * with the account the provider says the key belongs to, plus the webhook URL
+ * that has to be registered on that account.
+ *
+ * There is deliberately no "show" or "edit". Credentials that need checking are
+ * replaced; credentials that were wrong are cleared.
+ */
+export function setPaymentCredentials(
+  api: Api,
+  id: string,
+  input: { secret_key: string; webhook_secret: string },
+) {
+  return api.put<{ tenant: PlatformTenant; webhook_url: string }>(
+    `/platform/tenants/${id}/payment-credentials`,
+    input,
+  );
+}
+
+/** Put a studio back on the platform's account. */
+export function clearPaymentCredentials(api: Api, id: string) {
+  return api.del<{ tenant: PlatformTenant }>(`/platform/tenants/${id}/payment-credentials`);
 }
 
 export interface ImportSummary {

@@ -79,10 +79,10 @@ export async function giveComplimentaryPackage(
 
   const granted = await grantPackage(tenantId, {
     clientId: input.clientId,
-    // No payment intent, because no payment. Which is also why there is no
-    // idempotency key here: giving the same package twice is two gifts, and
-    // the admin who did it can remove one.
-    paymentIntentId: null,
+    // No Purchase, because no sale. Which is also why there is no idempotency
+    // key here: giving the same package twice is two gifts, and the admin who
+    // did it can remove one.
+    purchaseId: null,
     amountSgd: FREE,
     packageKind: input.packageKind,
     packageId: input.packageId,

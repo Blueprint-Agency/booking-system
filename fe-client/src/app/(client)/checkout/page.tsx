@@ -13,6 +13,9 @@ import { useInstructors, useLocations } from "@/lib/classes";
 import { CrossLocationBlock } from "@/components/checkout/cross-location-block";
 import { AddOnCheckout } from "@/components/checkout/add-on-checkout";
 import { PayButton, StripeFootnote } from "@/components/checkout/pay-button";
+import { PartPaymentBlock } from "@/components/checkout/part-payment-block";
+import { SaveCardBlock } from "@/components/checkout/save-card-block";
+import { usePartPaymentOptions } from "@/lib/open-purchases";
 import { useClientPackages } from "@/lib/use-client-packages";
 import { tierEffectivePrice, type ApiWorkshopDetail, type ApiWorkshopTier } from "@/lib/workshops";
 import type { ApiClassPackage, ApiPtPackage } from "@/lib/packages";
@@ -85,6 +88,15 @@ function CheckoutContent() {
   // it prices at the stored Duration with no remainder — a commented mirror of
   // `priceCrossLocationForNewPlan`, which is what the charge is actually built from.
   const [addOn, setAddOn] = useState(false);
+  // Part Payment (#93) — off unless the member ticks it, and absent entirely
+  // unless the studio offers it. `partAmount` is a string because it is what
+  // the member is typing; the server decides whether it is allowed.
+  const partPayment = usePartPaymentOptions();
+  const [partChecked, setPartChecked] = useState(false);
+  const [partAmount, setPartAmount] = useState("");
+  // "Save this card for next time" (#185) — unticked unless the member says so.
+  // A card is only ever kept because somebody asked for it to be.
+  const [saveCard, setSaveCard] = useState(false);
   const isUnlimited = pkg?._kind === "class" && pkg.kind === "unlimited";
   const chosenLocation = isUnlimited
     ? unlimitedLocation ?? locations?.find((l) => l.id === homeLocationId) ?? null
@@ -184,15 +196,31 @@ function CheckoutContent() {
     }
   }
 
-  async function handleProceed() {
+  // `partSgd` is what the member wants on this card, or null for the whole
+  // price — which is every checkout that leaves Part Payment unticked. It is
+  // passed in rather than read from state because the total it was typed
+  // against is only computed further down, past the loading and sign-in gates.
+  async function handleProceed(partSgd: number | null) {
     setRedirecting(true);
     setCheckoutError(null);
     try {
       const token = await getToken();
       const endpoint = mode === "workshop" ? "/me/checkout/workshop" : "/me/checkout/package";
+      const part = partSgd == null ? {} : { part_payment_sgd: partSgd };
+      // Sent only when it is true. An absent field is "no" on the server, so a
+      // false here would be noise on every checkout that does not save a card.
+      const keep = saveCard ? { save_card: true } : {};
       const body = mode === "workshop"
-        ? { workshop_id: workshopId, workshop_tier_id: selectedTier?.id, promo_code: promoApplied?.code }
+        ? {
+            workshop_id: workshopId,
+            workshop_tier_id: selectedTier?.id,
+            promo_code: promoApplied?.code,
+            ...part,
+            ...keep,
+          }
         : {
+            ...part,
+            ...keep,
             package_kind: packageKind,
             package_id: packageId,
             promo_code: promoApplied?.code,
@@ -219,7 +247,12 @@ function CheckoutContent() {
           setPromoApplied(null);
           setPromoError(data.message ?? "That code can't be used on this purchase.");
         } else {
-          setCheckoutError(data.error ?? "Could not start checkout. Please try again.");
+          // The server writes the sentence for a refused Part Payment amount —
+          // it is the only side that knows the balance — so print it rather
+          // than deriving a second, quieter version of the same rule.
+          setCheckoutError(
+            data.message ?? data.error ?? "Could not start checkout. Please try again.",
+          );
         }
         setRedirecting(false);
         return;
@@ -336,6 +369,17 @@ function CheckoutContent() {
   const price = baseCents / 100;
   const discount = discountCents / 100;
   const grandTotal = totalCents / 100;
+  // What goes on this card. Null is the whole price — every checkout that
+  // leaves Part Payment unticked, and every studio that does not offer it.
+  const splitting = partPayment.enabled && partChecked;
+  const typedPart = Number(partAmount.trim());
+  const partIsValid = partAmount.trim() !== "" && Number.isFinite(typedPart) && typedPart > 0;
+  // An empty or half-typed box **blocks the button**; it must never fall back to
+  // the whole price. `Number("")` is 0, so a member who cleared the field to
+  // retype it would otherwise be charged the full amount, under a panel still
+  // promising them that nothing would be granted until they paid the rest.
+  const payingNow = splitting && partIsValid ? typedPart : null;
+  const partBlocked = splitting && !partIsValid;
 
   return (
     <div id="checkout">
@@ -564,7 +608,49 @@ function CheckoutContent() {
                 <span>Total</span>
                 <span>{formatCurrency(grandTotal)}</span>
               </div>
+              {payingNow != null && (
+                <div className="flex justify-between py-1.5 text-sm text-muted">
+                  <span>Paying now</span>
+                  <span>{formatCurrency(payingNow)}</span>
+                </div>
+              )}
             </div>
+
+            {/* Part Payment (#93) — under the total, because it is a decision
+                about how to pay a price the member has already read. Nothing
+                renders where the studio has not turned it on, and a free
+                purchase has nothing to split. */}
+            {grandTotal > 0 && (
+              <PartPaymentBlock
+                enabled={partPayment.enabled}
+                checked={partChecked}
+                onCheckedChange={next => {
+                  setPartChecked(next);
+                  // Pre-filled with the full price and edited downward, so the
+                  // safe amount is the one already in the box.
+                  if (next) setPartAmount(grandTotal.toFixed(2));
+                }}
+                amount={partAmount}
+                onAmountChange={setPartAmount}
+                totalSgd={grandTotal}
+                floorSgd={partPayment.floorSgd}
+                isWorkshop={mode === "workshop"}
+              />
+            )}
+
+            {/* Saving the card (#185) — under the Part Payment block, because a
+                member splitting a price across two cards is the one this saves
+                the most typing for. A free purchase reaches no payment page, so
+                there is no card to keep. */}
+            {grandTotal > 0 && (
+              <SaveCardBlock
+                checked={saveCard}
+                onCheckedChange={setSaveCard}
+                // A Part Payment is already card-only and says so itself; the
+                // same notice twice reads as two restrictions, not one.
+                alreadyCardOnly={splitting}
+              />
+            )}
           </div>
 
           {checkoutError && (
@@ -602,19 +688,23 @@ function CheckoutContent() {
           )}
 
           <PayButton
-            onClick={handleProceed}
+            onClick={() => handleProceed(payingNow)}
             busy={redirecting}
-            disabled={needsHomeStudio || needsInstructor}
+            disabled={needsHomeStudio || needsInstructor || partBlocked}
             label={
               needsHomeStudio
                 ? "Choose your home studio to continue"
                 : needsInstructor
                   ? "Choose your instructor to continue"
-                : // A discount that clears the total skips Stripe entirely, so the
-                  // button names the confirmation rather than a charge of nothing.
-                  totalCents === 0
-                  ? "Confirm your free purchase"
-                  : `Pay ${formatCurrency(grandTotal)} with Stripe`
+                  : partBlocked
+                    ? "Enter an amount to pay now"
+                    : // A discount that clears the total skips Stripe entirely, so the
+                      // button names the confirmation rather than a charge of nothing.
+                      totalCents === 0
+                      ? "Confirm your free purchase"
+                      : // The button names the charge, never the price, so a part
+                        // payment cannot be mistaken for settling the whole thing.
+                        `Pay ${formatCurrency(payingNow ?? grandTotal)} with Stripe`
             }
           />
 
