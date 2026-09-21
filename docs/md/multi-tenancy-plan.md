@@ -464,6 +464,12 @@ retired.**
       Backend: `/api/v1/platform/*`, exempt from tenant resolution because it is
       cross-tenant by definition.
 - [x] Migrate the existing studio itself to be tenant #1.
+- [x] Rename a studio's slug; its own old slug can be taken back immediately
+      (other studios stay locked out of it for the 90-day redirect window).
+- [x] **Term** per studio: start date (defaults to provisioning day) + 3/6/12-month
+      duration → stored end date; suspended automatically when it ends. Migrations
+      0071–0072. See below.
+- [x] **Delete** a suspended studio and all its data. See below.
 - [ ] Billing overview. Deferred — there is no per-tenant billing to overview yet.
 
 **The gate is not a staff role.** A `platform` pool session is required, and
@@ -479,6 +485,33 @@ exists. See `be/src/services/tenants/platform-admin.ts`.
 still succeeds, so the studio's hostnames stay live rather than becoming a 404 —
 a dedicated "paused" page on the frontends is still to do; today they surface the
 `403 tenant_suspended` as a load failure.
+
+**Term** (`be/src/services/tenants/term.ts`, `PUT /api/v1/platform/tenants/:id/term`
+`{ start_date, months: 3|6|12 }`). Two dates on `tenants`, on the studio's own clock;
+the end date is the first day not paid for, and null means open-ended (every studio
+that predates Terms — the operator sets one). A studio can also be given a first Term
+at creation (`term_months`). From the end date an active studio is treated as
+suspended wherever its status decides anything (`effectiveStatus`), with no wait for
+the sweep; a 15-minute platform-wide cron (`suspendEndedTerms`) then writes
+`suspended` onto the row. **Unsuspending an expired studio is refused**
+(`409 tenant_term_ended`): the operator extends the Term, then reactivates — the two
+stay separate acts, because extending cannot tell a Term suspension from any other.
+
+**Deletion** (`be/src/services/tenants/delete.ts`,
+`DELETE /api/v1/platform/tenants/:id?confirm=<slug>`). Refused for an active studio
+(`409 tenant_not_suspended`) and unless `confirm` is its current slug
+(`400 confirmation_mismatch`); the UI makes the operator type the slug. One
+transaction as `booking_app` inside the studio's own `withTenant`: every
+`tenant_id` table (from the catalogue, children first — `auth_events` included),
+`tenant_settings`, then `tenants` (cascading `former_slugs`, claimed sessions, payment
+credentials), then the sign-in accounts of people who belonged only to that studio
+(checked through `client_auth_user_is_member` / `staff_auth_user_is_staff`, migration
+0072). After the commit it deletes the studio's R2 folder `t/<tenant id>/`,
+best-effort. Not removed: objects uploaded before keys were tenant-prefixed, the
+studio's Customers/cards at its payment provider, mail already sent. The slug is free
+immediately. The record is the `platform: tenant deleted` log line (who, which
+studio, row count) — there is no platform audit table, and the studio's own
+`audit_log` is deleted with it. Integration test: `be/src/test/tenant-delete.test.ts`.
 
 ## Env-var note
 

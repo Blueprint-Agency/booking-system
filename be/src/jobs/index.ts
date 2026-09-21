@@ -3,6 +3,7 @@ import { logContext, logger, runWithLogContext } from '../shared/logger'
 import { withTenant } from '../db'
 import { listJobTenants, type JobTenant } from '../services/tenants/tenants'
 import { releaseExpiredFormerSlugs } from '../services/tenants/former-slugs'
+import { suspendEndedTerms } from '../services/tenants/term'
 import { SLOT_CRON, isDailySlot } from './local-time'
 import { expireStaleSessions, completeEndedPtSessions } from '../services/pt-sessions/cancel'
 import { expirePackages, sendLapsingAlerts, sendExpiredNotifications } from '../services/packages/expire'
@@ -135,4 +136,11 @@ export async function registerJobs() {
   cron.schedule('0 3 * * *', safeJob('releaseExpiredFormerSlugs', releaseExpiredFormerSlugs), {
     timezone: 'UTC',
   })
+
+  // Every 15 min, platform-wide — write `suspended` onto every studio whose Term
+  // has ended, on its own clock. Not per tenant: `tenants` is platform data with
+  // no policy, and one statement decides every zone. Nothing waits on it — a
+  // studio counts as suspended from the moment its Term ends (`effectiveStatus`)
+  // — so the grid only decides how soon the stored status catches up.
+  cron.schedule(SLOT_CRON, safeJob('suspendEndedTerms', suspendEndedTerms))
 }

@@ -8,9 +8,11 @@
  *  - **a redirect target** — the public tenant-by-slug lookup answers it with
  *    the studio's *current* Slug, and the frontends' proxies send the visitor
  *    there, path and query kept;
- *  - **held** — no Tenant may be created on it or renamed to it, so nobody can
- *    stand up on a studio's old address while its bookmarks, old emails and QR
- *    posters still point there.
+ *  - **held** — no *other* Tenant may be created on it or renamed to it, so
+ *    nobody can stand up on a studio's old address while its bookmarks, old
+ *    emails and QR posters still point there. The studio it belongs to may take
+ *    it back at any time — renaming straight back needs no wait — and doing so
+ *    ends the hold, because the address is that studio's current Slug again.
  *
  * It is never a Tenant. `resolveTenantBySlug` reads `tenants.slug` only, so the
  * API's tenant resolution refuses a former Slug exactly as it refuses one that
@@ -57,8 +59,19 @@ async function lockSlugs(tx: Executor): Promise<void> {
  *
  * `slug_taken` when a Tenant answers on it, `slug_held` when it is a former
  * Slug still inside its redirect window. Null when it is free.
+ *
+ * `forTenantId` names the studio that wants it, when one does (a rename). A
+ * studio's *own* former Slug is free to it: the hold exists to keep other
+ * studios off an address whose bookmarks and posters still point at this one,
+ * and handing the address back to the studio it points at is the one move that
+ * cannot strand anybody. So a studio may be renamed straight back, with no
+ * wait; another studio still may not take it until the window ends.
  */
-export async function slugConflict(reader: Reader, slug: string): Promise<SlugConflict | null> {
+export async function slugConflict(
+  reader: Reader,
+  slug: string,
+  forTenantId?: string,
+): Promise<SlugConflict | null> {
   const [current] = await reader
     .select({ id: tenants.id })
     .from(tenants)
@@ -67,11 +80,12 @@ export async function slugConflict(reader: Reader, slug: string): Promise<SlugCo
   if (current) return 'slug_taken'
 
   const [held] = await reader
-    .select({ slug: formerSlugs.slug })
+    .select({ slug: formerSlugs.slug, renamedTenantId: formerSlugs.renamedTenantId })
     .from(formerSlugs)
     .where(and(eq(formerSlugs.slug, slug), gt(formerSlugs.redirectUntil, sql`now()`)))
     .limit(1)
-  return held ? 'slug_held' : null
+  if (!held) return null
+  return held.renamedTenantId === forTenantId ? null : 'slug_held'
 }
 
 /**
@@ -79,10 +93,17 @@ export async function slugConflict(reader: Reader, slug: string): Promise<SlugCo
  * Takes the lock, then refuses a slug that is taken or held; the caller writes
  * inside the same transaction. The one gate every slug-claiming write goes
  * through, so a new one cannot skip the lock.
+ *
+ * `forTenantId` is the renamed studio, which may reclaim its own former Slug —
+ * see `slugConflict`. Creating a studio names none.
  */
-export async function claimSlug(tx: Reader & Executor, slug: string): Promise<void> {
+export async function claimSlug(
+  tx: Reader & Executor,
+  slug: string,
+  forTenantId?: string,
+): Promise<void> {
   await lockSlugs(tx)
-  const conflict = await slugConflict(tx, slug)
+  const conflict = await slugConflict(tx, slug, forTenantId)
   if (conflict) throw new ConflictError(conflict, { slug })
 }
 
@@ -126,6 +147,19 @@ export async function clearExpired(tx: Deleter, slugs: string[]): Promise<void> 
   await tx
     .delete(formerSlugs)
     .where(and(inArray(formerSlugs.slug, slugs), lte(formerSlugs.redirectUntil, sql`now()`)))
+}
+
+/**
+ * Drop this studio's own former-Slug rows for these slugs, whatever their
+ * window. Called inside a rename: the Slug the studio is moving back to stops
+ * being a former one the moment it is current again, and a row left behind
+ * would redirect the studio's live address to itself and collide with the
+ * primary key the next time the studio moves away from it.
+ */
+export async function releaseOwn(tx: Deleter, tenantId: string, slugs: string[]): Promise<void> {
+  await tx
+    .delete(formerSlugs)
+    .where(and(inArray(formerSlugs.slug, slugs), eq(formerSlugs.renamedTenantId, tenantId)))
 }
 
 /**

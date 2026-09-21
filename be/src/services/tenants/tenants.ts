@@ -7,6 +7,7 @@ import { isUniqueViolation } from '../../db/unique-violation'
 import { ConflictError } from '../../shared/errors'
 import { claimSlug } from './former-slugs'
 import { assertUsableSlug, normaliseSlug } from './slug'
+import { DEFAULT_TIMEZONE, termEnded, todayFor } from './term-dates'
 
 /**
  * What a studio publishes about itself: the branding both frontends render
@@ -172,6 +173,9 @@ export type TenantRowSummary = {
   name: string
   timezone: string
   status: TenantStatus
+  /** The studio's Term, as calendar dates on its own clock — see `./term.ts`. */
+  termStartDate: string
+  termEndDate: string | null
   createdAt: Date
 }
 
@@ -190,6 +194,8 @@ export async function listTenants(): Promise<TenantSummary[]> {
         name: tenants.name,
         timezone: tenants.timezone,
         status: tenants.status,
+        termStartDate: tenants.termStartDate,
+        termEndDate: tenants.termEndDate,
         createdAt: tenants.createdAt,
       })
       .from(tenants)
@@ -246,7 +252,15 @@ export async function activateAfterFirstStaff(id: string): Promise<TenantRow | n
   const [row] = await db
     .update(tenants)
     .set({ status: 'active', updatedAt: new Date() })
-    .where(and(eq(tenants.id, id), eq(tenants.status, 'suspended')))
+    .where(
+      and(
+        eq(tenants.id, id),
+        eq(tenants.status, 'suspended'),
+        // Nor a studio whose Term has ended: that suspension has a reason of
+        // its own, which gaining staff does not remove.
+        sql`(${tenants.termEndDate} IS NULL OR (now() AT TIME ZONE ${tenants.timezone})::date < ${tenants.termEndDate})`,
+      ),
+    )
     .returning()
 
   if (row) forgetCachedTenants()
@@ -257,10 +271,12 @@ export async function activateAfterFirstStaff(id: string): Promise<TenantRow | n
  * Suspend, reactivate or archive a studio.
  *
  * Status is the *only* thing that changes: suspending retains every row the
- * studio owns, and reactivating is the same call in reverse. Deleting a tenant
- * is deliberately not offered here — `tenant_id` is `ON DELETE RESTRICT`
- * everywhere, so a delete would have to cascade through 55 tables, and the
- * decision to destroy a business's data is not a button.
+ * studio owns, and reactivating is the same call in reverse. Deleting a studio
+ * is a different act with its own preconditions — `./delete.ts`.
+ *
+ * Reactivating a studio whose Term has ended is refused (`tenant_term_ended`):
+ * it would count as suspended again on its very next request, and the next
+ * sweep would write that down. The Term is extended first (`./term.ts`).
  *
  * The memo is dropped afterwards, because every one of those caches would
  * otherwise keep serving the old status for up to a minute.
@@ -269,6 +285,14 @@ export async function setTenantStatus(
   id: string,
   status: TenantStatus,
 ): Promise<TenantRowSummary | null> {
+  if (status === 'active') {
+    const [current] = await db.select().from(tenants).where(eq(tenants.id, id)).limit(1)
+    if (!current) return null
+    if (termEnded(current)) {
+      throw new ConflictError('tenant_term_ended', { termEndDate: current.termEndDate })
+    }
+  }
+
   const [row] = await db
     .update(tenants)
     .set({ status, updatedAt: new Date() })
@@ -279,6 +303,8 @@ export async function setTenantStatus(
       name: tenants.name,
       timezone: tenants.timezone,
       status: tenants.status,
+      termStartDate: tenants.termStartDate,
+      termEndDate: tenants.termEndDate,
       createdAt: tenants.createdAt,
     })
 
@@ -312,6 +338,8 @@ export async function createTenant(input: CreateTenantInput): Promise<ResolvedTe
           slug,
           name: input.name,
           ...(input.timezone ? { timezone: input.timezone } : {}),
+          // The Term starts today on the studio's own clock, not the database's.
+          termStartDate: todayFor(input.timezone ?? DEFAULT_TIMEZONE),
         })
         .returning()
       // Invariant: an insert that succeeds returns its row; a refused one throws.

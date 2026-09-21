@@ -12,6 +12,8 @@ process.env.PLATFORM_ADMIN_EMAIL = OPERATOR
 /**
  * Slug Rename (#174): a studio changes its web address from the super portal,
  * and its old address redirects for 90 days without ever resolving as a Tenant.
+ * The studio itself may be renamed straight back; no other studio may take the
+ * old address inside the window.
  *
  * Through the platform and public routes, against a real Postgres with the
  * Row-Level Security policies live — the email-template rewrite happens inside
@@ -185,6 +187,47 @@ describe('slug rename', { skip: integrationTestsEnabled ? false : SKIP_REASON },
     // Nothing moved for the studio that was refused.
     const [row] = await harness.db.select().from(schema.tenants).where(eq(schema.tenants.id, tenant.id))
     assert.equal(row?.slug, tenant.slug)
+  })
+
+  test('a studio can be renamed straight back to its old slug, and nobody else can take it', async () => {
+    const tenant = await studio('back')
+    const original = tenant.slug
+    const detour = `ren-back-detour-${run}`
+    const other = await studio('back-other')
+
+    await expectStatus(await rename(tenant.id, detour), 200)
+
+    // Held from everyone else — the form's check says so, and so does the rename…
+    const check = (slug: string, forTenant?: string) =>
+      harness.app.request(
+        `/api/v1/platform/tenants/slug-check/${slug}${forTenant ? `?tenant=${forTenant}` : ''}`,
+        { headers: { Authorization: operator.Authorization! } },
+      )
+    assert.equal((await expectStatus(await check(original), 200)).reason, 'slug_held')
+    assert.equal((await expectStatus(await check(original, other.id), 200)).reason, 'slug_held')
+    await expectStatus(await rename(other.id, original), 409, 'slug_held')
+
+    // …but free to the studio it belongs to, with no wait.
+    assert.equal((await expectStatus(await check(original, tenant.id), 200)).available, true)
+    const body = await expectStatus(await rename(tenant.id, original), 200)
+    assert.equal(body.tenant.slug, original)
+    assert.equal(body.former.slug, detour)
+
+    // The address it came back to is current again, not a former one; the
+    // detour is now the one that redirects, and is held from others in turn.
+    const formers = await harness.db
+      .select()
+      .from(schema.formerSlugs)
+      .where(eq(schema.formerSlugs.renamedTenantId, tenant.id))
+    assert.deepEqual(formers.map(f => f.slug), [detour])
+    const resolved = await expectStatus(await lookup(original), 200)
+    assert.equal(resolved.tenant.id, tenant.id)
+    assert.deepEqual(await expectStatus(await lookup(detour), 200), { moved_to: { slug: original } })
+    await expectStatus(await rename(other.id, detour), 409, 'slug_held')
+
+    // And back and forth again, as often as the operator likes.
+    await expectStatus(await rename(tenant.id, detour), 200)
+    await expectStatus(await rename(tenant.id, original), 200)
   })
 
   test('the slug check hands the confirm step the new addresses', async () => {

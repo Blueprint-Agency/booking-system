@@ -498,6 +498,20 @@
       "when": 1789915387008,
       "tag": "0070_member_saved_cards",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1790009916692,
+      "tag": "0071_tenant_term",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1790009938950,
+      "tag": "0072_tenant_term_backfill",
+      "breakpoints": true
     }
   ]
 }

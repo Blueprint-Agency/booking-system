@@ -54,6 +54,14 @@ thing that reads a former slug is the public slug lookup the frontends' proxies
 call: it answers `{ moved_to: { slug } }`, and the proxy sends a 308 to the
 same path and query on the new host. See `be/CONTEXT.md` § Former slug.
 
+A studio whose **Term** has ended still resolves — like a suspended one, so the
+frontends can show it paused — but it counts as suspended from the first moment
+of its end date on its own clock: the public slug lookup reports
+`status: 'suspended'`, and `requireActiveTenant` refuses `/me` and `/portal`
+with `403 tenant_suspended`. Both read `effectiveStatus`
+(`be/src/services/tenants/term-dates.ts`), so there is no gap while the
+15-minute sweep catches the stored status up. See `be/CONTEXT.md` § Term.
+
 Resolution also opens the database's tenant context — one transaction carrying
 `app.tenant_id`, which the Row-Level Security policies from #63 read back. The
 two are welded together deliberately: a request that reached a query with no

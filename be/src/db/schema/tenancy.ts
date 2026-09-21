@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, jsonb, timestamp, index } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, text, jsonb, timestamp, index, date } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { tenantStatusEnum } from '../enums'
 
@@ -49,6 +49,19 @@ export const tenants = pgTable(
     // right for tenant #1.
     timezone: text('timezone').notNull().default('Asia/Singapore'),
     status: tenantStatusEnum('status').notNull().default('active'),
+    // The studio's Term — the stretch of time it has paid for (see
+    // services/tenants/term.ts). Calendar dates on the studio's own clock
+    // (`timezone`), never instants. The start defaults to the day it was
+    // provisioned; the default here is only a backstop for an insert that names
+    // none, because `CURRENT_DATE` is the database's day, not the studio's.
+    termStartDate: date('term_start_date', { mode: 'string' })
+      .notNull()
+      .default(sql`CURRENT_DATE`),
+    // The first day the studio is no longer paid for: start + the duration the
+    // operator picked. Null is "no end set" — an open-ended Term, which every
+    // studio that predates Terms has until the operator gives it one. From this
+    // date on the studio counts as suspended wherever its status is read.
+    termEndDate: date('term_end_date', { mode: 'string' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

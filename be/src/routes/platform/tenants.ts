@@ -5,6 +5,8 @@ import { tenantOrigin } from '../../lib/allowed-origins'
 import { checkSlug } from '../../services/tenants/slug'
 import { inviteFirstAdmin, provisionTenant, slugConflictFor } from '../../services/tenants/provision'
 import { renameTenant } from '../../services/tenants/rename'
+import { deleteTenant } from '../../services/tenants/delete'
+import { isIsoDate, setTenantTerm, termEnded } from '../../services/tenants/term'
 import {
   listTenants,
   loadTenantById,
@@ -29,7 +31,7 @@ import { logger } from '../../shared/logger'
 
 /**
  * The super portal's route surface: create a studio, list them, change one's
- * status or its address. Few routes, because onboarding a studio should be a
+ * status, its Term or its address, and delete one that is already suspended. Few routes, because onboarding a studio should be a
  * one-minute job and everything else about a studio is administered from inside
  * it.
  *
@@ -51,6 +53,14 @@ function serialize(
     timezone: tenant.timezone,
     status: tenant.status,
     created_at: tenant.createdAt.toISOString(),
+    // The studio's Term (services/tenants/term.ts). `ended` is decided here on
+    // the studio's own clock, so the list says so the moment it happens even
+    // though `status` above only changes when the sweep writes it.
+    term: {
+      start_date: tenant.termStartDate,
+      end_date: tenant.termEndDate,
+      ended: termEnded(tenant),
+    },
     // Zero is the number that matters: a studio nobody can sign in to. It is a
     // legitimate step — a studio created to receive an archive starts here — and
     // a terrible resting place, so the list has to be able to say so.
@@ -97,6 +107,28 @@ const createBody = z.object({
   // all, because the archive brings its own and the import refuses to merge.
   admin_email: z.union([z.string().email(), z.literal('')]).optional(),
   admin_name: z.string().max(200).optional(),
+  // How long the first Term runs from today. Omitted leaves it open-ended.
+  term_months: z.union([z.literal(3), z.literal(6), z.literal(12)]).optional(),
+})
+
+/** A calendar date, `YYYY-MM-DD`, that exists. */
+const isoDate = z.string().refine(isIsoDate, { message: 'a date like 2026-01-31' })
+
+const termBody = z.object({
+  start_date: isoDate,
+  months: z.union([z.literal(3), z.literal(6), z.literal(12)]),
+})
+
+/**
+ * Deleting takes the studio's Slug, typed out, as well as its id — the id says
+ * which row, the Slug says the operator meant it.
+ */
+const deleteQuery = z.object({ confirm: z.string().min(1) })
+
+const slugCheckQuery = z.object({
+  // The studio being renamed, when the check is the rename form's: its own old
+  // addresses are free to it.
+  tenant: z.string().uuid().optional(),
 })
 
 /** Required here, unlike at creation: naming nobody would be a no-op. */
@@ -143,10 +175,10 @@ const app = new Hono()
    * Platform-admin-gated like everything else here: the same question asked
    * publicly would enumerate every studio on the platform.
    */
-  .get('/tenants/slug-check/:slug', async c => {
+  .get('/tenants/slug-check/:slug', zValidator('query', slugCheckQuery), async c => {
     const verdict = checkSlug(c.req.param('slug'))
     if (!verdict.ok) return c.json({ available: false, reason: verdict.reason })
-    const conflict = await slugConflictFor(verdict.slug)
+    const conflict = await slugConflictFor(verdict.slug, c.req.valid('query').tenant)
     return c.json({
       available: conflict === null,
       slug: verdict.slug,
@@ -169,6 +201,7 @@ const app = new Hono()
       timezone: body.timezone,
       adminEmail: body.admin_email,
       adminName: body.admin_name,
+      termMonths: body.term_months,
     })
 
     logger.info(
@@ -209,11 +242,79 @@ const app = new Hono()
   })
 
   /**
+   * Set a studio's Term: a start date and a duration of 3, 6 or 12 months. The
+   * end date is computed and stored (services/tenants/term.ts).
+   *
+   * Changes the Term only. Extending an ended Term does not reopen the studio —
+   * reactivating is the operator's separate act, through the status route.
+   */
+  .put('/tenants/:id/term', zValidator('json', termBody), async c => {
+    const id = z.string().uuid().safeParse(c.req.param('id'))
+    if (!id.success) return c.json({ error: ERROR_CODES.not_found }, 404)
+    const body = c.req.valid('json')
+
+    const tenant = await setTenantTerm(id.data, { startDate: body.start_date, months: body.months })
+
+    logger.warn(
+      {
+        tenantId: tenant.id,
+        termStartDate: tenant.termStartDate,
+        termEndDate: tenant.termEndDate,
+        by: c.get('platformAdminEmail'),
+      },
+      'platform: tenant term set',
+    )
+    return c.json({
+      tenant: serialize(tenant, await staffCountFor(tenant.id), await providerAccountStatus(tenant.id)),
+    })
+  })
+
+  /**
+   * Delete a studio and everything it owns (services/tenants/delete.ts).
+   *
+   * Refused while the studio is active (`tenant_not_suspended`) and unless
+   * `?confirm=` repeats its current Slug (`confirmation_mismatch`). Cannot be
+   * undone — export first.
+   */
+  .delete('/tenants/:id', zValidator('query', deleteQuery), async c => {
+    const id = z.string().uuid().safeParse(c.req.param('id'))
+    if (!id.success) return c.json({ error: ERROR_CODES.not_found }, 404)
+    const by = c.get('platformAdminEmail')
+
+    const deleted = await deleteTenant({ tenantId: id.data, confirmSlug: c.req.valid('query').confirm })
+
+    // The record of the deletion. The studio's own audit trail went with it, so
+    // this line — who, which studio, how much — is what remains.
+    logger.warn(
+      {
+        tenantId: deleted.id,
+        slug: deleted.slug,
+        rows: deleted.rows,
+        accounts: deleted.accounts,
+        objects: deleted.objects,
+        by,
+      },
+      'platform: tenant deleted',
+    )
+    return c.json({
+      deleted: {
+        id: deleted.id,
+        slug: deleted.slug,
+        rows: deleted.rows,
+        tables: deleted.tables,
+        accounts: deleted.accounts,
+        objects: deleted.objects,
+      },
+    })
+  })
+
+  /**
    * Rename a studio's Slug — change its web address.
    *
    * The old address keeps redirecting for 90 days and is held from every other
-   * studio meanwhile; see services/tenants/rename.ts. Platform administrators
-   * only: a studio's own admins ask the operator.
+   * studio meanwhile; the studio itself may be renamed straight back to it. See
+   * services/tenants/rename.ts. Platform administrators only: a studio's own
+   * admins ask the operator.
    */
   .post('/tenants/:id/slug', zValidator('json', renameBody), async c => {
     const id = z.string().uuid().safeParse(c.req.param('id'))

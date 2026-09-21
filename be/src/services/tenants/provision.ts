@@ -38,6 +38,7 @@ import { logger } from '../../shared/logger'
 import { inviterNameFor, mailInvitation, writePendingStaff, type StaffInvitationRow } from '../auth/invitations'
 import { claimSlug, slugConflict, type SlugConflict } from './former-slugs'
 import { assertUsableSlug } from './slug'
+import { DEFAULT_TIMEZONE, termEndDate, todayFor, type TermMonths } from './term-dates'
 import { activateAfterFirstStaff, forgetCachedTenants, loadTenantById } from './tenants'
 
 export interface ProvisionTenantInput {
@@ -55,6 +56,11 @@ export interface ProvisionTenantInput {
    */
   adminEmail?: string
   adminName?: string
+  /**
+   * How long the studio's first Term runs, from today on its own clock. Omitted
+   * leaves the Term open-ended until the operator sets one — see `./term.ts`.
+   */
+  termMonths?: TermMonths
 }
 
 export interface ProvisionedTenant {
@@ -163,12 +169,18 @@ export async function provisionTenant(input: ProvisionTenantInput): Promise<Prov
       // constraint spans the two tables that say so — see `claimSlug`.
       await claimSlug(tx, slug)
 
+      // The Term starts the day the studio is provisioned, on its own clock —
+      // not the database's `CURRENT_DATE`, which is the column's backstop only.
+      const termStartDate = todayFor(input.timezone ?? DEFAULT_TIMEZONE)
+
       const [tenant] = await tx
         .insert(tenants)
         .values({
           slug,
           name,
           ...(input.timezone ? { timezone: input.timezone } : {}),
+          termStartDate,
+          ...(input.termMonths ? { termEndDate: termEndDate(termStartDate, input.termMonths) } : {}),
           // A studio nobody can sign in to must not answer on its hostnames as
           // though it were open for business. Without a first admin it opens
           // `suspended`, and `activateAfterFirstStaff` lifts that the moment it
@@ -347,7 +359,13 @@ export async function inviteFirstAdmin(
  * Deliberately a *platform admin* route only. The same question asked publicly
  * would enumerate every studio on the platform, which is precisely what the
  * public resolver's uniform 404 exists to prevent.
+ *
+ * `forTenantId` asks on behalf of the rename form: a studio's own old address
+ * is free *to that studio*, so it can be renamed straight back.
  */
-export async function slugConflictFor(slug: string): Promise<SlugConflict | null> {
-  return slugConflict(db, assertUsableSlug(slug))
+export async function slugConflictFor(
+  slug: string,
+  forTenantId?: string,
+): Promise<SlugConflict | null> {
+  return slugConflict(db, assertUsableSlug(slug), forTenantId)
 }
