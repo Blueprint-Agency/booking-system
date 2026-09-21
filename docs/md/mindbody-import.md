@@ -23,7 +23,75 @@ pre-restore database is kept until dropped. What it does and every refusal:
 infrastructure repo, [`docs/backup-restore.md`](https://github.com/Blueprint-Agency/infrastructure/blob/main/docs/backup-restore.md),
 "Restore to live".
 
-## The transform (reports → studio archive)
+## 1. Before the day: the decisions
+
+Twenty decisions belong to the studio, not to the operator, and every one of them is a field in
+the studio config. `transform` refuses to run while any is open, so the day cannot start until
+they are settled. Walk this table with the studio's admin in a sitting of its own, well before
+the freeze — decisions 11 and 12 are fixed **in Mindbody**, so they have to be done before the
+*final* download, not after it.
+
+| # | Decision | What the studio provides | Default if they have no view |
+|---|---|---|---|
+| 1 | Studio identity | Slug, display name, timezone, owner's admin email | — (required) |
+| 2 | Locations | Name, address, phone for each | — (required) |
+| 3 | Rooms | Which Mindbody room spellings are one Room; capacity of each; which "rooms" are really off-site venues | Off-site venues dropped from Rooms |
+| 4 | Class capacity | Seats per class, per Room, with exceptions per class name | Room capacity |
+| 5 | Class Types | Which class names are the same Class Type (case, spacing and spelling variants) | Trimmed, case-folded name |
+| 6 | Catalogue | For every pricing option: `sell`, `legacy` or `skip`; and for `sell`, the list price, sessions and length | `legacy`, with the inferred sessions and length |
+| 7 | Credit cost | Credits per class | 1 |
+| 8 | Cancellation policy | Late-cancel window (hours) for classes and PT; cancellations allowed per cycle and cycle length. Note: on the platform a member cannot cancel inside the window at all | 24 h, 24 h, 3 per 30 days |
+| 9 | PT requests | How many days ahead a PT request stays open | 7 |
+| 10 | Staff | Email and role (Admin or Instructor) for each person migrated; who is the owner; which of two records sharing a name is which | Instructor; former teachers archived |
+| 11 | Members with no email | Real email, fixed in Mindbody before the final download | Placeholder email, fixed later by an admin |
+| 12 | Members sharing an email | Which member keeps it; real emails for the others | Most recent visitor keeps it; others get placeholders |
+| 13 | Two live packages at once | Accept "the one ending soonest runs, the others wait with their days left" | Accepted |
+| 14 | Unlimited Home Location | Location for plans whose name names none | The main Location |
+| 15 | Future workshops and retreats | Which to migrate; tier (room type) prices; how instalments count | All with paid attendees; price = amount paid |
+| 16 | Teacher pay | Use the pay-rate report's per-class amount for future classes; PT pay | Per-class rate; PT Unpriced |
+| 17 | History | How far back; whether past purchases appear in Finance | None on a quick rehearsal; classes and bookings from opening, purchases off |
+| 18 | Not migrated | How to track live mat storage, lone access passes and corporate balances by hand | Listed in the preflight report |
+| 19 | Class Series | Which weekly classes repeat, and the term end date to extend to | Proposed from the last 4 weeks |
+| 20 | Cutover timing | Freeze start, launch date, the date Mindbody may be cancelled | — (required) |
+
+The studio's own answers — its slug, its Locations, its owner's email — live in the private
+studio config beside the downloads. None of them belongs in this repository.
+
+Two more things to have in hand before the day:
+
+- **A rehearsal that passed.** Run the whole of this file on staging at least once, with the
+  history cutoff the launch will use, and keep the timings. See section 7.
+- **The preflight sent and answered.** The rehearsal's `<studio>.preflight.md` is the list the
+  studio works through in Mindbody: members with no email, members sharing one, and everything
+  still live that does not come across. It is much shorter on launch day if they fix it once,
+  early.
+
+## 2. The download (cutover profile)
+
+The download script lives **outside this repository**, because its config and its output name
+the studio. What belongs here is the shape of the profile it runs on the day:
+
+- **Only the reports the transform reads.** They are listed at the end of section 3, and nothing
+  else: the full 42-report run takes far longer, and the freeze is paid for in minutes.
+- **Schedule and roster ranges run from today into the future.** Staff Schedule (ALL,
+  "Scheduled") and Schedule at a Glance must reach the last date the studio has anything
+  scheduled — not "up to today", which is what an ordinary download does, and which would lose
+  every future class and every seat already booked on one. A studio bringing its past also needs
+  Attendance and Payroll (Detail) back to the history cutoff from decision 17.
+- **A capped or refused report is a hard failure.** Mindbody truncates a report that is too large
+  and says so quietly. The profile stops the run — not warns — on any report that comes back
+  capped, refused or short, because a silently truncated file transforms into a studio that has
+  simply lost those members, and nothing downstream can tell the difference.
+- **The finish time is recorded.** The moment the last report landed is the **"as of"** moment:
+  it is what `--as-of` is given, it is the day every live balance is true for, and it is the
+  moment the freeze has to cover from.
+
+**The freeze window** runs from the start of this download until verify passes. Through it the
+studio takes no bookings, no sales and no schedule changes in Mindbody. Anything typed into
+Mindbody after the "as of" moment is not in the archive, and an admin re-enters it on the
+platform by hand.
+
+## 3. The transform (reports → studio archive)
 
 The backend turns a folder of downloaded Mindbody reports plus a **studio config** into a zip
 the super portal's import reads (`be/src/mindbody/`). It needs no database and no backend
@@ -188,7 +256,121 @@ or reuse the sign-in account of every member and staff row by email, inside the 
 transaction; a failed import leaves no accounts behind. An archive without the flag (every
 export) still needs each row to name its account, as before.
 
-## 1. The import
+## 4. Launch day, in order
 
-_To be written with the import itself: mapping, import script, dry run, reconciliation gate,
-invitation batches and rollback window — issue #130. Keep step 0 at the top of this file._
+Every step in one sitting, in this order. Do not start until section 1 is settled, the
+rehearsal passed and the preflight has been answered.
+
+1. **Freeze Mindbody.** The studio stops taking bookings, sales and schedule changes. Tell them
+   in the room, not by email: from here on, anything typed into Mindbody is re-typed later.
+2. **Download**, with the cutover profile (section 2). Write down the finish time; that is
+   `--as-of` from here on. If any report came back capped or refused, stop — fix the range and
+   download again. Do not transform a short file.
+3. **Starter config.** Copy the rehearsal's config beside the new downloads, or, if the studio's
+   answers have changed, make a fresh one and fill it in again:
+
+   ```bash
+   cd be
+   npm run mindbody -- starter --reports <downloads dir> --out <config.json> --as-of <finish time>
+   ```
+
+   `starter` refuses to write over an existing config — it holds the `secret` the invitation
+   tokens are keyed by, and a person's answers. Reusing the rehearsal's config is the normal
+   path; check its catalogue against the new Pricing Option Expirations report, because an
+   option the studio started selling since the rehearsal is a new decision 6.
+4. **Back up production.** Section 0, in full. Write the snapshot id in the launch ticket. This
+   is the only way back, and a rehearsal does not excuse it.
+5. **Provision an empty Tenant**, in the super portal → **New studio**, with the config's
+   `studio.slug` and display name and **no first admin**. It opens suspended, which is right: a
+   studio nobody can sign in to should not answer as though it were open. Copy its id.
+
+   Provisioning *with* an admin email seeds templates and a staff row, and the import would
+   refuse the Tenant as not empty.
+6. **Transform**, for that Tenant id:
+
+   ```bash
+   npm run mindbody -- transform --reports <downloads dir> --config <config.json> \
+     --tenant <tenant id> --out <studio.zip>
+   ```
+
+   It refuses while any config field is open and names every one. Read the counts it prints and
+   the new `<studio>.preflight.md` before going on: a preflight that grew since the rehearsal
+   means something changed in Mindbody that nobody mentioned.
+7. **Import.** Super portal → the Tenant → **Import**, and upload `studio.zip`. It is
+   all-or-nothing: a failure leaves the Tenant empty and you import again. The owner's staff row
+   arrives active, and the Tenant opens at that moment. Allow a couple of minutes for a studio
+   with history, and do not assume it has hung.
+8. **Verify**, before anybody books. Super portal → the Tenant → **Export**, then:
+
+   ```bash
+   npm run mindbody -- verify --expected <studio.expected.json> --export <exported.zip>
+   ```
+
+   It exits non-zero on any difference and lists each one by member, class, workshop or year.
+   **A non-zero verify stops the launch**: go to section 6, do not fix rows by hand.
+9. **The owner gets in.** The owner is an active Admin with no password yet, so they set one
+   from the portal's **Forgot password** at `{slug}.portal.reservetoday.app` using the config's
+   `studio.ownerEmail`. Have them do it with you, and confirm they can see the schedule and the
+   member list.
+10. **The owner invites staff.** Portal → Staff. Everyone else arrived pending with an
+    invitation; the owner sends or resends each one. Invitations expire 7 days after the "as of"
+    moment, and resending extends the link, so a late one is not a blocker.
+11. **Extend the imported Class Series.** Portal → Schedule → open any class of a series → the
+    Series panel → **Extend**, to the term end date from decision 19. The imported timetable
+    stops at the last class Mindbody had; this is what carries it forward. Preview shows every
+    date and its clashes before anything is created, and extend never duplicates a date that
+    already has a class.
+12. **Open to members.** The Tenant has been active since step 7 and its address works, so this
+    last step is the announcement, not a switch: the studio tells members the new address, and
+    each member types their email and is sent a link to set a password. The platform sends
+    nothing to members on its own. Only now is the freeze over, and the studio starts taking
+    bookings on the platform instead of Mindbody.
+
+Keep Mindbody readable — not writable — until the date in decision 20, so a question about a
+member's history has somewhere to go.
+
+## 5. What "done" looks like
+
+- `verify` exited zero.
+- The owner has signed into the portal.
+- Every migrated staff member has an invitation sent (or resent) and not revoked.
+- Every series in the config has classes to the term end date.
+- The preflight's open lines have an owner: members on a placeholder email, live mat storage,
+  lone access passes and corporate balances are all tracked by hand by the studio, not by the
+  platform.
+
+## 6. Rollback
+
+Rollback is a restore, not a repair. Never edit imported rows to make verify pass: the archive
+is deterministic, so a rerun of the same reports and the same config gives the same studio, and
+a hand-edited one gives something nobody can reproduce.
+
+1. Tell the studio the freeze holds. Mindbody stays frozen; it is still the system of record.
+2. Restore the snapshot from step 4, with the command in section 0. It restores beside live,
+   snapshots live again, then swaps the two in one transaction, so the failed attempt is kept
+   until it is dropped.
+3. Fix the cause — nearly always the config, or a report that came back short.
+4. Provision a **fresh empty Tenant** and import into that. Re-importing into a Tenant that
+   already has rows is refused, and rightly.
+5. Verify again. The freeze lifts only when it passes.
+
+If the restore itself misbehaves, every refusal it can give is documented in the infrastructure
+repo, [`docs/backup-restore.md`](https://github.com/Blueprint-Agency/infrastructure/blob/main/docs/backup-restore.md),
+"Restore to live".
+
+## 7. Rehearsing on staging
+
+The rehearsal is the same file, start to finish, against staging: `booking-staging` in step 4,
+the staging super portal in steps 5, 7 and 8, `{slug}.portal.reservetoday.app` on staging in
+step 9. Two differences and nothing else:
+
+- The downloads are real, and so is the history cutoff the launch will use. A rehearsal on a
+  `history: null` config proves the timetable and the packages, not the import's size; run at
+  least one with the real cutoff, which doubles as the production-sized dataset.
+- Mindbody is not frozen, so the figures move under you. That is fine: verify compares the
+  archive with what was imported, not with Mindbody.
+
+Record, on the rehearsal's ticket: how long the download took, how long the transform took, how
+long the import took, what verify said, and every gap found — a config field nobody could
+answer, a report that came back capped, a preflight line the studio had not seen. Those timings
+are what the freeze window is budgeted from.
