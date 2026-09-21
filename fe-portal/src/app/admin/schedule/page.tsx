@@ -369,6 +369,10 @@ export default function SchedulePage() {
                   monthStart={startOfMonth(cursor)}
                   entries={visibleEntries}
                   onPickDay={addMode ? (d) => pickSlot(daySlot(d)) : null}
+                  onOpenDay={(d) => {
+                    setCursor(d);
+                    setView("day");
+                  }}
                 />
               )}
             </>
@@ -566,10 +570,12 @@ function MonthView({
   monthStart,
   entries,
   onPickDay,
+  onOpenDay,
 }: {
   monthStart: Date;
   entries: Entry[];
   onPickDay: ((day: Date) => void) | null;
+  onOpenDay: (day: Date) => void;
 }) {
   const gridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
   const days = eachDayOfInterval({ start: gridStart, end: addDays(gridStart, 41) });
@@ -605,7 +611,7 @@ function MonthView({
                 getDay(day) % 7 === 0 && "border-r-0"
               )}
             >
-              {onPickDay && (
+              {onPickDay ? (
                 // Month cells carry no time, so picking one seeds the default
                 // hour and the form takes it from there.
                 <button
@@ -619,8 +625,17 @@ function MonthView({
                     {format(day, "d MMM")}
                   </span>
                 </button>
+              ) : (
+                // Unarmed, the cell opens that day. It sits under the content,
+                // which lets clicks fall through to it except on the chips.
+                <button
+                  type="button"
+                  onClick={() => onOpenDay(day)}
+                  aria-label={`Open ${format(day, "EEEE d MMMM")}`}
+                  className="absolute inset-0 z-0 transition-colors hover:bg-accent/[0.06] focus-visible:bg-accent/10 focus-visible:outline-none"
+                />
               )}
-              <div className="mb-1 flex items-center justify-between">
+              <div className="pointer-events-none relative mb-1 flex items-center justify-between">
                 <span
                   className={cn(
                     "inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-medium",
@@ -639,13 +654,13 @@ function MonthView({
                   </span>
                 )}
               </div>
-              <ul className="space-y-1">
+              <ul className="pointer-events-none relative space-y-1">
                 {visible.map((e) => (
                   <li key={`${e.kind}-${e.id}`}>
                     <Link
                       href={`/admin/schedule/${e.kind}/${e.kind === "workshop" ? e.raw.id : e.id}`}
                       className={cn(
-                        "flex items-center gap-1 truncate rounded-sm border-l-[3px] px-1.5 py-1 text-[11px] font-semibold text-ink transition-all hover:-translate-y-px hover:shadow-sm",
+                        "pointer-events-auto flex items-center gap-1 truncate rounded-sm border-l-[3px] px-1.5 py-1 text-[11px] font-semibold text-ink transition-all hover:-translate-y-px hover:shadow-sm",
                         kindClasses(e)
                       )}
                       title={`${formatTime(e.startsAt)} · ${e.label}`}
@@ -871,38 +886,64 @@ interface PositionedEvent {
   width: number;
 }
 
+/**
+ * Packs a day's events into side-by-side columns. A chain of staggered classes
+ * (9:30, 9:45, 10:15, 11:00 …) is one overlap group, but it only needs as many
+ * columns as classes actually run at once — so each event takes the first
+ * column that is free by its start, then widens right across any columns that
+ * stay free for its whole length.
+ */
 function layoutEvents(entries: Entry[]): PositionedEvent[] {
-  const sorted = [...entries].sort((a, b) =>
-    a.startsAt.localeCompare(b.startsAt)
-  );
+  const items = entries
+    .map((entry) => ({
+      entry,
+      start: parseISO(entry.startsAt).getTime(),
+      end: parseISO(entry.endsAt).getTime(),
+      col: 0,
+    }))
+    .sort((a, b) => a.start - b.start || b.end - a.end);
+
   const out: PositionedEvent[] = [];
-  let i = 0;
-  while (i < sorted.length) {
-    // collect overlap cluster
-    const cluster: Entry[] = [sorted[i]];
-    let clusterEnd = parseISO(sorted[i].endsAt).getTime();
-    let j = i + 1;
-    while (j < sorted.length) {
-      const startMs = parseISO(sorted[j].startsAt).getTime();
-      if (startMs < clusterEnd) {
-        cluster.push(sorted[j]);
-        clusterEnd = Math.max(clusterEnd, parseISO(sorted[j].endsAt).getTime());
-        j++;
-      } else break;
+  let group: typeof items = [];
+  let groupEnd = -Infinity;
+
+  const flush = () => {
+    const colEnds: number[] = [];
+    for (const item of group) {
+      const free = colEnds.findIndex((end) => end <= item.start);
+      item.col = free === -1 ? colEnds.length : free;
+      colEnds[item.col] = item.end;
     }
-    cluster.forEach((entry, idx) => {
-      const pos = computeYBounds(entry);
-      const colWidth = 100 / cluster.length;
+    const cols = colEnds.length;
+    for (const item of group) {
+      let span = 1;
+      while (
+        item.col + span < cols &&
+        !group.some(
+          (o) =>
+            o.col === item.col + span && o.start < item.end && o.end > item.start
+        )
+      ) {
+        span++;
+      }
+      const pos = computeYBounds(item.entry);
       out.push({
-        entry,
+        entry: item.entry,
         top: pos.top,
         height: pos.height,
-        left: idx * colWidth,
-        width: colWidth,
+        left: (item.col / cols) * 100,
+        width: (span / cols) * 100,
       });
-    });
-    i = j;
+    }
+    group = [];
+  };
+
+  for (const item of items) {
+    if (item.start >= groupEnd) flush();
+    group.push(item);
+    groupEnd = Math.max(groupEnd, item.end);
   }
+  flush();
   return out;
 }
 
