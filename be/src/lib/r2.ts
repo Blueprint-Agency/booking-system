@@ -1,4 +1,10 @@
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import {
+  DeleteObjectsCommand,
+  GetObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { outbound, VENDOR_DEADLINE_MS } from './outbound'
 
@@ -68,6 +74,43 @@ export async function putObject(key: string, body: Uint8Array, contentType: stri
       { abortSignal },
     ),
   )
+}
+
+/**
+ * Delete every object whose key starts with `prefix`, a page at a time, and
+ * return how many went. Used to take a deleted studio's uploads with it
+ * (`t/<tenant id>/`, see `lib/object-key.ts`).
+ *
+ * The caller is responsible for the prefix being narrow: an empty or bucket-wide
+ * prefix is refused here rather than trusted.
+ */
+export async function deleteObjectsUnder(prefix: string): Promise<number> {
+  // Invariant: callers pass a tenant's own folder — never the bucket root.
+  if (!prefix || !prefix.endsWith('/') || prefix === '/') {
+    throw new Error(`refusing to delete under a prefix that is not a folder: "${prefix}"`)
+  }
+  let deleted = 0
+  let token: string | undefined
+  do {
+    const page = await outbound('storage', 'listObjects', abortSignal =>
+      r2.send(
+        new ListObjectsV2Command({ Bucket: R2_BUCKET, Prefix: prefix, ContinuationToken: token }),
+        { abortSignal },
+      ),
+    )
+    const keys = (page.Contents ?? []).flatMap(o => (o.Key ? [{ Key: o.Key }] : []))
+    if (keys.length > 0) {
+      await outbound('storage', 'deleteObjects', abortSignal =>
+        r2.send(
+          new DeleteObjectsCommand({ Bucket: R2_BUCKET, Delete: { Objects: keys, Quiet: true } }),
+          { abortSignal },
+        ),
+      )
+      deleted += keys.length
+    }
+    token = page.IsTruncated ? page.NextContinuationToken : undefined
+  } while (token)
+  return deleted
 }
 
 /** A signed GET, valid for `expiresIn` seconds. Generated per request, never

@@ -48,6 +48,10 @@ export async function listMyWorkshopBookings(
       cancelledAt: bookings.cancelledAt,
       code: bookings.code,
       qrToken: bookings.qrToken,
+      // Workshop money is frozen on the booking itself (§15), so it is read
+      // here rather than derived from the tier — a place bought at an early
+      // bird, with a Promo Code, or in instalments cost what it cost.
+      amountPaidSgd: bookings.amountPaidSgd,
       workshopName: workshops.name,
       workshopLocationId: workshops.locationId,
       tierName: workshopTiers.name,
@@ -127,7 +131,7 @@ export async function listMyWorkshopBookings(
       location: r.workshopLocationId ? locationById.get(r.workshopLocationId) ?? null : null,
       starts_at: range?.startsAt ?? null,
       ends_at: range?.endsAt ?? null,
-      amount_paid_sgd: null,
+      amount_paid_sgd: r.amountPaidSgd,
     }
   })
 }

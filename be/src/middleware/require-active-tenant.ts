@@ -1,4 +1,5 @@
 import type { MiddlewareHandler } from 'hono'
+import { effectiveStatus } from '../services/tenants/term-dates'
 import { loadTenantById } from '../services/tenants/tenants'
 import { tenantId } from './tenant'
 import { ERROR_CODES } from '../shared/error-codes'
@@ -29,12 +30,15 @@ export const requireActiveTenant: MiddlewareHandler = async (c, next) => {
   // would be worse than refusing.
   if (!tenant) return c.json({ error: ERROR_CODES.not_found }, 404)
 
-  if (tenant.status !== 'active') {
+  // Effective, not stored: a studio whose Term has ended is suspended from that
+  // moment, whether or not the sweep has written it down yet (services/tenants/term.ts).
+  const status = effectiveStatus(tenant)
+  if (status !== 'active') {
     logger.info(
-      { tenantId: id, slug: tenant.slug, status: tenant.status, path: c.req.path },
+      { tenantId: id, slug: tenant.slug, status, path: c.req.path },
       'tenant: refused a request to a studio that is not active',
     )
-    return c.json({ error: ERROR_CODES.tenant_suspended, status: tenant.status }, 403)
+    return c.json({ error: ERROR_CODES.tenant_suspended, status }, 403)
   }
 
   await next()

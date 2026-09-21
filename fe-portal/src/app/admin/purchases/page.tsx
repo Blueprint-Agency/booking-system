@@ -132,7 +132,7 @@ export default function UnfinishedPurchasesPage() {
                     <p className="truncate text-sm font-medium text-ink">{p.item_name}</p>
                     <p className="mt-1 text-xs text-muted">
                       <Link
-                        href={`/admin/clients/${p.client_id}`}
+                        href={`/admin/customers/${p.client_id}`}
                         className="underline underline-offset-2 hover:text-ink"
                       >
                         {p.client_name}

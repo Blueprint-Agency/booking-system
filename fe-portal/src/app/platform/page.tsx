@@ -1,36 +1,53 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  CalendarClock,
   CreditCard,
   Download,
   ExternalLink,
   Loader2,
+  MoreHorizontal,
   Pause,
   PenLine,
   Play,
   Plus,
+  Trash2,
   Upload,
   UserPlus,
+  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button, EmptyState, PageHeader, StatusBadge } from "@/components/ui";
 import { CreateTenantDialog } from "@/components/platform/create-tenant-dialog";
+import { DeleteTenantDialog } from "@/components/platform/delete-tenant-dialog";
 import { InviteFirstAdminDialog } from "@/components/platform/invite-first-admin-dialog";
 import { RenameTenantDialog } from "@/components/platform/rename-tenant-dialog";
 import { PaymentCredentialsDialog } from "@/components/platform/payment-credentials-dialog";
+import { TenantTermDialog } from "@/components/platform/tenant-term-dialog";
 import { ApiError, makeApi } from "@/lib/api";
 import {
+  TENANT_REFUSALS,
   exportTenant,
+  formatTermDate,
   importTenant,
   listTenants,
   setTenantStatus,
   type PlatformTenant,
 } from "@/lib/platform";
+
+/** One line saying how long a studio is paid for, and whether that has run out. */
+function termLine(tenant: PlatformTenant): string {
+  const from = formatTermDate(tenant.term.start_date);
+  if (!tenant.term.end_date) return `Term from ${from} · no end date`;
+  const to = formatTermDate(tenant.term.end_date);
+  return tenant.term.ended ? `Term ${from} – ${to} · ended` : `Term ${from} – ${to}`;
+}
 import { getPortalToken, usePortalSession } from "@/lib/portal-auth";
 
 /**
  * Every studio on the platform, and the few things that are done to one from
- * outside it: create, suspend, rename, and move its data in or out.
+ * outside it: create, suspend, rename, set its Term, move its data in or out,
+ * and — once suspended — delete it.
  *
  * Everything else about a studio is administered from inside the studio, by its
  * own admins. This page stays deliberately thin — a super portal that grew a
@@ -53,6 +70,10 @@ export default function PlatformPage() {
   const [renaming, setRenaming] = useState<PlatformTenant | null>(null);
   /** The studio whose payment account is being set, or null. */
   const [payingFor, setPayingFor] = useState<PlatformTenant | null>(null);
+  /** The studio whose Term is being set, or null. */
+  const [termFor, setTermFor] = useState<PlatformTenant | null>(null);
+  /** The studio the delete dialog is open for, or null. */
+  const [deleting, setDeleting] = useState<PlatformTenant | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   /** One file input serves every row; this is the studio the picker is for. */
   const [importTarget, setImportTarget] = useState<PlatformTenant | null>(null);
@@ -107,8 +128,16 @@ export default function PlatformPage() {
       const { tenant: updated } = await setTenantStatus(api, tenant.id, next);
       setTenants(rows => (rows ?? []).map(row => (row.id === updated.id ? updated : row)));
       toast.success(next === "suspended" ? `${tenant.name} suspended.` : `${tenant.name} reactivated.`);
-    } catch {
-      toast.error("Could not change the studio's status.");
+    } catch (err) {
+      // A studio whose Term has ended cannot be reactivated until the Term is
+      // extended — say so, rather than a bare failure.
+      const code =
+        err instanceof ApiError && err.body && typeof err.body === "object"
+          ? (err.body as { error?: string }).error
+          : undefined;
+      toast.error(
+        code && TENANT_REFUSALS[code] ? TENANT_REFUSALS[code] : "Could not change the studio's status.",
+      );
     } finally {
       setBusyId(null);
     }
@@ -225,9 +254,19 @@ export default function PlatformPage() {
                   {tenant.staff_count === 0 && (
                     <StatusBadge status="incomplete" label="No way in" />
                   )}
+                  {/* The Term runs out before the sweep writes `suspended`; the
+                      studio is already refused, so the list says so too. */}
+                  {tenant.term.ended && tenant.status === "active" && (
+                    <StatusBadge status="suspended" label="Term ended" />
+                  )}
                 </div>
                 <p className="mt-1 truncate text-sm text-muted">
                   {tenant.slug} · {tenant.timezone}
+                </p>
+                <p
+                  className={`mt-0.5 truncate text-sm ${tenant.term.ended ? "text-error" : "text-muted"}`}
+                >
+                  {termLine(tenant)}
                 </p>
                 {/* Whose account this studio's money lands in. Worth a line of
                     its own rather than a badge: "the platform's" is a correct,
@@ -263,12 +302,15 @@ export default function PlatformPage() {
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
+              {/* One visible action at most — the thing this studio is waiting
+                  on — and everything else behind the menu. Most of these are
+                  done once in a studio's life; eight equal buttons on every row
+                  made the rare, dangerous ones as loud as the routine ones. */}
+              <div className="flex items-center gap-2">
                 {/* Offered only while the studio has nobody, because that is the
                     only case the backend accepts: adding the rest of a working
-                    studio's staff is that studio's own job. First in the row —
-                    for a studio in this state it is the only action that
-                    changes anything. */}
+                    studio's staff is that studio's own job. For a studio in this
+                    state it is the only action that changes anything. */}
                 {tenant.staff_count === 0 && tenant.status !== "archived" && (
                   <Button onClick={() => setInviting(tenant)}>
                     <UserPlus className="h-4 w-4" />
@@ -276,78 +318,53 @@ export default function PlatformPage() {
                   </Button>
                 )}
 
-                {/* An archived studio takes no money, so there is nothing to
-                    point at an account. */}
-                {tenant.status !== "archived" && (
-                  <Button
-                    variant="secondary"
-                    disabled={isBusy(tenant.id)}
-                    onClick={() => setPayingFor(tenant)}
-                  >
-                    <CreditCard className="h-4 w-4" />
-                    Payments
-                  </Button>
-                )}
-
-                {/* Export first, and available whatever the studio's status —
-                    taking a copy is the one action that is always safe, and the
-                    moment an operator most wants it is right before they do
-                    something they might regret. */}
-                <Button
-                  variant="secondary"
-                  disabled={isBusy(tenant.id)}
-                  onClick={() => void downloadArchive(tenant)}
-                >
-                  {busyId === `export:${tenant.id}` ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Download className="h-4 w-4" />
-                  )}
-                  Export
-                </Button>
-
-                <Button
-                  variant="secondary"
-                  disabled={isBusy(tenant.id)}
-                  onClick={() => pickArchiveFor(tenant)}
-                >
-                  {busyId === `import:${tenant.id}` ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Upload className="h-4 w-4" />
-                  )}
-                  Import
-                </Button>
-
-                {tenant.status !== "archived" && (
-                  <Button
-                    variant="secondary"
-                    disabled={isBusy(tenant.id)}
-                    onClick={() => setRenaming(tenant)}
-                  >
-                    <PenLine className="h-4 w-4" />
-                    Rename
-                  </Button>
-                )}
-
-                {/* Archived studios are terminal here: bringing one back is a
-                    decision with data-retention consequences, not a toggle. */}
-                {tenant.status !== "archived" && (
-                  <Button
-                    variant="secondary"
-                    disabled={isBusy(tenant.id)}
-                    onClick={() => void toggleSuspension(tenant)}
-                  >
-                    {busyId === tenant.id ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : tenant.status === "active" ? (
-                      <Pause className="h-4 w-4" />
-                    ) : (
-                      <Play className="h-4 w-4" />
-                    )}
-                    {tenant.status === "active" ? "Suspend" : "Reactivate"}
-                  </Button>
-                )}
+                <RowMenu
+                  label={`Actions for ${tenant.name}`}
+                  busy={isBusy(tenant.id)}
+                  groups={[
+                    // An archived studio is terminal here: it takes no money,
+                    // keeps its name, and bringing it back is a decision with
+                    // data-retention consequences, not a toggle.
+                    tenant.status !== "archived"
+                      ? [
+                          { icon: PenLine, label: "Rename", onSelect: () => setRenaming(tenant) },
+                          { icon: CalendarClock, label: "Set term", onSelect: () => setTermFor(tenant) },
+                          { icon: CreditCard, label: "Payments", onSelect: () => setPayingFor(tenant) },
+                        ]
+                      : [],
+                    // Export available whatever the studio's status — taking a
+                    // copy is the one action that is always safe, and the moment
+                    // an operator most wants it is right before they do
+                    // something they might regret.
+                    [
+                      { icon: Download, label: "Export archive", onSelect: () => void downloadArchive(tenant) },
+                      { icon: Upload, label: "Restore archive", onSelect: () => pickArchiveFor(tenant) },
+                    ],
+                    [
+                      ...(tenant.status !== "archived"
+                        ? [
+                            {
+                              icon: tenant.status === "active" ? Pause : Play,
+                              label: tenant.status === "active" ? "Suspend" : "Reactivate",
+                              // A studio whose Term has ended is reactivated by
+                              // extending the Term first; the item says why.
+                              disabledReason:
+                                tenant.status !== "active" && tenant.term.ended
+                                  ? "Term has ended — extend it first"
+                                  : undefined,
+                              onSelect: () => void toggleSuspension(tenant),
+                            },
+                          ]
+                        : []),
+                      // Only once the studio is closed: the backend refuses to
+                      // delete an active studio, and suspending first is the
+                      // reversible step that proves nobody is working in it.
+                      ...(tenant.status !== "active"
+                        ? [{ icon: Trash2, label: "Delete studio", danger: true, onSelect: () => setDeleting(tenant) }]
+                        : []),
+                    ],
+                  ]}
+                />
               </div>
             </li>
           ))}
@@ -392,10 +409,38 @@ export default function PlatformPage() {
         }}
       />
 
+      <TenantTermDialog
+        // Keyed on the studio, so each opening starts from that studio's Term.
+        key={`term:${termFor?.id ?? "none"}`}
+        api={api}
+        tenant={termFor}
+        onOpenChange={open => {
+          if (!open) setTermFor(null);
+        }}
+        onSaved={updated => {
+          setTermFor(null);
+          setTenants(rows => (rows ?? []).map(row => (row.id === updated.id ? updated : row)));
+        }}
+      />
+
+      <DeleteTenantDialog
+        // Keyed on the studio, so the confirmation field starts empty each time.
+        key={`delete:${deleting?.id ?? "none"}`}
+        api={api}
+        tenant={deleting}
+        onOpenChange={open => {
+          if (!open) setDeleting(null);
+        }}
+        onDeleted={gone => {
+          setDeleting(null);
+          setTenants(rows => (rows ?? []).filter(row => row.id !== gone.id));
+        }}
+      />
+
       <InviteFirstAdminDialog
         // Keyed on the studio, so closing the dialog remounts it empty rather
         // than carrying one studio's half-typed address into the next.
-        key={inviting?.id ?? "none"}
+        key={`invite:${inviting?.id ?? "none"}`}
         api={api}
         tenant={inviting}
         onOpenChange={open => {
@@ -414,7 +459,7 @@ export default function PlatformPage() {
         // Keyed on the studio, so closing remounts it empty — a secret key
         // half-typed for one studio must never still be in the field under
         // another studio's name.
-        key={payingFor?.id ?? "none"}
+        key={`pay:${payingFor?.id ?? "none"}`}
         api={api}
         // Read back out of the freshly loaded list rather than held as a
         // snapshot: saving credentials changes what the dialog says about the
@@ -430,5 +475,99 @@ export default function PlatformPage() {
         }}
       />
     </>
+  );
+}
+
+type RowAction = {
+  icon: LucideIcon;
+  label: string;
+  onSelect: () => void;
+  danger?: boolean;
+  /** Shown under the label, and the item is inert, when set. */
+  disabledReason?: string;
+};
+
+/**
+ * The ⋯ menu on a studio row. Groups are separated by a rule and empty ones
+ * dropped, so the same call serves an active, suspended and archived studio.
+ * While anything is in flight for the studio the trigger spins and refuses to
+ * open — a second click during an import would upload the same archive twice.
+ */
+function RowMenu({ label, busy, groups }: { label: string; busy: boolean; groups: RowAction[][] }) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const shown = groups.filter(group => group.length > 0);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointer(event: PointerEvent) {
+      if (!root.current?.contains(event.target as Node)) setOpen(false);
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpen(false);
+        trigger.current?.focus();
+      }
+    }
+    document.addEventListener("pointerdown", onPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={root} className="relative">
+      <Button
+        ref={trigger}
+        variant="secondary"
+        size="icon"
+        aria-label={label}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        disabled={busy}
+        onClick={() => setOpen(o => !o)}
+      >
+        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <MoreHorizontal className="h-4 w-4" />}
+      </Button>
+
+      {open && (
+        <div
+          role="menu"
+          aria-label={label}
+          className="absolute right-0 top-full z-20 mt-1 w-56 rounded-md border border-border bg-card p-1 shadow-soft"
+        >
+          {shown.map((group, i) => (
+            <div key={i} className={i > 0 ? "mt-1 border-t border-border pt-1" : undefined}>
+              {group.map(action => (
+                <button
+                  key={action.label}
+                  type="button"
+                  role="menuitem"
+                  disabled={Boolean(action.disabledReason)}
+                  onClick={() => {
+                    setOpen(false);
+                    action.onSelect();
+                  }}
+                  className={`flex w-full items-start gap-2.5 rounded px-3 py-2 text-left text-sm hover:bg-paper disabled:pointer-events-none disabled:opacity-60 ${
+                    action.danger ? "text-error" : "text-ink"
+                  }`}
+                >
+                  <action.icon className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>
+                    {action.label}
+                    {action.disabledReason && (
+                      <span className="block text-xs text-muted">{action.disabledReason}</span>
+                    )}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

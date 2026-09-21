@@ -49,7 +49,9 @@ export function RenameTenantDialog({ api, tenant, onOpenChange, onRenamed }: Ren
     setChecking(true);
     const timer = setTimeout(async () => {
       try {
-        const result = await checkSlug(api, slug);
+        // Asked as this studio, so one of its own old addresses shows as free:
+        // renaming straight back needs no wait.
+        const result = await checkSlug(api, slug, tenant.id);
         if (!cancelled) setVerdict(result);
       } catch {
         // The rename itself refuses the same slugs for the same reasons.
@@ -152,7 +154,7 @@ export function RenameTenantDialog({ api, tenant, onOpenChange, onRenamed }: Ren
               ) : slug && verdict?.available ? (
                 <span className="text-sage">“{slug}” is free.</span>
               ) : (
-                "The old address redirects here for 90 days, and no other studio can take it meanwhile."
+                "The old address redirects here for 90 days, and no other studio can take it meanwhile. This studio can be renamed back to it at any time."
               )}
             </p>
           </div>

@@ -1,6 +1,5 @@
 "use client";
 // FIXTURE-BACKED: reads static mock data from `@/data`, not the live backend.
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Menu, X, MapPin, Settings, ChevronDown } from "lucide-react";
@@ -11,17 +10,22 @@ import { cn } from "@/lib/utils";
 import { StudioMark } from "@/components/brand/studio-mark";
 import { visibleToRole } from "@/lib/staff-role";
 import { useWorkspace } from "@/lib/workspace-context";
+import {
+  SidebarBrand,
+  SidebarFrame,
+  SidebarHeading,
+  SidebarLink,
+  useRailTip,
+  useSidebar,
+} from "./sidebar";
 
 type BadgeMap = Partial<Record<NonNullable<NavItem["badgeKey"]>, number | undefined>>;
 
 function NavBrand() {
   return (
-    <Link
-      href="/admin/schedule"
-      className="group flex items-center gap-2.5 px-4 py-4 text-sm font-semibold tracking-tight text-ink"
-    >
+    <SidebarBrand href="/admin/schedule">
       <StudioMark />
-    </Link>
+    </SidebarBrand>
   );
 }
 
@@ -53,43 +57,15 @@ function NavLinkList({
             className={staggered ? "animate-slide-in-left" : undefined}
             style={staggered ? { animationDelay: `${idx * 45}ms` } : undefined}
           >
-            <Link
+            <SidebarLink
               href={item.href}
-              onClick={onNavigate}
-              aria-current={isActive ? "page" : undefined}
-              className={cn(
-                "group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all duration-150",
-                isActive
-                  ? "bg-accent/10 font-medium text-accent"
-                  : onAccent
-                  ? "text-ink/75 hover:bg-accent/[0.08] hover:text-ink"
-                  : "text-ink/90 hover:bg-warm/70 hover:text-ink"
-              )}
-            >
-              {isActive && (
-                <span
-                  aria-hidden="true"
-                  className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-accent"
-                />
-              )}
-              <item.icon
-                className={cn(
-                  "h-[18px] w-[18px] shrink-0 transition-colors",
-                  isActive ? "text-accent" : "text-muted group-hover:text-ink"
-                )}
-              />
-              <span className="flex-1 truncate">{item.label}</span>
-              {badge !== undefined && (
-                <span
-                  className={cn(
-                    "inline-flex min-w-[20px] justify-center rounded-full px-1.5 py-0.5 text-[11px] font-semibold tabular-nums",
-                    isActive ? "bg-accent/15 text-accent" : "bg-warning/20 text-warning"
-                  )}
-                >
-                  {badge}
-                </span>
-              )}
-            </Link>
+              label={item.label}
+              icon={item.icon}
+              active={isActive}
+              badge={badge}
+              onNavigate={onNavigate}
+              onAccent={onAccent}
+            />
           </li>
         );
       })}
@@ -114,13 +90,25 @@ function CollapsibleNavGroup({
     (i) => pathname === i.href || pathname.startsWith(i.href + "/")
   );
   const [open, setOpen] = useState(hasActiveChild);
+  const { collapsed } = useSidebar();
   // Auto-open when navigating into one of its children.
   useEffect(() => {
     if (hasActiveChild) setOpen(true);
   }, [hasActiveChild]);
 
+  // In the rail there is no room for a disclosure — its items sit flat, under a
+  // rule like every other group.
+  if (collapsed) {
+    return (
+      <div className="mb-4">
+        <SidebarHeading>{label}</SidebarHeading>
+        <NavLinkList items={items} pathname={pathname} onNavigate={onNavigate} badges={badges} />
+      </div>
+    );
+  }
+
   return (
-    <div className="mb-5">
+    <div className="mb-4">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
@@ -220,6 +208,8 @@ function NavContent({ pathname, onNavigate }: { pathname: string; onNavigate?: (
   const workspaceItems = visibleItems.filter((i) => i.workspaceScoped);
   const activeLocationName =
     accessibleLocations.find((l) => l.id === activeLocationId)?.name ?? "Workspace";
+  const { collapsed } = useSidebar();
+  const locationTip = useRailTip(activeLocationName);
 
   // Everything else, grouped by functional group.
   const groupedItems: Record<NavGroup, NavItem[]> = NAV_GROUP_ORDER.reduce(
@@ -231,16 +221,25 @@ function NavContent({ pathname, onNavigate }: { pathname: string; onNavigate?: (
   );
 
   return (
-    <div className="px-2.5 pt-1 pb-6">
+    <div className="px-2.5 pt-1 pb-4">
       {workspaceItems.length > 0 && (
-        <div className="mb-5 -mx-2.5 overflow-hidden border-b border-border px-2.5 pb-2.5">
+        <div className="mb-4 -mx-2.5 overflow-hidden border-b border-border px-2.5 pb-2.5">
           {/* Keyed on the active location so the content slides in on each workspace switch. */}
           <div key={activeLocationId ?? "none"} className="animate-slide-in-left">
-            <div className="mb-1 flex items-center gap-2.5 px-2 pt-0.5 pb-1.5">
-              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-paper text-muted ring-1 ring-inset ring-border">
+            <div
+              className={cn(
+                "mb-1 flex items-center gap-2.5 pt-0.5 pb-1.5",
+                collapsed ? "justify-center" : "px-2"
+              )}
+            >
+              <span
+                {...locationTip}
+                aria-label={collapsed ? `This location: ${activeLocationName}` : undefined}
+                className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-paper text-muted ring-1 ring-inset ring-border"
+              >
                 <MapPin className="h-[18px] w-[18px]" />
               </span>
-              <div className="min-w-0">
+              <div className={collapsed ? "sr-only" : "min-w-0"}>
                 <div className="text-[9px] font-bold uppercase tracking-[0.14em] text-muted">
                   This location
                 </div>
@@ -280,10 +279,8 @@ function NavContent({ pathname, onNavigate }: { pathname: string; onNavigate?: (
           );
         }
         return (
-          <div key={group} className="mb-5">
-            <div className="px-3 pb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-muted/70">
-              {group}
-            </div>
+          <div key={group} className="mb-4">
+            <SidebarHeading>{group}</SidebarHeading>
             <NavLinkList items={items} pathname={pathname} onNavigate={onNavigate} badges={badges} />
           </div>
         );
@@ -295,10 +292,9 @@ function NavContent({ pathname, onNavigate }: { pathname: string; onNavigate?: (
 export function AdminNav() {
   const pathname = usePathname() ?? "";
   return (
-    <nav className="hidden w-60 shrink-0 border-r border-border bg-card lg:block">
-      <NavBrand />
+    <SidebarFrame brand={<NavBrand />}>
       <NavContent pathname={pathname} />
-    </nav>
+    </SidebarFrame>
   );
 }
 

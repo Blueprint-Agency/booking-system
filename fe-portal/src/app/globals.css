@@ -136,3 +136,15 @@
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* The sidebar's own scroll area: a thin thumb that only shows while the nav is
+   hovered, so a nav that fits never shows a bar, and one that doesn't still
+   says so when the pointer is over it. */
+.sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.sidebar-scroll:hover,
+.sidebar-scroll:focus-within {
+  scrollbar-color: var(--color-border) transparent;
+}

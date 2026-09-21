@@ -1,0 +1,15 @@
+[
+  ["Date", "Start time", "End time", "Description", "Staff", "Room", "Location", "Client", "Client ID", "Status", "Pricing option"],
+  ["2026-07-06", "19:00", "20:00", "Hatha", "Instructor, Ivy", "Studio 1 - Hot Room", "Main Hall ", "Doe, Jane", "100000001", "Late Cancel", "Class Pack -  Bundle of 10"],
+  ["2026-08-20", "08:00", "09:00", "Ghost Class", "Instructor, Ivy", "Studio 1 - Hot Room", "Main Hall ", "Roe, Rick", "100000002", "Signed in", "Unlimited 12"],
+  ["2026-08-24", "19:00", "20:00", "Hatha", "Instructor, Ivy", "Studio 1 - Hot Room", "Main Hall ", "Doe, Jane", "100000001", "Signed in", "Class Pack -  Bundle of 10"],
+  ["2026-08-24", "19:00", "20:00", "Hatha", "Instructor, Ivy", "Studio 1 - Hot Room", "Main Hall ", "Roe, Rick", "100000002", "Signed in", "Unlimited 12"],
+  ["2026-08-31", "19:00", "20:00", "Hatha", "Instructor, Ivy", "Studio 1 - Hot Room", "Main Hall ", "Doe, Jane", "100000001", "Absent", "Class Pack -  Bundle of 10"],
+  ["2026-09-01", "09:00", "10:00", "Personal Training / PT", "Owner, Olive", "", "Main Hall ", "林, Mei", "100000008", "Signed in", "PT - Bundle of 10"],
+  ["2026-09-07", "19:00", "20:00", "HATHA ", "Instructor, Ivy", "Studio 1 - Hot Room", "Main Hall ", "Reuse, Ada", "100000006", "Late Cancel", "ClassPass"],
+  ["2026-09-08", "10:00", "11:00", "Vinyasa flow", "Owner, Olive", "Studio2-Normal Room", "Main Hall ", "Poe, Pat", "100000003", "Early Cancel", "Class Pack - Bundle of 20"],
+  ["2026-09-10", "19:00", "20:00", "Hatha", "Instructor, Ivy", "Studio 1 - Hot Room", "Main Hall ", "Doe, Jane", "100000001", "Signed in", "Class Pack -  Bundle of 10"],
+  ["2026-09-14", "19:00", "20:00", "Hatha", "Instructor, Ivy", "Studio 1 - Hot Room", "Main Hall ", "Lee, Sam", "100000004", "No Show", "2 Trial Classes For New Joiners"],
+  ["2026-09-15", "10:00", "11:00", "Vinyasa flow", "Owner, Olive", "Studio2-Normal Room", "Main Hall ", "Lee, Kim", "100000005", "Reserved", ""],
+  ["2090-01-02", "19:00", "20:00", "HATHA ", "Instructor, Ivy", "Studio 1 - Hot Room", "Main Hall ", "Doe, Jane", "100000001", "Reserved", "Class Pack -  Bundle of 10"]
+]

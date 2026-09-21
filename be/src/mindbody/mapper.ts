@@ -4,8 +4,28 @@ import { joinName, splitName } from '../lib/name'
 import { ARCHIVE_VERSION, type TenantArchive } from '../services/tenants/transfer-shape'
 import type { StudioConfig } from './config'
 import { idsFor, secretToken } from './ids'
-import type { MemberListRow, PhoneBookRow, ReferralRow, RetentionRow } from './readers'
-import { normaliseStaffName, zonedToInstant, type LocalDateTime } from './values'
+import { mapHistory, type MappedHistory } from './history'
+import { configLookups } from './lookups'
+import { mapPackages, type AccountBalance, type NotMigrated } from './packages'
+import type {
+  AccountBalanceRow,
+  AttendanceRow,
+  HoldingRow,
+  MemberListRow,
+  OptionSaleRow,
+  PayRateRow,
+  PayrollRow,
+  PhoneBookRow,
+  ReferralRow,
+  RetentionRow,
+  RosterRow,
+  SaleRow,
+  ScheduledClassRow,
+} from './readers'
+import { bookingCoder } from './booking-codes'
+import { mapSchedule } from './schedule'
+import { normaliseClassName, normaliseStaffName, zonedToInstant, type LocalDateTime } from './values'
+import { mapWorkshops, workshopOptionKeys } from './workshops'
 
 /**
  * Report rows plus the studio config in, archive rows out. Pure: no clock, no
@@ -24,9 +44,38 @@ export type MindbodyReports = {
   referrals: ReferralRow[]
   retention: RetentionRow[]
   phoneBook: PhoneBookRow[]
+  /** What every client holds of every pricing option. */
+  holdings: HoldingRow[]
+  /** Every pricing option sold, and every sale line: read only to propose the catalogue. */
+  optionSales: OptionSaleRow[]
+  sales: SaleRow[]
+  /** Money on account, either way. Empty where the report was not downloaded. */
+  balances: AccountBalanceRow[]
+  /** The timetable, past and to come, empty classes included. */
+  schedule: ScheduledClassRow[]
+  /** Who is booked into what. Reaches past the download only where it was run over future dates. */
+  roster: RosterRow[]
+  payRates: PayRateRow[]
+  /** Every past visit and how it ended. Empty where the report was not downloaded, or no history is wanted. */
+  attendance: AttendanceRow[]
+  /** What each teacher was actually paid, per past class. Empty where the report was not downloaded. */
+  payroll: PayrollRow[]
 }
 
 export type Preflight = {
+  /** Live in Mindbody and not a package here: mat storage, a workshop place, a lone access pass. */
+  notMigrated: NotMigrated[]
+  /** Money on account. The platform keeps no such balance. */
+  balances: AccountBalance[]
+  /**
+   * The timetable: a booking with no class or no package, a class over
+   * capacity, a series with nothing to continue, a workshop with no days left,
+   * and — where history came across — everything about the past that could not
+   * be placed.
+   */
+  schedule: string[]
+  /** Active staff with no email: imported by name, with no login. */
+  staffWithoutLogin: { name: string; placeholder: string }[]
   /** Members with no usable email: imported under a placeholder, fixed later by an admin. */
   noEmail: { id: string; name: string; placeholder: string }[]
   /** Emails more than one member holds: one keeps it, the others get placeholders. */
@@ -51,6 +100,20 @@ const PLACEHOLDER_DOMAIN = 'no-email.invalid'
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
 type Row = Record<string, unknown>
+
+/** A studio importing no history: the shape, with nothing in it. */
+const noHistory = (): MappedHistory => ({
+  classes: [],
+  bookings: [],
+  checkIns: [],
+  cancellations: [],
+  ptRequests: [],
+  ptSessions: [],
+  ptSessionClients: [],
+  clientPackages: [],
+  instructors: [],
+  notes: [],
+})
 
 export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenantId: string): Transformed {
   const id = idsFor(tenantId)
@@ -153,7 +216,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     if (m.email) holders.set(m.email, [...(holders.get(m.email) ?? []), m])
   }
 
-  const preflight: Preflight = { noEmail: [], sharedEmails: [] }
+  const preflight: Preflight = { noEmail: [], sharedEmails: [], notMigrated: [], balances: [], schedule: [], staffWithoutLogin: [] }
   const emailOf = new Map<string, string>()
   for (const m of reports.members) {
     if (!m.email) {
@@ -201,9 +264,14 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
 
   const phoneBook = new Map(reports.phoneBook.map(p => [normaliseStaffName(p.name), p]))
   const owner = config.studio.ownerEmail.trim().toLowerCase()
+  // The owner and every listed admin run the portal from the first minute.
+  const admins = new Set([owner, ...config.studio.admins.map(a => a.email.trim().toLowerCase())])
   const staffUsers: Row[] = []
   const instructors: Row[] = []
   const invitations: Row[] = []
+  const staffIds = new Map<string, string>()
+  let ownerId: string | null = null
+  const seatedAdmins = new Set<string>()
 
   for (const s of config.staff) {
     if (s.migrate === 'skip') continue
@@ -213,9 +281,18 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     const { firstName, lastName } = splitName(name)
     const staffId = id('staff', key)
     const archived = s.migrate === 'archived'
-    const email = archived ? placeholder('staff', key) : s.email.trim().toLowerCase()
-    const isOwner = !archived && email === owner
-    const role = s.role ?? 'instructor'
+    const real = archived || (s.migrate === 'active' && s.noLogin) ? '' : (s.email?.trim().toLowerCase() ?? '')
+    // No email, no login: they come across by name so their classes and pay
+    // name them, under an address nobody receives, and nobody can sign in as them.
+    const loginless = !archived && !real
+    const email = real || placeholder('staff', key)
+    const isAdmin = !archived && !loginless && admins.has(email)
+    if (isAdmin) seatedAdmins.add(email)
+    const role = isAdmin ? 'admin' : (s.role ?? 'instructor')
+    // Onboarded now: active, no invitation, signing in by setting a password.
+    const onboarded = isAdmin || (!archived && !loginless && config.staffOnboarding === 'active')
+    const pending = !archived && !loginless && !onboarded
+    if (loginless) preflight.staffWithoutLogin.push({ name, placeholder: email })
 
     staffUsers.push({
       id: staffId,
@@ -226,19 +303,22 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
       first_name: firstName,
       last_name: lastName,
       role,
-      // The owner runs the studio from the first minute; everyone else arrives
-      // by invitation, sent or resent by an admin when the studio decides.
-      status: archived ? 'archived' : isOwner ? 'active' : 'pending',
+      // The owner, the admins and — with `staffOnboarding: 'active'` — everyone
+      // with an email run the studio from the first minute; otherwise they
+      // arrive by invitation, sent or resent by an admin when the studio decides.
+      status: archived ? 'archived' : pending ? 'pending' : 'active',
       granted_location_ids: [],
       phone: listed?.phone || null,
-      invited_at: archived || isOwner ? null : asOf.toISOString(),
+      invited_at: pending ? asOf.toISOString() : null,
       archived_at: archived ? asOf.toISOString() : null,
     })
     ids.staff_users![s.mindbodyName] = staffId
+    staffIds.set(key, staffId)
+    if (isAdmin && email === owner) ownerId = staffId
 
     if (s.teaches || role === 'instructor') instructors.push({ staff_user_id: staffId, tenant_id: tenantId })
 
-    if (!archived && !isOwner) {
+    if (pending) {
       invitations.push({
         id: id('staff-invitation', key),
         tenant_id: tenantId,
@@ -255,18 +335,176 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     }
   }
 
+  // Admins Mindbody never listed as staff — an owner who never taught, whoever
+  // runs the migration: a staff row each, active, with no invitation to send.
+  for (const email of admins) {
+    if (seatedAdmins.has(email)) continue
+    const listedName = config.studio.admins.find(a => a.email.trim().toLowerCase() === email)?.name?.trim()
+    const { firstName, lastName } = splitName(listedName || email.split('@')[0]!)
+    const staffId = id('staff', `admin:${email}`)
+    staffUsers.push({
+      id: staffId,
+      tenant_id: tenantId,
+      auth_user_id: null,
+      email,
+      name: joinName(firstName, lastName),
+      first_name: firstName,
+      last_name: lastName,
+      role: 'admin',
+      status: 'active',
+      granted_location_ids: [],
+      phone: null,
+      invited_at: null,
+      archived_at: null,
+    })
+    ids.staff_users![email] = staffId
+    if (email === owner) ownerId = staffId
+  }
+
+  /* ── The catalogue, and what members still hold of it (`./packages.ts`) ─── */
+
+  const memberNames = new Map(reports.members.map(m => [m.id, memberName(m)]))
+  // The pricing options that buy a place on a workshop: a booking, never a package.
+  const workshopOptions = workshopOptionKeys(config)
+  const packages = mapPackages({
+    holdings: reports.holdings,
+    balances: reports.balances,
+    config,
+    tenantId,
+    id,
+    ids,
+    memberNames,
+    workshopOptions,
+  })
+  preflight.notMigrated = packages.notMigrated
+  preflight.balances = packages.balances
+
+  /* ── The timetable to come, and who is booked on it (`./schedule.ts`) ───── */
+
+  // `validateConfig` has already refused a config whose owner is not among the staff.
+  if (!ownerId) throw new Error('the owner is not among the staff coming across')
+  // One coder for the whole archive: a booking reference is unique within a
+  // studio, and a class seat, a workshop place and a visit years ago all share
+  // that one namespace.
+  const codes = bookingCoder(config.secret, tenantId)
+  const instructorIds = new Set(instructors.map(i => i.staff_user_id as string))
+  const lookups = configLookups(config, id)
+
+  // The Class Type a PT appointment's focus is. Made at most once, whichever of
+  // the timetable and the history first needs it, so two PT imports are never
+  // two Class Types of one name.
+  const ptTypeKey = normaliseClassName(config.ptClassType)
+  const ptClassTypes: Row[] = []
+  let ptTypeId = lookups.types.get(ptTypeKey)?.id ?? null
+  const ensurePtType = () => {
+    if (!ptTypeId) {
+      ptTypeId = id('class-type', ptTypeKey)
+      ptClassTypes.push({ id: ptTypeId, tenant_id: tenantId, name: config.ptClassType })
+      ids.class_types![config.ptClassType] = ptTypeId
+    }
+    return ptTypeId
+  }
+
+  const schedule = mapSchedule({
+    schedule: reports.schedule,
+    roster: reports.roster,
+    payRates: reports.payRates,
+    config,
+    tenantId,
+    id,
+    ids,
+    memberNames,
+    staffIds,
+    instructorIds,
+    ownerId,
+    clientPackages: packages.clientPackages,
+    codes,
+    lookups,
+    ensurePtType,
+  })
+
+  /* ── Workshops and retreats to come, and who has paid (`./workshops.ts`) ── */
+
+  const workshops = mapWorkshops({
+    schedule: reports.schedule,
+    holdings: reports.holdings,
+    config,
+    tenantId,
+    id,
+    ids,
+    memberNames,
+    staffIds,
+    instructorIds,
+    ownerId,
+    codes,
+  })
+  /* ── The studio's past, if the config asks for it (`./history.ts`) ─────── */
+
+  const history = config.history
+    ? mapHistory({
+        history: config.history,
+        schedule: reports.schedule,
+        roster: reports.roster,
+        attendance: reports.attendance,
+        payroll: reports.payroll,
+        optionSales: reports.optionSales,
+        members: reports.members,
+        config,
+        tenantId,
+        id,
+        ids,
+        memberNames,
+        staffIds,
+        instructorIds,
+        ownerId,
+        lookups,
+        ensurePtType,
+        clientPackages: packages.clientPackages,
+        workshopOptions,
+        codes,
+      })
+    : noHistory()
+
+  preflight.schedule = [...schedule.notes, ...workshops.notes, ...history.notes]
+
   /* ── The archive ───────────────────────────────────────────────────────── */
+
+  // One profile per staff member, however many things they lead: the timetable
+  // and the workshops each name whoever was not an instructor already.
+  const extraInstructors = new Map<string, Row>()
+  for (const i of [...schedule.instructors, ...workshops.instructors, ...history.instructors]) {
+    extraInstructors.set(i.staff_user_id as string, i)
+  }
 
   // Parents first, as an export writes them — the importer orders by the
   // schema, but a person reading the zip reads it in this order.
   const rows: Record<string, Row[]> = {
     locations,
     rooms,
-    class_types: classTypes,
+    class_types: [...classTypes, ...ptClassTypes],
     staff_users: staffUsers,
-    instructors,
+    instructors: [...instructors, ...extraInstructors.values()],
     staff_invitations: invitations,
     clients,
+    class_packages: packages.classPackages,
+    pt_packages: packages.ptPackages,
+    client_packages: [...packages.clientPackages, ...history.clientPackages],
+    class_series: schedule.classSeries,
+    classes: [...history.classes, ...schedule.classes],
+    pt_requests: [...history.ptRequests, ...schedule.ptRequests],
+    pt_sessions: [...history.ptSessions, ...schedule.ptSessions],
+    pt_session_clients: [...history.ptSessionClients, ...schedule.ptSessionClients],
+    workshops: workshops.workshops,
+    workshop_days: workshops.workshopDays,
+    workshop_tiers: workshops.workshopTiers,
+    workshop_tier_days: workshops.workshopTierDays,
+    workshop_instructors: workshops.workshopInstructors,
+    bookings: [...history.bookings, ...schedule.bookings, ...workshops.bookings],
+    // After `bookings`, which they point at. The importer sorts the tables it
+    // writes by the schema's own foreign keys, so this order is for a person
+    // reading the zip; it costs nothing to have it read the way it must be written.
+    check_ins: history.checkIns,
+    cancellations: history.cancellations,
     global_policy: globalPolicy,
     pt_booking_config: ptBookingConfig,
     email_templates: emailTemplates,
@@ -334,5 +572,19 @@ export function renderPreflight(p: Preflight): string {
     lines.push(`- ${s.email}: kept by ${s.keeper.id} ${s.keeper.name}`)
     for (const o of s.others) lines.push(`  - ${o.id} ${o.name} → ${o.placeholder}`)
   }
+  lines.push('', `## Staff with no email: imported by name, with no login (${p.staffWithoutLogin.length})`, '')
+  lines.push('They teach, are paid and appear on the timetable; nobody can sign in as them until they have a real email.', '')
+  for (const s of p.staffWithoutLogin) lines.push(`- ${s.name} → ${s.placeholder}`)
+  lines.push('', `## Still live in Mindbody, and not migrated (${p.notMigrated.length})`, '')
+  lines.push('The platform has no package for these. Decide with the studio how each is honoured after launch.', '')
+  for (const n of p.notMigrated) {
+    lines.push(`- ${n.clientId} ${n.name}: ${n.option} — ${n.left}, until ${n.expires} (${n.reason})`)
+  }
+  lines.push('', `## Money on account (${p.balances.length})`, '')
+  lines.push('The platform keeps no account balance. A negative figure is money the member owes.', '')
+  for (const b of p.balances) lines.push(`- ${b.clientId} ${b.name}: ${b.balance}`)
+  lines.push('', `## The timetable and bookings (${p.schedule.length})`, '')
+  lines.push('Imported as far as it could be; each line is something for a person to look at.', '')
+  for (const note of p.schedule) lines.push(`- ${note}`)
   return `${lines.join('\n')}\n`
 }

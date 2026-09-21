@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 import { redirectForFormerSlug } from '../../services/tenants/former-slugs'
+import { effectiveStatus } from '../../services/tenants/term-dates'
 import { resolveTenantBySlug, type ResolvedTenant } from '../../services/tenants/tenants'
 import { ERROR_CODES } from '../../shared/error-codes'
 
@@ -28,7 +29,9 @@ function serialize({ tenant, settings }: ResolvedTenant) {
       slug: tenant.slug,
       name: tenant.name,
       timezone: tenant.timezone,
-      status: tenant.status,
+      // Effective: a studio whose Term has ended shows as paused from that
+      // moment, before any sweep has written it down.
+      status: effectiveStatus(tenant),
     },
     // Display settings only. The mail-from identity and waiver text are not
     // display data and have no business on a public, cached endpoint.

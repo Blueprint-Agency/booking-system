@@ -1,7 +1,8 @@
 "use client";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Search, Plus, Loader2, KeyRound } from "lucide-react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Search, Plus, Loader2, KeyRound, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import {
   Avatar,
@@ -12,6 +13,7 @@ import {
   Input,
   Label,
   PageHeader,
+  Select,
 } from "@/components/ui";
 import { runsStudio } from "@/lib/staff-role";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -19,6 +21,12 @@ import { ApiError } from "@/lib/api";
 import { formatDate } from "@/lib/formatters";
 
 type StatusFilter = "all" | "active" | "trials" | "blocked";
+type SortKey = "joined" | "name";
+
+const PAGE_SIZES = [25, 50, 100] as const;
+const DEFAULT_PAGE_SIZE = 50;
+/** Wait this long after the last keystroke before searching the whole studio. */
+const SEARCH_DEBOUNCE_MS = 300;
 
 /** Nothing outside the Trials filter has a trial date, so nothing else asks. */
 function trialStarted(c: ApiClient): string {
@@ -41,32 +49,134 @@ interface ApiClient {
   converted: boolean;
 }
 
-export default function ClientsPage() {
+/** The Trial Funnel over every member the Trials filter matches, counted by the backend. */
+interface ApiFunnel {
+  trials: number;
+  attended: number;
+  converted: number;
+}
+
+interface ApiClientPage {
+  clients: ApiClient[];
+  /** Matching members across every page. */
+  total: number;
+  page: number;
+  page_size: number;
+  funnel: ApiFunnel | null;
+}
+
+/**
+ * The list's position — filter, search, sort, page — kept in the address bar,
+ * so opening a customer and pressing Back lands on the same page of the same
+ * search rather than page one of everybody.
+ */
+interface ListState {
+  q: string;
+  status: StatusFilter;
+  sort: SortKey;
+  page: number;
+  pageSize: number;
+}
+
+function readState(search: string): ListState {
+  const p = new URLSearchParams(search);
+  const status = p.get("filter");
+  const sort = p.get("sort");
+  const page = Number(p.get("page"));
+  const size = Number(p.get("size"));
+  return {
+    q: p.get("q") ?? "",
+    status: status === "active" || status === "trials" || status === "blocked" ? status : "all",
+    sort: sort === "name" ? "name" : "joined",
+    page: Number.isInteger(page) && page > 0 ? page : 1,
+    pageSize: (PAGE_SIZES as readonly number[]).includes(size) ? size : DEFAULT_PAGE_SIZE,
+  };
+}
+
+function writeState(s: ListState) {
+  const p = new URLSearchParams();
+  if (s.q) p.set("q", s.q);
+  if (s.status !== "all") p.set("filter", s.status);
+  if (s.sort !== "joined") p.set("sort", s.sort);
+  if (s.page !== 1) p.set("page", String(s.page));
+  if (s.pageSize !== DEFAULT_PAGE_SIZE) p.set("size", String(s.pageSize));
+  const qs = p.toString();
+  window.history.replaceState(null, "", qs ? `?${qs}` : window.location.pathname);
+}
+
+// `useSearchParams` needs a Suspense boundary above it, or the build bails out
+// of prerendering the whole route.
+export default function CustomersPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading customers…
+        </div>
+      }
+    >
+      <CustomersList />
+    </Suspense>
+  );
+}
+
+function CustomersList() {
   const { api, currentStaff } = useWorkspace();
   const isAdmin = runsStudio(currentStaff?.role);
-  const [clients, setClients] = useState<ApiClient[]>([]);
+  const searchParams = useSearchParams();
+  // Read once: afterwards the list owns its position and writes it back.
+  const [state, setState] = useState<ListState>(() => readState(searchParams.toString()));
+  // What is typed, ahead of the debounced `state.q` the backend is asked for.
+  const [query, setQuery] = useState(state.q);
+  const [result, setResult] = useState<ApiClientPage | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
-  const [status, setStatus] = useState<StatusFilter>("all");
   const [addOpen, setAddOpen] = useState(false);
+  // Only the newest request may paint: a slow page-3 response must not land on
+  // top of the page-4 one the admin has already moved to.
+  const requestSeq = useRef(0);
+
+  const update = useCallback((patch: Partial<ListState>) => {
+    setState((s) => {
+      // Anything but a page move starts again at page one — page 12 of a
+      // search that now has two pages is an empty screen.
+      const next = { ...s, ...patch, page: patch.page ?? 1 };
+      writeState(next);
+      return next;
+    });
+  }, []);
+
+  // Debounce the search box into the list state.
+  useEffect(() => {
+    if (query.trim() === state.q) return;
+    const t = setTimeout(() => update({ q: query.trim() }), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [query, state, update]);
 
   const load = useCallback(async () => {
     if (!api) return;
+    const seq = ++requestSeq.current;
     setLoading(true);
     setError(null);
     try {
-      // Blocked clients are filtered out server-side unless asked for.
-      const res = await api.get<{ clients: ApiClient[] }>("/portal/admin/clients", {
+      const res = await api.get<ApiClientPage>("/portal/admin/clients", {
+        q: state.q || undefined,
+        filter: state.status === "all" ? undefined : state.status,
+        sort: state.sort,
+        page: state.page,
+        page_size: state.pageSize,
+        // Blocked clients are filtered out server-side unless asked for.
         include_deleted: isAdmin ? "true" : undefined,
       });
-      setClients(res.clients);
+      if (seq !== requestSeq.current) return;
+      setResult(res);
     } catch (err) {
+      if (seq !== requestSeq.current) return;
       setError(err instanceof ApiError ? `HTTP ${err.status}` : "Network error");
     } finally {
-      setLoading(false);
+      if (seq === requestSeq.current) setLoading(false);
     }
-  }, [api, isAdmin]);
+  }, [api, state, isAdmin]);
 
   useEffect(() => {
     void load();
@@ -95,31 +205,19 @@ export default function ClientsPage() {
     }
   }
 
-  const filtered = useMemo(
-    () =>
-      clients.filter((c) => {
-        const blocked = c.deleted_at !== null;
-        if (status === "active" && blocked) return false;
-        if (status === "blocked" && !blocked) return false;
-        if (status === "trials" && !c.trial_started_at) return false;
-        if (query.trim()) {
-          const q = query.toLowerCase();
-          return (
-            c.name.toLowerCase().includes(q) || c.email.toLowerCase().includes(q)
-          );
-        }
-        return true;
-      }),
-    [clients, status, query],
-  );
-
+  const { status, page, pageSize } = state;
   const showTrials = status === "trials";
+  const rows = result?.clients ?? [];
+  const total = result?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const firstShown = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const lastShown = Math.min(page * pageSize, total);
 
   return (
     <div>
       <PageHeader
         title="Customers"
-        description="Members who self-registered via the customer app or were added here. Adjustments and blocking live on the profile."
+        description="Members who self-registered via the customer app, were added here, or were imported. Open one to see their packages, bookings and payments."
         actions={
           <Button onClick={() => setAddOpen(true)}>
             <Plus className="h-4 w-4" /> Customer
@@ -128,13 +226,14 @@ export default function ClientsPage() {
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 max-w-md">
+        <div className="relative w-full flex-1 sm:max-w-md">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
           <Input
-            placeholder="Search by name or email…"
+            placeholder="Search by name, email or phone…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="pl-9"
+            aria-label="Search customers"
           />
         </div>
         <div className="flex gap-1.5 text-xs">
@@ -144,7 +243,7 @@ export default function ClientsPage() {
             <button
               key={s}
               type="button"
-              onClick={() => setStatus(s)}
+              onClick={() => update({ status: s })}
               className={`rounded-full px-3 py-1.5 font-medium capitalize transition ${
                 status === s
                   ? "bg-accent text-white"
@@ -155,15 +254,24 @@ export default function ClientsPage() {
             </button>
           ))}
         </div>
-        <span className="ml-auto text-xs text-muted">
-          {filtered.length} of {clients.length}
+        <Select
+          value={state.sort}
+          onChange={(e) => update({ sort: e.target.value as SortKey })}
+          className="h-8 w-auto py-1 text-xs"
+          aria-label="Sort customers"
+        >
+          <option value="joined">Newest first</option>
+          <option value="name">Name A–Z</option>
+        </Select>
+        <span className="ml-auto text-xs tabular-nums text-muted">
+          {result ? `${total.toLocaleString()} customer${total === 1 ? "" : "s"}` : ""}
         </span>
       </div>
 
-      {showTrials && !loading && !error && <TrialFunnel rows={filtered} />}
+      {showTrials && result?.funnel && !error && <TrialFunnel funnel={result.funnel} />}
 
       <div className="rounded-xl border border-border bg-card shadow-soft">
-        {loading ? (
+        {loading && !result ? (
           <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted">
             <Loader2 className="h-4 w-4 animate-spin" /> Loading customers…
           </div>
@@ -175,35 +283,29 @@ export default function ClientsPage() {
             </Button>
           </div>
         ) : (
-          <>
+          // Dimmed rather than blanked while the next page loads, so the pager
+          // does not jump under the admin's cursor.
+          <div className={loading ? "opacity-60 transition-opacity" : "transition-opacity"}>
             {/* Mobile cards */}
             <ul className="divide-y divide-border sm:hidden">
-              {filtered.map((c) => (
+              {rows.map((c) => (
                 <li key={c.id}>
                   <Link
-                    href={`/admin/clients/${c.id}`}
+                    href={`/admin/customers/${c.id}`}
                     className="flex items-start gap-3 p-4 hover:bg-paper"
                   >
                     <Avatar name={c.name} size={36} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="truncate font-medium text-ink">{c.name}</span>
-                        {c.deleted_at ? (
-                          <Badge tone="error">Blocked</Badge>
-                        ) : showTrials ? (
-                          <Badge tone={c.converted ? "sage" : "warning"}>
-                            {c.converted ? "Converted" : "Follow up"}
-                          </Badge>
-                        ) : (
-                          <Badge tone="sage">Active</Badge>
-                        )}
+                        <StatusCell client={c} showTrials={showTrials} />
                       </div>
                       <div className="truncate text-xs text-muted">{c.email}</div>
                       <div className="mt-2 flex items-center gap-4 text-[11px] text-muted">
                         <span>{c.phone || "—"}</span>
                         {showTrials && <span>{c.attended} attended</span>}
                         <span className="ml-auto">
-                          {showTrials ? trialStarted(c) : formatDate(c.joined_at)}
+                          {showTrials ? trialStarted(c) : formatDate(c.joined_at, "d MMM yyyy")}
                         </span>
                       </div>
                     </div>
@@ -244,11 +346,11 @@ export default function ClientsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {filtered.map((c) => (
+                  {rows.map((c) => (
                     <tr key={c.id} className="hover:bg-paper">
                       <td className="px-5 py-3">
                         <Link
-                          href={`/admin/clients/${c.id}`}
+                          href={`/admin/customers/${c.id}`}
                           className="flex items-center gap-3"
                         >
                           <Avatar name={c.name} size={32} />
@@ -260,7 +362,7 @@ export default function ClientsPage() {
                       </td>
                       <td className="px-5 py-3 text-sm text-muted">{c.phone || "—"}</td>
                       <td className="px-5 py-3 text-sm text-muted">
-                        {showTrials ? trialStarted(c) : formatDate(c.joined_at)}
+                        {showTrials ? trialStarted(c) : formatDate(c.joined_at, "d MMM yyyy")}
                       </td>
                       {showTrials && (
                         <td
@@ -272,15 +374,7 @@ export default function ClientsPage() {
                         </td>
                       )}
                       <td className="px-5 py-3">
-                        {c.deleted_at ? (
-                          <Badge tone="error">Blocked</Badge>
-                        ) : showTrials ? (
-                          <Badge tone={c.converted ? "sage" : "warning"}>
-                            {c.converted ? "Converted" : "Follow up"}
-                          </Badge>
-                        ) : (
-                          <Badge tone="sage">Active</Badge>
-                        )}
+                        <StatusCell client={c} showTrials={showTrials} />
                       </td>
                       {isAdmin && (
                         <td className="px-5 py-3 text-right">
@@ -305,10 +399,62 @@ export default function ClientsPage() {
                 </tbody>
               </table>
             </div>
-            {filtered.length === 0 && (
-              <div className="py-12 text-center text-sm text-muted">No customers match.</div>
+            {rows.length === 0 && (
+              <div className="py-12 text-center text-sm text-muted">
+                {total > 0 ? "Nothing on this page." : "No customers match."}
+              </div>
             )}
-          </>
+
+            {total > 0 && (
+              <nav
+                className="flex flex-wrap items-center gap-3 border-t border-border px-4 py-3 text-xs text-muted sm:px-5"
+                aria-label="Customer pages"
+              >
+                <span className="tabular-nums">
+                  {firstShown.toLocaleString()}–{lastShown.toLocaleString()} of{" "}
+                  {total.toLocaleString()}
+                </span>
+                <label className="flex items-center gap-1.5">
+                  <span className="hidden sm:inline">Per page</span>
+                  <Select
+                    value={pageSize}
+                    onChange={(e) => update({ pageSize: Number(e.target.value) })}
+                    className="h-8 w-auto py-1 text-xs"
+                    aria-label="Customers per page"
+                  >
+                    {PAGE_SIZES.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </Select>
+                </label>
+                <div className="ml-auto flex items-center gap-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={page <= 1 || loading}
+                    onClick={() => update({ page: page - 1 })}
+                    aria-label="Previous page"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <span className="px-1 tabular-nums">
+                    Page {page} of {pageCount}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    disabled={page >= pageCount || loading}
+                    onClick={() => update({ page: page + 1 })}
+                    aria-label="Next page"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </nav>
+            )}
+          </div>
         )}
       </div>
 
@@ -324,18 +470,28 @@ export default function ClientsPage() {
   );
 }
 
+function StatusCell({ client: c, showTrials }: { client: ApiClient; showTrials: boolean }) {
+  if (c.deleted_at) return <Badge tone="error">Blocked</Badge>;
+  if (showTrials) {
+    return (
+      <Badge tone={c.converted ? "sage" : "warning"}>
+        {c.converted ? "Converted" : "Follow up"}
+      </Badge>
+    );
+  }
+  return <Badge tone="sage">Active</Badge>;
+}
+
 /**
- * The trial funnel over whatever the Trials filter is currently showing —
- * bought, turned up, converted. Counted from the same rows the table lists, so a
- * number here can't disagree with the list under it.
+ * The trial funnel over every member the Trials filter matches — bought,
+ * turned up, converted. Counted by the backend across all pages, so a number
+ * here never depends on how many rows are on screen.
  */
-function TrialFunnel({ rows }: { rows: ApiClient[] }) {
-  const attended = rows.filter((c) => c.attended > 0).length;
-  const converted = rows.filter((c) => c.converted).length;
+function TrialFunnel({ funnel }: { funnel: ApiFunnel }) {
   const steps = [
-    { label: "Bought a trial", value: rows.length },
-    { label: "Attended their trial", value: attended },
-    { label: "Converted", value: converted, hint: "Went on to pay for a package" },
+    { label: "Bought a trial", value: funnel.trials },
+    { label: "Attended their trial", value: funnel.attended },
+    { label: "Converted", value: funnel.converted, hint: "Went on to pay for a package" },
   ];
   return (
     <div className="mb-4 grid gap-2 sm:grid-cols-3">
@@ -343,13 +499,15 @@ function TrialFunnel({ rows }: { rows: ApiClient[] }) {
         <div key={s.label} className="rounded-xl border border-border bg-card p-3 shadow-soft">
           <div className="text-xs text-muted">{s.label}</div>
           <div className="mt-0.5 flex items-baseline gap-2">
-            <span className="text-lg font-semibold tabular-nums text-ink">{s.value}</span>
+            <span className="text-lg font-semibold tabular-nums text-ink">
+              {s.value.toLocaleString()}
+            </span>
             {/* Share of trials, not of the previous step — an owner asks "how
                 many of the people who tried", never "how many of the ones who
                 turned up". */}
-            {rows.length > 0 && s.value !== rows.length && (
+            {funnel.trials > 0 && s.value !== funnel.trials && (
               <span className="text-xs text-muted tabular-nums">
-                {Math.round((s.value / rows.length) * 100)}%
+                {Math.round((s.value / funnel.trials) * 100)}%
               </span>
             )}
           </div>

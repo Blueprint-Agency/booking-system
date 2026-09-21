@@ -2,14 +2,16 @@
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
+import { Button, Dialog, DialogFooter, Input, Label, Select } from "@/components/ui";
 import { ApiError, type Api } from "@/lib/api";
 import {
   SLUG_REASONS,
+  TERM_MONTHS,
   checkSlug,
   createTenant,
   suggestSlug,
   type SlugVerdict,
+  type TermMonths,
 } from "@/lib/platform";
 
 /**
@@ -41,6 +43,9 @@ export interface CreateTenantDialogProps {
  *  studio elsewhere must have this changed at creation, not afterwards. */
 const DEFAULT_TIMEZONE = "Asia/Singapore";
 
+/** The first Term's length unless the operator picks another. */
+const DEFAULT_TERM = "12";
+
 export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: CreateTenantDialogProps) {
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
@@ -50,6 +55,8 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
   const [timezone, setTimezone] = useState(DEFAULT_TIMEZONE);
   const [adminEmail, setAdminEmail] = useState("");
   const [adminName, setAdminName] = useState("");
+  /** Months of the first Term, or "" for open-ended. */
+  const [termMonths, setTermMonths] = useState<string>(DEFAULT_TERM);
   const [verdict, setVerdict] = useState<SlugVerdict | null>(null);
   const [checking, setChecking] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -64,6 +71,7 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
     setTimezone(DEFAULT_TIMEZONE);
     setAdminEmail("");
     setAdminName("");
+    setTermMonths(DEFAULT_TERM);
     setVerdict(null);
   }, [open]);
 
@@ -116,6 +124,7 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
         slug,
         name: name.trim(),
         timezone,
+        ...(termMonths ? { term_months: Number(termMonths) as TermMonths } : {}),
         ...(adminEmail.trim() ? { admin_email: adminEmail.trim() } : {}),
         ...(adminName.trim() ? { admin_name: adminName.trim() } : {}),
       });
@@ -205,6 +214,22 @@ export function CreateTenantDialog({ api, open, onOpenChange, onCreated }: Creat
           />
           <p className="text-xs text-muted">
             IANA zone. Every scheduled job for this studio fires in it.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="tenant-term">Term</Label>
+          <Select id="tenant-term" value={termMonths} onChange={e => setTermMonths(e.target.value)}>
+            {TERM_MONTHS.map(months => (
+              <option key={months} value={String(months)}>
+                {months} months from today
+              </option>
+            ))}
+            <option value="">No end date</option>
+          </Select>
+          <p className="text-xs text-muted">
+            The studio is suspended automatically on the day its term ends. You can change the
+            term later from the studio list.
           </p>
         </div>
 

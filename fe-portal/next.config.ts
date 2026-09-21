@@ -17,6 +17,15 @@ const nextConfig: NextConfig = {
   // server treats those as cross-origin and refuses to serve its internal
   // assets to them unless they're allowed here. Dev-only; production unaffected.
   allowedDevOrigins: ["*.localhost", "*.portal.localhost"],
+  // The admin Customers page moved from /admin/clients to /admin/customers.
+  // Bookmarks and links in old emails still land. Permanent: the old path is
+  // not coming back. Only the page moved — the API is still /portal/admin/clients.
+  async redirects() {
+    return [
+      { source: "/admin/clients", destination: "/admin/customers", permanent: true },
+      { source: "/admin/clients/:path*", destination: "/admin/customers/:path*", permanent: true },
+    ];
+  },
   // Hardening headers and the Content-Security-Policy on every response (#142).
   async headers() {
     return [

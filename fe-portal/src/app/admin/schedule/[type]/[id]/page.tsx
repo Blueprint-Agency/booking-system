@@ -327,7 +327,7 @@ function ClassRoster({
               >
                 <div className="min-w-0 flex-1">
                   <Link
-                    href={`/admin/clients/${a.client.id}`}
+                    href={`/admin/customers/${a.client.id}`}
                     className="text-ink hover:text-accent"
                   >
                     {a.client.name}
@@ -761,7 +761,7 @@ function PtDetail({ id }: { id: string }) {
                 className="flex items-center justify-between gap-3 py-2.5 text-sm"
               >
                 <div className="min-w-0">
-                  <Link href={`/admin/clients/${cl.id}`} className="text-ink hover:text-accent">
+                  <Link href={`/admin/customers/${cl.id}`} className="text-ink hover:text-accent">
                     {cl.name}
                   </Link>
                   {cl.code && (

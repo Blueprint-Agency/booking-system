@@ -10,6 +10,8 @@ import {
   familyOf,
   isActivated,
   isDormant,
+  isCurrentStanding,
+  packageStanding,
   type PackageValidity,
 } from './validity'
 
@@ -297,5 +299,23 @@ assert.strictEqual(crossLocationPriceSgd(6, '30.00'), '180.00', 'six months at $
 assert.strictEqual(crossLocationPriceSgd(3, '30.00'), '90.00', 'three months at $30 is $90')
 assert.strictEqual(crossLocationPriceSgd(3, '29.90'), '89.70', 'a cent-precise rate stays exact')
 assert.strictEqual(crossLocationPriceSgd(0, '30.00'), '0.00', 'no months left is no charge')
+
+// packageStanding — which way a package fails computeActive, for the portal's
+// current / past split. Expiry is read before balance.
+const standing = (p: PackageValidity, active = true) => packageStanding({ ...p, active }, NOW)
+assert.strictEqual(standing(bundle(3)), 'running', 'dated, not expired, credits left')
+assert.strictEqual(standing(bundle(3, null)), 'dormant', 'no end date yet is Dormant')
+assert.strictEqual(standing(bundle(3, EARLIER)), 'expired', 'past its end date, even before the sweep')
+assert.strictEqual(standing(bundle(3, EARLIER), false), 'expired', 'and after it')
+assert.strictEqual(standing(bundle(0)), 'used_up', 'nothing left to spend')
+assert.strictEqual(standing(bundle(0, EARLIER), false), 'expired', 'spent and expired reads as expired')
+assert.strictEqual(
+  standing({ kind: 'unlimited', expiresAt: LATER, creditsOrSessionsRemaining: null }),
+  'running',
+  'an Unlimited Plan is never used up',
+)
+assert.strictEqual(standing(bundle(3), false), 'ended', 'switched off with time and credits left: refunded or voided')
+assert.strictEqual(isCurrentStanding('running') && isCurrentStanding('dormant'), true)
+assert.strictEqual(['expired', 'used_up', 'ended'].some(s => isCurrentStanding(s as never)), false)
 
 console.log('packages/validity.test ok')

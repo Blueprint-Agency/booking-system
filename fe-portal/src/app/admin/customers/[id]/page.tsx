@@ -15,6 +15,10 @@ import {
   Download,
   Trash2,
   Gift,
+  ChevronDown,
+  ChevronRight,
+  FileCheck,
+  UserPlus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, Badge, Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
@@ -79,6 +83,65 @@ interface ApiPackage {
   refund_notice: string | null;
   /** How many returns the Refund will put on the statement (#93). */
   refund_payment_count: number;
+  /** Backend-derived; decides which list the package is in and its badge. */
+  standing: PackageStanding;
+  /**
+   * An online payment stands behind it. False on a comp, a $0 trial and a
+   * package imported from another system — none has a discount to derive.
+   */
+  paid_online: boolean;
+}
+
+type PackageStanding = "running" | "dormant" | "expired" | "used_up" | "ended";
+
+/** Running needs no badge — it is the normal state of a current package. */
+const STANDING_BADGE: Partial<
+  Record<PackageStanding, { label: string; tone: "neutral" | "warning" | "error" }>
+> = {
+  dormant: { label: "Not started", tone: "neutral" },
+  expired: { label: "Expired", tone: "neutral" },
+  used_up: { label: "Used up", tone: "neutral" },
+  ended: { label: "Ended", tone: "error" },
+};
+
+interface ApiBooking {
+  booking_id: string;
+  kind: "class" | "workshop" | "pt";
+  /** Class type or workshop name; null for a private session. */
+  title: string | null;
+  tier_name: string | null;
+  session_type: "1on1" | "2on1" | null;
+  starts_at: string | null;
+  ends_at: string | null;
+  location: string | null;
+  instructor: string | null;
+  state: "confirmed" | "cancelled" | "no_show";
+  check_in_state: "pending" | "attended" | "no_show" | "n_a";
+  refund_outcome: "credit_returned" | "session_returned" | "stripe_refunded" | "forfeited" | "n_a";
+  credits_used: number | null;
+  package_name: string | null;
+  code: string;
+  booked_at: string;
+  cancelled_at: string | null;
+}
+
+interface ApiAttendance {
+  attended: number;
+  no_shows: number;
+  late_cancels: number;
+  last_attended_at: string | null;
+}
+
+interface ApiPayment {
+  id: string;
+  item_name: string;
+  kind: string;
+  amount_sgd: string;
+  status: "pending" | "succeeded" | "refunded" | "failed";
+  purchase_status: "open" | "paid" | "refunded" | "abandoned";
+  receipt_url: string | null;
+  refunded_at: string | null;
+  created_at: string;
 }
 
 interface ApiWorkshopPurchase {
@@ -134,7 +197,20 @@ interface ApiProfile {
   suspended_at: string | null;
   deleted_at: string | null;
   deleted_by_staff_id: string | null;
+  gender: "female" | "male" | "non_binary" | "prefer_not_to_say" | null;
+  /** yyyy-mm-dd, or null when never given. */
+  dob: string | null;
+  waiver_signed_at: string | null;
+  referred_by: { id: string; name: string } | null;
+  /** Current: running, or waiting for a first booking. */
   packages: ApiPackage[];
+  /** Expired, used up, refunded — newest first. */
+  past_packages: ApiPackage[];
+  upcoming_bookings: ApiBooking[];
+  /** The most recent 50; `attendance` counts every booking ever. */
+  past_bookings: ApiBooking[];
+  attendance: ApiAttendance;
+  payments: ApiPayment[];
   workshop_purchases: ApiWorkshopPurchase[];
   adjustments: ApiAdjustment[];
   open_purchases: ApiOpenPurchase[];
@@ -218,6 +294,7 @@ export default function ClientProfilePage({
   const [permanentDeleteOpen, setPermanentDeleteOpen] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [showPastPackages, setShowPastPackages] = useState(false);
 
   // Everything the studio holds about this member, for an access request (#143).
   // Logged as a staff act on the member.
@@ -291,7 +368,7 @@ export default function ClientProfilePage({
   return (
     <div className="mx-auto max-w-5xl">
       <Link
-        href="/admin/clients"
+        href="/admin/customers"
         className="mb-2 inline-flex items-center gap-1 text-sm text-muted hover:text-ink"
       >
         <ArrowLeft className="h-3.5 w-3.5" /> All customers
@@ -386,8 +463,27 @@ export default function ClientProfilePage({
                 <span className="inline-flex items-center gap-1.5">
                   <Phone className="h-3 w-3" /> {profile.phone || "—"}
                 </span>
-                <span>Joined {formatDate(profile.joined_at)}</span>
+                <span>Joined {formatDate(profile.joined_at, "d MMM yyyy")}</span>
+                {profile.gender && profile.gender !== "prefer_not_to_say" && (
+                  <span>{GENDER_LABEL[profile.gender]}</span>
+                )}
+                {profile.dob && <span>Born {formatDate(profile.dob, "d MMM yyyy")}</span>}
+                <span className="inline-flex items-center gap-1.5">
+                  <FileCheck className="h-3 w-3" />
+                  {profile.waiver_signed_at
+                    ? `Waiver signed ${formatDate(profile.waiver_signed_at, "d MMM yyyy")}`
+                    : "Waiver not signed"}
+                </span>
+                {profile.referred_by && (
+                  <Link
+                    href={`/admin/customers/${profile.referred_by.id}`}
+                    className="inline-flex items-center gap-1.5 hover:text-ink"
+                  >
+                    <UserPlus className="h-3 w-3" /> Referred by {profile.referred_by.name}
+                  </Link>
+                )}
               </div>
+              <AttendanceStrip attendance={profile.attendance} />
             </div>
             {canEdit && (
               <Button variant="ghost" size="sm" onClick={downloadData} disabled={exporting}>
@@ -508,9 +604,9 @@ export default function ClientProfilePage({
 
           <section>
             <header className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-ink">Active packages</h2>
+              <h2 className="text-sm font-semibold text-ink">Packages &amp; memberships</h2>
               <div className="flex items-center gap-3">
-                <span className="text-xs text-muted">{profile.packages.length} active</span>
+                <span className="text-xs text-muted">{profile.packages.length} current</span>
                 {/* A **Complimentary Package** (#176) — beside the wallet it
                     lands in, not in the block/email row above it. */}
                 {canEdit && !profile.deleted_at && (
@@ -520,13 +616,38 @@ export default function ClientProfilePage({
                 )}
               </div>
             </header>
-            {profile.packages.length === 0 ? (
+            {/* Current first, then — folded away until asked for — everything
+                behind them. One card for both lists, so a past package keeps
+                its actions: an expired pack can still be extended or refunded. */}
+            {(
+              [
+                { id: "current", list: profile.packages },
+                { id: "past", list: showPastPackages ? profile.past_packages : [] },
+              ] as const
+            ).map((group) => (
+            <div key={group.id} className={group.id === "past" ? "mt-4" : undefined}>
+            {group.id === "past" && profile.past_packages.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowPastPackages((v) => !v)}
+                className="mb-3 inline-flex items-center gap-1 text-xs font-medium text-muted hover:text-ink"
+                aria-expanded={showPastPackages}
+              >
+                {showPastPackages ? (
+                  <ChevronDown className="h-3.5 w-3.5" />
+                ) : (
+                  <ChevronRight className="h-3.5 w-3.5" />
+                )}
+                Past packages ({profile.past_packages.length}) — expired, used up or refunded
+              </button>
+            )}
+            {group.id === "current" && group.list.length === 0 ? (
               <div className="rounded-xl border border-border bg-card px-5 py-10 text-center text-sm text-muted shadow-soft">
-                No active packages.
+                No current packages.
               </div>
-            ) : (
+            ) : group.list.length === 0 ? null : (
               <div className="grid gap-3 sm:grid-cols-2">
-                {profile.packages.map((p) => {
+                {group.list.map((p) => {
                   const kindTone =
                     p.kind === "credit_bundle"
                       ? "accent"
@@ -578,6 +699,11 @@ export default function ClientProfilePage({
                         {/* Said on the row, because "paid S$0" below reads as a
                             full discount otherwise, and this one was a gift. */}
                         {p.complimentary && <Badge tone="neutral">Free</Badge>}
+                        {STANDING_BADGE[p.standing] && (
+                          <Badge tone={STANDING_BADGE[p.standing]!.tone}>
+                            {STANDING_BADGE[p.standing]!.label}
+                          </Badge>
+                        )}
                         <div className="flex-1" />
                         {showMenu && (
                           <button
@@ -690,7 +816,7 @@ export default function ClientProfilePage({
                       )}
                       <div className="text-xs text-muted">
                         {p.expires_at
-                          ? `Valid until ${formatDate(p.expires_at)}`
+                          ? `${p.standing === "expired" ? "Expired" : "Valid until"} ${formatDate(p.expires_at, "d MMM yyyy")}`
                           : p.dormant
                             ? "Dormant — starts at first booking"
                             : "No expiry"}
@@ -712,8 +838,19 @@ export default function ClientProfilePage({
                       {/* List Price and the money off derived from it. That figure is
                           NOT stored and NOT sent — a third number would be free to
                           disagree with the two that matter. */}
+                      {/* A package with no online payment behind it and not
+                          given free (one brought over when the studio moved
+                          here): the figure is what the old system recorded,
+                          so no discount is derived from it. */}
+                      {!p.paid_online && !p.complimentary ? (
+                        <div className="text-xs text-muted">
+                          Bought {formatDate(p.purchased_at, "d MMM yyyy")} · paid S$
+                          {p.amount_paid_sgd} · no online payment on record
+                        </div>
+                      ) : (
                       <div className="text-xs text-muted">
-                        List S${p.list_price_sgd} · paid S${p.amount_paid_sgd}
+                        Bought {formatDate(p.purchased_at, "d MMM yyyy")} · List S$
+                        {p.list_price_sgd} · paid S${p.amount_paid_sgd}
                         {discountOff(p.list_price_sgd, p.amount_paid_sgd) && (
                           <span className="text-ink">
                             {" "}
@@ -724,6 +861,7 @@ export default function ClientProfilePage({
                           <span> · code <span className="text-ink">{p.promo_code}</span></span>
                         )}
                       </div>
+                      )}
                       {/* The attended notice sits on the row itself, above the
                           Refund action, and again in the dialog. It is a notice
                           and not a gate — the refund stays available (§14). */}
@@ -737,7 +875,17 @@ export default function ClientProfilePage({
                 })}
               </div>
             )}
+            </div>
+            ))}
           </section>
+
+          <BookingsSection
+            upcoming={profile.upcoming_bookings}
+            past={profile.past_bookings}
+            attendance={profile.attendance}
+          />
+
+          <PaymentsSection payments={profile.payments} />
 
           {profile.workshop_purchases.length > 0 && (
             <section>
@@ -795,7 +943,9 @@ export default function ClientProfilePage({
               <div className="rounded-xl border border-border bg-card shadow-soft">
                 <ul className="divide-y divide-border">
                   {profile.adjustments.map((a) => {
-                    const pkg = profile.packages.find((p) => p.id === a.client_package_id);
+                    const pkg = [...profile.packages, ...profile.past_packages].find(
+                      (p) => p.id === a.client_package_id,
+                    );
                     const isExpiry = a.reason.startsWith("Expiry");
                     const isSet = a.reason.startsWith("Set ");
                     const badge = isExpiry ? (
@@ -1085,7 +1235,7 @@ export default function ClientProfilePage({
             try {
               await api.del(`/portal/admin/clients/${id}/permanently`);
               toast.success("Customer deleted.");
-              router.replace("/admin/clients");
+              router.replace("/admin/customers");
             } catch (err) {
               toast.error(
                 err instanceof ApiError
@@ -1337,5 +1487,222 @@ function AdjustmentDialog({
         </DialogFooter>
       </form>
     </Dialog>
+  );
+}
+
+const GENDER_LABEL: Record<"female" | "male" | "non_binary" | "prefer_not_to_say", string> = {
+  female: "Female",
+  male: "Male",
+  non_binary: "Non-binary",
+  prefer_not_to_say: "Prefer not to say",
+};
+
+/** Attendance over every booking ever — the backend counts, not the list below. */
+function AttendanceStrip({ attendance }: { attendance: ApiAttendance }) {
+  const items = [
+    { label: "Attended", value: attendance.attended, tone: "text-ink" },
+    { label: "No-shows", value: attendance.no_shows, tone: attendance.no_shows > 0 ? "text-warning" : "text-ink" },
+    {
+      label: "Late cancels",
+      value: attendance.late_cancels,
+      tone: attendance.late_cancels > 0 ? "text-warning" : "text-ink",
+    },
+  ];
+  return (
+    <div className="mt-3 flex flex-wrap items-baseline gap-x-5 gap-y-1 text-xs text-muted">
+      {items.map((i) => (
+        <span key={i.label}>
+          <span className={`text-sm font-semibold tabular-nums ${i.tone}`}>{i.value}</span> {i.label}
+        </span>
+      ))}
+      <span>
+        {attendance.last_attended_at
+          ? `Last visit ${formatDate(attendance.last_attended_at, "d MMM yyyy")}`
+          : "No visits yet"}
+      </span>
+    </div>
+  );
+}
+
+function bookingTitle(b: ApiBooking): string {
+  if (b.kind === "pt") return b.session_type === "2on1" ? "Private session (2-on-1)" : "Private session";
+  if (b.kind === "workshop") return b.tier_name ? `${b.title ?? "Workshop"} · ${b.tier_name}` : (b.title ?? "Workshop");
+  return b.title ?? "Class";
+}
+
+/** How a booking ended, in the words the front desk uses. */
+function bookingOutcome(b: ApiBooking, upcoming: boolean): { label: string; tone: "sage" | "warning" | "error" | "neutral" | "accent" } {
+  if (b.state === "cancelled") {
+    return b.refund_outcome === "forfeited"
+      ? { label: "Late cancel", tone: "warning" }
+      : { label: "Cancelled", tone: "neutral" };
+  }
+  if (b.check_in_state === "attended") return { label: "Attended", tone: "sage" };
+  if (b.state === "no_show" || b.check_in_state === "no_show") return { label: "No-show", tone: "error" };
+  if (upcoming) return { label: "Booked", tone: "accent" };
+  // In the past, still confirmed and never checked in — nobody marked it.
+  return { label: "Not checked in", tone: "neutral" };
+}
+
+function BookingRow({ b, upcoming }: { b: ApiBooking; upcoming: boolean }) {
+  const outcome = bookingOutcome(b, upcoming);
+  const detail = [b.instructor, b.location, b.package_name ? `on ${b.package_name}` : null]
+    .filter(Boolean)
+    .join(" · ");
+  return (
+    <li className="flex items-start gap-3 px-4 py-3 sm:px-5">
+      <div className="w-24 shrink-0 text-xs tabular-nums text-muted sm:w-28">
+        {b.starts_at ? (
+          <>
+            <div className="text-ink">{formatDate(b.starts_at, "d MMM yyyy")}</div>
+            <div>{formatDate(b.starts_at, "EEE h:mma").replace(/(AM|PM)/, (m) => m.toLowerCase())}</div>
+          </>
+        ) : (
+          "—"
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm text-ink">{bookingTitle(b)}</div>
+        {detail && <div className="truncate text-xs text-muted">{detail}</div>}
+      </div>
+      <Badge tone={outcome.tone}>{outcome.label}</Badge>
+    </li>
+  );
+}
+
+/**
+ * What the member has booked and what they did with it. Upcoming in full;
+ * history capped at the most recent the backend sends (the attendance strip in
+ * the header counts every one). Cancelled bookings stay in the history — a late
+ * cancel is exactly what the front desk looks here for.
+ */
+function BookingsSection({
+  upcoming,
+  past,
+  attendance,
+}: {
+  upcoming: ApiBooking[];
+  past: ApiBooking[];
+  attendance: ApiAttendance;
+}) {
+  const [showAll, setShowAll] = useState(false);
+  const HISTORY_PREVIEW = 10;
+  const history = showAll ? past : past.slice(0, HISTORY_PREVIEW);
+  const everBooked = attendance.attended + attendance.no_shows + attendance.late_cancels;
+  return (
+    <section className="grid gap-6 lg:grid-cols-2">
+      <div>
+        <header className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-ink">Upcoming bookings</h2>
+          <span className="text-xs text-muted">{upcoming.length}</span>
+        </header>
+        <div className="rounded-xl border border-border bg-card shadow-soft">
+          {upcoming.length === 0 ? (
+            <div className="px-5 py-8 text-center text-sm text-muted">Nothing booked.</div>
+          ) : (
+            <ul className="divide-y divide-border">
+              {upcoming.map((b) => (
+                <BookingRow key={b.booking_id} b={b} upcoming />
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+      <div>
+        <header className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-ink">Booking history</h2>
+          <span className="text-xs text-muted">
+            {past.length > 0 ? `Most recent ${past.length}` : ""}
+          </span>
+        </header>
+        <div className="rounded-xl border border-border bg-card shadow-soft">
+          {past.length === 0 ? (
+            <div className="px-5 py-8 text-center text-sm text-muted">
+              {everBooked > 0 ? "No past bookings to show." : "No past bookings."}
+            </div>
+          ) : (
+            <>
+              <ul className="divide-y divide-border">
+                {history.map((b) => (
+                  <BookingRow key={b.booking_id} b={b} upcoming={false} />
+                ))}
+              </ul>
+              {past.length > HISTORY_PREVIEW && (
+                <button
+                  type="button"
+                  onClick={() => setShowAll((v) => !v)}
+                  className="w-full border-t border-border px-5 py-2.5 text-xs font-medium text-muted hover:bg-paper hover:text-ink"
+                >
+                  {showAll ? "Show fewer" : `Show all ${past.length}`}
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+const PAYMENT_STATUS: Record<ApiPayment["status"], { label: string; tone: "sage" | "warning" | "error" | "neutral" }> = {
+  succeeded: { label: "Paid", tone: "sage" },
+  pending: { label: "Pending", tone: "warning" },
+  refunded: { label: "Refunded", tone: "neutral" },
+  failed: { label: "Failed", tone: "error" },
+};
+
+/**
+ * Money that went through the payment provider. Packages that carry no online
+ * payment — given free, or brought over from another system — show what was
+ * paid on their own card above, so this list being empty is not "never paid".
+ */
+function PaymentsSection({ payments }: { payments: ApiPayment[] }) {
+  return (
+    <section>
+      <header className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-ink">Online payments</h2>
+        <span className="text-xs text-muted">{payments.length}</span>
+      </header>
+      <div className="rounded-xl border border-border bg-card shadow-soft">
+        {payments.length === 0 ? (
+          <div className="px-5 py-8 text-center text-sm text-muted">
+            No online payments. What was paid for an imported or free package is on its card above.
+          </div>
+        ) : (
+          <ul className="divide-y divide-border">
+            {payments.map((p) => {
+              const s = PAYMENT_STATUS[p.status];
+              return (
+                <li key={p.id} className="flex items-center gap-3 px-4 py-3 sm:px-5">
+                  <div className="w-24 shrink-0 text-xs tabular-nums text-muted sm:w-28">
+                    {formatDate(p.created_at, "d MMM yyyy")}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm text-ink">{p.item_name}</div>
+                    {p.refunded_at && (
+                      <div className="text-xs text-muted">
+                        Refunded {formatDate(p.refunded_at, "d MMM yyyy")}
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-sm tabular-nums text-ink">S${p.amount_sgd}</span>
+                  <Badge tone={s.tone}>{s.label}</Badge>
+                  {p.receipt_url && (
+                    <a
+                      href={p.receipt_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-muted underline underline-offset-2 hover:text-ink"
+                    >
+                      Receipt
+                    </a>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    </section>
   );
 }

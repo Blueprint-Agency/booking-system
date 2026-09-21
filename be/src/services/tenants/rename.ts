@@ -17,6 +17,12 @@
  *    so members and staff sign in once at the new address.
  *  - **Payments do not care.** Stripe routes its webhooks by Tenant id; a
  *    checkout in flight completes, and its return URL on the old host redirects.
+ *  - **Renaming back is immediate.** A studio's own former Slug is free to it at
+ *    any time (`claimSlug` with the studio's id); taking it back drops its
+ *    former-Slug row, and the address it is leaving starts a redirect of its
+ *    own. What stays: every *other* studio is kept off a live former Slug for
+ *    the whole window, and the ordinary rules (well-formed, not reserved, not
+ *    another studio's current Slug) apply to the way back as to the way out.
  */
 import { and, eq, sql } from 'drizzle-orm'
 import { currentTenantId, db } from '../../db'
@@ -26,7 +32,7 @@ import { formerSlugs, tenants } from '../../db/schema/tenancy'
 import type { TenantRow } from '../../db/schema/tenancy'
 import { tenantOrigin } from '../../lib/allowed-origins'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
-import { claimSlug, clearExpired, REDIRECT_WINDOW_DAYS } from './former-slugs'
+import { claimSlug, clearExpired, releaseOwn, REDIRECT_WINDOW_DAYS } from './former-slugs'
 import { assertUsableSlug } from './slug'
 import { forgetCachedTenants } from './tenants'
 
@@ -83,13 +89,19 @@ export async function renameTenant(input: RenameTenantInput): Promise<RenamedTen
     // slug from everyone else for 90 days in exchange for nothing.
     if (tenant.status === 'archived') throw new ConflictError('tenant_archived')
 
-    await claimSlug(tx, slug)
+    // Named as this studio's claim, so one of its own former Slugs is free to
+    // it: renaming straight back needs no wait. Another studio's live one is
+    // still refused.
+    await claimSlug(tx, slug, tenant.id)
 
     // An expired row for either slug is dead weight that would collide with the
     // primary key: the new slug may have been some studio's former address, and
     // the old one may have been a former address of this studio before it was
     // taken again.
     await clearExpired(tx, [tenant.slug, slug])
+    // And this studio's own row for the slug it is taking back, live or not: it
+    // is the studio's current address again, not a former one.
+    await releaseOwn(tx, tenant.id, [tenant.slug, slug])
 
     const now = new Date()
     const redirectUntil = new Date(now.getTime() + REDIRECT_WINDOW_DAYS * DAY_MS)
