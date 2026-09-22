@@ -48,8 +48,7 @@ export function profileReports(profile: Profile, manifest: ManifestEntry[] = rea
   }
   return CUTOVER.map(r => {
     const m = r.kind ? byKind.get(r.kind) : undefined
-    if (m) return { ...r, file: m.file, single: m.single }
-    return r.unverified && process.env.MB_AUTOPAY_PATH ? { ...r, path: process.env.MB_AUTOPAY_PATH } : r
+    return m ? { ...r, file: m.file, single: m.single } : r
   })
 }
 
@@ -199,7 +198,6 @@ export function describePlan(profile: Profile, exportFolder: string, reports: Pl
       r.kind && `transform reads it as ${r.kind}`,
       r.single && 'single file (split/capped = FAIL)',
       r.optional && 'optional',
-      r.unverified && 'UNVERIFIED path',
       r.split && `one file per ${r.split}`,
     ].filter(Boolean).join(', ')
     lines.push(`${String(i + 1).padStart(2)}. reports/${f.folder}/${f.file}`)

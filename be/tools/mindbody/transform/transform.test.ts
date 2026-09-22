@@ -1243,7 +1243,7 @@ test('report-files.json: every file the cutover download writes matches exactly 
   for (const extra of [
     '21 Referral Types - All Referrers-Summary.xls',
     '01 Membership - New Version Detail.xlsx',
-    '43 AutoPay Schedule.xls',
+    '43 Autopay Detail - Scheduled.xls',
     '08 Cancellations - Group cancellations.xls',
   ]) {
     assert.deepEqual(Object.entries(REPORT_FILES).filter(([, r]) => r.test(extra)), [], extra)
