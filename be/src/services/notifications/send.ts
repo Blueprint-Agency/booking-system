@@ -1,4 +1,4 @@
-import { renderTemplate } from './render'
+import { frameTemplatedEmail } from './frame'
 import { sendMail } from '../../lib/mailer'
 import { tenantMailIdentity } from '../tenants/mail-identity'
 import { db } from '../../db'
@@ -92,10 +92,25 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
   // Invariant: every studio is seeded every template slug it can be asked to send — see the note above.
   if (!tpl) throw new Error(`unknown_template:${slug}`)
 
-  const subject = renderTemplate(tpl.subject, variables)
-  const body = renderTemplate(tpl.bodyHtml, variables)
   const logged = { ...variables }
   for (const name of secretVariables) if (name in logged) logged[name] = REDACTED
+
+  // The studio's identity, not the platform's: the envelope address is shared
+  // and authenticated, the display name and Reply-To are this tenant's own. The
+  // name also heads the email itself (the shared design, `services/mail/
+  // layout.ts`), so it is read before the log row is written — the row keeps
+  // what was actually sent, secrets redacted.
+  const identity = await tenantMailIdentity(tenantId)
+  const frame = (vars: Record<string, string>) =>
+    frameTemplatedEmail({
+      slug,
+      recipientKind: recipient.userKind,
+      studioName: identity.fromName,
+      template: tpl,
+      variables: vars,
+    })
+  const email = frame(variables)
+  const loggedEmail = frame(logged)
 
   const [logRow] = await db
     .insert(emailLog)
@@ -105,8 +120,8 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
       recipientEmail: recipient.email,
       recipientUserId: recipient.userId ?? null,
       recipientUserKind: recipient.userKind,
-      subjectRendered: renderTemplate(tpl.subject, logged),
-      bodyRendered: renderTemplate(tpl.bodyHtml, logged),
+      subjectRendered: loggedEmail.subject,
+      bodyRendered: loggedEmail.html,
       status: 'queued',
     })
     .returning()
@@ -114,15 +129,13 @@ export async function sendTemplatedEmail(input: SendInput): Promise<void> {
   if (!logRow) throw new Error('email_log_insert_failed')
 
   try {
-    // The studio's identity, not the platform's: the envelope address is shared
-    // and authenticated, the display name and Reply-To are this tenant's own.
     // The log row's id is the idempotency key, so a retry at the send gate can
     // never deliver this message twice.
-    const identity = await tenantMailIdentity(tenantId)
     const result = await sendMail({
       to: recipient.email,
-      subject,
-      html: body,
+      subject: email.subject,
+      html: email.html,
+      text: email.text,
       slug,
       tenantId,
       idempotencyKey: logRow.id,

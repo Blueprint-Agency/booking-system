@@ -31,9 +31,8 @@ export type { MailKind } from './send-gate'
  * studio, and each studio's mail wears its own display name and `Reply-To` —
  * see docs/md/mail-identity.md and services/tenants/mail-identity.ts.
  */
-export const PLATFORM_MAIL_FROM_EMAIL = 'noreply@reservetoday.app'
-/** Shown only when no studio name applies — and on super portal mail. */
-export const PLATFORM_MAIL_FROM_NAME = 'ReserveToday'
+import { PLATFORM_MAIL_FROM_EMAIL, PLATFORM_MAIL_FROM_NAME } from './mailer-identity'
+export { PLATFORM_MAIL_FROM_EMAIL, PLATFORM_MAIL_FROM_NAME }
 
 /**
  * The one place a message's kind is decided. Credential mail is what someone
@@ -55,7 +54,10 @@ export function mailKind(slug: string): MailKind {
 export interface SendMailInput {
   to: string
   subject: string
+  /** Rendered through the shared design — `services/mail/layout.ts`. */
   html: string
+  /** The plain-text alternative the same render produced. */
+  text: string
   /** The template slug — or the super portal's own — which decides the kind. */
   slug: string
   /** Null for super portal mail, which no studio sends. */
@@ -82,6 +84,7 @@ export interface OutboundMessage {
   to: string
   subject: string
   html: string
+  text?: string
   replyTo?: string
   kind: MailKind
   idempotencyKey: string
@@ -216,6 +219,7 @@ export async function sendMail(input: SendMailInput): Promise<SendMailResult> {
     to: input.to,
     subject: input.subject,
     html: input.html,
+    text: input.text,
     kind,
     idempotencyKey: input.idempotencyKey,
     tags: [

@@ -2,8 +2,9 @@ import { randomUUID } from 'node:crypto'
 import { and, eq } from 'drizzle-orm'
 import { currentTenantId, db } from '../../db'
 import { clients } from '../../db/schema/identity'
-import { PLATFORM_MAIL_FROM_NAME, sendMail } from '../../lib/mailer'
+import { sendMail } from '../../lib/mailer'
 import { sendTemplatedEmail } from '../notifications/send'
+import { platformPasswordResetEmail, platformTwoFactorEmail, type PlatformEmail } from './platform-mail'
 
 /**
  * The mail Better Auth asks us to send: one-time codes, second factors and
@@ -101,38 +102,20 @@ export async function mailStaffPasswordReset(user: MailUser, resetUrl: string): 
  * The super portal has no Tenant, so its mail has no studio to speak for: no
  * template row to word it, no studio name to wear, and no `email_log` to file
  * it under (`tenant_id` is `NOT NULL` there). It is platform mail — the
- * platform's name on the platform's envelope, in copy that lives here because it
- * belongs to no studio.
+ * platform's name on the platform's envelope, in copy that lives in
+ * `./platform-mail.ts` because it belongs to no studio.
  */
 
-const escapeHtml = (value: string) =>
-  value.replace(/[&<>"']/g, ch => `&#${ch.charCodeAt(0)};`)
-
-async function mailPlatform(
-  slug: 'platform_two_factor_code' | 'platform_password_reset',
-  to: string,
-  subject: string,
-  lines: string[],
-): Promise<void> {
-  const html = lines.map(line => `<p>${line}</p>`).join('\n')
+async function mailPlatform(to: string, email: PlatformEmail): Promise<void> {
+  const { slug, subject, html, text } = email
   // No `email_log` row to key on, so the key is made here, once per message.
-  await sendMail({ to, subject, html, slug, tenantId: null, idempotencyKey: `platform-mail/${randomUUID()}` })
+  await sendMail({ to, subject, html, text, slug, tenantId: null, idempotencyKey: `platform-mail/${randomUUID()}` })
 }
 
 export async function mailPlatformTwoFactorCode(user: MailUser, code: string): Promise<void> {
-  await mailPlatform('platform_two_factor_code', user.email, `Your ${PLATFORM_MAIL_FROM_NAME} super portal verification code`, [
-    `Hi ${escapeHtml(user.name)},`,
-    'Your password was accepted for the super portal. Enter this code to finish signing in:',
-    `<strong style="font-size:24px;letter-spacing:0.18em;">${escapeHtml(code)}</strong>`,
-    "The code works once and expires in five minutes. If you didn't just sign in, someone has your password.",
-  ])
+  await mailPlatform(user.email, platformTwoFactorEmail(user.name, code))
 }
 
 export async function mailPlatformPasswordReset(user: MailUser, resetUrl: string): Promise<void> {
-  const href = escapeHtml(resetUrl)
-  await mailPlatform('platform_password_reset', user.email, `Set your ${PLATFORM_MAIL_FROM_NAME} super portal password`, [
-    `Hi ${escapeHtml(user.name)},`,
-    `Use this link to choose your super portal password: <a href="${href}">${href}</a>`,
-    "The link works once and expires in one hour. If you didn't ask for it, ignore this email.",
-  ])
+  await mailPlatform(user.email, platformPasswordResetEmail(user.name, resetUrl))
 }

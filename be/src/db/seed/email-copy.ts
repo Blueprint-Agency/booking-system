@@ -21,6 +21,19 @@
  *     `validity_line`), because the renderer has no conditionals.
  */
 
+import {
+  brandInitials,
+  emailButton,
+  emailCode,
+  emailDetails,
+  emailFooterNote,
+  emailHeading,
+  emailLink,
+  emailNote,
+  emailParagraph,
+  escapeHtml,
+} from '../../services/mail/layout'
+
 export interface EmailTemplateSeed {
   slug: string
   subject: string
@@ -41,15 +54,10 @@ export interface EmailStudio {
   /** The studio's own name, as its members know it. */
   name: string
   /**
-   * The two or three letters in the mark at the top of every email. Derived
-   * from the name when not given — an initial per word, so a two-word studio
-   * name becomes two letters and a one-word one becomes a single letter.
-   */
-  initials?: string
-  /**
-   * The footer line: where the studio is. Optional because a brand-new tenant
-   * has no premises configured yet, and a footer naming none is better than a
-   * footer naming someone else's.
+   * The footer line: where the studio is. Stored with the copy (as an
+   * `emailFooterNote`) and lifted into the design's footer at send time.
+   * Optional because a brand-new tenant has no premises configured yet, and a
+   * footer naming none is better than a footer naming someone else's.
    */
   footer?: string
 }
@@ -64,38 +72,29 @@ export interface EmailOrigins {
   studio: EmailStudio
 }
 
-/** An initial per word, capped at three — the mark is a square, not a label. */
-export function studioInitials(name: string): string {
-  const letters = name
-    .split(/\s+/)
-    .filter(Boolean)
-    .map(word => word[0]!.toUpperCase())
-    .join('')
-  return letters.slice(0, 3) || '·'
-}
+/** An initial per word, capped at three — the header mark is a square, not a label. */
+export const studioInitials = brandInitials
 
 /**
  * A studio's name goes into HTML that is stored and later mailed, and it is
  * tenant-supplied text. An unescaped `<` in it would be markup in thirty
- * emails, so it is escaped once, here, at the only point it enters the shell.
+ * emails, so it is escaped once, here, at the only point it enters the copy.
  */
-function esc(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-}
+const esc = escapeHtml
 
 /**
- * The one shell every email is built from — the studio's mark, a card, a
- * heading, prose, an optional call to action, optional fine print, and the
- * footer. Sharing it is what keeps thirty emails looking like one studio.
+ * The *content* of every email — a heading, prose, an optional call to action
+ * and optional fine print — built from the shared design's helpers
+ * (`services/mail/layout.ts`). What is stored is this fragment; the header band
+ * with the studio's name, the footer and the palette are wrapped around it at
+ * send time (`services/notifications/frame.ts`), so they are the same for every
+ * template and every studio, and a stored row never goes stale on a redesign.
  *
- * A *factory*, not a constant, because the mark and the footer are the studio's
- * own: the shell is shared across emails, never across tenants.
+ * A *factory*, not a constant, because the footer note is the studio's own
+ * premises: the design is shared across emails, never across tenants.
  *
- * `lines` are whole sentences (inline HTML allowed); each becomes a paragraph.
+ * `lines` are whole sentences (inline HTML allowed); each becomes a paragraph,
+ * except a block the helpers already built (detail rows, a code).
  */
 const bodyFor =
   (studio: EmailStudio) =>
@@ -103,79 +102,31 @@ const bodyFor =
     heading: string,
     lines: string[],
     opts: { cta?: { href: string; label: string }; note?: string } = {},
-  ) => {
-    const name = esc(studio.name)
-    const mark = esc(studio.initials?.trim() || studioInitials(studio.name))
-    // A footer naming nobody beats a footer naming the wrong premises, so a
-    // tenant with no address configured gets the name alone.
-    const footer = studio.footer ? `${name} — ${esc(studio.footer)}` : name
-    return `<!DOCTYPE html>
-<html>
-  <body style="margin:0;padding:0;background:#f7f5f2;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#1f1d1b;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f7f5f2;padding:32px 16px;">
-      <tr>
-        <td align="center">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid #e9e4dd;border-radius:14px;padding:32px 36px;">
-            <tr>
-              <td style="padding-bottom:20px;">
-                <div style="display:inline-block;vertical-align:middle;width:36px;height:36px;background:#c97a4a;border-radius:8px;color:#ffffff;font-weight:700;font-size:14px;line-height:36px;text-align:center;">${mark}</div>
-                <span style="display:inline-block;vertical-align:middle;margin-left:10px;font-size:15px;font-weight:600;letter-spacing:-0.01em;">${name}</span>
-              </td>
-            </tr>
-            <tr>
-              <td>
-                <h1 style="margin:0 0 16px;font-size:21px;font-weight:600;letter-spacing:-0.01em;">${heading}</h1>
-                ${lines
-                  .map(
-                    l =>
-                      `<p style="margin:0 0 14px;font-size:15px;line-height:1.55;color:#4a4742;">${l}</p>`,
-                  )
-                  .join('\n                ')}${
-                    opts.cta
-                      ? `
-                <p style="margin:24px 0;">
-                  <a href="${opts.cta.href}" style="display:inline-block;background:#c97a4a;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;padding:12px 22px;border-radius:9px;">${opts.cta.label}</a>
-                </p>`
-                      : ''
-                  }${
-                    opts.note
-                      ? `
-                <p style="margin:0 0 14px;font-size:13px;line-height:1.55;color:#7a7670;">${opts.note}</p>`
-                      : ''
-                  }
-                <hr style="border:0;border-top:1px solid #e9e4dd;margin:24px 0;" />
-                <p style="margin:0;font-size:12px;line-height:1.5;color:#9b9590;">
-                  ${footer}
-                </p>
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-    </table>
-  </body>
-</html>`
-  }
+  ) =>
+    [
+      emailHeading(heading),
+      ...lines.map(l => (/^<(table|p)[\s>]/.test(l) ? l : emailParagraph(l))),
+      opts.cta ? emailButton(opts.cta.href, opts.cta.label) : '',
+      opts.note ? emailNote(opts.note) : '',
+      // A footer naming nobody beats a footer naming the wrong premises, so a
+      // tenant with no address configured carries no note at all.
+      studio.footer ? emailFooterNote(studio.footer) : '',
+    ]
+      .filter(Boolean)
+      .join('\n')
 
-/** An inline text link in the studio's accent, for use inside a `lines` entry. */
-const link = (href: string, label: string) =>
-  `<a href="${href}" style="color:#c97a4a;font-weight:600;text-decoration:none;">${label} →</a>`
+/** An inline text link, for use inside a `lines` entry. */
+const link = (href: string, label: string) => emailLink(href, `${label} →`)
 
-/**
- * A labelled fact block — what a confirmation is actually for. Kept to plain
- * paragraphs (no nested table) so it survives every client Gmail renders like.
- */
-const facts = (rows: Array<[string, string]>) =>
-  rows
-    .map(([k, v]) => `<span style="color:#7a7670;">${k}</span> &nbsp;<strong>${v}</strong>`)
-    .join('<br />')
+/** The labelled facts a confirmation is actually for — class, date, place. */
+const facts = (rows: Array<[string, string]>) => emailDetails(rows)
 
 export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] {
   const { clientUrl, portalUrl, studio } = origins
 
-  // The shell, bound to this studio. `studio` is the name as it appears in
-  // prose and subject lines — where it is plain text, not HTML, so it is the
-  // raw value; the shell escapes its own copy of it.
+  // The content builder, bound to this studio's footer. `STUDIO` is the name as
+  // it appears in subject lines — plain text, so the raw value; the layout
+  // escapes its own copy for the header and footer at send time.
   const body = bodyFor(studio)
   /** For subject lines, which are plain text. */
   const STUDIO = studio.name
@@ -252,7 +203,7 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
   /* ── Sign-in: the codes and the staff password reset ─────────────────── */
 
   /** The code itself, set apart so it can be read off a phone at a glance. */
-  const code = `<span style="display:inline-block;font-size:28px;font-weight:700;letter-spacing:0.18em;color:#1f1d1b;">{{code}}</span>`
+  const code = emailCode('{{code}}')
 
   /**
    * A member's one-time code (the `client` pool's email OTP). Worded for any
@@ -409,7 +360,7 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
       ['Starts', '{{date}}'],
     ]),
     'Your check-in code is <strong>{{code}}</strong>.',
-    `${link('{{qr_url}}', 'Show your QR code')}<br /><a href="{{receipt_url}}" style="color:#7a7670;text-decoration:none;">View your purchase</a>`,
+    `${link('{{qr_url}}', 'Show your QR code')}<br />${emailLink('{{receipt_url}}', 'View your purchase')}`,
   ])
 
   // Waitlist promotion is deferred (backend-architecture.md §jobs), so this row
@@ -449,14 +400,22 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
    */
   const PACKAGE_PURCHASE_BODY = body('Your package is confirmed', [
     'Hi {{client_name}},',
-    facts([['Package', '{{package_name}}']]) + '<br />{{contents_line}}<br />{{validity_line}}',
+    facts([
+      ['Package', '{{package_name}}'],
+      ['Includes', '{{contents_line}}'],
+      ['Validity', '{{validity_line}}'],
+    ]),
     link('{{receipt_url}}', 'View your purchase'),
   ])
 
   /** A first-timer's welcome, which is not the same email as a $150 receipt. */
   const TRIAL_PASS_PURCHASE_BODY = body(`Welcome to ${STUDIO_HTML}`, [
     'Hi {{client_name}},',
-    facts([['Your pass', '{{package_name}}']]) + '<br />{{contents_line}}<br />{{validity_line}}',
+    facts([
+      ['Your pass', '{{package_name}}'],
+      ['Includes', '{{contents_line}}'],
+      ['Validity', '{{validity_line}}'],
+    ]),
     'Book your first class whenever you are ready. Arrive ten minutes early and someone will show you around.',
     link('{{receipt_url}}', 'View your account'),
   ])
@@ -468,7 +427,7 @@ export function buildEmailTemplates(origins: EmailOrigins): EmailTemplateSeed[] 
    */
   const PURCHASE_REFUNDED_BODY = body('Your purchase has been refunded', [
     'Hi {{client_name}},',
-    '<strong>{{package_name}}</strong>',
+    facts([['Refunded', '{{package_name}}']]),
     '{{refund_line}}',
     '{{cancelled_line}}',
     link('{{account_url}}', 'View your account'),

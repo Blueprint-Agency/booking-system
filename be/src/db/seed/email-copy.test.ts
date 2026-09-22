@@ -2,6 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { buildEmailTemplates, type EmailStudio } from './email-copy'
 import { TEMPLATE_VARIABLES } from '../../services/notifications/variables'
+import { frameTemplatedEmail } from '../../services/notifications/frame'
 
 // Dummy origins: the real ones come from `../../env` at seed time, and this
 // check has no environment to read. Nothing here asserts on the host.
@@ -19,6 +20,10 @@ const build = (studio: EmailStudio = STUDIO) =>
   })
 
 const SEEDED_TEMPLATES = build()
+
+/** A stored template as it is mailed: rendered and wrapped in the shared design. */
+const framed = (t: { slug: string; subject: string; bodyHtml: string }, studioName: string) =>
+  frameTemplatedEmail({ slug: t.slug, recipientKind: 'client', studioName, template: t, variables: {} })
 
 /**
  * The check that would have caught the placeholder body: a template whose
@@ -63,7 +68,7 @@ test('no template is a bare name (the §13 placeholder bug)', () => {
       .replace(/\s+/g, ' ')
       .trim()
     assert.ok(prose.length > 60, `${t.slug}: body has almost no copy of its own`)
-    assert.ok(t.bodyHtml.includes(STUDIO.name), `${t.slug}: missing the studio's branding`)
+    assert.ok(framed(t, STUDIO.name).html.includes(STUDIO.name), `${t.slug}: missing the studio's branding`)
     assert.ok(t.subject.trim().length > 0, `${t.slug}: empty subject`)
   }
 })
@@ -82,29 +87,38 @@ test('a second studio gets its own name everywhere, and no trace of the first', 
   assert.equal(second.length, SEEDED_TEMPLATES.length)
 
   for (const t of second) {
-    const whole = `${t.subject}\n${t.bodyHtml}`
+    const mailed = framed(t, 'Second Studio')
+    const whole = `${t.subject}\n${t.bodyHtml}\n${mailed.html}\n${mailed.text}`
     assert.ok(!whole.includes(STUDIO.name), `${t.slug}: still names the other studio`)
     assert.ok(!whole.includes(STUDIO.footer!), `${t.slug}: still carries the other footer`)
-    assert.ok(whole.includes('Second Studio'), `${t.slug}: never names its own studio`)
+    assert.ok(mailed.html.includes('Second Studio'), `${t.slug}: never names its own studio`)
+    assert.ok(t.bodyHtml.includes('Two Other Road.'), `${t.slug}: lost its own premises`)
   }
 })
 
-test('the mark is derived from the name when none is given', () => {
+test('the mark is derived from the name', () => {
   // An initial per word — the mark is a square, not a label.
   const [first] = build({ name: 'Second Studio' })
-  assert.ok(first!.bodyHtml.includes('>SS</div>'))
+  assert.ok(framed(first!, 'Second Studio').html.includes('>SS</td>'))
 })
 
 test("a studio's name is escaped before it reaches the HTML", () => {
   // Tenant-supplied text stored as HTML and mailed later: an unescaped `<`
   // would be markup in every one of these emails.
-  const [first] = build({ name: '<script>x</script> & Co' })
-  assert.ok(!first!.bodyHtml.includes('<script>'), 'raw markup reached the body')
-  assert.ok(first!.bodyHtml.includes('&lt;script&gt;'))
+  const name = '<script>x</script> & Co'
+  for (const t of build({ name })) {
+    const mailed = framed(t, name)
+    for (const html of [t.bodyHtml, mailed.html]) {
+      assert.ok(!html.includes('<script>'), `${t.slug}: raw markup reached the body`)
+    }
+    assert.ok(mailed.html.includes('&lt;script&gt;'))
+  }
 })
 
 test('a studio with no premises on record gets its name alone in the footer', () => {
   const [first] = build({ name: 'Second Studio' })
   // Never someone else's address, and never a dangling em dash.
-  assert.ok(!first!.bodyHtml.includes('Second Studio —'))
+  const mailed = framed(first!, 'Second Studio')
+  assert.ok(!mailed.text.includes('Second Studio —'))
+  assert.ok(!first!.bodyHtml.includes('data-email-footer-note'))
 })
