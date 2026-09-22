@@ -38,7 +38,16 @@ type Proposal = NonNullable<StudioConfigInput['catalogue']>[number]
 const TRIAL = /\btrial\b/i
 const PT = /\bpt\b|personal training/i
 
-export function proposeCatalogue(reports: MindbodyReports, asOf: CalendarDate | null): Proposal[] {
+export function proposeCatalogue(
+  reports: MindbodyReports,
+  asOf: CalendarDate | null,
+  /**
+   * `everySold`: also every option the register ever sold, held or not — what a
+   * studio importing its past purchases needs, since a purchase of an option
+   * with no catalogue entry cannot come across.
+   */
+  options: { everySold?: boolean } = {},
+): Proposal[] {
   // Every option still held — and every trial anybody ever held, because a
   // member who has used their trial must arrive having used it.
   const wanted = reports.holdings.filter(
@@ -46,17 +55,24 @@ export function proposeCatalogue(reports: MindbodyReports, asOf: CalendarDate | 
       (asOf ? isLive(h, asOf) : h.remaining !== null && (h.remaining.unlimited || h.remaining.count > 0)) ||
       (TRIAL.test(h.option) && !PT.test(`${h.option} ${h.serviceCategory}`)),
   )
-  const keys = [...new Set(wanted.map(h => normaliseOptionName(h.option)))].sort()
+  const keys = [
+    ...new Set([...wanted.map(h => h.option), ...(options.everySold ? reports.optionSales.map(s => s.option) : [])].map(normaliseOptionName)),
+  ].sort()
 
   return keys.map(key => {
     const holdings = reports.holdings.filter(h => normaliseOptionName(h.option) === key)
-    const spellings = [...new Set(holdings.map(h => h.option))].sort()
+    const sold = reports.optionSales.filter(s => normaliseOptionName(s.option) === key)
+    const written = [...holdings.map(h => h.option), ...(holdings.length ? [] : sold.map(s => s.option))]
+    const spellings = [...new Set(written)].sort()
     const categories = holdings.map(h => h.serviceCategory).join(' ')
     const name = spellings
-      .map(s => ({ s, n: holdings.filter(h => h.option === s).length }))
+      .map(s => ({ s, n: written.filter(w => w === s).length }))
       .sort((a, b) => b.n - a.n || a.s.localeCompare(b.s))[0]!.s
 
-    const unlimited = holdings.filter(h => h.purchased?.unlimited).length * 2 > holdings.length
+    // Held by nobody now: the register's own sentinel says whether it was unlimited.
+    const unlimited = holdings.length
+      ? holdings.filter(h => h.purchased?.unlimited).length * 2 > holdings.length
+      : sold.filter(s => s.remaining?.unlimited).length * 2 > sold.length
     const about = `${name} ${categories}`
     const kind =
       unlimited && /\baccess\b/i.test(name)

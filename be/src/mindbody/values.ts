@@ -182,16 +182,27 @@ function offsetMs(at: Date, timeZone: string): number {
 const PLACEHOLDER_PHONE = '10000000000'
 
 /**
- * A phone as the platform keeps it: digits (and a leading `+`), or empty.
+ * A phone as the platform keeps it: E.164 (`+6591234567`), which is what the
+ * member sign-up's phone field writes — or empty.
  *
  * Punctuation goes because some records carry a US input mask over a local
- * number — `(912) 345-6789` — which is formatting, not data.
+ * number — `(912) 345-6789` — which is formatting, not data. The studio's own
+ * country is Singapore's numbering here only in the one shape that can mean
+ * nothing else: eight bare digits get `+65`, and `65` plus eight digits gets its
+ * `+`. Another country's number written with its code keeps it (`+`, or `00`);
+ * one written the national way with a leading `0` names no country, so it is
+ * kept as typed rather than guessed at. Fewer than eight digits is not a phone.
  */
 export function cleanPhone(raw: string): string {
   const trimmed = raw.trim()
   const digits = trimmed.replace(/[^\d]/g, '')
-  if (!digits || digits === PLACEHOLDER_PHONE) return ''
-  return trimmed.startsWith('+') ? `+${digits}` : digits
+  if (!digits || digits === PLACEHOLDER_PHONE || digits.length < 8) return ''
+  if (trimmed.startsWith('+')) return digits.length <= 15 ? `+${digits}` : ''
+  if (digits.startsWith('00')) return digits.length - 2 >= 8 && digits.length - 2 <= 15 ? `+${digits.slice(2)}` : ''
+  if (digits.length === 8) return `+65${digits}`
+  if (digits.length === 10 && digits.startsWith('65')) return `+${digits}`
+  if (digits.startsWith('0')) return digits
+  return digits.length <= 15 ? `+${digits}` : ''
 }
 
 /** Shallow on purpose, like the platform's own check: a bounce is the authority on deliverability. */

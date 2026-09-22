@@ -69,7 +69,39 @@ Two more things to have in hand before the day:
 ## 2. The download (cutover profile)
 
 The download script lives **outside this repository**, because its config and its output name
-the studio. What belongs here is the shape of the profile it runs on the day:
+the studio. It drives the studio's own Mindbody sign-in in a browser, so only someone with that
+login runs it. On the day:
+
+```bash
+node export.js --profile cutover --dry-run   # the plan: every file, view and date range; no browser
+node export.js --profile cutover             # the download, into a fresh cutover-downloads/<date time>/
+```
+
+The folder it writes is what `transform --reports` is pointed at, as it is; its
+`_logs/as-of.txt` is the config's `asOf`. The file names it writes are
+`be/src/mindbody/report-files.json` — the transform's own list, pinned by a unit test against the
+matchers and the single/required rules (`REPORT_RULES` in `transform.ts`). The script checks
+itself against that file (`--dry-run --check-manifest <repo>/be/src/mindbody/report-files.json`
+exits non-zero when they differ), so a change on either side is caught before the day. The
+history cutoff the script downloads from must be on or before the config's `history.from`.
+Every date range is computed from the run date:
+
+| Report (view) | Range |
+|---|---|
+| Mailing Lists (Mailing List), Retention Management, Phone Book, Pay Rates, Account Balances (All balances), Visits Remaining (Detail) | as of the download |
+| Referral Types (each referrer group), Big Spenders (Detail Accrual) | history cutoff → today |
+| Pricing Option Expirations | history cutoff → today + 5 years |
+| Attendance without Revenue (**Date view only**), one file per year | history cutoff → today |
+| Payroll (Detail), one file per year | history cutoff → today |
+| Schedule at a Glance ("Scheduled", all locations, staff and statuses), one file per year | history cutoff → today + 12 months |
+| Staff Schedule (ALL, "Scheduled") | history cutoff → today + 5 years |
+| Membership (New Version Detail), AutoPay Schedule | optional, not read by the transform: who is on an autopay, to stop in Mindbody |
+
+Birthdays, addresses, emergency contacts, client notes and waiver status are in **no** Mindbody
+report: they come, if at all, from a client data export requested from Mindbody, by hand. The
+transform does not read them.
+
+What the profile is built to:
 
 - **Only the reports the transform reads.** They are listed at the end of section 3, and nothing
   else: the full 42-report run takes far longer, and the freeze is paid for in minutes.
@@ -81,9 +113,11 @@ the studio. What belongs here is the shape of the profile it runs on the day:
   cutoff from decision 17. Only the Date view of Attendance without Revenue is read: its Client,
   Staff member and Visit type views are the same visits sorted differently.
 - **A capped or refused report is a hard failure.** Mindbody truncates a report that is too large
-  and says so quietly. The profile stops the run — not warns — on any report that comes back
-  capped, refused or short, because a silently truncated file transforms into a studio that has
-  simply lost those members, and nothing downstream can tell the difference.
+  and says so quietly. A report the transform reads as one file fails the run if it comes back
+  capped or refused, rather than being split; the per-year reports are split by year from the
+  start. Any required report that fails ends the run with `CUTOVER DOWNLOAD INCOMPLETE` and a
+  non-zero exit: do not transform that folder. A silently truncated file transforms into a
+  studio that has simply lost those members, and nothing downstream can tell the difference.
 - **The finish time is recorded.** The moment the last report landed is the **"as of"** moment:
   it is what `--as-of` is given, it is the day every live balance is true for, and it is the
   moment the freeze has to cover from.
@@ -113,6 +147,14 @@ npm run mindbody -- verify --expected <studio.expected.json> --export <exported.
 ```
 
 - `transform` refuses to run while a field is open, and lists every one by name.
+- It also checks every row it wrote against the database's CHECK rules
+  (`be/src/mindbody/constraints.ts`, kept complete by an integration test that reads the live
+  constraint list) and writes no zip while any row breaks one — an import is all or nothing,
+  and a refused row would otherwise fail it only at the end. If the database still refuses an
+  import, the super portal names the table and the rule, not the SQL.
+- Build the zip for the Tenant it will be imported into (`--tenant` = that Tenant's id). Into
+  any other it still imports, under new ids, but `verify` then compares different ids and
+  reports every row.
 - Beside the zip it writes `<studio>.ids.json` (Mindbody key → platform id, per table),
   `<studio>.preflight.md` (members with no email, and emails several members share: who keeps
   the address, who gets a placeholder on `no-email.invalid`; what is still live in Mindbody and
@@ -250,7 +292,22 @@ npm run mindbody -- verify --expected <studio.expected.json> --export <exported.
   were downloaded, Account Balances (All balances), Pay Rates (`.xlsx`), Attendance without
   Revenue (Date view, `.xlsx`; one file or one per year) and Payroll (Detail, one per year). The
   last two are only read by a studio importing history; without them its past arrives with no
-  visits and every past class Unpriced. The transform can be pointed at the whole download
+  visits and every past class Unpriced. Cancellations (Individual records, one file per month)
+  is optional too: with it a past late cancel carries the time it really happened and who made
+  it (the member or ClassPass → `client`, anyone else → `admin`); without it the cancel is dated
+  at the class's start.
+- Payroll pays past PT as well as classes: a past PT session's Instructor Pay is what payroll
+  paid for that appointment. Payroll lines with nothing to belong to — a `TBD` revenue share
+  on a retreat, a class that did not come across — are listed in the preflight with the total
+  placed and not placed, so every dollar is accounted for.
+- A holding Visits Remaining shows combined (two packs of one option) is split back into its
+  purchases from the pricing-option register where the register accounts for it exactly —
+  each with its own expiry, credits and price. A holding that is one purchase takes that
+  purchase's price rather than the report's combined total.
+- Balances are Mindbody's Unbooked. Credits Mindbody set aside for future bookings that do not
+  come across (the roster was not downloaded far enough ahead) are given back to the member's
+  package and named in the preflight, rather than lost.
+- Phones are stored E.164 (`+65…`), as the member sign-up writes them. The transform can be pointed at the whole download
   folder: every other report and view in it is left alone.
 - `starter` names the Locations what the timetable calls them (oldest first, matched to the
   numbers Retention Management prints) and proposes each Room at the Location it holds most

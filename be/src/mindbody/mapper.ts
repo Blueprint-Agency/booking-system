@@ -10,6 +10,7 @@ import { mapPackages, type AccountBalance, type NotMigrated } from './packages'
 import type {
   AccountBalanceRow,
   AttendanceRow,
+  CancellationRow,
   HoldingRow,
   MemberListRow,
   OptionSaleRow,
@@ -60,6 +61,8 @@ export type MindbodyReports = {
   attendance: AttendanceRow[]
   /** What each teacher was actually paid, per past class. Empty where the report was not downloaded. */
   payroll: PayrollRow[]
+  /** When each booking was cancelled and by whom (Cancellations, Individual records). Empty where not downloaded. */
+  cancellations: CancellationRow[]
 }
 
 export type Preflight = {
@@ -375,6 +378,8 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     ids,
     memberNames,
     workshopOptions,
+    optionSales: reports.optionSales,
+    members: reports.members,
   })
   preflight.notMigrated = packages.notMigrated
   preflight.balances = packages.balances
@@ -423,6 +428,30 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     ensurePtType,
   })
 
+  /* ── Credits set aside for bookings that did not come across ─────────────── */
+
+  // A package's balance is Mindbody's *Unbooked*: its credits less those already
+  // set aside for future bookings, because each of those bookings arrives here
+  // having spent its credit. A booking that does not arrive — the roster was not
+  // downloaded far enough ahead, or its class did not come across — would take
+  // its credit with it. So, per member and Family, whatever Mindbody set aside
+  // beyond the bookings that did arrive is given back to the package it came from.
+  const restored = restoreBookedAhead(packages, schedule.bookings)
+  if (restored.credits > 0) {
+    const rosterEnd = reports.roster.reduce<string | null>((last, r) => {
+      const day = `${r.date.year}-${String(r.date.month).padStart(2, '0')}-${String(r.date.day).padStart(2, '0')}`
+      return last === null || day > last ? day : last
+    }, null)
+    const asOfDay = config.asOf.slice(0, 10)
+    schedule.notes.push(
+      `packages: ${restored.credits} credit(s) on ${restored.packages} package(s) that Mindbody had set aside for future bookings which did not come across were given back` +
+        (rosterEnd === null || rosterEnd <= asOfDay
+          ? ` — Schedule at a Glance ends ${rosterEnd ?? '(not downloaded)'}, not after the download (${asOfDay}): download it into the future so those bookings come across`
+          : ''),
+    )
+  }
+  schedule.notes.push(...packages.notes)
+
   /* ── Workshops and retreats to come, and who has paid (`./workshops.ts`) ── */
 
   const workshops = mapWorkshops({
@@ -447,6 +476,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
         roster: reports.roster,
         attendance: reports.attendance,
         payroll: reports.payroll,
+        cancellations: reports.cancellations,
         optionSales: reports.optionSales,
         members: reports.members,
         config,
@@ -460,6 +490,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
         lookups,
         ensurePtType,
         clientPackages: packages.clientPackages,
+        packageRuns: packages.runs,
         workshopOptions,
         codes,
       })
@@ -528,6 +559,43 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     ids,
     preflight,
   }
+}
+
+/**
+ * Give back the credits Mindbody set aside for future bookings that no imported
+ * booking spends. Per member and Family, because a seat is paid by whichever
+ * package runs, not necessarily the one Mindbody set the credit aside on.
+ */
+function restoreBookedAhead(
+  packages: { clientPackages: Row[]; bookedAhead: Map<string, number> },
+  bookings: Row[],
+): { credits: number; packages: number } {
+  const family = (kind: unknown) => (kind === 'pt' ? 'pt' : 'class')
+  const spent = new Map<string, number>()
+  const byId = new Map(packages.clientPackages.map(p => [String(p.id), p]))
+  for (const b of bookings) {
+    if (!b.client_package_id || Number(b.credits_or_sessions_used) < 1) continue
+    const pkg = byId.get(String(b.client_package_id))
+    if (!pkg) continue
+    const key = `${pkg.client_id}/${family(pkg.kind)}`
+    spent.set(key, (spent.get(key) ?? 0) + 1)
+  }
+  let credits = 0
+  const touched = new Set<string>()
+  for (const p of packages.clientPackages) {
+    const aside = packages.bookedAhead.get(String(p.id))
+    if (!aside || p.credits_or_sessions_remaining === null) continue
+    const key = `${p.client_id}/${family(p.kind)}`
+    const accounted = Math.min(aside, spent.get(key) ?? 0)
+    spent.set(key, (spent.get(key) ?? 0) - accounted)
+    const back = aside - accounted
+    if (back > 0) {
+      p.credits_or_sessions_remaining = Number(p.credits_or_sessions_remaining) + back
+      credits += back
+      touched.add(String(p.id))
+    }
+  }
+  return { credits, packages: touched.size }
 }
 
 /**

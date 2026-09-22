@@ -1,0 +1,19 @@
+{
+  "_comment": "The report files the transform reads (transform.ts REPORTS), as the cutover download names them. transform.test.ts pins every entry to its matcher; the download script outside this repo checks its cutover profile against this file (export.js --profile cutover --dry-run --check-manifest <this file>). <year> is one file per calendar year; <group> one file per referrer group; <piece> one file per date piece (a month, or smaller where Mindbody refuses a month).",
+  "files": [
+    { "kind": "members", "file": "02 Mailing Lists - Mailing List.xls", "single": true, "required": true },
+    { "kind": "referrals", "file": "21 Referral Types - <group>.xls", "single": false, "required": true },
+    { "kind": "retention", "file": "24 Retention Management.xls", "single": true, "required": true },
+    { "kind": "phoneBook", "file": "35 Phone Book.xls", "single": true, "required": true },
+    { "kind": "holdings", "file": "15 Visits Remaining - Detail.xlsx", "single": true, "required": true },
+    { "kind": "optionSales", "file": "13 Pricing Option Expirations.xls", "single": true, "required": true },
+    { "kind": "sales", "file": "19 Big Spenders - Detail Accrual.xls", "single": true, "required": true },
+    { "kind": "balances", "file": "04 Account Balances - All balances.xls", "single": true, "required": false },
+    { "kind": "schedule", "file": "34 Staff Schedule - ALL - Scheduled.xls", "single": true, "required": true },
+    { "kind": "roster", "file": "17 Schedule at a Glance - <year>.xlsx", "single": false, "required": true },
+    { "kind": "payRates", "file": "38 Pay Rates.xlsx", "single": true, "required": false },
+    { "kind": "attendance", "file": "16 Attendance without Revenue - Date - <year>.xlsx", "single": false, "required": false },
+    { "kind": "payroll", "file": "32 Payroll - Detail - <year>.xls", "single": false, "required": false },
+    { "kind": "cancellations", "file": "08 Cancellations - Individual records - <piece>.xls", "single": false, "required": false }
+  ]
+}

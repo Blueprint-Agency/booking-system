@@ -690,15 +690,22 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     )
 
     // The late cancel is a cancellation of its own, and the studio's rather
-    // than hers, so her allowance on the platform starts clean.
+    // than hers, so her allowance on the platform starts clean. The one the
+    // Cancellations report has a line for carries its real time.
     const cancelled = await harness.db
       .select({ source: schema.cancellations.source, at: schema.cancellations.cancelledAt })
       .from(schema.cancellations)
       .where(eq(schema.cancellations.tenantId, studio.tenantId))
     assert.deepEqual(
       cancelled.map(c => `${c.at.toISOString()} ${c.source}`).sort(),
-      ['2026-07-06T11:00:00.000Z client', '2026-09-07T11:00:00.000Z admin'],
+      ['2026-07-06T09:30:00.000Z client', '2026-09-07T11:00:00.000Z admin'],
     )
+    // Phones as sign-up writes them.
+    const [janeRow] = await harness.db
+      .select({ phone: schema.clients.phone })
+      .from(schema.clients)
+      .where(and(eq(schema.clients.tenantId, studio.tenantId), eq(schema.clients.email, 'jane.doe@example.test')))
+    assert.equal(janeRow?.phone, '+6591234567')
   })
 
   test('Class Popularity counts the imported check-ins, and Finance the pay payroll actually gave', async () => {
@@ -790,6 +797,33 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     assert.equal(imported.status, 409)
     assert.match(imported.body.message, /built for mb-/)
     assert.equal(await count('clients', other.id), 0)
+  })
+
+  test('the transform checks every CHECK rule the database has on the tables it writes', async () => {
+    const { CHECKS } = await import('../mindbody/constraints')
+    const studio = await transformedStudio()
+    const tables = studio.archive.manifest.tables
+    const found = await harness.db.execute<{ table: string; name: string }>(sql`
+      SELECT c.relname AS table, o.conname AS name
+      FROM pg_constraint o JOIN pg_class c ON c.oid = o.conrelid
+      WHERE o.contype = 'c' AND c.relname IN ${sql.raw(`(${tables.map(t => `'${t}'`).join(',')})`)}`)
+    const missing = [...found].filter(r => !CHECKS[r.table]?.[r.name]).map(r => `${r.table}.${r.name}`)
+    assert.deepEqual(missing, [], 'a CHECK the transform does not test would fail an import at its very end: add it to mindbody/constraints.ts')
+  })
+
+  test('a row the database refuses is reported by table and rule, never as the SQL or the row', async () => {
+    const studio = await transformedStudio()
+    studio.archive.rows.client_packages![0]!.credits_or_sessions_remaining = -1
+    const { packArchive } = await import('../services/tenants/transfer-archive')
+    const imported = await importZip(studio.tenant.id, await packArchive(studio.archive))
+    assert.equal(imported.status, 409, JSON.stringify(imported.body))
+    const message = String(imported.body.message)
+    assert.match(
+      message,
+      /^The database refused the import \(23514; table client_packages, rule client_packages_non_negative_balance\): new row for relation "client_packages" violates check constraint/,
+    )
+    assert.doesNotMatch(message, /Failed query|INSERT INTO|@example\.test/)
+    assert.equal(await count('client_packages', studio.tenant.id), 0)
   })
 
   test('a failed import leaves neither rows nor accounts behind', async () => {

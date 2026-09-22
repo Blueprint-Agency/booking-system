@@ -34,6 +34,8 @@ export function ptAppointmentRows(input: {
   ownerId: string
   /** When the platform is to say it was settled, scheduled and created. */
   settledAt: string
+  /** What the instructor was paid for it (payroll Detail), as money; absent is Unpriced. */
+  instructorPaySgd?: string | null
 }): PtAppointmentRows {
   const { tenantId, sessionId, requestId, partnerId } = input
   const sessionType = partnerId ? '2on1' : '1on1'
@@ -66,8 +68,9 @@ export function ptAppointmentRows(input: {
       starts_at: input.startsAt.toISOString(),
       ends_at: input.endsAt.toISOString(),
       session_type: sessionType,
-      // Mindbody pays PT by a percentage of the sale, which no report gives: Unpriced.
-      instructor_pay_sgd: null,
+      // What payroll actually paid for a session that has been; a future one is
+      // Unpriced, because Mindbody pays PT by a percentage of a sale not yet made.
+      instructor_pay_sgd: input.instructorPaySgd ?? null,
       capacity_online: partnerId ? 2 : 1,
       capacity_waitlist: 0,
       capacity_buffer: 0,
