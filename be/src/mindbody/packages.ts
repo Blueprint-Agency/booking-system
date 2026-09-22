@@ -1,6 +1,7 @@
 import { isLive } from './catalogue'
 import { ConfigError, type CatalogueEntry, type StudioConfig } from './config'
-import type { AccountBalanceRow, HoldingRow } from './readers'
+import type { AccountBalanceRow, HoldingRow, MemberListRow, OptionSaleRow } from './readers'
+import { registerMatcher } from './register'
 import {
   dayNumber,
   isoDay,
@@ -52,11 +53,21 @@ export type MappedPackages = {
   clientPackages: Row[]
   notMigrated: NotMigrated[]
   balances: AccountBalance[]
+  /**
+   * Package id → credits Mindbody had already set aside for future bookings
+   * (its Remaining less its Unbooked), which the package arrives without. The
+   * mapper gives back whatever of it no imported booking accounts for.
+   */
+  bookedAhead: Map<string, number>
+  /** Package id → the days its own purchase ran (register), where a holding was split into purchases. */
+  runs: Map<string, { from: number; to: number }>
+  /** What a person should know: holdings split into purchases, prices taken from the register. */
+  notes: string[]
 }
 
 const catalogueKey = (e: CatalogueEntry) => normaliseOptionName(e.name)
 
-/** A member's holdings of one catalogue entry, as one package: Mindbody combines them the same way. */
+/** A member's holding of one catalogue entry — one purchase, or several Mindbody combined — as one package. */
 type Held = {
   clientId: string
   entry: Sold
@@ -65,24 +76,81 @@ type Held = {
   paid: number
   /** Null on an Unlimited Plan. */
   balance: number | null
+  /** Credits Mindbody had already set aside for future bookings (Remaining − Unbooked). */
+  bookedAhead: number
+  /** `#2`, `#3`… for the second and later purchases of a holding split back into its purchases. */
+  suffix: string
 }
+
+const count = (s: HoldingRow['remaining']) => (s && !s.unlimited ? s.count : 0)
 
 function combine(clientId: string, entry: Sold, holdings: HoldingRow[]): Held {
   const started = holdings.flatMap(h => (h.firstActivation ? [h.firstActivation] : []))
   const ends = holdings.map(h => h.lastExpiration!)
   const by = (pick: (a: number, b: number) => number, dates: LocalDateTime[]) =>
     dates.reduce((a, b) => (pick(dayNumber(a), dayNumber(b)) === dayNumber(a) ? a : b))
+  const unlimited = entry.kind === 'unlimited'
   return {
     clientId,
     entry,
     firstActivation: started.length > 0 ? by(Math.min, started) : null,
     lastExpiration: by(Math.max, ends),
     paid: holdings.reduce((sum, h) => sum + h.totalPaid, 0),
-    balance:
-      entry.kind === 'unlimited'
-        ? null
-        : holdings.reduce((sum, h) => sum + (h.unbooked && !h.unbooked.unlimited ? h.unbooked.count : 0), 0),
+    balance: unlimited ? null : holdings.reduce((sum, h) => sum + count(h.unbooked), 0),
+    bookedAhead: unlimited ? 0 : holdings.reduce((sum, h) => sum + Math.max(0, count(h.remaining) - count(h.unbooked)), 0),
+    suffix: '',
   }
+}
+
+/**
+ * A combined holding split back into the purchases it is made of, from the
+ * pricing-option register — each with its own start, expiry, price and credits,
+ * so an earlier pack's credits keep the earlier pack's expiry.
+ *
+ * Only where the register accounts for the holding exactly: its live purchases'
+ * credits add up to the report's Remaining. The credits Mindbody set aside for
+ * future bookings come off the soonest-ending purchase first, the one that runs.
+ * Anything short of that and the holding stays combined, as Mindbody shows it.
+ */
+function split(combined: Held, holdings: HoldingRow[], purchases: OptionSaleRow[]): Held[] | null {
+  if (purchases.length < 2 || combined.entry.kind === 'trial') return null
+  const ordered = [...purchases].sort(
+    (a, b) => dayNumber(a.expiration) - dayNumber(b.expiration) || dayNumber(a.activation) - dayNumber(b.activation),
+  )
+  const unlimited = combined.entry.kind === 'unlimited'
+  if (!unlimited) {
+    const registered = ordered.reduce((sum, p) => sum + count(p.remaining), 0)
+    const reported = holdings.reduce((sum, h) => sum + count(h.remaining), 0)
+    if (registered !== reported) return null
+  }
+  let toTake = combined.bookedAhead
+  return ordered.map((p, i) => {
+    const credits = count(p.remaining)
+    const taken = Math.min(credits, toTake)
+    toTake -= taken
+    return {
+      clientId: combined.clientId,
+      entry: combined.entry,
+      firstActivation: p.activation,
+      lastExpiration: p.expiration,
+      paid: p.paid,
+      balance: unlimited ? null : credits - taken,
+      bookedAhead: taken,
+      suffix: i === 0 ? '' : `#${i + 1}`,
+    }
+  })
+}
+
+/**
+ * An Unlimited Plan's Home Location: the config's, else the Location its name
+ * names, else the default. Every plan has one — the platform requires it — past
+ * purchases included.
+ */
+export function planHome(config: StudioConfig, entry: { name: string; mindbodyNames: string[]; location: string | null }): string {
+  if (entry.location) return entry.location
+  const spelled = [entry.name, ...entry.mindbodyNames].map(normaliseOptionName)
+  const named = config.locations.find(l => spelled.some(s => s.includes(l.name.trim().toLowerCase())))
+  return named?.key ?? config.defaultLocation
 }
 
 /** The fewest whole calendar months from `from` that reach `to`: a waiting plan is never shortened. */
@@ -107,6 +175,9 @@ export function mapPackages(input: {
    * so it is neither wanted in the catalogue nor left behind in the preflight.
    */
   workshopOptions: Set<string>
+  /** The pricing-option register (one row per purchase) and the member list, to split a combined holding. */
+  optionSales: OptionSaleRow[]
+  members: MemberListRow[]
 }): MappedPackages {
   const { config, tenantId, id, ids, memberNames } = input
   const tz = config.studio.timezone
@@ -224,25 +295,63 @@ export function mapPackages(input: {
     }
   }
 
-  const homeOf = (entry: Extract<Sold, { kind: 'unlimited' }>): string => {
-    if (entry.location) return entry.location
-    const spelled = [entry.name, ...entry.mindbodyNames].map(normaliseOptionName)
-    const named = config.locations.find(l => spelled.some(s => s.includes(l.name.trim().toLowerCase())))
-    return named?.key ?? config.defaultLocation
-  }
+  const homeOf = (entry: Extract<Sold, { kind: 'unlimited' }>): string => planHome(config, entry)
   const passLocation = (h: HoldingRow) =>
     (entryOf.get(normaliseOptionName(h.option)) as Extract<Migrated, { kind: 'access_pass' }>).location
 
   const clientPackages: Row[] = []
   const hasTrial = new Set<string>()
+  const bookedAhead = new Map<string, number>()
+  const purchaseRuns = new Map<string, { from: number; to: number }>()
+  const notes: string[] = []
+
+  // The register's live purchases, by member and catalogue entry: live by the
+  // same test the holdings use — something left, and not expired on the day.
+  const whoBought = registerMatcher(input.members)
+  const livePurchases = new Map<string, OptionSaleRow[]>()
+  for (const sale of input.optionSales) {
+    const entry = entryOf.get(normaliseOptionName(sale.option))
+    if (!entry || entry.migrate === 'skip' || entry.kind === 'access_pass') continue
+    const left = sale.remaining !== null && (sale.remaining.unlimited || sale.remaining.count > 0)
+    if (!left || dayNumber(sale.expiration) < dayNumber(today)) continue
+    const match = whoBought(sale)
+    if (match.outcome !== 'matched') continue
+    const key = `${match.clientId}/${entry.kind === 'trial' ? 'trial' : catalogueKey(entry)}`
+    livePurchases.set(key, [...(livePurchases.get(key) ?? []), sale])
+  }
+  let splitHoldings = 0
+  let splitInto = 0
+  let pricedFromRegister = 0
+  const splitParts = new Set<Held>()
 
   for (const clientId of [...grouped.keys()].sort()) {
-    const held = [...grouped.get(clientId)!.values()]
-      .map(g => combine(clientId, g.entry, g.holdings))
+    const held = [...grouped.get(clientId)!.entries()]
+      .flatMap(([groupKey, g]) => {
+        const combined = combine(clientId, g.entry, g.holdings)
+        const purchases = livePurchases.get(`${clientId}/${groupKey}`) ?? []
+        const parts = split(combined, g.holdings, purchases)
+        if (parts) {
+          parts.forEach(p => splitParts.add(p))
+          splitHoldings++
+          splitInto += parts.length
+          return parts
+        }
+        // One purchase behind it: what that purchase cost, not the report's combined total.
+        // Only where the holding is that one row of the report too: several rows
+        // combined (a trial under two spellings) are several purchases, whatever
+        // the register still calls live.
+        if (purchases.length === 1 && g.holdings.length === 1) {
+          combined.paid = purchases[0]!.paid
+          pricedFromRegister++
+        }
+        return [combined]
+      })
       // Soonest-ending first; then by name, so the order never depends on the report's.
       .sort(
         (a, b) =>
-          dayNumber(a.lastExpiration) - dayNumber(b.lastExpiration) || catalogueKey(a.entry).localeCompare(catalogueKey(b.entry)),
+          dayNumber(a.lastExpiration) - dayNumber(b.lastExpiration) ||
+          catalogueKey(a.entry).localeCompare(catalogueKey(b.entry)) ||
+          a.suffix.localeCompare(b.suffix),
       )
     const running = new Set<'class' | 'pt'>()
     let addOnTaken = false
@@ -279,7 +388,8 @@ export function mapPackages(input: {
 
       const started = h.firstActivation ? zonedToInstant(h.firstActivation, tz) : asOf
       const price = entry.priceSgd ?? 0
-      const key = `${clientId}/${entry.kind === 'trial' ? 'trial' : entry.name}`
+      // A second or later purchase of a split holding is `…#2`: history finds it by the name before the `#`.
+      const key = `${clientId}/${entry.kind === 'trial' ? 'trial' : entry.name}${h.suffix}`
       const row = {
         id: id('client-package', key),
         tenant_id: tenantId,
@@ -304,7 +414,17 @@ export function mapPackages(input: {
       }
       clientPackages.push(row)
       ids.client_packages[key] = row.id
+      if (h.bookedAhead > 0) bookedAhead.set(row.id, h.bookedAhead)
+      if (h.suffix || splitParts.has(h)) {
+        purchaseRuns.set(row.id, { from: h.firstActivation ? dayNumber(h.firstActivation) : -Infinity, to: dayNumber(h.lastExpiration) })
+      }
     }
+  }
+  if (splitHoldings > 0) {
+    notes.push(`packages: ${splitHoldings} holding(s) Mindbody combined were split back into their ${splitInto} purchases (register), each with its own expiry, credits and price`)
+  }
+  if (pricedFromRegister > 0) {
+    notes.push(`packages: ${pricedFromRegister} package(s) carry the price their one purchase was sold at (register), not Visits Remaining's combined total`)
   }
 
   // A pass with no plan at the other Location beside it opens nothing here.
@@ -358,5 +478,5 @@ export function mapPackages(input: {
     .sort((a, b) => a.clientId.localeCompare(b.clientId))
 
   notMigrated.sort((a, b) => a.clientId.localeCompare(b.clientId) || a.option.localeCompare(b.option))
-  return { classPackages, ptPackages, clientPackages, notMigrated, balances }
+  return { classPackages, ptPackages, clientPackages, notMigrated, balances, bookedAhead, runs: purchaseRuns, notes }
 }

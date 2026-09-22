@@ -1,0 +1,6 @@
+<!-- Invented fixture: no real studio or person. Layout follows Mindbody's Cancellations (Individual records) export: data rows have no opening <tr>. -->
+<table class="mainText" cellspacing="0">
+<tr><td>Cancel Date/Time</td><td>Cancelled By</td><td>Date</td><td>Time</td><td>Type</td><td>Location</td><td>Teacher</td><td>Client</td><td>Method</td><td>Add-On</td><td></td></tr>
+<td>6/7/2026 5:30:00 pm</td><td>Jane&nbsp; Doe</td><td>6/7/2026</td><td>7:00 pm</td><td>Hatha</td><td>Main Hall</td><td>Ivy Instructor</td><td>Jane&nbsp; Doe</td><td>late</td><td>No</td><td>&nbsp;</td></tr>
+<td>5/7/2026 9:12:44 am</td><td>Rick Roe</td><td>6/7/2026</td><td>7:00 pm</td><td>Hatha</td><td>Main Hall</td><td>Ivy Instructor</td><td>Rick Roe</td><td>early</td><td>No</td><td>&nbsp;</td></tr>
+</table>

@@ -443,10 +443,41 @@ export function describeFailure(err: unknown): { code: string; message: string }
   }
   // Anything else the database refused mid-import. Still the operator's to look
   // at, and worth saying out loud rather than a bare "failed".
-  return {
-    code: 'import_refused',
-    message: err instanceof Error ? err.message : 'The import could not be completed.',
+  return { code: 'import_refused', message: refusalMessage(err) }
+}
+
+/**
+ * What the operator is told when the database refuses an import.
+ *
+ * The query builder's own message is the SQL it ran ("Failed query: INSERT
+ * INTO …" and its parameters), which says nothing about why and would print
+ * member data besides. The reason is on the database error it wraps: its
+ * SQLSTATE, the table, the rule broken and the column. Those are reported, and
+ * the row's values (Postgres's "Failing row contains …" detail) are not.
+ */
+function refusalMessage(err: unknown): string {
+  const pg = findDatabaseError(err)
+  if (pg) {
+    const where = [pg.table_name && `table ${pg.table_name}`, pg.constraint_name && `rule ${pg.constraint_name}`, pg.column_name && `column ${pg.column_name}`]
+      .filter(Boolean)
+      .join(', ')
+    return `The database refused the import (${pg.code ?? 'error'}${where ? `; ${where}` : ''}): ${pg.message}. Nothing was imported.`
   }
+  const message = err instanceof Error ? err.message : ''
+  // Never the SQL itself.
+  return message && !/^failed query/i.test(message) ? message : 'The import could not be completed. Nothing was imported.'
+}
+
+type DatabaseError = { code?: string; message: string; table_name?: string; constraint_name?: string; column_name?: string }
+
+function findDatabaseError(err: unknown): DatabaseError | null {
+  for (let e: unknown = err, depth = 0; e && depth < 5; e = (e as { cause?: unknown }).cause, depth++) {
+    const candidate = e as Partial<DatabaseError>
+    if (typeof candidate.code === 'string' && /^[0-9A-Z]{5}$/.test(candidate.code) && typeof candidate.message === 'string') {
+      return candidate as DatabaseError
+    }
+  }
+  return null
 }
 
 /** The studio's most recent import, or null if it has never had one. */

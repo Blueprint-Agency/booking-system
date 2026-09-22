@@ -568,16 +568,67 @@ export function readAttendance(rows: TableRow[]): AttendanceRow[] {
   return out
 }
 
+/* ── 08 Cancellations — Individual records: when each booking was given up ── */
+
+export type CancellationRow = {
+  /** When it was cancelled, on the studio's clock. */
+  cancelledAt: LocalDateTime
+  /** The client's own name (`First Last`), a staff member's, or a system user such as `_ClassPass API`. */
+  cancelledBy: string
+  /** The class it was cancelled from. */
+  date: CalendarDate
+  start: ClockTime | null
+  /** The class name, cut to 14 characters by Mindbody. */
+  description: string
+  /** The client, `First Last`. The report has no client id. */
+  client: string
+  /** `early` or `late`. */
+  method: string
+}
+
+/**
+ * One row per cancelled reservation. The rows have no opening `<tr>`, which
+ * `readHtmlTable` forgives; an empty piece is the header and "No Cancellations".
+ */
+export function readCancellations(html: string): CancellationRow[] {
+  const rows = readHtmlTable(html)
+  const { at, columns } = header(rows, 'Cancellations', ['Cancel Date/Time', 'Cancelled By', 'Date', 'Time', 'Client', 'Method'])
+  const out: CancellationRow[] = []
+  for (const row of dataRows(rows, at)) {
+    const cancelledAt = parseMindbodyDate(cell(row, columns, 'Cancel Date/Time'), 'DM')
+    const date = parseMindbodyDate(cell(row, columns, 'Date'), 'DM')
+    if (!cancelledAt || !date) continue
+    out.push({
+      cancelledAt,
+      cancelledBy: tidy(cell(row, columns, 'Cancelled By')),
+      date: { year: date.year, month: date.month, day: date.day },
+      // `h:mm am`, now and then with seconds; `TBD` on an appointment.
+      start: parseClock(cell(row, columns, 'Time').trim().replace(/^(\d{1,2}:\d{2}):\d{2}(\s*[ap]m)$/i, '$1$2')),
+      description: tidy(cell(row, columns, 'Type')),
+      client: tidy(cell(row, columns, 'Client')),
+      method: tidy(cell(row, columns, 'Method')).toLowerCase(),
+    })
+  }
+  return out
+}
+
 /* ── 39 Payroll — Detail: what each teacher was actually paid, per class ──── */
 
 export type PayrollRow = {
   /** The teacher, from the heading above their block. */
   staff: string
   date: CalendarDate
-  start: ClockTime
+  /** Null where Mindbody wrote `TBD` — a revenue share on something with no set time (a retreat). */
+  start: ClockTime | null
+  /** The class name; blank on the per-client and appointment tables, which have none. */
   description: string
-  /** Dollars earned for that one class. */
+  /** Dollars earned for that one class (or client, or appointment). */
   earnings: number
+  /**
+   * Which table the line is in: `class` (one line per class taught), `class_per_client`
+   * (a percentage-rate class: one line per client) or `appointment` (PT).
+   */
+  table: 'class' | 'class_per_client' | 'appointment'
 }
 
 /** A lone-cell heading that is the studio's own furniture rather than a teacher's name. */
@@ -655,10 +706,13 @@ function payrollLines(rows: TableRow[], staff: string | null): PayrollRow[] {
         ? { year: Number(long[3]), month, day: Number(long[1]) }
         : null
       : parseMindbodyDate(rawDate, 'DM')
-    const start = parseClock(cell(row, columns, pick(PAYROLL_TIME)))
+    const rawTime = cell(row, columns, pick(PAYROLL_TIME))
+    const start = parseClock(rawTime)
     const earnings = parseMoney(cell(row, columns, 'Earnings'))
-    if (!date || !start || earnings === null) continue
-    out.push({ staff: teacher, date, start, description: tidy(cell(row, columns, pick(PAYROLL_CLASS))), earnings })
+    // A line at no set time (`TBD`) is still money paid: kept, for the mapper to place or report.
+    if (!date || (!start && !/^tbd$/i.test(rawTime.trim())) || earnings === null) continue
+    const table = 'appointment date' in columns ? 'appointment' : 'client name' in columns ? 'class_per_client' : 'class'
+    out.push({ staff: teacher, date, start, description: tidy(cell(row, columns, pick(PAYROLL_CLASS))), earnings, table })
   }
   return out
 }

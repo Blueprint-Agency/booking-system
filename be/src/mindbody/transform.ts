@@ -2,12 +2,14 @@ import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { packArchive, unpackArchive } from '../services/tenants/transfer-archive'
 import { validateConfig } from './config'
+import { constraintViolations } from './constraints'
 import { compareFigures, figuresOf, type Figures } from './figures'
 import { mapStudio, renderPreflight, type MindbodyReports, type Transformed } from './mapper'
 import {
   readAccountBalances,
   readAttendance,
   readMemberList,
+  readCancellations,
   readPayroll,
   readPayRates,
   readPhoneBook,
@@ -56,7 +58,33 @@ export const REPORTS = {
     test: (f: string) => /attendance/i.test(f) && !/analysis/i.test(f) && /-\s*date\b/i.test(f),
   },
   payroll: { label: 'Payroll — Detail', test: (f: string) => /payroll.*detail/i.test(f) },
+  // When each late cancel happened, and who did it. Individual records only:
+  // "Group cancellations" repeats rows already in them.
+  cancellations: { label: 'Cancellations — Individual records', test: (f: string) => /cancellations - individual records/i.test(f) },
 } as const
+
+/**
+ * Which reports a download must hold (`required`) and which are read as exactly one file
+ * (`single`: two would be two downloads, with no saying which is current). `report-files.json`
+ * repeats these with the file names the cutover download writes, and the download script is
+ * checked against that file; `transform.test.ts` holds the three together.
+ */
+export const REPORT_RULES: Record<keyof typeof REPORTS, { single: boolean; required: boolean }> = {
+  members: { single: true, required: true },
+  referrals: { single: false, required: true },
+  retention: { single: true, required: true },
+  phoneBook: { single: true, required: true },
+  holdings: { single: true, required: true },
+  optionSales: { single: true, required: true },
+  sales: { single: true, required: true },
+  balances: { single: true, required: false },
+  schedule: { single: true, required: true },
+  roster: { single: false, required: true },
+  payRates: { single: true, required: false },
+  attendance: { single: false, required: false },
+  payroll: { single: false, required: false },
+  cancellations: { single: false, required: false },
+}
 
 async function filesUnder(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true, recursive: true })
@@ -69,6 +97,14 @@ async function filesUnder(dir: string): Promise<string[]> {
 /** Read every report this transform uses out of a download folder. */
 export async function readReports(dir: string): Promise<MindbodyReports> {
   const files = await filesUnder(dir)
+  // Every problem with the folder at once, before any file is read.
+  const problems: string[] = []
+  for (const [kind, rule] of Object.entries(REPORT_RULES) as [keyof typeof REPORTS, { single: boolean; required: boolean }][]) {
+    const found = files.filter(f => REPORTS[kind].test(path.basename(f)))
+    if (rule.required && found.length === 0) problems.push(`${dir} has no ${REPORTS[kind].label} report`)
+    if (rule.single && found.length > 1) problems.push(`${dir} has more than one ${REPORTS[kind].label} report: ${found.join(', ')}`)
+  }
+  if (problems.length > 0) throw new Error(problems.join('\n'))
   const pick = (kind: keyof typeof REPORTS) => {
     const found = files.filter(f => REPORTS[kind].test(path.basename(f)))
     if (found.length === 0) throw new Error(`${dir} has no ${REPORTS[kind].label} report`)
@@ -106,6 +142,8 @@ export async function readReports(dir: string): Promise<MindbodyReports> {
   for (const file of optionalSet('attendance')) attendance.push(...readAttendance(await workbook(file)))
   const payroll = []
   for (const file of optionalSet('payroll')) payroll.push(...readPayroll(await read(file)))
+  const cancellations = []
+  for (const file of optionalSet('cancellations')) cancellations.push(...readCancellations(await read(file)))
 
   return {
     members: readMemberList(await one('members')),
@@ -121,6 +159,7 @@ export async function readReports(dir: string): Promise<MindbodyReports> {
     payRates: payRatesFile ? readPayRates(await workbook(payRatesFile)) : [],
     attendance,
     payroll,
+    cancellations,
   }
 }
 
@@ -151,6 +190,11 @@ export async function transformMindbody(input: {
   const config = validateConfig(input.config)
   const reports = await readReports(input.reportsDir)
   const result = mapStudio(reports, config, input.tenantId.toLowerCase())
+  // Caught here, naming every rule, rather than as one refused row at the end of the import.
+  const violations = constraintViolations(result.archive)
+  if (violations.length > 0) {
+    throw new Error(`the archive would break the database's rules, so no zip was written:\n${violations.map(v => `  - ${v}`).join('\n')}`)
+  }
   const zip = await packArchive(result.archive, { date: new Date(config.asOf) })
   return { ...result, zip, preflightText: renderPreflight(result.preflight), expected: figuresOf(result.archive) }
 }
