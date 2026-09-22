@@ -61,6 +61,8 @@ export const leaveRequests = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
+    decidedByStaffIdFkIdx: index('leave_requests_decided_by_staff_id_fk_idx').on(table.decidedByStaffId),
+    instructorIdFkIdx: index('leave_requests_instructor_id_fk_idx').on(table.instructorId),
     // The balance query: one instructor's rows for one leave year.
     balanceIdx: index('leave_requests_instructor_year_idx').on(table.tenantId, table.instructorId, table.leaveYear),
     // The calendar / clash queries: everything overlapping a date window.
@@ -111,6 +113,7 @@ export const leavePools = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
+    tenantIdFkIdx: index('leave_pools_tenant_id_fk_idx').on(table.tenantId),
     pk: primaryKey({ columns: [table.instructorId, table.type, table.leaveYear] }),
   }),
 )

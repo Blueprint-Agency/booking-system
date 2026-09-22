@@ -48,6 +48,10 @@ export const clients = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
+    referredByClientIdFkIdx: index('clients_referred_by_client_id_fk_idx').on(table.referredByClientId),
+    // Is this sign-in anyone's member anywhere — `client_auth_user_is_member`
+    // (migration 0060), asked for every member when a studio is deleted.
+    authUserIdx: index('clients_auth_user_id_idx').on(table.authUserId),
     tenantAuthUserUnique: unique('clients_tenant_auth_user_unique').on(
       table.tenantId,
       table.authUserId,
@@ -94,6 +98,9 @@ export const staffUsers = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
+    archivedByStaffIdFkIdx: index('staff_users_archived_by_staff_id_fk_idx').on(table.archivedByStaffId),
+    // `staff_auth_user_is_staff` (migration 0072), as for clients above.
+    authUserIdx: index('staff_users_auth_user_id_idx').on(table.authUserId),
     tenantAuthUserUnique: unique('staff_users_tenant_auth_user_unique').on(
       table.tenantId,
       table.authUserId,
@@ -131,6 +138,8 @@ export const staffInvitations = pgTable(
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
   },
   table => ({
+    invitedByStaffIdFkIdx: index('staff_invitations_invited_by_staff_id_fk_idx').on(table.invitedByStaffId),
+    staffUserIdFkIdx: index('staff_invitations_staff_user_id_fk_idx').on(table.staffUserId),
     emailStatusIdx: index('staff_invitations_email_status_idx').on(table.tenantId, table.email, table.status),
     inviterIdx: index('staff_invitations_inviter_idx').on(table.tenantId, table.invitedByStaffId),
     // An invitation token is looked up inside the Tenant it was issued for, so

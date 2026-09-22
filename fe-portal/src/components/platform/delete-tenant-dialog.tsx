@@ -43,10 +43,15 @@ export function DeleteTenantDialog({ api, tenant, onOpenChange, onDeleted }: Del
         err instanceof ApiError && err.body && typeof err.body === "object"
           ? (err.body as { error?: string }).error
           : undefined;
+      // No answer at all (a timeout or a dropped connection) says nothing about
+      // the server: a large studio's delete can still commit after the portal
+      // gives up waiting. Only a refusal the server sent means nothing happened.
       toast.error(
         code && TENANT_REFUSALS[code]
           ? TENANT_REFUSALS[code]
-          : `Could not delete ${tenant.name}. Nothing was deleted.`,
+          : err instanceof ApiError
+            ? `Could not delete ${tenant.name}. Nothing was deleted.`
+            : `No answer from the server about ${tenant.name}. The delete may still finish — refresh the list in a minute before trying again.`,
       );
     } finally {
       setSubmitting(false);

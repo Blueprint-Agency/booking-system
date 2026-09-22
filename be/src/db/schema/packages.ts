@@ -117,6 +117,7 @@ export const ptPackages = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   table => ({
+    tenantIdFkIdx: index('pt_packages_tenant_id_fk_idx').on(table.tenantId),
     validityPositive: check(
       'pt_packages_validity_days_positive',
       sql`${table.validityDays} > 0`,
@@ -153,6 +154,7 @@ export const promotions = pgTable(
       .references(() => staffUsers.id, { onDelete: 'restrict' }),
   },
   table => ({
+    createdByStaffIdFkIdx: index('promotions_created_by_staff_id_fk_idx').on(table.createdByStaffId),
     // Primary in-window lookup at purchase time.
     parentLookupIdx: index('promotions_parent_lookup_idx').on(
       table.tenantId,
@@ -223,6 +225,7 @@ export const promoCodes = pgTable(
       .references(() => staffUsers.id, { onDelete: 'restrict' }),
   },
   table => ({
+    createdByStaffIdFkIdx: index('promo_codes_created_by_staff_id_fk_idx').on(table.createdByStaffId),
     // Unique per **Tenant**, not per platform. A global index would have let
     // whichever studio claimed SUMMER first keep every other studio off the
     // word — and the collision error would have told them it was taken.
@@ -265,6 +268,7 @@ export const promoCodeProducts = pgTable(
     productId: uuid('product_id').notNull(),
   },
   table => ({
+    tenantIdFkIdx: index('promo_code_products_tenant_id_fk_idx').on(table.tenantId),
     pk: primaryKey({
       name: 'promo_code_products_pkey',
       columns: [table.promoCodeId, table.productType, table.productId],
@@ -299,6 +303,8 @@ export const promoCodeRedemptions = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
+    clientIdFkIdx: index('promo_code_redemptions_client_id_fk_idx').on(table.clientId),
+    tenantIdFkIdx: index('promo_code_redemptions_tenant_id_fk_idx').on(table.tenantId),
     // The one-use-per-member rule. It also makes the Hold idempotent: a member
     // who abandons and retries updates their own row. It is **partial** (§14):
     // a refunded Redemption is not deleted — the ledger is the only evidence of
@@ -398,6 +404,13 @@ export const clientPackages = pgTable(
     }),
   },
   table => ({
+    appliedPromoCodeIdFkIdx: index('client_packages_applied_promo_code_id_fk_idx').on(table.appliedPromoCodeId),
+    appliedPromotionIdFkIdx: index('client_packages_applied_promotion_id_fk_idx').on(table.appliedPromotionId),
+    boundInstructorIdFkIdx: index('client_packages_bound_instructor_id_fk_idx').on(table.boundInstructorId),
+    locationIdFkIdx: index('client_packages_location_id_fk_idx').on(table.locationId),
+    purchaseIdFkIdx: index('client_packages_purchase_id_fk_idx').on(table.purchaseId),
+    sourceClassPackageIdFkIdx: index('client_packages_source_class_package_id_fk_idx').on(table.sourceClassPackageId),
+    sourcePtPackageIdFkIdx: index('client_packages_source_pt_package_id_fk_idx').on(table.sourcePtPackageId),
     clientKindIdx: index('client_packages_client_kind_idx').on(table.tenantId, table.clientId, table.kind),
     clientExpiryIdx: index('client_packages_client_expiry_idx').on(table.tenantId, table.clientId, table.expiresAt),
     // One plan per Purchase — the index that decides a redelivery race, in the
@@ -489,6 +502,7 @@ export const corporatePackages = pgTable(
       .references(() => staffUsers.id, { onDelete: 'restrict' }),
   },
   table => ({
+    createdByStaffIdFkIdx: index('corporate_packages_created_by_staff_id_fk_idx').on(table.createdByStaffId),
     statusIdx: index('corporate_packages_status_idx').on(table.tenantId, table.status),
     deletedIdx: index('corporate_packages_deleted_idx').on(table.tenantId, table.deletedAt),
     pricePositive: check('corporate_packages_price_positive', sql`${table.priceSgd} >= 0`),

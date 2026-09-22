@@ -1,4 +1,4 @@
-import { pgTable, uuid, boolean, integer, numeric, timestamp, check, uniqueIndex } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, boolean, integer, numeric, timestamp, check, index, uniqueIndex } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { tenantIdColumn } from './tenancy'
 import { staffUsers } from './identity'
@@ -51,6 +51,7 @@ export const globalPolicy = pgTable(
     }),
   },
   table => ({
+    updatedByStaffIdFkIdx: index('global_policy_updated_by_staff_id_fk_idx').on(table.updatedByStaffId),
     oneRowPerTenant: uniqueIndex('global_policy_tenant_uniq').on(table.tenantId),
     leaveCaps: check('global_policy_leave_caps_min_1', sql`${table.studyLeaveCap} >= 1`),
     crossLocationRateNonNegative: check(
@@ -72,6 +73,7 @@ export const ptBookingConfig = pgTable(
     }),
   },
   table => ({
+    updatedByStaffIdFkIdx: index('pt_booking_config_updated_by_staff_id_fk_idx').on(table.updatedByStaffId),
     oneRowPerTenant: uniqueIndex('pt_booking_config_tenant_uniq').on(table.tenantId),
   }),
 )

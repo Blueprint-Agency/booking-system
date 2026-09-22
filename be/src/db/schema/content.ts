@@ -31,6 +31,7 @@ export const emailTemplates = pgTable(
     }),
   },
   table => ({
+    updatedByStaffIdFkIdx: index('email_templates_updated_by_staff_id_fk_idx').on(table.updatedByStaffId),
     tenantSlugUnique: uniqueIndex('email_templates_tenant_slug_unique').on(
       table.tenantId,
       table.slug,
@@ -87,6 +88,7 @@ export const waiver = pgTable(
     }),
   },
   table => ({
+    updatedByStaffIdFkIdx: index('waiver_updated_by_staff_id_fk_idx').on(table.updatedByStaffId),
     oneRowPerTenant: uniqueIndex('waiver_tenant_uniq').on(table.tenantId),
   }),
 )
@@ -102,6 +104,7 @@ export const waiverSignatures = pgTable(
     signedAt: timestamp('signed_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
+    tenantIdFkIdx: index('waiver_signatures_tenant_id_fk_idx').on(table.tenantId),
     clientUnique: uniqueIndex('waiver_signatures_client_unique').on(table.clientId),
   }),
 )
@@ -128,6 +131,7 @@ export const marketingContent = pgTable(
     }),
   },
   table => ({
+    updatedByStaffIdFkIdx: index('marketing_content_updated_by_staff_id_fk_idx').on(table.updatedByStaffId),
     oneRowPerTenant: uniqueIndex('marketing_content_tenant_uniq').on(table.tenantId),
   }),
 )

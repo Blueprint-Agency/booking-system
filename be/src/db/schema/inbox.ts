@@ -22,6 +22,7 @@ export const inboxItems = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
+    readByStaffIdFkIdx: index('inbox_items_read_by_staff_id_fk_idx').on(table.readByStaffId),
     typeReadCreatedIdx: index('inbox_items_type_read_created_idx').on(
       table.tenantId,
       table.type,

@@ -341,4 +341,79 @@ describe('deleting a studio', { skip: integrationTestsEnabled ? false : SKIP_REA
     // A second delete of the same id finds nothing.
     await expectStatus(await remove(doomed, slug), 404)
   })
+
+  /**
+   * A studio the size of one restored from years of another booking system —
+   * thousands of members, tens of thousands of classes, bookings and
+   * check-ins — goes inside the portal's request deadline.
+   *
+   * The delete is one statement per table, but Postgres checks every foreign
+   * key per deleted row: deleting a studio's clients looks each one up in every
+   * table that points at `clients`. A referencing column with no index of its
+   * own makes each of those lookups a scan of the whole table, and a studio this
+   * size then took ~40s — the portal gave up at 15s while the backend carried on
+   * and committed (#194). So the sizes here are the ones that failed, and the
+   * bound is the portal's.
+   */
+  test('a studio of a real one’s size is deleted inside the portal’s deadline', { timeout: 180_000 }, async () => {
+    const { tenant } = await provision.provisionTenant({ slug: `del-big-${run}`, name: 'Years Of History' })
+    const big = tenant.id
+    // One class made the ordinary way brings the parents every class needs.
+    const seedClass = await fixtures.insertRow('classes', big)
+    const SIZE = { clients: 3_400, classes: 11_300, packages: 5_000, bookings: 86_000, checkIns: 80_000, cancellations: 3_000 }
+
+    await harness.db.execute(sql`
+      INSERT INTO client_auth_users (id, name, email)
+      SELECT 'del-big-${sql.raw(run)}-' || g, 'Member ' || g, 'member-' || g || '@${sql.raw(DOMAIN)}'
+      FROM generate_series(1, ${SIZE.clients}) g`)
+    await harness.db.execute(sql`
+      INSERT INTO clients (tenant_id, auth_user_id, email, name, phone)
+      SELECT ${big}, 'del-big-${sql.raw(run)}-' || g, 'member-' || g || '@${sql.raw(DOMAIN)}', 'Member ' || g, '+6590000000'
+      FROM generate_series(1, ${SIZE.clients}) g`)
+    await harness.db.execute(sql`
+      INSERT INTO classes (tenant_id, class_type_id, main_instructor_id, location_id, created_by_staff_id,
+                           starts_at, ends_at, capacity_online, credit_cost)
+      SELECT tenant_id, class_type_id, main_instructor_id, location_id, created_by_staff_id,
+             now() - g * interval '1 hour', now() - g * interval '1 hour' + interval '1 hour', 20, 1
+      FROM classes, generate_series(1, ${SIZE.classes - 1}) g
+      WHERE id = ${seedClass.id as string}`)
+    await harness.db.execute(sql`
+      INSERT INTO client_packages (tenant_id, client_id, kind, validity_days, amount_paid_sgd, list_price_sgd)
+      SELECT ${big}, c.id, 'credit_bundle', 30, 100, 100
+      FROM (SELECT id, row_number() OVER () AS n FROM clients WHERE tenant_id = ${big}) c,
+           generate_series(1, ${Math.ceil(SIZE.packages / SIZE.clients)}) g
+      LIMIT ${SIZE.packages}`)
+    await harness.db.execute(sql`
+      WITH c AS (SELECT id, row_number() OVER (ORDER BY id) - 1 AS n FROM clients WHERE tenant_id = ${big}),
+           k AS (SELECT id, row_number() OVER (ORDER BY id) - 1 AS n FROM classes WHERE tenant_id = ${big}),
+           p AS (SELECT DISTINCT ON (client_id) id, client_id FROM client_packages WHERE tenant_id = ${big})
+      INSERT INTO bookings (tenant_id, kind, class_id, client_id, client_package_id, qr_token, code)
+      SELECT ${big}, 'class', k.id, c.id, p.id, 'qr-' || g, 'B' || g
+      FROM generate_series(0, ${SIZE.bookings - 1}) g
+      JOIN c ON c.n = g % ${SIZE.clients}
+      JOIN k ON k.n = g % ${SIZE.classes}
+      LEFT JOIN p ON p.client_id = c.id`)
+    await harness.db.execute(sql`
+      INSERT INTO check_ins (tenant_id, booking_id, method, checked_in_by_staff_id)
+      SELECT b.tenant_id, b.id, 'manual', ${seedClass.main_instructor_id as string}
+      FROM bookings b WHERE b.tenant_id = ${big} LIMIT ${SIZE.checkIns}`)
+    await harness.db.execute(sql`
+      INSERT INTO cancellations (tenant_id, booking_id, client_id, kind, source,
+                                 was_within_window, was_within_cap, refund_fired, cancelled_at)
+      SELECT b.tenant_id, b.id, b.client_id, 'class', 'client', false, true, false, now()
+      FROM bookings b WHERE b.tenant_id = ${big}
+      ORDER BY b.id DESC LIMIT ${SIZE.cancellations}`)
+    await harness.db.execute(sql`ANALYZE`)
+
+    const PORTAL_DEADLINE_MS = 15_000
+    const started = performance.now()
+    const body = await expectStatus(await remove(big, tenant.slug), 200)
+    const took = performance.now() - started
+
+    const made = Object.values(SIZE).reduce((a, b) => a + b, 0)
+    assert.ok(body.deleted.rows >= made, `the whole studio went (${body.deleted.rows} of at least ${made} rows)`)
+    assert.equal(body.deleted.accounts.client, SIZE.clients, 'and every member who was only here')
+    // Well inside, not just inside: the portal's deadline covers the network too.
+    assert.ok(took < PORTAL_DEADLINE_MS / 2, `deleted in ${Math.round(took)}ms; the portal gives up at ${PORTAL_DEADLINE_MS}ms`)
+  })
 })

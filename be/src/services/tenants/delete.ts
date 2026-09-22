@@ -38,7 +38,7 @@
  * Not written to the studio's own `audit_log`, which is deleted with it. The
  * route's log line — who, which studio, how many rows — is the record.
  */
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, inArray, sql } from 'drizzle-orm'
 import { currentTenantId, db, withTenant } from '../../db'
 import { clientAuthUsers, staffAuthUsers } from '../../db/schema/auth'
 import { tenantImports, tenants, tenantSettings } from '../../db/schema/tenancy'
@@ -139,25 +139,29 @@ export async function deleteTenant(input: DeleteTenantInput): Promise<DeletedTen
     // Former Slugs, claimed sessions and payment credentials cascade.
     await db.delete(tenants).where(eq(tenants.id, id))
 
-    for (const userId of clientAccounts) {
-      const [still] = await db.execute<{ member: boolean }>(
-        sql`SELECT public.client_auth_user_is_member(${userId}) AS member`,
-      )
-      if (still?.member) continue
+    // A statement per batch of people, not two round trips per person: a studio
+    // restored with thousands of members spent longer here than on all its rows.
+    for (const batch of chunks(clientAccounts)) {
       const gone = await db
         .delete(clientAuthUsers)
-        .where(eq(clientAuthUsers.id, userId))
+        .where(
+          and(
+            inArray(clientAuthUsers.id, batch),
+            sql`NOT public.client_auth_user_is_member(${clientAuthUsers.id})`,
+          ),
+        )
         .returning({ id: clientAuthUsers.id })
       accounts.client += gone.length
     }
-    for (const userId of staffAccounts) {
-      const [still] = await db.execute<{ staff: boolean }>(
-        sql`SELECT public.staff_auth_user_is_staff(${userId}) AS staff`,
-      )
-      if (still?.staff) continue
+    for (const batch of chunks(staffAccounts)) {
       const gone = await db
         .delete(staffAuthUsers)
-        .where(eq(staffAuthUsers.id, userId))
+        .where(
+          and(
+            inArray(staffAuthUsers.id, batch),
+            sql`NOT public.staff_auth_user_is_staff(${staffAuthUsers.id})`,
+          ),
+        )
         .returning({ id: staffAuthUsers.id })
       accounts.staff += gone.length
     }
@@ -173,6 +177,13 @@ export async function deleteTenant(input: DeleteTenantInput): Promise<DeletedTen
     accounts,
     objects: await purgeObjects(id),
   }
+}
+
+/** Batches small enough to bind as parameters — Postgres takes at most 65,535 per statement. */
+function chunks<T>(items: T[], size = 10_000): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
+  return out
 }
 
 /** The auth user ids this studio's rows in `table` link to. */
