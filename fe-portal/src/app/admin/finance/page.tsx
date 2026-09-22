@@ -9,7 +9,9 @@ import {
   DialogFooter,
   Input,
   Label,
+  Pagination,
   Select,
+  DEFAULT_PAGE_SIZE,
 } from "@/components/ui";
 import {
   DateRangeFilter,
@@ -71,8 +73,6 @@ import { OverviewPanel } from "./overview";
  *      an invitation to make our books disagree with theirs.
  */
 
-const PAGE_SIZE = 50;
-
 export default function FinancePage() {
   const { api } = useWorkspace();
 
@@ -91,7 +91,6 @@ export default function FinancePage() {
   const [data, setData] = useState<FinanceResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [page, setPage] = useState(0);
   const [exporting, setExporting] = useState(false);
 
   // Local draft values for the inline-editable amount cells.
@@ -162,20 +161,26 @@ export default function FinancePage() {
     void load();
   }, [load]);
 
-  // A filter change that shrinks the result set must not leave the reader
-  // stranded on a page that no longer exists.
-  useEffect(() => {
-    setPage(0);
-  }, [filters]);
-
   /** Both halves read the same period, so a write has to refresh both. */
   const reload = useCallback(async () => {
     await Promise.all([load(), loadOverview()]);
   }, [load, loadOverview]);
 
+  // Paged here rather than with `usePaged`: a write reloads the ledger (which
+  // empties it first), and saving a pay cell on page three must not bounce the
+  // reader back to page one. Only a filter change does that.
+  // The page remembers which filters it was chosen under: a filter change that
+  // shrinks the result set must not leave the reader stranded on a page that
+  // no longer exists, so any other filters read as page one.
+  const [paged, setPaged] = useState({ filters, page: 1 });
+  const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
+  const page = paged.filters === filters ? paged.page : 1;
+  const setPage = (p: number) => setPaged({ filters, page: p });
+
   const rows = data?.rows ?? [];
-  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
-  const visible = rows.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+  const current = Math.min(page, pageCount);
+  const visible = rows.slice((current - 1) * pageSize, current * pageSize);
 
   const rowKey = (r: FinanceRow) => `${r.kind}:${r.id}:${r.instructor_id ?? ""}`;
 
@@ -361,8 +366,8 @@ export default function FinancePage() {
           description="Purchases, refunds and completed sessions appear here."
         />
       ) : (
-        <>
-          <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-soft">
+        <div className="overflow-hidden rounded-xl border border-border bg-card shadow-soft">
+          <div className="overflow-x-auto">
             {/* min-w makes the wrapper's overflow-x-auto actually do something:
                 a plain w-full table shrinks to the phone instead of scrolling,
                 and eleven columns then wrap one character per line. */}
@@ -517,34 +522,18 @@ export default function FinancePage() {
               </tbody>
             </table>
           </div>
-
-          {pageCount > 1 && (
-            <div className="mt-3 flex items-center justify-between text-xs text-muted">
-              <span>
-                {page * PAGE_SIZE + 1}–{Math.min(rows.length, (page + 1) * PAGE_SIZE)} of{" "}
-                {rows.length}
-              </span>
-              <div className="flex gap-2">
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={page === 0}
-                  onClick={() => setPage((p) => p - 1)}
-                >
-                  Previous
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={page >= pageCount - 1}
-                  onClick={() => setPage((p) => p + 1)}
-                >
-                  Next
-                </Button>
-              </div>
-            </div>
-          )}
-        </>
+          <Pagination
+            page={current}
+            pageSize={pageSize}
+            total={rows.length}
+            onPageChange={setPage}
+            onPageSizeChange={(n) => {
+              setPageSize(n);
+              setPage(1);
+            }}
+            noun="transactions"
+          />
+        </div>
       )}
 
       {showCreate && (

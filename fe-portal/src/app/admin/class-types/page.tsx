@@ -15,6 +15,8 @@ import {
   Tabs,
   TabsList,
   TabsTrigger,
+  Pagination,
+  usePaged,
 } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
@@ -65,9 +67,10 @@ export default function ClassTypesPage() {
   );
   const [view, setView] = useState<"active" | "archived">("active");
 
+  // `loading` starts true and is never set again: a reload after a save refreshes
+  // the list in place, so the pager keeps the page the admin was on.
   const reload = useCallback(async () => {
     if (!api) return;
-    setLoading(true);
     setError(null);
     try {
       const data = await api.get<{ class_types: ApiClassType[] }>(
@@ -289,37 +292,43 @@ function Tree({
   const orphans = all.filter(
     (c) => c.parentId && !all.some((p) => p.id === c.parentId),
   );
+  // Page by top-level row, so a parent never lands on one page and its children
+  // on the next. The count in the footer is of top-level types.
+  const { visible, pagination } = usePaged([...roots, ...orphans]);
 
   return (
-    <ul
-      className={`divide-y divide-border overflow-hidden rounded-xl border border-border bg-card shadow-soft ${
+    <div
+      className={`overflow-hidden rounded-xl border border-border bg-card shadow-soft ${
         dimmed ? "opacity-70" : ""
       }`}
     >
-      {[...roots, ...orphans].map((ct) => {
-        const children = byParent.get(ct.id) ?? [];
-        return (
-          <Fragment key={ct.id}>
-            <ClassTypeRow
-              ct={ct}
-              onEdit={() => onEdit(ct)}
-              onArchive={() => onArchive(ct)}
-              onDelete={onDelete ? () => onDelete(ct) : undefined}
-            />
-            {children.map((child) => (
+      <ul className="divide-y divide-border">
+        {visible.map((ct) => {
+          const children = byParent.get(ct.id) ?? [];
+          return (
+            <Fragment key={ct.id}>
               <ClassTypeRow
-                key={child.id}
-                ct={child}
-                onEdit={() => onEdit(child)}
-                onArchive={() => onArchive(child)}
-                onDelete={onDelete ? () => onDelete(child) : undefined}
-                indent
+                ct={ct}
+                onEdit={() => onEdit(ct)}
+                onArchive={() => onArchive(ct)}
+                onDelete={onDelete ? () => onDelete(ct) : undefined}
               />
-            ))}
-          </Fragment>
-        );
-      })}
-    </ul>
+              {children.map((child) => (
+                <ClassTypeRow
+                  key={child.id}
+                  ct={child}
+                  onEdit={() => onEdit(child)}
+                  onArchive={() => onArchive(child)}
+                  onDelete={onDelete ? () => onDelete(child) : undefined}
+                  indent
+                />
+              ))}
+            </Fragment>
+          );
+        })}
+      </ul>
+      <Pagination {...pagination} noun="class types" />
+    </div>
   );
 }
 

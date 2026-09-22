@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { use, useCallback, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
   Mail,
@@ -18,10 +18,21 @@ import {
   ChevronDown,
   ChevronRight,
   FileCheck,
-  UserPlus,
+  FileWarning,
+  type LucideIcon,
 } from "lucide-react";
 import { toast } from "sonner";
-import { Avatar, Badge, Button, Dialog, DialogFooter, Input, Label } from "@/components/ui";
+import {
+  Avatar,
+  Badge,
+  Button,
+  Dialog,
+  DialogFooter,
+  Input,
+  Label,
+  Pagination,
+  usePaged,
+} from "@/components/ui";
 import { PackageExpiryDialog } from "@/components/clients/package-expiry-dialog";
 import { CrossLocationDialog } from "@/components/clients/cross-location-dialog";
 import { HomeLocationDialog } from "@/components/clients/home-location-dialog";
@@ -39,6 +50,7 @@ import { ApiError } from "@/lib/api";
 import { downloadFile } from "@/lib/download";
 import { getPortalToken } from "@/lib/portal-auth";
 import { formatDate, formatRelative } from "@/lib/formatters";
+import { cn } from "@/lib/utils";
 import type { ClientPackage } from "@/types";
 
 type PackageKind = "credit_bundle" | "unlimited" | "trial" | "pt";
@@ -263,6 +275,49 @@ function toClientPackage(clientId: string, p: ApiPackage): ClientPackage {
   };
 }
 
+type PackageAction =
+  | "balance"
+  | "expiry"
+  | "cross_location"
+  | "home_location"
+  | "bound_instructor"
+  | "adjust"
+  | "refund"
+  | "remove";
+
+/** What an admin can do to one package, in menu order. */
+function packageActions(p: ApiPackage): { action: PackageAction; label: string }[] {
+  const out: { action: PackageAction; label: string }[] = [];
+  if (p.kind === "credit_bundle" || p.kind === "trial") {
+    out.push({ action: "balance", label: "Set credit balance" });
+  }
+  // Every kind expires, PT included — a PT package carries its own validity in
+  // days like a Credit Bundle does. A blank date returns any kind to Dormant
+  // (§8): every package starts there and Activates on its first booking.
+  out.push({ action: "expiry", label: "Edit expiry" });
+  // Only an Unlimited Plan has a Home Location to extend or move.
+  if (p.kind === "unlimited") {
+    out.push({
+      action: "cross_location",
+      label:
+        p.cross_location_paid_sgd !== null
+          ? "Edit Cross-Location Add-On"
+          : "Add Cross-Location Add-On",
+    });
+    out.push({ action: "home_location", label: "Change home studio" });
+  }
+  // Only a PT Package has a Bound Instructor — one sold open is bound from here.
+  if (p.kind === "pt") out.push({ action: "bound_instructor", label: "Change bound instructor" });
+  if (p.kind !== "unlimited") out.push({ action: "adjust", label: "Manual adjustment" });
+  // Always offered on a purchase that reached the payment provider — attendance
+  // is a notice inside the dialog, never a reason to hide the button (§14).
+  if (p.refundable) out.push({ action: "refund", label: "Refund purchase…" });
+  // A comp has no money behind it, so it is removed rather than refunded. The
+  // backend is what knows whether a class it paid for has been held.
+  if (p.complimentary) out.push({ action: "remove", label: "Remove free package…" });
+  return out;
+}
+
 export default function ClientProfilePage({
   params,
 }: {
@@ -277,7 +332,6 @@ export default function ClientProfilePage({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [adjustFor, setAdjustFor] = useState<ApiPackage | null>(null);
   const [balanceFor, setBalanceFor] = useState<ApiPackage | null>(null);
   const [expiryFor, setExpiryFor] = useState<ApiPackage | null>(null);
@@ -365,16 +419,32 @@ export default function ClientProfilePage({
     }
   }
 
+  function onPackageAction(action: PackageAction, p: ApiPackage) {
+    const open: Record<PackageAction, (p: ApiPackage) => void> = {
+      balance: setBalanceFor,
+      expiry: setExpiryFor,
+      cross_location: setCrossLocationFor,
+      home_location: setHomeLocationFor,
+      bound_instructor: setBoundInstructorFor,
+      adjust: setAdjustFor,
+      refund: setRefundFor,
+      remove: setRemoveFor,
+    };
+    open[action](p);
+  }
+
+  const blocked = Boolean(profile?.deleted_at);
+
   return (
-    <div className="mx-auto max-w-5xl">
+    <div className="mx-auto max-w-6xl">
       <Link
         href="/admin/customers"
-        className="mb-2 inline-flex items-center gap-1 text-sm text-muted hover:text-ink"
+        className="mb-3 inline-flex items-center gap-1 text-sm text-muted hover:text-ink"
       >
         <ArrowLeft className="h-3.5 w-3.5" /> All customers
       </Link>
 
-      {loading ? (
+      {loading && !profile ? (
         <div className="flex items-center justify-center gap-2 py-20 text-sm text-muted">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading customer…
         </div>
@@ -439,544 +509,197 @@ export default function ClientProfilePage({
             </div>
           )}
 
-          <header className="flex flex-wrap items-start gap-x-4 gap-y-3 border-b border-border pb-6">
-            <Avatar name={profile.name} size={64} />
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-xl font-semibold break-words text-ink sm:text-2xl">
-                  {profile.name}
-                </h1>
-                {profile.deleted_at ? (
-                  <Badge tone="error">
-                    <ShieldOff className="mr-1 h-3 w-3" /> Blocked
-                  </Badge>
-                ) : (
-                  <Badge tone="sage">
-                    <ShieldCheck className="mr-1 h-3 w-3" /> Active
-                  </Badge>
-                )}
-              </div>
-              <div className="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted">
-                <span className="inline-flex min-w-0 items-center gap-1.5 break-all">
-                  <Mail className="h-3 w-3 shrink-0" /> {profile.email}
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <Phone className="h-3 w-3" /> {profile.phone || "—"}
-                </span>
-                <span>Joined {formatDate(profile.joined_at, "d MMM yyyy")}</span>
-                {profile.gender && profile.gender !== "prefer_not_to_say" && (
-                  <span>{GENDER_LABEL[profile.gender]}</span>
-                )}
-                {profile.dob && <span>Born {formatDate(profile.dob, "d MMM yyyy")}</span>}
-                <span className="inline-flex items-center gap-1.5">
-                  <FileCheck className="h-3 w-3" />
-                  {profile.waiver_signed_at
-                    ? `Waiver signed ${formatDate(profile.waiver_signed_at, "d MMM yyyy")}`
-                    : "Waiver not signed"}
-                </span>
-                {profile.referred_by && (
-                  <Link
-                    href={`/admin/customers/${profile.referred_by.id}`}
-                    className="inline-flex items-center gap-1.5 hover:text-ink"
+          {/* Who they are and how they turn up — the two things the front desk
+              reads first. Everything that changes their account sits in the
+              side column, away from the name. */}
+          <header className="overflow-hidden rounded-2xl border border-border bg-card shadow-soft">
+            <div className="flex flex-wrap items-start gap-4 p-5 sm:p-6">
+              <Avatar name={profile.name} size={56} className="text-sm" />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="text-xl font-semibold break-words text-ink sm:text-2xl">
+                    {profile.name}
+                  </h1>
+                  {profile.deleted_at ? (
+                    <Badge tone="error">
+                      <ShieldOff className="mr-1 h-3 w-3" /> Blocked
+                    </Badge>
+                  ) : (
+                    <Badge tone="sage">
+                      <ShieldCheck className="mr-1 h-3 w-3" /> Active
+                    </Badge>
+                  )}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1.5 text-sm text-muted">
+                  <a
+                    href={`mailto:${profile.email}`}
+                    className="inline-flex min-w-0 items-center gap-1.5 break-all hover:text-ink"
                   >
-                    <UserPlus className="h-3 w-3" /> Referred by {profile.referred_by.name}
-                  </Link>
-                )}
+                    <Mail className="h-3.5 w-3.5 shrink-0" /> {profile.email}
+                  </a>
+                  <span className="inline-flex items-center gap-1.5">
+                    <Phone className="h-3.5 w-3.5 shrink-0" /> {profile.phone || "—"}
+                  </span>
+                  {/* Beside the contact details, because an unsigned waiver is
+                      the one thing that stops a member being checked in. */}
+                  {profile.waiver_signed_at ? (
+                    <span className="inline-flex items-center gap-1.5">
+                      <FileCheck className="h-3.5 w-3.5 shrink-0" /> Waiver signed{" "}
+                      {formatDate(profile.waiver_signed_at, "d MMM yyyy")}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1.5 text-warning">
+                      <FileWarning className="h-3.5 w-3.5 shrink-0" /> Waiver not signed
+                    </span>
+                  )}
+                </div>
               </div>
-              <AttendanceStrip attendance={profile.attendance} />
-            </div>
-            {canEdit && (
-              <Button variant="ghost" size="sm" onClick={downloadData} disabled={exporting}>
-                {exporting ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Download className="h-3.5 w-3.5" />
-                )}
-                Download data
-              </Button>
-            )}
-            {canEdit && !profile.deleted_at && (
-              <div className="flex flex-wrap items-center gap-2">
-                {/* The address the member signs in with (#176) — beside the one
-                    the header shows, because that is the thing being changed. */}
-                <Button variant="ghost" size="sm" onClick={() => setEmailOpen(true)}>
+              {/* The address the member signs in with (#176) — beside the one
+                  the header shows, because that is the thing being changed. */}
+              {canEdit && !blocked && (
+                <Button variant="secondary" size="sm" onClick={() => setEmailOpen(true)}>
                   <Mail className="h-3.5 w-3.5" /> Change email
                 </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setDeleteOpen(true)}
-                  className="text-error hover:bg-error/10 hover:text-error"
-                >
-                  <ShieldOff className="h-3.5 w-3.5" /> Block
-                </Button>
-              </div>
-            )}
-            {canEdit && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setPermanentDeleteOpen(true)}
-                className="text-error hover:bg-error/10 hover:text-error"
-              >
-                <Trash2 className="h-3.5 w-3.5" /> Delete permanently
-              </Button>
-            )}
+              )}
+            </div>
+            <AttendanceStrip attendance={profile.attendance} />
           </header>
 
-          {/* Remounted by the block state: blocking ends their sessions too. */}
-          <SessionsPanel
-            path={`/portal/admin/clients/${id}`}
-            canRevoke={canEdit}
-            refreshKey={profile.deleted_at}
-            actions={
-              canEdit && !profile.deleted_at ? (
-                <SendSetPasswordButton clientId={id} email={profile.email} />
-              ) : null
-            }
-          />
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
+            <div className="min-w-0 space-y-6">
+              {/* Unfinished purchases — money held against nothing granted (#93).
+                  First, because it is the thing a member's arrival at the front
+                  desk turns into a question. */}
+              {profile.open_purchases.length > 0 && (
+                <Section title="Unfinished purchases" count={profile.open_purchases.length}>
+                  <OpenPurchaseList
+                    purchases={profile.open_purchases}
+                    canEdit={canEdit}
+                    onRefund={setOpenPurchaseRefundFor}
+                  />
+                </Section>
+              )}
 
-          {/* Unfinished purchases — money held against nothing granted (#93).
-              Above the packages, because it is the thing a member's arrival at
-              the front desk turns into a question. */}
-          {profile.open_purchases.length > 0 && (
-            <section>
-              <header className="mb-3 flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-ink">Unfinished purchases</h2>
-                <span className="text-xs text-muted">
-                  {profile.open_purchases.length} open
-                </span>
-              </header>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {profile.open_purchases.map((p) => (
-                  <div
-                    key={p.id}
-                    className="rounded-xl border border-warning/40 bg-warning/5 px-5 py-4 shadow-soft"
-                  >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-ink">
-                          {p.item_name}
-                        </p>
-                        <p className="mt-1 text-xs text-muted">
-                          S${p.paid_sgd} paid of S${p.total_sgd}
-                          {p.part_paid_at
-                            ? ` · since ${formatDate(p.part_paid_at)}`
-                            : ""}
-                        </p>
-                      </div>
-                      <div className="shrink-0 text-right">
-                        <p className="text-lg font-semibold text-ink">
-                          S${p.outstanding_sgd}
-                        </p>
-                        <p className="text-[10px] uppercase tracking-wider text-muted">
-                          Outstanding
-                        </p>
-                      </div>
-                    </div>
-                    <p className="mt-3 flex items-start gap-1.5 text-xs text-ink">
-                      <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-warning" />
-                      <span>
-                        Grants nothing — no plan, no credits, no place held. Do not
-                        check this member in against it.
-                      </span>
-                    </p>
-                    {/* The money's only way out (#95). Nothing was delivered, so
-                        there is no plan to void and no booking to cancel — the
-                        refund closes the purchase and that is all it does. */}
-                    {canEdit && (
-                      <div className="mt-3 flex justify-end">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setOpenPurchaseRefundFor(p)}
-                          className="text-error hover:bg-error/10 hover:text-error"
-                        >
-                          Refund S${p.paid_sgd}
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          <section>
-            <header className="mb-3 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-ink">Packages &amp; memberships</h2>
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-muted">{profile.packages.length} current</span>
-                {/* A **Complimentary Package** (#176) — beside the wallet it
-                    lands in, not in the block/email row above it. */}
-                {canEdit && !profile.deleted_at && (
-                  <Button size="sm" variant="secondary" onClick={() => setGiveOpen(true)}>
-                    <Gift className="h-3.5 w-3.5" /> Give package
-                  </Button>
-                )}
-              </div>
-            </header>
-            {/* Current first, then — folded away until asked for — everything
-                behind them. One card for both lists, so a past package keeps
-                its actions: an expired pack can still be extended or refunded. */}
-            {(
-              [
-                { id: "current", list: profile.packages },
-                { id: "past", list: showPastPackages ? profile.past_packages : [] },
-              ] as const
-            ).map((group) => (
-            <div key={group.id} className={group.id === "past" ? "mt-4" : undefined}>
-            {group.id === "past" && profile.past_packages.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowPastPackages((v) => !v)}
-                className="mb-3 inline-flex items-center gap-1 text-xs font-medium text-muted hover:text-ink"
-                aria-expanded={showPastPackages}
+              <Section
+                title="Packages & memberships"
+                count={profile.packages.length}
+                aside={
+                  // A **Complimentary Package** (#176) — beside the wallet it
+                  // lands in, not among the account actions.
+                  canEdit && !blocked ? (
+                    <Button size="sm" variant="secondary" onClick={() => setGiveOpen(true)}>
+                      <Gift className="h-3.5 w-3.5" /> Give package
+                    </Button>
+                  ) : null
+                }
               >
-                {showPastPackages ? (
-                  <ChevronDown className="h-3.5 w-3.5" />
+                {profile.packages.length === 0 ? (
+                  <EmptyLine>No current packages.</EmptyLine>
                 ) : (
-                  <ChevronRight className="h-3.5 w-3.5" />
+                  <PackageGrid list={profile.packages} canEdit={canEdit} onAction={onPackageAction} />
                 )}
-                Past packages ({profile.past_packages.length}) — expired, used up or refunded
-              </button>
-            )}
-            {group.id === "current" && group.list.length === 0 ? (
-              <div className="rounded-xl border border-border bg-card px-5 py-10 text-center text-sm text-muted shadow-soft">
-                No current packages.
-              </div>
-            ) : group.list.length === 0 ? null : (
-              <div className="grid gap-3 sm:grid-cols-2">
-                {group.list.map((p) => {
-                  const kindTone =
-                    p.kind === "credit_bundle"
-                      ? "accent"
-                      : p.kind === "unlimited"
-                        ? "warning"
-                        : p.kind === "trial"
-                          ? "sage"
-                          : "cyan";
-                  const kindLabel =
-                    p.kind === "credit_bundle"
-                      ? "Credit"
-                      : p.kind === "unlimited"
-                        ? "Unlimited"
-                        : p.kind === "trial"
-                          ? "Trial"
-                          : "PT";
-                  // Every kind expires, PT included — a PT package carries its
-                  // own validity in days like a Credit Bundle does, so an admin
-                  // can extend or shorten one member's the same way. A blank
-                  // date returns any kind to Dormant (§8): every package starts
-                  // there and Activates on its first booking.
-                  const canEditExpiry = true;
-                  const canSetBalance = p.kind === "credit_bundle" || p.kind === "trial";
-                  const canAdjustDelta = p.kind !== "unlimited";
-                  // Only an Unlimited Plan has a Home Location to extend.
-                  const canEditCrossLocation = p.kind === "unlimited";
-                  const canMoveHomeLocation = p.kind === "unlimited";
-                  // Only a PT Package has a Bound Instructor, and every one of
-                  // them does — a package sold open is bound later from here.
-                  const canBindInstructor = p.kind === "pt";
-                  const showMenu =
-                    canEdit &&
-                    (canEditExpiry ||
-                      canSetBalance ||
-                      canAdjustDelta ||
-                      canEditCrossLocation ||
-                      canMoveHomeLocation ||
-                      canBindInstructor ||
-                      p.refundable ||
-                      p.complimentary);
-                  return (
-                    <div
-                      key={p.id}
-                      className="relative rounded-xl border border-border bg-card p-4 shadow-soft"
+                {/* Folded away until asked for. A past package keeps its
+                    actions: an expired pack can still be extended or refunded. */}
+                {profile.past_packages.length > 0 && (
+                  <div className="mt-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowPastPackages((v) => !v)}
+                      className="inline-flex items-center gap-1 rounded text-xs font-medium text-muted hover:text-ink"
+                      aria-expanded={showPastPackages}
                     >
-                      <div className="mb-1 flex items-center gap-2">
-                        <span className="font-medium text-ink">{p.package_name}</span>
-                        <Badge tone={kindTone}>{kindLabel}</Badge>
-                        {/* Said on the row, because "paid S$0" below reads as a
-                            full discount otherwise, and this one was a gift. */}
-                        {p.complimentary && <Badge tone="neutral">Free</Badge>}
-                        {STANDING_BADGE[p.standing] && (
-                          <Badge tone={STANDING_BADGE[p.standing]!.tone}>
-                            {STANDING_BADGE[p.standing]!.label}
-                          </Badge>
-                        )}
-                        <div className="flex-1" />
-                        {showMenu && (
-                          <button
-                            type="button"
-                            onClick={() => setOpenMenuId((m) => (m === p.id ? null : p.id))}
-                            className="rounded p-1 text-muted hover:bg-paper hover:text-ink"
-                            aria-label="Package actions"
-                          >
-                            <MoreVertical className="h-4 w-4" />
-                          </button>
-                        )}
-                      </div>
-                      {showMenu && openMenuId === p.id && (
-                        <div className="absolute right-2 top-10 z-20 w-52 rounded-md border border-border bg-card p-1 shadow-soft">
-                          {canSetBalance && (
-                            <MenuButton
-                              label="Set credit balance"
-                              onClick={() => {
-                                setBalanceFor(p);
-                                setOpenMenuId(null);
-                              }}
-                            />
-                          )}
-                          {canEditExpiry && (
-                            <MenuButton
-                              label="Edit expiry"
-                              onClick={() => {
-                                setExpiryFor(p);
-                                setOpenMenuId(null);
-                              }}
-                            />
-                          )}
-                          {canEditCrossLocation && (
-                            <MenuButton
-                              label={
-                                p.cross_location_paid_sgd !== null
-                                  ? "Edit Cross-Location Add-On"
-                                  : "Add Cross-Location Add-On"
-                              }
-                              onClick={() => {
-                                setCrossLocationFor(p);
-                                setOpenMenuId(null);
-                              }}
-                            />
-                          )}
-                          {canMoveHomeLocation && (
-                            <MenuButton
-                              label="Change home studio"
-                              onClick={() => {
-                                setHomeLocationFor(p);
-                                setOpenMenuId(null);
-                              }}
-                            />
-                          )}
-                          {canBindInstructor && (
-                            <MenuButton
-                              label="Change bound instructor"
-                              onClick={() => {
-                                setBoundInstructorFor(p);
-                                setOpenMenuId(null);
-                              }}
-                            />
-                          )}
-                          {canAdjustDelta && (
-                            <MenuButton
-                              label="Manual adjustment"
-                              onClick={() => {
-                                setAdjustFor(p);
-                                setOpenMenuId(null);
-                              }}
-                            />
-                          )}
-                          {/* Always offered on a purchase that reached the payment
-                              provider — attendance is a notice inside the dialog,
-                              never a reason to hide the button (§14). */}
-                          {p.refundable && (
-                            <MenuButton
-                              label="Refund purchase…"
-                              onClick={() => {
-                                setRefundFor(p);
-                                setOpenMenuId(null);
-                              }}
-                            />
-                          )}
-                          {/* A comp has no money behind it, so it is removed
-                              rather than refunded. Offered whenever the package
-                              was given — the backend is what knows whether a
-                              class it paid for has been held. */}
-                          {p.complimentary && (
-                            <MenuButton
-                              label="Remove free package…"
-                              onClick={() => {
-                                setRemoveFor(p);
-                                setOpenMenuId(null);
-                              }}
-                            />
-                          )}
-                        </div>
-                      )}
-                      {p.credits_or_sessions_remaining !== null ? (
-                        <div className="text-sm text-ink">
-                          {p.credits_or_sessions_remaining}
-                          {p.credits_or_sessions_total !== null
-                            ? ` / ${p.credits_or_sessions_total}`
-                            : ""}{" "}
-                          {p.kind === "pt" ? "sessions" : "credits"}
-                        </div>
+                      {showPastPackages ? (
+                        <ChevronDown className="h-3.5 w-3.5" />
                       ) : (
-                        <div className="text-sm text-ink">Unlimited</div>
+                        <ChevronRight className="h-3.5 w-3.5" />
                       )}
-                      <div className="text-xs text-muted">
-                        {p.expires_at
-                          ? `${p.standing === "expired" ? "Expired" : "Valid until"} ${formatDate(p.expires_at, "d MMM yyyy")}`
-                          : p.dormant
-                            ? "Dormant — starts at first booking"
-                            : "No expiry"}
-                        {p.unlimited_location ? ` · ${p.unlimited_location.name}` : ""}
-                        {p.cross_location_paid_sgd !== null
-                          ? ` · both studios (Add-On S$${p.cross_location_paid_sgd})`
-                          : ""}
-                      </div>
-                      {/* Stated on every PT Package, open ones included — "open
-                          to any instructor" is a fact about the package, and an
-                          absent line would read as one nobody had checked. */}
-                      {p.kind === "pt" && (
-                        <div className="text-xs text-muted">
-                          {p.bound_instructor
-                            ? `Sessions with ${p.bound_instructor.name}`
-                            : "Open to any instructor"}
-                        </div>
-                      )}
-                      {/* List Price and the money off derived from it. That figure is
-                          NOT stored and NOT sent — a third number would be free to
-                          disagree with the two that matter. */}
-                      {/* A package with no online payment behind it and not
-                          given free (one brought over when the studio moved
-                          here): the figure is what the old system recorded,
-                          so no discount is derived from it. */}
-                      {!p.paid_online && !p.complimentary ? (
-                        <div className="text-xs text-muted">
-                          Bought {formatDate(p.purchased_at, "d MMM yyyy")} · paid S$
-                          {p.amount_paid_sgd} · no online payment on record
-                        </div>
-                      ) : (
-                      <div className="text-xs text-muted">
-                        Bought {formatDate(p.purchased_at, "d MMM yyyy")} · List S$
-                        {p.list_price_sgd} · paid S${p.amount_paid_sgd}
-                        {discountOff(p.list_price_sgd, p.amount_paid_sgd) && (
-                          <span className="text-ink">
-                            {" "}
-                            · {discountOff(p.list_price_sgd, p.amount_paid_sgd)} off
-                          </span>
-                        )}
-                        {p.promo_code && (
-                          <span> · code <span className="text-ink">{p.promo_code}</span></span>
-                        )}
-                      </div>
-                      )}
-                      {/* The attended notice sits on the row itself, above the
-                          Refund action, and again in the dialog. It is a notice
-                          and not a gate — the refund stays available (§14). */}
-                      {p.refundable && p.refund_notice && (
-                        <div className="mt-1 inline-flex items-center gap-1 text-xs text-warning">
-                          <AlertTriangle className="h-3 w-3" /> {p.refund_notice}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            </div>
-            ))}
-          </section>
-
-          <BookingsSection
-            upcoming={profile.upcoming_bookings}
-            past={profile.past_bookings}
-            attendance={profile.attendance}
-          />
-
-          <PaymentsSection payments={profile.payments} />
-
-          {profile.workshop_purchases.length > 0 && (
-            <section>
-              <header className="mb-3 flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-ink">Workshop purchases</h2>
-                <span className="text-xs text-muted">{profile.workshop_purchases.length}</span>
-              </header>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {profile.workshop_purchases.map((w) => (
-                  <div
-                    key={w.booking_id}
-                    className="rounded-xl border border-border bg-card p-4 shadow-soft"
-                  >
-                    <div className="mb-1 flex items-center gap-2">
-                      <span className="font-medium text-ink">{w.workshop_name}</span>
-                      <Badge tone="cyan">Workshop</Badge>
-                      {w.tier_name && <span className="text-xs text-muted">{w.tier_name}</span>}
-                    </div>
-                    <div className="text-xs text-muted">
-                      List S${w.list_price_sgd} · paid S${w.amount_paid_sgd}
-                      {discountOff(w.list_price_sgd, w.amount_paid_sgd) && (
-                        <span className="text-ink">
-                          {" "}
-                          · {discountOff(w.list_price_sgd, w.amount_paid_sgd)} off
-                        </span>
-                      )}
-                    </div>
-                    {/* Same notice-not-gate treatment as the package rows (§14). */}
-                    {w.refundable && w.refund_notice && (
-                      <div className="mt-1 inline-flex items-center gap-1 text-xs text-warning">
-                        <AlertTriangle className="h-3 w-3" /> {w.refund_notice}
-                      </div>
-                    )}
-                    {canEdit && w.refundable && (
-                      <div className="mt-2">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="text-error hover:bg-error/10 hover:text-error"
-                          onClick={() => setWorkshopRefundFor(w)}
-                        >
-                          Refund purchase…
-                        </Button>
+                      {showPastPackages ? "Hide" : "Show"} past packages ({profile.past_packages.length})
+                      <span className="font-normal">— expired, used up or refunded</span>
+                    </button>
+                    {showPastPackages && (
+                      <div className="mt-3">
+                        <PackageGrid
+                          list={profile.past_packages}
+                          canEdit={canEdit}
+                          onAction={onPackageAction}
+                        />
                       </div>
                     )}
                   </div>
-                ))}
-              </div>
-            </section>
-          )}
+                )}
+              </Section>
 
-          {profile.adjustments.length > 0 && (
-            <section>
-              <h2 className="mb-3 text-sm font-semibold text-ink">Package adjustments</h2>
-              <div className="rounded-xl border border-border bg-card shadow-soft">
-                <ul className="divide-y divide-border">
-                  {profile.adjustments.map((a) => {
-                    const pkg = [...profile.packages, ...profile.past_packages].find(
-                      (p) => p.id === a.client_package_id,
-                    );
-                    const isExpiry = a.reason.startsWith("Expiry");
-                    const isSet = a.reason.startsWith("Set ");
-                    const badge = isExpiry ? (
-                      <Badge tone="neutral">Expiry</Badge>
-                    ) : isSet ? (
-                      <Badge tone="accent">Set</Badge>
-                    ) : (
-                      <Badge tone={a.delta > 0 ? "sage" : "error"}>
-                        {a.delta > 0 ? "+" : ""}
-                        {a.delta}
-                      </Badge>
-                    );
-                    return (
-                      <li key={a.id} className="flex items-start gap-3 px-4 py-3 sm:px-5">
-                        {badge}
-                        <div className="min-w-0 flex-1">
-                          <div className="text-sm text-ink">
-                            {pkg?.package_name ?? "Package"}
-                          </div>
-                          <div className="text-xs text-muted">{a.reason}</div>
-                        </div>
-                        <span className="shrink-0 text-xs text-muted">
-                          {formatRelative(a.created_at)}
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            </section>
-          )}
+              <BookingsSection upcoming={profile.upcoming_bookings} past={profile.past_bookings} />
+
+              <PaymentsSection payments={profile.payments} />
+
+              {profile.workshop_purchases.length > 0 && (
+                <Section title="Workshop purchases" count={profile.workshop_purchases.length}>
+                  <WorkshopPurchaseList
+                    purchases={profile.workshop_purchases}
+                    canEdit={canEdit}
+                    onRefund={setWorkshopRefundFor}
+                  />
+                </Section>
+              )}
+
+              {profile.adjustments.length > 0 && (
+                <Section title="Package adjustments" count={profile.adjustments.length}>
+                  <AdjustmentList
+                    adjustments={profile.adjustments}
+                    packages={[...profile.packages, ...profile.past_packages]}
+                  />
+                </Section>
+              )}
+            </div>
+
+            <aside className="min-w-0 space-y-6">
+              <DetailsCard profile={profile} />
+
+              {/* Remounted by the block state: blocking ends their sessions too. */}
+              <SessionsPanel
+                path={`/portal/admin/clients/${id}`}
+                canRevoke={canEdit}
+                refreshKey={profile.deleted_at}
+                actions={
+                  canEdit && !blocked ? (
+                    <SendSetPasswordButton clientId={id} email={profile.email} />
+                  ) : null
+                }
+              />
+
+              {canEdit && (
+                <Section title="Account">
+                  <div className="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card shadow-soft">
+                    <AccountAction
+                      icon={exporting ? Loader2 : Download}
+                      spin={exporting}
+                      label="Download data"
+                      hint="Everything the studio holds about them, as a .zip."
+                      disabled={exporting}
+                      onClick={downloadData}
+                    />
+                    {!blocked && (
+                      <AccountAction
+                        icon={ShieldOff}
+                        danger
+                        label="Block"
+                        hint="Stops them signing in. Their history is kept."
+                        onClick={() => setDeleteOpen(true)}
+                      />
+                    )}
+                    <AccountAction
+                      icon={Trash2}
+                      danger
+                      label="Delete permanently"
+                      hint="Removes them for good. Cannot be undone."
+                      onClick={() => setPermanentDeleteOpen(true)}
+                    />
+                  </div>
+                </Section>
+              )}
+            </aside>
+          </div>
         </div>
       )}
 
@@ -1250,6 +973,541 @@ export default function ClientProfilePage({
   );
 }
 
+/** One heading style for every block on the page: title, count, one action. */
+function Section({
+  title,
+  count,
+  aside,
+  children,
+}: {
+  title: string;
+  count?: number;
+  aside?: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <section>
+      <header className="mb-3 flex min-h-8 items-center gap-2">
+        <h2 className="text-sm font-semibold text-ink">{title}</h2>
+        {count !== undefined && (
+          <span className="rounded-full bg-warm px-2 py-0.5 text-[11px] font-medium tabular-nums text-muted">
+            {count}
+          </span>
+        )}
+        {aside && <div className="ml-auto flex items-center gap-2">{aside}</div>}
+      </header>
+      {children}
+    </section>
+  );
+}
+
+/** Nothing here yet — one quiet line, not a card-sized hole in the page. */
+function EmptyLine({ children }: { children: ReactNode }) {
+  return (
+    <div className="rounded-xl border border-dashed border-border px-4 py-5 text-center text-sm text-muted">
+      {children}
+    </div>
+  );
+}
+
+/** A pager under a grid of cards, which has no card of its own to sit in. */
+const GRID_PAGER = "mt-3 rounded-xl border border-border bg-card";
+
+/** Attendance over every booking ever — the backend counts, not the lists below. */
+function AttendanceStrip({ attendance }: { attendance: ApiAttendance }) {
+  const cells = [
+    { label: "Attended", value: String(attendance.attended), warn: false },
+    { label: "No-shows", value: String(attendance.no_shows), warn: attendance.no_shows > 0 },
+    { label: "Late cancels", value: String(attendance.late_cancels), warn: attendance.late_cancels > 0 },
+    {
+      label: "Last visit",
+      value: attendance.last_attended_at
+        ? formatDate(attendance.last_attended_at, "d MMM yyyy")
+        : "No visits yet",
+      warn: false,
+    },
+  ];
+  return (
+    <dl className="grid grid-cols-2 border-t border-border bg-paper/50 sm:grid-cols-4">
+      {cells.map((c, i) => (
+        <div
+          key={c.label}
+          className={cn(
+            "px-5 py-3 sm:px-6",
+            i % 2 === 1 && "border-l border-border",
+            i >= 2 && "border-t border-border sm:border-t-0",
+            i === 2 && "sm:border-l",
+          )}
+        >
+          <dt className="text-xs text-muted">{c.label}</dt>
+          <dd
+            className={cn(
+              "mt-0.5 font-semibold tabular-nums",
+              i < 3 ? "text-xl" : "text-base leading-7",
+              c.warn ? "text-warning" : "text-ink",
+            )}
+          >
+            {c.value}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/** The quieter facts about the member, out of the header so it stays short. */
+function DetailsCard({ profile }: { profile: ApiProfile }) {
+  const rows: { label: string; value: ReactNode }[] = [
+    { label: "Joined", value: formatDate(profile.joined_at, "d MMM yyyy") },
+  ];
+  if (profile.gender && profile.gender !== "prefer_not_to_say") {
+    rows.push({ label: "Gender", value: GENDER_LABEL[profile.gender] });
+  }
+  if (profile.dob) rows.push({ label: "Born", value: formatDate(profile.dob, "d MMM yyyy") });
+  if (profile.referred_by) {
+    rows.push({
+      label: "Referred by",
+      value: (
+        <Link
+          href={`/admin/customers/${profile.referred_by.id}`}
+          className="text-accent underline-offset-2 hover:underline"
+        >
+          {profile.referred_by.name}
+        </Link>
+      ),
+    });
+  }
+  return (
+    <Section title="Details">
+      <dl className="divide-y divide-border rounded-xl border border-border bg-card text-sm shadow-soft">
+        {rows.map((r) => (
+          <div key={r.label} className="flex items-baseline justify-between gap-3 px-4 py-2.5">
+            <dt className="text-muted">{r.label}</dt>
+            <dd className="min-w-0 truncate text-right text-ink">{r.value}</dd>
+          </div>
+        ))}
+      </dl>
+    </Section>
+  );
+}
+
+function AccountAction({
+  icon: Icon,
+  spin,
+  label,
+  hint,
+  danger,
+  disabled,
+  onClick,
+}: {
+  icon: LucideIcon;
+  spin?: boolean;
+  label: string;
+  hint: string;
+  danger?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "flex w-full items-start gap-3 px-4 py-3 text-left transition-colors disabled:opacity-60",
+        danger ? "hover:bg-error/5" : "hover:bg-paper",
+      )}
+    >
+      <Icon
+        className={cn(
+          "mt-0.5 h-4 w-4 shrink-0",
+          danger ? "text-error" : "text-muted",
+          spin && "animate-spin",
+        )}
+      />
+      <span className="min-w-0">
+        <span className={cn("block text-sm font-medium", danger ? "text-error" : "text-ink")}>
+          {label}
+        </span>
+        <span className="block text-xs text-muted">{hint}</span>
+      </span>
+    </button>
+  );
+}
+
+function PackageGrid({
+  list,
+  canEdit,
+  onAction,
+}: {
+  list: ApiPackage[];
+  canEdit: boolean;
+  onAction: (action: PackageAction, p: ApiPackage) => void;
+}) {
+  const { visible, pagination } = usePaged(list);
+  return (
+    <>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {visible.map((p) => (
+          <PackageCard key={p.id} p={p} canEdit={canEdit} onAction={onAction} />
+        ))}
+      </div>
+      <Pagination {...pagination} noun="packages" className={GRID_PAGER} />
+    </>
+  );
+}
+
+const KIND_BADGE: Record<PackageKind, { label: string; tone: "accent" | "warning" | "sage" | "cyan" }> = {
+  credit_bundle: { label: "Credit", tone: "accent" },
+  unlimited: { label: "Unlimited", tone: "warning" },
+  trial: { label: "Trial", tone: "sage" },
+  pt: { label: "PT", tone: "cyan" },
+};
+
+function PackageCard({
+  p,
+  canEdit,
+  onAction,
+}: {
+  p: ApiPackage;
+  canEdit: boolean;
+  onAction: (action: PackageAction, p: ApiPackage) => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const actions = canEdit ? packageActions(p) : [];
+  const kind = KIND_BADGE[p.kind];
+  const standing = STANDING_BADGE[p.standing];
+  const current = p.standing === "running" || p.standing === "dormant";
+
+  // A click anywhere else, or Escape, closes the menu.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
+
+  const remaining = p.credits_or_sessions_remaining;
+  const total = p.credits_or_sessions_total;
+  const share = remaining !== null && total ? Math.max(0, Math.min(1, remaining / total)) : null;
+  const unit = p.kind === "pt" ? "sessions" : "credits";
+
+  const validity = p.expires_at
+    ? `${p.standing === "expired" ? "Expired" : "Valid until"} ${formatDate(p.expires_at, "d MMM yyyy")}`
+    : p.dormant
+      ? "Starts at first booking"
+      : "No expiry";
+
+  return (
+    <div
+      className={cn(
+        "relative flex flex-col rounded-xl border border-border bg-card p-4 shadow-soft",
+        !current && "bg-card/70",
+      )}
+    >
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="font-medium break-words text-ink">{p.package_name}</div>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            <Badge tone={kind.tone}>{kind.label}</Badge>
+            {/* Said on the card, because "paid S$0" below reads as a full
+                discount otherwise, and this one was a gift. */}
+            {p.complimentary && <Badge tone="neutral">Free</Badge>}
+            {standing && <Badge tone={standing.tone}>{standing.label}</Badge>}
+          </div>
+        </div>
+        {actions.length > 0 && (
+          <div ref={menuRef} className="relative -mr-1 -mt-1">
+            <button
+              type="button"
+              onClick={() => setMenuOpen((o) => !o)}
+              className="rounded-md p-1.5 text-muted hover:bg-paper hover:text-ink"
+              aria-label={`Actions for ${p.package_name}`}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+            >
+              <MoreVertical className="h-4 w-4" />
+            </button>
+            {menuOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 top-9 z-20 w-56 rounded-lg border border-border bg-card p-1 shadow-soft"
+              >
+                {actions.map((a) => (
+                  <button
+                    key={a.action}
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      onAction(a.action, p);
+                    }}
+                    className={cn(
+                      "block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-paper",
+                      (a.action === "refund" || a.action === "remove") && "text-error",
+                    )}
+                  >
+                    {a.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* The balance is what the front desk came here for, so it is the
+          largest thing on the card. */}
+      <div className="mt-4">
+        {remaining !== null ? (
+          <div className="flex items-baseline gap-1">
+            <span className="text-2xl font-semibold tabular-nums text-ink">{remaining}</span>
+            {total !== null && <span className="text-sm tabular-nums text-muted">/ {total}</span>}
+            <span className="ml-1 text-xs text-muted">{unit} left</span>
+          </div>
+        ) : (
+          <div className="text-2xl font-semibold text-ink">Unlimited</div>
+        )}
+        {share !== null && (
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-warm">
+            <div
+              className={cn(
+                "h-full rounded-full",
+                !current ? "bg-muted/40" : remaining !== null && remaining <= 1 ? "bg-warning" : "bg-accent",
+              )}
+              style={{ width: `${share * 100}%` }}
+            />
+          </div>
+        )}
+      </div>
+
+      <div className="mt-3 space-y-0.5 text-xs text-muted">
+        <div>
+          {validity}
+          {p.unlimited_location ? ` · ${p.unlimited_location.name}` : ""}
+          {p.cross_location_paid_sgd !== null
+            ? ` · both studios (Add-On S$${p.cross_location_paid_sgd})`
+            : ""}
+        </div>
+        {/* Stated on every PT Package, open ones included — "open to any
+            instructor" is a fact about the package, and an absent line would
+            read as one nobody had checked. */}
+        {p.kind === "pt" && (
+          <div>
+            {p.bound_instructor
+              ? `Sessions with ${p.bound_instructor.name}`
+              : "Open to any instructor"}
+          </div>
+        )}
+        {/* List Price and the money off derived from it. That figure is NOT
+            stored and NOT sent — a third number would be free to disagree with
+            the two that matter. A package with no online payment behind it and
+            not given free (one brought over when the studio moved here) shows
+            what the old system recorded, with no discount derived. */}
+        {!p.paid_online && !p.complimentary ? (
+          <div>
+            Bought {formatDate(p.purchased_at, "d MMM yyyy")} · paid S${p.amount_paid_sgd} · no
+            online payment on record
+          </div>
+        ) : (
+          <div>
+            Bought {formatDate(p.purchased_at, "d MMM yyyy")} · List S${p.list_price_sgd} · paid S$
+            {p.amount_paid_sgd}
+            {discountOff(p.list_price_sgd, p.amount_paid_sgd) && (
+              <span className="text-ink">
+                {" "}
+                · {discountOff(p.list_price_sgd, p.amount_paid_sgd)} off
+              </span>
+            )}
+            {p.promo_code && (
+              <span>
+                {" "}
+                · code <span className="text-ink">{p.promo_code}</span>
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* The attended notice sits on the card itself, above the Refund action,
+          and again in the dialog. It is a notice and not a gate (§14). */}
+      {p.refundable && p.refund_notice && (
+        <div className="mt-2 inline-flex items-start gap-1 text-xs text-warning">
+          <AlertTriangle className="mt-px h-3 w-3 shrink-0" /> {p.refund_notice}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OpenPurchaseList({
+  purchases,
+  canEdit,
+  onRefund,
+}: {
+  purchases: ApiOpenPurchase[];
+  canEdit: boolean;
+  onRefund: (p: ApiOpenPurchase) => void;
+}) {
+  const { visible, pagination } = usePaged(purchases);
+  return (
+    <>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {visible.map((p) => (
+          <div
+            key={p.id}
+            className="rounded-xl border border-warning/40 bg-warning/5 px-5 py-4 shadow-soft"
+          >
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-ink">{p.item_name}</p>
+                <p className="mt-1 text-xs text-muted">
+                  S${p.paid_sgd} paid of S${p.total_sgd}
+                  {p.part_paid_at ? ` · since ${formatDate(p.part_paid_at)}` : ""}
+                </p>
+              </div>
+              <div className="shrink-0 text-right">
+                <p className="text-lg font-semibold text-ink">S${p.outstanding_sgd}</p>
+                <p className="text-[10px] uppercase tracking-wider text-muted">Outstanding</p>
+              </div>
+            </div>
+            <p className="mt-3 flex items-start gap-1.5 text-xs text-ink">
+              <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-warning" />
+              <span>
+                Grants nothing — no plan, no credits, no place held. Do not check this member
+                in against it.
+              </span>
+            </p>
+            {/* The money's only way out (#95). Nothing was delivered, so there
+                is no plan to void and no booking to cancel — the refund closes
+                the purchase and that is all it does. */}
+            {canEdit && (
+              <div className="mt-3 flex justify-end">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => onRefund(p)}
+                  className="text-error hover:bg-error/10 hover:text-error"
+                >
+                  Refund S${p.paid_sgd}
+                </Button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      <Pagination {...pagination} noun="purchases" className={GRID_PAGER} />
+    </>
+  );
+}
+
+function WorkshopPurchaseList({
+  purchases,
+  canEdit,
+  onRefund,
+}: {
+  purchases: ApiWorkshopPurchase[];
+  canEdit: boolean;
+  onRefund: (w: ApiWorkshopPurchase) => void;
+}) {
+  const { visible, pagination } = usePaged(purchases);
+  return (
+    <>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {visible.map((w) => (
+          <div key={w.booking_id} className="rounded-xl border border-border bg-card p-4 shadow-soft">
+            <div className="font-medium break-words text-ink">{w.workshop_name}</div>
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              <Badge tone="cyan">Workshop</Badge>
+              {w.tier_name && <span className="text-xs text-muted">{w.tier_name}</span>}
+            </div>
+            <div className="mt-3 text-xs text-muted">
+              List S${w.list_price_sgd} · paid S${w.amount_paid_sgd}
+              {discountOff(w.list_price_sgd, w.amount_paid_sgd) && (
+                <span className="text-ink">
+                  {" "}
+                  · {discountOff(w.list_price_sgd, w.amount_paid_sgd)} off
+                </span>
+              )}
+            </div>
+            {/* Same notice-not-gate treatment as the package cards (§14). */}
+            {w.refundable && w.refund_notice && (
+              <div className="mt-1 inline-flex items-start gap-1 text-xs text-warning">
+                <AlertTriangle className="mt-px h-3 w-3 shrink-0" /> {w.refund_notice}
+              </div>
+            )}
+            {canEdit && w.refundable && (
+              <div className="mt-2 flex justify-end">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-error hover:bg-error/10 hover:text-error"
+                  onClick={() => onRefund(w)}
+                >
+                  Refund purchase…
+                </Button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+      <Pagination {...pagination} noun="workshop purchases" className={GRID_PAGER} />
+    </>
+  );
+}
+
+function AdjustmentList({
+  adjustments,
+  packages,
+}: {
+  adjustments: ApiAdjustment[];
+  packages: ApiPackage[];
+}) {
+  const { visible, pagination } = usePaged(adjustments);
+  return (
+    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-soft">
+      <ul className="divide-y divide-border">
+        {visible.map((a) => {
+          const pkg = packages.find((p) => p.id === a.client_package_id);
+          const isExpiry = a.reason.startsWith("Expiry");
+          const isSet = a.reason.startsWith("Set ");
+          const badge = isExpiry ? (
+            <Badge tone="neutral">Expiry</Badge>
+          ) : isSet ? (
+            <Badge tone="accent">Set</Badge>
+          ) : (
+            <Badge tone={a.delta > 0 ? "sage" : "error"}>
+              {a.delta > 0 ? "+" : ""}
+              {a.delta}
+            </Badge>
+          );
+          return (
+            <li key={a.id} className="flex items-start gap-3 px-4 py-3 sm:px-5">
+              <div className="w-14 shrink-0">{badge}</div>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm text-ink">{pkg?.package_name ?? "Package"}</div>
+                <div className="text-xs text-muted">{a.reason}</div>
+              </div>
+              <span className="shrink-0 text-xs text-muted">{formatRelative(a.created_at)}</span>
+            </li>
+          );
+        })}
+      </ul>
+      <Pagination {...pagination} noun="adjustments" />
+    </div>
+  );
+}
+
 /**
  * Permanent deletion (#144), beside blocking. Nothing about the member is left
  * to restore, so the dialog offers the download first and asks for the email
@@ -1414,18 +1672,6 @@ function BlockClientDialog({
   );
 }
 
-function MenuButton({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="block w-full rounded px-3 py-2 text-left text-sm hover:bg-paper"
-    >
-      {label}
-    </button>
-  );
-}
-
 function AdjustmentDialog({
   pkg,
   onSubmit,
@@ -1497,33 +1743,6 @@ const GENDER_LABEL: Record<"female" | "male" | "non_binary" | "prefer_not_to_say
   prefer_not_to_say: "Prefer not to say",
 };
 
-/** Attendance over every booking ever — the backend counts, not the list below. */
-function AttendanceStrip({ attendance }: { attendance: ApiAttendance }) {
-  const items = [
-    { label: "Attended", value: attendance.attended, tone: "text-ink" },
-    { label: "No-shows", value: attendance.no_shows, tone: attendance.no_shows > 0 ? "text-warning" : "text-ink" },
-    {
-      label: "Late cancels",
-      value: attendance.late_cancels,
-      tone: attendance.late_cancels > 0 ? "text-warning" : "text-ink",
-    },
-  ];
-  return (
-    <div className="mt-3 flex flex-wrap items-baseline gap-x-5 gap-y-1 text-xs text-muted">
-      {items.map((i) => (
-        <span key={i.label}>
-          <span className={`text-sm font-semibold tabular-nums ${i.tone}`}>{i.value}</span> {i.label}
-        </span>
-      ))}
-      <span>
-        {attendance.last_attended_at
-          ? `Last visit ${formatDate(attendance.last_attended_at, "d MMM yyyy")}`
-          : "No visits yet"}
-      </span>
-    </div>
-  );
-}
-
 function bookingTitle(b: ApiBooking): string {
   if (b.kind === "pt") return b.session_type === "2on1" ? "Private session (2-on-1)" : "Private session";
   if (b.kind === "workshop") return b.tier_name ? `${b.title ?? "Workshop"} · ${b.tier_name}` : (b.title ?? "Workshop");
@@ -1550,11 +1769,11 @@ function BookingRow({ b, upcoming }: { b: ApiBooking; upcoming: boolean }) {
     .filter(Boolean)
     .join(" · ");
   return (
-    <li className="flex items-start gap-3 px-4 py-3 sm:px-5">
+    <li className="flex items-center gap-3 px-4 py-3 sm:px-5">
       <div className="w-24 shrink-0 text-xs tabular-nums text-muted sm:w-28">
         {b.starts_at ? (
           <>
-            <div className="text-ink">{formatDate(b.starts_at, "d MMM yyyy")}</div>
+            <div className="font-medium text-ink">{formatDate(b.starts_at, "d MMM yyyy")}</div>
             <div>{formatDate(b.starts_at, "EEE h:mma").replace(/(AM|PM)/, (m) => m.toLowerCase())}</div>
           </>
         ) : (
@@ -1562,8 +1781,12 @@ function BookingRow({ b, upcoming }: { b: ApiBooking; upcoming: boolean }) {
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm text-ink">{bookingTitle(b)}</div>
-        {detail && <div className="truncate text-xs text-muted">{detail}</div>}
+        <div className="truncate text-sm font-medium text-ink">{bookingTitle(b)}</div>
+        {detail && (
+          <div className="truncate text-xs text-muted" title={detail}>
+            {detail}
+          </div>
+        )}
       </div>
       <Badge tone={outcome.tone}>{outcome.label}</Badge>
     </li>
@@ -1571,76 +1794,63 @@ function BookingRow({ b, upcoming }: { b: ApiBooking; upcoming: boolean }) {
 }
 
 /**
- * What the member has booked and what they did with it. Upcoming in full;
- * history capped at the most recent the backend sends (the attendance strip in
- * the header counts every one). Cancelled bookings stay in the history — a late
- * cancel is exactly what the front desk looks here for.
+ * What the member has booked and what they did with it, as two tabs of one
+ * card. Upcoming in full; history is the most recent the backend sends (the
+ * attendance strip in the header counts every one). Cancelled bookings stay in
+ * the history — a late cancel is exactly what the front desk looks here for.
  */
-function BookingsSection({
-  upcoming,
-  past,
-  attendance,
-}: {
-  upcoming: ApiBooking[];
-  past: ApiBooking[];
-  attendance: ApiAttendance;
-}) {
-  const [showAll, setShowAll] = useState(false);
-  const HISTORY_PREVIEW = 10;
-  const history = showAll ? past : past.slice(0, HISTORY_PREVIEW);
-  const everBooked = attendance.attended + attendance.no_shows + attendance.late_cancels;
+function BookingsSection({ upcoming, past }: { upcoming: ApiBooking[]; past: ApiBooking[] }) {
+  const [tab, setTab] = useState<"upcoming" | "history">(
+    upcoming.length > 0 || past.length === 0 ? "upcoming" : "history",
+  );
+  const list = tab === "upcoming" ? upcoming : past;
+  const { visible, pagination } = usePaged(list, tab);
+  const tabs = [
+    { id: "upcoming" as const, label: "Upcoming", count: upcoming.length },
+    { id: "history" as const, label: "History", count: past.length },
+  ];
   return (
-    <section className="grid gap-6 lg:grid-cols-2">
-      <div>
-        <header className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-ink">Upcoming bookings</h2>
-          <span className="text-xs text-muted">{upcoming.length}</span>
-        </header>
-        <div className="rounded-xl border border-border bg-card shadow-soft">
-          {upcoming.length === 0 ? (
-            <div className="px-5 py-8 text-center text-sm text-muted">Nothing booked.</div>
-          ) : (
-            <ul className="divide-y divide-border">
-              {upcoming.map((b) => (
-                <BookingRow key={b.booking_id} b={b} upcoming />
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
-      <div>
-        <header className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-ink">Booking history</h2>
-          <span className="text-xs text-muted">
-            {past.length > 0 ? `Most recent ${past.length}` : ""}
-          </span>
-        </header>
-        <div className="rounded-xl border border-border bg-card shadow-soft">
-          {past.length === 0 ? (
-            <div className="px-5 py-8 text-center text-sm text-muted">
-              {everBooked > 0 ? "No past bookings to show." : "No past bookings."}
-            </div>
-          ) : (
-            <>
-              <ul className="divide-y divide-border">
-                {history.map((b) => (
-                  <BookingRow key={b.booking_id} b={b} upcoming={false} />
-                ))}
-              </ul>
-              {past.length > HISTORY_PREVIEW && (
-                <button
-                  type="button"
-                  onClick={() => setShowAll((v) => !v)}
-                  className="w-full border-t border-border px-5 py-2.5 text-xs font-medium text-muted hover:bg-paper hover:text-ink"
-                >
-                  {showAll ? "Show fewer" : `Show all ${past.length}`}
-                </button>
+    <Section title="Bookings">
+      <div className="overflow-hidden rounded-xl border border-border bg-card shadow-soft">
+        <div role="tablist" aria-label="Bookings" className="flex items-center gap-5 border-b border-border px-4 sm:px-5">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              role="tab"
+              aria-selected={tab === t.id}
+              onClick={() => setTab(t.id)}
+              className={cn(
+                "-mb-px inline-flex items-center gap-1.5 border-b-2 py-2.5 text-sm font-medium transition-colors",
+                tab === t.id
+                  ? "border-accent text-ink"
+                  : "border-transparent text-muted hover:text-ink",
               )}
-            </>
+            >
+              {t.label}
+              <span className="rounded-full bg-warm px-1.5 text-[11px] tabular-nums text-muted">
+                {t.count}
+              </span>
+            </button>
+          ))}
+          {tab === "history" && past.length > 0 && (
+            <span className="ml-auto text-xs text-muted">Latest {past.length}</span>
           )}
         </div>
+        {list.length === 0 ? (
+          <div className="px-5 py-6 text-center text-sm text-muted">
+            {tab === "upcoming" ? "Nothing booked." : "No past bookings."}
+          </div>
+        ) : (
+          <ul role="tabpanel" className="divide-y divide-border">
+            {visible.map((b) => (
+              <BookingRow key={b.booking_id} b={b} upcoming={tab === "upcoming"} />
+            ))}
+          </ul>
+        )}
+        <Pagination {...pagination} noun="bookings" />
       </div>
-    </section>
+    </Section>
   );
 }
 
@@ -1657,35 +1867,32 @@ const PAYMENT_STATUS: Record<ApiPayment["status"], { label: string; tone: "sage"
  * paid on their own card above, so this list being empty is not "never paid".
  */
 function PaymentsSection({ payments }: { payments: ApiPayment[] }) {
+  const { visible, pagination } = usePaged(payments);
   return (
-    <section>
-      <header className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-ink">Online payments</h2>
-        <span className="text-xs text-muted">{payments.length}</span>
-      </header>
-      <div className="rounded-xl border border-border bg-card shadow-soft">
-        {payments.length === 0 ? (
-          <div className="px-5 py-8 text-center text-sm text-muted">
-            No online payments. What was paid for an imported or free package is on its card above.
-          </div>
-        ) : (
+    <Section title="Online payments" count={payments.length}>
+      {payments.length === 0 ? (
+        <EmptyLine>
+          No online payments. Imported and free packages show what was paid on their own card.
+        </EmptyLine>
+      ) : (
+        <div className="overflow-hidden rounded-xl border border-border bg-card shadow-soft">
           <ul className="divide-y divide-border">
-            {payments.map((p) => {
+            {visible.map((p) => {
               const s = PAYMENT_STATUS[p.status];
               return (
-                <li key={p.id} className="flex items-center gap-3 px-4 py-3 sm:px-5">
+                <li key={p.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 sm:px-5">
                   <div className="w-24 shrink-0 text-xs tabular-nums text-muted sm:w-28">
                     {formatDate(p.created_at, "d MMM yyyy")}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm text-ink">{p.item_name}</div>
+                    <div className="truncate text-sm font-medium text-ink">{p.item_name}</div>
                     {p.refunded_at && (
                       <div className="text-xs text-muted">
                         Refunded {formatDate(p.refunded_at, "d MMM yyyy")}
                       </div>
                     )}
                   </div>
-                  <span className="text-sm tabular-nums text-ink">S${p.amount_sgd}</span>
+                  <span className="text-sm font-medium tabular-nums text-ink">S${p.amount_sgd}</span>
                   <Badge tone={s.tone}>{s.label}</Badge>
                   {p.receipt_url && (
                     <a
@@ -1701,8 +1908,9 @@ function PaymentsSection({ payments }: { payments: ApiPayment[] }) {
               );
             })}
           </ul>
-        )}
-      </div>
-    </section>
+          <Pagination {...pagination} noun="payments" />
+        </div>
+      )}
+    </Section>
   );
 }

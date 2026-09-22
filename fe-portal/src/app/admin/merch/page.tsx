@@ -11,7 +11,9 @@ import {
   EmptyState,
   Input,
   Label,
+  Pagination,
   Textarea,
+  usePaged,
 } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
@@ -80,6 +82,7 @@ export default function MerchPage() {
 
   const active = items?.filter((m) => !m.archived_at) ?? [];
   const archived = items?.filter((m) => m.archived_at) ?? [];
+  const { visible, pagination } = usePaged([...active, ...archived]);
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -104,17 +107,25 @@ export default function MerchPage() {
           }
         />
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {[...active, ...archived].map((item) => (
-            <MerchCard
-              key={item.id}
-              item={item}
-              onEdit={() => setEditing(item)}
-              onArchive={() => toggleArchive(item)}
-              onDelete={() => handleDelete(item)}
-            />
-          ))}
-        </div>
+        <>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {visible.map((item) => (
+              <MerchCard
+                key={item.id}
+                item={item}
+                onEdit={() => setEditing(item)}
+                onArchive={() => toggleArchive(item)}
+                onDelete={() => handleDelete(item)}
+              />
+            ))}
+          </div>
+          {/* The cards are their own boxes, so the footer gets one too. */}
+          <Pagination
+            {...pagination}
+            noun="items"
+            className="mt-3 rounded-xl border border-border bg-card shadow-soft"
+          />
+        </>
       )}
 
       {(creating || editing) && (

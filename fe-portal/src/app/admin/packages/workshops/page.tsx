@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Plus, MapPin, Loader2 } from "lucide-react";
-import { Button, PageHeader, Badge, EmptyState } from "@/components/ui";
+import { Button, PageHeader, Badge, EmptyState, Pagination, usePaged } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 
@@ -21,9 +21,10 @@ export default function WorkshopsListPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // `loading` starts true and is never set again: a reload after a save refreshes
+  // the list in place, so the pager keeps the page the admin was on.
   const load = useCallback(async () => {
     if (!api) return;
-    setLoading(true);
     setError(null);
     try {
       const ws = await api.get<{ workshops: ApiWorkshop[] }>("/portal/admin/workshops");
@@ -117,37 +118,41 @@ function Section({
   workshops: ApiWorkshop[];
   locations: Array<{ id: string; name: string }>;
 }) {
+  const { visible, pagination } = usePaged(workshops);
   return (
     <div className="space-y-2">
       {title && (
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">{title}</h2>
       )}
-      <ul className="divide-y divide-border rounded-xl border border-border bg-card shadow-soft">
-        {workshops.map((w) => (
-          <li key={w.id} className="flex items-center justify-between gap-4 px-4 py-3">
-            <div className="min-w-0">
-              <Link
-                href={`/admin/packages/workshops/${w.id}/edit`}
-                className="font-medium text-ink hover:text-accent"
-              >
-                {w.name}
-              </Link>
-              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
-                <span className="inline-flex items-center gap-1">
-                  <MapPin className="h-3 w-3" />
-                  {locations.find((l) => l.id === w.location_id)?.name ?? "—"}
-                </span>
-                {w.lifecycle === "cancelled" && <Badge tone="neutral">Cancelled</Badge>}
+      <div className="rounded-xl border border-border bg-card shadow-soft">
+        <ul className="divide-y divide-border">
+          {visible.map((w) => (
+            <li key={w.id} className="flex items-center justify-between gap-4 px-4 py-3">
+              <div className="min-w-0">
+                <Link
+                  href={`/admin/packages/workshops/${w.id}/edit`}
+                  className="font-medium text-ink hover:text-accent"
+                >
+                  {w.name}
+                </Link>
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted">
+                  <span className="inline-flex items-center gap-1">
+                    <MapPin className="h-3 w-3" />
+                    {locations.find((l) => l.id === w.location_id)?.name ?? "—"}
+                  </span>
+                  {w.lifecycle === "cancelled" && <Badge tone="neutral">Cancelled</Badge>}
+                </div>
               </div>
-            </div>
-            <Link href={`/admin/packages/workshops/${w.id}/edit`}>
-              <Button size="sm" variant="ghost">
-                Edit
-              </Button>
-            </Link>
-          </li>
-        ))}
-      </ul>
+              <Link href={`/admin/packages/workshops/${w.id}/edit`}>
+                <Button size="sm" variant="ghost">
+                  Edit
+                </Button>
+              </Link>
+            </li>
+          ))}
+        </ul>
+        <Pagination {...pagination} noun="workshops" />
+      </div>
     </div>
   );
 }

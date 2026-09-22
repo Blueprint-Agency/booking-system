@@ -2,7 +2,14 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Plus, Loader2 } from "lucide-react";
-import { Button, PageHeader, Badge, EmptyState } from "@/components/ui";
+import {
+  Button,
+  PageHeader,
+  Badge,
+  EmptyState,
+  Pagination,
+  usePaged,
+} from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { formatSgd, formatDate } from "@/lib/formatters";
@@ -25,6 +32,7 @@ export default function CorporatePackagesListPage() {
   const [packages, setPackages] = useState<ApiCorporatePackage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { visible, pagination } = usePaged(packages);
 
   const load = useCallback(async () => {
     if (!api) return;
@@ -78,33 +86,36 @@ export default function CorporatePackagesListPage() {
           cta={{ href: "/admin/packages/corporate/new", label: "New corporate package" }}
         />
       ) : (
-        <ul className="divide-y divide-border rounded-xl border border-border bg-card shadow-soft">
-          {packages.map((p) => (
-            <li key={p.id}>
-              <Link
-                href={`/admin/packages/corporate/${p.id}/edit`}
-                className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-paper"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="font-medium text-ink">{p.name}</div>
-                  <div className="mt-1 text-xs text-muted">
-                    Created {formatDate(p.created_at)}
+        <div className="overflow-hidden rounded-xl border border-border bg-card shadow-soft">
+          <ul className="divide-y divide-border">
+            {visible.map((p) => (
+              <li key={p.id}>
+                <Link
+                  href={`/admin/packages/corporate/${p.id}/edit`}
+                  className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-paper"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium text-ink">{p.name}</div>
+                    <div className="mt-1 text-xs text-muted">
+                      Created {formatDate(p.created_at)}
+                    </div>
                   </div>
-                </div>
-                <div className="hidden sm:block min-w-[110px] text-right text-sm text-ink">
-                  {formatSgd(Number(p.price_sgd))}
-                </div>
-                <div className="min-w-[80px] text-right">
-                  {p.status === "archived" ? (
-                    <Badge tone="neutral">Archived</Badge>
-                  ) : (
-                    <Badge tone="sage">Active</Badge>
-                  )}
-                </div>
-              </Link>
-            </li>
-          ))}
-        </ul>
+                  <div className="hidden sm:block min-w-[110px] text-right text-sm text-ink">
+                    {formatSgd(Number(p.price_sgd))}
+                  </div>
+                  <div className="min-w-[80px] text-right">
+                    {p.status === "archived" ? (
+                      <Badge tone="neutral">Archived</Badge>
+                    ) : (
+                      <Badge tone="sage">Active</Badge>
+                    )}
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <Pagination {...pagination} noun="corporate packages" />
+        </div>
       )}
     </div>
   );

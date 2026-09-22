@@ -11,9 +11,11 @@ import {
   DialogFooter,
   Input,
   Label,
+  Pagination,
   Tabs,
   TabsList,
   TabsTrigger,
+  usePaged,
 } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
@@ -281,53 +283,53 @@ function RoomList({
   onDelete?: (room: Room) => void;
   dimmed?: boolean;
 }) {
+  const { visible, pagination } = usePaged(rooms);
   return (
-    <ul
-      className={`divide-y divide-border overflow-hidden rounded-xl border border-border bg-card shadow-soft ${
-        dimmed ? "opacity-70" : ""
-      }`}
-    >
-      {rooms.map((room) => {
-        const isArchived = !!room.archivedAt;
-        return (
-          <li
-            key={room.id}
-            className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3"
-          >
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-sm font-medium text-ink">{room.name}</span>
-                {isArchived && <Badge tone="neutral">Archived</Badge>}
+    <div className="overflow-hidden rounded-xl border border-border bg-card shadow-soft">
+      <ul className={`divide-y divide-border ${dimmed ? "opacity-70" : ""}`}>
+        {visible.map((room) => {
+          const isArchived = !!room.archivedAt;
+          return (
+            <li
+              key={room.id}
+              className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-4 py-3"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium text-ink">{room.name}</span>
+                  {isArchived && <Badge tone="neutral">Archived</Badge>}
+                </div>
+                <div className="mt-0.5 flex items-center gap-1 text-xs text-muted">
+                  <Users className="h-3 w-3" /> Capacity {room.capacity}
+                </div>
               </div>
-              <div className="mt-0.5 flex items-center gap-1 text-xs text-muted">
-                <Users className="h-3 w-3" /> Capacity {room.capacity}
-              </div>
-            </div>
-            <div className="ml-auto flex shrink-0 flex-wrap justify-end gap-1">
-              <Button size="sm" variant="ghost" onClick={() => onEdit(room)}>
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </Button>
-              <Button size="sm" variant="ghost" onClick={() => onArchive(room)}>
-                {isArchived ? (
-                  <>
-                    <RotateCcw className="h-3.5 w-3.5" /> Restore
-                  </>
-                ) : (
-                  <>
-                    <Archive className="h-3.5 w-3.5" /> Archive
-                  </>
-                )}
-              </Button>
-              {isArchived && onDelete && (
-                <Button size="sm" variant="ghost" onClick={() => onDelete(room)}>
-                  <Trash2 className="h-3.5 w-3.5" /> Delete
+              <div className="ml-auto flex shrink-0 flex-wrap justify-end gap-1">
+                <Button size="sm" variant="ghost" onClick={() => onEdit(room)}>
+                  <Pencil className="h-3.5 w-3.5" /> Edit
                 </Button>
-              )}
-            </div>
-          </li>
-        );
-      })}
-    </ul>
+                <Button size="sm" variant="ghost" onClick={() => onArchive(room)}>
+                  {isArchived ? (
+                    <>
+                      <RotateCcw className="h-3.5 w-3.5" /> Restore
+                    </>
+                  ) : (
+                    <>
+                      <Archive className="h-3.5 w-3.5" /> Archive
+                    </>
+                  )}
+                </Button>
+                {isArchived && onDelete && (
+                  <Button size="sm" variant="ghost" onClick={() => onDelete(room)}>
+                    <Trash2 className="h-3.5 w-3.5" /> Delete
+                  </Button>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+      <Pagination {...pagination} noun="rooms" />
+    </div>
   );
 }
 

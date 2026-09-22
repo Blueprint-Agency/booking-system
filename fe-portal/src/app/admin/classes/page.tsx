@@ -2,7 +2,17 @@
 import { useCallback, useEffect, useState } from "react";
 import { Plus, Pencil, Archive, AlertTriangle, Loader2, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { Button, PageHeader, Badge, EmptyState, Tabs, TabsList, TabsTrigger } from "@/components/ui";
+import {
+  Button,
+  PageHeader,
+  Badge,
+  EmptyState,
+  Tabs,
+  TabsList,
+  TabsTrigger,
+  Pagination,
+  usePaged,
+} from "@/components/ui";
 import { ClassPackageDialog } from "@/components/packages/class-package-dialog";
 import { formatSgd } from "@/lib/formatters";
 import { useWorkspace } from "@/lib/workspace-context";
@@ -52,9 +62,10 @@ export default function ClassPackagesPage() {
     useState<{ kind: "create" } | { kind: "edit"; pkg: ClassPackage } | null>(null);
   const [view, setView] = useState<"active" | "archived">("active");
 
+  // `loading` starts true and is never set again: a reload after a save refreshes
+  // the list in place, so the pager keeps the page the admin was on.
   const load = useCallback(async () => {
     if (!api) return;
-    setLoading(true);
     setError(null);
     try {
       const data = await api.get<{ class_packages: ApiClassPackage[] }>(
@@ -276,6 +287,7 @@ function PackageGroup({
   archived?: boolean;
   warning?: string | null;
 }) {
+  const { visible, pagination } = usePaged(packages);
   if (packages.length === 0) return null;
   return (
     <section>
@@ -289,7 +301,7 @@ function PackageGroup({
         )}
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        {packages.map((pkg) => (
+        {visible.map((pkg) => (
           <PackageCard
             key={pkg.id}
             pkg={pkg}
@@ -301,6 +313,12 @@ function PackageGroup({
           />
         ))}
       </div>
+      {/* A card grid has no card of its own to sit in, so the footer is its own. */}
+      <Pagination
+        {...pagination}
+        noun="packages"
+        className="mt-3 rounded-xl border border-border bg-card shadow-soft"
+      />
     </section>
   );
 }

@@ -2,7 +2,16 @@
 // FIXTURE-BACKED: reads static mock data from `@/data`, not the live backend.
 import { useState, useMemo } from "react";
 import { QrCode, KeyRound, Check, ScanLine, Camera } from "lucide-react";
-import { Avatar, Badge, Button, Input, Label, PageHeader } from "@/components/ui";
+import {
+  Avatar,
+  Badge,
+  Button,
+  Input,
+  Label,
+  PageHeader,
+  Pagination,
+  usePaged,
+} from "@/components/ui";
 import {
   classInstances,
   ptSessions,
@@ -88,6 +97,8 @@ export default function CheckInPage() {
         .filter((b) => b.state === "confirmed")
         .map((b) => ({ booking: b, client: clients.find((c) => c.id === b.clientId)! }))
     : [];
+  // The header's checked-in count reads the whole roster, not this page.
+  const { visible: rosterPage, pagination: rosterPagination } = usePaged(roster, selectedKey);
 
   function flipCheckIn(bookingId: string, to: "attended" | "no_show") {
     setBookings((prev) =>
@@ -184,7 +195,7 @@ export default function CheckInPage() {
                 </h3>
               </header>
               <ul className="divide-y divide-border">
-                {roster.map(({ booking, client }) => (
+                {rosterPage.map(({ booking, client }) => (
                   <li
                     key={booking.id}
                     className="flex items-center gap-3 px-4 py-3 sm:gap-4 sm:px-5"
@@ -221,6 +232,7 @@ export default function CheckInPage() {
                   </li>
                 ))}
               </ul>
+              <Pagination {...rosterPagination} noun="bookings" />
             </div>
           )}
         </section>
