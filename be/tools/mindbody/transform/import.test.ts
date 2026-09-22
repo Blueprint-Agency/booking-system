@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { and, eq, sql } from 'drizzle-orm'
-import { frontendOrigin, integrationTestsEnabled, SKIP_REASON, startTestApp, inTenantContext, type TestApp } from './harness'
+import { frontendOrigin, integrationTestsEnabled, SKIP_REASON, startTestApp, inTenantContext, type TestApp } from '../../../src/test/harness'
 
 const OPERATOR = 'mindbody-operator@platform.test'
 process.env.PLATFORM_ADMIN_EMAIL = OPERATOR
@@ -16,28 +16,28 @@ process.env.PLATFORM_ADMIN_EMAIL = OPERATOR
  * that is asked of the platform the way a member, an admin or the operator
  * would ask it. Nothing here reads the transform's row JSON.
  *
- * The fixture studio and its people are invented (`src/mindbody/fixtures`).
+ * The fixture studio and its people are invented (`fixtures/` beside this file).
  */
 describe('a Mindbody studio, transformed and imported', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
   let harness!: TestApp
-  let schema!: typeof import('../db/schema')
-  let provision!: typeof import('../services/tenants/provision')
-  let tenants!: typeof import('../services/tenants/tenants')
-  let transform!: typeof import('../mindbody/transform')
-  let ensureAuthUser!: typeof import('../services/auth/auth-users')['ensureAuthUser']
+  let schema!: typeof import('../../../src/db/schema')
+  let provision!: typeof import('../../../src/services/tenants/provision')
+  let tenants!: typeof import('../../../src/services/tenants/tenants')
+  let transform!: typeof import('./transform')
+  let ensureAuthUser!: typeof import('../../../src/services/auth/auth-users')['ensureAuthUser']
   let operator!: Record<string, string>
 
-  const FIXTURES = path.join(__dirname, '..', 'mindbody', 'fixtures')
+  const FIXTURES = path.join(__dirname, 'fixtures')
   const run = Date.now().toString(36)
   let studios = 0
 
   before(async () => {
     harness = await startTestApp()
-    schema = await import('../db/schema')
-    provision = await import('../services/tenants/provision')
-    tenants = await import('../services/tenants/tenants')
-    transform = await import('../mindbody/transform')
-    ;({ ensureAuthUser } = await import('../services/auth/auth-users'))
+    schema = await import('../../../src/db/schema')
+    provision = await import('../../../src/services/tenants/provision')
+    tenants = await import('../../../src/services/tenants/tenants')
+    transform = await import('./transform')
+    ;({ ensureAuthUser } = await import('../../../src/services/auth/auth-users'))
     operator = await harness.signInAs('platform', OPERATOR, null)
   })
 
@@ -158,7 +158,7 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     assert.equal(await count('clients', studio.tenant.id), 8)
 
     // A member cancellation reads the policy, and finds the studio's own.
-    const policy = inTenantContext(await import('../services/policy/evaluate-cancellation'))
+    const policy = inTenantContext(await import('../../../src/services/policy/evaluate-cancellation'))
     const [client] = await harness.db
       .select({ id: schema.clients.id })
       .from(schema.clients)
@@ -218,7 +218,7 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     assert.deepEqual([nora.status, nora.role], ['active', 'instructor'], 'listed by name among the instructors')
 
     // Ivy has no password yet: she asks for a reset on her studio's portal, follows the link, and is in.
-    const { discardedMail } = await import('../lib/mailer')
+    const { discardedMail } = await import('../../../src/lib/mailer')
     const portal = { 'X-Tenant-Slug': studio.slug, Origin: frontendOrigin('staff', studio) }
     const json = { ...portal, 'Content-Type': 'application/json' }
     const requested = await harness.app.request('/api/v1/auth/staff/request-password-reset', {
@@ -277,7 +277,7 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     assert.equal(imported.status, 200, JSON.stringify(imported.body))
 
     const tenantId = studio.tenant.id
-    const classesSvc = inTenantContext(await import('../services/schedule/classes'))
+    const classesSvc = inTenantContext(await import('../../../src/services/schedule/classes'))
     const [owner] = await harness.db
       .select({ id: schema.staffUsers.id })
       .from(schema.staffUsers)
@@ -364,7 +364,7 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
 
   test('a second live class pack waits Dormant, and starts with the days it had left once the first is gone', async () => {
     const studio = await importedStudio()
-    const adjust = inTenantContext(await import('../services/packages/adjust'))
+    const adjust = inTenantContext(await import('../../../src/services/packages/adjust'))
     const jane = await studio.member('jane.doe@example.test')
     const [client] = await harness.db
       .select({ id: schema.clients.id })
@@ -433,7 +433,7 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
 
   test('a member who had a trial in Mindbody cannot have another', async () => {
     const studio = await importedStudio()
-    const comp = inTenantContext(await import('../services/packages/complimentary'))
+    const comp = inTenantContext(await import('../../../src/services/packages/complimentary'))
     const [jane] = await harness.db
       .select({ id: schema.clients.id })
       .from(schema.clients)
@@ -783,7 +783,7 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
   test('the same archive without the ensure-accounts flag is refused, as a restore always was', async () => {
     const studio = await transformedStudio()
     studio.archive.manifest.ensureAccounts = false
-    const { packArchive } = await import('../services/tenants/transfer-archive')
+    const { packArchive } = await import('../../../src/services/tenants/transfer-archive')
     const imported = await importZip(studio.tenant.id, await packArchive(studio.archive))
     assert.equal(imported.status, 409)
     assert.match(imported.body.message, /auth_user_id/)
@@ -800,7 +800,7 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
   })
 
   test('the transform checks every CHECK rule the database has on the tables it writes', async () => {
-    const { CHECKS } = await import('../mindbody/constraints')
+    const { CHECKS } = await import('./constraints')
     const studio = await transformedStudio()
     const tables = studio.archive.manifest.tables
     const found = await harness.db.execute<{ table: string; name: string }>(sql`
@@ -808,13 +808,13 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
       FROM pg_constraint o JOIN pg_class c ON c.oid = o.conrelid
       WHERE o.contype = 'c' AND c.relname IN ${sql.raw(`(${tables.map(t => `'${t}'`).join(',')})`)}`)
     const missing = [...found].filter(r => !CHECKS[r.table]?.[r.name]).map(r => `${r.table}.${r.name}`)
-    assert.deepEqual(missing, [], 'a CHECK the transform does not test would fail an import at its very end: add it to mindbody/constraints.ts')
+    assert.deepEqual(missing, [], 'a CHECK the transform does not test would fail an import at its very end: add it to tools/mindbody/transform/constraints.ts')
   })
 
   test('a row the database refuses is reported by table and rule, never as the SQL or the row', async () => {
     const studio = await transformedStudio()
     studio.archive.rows.client_packages![0]!.credits_or_sessions_remaining = -1
-    const { packArchive } = await import('../services/tenants/transfer-archive')
+    const { packArchive } = await import('../../../src/services/tenants/transfer-archive')
     const imported = await importZip(studio.tenant.id, await packArchive(studio.archive))
     assert.equal(imported.status, 409, JSON.stringify(imported.body))
     const message = String(imported.body.message)
@@ -835,7 +835,7 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     const templates = studio.archive.rows.email_templates!
     templates.push({ ...templates[0]!, id: '00000000-0000-4000-8000-00000000abcd' })
     studio.archive.manifest.counts.email_templates = templates.length
-    const { packArchive } = await import('../services/tenants/transfer-archive')
+    const { packArchive } = await import('../../../src/services/tenants/transfer-archive')
 
     const imported = await importZip(studio.tenant.id, await packArchive(studio.archive))
     assert.equal(imported.status, 409, JSON.stringify(imported.body))

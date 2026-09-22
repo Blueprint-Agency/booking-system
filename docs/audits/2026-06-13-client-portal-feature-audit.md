@@ -59,7 +59,7 @@ These change *what* the correct fix is — not just how to implement it.
   (via `computeActive` in `services/packages/validity.ts`) in the same update.
 - **P2 ✔ `adjustBalance`/`setBalance` don't recompute `active`** — `adjust.ts:57-60`. Adding credits to an
   exhausted bundle won't reactivate it. Same fix.
-- **P2 promo codes hardcoded & unlimited-use** — `be/src/lib/promo-codes.ts` (`SADHANA20`/`FRIEND10`),
+- **P2 promo codes hardcoded & unlimited-use** — `be/src/lib/promo-codes.ts` (a studio-named code / `FRIEND10`),
   no redemption ledger/expiry/per-user cap. Documented as v1 intentional; flag only.
 
 ### PT sessions

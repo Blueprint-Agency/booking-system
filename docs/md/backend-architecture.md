@@ -44,6 +44,11 @@ be/
 ├── tsconfig.json
 ├── drizzle.config.ts
 ├── .env.example
+├── tools/                             # Operator tooling, NOT the app: never imported by src/, not in the image
+│   └── mindbody/                      # Mindbody migration — see docs/md/mindbody-import.md
+│       ├── report-files.json          # The report files the transform reads = the files the download writes
+│       ├── download/                  # Report downloader (Playwright, the studio's Mindbody sign-in)
+│       └── transform/                 # Reports + studio config → the super portal's import archive
 └── src/
     ├── server.ts                      # Node entry — boots Hono app + cron schedulers
     ├── app.ts                         # Hono instance + global middleware + route mounting
@@ -1113,7 +1118,7 @@ Example: `RT-A4F2K9`. Collision probability over 10⁶ bookings on a 32⁶ ≈ 1
 
 Both index into `bookings` directly — no "wrong session" possible.
 
-A booking that must get the same codes every time it is written derives the bytes instead of drawing them at random, and spells the codes the one way through `qr.ts:bookingCodesFrom(tokenBytes, codeBytes)`. Only the Mindbody transform does this (`mindbody/schedule.ts`): both values are HMACs of the studio config's `secret`, so a rerun on the same reports writes the same archive byte for byte, and no report reveals a member's QR token. Its retry loop salts the code again and sees only the codes in the archive it is building, which is all there is — the transform imports into a Tenant that holds no bookings yet, and the DB unique index still backs it.
+A booking that must get the same codes every time it is written derives the bytes instead of drawing them at random, and spells the codes the one way through `qr.ts:bookingCodesFrom(tokenBytes, codeBytes)`. Only the Mindbody transform does this (`be/tools/mindbody/transform/schedule.ts`): both values are HMACs of the studio config's `secret`, so a rerun on the same reports writes the same archive byte for byte, and no report reveals a member's QR token. Its retry loop salts the code again and sees only the codes in the archive it is building, which is all there is — the transform imports into a Tenant that holds no bookings yet, and the DB unique index still backs it.
 
 ### Capacity enforcement
 

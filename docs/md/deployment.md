@@ -104,7 +104,7 @@ Both frontends ship to Vercel (one Vercel project each, Root Directory pointed a
 `deploy-be.yml` runs a `test` job before `deploy`, and `deploy` declares `needs: test`. A red
 backend suite means no image is built and neither stack is touched.
 
-- **What runs.** The whole backend suite (`be/src/**/*.test.ts`) against a throwaway `postgres:16`
+- **What runs.** The whole backend suite (`be/src/**/*.test.ts` and `be/tools/**/*.test.ts`) against a throwaway `postgres:16`
   service container, with `TEST_DATABASE_URL` pointing at it and the same stub environment the
   integration harness (`be/src/test/harness.ts`) fills in — `src/env.ts` validates at import, so
   unit tests need it too.

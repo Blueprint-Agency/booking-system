@@ -1,4 +1,4 @@
-import type { TenantArchive } from '../services/tenants/transfer-shape'
+import type { TenantArchive } from '../../../src/services/tenants/transfer-shape'
 
 /**
  * The database's CHECK constraints on every table the archive writes, as the
@@ -9,7 +9,7 @@ import type { TenantArchive } from '../services/tenants/transfer-shape'
  * transform checks every row against the same rules first and refuses to write
  * the zip, naming every broken rule and how many rows break it.
  *
- * Kept in step with the schema by `src/test/mindbody-transform.test.ts`, which
+ * Kept in step with the schema by `import.test.ts` (beside this file), which
  * reads the live constraint list and fails on any CHECK this file does not name.
  * A column the row leaves out takes its database default, so a missing number
  * passes; a missing reference is NULL.

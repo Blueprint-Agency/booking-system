@@ -1,5 +1,5 @@
 {
-  "_comment": "The report files the transform reads (transform.ts REPORTS), as the cutover download names them. transform.test.ts pins every entry to its matcher; the download script outside this repo checks its cutover profile against this file (export.js --profile cutover --dry-run --check-manifest <this file>). <year> is one file per calendar year; <group> one file per referrer group; <piece> one file per date piece (a month, or smaller where Mindbody refuses a month).",
+  "_comment": "The report files the transform reads (transform/transform.ts REPORTS), under the names the cutover download writes. Shared by both tools: the downloader (download/plan.ts) reads it for each cutover report's file name and single rule, and download/plan.test.ts checks the names it works out equal these; transform/transform.test.ts pins every entry to its matcher and rules. <year> is one file per calendar year; <group> one file per referrer group; <piece> one file per date piece (a month, or smaller where Mindbody refuses a month).",
   "files": [
     { "kind": "members", "file": "02 Mailing Lists - Mailing List.xls", "single": true, "required": true },
     { "kind": "referrals", "file": "21 Referral Types - <group>.xls", "single": false, "required": true },

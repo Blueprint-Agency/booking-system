@@ -6,7 +6,7 @@ ADR 0004 gave a studio its own payment account and one question with one answer:
 
 ## A studio's history does not move with it
 
-There is no way to hand a payment intent from one provider account to another. So when Yoga Sadhana's credentials are set, the sales it took on the platform's account stay on the platform's account — for as long as anybody might want to read, report or return one, which is indefinitely.
+There is no way to hand a payment intent from one provider account to another. So when the first studio's credentials are set, the sales it took on the platform's account stay on the platform's account — for as long as anybody might want to read, report or return one, which is indefinitely.
 
 Reading the studio's *current* credentials to refund one of those would send the call to an account where the intent does not exist. The member gets nothing back, and the admin gets an error naming an id that looks perfectly correct. Nothing about the failure points at the cause.
 

@@ -18,7 +18,7 @@ An account is therefore a **key**, not a header. That is the whole difference fr
 
 `providerAccountForTenant` answers `null` for a studio that has supplied nothing, and `null` means the platform's account — where every studio sold before this and where every studio still sells until it is moved.
 
-This is not a fallback bolted on for safety; it is what makes the change deployable. Studios are onboarded one at a time, each one an independent act, and the studios behind it are not waiting on anything. Yoga Sadhana's credentials are configurable from the day this ships and its selling is unchanged until somebody sets them.
+This is not a fallback bolted on for safety; it is what makes the change deployable. Studios are onboarded one at a time, each one an independent act, and the studios behind it are not waiting on anything. The first studio's credentials are configurable from the day this ships and its selling is unchanged until somebody sets them.
 
 The one place that refusal must not be silent is a studio whose credentials exist and cannot be opened — a rotated key, a tampered row. Falling back there would take that studio's members' money onto the platform's account: a silent misdirection of somebody else's revenue, which is worse than a failed checkout by a wide margin. So it throws.
 

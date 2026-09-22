@@ -1,4 +1,4 @@
-import { bookingCodesFrom } from '../services/bookings/qr'
+import { bookingCodesFrom } from '../../../src/services/bookings/qr'
 import { secretBytes } from './ids'
 
 /**

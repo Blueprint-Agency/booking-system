@@ -19,8 +19,8 @@ import { getPortalToken, signOutPortal, usePortalSession } from "@/lib/portal-au
 import type { Location, StaffRole, StaffUser } from "@/types";
 
 /**
- * Namespaced for the platform, not for tenant #1 — this was `ys.`, Yoga
- * Sadhana's initials, on every studio's portal. Isolation was never at stake
+ * Namespaced for the platform, not for tenant #1 — this was the first
+ * studio's initials, on every studio's portal. Isolation was never at stake
  * (each studio is its own origin, so its `localStorage` is its own), but the
  * name was one studio's on all of them. Renaming drops whatever location a
  * browser had remembered, which the picker re-asks for on the next visit.
