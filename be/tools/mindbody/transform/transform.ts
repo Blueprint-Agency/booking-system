@@ -1,6 +1,6 @@
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
-import { packArchive, unpackArchive } from '../services/tenants/transfer-archive'
+import { packArchive, unpackArchive } from '../../../src/services/tenants/transfer-archive'
 import { validateConfig } from './config'
 import { constraintViolations } from './constraints'
 import { compareFigures, figuresOf, type Figures } from './figures'
@@ -65,9 +65,9 @@ export const REPORTS = {
 
 /**
  * Which reports a download must hold (`required`) and which are read as exactly one file
- * (`single`: two would be two downloads, with no saying which is current). `report-files.json`
- * repeats these with the file names the cutover download writes, and the download script is
- * checked against that file; `transform.test.ts` holds the three together.
+ * (`single`: two would be two downloads, with no saying which is current). `../report-files.json`
+ * repeats these with the file names the cutover download writes; the downloader takes its names
+ * and rules from that file (`../download/plan.ts`), and `transform.test.ts` holds the three together.
  */
 export const REPORT_RULES: Record<keyof typeof REPORTS, { single: boolean; required: boolean }> = {
   members: { single: true, required: true },

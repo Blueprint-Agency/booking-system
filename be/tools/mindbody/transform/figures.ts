@@ -1,4 +1,4 @@
-import type { TenantArchive } from '../services/tenants/transfer-shape'
+import type { TenantArchive } from '../../../src/services/tenants/transfer-shape'
 import { localDateOf } from './values'
 
 /**

@@ -54,8 +54,9 @@ the freeze — decisions 11 and 12 are fixed **in Mindbody**, so they have to be
 | 19 | Class Series | Which weekly classes repeat, and the term end date to extend to | Proposed from the last 4 weeks |
 | 20 | Cutover timing | Freeze start, launch date, the date Mindbody may be cancelled | — (required) |
 
-The studio's own answers — its slug, its Locations, its owner's email — live in the private
-studio config beside the downloads. None of them belongs in this repository.
+The studio's own answers — its slug, its Locations, its owner's email — live in the studio's
+private folder outside the repository (`studio/answers.json` and the configs filled from it; see section 2).
+None of them belongs in this repository.
 
 Two more things to have in hand before the day:
 
@@ -68,23 +69,53 @@ Two more things to have in hand before the day:
 
 ## 2. The download (cutover profile)
 
-The download script lives **outside this repository**, because its config and its output name
-the studio. It drives the studio's own Mindbody sign-in in a browser, so only someone with that
-login runs it. On the day:
+The migration tooling lives in `be/tools/mindbody/`, apart from the app (nothing in `be/src`
+imports it, and it is not in the server image):
 
-```bash
-node export.js --profile cutover --dry-run   # the plan: every file, view and date range; no browser
-node export.js --profile cutover             # the download, into a fresh cutover-downloads/<date time>/
+```
+be/tools/mindbody/
+  report-files.json   the report files the transform reads = the files the cutover download writes
+  download/           the downloader: drives the studio's Mindbody sign-in in Chrome (Playwright)
+  transform/          reports + studio config -> the super portal's import archive; fill, verify
 ```
 
-The folder it writes is what `transform --reports` is pointed at, as it is; its
-`_logs/as-of.txt` is the config's `asOf`. The file names it writes are
-`be/src/mindbody/report-files.json` — the transform's own list, pinned by a unit test against the
-matchers and the single/required rules (`REPORT_RULES` in `transform.ts`). The script checks
-itself against that file (`--dry-run --check-manifest <repo>/be/src/mindbody/report-files.json`
-exits non-zero when they differ), so a change on either side is caught before the day. The
-history cutoff the script downloads from must be on or before the config's `history.from`.
-Every date range is computed from the run date:
+The code is here; the **data is not**. Every report, config, answer and archive names real
+people, so it lives in a private folder outside the repository, one folder per download:
+
+```
+<MB_EXPORT_ROOT>/
+  .mindbody-login.env, auth.json     the studio's Mindbody sign-in and saved session (private)
+  studio/                            the studio's own inputs: answers.json (for fill), the starter
+                                     config (holds the invitation secret), decisions and notes
+  <YYYY-MM-DD HHmm>/                 one download, named for when it started
+    reports/Clients/<NN Report>/…    the Excel files, one folder per report
+    reports/Staff/<NN Report>/…
+    _logs/as-of.txt                  when the last report landed: the config's asOf
+    config.<output>.json             filled configs, and the facts they were filled from
+    <name>.zip + .ids.json + .preflight.md + .expected.json    each archive built from it
+```
+
+Set `MB_EXPORT_ROOT` in `be/.env` (see `be/.env.example`); the sign-in file and the saved session
+default to `<root>/.mindbody-login.env` and `<root>/auth.json` (`MB_LOGIN_FILE`, `MB_AUTH_FILE`).
+The downloader opens a visible Chrome window — Mindbody's studio search refuses a headless one —
+so only someone with the studio's login runs it. On the day:
+
+```bash
+cd be
+npm run mindbody:download -- --profile cutover --dry-run   # the plan: every file, view and date range; no browser
+npm run mindbody:download -- --profile cutover             # the download, into a fresh <root>/<YYYY-MM-DD HHmm>/
+npm run mindbody:download -- --login-only [--fresh]        # just check (or, --fresh, redo) the sign-in
+```
+
+The folder it writes is what `transform --export` is pointed at, as it is; its
+`_logs/as-of.txt` is the config's `asOf`. The downloader takes every cutover file name and its
+single rule from `be/tools/mindbody/report-files.json` — the transform's own list, pinned by a unit
+test against the matchers and the single/required rules (`REPORT_RULES` in `transform.ts`) — and
+`download/plan.test.ts` checks that the names it works out from each report's number, view and page
+type are exactly that list, so neither side can drift from the other. After a real run every file
+written is checked against its expected name as well. The history cutoff the download starts
+from (`MB_START`, default 2023-01-01) must be on or before the config's `history.from`. Every
+date range is computed from the run date:
 
 | Report (view) | Range |
 |---|---|
@@ -129,26 +160,36 @@ platform by hand.
 
 ## 3. The transform (reports → studio archive)
 
-The backend turns a folder of downloaded Mindbody reports plus a **studio config** into a zip
-the super portal's import reads (`be/src/mindbody/`). It needs no database and no backend
-environment. The reports, the config and everything it writes name real people: keep them
-beside the downloads, never in this repository.
+The transform (`be/tools/mindbody/transform/`) turns an export folder of downloaded Mindbody
+reports plus a **studio config** into a zip the super portal's import reads. It needs no database
+and no backend environment. The reports, the config and everything it writes name real people:
+keep them in the private export folder, never in this repository. `--export` takes the export
+folder's full path, or just its name (`"2026-01-31 0100"`) to find it under `MB_EXPORT_ROOT`.
 
 ```bash
 cd be
-# 1. A config pre-filled from the reports. Fill in every null.
-#    --as-of is when the download finished; with it the catalogue proposal is only what is still held.
-npm run mindbody -- starter --reports <downloads dir> --out <config.json> --as-of <2026-01-31T02:00:00+08:00>
+# 1. A config pre-filled from the reports. Fill in every null — by hand, or step 1b.
+#    --as-of defaults to the export's _logs/as-of.txt (when the download finished); with it the
+#    catalogue proposal is only what is still held.
+npm run mindbody -- starter --export <export folder> --out <root>/studio/starter-config.json
+# 1b. Or fill it by rule from the studio's private answers (names, emails, Rooms, what is on sale):
+#     writes <export folder>/config.<output>.json for each `outputs` entry, plus the facts it used.
+npm run mindbody -- fill --export <export folder> --starter <root>/studio/starter-config.json --answers <root>/studio/answers.json
 # 2. Provision the Tenant in the super portal WITHOUT a first admin; copy its id.
-# 3. The archive, for that Tenant.
-npm run mindbody -- transform --reports <downloads dir> --config <config.json> --tenant <tenant id> --out <studio.zip>
+# 3. The archive, for that Tenant: <export folder>/<slug>.zip (or --name <name>, or --out <file.zip>).
+npm run mindbody -- transform --export <export folder> --config <config.json> --tenant <tenant id>
 # 4. Import the zip in the super portal, export the studio from the same page, then:
-npm run mindbody -- verify --expected <studio.expected.json> --export <exported.zip>
+npm run mindbody -- verify --expected <studio.expected.json> --export-zip <exported.zip>
 ```
 
+- `fill` holds the rules (`transform/fill.ts`: who comes across as Instructor or Admin, which
+  options are on sale and at the commonest price of the last 90 days, Room capacities from the
+  largest class each held, which service categories are workshops). Every value it fills in is
+  the studio's, from `answers.json` (`StudioAnswers` in `fill.ts` documents each field). Rerun it
+  on each new download; it never edits the starter.
 - `transform` refuses to run while a field is open, and lists every one by name.
 - It also checks every row it wrote against the database's CHECK rules
-  (`be/src/mindbody/constraints.ts`, kept complete by an integration test that reads the live
+  (`be/tools/mindbody/transform/constraints.ts`, kept complete by an integration test that reads the live
   constraint list) and writes no zip while any row breaks one — an import is all or nothing,
   and a refused row would otherwise fail it only at the end. If the database still refuses an
   import, the super portal names the table and the rule, not the SQL.
@@ -343,18 +384,22 @@ rehearsal passed and the preflight has been answered.
 2. **Download**, with the cutover profile (section 2). Write down the finish time; that is
    `--as-of` from here on. If any report came back capped or refused, stop — fix the range and
    download again. Do not transform a short file.
-3. **Starter config.** Copy the rehearsal's config beside the new downloads, or, if the studio's
-   answers have changed, make a fresh one and fill it in again:
+3. **Config.** Fill the rehearsal's starter config again from the new download — the facts
+   (class names, what is on sale and at what, who taught lately) and `asOf` come from the new
+   export, the answers from `studio/answers.json`:
 
    ```bash
    cd be
-   npm run mindbody -- starter --reports <downloads dir> --out <config.json> --as-of <finish time>
+   npm run mindbody -- fill --export <new export folder> --starter <root>/studio/starter-config.json \
+     --answers <root>/studio/answers.json
    ```
 
-   `starter` refuses to write over an existing config — it holds the `secret` the invitation
-   tokens are keyed by, and a person's answers. Reusing the rehearsal's config is the normal
-   path; check its catalogue against the new Pricing Option Expirations report, because an
-   option the studio started selling since the rehearsal is a new decision 6.
+   If the studio has new staff, series or pricing options since the rehearsal, make a fresh
+   starter from the new download instead (`starter --export <new export folder> --out …`) and
+   fill that. `starter` refuses to write over an existing config — it holds the `secret` the
+   invitation tokens are keyed by. Either way, check the filled catalogue against the new
+   Pricing Option Expirations report: an option the studio started selling since the rehearsal
+   is a new decision 6, and a new line in `answers.json`.
 4. **Back up production.** Section 0, in full. Write the snapshot id in the launch ticket. This
    is the only way back, and a rehearsal does not excuse it.
 5. **Provision an empty Tenant**, in the super portal → **New studio**, with the config's
@@ -366,21 +411,21 @@ rehearsal passed and the preflight has been answered.
 6. **Transform**, for that Tenant id:
 
    ```bash
-   npm run mindbody -- transform --reports <downloads dir> --config <config.json> \
-     --tenant <tenant id> --out <studio.zip>
+   npm run mindbody -- transform --export <new export folder> \
+     --config <new export folder>/config.<output>.json --tenant <tenant id>
    ```
 
    It refuses while any config field is open and names every one. Read the counts it prints and
    the new `<studio>.preflight.md` before going on: a preflight that grew since the rehearsal
    means something changed in Mindbody that nobody mentioned.
-7. **Import.** Super portal → the Tenant → **Import**, and upload `studio.zip`. It is
+7. **Import.** Super portal → the Tenant → **Import**, and upload `<export folder>/<slug>.zip`. It is
    all-or-nothing: a failure leaves the Tenant empty and you import again. The owner's staff row
    arrives active, and the Tenant opens at that moment. Allow a couple of minutes for a studio
    with history, and do not assume it has hung.
 8. **Verify**, before anybody books. Super portal → the Tenant → **Export**, then:
 
    ```bash
-   npm run mindbody -- verify --expected <studio.expected.json> --export <exported.zip>
+   npm run mindbody -- verify --expected <studio.expected.json> --export-zip <exported.zip>
    ```
 
    It exits non-zero on any difference and lists each one by member, class, workshop or year.

@@ -177,7 +177,7 @@ jobs:
       - name: Backend tests (serial)
         shell: bash
         run: |
-          node --import tsx --test --test-concurrency=1 --test-force-exit --test-reporter=tap "src/**/*.test.ts" | tee test-output.tap
+          node --import tsx --test --test-concurrency=1 --test-force-exit --test-reporter=tap "src/**/*.test.ts" "tools/**/*.test.ts" | tee test-output.tap
           if ! grep -qx '# skipped 0' test-output.tap; then
             echo "::error::Tests were skipped — the integration suite did not run against Postgres."
             grep -E '^# (tests|pass|fail|skipped)' test-output.tap

@@ -1,7 +1,7 @@
 /**
  * Rebuilds the fixtures that are not text: the workbooks.
  *
- *   npx tsx src/mindbody/fixtures/build-workbook.ts
+ *   npx tsx tools/mindbody/transform/fixtures/build-workbook.ts
  *
  * Their rows live in the `*.rows.json` files beside this one, where they can be
  * read and reviewed; this writes them the way Mindbody writes a workbook — one

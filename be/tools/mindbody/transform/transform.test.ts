@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { packArchive, unpackArchive } from '../services/tenants/transfer-archive'
+import { packArchive, unpackArchive } from '../../../src/services/tenants/transfer-archive'
 import { ConfigError, starterConfig, validateConfig } from './config'
 import { mapStudio } from './mapper'
 import type { OptionSaleRow } from './readers'
@@ -13,7 +13,7 @@ import { REPORTS as REPORT_FILES, REPORT_RULES, readReports, transformMindbody, 
 /**
  * The transform, from the outside: fixture reports and a fixture config in, an
  * archive out. The database half — importing it and signing in — is
- * `src/test/mindbody-transform.test.ts`.
+ * `import.test.ts`, beside this file.
  */
 
 const FIXTURES = path.join(__dirname, 'fixtures')
@@ -1224,7 +1224,7 @@ test('the starter config names the Locations the timetable names, oldest first, 
 })
 
 test('report-files.json: every file the cutover download writes matches exactly its own report, and the rules agree', () => {
-  const manifest = JSON.parse(readFileSync(path.join(__dirname, 'report-files.json'), 'utf8')) as {
+  const manifest = JSON.parse(readFileSync(path.join(__dirname, '..', 'report-files.json'), 'utf8')) as {
     files: { kind: keyof typeof REPORT_FILES; file: string; single: boolean; required: boolean }[]
   }
   // Every report the transform reads is in the manifest once, with the transform's own rules.
