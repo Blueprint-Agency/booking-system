@@ -126,7 +126,7 @@ date range is computed from the run date:
 | Payroll (Detail), one file per year | history cutoff → today |
 | Schedule at a Glance ("Scheduled", all locations, staff and statuses), one file per year | history cutoff → today + 12 months |
 | Staff Schedule (ALL, "Scheduled") | history cutoff → today + 5 years |
-| Membership (New Version Detail), AutoPay Schedule | optional, not read by the transform: who is on an autopay, to stop in Mindbody |
+| Membership (New Version Detail), Autopay Detail ("Scheduled"; Reports → Payment Processing — Mindbody has no "AutoPay Schedule" report) | optional, not read by the transform: who is on an autopay, to stop in Mindbody; Autopay Detail runs today → today + 12 months |
 
 Birthdays, addresses, emergency contacts, client notes and waiver status are in **no** Mindbody
 report: they come, if at all, from a client data export requested from Mindbody, by hand. The

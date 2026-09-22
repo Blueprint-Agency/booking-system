@@ -12,18 +12,20 @@
  *   reports/<Clients|Staff>/<NN Report>/<NN Report - view>.xls[x]
  *   _logs/_results.json, _logs/as-of.txt (when the last report landed: the config's asOf)
  * `--export <folder>` continues an earlier full download in its own folder, skipping
- * the files it already has.
+ * the files it already has. On a cutover folder it only fetches named reports the
+ * transform does not read (e.g. `--profile cutover --export "<folder>" autopay`): the
+ * folder's as-of stays, and the new results are merged into its _results.json.
  *
  * Where things are (flags win over be/.env, which wins over nothing — there is no default):
  *   --root        MB_EXPORT_ROOT   the private folder the exports go in
  *   --login-file  MB_LOGIN_FILE    the studio sign-in (MB_STUDIO / MB_EMAIL / MB_PASSWORD); default <root>/.mindbody-login.env
  *   --auth-file   MB_AUTH_FILE     the saved session;  default <root>/auth.json
  * Also: MB_START (history cutoff, YYYY-MM-DD, default 2023-01-01), MB_TIMEOUT (ms per request),
- * MB_PARALLEL (simultaneous date pieces), MB_AUTOPAY_PATH (the AutoPay Schedule page).
+ * MB_PARALLEL (simultaneous date pieces).
  *
  * Everything it reads and writes names real people and stays in that private folder.
  */
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { parseArgs } from 'node:util'
 import { config as loadEnv } from 'dotenv'
@@ -92,7 +94,11 @@ function main() {
   const only = (command === undefined ? [] : positionals).map(a => a.toLowerCase())
   const reports = profileReports(profile).filter(r => !only.length || only.some(o => r.name.toLowerCase().includes(o)))
   if (only.length && !reports.length) throw new Error(`no report's name contains ${only.join(' or ')}`)
-  if (values.export && profile === 'cutover') throw new Error('--export: a cutover download always starts a fresh folder, so nothing older is mixed in')
+  // A cutover folder is one moment: only a named report the transform does not read may be added to it later.
+  if (values.export && profile === 'cutover' && (!only.length || reports.some(r => !r.optional))) {
+    throw new Error('--export: a cutover download always starts a fresh folder, so nothing older is mixed in; ' +
+      'only named optional reports (not read by the transform) can be added to one')
+  }
 
   const started = new Date()
   const dates = runDates(started, startDate())
@@ -108,7 +114,8 @@ function main() {
     loginFile: values['login-file'] || process.env.MB_LOGIN_FILE || path.join(root(), '.mindbody-login.env'),
     authFile: values['auth-file'] || process.env.MB_AUTH_FILE || path.join(root(), 'auth.json'),
   }
-  return download({ profile, reports, folder, dates, files, loginOnly: values['login-only'], fresh: values.fresh, force: values.force })
+  return download({ profile, reports, folder, dates, files, loginOnly: values['login-only'], fresh: values.fresh, force: values.force,
+    addOn: profile === 'cutover' && !!values.export })
 }
 
 function printNext(folder: string) {
@@ -126,6 +133,8 @@ async function download(o: {
   loginOnly: boolean
   fresh: boolean
   force: boolean
+  /** Named optional reports added to a finished cutover folder. */
+  addOn: boolean
 }) {
   // Loaded here so the dry run needs no browser.
   const { openSession } = await import('./session')
@@ -162,7 +171,21 @@ async function download(o: {
   console.log(`\nDone. ${results.length - fails.length} ok/skipped, ${fails.length} failed.`)
   for (const [b, s] of fails) console.log(`  ${b}: ${s}`)
   mkdirSync(logsDir(o.folder), { recursive: true })
-  writeFileSync(path.join(logsDir(o.folder), '_results.json'), JSON.stringify(results, null, 1))
+  const resultsFile = path.join(logsDir(o.folder), '_results.json')
+  if (o.addOn) {
+    // Adding to a finished cutover folder: its results and its as-of moment stay; these replace their own lines.
+    const earlier: [string, string][] = existsSync(resultsFile) ? JSON.parse(readFileSync(resultsFile, 'utf8')) : []
+    // By category and number, so an earlier line under the report's old name is replaced too.
+    const key = (cat: string, folder: string) => `${cat}/${folder.slice(0, 2)}`
+    const mine = new Set(o.reports.map(r => key(r.cat, pad2(r.num))))
+    const merged = [...earlier.filter(([b]) => { const [cat = '', folder = ''] = b.split(/[\\/]/); return !mine.has(key(cat, folder)) }), ...results]
+    writeFileSync(resultsFile, JSON.stringify(merged, null, 1))
+    await session.browser.close()
+    console.log(`\nAdded to ${o.folder}; its _logs/as-of.txt is unchanged.`)
+    if (fails.length) process.exitCode = 1
+    return
+  }
+  writeFileSync(resultsFile, JSON.stringify(results, null, 1))
   await session.browser.close()
 
   // The "as of" moment: when the last report landed, in this machine's (the studio's) offset.

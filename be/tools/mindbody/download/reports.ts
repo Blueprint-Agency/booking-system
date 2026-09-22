@@ -82,8 +82,6 @@ export type ProfileEntry = Report & {
   loop?: { match: RegExp; label: string }
   /** Not read by the transform: a failure is reported but does not fail the run. */
   optional?: boolean
-  /** Its address was never checked against a live Mindbody. */
-  unverified?: boolean
 }
 
 const DETAIL_SUMMARY: Variant[] = [{ label: 'Detail', set: { View: 'Detail' } }, { label: 'Summary', set: { View: 'Summary' } }]
@@ -285,10 +283,16 @@ export const CUTOVER: ProfileEntry[] = [
   // Not read by the transform: who is on an autopay, to stop in Mindbody and re-sign on the platform.
   pick('Membership', { only: ['New Version Detail'], optional: true }),
   {
-    // UNVERIFIED path (never checked): Reports -> Sales -> AutoPay Schedule. Open it in Mindbody once and
-    // put its address path in MB_AUTOPAY_PATH if this one is wrong (`./plan.ts` applies it). The run does not fail on it.
-    name: 'AutoPay Schedule', cat: 'Sales', num: 43, optional: true, unverified: true, type: 'legacy',
-    path: '/ASP/adm/adm_rpt_autopay_sched.asp',
-    set: { requiredtxtDateStart: '$TODAY', requiredtxtDateEnd: '$FUTURE1Y' },
+    // Reports -> Payment Processing -> Autopay Detail (Mindbody has no "AutoPay Schedule" report): every
+    // autopay run due from today to 12 months ahead, POS-charged ones included. The other two filters
+    // narrow ("Only account autopays", "Only auto-renewing"), so they stay off. Read only: the page's
+    // Run / Delete buttons set frmDelEFT or a run flag, which this export never does.
+    // A studio with no autopays gets the page's "No autopay transactions found" table.
+    name: 'Autopay Detail', cat: 'Sales', num: 43, optional: true, type: 'legacy',
+    path: '/ASP/adm/adm_eft_det.asp',
+    set: { requiredtxtDateStart: '$TODAY', requiredtxtDateEnd: '$FUTURE1Y', optEFTLocation: '-1', optPayMeth: '',
+      pos_sales: true, optAccountAutoPay: false, optAutoRenewing: false, optFilterTagged: false,
+      noOfRowsToDisplay: '100000' }, // the on-screen page size, set high so no page limit can cut the export
+    variants: [{ label: 'Scheduled', set: { optEFTStatus: '1' } }],
   },
 ]
