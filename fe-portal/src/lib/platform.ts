@@ -6,8 +6,10 @@
  * their role and their location grants — none of which a platform admin has.
  * They belong to no studio; that is the whole point of them.
  */
-import type { Api } from "@/lib/api";
+import { ApiError, type Api } from "@/lib/api";
+import { getApiBaseUrl } from "@/lib/api-url";
 import { downloadFile } from "@/lib/download";
+import { tenantRequestHeaders } from "@/lib/tenant-host";
 
 export type TenantStatus = "active" | "suspended" | "archived";
 
@@ -261,11 +263,114 @@ export function exportTenant(
   });
 }
 
-/** Put an archive back into an empty studio. */
-export function importTenant(api: Api, id: string, archive: File) {
-  const body = new FormData();
-  body.append("archive", archive);
-  return api.post<ImportSummary>(`/platform/tenants/${id}/import`, body);
+/**
+ * Restoring an archive, as a job the server runs.
+ *
+ * The page keeps nothing about it that matters: the job row on the server says
+ * how far it has got, and any page load can ask. Start it, send the file (the
+ * one step that needs this page to stay open), then poll `latestImport` until
+ * it has succeeded or failed — processing carries on with the browser closed.
+ */
+export type ImportStatus = "uploading" | "processing" | "succeeded" | "failed";
+export type ImportPhase =
+  | "uploading"
+  | "unpacking"
+  | "checking"
+  | "accounts"
+  | "writing"
+  | "linking"
+  | "settings"
+  | "committing"
+  | "finishing"
+  | "done";
+
+export interface ImportJob {
+  id: string;
+  tenant_id: string;
+  status: ImportStatus;
+  phase: ImportPhase;
+  file_name: string;
+  upload_bytes: number;
+  received_bytes: number;
+  /** Steps done of `total` once the archive is being written; `total` is null before. */
+  processed: number;
+  total: number | null;
+  summary: ImportSummary | null;
+  /** `upload_interrupted` when the file never arrived whole — choose it again. */
+  error_code: string | null;
+  error: string | null;
+  started_by: string;
+  created_at: string;
+  updated_at: string;
+  finished_at: string | null;
+  dismissed_at: string | null;
+}
+
+export const isImportRunning = (job: ImportJob | null | undefined) =>
+  job?.status === "uploading" || job?.status === "processing";
+
+/** Every studio's import that is running, or finished and not yet dismissed. */
+export function listOpenImports(api: Api) {
+  return api.get<{ imports: ImportJob[] }>("/platform/imports");
+}
+
+/** One studio's most recent import, whatever state it is in. */
+export function latestImport(api: Api, tenantId: string) {
+  return api.get<{ job: ImportJob | null }>(`/platform/tenants/${tenantId}/imports/latest`);
+}
+
+/** Step one: the job, waiting for its file. Refused (409) while another is running. */
+export function startImport(api: Api, tenantId: string, file: File) {
+  return api.post<{ job: ImportJob }>(`/platform/tenants/${tenantId}/imports`, {
+    file_name: file.name,
+    size: file.size,
+  });
+}
+
+export function dismissImport(api: Api, tenantId: string, jobId: string) {
+  return api.post<{ job: ImportJob }>(`/platform/tenants/${tenantId}/imports/${jobId}/dismiss`);
+}
+
+/**
+ * Step two: the file itself, with upload progress.
+ *
+ * `XMLHttpRequest` rather than `fetch`, because `fetch` reports nothing about
+ * bytes *sent*, and that is the progress the operator is waiting on for a large
+ * archive. Resolves when the server has the whole file and the import is
+ * running — not when the import is done.
+ */
+export async function uploadImportArchive(
+  getToken: () => Promise<string | null>,
+  tenantId: string,
+  jobId: string,
+  file: File,
+  onProgress: (sent: number, total: number) => void,
+): Promise<ImportJob> {
+  const token = await getToken();
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("PUT", `${getApiBaseUrl()}/platform/tenants/${tenantId}/imports/${jobId}/archive`);
+    for (const [name, value] of Object.entries(tenantRequestHeaders())) xhr.setRequestHeader(name, value);
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    xhr.setRequestHeader("Accept", "application/json");
+    xhr.setRequestHeader("Content-Type", "application/zip");
+    xhr.upload.onprogress = event => {
+      onProgress(event.loaded, event.lengthComputable ? event.total : file.size);
+    };
+    xhr.onload = () => {
+      let body: unknown = null;
+      try {
+        body = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+      } catch {
+        body = null;
+      }
+      if (xhr.status >= 200 && xhr.status < 300) resolve((body as { job: ImportJob }).job);
+      else reject(new ApiError(xhr.status, body));
+    };
+    xhr.onerror = () => reject(new ApiError(0, null, "The upload could not reach the server."));
+    xhr.onabort = () => reject(new ApiError(0, null, "The upload was cancelled."));
+    xhr.send(file);
+  });
 }
 
 /**

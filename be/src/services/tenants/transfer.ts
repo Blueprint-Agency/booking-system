@@ -45,6 +45,12 @@ export type { TenantArchive, TenantManifest } from './transfer-shape'
  * them: the first has no `tenant_id` and the second is read before any Tenant
  * context exists. The studio's identity and branding travel in the manifest and
  * in `tenant_settings` handled separately, not as ordinary rows.
+ *
+ * `tenant_imports` is excluded because it is the platform's record of restoring
+ * this studio, not part of the studio: exporting it would put one environment's
+ * job history into an archive, and counting it would make every studio with an
+ * import in flight look non-empty to that same import. It goes with the studio
+ * on delete by `ON DELETE CASCADE` instead (migration 0073).
  */
 export async function tenantTableOrder() {
   const tables = (
@@ -56,7 +62,7 @@ export async function tenantTableOrder() {
       WHERE c.table_schema = 'public'
         AND c.column_name = 'tenant_id'
         AND t.table_type = 'BASE TABLE'
-        AND c.table_name <> 'tenant_settings'
+        AND c.table_name NOT IN ('tenant_settings', 'tenant_imports')
       ORDER BY c.table_name
     `)
   ).map(r => r.table_name)
@@ -165,6 +171,21 @@ export async function exportTenant(tenantId: string): Promise<TenantArchive> {
   }
 }
 
+/**
+ * Where an import has got to. `processed` of `total` counts every step across
+ * every phase — accounts ensured, rows written, rows linked, settings — so it
+ * only ever goes up. `phase` is what it is doing now, for a label.
+ */
+export type ImportPhase = 'checking' | 'accounts' | 'writing' | 'linking' | 'settings' | 'committing'
+export type ImportProgress = { phase: ImportPhase; processed: number; total: number }
+/**
+ * Called synchronously from inside the import's transaction, often — once per
+ * batch and once per row in the per-row phases. A listener must be cheap and
+ * must not reach the database through `db`, which is the import's own
+ * transaction here: anything it writes there is invisible until the commit.
+ */
+export type ImportProgressListener = (progress: ImportProgress) => void
+
 export type ImportSummary = {
   /** Rows written, per table. */
   written: Record<string, number>
@@ -249,6 +270,7 @@ const ACCOUNT_TABLES = { clients: 'client', staff_users: 'staff' } as const
 export async function importTenant(
   targetTenantId: string,
   archive: TenantArchive,
+  onProgress: ImportProgressListener = () => {},
 ): Promise<ImportSummary> {
   const target = await loadTenantById(targetTenantId)
   if (!target) throw new NotFoundError('not_found')
@@ -297,7 +319,23 @@ export async function importTenant(
   const inPlace = archive.manifest.tenant.id === targetTenantId
   const identity = inPlace ? new Map<string, string>() : buildIdentityMap(order, rows)
 
+  // One count across every step below, so a listener can draw a single bar that
+  // only moves forward: the accounts ensured, every row written, every row pass
+  // two revisits, and the settings.
+  const accountRows = ensureAccounts
+    ? Object.keys(ACCOUNT_TABLES).reduce((n, table) => n + (rows[table]?.length ?? 0), 0)
+    : 0
+  const rowCount = order.reduce((n, table) => n + (rows[table]?.length ?? 0), 0)
+  const deferredRows = Object.keys(deferred).reduce((n, table) => n + (rows[table]?.length ?? 0), 0)
+  const total = accountRows + rowCount + deferredRows + (settings ? 1 : 0)
+  let processed = 0
+  const step = (phase: ImportPhase, by = 0) => {
+    processed += by
+    onProgress({ phase, processed, total })
+  }
+
   await withTenant(targetTenantId, async () => {
+    step('checking')
     for (const table of order) {
       const [existing] = await db.execute<{ n: number }>(
         sql`SELECT count(*)::int AS n FROM ${sql.identifier(table)}`,
@@ -318,6 +356,7 @@ export async function importTenant(
     // the rows nor the accounts made for them. An account that already existed
     // is only read, so a rollback cannot take it.
     if (ensureAccounts) {
+      step('accounts')
       for (const [table, pool] of Object.entries(ACCOUNT_TABLES)) {
         const linked: Record<string, unknown>[] = []
         for (const row of rows[table] ?? []) {
@@ -326,6 +365,7 @@ export async function importTenant(
           }
           const name = typeof row.name === 'string' && row.name ? row.name : row.email
           linked.push({ ...row, auth_user_id: await ensureAuthUser(db, pool, { email: row.email, name }) })
+          step('accounts', 1)
         }
         rows[table] = linked
       }
@@ -333,6 +373,7 @@ export async function importTenant(
 
     // Pass one: every row, with the references no ordering can satisfy left
     // NULL so the insert is accepted.
+    step('writing')
     for (const table of order) {
       const tableRows = rows[table] ?? []
       if (tableRows.length === 0) {
@@ -353,7 +394,9 @@ export async function importTenant(
         return values
       })
       try {
-        await insertRows(table, prepared, columnKinds.get(table) ?? plain)
+        await insertRows(table, prepared, columnKinds.get(table) ?? plain, written =>
+          step('writing', written),
+        )
       } catch (err) {
         throw duplicateExplained(err, table, archive.manifest.tenant.slug)
       }
@@ -362,8 +405,10 @@ export async function importTenant(
 
     // Pass two: fill in what pass one held back, now that every row it could
     // point at exists.
+    step('linking')
     for (const [table, columns] of Object.entries(deferred)) {
       for (const source of rows[table] ?? []) {
+        step('linking', 1)
         const row = remapRow(source, identity)
         const fill = columns.filter(c => row[c] != null)
         if (fill.length === 0) continue
@@ -400,6 +445,7 @@ export async function importTenant(
     // import could not be run again to fix it, because the emptiness check above
     // now refuses a studio that has rows.
     if (settings) {
+      step('settings')
       await db.execute(sql`
         SELECT write_current_tenant_settings(
           ${settings.display_name ?? null},
@@ -416,7 +462,11 @@ export async function importTenant(
         )
       `)
       written.tenant_settings = 1
+      step('settings', 1)
     }
+    // Everything is written; what is left is the commit, which for a large
+    // studio is not instant.
+    step('committing')
   })
 
   return {
@@ -500,6 +550,7 @@ async function insertRows(
   table: string,
   rows: readonly Record<string, unknown>[],
   kinds: ColumnKinds,
+  onBatch: (written: number) => void = () => {},
 ) {
   const shapes = new Map<string, Record<string, unknown>[]>()
   for (const row of rows) {
@@ -522,6 +573,7 @@ async function insertRows(
         INSERT INTO ${sql.identifier(table)} (${names})
         VALUES ${sql.join(tuples, sql`, `)}
       `)
+      onBatch(batch.length)
     }
   }
 }

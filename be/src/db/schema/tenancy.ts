@@ -1,4 +1,16 @@
-import { pgTable, uuid, text, jsonb, timestamp, index, date } from 'drizzle-orm/pg-core'
+import {
+  pgTable,
+  uuid,
+  text,
+  jsonb,
+  timestamp,
+  index,
+  uniqueIndex,
+  date,
+  bigint,
+  integer,
+  check,
+} from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { tenantStatusEnum } from '../enums'
 
@@ -193,6 +205,79 @@ export const tenantIdColumn = () =>
   uuid('tenant_id')
     .notNull()
     .references(() => tenants.id, { onDelete: 'restrict' })
+
+/**
+ * One restore of a studio archive into a Tenant, as a job the server runs.
+ *
+ * The super portal's import used to be a single request that held the archive,
+ * wrote every row and answered with the summary — so a reload, a closed tab or
+ * a proxy timeout lost the only record of how it went, and there was nothing to
+ * show a progress bar from. This row is that record: created before the upload,
+ * advanced by the upload and then by the import itself, and read back by the
+ * page whenever it loads.
+ *
+ * **Not studio data.** It carries a `tenant_id` so Row-Level Security fences it
+ * like every other Tenant-scoped row (the sweep in `db/roles.ts` finds it by
+ * that column), but it is about the *platform's* handling of the studio, not
+ * part of the studio. So `tenantTableOrder` leaves it out: it is not exported in
+ * an archive, it does not make a studio count as non-empty to the import's own
+ * emptiness check, and it goes with the studio on delete by `ON DELETE CASCADE`
+ * rather than as one of the studio's rows.
+ *
+ * `updated_at` is the heartbeat. The process running the job touches it every
+ * few seconds; a job still `uploading` or `processing` whose heartbeat has
+ * stopped belongs to a request that was dropped or a process that died, and is
+ * marked failed when next read (`services/tenants/import-jobs.ts`).
+ */
+export const tenantImports = pgTable(
+  'tenant_imports',
+  {
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    /** `uploading` → `processing` → `succeeded` | `failed`. */
+    status: text('status').notNull().default('uploading'),
+    /** What the job is doing right now, finer than `status` — see `ImportPhase`. */
+    phase: text('phase').notNull().default('uploading'),
+    fileName: text('file_name').notNull(),
+    /** The archive's size as the browser reported it, and how much has arrived. */
+    uploadBytes: bigint('upload_bytes', { mode: 'number' }).notNull(),
+    receivedBytes: bigint('received_bytes', { mode: 'number' }).notNull().default(0),
+    /** Steps done of the steps there are, once the archive is being written. */
+    processed: integer('processed').notNull().default(0),
+    total: integer('total'),
+    /** The route's old response body, once it succeeded. */
+    summary: jsonb('summary'),
+    /** A machine code and a sentence the operator can act on, once it failed. */
+    errorCode: text('error_code'),
+    error: text('error'),
+    /** The platform administrator's email — not a foreign key, like `renamed_by`. */
+    startedBy: text('started_by').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+    /** Set when the operator closed the finished job's notice on the studio list. */
+    dismissedAt: timestamp('dismissed_at', { withTimezone: true }),
+  },
+  table => ({
+    /**
+     * One running import per studio. Two at once would race to the same
+     * emptiness check, and the second one's rows would be refused only after its
+     * whole archive had been uploaded — or, worse, interleave with the first.
+     */
+    oneRunning: uniqueIndex('tenant_imports_one_running')
+      .on(table.tenantId)
+      .where(sql`status IN ('uploading', 'processing')`),
+    latest: index('tenant_imports_tenant_created_idx').on(table.tenantId, table.createdAt),
+    statusValid: check(
+      'tenant_imports_status_valid',
+      sql`${table.status} IN ('uploading', 'processing', 'succeeded', 'failed')`,
+    ),
+  }),
+)
+
+export type TenantImportRow = typeof tenantImports.$inferSelect
 
 export type TenantRow = typeof tenants.$inferSelect
 export type TenantSettingsRow = typeof tenantSettings.$inferSelect

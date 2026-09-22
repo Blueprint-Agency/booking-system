@@ -18,7 +18,13 @@ import { reportStatementDescriptorPrefix } from './lib/stripe'
 // Said here, at boot, because the charge path deliberately stays silent.
 reportStatementDescriptorPrefix()
 
-const server = serve({ fetch: app.fetch, port: env.PORT }, info => {
+// Node ends any request still open after 5 minutes by default, and a studio
+// archive (up to 1 GB) can take longer than that to upload on an ordinary
+// connection. A stalled body is still cut off by the import's own idle timer,
+// and `headersTimeout` (60 s) still guards against slow headers.
+const REQUEST_TIMEOUT_MS = 60 * 60_000
+
+const server = serve({ fetch: app.fetch, port: env.PORT, serverOptions: { requestTimeout: REQUEST_TIMEOUT_MS } }, info => {
   logger.info({ port: info.port, env: env.NODE_ENV }, 'reservetoday-be started')
 })
 
