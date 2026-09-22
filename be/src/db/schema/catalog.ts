@@ -116,6 +116,8 @@ export const merchOrders = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
+    clientIdFkIdx: index('merch_orders_client_id_fk_idx').on(table.clientId),
+    merchIdFkIdx: index('merch_orders_merch_id_fk_idx').on(table.merchId),
     clientCreatedIdx: index('merch_orders_client_created_idx').on(table.tenantId, table.clientId, table.createdAt),
     // One order per payment. Both the webhook and the confirmation page's
     // sync-session deliver the same purchase, so this is what makes the second
@@ -146,6 +148,7 @@ export const classTypes: any = pgTable(
     deletedAt: timestamp('deleted_at', { withTimezone: true }),
   },
   table => ({
+    parentIdFkIdx: index('class_types_parent_id_fk_idx').on(table.parentId),
     archivedIdx: index('class_types_archived_idx').on(table.tenantId, table.archivedAt),
     deletedIdx: index('class_types_deleted_idx').on(table.tenantId, table.deletedAt),
     nameIdx: index('class_types_name_lower_idx').on(table.tenantId, sql`lower(${table.name})`),
@@ -167,7 +170,9 @@ export const instructors = pgTable('instructors', {
   annualLeaveDays: integer('annual_leave_days').notNull().default(14),
   medicalLeaveDays: integer('medical_leave_days').notNull().default(14),
   studyLeaveDays: integer('study_leave_days').notNull().default(7),
-})
+}, table => ({
+  tenantIdFkIdx: index('instructors_tenant_id_fk_idx').on(table.tenantId),
+}))
 
 /**
  * A **Leave Conflict**: two instructors an admin has declared cannot be away at
@@ -189,6 +194,8 @@ export const leaveConflicts = pgTable(
       .references(() => instructors.staffUserId, { onDelete: 'cascade' }),
   },
   table => ({
+    instructorBIdFkIdx: index('leave_conflicts_instructor_b_id_fk_idx').on(table.instructorBId),
+    tenantIdFkIdx: index('leave_conflicts_tenant_id_fk_idx').on(table.tenantId),
     pk: primaryKey({ columns: [table.instructorAId, table.instructorBId] }),
     canonicalOrder: check(
       'leave_conflicts_canonical_order',
@@ -209,6 +216,8 @@ export const instructorClassTypes = pgTable(
       .references(() => classTypes.id, { onDelete: 'restrict' }),
   },
   table => ({
+    classTypeIdFkIdx: index('instructor_class_types_class_type_id_fk_idx').on(table.classTypeId),
+    tenantIdFkIdx: index('instructor_class_types_tenant_id_fk_idx').on(table.tenantId),
     pk: primaryKey({ columns: [table.instructorId, table.classTypeId] }),
   }),
 )

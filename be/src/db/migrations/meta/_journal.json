@@ -519,6 +519,13 @@
       "when": 1790016150122,
       "tag": "0073_tenant_imports",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1790056630044,
+      "tag": "0074_foreign_key_indexes",
+      "breakpoints": true
     }
   ]
 }

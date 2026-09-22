@@ -1,4 +1,4 @@
-import { pgTable, text, boolean, timestamp, uuid, primaryKey } from 'drizzle-orm/pg-core'
+import { pgTable, text, boolean, timestamp, uuid, primaryKey, index } from 'drizzle-orm/pg-core'
 import { staffUsers } from './identity'
 import { tenantIdColumn } from './tenancy'
 
@@ -24,6 +24,7 @@ export const featureFlags = pgTable(
     }),
   },
   table => ({
+    updatedByStaffIdFkIdx: index('feature_flags_updated_by_staff_id_fk_idx').on(table.updatedByStaffId),
     pk: primaryKey({ columns: [table.tenantId, table.key] }),
   }),
 )

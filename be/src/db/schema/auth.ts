@@ -116,7 +116,10 @@ export const clientAuthSessions = pgTable(
      */
     impersonatedBy: text('impersonated_by'),
   },
-  table => ({ userIdx: index('client_auth_sessions_user_idx').on(table.userId) }),
+  table => ({
+    userIdx: index('client_auth_sessions_user_idx').on(table.userId),
+    claimedTenantIdFkIdx: index('client_auth_sessions_claimed_tenant_id_fk_idx').on(table.claimedTenantId),
+  }),
 )
 
 export const clientAuthAccounts = pgTable('client_auth_accounts', accountColumns(clientUserId), table => ({
@@ -142,7 +145,10 @@ const staffUserId = () =>
 export const staffAuthSessions = pgTable(
   'staff_auth_sessions',
   { ...sessionColumns(staffUserId), claimedTenantId: claimedTenantId() },
-  table => ({ userIdx: index('staff_auth_sessions_user_idx').on(table.userId) }),
+  table => ({
+    userIdx: index('staff_auth_sessions_user_idx').on(table.userId),
+    claimedTenantIdFkIdx: index('staff_auth_sessions_claimed_tenant_id_fk_idx').on(table.claimedTenantId),
+  }),
 )
 
 export const staffAuthAccounts = pgTable('staff_auth_accounts', accountColumns(staffUserId), table => ({

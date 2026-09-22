@@ -74,6 +74,15 @@ export const classes = pgTable(
       .references(() => staffUsers.id, { onDelete: 'restrict' }),
   },
   table => ({
+    // Each foreign key's own index, for the lookup deleting its parent makes
+    // (test/foreign-key-indexes.test.ts).
+    cancelledByStaffIdFkIdx: index('classes_cancelled_by_staff_id_fk_idx').on(table.cancelledByStaffId),
+    classTypeIdFkIdx: index('classes_class_type_id_fk_idx').on(table.classTypeId),
+    createdByStaffIdFkIdx: index('classes_created_by_staff_id_fk_idx').on(table.createdByStaffId),
+    locationIdFkIdx: index('classes_location_id_fk_idx').on(table.locationId),
+    mainInstructorIdFkIdx: index('classes_main_instructor_id_fk_idx').on(table.mainInstructorId),
+    roomIdFkIdx: index('classes_room_id_fk_idx').on(table.roomId),
+    seriesIdFkIdx: index('classes_series_id_fk_idx').on(table.seriesId),
     startsAtIdx: index('classes_starts_at_idx').on(table.tenantId, table.startsAt),
     seriesStartsIdx: index('classes_series_starts_idx').on(table.tenantId, table.seriesId, table.startsAt),
     mainInstructorStartsIdx: index('classes_main_instructor_starts_idx').on(table.tenantId, table.mainInstructorId, table.startsAt),
@@ -122,6 +131,7 @@ export const classSupportingInstructors = pgTable(
     paySgd: numeric('pay_sgd', { precision: 10, scale: 2 }),
   },
   table => ({
+    instructorIdFkIdx: index('class_supporting_instructors_instructor_id_fk_idx').on(table.instructorId),
     pk: primaryKey({ columns: [table.classId, table.instructorId] }),
     instructorIdx: index('class_supporting_instructors_instructor_idx').on(table.tenantId, table.instructorId),
   }),
@@ -175,6 +185,11 @@ export const classSeries = pgTable(
       .references(() => staffUsers.id, { onDelete: 'restrict' }),
   },
   table => ({
+    classTypeIdFkIdx: index('class_series_class_type_id_fk_idx').on(table.classTypeId),
+    createdByStaffIdFkIdx: index('class_series_created_by_staff_id_fk_idx').on(table.createdByStaffId),
+    locationIdFkIdx: index('class_series_location_id_fk_idx').on(table.locationId),
+    mainInstructorIdFkIdx: index('class_series_main_instructor_id_fk_idx').on(table.mainInstructorId),
+    roomIdFkIdx: index('class_series_room_id_fk_idx').on(table.roomId),
     classTypeIdx: index('class_series_class_type_idx').on(table.tenantId, table.classTypeId),
     weekdayRange: check('class_series_weekday_range', sql`${table.weekday} BETWEEN 1 AND 7`),
     endsAfterStarts: check('class_series_ends_after_starts', sql`${table.endTime} > ${table.startTime}`),
@@ -208,6 +223,7 @@ export const classSeriesSupportingInstructors = pgTable(
     paySgd: numeric('pay_sgd', { precision: 10, scale: 2 }).notNull(),
   },
   table => ({
+    instructorIdFkIdx: index('class_series_supporting_instructors_instructor_id_fk_idx').on(table.instructorId),
     pk: primaryKey({ columns: [table.seriesId, table.instructorId] }),
     instructorIdx: index('class_series_supporting_instructors_instructor_idx').on(
       table.tenantId,
@@ -242,6 +258,9 @@ export const workshops = pgTable(
       .references(() => staffUsers.id, { onDelete: 'restrict' }),
   },
   table => ({
+    cancelledByStaffIdFkIdx: index('workshops_cancelled_by_staff_id_fk_idx').on(table.cancelledByStaffId),
+    createdByStaffIdFkIdx: index('workshops_created_by_staff_id_fk_idx').on(table.createdByStaffId),
+    locationIdFkIdx: index('workshops_location_id_fk_idx').on(table.locationId),
     locationLifecycleIdx: index('workshops_location_lifecycle_idx').on(
       table.tenantId,
       table.locationId,
@@ -276,6 +295,7 @@ export const workshopDays = pgTable(
     capacityBuffer: integer('capacity_buffer').notNull().default(0),
   },
   table => ({
+    roomIdFkIdx: index('workshop_days_room_id_fk_idx').on(table.roomId),
     workshopOrdUnique: uniqueIndex('workshop_days_workshop_ord_unique').on(
       table.workshopId,
       table.ord,
@@ -321,6 +341,7 @@ export const workshopImages = pgTable(
     ord: integer('ord').notNull(),
   },
   table => ({
+    workshopIdFkIdx: index('workshop_images_workshop_id_fk_idx').on(table.workshopId),
     workshopOrdIdx: index('workshop_images_workshop_ord_idx').on(table.tenantId, table.workshopId, table.ord),
   }),
 )
@@ -345,6 +366,7 @@ export const workshopInstructors = pgTable(
     paySgd: numeric('pay_sgd', { precision: 10, scale: 2 }),
   },
   table => ({
+    instructorIdFkIdx: index('workshop_instructors_instructor_id_fk_idx').on(table.instructorId),
     pk: primaryKey({ columns: [table.workshopId, table.instructorId] }),
     mainUnique: uniqueIndex('workshop_instructors_main_unique')
       .on(table.workshopId)
@@ -375,6 +397,7 @@ export const workshopTiers = pgTable(
     ord: integer('ord').notNull(),
   },
   table => ({
+    workshopIdFkIdx: index('workshop_tiers_workshop_id_fk_idx').on(table.workshopId),
     workshopOrdIdx: index('workshop_tiers_workshop_ord_idx').on(table.tenantId, table.workshopId, table.ord),
   }),
 )
@@ -396,6 +419,7 @@ export const workshopTierDays = pgTable(
       .references(() => workshopDays.id, { onDelete: 'cascade' }),
   },
   table => ({
+    workshopDayIdFkIdx: index('workshop_tier_days_workshop_day_id_fk_idx').on(table.workshopDayId),
     pk: primaryKey({ columns: [table.workshopTierId, table.workshopDayId] }),
     // Reverse lookup (capacity recompute on day edit).
     dayIdx: index('workshop_tier_days_day_idx').on(table.tenantId, table.workshopDayId),
@@ -464,6 +488,12 @@ export const ptRequests = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
+    classTypeIdFkIdx: index('pt_requests_class_type_id_fk_idx').on(table.classTypeId),
+    clientIdFkIdx: index('pt_requests_client_id_fk_idx').on(table.clientId),
+    coClientIdFkIdx: index('pt_requests_co_client_id_fk_idx').on(table.coClientId),
+    debitedClientPackageIdFkIdx: index('pt_requests_debited_client_package_id_fk_idx').on(table.debitedClientPackageId),
+    locationIdFkIdx: index('pt_requests_location_id_fk_idx').on(table.locationId),
+    resolvedByStaffIdFkIdx: index('pt_requests_resolved_by_staff_id_fk_idx').on(table.resolvedByStaffId),
     statusCreatedIdx: index('pt_requests_status_created_idx').on(table.tenantId, table.status, table.createdAt),
     clientStatusIdx: index('pt_requests_client_status_idx').on(table.tenantId, table.clientId, table.status),
     // Backs the portal's location-scoped pending-request list.
@@ -495,6 +525,7 @@ export const ptRequestSlots = pgTable(
     endTime: time('end_time').notNull(),
   },
   table => ({
+    ptRequestIdFkIdx: index('pt_request_slots_pt_request_id_fk_idx').on(table.ptRequestId),
     requestIdx: index('pt_request_slots_request_idx').on(table.tenantId, table.ptRequestId),
     endAfterStart: check(
       'pt_request_slots_end_after_start',
@@ -549,6 +580,11 @@ export const ptSessions = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
+    cancelledByStaffIdFkIdx: index('pt_sessions_cancelled_by_staff_id_fk_idx').on(table.cancelledByStaffId),
+    instructorIdFkIdx: index('pt_sessions_instructor_id_fk_idx').on(table.instructorId),
+    locationIdFkIdx: index('pt_sessions_location_id_fk_idx').on(table.locationId),
+    roomIdFkIdx: index('pt_sessions_room_id_fk_idx').on(table.roomId),
+    scheduledByStaffIdFkIdx: index('pt_sessions_scheduled_by_staff_id_fk_idx').on(table.scheduledByStaffId),
     instructorStartsIdx: index('pt_sessions_instructor_starts_idx').on(
       table.tenantId,
       table.instructorId,
@@ -622,6 +658,8 @@ export const ptSessionClients = pgTable(
       .references(() => clients.id, { onDelete: 'cascade' }),
   },
   table => ({
+    clientIdFkIdx: index('pt_session_clients_client_id_fk_idx').on(table.clientId),
+    tenantIdFkIdx: index('pt_session_clients_tenant_id_fk_idx').on(table.tenantId),
     pk: primaryKey({ columns: [table.ptSessionId, table.clientId] }),
   }),
 )
@@ -646,6 +684,8 @@ export const ptSessionSupportingInstructors = pgTable(
     paySgd: numeric('pay_sgd', { precision: 10, scale: 2 }),
   },
   table => ({
+    instructorIdFkIdx: index('pt_session_supporting_instructors_instructor_id_fk_idx').on(table.instructorId),
+    tenantIdFkIdx: index('pt_session_supporting_instructors_tenant_id_fk_idx').on(table.tenantId),
     pk: primaryKey({ columns: [table.ptSessionId, table.instructorId] }),
   }),
 )
@@ -691,6 +731,12 @@ export const corporateSessions = pgTable(
       .references(() => staffUsers.id, { onDelete: 'restrict' }),
   },
   table => ({
+    cancelledByStaffIdFkIdx: index('corporate_sessions_cancelled_by_staff_id_fk_idx').on(table.cancelledByStaffId),
+    corporatePackageIdFkIdx: index('corporate_sessions_corporate_package_id_fk_idx').on(table.corporatePackageId),
+    createdByStaffIdFkIdx: index('corporate_sessions_created_by_staff_id_fk_idx').on(table.createdByStaffId),
+    locationIdFkIdx: index('corporate_sessions_location_id_fk_idx').on(table.locationId),
+    mainInstructorIdFkIdx: index('corporate_sessions_main_instructor_id_fk_idx').on(table.mainInstructorId),
+    roomIdFkIdx: index('corporate_sessions_room_id_fk_idx').on(table.roomId),
     startsAtIdx: index('corporate_sessions_starts_at_idx').on(table.tenantId, table.startsAt),
     instructorStartsIdx: index('corporate_sessions_instructor_starts_idx').on(
       table.tenantId,
@@ -731,6 +777,7 @@ export const corporateSessionSupportingInstructors = pgTable(
       .references(() => instructors.staffUserId, { onDelete: 'restrict' }),
   },
   table => ({
+    instructorIdFkIdx: index('corporate_session_supporting_instructors_instructor_id_fk_idx').on(table.instructorId),
     pk: primaryKey({ columns: [table.corporateSessionId, table.instructorId] }),
     instructorIdx: index('corporate_session_supporting_instructors_instructor_idx').on(table.tenantId, table.instructorId),
   }),
@@ -772,6 +819,9 @@ export const corporateRequests = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
+    clientIdFkIdx: index('corporate_requests_client_id_fk_idx').on(table.clientId),
+    corporatePackageIdFkIdx: index('corporate_requests_corporate_package_id_fk_idx').on(table.corporatePackageId),
+    resolvedByStaffIdFkIdx: index('corporate_requests_resolved_by_staff_id_fk_idx').on(table.resolvedByStaffId),
     statusCreatedIdx: index('corporate_requests_status_created_idx').on(
       table.tenantId,
       table.status,
@@ -823,6 +873,8 @@ export const manualPayrollEntries = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
+    createdByStaffIdFkIdx: index('manual_payroll_entries_created_by_staff_id_fk_idx').on(table.createdByStaffId),
+    instructorIdFkIdx: index('manual_payroll_entries_instructor_id_fk_idx').on(table.instructorId),
     instructorEntryDateIdx: index('manual_payroll_entries_instructor_entry_date_idx').on(
       table.tenantId,
       table.instructorId,

@@ -69,6 +69,18 @@ export const bookings = pgTable(
     cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
   },
   table => ({
+    // Each foreign key's own index, for the lookup deleting its parent makes
+    // (test/foreign-key-indexes.test.ts); the query indexes below lead with
+    // tenant_id and cannot serve it.
+    appliedPromoCodeIdFkIdx: index('bookings_applied_promo_code_id_fk_idx').on(table.appliedPromoCodeId),
+    appliedPromotionIdFkIdx: index('bookings_applied_promotion_id_fk_idx').on(table.appliedPromotionId),
+    classIdFkIdx: index('bookings_class_id_fk_idx').on(table.classId),
+    clientIdFkIdx: index('bookings_client_id_fk_idx').on(table.clientId),
+    clientPackageIdFkIdx: index('bookings_client_package_id_fk_idx').on(table.clientPackageId),
+    ptSessionIdFkIdx: index('bookings_pt_session_id_fk_idx').on(table.ptSessionId),
+    purchaseIdFkIdx: index('bookings_purchase_id_fk_idx').on(table.purchaseId),
+    workshopIdFkIdx: index('bookings_workshop_id_fk_idx').on(table.workshopId),
+    workshopTierIdFkIdx: index('bookings_workshop_tier_id_fk_idx').on(table.workshopTierId),
     clientBookedIdx: index('bookings_client_booked_idx').on(table.tenantId, table.clientId, table.bookedAt),
     classStateIdx: index('bookings_class_state_idx').on(table.tenantId, table.classId, table.state),
     tierStateIdx: index('bookings_tier_state_idx').on(table.tenantId, table.workshopTierId, table.state),
@@ -128,6 +140,8 @@ export const cancellations = pgTable(
     cancelledAt: timestamp('cancelled_at', { withTimezone: true }).notNull(),
   },
   table => ({
+    bookingIdFkIdx: index('cancellations_booking_id_fk_idx').on(table.bookingId),
+    clientIdFkIdx: index('cancellations_client_id_fk_idx').on(table.clientId),
     clientCancelledIdx: index('cancellations_client_cancelled_idx').on(table.tenantId, table.clientId, table.cancelledAt),
   }),
 )
@@ -147,6 +161,8 @@ export const checkIns = pgTable(
     method: checkinMethodEnum('method').notNull(),
   },
   table => ({
+    checkedInByStaffIdFkIdx: index('check_ins_checked_in_by_staff_id_fk_idx').on(table.checkedInByStaffId),
+    tenantIdFkIdx: index('check_ins_tenant_id_fk_idx').on(table.tenantId),
     bookingUnique: uniqueIndex('check_ins_booking_unique').on(table.bookingId),
   }),
 )

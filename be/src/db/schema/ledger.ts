@@ -85,6 +85,7 @@ export const purchases = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
+    clientIdFkIdx: index('purchases_client_id_fk_idx').on(table.clientId),
     clientCreatedIdx: index('purchases_client_created_idx').on(
       table.tenantId,
       table.clientId,
@@ -125,6 +126,9 @@ export const manualAdjustments = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
+    actedByStaffIdFkIdx: index('manual_adjustments_acted_by_staff_id_fk_idx').on(table.actedByStaffId),
+    clientIdFkIdx: index('manual_adjustments_client_id_fk_idx').on(table.clientId),
+    clientPackageIdFkIdx: index('manual_adjustments_client_package_id_fk_idx').on(table.clientPackageId),
     clientCreatedIdx: index('manual_adjustments_client_created_idx').on(table.tenantId, table.clientId, table.createdAt),
     packageIdx: index('manual_adjustments_package_idx').on(table.tenantId, table.clientPackageId),
   }),
@@ -144,6 +148,7 @@ export const auditLog = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
+    actorStaffIdFkIdx: index('audit_log_actor_staff_id_fk_idx').on(table.actorStaffId),
     targetIdx: index('audit_log_target_idx').on(table.tenantId, table.targetTable, table.targetId, table.createdAt),
     actorIdx: index('audit_log_actor_idx').on(table.tenantId, table.actorStaffId, table.createdAt),
     actionIdx: index('audit_log_action_idx').on(table.tenantId, table.action, table.createdAt),
@@ -195,6 +200,10 @@ export const stripePayments = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
+    bookingIdFkIdx: index('stripe_payments_booking_id_fk_idx').on(table.bookingId),
+    clientIdFkIdx: index('stripe_payments_client_id_fk_idx').on(table.clientId),
+    clientPackageIdFkIdx: index('stripe_payments_client_package_id_fk_idx').on(table.clientPackageId),
+    purchaseIdFkIdx: index('stripe_payments_purchase_id_fk_idx').on(table.purchaseId),
     // Scoped to the Tenant. Every lookup in `billing/webhook-handler.ts` already
     // pairs the intent id with a tenant id — the webhook resolves the Tenant
     // from the client in the intent's metadata before it asks about the payment
@@ -263,6 +272,7 @@ export const paymentCustomers = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({
+    clientIdFkIdx: index('payment_customers_client_id_fk_idx').on(table.clientId),
     /**
      * One Customer per member per account — the constraint the whole design
      * rests on, because a second row would silently split one member's cards
