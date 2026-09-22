@@ -63,6 +63,8 @@ export interface ResendPayload {
   to: string
   subject: string
   html: string
+  /** The plain-text alternative, for clients that do not render HTML. */
+  text?: string
   replyTo?: string
   tags: MailTag[]
 }

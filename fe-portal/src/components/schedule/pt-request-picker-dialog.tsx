@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Button, Dialog } from "@/components/ui";
+import { Button, Dialog, Pagination, usePaged } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ScheduleFromRequestDialog } from "@/components/pt-requests/schedule-from-request-dialog";
 import type { ApiPtRequest } from "@/lib/pt-requests";
@@ -47,6 +47,8 @@ export function PtRequestPickerDialog({
     };
   }, [api, activeLocation]);
 
+  const { visible, pagination } = usePaged(pending);
+
   if (picked) {
     return (
       <ScheduleFromRequestDialog
@@ -78,28 +80,31 @@ export function PtRequestPickerDialog({
           </div>
         </div>
       ) : (
-        <ul className="divide-y divide-border">
-          {pending.map((r) => {
-            const first = r.slots[0];
-            return (
-              <li key={r.id}>
-                <button
-                  type="button"
-                  onClick={() => setPicked(r)}
-                  className="block w-full px-3 py-2 text-left hover:bg-paper"
-                >
-                  <div className="text-sm font-medium text-ink">{r.client.name}</div>
-                  <div className="text-xs text-muted">
-                    {r.session_type.toUpperCase()} · {r.class_type.name}
-                    {first
-                      ? ` · ${first.proposed_date} ${first.start_time}–${first.end_time}`
-                      : ""}
-                  </div>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+        <div>
+          <ul className="divide-y divide-border">
+            {visible.map((r) => {
+              const first = r.slots[0];
+              return (
+                <li key={r.id}>
+                  <button
+                    type="button"
+                    onClick={() => setPicked(r)}
+                    className="block w-full px-3 py-2 text-left hover:bg-paper"
+                  >
+                    <div className="text-sm font-medium text-ink">{r.client.name}</div>
+                    <div className="text-xs text-muted">
+                      {r.session_type.toUpperCase()} · {r.class_type.name}
+                      {first
+                        ? ` · ${first.proposed_date} ${first.start_time}–${first.end_time}`
+                        : ""}
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <Pagination {...pagination} noun="requests" className="px-3 sm:px-3" />
+        </div>
       )}
     </Dialog>
   );

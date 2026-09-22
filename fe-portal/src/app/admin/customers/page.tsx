@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { Search, Plus, Loader2, KeyRound, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Plus, Loader2, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import {
   Avatar,
@@ -10,9 +10,12 @@ import {
   Button,
   Dialog,
   DialogFooter,
+  DEFAULT_PAGE_SIZE,
   Input,
+  isPageSize,
   Label,
   PageHeader,
+  Pagination,
   Select,
 } from "@/components/ui";
 import { runsStudio } from "@/lib/staff-role";
@@ -23,8 +26,6 @@ import { formatDate } from "@/lib/formatters";
 type StatusFilter = "all" | "active" | "trials" | "blocked";
 type SortKey = "joined" | "name";
 
-const PAGE_SIZES = [25, 50, 100] as const;
-const DEFAULT_PAGE_SIZE = 50;
 /** Wait this long after the last keystroke before searching the whole studio. */
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -89,7 +90,7 @@ function readState(search: string): ListState {
     status: status === "active" || status === "trials" || status === "blocked" ? status : "all",
     sort: sort === "name" ? "name" : "joined",
     page: Number.isInteger(page) && page > 0 ? page : 1,
-    pageSize: (PAGE_SIZES as readonly number[]).includes(size) ? size : DEFAULT_PAGE_SIZE,
+    pageSize: isPageSize(size) ? size : DEFAULT_PAGE_SIZE,
   };
 }
 
@@ -209,9 +210,6 @@ function CustomersList() {
   const showTrials = status === "trials";
   const rows = result?.clients ?? [];
   const total = result?.total ?? 0;
-  const pageCount = Math.max(1, Math.ceil(total / pageSize));
-  const firstShown = total === 0 ? 0 : (page - 1) * pageSize + 1;
-  const lastShown = Math.min(page * pageSize, total);
 
   return (
     <div>
@@ -405,55 +403,15 @@ function CustomersList() {
               </div>
             )}
 
-            {total > 0 && (
-              <nav
-                className="flex flex-wrap items-center gap-3 border-t border-border px-4 py-3 text-xs text-muted sm:px-5"
-                aria-label="Customer pages"
-              >
-                <span className="tabular-nums">
-                  {firstShown.toLocaleString()}–{lastShown.toLocaleString()} of{" "}
-                  {total.toLocaleString()}
-                </span>
-                <label className="flex items-center gap-1.5">
-                  <span className="hidden sm:inline">Per page</span>
-                  <Select
-                    value={pageSize}
-                    onChange={(e) => update({ pageSize: Number(e.target.value) })}
-                    className="h-8 w-auto py-1 text-xs"
-                    aria-label="Customers per page"
-                  >
-                    {PAGE_SIZES.map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </Select>
-                </label>
-                <div className="ml-auto flex items-center gap-1">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={page <= 1 || loading}
-                    onClick={() => update({ page: page - 1 })}
-                    aria-label="Previous page"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <span className="px-1 tabular-nums">
-                    Page {page} of {pageCount}
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={page >= pageCount || loading}
-                    onClick={() => update({ page: page + 1 })}
-                    aria-label="Next page"
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-              </nav>
-            )}
+            <Pagination
+              page={page}
+              pageSize={pageSize}
+              total={total}
+              loading={loading}
+              noun="customers"
+              onPageChange={(n) => update({ page: n })}
+              onPageSizeChange={(n) => update({ pageSize: n })}
+            />
           </div>
         )}
       </div>

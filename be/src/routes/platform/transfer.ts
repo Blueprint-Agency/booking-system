@@ -1,12 +1,18 @@
 import { Hono } from 'hono'
-import { exportTenant, importTenant } from '../../services/tenants/transfer'
+import { zValidator } from '@hono/zod-validator'
+import { z } from 'zod'
+import { exportTenant } from '../../services/tenants/transfer'
+import { ArchiveError, archiveFilename, packArchive } from '../../services/tenants/transfer-archive'
 import {
-  ArchiveError,
-  archiveFilename,
-  packArchive,
-  unpackArchive,
-} from '../../services/tenants/transfer-archive'
-import { activateAfterFirstStaff, loadTenantById } from '../../services/tenants/tenants'
+  describeFailure,
+  dismissImport,
+  importNow,
+  latestImport,
+  openImports,
+  receiveArchive,
+  startImport,
+} from '../../services/tenants/import-jobs'
+import { loadTenantById } from '../../services/tenants/tenants'
 import { ERROR_CODES } from '../../shared/error-codes'
 import { AppError } from '../../shared/errors'
 import { logger } from '../../shared/logger'
@@ -14,8 +20,9 @@ import { logger } from '../../shared/logger'
 /**
  * Taking a studio out of the platform, and putting it back.
  *
- * Two routes, both about one studio and both reachable only by a platform
- * administrator — the same gate as the rest of this branch. A studio's own
+ * Export, and import — the import both in one request and as a job the portal
+ * can follow across reloads. All about one studio and all reachable only by a
+ * platform administrator — the same gate as the rest of this branch. A studio's own
  * admins cannot export their studio from here; that is a different feature with
  * a different audience, and giving a studio a button that downloads every
  * member's details is a decision nobody has made.
@@ -61,16 +68,22 @@ app.get('/tenants/:id/export', async c => {
 })
 
 /**
- * Put an archive back into an empty studio.
+ * Put an archive back into an empty studio, in one request.
  *
  * The target is named in the URL and never read from the archive: restoring is
  * always *into* a studio the operator picked, so an archive can be renamed,
  * moved between environments, or used to clone a studio for testing without the
  * file deciding where its rows land.
+ *
+ * Kept for scripts and the Mindbody runbook, which want the summary as the
+ * answer. The super portal uses the job routes below instead, so a reload does
+ * not lose the import. It runs under a job row of its own, so it and a portal
+ * import into the same studio refuse each other.
  */
 app.post('/tenants/:id/import', async c => {
-  const tenantId = c.req.param('id')
-  const tenant = await loadTenantById(tenantId)
+  const tenantId = z.string().uuid().safeParse(c.req.param('id'))
+  if (!tenantId.success) return c.json({ error: ERROR_CODES.not_found }, 404)
+  const tenant = await loadTenantById(tenantId.data)
   if (!tenant) return c.json({ error: ERROR_CODES.not_found }, 404)
 
   const form = await c.req.parseBody()
@@ -81,8 +94,12 @@ app.post('/tenants/:id/import', async c => {
 
   let summary
   try {
-    const archive = await unpackArchive(Buffer.from(await file.arrayBuffer()))
-    summary = await importTenant(tenantId, archive)
+    summary = await importNow({
+      tenantId: tenant.id,
+      fileName: file.name || 'archive.zip',
+      bytes: Buffer.from(await file.arrayBuffer()),
+      by: c.get('platformAdminEmail'),
+    })
   } catch (err) {
     if (err instanceof ArchiveError) {
       return c.json({ error: ERROR_CODES.unreadable_archive, message: err.message }, 400)
@@ -91,40 +108,86 @@ app.post('/tenants/:id/import', async c => {
     if (err instanceof AppError) throw err
     // Anything else the database refused mid-import. Still the operator's to
     // look at, and worth saying out loud rather than returning a bare 500.
-    const message = err instanceof Error ? err.message : 'The import could not be completed.'
     logger.warn({ tenant: tenant.slug, err }, 'tenant import refused')
-    return c.json({ error: ERROR_CODES.import_refused, message }, 409)
+    return c.json({ error: ERROR_CODES.import_refused, message: describeFailure(err).message }, 409)
   }
-
-  // A studio provisioned to receive an archive opens `suspended`, because until
-  // the archive lands nobody can sign in to it. It just landed, and it brought
-  // the studio's own staff, so the reason for the suspension is gone.
-  const opened =
-    (summary.written.staff_users ?? 0) > 0 ? Boolean(await activateAfterFirstStaff(tenantId)) : false
 
   logger.info(
     {
       tenant: tenant.slug,
-      from: summary.sourceTenant.slug,
-      rows: summary.total,
-      opened,
+      from: summary.from.slug,
+      rows: summary.imported,
+      opened: summary.opened,
       remapped: summary.remapped,
       by: c.get('platformAdminEmail'),
     },
     'tenant imported',
   )
 
-  return c.json({
-    imported: summary.total,
-    tables: summary.written,
-    from: { slug: summary.sourceTenant.slug, name: summary.sourceTenant.name },
-    // Whether this was a copy beside a studio that is still here, or a restore
-    // of one that is gone. The operator asked for the same thing either way, but
-    // only one of them left the source studio's rows in place.
-    remapped: summary.remapped,
-    /** True when the archive is what let this studio open for business. */
-    opened,
+  return c.json(summary)
+})
+
+/*
+ * The import as a job (`services/tenants/import-jobs.ts`): start it, send the
+ * file, then read its progress back — from this page load or any later one.
+ */
+
+const uuid = z.string().uuid()
+const startBody = z.object({
+  file_name: z.string().trim().min(1).max(255),
+  size: z.number().int().positive(),
+})
+
+/** Every studio's import that is running, or finished and not yet dismissed. */
+app.get('/imports', async c => {
+  return c.json({ imports: await openImports() })
+})
+
+/** Start an import: the job exists, waiting for its file. */
+app.post('/tenants/:id/imports', zValidator('json', startBody), async c => {
+  const tenantId = uuid.safeParse(c.req.param('id'))
+  if (!tenantId.success) return c.json({ error: ERROR_CODES.not_found }, 404)
+  const body = c.req.valid('json')
+  const job = await startImport({
+    tenantId: tenantId.data,
+    fileName: body.file_name,
+    size: body.size,
+    by: c.get('platformAdminEmail'),
   })
+  return c.json({ job }, 201)
+})
+
+/**
+ * The file itself, as the raw request body (`application/zip`), not a form —
+ * so it can be read as it arrives and its progress written back. Answers once
+ * the file is whole and the import is running, not once it is done.
+ */
+app.put('/tenants/:id/imports/:jobId/archive', async c => {
+  const tenantId = uuid.safeParse(c.req.param('id'))
+  const jobId = uuid.safeParse(c.req.param('jobId'))
+  if (!tenantId.success || !jobId.success) return c.json({ error: ERROR_CODES.not_found }, 404)
+  const job = await receiveArchive({
+    tenantId: tenantId.data,
+    jobId: jobId.data,
+    body: c.req.raw.body,
+    signal: c.req.raw.signal,
+  })
+  return c.json({ job }, 202)
+})
+
+/** The studio's most recent import, whatever state it is in; null if none. */
+app.get('/tenants/:id/imports/latest', async c => {
+  const tenantId = uuid.safeParse(c.req.param('id'))
+  if (!tenantId.success) return c.json({ error: ERROR_CODES.not_found }, 404)
+  return c.json({ job: await latestImport(tenantId.data) })
+})
+
+/** Close a finished import's notice on the studio list. */
+app.post('/tenants/:id/imports/:jobId/dismiss', async c => {
+  const tenantId = uuid.safeParse(c.req.param('id'))
+  const jobId = uuid.safeParse(c.req.param('jobId'))
+  if (!tenantId.success || !jobId.success) return c.json({ error: ERROR_CODES.not_found }, 404)
+  return c.json({ job: await dismissImport(tenantId.data, jobId.data) })
 })
 
 export default app

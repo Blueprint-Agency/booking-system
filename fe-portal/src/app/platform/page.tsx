@@ -24,16 +24,29 @@ import { InviteFirstAdminDialog } from "@/components/platform/invite-first-admin
 import { RenameTenantDialog } from "@/components/platform/rename-tenant-dialog";
 import { PaymentCredentialsDialog } from "@/components/platform/payment-credentials-dialog";
 import { TenantTermDialog } from "@/components/platform/tenant-term-dialog";
+import { ImportProgress } from "@/components/platform/import-progress";
 import { ApiError, makeApi } from "@/lib/api";
 import {
   TENANT_REFUSALS,
+  dismissImport,
   exportTenant,
   formatTermDate,
-  importTenant,
+  isImportRunning,
+  latestImport,
+  listOpenImports,
   listTenants,
   setTenantStatus,
+  startImport,
+  uploadImportArchive,
+  type ImportJob,
   type PlatformTenant,
 } from "@/lib/platform";
+
+/** How often a running import is asked for its progress. */
+const POLL_MS = 1500;
+
+/** A refusal from the import routes: a sentence, and the job in the way if any. */
+type RefusalBody = { message?: string; job?: ImportJob } | null;
 
 /** One line saying how long a studio is paid for, and whether that has run out. */
 function termLine(tenant: PlatformTenant): string {
@@ -77,6 +90,10 @@ export default function PlatformPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
   /** One file input serves every row; this is the studio the picker is for. */
   const [importTarget, setImportTarget] = useState<PlatformTenant | null>(null);
+  /** Each studio's latest import worth showing, as the server last reported it. */
+  const [imports, setImports] = useState<Record<string, ImportJob>>({});
+  /** Bytes sent by an upload *this page* is making, per studio. */
+  const [uploads, setUploads] = useState<Record<string, { sent: number; total: number }>>({});
   const fileInput = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -100,16 +117,23 @@ export default function PlatformPage() {
   }, [isLoaded, isSignedIn, load]);
 
   /**
-   * Is anything in flight for this studio?
+   * Is a quick action in flight for this studio?
    *
-   * One `busyId` serves every row, and the three actions tag it differently —
-   * the status toggle with the bare id, export and import with a prefix. A
-   * button comparing against only one of those spins while staying clickable,
-   * and a second click during an import uploads the same archive twice into the
-   * same studio.
+   * One `busyId` serves every row, and the actions tag it differently — the
+   * status toggle with the bare id, export with a prefix. A button comparing
+   * against only one of those spins while staying clickable. An import is not
+   * one of these: it can run for minutes, so it disables only "Restore archive"
+   * (see `importBlocked`) and the rest of the menu stays usable.
    */
   function isBusy(id: string) {
-    return busyId === id || busyId === `export:${id}` || busyId === `import:${id}`;
+    return busyId === id || busyId === `export:${id}`;
+  }
+
+  /** Why a new import cannot start for this studio right now, if it cannot. */
+  function importBlocked(id: string): string | undefined {
+    if (uploads[id]) return "Uploading — wait for it to finish";
+    if (isImportRunning(imports[id])) return "An import is running";
+    return undefined;
   }
 
   async function toggleSuspension(tenant: PlatformTenant) {
@@ -161,6 +185,18 @@ export default function PlatformPage() {
     fileInput.current?.click();
   }
 
+  /** Put one studio's job into the map, replacing whatever it had. */
+  const putJob = useCallback((job: ImportJob) => {
+    setImports(current => ({ ...current, [job.tenant_id]: job }));
+  }, []);
+
+  /**
+   * Restore an archive, as a server-side job.
+   *
+   * Only the upload needs this page: once the file has arrived the server runs
+   * the import on its own, and the poll below follows it — from this page load
+   * or the next one.
+   */
   async function uploadArchive(file: File) {
     const tenant = importTarget;
     if (!tenant) return;
@@ -168,36 +204,129 @@ export default function PlatformPage() {
 
     if (
       !window.confirm(
-        `Restore an archive into ${tenant.name}? It must have no data of its own yet, and everything in the file is written exactly as it was.`,
+        `Restore ${file.name} into ${tenant.name}? It must have no data of its own yet, and everything in the file is written exactly as it was.`,
       )
     ) {
       return;
     }
 
-    setBusyId(`import:${tenant.id}`);
+    let job: ImportJob;
     try {
-      const summary = await importTenant(api, tenant.id, file);
-      const what = summary.remapped
-        ? `Copied ${summary.imported.toLocaleString()} rows from ${summary.from.name} into ${tenant.name}. ${summary.from.name} is untouched.`
-        : `Restored ${summary.imported.toLocaleString()} rows from ${summary.from.name} into ${tenant.name}.`;
-      // A studio created with no admin opens suspended. If the archive brought
-      // its staff, that is the moment it became a working studio, and the
-      // operator should not have to notice the badge to find out.
-      toast.success(summary.opened ? `${what} ${tenant.name} is now open.` : what);
-      await load();
+      ({ job } = await startImport(api, tenant.id, file));
     } catch (err) {
-      // The backend refuses with a sentence rather than a code — a studio that
-      // already has rows, or an archive from another version — and that sentence
-      // is the only thing that tells the operator what to do next.
-      const message =
-        err instanceof ApiError && typeof err.body === "object" && err.body !== null
-          ? (err.body as { message?: string }).message
-          : undefined;
-      toast.error(message ?? `Could not restore into ${tenant.name}.`);
+      // Refused with a sentence — an import already running, a file too big —
+      // and the refusal names the running import, so the row can show it.
+      const body = err instanceof ApiError && typeof err.body === "object" ? (err.body as RefusalBody) : null;
+      if (body?.job) putJob(body.job);
+      toast.error(body?.message ?? `Could not start the import into ${tenant.name}.`);
+      return;
+    }
+
+    putJob(job);
+    setUploads(current => ({ ...current, [tenant.id]: { sent: 0, total: file.size } }));
+    try {
+      const handed = await uploadImportArchive(getPortalToken, tenant.id, job.id, file, (sent, total) =>
+        setUploads(current => ({ ...current, [tenant.id]: { sent, total } })),
+      );
+      putJob(handed);
+    } catch (err) {
+      const body = err instanceof ApiError && typeof err.body === "object" ? (err.body as RefusalBody) : null;
+      if (body?.job) putJob(body.job);
+      else {
+        // The request never answered: ask the server what it made of it.
+        try {
+          const { job: latest } = await latestImport(api, tenant.id);
+          if (latest) putJob(latest);
+        } catch {
+          /* the poll will catch up */
+        }
+      }
+      toast.error(body?.message ?? `The upload to ${tenant.name} did not finish. Choose the file again.`);
     } finally {
-      setBusyId(null);
+      setUploads(current => {
+        const next = { ...current };
+        delete next[tenant.id];
+        return next;
+      });
     }
   }
+
+  async function dismiss(job: ImportJob) {
+    try {
+      await dismissImport(api, job.tenant_id, job.id);
+    } catch {
+      // Hidden either way: a notice that will not close is worse than one that
+      // comes back on the next load.
+    }
+    setImports(current => {
+      const next = { ...current };
+      if (next[job.tenant_id]?.id === job.id) delete next[job.tenant_id];
+      return next;
+    });
+  }
+
+  // Every studio's open import, once per page load: this is how a reload picks
+  // the bar back up. Nothing about it was kept in the browser.
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || refused) return;
+    let cancelled = false;
+    void listOpenImports(api)
+      .then(({ imports: jobs }) => {
+        if (cancelled) return;
+        setImports(Object.fromEntries(jobs.map(job => [job.tenant_id, job])));
+      })
+      .catch(() => {
+        /* the list still works without it; the next action will say */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, isLoaded, isSignedIn, refused]);
+
+  // While anything is running, follow it. Only the running studios are asked,
+  // so an idle page makes no requests at all.
+  const running = Object.values(imports)
+    .filter(job => isImportRunning(job))
+    .map(job => job.tenant_id)
+    .sort()
+    .join(",");
+  useEffect(() => {
+    if (!running) return;
+    const ids = running.split(",");
+    let inFlight = false;
+    const timer = setInterval(async () => {
+      if (inFlight) return;
+      inFlight = true;
+      try {
+        const answers = await Promise.all(ids.map(id => latestImport(api, id).catch(() => null)));
+        let finished = false;
+        for (const answer of answers) {
+          const job = answer?.job;
+          if (!job) continue;
+          if (!isImportRunning(job)) finished = true;
+          putJob(job);
+        }
+        // A finished import can have opened the studio; the row's badges read
+        // from the list.
+        if (finished) void load();
+      } finally {
+        inFlight = false;
+      }
+    }, POLL_MS);
+    return () => clearInterval(timer);
+  }, [running, api, putJob, load]);
+
+  // Leaving mid-upload interrupts it — say so before it happens.
+  const uploadingNow = Object.keys(uploads).length > 0;
+  useEffect(() => {
+    if (!uploadingNow) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [uploadingNow]);
 
   if (!isLoaded || tenants === null) {
     return (
@@ -242,7 +371,7 @@ export default function PlatformPage() {
               key={tenant.id}
               className="flex flex-col gap-3 rounded-lg border border-border bg-white p-4 sm:flex-row sm:items-center sm:justify-between"
             >
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium text-ink">{tenant.name}</span>
                   <StatusBadge status={tenant.status} />
@@ -278,6 +407,13 @@ export default function PlatformPage() {
                     ? `Charges on its own account · ${tenant.payments.account_id}`
                     : "Charges on the platform account"}
                 </p>
+                <ImportProgress
+                  studioName={tenant.name}
+                  job={imports[tenant.id] ?? null}
+                  localUpload={uploads[tenant.id] ?? null}
+                  onChooseFile={() => pickArchiveFor(tenant)}
+                  onDismiss={job => void dismiss(job)}
+                />
                 <div className="mt-2 flex flex-wrap gap-3 text-sm">
                   {tenant.urls.client && (
                     <a
@@ -338,7 +474,14 @@ export default function PlatformPage() {
                     // something they might regret.
                     [
                       { icon: Download, label: "Export archive", onSelect: () => void downloadArchive(tenant) },
-                      { icon: Upload, label: "Restore archive", onSelect: () => pickArchiveFor(tenant) },
+                      {
+                        icon: Upload,
+                        label: "Restore archive",
+                        // One import per studio at a time; the backend refuses a
+                        // second too, but the menu should not offer it.
+                        disabledReason: importBlocked(tenant.id),
+                        onSelect: () => pickArchiveFor(tenant),
+                      },
                     ],
                     [
                       ...(tenant.status !== "archived"

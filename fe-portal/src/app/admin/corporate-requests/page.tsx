@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { PageHeader, Badge } from "@/components/ui";
+import { PageHeader, Badge, Pagination, usePaged } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { scheduleErrorMessage } from "@/lib/schedule";
 import { CorporateRequestDrawer } from "@/components/corporate-requests/corporate-request-drawer";
@@ -109,6 +109,7 @@ export default function CorporateRequestsPage() {
   }, [load]);
 
   const active = requests.find((r) => r.id === activeId) ?? null;
+  const { visible, pagination } = usePaged(requests, tab);
 
   async function runAction(
     id: string,
@@ -181,35 +182,38 @@ export default function CorporateRequestsPage() {
                   : "No requests."}
         </div>
       ) : (
-        <ul className="divide-y divide-border rounded-xl border border-border bg-card shadow-soft">
-          {requests.map((r) => (
-            <li key={r.id}>
-              <button
-                type="button"
-                onClick={() => setActiveId(r.id)}
-                className="block w-full px-4 py-3 text-left transition hover:bg-paper"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
-                  <div className="min-w-0 flex-1">
-                    <div className="font-medium text-ink">{r.client.name}</div>
-                    <div className="text-xs text-muted">
-                      {r.package.name}
-                      {r.session
-                        ? ` · ${formatDateTime(r.session.startsAt)}`
-                        : ""}
+        <div className="overflow-hidden rounded-xl border border-border bg-card shadow-soft">
+          <ul className="divide-y divide-border">
+            {visible.map((r) => (
+              <li key={r.id}>
+                <button
+                  type="button"
+                  onClick={() => setActiveId(r.id)}
+                  className="block w-full px-4 py-3 text-left transition hover:bg-paper"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium text-ink">{r.client.name}</div>
+                      <div className="text-xs text-muted">
+                        {r.package.name}
+                        {r.session
+                          ? ` · ${formatDateTime(r.session.startsAt)}`
+                          : ""}
+                      </div>
+                    </div>
+                    <div className="ml-auto flex shrink-0 items-center gap-2">
+                      <Badge tone={STATUS_TONE[r.status]}>{r.status}</Badge>
+                      <span className="text-xs text-muted">
+                        {formatRelative(r.createdAt)}
+                      </span>
                     </div>
                   </div>
-                  <div className="ml-auto flex shrink-0 items-center gap-2">
-                    <Badge tone={STATUS_TONE[r.status]}>{r.status}</Badge>
-                    <span className="text-xs text-muted">
-                      {formatRelative(r.createdAt)}
-                    </span>
-                  </div>
-                </div>
-              </button>
-            </li>
-          ))}
-        </ul>
+                </button>
+              </li>
+            ))}
+          </ul>
+          <Pagination {...pagination} noun="requests" />
+        </div>
       )}
 
       {active && (

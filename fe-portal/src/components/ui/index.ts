@@ -13,3 +13,4 @@ export * from "./avatar";
 export * from "./skeleton";
 export * from "./empty-state";
 export * from "./page-header";
+export * from "./pagination";

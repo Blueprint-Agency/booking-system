@@ -41,7 +41,7 @@
 import { eq, sql } from 'drizzle-orm'
 import { currentTenantId, db, withTenant } from '../../db'
 import { clientAuthUsers, staffAuthUsers } from '../../db/schema/auth'
-import { tenants, tenantSettings } from '../../db/schema/tenancy'
+import { tenantImports, tenants, tenantSettings } from '../../db/schema/tenancy'
 import { deleteObjectsUnder, R2_BUCKET } from '../../lib/r2'
 import { tenantKey } from '../../lib/object-key'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
@@ -127,6 +127,14 @@ export async function deleteTenant(input: DeleteTenantInput): Promise<DeletedTen
       .where(eq(tenantSettings.tenantId, id))
       .returning({ tenantId: tenantSettings.tenantId })
     tables.tenant_settings = settings.length
+
+    // Its import jobs: not studio data, so not in `order`, and they would go by
+    // cascade anyway (migration 0073) — deleted by name so the count is reported.
+    const importJobs = await db
+      .delete(tenantImports)
+      .where(eq(tenantImports.tenantId, id))
+      .returning({ id: tenantImports.id })
+    tables.tenant_imports = importJobs.length
 
     // Former Slugs, claimed sessions and payment credentials cascade.
     await db.delete(tenants).where(eq(tenants.id, id))

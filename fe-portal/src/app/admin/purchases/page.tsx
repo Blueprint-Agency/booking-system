@@ -4,7 +4,7 @@ import Link from "next/link";
 import { AlertTriangle, Loader2, Wallet } from "lucide-react";
 import { toast } from "sonner";
 
-import { Button, EmptyState, PageHeader } from "@/components/ui";
+import { Button, EmptyState, PageHeader, Pagination, usePaged } from "@/components/ui";
 import { RefundDialog } from "@/components/clients/refund-dialog";
 import { useWorkspace } from "@/lib/workspace-context";
 import { runsStudio } from "@/lib/staff-role";
@@ -77,7 +77,9 @@ export default function UnfinishedPurchasesPage() {
     void load();
   }, [load]);
 
+  // Count and held total cover every row, not just the page on screen.
   const heldTotal = rows.reduce((sum, r) => sum + Number(r.paid_sgd), 0);
+  const { visible, pagination } = usePaged(rows);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -122,7 +124,7 @@ export default function UnfinishedPurchasesPage() {
           </div>
 
           <div className="space-y-3">
-            {rows.map((p) => (
+            {visible.map((p) => (
               <div
                 key={p.id}
                 className="rounded-xl border border-warning/40 bg-warning/5 px-5 py-4 shadow-soft"
@@ -172,6 +174,13 @@ export default function UnfinishedPurchasesPage() {
               </div>
             ))}
           </div>
+
+          {/* The rows are standalone cards, so the pager is a card of its own. */}
+          <Pagination
+            {...pagination}
+            noun="purchases"
+            className="rounded-xl border border-border bg-card shadow-soft"
+          />
         </>
       )}
 

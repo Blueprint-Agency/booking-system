@@ -119,6 +119,15 @@ describe('deleting a studio', { skip: integrationTestsEnabled ? false : SKIP_REA
       }
     }
     assert.deepEqual(refused, [], 'teach this file how to make a row in each of these')
+    // Not studio data, so `tenantTableOrder` leaves it out — but it carries a
+    // `tenant_id`, and it must go with the studio (by cascade, migration 0073).
+    await harness.db.insert(schema.tenantImports).values({
+      tenantId,
+      status: 'succeeded',
+      fileName: 'restored.zip',
+      uploadBytes: 1,
+      startedBy: OPERATOR,
+    })
   }
 
   before(async () => {

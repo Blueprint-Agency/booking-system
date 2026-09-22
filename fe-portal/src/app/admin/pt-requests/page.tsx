@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { PageHeader, Badge } from "@/components/ui";
+import { PageHeader, Badge, Pagination, usePaged } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { PtRequestDrawer } from "@/components/pt-requests/pt-request-drawer";
 import { ScheduleFromRequestDialog } from "@/components/pt-requests/schedule-from-request-dialog";
@@ -60,6 +60,8 @@ export default function PtRequestsPage() {
         .sort((a, b) => b.created_at.localeCompare(a.created_at)),
     [requests, tab],
   );
+  // Paged client-side: the tab counts need every request anyway.
+  const { visible, pagination } = usePaged(filtered, tab);
   const active = requests.find((r) => r.id === activeId) ?? null;
   const pendingCount = requests.filter((r) => r.status === "pending").length;
   const filters: PtFilter[] = ["pending", "scheduled", "cancelled", "attended", "all"];
@@ -140,52 +142,55 @@ export default function PtRequestsPage() {
             : "No requests."}
         </div>
       ) : (
-        <ul className="divide-y divide-border rounded-xl border border-border bg-card shadow-soft">
-          {filtered.map((r) => {
-            const first = r.slots[0];
-            const more = r.slots.length - 1;
-            const partnerHint =
-              r.session_type === "2on1" && !r.co_client?.clientId
-                ? " · partner: needs account"
-                : "";
-            return (
-              <li key={r.id}>
-                <button
-                  type="button"
-                  onClick={() => setActiveId(r.id)}
-                  className="block w-full px-4 py-3 text-left transition hover:bg-paper"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
-                    <div className="min-w-0 flex-1">
-                      <div className="font-medium text-ink">{r.client.name}</div>
-                      <div className="text-xs text-muted">
-                        {r.session_type.toUpperCase()} · {r.class_type.name}
-                        {first
-                          ? ` · ${first.proposed_date} ${first.start_time}–${first.end_time}`
-                          : ""}
-                        {more > 0 ? ` +${more} more` : ""}
-                        {partnerHint}
-                        {r.bound_instructor
-                          ? ` · with ${r.bound_instructor.name}`
-                          : ""}
+        <div className="overflow-hidden rounded-xl border border-border bg-card shadow-soft">
+          <ul className="divide-y divide-border">
+            {visible.map((r) => {
+              const first = r.slots[0];
+              const more = r.slots.length - 1;
+              const partnerHint =
+                r.session_type === "2on1" && !r.co_client?.clientId
+                  ? " · partner: needs account"
+                  : "";
+              return (
+                <li key={r.id}>
+                  <button
+                    type="button"
+                    onClick={() => setActiveId(r.id)}
+                    className="block w-full px-4 py-3 text-left transition hover:bg-paper"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
+                      <div className="min-w-0 flex-1">
+                        <div className="font-medium text-ink">{r.client.name}</div>
+                        <div className="text-xs text-muted">
+                          {r.session_type.toUpperCase()} · {r.class_type.name}
+                          {first
+                            ? ` · ${first.proposed_date} ${first.start_time}–${first.end_time}`
+                            : ""}
+                          {more > 0 ? ` +${more} more` : ""}
+                          {partnerHint}
+                          {r.bound_instructor
+                            ? ` · with ${r.bound_instructor.name}`
+                            : ""}
+                        </div>
+                      </div>
+                      <div className="ml-auto flex shrink-0 items-center gap-2">
+                        <Badge tone={PT_STATUS_TONE[r.status]}>
+                          {r.status === "cancelled_after_scheduled"
+                            ? ptStatusLabel(r)
+                            : PT_STATUS_SHORT[r.status]}
+                        </Badge>
+                        <span className="text-xs text-muted">
+                          {formatRelative(r.created_at)}
+                        </span>
                       </div>
                     </div>
-                    <div className="ml-auto flex shrink-0 items-center gap-2">
-                      <Badge tone={PT_STATUS_TONE[r.status]}>
-                        {r.status === "cancelled_after_scheduled"
-                          ? ptStatusLabel(r)
-                          : PT_STATUS_SHORT[r.status]}
-                      </Badge>
-                      <span className="text-xs text-muted">
-                        {formatRelative(r.created_at)}
-                      </span>
-                    </div>
-                  </div>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <Pagination {...pagination} noun="requests" />
+        </div>
       )}
 
       {active && (

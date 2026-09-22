@@ -7,7 +7,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { Plus, Loader2 } from "lucide-react";
-import { Button, PageHeader, Badge, EmptyState } from "@/components/ui";
+import { Button, PageHeader, Badge, EmptyState, Pagination, usePaged } from "@/components/ui";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
 import { formatSgd, formatDate } from "@/lib/formatters";
@@ -49,6 +49,8 @@ export default function PromoCodesListPage() {
     void load();
   }, [load]);
 
+  const { visible, pagination } = usePaged(codes);
+
   return (
     <div className="mx-auto max-w-5xl space-y-6">
       <PageHeader
@@ -81,37 +83,40 @@ export default function PromoCodesListPage() {
           cta={{ href: NEW_HREF, label: "New Promo Code" }}
         />
       ) : (
-        <ul className="divide-y divide-border rounded-xl border border-border bg-card shadow-soft">
-          {codes.map((c) => (
-            <li key={c.id}>
-              <Link
-                href={`/admin/packages/promo-codes/${c.id}/edit`}
-                className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-paper"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="font-medium text-ink">{c.code}</div>
-                  <div className="mt-1 text-xs text-muted">
-                    {c.label} · {c.applies_to_all ? "Everything" : `${c.products.length} product${c.products.length === 1 ? "" : "s"}`}
-                    {c.expires_at ? ` · Expires ${formatDate(c.expires_at)}` : " · Never expires"}
+        <div className="rounded-xl border border-border bg-card shadow-soft">
+          <ul className="divide-y divide-border">
+            {visible.map((c) => (
+              <li key={c.id}>
+                <Link
+                  href={`/admin/packages/promo-codes/${c.id}/edit`}
+                  className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-paper"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium text-ink">{c.code}</div>
+                    <div className="mt-1 text-xs text-muted">
+                      {c.label} · {c.applies_to_all ? "Everything" : `${c.products.length} product${c.products.length === 1 ? "" : "s"}`}
+                      {c.expires_at ? ` · Expires ${formatDate(c.expires_at)}` : " · Never expires"}
+                    </div>
                   </div>
-                </div>
-                <div className="hidden sm:block min-w-[110px] text-right text-sm text-ink">
-                  {moneyOff(c)}
-                </div>
-                <div className="hidden md:block min-w-[140px] text-right text-xs text-muted">
-                  {claimed(c)}
-                </div>
-                <div className="min-w-[80px] text-right">
-                  {c.status === "archived" ? (
-                    <Badge tone="neutral">Archived</Badge>
-                  ) : (
-                    <Badge tone="sage">Active</Badge>
-                  )}
-                </div>
-              </Link>
-            </li>
-          ))}
-        </ul>
+                  <div className="hidden sm:block min-w-[110px] text-right text-sm text-ink">
+                    {moneyOff(c)}
+                  </div>
+                  <div className="hidden md:block min-w-[140px] text-right text-xs text-muted">
+                    {claimed(c)}
+                  </div>
+                  <div className="min-w-[80px] text-right">
+                    {c.status === "archived" ? (
+                      <Badge tone="neutral">Archived</Badge>
+                    ) : (
+                      <Badge tone="sage">Active</Badge>
+                    )}
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <Pagination {...pagination} noun="promo codes" />
+        </div>
       )}
     </div>
   );
