@@ -12,6 +12,23 @@ themselves are in `deployment.md` § Tests gate the backend deploy.
 | Browser journeys (Playwright) | `e2e/journeys/*.spec.ts` | `npm test` in `e2e/` |
 | Repo scripts | `scripts/*.test.mjs` | `node --test scripts/<name>.test.mjs` |
 
+## Time
+
+A rule that turns on the current instant — a cancellation window, a package's expiry, a daily
+job's hour — reads it from `be/src/lib/clock.ts`, never from `new Date()`. Production never sets
+that clock. A backend test holds it through the harness:
+
+```ts
+harness.clock.set(cutoff)      // the app now thinks it is exactly `cutoff`
+harness.clock.advance(DAY)     // a day later
+harness.clock.reset()          // back to the wall clock (`close()` does this too)
+```
+
+Scheduled jobs are fired the same way the scheduler fires them — tenant fan-out and each
+Tenant's local hour included — through `scheduledJobs` in `be/src/jobs/index.ts`:
+`await scheduledJobs.expirePackages()` is one tick at whatever instant the clock says.
+`be/src/test/time-windows.test.ts` and `be/src/test/scheduled-jobs.test.ts` show both.
+
 ## Scenario Inventory
 
 `test-scenarios.md` lists every acceptance scenario the specs promise, one row each, with a stable

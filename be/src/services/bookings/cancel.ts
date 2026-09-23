@@ -22,6 +22,7 @@ import { refundCredits } from '../packages/ledger'
 import { decideOutcome, type RefundOutcome } from './refund-outcome'
 import { evaluateCancellation } from '../policy/evaluate-cancellation'
 import { AppError, BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
+import { now as clockNow } from '../../lib/clock'
 
 export type CancelSource = 'client' | 'admin'
 
@@ -109,7 +110,7 @@ export async function cancelBooking(
     }
 
     // 3. Evaluate the refund decision.
-    const now = new Date()
+    const now = clockNow()
     const evaluation =
       source === 'admin'
         ? undefined

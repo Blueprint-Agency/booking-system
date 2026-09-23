@@ -55,6 +55,17 @@ export type TestApp = {
    * lines a request produced are all present once `app.request()` resolves.
    */
   logs: { lines: () => Array<Record<string, unknown>>; clear: () => void }
+  /**
+   * What time the app thinks it is (`lib/clock`). `set` stands every service
+   * that applies a time window — cancellation policy, package validity, the
+   * scheduled jobs — at one fixed instant until the next `set`; `advance` moves
+   * it on; `reset` puts the wall clock back. `close` resets it too.
+   *
+   * Only the rules read it. Postgres defaults (`created_at`) and the auth
+   * server's session expiry keep real time, so a test can move far from today
+   * without its sign-in going stale.
+   */
+  clock: { set: (at: Date) => void; advance: (ms: number) => void; now: () => Date; reset: () => void }
   close: () => Promise<void>
 }
 
@@ -353,7 +364,12 @@ export async function startTestApp(): Promise<TestApp> {
 
   const { default: app } = await import('../app')
   const { closeDb } = await import('../db')
+  const { now, setClock } = await import('../lib/clock')
   await mountHarnessRoutes(app)
+  const fixClockAt = (at: Date) => {
+    const fixed = at.getTime()
+    setClock(() => new Date(fixed))
+  }
 
   return {
     app,
@@ -369,7 +385,14 @@ export async function startTestApp(): Promise<TestApp> {
         logged = []
       },
     },
+    clock: {
+      set: fixClockAt,
+      advance: ms => fixClockAt(new Date(now().getTime() + ms)),
+      now,
+      reset: () => setClock(null),
+    },
     close: async () => {
+      setClock(null)
       await closeDb()
       await client.end({ timeout: 5 })
     },

@@ -8,6 +8,7 @@ import { refundCredits } from '../packages/ledger'
 import { ptSessionCost } from './cost'
 import { AppError, ConflictError, ForbiddenError, NotFoundError } from '../../shared/errors'
 import { logger } from '../../shared/logger'
+import { now as clockNow } from '../../lib/clock'
 
 /**
  * Cancel a PT request, branching on its current status. Single entry point for
@@ -147,7 +148,7 @@ export async function cancelPtRequest(
       throw new ForbiddenError('not_your_session')
     }
 
-    const now = new Date()
+    const now = clockNow()
 
     // Refund decision. Admin bypasses window/cap (always full); client is gated
     // by the PT window + shared cancellation cap.
@@ -272,7 +273,7 @@ export async function cancelPtRequest(
  * source='system' — refund the debit, flip to cancelled_before_scheduled.
  */
 export async function expireStaleSessions(): Promise<void> {
-  const now = new Date()
+  const now = clockNow()
   // The scan is deliberately platform-wide — one process sweeps every studio —
   // but each expiry is then performed AS its own tenant, so the refund, the
   // status flip and the inbox item all land under the right one.
@@ -308,7 +309,7 @@ export async function expireStaleSessions(): Promise<void> {
  * showed up — this only advances the request lifecycle past its session.
  */
 export async function completeEndedPtSessions(): Promise<void> {
-  const now = new Date()
+  const now = clockNow()
   // Platform-wide on purpose, like `expirePackages`: this is a clock advancing
   // a lifecycle, not a caller asking a question, and it moves each row only in
   // relation to its own session. Nothing crosses between studios.
