@@ -504,7 +504,7 @@ Members sign in with email and password through the Better Auth `client` pool (#
 
 Link requests and password attempts are limited per address, and per email at each studio (`services/auth/rate-limit.ts`); over budget is 429. The pool's `/sign-in/email-otp` and the email-OTP plugin's own password-reset and email-change endpoints are disabled.
 
-An admin adding a member (`POST /portal/admin/clients`) writes the same two rows in one transaction, with no password; the member's first sign-in mails them the link, and an admin can send it from the member detail (`POST /portal/admin/clients/:id/send-set-password`). Blocking deletes the member's sessions **at that studio only** and restoring lets them sign in again — a block is one studio's decision, and the same auth user may be a member elsewhere.
+An admin adding a member (`POST /portal/admin/clients`) writes the same two rows in one transaction, with no password; the member's first sign-in mails them the link, and an admin can send it from the member detail (`POST /portal/admin/clients/:id/send-set-password`). Blocking deletes the member's sessions **at that studio only** and restoring lets them sign in again — a block is one studio's decision, and the same person's login at another studio is another account (ADR 0006), untouched.
 
 ### 4g. Referral conversion (cross-link)
 

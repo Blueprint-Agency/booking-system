@@ -8,8 +8,9 @@
  * the proof they are who was invited; the backend checks it, sets the password
  * and activates the row, and the page signs in with the password just chosen.
  *
- * Someone who already has a password at this studio — set through "Forgot
- * password" before they opened the invitation — keeps it: accepting just
+ * Someone who already has a password at this studio — carried onto this
+ * studio's login when shared logins were split (migration 0076), or set by a
+ * reset after an earlier invitation expired — keeps it: accepting just
  * activates them, and they sign in with it. A password at another studio is
  * that studio's login and plays no part here (#231).
  */

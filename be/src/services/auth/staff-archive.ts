@@ -156,7 +156,8 @@ export async function archiveStaff(input: ArchiveStaffInput): Promise<StaffUserR
   if (!updated) throw new ConflictError('staff_archive_failed')
 
   // Their Better Auth sessions at this studio end in the request's transaction,
-  // with the flip. Only this studio's: the same account may still be staff elsewhere.
+  // with the flip. Only this studio's: their login at another studio is another
+  // account (ADR 0006), untouched.
   await endStaffSessionsAt(db, tenantId, target.authUserId)
   // Archiving is how a staff member is blocked, so it is logged as one.
   await recordStaffAct({ tenantId, actorStaffId, kind: 'user_blocked', subjectUserId: target.authUserId, from: input.from })

@@ -53,8 +53,11 @@ sign-up, a block, a deletion, an email change — reaches another.
 - **Member deletion and Tenant deletion delete the studio's own logins directly.** The cross-Tenant
   `SECURITY DEFINER` checks (`client_auth_user_is_member`, `staff_auth_user_is_staff`) are no longer
   called. They are dropped in a later contract step.
-- **Export never carries logins, and restore makes fresh ones** (#229). The reset link opened from
-  an inbox needs no Tenant context (#230).
+- **Export never carries logins, and restore makes fresh ones** (#229). An archive holds no
+  password hash, second factor, session or verification. Restoring it — or importing a studio from
+  Mindbody — gives every member and staff member a fresh login with no password, and they get back
+  in through the email-first sign-in step, which mails them a link to set one. That link, opened
+  from an inbox, needs no Tenant context (#230).
 
 ### The Session claim
 

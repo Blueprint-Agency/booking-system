@@ -74,7 +74,8 @@ code or link from one studio is not found at another.
 
 - **Limits.** A link request or a password attempt spends a per-address budget (Better Auth's
   limiter, #114) and a per-email budget (`emailRateLimit`). Per email: 3 links per 15 minutes and
-  10 attempts per 5 minutes. These budgets count across every studio, and anyone who knows a
+  10 attempts per 5 minutes. ~~These budgets count across every studio~~ (**superseded by
+  [ADR 0006](0006-per-studio-logins.md):** they count per studio and email), and anyone who knows a
   member's email can spend them. That can hold a member's password sign-in back for up to five
   minutes; the link still gets them in. We take that over leaving one member's password open to
   guesses spread across many addresses.
