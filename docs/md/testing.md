@@ -70,3 +70,20 @@ Only the name counts — an ID in a comment or an assertion does not.
 4. When a test covers it, name the test with the ID, put its file path in "covered by"
    (`` `be/src/test/check-in.test.ts` ``, comma-separated for more than one), set `status` to
    `covered`, and run the script.
+
+## Exploratory QA
+
+Before a release, an agent can hunt for bugs the suites were never written for: it drives a real
+browser through the app as one role and reports what it finds. It supplements the suites and gates
+nothing: the prompt is the same every time, but a run's path and findings are not, so it cannot be a
+check.
+
+```
+/exploratory-qa <member|instructor|admin|super> [local|staging]
+```
+
+It finds bugs and leaves the code alone. Its findings arrive as `needs-triage` GitHub issues, and
+the promises it exercised that no Inventory row states arrive as proposed rows for a human to add.
+How a run goes, and each role's charter, is in `.claude/skills/exploratory-qa/`. A `super` run needs
+a Platform administrator account in `QA_SUPER_EMAIL` and `QA_SUPER_PASSWORD` in the environment of
+the session that runs it, or it asks for one.
