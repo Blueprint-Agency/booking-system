@@ -327,11 +327,11 @@ test('a studio copies into a second one beside it', options, async () => {
   }
 
   // The login a member signs in with never travels in an archive (#229): each
-  // copied member names the login their email has in the client pool, not the
-  // id the archive carried.
+  // copied member names the login their email has in the client pool at the
+  // copy — logins are per studio (#231) — not the id the archive carried.
   const accounts = await harness.db.execute<{ email: string; auth_user_id: string; login_id: string | null }>(sql`
     SELECT c.email, c.auth_user_id, u.id AS login_id
-    FROM clients c LEFT JOIN client_auth_users u ON u.email = lower(c.email)
+    FROM clients c LEFT JOIN client_auth_users u ON u.email = lower(c.email) AND u.tenant_id = c.tenant_id
     WHERE c.tenant_id = ${target}
   `)
   assert.equal(accounts.length, originals.size)

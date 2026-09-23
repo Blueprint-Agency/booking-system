@@ -56,6 +56,12 @@ import {
  * resolved to (`services/tenants/session-claim.ts`), so a session issued at
  * studio A is worthless at studio B. `platform` sessions carry no Tenant.
  *
+ * **A studio-pool login is one studio's own** (#231). Every `client` and
+ * `staff` table carries a `tenant_id` that defaults to the open context, and
+ * Row-Level Security fences it, so everything Better Auth reads and writes
+ * here — users, passwords, second factors, sessions, codes and reset links — is
+ * this studio's. The same email at another studio is another account.
+ *
  * **Bearer, not cookies.** The API and the frontends are on different hosts,
  * so a session travels as `Authorization: Bearer <token>`, held per origin by
  * the browser; the token is returned in the `set-auth-token` header.
@@ -72,8 +78,9 @@ export const AUTH_BASE_PATH: Record<AuthPool, string> = {
 
 /**
  * The claim, as Better Auth sees it: a session field the caller cannot set
- * (`input: false`), stored in `claimed_tenant_id` — see `db/schema/auth.ts` for
- * why the column is not named `tenant_id`.
+ * (`input: false`), stored in `claimed_tenant_id`. It always equals the row's
+ * `tenant_id` now, and stays as the check the middlewares make out loud — see
+ * `db/schema/auth.ts`.
  */
 const tenantClaimField = {
   claimedTenantId: { type: 'string', required: false, input: false },
@@ -105,12 +112,11 @@ const stampTenantClaim = {
  * The client pool's hook: the claim, and one refusal before it is written — a
  * member this studio has blocked gets no session here (#117).
  *
- * Asked of the `clients` row at the Tenant the sign-in named, not of the auth
- * user, because a block is one studio's decision about its own member: the same
- * person may be a member in good standing at another studio, on the same auth
- * user. No row at all is not refused — the harness and the register flow both
- * sign in before or alongside writing one, and a session with no row reaches
- * nothing (`client_not_found` at every member route).
+ * Asked of the `clients` row at the Tenant the sign-in named: a block is that
+ * studio's decision about its own member. No row at all is not refused — the
+ * harness and the register flow both sign in before or alongside writing one,
+ * and a session with no row reaches nothing (`client_not_found` at every member
+ * route).
  */
 const memberSessionHooks = {
   session: {
@@ -689,10 +695,10 @@ export async function signInMemberWithPassword(
 }
 
 /**
- * Does this address have a member password? The one thing the email step of
- * the sign-in form reveals (#173) — and so, that an account exists somewhere
- * on the platform, the accepted cost of an email-first form (ADR 0005). It says
- * nothing about whether the address is a member of the studio asking.
+ * Does this address have a member password **at this studio**? The one thing
+ * the email step of the sign-in form reveals (#173) — the accepted cost of an
+ * email-first form (ADR 0005). Asked in the request's Tenant context, where the
+ * pool sees this studio's logins only (#231).
  */
 export async function memberHasPassword(email: string): Promise<boolean> {
   const context = await clientAuth.$context
@@ -701,7 +707,7 @@ export async function memberHasPassword(email: string): Promise<boolean> {
 }
 
 /**
- * Does this address have a staff password, at any studio? What the portal's
+ * Does this address have a staff password at this studio? What the portal's
  * email step reveals (`staff-sign-in-step.ts`), as `memberHasPassword` is for
  * the member form.
  */
@@ -742,9 +748,10 @@ export async function mailMemberSetPasswordLink(
 export type SetPasswordRefusal = 'invalid_token' | 'password_too_short' | 'password_too_long'
 
 /**
- * Whose set-password link this is, or null for one that is used, expired or
- * never existed. Read without spending it, so the caller can decide whether
- * this studio may use it before anything changes.
+ * Whose set-password link this is, or null for one that is used, expired, never
+ * existed, or was mailed by another studio — whose verification this studio's
+ * context cannot see (#231). Read without spending it, so the caller can check
+ * the member before anything changes.
  */
 export async function memberLinkOwner(token: string): Promise<{ id: string; email: string } | null> {
   const context = await clientAuth.$context

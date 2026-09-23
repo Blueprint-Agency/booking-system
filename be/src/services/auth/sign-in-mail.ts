@@ -53,13 +53,12 @@ export async function mailClientCode(email: string, code: string): Promise<void>
  * had a password or forgot theirs, worded by the studio's `password_reset`
  * template.
  *
- * **Only a member of this studio gets one.** The client pool is one per email
- * platform-wide, so Better Auth would mail a link to anyone with an account
- * anywhere; the studio asking is the one whose name the mail wears. So the
- * `clients` row at the Tenant in context is looked up here, and an address
- * with none — or one this studio has blocked — is mailed nothing. The caller's
- * answer is the same either way, which is the point: it must never say who is
- * a member.
+ * **Only a member of this studio gets one.** The login is this studio's (#231),
+ * but a login is not a membership: one can outlive its `clients` row, or
+ * belong to a member this studio has blocked. So the `clients` row at the
+ * Tenant in context is looked up here, and an address with none — or a blocked
+ * one — is mailed nothing. The caller's answer is the same either way, which is
+ * the point: it must never say who is a member.
  */
 export async function mailClientPasswordReset(user: MailUser & { id: string }, resetUrl: string): Promise<void> {
   const tenantId = tenantInContext('client')

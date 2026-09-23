@@ -137,7 +137,7 @@ async function signInAs(
       body: JSON.stringify(body),
     })
 
-  await ensureCredential(db, pool, email)
+  await ensureCredential(db, pool, email, tenant)
   const signedIn = await post('/sign-in/email', { email, password: HARNESS_PASSWORD })
 
   const token = signedIn.headers.get('set-auth-token')
@@ -157,27 +157,38 @@ export function harnessAddress(): string {
   return `198.${18 + ((n >> 16) & 1)}.${(n >> 8) & 255}.${n & 255}`
 }
 
+/**
+ * The person's login in `pool` — at `tenant`, for the studio pools, whose logins
+ * are per studio (#231) — with the harness password as its credential.
+ */
 async function ensureCredential(
   db: PostgresJsDatabase<typeof schema>,
   pool: AuthPool,
   email: string,
+  tenant: { slug: string } | null,
 ): Promise<void> {
   const { ensureAuthUser } = await import('../services/auth/auth-users')
   const { hashPassword } = await import('better-auth/crypto')
-  const accounts = {
-    client: schema.clientAuthAccounts,
-    staff: schema.staffAuthAccounts,
-    platform: schema.platformAuthAccounts,
-  }[pool]
-  const userId = await ensureAuthUser(db, pool, { email, name: email.split('@')[0]! })
+  const name = email.split('@')[0]!
+  const password = await hashPassword(HARNESS_PASSWORD)
+
+  if (pool === 'platform') {
+    const accounts = schema.platformAuthAccounts
+    const userId = await ensureAuthUser(db, pool, { email, name })
+    await db.delete(accounts).where(and(eq(accounts.userId, userId), eq(accounts.providerId, 'credential')))
+    await db.insert(accounts).values({ id: randomUUID(), accountId: userId, providerId: 'credential', userId, password })
+    return
+  }
+
+  const [studio] = await db.select({ id: schema.tenants.id }).from(schema.tenants).where(eq(schema.tenants.slug, tenant!.slug))
+  if (!studio) throw new Error(`signInAs: no studio has the slug ${tenant!.slug}`)
+  const tenantId = studio.id
+  const accounts = pool === 'client' ? schema.clientAuthAccounts : schema.staffAuthAccounts
+  const userId = await ensureAuthUser(db, pool, { tenantId, email, name })
   await db.delete(accounts).where(and(eq(accounts.userId, userId), eq(accounts.providerId, 'credential')))
-  await db.insert(accounts).values({
-    id: randomUUID(),
-    accountId: userId,
-    providerId: 'credential',
-    userId,
-    password: await hashPassword(HARNESS_PASSWORD),
-  })
+  await db
+    .insert(accounts)
+    .values({ id: randomUUID(), accountId: userId, providerId: 'credential', userId, password, tenantId })
 }
 
 /**

@@ -28,8 +28,9 @@ answers one of two things:
   address belongs to a member of *this* studio who is not blocked, and nothing is mailed
   otherwise. The form shows "check your email" either way.
 
-The answer tells a caller whether an address has a password, and so that an account exists
-somewhere on the platform. That is the accepted cost of an email-first form. It never tells them
+The answer tells a caller whether an address has a password, and so that an account exists at
+this studio (per studio since [ADR 0006](0006-per-studio-logins.md)). That is the accepted cost of
+an email-first form. It never tells them
 whether the address is a member of the studio asking. The step has its own budget per address and
 per email, because a `password` answer never reaches the pool's limiter.
 
@@ -64,10 +65,10 @@ auth user, its password, the studio's `clients` row and the session. So no accou
 its email is proven. The code no longer signs anyone in: the pool's `/sign-in/email-otp` is
 disabled, along with the email-OTP plugin's own password-reset and email-change endpoints.
 
-Accounts stay one per email per pool, platform-wide. A member of two studios has one password. The
-latest proof of the email sets it, whether that proof is a registration code or a link. So a
-member who joins a second studio and chooses a new password at sign-up has also changed it at the
-first studio.
+~~Accounts stay one per email per pool, platform-wide. A member of two studios has one password.~~
+**Superseded by [ADR 0006](0006-per-studio-logins.md):** a member of two studios has a login, and a
+password, at each. Registering at a second studio leaves the first studio's password alone, and a
+code or link from one studio is not found at another.
 
 ### Limits, audit, impersonation
 

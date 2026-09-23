@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { after, before, describe, test } from 'node:test'
-import { eq, sql } from 'drizzle-orm'
+import { eq, inArray, sql } from 'drizzle-orm'
 import { integrationTestsEnabled, SKIP_REASON, startTestApp, type TestApp } from './harness'
 import { memberFixtures } from './member-fixtures'
 
@@ -209,41 +209,47 @@ describe('deleting a studio', { skip: integrationTestsEnabled ? false : SKIP_REA
     const doomed = tenant.id
 
     // People: one who is only here, and one who is also at the other studio —
-    // in each pool.
-    const onlyHereMember = await authUsers.ensureAuthUser(harness.db, 'client', {
-      email: `only-member@${DOMAIN}`,
-      name: 'Only Here',
-    })
-    const sharedMember = await authUsers.ensureAuthUser(harness.db, 'client', {
-      email: `shared-member@${DOMAIN}`,
-      name: 'Both Studios',
-    })
-    const onlyHereStaff = await authUsers.ensureAuthUser(harness.db, 'staff', {
-      email: `only-staff@${DOMAIN}`,
-      name: 'Only Here Staff',
-    })
-    const sharedStaff = await authUsers.ensureAuthUser(harness.db, 'staff', {
-      email: `shared-staff@${DOMAIN}`,
-      name: 'Both Studios Staff',
-    })
+    // in each pool. Logins are per studio (#231), so the second has one at each.
+    const login = (pool: 'client' | 'staff', tenantId: string, email: string) =>
+      authUsers.ensureAuthUser(harness.db, pool, { tenantId, email, name: email.split('@')[0]! })
+    const onlyHereMember = await login('client', doomed, `only-member@${DOMAIN}`)
+    const bothMemberHere = await login('client', doomed, `shared-member@${DOMAIN}`)
+    const bothMemberThere = await login('client', two.id, `shared-member@${DOMAIN}`)
+    const onlyHereStaff = await login('staff', doomed, `only-staff@${DOMAIN}`)
+    const bothStaffHere = await login('staff', doomed, `shared-staff@${DOMAIN}`)
+    const bothStaffThere = await login('staff', two.id, `shared-staff@${DOMAIN}`)
     await fixtures.insertRow('clients', doomed, { auth_user_id: onlyHereMember, email: `only-member@${DOMAIN}` })
-    await fixtures.insertRow('clients', doomed, { auth_user_id: sharedMember, email: `shared-member@${DOMAIN}` })
-    await fixtures.insertRow('clients', two.id, { auth_user_id: sharedMember, email: `shared-member@${DOMAIN}` })
+    await fixtures.insertRow('clients', doomed, { auth_user_id: bothMemberHere, email: `shared-member@${DOMAIN}` })
+    await fixtures.insertRow('clients', two.id, { auth_user_id: bothMemberThere, email: `shared-member@${DOMAIN}` })
     await fixtures.insertRow('staff_users', doomed, { auth_user_id: onlyHereStaff, email: `only-staff@${DOMAIN}` })
-    await fixtures.insertRow('staff_users', doomed, { auth_user_id: sharedStaff, email: `shared-staff@${DOMAIN}` })
-    await fixtures.insertRow('staff_users', two.id, { auth_user_id: sharedStaff, email: `shared-staff@${DOMAIN}` })
+    await fixtures.insertRow('staff_users', doomed, { auth_user_id: bothStaffHere, email: `shared-staff@${DOMAIN}` })
+    await fixtures.insertRow('staff_users', two.id, { auth_user_id: bothStaffThere, email: `shared-staff@${DOMAIN}` })
 
-    // Sessions: one signed in here, one signed in at the other studio.
-    const session = (claimedTenantId: string) => ({
-      id: randomUUID(),
-      token: randomUUID(),
-      userId: sharedMember,
-      expiresAt: new Date(Date.now() + 86_400_000),
-      claimedTenantId,
-    })
-    const hereSession = session(doomed)
-    const thereSession = session(two.id)
-    await harness.db.insert(schema.clientAuthSessions).values([hereSession, thereSession])
+    // What hangs off a login, at each studio: a credential, a session, a
+    // verification, and a staff second factor — so every login table has a row
+    // here that must go, and one there that must stay.
+    const expiresAt = new Date(Date.now() + 86_400_000)
+    const hangingOff = async (tenantId: string, member: string, staff: string) => {
+      const session = { id: randomUUID(), token: randomUUID(), expiresAt, claimedTenantId: tenantId, tenantId }
+      const credential = { id: randomUUID(), providerId: 'credential', password: 'not-a-real-hash', tenantId }
+      const verification = { id: randomUUID(), identifier: `probe-${randomUUID()}`, value: 'x', expiresAt, tenantId }
+      await harness.db.insert(schema.clientAuthSessions).values({ ...session, userId: member })
+      await harness.db.insert(schema.clientAuthAccounts).values({ ...credential, accountId: member, userId: member })
+      await harness.db.insert(schema.clientAuthVerifications).values(verification)
+      await harness.db
+        .insert(schema.staffAuthSessions)
+        .values({ ...session, id: randomUUID(), token: randomUUID(), userId: staff })
+      await harness.db
+        .insert(schema.staffAuthAccounts)
+        .values({ ...credential, id: randomUUID(), accountId: staff, userId: staff })
+      await harness.db.insert(schema.staffAuthVerifications).values({ ...verification, id: randomUUID() })
+      await harness.db
+        .insert(schema.staffAuthTwoFactors)
+        .values({ id: randomUUID(), secret: 'probe', backupCodes: 'probe', userId: staff, tenantId })
+      return session.id
+    }
+    await hangingOff(doomed, bothMemberHere, bothStaffHere)
+    const thereSession = await hangingOff(two.id, bothMemberThere, bothStaffThere)
 
     // A platform row in the sign-in log, which was never the studio's.
     const [platformEvent] = await harness.db
@@ -290,9 +296,9 @@ describe('deleting a studio', { skip: integrationTestsEnabled ? false : SKIP_REA
       Object.values(doomedBefore).reduce((a, b) => a + b, 0),
       'every row counted before is reported deleted',
     )
-    // The member who was only here, and the two staff who were: the first admin
-    // it was provisioned with, and the one added above.
-    assert.deepEqual(body.deleted.accounts, { client: 1, staff: 2 })
+    // Every login here: the two members' and the three staff members' — the
+    // first admin it was provisioned with, and the two added above.
+    assert.deepEqual(body.deleted.accounts, { client: 2, staff: 3 })
     assert.equal(body.deleted.objects, null, 'no bucket under test')
 
     // Nothing of it is left in any Tenant-scoped table…
@@ -310,18 +316,20 @@ describe('deleting a studio', { skip: integrationTestsEnabled ? false : SKIP_REA
     const sessions = await harness.db
       .select({ id: schema.clientAuthSessions.id })
       .from(schema.clientAuthSessions)
-      .where(eq(schema.clientAuthSessions.userId, sharedMember))
-    assert.deepEqual(sessions.map(s => s.id), [thereSession.id], 'its sessions end; the other studio’s do not')
+      .where(inArray(schema.clientAuthSessions.userId, [bothMemberHere, bothMemberThere]))
+    assert.deepEqual(sessions.map(s => s.id), [thereSession], 'its sessions end; the other studio’s do not')
 
-    // Accounts: gone for the people who were only here, kept for everyone else.
+    // Logins: every one of this studio's is gone; the other studio's are kept.
     const clientAccount = (id: string) =>
       harness.db.select().from(schema.clientAuthUsers).where(eq(schema.clientAuthUsers.id, id))
     const staffAccount = (id: string) =>
       harness.db.select().from(schema.staffAuthUsers).where(eq(schema.staffAuthUsers.id, id))
     assert.equal((await clientAccount(onlyHereMember)).length, 0)
-    assert.equal((await clientAccount(sharedMember)).length, 1)
+    assert.equal((await clientAccount(bothMemberHere)).length, 0)
+    assert.equal((await clientAccount(bothMemberThere)).length, 1)
     assert.equal((await staffAccount(onlyHereStaff)).length, 0)
-    assert.equal((await staffAccount(sharedStaff)).length, 1)
+    assert.equal((await staffAccount(bothStaffHere)).length, 0)
+    assert.equal((await staffAccount(bothStaffThere)).length, 1)
 
     // Every other studio is exactly as it was, table by table.
     assert.deepEqual(await countsFor(one.id), oneBefore)
@@ -363,8 +371,8 @@ describe('deleting a studio', { skip: integrationTestsEnabled ? false : SKIP_REA
     const SIZE = { clients: 3_400, classes: 11_300, packages: 5_000, bookings: 86_000, checkIns: 80_000, cancellations: 3_000 }
 
     await harness.db.execute(sql`
-      INSERT INTO client_auth_users (id, name, email)
-      SELECT 'del-big-${sql.raw(run)}-' || g, 'Member ' || g, 'member-' || g || '@${sql.raw(DOMAIN)}'
+      INSERT INTO client_auth_users (id, name, email, tenant_id)
+      SELECT 'del-big-${sql.raw(run)}-' || g, 'Member ' || g, 'member-' || g || '@${sql.raw(DOMAIN)}', ${big}
       FROM generate_series(1, ${SIZE.clients}) g`)
     await harness.db.execute(sql`
       INSERT INTO clients (tenant_id, auth_user_id, email, name, phone)
@@ -412,7 +420,7 @@ describe('deleting a studio', { skip: integrationTestsEnabled ? false : SKIP_REA
 
     const made = Object.values(SIZE).reduce((a, b) => a + b, 0)
     assert.ok(body.deleted.rows >= made, `the whole studio went (${body.deleted.rows} of at least ${made} rows)`)
-    assert.equal(body.deleted.accounts.client, SIZE.clients, 'and every member who was only here')
+    assert.equal(body.deleted.accounts.client, SIZE.clients, "and every member's login here")
     // Well inside, not just inside: the portal's deadline covers the network too.
     assert.ok(took < PORTAL_DEADLINE_MS / 2, `deleted in ${Math.round(took)}ms; the portal gives up at ${PORTAL_DEADLINE_MS}ms`)
   })

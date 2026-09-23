@@ -55,7 +55,7 @@ These are not the member's, so they stay; only the reference to the member goes.
 
 ## Across studios
 
-One person is one sign-in account at every studio they have joined; each studio holds its own `clients` row. A studio deletes **its** record of the member and nothing at another studio. The sign-in account is deleted only when no studio still has a member row for it — the check is `client_auth_user_is_member` (migration `0060`), which answers yes or no across studios without telling the asking studio which. The response does not say whether the account went either, for the same reason.
+Each studio has its own sign-in account for a member, beside its own `clients` row (ADR 0006). A studio deletes **its** record of the member, and its sign-in account for them, and nothing at another studio. No cross-studio question is asked: the member's account at another studio is a different row, which this studio's context cannot see.
 
 ## What records the deletion
 

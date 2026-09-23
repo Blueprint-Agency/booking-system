@@ -66,11 +66,10 @@ export async function mailLinkOrThrow(from: Headers, email: string, tenantId: st
  * Set a member's password from the mailed link, and sign them in to the studio
  * the page is on.
  *
- * Only at a studio where the link's owner is a member: the link was mailed
- * under one studio's name, and one account serves every studio, so without
- * this a link could be spent anywhere and set the password on the way to a
- * session that reaches nothing. Checked before the token is spent, so a
- * refusal leaves the link usable where it belongs.
+ * A link is its studio's own (#231): another studio's is not found here at all.
+ * Its owner must still be a member here, and not a blocked one, or setting the
+ * password would lead to a session that reaches nothing. Checked before the
+ * token is spent, so a refusal leaves the link usable.
  */
 export async function setPasswordFromLink(input: {
   tenantId: string

@@ -26,9 +26,9 @@ export interface RegisterMemberInput {
  * The `client` pool's auth user, its password and the studio's `clients` row
  * are written together with the session, so there is no moment at which a
  * member is signed in with nothing to be signed in to, and no account exists
- * before its email is proven. One person joining a second studio reuses their
- * auth user — and, having proven the email, sets its one password — and gets a
- * second, independent row.
+ * before its email is proven. One person joining a second studio gets a second,
+ * independent login there, with the password they choose there, beside a
+ * second, independent row (#231); their login at the first studio is untouched.
  *
  * In order:
  *
@@ -57,7 +57,7 @@ export async function registerMember(input: RegisterMemberInput): Promise<{ toke
 
   try {
     return await db.transaction(async tx => {
-      const authUserId = await ensureAuthUser(tx, 'client', { email, name })
+      const authUserId = await ensureAuthUser(tx, 'client', { tenantId: input.tenantId, email, name })
       await tx.insert(clients).values({
         tenantId: input.tenantId,
         authUserId,

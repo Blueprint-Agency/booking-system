@@ -77,30 +77,32 @@ async function studioWithLogins(slug: string) {
   const mark = `${MARK}-${slug}`
 
   const memberLogin = randomUUID()
-  await harness.db.insert(schema.clientAuthUsers).values({ id: memberLogin, email: memberEmail, name: 'Member', emailVerified: true })
+  // Every login row is the studio's own (#231).
+  const tenantId = tenant.id
+  await harness.db.insert(schema.clientAuthUsers).values({ id: memberLogin, email: memberEmail, name: 'Member', emailVerified: true, tenantId })
   await harness.db.insert(schema.clientAuthAccounts).values({
-    id: randomUUID(), accountId: memberLogin, providerId: 'credential', userId: memberLogin, password: `${mark}-member-hash`,
+    id: randomUUID(), accountId: memberLogin, providerId: 'credential', userId: memberLogin, password: `${mark}-member-hash`, tenantId,
   })
   await harness.db.insert(schema.clientAuthSessions).values({
-    id: randomUUID(), token: `${mark}-member-session`, expiresAt: in1h, userId: memberLogin, claimedTenantId: tenant.id,
+    id: randomUUID(), token: `${mark}-member-session`, expiresAt: in1h, userId: memberLogin, claimedTenantId: tenant.id, tenantId,
   })
   await harness.db.insert(schema.clientAuthVerifications).values({
-    id: randomUUID(), identifier: memberEmail, value: `${mark}-member-verification`, expiresAt: in1h,
+    id: randomUUID(), identifier: memberEmail, value: `${mark}-member-verification`, expiresAt: in1h, tenantId,
   })
 
   const staffLogin = randomUUID()
-  await harness.db.insert(schema.staffAuthUsers).values({ id: staffLogin, email: staffEmail, name: 'Staff', emailVerified: true, twoFactorEnabled: true })
+  await harness.db.insert(schema.staffAuthUsers).values({ id: staffLogin, email: staffEmail, name: 'Staff', emailVerified: true, twoFactorEnabled: true, tenantId })
   await harness.db.insert(schema.staffAuthAccounts).values({
-    id: randomUUID(), accountId: staffLogin, providerId: 'credential', userId: staffLogin, password: `${mark}-staff-hash`,
+    id: randomUUID(), accountId: staffLogin, providerId: 'credential', userId: staffLogin, password: `${mark}-staff-hash`, tenantId,
   })
   await harness.db.insert(schema.staffAuthTwoFactors).values({
-    id: randomUUID(), secret: `${mark}-staff-2fa`, backupCodes: `${mark}-staff-backup`, userId: staffLogin,
+    id: randomUUID(), secret: `${mark}-staff-2fa`, backupCodes: `${mark}-staff-backup`, userId: staffLogin, tenantId,
   })
   await harness.db.insert(schema.staffAuthSessions).values({
-    id: randomUUID(), token: `${mark}-staff-session`, expiresAt: in1h, userId: staffLogin, claimedTenantId: tenant.id,
+    id: randomUUID(), token: `${mark}-staff-session`, expiresAt: in1h, userId: staffLogin, claimedTenantId: tenant.id, tenantId,
   })
   await harness.db.insert(schema.staffAuthVerifications).values({
-    id: randomUUID(), identifier: staffEmail, value: `${mark}-staff-verification`, expiresAt: in1h,
+    id: randomUUID(), identifier: staffEmail, value: `${mark}-staff-verification`, expiresAt: in1h, tenantId,
   })
 
   await harness.db.insert(schema.clients).values({

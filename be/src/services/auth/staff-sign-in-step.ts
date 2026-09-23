@@ -21,14 +21,15 @@ import { spendSignInStepBudget, spendStaffLinkBudget } from './rate-limit'
  *     gets this answer too, and nothing is mailed to it.
  *   - `password` — everyone else: ask for the password and sign in.
  *
- * The pending case is why this is not only "has a password". A person who is
- * staff at another studio has one account and so one password; invited here,
- * they would sign in with it and meet "this account isn't active here", with
- * no admin to activate them when they are this studio's first.
+ * "Has a password" means at this studio: logins are per studio (#231), so a
+ * password at another studio is not asked for here. The pending case is kept
+ * apart all the same, so an invitee is always sent the link that accepts their
+ * invitation, never asked for a password that signs in to "this account isn't
+ * active here".
  *
  * What an answer reveals is the member form's accepted cost (ADR 0005): that an
- * address has a staff password somewhere on the platform. Pending here and
- * unknown everywhere answer alike.
+ * address has a staff password at this studio. Pending here and unknown here
+ * answer alike.
  *
  * Budgeted per address and per email before either answer, as the member step
  * is; the link is budgeted per email on top, so the step cannot flood an inbox —

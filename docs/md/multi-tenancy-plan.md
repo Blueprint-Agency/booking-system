@@ -31,7 +31,7 @@ the URLs resolve; `tenant_id` scoping makes the data isolate. Never infra-per-te
 | Topic | Decision |
 |---|---|
 | Architecture | Single shared deployment per app, single Postgres, `tenant_id` column scoping, with Postgres RLS as the fail-closed backstop. ⚠️ RLS only works if the app stops connecting as the table owner — see "Verification pass". Instance-per-tenant rejected. |
-| Auth | **Better Auth, self-hosted, 3 pools** (client, staff, platform) on our own tables; count never grows with tenants. A tenant is not an auth object: a studio-pool session carries the Tenant it signed in on (`claimed_tenant_id`), and the auth user tables carry no `tenant_id`. See `docs/adr/0004-self-hosted-auth-with-better-auth.md`. |
+| Auth | **Better Auth, self-hosted, 3 pools** (client, staff, platform) on our own tables; count never grows with tenants. A studio-pool session carries the Tenant it signed in on (`claimed_tenant_id`), and since #231 the `staff` and `client` auth tables carry a `tenant_id` too: the same email at two studios is two accounts. See `docs/adr/0004-self-hosted-auth-with-better-auth.md` and `docs/adr/0006-per-studio-logins.md`. |
 | Subdomain scheme | `{tenant}.reservetoday.app` → fe-client via `*.reservetoday.app`; `{tenant}.portal.reservetoday.app` → fe-portal via `*.portal.reservetoday.app`. **The label order is forced, not a preference:** RFC 4592 requires the asterisk to be the *leftmost* label, so today's `portal.{tenant}.…` shape would need `portal.*.reservetoday.app` — not a legal DNS record, therefore impossible to wildcard. ⚠️ **The live production portal URL must therefore change** (Phase 5). The fe-client production URL `{slug}.reservetoday.app` already matches the target scheme and does **not** change. |
 | Frontends | Stay on **Vercel** (Platforms pattern: one deployment, Host-header middleware). Moving FEs to the VPS gains nothing — rejected. |
 | DNS | **Option A (preferred): move `reservetoday.app` nameservers from Cloudflare to Vercel** to get true wildcards. Vercel DNS is a full DNS host — recreate `api` A record + MX/TXT there. Fallback Option B (if NS can't move): keep Cloudflare, no wildcard, super portal makes 2 API calls per tenant (Cloudflare CNAME + Vercel Domains API). |
@@ -503,10 +503,9 @@ stay separate acts, because extending cannot tell a Term suspension from any oth
 (`400 confirmation_mismatch`); the UI makes the operator type the slug. One
 transaction as `booking_app` inside the studio's own `withTenant`: every
 `tenant_id` table (from the catalogue, children first — `auth_events` included),
-`tenant_settings`, then `tenants` (cascading `former_slugs`, claimed sessions, payment
-credentials), then the sign-in accounts of people who belonged only to that studio
-(checked through `client_auth_user_is_member` / `staff_auth_user_is_staff`, migration
-0072). After the commit it deletes the studio's R2 folder `t/<tenant id>/`,
+then the studio's own logins in the `staff` and `client` pools (per studio since #231, so
+no cross-studio check), `tenant_settings`, then `tenants` (cascading `former_slugs` and
+payment credentials). After the commit it deletes the studio's R2 folder `t/<tenant id>/`,
 best-effort. Not removed: objects uploaded before keys were tenant-prefixed, the
 studio's Customers/cards at its payment provider, mail already sent. The slug is free
 immediately. The record is the `platform: tenant deleted` log line (who, which

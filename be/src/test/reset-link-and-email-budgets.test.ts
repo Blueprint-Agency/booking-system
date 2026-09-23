@@ -136,7 +136,7 @@ describe('reset link from the inbox, and per-studio email budgets', { skip: inte
   test('AUTH-16 a member sets their password through a link opened from the inbox; a made-up token is refused', async () => {
     const email = at('member-link')
     const { ensureAuthUser } = await import('../services/auth/auth-users')
-    const authUserId = await ensureAuthUser(harness.db, 'client', { email, name: 'Linked Member' })
+    const authUserId = await ensureAuthUser(harness.db, 'client', { tenantId: one.id, email, name: 'Linked Member' })
     await harness.db
       .insert(schema.clients)
       .values({ tenantId: one.id, authUserId, email, name: 'Linked Member', phone: '+6590000000', status: 'active' })
@@ -157,7 +157,7 @@ describe('reset link from the inbox, and per-studio email budgets', { skip: inte
   test('AUTH-16 staff set their password through a link opened from the inbox; a made-up or expired token is refused', async () => {
     const email = at('staff-link')
     const { ensureAuthUser } = await import('../services/auth/auth-users')
-    const authUserId = await ensureAuthUser(harness.db, 'staff', { email, name: 'Linked Staff' })
+    const authUserId = await ensureAuthUser(harness.db, 'staff', { tenantId: one.id, email, name: 'Linked Staff' })
     await harness.db
       .insert(schema.staffUsers)
       .values({ tenantId: one.id, email, name: 'Linked Staff', role: 'admin', status: 'active', authUserId })
@@ -222,8 +222,9 @@ describe('reset link from the inbox, and per-studio email budgets', { skip: inte
   test("AUTH-18 spending an email's staff link budget at one studio still mails its link at another", async () => {
     const email = at('staff-twice')
     const { ensureAuthUser } = await import('../services/auth/auth-users')
-    const authUserId = await ensureAuthUser(harness.db, 'staff', { email, name: 'Staff Twice' })
+    // Staff at both studios, with a login at each (#231).
     for (const tenant of [one, two]) {
+      const authUserId = await ensureAuthUser(harness.db, 'staff', { tenantId: tenant.id, email, name: 'Staff Twice' })
       await harness.db
         .insert(schema.staffUsers)
         .values({ tenantId: tenant.id, email, name: 'Staff Twice', role: 'admin', status: 'active', authUserId })

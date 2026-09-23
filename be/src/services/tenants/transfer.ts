@@ -345,10 +345,9 @@ export async function importTenant(
     // is one from the platform it came from — or none, when it was built
     // outside one. Either way it is not copied: each person gets a login made
     // from their email, with no password, and signs in through the email-first
-    // step, which mails them a Set-password link (#229). An email that already
-    // has a login in that pool is found rather than made, through the helper
-    // every other way in uses: while one login serves every studio, the same
-    // person at another studio keeps theirs.
+    // step, which mails them a Set-password link (#229). The login is the
+    // target studio's own (#231), through the helper every other way in uses;
+    // the same person at another studio has a login there, untouched.
     //
     // Inside this transaction, before any row: a failed import leaves neither
     // the rows nor the logins made for them. A login that already existed is
@@ -361,7 +360,8 @@ export async function importTenant(
           throw new Error(`a ${table} row in this archive has no email, so no account can be ensured for it`)
         }
         const name = typeof row.name === 'string' && row.name ? row.name : row.email
-        linked.push({ ...row, auth_user_id: await ensureAuthUser(db, pool, { email: row.email, name }) })
+        const authUserId = await ensureAuthUser(db, pool, { tenantId: targetTenantId, email: row.email, name })
+        linked.push({ ...row, auth_user_id: authUserId })
         step('accounts', 1)
       }
       rows[table] = linked

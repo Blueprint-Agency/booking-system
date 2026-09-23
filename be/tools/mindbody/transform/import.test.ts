@@ -117,9 +117,14 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
   }
 
   test('the zip imports into a freshly provisioned studio, which opens, and its people can sign in', async () => {
-    // A member who is already on the platform — at another studio, say — has
-    // an account before the import. The import must reuse it, not make another.
-    const existing = await ensureAuthUser(harness.db, 'client', { email: 'ada.reuse@example.test', name: 'Ada Reuse' })
+    // A member who is already on the platform at another studio has a login
+    // there. Logins are per studio (#231): the import makes this studio its own,
+    // and leaves the other studio's alone.
+    const existing = await ensureAuthUser(harness.db, 'client', {
+      tenantId: harness.tenants.one.id,
+      email: 'ada.reuse@example.test',
+      name: 'Ada Reuse',
+    })
 
     const studio = await transformedStudio()
     assert.equal((await tenants.loadTenantById(studio.tenant.id))?.status, 'suspended')
@@ -140,7 +145,13 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
       .select({ authUserId: schema.clients.authUserId })
       .from(schema.clients)
       .where(and(eq(schema.clients.tenantId, studio.tenant.id), eq(schema.clients.email, 'ada.reuse@example.test')))
-    assert.equal(ada?.authUserId, existing, 'an email already on the platform keeps its one account')
+    assert.ok(ada?.authUserId, 'the imported member has a login')
+    assert.notEqual(ada.authUserId, existing, "an email at another studio gets a login of this studio's own")
+    const [elsewhere] = await harness.db
+      .select({ id: schema.clientAuthUsers.id })
+      .from(schema.clientAuthUsers)
+      .where(eq(schema.clientAuthUsers.id, existing))
+    assert.ok(elsewhere, "the other studio's login is untouched")
 
     // The owner is an active Admin from the first minute.
     const owner = await harness.signInAs('staff', 'owner@example.test', studio)

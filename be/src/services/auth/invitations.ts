@@ -40,7 +40,7 @@ import {
   hasStaffPassword,
   MAX_PASSWORD_LENGTH,
   MIN_PASSWORD_LENGTH,
-  removeUnusedStaffUser,
+  deleteStaffLogin,
   renameStaffUser,
   setFirstStaffPassword,
 } from './auth-users'
@@ -105,8 +105,9 @@ export interface PendingStaffInput {
  * role needs one, and the invitation. Through `tx`, so a caller's transaction
  * takes all of it or none.
  *
- * The auth user is found by address when it already exists — a person who is
- * staff at another studio has one account — and made otherwise.
+ * The auth user is this studio's login for the address (#231), found when it
+ * already exists and made otherwise. Staff at another studio have a login there
+ * that this one never touches.
  */
 export async function writePendingStaff(
   tx: Writer,
@@ -116,7 +117,7 @@ export async function writePendingStaff(
   const now = new Date()
   const { firstName, lastName } = splitName(input.name)
 
-  const authUserId = await ensureAuthUser(tx, 'staff', { email, name: input.name })
+  const authUserId = await ensureAuthUser(tx, 'staff', { tenantId: input.tenantId, email, name: input.name })
 
   const [staff] = await tx
     .insert(staffUsers)
@@ -231,9 +232,11 @@ export interface InvitationLookup {
   email: string | null
   role: InvitableRole | null
   /**
-   * Whether the invitee already has a password — they are staff at another
-   * studio, say — so the page asks them to sign in with it rather than choose
-   * one. Always false unless the invitation is `valid`.
+   * Whether the invitee already has a password **at this studio** — they set
+   * one through "Forgot password" before opening the invitation, say — so the
+   * page asks them to sign in with it rather than choose one. A password at
+   * another studio is that studio's (#231). Always false unless the invitation
+   * is `valid`.
    */
   passwordSet: boolean
 }
@@ -299,9 +302,10 @@ const ACCEPT_REFUSALS = {
  * Holding the token is the proof. It was mailed to the invited address and
  * nowhere else, which is the same proof a password-reset link rests on.
  *
- * A person who already has a password — staff at another studio, with one
- * account — keeps it: `password` is ignored, and they sign in with the one they
- * have. A token can set a first password; it can never replace one.
+ * A person who already has a password at this studio keeps it: `password` is
+ * ignored, and they sign in with the one they have. A token can set a first
+ * password; it can never replace one. A password at another studio is that
+ * studio's login, not this one's (#231), and asks nothing of it.
  *
  * In one transaction, with the invitation claimed first by a conditional update,
  * so two tabs submitting the same link cannot both get through.
@@ -345,11 +349,10 @@ export async function acceptInvitation(input: {
       .returning({ id: staffInvitations.id })
     if (!claimed) throw new ConflictError('invitation_used')
 
-    // An invitation written before invitations made the auth user (#115), or one
-    // whose auth user was removed when a sibling invitation at another studio was
-    // revoked, is linked here instead.
+    // An invitation written before invitations made the auth user (#115) is
+    // linked here instead.
     const authUserId =
-      staff.authUserId ?? (await ensureAuthUser(tx, 'staff', { email: staff.email, name: staff.name }))
+      staff.authUserId ?? (await ensureAuthUser(tx, 'staff', { tenantId, email: staff.email, name: staff.name }))
 
     if (!(await hasStaffPassword(tx, authUserId))) {
       const password = input.password ?? ''
@@ -614,7 +617,7 @@ export async function revokeInvitation(
           ),
         )
         .returning({ authUserId: staffUsers.authUserId })
-      if (removed?.authUserId) await removeUnusedStaffUser(tx, removed.authUserId)
+      if (removed?.authUserId) await deleteStaffLogin(tx, removed.authUserId)
     }
 
     return updated!
