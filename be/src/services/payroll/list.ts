@@ -391,8 +391,10 @@ export async function updatePayrollAmount(
   amount: number | null,
   instructorId?: string,
 ): Promise<PayrollSaveResult> {
-  // The route's zod schema says the same thing, but this is the trust boundary
-  // for every other caller — a NaN reaching toFixed() writes garbage money.
+  // This is the one place the amount rule lives: the finance route deliberately
+  // has no `.min(0)`, so a negative reaches here and is refused as the typed
+  // `invalid_amount`. It is also the trust boundary for every other caller — a
+  // NaN reaching toFixed() writes garbage money.
   if (amount != null && (!Number.isFinite(amount) || amount < 0)) {
     return payrollSaveFailed('invalid_amount')
   }
