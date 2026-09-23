@@ -14,6 +14,7 @@ import { BadRequestError, ForbiddenError } from '../../shared/errors'
 import { PLATFORM_MAIL_FROM_NAME } from '../../lib/mailer'
 import { authAudit, recordAuthEvent } from './auth-events'
 import { MAX_PASSWORD_LENGTH, MIN_PASSWORD_LENGTH } from './auth-users'
+import { acceptInvitationOnPasswordReset } from './invitations'
 import { verifyPoolPassword } from './password-hash'
 import { authRateLimit, emailRateLimit } from './rate-limit'
 import { twoFactorChallengeHeader } from './two-factor-challenge'
@@ -332,6 +333,16 @@ function passwordPool(
       // by the user import still verifies, so migrated staff keep theirs (#120).
       password: { hash: hashPassword, verify: verifyPoolPassword },
       sendResetPassword: async ({ user, url }) => mail.passwordReset(user, url),
+      // A reset on a studio's portal where this person is still pending accepts
+      // their invitation there — the link proved the inbox the invitation went to.
+      ...(studioPool
+        ? {
+            onPasswordReset: async ({ user }: { user: { id: string } }) => {
+              const tenantId = currentTenantId()
+              if (tenantId) await acceptInvitationOnPasswordReset(tenantId, user.id)
+            },
+          }
+        : {}),
     },
     plugins: [
       bearer(),
@@ -685,6 +696,17 @@ export async function signInMemberWithPassword(
  */
 export async function memberHasPassword(email: string): Promise<boolean> {
   const context = await clientAuth.$context
+  const found = await context.internalAdapter.findUserByEmail(email.trim().toLowerCase(), { includeAccounts: true })
+  return Boolean(found?.accounts.some(account => account.providerId === 'credential' && account.password))
+}
+
+/**
+ * Does this address have a staff password, at any studio? What the portal's
+ * email step reveals (`staff-sign-in-step.ts`), as `memberHasPassword` is for
+ * the member form.
+ */
+export async function staffHasPassword(email: string): Promise<boolean> {
+  const context = await staffAuth.$context
   const found = await context.internalAdapter.findUserByEmail(email.trim().toLowerCase(), { includeAccounts: true })
   return Boolean(found?.accounts.some(account => account.providerId === 'credential' && account.password))
 }

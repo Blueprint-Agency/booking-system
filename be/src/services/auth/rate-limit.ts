@@ -140,6 +140,22 @@ export async function spendSignInStepBudget(email: string, address: string | nul
   return byEmail.allowed
 }
 
+const staffLinkStorage = authRateLimitStorage()
+
+/**
+ * The per-email budget for the set-password links the portal's email step
+ * mails. The staff pool has no per-email limiter of its own, so without this a
+ * caller rotating addresses could fill one staff member's inbox. The member
+ * pool's link figure.
+ */
+export async function spendStaffLinkBudget(email: string): Promise<boolean> {
+  const { allowed } = await staffLinkStorage.consume(
+    `email|${email.trim().toLowerCase()}`,
+    AUTH_EMAIL_RATE_LIMITS.linkRequest,
+  )
+  return allowed
+}
+
 const EMAIL_BUDGETED_PATHS: Record<string, Rule> = {
   '/request-password-reset': AUTH_EMAIL_RATE_LIMITS.linkRequest,
   '/sign-in/email': AUTH_EMAIL_RATE_LIMITS.signInAttempt,

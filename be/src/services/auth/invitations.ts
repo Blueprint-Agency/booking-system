@@ -22,7 +22,7 @@
  * password-reset notice.
  */
 import { randomBytes } from 'node:crypto'
-import { and, desc, eq, isNull, sql } from 'drizzle-orm'
+import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import { db } from '../../db'
 import type * as schema from '../../db/schema'
@@ -371,6 +371,60 @@ export async function acceptInvitation(input: {
     if (named.name) await renameStaffUser(tx, authUserId, named.name)
 
     return { email: staff.email }
+  })
+}
+
+/**
+ * A password reset at a studio where the person is still pending accepts their
+ * invitation there.
+ *
+ * The reset link went to the same inbox the invitation did, so following it is
+ * the proof `acceptInvitation` rests on. Without this, "Forgot password" — or
+ * the sign-in form's email step, which mails the same link — set a password
+ * that then signed into "this account isn't active here", with no admin to
+ * activate it when the person is the studio's first.
+ *
+ * Only an invitation still pending and unexpired: an expired or revoked one was
+ * the studio's decision, and a reset does not overturn it. Called from the staff
+ * pool's reset hook, in the Tenant context of the portal the reset was made on.
+ * Returns whether anyone was activated.
+ */
+export async function acceptInvitationOnPasswordReset(tenantId: string, authUserId: string): Promise<boolean> {
+  return db.transaction(async tx => {
+    const [staff] = await tx
+      .select()
+      .from(staffUsers)
+      .where(
+        and(
+          eq(staffUsers.tenantId, tenantId),
+          eq(staffUsers.authUserId, authUserId),
+          eq(staffUsers.status, 'pending'),
+          isNull(staffUsers.deletedAt),
+        ),
+      )
+      .limit(1)
+    if (!staff) return false
+
+    const now = new Date()
+    const claimed = await tx
+      .update(staffInvitations)
+      .set({ status: 'accepted', acceptedAt: now })
+      .where(
+        and(
+          eq(staffInvitations.tenantId, tenantId),
+          eq(staffInvitations.staffUserId, staff.id),
+          eq(staffInvitations.status, 'pending'),
+          gt(staffInvitations.expiresAt, now),
+        ),
+      )
+      .returning({ id: staffInvitations.id })
+    if (claimed.length === 0) return false
+
+    await tx
+      .update(staffUsers)
+      .set({ status: 'active', acceptedAt: staff.acceptedAt ?? now, updatedAt: now })
+      .where(and(eq(staffUsers.tenantId, tenantId), eq(staffUsers.id, staff.id)))
+    return true
   })
 }
 
