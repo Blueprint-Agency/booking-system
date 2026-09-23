@@ -16,6 +16,7 @@
     { "kind": "payroll", "file": "32 Payroll - Detail - <year>.xls", "single": false, "required": false },
     { "kind": "cancellations", "file": "08 Cancellations - Individual records - <piece>.xls", "single": false, "required": false },
     { "kind": "groupCancellations", "file": "08 Cancellations - Group cancellations.xls", "single": true, "required": false },
-    { "kind": "promotions", "file": "23 Promotions - Detail.xls", "single": true, "required": false }
+    { "kind": "promotions", "file": "23 Promotions - Detail.xls", "single": true, "required": false },
+    { "kind": "autopay", "file": "43 Autopay Detail - Scheduled.xls", "single": true, "required": false }
   ]
 }

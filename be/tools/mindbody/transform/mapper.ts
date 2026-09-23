@@ -10,6 +10,7 @@ import { mapPackages, type AccountBalance, type NotMigrated } from './packages'
 import type {
   AccountBalanceRow,
   AttendanceRow,
+  AutopayRow,
   CancellationRow,
   GroupCancellationRow,
   HoldingRow,
@@ -71,6 +72,8 @@ export type MindbodyReports = {
   cancellations: CancellationRow[]
   /** The classes the studio called off, a line per member on each (Cancellations, Group cancellations). Empty where not downloaded. */
   groupCancellations: GroupCancellationRow[]
+  /** The autopays still to run (Autopay Detail): none is imported. Empty where not downloaded. */
+  autopay: AutopayRow[]
 }
 
 export type Preflight = {
@@ -95,6 +98,8 @@ export type Preflight = {
     keeper: { id: string; name: string }
     others: { id: string; name: string; placeholder: string }[]
   }[]
+  /** Autopays still live in Mindbody. The platform charges none of them: each is stopped there and re-signed here. */
+  autopays: LiveAutopay[]
 }
 
 /** Mindbody key → platform id, per table: how any imported row is traced back to its source. */
@@ -201,10 +206,12 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     {
       tenant_id: tenantId,
       display_name: config.studio.displayName,
-      mail_from_name: config.studio.displayName,
+      // Mindbody holds no branding, so none is said: the importer keeps the
+      // logo, theme, copy and mail-from the super portal gave the Tenant.
+      mail_from_name: null,
       mail_reply_to: config.studio.mailReplyTo,
-      copy: {},
-      theme: {},
+      copy: null,
+      theme: null,
     },
   ]
 
@@ -228,7 +235,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     if (m.email) holders.set(m.email, [...(holders.get(m.email) ?? []), m])
   }
 
-  const preflight: Preflight = { noEmail: [], sharedEmails: [], notMigrated: [], balances: [], schedule: [], staffWithoutLogin: [] }
+  const preflight: Preflight = { noEmail: [], sharedEmails: [], notMigrated: [], balances: [], schedule: [], staffWithoutLogin: [], autopays: liveAutopays(reports.autopay) }
   const emailOf = new Map<string, string>()
   for (const m of reports.members) {
     if (!m.email) {
@@ -670,5 +677,31 @@ export function renderPreflight(p: Preflight): string {
   lines.push('', `## The timetable and bookings (${p.schedule.length})`, '')
   lines.push('Imported as far as it could be; each line is something for a person to look at.', '')
   for (const note of p.schedule) lines.push(`- ${note}`)
+  lines.push('', `## Autopays still live in Mindbody (${p.autopays.length})`, '')
+  lines.push('Mindbody will keep charging these after launch. Stop each in Mindbody, and have the member sign up again on the platform.')
+  for (const a of p.autopays) {
+    lines.push(
+      `- ${a.clientId ?? '(no id)'} ${a.client}${a.email ? ` <${a.email}>` : ''}: ${a.item}, next due ${a.next}` +
+        `${a.location ? ` at ${a.location}` : ''} (${a.status}; ${a.runs} run${a.runs === 1 ? '' : 's'} scheduled)`,
+    )
+  }
   return `${lines.join('\n')}\n`
+}
+
+export type LiveAutopay = Omit<AutopayRow, 'date'> & { next: string; runs: number }
+
+/**
+ * Autopay Detail lists every run due in the next 12 months, so a monthly
+ * autopay is twelve rows: one autopay per member and item, at its first run,
+ * with how many are scheduled.
+ */
+function liveAutopays(rows: AutopayRow[]): LiveAutopay[] {
+  const byKey = new Map<string, LiveAutopay>()
+  for (const { date, ...a } of rows) {
+    const key = `${a.clientId ?? a.client}\u0000${a.item}`
+    const had = byKey.get(key)
+    if (had) had.runs++
+    else byKey.set(key, { ...a, next: date, runs: 1 })
+  }
+  return [...byKey.values()]
 }

@@ -108,7 +108,9 @@ npm run mindbody:download -- --login-only [--fresh]        # just check (or, --f
 ```
 
 The folder it writes is what `transform --export` is pointed at, as it is; its
-`_logs/as-of.txt` is the config's `asOf`. The downloader takes every cutover file name and its
+`_logs/as-of.txt` is the config's `asOf`, written on the studio's clock (`MB_TIMEZONE` in
+`be/.env`, or `--timezone`; a download refuses to start without it), whatever timezone the
+operator's machine is set to. The downloader takes every cutover file name and its
 single rule from `be/tools/mindbody/report-files.json` — the transform's own list, pinned by a unit
 test against the matchers and the single/required rules (`REPORT_RULES` in `transform.ts`) — and
 `download/plan.test.ts` checks that the names it works out from each report's number, view and page
@@ -126,7 +128,8 @@ date range is computed from the run date:
 | Payroll (Detail), one file per year | history cutoff → today |
 | Schedule at a Glance ("Scheduled", all locations, staff and statuses), one file per year | history cutoff → today + 12 months |
 | Staff Schedule (ALL, "Scheduled") | history cutoff → today + 5 years |
-| Membership (New Version Detail), Autopay Detail ("Scheduled"; Reports → Payment Processing — Mindbody has no "AutoPay Schedule" report) | optional, not read by the transform: who is on an autopay, to stop in Mindbody; Autopay Detail runs today → today + 12 months |
+| Membership (New Version Detail) | optional, as of the download |
+| Autopay Detail ("Scheduled"; Reports → Payment Processing — Mindbody has no "AutoPay Schedule" report) | optional, today → today + 12 months: every autopay still to run is a preflight line, to stop in Mindbody; none is imported |
 
 Birthdays, addresses, emergency contacts, client notes and waiver status are in **no** Mindbody
 report: they come, if at all, from a client data export requested from Mindbody, by hand. The
@@ -177,6 +180,7 @@ npm run mindbody -- starter --export <export folder> --out <root>/studio/starter
 npm run mindbody -- fill --export <export folder> --starter <root>/studio/starter-config.json --answers <root>/studio/answers.json
 # 2. Provision the Tenant in the super portal WITHOUT a first admin; copy its id.
 # 3. The archive, for that Tenant: <export folder>/<slug>.zip (or --name <name>, or --out <file.zip>).
+#    Only for a database on this machine: a config with localhost origins needs --local.
 npm run mindbody -- transform --export <export folder> --config <config.json> --tenant <tenant id>
 # 4. Import the zip in the super portal, export the studio from the same page, then:
 npm run mindbody -- verify --expected <studio.expected.json> --export-zip <exported.zip>
@@ -334,8 +338,19 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   the import goes ahead without it.
 - The Tenant must be provisioned with the config's `studio.slug`: the import refuses an archive
   built for another slug, because its email links name that slug.
-- Staff invitations expire 7 days after `asOf` (the download time). Importing later is fine:
-  resend them from the portal's staff page, which extends the link.
+- Staff invitations are good for 7 days from the **import**, not the download: the importer
+  counts a pending invitation in a Mindbody archive from when it arrives. After that, resend
+  them from the portal's staff page, which extends the link.
+- The import keeps the Tenant's branding. The archive says nothing of a logo, theme, copy or
+  mail-from, and whatever the super portal gave the Tenant stays; the display name and reply-to
+  the config gives are written.
+- The email links are built from the config's `originPatterns`. A config whose patterns name
+  `localhost` (or `127.x`) is refused unless `transform` is given `--local`, so a zip built
+  with the local config cannot reach staging or production with links to the operator's machine.
+- `fill` proposes `policy.classWindowHours` from the Cancellations report: the smallest whole
+  hour that parts the members' own early cancels from their late ones. `fill` prints it, with how
+  many cancels were on the wrong side of it; with no early or no late self-cancel, the config's
+  own value stands. `studio.mailReplyTo` and `studio.emailFooter` come from `answers.json`.
 - Same reports + same config + same Tenant id → the same zip, byte for byte. Row ids are
   UUID v5 of the Tenant id and the Mindbody key; invitation tokens are keyed by the config's
   `secret`, which `starter` writes once at random.
@@ -452,8 +467,8 @@ rehearsal passed and the preflight has been answered.
    `studio.ownerEmail`. Have them do it with you, and confirm they can see the schedule and the
    member list.
 10. **The owner invites staff.** Portal → Staff. Everyone else arrived pending with an
-    invitation; the owner sends or resends each one. Invitations expire 7 days after the "as of"
-    moment, and resending extends the link, so a late one is not a blocker.
+    invitation; the owner sends or resends each one. Invitations expire 7 days after the import,
+    and resending extends the link, so a late one is not a blocker.
 11. **Extend the imported Class Series.** Portal → Schedule → open any class of a series → the
     Series panel → **Extend**, to the term end date from decision 19. The imported timetable
     stops at the last class Mindbody had; this is what carries it forward. Preview shows every

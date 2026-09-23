@@ -424,6 +424,9 @@ export function validateConfig(raw: unknown): StudioConfig {
   if (c.studio.ownerEmail && !EMAIL.test(c.studio.ownerEmail.trim())) {
     problems.push(`studio.ownerEmail "${c.studio.ownerEmail}" is not an email address`)
   }
+  if (c.studio.mailReplyTo && !EMAIL.test(c.studio.mailReplyTo.trim())) {
+    problems.push(`studio.mailReplyTo "${c.studio.mailReplyTo}" is not an email address`)
+  }
 
   if (c.locations.length === 0) problems.push('locations: the studio needs at least one Location')
   const locationKeys = new Set<string>()

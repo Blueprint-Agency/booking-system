@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm'
 import { db, withTenant } from '../../db'
 import { isUniqueViolation } from '../../db/unique-violation'
 import { ensureAuthUser } from '../auth/auth-users'
+import { INVITE_TTL_MS } from '../auth/invitations'
 import { buildIdentityMap, remapRow } from './transfer-identity'
 import { orderTables, type ForeignKey } from './transfer-order'
 import { studioTables } from './transfer-tables'
@@ -386,6 +387,14 @@ export async function importTenant(
           values.role = RETIRED_STAFF_ROLES[values.role] ?? values.role
         }
         values.tenant_id = targetTenantId
+        // An archive built outside the platform was written when its reports
+        // were downloaded, maybe days ago. Its invitations were sent by nobody
+        // yet: they are good for the usual week from now, when they arrive.
+        if (ensureAccounts && table === 'staff_invitations' && values.status === 'pending') {
+          const week = Date.now() + INVITE_TTL_MS
+          const written = Date.parse(String(values.expires_at))
+          if (!(written >= week)) values.expires_at = new Date(week).toISOString()
+        }
         for (const column of hold) values[column] = null
         return values
       })
@@ -440,21 +449,31 @@ export async function importTenant(
     // and none of its identity — no branding, no mail-from, no waiver — and the
     // import could not be run again to fix it, because the emptiness check above
     // now refuses a studio that has rows.
+    //
+    // What the archive leaves null the Tenant keeps. An archive built outside
+    // the platform knows nothing of the logo, theme or mail-from the super
+    // portal gave the studio while it waited, and null there is "not said",
+    // not "take it away".
     if (settings) {
       step('settings')
+      // A platform export is the whole truth about a studio, nulls included, and is written as it is.
+      const [current] = ensureAccounts
+        ? await db.execute<Record<string, unknown>>(sql`SELECT * FROM current_tenant_settings()`)
+        : []
+      const kept = (column: string) => settings[column] ?? current?.[column] ?? null
       await db.execute(sql`
         SELECT write_current_tenant_settings(
-          ${settings.display_name ?? null},
-          ${settings.logo_url ?? null},
-          ${settings.favicon_url ?? null},
-          ${settings.og_image_url ?? null},
-          ${settings.tagline ?? null},
-          ${asJsonb(settings.copy)}::jsonb,
-          ${asJsonb(settings.theme)}::jsonb,
-          ${settings.mail_from_name ?? null},
-          ${settings.mail_from_email ?? null},
-          ${settings.mail_reply_to ?? null},
-          ${settings.waiver_text ?? null}
+          ${kept('display_name')},
+          ${kept('logo_url')},
+          ${kept('favicon_url')},
+          ${kept('og_image_url')},
+          ${kept('tagline')},
+          ${asJsonb(kept('copy'))}::jsonb,
+          ${asJsonb(kept('theme'))}::jsonb,
+          ${kept('mail_from_name')},
+          ${kept('mail_from_email')},
+          ${kept('mail_reply_to')},
+          ${kept('waiver_text')}
         )
       `)
       written.tenant_settings = 1

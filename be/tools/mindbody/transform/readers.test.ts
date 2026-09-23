@@ -6,6 +6,7 @@ import { readHtmlTable, type TableRow } from './html-table'
 import {
   readAccountBalances,
   readAttendance,
+  readAutopayDetail,
   readCancellations,
   readGroupCancellations,
   readMemberList,
@@ -621,4 +622,15 @@ test('payroll as Mindbody lays it out: each teacher named between the tables, th
     ],
     'a percentage-rate class is a line per client, which the mapper adds up; an appointment writes its day out; a line at no set time (a retreat share) is kept for the mapper to place or report; the totals are not lines',
   )
+})
+
+test('autopay detail: one live autopay per row, and the page\'s "none found" line is none', () => {
+  const html = readFileSync(path.join(FIXTURES, 'reports', 'Sales', '43 Autopay Detail', '43 Autopay Detail - Scheduled.xls'), 'utf8')
+  assert.deepEqual(readAutopayDetail(html), [
+    { date: '1/10/2026', clientId: '100000001', client: 'Doe, Jane', email: 'jane.doe@example.test', location: 'Main Hall', item: 'Unlimited Monthly', status: 'Scheduled' },
+  ])
+  const none = `<table><tr><td><strong>Date</strong></td><td><strong>Client</strong></td><td><strong>Item</strong></td><td><strong>Status</strong></td></tr>
+    <tr><td colspan="7"><b><span>No autopay transactions found with the specified parameters.</span></b></td></tr></table>`
+  assert.deepEqual(readAutopayDetail(none), [])
+  assert.throws(() => readAutopayDetail('<table><tr><td>Something</td></tr></table>'), /Autopay Detail.*Client/)
 })

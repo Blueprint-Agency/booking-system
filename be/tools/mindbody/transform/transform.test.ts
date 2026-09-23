@@ -4,8 +4,8 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { packArchive, unpackArchive } from '../../../src/services/tenants/transfer-archive'
 import { ConfigError, starterConfig, validateConfig } from './config'
-import { mapStudio } from './mapper'
-import type { OptionSaleRow } from './readers'
+import { mapStudio, renderPreflight } from './mapper'
+import { readAutopayDetail, type OptionSaleRow } from './readers'
 import { registerMatcher } from './register'
 import { constraintViolations } from './constraints'
 import { REPORTS as REPORT_FILES, REPORT_RULES, readReports, transformMindbody, verifyImport } from './transform'
@@ -1379,7 +1379,6 @@ test('report-files.json: every file the cutover download writes matches exactly 
   for (const extra of [
     '21 Referral Types - All Referrers-Summary.xls',
     '01 Membership - New Version Detail.xlsx',
-    '43 Autopay Detail - Scheduled.xls',
   ]) {
     assert.deepEqual(Object.entries(REPORT_FILES).filter(([, r]) => r.test(extra)), [], extra)
   }
@@ -1729,4 +1728,33 @@ test('history: past PT ends as it did — a no-show stays one, a late cancel is 
     preflight.schedule.some(n => /history: 3 past PT session\(s\) have no roster line to say who booked them/.test(n)),
     preflight.schedule.join(' | '),
   )
+})
+
+test('an archive whose email links would point at this machine is refused, unless the target is said to be local', async () => {
+  const local = { ...fixtureConfig(), originPatterns: 'http://*.localhost:3000,http://*.portal.localhost:3001' }
+  await assert.rejects(run(local), /originPatterns.*localhost/)
+  const loopback = { ...fixtureConfig(), originPatterns: 'http://*.127.0.0.1.nip.io:3000,http://127.0.0.1:3001' }
+  await assert.rejects(run(loopback), /originPatterns/)
+  const lookalike = { ...fixtureConfig(), originPatterns: 'https://*.notlocalhost.example,https://*.portal.notlocalhost.example' }
+  await assert.doesNotReject(run(lookalike), 'a host that only contains the word is not this machine')
+  const built = await transformMindbody({ reportsDir: REPORTS, config: local, tenantId: TENANT, local: true })
+  assert.ok(built.archive.rows.email_templates!.some(t => String(t.body_html).includes('localhost:3000')))
+})
+
+test('each live autopay in Autopay Detail is a preflight line, to stop in Mindbody; none gives none', async () => {
+  const { preflight, preflightText } = await run()
+  assert.equal(preflight.autopays.length, 1)
+  assert.match(preflightText, /100000001 Doe, Jane .*Unlimited Monthly, next due 1\/10\/2026.*Scheduled; 1 run scheduled/)
+
+  const reports = await readReports(REPORTS)
+  // A monthly autopay is a row per run: still one autopay to stop.
+  reports.autopay = [reports.autopay[0]!, { ...reports.autopay[0]!, date: '1/11/2026' }]
+  const monthly = mapStudio(reports, validateConfig(fixtureConfig()), TENANT).preflight.autopays
+  assert.deepEqual(monthly.map(a => [a.clientId, a.next, a.runs]), [['100000001', '1/10/2026', 2]])
+
+  reports.autopay = readAutopayDetail(`<table><tr><td>Date</td><td>Client</td><td>Item</td><td>Status</td></tr>
+    <tr><td colspan="7">No autopay transactions found with the specified parameters.</td></tr></table>`)
+  const none = mapStudio(reports, validateConfig(fixtureConfig()), TENANT)
+  assert.deepEqual(none.preflight.autopays, [])
+  assert.match(renderPreflight(none.preflight), /## Autopays still live in Mindbody \(0\)\n\n[^\n]+\n$/)
 })

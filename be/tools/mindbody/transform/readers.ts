@@ -815,3 +815,41 @@ function payrollLines(rows: TableRow[], staff: string | null): PayrollRow[] {
   }
   return out
 }
+
+/* ── 43 Autopay Detail (Payment Processing): the autopays still to run ────── */
+
+export type AutopayRow = {
+  /** When it is next due, as the page prints it. Only listed for a person, so not read as a date. */
+  date: string
+  /** From the client link, where the page gives one. */
+  clientId: string | null
+  client: string
+  email: string
+  location: string
+  /** The pricing option or contract the autopay charges for. */
+  item: string
+  status: string
+}
+
+/**
+ * One row per autopay run due. Nothing here is imported: each is an autopay
+ * someone must stop in Mindbody and re-sign on the platform. A studio with none
+ * gets the page's "No autopay transactions found" line, one cell wide.
+ */
+export function readAutopayDetail(html: string): AutopayRow[] {
+  const rows = readHtmlTable(html)
+  const { at, columns } = header(rows, 'Autopay Detail', ['Date', 'Client', 'Item', 'Status'])
+  return dataRows(rows, at).flatMap(row => {
+    const client = tidy(cell(row, columns, 'Client'))
+    if (row.cells.length < 2 || !client) return []
+    return [{
+      date: tidy(cell(row, columns, 'Date')),
+      clientId: clientId(row, columns, 'Client'),
+      client,
+      email: tidy(cell(row, columns, 'Email')),
+      location: tidy(cell(row, columns, 'Location')),
+      item: tidy(cell(row, columns, 'Item')),
+      status: tidy(cell(row, columns, 'Status')),
+    }]
+  })
+}

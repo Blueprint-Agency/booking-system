@@ -298,7 +298,9 @@ export const CUTOVER: ProfileEntry[] = [
     // narrow ("Only account autopays", "Only auto-renewing"), so they stay off. Read only: the page's
     // Run / Delete buttons set frmDelEFT or a run flag, which this export never does.
     // A studio with no autopays gets the page's "No autopay transactions found" table.
-    name: 'Autopay Detail', cat: 'Sales', num: 43, optional: true, type: 'legacy',
+    // The transform lists each in the preflight, and imports none; optional, so it can be added to a
+    // cutover folder afterwards without moving its as-of moment.
+    name: 'Autopay Detail', kind: 'autopay', cat: 'Sales', num: 43, optional: true, type: 'legacy',
     path: '/ASP/adm/adm_eft_det.asp',
     set: { requiredtxtDateStart: '$TODAY', requiredtxtDateEnd: '$FUTURE1Y', optEFTLocation: '-1', optPayMeth: '',
       pos_sales: true, optAccountAutoPay: false, optAutoRenewing: false, optFilterTagged: false,

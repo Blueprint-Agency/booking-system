@@ -3,9 +3,9 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { starterConfig, validateConfig } from './config'
-import { reportFacts, staffFacts } from './facts'
+import { cancellationWindow, reportFacts, staffFacts } from './facts'
 import { fillConfigs, type StudioAnswers } from './fill'
-import { readReports } from './transform'
+import { readReports, transformMindbody } from './transform'
 import { dateOfIso } from './values'
 
 const FIXTURES = path.join(__dirname, 'fixtures')
@@ -111,4 +111,48 @@ test('a filled config, once a person sizes what the roster could not, is one the
   for (const r of c.rooms) r.capacity ??= 20
   for (const t of c.classTypes) if (t.capacity == null) t.capacity = 20
   assert.doesNotThrow(() => validateConfig(c))
+})
+
+test('reply-to and footer in the answers reach the studio\'s settings and every email', async () => {
+  const answers: StudioAnswers = {
+    ...ANSWERS,
+    studio: { ...ANSWERS.studio, mailReplyTo: 'hello@northwind.test', emailFooter: 'Northwind Yoga, 1 Invented Lane' },
+  }
+  const reports = await readReports(path.join(FIXTURES, 'reports'))
+  const asOf = dateOfIso(AS_OF)
+  const facts = reportFacts(reports, asOf, { offSiteVenues: answers.offSiteVenues })
+  const filledStudio = fillConfigs(starterConfig(reports, AS_OF), answers, facts, staffFacts(reports, asOf)).staging!.studio
+  assert.equal(filledStudio.mailReplyTo, 'hello@northwind.test')
+  assert.equal(filledStudio.emailFooter, 'Northwind Yoga, 1 Invented Lane')
+
+  // The fixture studio, with the two values as fill writes them.
+  const config = JSON.parse(readFileSync(path.join(FIXTURES, 'config.json'), 'utf8'))
+  Object.assign(config.studio, { mailReplyTo: filledStudio.mailReplyTo, emailFooter: filledStudio.emailFooter })
+  const { archive } = await transformMindbody({ reportsDir: path.join(FIXTURES, 'reports'), config, tenantId: '0b8e4a52-6d0f-4c1e-9a57-3f2d1c0b9e8a' })
+  assert.equal(archive.rows.tenant_settings![0]!.mail_reply_to, 'hello@northwind.test')
+  assert.ok(archive.rows.email_templates!.every(t => String(t.body_html).includes('1 Invented Lane')), 'the footer is on every email')
+})
+
+test('the Cancellations report proposes the class cancellation window: the cut-off between members\' early and late cancels', async () => {
+  // The fixture's members cancel late 90 minutes before a class, and early a day and more before one.
+  const { facts, configs } = await filled()
+  assert.equal(facts.classWindow?.hours, 2)
+  assert.equal(configs.local!.policy.classWindowHours, 2, 'the report\'s cut-off, not the 24-hour default')
+})
+
+test('the cut-off is the smallest whole hour that parts early from late self-cancels; staff cancels do not count', () => {
+  const at = (day: number, hour: number, minute = 0) => ({ year: 2026, month: 7, day, hour, minute, second: 0 })
+  const row = (cancelled: ReturnType<typeof at>, method: string, by = 'Jane Doe') => ({
+    cancelledAt: cancelled, cancelledBy: by, date: { year: 2026, month: 7, day: 10 }, start: { hour: 19, minute: 0 },
+    description: 'Hatha', client: 'Jane Doe', method,
+  })
+  const window = cancellationWindow([
+    row(at(10, 17, 1), 'late'), // 1h59 before
+    row(at(10, 18, 30), 'late'),
+    row(at(10, 16, 59), 'early'), // 2h01 before
+    row(at(9, 19), 'early'),
+    row(at(10, 18), 'early', 'Front Desk'), // a staff member's cancel says nothing of the members' rule
+  ])
+  assert.deepEqual(window, { hours: 2, early: 2, late: 2, misfits: 0 })
+  assert.equal(cancellationWindow([row(at(10, 18), 'late')]), null, 'no early self-cancel: no cut-off to see')
 })

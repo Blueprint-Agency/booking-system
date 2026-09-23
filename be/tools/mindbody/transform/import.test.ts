@@ -79,7 +79,7 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     // The links in the email copy are this environment's, as they would be on staging.
     config.originPatterns = process.env.TENANT_ORIGIN_PATTERNS
     edit?.(config)
-    return transform.transformMindbody({ reportsDir: path.join(FIXTURES, 'reports'), config, tenantId: tenant.id })
+    return transform.transformMindbody({ reportsDir: path.join(FIXTURES, 'reports'), config, tenantId: tenant.id, local: true })
   }
 
   /** A Tenant provisioned the way the runbook says — no first admin — and the fixture transformed for it. */
@@ -940,5 +940,50 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     // And the studio is still empty, so the operator can import again.
     const corrected = await transformFor(studio.tenant)
     assert.equal((await importZip(studio.tenant.id, corrected.zip)).status, 200)
+  })
+
+  test('the import keeps the branding the super portal set, where the archive has none of its own', async () => {
+    const studio = await transformedStudio()
+    await harness.db.execute(sql`
+      UPDATE tenant_settings SET logo_url = 'https://cdn.example.test/logo.png', tagline = 'Breathe in',
+        theme = '{"primary":"#123456"}'::jsonb, mail_from_name = 'Fixture Front Desk'
+      WHERE tenant_id = ${studio.tenant.id}`)
+
+    const imported = await importZip(studio.tenant.id, studio.zip)
+    assert.equal(imported.status, 200, JSON.stringify(imported.body))
+
+    const [settings] = await harness.db.execute<Record<string, unknown>>(
+      sql`SELECT * FROM tenant_settings WHERE tenant_id = ${studio.tenant.id}`,
+    )
+    assert.deepEqual(
+      [settings!.logo_url, settings!.tagline, settings!.theme, settings!.mail_from_name],
+      ['https://cdn.example.test/logo.png', 'Breathe in', { primary: '#123456' }, 'Fixture Front Desk'],
+    )
+    // What the archive does say still lands.
+    assert.equal(settings!.display_name, 'Mindbody Fixture Studio')
+    assert.equal(settings!.mail_reply_to, 'owner@example.test')
+  })
+
+  test('an import run 10 days after the download has invitations that are still valid', async () => {
+    const studio = await transformedStudio()
+    // As the transform writes them for a download 10 days ago: sent then, lapsed 3 days since.
+    const downloaded = Date.now() - 10 * 86_400_000
+    for (const invitation of studio.archive.rows.staff_invitations!) {
+      invitation.created_at = new Date(downloaded).toISOString()
+      invitation.expires_at = new Date(downloaded + 7 * 86_400_000).toISOString()
+    }
+    const { packArchive } = await import('../../../src/services/tenants/transfer-archive')
+    const importedAt = Date.now()
+    const imported = await importZip(studio.tenant.id, await packArchive(studio.archive))
+    assert.equal(imported.status, 200, JSON.stringify(imported.body))
+
+    const invitations = await harness.db
+      .select({ email: schema.staffInvitations.email, expiresAt: schema.staffInvitations.expiresAt })
+      .from(schema.staffInvitations)
+      .where(and(eq(schema.staffInvitations.tenantId, studio.tenant.id), eq(schema.staffInvitations.status, 'pending')))
+    assert.ok(invitations.length > 0)
+    for (const i of invitations) {
+      assert.ok(i.expiresAt.getTime() >= importedAt + 7 * 86_400_000 - 60_000, `${i.email}: a week from the import, not from the download`)
+    }
   })
 })

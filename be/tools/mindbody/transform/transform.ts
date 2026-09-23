@@ -8,6 +8,7 @@ import { mapStudio, renderPreflight, type MindbodyReports, type Transformed } fr
 import {
   readAccountBalances,
   readAttendance,
+  readAutopayDetail,
   readMemberList,
   readCancellations,
   readGroupCancellations,
@@ -67,6 +68,8 @@ export const REPORTS = {
   groupCancellations: { label: 'Cancellations — Group cancellations', test: (f: string) => /cancellations - group cancellations/i.test(f) },
   // What a promotion took off each sale: the Summary view is totals per promotion.
   promotions: { label: 'Promotions — Detail', test: (f: string) => /promotions - detail/i.test(f) },
+  // The autopays still to run: listed in the preflight, to stop in Mindbody.
+  autopay: { label: 'Autopay Detail', test: (f: string) => /autopay detail/i.test(f) },
 } as const
 
 /**
@@ -92,6 +95,7 @@ export const REPORT_RULES: Record<keyof typeof REPORTS, { single: boolean; requi
   cancellations: { single: false, required: false },
   groupCancellations: { single: true, required: false },
   promotions: { single: true, required: false },
+  autopay: { single: true, required: false },
 }
 
 async function filesUnder(dir: string): Promise<string[]> {
@@ -155,6 +159,7 @@ export async function readReports(dir: string): Promise<MindbodyReports> {
   const groupCancellationsFile = optional('groupCancellations')
   // Optional: a download older than it has none, and every past sale is then read as sold at full price.
   const promotionsFile = optional('promotions')
+  const autopayFile = optional('autopay')
 
   return {
     members: readMemberList(await one('members')),
@@ -173,10 +178,14 @@ export async function readReports(dir: string): Promise<MindbodyReports> {
     cancellations,
     groupCancellations: groupCancellationsFile ? readGroupCancellations(await read(groupCancellationsFile)) : [],
     promotions: promotionsFile ? readPromotions(await read(promotionsFile)) : [],
+    // Optional: a download older than it lists no autopays, which is not the same as there being none.
+    autopay: autopayFile ? readAutopayDetail(await read(autopayFile)) : [],
   }
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+/** A host that is the operator's own machine. */
+const LOCAL_HOST = /(?:\/\/|\.)localhost(?=[:/,]|$)|\b127\.\d{1,3}\.\d{1,3}\.\d{1,3}\b|\b0\.0\.0\.0\b|\[::1\]/i
 
 export type TransformOutput = Transformed & {
   /** The zip, byte-for-byte the same for the same inputs. */
@@ -198,9 +207,19 @@ export async function transformMindbody(input: {
   reportsDir: string
   config: unknown
   tenantId: string
+  /** The archive is for a database on this machine, so email links to it are meant. */
+  local?: boolean
 }): Promise<TransformOutput> {
   if (!UUID.test(input.tenantId)) throw new Error(`"${input.tenantId}" is not a Tenant id`)
   const config = validateConfig(input.config)
+  // The links in every email are baked in from originPatterns. Built from a local
+  // config and imported anywhere else, each one would point at the operator's machine.
+  if (!input.local && LOCAL_HOST.test(config.originPatterns)) {
+    throw new Error(
+      `originPatterns "${config.originPatterns}" points the studio's email links at this machine. ` +
+        'Use the config for the environment the archive is going to, or say the target is local (--local).',
+    )
+  }
   const reports = await readReports(input.reportsDir)
   const result = mapStudio(reports, config, input.tenantId.toLowerCase())
   // Caught here, naming every rule, rather than as one refused row at the end of the import.
