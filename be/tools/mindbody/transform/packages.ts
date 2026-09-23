@@ -2,6 +2,7 @@ import { isLive } from './catalogue'
 import { ConfigError, type CatalogueEntry, type StudioConfig } from './config'
 import type { AccountBalanceRow, HoldingRow, MemberListRow, OptionSaleRow } from './readers'
 import { registerMatcher } from './register'
+import { packageMoney, type JoinedSales } from './sales'
 import {
   dayNumber,
   isoDay,
@@ -80,6 +81,8 @@ type Held = {
   bookedAhead: number
   /** `#2`, `#3`… for the second and later purchases of a holding split back into its purchases. */
   suffix: string
+  /** What a promotion took off its one purchase (Promotions); 0 where none did, or it is several combined. */
+  discount: number
 }
 
 const count = (s: HoldingRow['remaining']) => (s && !s.unlimited ? s.count : 0)
@@ -99,6 +102,7 @@ function combine(clientId: string, entry: Sold, holdings: HoldingRow[]): Held {
     balance: unlimited ? null : holdings.reduce((sum, h) => sum + count(h.unbooked), 0),
     bookedAhead: unlimited ? 0 : holdings.reduce((sum, h) => sum + Math.max(0, count(h.remaining) - count(h.unbooked)), 0),
     suffix: '',
+    discount: 0,
   }
 }
 
@@ -112,7 +116,7 @@ function combine(clientId: string, entry: Sold, holdings: HoldingRow[]): Held {
  * future bookings come off the soonest-ending purchase first, the one that runs.
  * Anything short of that and the holding stays combined, as Mindbody shows it.
  */
-function split(combined: Held, holdings: HoldingRow[], purchases: OptionSaleRow[]): Held[] | null {
+function split(combined: Held, holdings: HoldingRow[], purchases: OptionSaleRow[], discountOf: (p: OptionSaleRow) => number): Held[] | null {
   if (purchases.length < 2 || combined.entry.kind === 'trial') return null
   const ordered = [...purchases].sort(
     (a, b) => dayNumber(a.expiration) - dayNumber(b.expiration) || dayNumber(a.activation) - dayNumber(b.activation),
@@ -137,6 +141,7 @@ function split(combined: Held, holdings: HoldingRow[], purchases: OptionSaleRow[
       balance: unlimited ? null : credits - taken,
       bookedAhead: taken,
       suffix: i === 0 ? '' : `#${i + 1}`,
+      discount: discountOf(p),
     }
   })
 }
@@ -178,6 +183,8 @@ export function mapPackages(input: {
   /** The pricing-option register (one row per purchase) and the member list, to split a combined holding. */
   optionSales: OptionSaleRow[]
   members: MemberListRow[]
+  /** Every sale joined to its register row (`./sales.ts`): a returned purchase is not live, and a promotion is a real discount. */
+  sales: JoinedSales
 }): MappedPackages {
   const { config, tenantId, id, ids, memberNames } = input
   const tz = config.studio.timezone
@@ -312,6 +319,8 @@ export function mapPackages(input: {
   for (const sale of input.optionSales) {
     const entry = entryOf.get(normaliseOptionName(sale.option))
     if (!entry || entry.migrate === 'skip' || entry.kind === 'access_pass') continue
+    // Returned, so refunded: whatever the register says is left, nobody holds it.
+    if (input.sales.refunded.has(sale)) continue
     const left = sale.remaining !== null && (sale.remaining.unlimited || sale.remaining.count > 0)
     if (!left || dayNumber(sale.expiration) < dayNumber(today)) continue
     const match = whoBought(sale)
@@ -319,6 +328,7 @@ export function mapPackages(input: {
     const key = `${match.clientId}/${entry.kind === 'trial' ? 'trial' : catalogueKey(entry)}`
     livePurchases.set(key, [...(livePurchases.get(key) ?? []), sale])
   }
+  const discountOf = (p: OptionSaleRow) => input.sales.saleOf.get(p)?.discount ?? 0
   let splitHoldings = 0
   let splitInto = 0
   let pricedFromRegister = 0
@@ -329,7 +339,7 @@ export function mapPackages(input: {
       .flatMap(([groupKey, g]) => {
         const combined = combine(clientId, g.entry, g.holdings)
         const purchases = livePurchases.get(`${clientId}/${groupKey}`) ?? []
-        const parts = split(combined, g.holdings, purchases)
+        const parts = split(combined, g.holdings, purchases, discountOf)
         if (parts) {
           parts.forEach(p => splitParts.add(p))
           splitHoldings++
@@ -342,6 +352,7 @@ export function mapPackages(input: {
         // the register still calls live.
         if (purchases.length === 1 && g.holdings.length === 1) {
           combined.paid = purchases[0]!.paid
+          combined.discount = discountOf(purchases[0]!)
           pricedFromRegister++
         }
         return [combined]
@@ -387,7 +398,6 @@ export function mapPackages(input: {
       }
 
       const started = h.firstActivation ? zonedToInstant(h.firstActivation, tz) : asOf
-      const price = entry.priceSgd ?? 0
       // A second or later purchase of a split holding is `…#2`: history finds it by the name before the `#`.
       const key = `${clientId}/${entry.kind === 'trial' ? 'trial' : entry.name}${h.suffix}`
       const row = {
@@ -404,13 +414,11 @@ export function mapPackages(input: {
         expires_at: runs ? endOfDay(h.lastExpiration) : null,
         active: true,
         purchased_at: (started > asOf ? asOf : started).toISOString(),
-        amount_paid_sgd: money(h.paid),
-        // Several holdings combined can have cost more than one List Price, and
-        // a List Price below what was paid would read as a negative discount.
-        list_price_sgd: money(Math.max(price, h.paid)),
+        // What was paid, and a discount only where a promotion gave one: the
+        // catalogue's price today says nothing about what this member was charged.
+        ...packageMoney(entry, h.paid, h.discount),
         // No Purchase: Mindbody's sales reached no payment provider here, and none is invented.
         purchase_id: null,
-        complimentary: false,
       }
       clientPackages.push(row)
       ids.client_packages[key] = row.id
@@ -463,10 +471,8 @@ export function mapPackages(input: {
       expires_at: endOfDay(h.lastExpiration),
       active: false,
       purchased_at: (started > asOf ? asOf : started).toISOString(),
-      amount_paid_sgd: money(h.paid),
-      list_price_sgd: money(Math.max(entry.priceSgd ?? 0, h.paid)),
+      ...packageMoney(entry, h.paid),
       purchase_id: null,
-      complimentary: false,
     }
     clientPackages.push(row)
     ids.client_packages[key] = row.id

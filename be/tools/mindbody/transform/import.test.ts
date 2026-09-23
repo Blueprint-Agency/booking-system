@@ -812,10 +812,40 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     const opted = await importedStudio(withHistory(true))
     assert.deepEqual(
       await preLaunchSales(opted),
-      // Kim's was used up before launch but had not expired, so Visits Remaining
-      // does not hold it either: money the studio took that nothing else counts.
-      ['Jane Doe 250', 'Kim Lee 250', 'Rick Roe 250'],
+      // One per sale line, on its sale date. Kim's was used up before launch but
+      // had not expired, so Visits Remaining does not hold it either: money the
+      // studio took that nothing else counts. Rick's $0 ClassPass is a comp.
+      ['Jane Doe 250', 'Kim Lee 250', 'Rick Roe 0', 'Rick Roe 240', 'Rick Roe 250'],
     )
+  })
+
+  test('a past sale and its return: one purchase, tagged refunded, and one Refund on the day of the return that Finance nets', async () => {
+    const studio = await importedStudio(withHistory(true))
+    const owner = await harness.signInAs('staff', 'owner@example.test', studio)
+    const finance = async (period: string) => {
+      const res = await get(`/api/v1/portal/admin/finance?${period}`, owner)
+      assert.equal(res.status, 200, await res.clone().text())
+      return (await res.json()) as { rows: Record<string, any>[]; totals: { gross_sgd: number; discounts_sgd: number; refunds_sgd: number } }
+    }
+
+    // Days at the studio (UTC+8): the sale on 1 July, and the return on the 3rd.
+    const day = (d: string, t: string) => encodeURIComponent(`${d}T${t}+08:00`)
+    const july = await finance(`from=${day('2026-07-01', '00:00:00')}&to=${day('2026-07-03', '23:59:59')}`)
+    const rick = july.rows.filter(r => r.user_name === 'Rick Roe' && r.kind !== 'instructor_pay')
+    assert.deepEqual(
+      rick.map(r => [r.kind, r.paid_sgd, r.refunded, r.complimentary]).sort(),
+      [
+        ['purchase', 250, true, false],
+        ['refund', -250, true, false],
+      ],
+    )
+    assert.equal(july.totals.refunds_sgd, 250)
+    // Jane's and Kim's packs are July's takings; Rick's came back.
+    assert.equal(july.totals.gross_sgd - july.totals.discounts_sgd - july.totals.refunds_sgd, 500)
+
+    // The Refund belongs to the day it was given, so a period that ends before it has the sale and no Refund.
+    const beforeReturn = await finance(`from=${day('2026-07-01', '00:00:00')}&to=${day('2026-07-02', '23:59:59')}`)
+    assert.ok(!beforeReturn.rows.some(r => r.kind === 'refund'))
   })
 
   test('verify compares the studio s past as well as its future, and names the year that lost something', async () => {

@@ -2,14 +2,12 @@ import type { BookingCoder } from './booking-codes'
 import type { CatalogueEntry, StudioConfig } from './config'
 import { fold, roomFor, type ConfigLookups } from './lookups'
 import { ptAppointmentRows, ptClients } from './pt'
-import { planHome } from './packages'
-import { personKey, registerMatcher } from './register'
+import { personKey } from './register'
+import { pastPackages, type JoinedSales } from './sales'
 import type {
   AttendanceRow,
   CancellationRow,
   GroupCancellationRow,
-  MemberListRow,
-  OptionSaleRow,
   PayrollRow,
   RosterRow,
   ScheduledClassRow,
@@ -63,6 +61,8 @@ export type MappedHistory = {
   ptSessionClients: Row[]
   /** Packages bought and used up before launch. Empty unless `history.purchases`. */
   clientPackages: Row[]
+  /** A provider-less Purchase per past package that was returned, closed as refunded. Empty unless `history.purchases`. */
+  purchases: Row[]
   /** Staff who taught something in history and had no instructor profile yet. */
   instructors: Row[]
   /** What a person should look at: a class that could not be placed, a visit with no class, a purchase with no member. */
@@ -112,9 +112,8 @@ export function mapHistory(input: {
   cancellations: CancellationRow[]
   /** The classes the studio called off. Empty where the report was not downloaded. */
   groupCancellations: GroupCancellationRow[]
-  /** The pricing-option register: every option ever sold, for past purchases. */
-  optionSales: OptionSaleRow[]
-  members: MemberListRow[]
+  /** Every sale line, joined to what it became and what reversed it (`./sales.ts`), for past purchases. */
+  sales: JoinedSales
   config: StudioConfig
   tenantId: string
   id: (kind: string, key: string) => string
@@ -167,7 +166,6 @@ export function mapHistory(input: {
 
   const entryOf = new Map<string, CatalogueEntry>()
   for (const e of config.catalogue) for (const s of e.mindbodyNames) entryOf.set(normaliseOptionName(s), e)
-  const catalogueIds = { ...ids.class_packages, ...ids.pt_packages }
 
   const clientPackages: Row[] = []
   /**
@@ -191,107 +189,30 @@ export function mapHistory(input: {
     packagesByOption.set(slotKey, slot)
   }
 
+  const purchases: Row[] = []
   if (input.history.purchases) {
-    const whoBought = registerMatcher(input.members)
-    const unmatched = new Map<string, number>()
-    const ambiguous = new Map<string, number>()
-    const unlisted = new Map<string, number>()
-    const trialsPaidFor = new Map<string, number>()
-    const taken = new Set<string>()
-
-    // Oldest first, so the ids a rerun writes never depend on report order.
-    const sales = [...input.optionSales].sort(
-      (a, b) =>
-        dayNumber(a.activation) - dayNumber(b.activation) ||
-        a.client.localeCompare(b.client) ||
-        a.option.localeCompare(b.option),
-    )
-    for (const sale of sales) {
-      if (isoDay(sale.activation) < from) continue
-      // Still live at the download, by the same test the live packages use
-      // (`./catalogue.ts`): something left *and* not expired. Those already came
-      // across as running packages. A purchase that is merely unexpired and
-      // spent is not one of them, and would otherwise reach neither path.
-      const left = sale.remaining !== null && (sale.remaining.unlimited || sale.remaining.count > 0)
-      if (left && dayNumber(sale.expiration) >= dayNumber(today)) continue
-      const optionKey = normaliseOptionName(sale.option)
-      if (input.workshopOptions.has(optionKey)) continue
-      const entry = entryOf.get(optionKey)
-      if (!entry) {
-        count(unlisted, sale.option)
-        continue
-      }
-      if (entry.migrate === 'skip' || entry.kind === 'access_pass') continue
-      // A member has one trial, ever — the platform holds them to it with a
-      // unique key, and `./packages.ts` has already written the spent one for
-      // anybody who used theirs. A second row for the same trial is the same
-      // trial twice, so history does not write one; the money it took is named
-      // instead, rather than quietly missing from Finance.
-      if (entry.kind === 'trial') {
-        if (sale.paid > 0) count(trialsPaidFor, `${sale.client} — ${sale.option}, ${money(sale.paid)}`)
-        continue
-      }
-
-      const match = whoBought(sale)
-      if (match.outcome !== 'matched') {
-        count(match.outcome === 'ambiguous' ? ambiguous : unmatched, `${sale.client} — ${sale.option}`)
-        continue
-      }
-      const clientId = match.clientId
-
-      // One key per purchase. Two of one option activated on one day is a real
-      // thing (a member buying two packs at the till), so the repeat is counted
-      // rather than folded into the first and lost.
-      let key = `past/${clientId}/${isoDay(sale.activation)}/${entry.name}`
-      for (let n = 2; taken.has(key); n++) key = `past/${clientId}/${isoDay(sale.activation)}/${entry.name}#${n}`
-      taken.add(key)
-
-      const catalogueId = catalogueIds[entry.name] ?? null
-      const length =
-        entry.kind === 'unlimited'
-          ? { duration_months: entry.durationMonths, validity_days: null }
-          : { duration_months: null, validity_days: entry.validityDays }
-      const row: Row = {
-        id: id('client-package', key),
-        tenant_id: tenantId,
-        client_id: ids.clients![clientId],
-        kind: entry.kind,
-        source_class_package_id: entry.kind === 'pt' ? null : catalogueId,
-        source_pt_package_id: entry.kind === 'pt' ? catalogueId : null,
-        // A plan has a Home Location, past or present: the platform requires it.
-        location_id: entry.kind === 'unlimited' ? ids.locations![planHome(config, entry)] : null,
-        ...length,
-        cross_location_paid_sgd: null,
-        // Used up, which is why it is history rather than a live holding.
-        credits_or_sessions_remaining: entry.kind === 'unlimited' ? null : 0,
-        expires_at: endOfDay(sale.expiration),
-        active: false,
-        purchased_at: zonedToInstant(sale.activation, tz).toISOString(),
-        amount_paid_sgd: money(sale.paid),
-        list_price_sgd: money(Math.max(entry.priceSgd ?? 0, sale.paid)),
-        purchase_id: null,
-        complimentary: false,
-      }
-      clientPackages.push(row)
-      ids.client_packages![key] = row.id as string
-
-      const slot = optionSlot(clientId, entry)
-      const held = packagesByOption.get(slot) ?? []
-      held.push({ id: row.id as string, kind: entry.kind, from: dayNumber(sale.activation), to: dayNumber(sale.expiration) })
-      packagesByOption.set(slot, held)
+    // Sale by sale, on the member whose id is on the sale (`./sales.ts`).
+    const barcodeOf = new Map(Object.entries(ids.clients ?? {}).map(([barcode, clientId]) => [clientId, barcode]))
+    const past = pastPackages({
+      joined: input.sales,
+      from,
+      today,
+      config,
+      tenantId,
+      id,
+      ids,
+      memberNames,
+      lookups,
+      workshopOptions: input.workshopOptions,
+      hasTrial: new Set(input.clientPackages.filter(p => p.kind === 'trial').map(p => barcodeOf.get(String(p.client_id))!)),
+    })
+    clientPackages.push(...past.clientPackages)
+    purchases.push(...past.purchases)
+    notes.push(...past.notes)
+    for (const s of past.slots) {
+      const slot = optionSlot(s.clientId, s.entry)
+      packagesByOption.set(slot, [...(packagesByOption.get(slot) ?? []), { id: s.id, kind: s.kind, from: s.from, to: s.to }])
     }
-
-    listed(unmatched, (w, n) => `history purchases: ${w} — ${n} purchase(s) match no member by name and phone, so they were not imported`)
-    listed(
-      ambiguous,
-      (w, n) => `history purchases: ${w} — ${n} purchase(s) name more than one member and the phone does not tell them apart, so they were not imported`,
-    )
-    listed(unlisted, (w, n) => `history purchases: "${w}" was sold ${n} time(s) in the window and is in no catalogue entry, so it was not imported`)
-    listed(
-      trialsPaidFor,
-      (w, n) =>
-        `history purchases: ${w} — ${n} trial(s) a member has already come across holding, so the money is not in Finance; a member may hold only one trial ever`,
-    )
   }
 
   /**
@@ -957,6 +878,7 @@ export function mapHistory(input: {
     ptSessions,
     ptSessionClients,
     clientPackages,
+    purchases,
     instructors: [...extraInstructors].sort().map(staffId => ({ staff_user_id: staffId, tenant_id: tenantId })),
     notes,
   }

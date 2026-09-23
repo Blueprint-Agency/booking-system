@@ -197,7 +197,7 @@ _Avoid_: reservation, lock, pending, soft-booked
 ### Refunds
 
 **Refund**:
-Money returned to a member for one Purchase, always the whole of it — there is no such thing as a partial one. Every payment the Purchase holds is returned, so a Purchase paid across two cards is refunded across both; that is still one Refund, because the Purchase is the thing being unwound. Do not read a Part Payment as a partial refund arriving: one is money coming in a piece at a time, the other is money going back in a piece, and only the first exists. It never describes a credit going back to a wallet either: a cancelled booking returns a credit or a session, and calling that a refund confuses money with entitlement.
+Money returned to a member for one Purchase, always the whole of it — there is no such thing as a partial one. Every payment the Purchase holds is returned, so a Purchase paid across two cards is refunded across both; that is still one Refund, because the Purchase is the thing being unwound. Do not read a Part Payment as a partial refund arriving: one is money coming in a piece at a time, the other is money going back in a piece, and only the first exists. It never describes a credit going back to a wallet either: a cancelled booking returns a credit or a session, and calling that a refund confuses money with entitlement. A Refund of a sale made before the studio came to the platform (migrated with its return) has no payment behind it: its Purchase carries the day it was given back itself.
 _Avoid_: partial refund, refund a credit, reimbursement, chargeback, revoke
 
 **Void**:

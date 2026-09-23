@@ -120,7 +120,7 @@ date range is computed from the run date:
 | Report (view) | Range |
 |---|---|
 | Mailing Lists (Mailing List), Retention Management, Phone Book, Pay Rates, Account Balances (All balances), Visits Remaining (Detail) | as of the download |
-| Referral Types (each referrer group), Big Spenders (Detail Accrual) | history cutoff → today |
+| Referral Types (each referrer group), Big Spenders (Detail Accrual), Promotions (Detail) | history cutoff → today |
 | Pricing Option Expirations | history cutoff → today + 5 years |
 | Attendance without Revenue (**Date view only**), one file per year | history cutoff → today |
 | Payroll (Detail), one file per year | history cutoff → today |
@@ -292,16 +292,30 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   cap them, and history landing inside that cycle would spend an allowance the member never spent
   here — so every member starts on the platform with a clean one.
 - **Past purchases** are a second, separate opt-in (`history.purchases`), because they are
-  pre-launch money and they show in Finance on the day they were bought. They are the
-  pricing-option register's rows that were activated after the cutoff and were not still live at
-  the download — live by the same test the packages use, something left *and* not expired, so a
-  pack bought and used up before launch is counted even though its date had not passed. The live
-  ones already came across as packages. Each is written as an inactive, used-up
-  `client_packages` row. The register carries no client id, so they are joined to members by
-  normalised name, and by phone where a name is held by more than one. **Anything unmatched is
-  listed in the preflight, never guessed.** A past *trial* is the one purchase that cannot come
-  across — a member may hold only one trial ever, which the platform enforces with a unique key,
-  and the one they used is already there — so the money it took is a preflight line instead.
+  pre-launch money and they show in Finance on the day they were sold. They are Big Spenders'
+  sale lines from the cutoff on — keyed by **client id**, so a purchase always lands on the
+  member whose id is on the sale, and two members of one name are never swapped. Each line is
+  joined to the pricing-option register row it created (a member it could be by name and phone,
+  the same option, the latest sale on or before the row's activation, its own price first), which
+  lends it its expiry; a line the register never lists (a day pass, a promo bundle) runs its
+  validity from the sale date. A line whose register row is still live at the download — something
+  left *and* not expired — already came across as a package. Every other line is an inactive
+  `client_packages` row dated on its **sale date**, at its sale Location where the platform holds
+  one (an Unlimited Plan's Home Location). **List Price is what was paid**, plus what a promotion
+  took off it (Promotions, Detail, joined by sale number) — so only a real promotion shows a
+  discount — and a $0 package is **Complimentary** unless it is a Trial the catalogue sells for
+  money. **Anything that cannot be placed** — an item in no catalogue entry, a workshop place, a
+  client not in the member list — is counted in the preflight with its money, never guessed.
+  A past *trial* for a member who already came across holding one cannot come across — a member
+  may hold only one trial ever — so the money it took is a preflight line instead.
+- A **return** (quantity −1) is a Refund on the past purchase it reverses (the same member and
+  option, sold no later than the return, the same amount first). It is written as a
+  provider-less Purchase closed as refunded on the day of the return (`purchases.refunded_at`),
+  which Finance lists as a Refund; the package is tagged Refunded. A migrated package still has
+  no payment row. A return with nothing to reverse is a preflight line. The register row of a
+  returned sale is never a live holding. `verify` compares revenue by month and every Refund.
+- The cutover download checks Big Spenders' client cap against the Member count, and refuses
+  the download where the cap could have left somebody out.
 - A past visit points at the package that paid for it only where the attendance report's pricing
   option is one the member's own history or live holdings actually hold, and where that holding's
   run covered the day. Anything else and the seat names no package: a wrong package would read
@@ -327,8 +341,9 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   `secret`, which `starter` writes once at random.
 - Reads today: Mailing Lists (Mailing List), Referral Types (detail files: creation date),
   Retention Management (gender), Phone Book (staff), Visits Remaining (Detail `.xlsx`: holdings),
-  Pricing Option Expirations (the catalogue proposal, and past purchases) and Big Spenders
-  (Detail Accrual, the catalogue proposal only), Staff Schedule (ALL, "Scheduled": the
+  Pricing Option Expirations (the catalogue proposal, and each purchase's dates) and Big Spenders
+  (Detail Accrual: the catalogue proposal, past purchases and returns), Promotions (Detail,
+  optional: a sale's discount), Staff Schedule (ALL, "Scheduled": the
   timetable), Schedule at a Glance (`.xlsx`, one per year: who is booked into what) and, if they
   were downloaded, Account Balances (All balances), Pay Rates (`.xlsx`), Attendance without
   Revenue (Date view, `.xlsx`; one file or one per year) and Payroll (Detail, one per year). The

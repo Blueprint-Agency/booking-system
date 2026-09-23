@@ -9,16 +9,17 @@
  * union, mapped into Money Events. Payroll stays the owner of what "a completed
  * session that owes pay" means; Finance does not get a second opinion on it.
  *
- * Money IN comes from six places, none of which are a ledger table:
+ * Money IN comes from seven places, none of which are a ledger table:
  *   - client_packages                  → purchase (and its Cross-Location Add-On)
  *   - bookings (kind = 'workshop')     → workshop_ticket
  *   - stripe_payments (corporate)      → corporate
  *   - merch_orders                     → merch
  *   - stripe_payments (refunded)       → refund
+ *   - purchases (refunded, unpaid here) → refund of a migrated sale
  * There is no finance_events table and there should not be one: these rows ARE
  * the ledger, and a copy of them would be a second thing to keep true.
  */
-import { and, eq, gte, inArray, isNotNull, lte, notInArray } from 'drizzle-orm'
+import { and, eq, gte, inArray, isNotNull, lte, notExists, notInArray } from 'drizzle-orm'
 import { db } from '../../db'
 import { clientPackages, classPackages, ptPackages, promoCodes } from '../../db/schema/packages'
 import { bookings } from '../../db/schema/bookings'
@@ -281,6 +282,35 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
       ),
     )
 
+  // A Refund of a sale that reached no payment provider: one made before the
+  // studio came to the platform, migrated with its return (#217). There is no
+  // payment row to date it, so the Purchase carries the date itself. A
+  // Purchase with a payment behind it is refunded through that payment and
+  // read above — never here as well, or the month would lose it twice.
+  const migratedRefunded = and(
+    eq(purchases.tenantId, tenantId),
+    eq(purchases.status, 'refunded'),
+    isNotNull(purchases.refundedAt),
+    notExists(
+      db
+        .select({ id: stripePayments.id })
+        .from(stripePayments)
+        .where(and(eq(stripePayments.tenantId, tenantId), eq(stripePayments.purchaseId, purchases.id))),
+    ),
+  )
+  const migratedRefundRows = await db
+    .select({
+      id: purchases.id,
+      refundedAt: purchases.refundedAt,
+      totalSgd: purchases.totalSgd,
+      clientName: clients.name,
+    })
+    .from(purchases)
+    .innerJoin(clients, eq(clients.id, purchases.clientId))
+    .where(and(migratedRefunded, ...within(purchases.refundedAt, filter)))
+  // Over the whole history, for the tag, like the refunded payments below.
+  const migratedRefundedIds = await db.select({ id: purchases.id }).from(purchases).where(migratedRefunded)
+
   // Which purchases carry the "Refunded" tag. Read over the WHOLE history, not
   // the filtered window: a purchase in August refunded in September is still a
   // refunded purchase when you look at August.
@@ -297,7 +327,10 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
     .from(stripePayments)
     .where(and(eq(stripePayments.tenantId, tenantId), eq(stripePayments.status, 'refunded')))
   const refundedIntents = new Set(refundedPayments.map(r => r.intent))
-  const refundedPurchases = new Set(refundedPayments.map(r => r.purchaseId))
+  const refundedPurchases = new Set([
+    ...refundedPayments.map(r => r.purchaseId),
+    ...migratedRefundedIds.map(r => r.id),
+  ])
   const isRefunded = (intent: string | null) => intent != null && refundedIntents.has(intent)
   const purchaseRefunded = (purchaseId: string | null) =>
     purchaseId != null && refundedPurchases.has(purchaseId)
@@ -406,6 +439,20 @@ async function listMoneyIn(tenantId: string, filter: FinanceFilter): Promise<Mon
       occurredAt: r.refundedAt as Date,
       party: r.clientName,
       paidSgd: `-${r.amountSgd}`,
+      refunded: true,
+    })
+  }
+
+  for (const r of migratedRefundRows) {
+    events.push({
+      ...base,
+      kind: 'refund',
+      type: 'refund',
+      id: r.id,
+      occurredAt: r.refundedAt as Date,
+      party: r.clientName,
+      // The whole sale back. A refunded Purchase holds nothing, so its total is what went back.
+      paidSgd: `-${r.totalSgd}`,
       refunded: true,
     })
   }

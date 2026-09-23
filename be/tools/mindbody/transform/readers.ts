@@ -273,6 +273,8 @@ export function readPricingOptionRegister(html: string): OptionSaleRow[] {
 /* ── 19 Big Spenders — Detail (accrual): every sale line ──────────────────── */
 
 export type SaleRow = {
+  /** The client whose block the line is in, from the block header's link. Null where the header has no link. */
+  clientId: string | null
   saleId: string
   soldAt: LocalDateTime
   description: string
@@ -287,22 +289,68 @@ export type SaleRow = {
  * client (and again at each page break), a section row, the lines, subtotals
  * and a total — and a line is the one row whose first cell is a sale number and
  * whose second is a date. The one report whose dates are M/D.
+ *
+ * The header's first cell is the client's name, linked to their
+ * `/clients/<id>/purchases` page: that id is who every line under it belongs
+ * to, until the next header.
  */
 export function readSales(html: string): SaleRow[] {
   const rows = readHtmlTable(html)
   const { at, columns } = header(rows, 'Big Spenders (detail)', ['Sale Date', 'Description', 'Quantity', 'Sales Total'])
   const out: SaleRow[] = []
-  for (const row of dataRows(rows, at)) {
+  let client: string | null = null
+  for (const row of rows.slice(at)) {
+    if (row.cells.some(c => c.toLowerCase() === 'sale date')) {
+      client = clientId(row, {}, '')
+      continue
+    }
     const saleId = row.cells[0] ?? ''
     const soldAt = parseMindbodyDate(cell(row, columns, 'Sale Date'), 'MD')
     if (!/^\d+$/.test(saleId) || !soldAt) continue
     out.push({
+      clientId: client,
       saleId,
       soldAt,
       description: tidy(cell(row, columns, 'Description')),
       location: tidy(cell(row, columns, 'Location')),
       quantity: parseMoney(cell(row, columns, 'Quantity')) ?? 0,
       total: parseMoney(cell(row, columns, 'Sales Total')) ?? 0,
+    })
+  }
+  return out
+}
+
+/* ── 23 Promotions — Detail: every sale a promotion took money off ─────────── */
+
+export type PromotionRow = {
+  /** The same sale number as Big Spenders', which is how the two are joined: this report has no client id. */
+  saleId: string
+  soldAt: LocalDateTime
+  /** The promotion's own name, as the studio set it up. */
+  promotion: string
+  item: string
+  /** Dollars taken off the line. */
+  discount: number
+  /** Dollars paid for the line, after the discount. */
+  total: number
+}
+
+/** One row per discounted line, and a totals row with no sale number at the end. D/M, like most of Mindbody. */
+export function readPromotions(html: string): PromotionRow[] {
+  const rows = readHtmlTable(html)
+  const { at, columns } = header(rows, 'Promotions (detail)', ['Date', 'Sale ID', 'Promotion', 'Item', 'Discount', 'Total'])
+  const out: PromotionRow[] = []
+  for (const row of dataRows(rows, at)) {
+    const saleId = tidy(cell(row, columns, 'Sale ID'))
+    const soldAt = parseMindbodyDate(cell(row, columns, 'Date'), 'DM')
+    if (!/^\d+$/.test(saleId) || !soldAt) continue
+    out.push({
+      saleId,
+      soldAt,
+      promotion: tidy(cell(row, columns, 'Promotion')),
+      item: tidy(cell(row, columns, 'Item')),
+      discount: parseMoney(cell(row, columns, 'Discount')) ?? 0,
+      total: parseMoney(cell(row, columns, 'Total')) ?? 0,
     })
   }
   return out

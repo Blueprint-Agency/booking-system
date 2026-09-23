@@ -1,0 +1,39 @@
+<!-- Invented fixture: no real studio or person. Layout follows Mindbody's Promotions (detail) export. -->
+<table id="ResultsTable" class="mainText" width="100%"  cellspacing="0">
+	<thead>
+		<tr>
+			<td class="Date"><strong>Date</strong></td>
+			<td class="SaleID"><strong>Sale ID</strong></td>
+			<td class="Promotion"><strong>Promotion</strong></td>
+			<td class="Client"><strong>Client</strong></td>
+			<td class="Barcode"><strong>Barcode</strong></td>
+			<td class="Item"><strong>Item</strong></td>
+			<td class="Quantity center-ch"><strong>Quantity</strong></td>
+			<td class="UnitPrice right"><strong>Unit price&nbsp;(excluding tax)</strong></td>
+			<td class="Discount right"><strong>Discount</strong></td>
+			<td class="Discount right"><strong>Discount %</strong></td>
+			<td class="Total right"><strong>Total</strong></td>
+			<td class="Employee"><strong>&nbsp;Employee</strong></td>
+		</tr>
+	</thead>
+	<tr bgcolor=>
+	  <td>20/8/2026</td>
+	  <td>8120</td>
+	  <td>Launch 10</td>
+	  <td>Jane Doe</td>
+	  <td>100020</td>
+	  <td>Class Pack - Bundle of 20</td>
+	  <td class="center-ch">1</td>
+	  <td class="right">$500.00</td>
+	  <td class="right">$50.00</td>
+	  <td class="right">10%</td>
+	  <td class="right">$450.00</td>
+	  <td>&nbsp;
+	Client
+	  </td>
+	</tr>
+	<tr>
+	  <td></td><td></td><td></td><td></td><td></td><td></td>
+	  <td class="center-ch">1</td><td></td><td class="right">$50.00</td><td></td><td class="right">$450.00</td><td></td>
+	</tr>
+</table>

@@ -18,6 +18,7 @@ import type {
   PayRateRow,
   PayrollRow,
   PhoneBookRow,
+  PromotionRow,
   ReferralRow,
   RetentionRow,
   RosterRow,
@@ -25,6 +26,7 @@ import type {
   ScheduledClassRow,
 } from './readers'
 import { bookingCoder } from './booking-codes'
+import { joinSales } from './sales'
 import { mapSchedule } from './schedule'
 import { normaliseClassName, normaliseStaffName, zonedToInstant, type LocalDateTime } from './values'
 import { mapWorkshops, workshopOptionKeys } from './workshops'
@@ -48,9 +50,12 @@ export type MindbodyReports = {
   phoneBook: PhoneBookRow[]
   /** What every client holds of every pricing option. */
   holdings: HoldingRow[]
-  /** Every pricing option sold, and every sale line: read only to propose the catalogue. */
+  /** Every pricing option sold: what each purchase became (activation, expiry, what is left), by name and phone. */
   optionSales: OptionSaleRow[]
+  /** Every sale line and return, by client id: the studio's takings (`./sales.ts`). */
   sales: SaleRow[]
+  /** What a promotion took off each sale, by sale number. Empty where the report was not downloaded. */
+  promotions: PromotionRow[]
   /** Money on account, either way. Empty where the report was not downloaded. */
   balances: AccountBalanceRow[]
   /** The timetable, past and to come, empty classes included. */
@@ -117,6 +122,7 @@ const noHistory = (): MappedHistory => ({
   ptSessions: [],
   ptSessionClients: [],
   clientPackages: [],
+  purchases: [],
   instructors: [],
   notes: [],
 })
@@ -372,6 +378,10 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
   const memberNames = new Map(reports.members.map(m => [m.id, memberName(m)]))
   // The pricing options that buy a place on a workshop: a booking, never a package.
   const workshopOptions = workshopOptionKeys(config)
+  // Every sale, joined to the register row it created and the return that
+  // reversed it: the live packages leave a refunded purchase out, and history
+  // rebuilds the past from it.
+  const sales = joinSales({ sales: reports.sales, optionSales: reports.optionSales, promotions: reports.promotions, members: reports.members })
   const packages = mapPackages({
     holdings: reports.holdings,
     balances: reports.balances,
@@ -383,6 +393,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     workshopOptions,
     optionSales: reports.optionSales,
     members: reports.members,
+    sales,
   })
   preflight.notMigrated = packages.notMigrated
   preflight.balances = packages.balances
@@ -481,8 +492,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
         payroll: reports.payroll,
         cancellations: reports.cancellations,
         groupCancellations: reports.groupCancellations,
-        optionSales: reports.optionSales,
-        members: reports.members,
+        sales,
         config,
         tenantId,
         id,
@@ -521,6 +531,8 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     instructors: [...instructors, ...extraInstructors.values()],
     staff_invitations: invitations,
     clients,
+    // Provider-less, and only a past sale that was returned: the Refund hangs from it.
+    purchases: history.purchases,
     class_packages: packages.classPackages,
     pt_packages: packages.ptPackages,
     client_packages: [...packages.clientPackages, ...history.clientPackages],

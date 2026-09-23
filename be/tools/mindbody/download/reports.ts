@@ -84,6 +84,9 @@ export type ProfileEntry = Report & {
   optional?: boolean
 }
 
+/** Big Spenders lists at most this many clients, biggest first: the ones past it are simply not in the file. */
+export const BIG_SPENDERS_CAP = 10_000
+
 const DETAIL_SUMMARY: Variant[] = [{ label: 'Detail', set: { View: 'Detail' } }, { label: 'Summary', set: { View: 'Summary' } }]
 const DATES: FieldSet = { requiredtxtDateStart: '$START', requiredtxtDateEnd: '$TODAY' }
 const MVC_DATES: FieldSet = { Start: '$START', End: '$TODAY' }
@@ -162,7 +165,9 @@ const CLIENTS: Draft[] = [
     variants: [{ label: 'Detail', set: { optSummary: '1' } }, { label: 'Summary', set: { optSummary: '0' } }] },
   { name: 'Big Spenders', path: '/ASP/adm/adm_rpt_big_spenders.asp', type: 'legacy',
     set: { ...DATES, optProdServ: '2', optTG: '0', optSaleLoc: '0', optNewClientOnly: '0', optMinValue: '0.00',
-      optTopNum: '10000' }, // "Top N" clients: above any studio's client count; the Summary view errors (HTTP 500) at 100000
+      // "Top N" clients: a client past it loses every sale. The Summary view errors (HTTP 500) at 100000, so it
+      // cannot simply be huge; the cutover download checks it against the Members instead (`./sales-cap.ts`).
+      optTopNum: String(BIG_SPENDERS_CAP) },
     variants: [
       { label: 'Detail Accrual', set: { optSummary: '0', optBasis: '0' } },
       { label: 'Detail Cash', set: { optSummary: '0', optBasis: '1' } },
@@ -268,6 +273,8 @@ export const CUTOVER: ProfileEntry[] = [
   pick('Visits Remaining', { kind: 'holdings', only: ['Detail'] }),
   pick('Pricing Option Expirations', { kind: 'optionSales' }),
   pick('Big Spenders', { kind: 'sales', only: ['Detail Accrual'] }),
+  // What a promotion took off each of those sales, by sale number: a past sale's List Price.
+  pick('Promotions', { kind: 'promotions', only: ['Detail'] }),
   // Their past visits (history): Date view only — the other views are the same rows re-sorted.
   pick('Attendance without Revenue', { kind: 'attendance', loop: { match: /^date$/i, label: 'Date' }, split: 'year' }),
   // Who is booked into what, past and to come: from the history cutoff to 12 months ahead, one file per year.

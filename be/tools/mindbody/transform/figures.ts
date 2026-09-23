@@ -1,5 +1,5 @@
 import type { TenantArchive } from '../../../src/services/tenants/transfer-shape'
-import { localDateOf } from './values'
+import { isoDay, localDateOf, money } from './values'
 
 /**
  * What a migrated studio should add up to, counted the same way twice: once
@@ -16,8 +16,11 @@ export type MemberFigures = { name: string; packages: number; credits: number; s
 /** A studio's year, the three figures that say whether its past came across whole. */
 export type YearFigures = { classes: number; attended: number; noShows: number }
 
-/** Which counts arrived with the timetable (#179, #180) and history (#181), and so may be missing from an older file. */
-type AddedLater = 'classes' | 'ptSessions' | 'workshops' | 'bookings' | 'perClass' | 'perWorkshop' | 'byYear'
+/** A Refund, by the Purchase it closes. */
+export type RefundFigure = { name: string; cents: number }
+
+/** Which counts arrived with the timetable (#179, #180), history (#181) and the money history (#217), and so may be missing from an older file. */
+type AddedLater = 'classes' | 'ptSessions' | 'workshops' | 'bookings' | 'perClass' | 'perWorkshop' | 'byYear' | 'revenueByMonth' | 'refunds'
 
 /**
  * Figures as an `expected.json` on disk may hold them. `figuresOf` always
@@ -53,6 +56,14 @@ export type Figures = {
    * go missing on the way in.
    */
   byYear: Record<string, YearFigures>
+  /**
+   * Money in, in cents, by the studio's own month (`YYYY-MM`): what each
+   * package was paid (a Complimentary one was paid nothing), its Add-On, and
+   * each workshop place — the sales Finance counts, on the day it counts them.
+   */
+  revenueByMonth: Record<string, number>
+  /** Every Refund, by the id of the Purchase it closes. */
+  refunds: Record<string, RefundFigure>
 }
 
 const tally = (counts: Record<string, number>, key: string, by = 1) => {
@@ -76,6 +87,8 @@ export function figuresOf(archive: TenantArchive): Figures {
     perClass: {},
     perWorkshop: {},
     byYear: {},
+    revenueByMonth: {},
+    refunds: {},
   }
   // The studio's own year, not UTC's: a class at 8am in Singapore on 1 January
   // is the new year's, and would otherwise be counted in the old one.
@@ -117,6 +130,25 @@ export function figuresOf(archive: TenantArchive): Figures {
     if (cls) cls.booked += 1
     const workshop = b.workshop_id == null ? undefined : figures.perWorkshop[String(b.workshop_id)]
     if (workshop) workshop.booked += 1
+  }
+
+  const monthOf = (at: unknown) => {
+    const d = localDateOf(new Date(String(at)), timeZone)
+    return `${d.year}-${String(d.month).padStart(2, '0')}`
+  }
+  const cents = (v: unknown) => (v == null ? 0 : Math.round(Number(v) * 100))
+  const earned = (at: unknown, amount: number) => {
+    if (amount !== 0) tally(figures.revenueByMonth, monthOf(at), amount)
+  }
+  for (const p of archive.rows.client_packages ?? []) {
+    if (p.complimentary !== true) earned(p.purchased_at, cents(p.amount_paid_sgd) + cents(p.cross_location_paid_sgd))
+  }
+  for (const b of archive.rows.bookings ?? []) if (b.kind === 'workshop') earned(b.booked_at, cents(b.amount_paid_sgd))
+  for (const p of archive.rows.purchases ?? []) {
+    if (p.status !== 'refunded' || p.refunded_at == null) continue
+    const day = localDateOf(new Date(String(p.refunded_at)), timeZone)
+    const who = names.get(String(p.client_id)) ?? String(p.client_id)
+    figures.refunds[String(p.id)] = { name: `the refund to ${who} on ${isoDay(day)}`, cents: cents(p.total_sgd) }
   }
 
   for (const p of archive.rows.client_packages ?? []) {
@@ -169,6 +201,22 @@ export function compareFigures(expected: StoredFigures, actual: Figures): string
     differ(`${held}: visits attended`, want.attended, got.attended)
     differ(`${held}: no-shows`, want.noShows, got.noShows)
   }
+  // Money is said as money. A month whose takings moved is named by the month,
+  // so a sale dated a day out — or lost — is found where Finance would show it.
+  const dollars = (c: number) => money(c / 100)
+  for (const month of keys(expected.revenueByMonth ?? {}, actual.revenueByMonth)) {
+    const want = expected.revenueByMonth?.[month] ?? 0
+    const got = actual.revenueByMonth[month] ?? 0
+    if (want !== got) differences.push(`${month}: revenue: expected ${dollars(want)}, found ${dollars(got)}`)
+  }
+  for (const purchaseId of keys(expected.refunds ?? {}, actual.refunds)) {
+    const want = expected.refunds?.[purchaseId]
+    const got = actual.refunds[purchaseId]
+    if (!got) differences.push(`${want!.name}: ${dollars(want!.cents)} in the archive, and no such refund in the studio`)
+    else if (!want) differences.push(`${got.name}: ${dollars(got.cents)} in the studio, and no such refund in the archive`)
+    else if (want.cents !== got.cents) differences.push(`${want.name}: expected ${dollars(want.cents)}, found ${dollars(got.cents)}`)
+  }
+
   const nothing = { name: '', booked: 0 }
   const attendance = (want: typeof nothing | undefined, got: typeof nothing | undefined, id: string) => {
     const what = (want ?? got ?? nothing).name || id

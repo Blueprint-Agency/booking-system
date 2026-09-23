@@ -13,6 +13,7 @@ import {
   readPayroll,
   readPhoneBook,
   readPricingOptionRegister,
+  readPromotions,
   readReferralTypes,
   readRetentionManagement,
   readRoster,
@@ -304,7 +305,8 @@ test('sales: only the sale lines of each client block, dated M/D, a return as mi
   const sales = readSales(
     readFileSync(path.join(FIXTURES, 'reports', 'Clients', '19 Big Spenders', '19 Big Spenders - Detail Accrual.xls'), 'utf8'),
   )
-  assert.equal(sales.length, 9, 'client headers, section rows, subtotals and totals are not sales')
+  assert.equal(sales.length, 20, 'client headers, section rows, subtotals and totals are not sales')
+  assert.deepEqual([...new Set(sales.map(s => s.clientId))], ['100000001', '100000002', '100000005', 'AB123456', '100000099', '100000008'])
   const first = sales[0]!
   assert.deepEqual([first.saleId, first.soldAt.month, first.soldAt.day], ['351', 4, 24], 'M/D: the 24th of April')
   assert.equal(first.description, '2 Trial Classes for New Joiners')
@@ -312,6 +314,47 @@ test('sales: only the sale lines of each client block, dated M/D, a return as mi
   const returned = sales.find(s => s.saleId === '5402')!
   assert.deepEqual([returned.quantity, returned.total], [-1, -250])
   assert.equal(sales.find(s => s.saleId === '7000')!.total, 1700)
+})
+
+test('sales: each line is the client whose block it is in, by the id in the block header s link', () => {
+  const header = (id: string, name: string) =>
+    `<tr style="background-color:#acacac;"><td><strong><a class="whiteSmallText" href="/app/clients/${id}/purchases">${name}</a></strong></td>
+     <td><strong>Sale Date</strong></td><td><strong>Description</strong></td><td><strong>Location</strong></td>
+     <td><strong>Quantity</strong></td><td><strong>Sales Total</strong></td></tr>`
+  const line = (sale: string, date: string, item: string, location: string, quantity: string, total: string) =>
+    `<tr class="right"><td><a href="adm_tlbx_voidedit.asp?saleno=${sale}">${sale}</a></td><td>${date}</td>
+     <td>&nbsp;&nbsp;${item}</td><td>${location} </td><td>${quantity}</td><td>${total}</td></tr>`
+  const html = `<table>
+    ${header('100000001', 'Lee, Sam')}
+    <tr><td colspan="6">Services</td></tr>
+    ${line('10', '12/31/2025', 'Class Pack - Bundle of 10', 'Main Hall', '1', '250.00')}
+    ${header('100000001', 'Lee, Sam')}
+    ${line('11', '1/2/2026', 'Class Pack - Bundle of 10', 'Main Hall', '-1', '-250.00')}
+    <tr class="right"><td>Total:</td><td>0</td><td>0.00</td></tr>
+    ${header('100000002', 'Lee, Sam')}
+    ${line('12', '1/3/2026', 'Drop-in', 'Online Store', '1', '30.00')}
+    </table>`
+  assert.deepEqual(
+    readSales(html).map(s => [s.saleId, s.clientId, isoDay(s.soldAt), s.location, s.quantity, s.total]),
+    [
+      ['10', '100000001', '2025-12-31', 'Main Hall', 1, 250],
+      // The header again at a page break: the same client, carried on.
+      ['11', '100000001', '2026-01-02', 'Main Hall', -1, -250],
+      // Two members of one name are two ids, never one.
+      ['12', '100000002', '2026-01-03', 'Online Store', 1, 30],
+    ],
+  )
+})
+
+test('promotions: one line per discounted sale, by sale id, with what was taken off', () => {
+  const promotions = readPromotions(
+    readFileSync(path.join(FIXTURES, 'reports', 'Clients', '23 Promotions', '23 Promotions - Detail.xls'), 'utf8'),
+  )
+  assert.deepEqual(
+    promotions.map(p => [p.saleId, isoDay(p.soldAt), p.promotion, p.item, p.discount, p.total]),
+    [['8120', '2026-08-20', 'Launch 10', 'Class Pack - Bundle of 20', 50, 450]],
+    'D/M dates, money without its $ and commas, and not the totals line',
+  )
 })
 
 test('account balances: one row per client, and not the total line', () => {

@@ -15,6 +15,7 @@ import {
   readPayRates,
   readPhoneBook,
   readPricingOptionRegister,
+  readPromotions,
   readReferralTypes,
   readRetentionManagement,
   readRoster,
@@ -64,6 +65,8 @@ export const REPORTS = {
   // The classes the studio called off. Its lines repeat Individual records, so
   // it is read for the classes, never for the members' cancels.
   groupCancellations: { label: 'Cancellations — Group cancellations', test: (f: string) => /cancellations - group cancellations/i.test(f) },
+  // What a promotion took off each sale: the Summary view is totals per promotion.
+  promotions: { label: 'Promotions — Detail', test: (f: string) => /promotions - detail/i.test(f) },
 } as const
 
 /**
@@ -88,6 +91,7 @@ export const REPORT_RULES: Record<keyof typeof REPORTS, { single: boolean; requi
   payroll: { single: false, required: false },
   cancellations: { single: false, required: false },
   groupCancellations: { single: true, required: false },
+  promotions: { single: true, required: false },
 }
 
 async function filesUnder(dir: string): Promise<string[]> {
@@ -149,6 +153,8 @@ export async function readReports(dir: string): Promise<MindbodyReports> {
   const cancellations = []
   for (const file of optionalSet('cancellations')) cancellations.push(...readCancellations(await read(file)))
   const groupCancellationsFile = optional('groupCancellations')
+  // Optional: a download older than it has none, and every past sale is then read as sold at full price.
+  const promotionsFile = optional('promotions')
 
   return {
     members: readMemberList(await one('members')),
@@ -166,6 +172,7 @@ export async function readReports(dir: string): Promise<MindbodyReports> {
     payroll,
     cancellations,
     groupCancellations: groupCancellationsFile ? readGroupCancellations(await read(groupCancellationsFile)) : [],
+    promotions: promotionsFile ? readPromotions(await read(promotionsFile)) : [],
   }
 }
 

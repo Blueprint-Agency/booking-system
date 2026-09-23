@@ -69,6 +69,7 @@ test('the dry run lists every cutover file under <export>/reports, with the run 
   assert.ok(lines.includes(`Reports: ${path.join(folder, 'reports')}`))
   assert.ok(lines.some(l => l.includes('reports/Clients/02 Mailing Lists/02 Mailing Lists - Mailing List.xls')))
   assert.ok(lines.some(l => l.includes('reports/Staff/34 Staff Schedule/34 Staff Schedule - ALL - Scheduled.xls')))
+  assert.ok(lines.some(l => l.endsWith('reports/Clients/23 Promotions/23 Promotions - Detail.xls')), 'Promotions: what each past sale was discounted')
   assert.ok(lines.some(l => l.includes('requiredtxtDateStart=1/1/2023 requiredtxtDateEnd=17/9/2027')), 'Schedule at a Glance runs 12 months ahead')
   // The classes the studio called off: one file over the whole range, beside the Individual records.
   const group = lines.findIndex(l => l.endsWith('reports/Clients/08 Cancellations/08 Cancellations - Group cancellations.xls'))

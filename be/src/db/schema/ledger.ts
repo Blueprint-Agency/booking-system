@@ -82,6 +82,16 @@ export const purchases = pgTable(
      */
     partPaidAt: timestamp('part_paid_at', { withTimezone: true }),
     settledAt: timestamp('settled_at', { withTimezone: true }),
+    /**
+     * When a Purchase with **no payment behind it** was refunded — a sale made
+     * before the studio came to the platform, migrated with its return (#217).
+     *
+     * A Refund of a sale paid here is dated by its payment's `refunded_at`, and
+     * Finance reads it there. A migrated sale reached no payment provider, so
+     * it has no payment row to carry the date, and this column carries it
+     * instead. Null on every Purchase the platform took money for.
+     */
+    refundedAt: timestamp('refunded_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({

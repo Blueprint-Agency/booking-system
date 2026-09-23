@@ -200,6 +200,14 @@ async function download(o: {
       console.log(`\nCUTOVER DOWNLOAD INCOMPLETE: ${hard.length} required report(s) failed. Do not transform; fix and re-run.`)
       process.exit(1)
     }
+    const { checkExportSalesCap } = await import('./sales-cap')
+    const { BIG_SPENDERS_CAP } = await import('./reports')
+    const cap = checkExportSalesCap(o.folder, BIG_SPENDERS_CAP)
+    console.log(`\n${cap.level === 'ok' ? '' : `${cap.level.toUpperCase()}: `}${cap.message}`)
+    if (cap.level === 'refuse') {
+      console.log('\nCUTOVER DOWNLOAD INCOMPLETE: Big Spenders could have left members out. Do not transform; fix and re-run.')
+      process.exit(1)
+    }
     console.log(`\nCutover download complete. As of ${asOf} (written to _logs/as-of.txt).`)
     printNext(o.folder)
   } else if (fails.length) {

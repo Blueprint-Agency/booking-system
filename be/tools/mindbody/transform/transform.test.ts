@@ -222,7 +222,8 @@ test('live packages: the soonest-ending runs with its expiry and unbooked balanc
   const running = named('100000001', 'Class Pack - Bundle of 10')
   assert.equal(running.credits_or_sessions_remaining, 5, 'unbooked, not remaining: the visit already booked has spent its credit')
   assert.equal(running.expires_at, '2090-03-01T15:59:59.000Z', 'the end of its last day, at the studio')
-  assert.deepEqual([running.active, running.validity_days, running.amount_paid_sgd, running.list_price_sgd], [true, 60, '250.00', '260.00'])
+  // List Price is what was paid: the catalogue's price today is no discount this member was given.
+  assert.deepEqual([running.active, running.validity_days, running.amount_paid_sgd, running.list_price_sgd], [true, 60, '250.00', '250.00'])
   assert.equal(running.purchased_at, '2026-07-31T16:00:00.000Z', 'first activation, studio-local')
 
   const waiting = named('100000001', 'Class Pack - Bundle of 20')
@@ -230,7 +231,7 @@ test('live packages: the soonest-ending runs with its expiry and unbooked balanc
     [waiting.expires_at, waiting.active, waiting.credits_or_sessions_remaining, waiting.validity_days],
     [null, true, 20, daysLeftUntil(2090, 6, 1)],
   )
-  assert.equal(waiting.list_price_sgd, '450.00', 'no List Price in the config: what was paid')
+  assert.equal(waiting.list_price_sgd, '500.00', 'what was paid, and the 50.00 a promotion took off it (Promotions)')
 
   const pt = named('100000008', 'PT - Bundle of 10')
   assert.deepEqual([pt.kind, pt.credits_or_sessions_remaining, pt.expires_at, pt.source_class_package_id], ['pt', 7, '2090-04-01T15:59:59.000Z', null])
@@ -766,7 +767,7 @@ test('verify: an attendee lost on the way in is named by workshop', async () => 
 test('verify: the archive adds up to its own expected figures, and an altered balance is named by member', async () => {
   const { archive, expected, zip } = await run()
   assert.deepEqual(
-    { ...expected, perMember: undefined, perClass: undefined, perWorkshop: undefined, byYear: undefined },
+    { ...expected, perMember: undefined, perClass: undefined, perWorkshop: undefined, byYear: undefined, revenueByMonth: undefined, refunds: undefined },
     {
       members: 8,
       staffByRole: { admin: 2, instructor: 2 },
@@ -782,6 +783,8 @@ test('verify: the archive adds up to its own expected figures, and an altered ba
       perClass: undefined,
       perWorkshop: undefined,
       byYear: undefined,
+      revenueByMonth: undefined,
+      refunds: undefined,
     },
   )
   // No history is asked for, so every class the studio has is still to come.
@@ -994,41 +997,166 @@ test('past PT is a session, a request that says how it ended, and a booking per 
   )
 })
 
-test('past purchases are a separate opt-in, joined to members by name and phone, and never guessed', async () => {
+test('past purchases are a separate opt-in, one per sale line, on the member whose id is on the sale, dated when it was sold', async () => {
   const without = await run(withHistory(false))
   assert.ok(
     !without.archive.rows.client_packages!.some(p => p.amount_paid_sgd === '250.00' && p.active === false),
     'without the opt-in the studio has no pre-launch revenue',
   )
+  assert.deepEqual(without.archive.rows.purchases, [])
 
-  const { archive, ids, preflight } = await run(withHistory(true))
+  const { archive, ids } = await run(withHistory(true))
   const who = new Map(Object.entries(ids.clients!).map(([barcode, id]) => [id as string, barcode]))
   const past = archive.rows.client_packages!.filter(p => p.active === false && p.kind === 'credit_bundle')
   assert.deepEqual(
-    past.map(p => `${who.get(String(p.client_id))} ${p.amount_paid_sgd} ${p.purchased_at} ${p.credits_or_sessions_remaining}`).sort(),
+    past
+      .map(p => `${who.get(String(p.client_id))} ${p.amount_paid_sgd} ${p.list_price_sgd} ${p.purchased_at} ${p.expires_at} ${p.complimentary}`)
+      .sort(),
     [
-      '100000001 250.00 2026-06-30T16:00:00.000Z 0',
-      '100000002 250.00 2026-06-30T16:00:00.000Z 0',
+      '100000001 250.00 250.00 2026-06-30T16:00:00.000Z 2026-08-30T15:59:59.000Z false',
+      // Two sales of one pack on two dates are two packages, each on its own
+      // sale date. The June one is in no register row, so it runs its validity
+      // from the day it was sold.
+      '100000002 0.00 0.00 2026-07-03T16:00:00.000Z 2026-07-13T15:59:59.000Z true',
+      '100000002 240.00 240.00 2026-06-01T16:00:00.000Z 2026-07-31T15:59:59.000Z false',
+      '100000002 250.00 250.00 2026-06-30T16:00:00.000Z 2026-08-30T15:59:59.000Z false',
       // Spent but not yet expired, so Visits Remaining does not hold it either:
       // without this it would be money the studio took and nobody counted.
-      '100000005 250.00 2026-06-30T16:00:00.000Z 0',
+      '100000005 250.00 250.00 2026-06-30T16:00:00.000Z 2026-09-30T15:59:59.000Z false',
     ],
-    'used up, and dated when they were bought, so Finance shows the money on that day',
+    'List Price is what was paid; the $0 ClassPass the register never listed is Complimentary, not a pack at 100% off',
   )
-  assert.ok(past.every(p => p.source_class_package_id === ids.class_packages!['Class Pack - Bundle of 10']))
-
-  // A register row that matches no member, and an option in no catalogue entry:
-  // both are named for a person, and neither is guessed at.
-  assert.ok(
-    preflight.schedule.some(n => /Nobody, Ghost — Class Pack - Bundle of 10 — 1 purchase\(s\) match no member/.test(n)),
-    preflight.schedule.join(' | '),
-  )
-  assert.ok(
-    preflight.schedule.some(n => /"Towel Service" was sold 1 time\(s\) in the window and is in no catalogue entry/.test(n)),
-    preflight.schedule.join(' | '),
-  )
+  assert.equal(past.filter(p => p.source_class_package_id === ids.class_packages!['Class Pack - Bundle of 10']).length, 4)
   // A purchase still live at the download already came across as a live package.
   assert.equal(archive.rows.client_packages!.filter(p => p.source_pt_package_id != null).length, 1)
+})
+
+test('two members of one name are never swapped: each past purchase is on the member whose id is on the sale', async () => {
+  const reports = await readReports(REPORTS)
+  // A second Rick Roe, with no phone to tell the two apart in the register.
+  reports.members.push({ id: '100000009', firstName: 'Rick', lastName: 'Roe', email: 'rick.two@example.test', phone: '' })
+  const day = (year: number, month: number, d: number) => ({ year, month, day: d, hour: 0, minute: 0, second: 0 })
+  reports.sales.push({
+    clientId: '100000009',
+    saleId: '7650',
+    soldAt: day(2026, 7, 10),
+    description: 'Class Pack -  Bundle of 10',
+    location: 'Main Hall',
+    quantity: 1,
+    total: 230,
+  })
+  reports.optionSales.push({
+    client: 'Roe, Rick',
+    phone: '',
+    option: 'Class Pack -  Bundle of 10',
+    activation: day(2026, 7, 10),
+    expiration: day(2026, 9, 7),
+    paid: 230,
+    remaining: { unlimited: false, count: 0 },
+  })
+  const { archive, ids } = mapStudio(reports, validateConfig(withHistory(true)), TENANT)
+  const paidBy = (barcode: string) =>
+    archive.rows.client_packages!
+      .filter(p => p.client_id === ids.clients![barcode] && p.active === false && p.kind === 'credit_bundle')
+      .map(p => `${p.amount_paid_sgd} ${p.purchased_at} ${p.expires_at}`)
+      .sort()
+  assert.deepEqual(paidBy('100000009'), ['230.00 2026-07-09T16:00:00.000Z 2026-09-07T15:59:59.000Z'])
+  assert.deepEqual(paidBy('100000002'), [
+    '0.00 2026-07-03T16:00:00.000Z 2026-07-13T15:59:59.000Z',
+    '240.00 2026-06-01T16:00:00.000Z 2026-07-31T15:59:59.000Z',
+    '250.00 2026-06-30T16:00:00.000Z 2026-08-30T15:59:59.000Z',
+  ])
+})
+
+test('a sale and its return are one past purchase with one Refund, on a Purchase no payment provider ever saw', async () => {
+  const { archive, ids, preflight } = await run(withHistory(true))
+  const returned = archive.rows.client_packages!.find(
+    p => p.client_id === ids.clients!['100000002'] && p.purchased_at === '2026-06-30T16:00:00.000Z' && p.kind === 'credit_bundle',
+  )!
+  assert.equal(returned.active, false, 'a refunded purchase is not a live package')
+  assert.ok(returned.purchase_id)
+  assert.deepEqual(archive.rows.purchases, [
+    {
+      id: returned.purchase_id,
+      tenant_id: TENANT,
+      client_id: ids.clients!['100000002'],
+      kind: 'class_package',
+      total_sgd: '250.00',
+      amount_paid_sgd: '0.00',
+      status: 'refunded',
+      settled_at: '2026-06-30T16:00:00.000Z',
+      // 3 July, the day of the return, at the studio.
+      refunded_at: '2026-07-02T16:00:00.000Z',
+      created_at: '2026-06-30T16:00:00.000Z',
+    },
+  ])
+  // No second package for the return, and none for the purchases around it.
+  assert.equal(archive.rows.client_packages!.filter(p => p.purchase_id != null).length, 1)
+  assert.ok(preflight.schedule.includes('history purchases: 1 return(s) came across as a Refund on the purchase each reverses'), preflight.schedule.join(' | '))
+  // A return with nothing in the window to reverse is named, not guessed onto another sale.
+  assert.ok(
+    preflight.schedule.includes(
+      'history purchases: a return of "Class Pack - Bundle of 20" on 2026-07-20 for Kim Lee (100000005), -450.00, reverses no sale, so no Refund was written',
+    ),
+    preflight.schedule.join(' | '),
+  )
+  assert.deepEqual(constraintViolations(archive), [])
+})
+
+test('sale lines that cannot be placed are counted in the preflight with their money', async () => {
+  const { preflight } = await run(withHistory(true))
+  const lines = preflight.schedule.filter(n => n.startsWith('history purchases:'))
+  assert.ok(lines.includes('history purchases: 2 sale line(s) totalling 265.00 were not placed on any member\'s package'), lines.join(' | '))
+  assert.ok(lines.includes('history purchases: "Class Pack - Bundle of 10" — client 100000099 is not in the member list — 1 sale line(s), 250.00'), lines.join(' | '))
+  assert.ok(lines.includes('history purchases: "Towel Service" — in no catalogue entry — 1 sale line(s), 15.00'), lines.join(' | '))
+  // Only a plan holds a Location here; a pack's sale Location is said to be lost, not quietly dropped.
+  assert.ok(lines.some(l => /^history purchases: 5 past package\(s\) were sold at a Location, which is not recorded/.test(l)), lines.join(' | '))
+
+  // A return whose sale is before the cutoff has nothing here to refund, and is counted rather than lost.
+  const cut = await run(withHistory(true, '2025-01-15'))
+  assert.ok(
+    cut.preflight.schedule.includes(
+      'history purchases: "Class Pack - Bundle of 10" — returns a sale from before 2025-01-15, which did not come across — 1 sale line(s), -250.00',
+    ),
+    cut.preflight.schedule.join(' | '),
+  )
+})
+
+test('a promotion is the only discount: a promo sale s List Price is what was paid plus what the promotion took off', async () => {
+  const { archive, ids } = await run()
+  const promoted = archive.rows.client_packages!.find(r => r.id === ids.client_packages!['100000001/Class Pack - Bundle of 20'])!
+  assert.deepEqual([promoted.amount_paid_sgd, promoted.list_price_sgd, promoted.complimentary], ['450.00', '500.00', false])
+  const discounted = archive.rows.client_packages!.filter(p => p.list_price_sgd !== p.amount_paid_sgd)
+  assert.deepEqual(discounted.map(p => p.id), [promoted.id], 'no other package shows a discount')
+
+  // Without the Promotions report the sale reads as sold at what was paid.
+  const reports = await readReports(REPORTS)
+  const plain = mapStudio({ ...reports, promotions: [] }, validateConfig(fixtureConfig()), TENANT)
+  const again = plain.archive.rows.client_packages!.find(r => r.id === plain.ids.client_packages!['100000001/Class Pack - Bundle of 20'])!
+  assert.equal(again.list_price_sgd, '450.00')
+})
+
+test('verify: a lost refund, and a month whose revenue moved, are each named', async () => {
+  const { archive, expected, zip } = await run(withHistory(true))
+  assert.deepEqual(await verifyImport(expected, zip), [])
+  assert.equal(
+    expected.revenueByMonth['2026-07'],
+    3 * 25000 + 120000,
+    'three class packs sold in July and a PT pack that started then; the $0 ClassPass is not revenue',
+  )
+  assert.deepEqual(Object.values(expected.refunds), [{ name: 'the refund to Rick Roe <rick.roe@example.test> on 2026-07-03', cents: 25000 }])
+
+  const moved = archive.rows.client_packages!.find(p => p.purchased_at === '2026-06-01T16:00:00.000Z' && p.kind === 'credit_bundle')!
+  moved.purchased_at = '2026-07-01T16:00:00.000Z'
+  archive.rows.purchases = []
+  archive.manifest.counts.purchases = 0
+  const differences = await verifyImport(expected, await packArchive(archive))
+  assert.ok(differences.includes('2026-06: revenue: expected 1940.00, found 1700.00'), differences.join(' | '))
+  assert.ok(differences.includes('2026-07: revenue: expected 1950.00, found 2190.00'), differences.join(' | '))
+  assert.ok(
+    differences.includes('the refund to Rick Roe <rick.roe@example.test> on 2026-07-03: 250.00 in the archive, and no such refund in the studio'),
+    differences.join(' | '),
+  )
 })
 
 test('history reaching back to a member s trial does not write them a second one', async () => {
@@ -1040,14 +1168,16 @@ test('history reaching back to a member s trial does not write them a second one
   assert.equal(trials.filter(p => p.client_id === ids.clients!['100000001']).length, 1)
   // The money it took is named, so it is not simply missing from Finance.
   assert.ok(
-    preflight.schedule.some(n => /Doe, Jane — 2 Trial Classes for New Joiners, 10\.00 — 1 trial\(s\) a member has already come across holding/.test(n)),
+    preflight.schedule.includes(
+      'history purchases: Jane Doe (100000001) — 2 Trial Classes for New Joiners, 10.00 — a trial for a member who already came across holding one, so the money is not in Finance; a member may hold only one trial ever',
+    ),
     preflight.schedule.join(' | '),
   )
 
-  // A name Mindbody writes as ".,  Legacy" is the member whose surname is blank,
-  // not a stranger: the fold drops the full stop the missing surname leaves.
+  // A name Mindbody writes as ".,  Legacy" in the register is the member whose
+  // surname is blank: the sale's id says so, and the register lends its dates.
   const legacy = archive.rows.client_packages!.filter(p => p.client_id === ids.clients!.AB123456 && p.active === false)
-  assert.deepEqual(legacy.map(p => p.amount_paid_sgd), ['250.00'])
+  assert.deepEqual(legacy.map(p => [p.amount_paid_sgd, p.expires_at]), [['250.00', '2023-12-31T15:59:59.000Z']])
 })
 
 test('the cutoff is the only thing that decides how far back the studio goes', async () => {
@@ -1273,7 +1403,7 @@ test('a past Unlimited Plan purchase keeps a Home Location, and the archive keep
   const { archive, ids } = await run(withHistory(true))
   const past = archive.rows.client_packages!.filter(p => p.kind === 'unlimited' && p.active === false)
   assert.ok(past.length > 0, 'the fixture has a past plan purchase')
-  assert.ok(past.every(p => p.location_id === ids.locations!['location-1']), 'homed where the live plan is: the platform requires a Home Location')
+  assert.ok(past.every(p => p.location_id === ids.locations!['location-2']), 'homed where it was sold: the platform requires a Home Location')
   assert.deepEqual(constraintViolations(archive), [])
 })
 
