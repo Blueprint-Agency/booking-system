@@ -6,7 +6,7 @@
 import { and, eq } from 'drizzle-orm'
 import { db } from '../../db'
 import { workshops, workshopTiers } from '../../db/schema/schedule'
-import { BadRequestError, NotFoundError } from '../../shared/errors'
+import { NotFoundError } from '../../shared/errors'
 import { toCents } from '../../shared/money'
 import {
   grantsWithoutPaying,
@@ -17,7 +17,7 @@ import { openSettledPurchase } from '../billing/purchases'
 import { tenantDisplayName } from '../tenants/mail-identity'
 import { listActivePromotionsFor } from '../packages/promotions'
 import { applyPromoCode, type AppliedPromoCode } from '../packages/promo-redemption'
-import { assertWorkshopBookable, bookWorkshopFree, tierEffectivePrice } from './book'
+import { assertWorkshopBookable, assertWorkshopOnSale, bookWorkshopFree, tierEffectivePrice } from './book'
 
 export type WorkshopCheckout = CheckoutQuote<{ bookingId: string }>
 
@@ -51,7 +51,7 @@ export async function beginWorkshopCheckout(
     .where(and(eq(workshops.tenantId, tenantId), eq(workshops.id, workshopId)))
     .limit(1)
   if (!ws) throw new NotFoundError('workshop_not_found')
-  if (ws.lifecycle !== 'active') throw new BadRequestError('workshop_not_active')
+  await assertWorkshopOnSale(tenantId, ws)
 
   const promos = await listActivePromotionsFor(tenantId, 'workshop', [workshopId])
   // Early-bird beats promotions while the cutoff is live — same rule the FE uses

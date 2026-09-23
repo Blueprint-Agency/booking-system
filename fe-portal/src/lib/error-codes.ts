@@ -327,6 +327,7 @@ export const ERROR_CODES = {
   workshop_check_in_unsupported: "workshop_check_in_unsupported",
   workshop_day_has_bookings: "workshop_day_has_bookings",
   workshop_day_not_found: "workshop_day_not_found",
+  workshop_ended: "workshop_ended",
   workshop_full: "workshop_full",
   workshop_has_no_main_instructor: "workshop_has_no_main_instructor",
   workshop_is_not_free: "workshop_is_not_free",
