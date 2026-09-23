@@ -92,7 +92,8 @@ export function proposeSchedule(
   ].sort()
 
   // Weekly: the same weekday, time, Room and name in each of the four weeks
-  // that ended on the day of the download.
+  // that ended on the day of the download — from the timetable's past, since its
+  // future reaches only days past the download.
   const series: Proposal['series'] = []
   if (today !== null) {
     const phoneBook = new Map(reports.phoneBook.map(p => [normaliseStaffName(p.name), p.name]))
@@ -106,9 +107,16 @@ export function proposeSchedule(
     }
     for (const key of [...slots.keys()].sort()) {
       const rows = slots.get(key)!
+      // In every one of the weeks up to the download: a slot that stopped is not running.
       const weeks = new Set(rows.map(r => Math.floor((today - dayNumber(r.date)) / 7)))
       if (weeks.size < WEEKS) continue
-      const teacher = commonest(rows.map(r => r.staff))
+      // Who teaches it now. A substitute covering (`***`) never counts; a slot
+      // clearly handed over — the new teacher took the last two weeks it ran —
+      // goes with them; anything less clear is whoever taught it most.
+      const own = rows.filter(r => !r.substitute).sort((a, b) => dayNumber(a.date) - dayNumber(b.date))
+      const [before, latest] = own.slice(-2).map(r => normaliseStaffName(r.staff))
+      const teacher =
+        latest !== undefined && latest === before ? own.at(-1)!.staff : commonest((own.length > 0 ? own : rows).map(r => r.staff))
       series.push({
         className: commonest(rows.map(r => r.description)),
         weekday: isoWeekday(rows[0]!.date),

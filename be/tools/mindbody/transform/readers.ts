@@ -71,7 +71,12 @@ export type MemberListRow = {
   firstName: string
   lastName: string
   email: string | null
+  /** Read the one way every report's phone is, which is how a past sale is told apart by phone (`./register.ts`). */
   phone: string
+  /** The Mobile phone cell as written: the mapper formats it with `country`. */
+  mobile: string
+  /** Where the member lives, as an ISO code (`SG`); empty where the report has no Country. */
+  country: string
 }
 
 /** `.` and `,` are what a surname field holds when nobody typed one. */
@@ -93,7 +98,31 @@ export function readMemberList(html: string): MemberListRow[] {
       lastName: surname(cell(row, columns, 'Last name')),
       email: cleanEmail(cell(row, columns, 'Email')),
       phone: cleanPhone(cell(row, columns, 'Mobile phone')),
+      mobile: tidy(cell(row, columns, 'Mobile phone')),
+      country: tidy(cell(row, columns, 'Country')).toUpperCase(),
     })
+  }
+  return out
+}
+
+/* ── 01 Membership — New Version Detail: the Location a membership is held at ─ */
+
+export type MembershipRow = {
+  id: string
+  /** `Active`, `Expired`, … */
+  status: string
+  /** The Location's name, as the timetable spells it. */
+  location: string
+}
+
+/** Takes a workbook already read into rows (`./xlsx.ts`): one row per member who has held a membership. */
+export function readMembership(rows: TableRow[]): MembershipRow[] {
+  const { at, columns } = header(rows, 'Membership (New Version Detail)', ['BarcodeID', 'Status', 'Location'])
+  const out: MembershipRow[] = []
+  for (const row of dataRows(rows, at)) {
+    const id = clientId(row, columns, 'BarcodeID')
+    if (!id) continue
+    out.push({ id, status: tidy(cell(row, columns, 'Status')), location: tidy(cell(row, columns, 'Location')) })
   }
   return out
 }
@@ -555,6 +584,8 @@ export type AttendanceRow = {
   status: string
   /** The pricing option the visit was taken from, as written. Blank where Mindbody recorded none. */
   option: string
+  /** Where that option was sold: a Location's name, or `Online Store`. Empty where the report has no such column. */
+  saleLocation: string
   /**
    * The status was read from the Yes/No flags, where "neither" cannot tell a
    * visit from a seat nobody marked: the roster's Status says which.
@@ -623,6 +654,7 @@ export function readAttendance(rows: TableRow[]): AttendanceRow[] {
       clientId: id,
       status: flagged ? statusFromFlags(row, columns) : tidy(cell(row, columns, 'Status')),
       option: /^n\/a$/i.test(option) ? '' : option,
+      saleLocation: tidy(cell(row, columns, 'Sale Location')),
       ...(flagged ? { fromFlags: true } : {}),
     })
   }

@@ -10,6 +10,7 @@ import {
   readAttendance,
   readAutopayDetail,
   readMemberList,
+  readMembership,
   readCancellations,
   readGroupCancellations,
   readPayroll,
@@ -40,6 +41,8 @@ export const REPORTS = {
   members: { label: 'Mailing Lists — Mailing List', test: (f: string) => /mailing list\.[a-z]+$/i.test(f) },
   referrals: { label: 'Referral Types (detail files)', test: (f: string) => /referral types/i.test(f) && !/summary/i.test(f) },
   retention: { label: 'Retention Management', test: (f: string) => /retention management/i.test(f) },
+  // The Old Version is totals; only the Detail has a row per member.
+  membership: { label: 'Membership — New Version Detail', test: (f: string) => /membership - new version detail/i.test(f) },
   phoneBook: { label: 'Phone Book', test: (f: string) => /phone book/i.test(f) },
   // The Summary view is the same rows with fewer columns; Detail has the activation date.
   holdings: { label: 'Visits Remaining — Detail', test: (f: string) => /visits remaining.*detail/i.test(f) },
@@ -82,6 +85,7 @@ export const REPORT_RULES: Record<keyof typeof REPORTS, { single: boolean; requi
   members: { single: true, required: true },
   referrals: { single: false, required: true },
   retention: { single: true, required: true },
+  membership: { single: true, required: false },
   phoneBook: { single: true, required: true },
   holdings: { single: true, required: true },
   optionSales: { single: true, required: true },
@@ -159,12 +163,15 @@ export async function readReports(dir: string): Promise<MindbodyReports> {
   const groupCancellationsFile = optional('groupCancellations')
   // Optional: a download older than it has none, and every past sale is then read as sold at full price.
   const promotionsFile = optional('promotions')
+  // Optional: an Unlimited Plan's Home Location falls back past it to where its visits were sold.
+  const membershipFile = optional('membership')
   const autopayFile = optional('autopay')
 
   return {
     members: readMemberList(await one('members')),
     referrals,
     retention: readRetentionManagement(await one('retention')),
+    membership: membershipFile ? readMembership(await workbook(membershipFile)) : [],
     phoneBook: readPhoneBook(await one('phoneBook')),
     holdings: readVisitsRemaining(await workbook(holdingsFile)),
     optionSales: readPricingOptionRegister(await one('optionSales')),

@@ -243,8 +243,15 @@ test('live packages: the soonest-ending runs with its expiry and unbooked balanc
   assert.deepEqual(held('AB123456'), [], 'a pack that expired years ago with credits on it is not live')
 })
 
-test('an Unlimited Plan keeps its expiry, is homed at the default Location, and a pass for the other Location is its Add-On', async () => {
-  const { archive, ids } = await run()
+/** The fixture's reports, with Rick placed at another Location (a Mindbody location id, `0` for none) in Retention Management. */
+const rickAt = (reports: Awaited<ReturnType<typeof readReports>>, location: string) => ({
+  ...reports,
+  retention: reports.retention.map(r => (r.id === '100000002' ? { ...r, location } : r)),
+})
+
+test('an Unlimited Plan keeps its expiry, is homed where its member is, and a pass for the other Location is its Add-On', async () => {
+  const reports = await readReports(REPORTS)
+  const { archive, ids } = mapStudio(rickAt(reports, '1'), validateConfig(fixtureConfig()), TENANT)
   const [plan, ...others] = archive.rows.client_packages!.filter(r => r.client_id === ids.clients!['100000002'])
   assert.deepEqual(others, [], 'the access pass is not a package of its own')
   assert.deepEqual(
@@ -253,10 +260,10 @@ test('an Unlimited Plan keeps its expiry, is homed at the default Location, and 
   )
   assert.equal(plan!.cross_location_paid_sgd, '120.00', 'what the pass cost')
 
-  // A plan whose name names a Location is homed there, whatever the default is.
+  // Where no report places the member, a plan whose name names a Location is homed there.
   const config = fixtureConfig()
   config.catalogue.find((e: { name: string }) => e.name === 'Unlimited 12').mindbodyNames = ['Unlimited 12', 'Unlimited 12 - Riverside']
-  const homed = await run(config)
+  const homed = mapStudio(rickAt(reports, '0'), validateConfig(config), TENANT)
   const moved = homed.archive.rows.client_packages!.find(r => r.kind === 'unlimited')!
   assert.equal(moved.location_id, homed.ids.locations!['location-2'])
   assert.equal(moved.cross_location_paid_sgd, null, 'a pass for the Location the plan is already homed at adds nothing')
@@ -363,7 +370,8 @@ test('the starter config proposes the catalogue from what was sold', async () =>
   const ten = proposed['Class Pack - Bundle of 10']!
   assert.deepEqual(
     [ten.migrate, ten.kind, ten.credits, ten.validityDays, ten.priceSgd],
-    [null, 'credit_bundle', 10, 60, 250],
+    // The fixture's packs run 1 July to 30 August: 61 days, both counted.
+    [null, 'credit_bundle', 10, 61, 250],
     'the commonest count, spread and price — not the one 90-day pack, the discount or the return',
   )
   const trial = proposed['2 Trial Classes for New Joiners']!
@@ -372,7 +380,7 @@ test('the starter config proposes the catalogue from what was sold', async () =>
   assert.deepEqual([plan.kind, plan.durationMonths, plan.credits, plan.priceSgd], ['unlimited', 12, null, 1700])
   assert.equal(proposed['Riverside Studio Access']!.kind, 'access_pass')
   const pt = proposed['PT - Bundle of 10']!
-  assert.deepEqual([pt.kind, pt.sessionType, pt.credits, pt.validityDays], ['pt', '1on1', 10, 90])
+  assert.deepEqual([pt.kind, pt.sessionType, pt.credits, pt.validityDays], ['pt', '1on1', 10, 91], '5 July to 3 October')
   assert.deepEqual([proposed['ClassPass']!.migrate, proposed['ClassPass']!.priceSgd], ['legacy', 0])
   assert.equal(proposed['MAT STORAGE (1 Year)']!.migrate, 'skip')
   assert.equal(proposed['Handstand Workshop - Twin']!.migrate, 'skip')
@@ -1034,7 +1042,7 @@ test('past purchases are a separate opt-in, one per sale line, on the member who
 test('two members of one name are never swapped: each past purchase is on the member whose id is on the sale', async () => {
   const reports = await readReports(REPORTS)
   // A second Rick Roe, with no phone to tell the two apart in the register.
-  reports.members.push({ id: '100000009', firstName: 'Rick', lastName: 'Roe', email: 'rick.two@example.test', phone: '' })
+  reports.members.push({ id: '100000009', firstName: 'Rick', lastName: 'Roe', email: 'rick.two@example.test', phone: '', mobile: '', country: '' })
   const day = (year: number, month: number, d: number) => ({ year, month, day: d, hour: 0, minute: 0, second: 0 })
   reports.sales.push({
     clientId: '100000009',
@@ -1378,7 +1386,7 @@ test('report-files.json: every file the cutover download writes matches exactly 
   // The files the download also writes and nothing reads stay unread.
   for (const extra of [
     '21 Referral Types - All Referrers-Summary.xls',
-    '01 Membership - New Version Detail.xlsx',
+    '01 Membership - Old Version (totals).xls',
   ]) {
     assert.deepEqual(Object.entries(REPORT_FILES).filter(([, r]) => r.test(extra)), [], extra)
   }
@@ -1442,7 +1450,7 @@ test('the register is joined to members by name, and by phone only where a name 
     { id: '1', firstName: 'Jane', lastName: 'Doe', email: null, phone: '+6591234567' },
     { id: '2', firstName: 'Kim', lastName: 'Lee', email: null, phone: '+6590000001' },
     { id: '3', firstName: 'Kim', lastName: 'Lee', email: null, phone: '+6590000002' },
-  ]
+  ].map(m => ({ ...m, mobile: m.phone, country: 'SG' }))
   const who = registerMatcher(members)
   assert.deepEqual(who(sale({ client: 'Doe, Jane', phone: '' })), { clientId: '1', outcome: 'matched' }, 'one member of that name')
   assert.deepEqual(who(sale({ client: 'Lee, Kim', phone: '+6590000002' })), { clientId: '3', outcome: 'matched' }, 'the phone tells two apart')
@@ -1624,6 +1632,7 @@ test('history: a visit is attended unless a flag says otherwise, an unpaid visit
     clientId,
     status,
     option,
+    saleLocation: '',
     fromFlags,
   })
   const attendance = [
@@ -1667,6 +1676,7 @@ test('history: past PT ends as it did — a no-show stays one, a late cancel is 
     clientId: '100000008',
     status,
     option,
+    saleLocation: '',
   })
   const attendance = [
     ...reports.attendance,
@@ -1728,6 +1738,205 @@ test('history: past PT ends as it did — a no-show stays one, a late cancel is 
     preflight.schedule.some(n => /history: 3 past PT session\(s\) have no roster line to say who booked them/.test(n)),
     preflight.schedule.join(' | '),
   )
+})
+
+/* ── Members, packages and weekly Class Series from report data (#220) ───── */
+
+/** A visit in the Attendance report, as its reader returns one. */
+const attended = (clientId: string, date: { year: number; month: number; day: number }, over: Record<string, unknown> = {}) => ({
+  date,
+  start: { hour: 19, minute: 0 },
+  end: null,
+  description: 'Hatha',
+  staff: 'Instructor, Ivy',
+  room: '',
+  location: 'Main Hall',
+  clientId,
+  status: 'Signed in',
+  option: '',
+  saleLocation: '',
+  fromFlags: true,
+  ...over,
+})
+
+test('an Unlimited Plan is homed where its member is: Retention Management, then Membership, then where their visits were sold, then its name, then the default', async () => {
+  const reports = await readReports(REPORTS)
+  const config = validateConfig(fixtureConfig())
+  const homeOf = (r: typeof reports) => {
+    const { archive, ids, preflight } = mapStudio(r, config, TENANT)
+    const plan = archive.rows.client_packages!.find(p => p.kind === 'unlimited' && p.client_id === ids.clients!['100000002'])!
+    return { home: Object.keys(ids.locations!).find(k => ids.locations![k] === plan.location_id), preflight }
+  }
+
+  // Rick at Mindbody location 2 in Retention Management, and the plan's name says nothing.
+  const retained = homeOf(rickAt(reports, '2'))
+  assert.equal(retained.home, 'location-2')
+  assert.ok(
+    retained.preflight.schedule.some(n => /Unlimited Plan Home Locations: 1 from Retention Management, 0 from Membership, 0 from where the member's visits were sold, 0 from the plan, 0 at defaultLocation/.test(n)),
+    retained.preflight.schedule.join(' | '),
+  )
+
+  const nowhere = rickAt(reports, '0')
+  assert.equal(homeOf(nowhere).home, 'location-1', 'no report places him: the default')
+  assert.ok(homeOf(nowhere).preflight.schedule.some(n => /0 from the plan, 1 at defaultLocation/.test(n)))
+  assert.equal(homeOf({ ...nowhere, membership: [{ id: '100000002', status: 'Active', location: 'Riverside' }] }).home, 'location-2', 'Membership s Location')
+
+  // Where his visits were sold, most often: twice at Riverside, once online, once at Main Hall.
+  const attendance = [
+    ...nowhere.attendance,
+    attended('100000002', { year: 2026, month: 9, day: 1 }, { saleLocation: 'Riverside' }),
+    attended('100000002', { year: 2026, month: 9, day: 2 }, { saleLocation: 'Riverside ' }),
+    attended('100000002', { year: 2026, month: 9, day: 3 }, { saleLocation: 'Online Store' }),
+    attended('100000002', { year: 2026, month: 9, day: 4 }, { saleLocation: 'Main Hall' }),
+  ]
+  const sold = homeOf({ ...nowhere, attendance })
+  assert.equal(sold.home, 'location-2')
+  assert.ok(sold.preflight.schedule.some(n => /1 from where the member's visits were sold/.test(n)), sold.preflight.schedule.join(' | '))
+})
+
+test('a shared email is kept by the profile that visited last, by the attendance history', async () => {
+  const reports = await readReports(REPORTS)
+  // Kim's last visit in Retention Management is later than Sam's, but Sam came to class after it.
+  const attendance = [...reports.attendance, attended('100000004', { year: 2026, month: 9, day: 16 })]
+  const { preflight } = mapStudio({ ...reports, attendance }, validateConfig(fixtureConfig()), TENANT)
+  assert.equal(preflight.sharedEmails[0]!.keeper.id, '100000004')
+
+  // A no-show or a cancel is no visit.
+  const noShow = [...reports.attendance, attended('100000004', { year: 2026, month: 9, day: 16 }, { status: 'No Show' })]
+  assert.equal(mapStudio({ ...reports, attendance: noShow }, validateConfig(fixtureConfig()), TENANT).preflight.sharedEmails[0]!.keeper.id, '100000005')
+})
+
+test('phones are formatted with the member s country; the dummy is empty; a number that cannot be is listed', async () => {
+  const reports = await readReports(REPORTS)
+  const members = reports.members.map(m =>
+    m.id === '100000001'
+      ? { ...m, mobile: '012-345 6789', country: 'MY' }
+      : m.id === '100000003'
+        ? { ...m, mobile: '0412 345 678', country: '' }
+        : m,
+  )
+  const { archive, ids, preflight } = mapStudio({ ...reports, members }, validateConfig(fixtureConfig()), TENANT)
+  const preflightText = renderPreflight(preflight)
+  const phone = (barcode: string) => archive.rows.clients!.find(r => r.id === ids.clients![barcode])!.phone
+  assert.equal(phone('100000001'), '+60123456789', 'Malaysia s calling code, the trunk 0 dropped')
+  assert.equal(phone('100000005'), '+6598765432')
+  assert.equal(phone('100000002'), '', 'Mindbody s dummy phone')
+  // No Country: the config's default, where this number is too long to be one.
+  assert.equal(phone('100000003'), '')
+  assert.deepEqual(preflight.badPhones, [{ id: '100000003', name: 'Pat Poe', phone: '0412 345 678', country: 'SG' }])
+  assert.match(preflightText, /## Phones that could not be formatted \(1\)/)
+  assert.match(preflightText, /100000003 Pat Poe: "0412 345 678" \(SG\)/)
+
+  const config = fixtureConfig()
+  config.defaultCountry = 'AU'
+  const australian = mapStudio({ ...reports, members }, validateConfig(config), TENANT)
+  assert.equal(australian.archive.rows.clients!.find(r => r.id === australian.ids.clients!['100000003'])!.phone, '+61412345678')
+})
+
+test('proposed Validity counts both the first and the last day: a 60-day pack proposes 60', async () => {
+  const reports = await readReports(REPORTS)
+  const optionSales = [
+    ...reports.optionSales.filter(s => !/bundle of 10/i.test(s.option)),
+    sale({ activation: day(2026, 7, 1), expiration: day(2026, 8, 29) }),
+    sale({ activation: day(2026, 5, 1), expiration: day(2026, 6, 29) }),
+  ]
+  const starter = starterConfig({ ...reports, optionSales }, '2026-09-17T02:00:00+08:00')
+  assert.equal(starter.catalogue!.find(e => e.name === 'Class Pack - Bundle of 10')!.validityDays, 60)
+})
+
+test('a future booking beyond the running package s expiry is paid by the package waiting behind it', async () => {
+  const reports = await readReports(REPORTS)
+  // Jane's running pack ends on 3 January; her Bundle of 20 waits behind it.
+  const holdings = reports.holdings.map(h =>
+    h.clientId === '100000001' && /bundle of 10/i.test(h.option) ? { ...h, lastExpiration: day(2090, 1, 3) } : h,
+  )
+  const seat = (clientId: string) => ({ ...reports.roster.find(r => r.date.year === 2090 && r.clientId === '100000001')!, date: { year: 2090, month: 1, day: 9 }, clientId, status: 'Reserved' })
+  const roster = [...reports.roster, seat('100000001'), seat('100000004')]
+  const { archive, ids, preflight } = mapStudio({ ...reports, holdings, roster }, validateConfig(fixtureConfig()), TENANT)
+  const classOn = (at: string) => archive.rows.classes!.find(c => c.starts_at === at)!.id
+  const booking = (barcode: string, at: string) =>
+    archive.rows.bookings!.find(b => b.client_id === ids.clients![barcode] && b.class_id === classOn(at))!
+
+  assert.equal(booking('100000001', '2090-01-02T11:00:00.000Z').client_package_id, ids.client_packages!['100000001/Class Pack - Bundle of 10'])
+  const later = booking('100000001', '2090-01-09T11:00:00.000Z')
+  assert.equal(later.client_package_id, ids.client_packages!['100000001/Class Pack - Bundle of 20'])
+  assert.equal(later.credits_or_sessions_used, 1)
+
+  // What is still unpaid is split: Sam's trial ends before the class in Mindbody too;
+  // Pat holds a pack in Mindbody (with no expiry) that is not a package here.
+  const notes = preflight.schedule.join(' | ')
+  assert.match(notes, /100000004 Sam Lee: booked into HATHA on 2090-01-09 at 19:00 with no class package to pay for it — unpaid in Mindbody too/)
+  assert.match(notes, /100000003 Pat Poe: booked into Hatha on 2090-01-09 at 19:00 with no class package to pay for it — unmatched: Mindbody has something to pay for it/)
+  assert.match(notes, /future bookings with no package: 1 unpaid in Mindbody too, 1 unmatched/)
+})
+
+test('a Class Type with no future class and no Class Series arrives archived; the ones in use stay active', async () => {
+  const config = fixtureConfig()
+  config.classTypes.push({ name: 'Yin', mindbodyNames: ['Yin'], capacity: null })
+  const { archive, ids } = await run(config)
+  const type = (name: string) => archive.rows.class_types!.find(t => t.name === name)!
+  assert.equal(type('Yin').archived_at, '2026-09-16T18:00:00.000Z')
+  assert.equal(type('Hatha').archived_at, null)
+  assert.equal(type('Vinyasa Flow').archived_at, null)
+  assert.equal(type('Personal Training').archived_at, null, 'the PT focus is what every new PT request is for')
+  assert.ok(ids.class_types!.Yin)
+})
+
+/** A class on the staff schedule, as its reader returns one. */
+const scheduled = (date: { year: number; month: number; day: number }, over: Record<string, unknown> = {}) => ({
+  staff: 'IVY INSTRUCTOR',
+  date,
+  start: { hour: 7, minute: 0 },
+  end: { hour: 8, minute: 0 },
+  description: 'Vinyasa flow',
+  substitute: false,
+  location: 'Main Hall',
+  serviceCategory: 'Classes',
+  room: 'Studio2-Normal Room',
+  ...over,
+})
+
+test('a weekly slot with no class since the download is proposed from its recurring pattern and, once confirmed, written', async () => {
+  const reports = await readReports(REPORTS)
+  const schedule = [
+    ...reports.schedule,
+    // Fridays at 7, last held six days before the download: Olive, then Ivy took it over.
+    scheduled({ year: 2026, month: 8, day: 21 }, { staff: 'OLIVE OWNER' }),
+    scheduled({ year: 2026, month: 8, day: 28 }, { staff: 'OLIVE OWNER' }),
+    scheduled({ year: 2026, month: 9, day: 4 }),
+    scheduled({ year: 2026, month: 9, day: 11 }),
+    // Wednesdays at 7: Olive's, and one week Ivy covered with no *** — no clear change.
+    // The last week a substitute covered, flagged.
+    ...[26, 2, 9, 16].map((d, i) =>
+      scheduled({ year: 2026, month: d > 20 ? 8 : 9, day: d }, { staff: i === 2 ? 'IVY INSTRUCTOR' : 'OLIVE OWNER', substitute: i === 3, description: 'Hatha', room: 'Studio 1 - Hot Room' }),
+    ),
+    // Tuesdays at 7: stopped three weeks before the download.
+    scheduled({ year: 2026, month: 8, day: 18 }, { description: 'Hatha', room: 'Studio 1 - Hot Room' }),
+    scheduled({ year: 2026, month: 8, day: 25 }, { description: 'Hatha', room: 'Studio 1 - Hot Room' }),
+  ]
+  const starter = starterConfig({ ...reports, schedule }, '2026-09-17T02:00:00+08:00')
+  assert.deepEqual(
+    starter.series!.map(s => `${s.className} ${s.weekday} ${s.startTime}-${s.endTime} ${s.room} ${s.teacher}`),
+    [
+      'Hatha 1 19:00-20:00 Studio 1 - Hot Room Ivy Instructor',
+      'Hatha 3 07:00-08:00 Studio 1 - Hot Room Olive Owner',
+      'Vinyasa flow 5 07:00-08:00 Studio2-Normal Room Ivy Instructor',
+    ],
+    'the teacher who took the slot over; a one-off cover or a substitute is not a hand-over; nothing for the Tuesdays that stopped',
+  )
+
+  const config = fixtureConfig()
+  config.series.push({ ...starter.series!.find(s => s.weekday === 5), migrate: true })
+  const { archive } = mapStudio({ ...reports, schedule }, validateConfig(config), TENANT)
+  assert.equal(archive.rows.class_series!.length, 2)
+  const fridays = archive.rows.class_series!.find(s => s.weekday === 5)!
+  // Nothing of it came across to link, so it ends on its last class before the download: launch day extends it.
+  assert.deepEqual(
+    [fridays.first_date, fridays.last_date, fridays.excluded_dates, fridays.start_time, fridays.instructor_pay_sgd],
+    ['2026-09-11', '2026-09-11', [], '07:00:00', '35.00'],
+  )
+  assert.ok(!archive.rows.classes!.some(c => c.series_id === fridays.id))
+  assert.deepEqual(constraintViolations(archive), [])
 })
 
 test('an archive whose email links would point at this machine is refused, unless the target is said to be local', async () => {

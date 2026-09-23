@@ -10,6 +10,7 @@ import {
   readCancellations,
   readGroupCancellations,
   readMemberList,
+  readMembership,
   readPayRates,
   readPayroll,
   readPhoneBook,
@@ -22,7 +23,7 @@ import {
   readStaffSchedule,
   readVisitsRemaining,
 } from './readers'
-import { parseMindbodyDate, cleanPhone, cleanEmail, isoDay, normaliseOptionName, normaliseStaffName, parseSessions } from './values'
+import { parseMindbodyDate, cleanPhone, cleanEmail, formatPhone, isoDay, normaliseOptionName, normaliseStaffName, parseSessions } from './values'
 import { readXlsxTable } from './xlsx'
 
 /**
@@ -125,19 +126,38 @@ test('the member list: one member per row, the total row and the placeholders le
       <tr align="left">
         <td><div><strong>Last name</strong></div></td><td><div><strong>First name</strong></div></td>
         <td><div><strong>Nickname</strong></div></td><td><div><strong>ID</strong></div></td>
+        <td><div><strong>Country</strong></div></td>
         <td><div><strong>Mobile phone</strong></div></td><td><div><strong>Home phone</strong></div></td>
         <td><div><strong>Email</strong></div></td>
       </tr>
       <tr class="resultRow"><td>Doe </td><td>Jane</td><td></td><td style="mso-number-format:\\@">100000001</td>
-        <td>91234567</td><td>10000000000</td><td> Jane@Example.test </td></tr>
+        <td>SG</td><td>91234567</td><td>10000000000</td><td> Jane@Example.test </td></tr>
       <tr class="resultRow"><td>.</td><td>Solo</td><td></td><td>AB123456</td>
-        <td>10000000000</td><td>10000000000</td><td>-</td></tr>
-      <tr><td colspan="20">Total clients: 2</td></tr>
+        <td></td><td>10000000000</td><td>10000000000</td><td>-</td></tr>
+      <tr class="resultRow"><td>Tan</td><td>Ali</td><td></td><td>100000009</td>
+        <td> my </td><td>012-345 6789</td><td></td><td>ali@example.test</td></tr>
+      <tr><td colspan="20">Total clients: 3</td></tr>
     </table>`)
   assert.deepEqual(members, [
-    { id: '100000001', firstName: 'Jane', lastName: 'Doe', email: 'jane@example.test', phone: '+6591234567' },
-    { id: 'AB123456', firstName: 'Solo', lastName: '', email: null, phone: '' },
+    { id: '100000001', firstName: 'Jane', lastName: 'Doe', email: 'jane@example.test', phone: '+6591234567', mobile: '91234567', country: 'SG' },
+    { id: 'AB123456', firstName: 'Solo', lastName: '', email: null, phone: '', mobile: '10000000000', country: '' },
+    // The Country column is what the number is dialled from: the mapper formats `mobile` with it.
+    { id: '100000009', firstName: 'Ali', lastName: 'Tan', email: 'ali@example.test', phone: '0123456789', mobile: '012-345 6789', country: 'MY' },
   ])
+})
+
+test('a phone is formatted with the member s country: its calling code, the trunk 0 dropped, the dummy empty', () => {
+  assert.deepEqual(formatPhone('91234567', 'SG'), { phone: '+6591234567', ok: true })
+  assert.deepEqual(formatPhone('6591234567', 'SG'), { phone: '+6591234567', ok: true }, 'the code already written, without its +')
+  assert.deepEqual(formatPhone('012-345 6789', 'MY'), { phone: '+60123456789', ok: true }, 'a national number, its trunk 0 dropped')
+  assert.deepEqual(formatPhone('0412 345 678', 'AU'), { phone: '+61412345678', ok: true })
+  assert.deepEqual(formatPhone('+44 7700 900123', 'SG'), { phone: '+447700900123', ok: true }, 'written with a + it names its own country')
+  assert.deepEqual(formatPhone('0060123456789', 'SG'), { phone: '+60123456789', ok: true }, 'and 00 is a +')
+  assert.deepEqual(formatPhone('10000000000', 'SG'), { phone: '', ok: true }, 'Mindbody s dummy is no phone, not a bad one')
+  assert.deepEqual(formatPhone('', 'SG'), { phone: '', ok: true })
+  assert.deepEqual(formatPhone('0412 345 678', 'SG'), { phone: '', ok: false }, 'too long to be a Singapore number, and no code to say otherwise')
+  assert.deepEqual(formatPhone('12345', 'SG'), { phone: '', ok: false })
+  assert.deepEqual(formatPhone('91234567', 'ZZ'), { phone: '', ok: false }, 'a country with no calling code known here')
 })
 
 test('referral types: the creation date per member, across group, subtotal and blank rows', () => {
@@ -584,6 +604,21 @@ test('attendance without revenue: the three flags are how a visit ended, and "n/
     [{ year: 2026, month: 9, day: 17 }, { hour: 8, minute: 45 }, null, 'Hatha', '', 'Main Hall'],
     'the class name is Type, the Location is Visit Location, and the schedule report supplies the Room and the end',
   )
+  assert.equal(first.saleLocation, 'Online Store', 'where the option that paid for it was sold: a Location, or the online store')
+})
+
+test('membership (new version, detail): each member s membership and the Location it is held at', () => {
+  const rows = readMembership([
+    row('BarcodeID', 'Client Name', 'Status', 'Membership Tier', 'Phone', 'Email Address', 'Joined On', 'Location', 'Next AutoPay Date'),
+    row('100000001', 'Jane Doe', 'Active', 'Unlimited', '91234567', 'jane@example.test', '45000', ' Riverside ', ''),
+    row('100000002', 'Rick Roe', 'Expired', 'Unlimited', '', '', '45000', 'Main Hall', ''),
+    row('', 'Total', '', '', '', '', '', '', ''),
+  ])
+  assert.deepEqual(rows, [
+    { id: '100000001', status: 'Active', location: 'Riverside' },
+    { id: '100000002', status: 'Expired', location: 'Main Hall' },
+  ])
+  assert.throws(() => readMembership([row('Something', 'Else')]), /Membership.*BarcodeID/)
 })
 
 test('payroll as Mindbody lays it out: each teacher named between the tables, three kinds of table', () => {

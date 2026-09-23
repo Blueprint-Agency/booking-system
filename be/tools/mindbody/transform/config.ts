@@ -60,10 +60,10 @@ const classTypeSchema = z.object({
 
 /**
  * A weekly class, proposed by the starter config from what ran at the same
- * weekday, time and Room under the same name in each of the last four weeks.
- * One a person confirms (`migrate: true`) is written as a Class Series, with
- * the imported future classes it matches linked to it — so the first thing the
- * studio does after launch is extend it.
+ * weekday, time and Room under the same name in each of the last four weeks,
+ * led by the latest week's own teacher. One a person confirms (`migrate: true`)
+ * is written as a Class Series, with any imported future classes it matches
+ * linked to it — so the first thing the studio does after launch is extend it.
  */
 const seriesSchema = z.object({
   /** A class name as Mindbody writes it; its Class Type is looked up like any class's. */
@@ -244,6 +244,11 @@ export const studioConfigSchema = z.object({
    * classes do (#179).
    */
   defaultLocation: open(z.string().min(1)),
+  /**
+   * The country (ISO code) a member's phone is dialled from where the Mailing
+   * List gives them no Country: the studio's own.
+   */
+  defaultCountry: z.string().regex(/^[A-Za-z]{2}$/).default('SG'),
   rooms: z.array(roomSchema).default([]),
   /** Room spellings that are really off-site venues (outdoors, a company office, a retreat). Not Rooms. */
   offSiteVenues: z.array(z.string()).default([]),
@@ -328,6 +333,7 @@ export type StudioConfig = {
     mindbodyNames: string[]
   }[]
   defaultLocation: string
+  defaultCountry: string
   rooms: { name: string; location: string; capacity: number; mindbodyNames: string[]; classTypes: string[] }[]
   offSiteVenues: string[]
   classTypes: { name: string; mindbodyNames: string[]; capacity: number | null }[]

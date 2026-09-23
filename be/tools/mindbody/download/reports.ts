@@ -268,6 +268,9 @@ export const CUTOVER: ProfileEntry[] = [
   // One file per referrer group; the Summary group is downloaded too and ignored by the transform.
   pick('Referral Types', { kind: 'referrals' }),
   pick('Retention Management', { kind: 'retention' }),
+  // Where each membership is held: an Unlimited Plan's Home Location where Retention Management has none.
+  // Also who is on an autopay, to stop in Mindbody and re-sign on the platform.
+  pick('Membership', { kind: 'membership', only: ['New Version Detail'], optional: true }),
   pick('Account Balances', { kind: 'balances', only: ['All balances'] }),
   // What they hold: the live packages and the catalogue proposal.
   pick('Visits Remaining', { kind: 'holdings', only: ['Detail'] }),
@@ -290,8 +293,6 @@ export const CUTOVER: ProfileEntry[] = [
   // Which past classes the studio called off, so they arrive cancelled rather than live and Unpriced.
   // Its lines repeat some Individual records, grouped by class; it is small enough for one file.
   pick('Cancellations', { kind: 'groupCancellations', only: ['Group cancellations'] }),
-  // Not read by the transform: who is on an autopay, to stop in Mindbody and re-sign on the platform.
-  pick('Membership', { only: ['New Version Detail'], optional: true }),
   {
     // Reports -> Payment Processing -> Autopay Detail (Mindbody has no "AutoPay Schedule" report): every
     // autopay run due from today to 12 months ahead, POS-charged ones included. The other two filters

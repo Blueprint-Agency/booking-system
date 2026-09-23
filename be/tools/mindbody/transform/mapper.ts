@@ -6,7 +6,7 @@ import type { StudioConfig } from './config'
 import { idsFor, secretToken } from './ids'
 import { mapHistory, type MappedHistory } from './history'
 import { configLookups } from './lookups'
-import { mapPackages, type AccountBalance, type NotMigrated } from './packages'
+import { mapPackages, memberHomes, type AccountBalance, type NotMigrated } from './packages'
 import type {
   AccountBalanceRow,
   AttendanceRow,
@@ -15,6 +15,7 @@ import type {
   GroupCancellationRow,
   HoldingRow,
   MemberListRow,
+  MembershipRow,
   OptionSaleRow,
   PayRateRow,
   PayrollRow,
@@ -29,7 +30,16 @@ import type {
 import { bookingCoder } from './booking-codes'
 import { joinSales } from './sales'
 import { mapSchedule } from './schedule'
-import { normaliseClassName, normaliseStaffName, zonedToInstant, type LocalDateTime } from './values'
+import {
+  dayNumber,
+  formatPhone,
+  localDateOf,
+  normaliseClassName,
+  normaliseStaffName,
+  zonedToInstant,
+  type CalendarDate,
+  type LocalDateTime,
+} from './values'
 import { mapWorkshops, workshopOptionKeys } from './workshops'
 
 /**
@@ -48,6 +58,8 @@ export type MindbodyReports = {
   members: MemberListRow[]
   referrals: ReferralRow[]
   retention: RetentionRow[]
+  /** Where each membership is held (Membership, New Version Detail). Empty where not downloaded. */
+  membership: MembershipRow[]
   phoneBook: PhoneBookRow[]
   /** What every client holds of every pricing option. */
   holdings: HoldingRow[]
@@ -98,6 +110,8 @@ export type Preflight = {
     keeper: { id: string; name: string }
     others: { id: string; name: string; placeholder: string }[]
   }[]
+  /** Members' phones that could not be formatted for their country: imported with none. */
+  badPhones: { id: string; name: string; phone: string; country: string }[]
   /** Autopays still live in Mindbody. The platform charges none of them: each is stopped there and re-signed here. */
   autopays: LiveAutopay[]
 }
@@ -235,7 +249,17 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     if (m.email) holders.set(m.email, [...(holders.get(m.email) ?? []), m])
   }
 
-  const preflight: Preflight = { noEmail: [], sharedEmails: [], notMigrated: [], balances: [], schedule: [], staffWithoutLogin: [], autopays: liveAutopays(reports.autopay) }
+  const preflight: Preflight = {
+    noEmail: [],
+    sharedEmails: [],
+    badPhones: [],
+    notMigrated: [],
+    balances: [],
+    schedule: [],
+    staffWithoutLogin: [],
+    autopays: liveAutopays(reports.autopay),
+  }
+  const lastVisits = lastVisitOf(reports.attendance, localDateOf(asOf, tz))
   const emailOf = new Map<string, string>()
   for (const m of reports.members) {
     if (!m.email) {
@@ -249,7 +273,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
       emailOf.set(group[0]!.id, email)
       continue
     }
-    const keeper = keeperOf(email, group, config.sharedEmailKeepers[email], retention, created)
+    const keeper = keeperOf(email, group, config.sharedEmailKeepers[email], lastVisits, retention, created)
     emailOf.set(keeper.id, email)
     const others = group
       .filter(m => m !== keeper)
@@ -263,6 +287,10 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
 
   const clients: Row[] = reports.members.map(m => {
     const joined = created.get(m.id) ?? retention.get(m.id)?.memberSince ?? null
+    // Dialled from the country the member lives in; one that cannot be is none, and listed.
+    const country = m.country || config.defaultCountry.toUpperCase()
+    const phone = formatPhone(m.mobile, country)
+    if (!phone.ok) preflight.badPhones.push({ id: m.id, name: memberName(m), phone: m.mobile, country })
     const row = {
       id: id('client', m.id),
       tenant_id: tenantId,
@@ -270,7 +298,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
       auth_user_id: null,
       email: emailOf.get(m.id),
       name: memberName(m),
-      phone: m.phone,
+      phone: phone.phone,
       gender: retention.get(m.id)?.gender ?? null,
       status: 'active',
       joined_at: joined ? instant(joined) : asOf.toISOString(),
@@ -401,6 +429,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     optionSales: reports.optionSales,
     members: reports.members,
     sales,
+    homes: memberHomes(config, reports),
   })
   preflight.notMigrated = packages.notMigrated
   preflight.balances = packages.balances
@@ -425,7 +454,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
   const ensurePtType = () => {
     if (!ptTypeId) {
       ptTypeId = id('class-type', ptTypeKey)
-      ptClassTypes.push({ id: ptTypeId, tenant_id: tenantId, name: config.ptClassType })
+      ptClassTypes.push({ id: ptTypeId, tenant_id: tenantId, name: config.ptClassType, archived_at: null })
       ids.class_types![config.ptClassType] = ptTypeId
     }
     return ptTypeId
@@ -444,6 +473,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     instructorIds,
     ownerId,
     clientPackages: packages.clientPackages,
+    holdings: reports.holdings,
     codes,
     lookups,
     ensurePtType,
@@ -518,6 +548,20 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     : noHistory()
 
   preflight.schedule = [...schedule.notes, ...workshops.notes, ...history.notes]
+
+  // A Class Type nothing is scheduled under from launch — no future class, no
+  // Class Series to extend — is kept for the history that names it, archived so
+  // it does not clutter the catalogue. The PT focus stays: every new PT request is for it.
+  const inUse = new Set([...schedule.classes, ...schedule.classSeries].map(r => String(r.class_type_id)))
+  let archivedTypes = 0
+  for (const t of classTypes) {
+    const used = inUse.has(String(t.id)) || t.id === ptTypeId
+    t.archived_at = used ? null : asOf.toISOString()
+    if (!used) archivedTypes++
+  }
+  if (archivedTypes > 0) {
+    preflight.schedule.push(`classTypes: ${archivedTypes} Class Type(s) have no future class and no Class Series, so they came across archived`)
+  }
 
   /* ── The archive ───────────────────────────────────────────────────────── */
 
@@ -622,17 +666,36 @@ function restoreBookedAhead(
 }
 
 /**
+ * Each member's last visit in the attendance history, up to the download: a
+ * class or appointment they came to. A no-show, a cancel or a seat still only
+ * reserved is no visit.
+ */
+function lastVisitOf(attendance: AttendanceRow[], today: CalendarDate): Map<string, LocalDateTime> {
+  const last = new Map<string, LocalDateTime>()
+  const stamp = (d: LocalDateTime) => Date.UTC(d.year, d.month - 1, d.day, d.hour, d.minute)
+  for (const v of attendance) {
+    if (dayNumber(v.date) > dayNumber(today) || /cancel|absent|no[ -]?show|reserved|booked/i.test(v.status)) continue
+    const at = { ...v.date, ...v.start, second: 0 }
+    const had = last.get(v.clientId)
+    if (!had || stamp(at) > stamp(had)) last.set(v.clientId, at)
+  }
+  return last
+}
+
+/**
  * Who keeps an email several members share.
  *
  * The config decides where it names someone. Otherwise the member with the most
  * recent visit keeps it — the one most likely to be the person reading that
- * inbox — then the most recently created profile, then the lowest id, so the
- * answer never depends on report order.
+ * inbox — by the attendance history, or by Retention Management's last visit
+ * for a member it has none for; then the most recently created profile, then
+ * the lowest id, so the answer never depends on report order.
  */
 function keeperOf(
   email: string,
   group: MemberListRow[],
   named: string | undefined,
+  lastVisits: Map<string, LocalDateTime>,
   retention: Map<string, RetentionRow>,
   created: Map<string, LocalDateTime>,
 ): MemberListRow {
@@ -643,11 +706,9 @@ function keeperOf(
   }
   const stamp = (d: LocalDateTime | null | undefined) =>
     d ? Date.UTC(d.year, d.month - 1, d.day, d.hour, d.minute, d.second) : -Infinity
+  const visited = (id: string) => stamp(lastVisits.get(id) ?? retention.get(id)?.lastVisit)
   return [...group].sort(
-    (a, b) =>
-      stamp(retention.get(b.id)?.lastVisit) - stamp(retention.get(a.id)?.lastVisit) ||
-      stamp(created.get(b.id)) - stamp(created.get(a.id)) ||
-      a.id.localeCompare(b.id),
+    (a, b) => visited(b.id) - visited(a.id) || stamp(created.get(b.id)) - stamp(created.get(a.id)) || a.id.localeCompare(b.id),
   )[0]!
 }
 
@@ -658,11 +719,14 @@ export function renderPreflight(p: Preflight): string {
   lines.push('Imported under a placeholder address nobody receives. Add a real email in Mindbody before the final download, or have an admin set it after launch.', '')
   for (const m of p.noEmail) lines.push(`- ${m.id} ${m.name} → ${m.placeholder}`)
   lines.push('', `## Emails shared by more than one member (${p.sharedEmails.length})`, '')
-  lines.push('One member keeps the address (named in `sharedEmailKeepers`, or else the most recent visitor); the others get placeholders.', '')
+  lines.push('One member keeps the address (named in `sharedEmailKeepers`, or else the one whose last visit in the attendance history is latest); the others get placeholders.', '')
   for (const s of p.sharedEmails) {
     lines.push(`- ${s.email}: kept by ${s.keeper.id} ${s.keeper.name}`)
     for (const o of s.others) lines.push(`  - ${o.id} ${o.name} → ${o.placeholder}`)
   }
+  lines.push('', `## Phones that could not be formatted (${p.badPhones.length})`, '')
+  lines.push("Imported with no phone. Each is formatted with the member's Country in the Mailing List (or `defaultCountry`): fix the number or the Country in Mindbody, or have an admin set it after launch.", '')
+  for (const b of p.badPhones) lines.push(`- ${b.id} ${b.name}: "${b.phone}" (${b.country})`)
   lines.push('', `## Staff with no email: imported by name, with no login (${p.staffWithoutLogin.length})`, '')
   lines.push('They teach, are paid and appear on the timetable; nobody can sign in as them until they have a real email.', '')
   for (const s of p.staffWithoutLogin) lines.push(`- ${s.name} → ${s.placeholder}`)

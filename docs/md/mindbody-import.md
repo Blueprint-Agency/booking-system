@@ -44,9 +44,9 @@ the freeze — decisions 11 and 12 are fixed **in Mindbody**, so they have to be
 | 9 | PT requests | How many days ahead a PT request stays open | 7 |
 | 10 | Staff | Email and role (Admin or Instructor) for each person migrated; who is the owner; which of two records sharing a name is which | Instructor; former teachers archived |
 | 11 | Members with no email | Real email, fixed in Mindbody before the final download | Placeholder email, fixed later by an admin |
-| 12 | Members sharing an email | Which member keeps it; real emails for the others | Most recent visitor keeps it; others get placeholders |
+| 12 | Members sharing an email | Which member keeps it; real emails for the others | The one whose last visit (attendance history) is latest keeps it; others get placeholders |
 | 13 | Two live packages at once | Accept "the one ending soonest runs, the others wait with their days left" | Accepted |
-| 14 | Unlimited Home Location | Location for plans whose name names none | The main Location |
+| 14 | Unlimited Home Location | Location for a member no report places | Retention Management's location, then Membership's, then where their visits were sold, then the plan's name, then the main Location — the preflight counts each |
 | 15 | Future workshops and retreats | Which to migrate; tier (room type) prices; how instalments count | All with paid attendees; price = amount paid |
 | 16 | Teacher pay | Use the pay-rate report's per-class amount for future classes; PT pay | Per-class rate; PT Unpriced |
 | 17 | History | How far back; whether past purchases appear in Finance | None on a quick rehearsal; classes and bookings from opening, purchases off |
@@ -269,11 +269,19 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   is what moves a member up; holding two tiers is a preflight line. A place is not a package, so
   no `client_packages` row is written for it and it is not listed as "not migrated"; a workshop
   with no day left to come is a preflight line instead of an empty Workshop.
-- **Class Series** are proposed by `starter` from what ran at the same weekday, time, Room and
-  name in each of the four weeks up to `asOf`. A person sets `migrate` on each; a confirmed one
-  is written as a series whose imported classes are linked to it and whose last date is the
-  last class that came across, so launch day starts with an extend and nothing is duplicated.
-  Its teacher must be coming across as an active instructor, or the portal could never extend it.
+- **Class Series** are proposed by `starter` from the timetable's recurring pattern: what ran at
+  the same weekday, time, Room and name in each of the four weeks up to `asOf`, taught by the
+  latest week's own teacher (not a substitute). A slot that stopped is not proposed. A person
+  sets `migrate` on each; a confirmed one is written as a series whose imported classes are
+  linked to it and whose last date is the last class that came across — or, where none is still
+  to come (the published timetable runs only days past the download), its last class before
+  the download — so launch day starts with an extend and nothing is duplicated. Its teacher must
+  be coming across as an active instructor, or the portal could never extend it.
+- A Class Type with no future class and no Class Series arrives archived; history still names it.
+- A future booking the running package cannot cover (it ends first) is paid by the member's
+  package waiting behind it, where that will still be running then. The rest are preflight
+  lines, split into "unpaid in Mindbody too" and "unmatched" (Mindbody holds something that
+  would pay for it).
 - **The studio's past** is optional and off by default: `history` in the config is `null` for a
   quick rehearsal, and `{ "from": "2019-01-01", "purchases": false }` for a launch that wants it.
   `from` is the first day to bring, on the studio's own calendar. Past classes are the union of
@@ -378,7 +386,10 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
 - Balances are Mindbody's Unbooked. Credits Mindbody set aside for future bookings that do not
   come across (the roster was not downloaded far enough ahead) are given back to the member's
   package and named in the preflight, rather than lost.
-- Phones are stored E.164 (`+65…`), as the member sign-up writes them. The transform can be pointed at the whole download
+- Phones are stored E.164 (`+65…`), as the member sign-up writes them, formatted with the
+  member's Country in the Mailing List (`defaultCountry` where it is blank). Mindbody's dummy
+  phone is empty; a number that cannot be formatted is imported empty and listed in the
+  preflight. Proposed Validity counts both the activation and the expiry day. The transform can be pointed at the whole download
   folder: every other report and view in it is left alone.
 - `starter` names the Locations what the timetable calls them (oldest first, matched to the
   numbers Retention Management prints) and proposes each Room at the Location it holds most

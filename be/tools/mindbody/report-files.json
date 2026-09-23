@@ -4,6 +4,7 @@
     { "kind": "members", "file": "02 Mailing Lists - Mailing List.xls", "single": true, "required": true },
     { "kind": "referrals", "file": "21 Referral Types - <group>.xls", "single": false, "required": true },
     { "kind": "retention", "file": "24 Retention Management.xls", "single": true, "required": true },
+    { "kind": "membership", "file": "01 Membership - New Version Detail.xlsx", "single": true, "required": false },
     { "kind": "phoneBook", "file": "35 Phone Book.xls", "single": true, "required": true },
     { "kind": "holdings", "file": "15 Visits Remaining - Detail.xlsx", "single": true, "required": true },
     { "kind": "optionSales", "file": "13 Pricing Option Expirations.xls", "single": true, "required": true },

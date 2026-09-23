@@ -2,7 +2,7 @@ import type { BookingCoder } from './booking-codes'
 import { ConfigError, type StudioConfig } from './config'
 import { fold, roomFor, type ConfigLookups } from './lookups'
 import { ptAppointmentRows, ptClients } from './pt'
-import type { PayRateRow, RosterRow, ScheduledClassRow } from './readers'
+import type { HoldingRow, PayRateRow, RosterRow, ScheduledClassRow } from './readers'
 import {
   dayNumber,
   isoClock,
@@ -10,6 +10,7 @@ import {
   isoWeekday,
   money,
   normaliseClassName,
+  normaliseOptionName,
   normaliseStaffName,
   zonedToInstant,
   type CalendarDate,
@@ -64,8 +65,10 @@ export function mapSchedule(input: {
   /** Those of them who already have an instructor profile. */
   instructorIds: Set<string>
   ownerId: string
-  /** The `client_packages` rows already mapped: a booking is paid by the member's running one. */
+  /** The `client_packages` rows already mapped: a booking is paid by the member's running one, or the one waiting behind it. */
   clientPackages: Row[]
+  /** What members hold in Mindbody, to say whether a seat nothing here pays for was unpaid there too. */
+  holdings: HoldingRow[]
   /** The archive's one booking coder, shared with the workshop import so that no two bookings take one code. */
   codes: BookingCoder
 }): MappedSchedule {
@@ -204,33 +207,67 @@ export function mapSchedule(input: {
   /* ── Who is already booked ─────────────────────────────────────────────── */
 
   /**
-   * The member's running package in a Family: the one a booking made today
-   * would be paid by. A package that runs out before the session cannot pay
-   * for it — the platform refuses exactly that (`plan_expires_before_class`) —
-   * so a seat whose only package ends first is imported unpaid and listed,
-   * rather than pinned to a package the studio could never charge.
+   * The package that pays for a member's session: the one running in its
+   * Family, where it lasts until then; else the first one waiting behind it
+   * that will still be running then — it starts when the running one ends (or
+   * today, where none runs) and lasts its whole validity. A package that runs
+   * out before the session cannot pay for it — the platform refuses exactly that
+   * (`plan_expires_before_class`) — so a seat nothing can pay for is imported
+   * unpaid and listed, rather than pinned to a package the studio could never charge.
    */
-  const runningPackage = (clientId: string, family: 'class' | 'pt', startsAt: Date) =>
-    input.clientPackages.find(
-      p =>
-        p.client_id === ids.clients![clientId] &&
-        p.active === true &&
-        p.expires_at != null &&
-        String(p.expires_at) >= startsAt.toISOString() &&
-        (p.kind === 'pt') === (family === 'pt'),
+  const payingPackage = (clientId: string, family: 'class' | 'pt', startsAt: Date) => {
+    const mine = input.clientPackages.filter(
+      p => p.client_id === ids.clients![clientId] && p.active === true && (p.kind === 'pt') === (family === 'pt'),
     )
+    const running = mine.find(p => p.expires_at != null)
+    if (running && String(running.expires_at) >= startsAt.toISOString()) return running
+    // The waiting ones run one after another, in the order they queue.
+    let until = running ? new Date(String(running.expires_at)) : asOf
+    for (const p of mine.filter(p => p.expires_at == null)) {
+      const from = until
+      until = new Date(from)
+      if (p.duration_months != null) until.setUTCMonth(until.getUTCMonth() + Number(p.duration_months))
+      else until.setTime(until.getTime() + Number(p.validity_days) * 86_400_000)
+      if (startsAt > from && startsAt <= until) return p
+    }
+    return undefined
+  }
+
+  /**
+   * Whether anything the member holds in Mindbody would have paid for the
+   * session: something left, not expired by then, in that Family. What cannot
+   * be paid for here was unpaid in Mindbody too, or else it is unmatched — a
+   * holding that did not come across as a package that lasts.
+   */
+  const entryOf = new Map(config.catalogue.flatMap(e => e.mindbodyNames.map(s => [normaliseOptionName(s), e] as const)))
+  const heldInMindbody = (clientId: string, family: 'class' | 'pt', on: CalendarDate) =>
+    input.holdings.some(h => {
+      if (h.clientId !== clientId) return false
+      const entry = entryOf.get(normaliseOptionName(h.option))
+      if (!entry || entry.migrate === 'skip' || entry.kind === 'access_pass') return false
+      const left = h.remaining !== null && (h.remaining.unlimited || h.remaining.count > 0)
+      return left && (entry.kind === 'pt') === (family === 'pt') && (h.lastExpiration === null || dayNumber(h.lastExpiration) >= dayNumber(on))
+    })
+  const unpaid = { mindbody: 0, unmatched: 0 }
 
   // `??=`, never `=`: the history import fills the same three maps, and
   // whichever of the two runs second must add to them rather than empty them.
   ids.classes ??= {}
   ids.bookings ??= {}
   const bookings: Row[] = []
-  const booking = (key: string, clientId: string, target: Row, family: 'class' | 'pt', label: string, startsAt: Date): void => {
-    const pkg = runningPackage(clientId, family, startsAt)
+  const booking = (key: string, clientId: string, target: Row, family: 'class' | 'pt', label: string, startsAt: Date, on: CalendarDate): void => {
+    const pkg = payingPackage(clientId, family, startsAt)
     if (!pkg) {
       const what = family === 'pt' ? 'PT' : 'class'
       const who = `${clientId} ${memberNames.get(clientId)}`
-      notes.push(`${who}: booked into ${label} with no ${what} package that lasts until then to pay for it`)
+      const held = heldInMindbody(clientId, family, on)
+      unpaid[held ? 'unmatched' : 'mindbody']++
+      notes.push(
+        `${who}: booked into ${label} with no ${what} package to pay for it — ` +
+          (held
+            ? 'unmatched: Mindbody has something to pay for it that did not come across as a package lasting until then'
+            : 'unpaid in Mindbody too: nothing they hold there lasts until then'),
+      )
     }
     const made = input.codes(key)
     const row: Row = {
@@ -314,7 +351,7 @@ export function mapSchedule(input: {
       continue
     }
     seats.add(r.clientId)
-    booking(`${cls.id}/${r.clientId}`, r.clientId, { class_id: cls.id }, 'class', label, instant(cls.date, cls.start))
+    booking(`${cls.id}/${r.clientId}`, r.clientId, { class_id: cls.id }, 'class', label, instant(cls.date, cls.start), cls.date)
   }
   for (const cls of classes.values()) {
     ids.classes[cls.label] = cls.id
@@ -367,7 +404,7 @@ export function mapSchedule(input: {
       // Still to come, so it is a session the studio has scheduled and nothing
       // has yet become of.
       status: 'scheduled',
-      debitedClientPackageId: (runningPackage(requester!, 'pt', startsAt)?.id as string | undefined) ?? null,
+      debitedClientPackageId: (payingPackage(requester!, 'pt', startsAt)?.id as string | undefined) ?? null,
       ownerId: input.ownerId,
       settledAt: asOf.toISOString(),
     })
@@ -378,8 +415,11 @@ export function mapSchedule(input: {
     // Each of two members sharing a session was charged from their own package
     // in Mindbody, so each booking gives its own session back if cancelled.
     for (const clientId of ptClients({ requesterId: requester!, partnerId: partner ?? null })) {
-      booking(`${sessionId}/${clientId}`, clientId, { pt_session_id: sessionId }, 'pt', label, startsAt)
+      booking(`${sessionId}/${clientId}`, clientId, { pt_session_id: sessionId }, 'pt', label, startsAt, a.date)
     }
+  }
+  if (unpaid.mindbody + unpaid.unmatched > 0) {
+    notes.push(`future bookings with no package: ${unpaid.mindbody} unpaid in Mindbody too, ${unpaid.unmatched} unmatched — each is listed above`)
   }
 
   if (problems.length > 0) throw new ConfigError(problems)
@@ -394,23 +434,33 @@ export function mapSchedule(input: {
     const type = types.get(normaliseClassName(s.className))!
     const room = roomFor(input.lookups, s.room, type.id)!
     const teacherId = staffIds.get(normaliseStaffName(s.teacher))!
+    const inSlot = (c: { typeId?: string; roomId?: string | null; date: CalendarDate; start: ClockTime; end: ClockTime }) =>
+      c.typeId === type.id &&
+      c.roomId === room.id &&
+      isoWeekday(c.date) === s.weekday &&
+      isoClock(c.start) === s.startTime &&
+      isoClock(c.end) === s.endTime
     const mine = [...classes.values()]
-      .filter(
-        c =>
-          c.typeId === type.id &&
-          c.roomId === room.id &&
-          isoWeekday(c.date) === s.weekday &&
-          isoClock(c.start) === s.startTime &&
-          isoClock(c.end) === s.endTime &&
-          c.row.series_id === null,
-      )
+      .filter(c => inSlot(c) && c.row.series_id === null)
       .sort((a, b) => dayNumber(a.date) - dayNumber(b.date))
-    if (mine.length === 0) {
-      notes.push(`series ${label}: no future class matches it, so there is nothing to continue — create it in the portal instead`)
+    // The published timetable runs only days past the download, so a weekly
+    // class often has nothing still to come. It is written all the same, ending
+    // on its last class before the download: launch day's extend carries it on.
+    const dates = mine.length > 0
+      ? mine.map(c => c.date)
+      : input.schedule
+          .filter(r => instant(r.date, r.start) <= asOf)
+          .filter(r => inSlot({ ...r, typeId: types.get(normaliseClassName(r.description))?.id, roomId: roomFor(input.lookups, r.room, type.id)?.id }))
+          .map(r => r.date)
+          .sort((a, b) => dayNumber(a) - dayNumber(b))
+          .slice(-1)
+    if (dates.length === 0) {
+      notes.push(`series ${label}: no class on the timetable matches it, so there is nothing to continue — create it in the portal instead`)
       continue
     }
-    const [first, last] = [mine[0]!.date, mine.at(-1)!.date]
-    const held = new Set(mine.map(c => dayNumber(c.date)))
+    const [first, last] = [dates[0]!, dates.at(-1)!]
+    if (mine.length === 0) notes.push(`series ${label}: no class of it is on the timetable after the download, so it ends on ${isoDay(last)} — extend it on launch day`)
+    const held = new Set(dates.map(dayNumber))
     const excluded: string[] = []
     for (let d = dayNumber(first); d <= dayNumber(last); d += 7) {
       if (!held.has(d)) excluded.push(new Date(d * 86_400_000).toISOString().slice(0, 10))
