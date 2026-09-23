@@ -300,6 +300,18 @@ export async function startTestApp(): Promise<TestApp> {
   const client = postgres(TEST_DATABASE_URL, { max: 1 })
   const db = drizzle(client, { schema })
 
+  // The database is this file's until `close`. The files share fixtures — the
+  // two Tenants, name-matched purges, the row counts a studio delete is checked
+  // against — so two at once (a parallel `npm run check`, or a second checkout
+  // or session running the suite beside this one) fail each other at random.
+  // Taken BEFORE the setup below, not after it: `ensureTenantIsolation` drops
+  // and re-creates every table's policy, and a file setting up while another
+  // runs left that one's writes, for a moment, facing RLS with no policy at all.
+  // Held on this connection, so it goes when the process does even if a file
+  // never reaches `close`. One `startTestApp` per process: a second would wait
+  // on this one forever.
+  await client`select pg_advisory_lock(${HARNESS_FILE_LOCK})`
+
   // `node --test` runs one process per file, and every harness-using file points
   // at the SAME scratch database — so two of them migrate it at the same time.
   // Concurrent DDL does not merely race: one transaction holds the lock on a
@@ -326,15 +338,6 @@ export async function startTestApp(): Promise<TestApp> {
   } finally {
     await client`select pg_advisory_unlock(${HARNESS_SETUP_LOCK})`
   }
-
-  // Then the database is this file's until `close`. The files share fixtures —
-  // the two Tenants, name-matched purges, the row counts a studio delete is
-  // checked against — so two at once (a parallel `npm run check`, or a second
-  // checkout or session running the suite beside this one) fail each other at
-  // random. Held on this connection, so it goes when the process does even if
-  // a file never reaches `close`. One `startTestApp` per process: a second
-  // would wait on this one forever.
-  await client`select pg_advisory_lock(${HARNESS_FILE_LOCK})`
 
   // Before the app is imported, so even its load-time lines are captured.
   const { useLogDestination } = await import('../shared/logger')
