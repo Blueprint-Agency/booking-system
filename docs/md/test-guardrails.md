@@ -52,7 +52,7 @@ the suites for every app the session changed — committed or not:
 |---|---|
 | `be/` | the backend test files the change reaches, serially, as CI does (needs `TEST_DATABASE_URL`; a run that skips the integration tests counts as a failure) |
 | `fe-client/`, `fe-portal/` | `npm run check` |
-| `e2e/` | typecheck + `playwright test --list` (the skip check; the journeys need a deployed stack) |
+| `e2e/` | typecheck + `playwright test --list` (the skip check; the journeys themselves need the local stack built — `docs/md/e2e-journeys.md`) |
 | `scripts/`, `.claude/hooks/` | their unit tests |
 
 Markdown and `.gitignore` changes run nothing. A suite already green for exactly the current
@@ -84,7 +84,8 @@ whoever started the run.
 - **Journeys:** the Playwright config adds `no-skips-reporter`, which fails any run with a
   `test.skip` / `test.fixme` / `describe.skip` journey, or one that calls `test.skip()` as it runs.
   `test-guardrails.yml` lists the journeys on every PR (`playwright test --list`, no stack needed),
-  so a static skip fails the PR; a runtime skip fails the staging run in `e2e.yml`. In CI,
+  so a static skip fails the PR; a runtime skip fails the PR's own run in `e2e-local.yml` and the
+  staging run in `e2e.yml`. In CI,
   `forbidOnly` also fails a stray `test.only`.
 
 A journey that is genuinely broken is a bug to file, not a test to skip.

@@ -1,0 +1,130 @@
+name: E2E Journeys (PR)
+
+# The browser journeys on every pull request (#207), against a stack that lives
+# and dies inside this runner: Postgres as a service, the backend, and the
+# production builds of both frontends. Stripe is a stub played by the test
+# process itself (e2e/src/stripe-stub.ts) — the backend's Stripe client is
+# pointed at it by STRIPE_API_URL, and the browser's resolver sends every
+# Stripe host to its checkout page. No secret is read and nothing leaves the
+# runner: not for Stripe, not for staging, not for mail (the backend runs its
+# null mail transport).
+#
+# This is the early warning, not the gate. The real-Stripe run against staging
+# (e2e.yml) still gates the production deploy, unchanged.
+#
+# Every pull request, whatever it touches: a check that only sometimes reports
+# cannot be made required.
+on:
+  pull_request:
+    branches: [staging, main]
+
+permissions:
+  contents: read
+
+jobs:
+  journeys:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # A newer push to the same pull request makes this run's answer stale.
+    concurrency:
+      group: booking-e2e-pr-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: booking_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d booking_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    # Throwaway values for a throwaway stack. The backend reads these when the
+    # journeys start it (e2e/src/local-stack.ts), and so does its `e2e:studio`
+    # command; the NEXT_PUBLIC_ one is baked into the frontend builds.
+    env:
+      E2E_STACK: local
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/booking_e2e
+      DB_APP_PASSWORD: booking_app_e2e
+      DATABASE_APP_URL: postgres://booking_app:booking_app_e2e@localhost:5432/booking_e2e
+      APP_ENV: development
+      IMPERSONATION_SECRET: e2e-local-impersonation-secret-not-a-secret
+      BETTER_AUTH_SECRET: e2e-local-better-auth-secret-not-a-secret
+      BETTER_AUTH_URL: http://localhost:4000
+      FRONTEND_URLS: http://*.localhost:3000,http://*.portal.localhost:3001
+      RESEND_API_KEY: re_e2e_local_unused
+      NEXT_PUBLIC_API_URL: http://localhost:4000/api/v1
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            be/package-lock.json
+            fe-client/package-lock.json
+            fe-portal/package-lock.json
+            e2e/package-lock.json
+
+      - name: Install
+        shell: bash
+        run: |
+          pids=()
+          for app in be fe-client fe-portal e2e; do
+            (cd "$app" && npm ci --no-audit --no-fund) & pids+=($!)
+          done
+          for pid in "${pids[@]}"; do wait "$pid"; done
+
+      - name: Typecheck journeys
+        working-directory: e2e
+        run: npm run check
+
+      - name: Migrate
+        working-directory: be
+        run: npm run db:migrate
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            fe-client/.next/cache
+            fe-portal/.next/cache
+          key: next-${{ hashFiles('fe-client/package-lock.json', 'fe-portal/package-lock.json') }}-${{ hashFiles('fe-client/src/**', 'fe-portal/src/**') }}
+          restore-keys: next-${{ hashFiles('fe-client/package-lock.json', 'fe-portal/package-lock.json') }}-
+
+      # Production builds, as Vercel serves them — not `next dev`.
+      - name: Build frontends
+        shell: bash
+        run: |
+          pids=()
+          for app in fe-client fe-portal; do
+            (cd "$app" && npm run build) & pids+=($!)
+          done
+          for pid in "${pids[@]}"; do wait "$pid"; done
+
+      - name: Install Chromium
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+
+      # Starts the backend and both frontends, then the Stripe stub, then makes
+      # the run's studio — all from the Playwright config.
+      - name: Journeys
+        working-directory: e2e
+        run: npx playwright test
+
+      - name: Report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-pr
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 14

@@ -90,11 +90,15 @@ export async function signInMember(page: Page, member: { token: string }): Promi
   )
 }
 
-/** Sign a staff member in through the portal's own form. */
+/**
+ * Sign a staff member in through the portal's own form: the email first, and
+ * the password once the portal says this account has one (#227).
+ */
 export async function signInStaff(page: Page, person: { email: string }): Promise<void> {
   const { urls, staff } = studio()
   await page.goto(`${urls.portal}/login`)
   await page.getByLabel('Email').fill(person.email)
+  await page.getByRole('button', { name: 'Continue', exact: true }).click()
   await page.getByRole('textbox', { name: 'Password' }).fill(staff.password)
   await page.getByRole('button', { name: 'Sign in', exact: true }).click()
 }

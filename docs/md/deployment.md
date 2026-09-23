@@ -213,6 +213,9 @@ staging first, then re-run.
   follows a staging one, so it does.
 - **Run by hand:** Actions → *E2E Journeys* → *Run workflow*. Deploys nothing. On failure the run
   uploads `playwright-report` (traces, screenshots, video).
+- **Pull requests run the same journeys earlier**, on a stack inside the runner with Stripe stubbed
+  (`e2e-local.yml`, #207) — no secret, no staging, no real Stripe. That run warns; this one gates.
+  See `docs/md/e2e-journeys.md`.
 - **Run locally** against a local stack (backend + both frontends up):
 
   ```bash
@@ -504,6 +507,7 @@ revoke the old one. Both keys work in between, so nothing breaks. The rows that 
 
 - be, GH env vars: `PORT`, `PLATFORM_ADMIN_EMAIL`, `FRONTEND_URLS`, `STRIPE_STATEMENT_DESCRIPTOR_PREFIX`, `LOG_LEVEL`.
 - be, derived in the workflow: `NODE_ENV`, `APP_ENV`, `BETTER_AUTH_URL`, `DATABASE_URL` and `DATABASE_APP_URL` (built from the DB secrets above).
+- be, never deployed: `STRIPE_API_URL` — the one schema entry the deploy deliberately does not write. It points the pull-request journeys at a Stripe stub (`docs/md/e2e-journeys.md`); a deployment reaches Stripe itself, and production refuses it at boot.
 - fe-client and fe-portal, Vercel: `NEXT_PUBLIC_API_URL`, `NEXT_PUBLIC_ROOT_DOMAIN`, `NEXT_PUBLIC_APP_ENV`, `NEXT_PUBLIC_FARO_COLLECTOR_URL` (optional). `NEXT_PUBLIC_API_URL` and `NEXT_PUBLIC_FARO_COLLECTOR_URL` also feed the CSP — see below.
 - Deploy, GH org vars: `BPVPS2_TAILSCALE_HOST`, `DOCKERHUB_USERNAME`.
 

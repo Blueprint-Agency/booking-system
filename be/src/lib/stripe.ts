@@ -3,6 +3,7 @@ import Stripe from 'stripe'
 import { env } from '../env'
 import { logger } from '../shared/logger'
 import { VENDOR_DEADLINE_MS } from './outbound'
+import { stripeEndpoint } from './stripe-endpoint'
 import {
   loadProviderCredentials,
   providerCredentials,
@@ -46,6 +47,9 @@ export type StripeFactory = (account: ProviderAccount) => Stripe
  * it never retries on its own: a retry inside the SDK would run past that
  * deadline unseen. Where a retry is wanted — webhooks and cron, never a route —
  * the wrapper does it.
+ *
+ * Reached at Stripe, or at the stand-in `STRIPE_API_URL` names for a pull
+ * request's browser journeys (`./stripe-endpoint.ts`).
  */
 function realClient(account: ProviderAccount): Stripe {
   // The studio's own key, or the platform's. There is no third case: an account
@@ -54,6 +58,7 @@ function realClient(account: ProviderAccount): Stripe {
     apiVersion: STRIPE_API_VERSION,
     timeout: VENDOR_DEADLINE_MS.stripe,
     maxNetworkRetries: 0,
+    ...stripeEndpoint(env.STRIPE_API_URL, env.APP_ENV),
   })
 }
 

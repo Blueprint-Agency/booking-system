@@ -1,5 +1,7 @@
 .vercel
-.mcp.json
+# The root .mcp.json is shared: it runs the Playwright agents' server (e2e/scripts/init-agents.mjs).
+# Personal MCP servers go in user or local scope (`claude mcp add --scope user|local`), not here.
+*/**/.mcp.json
 .playwright-mcp/
 .scratch/
 # Test guardrail hooks (.claude/hooks/): per-session state, and the human's

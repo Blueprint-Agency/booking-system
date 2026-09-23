@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "playwright-test": {
+      "command": "node",
+      "args": [
+        "e2e/node_modules/@playwright/test/cli.js",
+        "run-test-mcp-server",
+        "-c",
+        "e2e/playwright.config.ts"
+      ],
+      "env": {
+        "E2E_STACK": "local"
+      }
+    }
+  }
+}

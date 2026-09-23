@@ -1,5 +1,6 @@
 import './db/url'
 import { z } from 'zod'
+import { stripeEndpoint } from './lib/stripe-endpoint'
 
 /**
  * Zod-validated env loader. Required vars cover:
@@ -89,6 +90,13 @@ const schema = z.object({
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   /**
+   * A stand-in for Stripe's API, as an origin — `http://127.0.0.1:12111` — for
+   * the browser journeys a pull request runs on the CI runner (#207), so they
+   * reach no real Stripe. Unset (every deployment) is Stripe itself. Refused
+   * on production at boot — see `lib/stripe-endpoint.ts`.
+   */
+  STRIPE_API_URL: z.string().optional(),
+  /**
    * The fixed half of the card statement descriptor, as set on the Stripe
    * account. Not a secret and not per-tenant: it names the platform, and the
    * studio's name is appended per charge in the 22 characters left after it
@@ -126,6 +134,12 @@ const schema = z.object({
   R2_SECRET_ACCESS_KEY: z.string().optional(),
   R2_BUCKET_NAME: z.string().optional(),
   R2_PUBLIC_URL: z.string().optional(),
+}).superRefine((e, ctx) => {
+  try {
+    stripeEndpoint(e.STRIPE_API_URL, e.APP_ENV)
+  } catch (err) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['STRIPE_API_URL'], message: (err as Error).message })
+  }
 })
 
 const parsed = schema.safeParse(process.env)

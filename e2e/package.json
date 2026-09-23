@@ -1,10 +1,11 @@
 {
   "name": "reservetoday-e2e",
   "private": true,
-  "description": "Browser journeys against a deployed ReserveToday — staging gates production (#145)",
+  "description": "Browser journeys — on the local stack for every PR (#207), against staging to gate production (#145)",
   "scripts": {
     "test": "playwright test",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "agents": "node scripts/init-agents.mjs"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
