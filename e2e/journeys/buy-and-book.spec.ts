@@ -7,7 +7,7 @@ import { signInMember, studio } from '../src/studio'
  * The buyer holds no plan, so the credit they book with can only have come from
  * this purchase. Payment is Stripe's own hosted Checkout, in test mode.
  */
-test('a member buys a plan with a test card and books a class', async ({ page }) => {
+test('PAY-16 a member buys a plan with a test card and books a class', async ({ page }) => {
   const { urls, catalogue, members } = studio()
   await signInMember(page, members.buyer)
 

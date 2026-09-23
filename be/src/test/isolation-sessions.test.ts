@@ -167,7 +167,7 @@ describe('tenant isolation for sessions', { skip: integrationTestsEnabled ? fals
     )
   })
 
-  test("a member session from studio one is refused at studio two's /me", async () => {
+  test("TEN-13 a member session from studio one is refused at studio two's /me", async () => {
     await addClientRow(two.id, MEMBER, await authUserId(schema.clientAuthUsers, MEMBER))
     await expectStatus(await get('/api/v1/me', sentTo(memberAtOne, 'client', two)), 403, 'tenant_mismatch')
   })

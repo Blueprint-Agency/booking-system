@@ -217,7 +217,7 @@ describe('package activation', { skip: integrationTestsEnabled ? false : SKIP_RE
     await harness.close()
   })
 
-  test('a purchase lands Dormant with its validity frozen, and the first booking stamps the expiry', async () => {
+  test('PKG-29 a purchase lands Dormant with its validity frozen, and the first booking stamps the expiry', async () => {
     const clientId = await newMember()
     const { clientPackageId } = await grantBundle(clientId)
 

@@ -278,7 +278,7 @@ describe('customers directory and detail', { skip: integrationTestsEnabled ? fal
     assert.equal(hidden.body.total, 7, 'blocked members stay hidden unless asked for')
   })
 
-  test('the trial funnel counts every trial member, whatever the page size', async () => {
+  test('CUS-07 the trial funnel counts every trial member, whatever the page size', async () => {
     const { body } = await get<ListBody>(`?q=${PREFIX}&filter=trials&page_size=1`, adminOne.headers)
     assert.equal(body.total, 2)
     assert.equal(body.clients.length, 1)
@@ -355,7 +355,7 @@ describe('customers directory and detail', { skip: integrationTestsEnabled ? fal
     assert.deepEqual(body.payments, [], 'nothing went through the payment provider')
   })
 
-  test("another studio's admin cannot read the member, and neither way round", async () => {
+  test("TEN-06 another studio's admin cannot read the member, and neither way round", async () => {
     const theirs = await get<{ error: string }>(`/${detailId}`, adminTwo.headers)
     assert.equal(theirs.status, 404)
     assert.equal(theirs.body.error, 'client_not_found')

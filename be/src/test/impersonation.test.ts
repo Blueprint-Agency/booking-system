@@ -121,7 +121,7 @@ describe('member impersonation', { skip: integrationTestsEnabled ? false : SKIP_
     await harness.close()
   })
 
-  test('an admin impersonates a member: /me works, carries impersonatedBy, and the audit rows name both', async () => {
+  test('AUD-02 an admin impersonates a member: /me works, carries impersonatedBy, and the audit rows name both', async () => {
     const member = await memberAt(one, admin.headers, at('member'))
     const { token, grant, fe_client_url } = await impersonate(admin.headers, member.id)
 
@@ -182,7 +182,7 @@ describe('member impersonation', { skip: integrationTestsEnabled ? false : SKIP_
     assert.ok(ended, 'impersonation_ended was written')
   })
 
-  test('a grant minted at one studio is refused at another', async () => {
+  test('TEN-14 a grant minted at one studio is refused at another', async () => {
     const member = await memberAt(one, admin.headers, at('cross-studio'))
     const { grant } = await impersonate(admin.headers, member.id)
 

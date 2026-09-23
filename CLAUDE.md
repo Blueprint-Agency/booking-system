@@ -26,7 +26,7 @@ BE layout: routes split by audience (`routes/portal/{admin,instructor}/`, `route
 
 ## Spec docs (`docs/md/`)
 
-`prd.md` (product requirements) · `fe-client-features.md` (source of truth for fe-client) · `admin-restructure.md` (source of truth for fe-portal) · `backend-architecture.md` (BE spine — stack, folders, DB schema, integrations, jobs) · `be-portal.md` / `be-client.md` (route surfaces) · `deployment.md` (Vercel + VPS deploy, envs, CORS, auth, CI settings).
+`prd.md` (product requirements) · `fe-client-features.md` (source of truth for fe-client) · `admin-restructure.md` (source of truth for fe-portal) · `backend-architecture.md` (BE spine — stack, folders, DB schema, integrations, jobs) · `be-portal.md` / `be-client.md` (route surfaces) · `deployment.md` (Vercel + VPS deploy, envs, CORS, auth, CI settings) · `testing.md` (suites, and naming a test with its `test-scenarios.md` Scenario Inventory ID).
 
 ## Conventions
 

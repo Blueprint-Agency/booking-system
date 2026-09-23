@@ -12,6 +12,7 @@ make it pass.**
 | No skipped tests | backend `test` job (deploy-be.yml); `e2e/src/no-skips-reporter.ts` | A skip passing as a pass |
 | No lost tests | backend `test` job; `test-guardrails.yml` | A PR with fewer tests than its base branch |
 | Coverage report | backend `test` job → run summary | Untested code going unseen (report only, no % gate) |
+| Scenario Inventory traces | `scripts/check-scenarios.mjs` in `test-guardrails.yml` | A row still marked covered after its test was renamed or deleted (`testing.md`) |
 
 The hooks are registered in `.claude/settings.json`, so every Claude Code session in this repo
 gets them.

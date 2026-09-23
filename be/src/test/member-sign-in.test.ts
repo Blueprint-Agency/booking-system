@@ -169,7 +169,7 @@ describe('member sign-in', { skip: integrationTestsEnabled ? false : SKIP_REASON
     await harness.close()
   })
 
-  test('registering with a code writes the auth user and the clients row together, and signs the member in', async () => {
+  test('AUTH-01 registering with a code writes the auth user and the clients row together, and signs the member in', async () => {
     const email = at('new-member')
     const headers = await registered(one, email)
 
@@ -186,7 +186,7 @@ describe('member sign-in', { skip: integrationTestsEnabled ? false : SKIP_REASON
     await expectStatus(await send('/api/v1/me/packages', { headers }), 200)
   })
 
-  test('a wrong code registers nobody', async () => {
+  test('AUTH-03 a wrong code registers nobody', async () => {
     const email = at('wrong-code')
     await requestCode(one, email)
     const res = await register(one, registerBody(email, '000000'))
@@ -206,7 +206,7 @@ describe('member sign-in', { skip: integrationTestsEnabled ? false : SKIP_REASON
     await expectStatus(await me(headers), 200)
   })
 
-  test('one person joins a second studio as a second record, on the same auth user', async () => {
+  test('TEN-13 one person joins a second studio as a second record, on the same auth user', async () => {
     const email = at('two-studios')
     const atOne = await registered(one, email)
     const atTwo = await registered(two, email)
@@ -223,7 +223,7 @@ describe('member sign-in', { skip: integrationTestsEnabled ? false : SKIP_REASON
     await expectStatus(await me({ ...atOne, ...memberHeaders(two) }), 403, 'tenant_mismatch')
   })
 
-  test('an admin adding a member writes a Better Auth user, and that member sets a password through the link', async () => {
+  test('AUTH-06 an admin adding a member writes a Better Auth user, and that member sets a password through the link', async () => {
     const email = at('added-by-admin')
     const created = await expectStatus(
       await send('/api/v1/portal/admin/clients', {
@@ -271,7 +271,7 @@ describe('member sign-in', { skip: integrationTestsEnabled ? false : SKIP_REASON
     )
   })
 
-  test('blocking ends the member\'s session and refuses their sign-in; restoring reverses both', async () => {
+  test('AUTH-08 blocking ends the member\'s session and refuses their sign-in; restoring reverses both', async () => {
     const email = at('blocked')
     const headers = await registered(one, email)
     const row = await clientRow(one.id, email)
@@ -307,7 +307,7 @@ describe('member sign-in', { skip: integrationTestsEnabled ? false : SKIP_REASON
     await expectStatus(await me(await signedInAt(two, email)), 200)
   })
 
-  test('editing the name on the profile persists on the member\'s row', async () => {
+  test('ACC-07 editing the name on the profile persists on the member\'s row', async () => {
     const email = at('renamed')
     const headers = await registered(one, email)
     const patched = await expectStatus(

@@ -70,7 +70,7 @@ describe('tenant provisioning', { skip: integrationTestsEnabled ? false : SKIP_R
   const mailedTo = (email: string, since: number) =>
     discardedMail.slice(since).filter(m => m.to === email)
 
-  test('a studio is created whole: row, settings, and an invited admin with an account', async () => {
+  test('SUP-01 a studio is created whole: row, settings, and an invited admin with an account', async () => {
     const slug = `prov-ok-${Date.now()}`
     const sent = discardedMail.length
 

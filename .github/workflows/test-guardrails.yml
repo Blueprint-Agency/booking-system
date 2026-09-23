@@ -25,6 +25,12 @@ jobs:
           node-version: 22
       - run: node --test "scripts/*.test.mjs" ".claude/hooks/*.test.mjs"
 
+      # Every Scenario Inventory row marked covered must name a test file whose
+      # test name still carries its ID (docs/md/testing.md), whichever app the
+      # test is in. Prints coverage by role and by risk.
+      - name: Scenario Inventory traces to tests
+        run: node scripts/check-scenarios.mjs
+
   # The journeys themselves need a deployed stack and run in e2e.yml. Listing
   # them needs nothing, and is enough to see what a PR did to them.
   e2e:

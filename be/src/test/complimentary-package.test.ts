@@ -236,7 +236,7 @@ describe('complimentary package', { skip: integrationTestsEnabled ? false : SKIP
     await harness.close()
   })
 
-  test('a given package lands Dormant at zero against its List Price, and Activates on the first booking', async () => {
+  test('PKG-10 a given package lands Dormant at zero against its List Price, and Activates on the first booking', async () => {
     const clientId = await newMember()
     const { clientPackageId } = await give(clientId)
 
@@ -258,7 +258,7 @@ describe('complimentary package', { skip: integrationTestsEnabled ? false : SKIP
     assert.ok((await row(clientPackageId))!.expiresAt, 'the first booking Activates it, losing none of its validity')
   })
 
-  test('the reason is required, and lands on the ledger and the audit log', async () => {
+  test('PKG-10 the reason is required, and lands on the ledger and the audit log', async () => {
     const clientId = await newMember()
     await assert.rejects(
       () => give(clientId, { reason: '   ' }),

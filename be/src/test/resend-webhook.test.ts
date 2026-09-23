@@ -122,7 +122,7 @@ describe('resend delivery webhook', { skip: integrationTestsEnabled ? false : SK
     assert.deepEqual(await res.json(), { error: 'webhook_not_configured' })
   })
 
-  test("a bounce marks that tenant's row bounced and raises the alert", async () => {
+  test("NTF-23 a bounce marks that tenant's row bounced and raises the alert", async () => {
     const { one } = harness.tenants
     const messageId = await sentRow(one.id)
 
@@ -137,7 +137,7 @@ describe('resend delivery webhook', { skip: integrationTestsEnabled ? false : SK
     ])
   })
 
-  test('a delivery marks the row delivered, and the same event twice is harmless', async () => {
+  test('NTF-23 a delivery marks the row delivered, and the same event twice is harmless', async () => {
     const { two } = harness.tenants
     const messageId = await sentRow(two.id)
     const body = event('email.delivered', messageId, { tenant: two.id })

@@ -8,7 +8,7 @@ import { signInMember, studio } from '../src/studio'
  * inside the window in which a cancellation is refunded — then cancel it, and
  * their balance is read before, between and after.
  */
-test('a member cancels inside the window and the credit comes back', async ({ page }) => {
+test('CXL-01 a member cancels inside the window and the credit comes back', async ({ page }) => {
   const { urls, catalogue, members } = studio()
   await signInMember(page, members.canceller)
   const full = catalogue.packageCredits

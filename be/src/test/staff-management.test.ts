@@ -142,7 +142,7 @@ describe('admins manage staff', { skip: integrationTestsEnabled ? false : SKIP_R
     assert.ok((await staffRow(studio, peer.id)).deletedAt, 'the peer is soft-deleted')
   })
 
-  test('an admin still cannot change their own role or archive themselves', async () => {
+  test('STF-13, STF-14 an admin still cannot change their own role or archive themselves', async () => {
     const studio = await freshStudio()
     const admin = await staffAt(studio, 'admin', 'admin')
     await staffAt(studio, 'peer', 'admin')
@@ -161,7 +161,7 @@ describe('admins manage staff', { skip: integrationTestsEnabled ? false : SKIP_R
     assert.equal((await staffRow(studio, admin.id)).status, 'active')
   })
 
-  test('an instructor gets 403 on every staff-management action', async () => {
+  test('STF-18, STF-21 an instructor gets 403 on every staff-management action', async () => {
     const studio = await freshStudio()
     const admin = await staffAt(studio, 'admin', 'admin')
     const instructor = await staffAt(studio, 'instructor', 'instructor')
@@ -258,7 +258,7 @@ describe('admins manage staff', { skip: integrationTestsEnabled ? false : SKIP_R
     assert.equal((await demote()).role, 'instructor')
   })
 
-  test('two admins archiving each other at once cannot leave the studio with none', async () => {
+  test('STF-16 two admins archiving each other at once cannot leave the studio with none', async () => {
     const studio = await freshStudio()
     const a = await staffAt(studio, 'a', 'admin')
     const b = await staffAt(studio, 'b', 'admin')

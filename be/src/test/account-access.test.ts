@@ -127,7 +127,7 @@ describe('account access from the detail views', { skip: integrationTestsEnabled
     await harness.close()
   })
 
-  test('member detail lists the member\'s sessions here; signing them out everywhere makes their next request 401', async () => {
+  test('AUTH-14 member detail lists the member\'s sessions here; signing them out everywhere makes their next request 401', async () => {
     const member = await memberAt(one, owner.headers, at('member'))
     // A second device.
     const phone = await harness.signInAs('client', at('member'), one)
@@ -165,7 +165,7 @@ describe('account access from the detail views', { skip: integrationTestsEnabled
     assert.equal(event.tenantId, one.id)
   })
 
-  test('signing a member out at one studio leaves their session at another', async () => {
+  test('AUTH-14 signing a member out at one studio leaves their session at another', async () => {
     const member = await memberAt(one, owner.headers, at('two-studios'))
     const elsewhere = await memberAt(two, adminTwo.headers, at('two-studios'))
     assert.equal(elsewhere.authUserId, member.authUserId, 'one auth user, two rows')
@@ -232,7 +232,7 @@ describe('account access from the detail views', { skip: integrationTestsEnabled
     await expectStatus(await send('/api/v1/me', { headers: again }), 200)
   })
 
-  test('blocking a staff member (archive) ends their sessions and is logged; unblocking reverses it', async () => {
+  test('STF-10 blocking a staff member (archive) ends their sessions and is logged; unblocking reverses it', async () => {
     const target = await staffAt(one, at('archived-admin'), 'admin')
 
     await expectStatus(

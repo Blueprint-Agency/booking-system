@@ -182,7 +182,7 @@ describe('class series', { skip: integrationTestsEnabled ? false : SKIP_REASON }
 
   let seriesId!: string
 
-  test('a clash on any date is listed, and a commit with it creates nothing', async () => {
+  test('SCH-13 a clash on any date is listed, and a commit with it creates nothing', async () => {
     // Monday 1: the room is taken by a one-off class. Monday 2: the supporting
     // instructor is on leave.
     const roomTaken = await json(
@@ -241,7 +241,7 @@ describe('class series', { skip: integrationTestsEnabled ? false : SKIP_REASON }
     assert.equal(made.length, 1, 'only the one-off class exists')
   })
 
-  test('skipping the clashing dates creates every other class, linked to the series', async () => {
+  test('SCH-11 skipping the clashing dates creates every other class, linked to the series', async () => {
     const created = await json(
       await send('/series', admin.headers, 'POST', {
         ...template(),
@@ -280,7 +280,7 @@ describe('class series', { skip: integrationTestsEnabled ? false : SKIP_REASON }
     assert.equal(detail.series_id, seriesId)
   })
 
-  test('extending twice over overlapping ranges never duplicates a date', async () => {
+  test('SCH-15 extending twice over overlapping ranges never duplicates a date', async () => {
     const to = monday(6)
     const preview = await json(
       await send(`/series/${seriesId}/extend/preview`, admin.headers, 'POST', { last_date: to }),
@@ -352,7 +352,7 @@ describe('class series', { skip: integrationTestsEnabled ? false : SKIP_REASON }
     assert.ok(booking.bookingId)
   })
 
-  test('ending a series cancels its unbooked future classes and returns the booked ones', async () => {
+  test('SCH-16 ending a series cancels its unbooked future classes and returns the booked ones', async () => {
     const before = await seriesClasses(seriesId)
     const booked = before[4]!
     const ended = await json(

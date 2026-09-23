@@ -344,7 +344,7 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     return { ...studio, tenantId, ownerId: owner!.id, newClass, member }
   }
 
-  test('a migrated class pack keeps its credits and expiry; booking spends one and cancelling returns it', async () => {
+  test('CXL-01 a migrated class pack keeps its credits and expiry; booking spends one and cancelling returns it', async () => {
     const studio = await importedStudio()
     const jane = await studio.member('jane.doe@example.test')
     const pack = async () => (await jane.packages()).find(p => p.package_name === 'Class Pack - Bundle of 10')!
@@ -511,7 +511,7 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     assert.equal(((await covered.json()) as Record<string, any>).instructor_pay_sgd, null)
   })
 
-  test('an imported booking is the member s, with a working code, and cancelling it returns the credit', async () => {
+  test('CXL-01 an imported booking is the member s, with a working code, and cancelling it returns the credit', async () => {
     const studio = await importedStudio()
     const jane = await studio.member('jane.doe@example.test')
     const pack = async () => (await jane.packages()).find(p => p.package_name === 'Class Pack - Bundle of 10')!
@@ -557,7 +557,7 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     )
   })
 
-  test('an imported series extends from the portal without duplicating a class that already came across', async () => {
+  test('SCH-15 an imported series extends from the portal without duplicating a class that already came across', async () => {
     const studio = await importedStudio()
     const owner = await harness.signInAs('staff', 'owner@example.test', studio)
     const seriesId = studio.archive.rows.class_series![0]!.id as string
@@ -623,7 +623,7 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     assert.deepEqual(body.supporting_instructor_ids, [olive])
   })
 
-  test('a member who paid for a workshop finds their place, and Finance finds the money', async () => {
+  test('FIN-13 a member who paid for a workshop finds their place, and Finance finds the money', async () => {
     const studio = await importedStudio()
 
     // A deposit on a twin and a top-up to a single: one place, at the single room.

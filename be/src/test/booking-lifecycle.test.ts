@@ -238,7 +238,7 @@ describe('booking lifecycle over HTTP', { skip: integrationTestsEnabled ? false 
     await harness.close()
   })
 
-  test('a member books a class with a package credit: one booking, one credit spent', async () => {
+  test('BKG-19 a member books a class with a package credit: one booking, one credit spent', async () => {
     const ana = await member(one, 'ana')
     const classId = await addClass(one, 3 * DAY)
 
@@ -255,7 +255,7 @@ describe('booking lifecycle over HTTP', { skip: integrationTestsEnabled ? false 
     assert.equal(await creditsLeft(ana), 9)
   })
 
-  test('a member cancels before the window closes: booking cancelled, credit returned', async () => {
+  test('CXL-01, CXL-02 a member cancels before the window closes: booking cancelled, credit returned', async () => {
     const ben = await member(one, 'ben')
     const classId = await addClass(one, 3 * DAY)
     const bookingId = await bookOk(ben, classId)
@@ -274,7 +274,7 @@ describe('booking lifecycle over HTTP', { skip: integrationTestsEnabled ? false 
     assert.equal(cancellation.refundFired, true)
   })
 
-  test('a member cannot cancel once the window has closed: refused, booking and credit untouched', async () => {
+  test('CXL-17 a member cannot cancel once the window has closed: refused, booking and credit untouched', async () => {
     // The service treats the window as a hard deadline for members (cancel.ts),
     // not a forfeit — the refusal is what is asserted here. The specs say
     // forfeit; which one is right is #151.
@@ -292,7 +292,7 @@ describe('booking lifecycle over HTTP', { skip: integrationTestsEnabled ? false 
     assert.equal((await cancellationsOf(bookingId)).length, 0)
   })
 
-  test("a cancellation past the studio's cap is cancelled with its credit forfeited", async () => {
+  test("CXL-12, CXL-02 a cancellation past the studio's cap is cancelled with its credit forfeited", async () => {
     const dee = await member(one, 'dee')
     const { cancelCapCount } = await policyOf(one)
 
@@ -319,7 +319,7 @@ describe('booking lifecycle over HTTP', { skip: integrationTestsEnabled ? false 
     assert.equal(cancellation.refundFired, false)
   })
 
-  test('a full class refuses the next member, and the seat a cancellation frees is theirs to book', async () => {
+  test('CXL-03 a full class refuses the next member, and the seat a cancellation frees is theirs to book', async () => {
     // Class waitlists are deferred in v1 (backend-architecture.md §8): a full
     // class refuses outright, nobody is queued, and nothing is promoted. What
     // the rules do guarantee is that the freed seat is bookable and charged.
@@ -345,7 +345,7 @@ describe('booking lifecycle over HTTP', { skip: integrationTestsEnabled ? false 
     assert.equal(await creditsLeft(eve), 10)
   })
 
-  test('staff mark a no-show once the class has started: credit forfeited, no cancellation counted', async () => {
+  test('CHK-06 staff mark a no-show once the class has started: credit forfeited, no cancellation counted', async () => {
     const gus = await member(one, 'gus')
     const classId = await addClass(one, 3 * DAY)
     const bookingId = await bookOk(gus, classId)
@@ -375,7 +375,7 @@ describe('booking lifecycle over HTTP', { skip: integrationTestsEnabled ? false 
     await expectStatus(await noShow(gus.headers), 401)
   })
 
-  test("a member cannot cancel or read another member's booking", async () => {
+  test("CXL-20, ACC-10 a member cannot cancel or read another member's booking", async () => {
     const hal = await member(one, 'hal')
     const ivy = await member(one, 'ivy')
     const bookingId = await bookOk(hal, await addClass(one, 3 * DAY))

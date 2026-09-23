@@ -171,7 +171,7 @@ describe('member passwords', { skip: integrationTestsEnabled ? false : SKIP_REAS
     await harness.close()
   })
 
-  test('a member with no password is mailed a set-password link, and setting it signs them in to the studio', async () => {
+  test('AUTH-06, AUTH-10 a member with no password is mailed a set-password link, and setting it signs them in to the studio', async () => {
     const email = at('imported')
     await memberWithoutPassword(one, email)
     const before = mailsTo(email).length
@@ -201,7 +201,7 @@ describe('member passwords', { skip: integrationTestsEnabled ? false : SKIP_REAS
     await expectStatus(await me({ ...headers, ...memberHeaders(two) }), 403, 'tenant_mismatch')
   })
 
-  test('once set, the email step asks for the password, and a wrong one is refused and recorded', async () => {
+  test('AUTH-05 once set, the email step asks for the password, and a wrong one is refused and recorded', async () => {
     const email = at('returning')
     const { authUserId } = await memberWithoutPassword(one, email)
     await passwordSetThroughLink(one, email)
@@ -237,7 +237,7 @@ describe('member passwords', { skip: integrationTestsEnabled ? false : SKIP_REAS
     }
   })
 
-  test('a used link and an expired link are refused', async () => {
+  test('AUTH-11 a used link and an expired link are refused', async () => {
     const email = at('link-once')
     const { authUserId } = await memberWithoutPassword(one, email)
     await expectStatus(await signInStep(one, email), 200)
@@ -283,7 +283,7 @@ describe('member passwords', { skip: integrationTestsEnabled ? false : SKIP_REAS
     await expectStatus(await setPassword(one, await tokenFromLink(email), 'seven77'), 400, 'password_too_short')
   })
 
-  test('sign-up takes a password, and the account exists only once the emailed code is confirmed', async () => {
+  test('AUTH-01, AUTH-03 sign-up takes a password, and the account exists only once the emailed code is confirmed', async () => {
     const email = at('sign-up')
     const details = { email, first_name: 'Ada', last_name: 'Lovelace', phone: '+6591234567', password: PASSWORD }
 
@@ -307,7 +307,7 @@ describe('member passwords', { skip: integrationTestsEnabled ? false : SKIP_REAS
     assert.deepEqual(await expectStatus(await signInStep(one, email), 200), { next: 'password' })
   })
 
-  test('sign-up refuses a password shorter than 8 characters', async () => {
+  test('AUTH-04 sign-up refuses a password shorter than 8 characters', async () => {
     const email = at('sign-up-short')
     await expectStatus(
       await send('/api/v1/public/members/register', {
@@ -327,7 +327,7 @@ describe('member passwords', { skip: integrationTestsEnabled ? false : SKIP_REAS
     assert.equal(res.headers.get('set-auth-token'), null)
   })
 
-  test('forgot password mails a link to a member who has one, and the new password replaces it', async () => {
+  test('AUTH-09, AUTH-10 forgot password mails a link to a member who has one, and the new password replaces it', async () => {
     const email = at('forgot')
     await memberWithoutPassword(one, email)
     await passwordSetThroughLink(one, email)
@@ -344,7 +344,7 @@ describe('member passwords', { skip: integrationTestsEnabled ? false : SKIP_REAS
     await expectStatus(await signInWithPassword(one, email, 'a brand new one'), 200)
   })
 
-  test('a member changes their password with the current one', async () => {
+  test('AUTH-12 a member changes their password with the current one', async () => {
     const email = at('changer')
     await memberWithoutPassword(one, email)
     const headers = await passwordSetThroughLink(one, email)
@@ -429,7 +429,7 @@ describe('member passwords', { skip: integrationTestsEnabled ? false : SKIP_REAS
     )
   })
 
-  test('a blocked member is refused, by password and by link', async () => {
+  test('AUTH-08 a blocked member is refused, by password and by link', async () => {
     const email = at('blocked')
     const { row } = await memberWithoutPassword(one, email)
     await passwordSetThroughLink(one, email)

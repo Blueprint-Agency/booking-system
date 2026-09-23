@@ -312,7 +312,7 @@ describe('row-level security', { skip: integrationTestsEnabled ? false : SKIP_RE
     assert.equal(verifyGrant(untenanted), null)
   })
 
-  test("an admin cannot impersonate another studio's staff", async () => {
+  test("TEN-14 an admin cannot impersonate another studio's staff", async () => {
     const { resolveTenant, TENANT_SLUG_HEADER } = await import('../middleware/tenant')
     const { impersonate } = await import('../middleware/impersonate')
 

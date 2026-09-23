@@ -229,7 +229,7 @@ test('an archive exported while identity rows still carried clerk_user_id import
   assert.equal(summary.written.clients, archive.rows.clients!.length)
 })
 
-test('an archive taken while the superadmin role existed restores its staff as admins', options, async () => {
+test('SUP-02 an archive taken while the superadmin role existed restores its staff as admins', options, async () => {
   // Migration 0055 folded the role into `admin` and dropped location grants.
   // An archive written the day before carries both, and must restore the way
   // the database itself was migrated.

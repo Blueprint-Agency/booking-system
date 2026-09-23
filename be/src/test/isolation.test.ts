@@ -1328,7 +1328,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     }
   })
 
-  test('a 2on1 partner is looked up inside the studio, never across it', async () => {
+  test('TEN-04 a 2on1 partner is looked up inside the studio, never across it', async () => {
     const [member] = await harness.db
       .select()
       .from(schema.clients)

@@ -262,7 +262,7 @@ describe('staff onboarding', { skip: integrationTestsEnabled ? false : SKIP_REAS
     assert.equal(profile.role, 'instructor')
   })
 
-  test('revoking an invitation before it is accepted removes the staff row and the auth user', async () => {
+  test('STF-04 revoking an invitation before it is accepted removes the staff row and the auth user', async () => {
     const email = at('revoked')
     const invitation = await invite(email)
 
