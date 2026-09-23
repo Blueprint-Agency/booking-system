@@ -390,7 +390,7 @@ export async function importTenant(
         // An archive built outside the platform was written when its reports
         // were downloaded, maybe days ago. Its invitations were sent by nobody
         // yet: they are good for the usual week from now, when they arrive.
-        if (ensureAccounts && table === 'staff_invitations' && values.status === 'pending') {
+        if (builtOutside && table === 'staff_invitations' && values.status === 'pending') {
           const week = Date.now() + INVITE_TTL_MS
           const written = Date.parse(String(values.expires_at))
           if (!(written >= week)) values.expires_at = new Date(week).toISOString()
@@ -457,7 +457,7 @@ export async function importTenant(
     if (settings) {
       step('settings')
       // A platform export is the whole truth about a studio, nulls included, and is written as it is.
-      const [current] = ensureAccounts
+      const [current] = builtOutside
         ? await db.execute<Record<string, unknown>>(sql`SELECT * FROM current_tenant_settings()`)
         : []
       const kept = (column: string) => settings[column] ?? current?.[column] ?? null
