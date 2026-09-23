@@ -142,6 +142,7 @@ const noHistory = (): MappedHistory => ({
   ptSessionClients: [],
   clientPackages: [],
   purchases: [],
+  manualPayrollEntries: [],
   instructors: [],
   notes: [],
 })
@@ -464,6 +465,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     schedule: reports.schedule,
     roster: reports.roster,
     payRates: reports.payRates,
+    payroll: reports.payroll,
     config,
     tenantId,
     id,
@@ -474,6 +476,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     ownerId,
     clientPackages: packages.clientPackages,
     holdings: reports.holdings,
+    ptPackages: packages.ptPackages,
     codes,
     lookups,
     ensurePtType,
@@ -603,6 +606,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     // reading the zip; it costs nothing to have it read the way it must be written.
     check_ins: history.checkIns,
     cancellations: history.cancellations,
+    manual_payroll_entries: history.manualPayrollEntries,
     global_policy: globalPolicy,
     pt_booking_config: ptBookingConfig,
     email_templates: emailTemplates,

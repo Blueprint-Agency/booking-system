@@ -9,7 +9,36 @@
  * places to remember a column added to either table.
  */
 
+import type { PayrollRow } from './readers'
+import { isoClock, isoDay, normaliseStaffName } from './values'
+
 type Row = Record<string, unknown>
+
+/** How a trainer is paid for a PT session: a percentage of what one session of the package is worth, or a flat amount. */
+export type PtRate = { percent: number; flat?: never } | { flat: number; percent?: never }
+
+/** A rate Payroll pays personal training on: `PT`, `PT (50%)`, `Personal Training`. */
+const PT_RATE = /\bpt\b|personal training/i
+
+/**
+ * Each trainer's PT rate, by normalised name, as Payroll Detail last paid them:
+ * the rate named above their most recent appointment line. `PT (50%)` is a
+ * percentage; a flat `PT` rate pays the line's Base Pay (or its earnings, where
+ * the table has no Base Pay). A trainer Payroll never paid for PT has none.
+ */
+export function ptRates(payroll: PayrollRow[]): Map<string, PtRate> {
+  const latest = new Map<string, { at: string; rate: PtRate }>()
+  for (const p of payroll) {
+    // An appointment table can pay other services too (a massage): only a PT rate prices PT.
+    if (p.table !== 'appointment' || !p.rate || !PT_RATE.test(p.rate.name) || !p.start) continue
+    const rate: PtRate = p.rate.percent !== null ? { percent: p.rate.percent } : { flat: p.basePay ?? p.earnings }
+    const at = `${isoDay(p.date)} ${isoClock(p.start)}`
+    const key = normaliseStaffName(p.staff)
+    const had = latest.get(key)
+    if (!had || had.at <= at) latest.set(key, { at, rate })
+  }
+  return new Map([...latest].map(([key, { rate }]) => [key, rate]))
+}
 
 export type PtAppointmentRows = { request: Row; session: Row; sessionClients: Row[] }
 
@@ -36,7 +65,7 @@ export function ptAppointmentRows(input: {
   scheduledById?: string | null
   /** When the platform is to say it was settled, scheduled and created. */
   settledAt: string
-  /** What the instructor was paid for it (payroll Detail), as money; absent is Unpriced. */
+  /** What the instructor was, or is to be, paid for it, as money; absent is Unpriced. */
   instructorPaySgd?: string | null
   /** What was written on the appointment. */
   message?: string | null
@@ -80,8 +109,8 @@ export function ptAppointmentRows(input: {
       starts_at: input.startsAt.toISOString(),
       ends_at: input.endsAt.toISOString(),
       session_type: sessionType,
-      // What payroll actually paid for a session that has been; a future one is
-      // Unpriced, because Mindbody pays PT by a percentage of a sale not yet made.
+      // What payroll actually paid for a session that has been; for one still to
+      // come, the trainer's PT rate applied to it (`ptRates`), or Unpriced.
       instructor_pay_sgd: input.instructorPaySgd ?? null,
       capacity_online: sessionType === '2on1' ? 2 : 1,
       capacity_waitlist: 0,

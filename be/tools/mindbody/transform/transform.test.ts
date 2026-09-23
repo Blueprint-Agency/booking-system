@@ -475,7 +475,8 @@ test('future PT: a scheduled request, a session and a booking, for the member an
   assert.equal(session.starts_at, '2090-01-02T01:00:00.000Z', '9am Singapore')
   assert.equal(session.instructor_id, ids.staff_users!['Olive Owner'])
   assert.deepEqual([session.session_type, session.capacity_online, session.lifecycle], ['1on1', 1, 'active'])
-  assert.equal(session.instructor_pay_sgd, null, 'Mindbody pays PT by percentage, which no report gives')
+  // Olive is on PT (50%) in Payroll, and Mei's pack cost 1,200.00 for 10 sessions.
+  assert.equal(session.instructor_pay_sgd, '60.00', 'the trainer s percentage of what one session of the package is worth')
 
   assert.equal(request.status, 'scheduled')
   assert.equal(request.scheduled_pt_session_id, session.id)
@@ -512,6 +513,62 @@ test('Class Series: a confirmed weekly class is written with its imported classe
     linked.map(c => c.starts_at).sort(),
     ['2090-01-02T11:00:00.000Z', '2090-01-09T11:00:00.000Z', '2090-01-23T11:00:00.000Z'],
     'extending the series must not duplicate a class that already came across',
+  )
+})
+
+test('a Class Series whose teacher has no known rate is Unpriced, never 0; one whose rate really is 0 pays 0', async () => {
+  const reports = await readReports(REPORTS)
+  const seriesPay = (payRates: typeof reports.payRates) => {
+    const { archive, preflight } = mapStudio({ ...reports, payRates }, validateConfig(fixtureConfig()), TENANT)
+    return { pay: archive.rows.class_series![0]!.instructor_pay_sgd, classes: archive.rows.classes!, preflight }
+  }
+  const unknown = seriesPay(reports.payRates.filter(r => r.staff !== 'Instructor, Ivy'))
+  assert.equal(unknown.pay, null, 'no rate is Unpriced, so its classes show up for pricing')
+  assert.ok(unknown.classes.filter(c => c.series_id).every(c => c.instructor_pay_sgd === null))
+  assert.ok(
+    unknown.preflight.schedule.some(n => /series Hatha, weekday 1 at 19:00: Ivy Instructor has no per-class rate, so the series is Unpriced — its classes, and every class an extend adds, need their pay set/.test(n)),
+    unknown.preflight.schedule.join(' | '),
+  )
+  const unpaid = seriesPay(reports.payRates.map(r => (r.staff === 'Instructor, Ivy' ? { ...r, perClass: 0 } : r)))
+  assert.equal(unpaid.pay, '0.00', 'a rate of 0 is a rate')
+})
+
+test('future PT: priced from the trainer s PT rate in Payroll — a percentage of the package, or flat — and Unpriced with none', async () => {
+  const reports = await readReports(REPORTS)
+  const ptPay = (payroll: typeof reports.payroll) => {
+    const { archive, preflight } = mapStudio({ ...reports, payroll }, validateConfig(fixtureConfig()), TENANT)
+    return { pay: archive.rows.pt_sessions!.find(s => String(s.starts_at) > '2090')!.instructor_pay_sgd, preflight }
+  }
+  assert.equal(ptPay(reports.payroll).pay, '60.00')
+
+  // A flat PT rate, paid later than the percentage one: the latest rate is the one she is on.
+  const flat = {
+    staff: 'Owner, Olive',
+    date: day(2026, 9, 12),
+    start: { hour: 9, minute: 0 },
+    description: '',
+    earnings: 45,
+    table: 'appointment' as const,
+    rate: { name: 'PT', percent: null },
+    basePay: 45,
+  }
+  assert.equal(ptPay([...reports.payroll, flat]).pay, '45.00')
+
+  const none = ptPay(reports.payroll.filter(p => p.table !== 'appointment'))
+  assert.equal(none.pay, null, 'no PT rate known: Unpriced')
+  assert.ok(
+    none.preflight.schedule.some(n => /pay: Owner, Olive has 1 future PT session\(s\) and no PT rate in Payroll, so they are Unpriced/.test(n)),
+    none.preflight.schedule.join(' | '),
+  )
+})
+
+test('a per-head class rate the platform cannot hold is named in the preflight, with the classes it leaves Unpriced', async () => {
+  const { preflight } = await run()
+  assert.ok(
+    preflight.schedule.some(n =>
+      /pay: Owner, Olive is paid 5\.00 per client in Mindbody, which the platform has no pay rule for — 2 future class\(es\) came across Unpriced/.test(n),
+    ),
+    preflight.schedule.join(' | '),
   )
 })
 
@@ -793,6 +850,8 @@ test('verify: the archive adds up to its own expected figures, and an altered ba
       byYear: undefined,
       revenueByMonth: undefined,
       refunds: undefined,
+      // Three Hatha at 35.00 and Olive's PT at 60.00; her per-head classes are Unpriced.
+      payByMonth: { '2090-01': '165.00' },
     },
   )
   // No history is asked for, so every class the studio has is still to come.
@@ -1505,10 +1564,13 @@ test('a holding Mindbody combined is split back into its purchases, each with it
 
 test('history: PT carries what payroll paid, and its Room from the roster; payroll with nothing to belong to is reported', async () => {
   const reports = await readReports(REPORTS)
+  const pt = { description: '', table: 'appointment' as const, rate: { name: 'PT', percent: 50 }, basePay: null }
   const payroll = [
     ...reports.payroll,
-    { staff: 'Owner, Olive', date: day(2026, 9, 1), start: { hour: 9, minute: 0 }, description: '', earnings: 60, table: 'appointment' as const },
-    { staff: 'Owner, Olive', date: day(2026, 8, 30), start: null, description: '', earnings: 1000, table: 'appointment' as const },
+    { ...pt, staff: 'Owner, Olive', date: day(2026, 9, 1), start: { hour: 9, minute: 0 }, earnings: 60 },
+    { ...pt, staff: 'Owner, Olive', date: day(2026, 8, 30), start: null, earnings: 1000 },
+    // Paid to somebody who is not coming across: nobody to write it against.
+    { ...pt, staff: 'Gone, Greta', date: day(2026, 8, 30), start: null, earnings: 7 },
   ]
   const roster = [
     ...reports.roster,
@@ -1530,8 +1592,20 @@ test('history: PT carries what payroll paid, and its Room from the roster; payro
   const session = archive.rows.pt_sessions!.find(s => s.starts_at === '2026-09-01T01:00:00.000Z')!
   assert.equal(session.instructor_pay_sgd, '60.00')
   assert.equal(session.room_id, ids.rooms!['Hot Room'])
-  assert.ok(preflight.schedule.some(n => /history payroll: 1000\.00 Owner, Olive — paid at no set time/.test(n)), preflight.schedule.join(' | '))
-  assert.ok(preflight.schedule.some(n => /history payroll: .* paid from 2026-06-01; .* is on the classes and PT sessions that came across/.test(n)))
+  assert.ok(
+    archive.rows.manual_payroll_entries!.some(e => e.amount_sgd === '1100.00' && e.instructor_id === ids.staff_users!['Olive Owner']),
+    'a retreat share at no set time is a Manual Entry, with the other one of that day',
+  )
+  assert.ok(
+    preflight.schedule.some(n => /history payroll: 7\.00 Gone, Greta — is not coming across, so it was not imported/.test(n)),
+    preflight.schedule.join(' | '),
+  )
+  assert.ok(
+    preflight.schedule.some(n =>
+      /history payroll: 1490\.00 paid from 2026-06-01; 299\.00 is on the classes and PT sessions that came across, 1184\.00 on 3 Manual Payroll Entries, 7\.00 is not/.test(n),
+    ),
+    preflight.schedule.join(' | '),
+  )
 })
 
 test('history: a late cancel carries its real time and who made it, from the Cancellations report', async () => {
@@ -1966,4 +2040,67 @@ test('each live autopay in Autopay Detail is a preflight line, to stop in Mindbo
   const none = mapStudio(reports, validateConfig(fixtureConfig()), TENANT)
   assert.deepEqual(none.preflight.autopays, [])
   assert.match(renderPreflight(none.preflight), /## Autopays still live in Mindbody \(0\)\n\n[^\n]+\n$/)
+})
+
+/* ── Instructor Pay from the reports (#218) ──────────────────────────────── */
+
+test('historical Instructor Pay adds up to the Payroll Detail total: class pay, session pay and Manual Entries', async () => {
+  const { archive, ids } = await run(withHistory())
+  const cents = (v: unknown) => (v == null ? 0 : Math.round(Number(v) * 100))
+  const past = (at: unknown) => String(at) < '2026-09-17'
+  const onClasses = archive.rows.classes!.filter(c => past(c.starts_at)).reduce((n, c) => n + cents(c.instructor_pay_sgd), 0)
+  const onSessions = archive.rows.pt_sessions!.filter(s => past(s.starts_at)).reduce((n, s) => n + cents(s.instructor_pay_sgd), 0)
+  const entries = archive.rows.manual_payroll_entries!
+  const manual = entries.reduce((n, e) => n + cents(e.amount_sgd), 0)
+  // 35 × 3 + 38 + 40 + 48 + 8 on classes, and 30 + 54 + 100 that fits none.
+  assert.equal(onClasses + onSessions + manual, 42300)
+
+  const staff = (name: string) => ids.staff_users![name]
+  assert.deepEqual(
+    entries.map(e => `${e.entry_date} ${e.instructor_id === staff('Ivy Instructor') ? 'Ivy' : 'Olive'} ${e.amount_sgd} ${e.label}`).sort(),
+    [
+      // A PT line with no session to sit on, at its own time.
+      '2026-08-20T03:00:00.000Z Olive 54.00 Mindbody payroll: PT appointment at 11:00 (PT 50%)',
+      // A revenue share at no set time: on its day.
+      '2026-08-29T16:00:00.000Z Olive 100.00 Mindbody payroll: PT appointment, no set time (PT 50%)',
+      // A workshop's per-client lines, added up.
+      '2026-09-05T06:00:00.000Z Ivy 30.00 Mindbody payroll: class paid per client at 14:00 (Percentage Rate 40%)',
+    ],
+  )
+  for (const e of entries) {
+    assert.equal(e.created_by_staff_id, staff('Olive Owner'))
+    assert.ok(archive.rows.instructors!.some(i => i.staff_user_id === e.instructor_id), 'paid, so an instructor')
+  }
+  assert.deepEqual(constraintViolations(archive), [])
+})
+
+test('a past PT session Mindbody marked unpaid is $0, not Unpriced', async () => {
+  const reports = await readReports(REPORTS)
+  const attendance = reports.attendance.map(v =>
+    /personal training/i.test(v.description) ? { ...v, status: 'No Show', staffPaid: false } : v,
+  )
+  const { archive } = mapStudio({ ...reports, attendance }, validateConfig(withHistory()), TENANT)
+  const session = archive.rows.pt_sessions!.find(s => s.starts_at === '2026-09-01T01:00:00.000Z')!
+  assert.equal(session.instructor_pay_sgd, '0.00')
+  // Without the mark, payroll simply has no line for it: Unpriced, for an admin to settle.
+  const unmarked = mapStudio(reports, validateConfig(withHistory()), TENANT)
+  assert.equal(unmarked.archive.rows.pt_sessions!.find(s => s.starts_at === '2026-09-01T01:00:00.000Z')!.instructor_pay_sgd, null)
+})
+
+test('verify: Instructor Pay is compared month by month, and a changed month is named', async () => {
+  const { archive, expected, zip } = await run(withHistory())
+  assert.deepEqual(expected.payByMonth, {
+    '2026-07': '35.00',
+    '2026-08': '224.00',
+    '2026-09': '164.00',
+    // The timetable to come: the per-class rate, and Olive's PT at her percentage.
+    '2090-01': '165.00',
+  })
+  assert.deepEqual(await verifyImport(expected, zip), [])
+
+  // One Manual Entry lost on the way in, and the manifest none the wiser.
+  archive.rows.manual_payroll_entries!.pop()
+  archive.manifest.counts.manual_payroll_entries = archive.rows.manual_payroll_entries!.length
+  const differences = await verifyImport(expected, await packArchive(archive))
+  assert.ok(differences.some(d => /^2026-\d\d: Instructor Pay: expected [\d.]+, found [\d.]+$/.test(d)), differences.join(' | '))
 })

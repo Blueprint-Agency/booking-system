@@ -48,7 +48,7 @@ the freeze — decisions 11 and 12 are fixed **in Mindbody**, so they have to be
 | 13 | Two live packages at once | Accept "the one ending soonest runs, the others wait with their days left" | Accepted |
 | 14 | Unlimited Home Location | Location for a member no report places | Retention Management's location, then Membership's, then where their visits were sold, then the plan's name, then the main Location — the preflight counts each |
 | 15 | Future workshops and retreats | Which to migrate; tier (room type) prices; how instalments count | All with paid attendees; price = amount paid |
-| 16 | Teacher pay | Use the pay-rate report's per-class amount for future classes; PT pay | Per-class rate; PT Unpriced |
+| 16 | Teacher pay | Use the pay-rate report's per-class amount for future classes; what to pay a per-head teacher's classes | Per-class rate, else Unpriced; PT at the trainer's Payroll PT rate |
 | 17 | History | How far back; whether past purchases appear in Finance | None on a quick rehearsal; classes and bookings from opening, purchases off |
 | 18 | Not migrated | How to track live mat storage, lone access passes and corporate balances by hand | Listed in the preflight report |
 | 19 | Class Series | Which weekly classes repeat, and the term end date to extend to | Proposed from the last 4 weeks |
@@ -236,7 +236,10 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   where Mindbody files two rooms under one spelling (a studio that relabelled its rooms), each
   Room but one lists the `rooms[].classTypes` it holds under that spelling and the last takes the
   rest; a class's Room decides its Location, so a Room at the wrong Location moves its classes —
-  where they have none, the class is **Unpriced** for an admin to settle. A name marked `***`
+  where they have none, the class is **Unpriced** for an admin to settle (a rate of 0 — every slot
+  0 — is a real 0). A teacher Pay Rates also pays **per client** is named in the preflight with how
+  many future classes that leaves Unpriced (or paying only the per-class part): the platform pays a
+  class one fixed figure, so a per-head rule has nowhere to go. A name marked `***`
   is taught by the substitute it is filed under. Anything under a `workshopCategories` service
   category is left to the workshop import.
 - **Future bookings** come from Schedule at a Glance over future dates, joined to a class on
@@ -249,7 +252,12 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   config's `secret`, so a rerun writes the same ones. A roster row under a
   `ptAppointmentNames` name is a PT appointment instead: a scheduled `pt_request` (its focus the
   `ptClassType` Class Type, made if the config has none by that name), a `pt_session` and a
-  booking per member. PT pay is a percentage in Mindbody, which no report gives: Unpriced.
+  booking per member. Its pay is the trainer's **PT rate from Payroll (Detail)** — the rate header
+  (`PT (50%)`, or a flat `PT`) above their most recent appointment line: flat pays the table's Base
+  Pay; a percentage pays that share of what one session of each member's running PT package is
+  worth (what was paid ÷ its sessions), as Mindbody's "Rev. per Session" does. A trainer with no PT
+  line in Payroll, or a member with no package to value the session by, leaves it Unpriced, named
+  in the preflight.
 - **Workshops and retreats to come** are one config entry per Mindbody **service category** — a
   workshop, a retreat or a course has one of its own — proposed by `starter` for every category
   with something still to come. A person sets `migrate`, the Location, the seats per day and the
@@ -277,6 +285,9 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   to come (the published timetable runs only days past the download), its last class before
   the download — so launch day starts with an extend and nothing is duplicated. Its teacher must
   be coming across as an active instructor, or the portal could never extend it.
+  Its pay is the teacher's per-class rate; with none known it is **Unpriced** (null), never 0, so
+  its classes, and every class an extend adds, show up in Finance for pricing. The portal cannot
+  yet change a series' pay, so settle the rate in the answers before the final build.
 - A Class Type with no future class and no Class Series arrives archived; history still names it.
 - A future booking the running package cannot cover (it ends first) is paid by the member's
   package waiting behind it, where that will still be running then. The rest are preflight
@@ -376,9 +387,16 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   it (the member or ClassPass → `client`, anyone else → `admin`); without it the cancel is dated
   at the class's start.
 - Payroll pays past PT as well as classes: a past PT session's Instructor Pay is what payroll
-  paid for that appointment. Payroll lines with nothing to belong to — a `TBD` revenue share
-  on a retreat, a class that did not come across — are listed in the preflight with the total
-  placed and not placed, so every dollar is accounted for.
+  paid for that appointment. One with no payroll line whose visits Mindbody marked **not staff
+  paid** (an unpaid no-show) is $0, not Unpriced. Payroll lines with nothing to belong to — a
+  workshop's per-client lines, a `TBD` revenue share on a retreat, a PT line with no session —
+  become **Manual Payroll Entries** for the teacher on their own date (a `TBD` line at the start
+  of its day), one per class or appointment and rate, labelled `Mindbody payroll: …`. So Finance's
+  historical Instructor Pay equals Mindbody's Payroll total: class pay + session pay + Manual
+  Entries. Only a line for a teacher who is not coming across stays behind, named in the preflight
+  beside the totals placed, entered manually and not placed.
+- `verify` compares Instructor Pay month by month (classes, PT sessions and Manual Entries, on the
+  studio's calendar), and names any month that changed on the way in.
 - A holding Visits Remaining shows combined (two packs of one option) is split back into its
   purchases from the pricing-option register where the register accounts for it exactly —
   each with its own expiry, credits and price. A holding that is one purchase takes that

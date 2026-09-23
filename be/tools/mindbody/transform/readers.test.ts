@@ -461,14 +461,31 @@ test('the roster: a PT appointment s real end time, its notes, and who booked it
   assert.equal(roster[0]!.notes, '')
 })
 
-test('pay rates: the per-class rate of each teacher, and null where there is none', async () => {
+test('pay rates: the per-class and per-head rate of each teacher, and null where there is none', async () => {
   const rates = readPayRates(await readXlsxTable(readFileSync(path.join(FIXTURES, 'reports', 'Staff', '38 Pay Rates', '38 Pay Rates.xlsx'))))
   assert.deepEqual(rates, [
     // Under an "Assistant/Per Class Rate" slot, which is still per class.
-    { staff: 'Instructor, Ivy', perClass: 35 },
-    // Paid per head: the platform has no such rate, so the classes are Unpriced.
-    { staff: 'Owner, Olive', perClass: null },
-    { staff: 'Teacher, Old', perClass: 40 },
+    { staff: 'Instructor, Ivy', perClass: 35, perClient: null },
+    // Paid per head: no per-class rate, and the per-head one kept for the mapper to place or name.
+    { staff: 'Owner, Olive', perClass: null, perClient: 5 },
+    { staff: 'Teacher, Old', perClass: 40, perClient: null },
+  ])
+})
+
+test('pay rates: a teacher whose every slot is 0 really is paid 0, which is not the same as having no rate', () => {
+  const rates = readPayRates([
+    row('Unpaid, Una', '', 'Assistant/Per Class Rate', 'Per Class Rate', 'Per Client Rate'),
+    row('Default: Assistant/Per Class Rate', 'Rate', '$0.00', '$0.00', '$0.00'),
+    row('Both, Bea', '', 'Assistant/Per Class Rate', 'Per Class Rate', 'Per Client Rate'),
+    row('Default: Assistant/Per Class Rate', 'Rate', '$35.00', '$0.00', '$5.00'),
+    row('Share, Sol', '', 'Per Class Rate', 'Percentage Rate'),
+    row('Default: Percentage Rate', 'Rate', '', '40%'),
+  ])
+  assert.deepEqual(rates, [
+    { staff: 'Unpaid, Una', perClass: 0, perClient: null },
+    { staff: 'Both, Bea', perClass: 35, perClient: 5 },
+    // A blank and a percentage say nothing about per-class pay: no rate, not a rate of 0.
+    { staff: 'Share, Sol', perClass: null, perClient: null },
   ])
 })
 
@@ -512,11 +529,22 @@ test('payroll: the teacher from the heading above the table, and what each class
       'Instructor, Ivy 31/8/2026 19:00 Hatha 35',
       'Instructor, Ivy 7/9/2026 19:00 Hatha 38',
       'Instructor, Ivy 10/9/2026 19:00 Hatha 40',
+      // A percentage-rate class that did not come across (a workshop): a line per client, no class name.
+      'Instructor, Ivy 5/9/2026 14:00  12',
+      'Instructor, Ivy 5/9/2026 14:00  18',
       // Paid per client, which is still a real figure for the class that ran.
       'Owner, Olive 8/9/2026 10:00 Vinyasa flow 48',
       'Owner, Olive 15/9/2026 10:00 Vinyasa flow 8',
+      // PT with nobody on the roster for it, and a revenue share at no set time.
+      'Owner, Olive 20/8/2026 11:00  54',
+      'Owner, Olive 30/8/2026 undefined:00  100',
     ],
     'the report title, the pay-rate line and the totals are not classes',
+  )
+  assert.deepEqual(
+    [...new Set(paid.map(p => `${p.staff}: ${p.rate?.name} ${p.rate?.percent ?? '-'}`))],
+    ['Instructor, Ivy: Per Class -', 'Instructor, Ivy: Percentage Rate 40', 'Owner, Olive: Per Client -', 'Owner, Olive: PT 50'],
+    'the pay-rate line above each table is the rate its lines were paid on',
   )
 })
 
@@ -598,6 +626,11 @@ test('attendance without revenue: the three flags are how a visit ended, and "n/
     ],
     'no Status column: it is read from Late Cancel and No-show, and the grand total is no visit',
   )
+  assert.deepEqual(
+    visits.map(v => v.staffPaid),
+    [true, false, false, true, false],
+    'whether the teacher was paid for the visit is kept: an unpaid PT no-show is $0, not Unpriced',
+  )
   const first = visits[0]!
   assert.deepEqual(
     [first.date, first.start, first.end, first.description, first.room, first.location],
@@ -639,10 +672,17 @@ test('payroll as Mindbody lays it out: each teacher named between the tables, th
       <tr class="odd"><td>8/9/2026</td><td>10:00 am</td><td>Doe, Jane</td><td>Unlimited 12</td><td>10.00</td><td>10.00</td><td>5.00</td><td>5.00</td></tr>
       <tr class=""><td>8/9/2026</td><td>10:00 am</td><td>Roe, Rick</td><td>Class Pack</td><td>20.00</td><td>20.00</td><td>10.00</td><td>10.00</td></tr>
     </table>
+    <div class="payscaleHeader"><span class="payscale">
+      Pay rate: PT (50%)</span></div>
     <table class="results appointments">
       <tr><td>Appointment Date</td><td>Appt. Time</td><td>Client Name</td><td>Series Used</td><td>Revenue</td><td></td><td>Rev. per Session</td><td>Earnings</td></tr>
       <tr class="odd"><td>Thursday, 10 September 2026</td><td>11:00 am</td><td>J. Doe</td><td>PT - Bundle of 10</td><td>1,200.00</td><td></td><td>120.00</td><td>60.00</td></tr>
       <tr class=""><td>30/8/2026</td><td>TBD</td><td>R. Roe</td><td>Retreat - Twin</td><td>2,000.00</td><td></td><td>2,000.00</td><td>1,000.00</td></tr>
+    </table>
+    <div class="payscaleHeader"><span class="payscale">Pay rate: PT</span></div>
+    <table class="results appointments">
+      <tr><td>Appointment Date</td><td>Appt. Time</td><td>Client Name(s)</td><td></td><td># Staff paid</td><td># Staff unpaid</td><td>Base Pay</td><td></td><td>Earnings</td></tr>
+      <tr class="odd"><td>Friday, 11 September 2026</td><td>9:00&nbsp;am </td><td>M. Lin</td><td></td><td>1</td><td>0</td><td>40.00</td><td></td><td>40.00</td></tr>
     </table>
     <table class="results staffTotalAsstDisabled"><tr><td># Services</td><td># Staff paid</td><td># Staff unpaid</td><td>Base Earnings</td><td></td><td>Earnings</td></tr>
       <tr><td>Total for Owner, Olive</td><td>1</td><td>2</td><td>15.00</td><td></td><td>15.00</td></tr></table>`
@@ -654,8 +694,22 @@ test('payroll as Mindbody lays it out: each teacher named between the tables, th
       'class_per_client Owner, Olive 8/9 10:0  10',
       'appointment Owner, Olive 10/9 11:0  60',
       'appointment Owner, Olive 30/8 TBD  1000',
+      'appointment Owner, Olive 11/9 9:0  40',
     ],
     'a percentage-rate class is a line per client, which the mapper adds up; an appointment writes its day out; a line at no set time (a retreat share) is kept for the mapper to place or report; the totals are not lines',
+  )
+  assert.deepEqual(
+    readPayroll(html).map(p => [p.rate, p.basePay]),
+    [
+      [{ name: 'Per Class Rate', percent: null }, 35],
+      [{ name: 'Percentage Rate', percent: 50 }, null],
+      [{ name: 'Percentage Rate', percent: 50 }, null],
+      [{ name: 'PT', percent: 50 }, null],
+      [{ name: 'PT', percent: 50 }, null],
+      // A flat PT rate: what one appointment pays, whoever it was with.
+      [{ name: 'PT', percent: null }, 40],
+    ],
+    'each table is paid on the rate named above it, and a flat rate says its amount in Base Pay',
   )
 })
 

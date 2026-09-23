@@ -155,8 +155,11 @@ export const classSeries = pgTable(
     mainInstructorId: uuid('main_instructor_id')
       .notNull()
       .references(() => instructors.staffUserId, { onDelete: 'restrict' }),
-    // Admin only, so always priced — same figure as classes.instructor_pay_sgd.
-    instructorPaySgd: numeric('instructor_pay_sgd', { precision: 10, scale: 2 }).notNull(),
+    // Same figure as classes.instructor_pay_sgd, copied onto each class it
+    // creates. A series made in the portal is always priced; NULL only on one
+    // imported from another system with no known rate, whose classes (and every
+    // class an extend adds) are then Unpriced, priced one by one in Finance.
+    instructorPaySgd: numeric('instructor_pay_sgd', { precision: 10, scale: 2 }),
     locationId: uuid('location_id')
       .notNull()
       .references(() => locations.id, { onDelete: 'restrict' }),

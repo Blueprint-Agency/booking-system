@@ -16,7 +16,18 @@
 	<tr><td>31/8/2026</td><td>7:00 pm</td><td>Hatha</td><td>1</td><td>$35.00</td><td>$35.00</td></tr>
 	<tr><td>7/9/2026</td><td>7:00 pm</td><td>Hatha</td><td>0</td><td>$38.00</td><td>$38.00</td></tr>
 	<tr><td>10/9/2026</td><td>7:00 pm</td><td>Hatha</td><td>1</td><td>$40.00</td><td>$40.00</td></tr>
-	<tr><td colspan="6"><strong>Total: $183.00</strong></td></tr>
+	<tr><td colspan="6">Pay Rate: Percentage Rate (40%)</td></tr>
+	<tr class="whiteHeader">
+		<td><strong>Date</strong></td>
+		<td><strong>Time</strong></td>
+		<td><strong>Client Name</strong></td>
+		<td><strong>Revenue</strong></td>
+		<td><strong>Rev. per Session</strong></td>
+		<td><strong>Earnings</strong></td>
+	</tr>
+	<tr><td>5/9/2026</td><td>2:00 pm</td><td>Doe, Jane</td><td>$30.00</td><td>$30.00</td><td>$12.00</td></tr>
+	<tr><td>5/9/2026</td><td>2:00 pm</td><td>Roe, Rick</td><td>$45.00</td><td>$45.00</td><td>$18.00</td></tr>
+	<tr><td colspan="6"><strong>Total: $213.00</strong></td></tr>
 	<tr><td colspan="6"><strong>Owner, Olive</strong></td></tr>
 	<tr><td colspan="6">Pay Rate: Per Client</td></tr>
 	<tr class="whiteHeader">
@@ -29,5 +40,16 @@
 	</tr>
 	<tr><td>8/9/2026</td><td>10:00 am</td><td>Vinyasa flow</td><td>6</td><td>$8.00</td><td>$48.00</td></tr>
 	<tr><td>15/9/2026</td><td>10:00 am</td><td>Vinyasa flow</td><td>1</td><td>$8.00</td><td>$8.00</td></tr>
-	<tr><td colspan="6"><strong>Total: $56.00</strong></td></tr>
+	<tr><td colspan="6">Pay Rate: PT (50%)</td></tr>
+	<tr class="whiteHeader">
+		<td><strong>Appointment Date</strong></td>
+		<td><strong>Appt. Time</strong></td>
+		<td><strong>Client Name</strong></td>
+		<td><strong>Revenue</strong></td>
+		<td><strong>Rev. per Session</strong></td>
+		<td><strong>Earnings</strong></td>
+	</tr>
+	<tr><td>Thursday, 20 August 2026</td><td>11:00 am</td><td>M. Lin</td><td>$1,080.00</td><td>$108.00</td><td>$54.00</td></tr>
+	<tr><td>30/8/2026</td><td>TBD</td><td>R. Roe</td><td>$200.00</td><td>$200.00</td><td>$100.00</td></tr>
+	<tr><td colspan="6"><strong>Total: $210.00</strong></td></tr>
 </table>

@@ -63,6 +63,8 @@ export type MappedHistory = {
   clientPackages: Row[]
   /** A provider-less Purchase per past package that was returned, closed as refunded. Empty unless `history.purchases`. */
   purchases: Row[]
+  /** Payroll that fits no class or PT session that came across: a workshop, a retreat share, a PT line with no session. */
+  manualPayrollEntries: Row[]
   /** Staff who taught something in history and had no instructor profile yet. */
   instructors: Row[]
   /** What a person should look at: a class that could not be placed, a visit with no class, a purchase with no member. */
@@ -547,8 +549,8 @@ export function mapHistory(input: {
     staff: string
     location: string
     room: string
-    /** Client id → how their visit ended, and what paid for it. */
-    clients: Map<string, { outcome: Exclude<Outcome, 'early_cancel'>; option: string }>
+    /** Client id → how their visit ended, what paid for it, and whether it counted towards the trainer's pay. */
+    clients: Map<string, { outcome: Exclude<Outcome, 'early_cancel'>; option: string; staffPaid: boolean | null }>
   }
   const appointments = new Map<string, Appointment>()
 
@@ -597,7 +599,9 @@ export function mapHistory(input: {
         room: v.room,
         clients: new Map(),
       }
-      if (!appointment.clients.has(v.clientId)) appointment.clients.set(v.clientId, { outcome, option: v.option })
+      if (!appointment.clients.has(v.clientId)) {
+        appointment.clients.set(v.clientId, { outcome, option: v.option, staffPaid: v.staffPaid ?? null })
+      }
       appointments.set(key, appointment)
       continue
     }
@@ -779,7 +783,11 @@ export function mapHistory(input: {
       scheduledById: booker ?? null,
       // Settled when it happened, not at the download: it is the studio's past.
       settledAt: startsAt.toISOString(),
-      instructorPaySgd: pay === undefined ? null : money(pay),
+      // No payroll line, and Mindbody marked every visit on it as not counting
+      // towards the trainer's pay (an unpaid no-show): the trainer was paid
+      // nothing, which is $0 and not something for an admin to price.
+      instructorPaySgd:
+        pay !== undefined ? money(pay) : [...a.clients.values()].every(v => v.staffPaid === false) ? money(0) : null,
       message: line?.notes,
       twoPerson: [...a.clients.values()].some(c => {
         const entry = entryOf.get(normaliseOptionName(c.option))
@@ -838,11 +846,19 @@ export function mapHistory(input: {
     )
   }
 
-  /* ── Payroll that found nothing to belong to ───────────────────────────── */
+  /* ── Payroll that found nothing to belong to: Manual Payroll Entries ───── */
 
-  // Summed per teacher and kind of line, so the studio can see where every
-  // dollar of payroll went: onto a class, onto a PT session, or nowhere here.
-  const leftover = new Map<string, number>()
+  /**
+   * A payroll line no class or PT session took — a workshop's per-client lines,
+   * a retreat's revenue share at no set time, a PT line with no session — is
+   * still money the studio paid, so it becomes a Manual Payroll Entry for the
+   * teacher on its own date: that is what keeps Finance's historical Instructor
+   * Pay equal to Mindbody's Payroll total. The lines of one class, or one
+   * appointment, on one rate are one entry, as they are one payment.
+   */
+  type Entry = { staffId: string; date: CalendarDate; start: ClockTime | null; label: string; amount: number }
+  const entries = new Map<string, Entry>()
+  const notComing = new Map<string, number>()
   let payrollTotal = 0
   let payrollPlaced = 0
   for (const p of input.payroll) {
@@ -852,20 +868,57 @@ export function mapHistory(input: {
       payrollPlaced += p.earnings
       continue
     }
-    const why = !p.start
-      ? 'paid at no set time (TBD — a revenue share on a retreat or course)'
-      : p.table === 'appointment'
-        ? 'for a PT appointment that did not come across'
-        : `for a class that did not come across (a workshop or retreat day, or a class left behind)${p.description ? '' : ' — a per-client line with no class name'}`
-    const key = `${p.staff} — ${why}`
-    leftover.set(key, (leftover.get(key) ?? 0) + p.earnings)
+    const staffId = staffIds.get(normaliseStaffName(p.staff))
+    if (!staffId) {
+      notComing.set(p.staff, (notComing.get(p.staff) ?? 0) + p.earnings)
+      continue
+    }
+    const kind = p.table === 'appointment' ? 'PT appointment' : p.table === 'class_per_client' ? 'class paid per client' : 'class'
+    const when = p.start ? ` at ${isoClock(p.start)}` : ', no set time'
+    const rate = p.rate ? ` (${p.rate.name}${p.rate.percent === null ? '' : ` ${p.rate.percent}%`})` : ''
+    const label = `Mindbody payroll: ${p.description || kind}${when}${rate}`
+    const key = `${staffId} ${isoDay(p.date)} ${p.start ? isoClock(p.start) : 'TBD'} ${label}`
+    const entry = entries.get(key) ?? { staffId, date: p.date, start: p.start, label, amount: 0 }
+    entry.amount += p.earnings
+    entries.set(key, entry)
   }
+
+  ids.manual_payroll_entries ??= {}
+  const manualPayrollEntries: Row[] = []
+  let payrollManual = 0
+  for (const [key, e] of [...entries].sort(([a], [b]) => a.localeCompare(b))) {
+    const amount = Math.round(e.amount * 100) / 100
+    if (amount === 0) continue
+    teaches(e.staffId)
+    const row: Row = {
+      id: id('manual-payroll-entry', key),
+      tenant_id: tenantId,
+      instructor_id: e.staffId,
+      amount_sgd: money(amount),
+      label: e.label,
+      // At its own time, or — a line at no set time — the start of its day.
+      entry_date: (e.start ? instant(e.date, e.start) : zonedToInstant({ ...e.date, hour: 0, minute: 0, second: 0 }, tz)).toISOString(),
+      created_by_staff_id: input.ownerId,
+      created_at: asOf.toISOString(),
+    }
+    manualPayrollEntries.push(row)
+    ids.manual_payroll_entries[key] = row.id as string
+    payrollManual += amount
+    // Kept, or the totals would not be Mindbody's; but the portal edits an entry only at 0 or more.
+    if (amount < 0) {
+      notes.push(`history payroll: "${e.label}" on ${isoDay(e.date)} nets to ${money(amount)} (a reversal) — imported as it is; the portal cannot edit a negative entry`)
+    }
+  }
+
   if (input.payroll.length > 0) {
+    // To the cent, and never "-0.00": thousands of lines in floating point leave dust behind.
+    const cents = (n: number) => money(Math.round(n * 100) / 100 + 0)
     notes.push(
-      `history payroll: ${money(payrollTotal)} paid from ${from}; ${money(payrollPlaced)} is on the classes and PT sessions that came across, ${money(payrollTotal - payrollPlaced)} is not`,
+      `history payroll: ${cents(payrollTotal)} paid from ${from}; ${cents(payrollPlaced)} is on the classes and PT sessions that came across, ` +
+        `${cents(payrollManual)} on ${manualPayrollEntries.length} Manual Payroll Entries, ${cents(payrollTotal - payrollPlaced - payrollManual)} is not`,
     )
-    for (const [what, amount] of [...leftover].sort(([a], [b]) => a.localeCompare(b))) {
-      if (amount !== 0) notes.push(`history payroll: ${money(amount)} ${what}`)
+    for (const [staff, amount] of [...notComing].sort(([a], [b]) => a.localeCompare(b))) {
+      if (amount !== 0) notes.push(`history payroll: ${money(amount)} ${staff} — is not coming across, so it was not imported`)
     }
   }
 
@@ -879,6 +932,7 @@ export function mapHistory(input: {
     ptSessionClients,
     clientPackages,
     purchases,
+    manualPayrollEntries,
     instructors: [...extraInstructors].sort().map(staffId => ({ staff_user_id: staffId, tenant_id: tenantId })),
     notes,
   }

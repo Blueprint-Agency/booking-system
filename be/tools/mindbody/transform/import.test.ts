@@ -780,15 +780,19 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
 
     // Historical Instructor Pay is the studio's own money, not a rate applied
     // after the fact — and Olive, who has no per-class rate at all, still has it.
+    // Payroll that fits no class or session that came across arrives as Manual
+    // Payroll Entries: Ivy's workshop (30), Olive's PT line with no session (54)
+    // and her retreat share (100) — so the totals are Mindbody's own.
     const finance = await get('/api/v1/portal/admin/finance?from=2026-08-01&to=2026-09-17', owner)
     assert.equal(finance.status, 200, await finance.clone().text())
     const body = (await finance.json()) as { instructor_totals: Record<string, any>[]; unpriced_count: number }
     assert.deepEqual(
       body.instructor_totals.map(i => `${i.instructor_name} ${i.total_sgd} over ${i.session_count}`).sort(),
-      ['Ivy Instructor 148 over 4', 'Olive Owner 56 over 2'],
+      ['Ivy Instructor 178 over 5', 'Olive Owner 210 over 4'],
     )
+    assert.equal(await count('manual_payroll_entries', studio.tenantId), 3)
     // The past class payroll has no line for, and the two past PT sessions
-    // (one a no-show) — Mindbody pays PT by percentage of the sale, which no report gives.
+    // (one a no-show) payroll has no line for and Mindbody never marked unpaid.
     assert.equal(body.unpriced_count, 3)
   })
 

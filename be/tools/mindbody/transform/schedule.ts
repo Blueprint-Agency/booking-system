@@ -1,8 +1,8 @@
 import type { BookingCoder } from './booking-codes'
 import { ConfigError, type StudioConfig } from './config'
 import { fold, roomFor, type ConfigLookups } from './lookups'
-import { ptAppointmentRows, ptClients } from './pt'
-import type { HoldingRow, PayRateRow, RosterRow, ScheduledClassRow } from './readers'
+import { ptAppointmentRows, ptClients, ptRates } from './pt'
+import type { HoldingRow, PayRateRow, PayrollRow, RosterRow, ScheduledClassRow } from './readers'
 import {
   dayNumber,
   isoClock,
@@ -50,6 +50,8 @@ export function mapSchedule(input: {
   schedule: ScheduledClassRow[]
   roster: RosterRow[]
   payRates: PayRateRow[]
+  /** What each teacher was paid, and on what rate: where a future PT session's rate comes from. */
+  payroll: PayrollRow[]
   config: StudioConfig
   tenantId: string
   id: (kind: string, key: string) => string
@@ -69,6 +71,8 @@ export function mapSchedule(input: {
   clientPackages: Row[]
   /** What members hold in Mindbody, to say whether a seat nothing here pays for was unpaid there too. */
   holdings: HoldingRow[]
+  /** The `pt_packages` rows already mapped: how many sessions a PT package's price bought. */
+  ptPackages: Row[]
   /** The archive's one booking coder, shared with the workshop import so that no two bookings take one code. */
   codes: BookingCoder
 }): MappedSchedule {
@@ -83,6 +87,21 @@ export function mapSchedule(input: {
 
   const { offSite, locations, types, workshopCategories, ptNames } = input.lookups
   const payPerClass = new Map(input.payRates.map(p => [normaliseStaffName(p.staff), p.perClass]))
+  const payPerHead = new Map(input.payRates.map(p => [normaliseStaffName(p.staff), p]))
+  const ptRateOf = ptRates(input.payroll)
+  const ptCatalogue = new Map(input.ptPackages.map(p => [String(p.id), { sessions: Number(p.num_sessions), price: Number(p.price_sgd) }]))
+  /**
+   * The sessions a member's PT package paid for. Usually the catalogue's count;
+   * but a holding Mindbody combined and the register could not split back
+   * (`./packages.ts`) carries the price of every pack in it, so its sessions
+   * are the catalogue's count times the packs its price amounts to.
+   */
+  const sessionsBought = (pkg: Row) => {
+    const entry = ptCatalogue.get(String(pkg.source_pt_package_id))
+    if (!entry?.sessions) return undefined
+    const packs = entry.price > 0 ? Math.max(1, Math.round(Number(pkg.amount_paid_sgd) / entry.price)) : 1
+    return entry.sessions * packs
+  }
 
   /** Leading something imported makes a staff member an instructor, if they were not one already. */
   const extraInstructors = new Set<string>()
@@ -123,6 +142,8 @@ export function mapSchedule(input: {
   const unknownLocations = new Map<string, number>()
   const unknownTeachers = new Map<string, number>()
   const needCapacity = new Map<string, number>()
+  /** Future classes, by teacher, whose teacher Mindbody also pays per head. */
+  const perHeadClasses = new Map<string, number>()
 
   for (const r of input.schedule) {
     const startsAt = instant(r.date, r.start)
@@ -157,6 +178,7 @@ export function mapSchedule(input: {
     }
     teaches(teacherId)
     const pay = payPerClass.get(staffKey)
+    if (payPerHead.get(staffKey)?.perClient != null) count(perHeadClasses, staffKey)
     const row: Row = {
       id: id('class', key),
       tenant_id: tenantId,
@@ -171,7 +193,8 @@ export function mapSchedule(input: {
       capacity_buffer: 0,
       credit_cost: 1,
       // No per-class rate for this teacher: Unpriced, for an admin to settle.
-      instructor_pay_sgd: pay ? money(pay) : null,
+      // A rate of 0 is a rate: the teacher really is paid nothing.
+      instructor_pay_sgd: pay == null ? null : money(pay),
       lifecycle: 'active',
       series_id: null,
       created_at: asOf.toISOString(),
@@ -203,6 +226,19 @@ export function mapSchedule(input: {
     (w, n) => `staff: ${w} teaches ${n} future class(es) and is not coming across — migrate them, or take the classes off the timetable`,
   )
   listed(needCapacity, (w, n) => `classTypes: "${w}" is held off-site ${n} time(s), so its Class Type needs a capacity`)
+
+  // A pay rule the platform has no place for: a class here pays one fixed
+  // figure, whoever comes. So the per-head part of a teacher's pay is named,
+  // with what their classes came across carrying instead.
+  for (const [staffKey, n] of [...perHeadClasses].sort(([a], [b]) => a.localeCompare(b))) {
+    const rate = payPerHead.get(staffKey)!
+    notes.push(
+      `pay: ${rate.staff} is paid ${money(rate.perClient!)} per client in Mindbody, which the platform has no pay rule for — ` +
+        (rate.perClass == null
+          ? `${n} future class(es) came across Unpriced; set their pay in the portal`
+          : `${n} future class(es) came across paying only the per-class ${money(rate.perClass)}`),
+    )
+  }
 
   /* ── Who is already booked ─────────────────────────────────────────────── */
 
@@ -366,6 +402,35 @@ export function mapSchedule(input: {
   const ptSessionClients: Row[] = []
   ids.pt_sessions ??= {}
 
+  const ptUnrated = new Map<string, number>()
+  const ptUnvalued = new Map<string, number>()
+  /**
+   * What a future PT session pays its trainer, on the rate Payroll last paid
+   * them for PT: flat, or their percentage of what one session of each member's
+   * package is worth (what was paid for it over the sessions it bought), as
+   * Mindbody's "Rev. per Session" works it out. Unpriced where no rate is known,
+   * or a member on it has no package to value the session by.
+   */
+  const ptPay = (staff: string, clients: string[], startsAt: Date): string | null => {
+    const rate = ptRateOf.get(normaliseStaffName(staff))
+    if (!rate) {
+      count(ptUnrated, staff)
+      return null
+    }
+    if (rate.flat !== undefined) return money(rate.flat)
+    const worth = clients.map(clientId => {
+      const pkg = runningPackage(clientId, 'pt', startsAt)
+      const sessions = pkg ? sessionsBought(pkg) : undefined
+      return pkg && sessions ? Number(pkg.amount_paid_sgd) / sessions : null
+    })
+    if (worth.some(w => w === null)) {
+      count(ptUnvalued, `${staff} (PT ${rate.percent}%)`)
+      return null
+    }
+    const earned = (rate.percent / 100) * worth.reduce<number>((sum, w) => sum + w!, 0)
+    return money(Math.round(earned * 100) / 100)
+  }
+
   for (const key of [...appointments.keys()].sort()) {
     const a = appointments.get(key)!
     const label = `PT on ${isoDay(a.date)} at ${isoClock(a.start)} with ${a.staff}`
@@ -389,6 +454,7 @@ export function mapSchedule(input: {
     const end = a.end ? instant(a.date, a.end) : startsAt
     const endsAt = end > startsAt ? end : new Date(startsAt.getTime() + 3_600_000)
     const sessionId = id('pt-session', key)
+    const pay = ptPay(a.staff, ptClients({ requesterId: requester!, partnerId: partner ?? null }), startsAt)
     const rows = ptAppointmentRows({
       tenantId,
       requestId: id('pt-request', key),
@@ -407,6 +473,7 @@ export function mapSchedule(input: {
       debitedClientPackageId: (payingPackage(requester!, 'pt', startsAt)?.id as string | undefined) ?? null,
       ownerId: input.ownerId,
       settledAt: asOf.toISOString(),
+      instructorPaySgd: pay,
     })
     ptRequests.push(rows.request)
     ptSessions.push(rows.session)
@@ -421,6 +488,14 @@ export function mapSchedule(input: {
   if (unpaid.mindbody + unpaid.unmatched > 0) {
     notes.push(`future bookings with no package: ${unpaid.mindbody} unpaid in Mindbody too, ${unpaid.unmatched} unmatched — each is listed above`)
   }
+
+  const tallied = (tally: Map<string, number>, say: (what: string, n: number) => string) =>
+    [...tally].sort(([a], [b]) => a.localeCompare(b)).forEach(([what, n]) => notes.push(say(what, n)))
+  tallied(ptUnrated, (w, n) => `pay: ${w} has ${n} future PT session(s) and no PT rate in Payroll, so they are Unpriced`)
+  tallied(
+    ptUnvalued,
+    (w, n) => `pay: ${w} has ${n} future PT session(s) with a member holding no PT package to value them by, so they are Unpriced`,
+  )
 
   if (problems.length > 0) throw new ConfigError(problems)
 
@@ -469,16 +544,19 @@ export function mapSchedule(input: {
     const seriesId = id('class-series', key)
     teaches(teacherId)
     const pay = payPerClass.get(normaliseStaffName(s.teacher))
-    // A series must carry a pay figure, so there is no Unpriced to fall back on.
-    if (!pay) {
-      notes.push(`series ${label}: ${s.teacher} has no per-class rate, so the series pays 0.00 — set it in the portal before extending`)
+    // No known rate is Unpriced, never 0: so are the classes it links and
+    // every class it extends to, until an admin sets the series' pay.
+    if (pay == null) {
+      notes.push(
+        `series ${label}: ${s.teacher} has no per-class rate, so the series is Unpriced — its classes, and every class an extend adds, need their pay set in Finance`,
+      )
     }
     classSeries.push({
       id: seriesId,
       tenant_id: tenantId,
       class_type_id: type.id,
       main_instructor_id: teacherId,
-      instructor_pay_sgd: money(pay ?? 0),
+      instructor_pay_sgd: pay == null ? null : money(pay),
       location_id: ids.locations![room.location],
       room_id: room.id,
       weekday: s.weekday,
