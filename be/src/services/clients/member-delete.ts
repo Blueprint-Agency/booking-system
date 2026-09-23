@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import { db } from '../../db'
 import { clientAuthUsers } from '../../db/schema/auth'
 import { endClientSessionsAt } from '../auth/auth-users'
@@ -19,12 +19,10 @@ import { MEMBER_TABLES, eraseSteps } from './member-tables'
  * the payment provider, with cards kept against them, and neither is a row this
  * studio owns. Both go, first, for the reason given at the call below.
  *
- * **Their sign-in account goes only if no studio still has them.** One person
- * holds one `client_auth_users` row across every studio they have joined; this
- * studio deleting its record of them is not this studio deleting them from
- * another. Which studios that is, this studio's context cannot see, so the
- * question goes to `client_auth_user_is_member` (migration 0060), which answers
- * yes or no and nothing else.
+ * **Their login here goes too.** A login is one studio's own (#231), so this
+ * studio's login for the member is theirs to delete, with its password and
+ * sessions. The same person's login at another studio is another row, and is
+ * never looked at.
  *
  * Runs inside the request's transaction, so a failure part-way deletes nothing.
  * Every statement names the Tenant as well as the member, as the export does:
@@ -78,13 +76,10 @@ export async function deleteMemberPermanently(input: {
     }
   }
 
-  const [elsewhere] = await db.execute<{ member: boolean }>(
-    sql`SELECT public.client_auth_user_is_member(${member.authUserId}) AS member`,
-  )
-  // Their sessions and credentials at the auth server cascade with it. Which way
-  // this went is not returned: it would tell this studio whether the person is a
-  // member of another.
-  if (!elsewhere?.member) await db.delete(clientAuthUsers).where(eq(clientAuthUsers.id, member.authUserId))
+  // Their credentials and sessions here cascade with it.
+  await db
+    .delete(clientAuthUsers)
+    .where(and(eq(clientAuthUsers.tenantId, tenantId), eq(clientAuthUsers.id, member.authUserId)))
 
   await recordStaffAct({
     tenantId,

@@ -24,9 +24,9 @@ export const clients = pgTable(
   {
     tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-    // The member's `client_auth_users` id. Unique per Tenant, not per platform:
-    // one person may be a member of two studios, and gets an independent record
-    // at each.
+    // The member's `client_auth_users` id: this studio's login for them (#231).
+    // One person may be a member of two studios, and gets an independent record
+    // and an independent login at each.
     authUserId: text('auth_user_id').notNull(),
     email: text('email').notNull(),
     name: text('name').notNull(),
@@ -49,8 +49,8 @@ export const clients = pgTable(
   },
   table => ({
     referredByClientIdFkIdx: index('clients_referred_by_client_id_fk_idx').on(table.referredByClientId),
-    // Is this sign-in anyone's member anywhere — `client_auth_user_is_member`
-    // (migration 0060), asked for every member when a studio is deleted.
+    // For `client_auth_user_is_member` (migration 0060), which nothing calls
+    // since logins became per studio (#231) and is dropped in a later step.
     authUserIdx: index('clients_auth_user_id_idx').on(table.authUserId),
     tenantAuthUserUnique: unique('clients_tenant_auth_user_unique').on(
       table.tenantId,
@@ -74,9 +74,10 @@ export const staffUsers = pgTable(
   {
     tenantId: tenantIdColumn(),
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-    // The `staff_auth_users` id. Written by the invitation or seed that made the
-    // row, so a pending row has one too. Unique per Tenant, not per platform: the
-    // same person may be an instructor at one studio and an admin at another.
+    // The `staff_auth_users` id: this studio's login for them (#231). Written by
+    // the invitation or seed that made the row, so a pending row has one too. The
+    // same person may be an instructor at one studio and an admin at another,
+    // with a login at each.
     authUserId: text('auth_user_id').notNull(),
     email: text('email').notNull(),
     name: text('name').notNull(),

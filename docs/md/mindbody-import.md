@@ -369,10 +369,12 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   payroll gave them, the bookings on them with their check-ins and late cancellations, its past
   PT, and (on the second opt-in) the packages members bought and used up before launch.
 
-The archive's manifest carries `ensureAccounts: true`. On import that makes the importer create
-or reuse the sign-in account of every member and staff row by email, inside the import's
-transaction; a failed import leaves no accounts behind. An archive without the flag (every
-export) still needs each row to name its account, as before.
+Every import — this one and a restored export alike — creates or reuses the sign-in account of
+every member and staff row by email, with no password, inside the import's transaction; a failed
+import leaves no accounts behind. No archive carries logins, so no row keeps the account id it
+came with (#229). The archive's manifest carries `ensureAccounts: true`, which lets its rows name
+no account and refuses any studio but the one it was built for. An archive without the flag
+(every export) still needs each row to name an account, as before.
 
 ## 4. Launch day, in order
 

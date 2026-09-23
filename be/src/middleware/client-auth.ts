@@ -20,15 +20,17 @@ declare module 'hono' {
  * Verifies a member bearer token — a Better Auth `client` pool session — and
  * attaches the member's `clients` row at this studio.
  *
- *   401 — no bearer token, or no such session in the client pool (a staff or
- *         super portal session is a row this pool has never seen)
- *   403 — the session was signed in on another studio
+ *   401 — no bearer token, or no such session in the client pool at this studio
+ *         (a staff or super portal session is a row this pool has never seen,
+ *         and another studio's is one this studio's context cannot see, since
+ *         logins are per studio — #231)
+ *   403 — the session's claim names another studio
  *   404 — this studio has no clients row linked to the user
  *
- * The session carries the Tenant it was signed in on, so a member of studio A
- * who names studio B is refused here, before any row is read — not merely fenced
- * by Row-Level Security. No auto-provision: member registration writes the
- * clients row alongside the auth user. `clientSession` is what
+ * The session carries the Tenant it was signed in on, and the claim is checked
+ * before any row is read — belt to Row-Level Security's braces, which already
+ * keep another studio's session out of sight. No auto-provision: member
+ * registration writes the clients row alongside the auth user. `clientSession` is what
  * `clientImpersonation` compares an impersonation grant against.
  */
 export const clientAuth: MiddlewareHandler = async (c, next) => {
@@ -48,8 +50,8 @@ export const clientAuth: MiddlewareHandler = async (c, next) => {
   const claimRefusal = assertTenantSessionClaim(c, session.claimedTenantId)
   if (claimRefusal) return c.json({ error: claimRefusal }, 403)
 
-  // Tenant in the query as well as in the RLS context: the same person may hold
-  // a row at another studio, and it is not this one.
+  // Tenant in the query as well as in the RLS context, so neither is the only
+  // thing deciding which studio's row this is.
   const [row] = await db
     .select()
     .from(clients)

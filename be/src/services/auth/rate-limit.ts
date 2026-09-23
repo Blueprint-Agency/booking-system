@@ -105,6 +105,10 @@ export function authRateLimit() {
  * Kept small for links — a member needs one, and a second when the first went
  * astray — and as generous as the address budget for passwords, so a member
  * who mistypes a few times is not locked out of their own account.
+ *
+ * Every per-email budget is kept per **Tenant** and email (#230): the same
+ * address at two studios is two logins (#228), so attempts at one studio must
+ * not spend the other's budget.
  */
 export const AUTH_EMAIL_RATE_LIMITS = {
   /** A set-password link mailed, whether asked for by the email step, "forgot password" or an admin. */
@@ -125,16 +129,23 @@ export const SIGN_IN_STEP_ADDRESS_LIMIT: Rule = { window: 60, max: 20 }
 
 const signInStepStorage = authRateLimitStorage()
 
+/** The key of a per-email budget at one studio: the Tenant, then the case-folded email. */
+const tenantEmailKey = (tenantId: string, email: string) => `${tenantId}|${email.trim().toLowerCase()}`
+
 /**
- * Spend the email step's budgets — per address and per email. False when
- * either is gone. Without an address every caller shares one bucket, which
- * throttles rather than exempts, as the pools' own limiter does.
+ * Spend the email step's budgets — per address, and per email at this studio.
+ * False when either is gone. Without an address every caller shares one
+ * bucket, which throttles rather than exempts, as the pools' own limiter does.
  */
-export async function spendSignInStepBudget(email: string, address: string | null): Promise<boolean> {
+export async function spendSignInStepBudget(
+  tenantId: string,
+  email: string,
+  address: string | null,
+): Promise<boolean> {
   const byAddress = await signInStepStorage.consume(`address|${address ?? ''}`, SIGN_IN_STEP_ADDRESS_LIMIT)
   if (!byAddress.allowed) return false
   const byEmail = await signInStepStorage.consume(
-    `email|${email.trim().toLowerCase()}`,
+    `email|${tenantEmailKey(tenantId, email)}`,
     AUTH_EMAIL_RATE_LIMITS.signInStep,
   )
   return byEmail.allowed
@@ -146,11 +157,11 @@ const staffLinkStorage = authRateLimitStorage()
  * The per-email budget for the set-password links the portal's email step
  * mails. The staff pool has no per-email limiter of its own, so without this a
  * caller rotating addresses could fill one staff member's inbox. The member
- * pool's link figure.
+ * pool's link figure, per studio.
  */
-export async function spendStaffLinkBudget(email: string): Promise<boolean> {
+export async function spendStaffLinkBudget(tenantId: string, email: string): Promise<boolean> {
   const { allowed } = await staffLinkStorage.consume(
-    `email|${email.trim().toLowerCase()}`,
+    `email|${tenantEmailKey(tenantId, email)}`,
     AUTH_EMAIL_RATE_LIMITS.linkRequest,
   )
   return allowed
@@ -174,8 +185,12 @@ export function emailBudget(path: string, body: unknown): { key: string; rule: R
  * after the per-address limiter has let the request through and before the
  * endpoint does any work. Its own store, for the reason `authRateLimitStorage`
  * gives — one per pool.
+ *
+ * Each budget is spent at the studio `tenantOf` names — the Tenant context the
+ * request runs in. With none, every such request shares one bucket per email,
+ * which throttles rather than exempts.
  */
-export function emailRateLimit(now: () => number = () => Date.now()) {
+export function emailRateLimit(tenantOf: () => string | null, now: () => number = () => Date.now()) {
   const storage = authRateLimitStorage(now)
   return {
     id: 'email-rate-limit',
@@ -186,7 +201,7 @@ export function emailRateLimit(now: () => number = () => Date.now()) {
           handler: createAuthMiddleware(async ctx => {
             const budget = emailBudget(ctx.path, ctx.body)
             if (!budget) return
-            const { allowed, retryAfter } = await storage.consume(budget.key, budget.rule)
+            const { allowed, retryAfter } = await storage.consume(`${tenantOf() ?? ''}|${budget.key}`, budget.rule)
             if (allowed) return
             throw new APIError(
               'TOO_MANY_REQUESTS',

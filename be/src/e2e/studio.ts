@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto'
-import { and, eq, like, lt, notExists, sql } from 'drizzle-orm'
+import { and, eq, like, lt, sql } from 'drizzle-orm'
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js'
 import type { Hono } from 'hono'
 import { withTenant } from '../db'
@@ -85,7 +85,6 @@ const CHECK_IN_CLASS_STARTS_IN = 15 * 60 * 1000
 
 /** Resend's sink: accepted and reported delivered, never sent to a person. */
 const addressFor = (slug: string, who: string) => `delivered+${slug}-${who}@resend.dev`
-const addressPattern = (slug: string) => `delivered+${slug}-%@resend.dev`
 
 export function isE2eSlug(slug: string): boolean {
   return slug.startsWith(E2E_SLUG_PREFIX) && /^[a-z0-9-]+$/.test(slug)
@@ -135,7 +134,7 @@ export async function createE2eStudio({ app, db }: { app: Hono; db: Db }): Promi
   const password = randomBytes(18).toString('base64url')
   const staffMember = async (who: 'admin' | 'instructor', displayName: string) => {
     const email = addressFor(slug, who)
-    const authUserId = await ensureAuthUser(db, 'staff', { email, name: displayName })
+    const authUserId = await ensureAuthUser(db, 'staff', { tenantId: tenant.id, email, name: displayName })
     await setFirstStaffPassword(db, authUserId, password)
     const [first, last] = displayName.split(' ')
     const [row] = await db
@@ -284,8 +283,8 @@ export async function createE2eStudio({ app, db }: { app: Hono; db: Db }): Promi
 
 /**
  * Delete an e2e studio: every row carrying its `tenant_id`, children before
- * parents, then the studio, then the auth users made for it. Returns false when
- * there was no such studio, so it is safe to run after a setup that failed.
+ * parents, its logins, then the studio. Returns false when there was no such
+ * studio, so it is safe to run after a setup that failed.
  *
  * Refuses any slug outside the e2e prefix — the one thing between a typo here
  * and a real studio's data.
@@ -294,38 +293,29 @@ export async function removeE2eStudio({ db, slug }: { db: Db; slug: string }): P
   if (!isE2eSlug(slug)) throw new Error(`${slug} is not an e2e studio`)
   const [tenant] = await db.select().from(schema.tenants).where(eq(schema.tenants.slug, slug))
 
+  if (!tenant) return false
   const { order } = await tenantTableOrder()
   await db.transaction(async tx => {
-    if (tenant) {
-      for (const table of [...order].reverse()) {
-        await tx.execute(sql`DELETE FROM ${sql.identifier(table)} WHERE tenant_id = ${tenant.id}`)
-      }
-      await tx.delete(schema.tenantSettings).where(eq(schema.tenantSettings.tenantId, tenant.id))
-      await tx.delete(schema.tenants).where(eq(schema.tenants.id, tenant.id))
+    for (const table of [...order].reverse()) {
+      await tx.execute(sql`DELETE FROM ${sql.identifier(table)} WHERE tenant_id = ${tenant.id}`)
     }
-    // By address, even when the studio is already gone, so a run that died
-    // between the two leaves nothing. A member still on another studio's books
-    // keeps their account — not that an address on this sink could be one.
-    await tx
-      .delete(schema.clientAuthUsers)
-      .where(
-        and(
-          like(schema.clientAuthUsers.email, addressPattern(slug)),
-          notExists(
-            tx.select().from(schema.clients).where(eq(schema.clients.authUserId, schema.clientAuthUsers.id)),
-          ),
-        ),
-      )
-    await tx
-      .delete(schema.staffAuthUsers)
-      .where(
-        and(
-          like(schema.staffAuthUsers.email, addressPattern(slug)),
-          notExists(
-            tx.select().from(schema.staffUsers).where(eq(schema.staffUsers.authUserId, schema.staffAuthUsers.id)),
-          ),
-        ),
-      )
+    // Its logins are its own (#231) and outside `order`: what hangs off a user
+    // first, then the users, before the `tenants` row they restrict.
+    for (const table of [
+      schema.clientAuthSessions,
+      schema.clientAuthAccounts,
+      schema.clientAuthVerifications,
+      schema.clientAuthUsers,
+      schema.staffAuthSessions,
+      schema.staffAuthAccounts,
+      schema.staffAuthTwoFactors,
+      schema.staffAuthVerifications,
+      schema.staffAuthUsers,
+    ]) {
+      await tx.delete(table).where(eq(table.tenantId, tenant.id))
+    }
+    await tx.delete(schema.tenantSettings).where(eq(schema.tenantSettings.tenantId, tenant.id))
+    await tx.delete(schema.tenants).where(eq(schema.tenants.id, tenant.id))
   })
   forgetCachedTenants()
   return Boolean(tenant)

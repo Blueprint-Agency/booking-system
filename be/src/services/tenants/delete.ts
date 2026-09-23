@@ -15,14 +15,13 @@
  * by `tenantTableOrder`, the same rule Row-Level Security and the studio archive
  * use, so a table added later is included without anyone remembering this file.
  * That includes the studio's `auth_events` rows and its payment-provider
- * credentials. Then `tenant_settings`, then the `tenants` row itself, which
- * takes with it by `ON DELETE CASCADE` its former Slugs and every sign-in
- * session claimed on it. Then the sign-in accounts of the people who were only
- * here: a member or staff member of another studio keeps theirs, decided by the
- * owner-owned `client_auth_user_is_member` / `staff_auth_user_is_staff`
- * functions (migrations 0060, 0072), because this transaction cannot see other
- * studios' rows and must not. Last, after the commit, the studio's uploads under
- * its own object-storage folder.
+ * credentials. Then its logins — the `staff` and `client` pools' rows, which are
+ * this studio's own (#231) and never part of its archive, so not in that order:
+ * sessions, credentials, second factors and verifications, then the users. A
+ * member or staff member of another studio has a login there, which is another
+ * row. Then `tenant_settings`, then the `tenants` row itself, which takes with it
+ * by `ON DELETE CASCADE` its former Slugs. Last, after the commit, the studio's
+ * uploads under its own object-storage folder.
  *
  * **What does not.** Anything outside this database and that folder: objects
  * uploaded before keys carried a tenant prefix, the studio's Customers and cards
@@ -38,9 +37,19 @@
  * Not written to the studio's own `audit_log`, which is deleted with it. The
  * route's log line — who, which studio, how many rows — is the record.
  */
-import { and, eq, inArray, sql } from 'drizzle-orm'
+import { eq, getTableName, sql } from 'drizzle-orm'
 import { currentTenantId, db, withTenant } from '../../db'
-import { clientAuthUsers, staffAuthUsers } from '../../db/schema/auth'
+import {
+  clientAuthAccounts,
+  clientAuthSessions,
+  clientAuthUsers,
+  clientAuthVerifications,
+  staffAuthAccounts,
+  staffAuthSessions,
+  staffAuthTwoFactors,
+  staffAuthUsers,
+  staffAuthVerifications,
+} from '../../db/schema/auth'
 import { tenantImports, tenants, tenantSettings } from '../../db/schema/tenancy'
 import { deleteObjectsUnder, R2_BUCKET } from '../../lib/r2'
 import { tenantKey } from '../../lib/object-key'
@@ -61,10 +70,10 @@ export interface DeleteTenantInput {
 export interface DeletedTenant {
   id: string
   slug: string
-  /** Rows deleted, per table, `tenant_settings` included. */
+  /** Rows deleted, per table, `tenant_settings` and the login tables included. */
   tables: Record<string, number>
   rows: number
-  /** Sign-in accounts removed because this studio was their only one. */
+  /** The studio's logins removed, per pool. */
   accounts: { client: number; staff: number }
   /** Uploads removed from object storage; null when storage is not configured
    *  here, or the removal failed (logged, and the rows are gone regardless). */
@@ -99,10 +108,6 @@ export async function deleteTenant(input: DeleteTenantInput): Promise<DeletedTen
     if (!locked) throw new NotFoundError('not_found')
     if (!DELETABLE.has(locked.status)) throw new ConflictError('tenant_not_suspended')
 
-    // Who might lose their only studio, read before their rows go.
-    const clientAccounts = await authUserIds('clients', id)
-    const staffAccounts = await authUserIds('staff_users', id)
-
     // References no ordering can satisfy (a table pointing at itself, or a
     // cycle) are cleared first, so the children-first deletes below never
     // meet a row still pointed at by one that goes later.
@@ -136,35 +141,19 @@ export async function deleteTenant(input: DeleteTenantInput): Promise<DeletedTen
       .returning({ id: tenantImports.id })
     tables.tenant_imports = importJobs.length
 
-    // Former Slugs, claimed sessions and payment credentials cascade.
-    await db.delete(tenants).where(eq(tenants.id, id))
+    // Its logins, before the `tenants` row their `tenant_id` restricts: what
+    // hangs off a user first, then the users. The users are also `accounts`.
+    for (const pool of ['client', 'staff'] as const) {
+      const { users, hangingOff } = LOGINS[pool]
+      for (const table of [...hangingOff, users]) {
+        const gone = await db.execute(sql`DELETE FROM ${table} WHERE tenant_id = ${id} RETURNING 1`)
+        tables[getTableName(table)] = gone.length
+        if (table === users) accounts[pool] = gone.length
+      }
+    }
 
-    // A statement per batch of people, not two round trips per person: a studio
-    // restored with thousands of members spent longer here than on all its rows.
-    for (const batch of chunks(clientAccounts)) {
-      const gone = await db
-        .delete(clientAuthUsers)
-        .where(
-          and(
-            inArray(clientAuthUsers.id, batch),
-            sql`NOT public.client_auth_user_is_member(${clientAuthUsers.id})`,
-          ),
-        )
-        .returning({ id: clientAuthUsers.id })
-      accounts.client += gone.length
-    }
-    for (const batch of chunks(staffAccounts)) {
-      const gone = await db
-        .delete(staffAuthUsers)
-        .where(
-          and(
-            inArray(staffAuthUsers.id, batch),
-            sql`NOT public.staff_auth_user_is_staff(${staffAuthUsers.id})`,
-          ),
-        )
-        .returning({ id: staffAuthUsers.id })
-      accounts.staff += gone.length
-    }
+    // Former Slugs and payment credentials cascade.
+    await db.delete(tenants).where(eq(tenants.id, id))
   })
 
   forgetCachedTenants()
@@ -179,19 +168,16 @@ export async function deleteTenant(input: DeleteTenantInput): Promise<DeletedTen
   }
 }
 
-/** Batches small enough to bind as parameters — Postgres takes at most 65,535 per statement. */
-function chunks<T>(items: T[], size = 10_000): T[][] {
-  const out: T[][] = []
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
-  return out
-}
-
-/** The auth user ids this studio's rows in `table` link to. */
-async function authUserIds(table: 'clients' | 'staff_users', tenantId: string): Promise<string[]> {
-  const rows = await db.execute<{ auth_user_id: string }>(
-    sql`SELECT DISTINCT auth_user_id FROM ${sql.identifier(table)} WHERE tenant_id = ${tenantId}`,
-  )
-  return rows.map(r => r.auth_user_id)
+/** Each studio pool's login tables: its users, and what hangs off a user. */
+const LOGINS = {
+  client: {
+    users: clientAuthUsers,
+    hangingOff: [clientAuthSessions, clientAuthAccounts, clientAuthVerifications],
+  },
+  staff: {
+    users: staffAuthUsers,
+    hangingOff: [staffAuthSessions, staffAuthAccounts, staffAuthTwoFactors, staffAuthVerifications],
+  },
 }
 
 /**

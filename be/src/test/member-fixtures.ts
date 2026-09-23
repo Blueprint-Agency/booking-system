@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
-import { eq, inArray, like, or, sql } from 'drizzle-orm'
+import { and, eq, inArray, like, or, sql } from 'drizzle-orm'
 import type * as Schema from '../db/schema'
 import { MEMBER_TABLES, type MemberKey, type MemberTable } from '../services/clients/member-tables'
 import type { TestApp } from './harness'
@@ -28,7 +28,11 @@ export function memberFixtures(harness: TestApp, schema: typeof Schema, domain: 
 
   const staffAt = async (tenant: Tenant, email: string, role: 'admin' | 'instructor'): Promise<Staff> => {
     const headers = await harness.signInAs('staff', email, tenant)
-    const [user] = await harness.db.select().from(schema.staffAuthUsers).where(eq(schema.staffAuthUsers.email, email))
+    // This studio's login for them: logins are per studio (#231).
+    const [user] = await harness.db
+      .select()
+      .from(schema.staffAuthUsers)
+      .where(and(eq(schema.staffAuthUsers.tenantId, tenant.id), eq(schema.staffAuthUsers.email, email)))
     const [row] = await harness.db
       .insert(schema.staffUsers)
       .values({ tenantId: tenant.id, email, name: email, role, status: 'active', authUserId: user!.id })

@@ -6,10 +6,9 @@
  * `archiveStaff` / `unarchiveStaff` for staff. Every one of them is logged in
  * `auth_events` as the acting staff member's (`recordStaffAct`).
  *
- * **"Everywhere" means every device, at this studio.** Not the admin plugin's
- * revoke-all or ban, which are keyed on the auth user alone: one person holds one
- * auth user across every studio they belong to, and studio A signing them out, or
- * blocking them, is not studio A's to do at studio B (`endStaffSessionsAt`).
+ * **"Everywhere" means every device, at this studio.** A login is one studio's
+ * own (#231), so its sessions are this studio's; the same person at another
+ * studio has another login, which studio A cannot sign out or block.
  *
  * **Every lookup starts from this studio's row.** The target is found by its
  * `clients` / `staff_users` id *at the caller's Tenant*, and only then by its

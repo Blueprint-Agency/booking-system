@@ -327,8 +327,8 @@ function buildClientLoginUrl(tenantId: string): Promise<string> {
  * one transaction, then a branded "your account is ready" invite. The account
  * has no password: the member's first sign-in mails them a link to set one (#173).
  *
- * The auth user is found rather than created when the address already has one —
- * the same person, a member at another studio — and this studio gets its own row.
+ * The auth user is this studio's login for the address (#231): a member of
+ * another studio has a login there, which this one never touches.
  */
 export async function createClientWithInvite(input: CreateClientInput): Promise<ClientRow> {
   const name = input.name.trim()
@@ -356,7 +356,7 @@ export async function createClientWithInvite(input: CreateClientInput): Promise<
   }
 
   const row = await db.transaction(async tx => {
-    const authUserId = await ensureAuthUser(tx, 'client', { email, name })
+    const authUserId = await ensureAuthUser(tx, 'client', { tenantId: input.tenantId, email, name })
     const [inserted] = await tx
       .insert(clients)
       .values({
@@ -401,9 +401,8 @@ export interface SoftDeleteClientInput {
  * bookings, packages, credit ledger entries, and the auth user are preserved so
  * the action is fully reversible via restoreClient.
  *
- * At this studio only, not through Better Auth's admin ban, which is keyed on the
- * auth user: the same person may be a member at another studio, and blocking
- * them here is not this studio's to do there.
+ * At this studio only: the login is this studio's (#231), and the same person's
+ * login at another studio is that studio's to block or not.
  *
  * Idempotent: already-deleted target returns the existing row unchanged.
  */

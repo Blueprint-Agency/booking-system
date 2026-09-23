@@ -8,9 +8,11 @@
  * the proof they are who was invited; the backend checks it, sets the password
  * and activates the row, and the page signs in with the password just chosen.
  *
- * Someone who already has a password here — staff at another studio, one
- * account — keeps it: accepting just opens this studio to it, and they sign in
- * as they always do.
+ * Someone who already has a password at this studio — carried onto this
+ * studio's login when shared logins were split (migration 0076), or set by a
+ * reset after an earlier invitation expired — keeps it: accepting just
+ * activates them, and they sign in with it. A password at another studio is
+ * that studio's login and plays no part here (#231).
  */
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState, type FormEvent } from "react";
@@ -227,10 +229,10 @@ function ExistingAccountForm({ token, email }: { token: string; email: string })
 
   return (
     <div className="text-center">
-      <h1 className="text-base font-semibold text-ink">You already have a staff account</h1>
+      <h1 className="text-base font-semibold text-ink">You already have a password here</h1>
       <p className="mt-2 text-sm text-muted">
-        <span className="font-medium text-ink">{email}</span> already has a password. Accept the
-        invitation, then sign in with it as usual.
+        <span className="font-medium text-ink">{email}</span> already has a password at this studio.
+        Accept the invitation, then sign in with it.
       </p>
       {error && (
         <div className="mt-4">

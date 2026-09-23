@@ -70,6 +70,10 @@ A matching claim does not by itself mark the Tenant *corroborated*: a sign-in ca
 
 ### Why the auth user tables carry no `tenant_id`
 
+> **Superseded by [ADR 0006](0006-per-studio-logins.md).** The `staff` and `client` tables now carry
+> a `tenant_id`: the same email at two studios is two accounts. Kept below as the record of what
+> was decided first.
+
 One person is one account per pool. A staff member of two studios is one `staff_auth_users` row
 with a `staff_users` row at each studio; a member of two studios is one `client_auth_users` row
 with a `clients` row at each. Those rows are platform rows, like `tenants`, and

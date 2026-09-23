@@ -34,7 +34,7 @@ export function memberAuthMessage(error: MemberAuthError, fallback: string): str
     case "already_member":
       return "You already have an account here. Sign in instead.";
     case "tenant_mismatch":
-      return "You're signed in at another studio. Sign out, then sign in here.";
+      return "You're signed in at another studio, and each studio has its own sign-in. Sign out, then sign in here.";
     case "invalid_email_or_password":
       return "That email or password is incorrect.";
     case "invalid_password":

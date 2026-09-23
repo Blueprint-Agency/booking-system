@@ -122,8 +122,8 @@ check as staff:
 | none | **403 `tenant_required`** |
 
 There is no rollout seam: every studio-pool session is stamped, so a missing claim
-proves nothing. A staff member of two studios is one user with a `staff_users` row
-at each and a session per hostname; after the claim, the row for the resolved
+proves nothing. A staff member of two studios has a login and a `staff_users` row
+at each (ADR 0006); after the claim, the row for the resolved
 tenant must exist (`staff_not_provisioned`) and be active (`staff_inactive`). A
 member's `clients` row must exist (`client_not_found`) and not be blocked. There
 is no auto-link or auto-provision: invitations, seeds and member registration
@@ -179,9 +179,15 @@ same shape (`(tenant_id, auth_user_id)`). Nothing needed backfilling: a narrower
 unique cannot have admitted a row the wider one refuses. Reads did not change
 either, because every one of them already runs inside a tenant context the
 policies enforce — the same person's row at another studio is invisible, not
-merely filtered. One auth user holds one row per studio;
-`src/test/member-sign-in.test.ts` shows a member joining a second studio with the
-same account.
+merely filtered.
+
+Logins followed later (migration 0076, ADR 0006): the `staff` and `client` auth
+pool tables carry a `tenant_id` too, so the same email at two studios is two
+accounts, and Row-Level Security fences them like any other studio row. A session
+from studio A is not even visible at studio B — its answer there is 401
+`invalid_token`, before the claim check in the table above is reached.
+`src/test/per-studio-logins.test.ts` shows a member and a staff member at two
+studios with a password at each.
 
 ## Environment
 

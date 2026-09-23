@@ -9,10 +9,10 @@
  * was always going to fail.
  *
  * Nothing has to *make* a session carry the right studio: a Better Auth
- * session cannot be moved between
- * studios at all: the claim is written once, at sign-in, and a staff member of
- * two studios holds one session per hostname. So there is nothing to switch —
- * only a verdict to read.
+ * session cannot be moved between studios at all. The claim is written once,
+ * at sign-in, and a staff member of two studios has a separate login at each
+ * (#231), with its own sessions. So there is nothing to switch — only a
+ * verdict to read.
  *
  * Normally unreachable in a browser: the session token is kept per origin, so
  * studio B's portal never holds studio A's. It is a **convenience, not a gate**;

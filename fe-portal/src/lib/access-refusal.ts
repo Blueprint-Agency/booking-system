@@ -106,7 +106,7 @@ export function accessDeniedCopy(reason: string | null): AccessDeniedCopy {
     case ERROR_CODES.tenant_mismatch:
       return {
         title: "This account has no access here",
-        detail: "belongs to a different studio.",
+        detail: "is signed in at a different studio. Each studio has its own sign-in, so sign in again here.",
         namesAccount: true,
         offerSwitch: true,
         offerRetry: false,

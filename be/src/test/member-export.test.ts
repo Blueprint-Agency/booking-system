@@ -49,9 +49,9 @@ describe('member export', { skip: integrationTestsEnabled ? false : SKIP_REASON 
 
     member = await memberAt(one, admin.headers, at('member'))
     neighbour = await memberAt(one, admin.headers, at('neighbour'))
-    // The same person, a member of the second studio too.
+    // The same person, a member of the second studio too, on that studio's own login (#231).
     elsewhere = await memberAt(two, adminTwo.headers, at('member'))
-    assert.equal(elsewhere.authUserId, member.authUserId)
+    assert.notEqual(elsewhere.authUserId, member.authUserId)
 
     memberRows = await fixturesFor(one.id, member)
     await fixturesFor(one.id, neighbour)
@@ -128,6 +128,7 @@ describe('member export', { skip: integrationTestsEnabled ? false : SKIP_REASON 
         for (const v of values) {
           assert.ok(v !== neighbour.clientId && v !== neighbour.authUserId && v !== neighbour.email, `${entry.table} row names another member`)
           assert.notEqual(v, elsewhere.clientId, `${entry.table} row names the member's record at another studio`)
+          assert.notEqual(v, elsewhere.authUserId, `${entry.table} row names the member's login at another studio`)
         }
       }
     }

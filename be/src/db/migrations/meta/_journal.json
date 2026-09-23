@@ -533,6 +533,13 @@
       "when": 1790171873903,
       "tag": "0075_check_in_window",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1790178525726,
+      "tag": "0076_per_studio_logins",
+      "breakpoints": true
     }
   ]
 }

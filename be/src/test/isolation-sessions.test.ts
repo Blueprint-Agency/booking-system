@@ -16,7 +16,8 @@ process.env.PLATFORM_ADMIN_EMAIL = OPERATOR
  * only sessions were vendor JWTs this harness could not mint. A Better Auth session
  * is stamped at sign-in with the Tenant whose hostname it signed in on, and both
  * studio middlewares refuse it anywhere else — so a session from studio A is
- * worthless at studio B, for staff and, for the first time, for members.
+ * worthless at studio B, for staff and, for the first time, for members. Since
+ * logins are per studio (#231), studio B cannot even see it: 401.
  */
 describe('tenant isolation for sessions', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
   let harness!: TestApp
@@ -49,10 +50,15 @@ describe('tenant isolation for sessions', { skip: integrationTestsEnabled ? fals
     if (error) assert.equal((JSON.parse(body) as { error: string }).error, error)
   }
 
-  const authUserId = async (table: typeof schema.clientAuthUsers | typeof schema.staffAuthUsers, email: string) => {
-    const [row] = await harness.db.select({ id: table.id }).from(table).where(eq(table.email, email))
-    assert.ok(row, `no auth user for ${email}`)
-    return row.id
+  /** The person's login at `tenantId` — logins are per studio (#231) — made when there is none yet. */
+  const authUserId = async (
+    table: typeof schema.clientAuthUsers | typeof schema.staffAuthUsers,
+    email: string,
+    tenantId: string = one.id,
+  ) => {
+    const { ensureAuthUser } = await import('../services/auth/auth-users')
+    const pool = table === schema.clientAuthUsers ? 'client' : 'staff'
+    return ensureAuthUser(harness.db, pool, { tenantId, email, name: email.split('@')[0]! })
   }
 
   const addStaffRow = (
@@ -157,33 +163,38 @@ describe('tenant isolation for sessions', { skip: integrationTestsEnabled ? fals
   })
 
   test("a staff session from studio one is refused at studio two's portal", async () => {
-    // Even with a row at studio two, which is what makes the claim the refusal.
-    await addStaffRow(two.id, STAFF, await authUserId(schema.staffAuthUsers, STAFF))
-    await expectStatus(await get('/api/v1/portal/auth/me', sentTo(staffAtOne, 'staff', two)), 403, 'tenant_mismatch')
+    // Even with a row at studio two: studio two's context cannot see the session.
+    await addStaffRow(two.id, STAFF, await authUserId(schema.staffAuthUsers, STAFF, two.id))
+    await expectStatus(await get('/api/v1/portal/auth/me', sentTo(staffAtOne, 'staff', two)), 401, 'invalid_token')
     await expectStatus(
       await get('/api/v1/portal/admin/clients', sentTo(staffAtOne, 'staff', two)),
-      403,
-      'tenant_mismatch',
+      401,
+      'invalid_token',
     )
   })
 
   test("TEN-13 a member session from studio one is refused at studio two's /me", async () => {
-    await addClientRow(two.id, MEMBER, await authUserId(schema.clientAuthUsers, MEMBER))
-    await expectStatus(await get('/api/v1/me', sentTo(memberAtOne, 'client', two)), 403, 'tenant_mismatch')
+    await addClientRow(two.id, MEMBER, await authUserId(schema.clientAuthUsers, MEMBER, two.id))
+    await expectStatus(await get('/api/v1/me', sentTo(memberAtOne, 'client', two)), 401, 'invalid_token')
   })
 
-  test('one user, two staff rows, two sessions — each reaches only its own studio', async () => {
+  test('staff at two studios have two logins and two sessions — each reaches only its own studio', async () => {
     const atOne = await harness.signInAs('staff', TWO_STUDIOS, one)
     const atTwo = await harness.signInAs('staff', TWO_STUDIOS, two)
-    const userId = await authUserId(schema.staffAuthUsers, TWO_STUDIOS)
-    await addStaffRow(one.id, TWO_STUDIOS, userId)
-    await addStaffRow(two.id, TWO_STUDIOS, userId)
+    const userAtOne = await authUserId(schema.staffAuthUsers, TWO_STUDIOS, one.id)
+    const userAtTwo = await authUserId(schema.staffAuthUsers, TWO_STUDIOS, two.id)
+    await addStaffRow(one.id, TWO_STUDIOS, userAtOne)
+    await addStaffRow(two.id, TWO_STUDIOS, userAtTwo)
 
     const [users, sessions] = await Promise.all([
       harness.db.select().from(schema.staffAuthUsers).where(eq(schema.staffAuthUsers.email, TWO_STUDIOS)),
-      harness.db.select().from(schema.staffAuthSessions).where(eq(schema.staffAuthSessions.userId, userId)),
+      harness.db
+        .select()
+        .from(schema.staffAuthSessions)
+        .where(inArray(schema.staffAuthSessions.userId, [userAtOne, userAtTwo])),
     ])
-    assert.equal(users.length, 1)
+    assert.equal(users.length, 2, 'a login at each studio')
+    assert.notEqual(userAtOne, userAtTwo)
     assert.equal(sessions.length, 2)
 
     const rowOf = async (headers: Record<string, string>) => {
@@ -201,8 +212,8 @@ describe('tenant isolation for sessions', { skip: integrationTestsEnabled ? fals
     assert.equal(await rowOf(atOne), await staffRowAt(one.id))
     assert.equal(await rowOf(atTwo), await staffRowAt(two.id))
 
-    await expectStatus(await get('/api/v1/portal/auth/me', sentTo(atOne, 'staff', two)), 403, 'tenant_mismatch')
-    await expectStatus(await get('/api/v1/portal/auth/me', sentTo(atTwo, 'staff', one)), 403, 'tenant_mismatch')
+    await expectStatus(await get('/api/v1/portal/auth/me', sentTo(atOne, 'staff', two)), 401, 'invalid_token')
+    await expectStatus(await get('/api/v1/portal/auth/me', sentTo(atTwo, 'staff', one)), 401, 'invalid_token')
   })
 
   test('a session with no active staff row at its own studio is still refused', async () => {

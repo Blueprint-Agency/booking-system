@@ -1,4 +1,5 @@
-import { pgTable, text, timestamp, boolean, integer, uuid, index } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
+import { pgTable, text, timestamp, boolean, integer, uuid, index, unique } from 'drizzle-orm/pg-core'
 import { authEventKindEnum, authPoolEnum } from '../enums'
 import { tenants } from './tenancy'
 
@@ -10,26 +11,29 @@ import { tenants } from './tenancy'
  * kept by table rather than by vendor account.
  * The instances that read these tables are in `services/auth/better-auth.ts`.
  *
- * **No `tenant_id` on any of them, deliberately.** These are platform rows,
- * like `tenants`: a staff member of two studios is ONE user row with a
- * `staff_users` row at each studio (`staff_users.auth_user_id`), and a member
- * of two studios is one user with two `clients` rows. A `tenant_id` column
- * would force that person into two accounts with two passwords.
+ * **A studio's logins are that studio's own.** Every `client` and `staff`
+ * table carries a `tenant_id`, and an address is unique per studio, not
+ * platform-wide: the same email at two studios is two accounts, with two
+ * passwords, two second factors and two sets of sessions, and nothing done at
+ * one studio — a reset, a sign-up, a block, a deletion — reaches the other.
+ * `ensureTenantIsolation` (`db/roles.ts`) fences every table with a `tenant_id`
+ * column, found by name, so these get the same Row-Level Security policy as
+ * every other studio row: Better Auth's own queries, which run inside the
+ * Tenant context `resolveTenant` opened, see only this studio's logins, and a
+ * query with no context sees none.
  *
- * It matters for Row-Level Security too, and in a way that is easy to undo by
- * accident. `ensureTenantIsolation` (`db/roles.ts`) fences EVERY table that has
- * a column called `tenant_id`, found by name. So the Tenant a session was
- * signed in on — its claim, written at sign-in from #113 on — lives in
- * `claimed_tenant_id` and must never be renamed to `tenant_id`. Named that, the
- * sweep would put a policy on the sessions table, and then:
+ * `tenant_id` defaults to the transaction's Tenant (`app.tenant_id`), because
+ * Better Auth writes sessions, credentials, verifications and second factors
+ * itself and cannot be told to name one. With no context the default is null
+ * and the insert fails on `NOT NULL` — the same loud failure a domain table's
+ * missing `tenant_id` gives.
  *
- *   - every session outside a Tenant context would be invisible — the super
- *     portal's, and any session looked up before `resolveTenant` has run; and
- *   - "sign out everywhere", which deletes a user's sessions across every studio
- *     they work at, would only reach the studio whose context happened to be
- *     open, and quietly leave the others signed in.
+ * `claimed_tenant_id` on the sessions predates this: the Tenant a session was
+ * signed in on, checked by the middlewares (`session-claim.ts`). It now always
+ * equals `tenant_id`, and stays as the belt to RLS's braces.
  *
- * The platform pool has no claim column at all: the super portal has no Tenant.
+ * The `platform` pool has none of this: the super portal has no Tenant, and an
+ * operator is one account, platform-wide.
  *
  * Column shapes are Better Auth's own (`getAuthTables` in `@better-auth/core`),
  * with camelCase keys because the Drizzle adapter looks fields up by key.
@@ -38,7 +42,7 @@ import { tenants } from './tenancy'
 const userColumns = () => ({
   id: text('id').primaryKey(),
   name: text('name').notNull(),
-  email: text('email').notNull().unique(),
+  email: text('email').notNull(),
   emailVerified: boolean('email_verified').notNull().default(false),
   image: text('image'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
@@ -91,13 +95,24 @@ const twoFactorColumns = <U>(userId: () => U) => ({
   lockedUntil: timestamp('locked_until', { withTimezone: true }),
 })
 
+/** The studio a login row belongs to — the transaction's Tenant. See the note at the top of the file. */
+const loginTenantId = () =>
+  uuid('tenant_id')
+    .notNull()
+    .default(sql`nullif(current_setting('app.tenant_id', true), '')::uuid`)
+    .references(() => tenants.id, { onDelete: 'restrict' })
+
 /** The Tenant this session was signed in on. See the note at the top of the file. */
 const claimedTenantId = () =>
   uuid('claimed_tenant_id').references(() => tenants.id, { onDelete: 'cascade' })
 
 /* ── client: members, signed in by email and password ─────────────────── */
 
-export const clientAuthUsers = pgTable('client_auth_users', userColumns())
+export const clientAuthUsers = pgTable(
+  'client_auth_users',
+  { ...userColumns(), tenantId: loginTenantId() },
+  table => ({ tenantEmailUnique: unique('client_auth_users_tenant_email_unique').on(table.tenantId, table.email) }),
+)
 
 const clientUserId = () =>
   text('user_id')
@@ -108,6 +123,7 @@ export const clientAuthSessions = pgTable(
   'client_auth_sessions',
   {
     ...sessionColumns(clientUserId),
+    tenantId: loginTenantId(),
     claimedTenantId: claimedTenantId(),
     /**
      * Set on a session a studio admin opened as this member (#118): the
@@ -118,24 +134,40 @@ export const clientAuthSessions = pgTable(
   },
   table => ({
     userIdx: index('client_auth_sessions_user_idx').on(table.userId),
+    tenantIdx: index('client_auth_sessions_tenant_idx').on(table.tenantId),
     claimedTenantIdFkIdx: index('client_auth_sessions_claimed_tenant_id_fk_idx').on(table.claimedTenantId),
   }),
 )
 
-export const clientAuthAccounts = pgTable('client_auth_accounts', accountColumns(clientUserId), table => ({
-  userIdx: index('client_auth_accounts_user_idx').on(table.userId),
-}))
+export const clientAuthAccounts = pgTable(
+  'client_auth_accounts',
+  { ...accountColumns(clientUserId), tenantId: loginTenantId() },
+  table => ({
+    userIdx: index('client_auth_accounts_user_idx').on(table.userId),
+    tenantIdx: index('client_auth_accounts_tenant_idx').on(table.tenantId),
+  }),
+)
 
-export const clientAuthVerifications = pgTable('client_auth_verifications', verificationColumns(), table => ({
-  identifierIdx: index('client_auth_verifications_identifier_idx').on(table.identifier),
-}))
+export const clientAuthVerifications = pgTable(
+  'client_auth_verifications',
+  { ...verificationColumns(), tenantId: loginTenantId() },
+  table => ({
+    identifierIdx: index('client_auth_verifications_identifier_idx').on(table.identifier),
+    tenantIdx: index('client_auth_verifications_tenant_idx').on(table.tenantId),
+  }),
+)
 
 /* ── staff: studio portals, password + second factor ───────────────────── */
 
-export const staffAuthUsers = pgTable('staff_auth_users', {
-  ...userColumns(),
-  twoFactorEnabled: boolean('two_factor_enabled').default(false),
-})
+export const staffAuthUsers = pgTable(
+  'staff_auth_users',
+  {
+    ...userColumns(),
+    twoFactorEnabled: boolean('two_factor_enabled').default(false),
+    tenantId: loginTenantId(),
+  },
+  table => ({ tenantEmailUnique: unique('staff_auth_users_tenant_email_unique').on(table.tenantId, table.email) }),
+)
 
 const staffUserId = () =>
   text('user_id')
@@ -144,30 +176,48 @@ const staffUserId = () =>
 
 export const staffAuthSessions = pgTable(
   'staff_auth_sessions',
-  { ...sessionColumns(staffUserId), claimedTenantId: claimedTenantId() },
+  { ...sessionColumns(staffUserId), tenantId: loginTenantId(), claimedTenantId: claimedTenantId() },
   table => ({
     userIdx: index('staff_auth_sessions_user_idx').on(table.userId),
+    tenantIdx: index('staff_auth_sessions_tenant_idx').on(table.tenantId),
     claimedTenantIdFkIdx: index('staff_auth_sessions_claimed_tenant_id_fk_idx').on(table.claimedTenantId),
   }),
 )
 
-export const staffAuthAccounts = pgTable('staff_auth_accounts', accountColumns(staffUserId), table => ({
-  userIdx: index('staff_auth_accounts_user_idx').on(table.userId),
-}))
+export const staffAuthAccounts = pgTable(
+  'staff_auth_accounts',
+  { ...accountColumns(staffUserId), tenantId: loginTenantId() },
+  table => ({
+    userIdx: index('staff_auth_accounts_user_idx').on(table.userId),
+    tenantIdx: index('staff_auth_accounts_tenant_idx').on(table.tenantId),
+  }),
+)
 
-export const staffAuthVerifications = pgTable('staff_auth_verifications', verificationColumns(), table => ({
-  identifierIdx: index('staff_auth_verifications_identifier_idx').on(table.identifier),
-}))
+export const staffAuthVerifications = pgTable(
+  'staff_auth_verifications',
+  { ...verificationColumns(), tenantId: loginTenantId() },
+  table => ({
+    identifierIdx: index('staff_auth_verifications_identifier_idx').on(table.identifier),
+    tenantIdx: index('staff_auth_verifications_tenant_idx').on(table.tenantId),
+  }),
+)
 
-export const staffAuthTwoFactors = pgTable('staff_auth_two_factors', twoFactorColumns(staffUserId), table => ({
-  userIdx: index('staff_auth_two_factors_user_idx').on(table.userId),
-  secretIdx: index('staff_auth_two_factors_secret_idx').on(table.secret),
-}))
+export const staffAuthTwoFactors = pgTable(
+  'staff_auth_two_factors',
+  { ...twoFactorColumns(staffUserId), tenantId: loginTenantId() },
+  table => ({
+    userIdx: index('staff_auth_two_factors_user_idx').on(table.userId),
+    secretIdx: index('staff_auth_two_factors_secret_idx').on(table.secret),
+    tenantIdx: index('staff_auth_two_factors_tenant_idx').on(table.tenantId),
+  }),
+)
 
 /* ── platform: the super portal, password + second factor, no Tenant ───── */
 
 export const platformAuthUsers = pgTable('platform_auth_users', {
   ...userColumns(),
+  // One operator, one account, platform-wide.
+  email: text('email').notNull().unique(),
   twoFactorEnabled: boolean('two_factor_enabled').default(false),
 })
 
@@ -205,8 +255,7 @@ export const platformAuthTwoFactors = pgTable(
 
 /**
  * The sign-in audit log, written by `services/auth/auth-events.ts` from every
- * pool's hooks. Unlike the pool tables above it does carry a `tenant_id`: an
- * event happens at one studio, even when the person it happened to works at two.
+ * pool's hooks. An event happens at one studio, and carries its `tenant_id`.
  *
  * **The one table whose `tenant_id` is nullable, on purpose.** A studio pool's
  * event belongs to the studio it happened at and is fenced like any other

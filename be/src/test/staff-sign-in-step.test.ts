@@ -17,10 +17,9 @@ import {
  * invitation.
  *
  * The case this exists for: a person who is already staff at one studio is made
- * the first admin of another. They have one account and so one password, which
- * signed them in at the new studio as a pending staff member — "this account
- * isn't active here", with no admin to activate them. The email step now mails
- * them the set-password link instead, and following it accepts the invitation.
+ * the first admin of another. Logins are per studio (#231), so their password at
+ * the first studio does not sign in at the new one; the email step mails them the
+ * new studio's set-password link, and following it accepts the invitation.
  */
 describe('staff email-first sign-in', { skip: integrationTestsEnabled ? false : SKIP_REASON }, () => {
   let harness!: TestApp
@@ -84,10 +83,11 @@ describe('staff email-first sign-in', { skip: integrationTestsEnabled ? false : 
     })
   }
 
-  const authUserId = async (email: string, withPassword: boolean) => {
+  /** The person's login at `tenant` — logins are per studio (#231) — with the harness password or none. */
+  const authUserId = async (email: string, withPassword: boolean, tenant: { id: string; slug: string } = one) => {
     const { ensureAuthUser } = await import('../services/auth/auth-users')
-    if (withPassword) await harness.signInAs('staff', email, one)
-    return ensureAuthUser(harness.db, 'staff', { email, name: email.split('@')[0]! })
+    if (withPassword) await harness.signInAs('staff', email, tenant)
+    return ensureAuthUser(harness.db, 'staff', { tenantId: tenant.id, email, name: email.split('@')[0]! })
   }
 
   const staffRow = async (tenantId: string, email: string) => {
@@ -184,16 +184,14 @@ describe('staff email-first sign-in', { skip: integrationTestsEnabled ? false : 
     assert.equal((await meAfterSignIn(one, email, NEW_PASSWORD)).status, 200)
   })
 
-  test('staff elsewhere, pending here, are mailed the link rather than asked for the password they have', async () => {
+  test('staff elsewhere, pending here, are mailed the link for a password here', async () => {
     const email = at('first-admin')
-    const userId = await authUserId(email, true)
-    await staffAt(one, email, userId, 'active')
-    const pending = await staffAt(two, email, userId, 'pending')
+    await staffAt(one, email, await authUserId(email, true), 'active')
+    const pending = await staffAt(two, email, await authUserId(email, false, two), 'pending')
 
-    // Before: their password signs them in at studio two, and the portal refuses them.
-    const refused = await meAfterSignIn(two, email, HARNESS_PASSWORD)
-    assert.equal(refused.status, 403)
-    assert.equal(((await refused.json()) as { error: string }).error, 'staff_inactive')
+    // Their password at studio one is studio one's: it does not sign in at two.
+    const refused = await post('/api/v1/auth/staff/sign-in/email', two, { email, password: HARNESS_PASSWORD })
+    assert.equal(refused.status, 401, await refused.text())
 
     assert.deepEqual(await step(two, email), { next: 'link_sent' })
     await resetPassword(two, resetTokenFor(email))
@@ -201,15 +199,14 @@ describe('staff email-first sign-in', { skip: integrationTestsEnabled ? false : 
     assert.equal((await staffRow(two.id, email))?.status, 'active')
     assert.equal(await invitationStatus(pending.id), 'accepted')
     assert.equal((await meAfterSignIn(two, email, NEW_PASSWORD)).status, 200)
-    assert.equal((await meAfterSignIn(one, email, NEW_PASSWORD)).status, 200, 'still staff at studio one')
+    assert.equal((await meAfterSignIn(one, email, HARNESS_PASSWORD)).status, 200, "studio one's password is unchanged")
     assert.deepEqual(await step(two, email), { next: 'password' }, 'arrived: the password is asked for now')
   })
 
   test('"Forgot password" on a pending account accepts the invitation too', async () => {
     const email = at('forgot')
-    const userId = await authUserId(email, true)
-    await staffAt(one, email, userId, 'active')
-    await staffAt(two, email, userId, 'pending')
+    await staffAt(one, email, await authUserId(email, true), 'active')
+    await staffAt(two, email, await authUserId(email, false, two), 'pending')
 
     await expectStatus(
       await post('/api/v1/auth/staff/request-password-reset', two, {
@@ -224,12 +221,11 @@ describe('staff email-first sign-in', { skip: integrationTestsEnabled ? false : 
 
   test('an expired invitation is mailed no link, and a reset does not revive it', async () => {
     const email = at('expired')
-    const userId = await authUserId(email, true)
-    await staffAt(one, email, userId, 'active')
-    const staff = await staffAt(two, email, userId, 'pending', -60_000)
+    await staffAt(one, email, await authUserId(email, true), 'active')
+    const staff = await staffAt(two, email, await authUserId(email, false, two), 'pending', -60_000)
 
-    // Not arrived: asked for the password they have, which the portal then refuses.
-    assert.deepEqual(await step(two, email), { next: 'password' })
+    // Not arrived, and no password here: the uniform answer, and nothing mailed.
+    assert.deepEqual(await step(two, email), { next: 'link_sent' })
     assert.equal(mailsTo(email).length, 0)
 
     // "Forgot password" still resets it, but does not accept a lapsed invitation.
@@ -258,11 +254,11 @@ describe('staff email-first sign-in', { skip: integrationTestsEnabled ? false : 
     assert.deepEqual(await step(one, stranger), { next: 'link_sent' })
     assert.equal(mailsTo(stranger).length, 0)
 
-    // Staff at another studio only: they have a password, so they are asked for
-    // it — the portal then says they have no access here, as before.
+    // Staff at another studio only: their password is that studio's (#231), so
+    // here they are an unknown address like any other.
     const elsewhere = at('elsewhere')
     await staffAt(one, elsewhere, await authUserId(elsewhere, true), 'active')
-    assert.deepEqual(await step(two, elsewhere), { next: 'password' })
+    assert.deepEqual(await step(two, elsewhere), { next: 'link_sent' })
     assert.equal(mailsTo(elsewhere).length, 0)
   })
 })

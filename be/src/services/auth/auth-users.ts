@@ -17,8 +17,16 @@ const USERS = {
 
 type UserWriter = Pick<PostgresJsDatabase<typeof schema>, 'insert' | 'select'>
 
+type NewUser = { email: string; name: string }
+
 /**
  * Make sure a Better Auth user exists for this address, and return its id.
+ *
+ * **Per studio in the `staff` and `client` pools** (#231): the same address at
+ * two studios is two users, so the studio is named, and the user is found or
+ * made at that studio only. Named rather than read from the Tenant context,
+ * because the seeds, the e2e studio helper and the test harness write on the
+ * owner connection, where there is none. The `platform` pool has no studio.
  *
  * **Passwordless.** The row is a user
  * with no credential account at all; the person sets their first password
@@ -31,20 +39,40 @@ type UserWriter = Pick<PostgresJsDatabase<typeof schema>, 'insert' | 'select'>
  * — is found by address and left untouched, so re-running a seed on every
  * deploy locks nobody out.
  */
+export async function ensureAuthUser(db: UserWriter, pool: 'platform', input: NewUser): Promise<string>
+export async function ensureAuthUser(
+  db: UserWriter,
+  pool: 'client' | 'staff',
+  input: NewUser & { tenantId: string },
+): Promise<string>
 export async function ensureAuthUser(
   db: UserWriter,
   pool: keyof typeof USERS,
-  input: { email: string; name: string },
+  input: NewUser & { tenantId?: string },
 ): Promise<string> {
-  const users = USERS[pool]
   const email = input.email.trim().toLowerCase()
+  const values = { id: randomUUID(), email, name: input.name, emailVerified: true }
 
-  await db
-    .insert(users)
-    .values({ id: randomUUID(), email, name: input.name, emailVerified: true })
-    .onConflictDoNothing({ target: users.email })
-
-  const [row] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1)
+  let row: { id: string } | undefined
+  if (pool === 'platform') {
+    const users = USERS.platform
+    await db.insert(users).values(values).onConflictDoNothing({ target: users.email })
+    ;[row] = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1)
+  } else {
+    const users = USERS[pool]
+    // Invariant: the overloads above require a Tenant for the studio pools.
+    if (!input.tenantId) throw new Error(`ensureAuthUser: a ${pool} user belongs to a studio, and none was named`)
+    const tenantId = input.tenantId
+    await db
+      .insert(users)
+      .values({ ...values, tenantId })
+      .onConflictDoNothing({ target: [users.tenantId, users.email] })
+    ;[row] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.tenantId, tenantId), eq(users.email, email)))
+      .limit(1)
+  }
   // Invariant: the insert above either wrote this address or found it already there.
   if (!row) throw new Error(`ensureAuthUser: no ${pool} user for ${email} after insert`)
   return row.id
@@ -85,14 +113,23 @@ export async function setFirstStaffPassword(db: UserWriter, userId: string, pass
     providerId: 'credential',
     userId,
     password: await hashPassword(password),
+    tenantId: loginTenant(schema.staffAuthUsers, userId),
   })
 }
 
 /**
+ * The studio a login belongs to, for a credential written beside it — read off
+ * the user rather than the Tenant context, so the e2e studio helper, writing on
+ * the owner connection, writes the same row a request does.
+ */
+const loginTenant = (users: typeof schema.staffAuthUsers | typeof schema.clientAuthUsers, userId: string) =>
+  sql<string>`(select ${users.tenantId} from ${users} where ${users.id} = ${userId})`
+
+/**
  * Give a member auth user the password they chose at registration (#173),
  * replacing any they had: registration has just proved the email with a code,
- * which is as much as a reset link proves. One account per email serves every
- * studio, so the password is the same one everywhere they are a member.
+ * which is as much as a reset link proves. The user is this studio's login, so
+ * the password is this studio's only (#231).
  */
 export async function setMemberPassword(
   db: UserWriter & Deleter,
@@ -107,6 +144,7 @@ export async function setMemberPassword(
     providerId: 'credential',
     userId,
     password: await hashPassword(password),
+    tenantId: loginTenant(schema.clientAuthUsers, userId),
   })
 }
 
@@ -124,10 +162,8 @@ export async function renameStaffUser(
 /**
  * End a staff user's sessions **at one studio**.
  *
- * Not the admin plugin's revoke-all, which is keyed on the user alone: one staff
- * auth user signs into every studio they work at, a session per hostname, and
- * archiving them at studio A must not sign them out of studio B, where they are
- * still staff. The session's Tenant claim is what tells the two apart.
+ * A login is one studio's own (#231), so its sessions are all at that studio;
+ * the claim in the query says so out loud rather than leaning on that alone.
  */
 export async function endStaffSessionsAt(db: Deleter, tenantId: string, userId: string): Promise<number> {
   const sessions = schema.staffAuthSessions
@@ -138,11 +174,7 @@ export async function endStaffSessionsAt(db: Deleter, tenantId: string, userId: 
   return ended.length
 }
 
-/**
- * End a member's sessions **at one studio** — for the reason `endStaffSessionsAt`
- * gives: one member auth user signs into every studio they have joined, and
- * blocking them at studio A is not studio A's to do at studio B.
- */
+/** End a member's sessions **at one studio**, as `endStaffSessionsAt` does for staff. */
 export async function endClientSessionsAt(db: Deleter, tenantId: string, userId: string): Promise<number> {
   const sessions = schema.clientAuthSessions
   const ended = await db
@@ -198,11 +230,10 @@ export async function listSessionsAt(
 }
 
 /**
- * Remove a staff auth user nobody has used. With no password there was never a
- * session, so nothing is lost. One with a password is left alone: it may be the
- * same person's account at another studio, which this studio cannot see.
+ * Remove the staff login of someone whose pending invitation was revoked. It
+ * is this studio's login and nobody else's (#231), so it simply goes, and any
+ * credential and session with it by cascade.
  */
-export async function removeUnusedStaffUser(db: Reader & Deleter, userId: string): Promise<void> {
-  if (await hasStaffPassword(db, userId)) return
+export async function deleteStaffLogin(db: Deleter, userId: string): Promise<void> {
   await db.delete(schema.staffAuthUsers).where(eq(schema.staffAuthUsers.id, userId))
 }
