@@ -19,8 +19,8 @@
  * inline scripts, and the only way to drop it is a per-request nonce, which
  * turns every static page dynamic. `docs/md/deployment.md` § Security headers.
  *
- * The camera is off: check-in is by code today. A camera QR scanner will need
- * `camera=(self)` here.
+ * The camera is this origin's only: the check-in desk (#192) scans members' QR
+ * codes with it. Nothing framed or third-party may ask for it.
  */
 
 export type SecurityHeaderInput = {
@@ -73,7 +73,7 @@ export function securityHeaders(input: SecurityHeaderInput): { key: string; valu
     { key: "X-Frame-Options", value: "DENY" },
     {
       key: "Permissions-Policy",
-      value: "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()",
+      value: "camera=(self), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()",
     },
   ];
 }

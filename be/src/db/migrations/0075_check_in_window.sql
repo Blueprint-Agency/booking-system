@@ -1,0 +1,2 @@
+ALTER TABLE "global_policy" ADD COLUMN "check_in_opens_minutes_before" integer DEFAULT 30 NOT NULL;--> statement-breakpoint
+ALTER TABLE "global_policy" ADD CONSTRAINT "global_policy_check_in_window_non_negative" CHECK ("global_policy"."check_in_opens_minutes_before" >= 0);

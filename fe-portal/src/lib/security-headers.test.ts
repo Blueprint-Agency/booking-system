@@ -25,7 +25,9 @@ test("every page carries the fixed hardening headers", () => {
   assert.equal(header("X-Content-Type-Options"), "nosniff");
   assert.equal(header("Referrer-Policy"), "strict-origin-when-cross-origin");
   assert.equal(header("X-Frame-Options"), "DENY");
-  assert.match(header("Permissions-Policy")!, /camera=\(\)/);
+  // The check-in desk scans QR codes with this origin's camera; nobody else may.
+  assert.match(header("Permissions-Policy")!, /camera=\(self\)/);
+  assert.match(header("Permissions-Policy")!, /microphone=\(\)/);
   assert.ok(header("Content-Security-Policy"), "enforced, not report-only");
 });
 

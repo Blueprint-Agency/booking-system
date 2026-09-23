@@ -8,6 +8,7 @@ import { SectionHeading } from "@/components/booking/section-heading";
 import { ClassRow, FilterSelect } from "@/components/booking/class-row";
 import { ScheduleSegments } from "@/components/booking/schedule-segments";
 import { Skeleton } from "@/components/ui/skeleton";
+import { MyNextClass } from "@/components/account/next-class-card";
 import { useBrand } from "@/components/brand/brand-provider";
 
 const WINDOW_DAYS = 30;
@@ -91,6 +92,8 @@ export function ClassFeed() {
 
   return (
     <BookingSurface maxWidth="xl" padding="default">
+      {/* A signed-in member's soonest class and its check-in QR (#192). */}
+      <MyNextClass />
       <SectionHeading
         eyebrow={eyebrow}
         title="Book a class"

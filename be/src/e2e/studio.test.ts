@@ -96,6 +96,12 @@ describe('e2e studio', { skip: integrationTestsEnabled ? false : SKIP_REASON }, 
         .where(eq(schema.globalPolicy.tenantId, made.tenantId))
       assert.ok(policy, 'a studio without a policy row cannot cancel a booking')
       assert.ok(new Date(made.classes.cancel.startsAt).getTime() - Date.now() > policy.classWindowHours * 3_600_000)
+      // The check-in class has not started, and its Check-in Window is already open.
+      const checkInStartsIn = new Date(made.classes.checkIn.startsAt).getTime() - Date.now()
+      assert.ok(checkInStartsIn > 0)
+      assert.ok(checkInStartsIn < policy.checkInOpensMinutesBefore * 60_000)
+      const arriverPackages = await memberGet(made, made.members.arriver.token, '/packages')
+      assert.ok(JSON.stringify(await arriverPackages.json()).includes(made.catalogue.packageName))
     } finally {
       await studio.removeE2eStudio({ db: harness.db, slug: made.slug })
     }

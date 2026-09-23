@@ -31,14 +31,17 @@ export type Studio = {
     buyClassType: string
     cancelClassType: string
     portalClassType: string
+    checkInClassType: string
   }
   classes: {
     buy: { id: string; startsAt: string }
     cancel: { id: string; startsAt: string }
+    checkIn: { id: string; startsAt: string }
   }
   members: {
     buyer: { email: string; token: string }
     canceller: { email: string; token: string }
+    arriver: { email: string; token: string }
   }
 }
 

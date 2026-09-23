@@ -359,12 +359,23 @@ function UpcomingCard({
               In progress
             </span>
           )}
+          {booking.check_in_state === "attended" && (
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full bg-sage/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-sage",
+                ongoing && "ml-1.5",
+              )}
+            >
+              <CheckCircle2 className="h-3 w-3" />
+              Checked in
+            </span>
+          )}
           <p
             className={cn(
               featured || ongoing
                 ? "text-base sm:text-lg font-semibold text-ink truncate"
                 : "font-medium text-ink truncate",
-              ongoing && "mt-1",
+              (ongoing || booking.check_in_state === "attended") && "mt-1",
             )}
           >
             {booking.name}

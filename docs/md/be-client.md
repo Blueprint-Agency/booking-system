@@ -106,8 +106,7 @@ Same shape as `routes/public/catalog.ts` but adds:
 |---|---|---|
 | GET | `/bookings/upcoming` | `bookings WHERE client_id=me AND state='confirmed' AND session.starts_at >= now()`, joined to session detail |
 | GET | `/bookings/past` | Same but `starts_at < now()`, includes `check_in_state` |
-| GET | `/bookings/:id` | Detail incl. QR URL + code |
-| GET | `/bookings/:id/qr` | Returns the QR image (PNG bytes) — no signed URL needed since the token is the auth |
+| GET | `/bookings/:id` | Detail incl. `qr_token` + `code`. The app draws the QR from the token itself; there is no server-rendered QR image (#192) |
 | POST | `/bookings/class` | `{ class_id, use_credits? }` — see §4a class booking flow. The server picks the package; `use_credits: true` is the one exception (spec §2), asking to pay with credits for a class the member's Unlimited Plan does not cover. |
 | POST | `/bookings/workshop` | `{ workshop_id, workshop_tier_id }` — initiates Stripe checkout; see §4b |
 | DELETE | `/bookings/:id` | Self-cancel — see §4c |

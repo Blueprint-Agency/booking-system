@@ -99,6 +99,7 @@ export const CHECKS: Record<string, Record<string, Rule>> = {
   global_policy: {
     global_policy_cross_location_rate_non_negative: r => num(r.cross_location_rate_sgd, n => n >= 0),
     global_policy_leave_caps_min_1: r => num(r.study_leave_cap, n => n >= 1),
+    global_policy_check_in_window_non_negative: r => num(r.check_in_opens_minutes_before, n => n >= 0),
   },
 }
 

@@ -38,7 +38,6 @@ const app = new Hono()
     const rows = await listClassBookings(tenantId(c), clientId, 'past')
     return c.json({ bookings: rows.map(bookingRow) })
   })
-  .get('/:id/qr', c => c.json({ todo: 'booking QR PNG' }, 501))
   .get('/:id', zValidator('param', z.object({ id: z.string().uuid() })), async c => {
     const clientId = c.get('clientId')
     const { id } = c.req.valid('param')

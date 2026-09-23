@@ -7,6 +7,7 @@ import {
   CalendarDays,
   CalendarOff,
   HandHeart,
+  QrCode,
   Wallet,
   UserRound,
   type LucideIcon,
@@ -91,6 +92,7 @@ function useInstructorNavItems(): InstructorNavItem[] {
 
   return [
     { label: "My Schedule", href: "/instructor/schedule", icon: CalendarDays },
+    { label: "Check-in", href: "/instructor/check-in", icon: QrCode },
     { label: "PT Requests", href: "/instructor/pt-requests", icon: HandHeart, badge: ptPending },
     { label: "My Leave", href: "/instructor/leave", icon: CalendarOff },
     { label: "Teaching log", href: "/instructor/payroll", icon: Wallet },

@@ -50,6 +50,9 @@ const globalPatch = z.object({
   part_payment_enabled: z
     .boolean({ message: 'Part Payment is either on or off.' })
     .optional(),
+  // The Check-in Window (#192). A day is the ceiling: a member checked in the
+  // evening before a morning class has not arrived for anything.
+  check_in_opens_minutes_before: bounded('Check-in can open between 0 and 1440 minutes early.', 0, 1440),
   // Every declared Leave Conflict, as one replacement set. Which pairs are
   // allowed — two different, active instructors, each pair once — is the
   // service's call; this only says what the shape has to be.
@@ -78,6 +81,7 @@ function serializeGlobal(r: svc.GlobalPolicyRow) {
     study_leave_cap: r.studyLeaveCap,
     cross_location_rate_sgd: r.crossLocationRateSgd,
     part_payment_enabled: r.partPaymentEnabled,
+    check_in_opens_minutes_before: r.checkInOpensMinutesBefore,
     updated_at: r.updatedAt,
     updated_by_staff_id: r.updatedByStaffId,
   }
@@ -129,6 +133,9 @@ const app = new Hono()
           : {}),
         ...(body.part_payment_enabled !== undefined
           ? { partPaymentEnabled: body.part_payment_enabled }
+          : {}),
+        ...(body.check_in_opens_minutes_before !== undefined
+          ? { checkInOpensMinutesBefore: body.check_in_opens_minutes_before }
           : {}),
         ...(body.leave_conflicts !== undefined
           ? {

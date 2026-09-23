@@ -14,6 +14,7 @@ import { SectionHeading } from "@/components/booking/section-heading";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { QrBadge } from "@/components/account/qr-badge";
+import { MyNextClass } from "@/components/account/next-class-card";
 import { useAppUser } from "@/lib/auth";
 import { useApi } from "@/lib/api";
 import { reportError } from "@/lib/report-error";
@@ -94,6 +95,9 @@ export default function AccountOverview() {
         eyebrow={`Welcome back, ${firstName}`}
         title="Here's your practice"
       />
+
+      {/* The class running now or next, with its check-in QR one tap away (#192). */}
+      <MyNextClass />
 
       {/* Credit totals */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
