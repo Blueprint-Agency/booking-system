@@ -37,6 +37,15 @@ BE layout: routes split by audience (`routes/portal/{admin,instructor}/`, `route
 - Docs go in `docs/md/` (markdown) or `docs/html/` (static). Two exceptions: the **domain glossary** for a context lives at `<context>/CONTEXT.md` (indexed by root `CONTEXT-MAP.md`), and **ADRs** live at `<context>/docs/adr/NNNN-slug.md` (root `docs/adr/` if the decision spans all three apps).
 - **Commit messages**: no `Co-Authored-By: Claude …` trailers, no `🤖 Generated with Claude Code` lines.
 
+## Testing
+
+**Tests verify behaviour.** A failing test means the code is wrong until a human says the spec changed. So:
+
+- **Never special-case inputs.** No branch that recognises a test's values (`if (email === 'member@northwind.test')`), no hard-coded return shaped to one assertion. Fix the general behaviour.
+- **Never weaken a test to make it pass.** No skipping, loosening an assertion, rewriting an expected value to match what the code does, catching the error it checks for, or deleting the test. If you believe a test is wrong, stop and say so.
+
+Guardrails back this up (`docs/md/test-guardrails.md`): a hook refuses edits to committed test files unless a human lists them in `.claude/test-edits.allow`; stopping runs the suites the session touched; CI fails on a skipped test and on a PR with fewer tests than its base.
+
 ## Agent skills
 
 ### Issue tracker

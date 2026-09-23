@@ -114,6 +114,14 @@ backend suite means no image is built and neither stack is touched.
 - **Skips fail the job.** The integration tests skip themselves when `TEST_DATABASE_URL` is unset,
   and a skipped test counts as a pass. Nothing else in the suite skips, so the job fails unless the
   TAP summary reads `# skipped 0` — a broken CI env cannot turn the gate green by testing nothing.
+- **Tests may not quietly disappear.** A pull request whose backend has fewer tests than its base
+  branch fails the `test` job. Each `staging`/`main` run records its count (an Actions cache keyed
+  by the `be/` tree); a PR compares against the base's. Removing tests on purpose: add the
+  `tests-removed` label and re-run the job. The journeys get the same check, and a skipped journey
+  fails, in the `Test Guardrails` workflow (`test-guardrails.yml`, every PR). See
+  `test-guardrails.md`.
+- **Coverage is reported, not gated.** The suite runs with Node's built-in coverage; the job's
+  summary page shows lines/branches/functions per `src/services/<feature>/` folder. No threshold.
 - **Pull requests** into `staging` or `main` run the same tests and never deploy. A push that only
   touches a frontend does not run the backend tests or deploy (a `changes` job filters by path).
   A manual `workflow_dispatch` always runs the tests, then deploys.

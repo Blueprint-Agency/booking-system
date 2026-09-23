@@ -2,3 +2,6 @@ node_modules/
 dist/
 .env
 *.local
+# Test run output: coverage (lcov) and the TAP CI keeps for its checks.
+lcov.info
+test-output.tap

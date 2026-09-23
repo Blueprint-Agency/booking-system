@@ -1,4 +1,4 @@
-import { defineConfig, devices } from '@playwright/test'
+import { defineConfig, devices, type ReporterDescription } from '@playwright/test'
 
 /**
  * The three golden paths (#145), run against a deployed stack — staging in CI,
@@ -9,6 +9,8 @@ import { defineConfig, devices } from '@playwright/test'
  * One worker. The journeys share one studio and a deployed backend, and a
  * gate that is fast but occasionally racing itself is worse than a slow one.
  */
+const baseReporters: ReporterDescription[] = process.env.CI ? [['list'], ['html', { open: 'never' }]] : [['list']]
+
 export default defineConfig({
   testDir: './journeys',
   globalSetup: './src/global-setup.ts',
@@ -18,9 +20,12 @@ export default defineConfig({
   // a credit spent — so a second attempt meets a different studio and fails
   // for that. A blip means re-running the workflow, which makes a fresh studio.
   retries: 0,
+  // A stray `test.only` would quietly run one journey and pass the gate.
+  forbidOnly: !!process.env.CI,
   timeout: 120_000,
   expect: { timeout: 20_000 },
-  reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : [['list']],
+  // no-skips fails the run on any skipped journey, `--list` included.
+  reporter: [...baseReporters, ['./src/no-skips-reporter.ts']],
   use: {
     ...devices['Desktop Chrome'],
     // The studio's zone (tenants.timezone defaults to Asia/Singapore), so a

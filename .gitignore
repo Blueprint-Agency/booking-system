@@ -2,3 +2,7 @@
 .mcp.json
 .playwright-mcp/
 .scratch/
+# Test guardrail hooks (.claude/hooks/): per-session state, and the human's
+# per-task override for editing committed tests.
+.claude/.hook-state/
+.claude/test-edits.allow

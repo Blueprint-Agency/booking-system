@@ -89,6 +89,10 @@ jobs:
     concurrency:
       group: booking-be-test-${{ github.ref }}
       cancel-in-progress: false
+    permissions:
+      contents: read
+      # The test-count check reads the pull request's labels.
+      pull-requests: read
 
     # Throwaway. The integration harness migrates it, creates the `booking_app`
     # role and seeds both fixture tenants on every run.
@@ -131,6 +135,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # A pull request checks out its merge commit; its first parent is the
+          # base branch, whose test count the PR is held to.
+          fetch-depth: 2
 
       # The same major as the image (be/Dockerfile), so a test cannot pass here on
       # a Node the server never runs on. At least 21 either way: `node --test` only
@@ -174,13 +182,93 @@ jobs:
       # --test-force-exit: a test file whose `after` hook throws before it
       # reaches harness.close() leaves Postgres sockets open, and the process
       # then sits at the job timeout instead of reporting the failure.
+      #
+      # Coverage is Node's own (no dependency), written as lcov beside the TAP
+      # and summarised by the next step.
       - name: Backend tests (serial)
         shell: bash
         run: |
-          node --import tsx --test --test-concurrency=1 --test-force-exit --test-reporter=tap "src/**/*.test.ts" "tools/**/*.test.ts" | tee test-output.tap
+          node --import tsx --test --test-concurrency=1 --test-force-exit \
+            --experimental-test-coverage --test-coverage-include='src/**' \
+            --test-coverage-exclude='src/**/*.test.ts' --test-coverage-exclude='src/test/**' \
+            --test-reporter=tap --test-reporter-destination=stdout \
+            --test-reporter=lcov --test-reporter-destination=lcov.info \
+            "src/**/*.test.ts" "tools/**/*.test.ts" | tee test-output.tap
           if ! grep -qx '# skipped 0' test-output.tap; then
             echo "::error::Tests were skipped — the integration suite did not run against Postgres."
             grep -E '^# (tests|pass|fail|skipped)' test-output.tap
+            exit 1
+          fi
+
+      # Per service folder, in the run's summary page. A report, never a gate:
+      # a percentage to hit is a reason to write tests that assert nothing.
+      - name: Coverage by service folder
+        if: ${{ !cancelled() && hashFiles('be/lcov.info') != '' }}
+        working-directory: .
+        run: node scripts/coverage-summary.mjs be/lcov.info >> "$GITHUB_STEP_SUMMARY"
+
+      # A pull request may not quietly lose tests. Every run on `staging`/`main`
+      # records how many tests its backend has, keyed by the git tree of `be/`
+      # it tested; a pull request compares its own count with the one recorded
+      # for the base branch it merges into (its merge commit's first parent).
+      # Only a run that skipped nothing counts — a skipped suite reports one
+      # test where it holds dozens.
+      - name: Test count
+        id: count
+        if: ${{ !cancelled() && hashFiles('be/test-output.tap') != '' }}
+        shell: bash
+        run: |
+          if grep -qx '# skipped 0' test-output.tap; then
+            echo "tests=$(sed -n 's/^# tests //p' test-output.tap | tail -n1)" >> "$GITHUB_OUTPUT"
+          fi
+          echo "tree=$(git rev-parse HEAD:be)" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            echo "base_tree=$(git rev-parse HEAD^1:be)" >> "$GITHUB_OUTPUT"
+          fi
+          mkdir -p .test-count
+
+      # Green runs only. A cache key cannot be overwritten, so a red run's count
+      # (a file that fails to import reports as one test) would stick to its tree.
+      - name: Record the test count
+        if: ${{ success() && github.event_name != 'pull_request' && steps.count.outputs.tests != '' }}
+        run: echo "${{ steps.count.outputs.tests }}" > .test-count/tests
+      - name: Save the test count
+        if: ${{ success() && github.event_name != 'pull_request' && steps.count.outputs.tests != '' }}
+        uses: actions/cache/save@v4
+        with:
+          path: be/.test-count
+          key: be-test-count-${{ steps.count.outputs.tree }}
+
+      - name: Base branch's test count
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && steps.count.outputs.tests != '' }}
+        uses: actions/cache/restore@v4
+        with:
+          path: be/.test-count
+          key: be-test-count-${{ steps.count.outputs.base_tree }}
+
+      # Removing tests on purpose (a feature deleted) is allowed: a human adds
+      # the `tests-removed` label and re-runs this job. Read live, not from the
+      # event, so the re-run sees the label.
+      - name: No tests lost
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && steps.count.outputs.tests != '' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD_COUNT: ${{ steps.count.outputs.tests }}
+        run: |
+          base=$(cat .test-count/tests 2>/dev/null || true)
+          if [ -z "$base" ]; then
+            echo "::warning::No test count is recorded for the base branch's backend, so this PR's count ($HEAD_COUNT) was not compared. Re-run the base branch's BE Deploy workflow to record one."
+            exit 0
+          fi
+          echo "Backend tests: $HEAD_COUNT here, $base on the base branch."
+          if [ "$HEAD_COUNT" -lt "$base" ]; then
+            if gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json labels -q '.labels[].name' | grep -qx tests-removed; then
+              echo "::warning::$((base - HEAD_COUNT)) backend test(s) removed; allowed by the tests-removed label."
+              exit 0
+            fi
+            echo "::error::This PR has $((base - HEAD_COUNT)) fewer backend tests than the base branch ($HEAD_COUNT vs $base). Deleting a test must be deliberate: if it is, add the tests-removed label and re-run this job."
             exit 1
           fi
 

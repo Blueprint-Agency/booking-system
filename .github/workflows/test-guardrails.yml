@@ -1,0 +1,83 @@
+name: Test Guardrails
+
+# The checks that keep tests honest, whoever wrote them (#200), on every pull
+# request. The backend's own count check and coverage report live in its `test`
+# job (deploy-be.yml), which has the suite's output to hand; these are the ones
+# that need no database. See docs/md/test-guardrails.md.
+on:
+  pull_request:
+    branches: [staging, main]
+
+permissions:
+  contents: read
+  # The count check reads the pull request's labels.
+  pull-requests: read
+
+jobs:
+  # The guardrail hooks (.claude/hooks/) and the repo scripts are tested too.
+  scripts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node --test "scripts/*.test.mjs" ".claude/hooks/*.test.mjs"
+
+  # The journeys themselves need a deployed stack and run in e2e.yml. Listing
+  # them needs nothing, and is enough to see what a PR did to them.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: e2e
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The merge commit's first parent is the base branch.
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - run: npm ci
+      - run: npm run check
+
+      # A skipped journey fails CI, as a skipped backend test does: the
+      # config's no-skips reporter fails a run — `--list` included — on any
+      # `test.skip` / `test.fixme` / `describe.skip`, and CI's forbidOnly on a
+      # stray `test.only`. A `test.skip()` inside a journey only shows when it
+      # runs, and fails e2e.yml then.
+      - name: No skipped journeys
+        env:
+          CI: 'true'
+        run: npx playwright test --list
+
+      - name: No journeys lost
+        shell: bash
+        env:
+          CI: 'true'
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          count() { npx playwright test --list --reporter=json | jq '[.. | objects | select(has("specs")) | .specs[].tests[]] | length'; }
+          head=$(count)
+          git worktree add --detach "$RUNNER_TEMP/base" HEAD^1
+          ln -s "$PWD/node_modules" "$RUNNER_TEMP/base/e2e/node_modules"
+          base=$(cd "$RUNNER_TEMP/base/e2e" && count) || base=
+          if [ -z "$base" ]; then
+            echo "::warning::Could not list the base branch's journeys, so this PR's count ($head) was not compared."
+            exit 0
+          fi
+          echo "Journeys: $head here, $base on the base branch."
+          if [ "$head" -lt "$base" ]; then
+            if gh pr view "$PR" -R "$GITHUB_REPOSITORY" --json labels -q '.labels[].name' | grep -qx tests-removed; then
+              echo "::warning::$((base - head)) journey(s) removed; allowed by the tests-removed label."
+              exit 0
+            fi
+            echo "::error::This PR has $((base - head)) fewer journeys than the base branch ($head vs $base). Deleting a test must be deliberate: if it is, add the tests-removed label and re-run this job."
+            exit 1
+          fi
