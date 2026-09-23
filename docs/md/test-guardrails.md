@@ -50,7 +50,7 @@ the suites for every app the session changed — committed or not:
 
 | Changed | Runs |
 |---|---|
-| `be/` | backend suite, serially, as CI does (needs `TEST_DATABASE_URL`; a run that skips the integration tests counts as a failure) |
+| `be/` | the backend test files the change reaches, serially, as CI does (needs `TEST_DATABASE_URL`; a run that skips the integration tests counts as a failure) |
 | `fe-client/`, `fe-portal/` | `npm run check` |
 | `e2e/` | typecheck + `playwright test --list` (the skip check; the journeys need a deployed stack) |
 | `scripts/`, `.claude/hooks/` | their unit tests |
@@ -60,10 +60,23 @@ changes is not run again, so a turn that changed nothing costs nothing. On a fai
 refused and the failures go back to the agent. If it is sent back, changes nothing and stops again,
 it is let go, and the human sees a warning that it stopped on failing tests.
 
-The backend suite takes minutes; the Stop hook allows it 30. Every session and worktree on a
-machine shares one test database, and two suites on it at once fail each other ("tuple concurrently
-updated"), so a backend run waits for a machine-wide lock (`reservetoday-test-db.lock` in the temp
-directory) first. A lock whose holder died is taken over.
+**Only the backend tests a change reaches.** The whole backend suite is ~25 minutes, which an agent
+paid on every stop; CI still runs all of it on the PR. `.claude/hooks/backend-tests.mjs` picks the
+test files: a changed test itself, every test that imports the change (through any chain of
+imports), and every test that calls the URL of a route the chain reaches. It does not follow imports
+through `app.ts`, the harness or a routes `index.ts`, since through those everything reaches
+everything. A change reaching more than 15 tests keeps the closest ones (its importers, and the
+tests of a route that imports it directly) plus the tenant isolation guards (`isolation`, `rls`,
+`rls-coverage`). If that is still more than 15, it runs the guards alone. A change no test reaches
+runs nothing. To see what a change would run: `node .claude/hooks/backend-tests.mjs be src/services/bookings/cancel.ts`.
+
+**One test database per worktree.** Two runs on one database fail each other ("tuple concurrently
+updated"). Each checkout's `be/.env` points `TEST_DATABASE_URL` at its own database (e.g.
+`reservetoday-test-staging-7`), so agents in different worktrees never wait on each other. Create
+the database once (`CREATE DATABASE "…"`); the harness migrates it on first use. Inside one
+database, runs still take turns: the hook waits on a per-checkout lock in the temp directory (a lock
+whose holder died is taken over), and the harness holds a Postgres advisory lock for each test file,
+whoever started the run.
 
 ## No skipped tests
 

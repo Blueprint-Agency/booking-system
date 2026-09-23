@@ -23,18 +23,29 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, unl
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { backendTestFiles } from './backend-tests.mjs'
 
 // As CI runs it (deploy-be.yml): serially, which is the only way it is green.
-const SERIAL_BE =
-  'node --import tsx --test --test-concurrency=1 --test-force-exit --test-reporter=spec "src/**/*.test.ts"'
+// But only the test files the change reaches (backend-tests.mjs): the whole
+// suite is ~25 minutes, which an agent paid on every stop. CI runs all of it.
+const SERIAL_BE = 'node --import tsx --test --test-concurrency=1 --test-force-exit --test-reporter=spec'
 
 /**
  * Suites in the order they run. `dir` is where the command runs and what it
  * watches. `realDatabase`: skips mean it did not reach Postgres, and only one
- * run at a time may use the machine's test database.
+ * run at a time may use the checkout's test database.
  */
 export const SUITES = [
-  { id: 'be', dir: 'be', command: SERIAL_BE, label: 'backend tests (serial, real Postgres)', realDatabase: true },
+  {
+    id: 'be',
+    dir: 'be',
+    command: `${SERIAL_BE} <the test files the change reaches>`,
+    label: 'backend tests the change reaches (serial, real Postgres)',
+    realDatabase: true,
+    // Repo paths in; test files relative to `be/` out.
+    files: (beDir, paths) =>
+      backendTestFiles(beDir, paths.filter((p) => p.startsWith('be/')).map((p) => p.slice('be/'.length))),
+  },
   { id: 'fe-client', dir: 'fe-client', command: 'npm run -s check', label: 'fe-client check' },
   { id: 'fe-portal', dir: 'fe-portal', command: 'npm run -s check', label: 'fe-portal check' },
   // Journeys need a deployed stack, so not them: the typecheck, and `--list`,
@@ -138,10 +149,15 @@ function fingerprint(projectDir, base, suite, untracked) {
   return hash.digest('hex')
 }
 
-// Machine-wide, not per checkout: every session and worktree here shares one
-// test database, and two suites on it at once fail each other ("tuple
-// concurrently updated") — which reads as red tests nobody broke.
-const DB_LOCK = join(tmpdir(), 'reservetoday-test-db.lock')
+// Per checkout: two suites on one test database at once fail each other
+// ("tuple concurrently updated") — which reads as red tests nobody broke. Each
+// worktree points `TEST_DATABASE_URL` at its own database, so a lock across
+// them only made every agent on the machine wait in one line. (The harness
+// also holds a per-database lock for each file, whoever started the run.)
+function dbLock(projectDir) {
+  const id = createHash('sha256').update(projectDir.toLowerCase()).digest('hex').slice(0, 12)
+  return join(tmpdir(), `reservetoday-test-db-${id}.lock`)
+}
 const LOCK_WAIT_MS = 25 * 60 * 1000
 
 function sleep(ms) {
@@ -158,16 +174,17 @@ function alive(pid) {
 }
 
 /** Waits for the test database; false if it stayed busy past the wait. */
-export function lockDatabase(lock = DB_LOCK, waitMs = LOCK_WAIT_MS) {
+export function lockDatabase(lock, waitMs = LOCK_WAIT_MS) {
   const giveUp = Date.now() + waitMs
-  do {
+  for (;;) {
     try {
       mkdirSync(lock)
       writeFileSync(join(lock, 'pid'), String(process.pid))
       return true
     } catch {
       // Held. Take it over if its holder is gone (killed mid-run), or never
-      // got as far as writing its pid.
+      // got as far as writing its pid — and try again at once, whatever the
+      // clock says: nobody else is waiting on a dead run's lock.
       let holder = 0
       let since = Date.now()
       try {
@@ -175,40 +192,53 @@ export function lockDatabase(lock = DB_LOCK, waitMs = LOCK_WAIT_MS) {
         holder = Number(readFileSync(join(lock, 'pid'), 'utf8'))
       } catch {}
       const orphaned = holder ? !alive(holder) : Date.now() - since > 60_000
-      if (orphaned) unlockDatabase(lock)
-      else sleep(Math.min(2000, Math.max(giveUp - Date.now(), 0)))
+      if (orphaned) {
+        unlockDatabase(lock)
+        continue
+      }
+      if (Date.now() >= giveUp) return false
+      sleep(Math.min(2000, Math.max(giveUp - Date.now(), 0)))
     }
-  } while (Date.now() < giveUp)
-  return false
+  }
 }
 
-export function unlockDatabase(lock = DB_LOCK) {
+export function unlockDatabase(lock) {
   rmSync(lock, { recursive: true, force: true })
 }
 
-function run(projectDir, suite) {
+function run(projectDir, suite, paths) {
   const cwd = join(projectDir, suite.dir)
   if (suite.dir !== '.' && !existsSync(join(cwd, 'node_modules'))) {
     return { ok: false, output: `${suite.dir}/node_modules is missing — run \`npm ci\` in ${suite.dir}/ first.` }
   }
-  if (suite.realDatabase && !lockDatabase()) {
+  let command = suite.command
+  if (suite.files) {
+    const files = suite.files(cwd, paths)
+    // Nothing reaches a test (a type, a doc comment, an unused helper): CI has it.
+    if (!files.length) return { ok: true, command: '(no test file reaches this change)' }
+    command = `${SERIAL_BE} ${files.map((f) => `"${f}"`).join(' ')}`
+  }
+  const lock = dbLock(projectDir)
+  if (suite.realDatabase && !lockDatabase(lock)) {
     return {
       ok: false,
-      output: `Another backend test run held the test database for ${LOCK_WAIT_MS / 60000} minutes (${DB_LOCK}). Tell the human.`,
+      command,
+      output: `Another backend test run held this checkout's test database for ${LOCK_WAIT_MS / 60000} minutes (${lock}). Tell the human.`,
     }
   }
   let result
   try {
-    result = spawnSync(suite.command, { cwd, shell: true, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 })
+    result = spawnSync(command, { cwd, shell: true, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 })
   } finally {
-    if (suite.realDatabase) unlockDatabase()
+    if (suite.realDatabase) unlockDatabase(lock)
   }
   const output = `${result.stdout ?? ''}${result.stderr ?? ''}`
-  if (result.status !== 0) return { ok: false, output: failureExcerpt(output) }
+  if (result.status !== 0) return { ok: false, command, output: failureExcerpt(output) }
   const skipped = skippedCount(output)
   if (suite.realDatabase && skipped > 0) {
     return {
       ok: false,
+      command,
       output:
         `${skipped} backend test(s) skipped: the integration suite did not run against Postgres, so a green ` +
         'run proves nothing. Set TEST_DATABASE_URL in be/.env to a scratch database (be/.env.example), ' +
@@ -244,14 +274,14 @@ function stop(projectDir, input) {
       known.push(suite.id)
       continue
     }
-    const result = run(projectDir, suite)
+    const result = run(projectDir, suite, [...changed, ...untracked])
     if (result.ok) {
       state.green[suite.id] = fp
       delete state.red[suite.id]
     } else {
       state.red[suite.id] = { fp }
       failures.push(suite.id)
-      report.push(`── ${suite.label} (in ${suite.dir}/: ${suite.command}) ──\n${result.output}`)
+      report.push(`── ${suite.label} (in ${suite.dir}/: ${result.command ?? suite.command}) ──\n${result.output}`)
     }
   }
   writeState(file, state)
