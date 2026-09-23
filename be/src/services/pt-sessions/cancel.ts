@@ -173,8 +173,28 @@ export async function cancelPtRequest(
       }
       refundSessions = evaluation.refund === 'full' ? cost : 0
     }
-    const refundOutcome: CancelPtRequestResult['refundOutcome'] =
-      refundSessions > 0 ? 'session_returned' : 'forfeited'
+
+    const sessionBookings = await tx
+      .select({ id: bookings.id, clientId: bookings.clientId })
+      .from(bookings)
+      .where(
+        and(
+          eq(bookings.tenantId, tenantId),
+          eq(bookings.ptSessionId, session.id),
+          eq(bookings.state, 'confirmed'),
+        ),
+      )
+      .for('update')
+    // The requester's booking carries the debit (schedule.ts). If it was already
+    // cancelled on its own (services/bookings/cancel.ts), that cancel settled the
+    // session(s) — returned or forfeited — and returning them here would pay twice.
+    const requesterStillBooked = sessionBookings.some(b => b.clientId === req.clientId)
+    if (!requesterStillBooked) refundSessions = 0
+    const refundOutcome: CancelPtRequestResult['refundOutcome'] = !requesterStillBooked
+      ? 'n_a'
+      : refundSessions > 0
+        ? 'session_returned'
+        : 'forfeited'
 
     await refundToPackage(refundSessions, source === 'admin' ? 'pt_admin_cancel_refund' : 'pt_cancel_refund')
 
@@ -188,19 +208,8 @@ export async function cancelPtRequest(
       })
       .where(and(eq(ptSessions.tenantId, tenantId), eq(ptSessions.id, session.id)))
 
-    // Cancel every booking on the session. The requester's booking carries the
-    // refund outcome; co-clients (2on1 partner) only lose their seat (`n_a`).
-    const sessionBookings = await tx
-      .select({ id: bookings.id, clientId: bookings.clientId })
-      .from(bookings)
-      .where(
-        and(
-          eq(bookings.tenantId, tenantId),
-          eq(bookings.ptSessionId, session.id),
-          eq(bookings.state, 'confirmed'),
-        ),
-      )
-      .for('update')
+    // Cancel every booking still on the session. The requester's booking carries
+    // the refund outcome; co-clients (2on1 partner) only lose their seat (`n_a`).
     for (const bk of sessionBookings) {
       await tx
         .update(bookings)

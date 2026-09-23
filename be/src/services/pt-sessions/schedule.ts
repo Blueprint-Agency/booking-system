@@ -141,6 +141,17 @@ export async function schedulePtRequest(
   const capacityOnline = cost // 1on1 → 1 seat, 2on1 → 2 seats
 
   const ptSessionId = await db.transaction(async tx => {
+    // The checks above read without a lock, so two schedules of one request can
+    // both get here. Whichever locks the request first makes the session; the
+    // other finds it no longer pending — a 409, not a unique-index 500.
+    const [locked] = await tx
+      .select({ status: ptRequests.status })
+      .from(ptRequests)
+      .where(and(eq(ptRequests.tenantId, tenantId), eq(ptRequests.id, req.id)))
+      .for('update')
+      .limit(1)
+    if (locked?.status !== 'pending') return null
+
     // The session row's own instructor_id FK points at instructors.staff_user_id,
     // so the profile row has to exist before there is a session to hang it on.
     await ensureInstructors(tenantId, [input.instructorId], tx)
@@ -204,6 +215,7 @@ export async function schedulePtRequest(
 
     return sessionId
   })
+  if (!ptSessionId) return { ok: false, error: 'not_pending' }
 
   // NOTE(email): pt_session_approved is sent out-of-band, consistent with the
   // class booking path which is inbox/in-app only in v1.
