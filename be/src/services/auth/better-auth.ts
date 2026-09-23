@@ -281,7 +281,7 @@ const clientAuth = betterAuth({
       disableSignUp: false,
       sendVerificationOTP: async ({ email, otp }) => mailClientCode(email, otp),
     }),
-    emailRateLimit(),
+    emailRateLimit(currentTenantId),
     impersonationKeepsPassword(),
     authAudit('client'),
   ],

@@ -46,7 +46,7 @@ export async function staffSignInStep(input: {
 }): Promise<StaffSignInStep> {
   const email = input.email.trim().toLowerCase()
   const { ip } = await requestAddress(input.from)
-  if (!(await spendSignInStepBudget(email, ip))) throw tooManyRequests()
+  if (!(await spendSignInStepBudget(input.tenantId, email, ip))) throw tooManyRequests()
 
   const [staff] = await db
     .select({ id: staffUsers.id, status: staffUsers.status, authUserId: staffUsers.authUserId })
@@ -99,7 +99,7 @@ export async function staffSignInStep(input: {
  * budget above is what a caller meets instead.
  */
 async function mailQuietly(from: Headers, email: string, tenantId: string): Promise<void> {
-  if (!(await spendStaffLinkBudget(email))) return
+  if (!(await spendStaffLinkBudget(tenantId, email))) return
   try {
     await mailStaffSetPasswordLink(from, email, await requireTenantUrl('portal', tenantId))
   } catch (err) {

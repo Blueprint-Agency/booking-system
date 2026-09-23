@@ -41,7 +41,7 @@ const tooManyRequests = () => new AppError(429, 'too_many_requests')
  */
 export async function nextSignInStep(input: FromCaller): Promise<SignInStep> {
   const { ip } = await requestAddress(input.from)
-  if (!(await spendSignInStepBudget(input.email, ip))) throw tooManyRequests()
+  if (!(await spendSignInStepBudget(input.tenantId, input.email, ip))) throw tooManyRequests()
   if (await memberHasPassword(input.email)) return { next: 'password' }
   return requestMemberPasswordLink(input)
 }
