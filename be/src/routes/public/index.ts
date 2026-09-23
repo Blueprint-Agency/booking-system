@@ -4,6 +4,7 @@ import marketing from './marketing'
 import members from './members'
 import referral from './referral'
 import staffInvitations from './staff-invitations'
+import staffSignIn from './staff-sign-in'
 import tenants from './tenants'
 
 const app = new Hono()
@@ -13,5 +14,6 @@ const app = new Hono()
   .route('/', members)
   .route('/', referral)
   .route('/', staffInvitations)
+  .route('/', staffSignIn)
 
 export default app

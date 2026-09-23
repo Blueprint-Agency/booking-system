@@ -15,9 +15,13 @@
  *   - **A reset is a link, not a code.** Better Auth mails a link that comes
  *     back to this page as `?token=…`, and the new password is chosen here.
  *
- * The super portal asks for the email first. An operator who has never set a
- * password is mailed the link to set one straight away, and never sees a
- * password field they cannot fill (`be/src/services/auth/platform-first-sign-in.ts`).
+ * Both portals ask for the email first, so nobody sees a password field they
+ * cannot fill. On the super portal an operator who has never set a password is
+ * mailed the link to set one (`be/src/services/auth/platform-first-sign-in.ts`).
+ * On a studio's portal the link goes to staff with no password, and to staff
+ * still pending at this studio — someone already staff elsewhere has a password,
+ * but cannot use it here until they arrive, and following the link accepts
+ * their invitation (`be/src/services/auth/staff-sign-in-step.ts`).
  */
 import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -37,7 +41,16 @@ type AuthError = { status?: number; code?: string; message?: string } | null | u
 
 type SignInStep =
   | { step: "password" }
-  | { step: "set_password"; sent: boolean; retryAfterSeconds: number };
+  | { step: "set_password"; sent: boolean; retryAfterSeconds: number }
+  /** A studio portal's answer: a link went out if one was owed, and the answer does not say. */
+  | { step: "link_sent" };
+
+/**
+ * How long a studio portal's "check your email" waits before offering another
+ * link. The backend mails at most three per address per 15 minutes, and past
+ * that answers as if it had — so resends are spaced to fit inside the budget.
+ */
+const STAFF_RESEND_SECONDS = 5 * 60;
 
 const noToken = async () => null;
 
@@ -60,12 +73,12 @@ export function PortalLogin({ superPortal }: { superPortal: boolean }) {
   const resetLinkBroken = searchParams.get("error") === "INVALID_TOKEN";
 
   const [view, setView] = useState<
-    "signin" | "mfa" | "forgot" | "sent" | "reset" | "resetDone" | "firstSignIn"
+    "signin" | "mfa" | "forgot" | "sent" | "reset" | "resetDone" | "firstSignIn" | "linkSent"
   >(resetToken ? "reset" : "signin");
 
   const [email, setEmail] = useState("");
-  // The super portal shows the password field only once the email step says so.
-  const [emailConfirmed, setEmailConfirmed] = useState(!superPortal);
+  // The password field shows only once the email step says so.
+  const [emailConfirmed, setEmailConfirmed] = useState(false);
   // When the next set-password link may be asked for, as epoch ms.
   const [resendAt, setResendAt] = useState(0);
   const [now, setNow] = useState(() => Date.now());
@@ -132,15 +145,23 @@ export function PortalLogin({ superPortal }: { superPortal: boolean }) {
 
   /** Ask the backend what comes after this email; mails the set-password link when owed. */
   async function askSignInStep(): Promise<SignInStep | null> {
+    const body = { email: email.trim() };
     try {
-      return await apiFetch<SignInStep>("/platform/sign-in/step", noToken, {
+      if (superPortal) {
+        return await apiFetch<SignInStep>("/platform/sign-in/step", noToken, { method: "POST", body });
+      }
+      const { next } = await apiFetch<{ next: "password" | "link_sent" }>("/public/staff/sign-in-step", noToken, {
         method: "POST",
-        body: { email: email.trim() },
+        body,
       });
+      return next === "password" ? { step: "password" } : { step: "link_sent" };
     } catch (err) {
       if (!(err instanceof ApiError)) throw err;
+      // `password_link_refused`: the auth pool's own per-address budget for links, spent.
+      const throttled =
+        err.status === 429 || (err.body as { error?: string } | null)?.error === "password_link_refused";
       setError(
-        err.status === 429
+        throttled
           ? "Too many attempts. Wait a minute, then try again."
           : err.status === 400
             ? "Enter a valid email address."
@@ -148,6 +169,13 @@ export function PortalLogin({ superPortal }: { superPortal: boolean }) {
       );
       return null;
     }
+  }
+
+  function applyLinkSentStep() {
+    setNow(Date.now());
+    setResendAt(Date.now() + STAFF_RESEND_SECONDS * 1000);
+    setPassword("");
+    setView("linkSent");
   }
 
   function applySetPasswordStep(result: Extract<SignInStep, { step: "set_password" }>) {
@@ -163,6 +191,7 @@ export function PortalLogin({ superPortal }: { superPortal: boolean }) {
       const result = await askSignInStep();
       if (!result) return;
       if (result.step === "set_password") applySetPasswordStep(result);
+      else if (result.step === "link_sent") applyLinkSentStep();
       else setEmailConfirmed(true);
     });
   }
@@ -171,6 +200,7 @@ export function PortalLogin({ superPortal }: { superPortal: boolean }) {
     void run(async () => {
       const result = await askSignInStep();
       if (result?.step === "set_password") applySetPasswordStep(result);
+      else if (result?.step === "link_sent") applyLinkSentStep();
     });
   }
 
@@ -433,10 +463,36 @@ export function PortalLogin({ superPortal }: { superPortal: boolean }) {
         autoComplete="current-password"
         value={password}
         onChange={ev => setPassword(ev.target.value)}
-        autoFocus={superPortal}
+        autoFocus
       />
     </div>
   );
+
+  if (view === "linkSent") {
+    return (
+      <>
+        <h1 className="mb-1 text-lg font-semibold text-ink">Check your email</h1>
+        <p className="mb-5 text-sm text-muted">
+          If {email.trim()} can sign in here, we sent it a link to set your password. It works once, for one hour.
+          Once your password is set, you&apos;re in.
+        </p>
+        {error && <ErrorNote message={error} />}
+        <div className="mt-4 flex flex-wrap gap-3 text-sm">
+          <button
+            type="button"
+            onClick={resendSetPasswordLink}
+            disabled={submitting || resendIn > 0}
+            className={`${linkButton} disabled:cursor-not-allowed disabled:text-muted`}
+          >
+            {resendIn > 0 ? `Resend link in ${resendIn}s` : "Didn't get it? Resend link"}
+          </button>
+          <button type="button" onClick={changeEmail} className={linkButton}>
+            Use a different email
+          </button>
+        </div>
+      </>
+    );
+  }
 
   if (view === "firstSignIn") {
     return (
@@ -471,7 +527,7 @@ export function PortalLogin({ superPortal }: { superPortal: boolean }) {
     );
   }
 
-  // The super portal's first screen: the email alone.
+  // The first screen: the email alone.
   if (!emailConfirmed) {
     return (
       <>
@@ -513,8 +569,7 @@ export function PortalLogin({ superPortal }: { superPortal: boolean }) {
             type="email"
             autoComplete="email"
             value={email}
-            readOnly={superPortal}
-            onChange={ev => setEmail(ev.target.value)}
+            readOnly
           />
         </div>
         {passwordField}
@@ -524,11 +579,9 @@ export function PortalLogin({ superPortal }: { superPortal: boolean }) {
           Sign in
         </Button>
       </form>
-      {superPortal && (
-        <button type="button" onClick={changeEmail} className={`mt-4 mr-4 text-sm ${linkButton}`}>
-          Use a different email
-        </button>
-      )}
+      <button type="button" onClick={changeEmail} className={`mt-4 mr-4 text-sm ${linkButton}`}>
+        Use a different email
+      </button>
       <button
         type="button"
         onClick={() => {
