@@ -67,6 +67,8 @@ export interface UpdateGlobalPolicyInput {
    * forbidden anyone to clear.
    */
   partPaymentEnabled?: boolean
+  /** The Check-in Window (#192), in minutes before a session starts. */
+  checkInOpensMinutesBefore?: number
   /** Every declared **Leave Conflict**, as one replacement set. Absent leaves
    *  the declared pairs alone; present replaces them entirely. */
   leaveConflictPairs?: readonly LeaveConflictPair[]

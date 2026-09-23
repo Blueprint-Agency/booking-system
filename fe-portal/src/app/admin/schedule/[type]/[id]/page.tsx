@@ -15,6 +15,7 @@ import {
 } from "@/components/schedule/instructor-leave";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
+import { checkInErrorMessage } from "@/lib/check-in";
 import { computeEventState } from "@/lib/event-state";
 import { formatDate, formatTime, formatDateTime, formatSgd } from "@/lib/formatters";
 import { localDay } from "@/lib/local-day";
@@ -224,7 +225,6 @@ function ClassDetail({ id }: { id: string }) {
       </div>
       <ClassRoster
         attendees={data.attendees ?? []}
-        startsAt={data.starts_at}
         cancelled={data.lifecycle === "cancelled"}
       />
       <ClassEditor
@@ -249,11 +249,9 @@ const PACKAGE_KIND_LABEL: Record<NonNullable<ScheduleClassAttendee["package_kind
 
 function ClassRoster({
   attendees,
-  startsAt,
   cancelled,
 }: {
   attendees: ScheduleClassAttendee[];
-  startsAt: string;
   cancelled: boolean;
 }) {
   const { api } = useWorkspace();
@@ -264,12 +262,12 @@ function ClassRoster({
   // Re-sync when the parent reloads the class.
   useEffect(() => setRows(attendees), [attendees]);
 
-  // The tick is only available from the class start time onwards.
-  const started = Date.now() >= new Date(startsAt).getTime();
+  // When the tick opens is the studio's Check-in Window, which the server
+  // holds; a tick before it comes back refused with the opening time.
   const attendedCount = rows.filter((r) => r.check_in_state === "attended").length;
 
   async function toggle(a: ScheduleClassAttendee) {
-    if (!api || cancelled || !started || busyId) return;
+    if (!api || cancelled || busyId) return;
     const attended = a.check_in_state !== "attended";
     setBusyId(a.booking_id);
     setErr(null);
@@ -284,11 +282,9 @@ function ClassRoster({
         ),
       );
     } catch (e) {
-      setErr(
-        e instanceof ApiError && e.status === 422
-          ? "Check-in opens once the class has started."
-          : "Couldn't update attendance. Please try again.",
-      );
+      // The backend words its own refusal (the Check-in Window, a cancelled
+      // booking) — show that rather than guessing from the status.
+      setErr(checkInErrorMessage(e, "Couldn't update attendance"));
     } finally {
       setBusyId(null);
     }
@@ -302,11 +298,6 @@ function ClassRoster({
           <span className="text-xs text-muted">{attendedCount} checked in</span>
         )}
       </div>
-      {!started && !cancelled && rows.length > 0 && (
-        <p className="mb-3 rounded-md border border-border bg-card px-3 py-2 text-xs text-muted">
-          Check-in opens when the class starts.
-        </p>
-      )}
       {err && (
         <p className="mb-3 rounded-md border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
           {err}
@@ -319,7 +310,7 @@ function ClassRoster({
           {rows.map((a) => {
             const attended = a.check_in_state === "attended";
             const noShow = a.check_in_state === "no_show";
-            const disabled = cancelled || !started || busyId === a.booking_id;
+            const disabled = cancelled || busyId === a.booking_id;
             return (
               <li
                 key={a.booking_id}

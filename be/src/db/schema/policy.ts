@@ -45,6 +45,10 @@ export const globalPolicy = pgTable(
     // checkbox — a Purchase already open can still be resumed and finished, since
     // the alternative is money held against a Balance nobody can clear.
     partPaymentEnabled: boolean('part_payment_enabled').notNull().default(false),
+    // The **Check-in Window** (#192): how many minutes before a class or PT
+    // session starts its members may be checked in, by scan or by tick. A
+    // no-show is not moved by it — nobody is a no-show before the session begins.
+    checkInOpensMinutesBefore: integer('check_in_opens_minutes_before').notNull().default(30),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     updatedByStaffId: uuid('updated_by_staff_id').references(() => staffUsers.id, {
       onDelete: 'restrict',
@@ -54,6 +58,10 @@ export const globalPolicy = pgTable(
     updatedByStaffIdFkIdx: index('global_policy_updated_by_staff_id_fk_idx').on(table.updatedByStaffId),
     oneRowPerTenant: uniqueIndex('global_policy_tenant_uniq').on(table.tenantId),
     leaveCaps: check('global_policy_leave_caps_min_1', sql`${table.studyLeaveCap} >= 1`),
+    checkInWindowNonNegative: check(
+      'global_policy_check_in_window_non_negative',
+      sql`${table.checkInOpensMinutesBefore} >= 0`,
+    ),
     crossLocationRateNonNegative: check(
       'global_policy_cross_location_rate_non_negative',
       sql`${table.crossLocationRateSgd} >= 0`,

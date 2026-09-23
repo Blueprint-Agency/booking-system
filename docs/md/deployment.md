@@ -505,7 +505,7 @@ Both frontends send the same hardening headers on every response, from `headers(
 `next.config.ts` (policy in `src/lib/security-headers.ts`, one copy per app): HSTS (two years,
 subdomains), `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`,
 `X-Frame-Options: DENY`, a `Permissions-Policy` that turns off camera, microphone, geolocation and
-payment (a camera check-in scanner will need `camera=(self)` on the portal), and an **enforced**
+payment (except the portal's `camera=(self)`, for the check-in desk's QR scanner), and an **enforced**
 Content-Security-Policy.
 
 The CSP admits what the pages actually load: scripts, styles and fonts from their own origin; fetches

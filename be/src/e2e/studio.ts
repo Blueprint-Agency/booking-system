@@ -59,22 +59,29 @@ export type E2eStudio = {
     cancelClassType: string
     /** Journey 2's class type, with nothing scheduled: the admin schedules it. */
     portalClassType: string
+    /** Journey 4's class — starting minutes from now, inside the Check-in Window. */
+    checkInClassType: string
   }
   classes: {
     buy: { id: string; startsAt: string }
     cancel: { id: string; startsAt: string }
+    checkIn: { id: string; startsAt: string }
   }
   members: {
     /** Signed in, registered, holding no plan. */
     buyer: { email: string; token: string }
     /** Signed in, registered, holding the plan. */
     canceller: { email: string; token: string }
+    /** Signed in, registered, holding the plan: books the check-in class and is checked in. */
+    arriver: { email: string; token: string }
   }
 }
 
 const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 const PACKAGE_CREDITS = 5
+/** Long enough for the journey to book it before it starts, short enough to be inside the window. */
+const CHECK_IN_CLASS_STARTS_IN = 15 * 60 * 1000
 
 /** Resend's sink: accepted and reported delivered, never sent to a person. */
 const addressFor = (slug: string, who: string) => `delivered+${slug}-${who}@resend.dev`
@@ -158,6 +165,7 @@ export async function createE2eStudio({ app, db }: { app: Hono; db: Db }): Promi
     buyClassType: 'E2E buy class',
     cancelClassType: 'E2E cancel class',
     portalClassType: 'E2E portal class',
+    checkInClassType: 'E2E check-in class',
   }
   const { classPackage, classTypes } = await withTenant(tenant.id, async () => ({
     classPackage: await createClassPackage(tenant.id, {
@@ -171,10 +179,10 @@ export async function createE2eStudio({ app, db }: { app: Hono; db: Db }): Promi
       buy: await createClassType(tenant.id, { name: catalogue.buyClassType }),
       cancel: await createClassType(tenant.id, { name: catalogue.cancelClassType }),
       portal: await createClassType(tenant.id, { name: catalogue.portalClassType }),
+      checkIn: await createClassType(tenant.id, { name: catalogue.checkInClassType }),
     },
   }))
 
-  // Days out, so both are well outside the policy's 24-hour cancellation window.
   const addClass = async (classTypeId: string, startsAt: Date) => {
     const [row] = await db
       .insert(schema.classes)
@@ -195,8 +203,12 @@ export async function createE2eStudio({ app, db }: { app: Hono; db: Db }): Promi
     return { id: row!.id, startsAt: startsAt.toISOString() }
   }
   const classes = {
+    // Days out, so both are well outside the policy's 24-hour cancellation window.
     buy: await addClass(classTypes.buy.id, hourFromNow(3)),
     cancel: await addClass(classTypes.cancel.id, hourFromNow(4)),
+    // Minutes out: bookable (it has not started) and already inside the
+    // seeded Check-in Window, so the desk can check its member in today.
+    checkIn: await addClass(classTypes.checkIn.id, new Date(Date.now() + CHECK_IN_CLASS_STARTS_IN)),
   }
 
   const register = async (who: string, lastName: string) => {
@@ -237,20 +249,23 @@ export async function createE2eStudio({ app, db }: { app: Hono; db: Db }): Promi
   }
   const buyer = await register('buyer', 'Buyer')
   const canceller = await register('canceller', 'Canceller')
+  const arriver = await register('arriver', 'Arriver')
 
-  const [cancellerRow] = await db
-    .select({ id: schema.clients.id })
-    .from(schema.clients)
-    .where(and(eq(schema.clients.tenantId, tenant.id), eq(schema.clients.email, canceller.email)))
-  await withTenant(tenant.id, () =>
-    grantPackage(tenant.id, {
-      clientId: cancellerRow!.id,
-      purchaseId: null,
-      amountSgd: catalogue.packagePriceSgd,
-      packageKind: 'class',
-      packageId: classPackage.id,
-    }),
-  )
+  for (const member of [canceller, arriver]) {
+    const [row] = await db
+      .select({ id: schema.clients.id })
+      .from(schema.clients)
+      .where(and(eq(schema.clients.tenantId, tenant.id), eq(schema.clients.email, member.email)))
+    await withTenant(tenant.id, () =>
+      grantPackage(tenant.id, {
+        clientId: row!.id,
+        purchaseId: null,
+        amountSgd: catalogue.packagePriceSgd,
+        packageKind: 'class',
+        packageId: classPackage.id,
+      }),
+    )
+  }
 
   return {
     slug,
@@ -263,7 +278,7 @@ export async function createE2eStudio({ app, db }: { app: Hono; db: Db }): Promi
     },
     catalogue,
     classes,
-    members: { buyer, canceller },
+    members: { buyer, canceller, arriver },
   }
 }
 

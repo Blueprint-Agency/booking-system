@@ -289,9 +289,9 @@ Unpriced sessions therefore still occur by design. They are cleared by hand thro
 ### `check-in.ts`
 | Method | Path | Effect |
 |---|---|---|
-| GET | `/check-in` | Generic page — current session candidates (sessions ongoing + class window) |
-| POST | `/check-in/scan` | `{ qr_token | code, session_id }` — verify token/code matches a booking on this session, insert `check_ins` row, update `bookings.check_in_state='attended'` |
-| POST | `/check-in/manual` | `{ booking_id }` — admin manual tick |
+| GET | `/check-in` | Today's (studio timezone) active classes and PT sessions, each with `check_in_opens_at` and its roster (`booking_id, client_id, name, code, state, check_in_state, method, checked_in_at`; cancelled bookings left out). Optional `?location_id=` |
+| POST | `/check-in/scan` | Exactly one of `{ qr_token }` or `{ code }` (case-insensitive). The code alone names the booking — no `session_id`. Inserts the `check_ins` row with `method` `qr`/`code` and sets `check_in_state='attended'`. Idempotent: an already-attended booking answers `outcome: 'already_checked_in'` and writes nothing. Refusals: 404 `booking_not_found` (unknown, or another studio's), 409 `booking_cancelled` / `session_cancelled`, 422 `check_in_not_open` (before the Check-in Window, or another day) / `check_in_closed` (the session's day has passed), 403 `not_your_session` (instructor) |
+| POST | `/check-in/manual` | `{ booking_id, attended }` — manual tick and undo. Opens with the Check-in Window (`global_policy.check_in_opens_minutes_before`), never closes. A no-show (`/bookings/:id/no-show`) still waits for the start time |
 
 ### `inbox.ts` (workspace-scoped)
 
@@ -590,6 +590,7 @@ Scoped to the authenticated instructor. The middleware loads `staff_users` then 
 ### `check-in.ts`
 | Method | Path | Effect |
 |---|---|---|
+| GET | `/check-in` | Same as admin, listing only the sessions the caller teaches |
 | POST | `/check-in/scan` | Same as admin scan, but service-layer guard enforces ownership |
 | POST | `/check-in/manual` | Same |
 

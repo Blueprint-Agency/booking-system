@@ -526,6 +526,13 @@
       "when": 1790056630044,
       "tag": "0074_foreign_key_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1790171873903,
+      "tag": "0075_check_in_window",
+      "breakpoints": true
     }
   ]
 }

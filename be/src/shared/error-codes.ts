@@ -37,6 +37,8 @@ export const ERROR_CODES = {
   cannot_set_balance_on_unlimited_package: 'cannot_set_balance_on_unlimited_package',
   capacity_below_bookings: 'capacity_below_bookings',
   card_not_found: 'card_not_found',
+  check_in_closed: 'check_in_closed',
+  check_in_not_open: 'check_in_not_open',
   checkout_client_missing: 'checkout_client_missing',
   checkout_kind_unknown: 'checkout_kind_unknown',
   checkout_session_busy: 'checkout_session_busy',

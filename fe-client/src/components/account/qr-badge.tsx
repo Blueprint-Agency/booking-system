@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { QRCodeSVG } from "qrcode.react";
 import { X } from "lucide-react";
 import { useFocusTrap } from "@/lib/use-focus-trap";
@@ -103,5 +104,92 @@ export function QrBadge({ value, label, subLabel }: Props) {
         </div>
       )}
     </>
+  );
+}
+
+type FullScreenProps = {
+  /** The booking's `qr_token`: what the studio's scanner reads. */
+  value: string;
+  /** The booking's typed code, for when the scanner can't read the screen. */
+  code: string;
+  title: string;
+  subtitle?: string;
+  onClose: () => void;
+};
+
+/**
+ * The booking QR filling a phone screen, with the typed code under it.
+ *
+ * Literal black on white rather than the theme's ink/paper: a studio's theme
+ * can tint those, and a scanner reads contrast. The page can't raise the
+ * screen's brightness, so contrast is the one lever left. Portalled to `body`
+ * so a transformed ancestor can't trap the fixed overlay. Mount it only while
+ * open; it locks scroll and traps focus for as long as it is mounted.
+ */
+export function QrFullScreen({ value, code, title, subtitle, onClose }: FullScreenProps) {
+  const trapRef = useFocusTrap<HTMLDivElement>(true);
+  useBodyScrollLock(true);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return createPortal(
+    <div
+      ref={trapRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="qr-fullscreen-title"
+      data-testid="booking-qr-dialog"
+      tabIndex={-1}
+      className="fixed inset-0 z-[100] flex flex-col overflow-y-auto bg-white text-black outline-none"
+    >
+      <div className="flex justify-end p-2">
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="inline-flex h-12 w-12 items-center justify-center rounded-full text-black hover:bg-black/5"
+        >
+          <X className="h-6 w-6" />
+        </button>
+      </div>
+      <div className="flex flex-1 flex-col items-center justify-center px-4 pb-10">
+        <h2 id="qr-fullscreen-title" className="text-center text-xl font-semibold break-words">
+          {title}
+        </h2>
+        {subtitle && <p className="mt-1 text-center text-base text-black/70">{subtitle}</p>}
+        {/* Most of the width on a phone, capped by the height so a landscape
+            screen still shows the code under it. */}
+        <div className="mt-6 w-full max-w-[min(100%,60dvh,420px)] bg-white">
+          <QRCodeSVG
+            value={value}
+            size={420}
+            level="M"
+            marginSize={2}
+            bgColor="#ffffff"
+            fgColor="#000000"
+            className="block h-auto w-full"
+            role="img"
+            aria-label="Check-in QR code"
+          />
+        </div>
+        <p className="mt-4 text-center text-xs uppercase tracking-wider text-black/70">
+          Booking code
+        </p>
+        <p
+          data-testid="booking-qr-code"
+          className="mt-1 text-center font-mono text-4xl font-bold tracking-wider break-all select-all"
+        >
+          {code}
+        </p>
+        <p className="mt-4 text-center text-sm text-black/70">
+          Show this at the studio to check in.
+        </p>
+      </div>
+    </div>,
+    document.body,
   );
 }

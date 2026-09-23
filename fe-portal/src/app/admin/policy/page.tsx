@@ -16,6 +16,8 @@ interface PolicyState {
   crossLocationRateSgd: number;
   /** Whether members may split a purchase across two cards (#93). */
   partPaymentEnabled: boolean;
+  /** How long before a session starts the door opens for check-in (#192). */
+  checkInOpensMinutesBefore: number;
   bookInAdvanceDays: number;
   updatedAt: string | null;
 }
@@ -30,6 +32,7 @@ interface ApiPolicy {
     study_leave_cap: number;
     cross_location_rate_sgd: string;
     part_payment_enabled: boolean;
+    check_in_opens_minutes_before: number;
     updated_at: string | null;
   };
   pt_booking_config: {
@@ -72,6 +75,7 @@ function emptyPolicy(): PolicyState {
     studyLeaveCap: 1,
     crossLocationRateSgd: 0,
     partPaymentEnabled: false,
+    checkInOpensMinutesBefore: 30,
     bookInAdvanceDays: 0,
     updatedAt: null,
   };
@@ -94,6 +98,8 @@ function diffGlobal(saved: PolicyState, draft: PolicyState) {
     out.cross_location_rate_sgd = draft.crossLocationRateSgd;
   if (saved.partPaymentEnabled !== draft.partPaymentEnabled)
     out.part_payment_enabled = draft.partPaymentEnabled;
+  if (saved.checkInOpensMinutesBefore !== draft.checkInOpensMinutesBefore)
+    out.check_in_opens_minutes_before = draft.checkInOpensMinutesBefore;
   return out;
 }
 
@@ -135,6 +141,7 @@ export default function PolicyPage() {
         studyLeaveCap: r.global_policy.study_leave_cap,
         crossLocationRateSgd: Number(r.global_policy.cross_location_rate_sgd),
         partPaymentEnabled: r.global_policy.part_payment_enabled,
+        checkInOpensMinutesBefore: r.global_policy.check_in_opens_minutes_before,
         bookInAdvanceDays: r.pt_booking_config.book_in_advance_days,
         updatedAt: r.global_policy.updated_at,
       };
@@ -173,6 +180,7 @@ export default function PolicyPage() {
     draft.studyLeaveCap !== policy.studyLeaveCap ||
     draft.crossLocationRateSgd !== policy.crossLocationRateSgd ||
     draft.partPaymentEnabled !== policy.partPaymentEnabled ||
+    draft.checkInOpensMinutesBefore !== policy.checkInOpensMinutesBefore ||
     draft.cancelCapCount !== policy.cancelCapCount ||
     draft.cancelCapCycleDays !== policy.cancelCapCycleDays ||
     draft.classWindowHours !== policy.classWindowHours ||
@@ -187,9 +195,18 @@ export default function PolicyPage() {
       ? "The study leave cap must be a whole number between 1 and 99 instructors."
       : null;
 
+  // The backend accepts 0–1440 minutes (up to a day ahead). Say so here rather
+  // than letting the save come back refused.
+  const checkInError =
+    !Number.isInteger(draft.checkInOpensMinutesBefore) ||
+    draft.checkInOpensMinutesBefore < 0 ||
+    draft.checkInOpensMinutesBefore > 1440
+      ? "Check-in must open a whole number of minutes between 0 and 1440 before the start."
+      : null;
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    if (!api || capError) return;
+    if (!api || capError || checkInError) return;
     setSaving(true);
     try {
       const globalDelta: Record<string, unknown> = diffGlobal(policy, draft);
@@ -384,6 +401,35 @@ export default function PolicyPage() {
               />
             </div>
           </div>
+        </section>
+
+        <section className="rounded-xl border border-border bg-card p-6 shadow-soft">
+          <header className="mb-4">
+            <h2 className="text-base font-semibold text-ink">Check-in window</h2>
+            <p className="mt-0.5 text-xs text-muted">
+              How early before a class or PT session starts a member can be checked in at the
+              door. Scanning a code closes at the end of the session&apos;s day; ticking the
+              roster by hand stays open afterwards for cleaning up.
+            </p>
+          </header>
+          <div className="max-w-xs space-y-1.5">
+            <Label htmlFor="check-in-opens">Opens before start (minutes)</Label>
+            <Input
+              id="check-in-opens"
+              type="number"
+              min={0}
+              max={1440}
+              value={draft.checkInOpensMinutesBefore}
+              onChange={(e) =>
+                setDraft({ ...draft, checkInOpensMinutesBefore: Number(e.target.value) })
+              }
+            />
+          </div>
+          {checkInError && (
+            <p role="alert" className="mt-2 text-xs text-error">
+              {checkInError}
+            </p>
+          )}
         </section>
 
         <section className="rounded-xl border border-border bg-card p-6 shadow-soft">
@@ -593,7 +639,7 @@ export default function PolicyPage() {
             >
               Reset
             </Button>
-            <Button type="submit" disabled={!dirty || saving || capError !== null}>
+            <Button type="submit" disabled={!dirty || saving || capError !== null || checkInError !== null}>
               {saving ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" /> Saving…

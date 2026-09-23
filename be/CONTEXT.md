@@ -332,6 +332,16 @@ _Avoid_: upgraded, retained, activated, signed up, won
 A weekly repeating class, defined once — Class Type, weekday, start and end time in the Tenant's own timezone, instructors and their pay, Location, Room, capacity, credit cost, a first and a last date, and dates to leave out — that creates an ordinary class for every week in its range. A class created by a series is a class in every respect: it is booked, edited, cancelled and restaffed on its own, and changing one never changes the others. The series only records where the class came from and makes more of them: it is **extended** to a later last date (never creating a second class on a date it already has) and **ended** from a date (its unbooked classes from then on are cancelled; booked ones are left for the admin to cancel, which refunds). Both creating and extending are previewed first — every date with its clash result — and commit all or nothing. Admin only.
 _Avoid_: recurring class, repeating event, template, schedule rule, recurrence
 
+### Check-in
+
+**Check-in**:
+Marking a member `attended` on a class or PT session they booked (`services/bookings/check-in.ts`). Three ways in, one set of rules: front desk **scans** the QR in the member's app, **types** the booking code printed under it (`RT-XXXXXX`, any case), or **ticks** the roster by hand. The code alone names the member and the session, so there is no wrong session to pick. Idempotent: a second scan answers "already checked in" and writes nothing, and the first scan stays the record (`check_ins.method`). A code from another Tenant is simply not found. An Instructor checks in their own sessions only. Workshops are not checked in.
+_Avoid_: attendance marking, sign-in, arrival
+
+**Check-in Window**:
+How early check-in opens — the Tenant's `check_in_opens_minutes_before` on its policy row, so a member who arrives ten minutes early is ticked at the door. A scan also closes with the session's own day in the Tenant's timezone; a manual tick never closes, because cleaning up a roster afterwards is what it is for. A **no-show** is not moved by the window: nobody is a no-show before the session begins.
+_Avoid_: grace period, early check-in, arrival window
+
 ### Instructor leave
 
 **Leave Request**:
