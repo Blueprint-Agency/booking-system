@@ -1,3 +1,4 @@
+import { asc, eq } from 'drizzle-orm'
 import { db } from '../db'
 import { featureFlags } from '../db/schema/ops'
 
@@ -10,7 +11,6 @@ import { featureFlags } from '../db/schema/ops'
  * everybody.
  */
 const cache: Map<string, boolean> = new Map()
-let loaded = false
 
 const cacheKey = (tenantId: string, key: string) => `${tenantId}:${key}`
 
@@ -26,12 +26,25 @@ const cacheKey = (tenantId: string, key: string) => `${tenantId}:${key}`
 export async function loadFeatureFlags(): Promise<void> {
   const rows = await db.select().from(featureFlags)
   for (const row of rows) cache.set(cacheKey(row.tenantId, row.key), row.enabled)
-  loaded = true
 }
 
+/**
+ * A flag nobody has set is off. No "loaded yet?" guard: a flag switched in this
+ * process is already in the cache, and one that is not reads as off either way.
+ */
 export function isEnabled(tenantId: string, key: string): boolean {
-  if (!loaded) return false
   return cache.get(cacheKey(tenantId, key)) ?? false
+}
+
+export type FeatureFlagRow = typeof featureFlags.$inferSelect
+
+/** This studio's switchboard, by key. */
+export async function listFlags(tenantId: string): Promise<FeatureFlagRow[]> {
+  return db
+    .select()
+    .from(featureFlags)
+    .where(eq(featureFlags.tenantId, tenantId))
+    .orderBy(asc(featureFlags.key))
 }
 
 export async function setFlag(
@@ -39,13 +52,15 @@ export async function setFlag(
   key: string,
   enabled: boolean,
   staffId: string,
-): Promise<void> {
-  await db
+): Promise<FeatureFlagRow> {
+  const [row] = await db
     .insert(featureFlags)
     .values({ tenantId, key, enabled, updatedByStaffId: staffId })
     .onConflictDoUpdate({
       target: [featureFlags.tenantId, featureFlags.key],
       set: { enabled, updatedAt: new Date(), updatedByStaffId: staffId },
     })
+    .returning()
   cache.set(cacheKey(tenantId, key), enabled)
+  return row!
 }
