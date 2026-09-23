@@ -3,7 +3,7 @@ import type { CatalogueEntry, StudioConfig } from './config'
 import { fold, roomFor, type ConfigLookups } from './lookups'
 import { ptAppointmentRows, ptClients } from './pt'
 import { personKey } from './register'
-import { pastPackages, type JoinedSales } from './sales'
+import { pastPackages, type JoinedSale, type JoinedSales } from './sales'
 import type {
   AttendanceRow,
   CancellationRow,
@@ -72,7 +72,7 @@ export type MappedHistory = {
 }
 
 /** What Mindbody wrote in a visit's Status column, as the platform understands it. */
-type Outcome = 'attended' | 'absent' | 'late_cancel' | 'early_cancel' | 'booked'
+export type Outcome = 'attended' | 'absent' | 'late_cancel' | 'early_cancel' | 'booked'
 
 // Mindbody's "unpaid" is a visit nothing paid for, not one nobody came to:
 // attended, and with no package (`UNPAID`).
@@ -82,7 +82,7 @@ const UNPAID = /^unpaid\b/i
 const LATE_CANCEL = /late\s*cancel/i
 const EARLY_CANCEL = /cancel/i
 
-function outcomeOf(status: string): Outcome {
+export function outcomeOf(status: string): Outcome {
   if (ATTENDED.test(status)) return 'attended'
   if (ABSENT.test(status)) return 'absent'
   if (LATE_CANCEL.test(status)) return 'late_cancel'
@@ -95,7 +95,7 @@ function outcomeOf(status: string): Outcome {
 }
 
 /** What a booking looks like once it has ended that way. */
-const SETTLEMENT = {
+export const SETTLEMENT = {
   attended: { state: 'confirmed', check_in_state: 'attended', refund_outcome: 'n_a' },
   absent: { state: 'no_show', check_in_state: 'no_show', refund_outcome: 'forfeited' },
   late_cancel: { state: 'cancelled', check_in_state: 'n_a', refund_outcome: 'forfeited' },
@@ -132,6 +132,10 @@ export function mapHistory(input: {
   packageRuns?: Map<string, { from: number; to: number }>
   /** The pricing options that buy a place on a workshop: never a package. */
   workshopOptions: Set<string>
+  /** Sale lines already on a workshop place (`./workshops.ts`): not a past package, and not unplaced either. */
+  workshopSales?: Set<JoinedSale>
+  /** Payroll lines already a past Workshop's pay (`./workshops.ts`): no class takes them, and no Manual Entry is made of them. */
+  workshopPayroll?: Set<PayrollRow>
   codes: BookingCoder
 }): MappedHistory {
   const { config, tenantId, id, ids, memberNames, staffIds, lookups } = input
@@ -206,6 +210,7 @@ export function mapHistory(input: {
       memberNames,
       lookups,
       workshopOptions: input.workshopOptions,
+      onWorkshops: input.workshopSales ?? new Set(),
       hasTrial: new Set(input.clientPackages.filter(p => p.kind === 'trial').map(p => barcodeOf.get(String(p.client_id))!)),
     })
     clientPackages.push(...past.clientPackages)
@@ -274,8 +279,9 @@ export function mapHistory(input: {
    */
   const payOf = new Map<string, number>()
   const payKey = (d: CalendarDate, t: ClockTime, staff: string) => `${isoDay(d)} ${isoClock(t)} ${normaliseStaffName(staff)}`
+  const onWorkshops = input.workshopPayroll ?? new Set<PayrollRow>()
   for (const p of input.payroll) {
-    if (!p.start || isoDay(p.date) < from) continue
+    if (!p.start || isoDay(p.date) < from || onWorkshops.has(p)) continue
     const key = payKey(p.date, p.start, p.staff)
     payOf.set(key, (payOf.get(key) ?? 0) + p.earnings)
   }
@@ -861,9 +867,14 @@ export function mapHistory(input: {
   const notComing = new Map<string, number>()
   let payrollTotal = 0
   let payrollPlaced = 0
+  let payrollWorkshops = 0
   for (const p of input.payroll) {
     if (isoDay(p.date) < from) continue
     payrollTotal += p.earnings
+    if (onWorkshops.has(p)) {
+      payrollWorkshops += p.earnings
+      continue
+    }
     if (p.start && payUsed.has(payKey(p.date, p.start, p.staff))) {
       payrollPlaced += p.earnings
       continue
@@ -915,7 +926,8 @@ export function mapHistory(input: {
     const cents = (n: number) => money(Math.round(n * 100) / 100 + 0)
     notes.push(
       `history payroll: ${cents(payrollTotal)} paid from ${from}; ${cents(payrollPlaced)} is on the classes and PT sessions that came across, ` +
-        `${cents(payrollManual)} on ${manualPayrollEntries.length} Manual Payroll Entries, ${cents(payrollTotal - payrollPlaced - payrollManual)} is not`,
+        (payrollWorkshops !== 0 ? `${cents(payrollWorkshops)} on past Workshops, ` : '') +
+        `${cents(payrollManual)} on ${manualPayrollEntries.length} Manual Payroll Entries, ${cents(payrollTotal - payrollPlaced - payrollWorkshops - payrollManual)} is not`,
     )
     for (const [staff, amount] of [...notComing].sort(([a], [b]) => a.localeCompare(b))) {
       if (amount !== 0) notes.push(`history payroll: ${money(amount)} ${staff} — is not coming across, so it was not imported`)

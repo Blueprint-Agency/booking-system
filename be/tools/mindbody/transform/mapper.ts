@@ -506,11 +506,15 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
   }
   schedule.notes.push(...packages.notes)
 
-  /* ── Workshops and retreats to come, and who has paid (`./workshops.ts`) ── */
+  /* ── Workshops and retreats, to come and held, and who has a place (`./workshops.ts`) ── */
 
   const workshops = mapWorkshops({
     schedule: reports.schedule,
     holdings: reports.holdings,
+    attendance: reports.attendance,
+    payroll: reports.payroll,
+    sales,
+    history: config.history,
     config,
     tenantId,
     id,
@@ -546,6 +550,8 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
         clientPackages: packages.clientPackages,
         packageRuns: packages.runs,
         workshopOptions,
+        workshopSales: workshops.placedSales,
+        workshopPayroll: workshops.placedPayroll,
         codes,
       })
     : noHistory()
@@ -604,7 +610,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
     // After `bookings`, which they point at. The importer sorts the tables it
     // writes by the schema's own foreign keys, so this order is for a person
     // reading the zip; it costs nothing to have it read the way it must be written.
-    check_ins: history.checkIns,
+    check_ins: [...history.checkIns, ...workshops.checkIns],
     cancellations: history.cancellations,
     manual_payroll_entries: history.manualPayrollEntries,
     global_policy: globalPolicy,

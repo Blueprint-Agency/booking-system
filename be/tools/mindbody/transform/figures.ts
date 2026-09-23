@@ -79,7 +79,8 @@ export type Figures = {
   refunds: Record<string, RefundFigure>
   /**
    * Instructor Pay by the studio's own month (`YYYY-MM`), as money: what classes
-   * and PT sessions that are on pay, and every Manual Payroll Entry. For a
+   * and PT sessions that are on pay, every workshop's (on its first day), and
+   * every Manual Payroll Entry. For a
    * studio importing its past, the months before launch are Mindbody's Payroll
    * total, so a month that lost pay on the way in is named.
    */
@@ -180,6 +181,18 @@ export function figuresOf(archive: TenantArchive): Figures {
   for (const c of archive.rows.classes ?? []) if (c.lifecycle === 'active') pay(c.starts_at, c.instructor_pay_sgd)
   for (const s of archive.rows.pt_sessions ?? []) if (s.lifecycle === 'active') pay(s.starts_at, s.instructor_pay_sgd)
   for (const e of archive.rows.manual_payroll_entries ?? []) pay(e.entry_date, e.amount_sgd)
+  // A workshop's pay, on its first day, as Payroll dates a workshop that has no single date.
+  const firstDay = new Map<string, string>()
+  for (const d of archive.rows.workshop_days ?? []) {
+    const at = new Date(String(d.starts_at)).toISOString()
+    const had = firstDay.get(String(d.workshop_id))
+    if (!had || at < had) firstDay.set(String(d.workshop_id), at)
+  }
+  const held = new Set((archive.rows.workshops ?? []).filter(w => w.lifecycle === 'active').map(w => String(w.id)))
+  for (const i of archive.rows.workshop_instructors ?? []) {
+    const at = firstDay.get(String(i.workshop_id))
+    if (at && held.has(String(i.workshop_id))) pay(at, i.pay_sgd)
+  }
   for (const [month, c] of Object.entries(payCents)) figures.payByMonth[month] = money(c / 100)
 
   for (const p of archive.rows.client_packages ?? []) {

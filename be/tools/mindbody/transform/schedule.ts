@@ -419,7 +419,7 @@ export function mapSchedule(input: {
     }
     if (rate.flat !== undefined) return money(rate.flat)
     const worth = clients.map(clientId => {
-      const pkg = runningPackage(clientId, 'pt', startsAt)
+      const pkg = payingPackage(clientId, 'pt', startsAt)
       const sessions = pkg ? sessionsBought(pkg) : undefined
       return pkg && sessions ? Number(pkg.amount_paid_sgd) / sessions : null
     })

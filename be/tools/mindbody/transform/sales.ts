@@ -198,6 +198,8 @@ export function pastPackages(input: {
   memberNames: Map<string, string>
   lookups: ConfigLookups
   workshopOptions: Set<string>
+  /** Sale lines that are on a workshop place already (`./workshops.ts`): placed, so neither a package nor a loss. */
+  onWorkshops?: Set<JoinedSale>
   /** Members who already came across holding a trial, live or spent: a member has one, ever. */
   hasTrial: Set<string>
 }): { clientPackages: Row[]; purchases: Row[]; slots: PastSlot[]; notes: string[] } {
@@ -241,6 +243,7 @@ export function pastPackages(input: {
   let locationsDropped = 0
   for (const j of joined.sold) {
     const { sale, register, returnedBy } = j
+    if (input.onWorkshops?.has(j)) continue
     if (!inWindow(sale)) {
       // Its sale is before the cutoff and did not come across, so there is nothing here to refund.
       if (returnedBy && inWindow(returnedBy)) miss(returnedBy, `returns a sale from before ${from}, which did not come across`)

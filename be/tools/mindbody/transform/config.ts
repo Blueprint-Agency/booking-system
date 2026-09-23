@@ -91,14 +91,23 @@ const workshopTierSchema = z.object({
   mindbodyNames: z.array(z.string()).min(1),
   /** What the tier costs. No report holds a workshop's price list. */
   priceSgd: open(z.number().min(0)),
+  /**
+   * The days of the workshop it grants, by their place in it (1 is the first
+   * day). Absent, it grants every day: a room type is the whole retreat. A day
+   * pass or a weekend-only option says which days it is.
+   */
+  days: z.array(z.number().int().positive()).min(1).optional(),
 })
 
 /**
- * A workshop or a retreat still to come, as the platform is to know it.
+ * A workshop or a retreat, still to come or — for a studio bringing its past —
+ * already held, as the platform is to know it.
  *
  * Identified by the Mindbody service category its occurrences are scheduled
  * under — a workshop, a retreat or a course has one of its own — which must
  * also be in `workshopCategories`, or its days would be imported as classes too.
+ * `migrate` decides both: its days to come, and every past run of it inside
+ * `history`.
  */
 const workshopSchema = z.object({
   category: z.string().min(1),
@@ -344,7 +353,7 @@ export type StudioConfig = {
     location: string
     capacity: number
     migrate: boolean
-    tiers: { name: string; mindbodyNames: string[]; priceSgd: number }[]
+    tiers: { name: string; mindbodyNames: string[]; priceSgd: number; days?: number[] }[]
   }[]
   ptAppointmentNames: string[]
   ptClassType: string

@@ -47,7 +47,7 @@ the freeze — decisions 11 and 12 are fixed **in Mindbody**, so they have to be
 | 12 | Members sharing an email | Which member keeps it; real emails for the others | The one whose last visit (attendance history) is latest keeps it; others get placeholders |
 | 13 | Two live packages at once | Accept "the one ending soonest runs, the others wait with their days left" | Accepted |
 | 14 | Unlimited Home Location | Location for a member no report places | Retention Management's location, then Membership's, then where their visits were sold, then the plan's name, then the main Location — the preflight counts each |
-| 15 | Future workshops and retreats | Which to migrate; tier (room type) prices; how instalments count | All with paid attendees; price = amount paid |
+| 15 | Workshops and retreats, to come and past | Which to migrate (one `migrate` covers a category's days to come and its past runs inside `history`); tier (room type) prices; which days a tier grants, where not all; how instalments count | All with paid attendees; price = amount paid; every tier grants every day |
 | 16 | Teacher pay | Use the pay-rate report's per-class amount for future classes; what to pay a per-head teacher's classes | Per-class rate, else Unpriced; PT at the trainer's Payroll PT rate |
 | 17 | History | How far back; whether past purchases appear in Finance | None on a quick rehearsal; classes and bookings from opening, purchases off |
 | 18 | Not migrated | How to track live mat storage, lone access passes and corporate balances by hand | Listed in the preflight report |
@@ -259,24 +259,46 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   line in Payroll, or a member with no package to value the session by, leaves it Unpriced, named
   in the preflight.
 - **Workshops and retreats to come** are one config entry per Mindbody **service category** — a
-  workshop, a retreat or a course has one of its own — proposed by `starter` for every category
-  with something still to come. A person sets `migrate`, the Location, the seats per day and the
+  workshop, a retreat or a course has one of its own — proposed by `starter` for every workshop
+  category on the timetable, past or to come, and for every one members hold a pricing option of
+  (a paid retreat with no timetable row still gets an entry). A person sets `migrate`, the Location, the seats per day and the
   price of each **tier** (room type: twin, single, non-resident), which Mindbody sells as pricing
   options; a deposit or a top-up sold under its own option is moved into the tier it buys
   (`tiers[].mindbodyNames`). The category must also be in `workshopCategories`, or its days would
   arrive as classes as well — `transform` refuses a config where it is not. A Workshop is written
   with one **Day** per future occurrence in the schedule report (its Room where the workshop's own
-  Location has one), one Tier per room type granting every day, and its instructors from that
+  Location has one), one Tier per room type granting every day — or only the days listed in
+  `tiers[].days` (1 is the first day), for a day pass or a weekend-only option — and its instructors from that
   report: whoever leads the most days is the main one and the rest are supporting, all Unpriced
   (Mindbody pays a workshop by agreement, which no report gives).
 - **Workshop attendees** are the members holding a live entitlement on one of those pricing
   options: one `kind: 'workshop'` booking each, at the tier they bought, with `amount_paid_sgd` =
   what they paid — so it shows in the member's workshops and in Finance as workshop money on the
-  day of `asOf`. Several holdings (a deposit and its balance, a twin place and a top-up to a
+  day it was **sold**: the first Big Spenders sale of one of its options since the category last
+  ran. A place with no such sale is dated on `asOf`, and counted in the preflight. Several holdings (a deposit and its balance, a twin place and a top-up to a
   single) are one booking whose amount is their sum, at the **dearest** tier held, because a top-up
   is what moves a member up; holding two tiers is a preflight line. A place is not a package, so
   no `client_packages` row is written for it and it is not listed as "not migrated"; a workshop
   with no day left to come is a preflight line instead of an empty Workshop.
+- **Past workshops and retreats** come across with `history`, for a category whose entry says
+  `migrate: true`. Its days from `history.from` up to the download are split into runs wherever
+  more than 31 days pass between two, and each run is a Workshop of its own (named by its first
+  day where the category has more than one), with its Days, Tiers and instructors as above. Its
+  attendees are the members the Attendance report has on its days: one booking each, at the
+  dearest tier their visits or sale lines name, `attended` and checked in if they came on any
+  day (else a no-show, a late cancel, or a seat never marked, as a class visit is). What they paid
+  is their Big Spenders sale lines of its options since the run before it — returns taken off, a
+  promotion's discount added back for List Price — dated on the first sale. That money is on the
+  place whether or not `history.purchases` is on, as a place to come carries its money: a
+  workshop booking always does. What Payroll paid on its days (lines at one of its start times,
+  or at no set time on one of its dates, and never a PT appointment's) is its instructors' pay —
+  `workshop_instructors.pay_sgd`, a paid teacher not on its timetable a supporting instructor —
+  and not a Manual Payroll Entry, so Instructor Pay adds up to the same total. `verify` counts a
+  workshop's pay on its first day, as Payroll does, and names a past attendee lost on the way in
+  by member and by workshop.
+- A workshop category with `migrate: false` (or with no `workshops` entry) writes nothing, and,
+  with `history`, is a preflight line counting its past visits, sale lines and payroll inside the
+  window. Its payroll still arrives, as Manual Payroll Entries.
 - **Class Series** are proposed by `starter` from the timetable's recurring pattern: what ran at
   the same weekday, time, Room and name in each of the four weeks up to `asOf`, taught by the
   latest week's own teacher (not a substitute). A slot that stopped is not proposed. A person
