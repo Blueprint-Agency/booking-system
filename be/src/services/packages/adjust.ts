@@ -127,6 +127,9 @@ export async function setBalance(input: SetBalanceInput): Promise<ClientPackageR
   if (!Number.isInteger(input.balance) || input.balance < 0) {
     throw new BadRequestError('balance_must_be_nonnegative_integer')
   }
+  // Checked here, not left to `adjustBalance`: the reason it is handed is
+  // prefixed with "Set N:", which is never blank.
+  if (!input.reason.trim()) throw new BadRequestError('reason_required')
   const pkg = await loadOwnedPackage(input.tenantId, input.clientId, input.clientPackageId)
   if (pkg.creditsOrSessionsRemaining === null) {
     throw new BadRequestError('cannot_set_balance_on_unlimited_package')
