@@ -10,6 +10,7 @@ import {
   readAttendance,
   readMemberList,
   readCancellations,
+  readGroupCancellations,
   readPayroll,
   readPayRates,
   readPhoneBook,
@@ -58,9 +59,11 @@ export const REPORTS = {
     test: (f: string) => /attendance/i.test(f) && !/analysis/i.test(f) && /-\s*date\b/i.test(f),
   },
   payroll: { label: 'Payroll — Detail', test: (f: string) => /payroll.*detail/i.test(f) },
-  // When each late cancel happened, and who did it. Individual records only:
-  // "Group cancellations" repeats rows already in them.
+  // When each late cancel happened, and who did it.
   cancellations: { label: 'Cancellations — Individual records', test: (f: string) => /cancellations - individual records/i.test(f) },
+  // The classes the studio called off. Its lines repeat Individual records, so
+  // it is read for the classes, never for the members' cancels.
+  groupCancellations: { label: 'Cancellations — Group cancellations', test: (f: string) => /cancellations - group cancellations/i.test(f) },
 } as const
 
 /**
@@ -84,6 +87,7 @@ export const REPORT_RULES: Record<keyof typeof REPORTS, { single: boolean; requi
   attendance: { single: false, required: false },
   payroll: { single: false, required: false },
   cancellations: { single: false, required: false },
+  groupCancellations: { single: true, required: false },
 }
 
 async function filesUnder(dir: string): Promise<string[]> {
@@ -144,6 +148,7 @@ export async function readReports(dir: string): Promise<MindbodyReports> {
   for (const file of optionalSet('payroll')) payroll.push(...readPayroll(await read(file)))
   const cancellations = []
   for (const file of optionalSet('cancellations')) cancellations.push(...readCancellations(await read(file)))
+  const groupCancellationsFile = optional('groupCancellations')
 
   return {
     members: readMemberList(await one('members')),
@@ -160,6 +165,7 @@ export async function readReports(dir: string): Promise<MindbodyReports> {
     attendance,
     payroll,
     cancellations,
+    groupCancellations: groupCancellationsFile ? readGroupCancellations(await read(groupCancellationsFile)) : [],
   }
 }
 

@@ -14,6 +14,7 @@
     { "kind": "payRates", "file": "38 Pay Rates.xlsx", "single": true, "required": false },
     { "kind": "attendance", "file": "16 Attendance without Revenue - Date - <year>.xlsx", "single": false, "required": false },
     { "kind": "payroll", "file": "32 Payroll - Detail - <year>.xls", "single": false, "required": false },
-    { "kind": "cancellations", "file": "08 Cancellations - Individual records - <piece>.xls", "single": false, "required": false }
+    { "kind": "cancellations", "file": "08 Cancellations - Individual records - <piece>.xls", "single": false, "required": false },
+    { "kind": "groupCancellations", "file": "08 Cancellations - Group cancellations.xls", "single": true, "required": false }
   ]
 }

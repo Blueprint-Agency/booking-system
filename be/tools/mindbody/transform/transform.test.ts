@@ -971,13 +971,19 @@ test('past PT is a session, a request that says how it ended, and a booking per 
   const { archive, ids } = await run(withHistory())
   const session = archive.rows.pt_sessions!.find(s => String(s.starts_at) < '2026-09-17')!
   assert.equal(session.starts_at, '2026-09-01T01:00:00.000Z', '9am Singapore')
+  // The roster booked it for ninety minutes; the attendance report's hour is not the appointment's.
+  assert.equal(session.ends_at, '2026-09-01T02:30:00.000Z')
   assert.equal(session.instructor_id, ids.staff_users!['Olive Owner'])
   assert.deepEqual([session.session_type, session.lifecycle, session.instructor_pay_sgd], ['1on1', 'active', null])
+  // Ivy booked it for her, and Ivy is coming across.
+  assert.equal(session.scheduled_by_staff_id, ids.staff_users!['Ivy Instructor'])
 
   const request = archive.rows.pt_requests!.find(r => r.scheduled_pt_session_id === session.id)!
   assert.equal(request.status, 'attended', 'Mei came, so the request ended attended')
   assert.equal(request.client_id, ids.clients!['100000008'])
   assert.ok(request.debited_client_package_id, 'her PT bundle paid for it')
+  assert.equal(request.message, 'Left knee: no deep lunges', 'the appointment s notes')
+  assert.equal(request.resolved_by_staff_id, ids.staff_users!['Ivy Instructor'])
 
   const booking = archive.rows.bookings!.find(b => b.pt_session_id === session.id)!
   assert.deepEqual([booking.state, booking.check_in_state], ['confirmed', 'attended'])
@@ -1244,7 +1250,6 @@ test('report-files.json: every file the cutover download writes matches exactly 
     '21 Referral Types - All Referrers-Summary.xls',
     '01 Membership - New Version Detail.xlsx',
     '43 Autopay Detail - Scheduled.xls',
-    '08 Cancellations - Group cancellations.xls',
   ]) {
     assert.deepEqual(Object.entries(REPORT_FILES).filter(([, r]) => r.test(extra)), [], extra)
   }
@@ -1380,6 +1385,8 @@ test('history: PT carries what payroll paid, and its Room from the roster; payro
       location: 'Main Hall',
       clientId: '100000008',
       status: 'Signed in',
+      notes: '',
+      scheduledBy: 'Client',
     },
   ]
   const { archive, ids, preflight } = mapStudio({ ...reports, payroll, roster }, validateConfig(withHistory()), TENANT)
@@ -1413,4 +1420,183 @@ test('history: a late cancel carries its real time and who made it, from the Can
   assert.equal(run([cancel('Frank Front', day(2026, 7, 6, 18, 0))]).row.source, 'admin', 'the studio cancelled it')
   assert.equal(run([cancel('_ClassPass API', day(2026, 7, 6, 18, 0))]).row.source, 'client', 'ClassPass, on the member s behalf')
   assert.equal(run([]).row.cancelled_at, '2026-07-06T11:00:00.000Z', 'no report: dated at the class s start, as before')
+})
+
+/* ── Past classes, visits and PT as Mindbody recorded them (#219) ────────── */
+
+/** A past Hatha from the fixture's timetable, moved to another day. */
+const pastHatha = (reports: Awaited<ReturnType<typeof readReports>>, d: number, month = 8) => {
+  const hatha = reports.schedule.find(r => r.date.month === 8 && r.date.day === 24 && /hatha/i.test(r.description))!
+  return { ...hatha, date: { year: 2026, month, day: d } }
+}
+
+const groupLine = (date: { year: number; month: number; day: number }, description: string, by = 'Frank Front') => ({
+  cancelledAt: day(date.year, date.month, date.day - 1, 10, 0),
+  cancelledBy: by,
+  date,
+  start: { hour: 19, minute: 0 },
+  description,
+  client: 'Jane Doe',
+  method: 'early',
+  group: `${date.month}-${date.day}`,
+  location: 'Main Hall',
+  teacher: 'Ivy Instructor',
+})
+
+test('history: a past class the studio called off, with nobody on it and no pay, arrives cancelled and not Unpriced', async () => {
+  const reports = await readReports(REPORTS)
+  const schedule = [...reports.schedule, pastHatha(reports, 18), pastHatha(reports, 19)]
+  const groupCancellations = [
+    // Mindbody cuts the class name to 14 characters, and writes it in whatever case.
+    groupLine({ year: 2026, month: 8, day: 18 }, 'HATHA'),
+    // Called off in the report, and yet payroll paid for it and a member late-cancelled it: it ran.
+    groupLine({ year: 2026, month: 9, day: 7 }, 'Hatha'),
+  ]
+  const { archive, ids, preflight } = mapStudio({ ...reports, schedule, groupCancellations }, validateConfig(withHistory()), TENANT)
+  const at = (iso: string) => startsAt(archive.rows.classes!, iso)
+
+  const calledOff = at('2026-08-18T11:00:00.000Z')
+  assert.deepEqual(
+    [calledOff.lifecycle, calledOff.cancelled_at, calledOff.cancelled_by_staff_id],
+    ['cancelled', '2026-08-17T02:00:00.000Z', ids.staff_users!['Frank Front']],
+  )
+  assert.equal(calledOff.instructor_pay_sgd, null, 'a cancelled class is on nobody s Unpriced list: payroll counts active classes only')
+  assert.deepEqual([at('2026-09-07T11:00:00.000Z').lifecycle, at('2026-09-07T11:00:00.000Z').instructor_pay_sgd], ['active', '38.00'])
+  // Nobody on it and no pay, but nothing says it was called off: it stays, and is named.
+  assert.equal(at('2026-08-19T11:00:00.000Z').lifecycle, 'active')
+  assert.ok(preflight.schedule.some(n => /history: 1 past class\(es\) the studio called off .*came across cancelled/.test(n)), preflight.schedule.join(' | '))
+  assert.ok(
+    preflight.schedule.some(n => /history: 1 past class\(es\) had nobody on them, no payroll line and no group cancellation/.test(n)),
+    preflight.schedule.join(' | '),
+  )
+})
+
+test('history: a class a substitute taught records the substitute, and the preflight counts the covers', async () => {
+  const reports = await readReports(REPORTS)
+  const cover = { ...pastHatha(reports, 18), staff: 'OLIVE OWNER', substitute: true }
+  const { archive, ids, preflight } = mapStudio({ ...reports, schedule: [...reports.schedule, cover] }, validateConfig(withHistory()), TENANT)
+  assert.equal(startsAt(archive.rows.classes!, '2026-08-18T11:00:00.000Z').main_instructor_id, ids.staff_users!['Olive Owner'])
+  assert.ok(
+    preflight.schedule.some(n => /history: 1 past class\(es\) were taught by a substitute \(\*\*\* in Mindbody\)/.test(n)),
+    preflight.schedule.join(' | '),
+  )
+})
+
+test('history: a visit is attended unless a flag says otherwise, an unpaid visit is attended with no package, and the roster tells an unmarked seat', async () => {
+  const reports = await readReports(REPORTS)
+  const visit = (clientId: string, status: string, option: string, fromFlags = true) => ({
+    date: { year: 2026, month: 8, day: 24 },
+    start: { hour: 19, minute: 0 },
+    end: null,
+    description: 'Hatha',
+    staff: 'Instructor, Ivy',
+    room: '',
+    location: 'Main Hall',
+    clientId,
+    status,
+    option,
+    fromFlags,
+  })
+  const attendance = [
+    ...reports.attendance,
+    // Staff Paid = No, and neither flag: what the reader makes of it.
+    visit('100000004', 'Signed in', ''),
+    // Mindbody's "unpaid": she came, and nothing paid for it.
+    visit('100000003', 'Unpaid', 'Class Pack - Bundle of 20', false),
+    // Neither flag, and the roster never marked the seat either.
+    visit('100000005', 'Signed in', ''),
+    // A report with its own Status column already said: the roster does not overrule it.
+    visit('100000006', 'Signed in', 'ClassPass', false),
+  ]
+  const roster = [
+    ...reports.roster,
+    ...['100000005', '100000006'].map(clientId => ({ ...reports.roster[0]!, date: { year: 2026, month: 8, day: 24 }, clientId, status: 'Reserved' })),
+  ]
+  const { archive, ids } = mapStudio({ ...reports, attendance, roster }, validateConfig(withHistory(true)), TENANT)
+  const cls = startsAt(archive.rows.classes!, '2026-08-24T11:00:00.000Z').id
+  const seat = (barcode: string) => archive.rows.bookings!.find(b => b.class_id === cls && b.client_id === ids.clients![barcode])!
+  const checkedIn = (b: Record<string, any>) => archive.rows.check_ins!.some(c => c.booking_id === b.id)
+
+  assert.deepEqual([seat('100000004').state, seat('100000004').check_in_state, checkedIn(seat('100000004'))], ['confirmed', 'attended', true])
+  const unpaid = seat('100000003')
+  assert.deepEqual([unpaid.state, unpaid.check_in_state, checkedIn(unpaid)], ['confirmed', 'attended', true], 'not a no-show')
+  assert.deepEqual([unpaid.client_package_id, unpaid.credits_or_sessions_used], [null, 0], 'and no package paid for it')
+  assert.deepEqual([seat('100000005').state, seat('100000005').check_in_state], ['confirmed', 'pending'])
+  assert.equal(seat('100000006').check_in_state, 'attended')
+})
+
+test('history: past PT ends as it did — a no-show stays one, a late cancel is cancelled, a Sharing package seats two', async () => {
+  const reports = await readReports(REPORTS)
+  const pt = (d: number, status: string, option: string, end: { hour: number; minute: number } | null = { hour: 10, minute: 0 }) => ({
+    date: { year: 2026, month: 9, day: d },
+    start: { hour: 9, minute: 0 },
+    end,
+    description: 'Personal Training / PT',
+    staff: 'Owner, Olive',
+    room: '',
+    location: 'Main Hall',
+    clientId: '100000008',
+    status,
+    option,
+  })
+  const attendance = [
+    ...reports.attendance,
+    pt(4, 'Signed in', 'PT - Sharing Bundle of 10'),
+    // The flagged report has no end time, and the roster has no line for it.
+    pt(5, 'Signed in', 'PT - Bundle of 10', null),
+    pt(6, 'Late Cancel', 'PT - Bundle of 10'),
+  ]
+  const roster = [...reports.roster, { ...reports.roster[0]!, ...pt(4, 'Completed', ''), notes: '', scheduledBy: 'Client' }]
+  const config = withHistory()
+  config.catalogue.push({
+    name: 'PT - Sharing Bundle of 10',
+    mindbodyNames: ['PT - Sharing Bundle of 10'],
+    migrate: 'legacy',
+    kind: 'pt',
+    credits: 10,
+    validityDays: 90,
+    priceSgd: null,
+    sessionType: '2on1',
+  })
+  const { archive, ids, preflight } = mapStudio({ ...reports, attendance, roster }, validateConfig(config), TENANT)
+  const session = (d: number) => archive.rows.pt_sessions!.find(s => s.starts_at === `2026-09-0${d}T01:00:00.000Z`)!
+  const request = (d: number) => archive.rows.pt_requests!.find(r => r.scheduled_pt_session_id === session(d).id)!
+  const booking = (d: number) => archive.rows.bookings!.find(b => b.pt_session_id === session(d).id)!
+
+  // A no-show: the booking says so, and the request is already where the
+  // platform's own end-of-session job leaves one — so that job has nothing to move.
+  assert.deepEqual([booking(3).state, booking(3).check_in_state], ['no_show', 'no_show'])
+  assert.equal(request(3).status, 'attended')
+  assert.equal(session(3).lifecycle, 'active')
+
+  // Paid from a two-person package: two places, the second empty because Mindbody named nobody —
+  // so the request, which names a partner whenever it says 2on1, stays 1on1.
+  assert.deepEqual(
+    [session(4).session_type, session(4).capacity_online, request(4).session_type, request(4).co_client_id],
+    ['2on1', 2, '1on1', null],
+  )
+  assert.equal(archive.rows.pt_session_clients!.filter(c => c.pt_session_id === session(4).id).length, 1)
+
+  // No end time anywhere: an hour, and counted.
+  assert.equal(session(5).ends_at, '2026-09-05T02:00:00.000Z')
+  assert.ok(
+    preflight.schedule.some(n => /history: 1 past PT session\(s\) have no end time in the roster or the attendance report, so they are one hour long/.test(n)),
+    preflight.schedule.join(' | '),
+  )
+
+  // Late-cancelled: the session is cancelled, as the portal cancels one.
+  assert.deepEqual([session(6).lifecycle, session(6).cancelled_at], ['cancelled', '2026-09-06T01:00:00.000Z'])
+  assert.deepEqual([request(6).status, booking(6).state, booking(6).check_in_state], ['cancelled_after_scheduled', 'cancelled', 'n_a'])
+  assert.ok(archive.rows.cancellations!.some(c => c.booking_id === booking(6).id && c.kind === 'pt'))
+
+  // Booked by the member, or with no roster line: the owner stands in, and the preflight says how often.
+  assert.equal(session(4).scheduled_by_staff_id, ids.staff_users!['Olive Owner'])
+  assert.ok(
+    preflight.schedule.some(n => /history: 1 past PT session\(s\) were booked by "Client", who is not staff coming across/.test(n)),
+    preflight.schedule.join(' | '),
+  )
+  assert.ok(
+    preflight.schedule.some(n => /history: 3 past PT session\(s\) have no roster line to say who booked them/.test(n)),
+    preflight.schedule.join(' | '),
+  )
 })

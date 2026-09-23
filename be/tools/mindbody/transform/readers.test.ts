@@ -7,6 +7,7 @@ import {
   readAccountBalances,
   readAttendance,
   readCancellations,
+  readGroupCancellations,
   readMemberList,
   readPayRates,
   readPayroll,
@@ -19,7 +20,7 @@ import {
   readStaffSchedule,
   readVisitsRemaining,
 } from './readers'
-import { parseMindbodyDate, cleanPhone, cleanEmail, normaliseOptionName, normaliseStaffName, parseSessions } from './values'
+import { parseMindbodyDate, cleanPhone, cleanEmail, isoDay, normaliseOptionName, normaliseStaffName, parseSessions } from './values'
 import { readXlsxTable } from './xlsx'
 
 /**
@@ -372,7 +373,7 @@ test('the roster: dates and times come back as real workbook values, whatever th
   const roster = readRoster(
     await readXlsxTable(readFileSync(path.join(FIXTURES, 'reports', 'Clients', '17 Schedule at a Glance', '17 Schedule at a Glance - 2090.xlsx'))),
   )
-  assert.equal(roster.length, 10)
+  assert.equal(roster.length, 11)
   const first = roster[0]!
   assert.deepEqual(
     [first.date, first.start, first.end],
@@ -382,6 +383,18 @@ test('the roster: dates and times come back as real workbook values, whatever th
   assert.deepEqual([first.description, first.staff, first.clientId, first.status], ['Hatha', 'Instructor, Ivy', '100000001', 'Signed in'])
   assert.deepEqual([first.room, first.location], ['Studio 1 - Hot Room', 'Main Hall'])
   assert.ok(roster.some(r => r.status === 'Late Cancel'), 'a cancelled seat is still a row; what to do with it is the mapper s')
+})
+
+test('the roster: a PT appointment s real end time, its notes, and who booked it', async () => {
+  const roster = readRoster(
+    await readXlsxTable(readFileSync(path.join(FIXTURES, 'reports', 'Clients', '17 Schedule at a Glance', '17 Schedule at a Glance - 2090.xlsx'))),
+  )
+  const pt = roster.find(r => r.description === 'Personal Training / PT' && r.date.year === 2026)!
+  assert.deepEqual([pt.start, pt.end], [{ hour: 9, minute: 0 }, { hour: 10, minute: 30 }], 'ninety minutes, as booked')
+  assert.equal(pt.notes, 'Left knee: no deep lunges', 'the Appointment Notes column')
+  assert.equal(pt.scheduledBy, 'Ivy Instructor', 'a member of staff, First Last')
+  assert.equal(roster[0]!.scheduledBy, 'Client', 'booked by the member themselves')
+  assert.equal(roster[0]!.notes, '')
 })
 
 test('pay rates: the per-class rate of each teacher, and null where there is none', async () => {
@@ -460,6 +473,37 @@ test('cancellations: rows with no opening <tr>, the cancel time to the second, a
   assert.deepEqual([early!.start, early!.cancelledBy, early!.method], [null, '_ClassPass API', 'early'], 'an appointment at no set time')
 })
 
+test('group cancellations: one block per class the studio cancelled, a line per member who was on it', () => {
+  const block = (id: number) =>
+    `<tr><td colspan='9'>&nbsp;<b>Group Cancellation:</b>&nbsp;&nbsp;</td>
+     <td colspan="2"><b><a class="trackResource" href="adm_tlbx_advcanc_rest_p.asp?id=${id}&type=group&rtn=grp">restore group</a></b></td></tr>`
+  const line = (cancelled: string, date: string, time: string, type: string, client: string) =>
+    `<tr><td>&nbsp;${cancelled}&nbsp;</td><td>&nbsp;Frank Front&nbsp;</td><td>&nbsp;${date}&nbsp;</td><td>&nbsp;${time}&nbsp;</td>
+     <td>&nbsp;${type}&nbsp;</td><td>&nbsp;Main Hall&nbsp;</td><td>&nbsp;Ivy (Trainee Te&nbsp;</td><td>&nbsp;${client}&nbsp;</td>
+     <td>&nbsp;early&nbsp;</td><td>&nbsp;No&nbsp;</td><td></td></tr>`
+  const html = `<table><tr><td><b>&nbsp;Cancel Date/Time</b></td><td><b>&nbsp;Cancelled By</b></td><td><b>&nbsp;Date</b></td>
+    <td><b>&nbsp;Time</b></td><td><b>&nbsp;Type</b></td><td><b>&nbsp;Location</b></td><td><b>&nbsp;Teacher</b></td>
+    <td><b>&nbsp;Client</b></td><td><b>&nbsp;Method</b></td><td><b>&nbsp;Add-On</b></td><td><b></b></td></tr>
+    ${block(33)}
+    ${line('7/8/2026 7:42:29 am', '7/8/2026', '12:00&nbsp;pm ', 'Stretch &amp; Bala', 'Jane&nbsp;Doe')}
+    ${line('7/8/2026 7:42:31 am', '7/8/2026', '12:00&nbsp;pm ', 'Stretch &amp; Bala', 'Rick&nbsp;Roe')}
+    ${block(32)}
+    ${line('1/8/2026 9:00:00 pm', '2/8/2026', '7:00&nbsp;pm ', 'Hatha', 'Pat&nbsp;Poe')}
+    </table>`
+  const rows = readGroupCancellations(html)
+  assert.deepEqual(
+    rows.map(r => [r.group, isoDay(r.date), r.start, r.description, r.client, r.cancelledBy]),
+    [
+      ['33', '2026-08-07', { hour: 12, minute: 0 }, 'Stretch & Bala', 'Jane Doe', 'Frank Front'],
+      ['33', '2026-08-07', { hour: 12, minute: 0 }, 'Stretch & Bala', 'Rick Roe', 'Frank Front'],
+      ['32', '2026-08-02', { hour: 19, minute: 0 }, 'Hatha', 'Pat Poe', 'Frank Front'],
+    ],
+    'each line knows the group it is in; the dates run D/M like the Individual records',
+  )
+  assert.deepEqual(rows[0]!.cancelledAt, { year: 2026, month: 8, day: 7, hour: 7, minute: 42, second: 29 })
+  assert.equal(rows[0]!.teacher, 'Ivy (Trainee Te', 'cut short by Mindbody, like the class name')
+})
+
 test('attendance without revenue: the three flags are how a visit ended, and "n/a" is no option', () => {
   const header = row(
     'Date', 'Day', 'Time', 'Client ID', 'Client', 'Visit Service Category', 'Visit Type', 'Type', 'Pricing Option', 'Exp. Date',
@@ -485,9 +529,10 @@ test('attendance without revenue: the three flags are how a visit ended, and "n/
       ['100000002', 'Late Cancel', 'Class Pack - Bundle of 10'],
       ['100000003', 'No Show', 'ClassPass'],
       ['100000004', 'No Show', 'Unlimited 12'],
-      ['100000005', 'Reserved', ''],
+      // Not counted towards the teacher's pay, and still a visit: Staff Paid is about pay, not attendance.
+      ['100000005', 'Signed in', ''],
     ],
-    'no Status column: it is read from Staff Paid, Late Cancel and No-show, and the grand total is no visit',
+    'no Status column: it is read from Late Cancel and No-show, and the grand total is no visit',
   )
   const first = visits[0]!
   assert.deepEqual(

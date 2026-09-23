@@ -11,6 +11,7 @@ import type {
   AccountBalanceRow,
   AttendanceRow,
   CancellationRow,
+  GroupCancellationRow,
   HoldingRow,
   MemberListRow,
   OptionSaleRow,
@@ -63,6 +64,8 @@ export type MindbodyReports = {
   payroll: PayrollRow[]
   /** When each booking was cancelled and by whom (Cancellations, Individual records). Empty where not downloaded. */
   cancellations: CancellationRow[]
+  /** The classes the studio called off, a line per member on each (Cancellations, Group cancellations). Empty where not downloaded. */
+  groupCancellations: GroupCancellationRow[]
 }
 
 export type Preflight = {
@@ -477,6 +480,7 @@ export function mapStudio(reports: MindbodyReports, config: StudioConfig, tenant
         attendance: reports.attendance,
         payroll: reports.payroll,
         cancellations: reports.cancellations,
+        groupCancellations: reports.groupCancellations,
         optionSales: reports.optionSales,
         members: reports.members,
         config,

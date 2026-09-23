@@ -592,6 +592,28 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     )
   })
 
+  test('a past PT no-show is still a no-show after the platform s PT jobs have run over it', async () => {
+    const studio = await importedStudio(withHistory())
+    const mei = await harness.signInAs('client', 'mei@example.test', studio)
+    const noShow = async () => {
+      const res = await get('/api/v1/me/pt-sessions', mei)
+      assert.equal(res.status, 200, await res.clone().text())
+      const requests = ((await res.json()) as { pt_requests: Record<string, any>[] }).pt_requests
+      const r = requests.find(x => x.session?.starts_at === '2026-09-03T01:00:00.000Z')!
+      return { status: r.status, checkIn: r.booking?.check_in_state }
+    }
+    const before = await noShow()
+    // She did not come: her booking says so, and the request is where the
+    // platform leaves any session that is over.
+    assert.deepEqual(before, { status: 'attended', checkIn: 'no_show' })
+
+    // The two PT jobs the platform runs every five minutes (`src/jobs/index.ts`).
+    const jobs = await import('../../../src/services/pt-sessions/cancel')
+    await jobs.completeEndedPtSessions()
+    await jobs.expireStaleSessions()
+    assert.deepEqual(await noShow(), before, 'nothing relabelled her no-show')
+  })
+
   test('SCH-15 an imported series extends from the portal without duplicating a class that already came across', async () => {
     const studio = await importedStudio()
     const owner = await harness.signInAs('staff', 'owner@example.test', studio)
@@ -765,9 +787,9 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
       body.instructor_totals.map(i => `${i.instructor_name} ${i.total_sgd} over ${i.session_count}`).sort(),
       ['Ivy Instructor 148 over 4', 'Olive Owner 56 over 2'],
     )
-    // The past class payroll has no line for, and the past PT session —
-    // Mindbody pays PT by percentage of the sale, which no report gives.
-    assert.equal(body.unpriced_count, 2)
+    // The past class payroll has no line for, and the two past PT sessions
+    // (one a no-show) — Mindbody pays PT by percentage of the sale, which no report gives.
+    assert.equal(body.unpriced_count, 3)
   })
 
   test('past purchases are the studio s own decision: opted in they are pre-launch revenue, and otherwise nothing', async () => {

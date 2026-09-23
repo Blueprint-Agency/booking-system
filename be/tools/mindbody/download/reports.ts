@@ -277,9 +277,12 @@ export const CUTOVER: ProfileEntry[] = [
   pick('Staff Schedule', { kind: 'schedule', loop: { match: /^all$/i, label: 'ALL' }, only: ['Scheduled'] }),
   pick('Pay Rates', { kind: 'payRates' }),
   pick('Payroll', { kind: 'payroll', only: ['Detail'], split: 'year' }),
-  // When each late cancel really happened, and who did it. Individual records only (Group repeats them);
-  // one file per month from the start, since a whole year is refused.
+  // When each late cancel really happened, and who did it. One file per month from the start, since a
+  // whole year is refused.
   pick('Cancellations', { kind: 'cancellations', only: ['Individual records'], split: 'month' }),
+  // Which past classes the studio called off, so they arrive cancelled rather than live and Unpriced.
+  // Its lines repeat some Individual records, grouped by class; it is small enough for one file.
+  pick('Cancellations', { kind: 'groupCancellations', only: ['Group cancellations'] }),
   // Not read by the transform: who is on an autopay, to stop in Mindbody and re-sign on the platform.
   pick('Membership', { only: ['New Version Detail'], optional: true }),
   {

@@ -420,6 +420,10 @@ export type RosterRow = {
   clientId: string
   /** `Reserved`, `Signed in`, `Late Cancel`, … */
   status: string
+  /** What was written on the appointment (`Appointment Notes`). Not `Notes`, which may be the member's own account notes. */
+  notes: string
+  /** Who booked it: a member of staff (`First Last`), `Client` for the member themselves, or a system user. */
+  scheduledBy: string
 }
 
 /**
@@ -445,6 +449,8 @@ export function readRoster(rows: TableRow[]): RosterRow[] {
       location: tidy(cell(row, columns, 'Location')),
       clientId: id,
       status: tidy(cell(row, columns, 'Status')),
+      notes: tidy(cell(row, columns, 'Appointment Notes')),
+      scheduledBy: tidy(cell(row, columns, 'Scheduled by')),
     })
   }
   return out
@@ -501,24 +507,30 @@ export type AttendanceRow = {
   status: string
   /** The pricing option the visit was taken from, as written. Blank where Mindbody recorded none. */
   option: string
+  /**
+   * The status was read from the Yes/No flags, where "neither" cannot tell a
+   * visit from a seat nobody marked: the roster's Status says which.
+   */
+  fromFlags?: boolean
 }
 
 /** The columns of Attendance without Revenue's detail views, which say how a visit ended in three flags rather than a Status. */
 const ATTENDANCE_FLAGS = ['Date', 'Time', 'Type', 'Staff', 'Client ID', 'Pricing Option', 'Staff Paid', 'Late Cancel', 'No-show'] as const
 
 /**
- * A visit's Status, from the three Yes/No flags the Attendance without Revenue
- * report writes instead of one. Late cancel and no-show are what the flags say;
- * a visit that is neither and counted towards the teacher's pay is one the
- * member came to; anything else is a seat nobody marked (the report's own
- * "upcoming" rows, on the day of the download).
+ * A visit's Status, from the Yes/No flags the Attendance without Revenue report
+ * writes instead of one. Late cancel and no-show are what the flags say; a
+ * visit that is neither is one the member came to. `Staff Paid` is not read:
+ * it says whether the visit counted towards the teacher's pay, and a visit that
+ * did not was still attended. The report's own "upcoming" rows, on the day of
+ * the download, are neither too — the roster's Status tells those apart, which
+ * is the mapper's to join (`./history.ts`).
  */
 function statusFromFlags(row: TableRow, columns: Columns): string {
   const yes = (name: string) => /^yes$/i.test(cell(row, columns, name).trim())
   if (yes('Late Cancel')) return 'Late Cancel'
   if (yes('No-show')) return 'No Show'
-  if (yes('Staff Paid')) return 'Signed in'
-  return 'Reserved'
+  return 'Signed in'
 }
 
 /**
@@ -563,6 +575,7 @@ export function readAttendance(rows: TableRow[]): AttendanceRow[] {
       clientId: id,
       status: flagged ? statusFromFlags(row, columns) : tidy(cell(row, columns, 'Status')),
       option: /^n\/a$/i.test(option) ? '' : option,
+      ...(flagged ? { fromFlags: true } : {}),
     })
   }
   return out
@@ -592,22 +605,60 @@ export type CancellationRow = {
  */
 export function readCancellations(html: string): CancellationRow[] {
   const rows = readHtmlTable(html)
-  const { at, columns } = header(rows, 'Cancellations', ['Cancel Date/Time', 'Cancelled By', 'Date', 'Time', 'Client', 'Method'])
-  const out: CancellationRow[] = []
+  const { at, columns } = header(rows, 'Cancellations', CANCELLATION_COLUMNS)
+  return dataRows(rows, at).flatMap(row => cancellationLine(row, columns) ?? [])
+}
+
+const CANCELLATION_COLUMNS = ['Cancel Date/Time', 'Cancelled By', 'Date', 'Time', 'Client', 'Method']
+
+/** One cancelled reservation, as both views of the report write it; null for any other row. */
+function cancellationLine(row: TableRow, columns: Columns): CancellationRow | null {
+  const cancelledAt = parseMindbodyDate(cell(row, columns, 'Cancel Date/Time'), 'DM')
+  const date = parseMindbodyDate(cell(row, columns, 'Date'), 'DM')
+  if (!cancelledAt || !date) return null
+  return {
+    cancelledAt,
+    cancelledBy: tidy(cell(row, columns, 'Cancelled By')),
+    date: { year: date.year, month: date.month, day: date.day },
+    // `h:mm am`, now and then with seconds; `TBD` on an appointment.
+    start: parseClock(cell(row, columns, 'Time').trim().replace(/^(\d{1,2}:\d{2}):\d{2}(\s*[ap]m)$/i, '$1$2')),
+    description: tidy(cell(row, columns, 'Type')),
+    client: tidy(cell(row, columns, 'Client')),
+    method: tidy(cell(row, columns, 'Method')).toLowerCase(),
+  }
+}
+
+/* ── 08 Cancellations — Group cancellations: the classes the studio called off ─ */
+
+export type GroupCancellationRow = CancellationRow & {
+  /** Mindbody's id for the group: one per class cancelled, from the block's "restore group" link. */
+  group: string
+  location: string
+  /** The class's teacher, cut to 20 characters by Mindbody. */
+  teacher: string
+}
+
+/**
+ * The same columns as the Individual records, in blocks: a `Group
+ * Cancellation:` row per class the studio cancelled, then a line per member
+ * whose reservation went with it. A class nobody was booked on has no line,
+ * so it is not in this report at all.
+ */
+export function readGroupCancellations(html: string): GroupCancellationRow[] {
+  const rows = readHtmlTable(html)
+  const { at, columns } = header(rows, 'Group cancellations', [...CANCELLATION_COLUMNS, 'Teacher'])
+  const out: GroupCancellationRow[] = []
+  let group: string | null = null
+  let blocks = 0
   for (const row of dataRows(rows, at)) {
-    const cancelledAt = parseMindbodyDate(cell(row, columns, 'Cancel Date/Time'), 'DM')
-    const date = parseMindbodyDate(cell(row, columns, 'Date'), 'DM')
-    if (!cancelledAt || !date) continue
-    out.push({
-      cancelledAt,
-      cancelledBy: tidy(cell(row, columns, 'Cancelled By')),
-      date: { year: date.year, month: date.month, day: date.day },
-      // `h:mm am`, now and then with seconds; `TBD` on an appointment.
-      start: parseClock(cell(row, columns, 'Time').trim().replace(/^(\d{1,2}:\d{2}):\d{2}(\s*[ap]m)$/i, '$1$2')),
-      description: tidy(cell(row, columns, 'Type')),
-      client: tidy(cell(row, columns, 'Client')),
-      method: tidy(cell(row, columns, 'Method')).toLowerCase(),
-    })
+    if (row.cells.some(c => /^group cancellation:?$/i.test(c))) {
+      blocks++
+      group = row.links.map(link => link?.match(/[?&]id=(\d+)/)?.[1]).find(Boolean) ?? `#${blocks}`
+      continue
+    }
+    const line = group === null ? null : cancellationLine(row, columns)
+    if (!line) continue
+    out.push({ ...line, group: group!, location: tidy(cell(row, columns, 'Location')), teacher: tidy(cell(row, columns, 'Teacher')) })
   }
   return out
 }

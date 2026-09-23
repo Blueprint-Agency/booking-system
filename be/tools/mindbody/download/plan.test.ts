@@ -70,6 +70,11 @@ test('the dry run lists every cutover file under <export>/reports, with the run 
   assert.ok(lines.some(l => l.includes('reports/Clients/02 Mailing Lists/02 Mailing Lists - Mailing List.xls')))
   assert.ok(lines.some(l => l.includes('reports/Staff/34 Staff Schedule/34 Staff Schedule - ALL - Scheduled.xls')))
   assert.ok(lines.some(l => l.includes('requiredtxtDateStart=1/1/2023 requiredtxtDateEnd=17/9/2027')), 'Schedule at a Glance runs 12 months ahead')
+  // The classes the studio called off: one file over the whole range, beside the Individual records.
+  const group = lines.findIndex(l => l.endsWith('reports/Clients/08 Cancellations/08 Cancellations - Group cancellations.xls'))
+  assert.ok(group >= 0, 'Group cancellations is downloaded')
+  assert.ok(lines[group + 1]!.includes('requiredtxtDateStart=1/1/2023 requiredtxtDateEnd=17/9/2026'), 'from the history cutoff to today')
+  assert.ok(lines[group + 1]!.includes('transform reads it as groupCancellations, single file'))
   for (const m of manifest) assert.ok(lines.some(l => l.endsWith(`/${m.file}`)), m.file)
 })
 
