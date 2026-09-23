@@ -257,6 +257,10 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
    */
   async function purgeFixtures() {
     const { sql } = await import('drizzle-orm')
+    // The name patterns below are common words ("Vinyasa Flow" is also a
+    // Mindbody fixture's class), so every name match is held to this file's two
+    // fixture Tenants — a purge must never reach another suite's studio.
+    const own = sql`tenant_id IN (${harness.tenants.one.id}, ${harness.tenants.two.id})`
 
     // The transactional rows first, innermost outwards: every one of these has
     // an `on delete restrict` FK onto a client, a booking or a package that the
@@ -283,34 +287,25 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
     await harness.db.execute(sql`DELETE FROM purchases WHERE client_id IN (${isolationClients})`)
     await harness.db.execute(sql`
       DELETE FROM promo_code_products WHERE promo_code_id IN (
-        SELECT id FROM promo_codes WHERE label LIKE 'isolation %'
+        SELECT id FROM promo_codes WHERE label LIKE 'isolation %' AND ${own}
       )
     `)
-    await harness.db.execute(sql`DELETE FROM promo_codes WHERE label LIKE 'isolation %'`)
-    await harness.db.execute(sql`DELETE FROM class_packages WHERE name LIKE '% Bundle'`)
+    await harness.db.execute(sql`DELETE FROM promo_codes WHERE label LIKE 'isolation %' AND ${own}`)
+    await harness.db.execute(sql`DELETE FROM class_packages WHERE name LIKE '% Bundle' AND ${own}`)
 
+    const isolationClassTypes = sql`SELECT id FROM class_types WHERE name LIKE '% Flow' AND ${own}`
     await harness.db.execute(sql`
       DELETE FROM class_supporting_instructors WHERE class_id IN (
-        SELECT c.id FROM classes c
-        JOIN class_types t ON t.id = c.class_type_id
-        WHERE t.name LIKE '% Flow'
+        SELECT id FROM classes WHERE class_type_id IN (${isolationClassTypes})
       )
     `)
-    await harness.db.execute(sql`
-      DELETE FROM classes WHERE class_type_id IN (
-        SELECT id FROM class_types WHERE name LIKE '% Flow'
-      )
-    `)
+    await harness.db.execute(sql`DELETE FROM classes WHERE class_type_id IN (${isolationClassTypes})`)
     // After the classes: each one's series_id restricts its series' delete.
-    await harness.db.execute(sql`
-      DELETE FROM class_series WHERE class_type_id IN (
-        SELECT id FROM class_types WHERE name LIKE '% Flow'
-      )
-    `)
-    await harness.db.execute(sql`DELETE FROM class_types WHERE name LIKE '% Flow'`)
+    await harness.db.execute(sql`DELETE FROM class_series WHERE class_type_id IN (${isolationClassTypes})`)
+    await harness.db.execute(sql`DELETE FROM class_types WHERE name LIKE '% Flow' AND ${own}`)
 
     // The remaining-surfaces fixtures, innermost outwards.
-    const isolationWorkshops = sql`SELECT id FROM workshops WHERE name LIKE '% Retreat'`
+    const isolationWorkshops = sql`SELECT id FROM workshops WHERE name LIKE '% Retreat' AND ${own}`
     await harness.db.execute(sql`
       DELETE FROM workshop_tier_days WHERE workshop_tier_id IN (
         SELECT id FROM workshop_tiers WHERE workshop_id IN (${isolationWorkshops})
@@ -335,7 +330,7 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
       WHERE payload ? 'isolation'
          OR payload->>'workshopId' IN (SELECT id::text FROM (${isolationWorkshops}) w)
     `)
-    await harness.db.execute(sql`DELETE FROM workshops WHERE name LIKE '% Retreat'`)
+    await harness.db.execute(sql`DELETE FROM workshops WHERE name LIKE '% Retreat' AND ${own}`)
     await harness.db.execute(sql`
       DELETE FROM leave_requests WHERE instructor_id IN (
         SELECT id FROM staff_users WHERE email LIKE '%@isolation.test'
@@ -346,9 +341,9 @@ describe('tenant isolation', { skip: integrationTestsEnabled ? false : SKIP_REAS
         SELECT id FROM staff_users WHERE email LIKE '%@isolation.test'
       )
     `)
-    await harness.db.execute(sql`DELETE FROM feature_flags WHERE key LIKE 'isolation_%'`)
+    await harness.db.execute(sql`DELETE FROM feature_flags WHERE key LIKE 'isolation_%' AND ${own}`)
     await harness.db.execute(sql`DELETE FROM email_log WHERE recipient_email LIKE '%@isolation.test'`)
-    await harness.db.execute(sql`DELETE FROM merch WHERE title LIKE '% Mat'`)
+    await harness.db.execute(sql`DELETE FROM merch WHERE title LIKE '% Mat' AND ${own}`)
     await harness.db.execute(sql`DELETE FROM clients WHERE email LIKE '%@isolation.test'`)
     await harness.db.execute(sql`
       DELETE FROM leave_conflicts WHERE instructor_a_id IN (

@@ -2,7 +2,7 @@ import { after, before, describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { and, eq, sql } from 'drizzle-orm'
+import { and, eq, lte, sql } from 'drizzle-orm'
 import { frontendOrigin, integrationTestsEnabled, SKIP_REASON, startTestApp, inTenantContext, type TestApp } from '../../../src/test/harness'
 
 const OPERATOR = 'mindbody-operator@platform.test'
@@ -39,11 +39,35 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     transform = await import('./transform')
     ;({ ensureAuthUser } = await import('../../../src/services/auth/auth-users'))
     operator = await harness.signInAs('platform', OPERATOR, null)
+    // A run killed mid-flight never reaches `after`, so clear any studio an
+    // earlier run left behind before making new ones. Only stale ones: a run
+    // going on beside this one (another checkout, a hook) is still using its own.
+    await deleteStudios('mb-%', 60 * 60 * 1000)
   })
 
   after(async () => {
-    await harness?.close()
+    // `before` may have thrown — don't mask the real failure with a teardown one.
+    if (!harness) return
+    // Every studio this run made. Left behind, their catalogues (a "Vinyasa
+    // Flow", members, bookings) pile up in the shared test database under
+    // names another suite's purge may also match.
+    await deleteStudios(`mb-${run}-%`)
+    await harness.close()
   })
+
+  /** Delete every fixture studio whose Slug matches, the way the super portal does: suspend, then delete by name. */
+  async function deleteStudios(pattern: string, olderThanMs = 0) {
+    const { deleteTenant } = await import('../../../src/services/tenants/delete')
+    const cutoff = new Date(Date.now() - olderThanMs)
+    const doomed = await harness.db
+      .select({ id: schema.tenants.id, slug: schema.tenants.slug })
+      .from(schema.tenants)
+      .where(and(sql`${schema.tenants.slug} LIKE ${pattern}`, lte(schema.tenants.createdAt, cutoff)))
+    for (const studio of doomed) {
+      await harness.db.update(schema.tenants).set({ status: 'suspended' }).where(eq(schema.tenants.id, studio.id))
+      await deleteTenant({ tenantId: studio.id, confirmSlug: studio.slug })
+    }
+  }
 
   /** A change to the fixture config, for a studio that wants something else of it. */
   type Edit = (config: Record<string, any>) => void

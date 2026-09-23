@@ -316,6 +316,15 @@ export async function startTestApp(): Promise<TestApp> {
     await client`select pg_advisory_unlock(${HARNESS_SETUP_LOCK})`
   }
 
+  // Then the database is this file's until `close`. The files share fixtures —
+  // the two Tenants, name-matched purges, the row counts a studio delete is
+  // checked against — so two at once (a parallel `npm run check`, or a second
+  // checkout or session running the suite beside this one) fail each other at
+  // random. Held on this connection, so it goes when the process does even if
+  // a file never reaches `close`. One `startTestApp` per process: a second
+  // would wait on this one forever.
+  await client`select pg_advisory_lock(${HARNESS_FILE_LOCK})`
+
   // Before the app is imported, so even its load-time lines are captured.
   const { useLogDestination } = await import('../shared/logger')
   let logged: string[] = []
@@ -356,6 +365,8 @@ export async function startTestApp(): Promise<TestApp> {
 /** Arbitrary, but fixed: every harness process has to pick the same number for
  *  the lock to mean anything. */
 const HARNESS_SETUP_LOCK = 4_120_931
+/** Held from setup to `close`: one harness-using file at a time. */
+const HARNESS_FILE_LOCK = 4_120_932
 
 async function seedAll(db: PostgresJsDatabase<typeof schema>): Promise<void> {
   // Dynamic: the seed validates `env.APP_ENV`, so it must not be imported
