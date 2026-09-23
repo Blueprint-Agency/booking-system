@@ -23,13 +23,15 @@ export type TenantManifest = {
   /** Row count per table, so a truncated archive is caught before it is written. */
   counts: Record<string, number>
   /**
-   * Ask the importer to create or reuse the sign-in account of every `clients`
-   * and `staff_users` row, by email, instead of requiring each row to name one.
+   * Marks an archive built outside the platform (the Mindbody transform), whose
+   * `clients` and `staff_users` rows name no login and whose links name one
+   * studio's slug. The importer then lets those rows name none, and refuses any
+   * studio but that one.
    *
-   * Set by archives built from outside the platform (the Mindbody transform),
-   * whose people have no account yet. Never set by an export: a restore brings
-   * the accounts its rows already name, and a row without one is still refused.
-   * Optional, so the archive version is unchanged.
+   * Never set by an export, whose rows each name a login; one that names none is
+   * still refused. Either way the importer gives every person a login made from
+   * their email, never the one the row names (#229). Optional, so the archive
+   * version is unchanged.
    */
   ensureAccounts?: boolean
 }

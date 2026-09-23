@@ -767,6 +767,8 @@ dropped scenario stays, marked `wont-test`, with the reason in its cell.
 | SUP-01 | SUP | super | **Given** a studio with no staff **When** the platform administrator invites its first Admin **Then** an Admin invitation is created at that studio _(prd §2.2)_ | UX | integration | `be/src/test/tenant-provisioning.test.ts` | covered |
 | SUP-02 | SUP | super | **Given** a studio archive taken while a retired third staff role existed **When** it is restored **Then** those staff rows and invitations come back as Admins _(admin-restructure §14a)_ | data-loss | integration | `be/src/test/transfer.test.ts` | covered |
 | SUP-03 | SUP | super | **Given** a platform administrator session **When** it calls a studio's portal admin route (credit adjustment, schedule edit, refund) **Then** the request is refused and no business row is written _(prd §2.4)_ | tenancy | integration |  | uncovered |
+| SUP-04 | SUP | super | **Given** a studio whose staff and members have passwords, 2FA secrets, sessions and verifications **When** the platform administrator exports it **Then** the archive holds none of them and no login table _(#228 story 21)_ | tenancy | integration | `be/src/test/transfer-logins.test.ts` | covered |
+| SUP-05 | SUP | super | **Given** a studio archive whose logins are not on the platform **When** it is restored **Then** each member and staff member has a fresh login with no password, their rows name it rather than the old one, and the email-first sign-in step mails each a Set-password link _(#228 stories 22, 23)_ | UX | integration | `be/src/test/transfer-logins.test.ts` | covered |
 
 ## TEN — Tenant isolation
 

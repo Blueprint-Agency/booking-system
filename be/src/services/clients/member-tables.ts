@@ -216,6 +216,21 @@ export const UNEXPORTED_MEMBER_COLUMNS: readonly { table: string; column: string
   },
 ]
 
+/**
+ * The member's login: the `client` pool's tables. Named here so that, once they
+ * carry a `tenant_id` and every column in them names the member, they still
+ * read as set aside rather than forgotten.
+ */
+const LOGIN_WHY =
+  'The member’s login, not what the studio holds about them. It is never exported, and a studio restore makes a fresh one.'
+
+export const UNEXPORTED_MEMBER_TABLES: readonly { table: string; why: string }[] = [
+  { table: 'client_auth_users', why: LOGIN_WHY },
+  { table: 'client_auth_accounts', why: `${LOGIN_WHY} Holds the password hash.` },
+  { table: 'client_auth_sessions', why: `${LOGIN_WHY} Holds session tokens.` },
+  { table: 'client_auth_verifications', why: `${LOGIN_WHY} Holds sign-up codes and Set-password tokens.` },
+]
+
 /** A column name that reads as a member reference: `client_id`, `co_client_id`, `member_email`… */
 const MEMBER_COLUMN_NAME = /(^|_)(client|member)_(id|email|name)$/
 
@@ -233,12 +248,15 @@ export function unlistedMemberColumns(tables: PgTable[]): string[] {
     ...UNEXPORTED_MEMBER_COLUMNS.map(c => `${c.table}.${c.column}`),
   ])
 
+  const setAside = new Set(UNEXPORTED_MEMBER_TABLES.map(t => t.table))
+
   const unlisted: string[] = []
   for (const table of tables) {
     const { name, columns, foreignKeys } = getTableConfig(table)
-    // The auth pools are platform-wide, not a studio's; member deletion and
-    // export are about what one studio holds.
+    // Member deletion and export are about what one studio holds, which is
+    // neither a platform-wide table nor the member's login.
     if (!columns.some(c => c.name === 'tenant_id')) continue
+    if (setAside.has(name)) continue
     const naming = new Set<string>()
     for (const fk of foreignKeys) {
       const ref = fk.reference()
