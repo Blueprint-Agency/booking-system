@@ -86,10 +86,12 @@ export function proposeCatalogue(
               : 'credit_bundle'
 
     // One purchase at a time, from the register; a holding is several combined.
+    // Both the activation day and the expiry day are days it can be used, so a
+    // 60-day pack activated on the 1st expires on the 60th, not the 61st.
     const spreads = reports.optionSales
       .filter(s => normaliseOptionName(s.option) === key)
-      .map(s => dayNumber(s.expiration) - dayNumber(s.activation))
-      .filter(d => d > 0)
+      .map(s => dayNumber(s.expiration) - dayNumber(s.activation) + 1)
+      .filter(d => d > 1)
     const days = commonest(spreads)
     const prices = reports.sales
       .filter(s => normaliseOptionName(s.description) === key && s.quantity === 1 && s.total > 0)

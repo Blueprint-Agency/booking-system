@@ -91,6 +91,29 @@ export function resolveTokens(set: FieldSet, d: RunDates): FieldSet {
   return Object.fromEntries(Object.entries(set).map(([k, v]) => [k, isToken(v) ? dmy(dates[v]) : v]))
 }
 
+/**
+ * The "as of" moment a download writes to `_logs/as-of.txt`, to the minute, on
+ * the studio's clock: `2026-09-17T02:07:00+08:00`. The day in it is the day the
+ * config and the transform take as "today", so it is the studio's, never the
+ * day of whatever timezone the operator's machine is set to.
+ */
+export function asOfStamp(at: Date, timeZone: string): string {
+  let parts: Intl.DateTimeFormatPart[]
+  try {
+    parts = new Intl.DateTimeFormat('en-US', {
+      timeZone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+    }).formatToParts(at)
+  } catch {
+    throw new Error(`MB_TIMEZONE "${timeZone}" is not a timezone (expected one like Asia/Singapore)`)
+  }
+  const part = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find(p => p.type === type)!.value)
+  const wall = Date.UTC(part('year'), part('month') - 1, part('day'), part('hour'), part('minute'))
+  const off = Math.round((wall - Math.floor(at.getTime() / 60_000) * 60_000) / 60_000)
+  const sign = off >= 0 ? '+' : '-'
+  return `${part('year')}-${pad2(part('month'))}-${pad2(part('day'))}T${pad2(part('hour'))}:${pad2(part('minute'))}:00` +
+    `${sign}${pad2(Math.floor(Math.abs(off) / 60))}:${pad2(Math.abs(off) % 60)}`
+}
+
 /* ── Where it writes ───────────────────────────────────────────────────── */
 
 /** An export folder's name: when the download started, `YYYY-MM-DD HHmm`. */

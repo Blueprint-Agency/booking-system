@@ -540,6 +540,20 @@
       "when": 1790178525726,
       "tag": "0076_per_studio_logins",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1790189059759,
+      "tag": "0077_migrated_refund_date",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1790189074691,
+      "tag": "0078_class_series_pay_nullable",
+      "breakpoints": true
     }
   ]
 }

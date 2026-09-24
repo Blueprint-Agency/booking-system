@@ -18,7 +18,16 @@ type Json = Record<string, any>
 
 export type StudioAnswers = {
   /** Decision 1: who the studio is, and who runs the portal from day one. */
-  studio: { displayName: string; timezone: string; ownerEmail: string; admins: { email: string; name: string | null }[] }
+  studio: {
+    displayName: string
+    timezone: string
+    ownerEmail: string
+    admins: { email: string; name: string | null }[]
+    /** Where members' replies to the studio's emails go. Left out, the Tenant keeps the one it has. */
+    mailReplyTo?: string | null
+    /** Printed at the foot of every email. */
+    emailFooter?: string | null
+  }
   /** Decision 2: the Locations, as the config spells them. */
   locations: Json[]
   /** Decision 14: where an Unlimited Plan naming no Location is homed. */
@@ -76,6 +85,8 @@ export function fillConfig(starter: Json, answers: StudioAnswers, facts: ReportF
     timezone: answers.studio.timezone,
     ownerEmail: answers.studio.ownerEmail,
     admins: answers.studio.admins,
+    mailReplyTo: answers.studio.mailReplyTo ?? null,
+    emailFooter: answers.studio.emailFooter ?? null,
   })
 
   // 2. Locations.
@@ -209,6 +220,9 @@ export function fillConfig(starter: Json, answers: StudioAnswers, facts: ReportF
 
   // 17. History.
   c.history = answers.history
+
+  // The class cancellation window: the cut-off the members' own early and late cancels show.
+  if (facts.classWindow) c.policy = { ...c.policy, classWindowHours: facts.classWindow.hours }
   return c
 }
 

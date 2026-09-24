@@ -38,7 +38,18 @@ export function proposeSchedule(
 ): Proposal {
   const today = asOf ? dayNumber(asOf) : null
   const recent = reports.schedule.filter(r => today === null || dayNumber(r.date) > today - WEEKS * 7)
-  const workshopCategories = [...new Set(recent.map(r => r.serviceCategory).filter(c => WORKSHOP.test(c)))].sort()
+  const fold = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase()
+  // Every workshop the studio ever ran or sold — one still to come, one already
+  // held (its past can come across with the history), and a paid retreat that
+  // never had a row on the timetable at all — so none is passed over unasked.
+  const workshopCategories = [
+    ...new Map(
+      [...reports.schedule.map(r => r.serviceCategory), ...reports.holdings.map(h => h.serviceCategory)]
+        // "Personal Training" is PT, not a teacher training.
+        .filter(c => WORKSHOP.test(c) && !PT.test(c))
+        .map(c => [fold(c), c.trim()] as const),
+    ).values(),
+  ].sort()
   const classes = recent.filter(r => !WORKSHOP.test(r.serviceCategory))
 
   const rooms = [...new Set(classes.map(r => r.room).filter(Boolean))].sort().map(room => {
@@ -57,33 +68,27 @@ export function proposeSchedule(
     capacity: null,
   }))
 
-  // One entry per category with something still to come: a workshop that has
-  // already run has no days to import, and is not worth a decision.
-  const fold = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase()
-  const toCome = new Set(
-    reports.schedule.filter(r => today === null || dayNumber(r.date) >= today).map(r => fold(r.serviceCategory)),
-  )
-  const workshops: Proposal['workshops'] = workshopCategories
-    .filter(category => toCome.has(fold(category)))
-    .map(category => {
-      // The room types it was sold by: the pricing options filed under its own
-      // service category. A deposit or a top-up sold separately is one of these
-      // too, and is moved into the tier it buys by hand.
-      const options = reports.holdings.filter(h => fold(h.serviceCategory) === fold(category))
-      const keys = [...new Set(options.map(h => normaliseOptionName(h.option)))].sort()
-      return {
-        category,
-        // What Mindbody calls the category is the workshop's own name in it.
-        name: category,
-        location: null,
-        capacity: null,
-        migrate: null,
-        tiers: keys.map(key => {
-          const spellings = options.filter(h => normaliseOptionName(h.option) === key).map(h => h.option)
-          return { name: commonest(spellings), mindbodyNames: [...new Set(spellings)].sort(), priceSgd: null }
-        }),
-      }
-    })
+  // One entry per category, for a person to decide `migrate`: its days to come,
+  // and its past runs for a studio bringing its history.
+  const workshops: Proposal['workshops'] = workshopCategories.map(category => {
+    // The room types it was sold by: the pricing options filed under its own
+    // service category. A deposit or a top-up sold separately is one of these
+    // too, and is moved into the tier it buys by hand.
+    const options = reports.holdings.filter(h => fold(h.serviceCategory) === fold(category))
+    const keys = [...new Set(options.map(h => normaliseOptionName(h.option)))].sort()
+    return {
+      category,
+      // What Mindbody calls the category is the workshop's own name in it.
+      name: category,
+      location: null,
+      capacity: null,
+      migrate: null,
+      tiers: keys.map(key => {
+        const spellings = options.filter(h => normaliseOptionName(h.option) === key).map(h => h.option)
+        return { name: commonest(spellings), mindbodyNames: [...new Set(spellings)].sort(), priceSgd: null }
+      }),
+    }
+  })
 
   // The roster and the attendance report call one appointment different things
   // ("Personal Training / PT" beside a bare "PT"); both are PT.
@@ -92,7 +97,8 @@ export function proposeSchedule(
   ].sort()
 
   // Weekly: the same weekday, time, Room and name in each of the four weeks
-  // that ended on the day of the download.
+  // that ended on the day of the download — from the timetable's past, since its
+  // future reaches only days past the download.
   const series: Proposal['series'] = []
   if (today !== null) {
     const phoneBook = new Map(reports.phoneBook.map(p => [normaliseStaffName(p.name), p.name]))
@@ -106,9 +112,16 @@ export function proposeSchedule(
     }
     for (const key of [...slots.keys()].sort()) {
       const rows = slots.get(key)!
+      // In every one of the weeks up to the download: a slot that stopped is not running.
       const weeks = new Set(rows.map(r => Math.floor((today - dayNumber(r.date)) / 7)))
       if (weeks.size < WEEKS) continue
-      const teacher = commonest(rows.map(r => r.staff))
+      // Who teaches it now. A substitute covering (`***`) never counts; a slot
+      // clearly handed over — the new teacher took the last two weeks it ran —
+      // goes with them; anything less clear is whoever taught it most.
+      const own = rows.filter(r => !r.substitute).sort((a, b) => dayNumber(a.date) - dayNumber(b.date))
+      const [before, latest] = own.slice(-2).map(r => normaliseStaffName(r.staff))
+      const teacher =
+        latest !== undefined && latest === before ? own.at(-1)!.staff : commonest((own.length > 0 ? own : rows).map(r => r.staff))
       series.push({
         className: commonest(rows.map(r => r.description)),
         weekday: isoWeekday(rows[0]!.date),

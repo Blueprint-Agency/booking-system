@@ -8,12 +8,16 @@ import { mapStudio, renderPreflight, type MindbodyReports, type Transformed } fr
 import {
   readAccountBalances,
   readAttendance,
+  readAutopayDetail,
   readMemberList,
+  readMembership,
   readCancellations,
+  readGroupCancellations,
   readPayroll,
   readPayRates,
   readPhoneBook,
   readPricingOptionRegister,
+  readPromotions,
   readReferralTypes,
   readRetentionManagement,
   readRoster,
@@ -37,6 +41,8 @@ export const REPORTS = {
   members: { label: 'Mailing Lists — Mailing List', test: (f: string) => /mailing list\.[a-z]+$/i.test(f) },
   referrals: { label: 'Referral Types (detail files)', test: (f: string) => /referral types/i.test(f) && !/summary/i.test(f) },
   retention: { label: 'Retention Management', test: (f: string) => /retention management/i.test(f) },
+  // The Old Version is totals; only the Detail has a row per member.
+  membership: { label: 'Membership — New Version Detail', test: (f: string) => /membership - new version detail/i.test(f) },
   phoneBook: { label: 'Phone Book', test: (f: string) => /phone book/i.test(f) },
   // The Summary view is the same rows with fewer columns; Detail has the activation date.
   holdings: { label: 'Visits Remaining — Detail', test: (f: string) => /visits remaining.*detail/i.test(f) },
@@ -58,9 +64,15 @@ export const REPORTS = {
     test: (f: string) => /attendance/i.test(f) && !/analysis/i.test(f) && /-\s*date\b/i.test(f),
   },
   payroll: { label: 'Payroll — Detail', test: (f: string) => /payroll.*detail/i.test(f) },
-  // When each late cancel happened, and who did it. Individual records only:
-  // "Group cancellations" repeats rows already in them.
+  // When each late cancel happened, and who did it.
   cancellations: { label: 'Cancellations — Individual records', test: (f: string) => /cancellations - individual records/i.test(f) },
+  // The classes the studio called off. Its lines repeat Individual records, so
+  // it is read for the classes, never for the members' cancels.
+  groupCancellations: { label: 'Cancellations — Group cancellations', test: (f: string) => /cancellations - group cancellations/i.test(f) },
+  // What a promotion took off each sale: the Summary view is totals per promotion.
+  promotions: { label: 'Promotions — Detail', test: (f: string) => /promotions - detail/i.test(f) },
+  // The autopays still to run: listed in the preflight, to stop in Mindbody.
+  autopay: { label: 'Autopay Detail', test: (f: string) => /autopay detail/i.test(f) },
 } as const
 
 /**
@@ -73,6 +85,7 @@ export const REPORT_RULES: Record<keyof typeof REPORTS, { single: boolean; requi
   members: { single: true, required: true },
   referrals: { single: false, required: true },
   retention: { single: true, required: true },
+  membership: { single: true, required: false },
   phoneBook: { single: true, required: true },
   holdings: { single: true, required: true },
   optionSales: { single: true, required: true },
@@ -84,6 +97,9 @@ export const REPORT_RULES: Record<keyof typeof REPORTS, { single: boolean; requi
   attendance: { single: false, required: false },
   payroll: { single: false, required: false },
   cancellations: { single: false, required: false },
+  groupCancellations: { single: true, required: false },
+  promotions: { single: true, required: false },
+  autopay: { single: true, required: false },
 }
 
 async function filesUnder(dir: string): Promise<string[]> {
@@ -144,11 +160,18 @@ export async function readReports(dir: string): Promise<MindbodyReports> {
   for (const file of optionalSet('payroll')) payroll.push(...readPayroll(await read(file)))
   const cancellations = []
   for (const file of optionalSet('cancellations')) cancellations.push(...readCancellations(await read(file)))
+  const groupCancellationsFile = optional('groupCancellations')
+  // Optional: a download older than it has none, and every past sale is then read as sold at full price.
+  const promotionsFile = optional('promotions')
+  // Optional: an Unlimited Plan's Home Location falls back past it to where its visits were sold.
+  const membershipFile = optional('membership')
+  const autopayFile = optional('autopay')
 
   return {
     members: readMemberList(await one('members')),
     referrals,
     retention: readRetentionManagement(await one('retention')),
+    membership: membershipFile ? readMembership(await workbook(membershipFile)) : [],
     phoneBook: readPhoneBook(await one('phoneBook')),
     holdings: readVisitsRemaining(await workbook(holdingsFile)),
     optionSales: readPricingOptionRegister(await one('optionSales')),
@@ -160,10 +183,16 @@ export async function readReports(dir: string): Promise<MindbodyReports> {
     attendance,
     payroll,
     cancellations,
+    groupCancellations: groupCancellationsFile ? readGroupCancellations(await read(groupCancellationsFile)) : [],
+    promotions: promotionsFile ? readPromotions(await read(promotionsFile)) : [],
+    // Optional: a download older than it lists no autopays, which is not the same as there being none.
+    autopay: autopayFile ? readAutopayDetail(await read(autopayFile)) : [],
   }
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+/** A host that is the operator's own machine. */
+const LOCAL_HOST = /(?:\/\/|\.)localhost(?=[:/,]|$)|\b127\.\d{1,3}\.\d{1,3}\.\d{1,3}\b|\b0\.0\.0\.0\b|\[::1\]/i
 
 export type TransformOutput = Transformed & {
   /** The zip, byte-for-byte the same for the same inputs. */
@@ -185,9 +214,19 @@ export async function transformMindbody(input: {
   reportsDir: string
   config: unknown
   tenantId: string
+  /** The archive is for a database on this machine, so email links to it are meant. */
+  local?: boolean
 }): Promise<TransformOutput> {
   if (!UUID.test(input.tenantId)) throw new Error(`"${input.tenantId}" is not a Tenant id`)
   const config = validateConfig(input.config)
+  // The links in every email are baked in from originPatterns. Built from a local
+  // config and imported anywhere else, each one would point at the operator's machine.
+  if (!input.local && LOCAL_HOST.test(config.originPatterns)) {
+    throw new Error(
+      `originPatterns "${config.originPatterns}" points the studio's email links at this machine. ` +
+        'Use the config for the environment the archive is going to, or say the target is local (--local).',
+    )
+  }
   const reports = await readReports(input.reportsDir)
   const result = mapStudio(reports, config, input.tenantId.toLowerCase())
   // Caught here, naming every rule, rather than as one refused row at the end of the import.

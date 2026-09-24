@@ -79,7 +79,7 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     // The links in the email copy are this environment's, as they would be on staging.
     config.originPatterns = process.env.TENANT_ORIGIN_PATTERNS
     edit?.(config)
-    return transform.transformMindbody({ reportsDir: path.join(FIXTURES, 'reports'), config, tenantId: tenant.id })
+    return transform.transformMindbody({ reportsDir: path.join(FIXTURES, 'reports'), config, tenantId: tenant.id, local: true })
   }
 
   /** A Tenant provisioned the way the runbook says — no first admin — and the fixture transformed for it. */
@@ -592,6 +592,28 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     )
   })
 
+  test('a past PT no-show is still a no-show after the platform s PT jobs have run over it', async () => {
+    const studio = await importedStudio(withHistory())
+    const mei = await harness.signInAs('client', 'mei@example.test', studio)
+    const noShow = async () => {
+      const res = await get('/api/v1/me/pt-sessions', mei)
+      assert.equal(res.status, 200, await res.clone().text())
+      const requests = ((await res.json()) as { pt_requests: Record<string, any>[] }).pt_requests
+      const r = requests.find(x => x.session?.starts_at === '2026-09-03T01:00:00.000Z')!
+      return { status: r.status, checkIn: r.booking?.check_in_state }
+    }
+    const before = await noShow()
+    // She did not come: her booking says so, and the request is where the
+    // platform leaves any session that is over.
+    assert.deepEqual(before, { status: 'attended', checkIn: 'no_show' })
+
+    // The two PT jobs the platform runs every five minutes (`src/jobs/index.ts`).
+    const jobs = await import('../../../src/services/pt-sessions/cancel')
+    await jobs.completeEndedPtSessions()
+    await jobs.expireStaleSessions()
+    assert.deepEqual(await noShow(), before, 'nothing relabelled her no-show')
+  })
+
   test('SCH-15 an imported series extends from the portal without duplicating a class that already came across', async () => {
     const studio = await importedStudio()
     const owner = await harness.signInAs('staff', 'owner@example.test', studio)
@@ -758,16 +780,20 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
 
     // Historical Instructor Pay is the studio's own money, not a rate applied
     // after the fact — and Olive, who has no per-class rate at all, still has it.
+    // Payroll that fits no class or session that came across arrives as Manual
+    // Payroll Entries: Ivy's workshop (30), Olive's PT line with no session (54)
+    // and her retreat share (100) — so the totals are Mindbody's own.
     const finance = await get('/api/v1/portal/admin/finance?from=2026-08-01&to=2026-09-17', owner)
     assert.equal(finance.status, 200, await finance.clone().text())
     const body = (await finance.json()) as { instructor_totals: Record<string, any>[]; unpriced_count: number }
     assert.deepEqual(
       body.instructor_totals.map(i => `${i.instructor_name} ${i.total_sgd} over ${i.session_count}`).sort(),
-      ['Ivy Instructor 148 over 4', 'Olive Owner 56 over 2'],
+      ['Ivy Instructor 178 over 5', 'Olive Owner 210 over 4'],
     )
-    // The past class payroll has no line for, and the past PT session —
-    // Mindbody pays PT by percentage of the sale, which no report gives.
-    assert.equal(body.unpriced_count, 2)
+    assert.equal(await count('manual_payroll_entries', studio.tenantId), 3)
+    // The past class payroll has no line for, and the two past PT sessions
+    // (one a no-show) payroll has no line for and Mindbody never marked unpaid.
+    assert.equal(body.unpriced_count, 3)
   })
 
   test('past purchases are the studio s own decision: opted in they are pre-launch revenue, and otherwise nothing', async () => {
@@ -790,10 +816,40 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     const opted = await importedStudio(withHistory(true))
     assert.deepEqual(
       await preLaunchSales(opted),
-      // Kim's was used up before launch but had not expired, so Visits Remaining
-      // does not hold it either: money the studio took that nothing else counts.
-      ['Jane Doe 250', 'Kim Lee 250', 'Rick Roe 250'],
+      // One per sale line, on its sale date. Kim's was used up before launch but
+      // had not expired, so Visits Remaining does not hold it either: money the
+      // studio took that nothing else counts. Rick's $0 ClassPass is a comp.
+      ['Jane Doe 250', 'Kim Lee 250', 'Rick Roe 0', 'Rick Roe 240', 'Rick Roe 250'],
     )
+  })
+
+  test('a past sale and its return: one purchase, tagged refunded, and one Refund on the day of the return that Finance nets', async () => {
+    const studio = await importedStudio(withHistory(true))
+    const owner = await harness.signInAs('staff', 'owner@example.test', studio)
+    const finance = async (period: string) => {
+      const res = await get(`/api/v1/portal/admin/finance?${period}`, owner)
+      assert.equal(res.status, 200, await res.clone().text())
+      return (await res.json()) as { rows: Record<string, any>[]; totals: { gross_sgd: number; discounts_sgd: number; refunds_sgd: number } }
+    }
+
+    // Days at the studio (UTC+8): the sale on 1 July, and the return on the 3rd.
+    const day = (d: string, t: string) => encodeURIComponent(`${d}T${t}+08:00`)
+    const july = await finance(`from=${day('2026-07-01', '00:00:00')}&to=${day('2026-07-03', '23:59:59')}`)
+    const rick = july.rows.filter(r => r.user_name === 'Rick Roe' && r.kind !== 'instructor_pay')
+    assert.deepEqual(
+      rick.map(r => [r.kind, r.paid_sgd, r.refunded, r.complimentary]).sort(),
+      [
+        ['purchase', 250, true, false],
+        ['refund', -250, true, false],
+      ],
+    )
+    assert.equal(july.totals.refunds_sgd, 250)
+    // Jane's and Kim's packs are July's takings; Rick's came back.
+    assert.equal(july.totals.gross_sgd - july.totals.discounts_sgd - july.totals.refunds_sgd, 500)
+
+    // The Refund belongs to the day it was given, so a period that ends before it has the sale and no Refund.
+    const beforeReturn = await finance(`from=${day('2026-07-01', '00:00:00')}&to=${day('2026-07-02', '23:59:59')}`)
+    assert.ok(!beforeReturn.rows.some(r => r.kind === 'refund'))
   })
 
   test('verify compares the studio s past as well as its future, and names the year that lost something', async () => {
@@ -888,5 +944,50 @@ describe('a Mindbody studio, transformed and imported', { skip: integrationTests
     // And the studio is still empty, so the operator can import again.
     const corrected = await transformFor(studio.tenant)
     assert.equal((await importZip(studio.tenant.id, corrected.zip)).status, 200)
+  })
+
+  test('the import keeps the branding the super portal set, where the archive has none of its own', async () => {
+    const studio = await transformedStudio()
+    await harness.db.execute(sql`
+      UPDATE tenant_settings SET logo_url = 'https://cdn.example.test/logo.png', tagline = 'Breathe in',
+        theme = '{"primary":"#123456"}'::jsonb, mail_from_name = 'Fixture Front Desk'
+      WHERE tenant_id = ${studio.tenant.id}`)
+
+    const imported = await importZip(studio.tenant.id, studio.zip)
+    assert.equal(imported.status, 200, JSON.stringify(imported.body))
+
+    const [settings] = await harness.db.execute<Record<string, unknown>>(
+      sql`SELECT * FROM tenant_settings WHERE tenant_id = ${studio.tenant.id}`,
+    )
+    assert.deepEqual(
+      [settings!.logo_url, settings!.tagline, settings!.theme, settings!.mail_from_name],
+      ['https://cdn.example.test/logo.png', 'Breathe in', { primary: '#123456' }, 'Fixture Front Desk'],
+    )
+    // What the archive does say still lands.
+    assert.equal(settings!.display_name, 'Mindbody Fixture Studio')
+    assert.equal(settings!.mail_reply_to, 'owner@example.test')
+  })
+
+  test('an import run 10 days after the download has invitations that are still valid', async () => {
+    const studio = await transformedStudio()
+    // As the transform writes them for a download 10 days ago: sent then, lapsed 3 days since.
+    const downloaded = Date.now() - 10 * 86_400_000
+    for (const invitation of studio.archive.rows.staff_invitations!) {
+      invitation.created_at = new Date(downloaded).toISOString()
+      invitation.expires_at = new Date(downloaded + 7 * 86_400_000).toISOString()
+    }
+    const { packArchive } = await import('../../../src/services/tenants/transfer-archive')
+    const importedAt = Date.now()
+    const imported = await importZip(studio.tenant.id, await packArchive(studio.archive))
+    assert.equal(imported.status, 200, JSON.stringify(imported.body))
+
+    const invitations = await harness.db
+      .select({ email: schema.staffInvitations.email, expiresAt: schema.staffInvitations.expiresAt })
+      .from(schema.staffInvitations)
+      .where(and(eq(schema.staffInvitations.tenantId, studio.tenant.id), eq(schema.staffInvitations.status, 'pending')))
+    assert.ok(invitations.length > 0)
+    for (const i of invitations) {
+      assert.ok(i.expiresAt.getTime() >= importedAt + 7 * 86_400_000 - 60_000, `${i.email}: a week from the import, not from the download`)
+    }
   })
 })

@@ -22,6 +22,22 @@ export type RegisterMatch = { clientId: string; outcome: 'matched' } | { clientI
 export const personKey = (raw: string) => normaliseStaffName(raw.replace(/\./g, ' '))
 
 export function registerMatcher(members: MemberListRow[]): (sale: OptionSaleRow) => RegisterMatch {
+  const candidatesOf = registerCandidates(members)
+  return sale => {
+    const candidates = candidatesOf(sale)
+    if (candidates.length === 0) return { clientId: null, outcome: 'unmatched' }
+    if (candidates.length === 1) return { clientId: candidates[0]!, outcome: 'matched' }
+    return { clientId: null, outcome: 'ambiguous' }
+  }
+}
+
+/**
+ * Every member a register row could be: those holding its name, narrowed by
+ * phone where that tells them apart. Where the member is already known — a sale
+ * line carries its client's id — this is the question to ask of the register:
+ * not "whose is this row?" but "could it be theirs?".
+ */
+export function registerCandidates(members: MemberListRow[]): (sale: OptionSaleRow) => string[] {
   const byName = new Map<string, MemberListRow[]>()
   for (const m of members) {
     const key = personKey(`${m.firstName} ${m.lastName}`)
@@ -30,10 +46,9 @@ export function registerMatcher(members: MemberListRow[]): (sale: OptionSaleRow)
   const digits = (s: string) => s.replace(/\D/g, '')
   return sale => {
     const candidates = byName.get(personKey(sale.client)) ?? []
-    if (candidates.length === 0) return { clientId: null, outcome: 'unmatched' }
-    if (candidates.length === 1) return { clientId: candidates[0]!.id, outcome: 'matched' }
+    if (candidates.length < 2) return candidates.map(m => m.id)
     const phone = digits(sale.phone)
     const narrowed = phone ? candidates.filter(m => digits(m.phone) === phone) : []
-    return narrowed.length === 1 ? { clientId: narrowed[0]!.id, outcome: 'matched' } : { clientId: null, outcome: 'ambiguous' }
+    return (narrowed.length === 1 ? narrowed : candidates).map(m => m.id)
   }
 }

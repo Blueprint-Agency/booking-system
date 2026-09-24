@@ -6,12 +6,16 @@ import { readHtmlTable, type TableRow } from './html-table'
 import {
   readAccountBalances,
   readAttendance,
+  readAutopayDetail,
   readCancellations,
+  readGroupCancellations,
   readMemberList,
+  readMembership,
   readPayRates,
   readPayroll,
   readPhoneBook,
   readPricingOptionRegister,
+  readPromotions,
   readReferralTypes,
   readRetentionManagement,
   readRoster,
@@ -19,7 +23,7 @@ import {
   readStaffSchedule,
   readVisitsRemaining,
 } from './readers'
-import { parseMindbodyDate, cleanPhone, cleanEmail, normaliseOptionName, normaliseStaffName, parseSessions } from './values'
+import { parseMindbodyDate, cleanPhone, cleanEmail, formatPhone, isoDay, normaliseOptionName, normaliseStaffName, parseSessions } from './values'
 import { readXlsxTable } from './xlsx'
 
 /**
@@ -122,19 +126,38 @@ test('the member list: one member per row, the total row and the placeholders le
       <tr align="left">
         <td><div><strong>Last name</strong></div></td><td><div><strong>First name</strong></div></td>
         <td><div><strong>Nickname</strong></div></td><td><div><strong>ID</strong></div></td>
+        <td><div><strong>Country</strong></div></td>
         <td><div><strong>Mobile phone</strong></div></td><td><div><strong>Home phone</strong></div></td>
         <td><div><strong>Email</strong></div></td>
       </tr>
       <tr class="resultRow"><td>Doe </td><td>Jane</td><td></td><td style="mso-number-format:\\@">100000001</td>
-        <td>91234567</td><td>10000000000</td><td> Jane@Example.test </td></tr>
+        <td>SG</td><td>91234567</td><td>10000000000</td><td> Jane@Example.test </td></tr>
       <tr class="resultRow"><td>.</td><td>Solo</td><td></td><td>AB123456</td>
-        <td>10000000000</td><td>10000000000</td><td>-</td></tr>
-      <tr><td colspan="20">Total clients: 2</td></tr>
+        <td></td><td>10000000000</td><td>10000000000</td><td>-</td></tr>
+      <tr class="resultRow"><td>Tan</td><td>Ali</td><td></td><td>100000009</td>
+        <td> my </td><td>012-345 6789</td><td></td><td>ali@example.test</td></tr>
+      <tr><td colspan="20">Total clients: 3</td></tr>
     </table>`)
   assert.deepEqual(members, [
-    { id: '100000001', firstName: 'Jane', lastName: 'Doe', email: 'jane@example.test', phone: '+6591234567' },
-    { id: 'AB123456', firstName: 'Solo', lastName: '', email: null, phone: '' },
+    { id: '100000001', firstName: 'Jane', lastName: 'Doe', email: 'jane@example.test', phone: '+6591234567', mobile: '91234567', country: 'SG' },
+    { id: 'AB123456', firstName: 'Solo', lastName: '', email: null, phone: '', mobile: '10000000000', country: '' },
+    // The Country column is what the number is dialled from: the mapper formats `mobile` with it.
+    { id: '100000009', firstName: 'Ali', lastName: 'Tan', email: 'ali@example.test', phone: '0123456789', mobile: '012-345 6789', country: 'MY' },
   ])
+})
+
+test('a phone is formatted with the member s country: its calling code, the trunk 0 dropped, the dummy empty', () => {
+  assert.deepEqual(formatPhone('91234567', 'SG'), { phone: '+6591234567', ok: true })
+  assert.deepEqual(formatPhone('6591234567', 'SG'), { phone: '+6591234567', ok: true }, 'the code already written, without its +')
+  assert.deepEqual(formatPhone('012-345 6789', 'MY'), { phone: '+60123456789', ok: true }, 'a national number, its trunk 0 dropped')
+  assert.deepEqual(formatPhone('0412 345 678', 'AU'), { phone: '+61412345678', ok: true })
+  assert.deepEqual(formatPhone('+44 7700 900123', 'SG'), { phone: '+447700900123', ok: true }, 'written with a + it names its own country')
+  assert.deepEqual(formatPhone('0060123456789', 'SG'), { phone: '+60123456789', ok: true }, 'and 00 is a +')
+  assert.deepEqual(formatPhone('10000000000', 'SG'), { phone: '', ok: true }, 'Mindbody s dummy is no phone, not a bad one')
+  assert.deepEqual(formatPhone('', 'SG'), { phone: '', ok: true })
+  assert.deepEqual(formatPhone('0412 345 678', 'SG'), { phone: '', ok: false }, 'too long to be a Singapore number, and no code to say otherwise')
+  assert.deepEqual(formatPhone('12345', 'SG'), { phone: '', ok: false })
+  assert.deepEqual(formatPhone('91234567', 'ZZ'), { phone: '', ok: false }, 'a country with no calling code known here')
 })
 
 test('referral types: the creation date per member, across group, subtotal and blank rows', () => {
@@ -303,7 +326,8 @@ test('sales: only the sale lines of each client block, dated M/D, a return as mi
   const sales = readSales(
     readFileSync(path.join(FIXTURES, 'reports', 'Clients', '19 Big Spenders', '19 Big Spenders - Detail Accrual.xls'), 'utf8'),
   )
-  assert.equal(sales.length, 9, 'client headers, section rows, subtotals and totals are not sales')
+  assert.equal(sales.length, 20, 'client headers, section rows, subtotals and totals are not sales')
+  assert.deepEqual([...new Set(sales.map(s => s.clientId))], ['100000001', '100000002', '100000005', 'AB123456', '100000099', '100000008'])
   const first = sales[0]!
   assert.deepEqual([first.saleId, first.soldAt.month, first.soldAt.day], ['351', 4, 24], 'M/D: the 24th of April')
   assert.equal(first.description, '2 Trial Classes for New Joiners')
@@ -311,6 +335,47 @@ test('sales: only the sale lines of each client block, dated M/D, a return as mi
   const returned = sales.find(s => s.saleId === '5402')!
   assert.deepEqual([returned.quantity, returned.total], [-1, -250])
   assert.equal(sales.find(s => s.saleId === '7000')!.total, 1700)
+})
+
+test('sales: each line is the client whose block it is in, by the id in the block header s link', () => {
+  const header = (id: string, name: string) =>
+    `<tr style="background-color:#acacac;"><td><strong><a class="whiteSmallText" href="/app/clients/${id}/purchases">${name}</a></strong></td>
+     <td><strong>Sale Date</strong></td><td><strong>Description</strong></td><td><strong>Location</strong></td>
+     <td><strong>Quantity</strong></td><td><strong>Sales Total</strong></td></tr>`
+  const line = (sale: string, date: string, item: string, location: string, quantity: string, total: string) =>
+    `<tr class="right"><td><a href="adm_tlbx_voidedit.asp?saleno=${sale}">${sale}</a></td><td>${date}</td>
+     <td>&nbsp;&nbsp;${item}</td><td>${location} </td><td>${quantity}</td><td>${total}</td></tr>`
+  const html = `<table>
+    ${header('100000001', 'Lee, Sam')}
+    <tr><td colspan="6">Services</td></tr>
+    ${line('10', '12/31/2025', 'Class Pack - Bundle of 10', 'Main Hall', '1', '250.00')}
+    ${header('100000001', 'Lee, Sam')}
+    ${line('11', '1/2/2026', 'Class Pack - Bundle of 10', 'Main Hall', '-1', '-250.00')}
+    <tr class="right"><td>Total:</td><td>0</td><td>0.00</td></tr>
+    ${header('100000002', 'Lee, Sam')}
+    ${line('12', '1/3/2026', 'Drop-in', 'Online Store', '1', '30.00')}
+    </table>`
+  assert.deepEqual(
+    readSales(html).map(s => [s.saleId, s.clientId, isoDay(s.soldAt), s.location, s.quantity, s.total]),
+    [
+      ['10', '100000001', '2025-12-31', 'Main Hall', 1, 250],
+      // The header again at a page break: the same client, carried on.
+      ['11', '100000001', '2026-01-02', 'Main Hall', -1, -250],
+      // Two members of one name are two ids, never one.
+      ['12', '100000002', '2026-01-03', 'Online Store', 1, 30],
+    ],
+  )
+})
+
+test('promotions: one line per discounted sale, by sale id, with what was taken off', () => {
+  const promotions = readPromotions(
+    readFileSync(path.join(FIXTURES, 'reports', 'Clients', '23 Promotions', '23 Promotions - Detail.xls'), 'utf8'),
+  )
+  assert.deepEqual(
+    promotions.map(p => [p.saleId, isoDay(p.soldAt), p.promotion, p.item, p.discount, p.total]),
+    [['8120', '2026-08-20', 'Launch 10', 'Class Pack - Bundle of 20', 50, 450]],
+    'D/M dates, money without its $ and commas, and not the totals line',
+  )
 })
 
 test('account balances: one row per client, and not the total line', () => {
@@ -372,7 +437,7 @@ test('the roster: dates and times come back as real workbook values, whatever th
   const roster = readRoster(
     await readXlsxTable(readFileSync(path.join(FIXTURES, 'reports', 'Clients', '17 Schedule at a Glance', '17 Schedule at a Glance - 2090.xlsx'))),
   )
-  assert.equal(roster.length, 10)
+  assert.equal(roster.length, 11)
   const first = roster[0]!
   assert.deepEqual(
     [first.date, first.start, first.end],
@@ -384,14 +449,43 @@ test('the roster: dates and times come back as real workbook values, whatever th
   assert.ok(roster.some(r => r.status === 'Late Cancel'), 'a cancelled seat is still a row; what to do with it is the mapper s')
 })
 
-test('pay rates: the per-class rate of each teacher, and null where there is none', async () => {
+test('the roster: a PT appointment s real end time, its notes, and who booked it', async () => {
+  const roster = readRoster(
+    await readXlsxTable(readFileSync(path.join(FIXTURES, 'reports', 'Clients', '17 Schedule at a Glance', '17 Schedule at a Glance - 2090.xlsx'))),
+  )
+  const pt = roster.find(r => r.description === 'Personal Training / PT' && r.date.year === 2026)!
+  assert.deepEqual([pt.start, pt.end], [{ hour: 9, minute: 0 }, { hour: 10, minute: 30 }], 'ninety minutes, as booked')
+  assert.equal(pt.notes, 'Left knee: no deep lunges', 'the Appointment Notes column')
+  assert.equal(pt.scheduledBy, 'Ivy Instructor', 'a member of staff, First Last')
+  assert.equal(roster[0]!.scheduledBy, 'Client', 'booked by the member themselves')
+  assert.equal(roster[0]!.notes, '')
+})
+
+test('pay rates: the per-class and per-head rate of each teacher, and null where there is none', async () => {
   const rates = readPayRates(await readXlsxTable(readFileSync(path.join(FIXTURES, 'reports', 'Staff', '38 Pay Rates', '38 Pay Rates.xlsx'))))
   assert.deepEqual(rates, [
     // Under an "Assistant/Per Class Rate" slot, which is still per class.
-    { staff: 'Instructor, Ivy', perClass: 35 },
-    // Paid per head: the platform has no such rate, so the classes are Unpriced.
-    { staff: 'Owner, Olive', perClass: null },
-    { staff: 'Teacher, Old', perClass: 40 },
+    { staff: 'Instructor, Ivy', perClass: 35, perClient: null },
+    // Paid per head: no per-class rate, and the per-head one kept for the mapper to place or name.
+    { staff: 'Owner, Olive', perClass: null, perClient: 5 },
+    { staff: 'Teacher, Old', perClass: 40, perClient: null },
+  ])
+})
+
+test('pay rates: a teacher whose every slot is 0 really is paid 0, which is not the same as having no rate', () => {
+  const rates = readPayRates([
+    row('Unpaid, Una', '', 'Assistant/Per Class Rate', 'Per Class Rate', 'Per Client Rate'),
+    row('Default: Assistant/Per Class Rate', 'Rate', '$0.00', '$0.00', '$0.00'),
+    row('Both, Bea', '', 'Assistant/Per Class Rate', 'Per Class Rate', 'Per Client Rate'),
+    row('Default: Assistant/Per Class Rate', 'Rate', '$35.00', '$0.00', '$5.00'),
+    row('Share, Sol', '', 'Per Class Rate', 'Percentage Rate'),
+    row('Default: Percentage Rate', 'Rate', '', '40%'),
+  ])
+  assert.deepEqual(rates, [
+    { staff: 'Unpaid, Una', perClass: 0, perClient: null },
+    { staff: 'Both, Bea', perClass: 35, perClient: 5 },
+    // A blank and a percentage say nothing about per-class pay: no rate, not a rate of 0.
+    { staff: 'Share, Sol', perClass: null, perClient: null },
   ])
 })
 
@@ -435,11 +529,22 @@ test('payroll: the teacher from the heading above the table, and what each class
       'Instructor, Ivy 31/8/2026 19:00 Hatha 35',
       'Instructor, Ivy 7/9/2026 19:00 Hatha 38',
       'Instructor, Ivy 10/9/2026 19:00 Hatha 40',
+      // A percentage-rate class that did not come across (a workshop): a line per client, no class name.
+      'Instructor, Ivy 5/9/2026 14:00  12',
+      'Instructor, Ivy 5/9/2026 14:00  18',
       // Paid per client, which is still a real figure for the class that ran.
       'Owner, Olive 8/9/2026 10:00 Vinyasa flow 48',
       'Owner, Olive 15/9/2026 10:00 Vinyasa flow 8',
+      // PT with nobody on the roster for it, and a revenue share at no set time.
+      'Owner, Olive 20/8/2026 11:00  54',
+      'Owner, Olive 30/8/2026 undefined:00  100',
     ],
     'the report title, the pay-rate line and the totals are not classes',
+  )
+  assert.deepEqual(
+    [...new Set(paid.map(p => `${p.staff}: ${p.rate?.name} ${p.rate?.percent ?? '-'}`))],
+    ['Instructor, Ivy: Per Class -', 'Instructor, Ivy: Percentage Rate 40', 'Owner, Olive: Per Client -', 'Owner, Olive: PT 50'],
+    'the pay-rate line above each table is the rate its lines were paid on',
   )
 })
 
@@ -458,6 +563,37 @@ test('cancellations: rows with no opening <tr>, the cancel time to the second, a
     [{ year: 2026, month: 7, day: 6, hour: 17, minute: 30, second: 12 }, 'Jane Doe', { year: 2026, month: 7, day: 6 }, { hour: 19, minute: 0 }, 'Jane Doe', 'late'],
   )
   assert.deepEqual([early!.start, early!.cancelledBy, early!.method], [null, '_ClassPass API', 'early'], 'an appointment at no set time')
+})
+
+test('group cancellations: one block per class the studio cancelled, a line per member who was on it', () => {
+  const block = (id: number) =>
+    `<tr><td colspan='9'>&nbsp;<b>Group Cancellation:</b>&nbsp;&nbsp;</td>
+     <td colspan="2"><b><a class="trackResource" href="adm_tlbx_advcanc_rest_p.asp?id=${id}&type=group&rtn=grp">restore group</a></b></td></tr>`
+  const line = (cancelled: string, date: string, time: string, type: string, client: string) =>
+    `<tr><td>&nbsp;${cancelled}&nbsp;</td><td>&nbsp;Frank Front&nbsp;</td><td>&nbsp;${date}&nbsp;</td><td>&nbsp;${time}&nbsp;</td>
+     <td>&nbsp;${type}&nbsp;</td><td>&nbsp;Main Hall&nbsp;</td><td>&nbsp;Ivy (Trainee Te&nbsp;</td><td>&nbsp;${client}&nbsp;</td>
+     <td>&nbsp;early&nbsp;</td><td>&nbsp;No&nbsp;</td><td></td></tr>`
+  const html = `<table><tr><td><b>&nbsp;Cancel Date/Time</b></td><td><b>&nbsp;Cancelled By</b></td><td><b>&nbsp;Date</b></td>
+    <td><b>&nbsp;Time</b></td><td><b>&nbsp;Type</b></td><td><b>&nbsp;Location</b></td><td><b>&nbsp;Teacher</b></td>
+    <td><b>&nbsp;Client</b></td><td><b>&nbsp;Method</b></td><td><b>&nbsp;Add-On</b></td><td><b></b></td></tr>
+    ${block(33)}
+    ${line('7/8/2026 7:42:29 am', '7/8/2026', '12:00&nbsp;pm ', 'Stretch &amp; Bala', 'Jane&nbsp;Doe')}
+    ${line('7/8/2026 7:42:31 am', '7/8/2026', '12:00&nbsp;pm ', 'Stretch &amp; Bala', 'Rick&nbsp;Roe')}
+    ${block(32)}
+    ${line('1/8/2026 9:00:00 pm', '2/8/2026', '7:00&nbsp;pm ', 'Hatha', 'Pat&nbsp;Poe')}
+    </table>`
+  const rows = readGroupCancellations(html)
+  assert.deepEqual(
+    rows.map(r => [r.group, isoDay(r.date), r.start, r.description, r.client, r.cancelledBy]),
+    [
+      ['33', '2026-08-07', { hour: 12, minute: 0 }, 'Stretch & Bala', 'Jane Doe', 'Frank Front'],
+      ['33', '2026-08-07', { hour: 12, minute: 0 }, 'Stretch & Bala', 'Rick Roe', 'Frank Front'],
+      ['32', '2026-08-02', { hour: 19, minute: 0 }, 'Hatha', 'Pat Poe', 'Frank Front'],
+    ],
+    'each line knows the group it is in; the dates run D/M like the Individual records',
+  )
+  assert.deepEqual(rows[0]!.cancelledAt, { year: 2026, month: 8, day: 7, hour: 7, minute: 42, second: 29 })
+  assert.equal(rows[0]!.teacher, 'Ivy (Trainee Te', 'cut short by Mindbody, like the class name')
 })
 
 test('attendance without revenue: the three flags are how a visit ended, and "n/a" is no option', () => {
@@ -485,9 +621,15 @@ test('attendance without revenue: the three flags are how a visit ended, and "n/
       ['100000002', 'Late Cancel', 'Class Pack - Bundle of 10'],
       ['100000003', 'No Show', 'ClassPass'],
       ['100000004', 'No Show', 'Unlimited 12'],
-      ['100000005', 'Reserved', ''],
+      // Not counted towards the teacher's pay, and still a visit: Staff Paid is about pay, not attendance.
+      ['100000005', 'Signed in', ''],
     ],
-    'no Status column: it is read from Staff Paid, Late Cancel and No-show, and the grand total is no visit',
+    'no Status column: it is read from Late Cancel and No-show, and the grand total is no visit',
+  )
+  assert.deepEqual(
+    visits.map(v => v.staffPaid),
+    [true, false, false, true, false],
+    'whether the teacher was paid for the visit is kept: an unpaid PT no-show is $0, not Unpriced',
   )
   const first = visits[0]!
   assert.deepEqual(
@@ -495,6 +637,21 @@ test('attendance without revenue: the three flags are how a visit ended, and "n/
     [{ year: 2026, month: 9, day: 17 }, { hour: 8, minute: 45 }, null, 'Hatha', '', 'Main Hall'],
     'the class name is Type, the Location is Visit Location, and the schedule report supplies the Room and the end',
   )
+  assert.equal(first.saleLocation, 'Online Store', 'where the option that paid for it was sold: a Location, or the online store')
+})
+
+test('membership (new version, detail): each member s membership and the Location it is held at', () => {
+  const rows = readMembership([
+    row('BarcodeID', 'Client Name', 'Status', 'Membership Tier', 'Phone', 'Email Address', 'Joined On', 'Location', 'Next AutoPay Date'),
+    row('100000001', 'Jane Doe', 'Active', 'Unlimited', '91234567', 'jane@example.test', '45000', ' Riverside ', ''),
+    row('100000002', 'Rick Roe', 'Expired', 'Unlimited', '', '', '45000', 'Main Hall', ''),
+    row('', 'Total', '', '', '', '', '', '', ''),
+  ])
+  assert.deepEqual(rows, [
+    { id: '100000001', status: 'Active', location: 'Riverside' },
+    { id: '100000002', status: 'Expired', location: 'Main Hall' },
+  ])
+  assert.throws(() => readMembership([row('Something', 'Else')]), /Membership.*BarcodeID/)
 })
 
 test('payroll as Mindbody lays it out: each teacher named between the tables, three kinds of table', () => {
@@ -515,10 +672,17 @@ test('payroll as Mindbody lays it out: each teacher named between the tables, th
       <tr class="odd"><td>8/9/2026</td><td>10:00 am</td><td>Doe, Jane</td><td>Unlimited 12</td><td>10.00</td><td>10.00</td><td>5.00</td><td>5.00</td></tr>
       <tr class=""><td>8/9/2026</td><td>10:00 am</td><td>Roe, Rick</td><td>Class Pack</td><td>20.00</td><td>20.00</td><td>10.00</td><td>10.00</td></tr>
     </table>
+    <div class="payscaleHeader"><span class="payscale">
+      Pay rate: PT (50%)</span></div>
     <table class="results appointments">
       <tr><td>Appointment Date</td><td>Appt. Time</td><td>Client Name</td><td>Series Used</td><td>Revenue</td><td></td><td>Rev. per Session</td><td>Earnings</td></tr>
       <tr class="odd"><td>Thursday, 10 September 2026</td><td>11:00 am</td><td>J. Doe</td><td>PT - Bundle of 10</td><td>1,200.00</td><td></td><td>120.00</td><td>60.00</td></tr>
       <tr class=""><td>30/8/2026</td><td>TBD</td><td>R. Roe</td><td>Retreat - Twin</td><td>2,000.00</td><td></td><td>2,000.00</td><td>1,000.00</td></tr>
+    </table>
+    <div class="payscaleHeader"><span class="payscale">Pay rate: PT</span></div>
+    <table class="results appointments">
+      <tr><td>Appointment Date</td><td>Appt. Time</td><td>Client Name(s)</td><td></td><td># Staff paid</td><td># Staff unpaid</td><td>Base Pay</td><td></td><td>Earnings</td></tr>
+      <tr class="odd"><td>Friday, 11 September 2026</td><td>9:00&nbsp;am </td><td>M. Lin</td><td></td><td>1</td><td>0</td><td>40.00</td><td></td><td>40.00</td></tr>
     </table>
     <table class="results staffTotalAsstDisabled"><tr><td># Services</td><td># Staff paid</td><td># Staff unpaid</td><td>Base Earnings</td><td></td><td>Earnings</td></tr>
       <tr><td>Total for Owner, Olive</td><td>1</td><td>2</td><td>15.00</td><td></td><td>15.00</td></tr></table>`
@@ -530,7 +694,32 @@ test('payroll as Mindbody lays it out: each teacher named between the tables, th
       'class_per_client Owner, Olive 8/9 10:0  10',
       'appointment Owner, Olive 10/9 11:0  60',
       'appointment Owner, Olive 30/8 TBD  1000',
+      'appointment Owner, Olive 11/9 9:0  40',
     ],
     'a percentage-rate class is a line per client, which the mapper adds up; an appointment writes its day out; a line at no set time (a retreat share) is kept for the mapper to place or report; the totals are not lines',
   )
+  assert.deepEqual(
+    readPayroll(html).map(p => [p.rate, p.basePay]),
+    [
+      [{ name: 'Per Class Rate', percent: null }, 35],
+      [{ name: 'Percentage Rate', percent: 50 }, null],
+      [{ name: 'Percentage Rate', percent: 50 }, null],
+      [{ name: 'PT', percent: 50 }, null],
+      [{ name: 'PT', percent: 50 }, null],
+      // A flat PT rate: what one appointment pays, whoever it was with.
+      [{ name: 'PT', percent: null }, 40],
+    ],
+    'each table is paid on the rate named above it, and a flat rate says its amount in Base Pay',
+  )
+})
+
+test('autopay detail: one live autopay per row, and the page\'s "none found" line is none', () => {
+  const html = readFileSync(path.join(FIXTURES, 'reports', 'Sales', '43 Autopay Detail', '43 Autopay Detail - Scheduled.xls'), 'utf8')
+  assert.deepEqual(readAutopayDetail(html), [
+    { date: '1/10/2026', clientId: '100000001', client: 'Doe, Jane', email: 'jane.doe@example.test', location: 'Main Hall', item: 'Unlimited Monthly', status: 'Scheduled' },
+  ])
+  const none = `<table><tr><td><strong>Date</strong></td><td><strong>Client</strong></td><td><strong>Item</strong></td><td><strong>Status</strong></td></tr>
+    <tr><td colspan="7"><b><span>No autopay transactions found with the specified parameters.</span></b></td></tr></table>`
+  assert.deepEqual(readAutopayDetail(none), [])
+  assert.throws(() => readAutopayDetail('<table><tr><td>Something</td></tr></table>'), /Autopay Detail.*Client/)
 })

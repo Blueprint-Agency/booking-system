@@ -12,8 +12,8 @@
  *   reports/<Clients|Staff>/<NN Report>/<NN Report - view>.xls[x]
  *   _logs/_results.json, _logs/as-of.txt (when the last report landed: the config's asOf)
  * `--export <folder>` continues an earlier full download in its own folder, skipping
- * the files it already has. On a cutover folder it only fetches named reports the
- * transform does not read (e.g. `--profile cutover --export "<folder>" autopay`): the
+ * the files it already has. On a cutover folder it only fetches named optional reports,
+ * which no imported row depends on (e.g. `--profile cutover --export "<folder>" autopay`): the
  * folder's as-of stays, and the new results are merged into its _results.json.
  *
  * Where things are (flags win over be/.env, which wins over nothing — there is no default):
@@ -21,7 +21,8 @@
  *   --login-file  MB_LOGIN_FILE    the studio sign-in (MB_STUDIO / MB_EMAIL / MB_PASSWORD); default <root>/.mindbody-login.env
  *   --auth-file   MB_AUTH_FILE     the saved session;  default <root>/auth.json
  * Also: MB_START (history cutoff, YYYY-MM-DD, default 2023-01-01), MB_TIMEOUT (ms per request),
- * MB_PARALLEL (simultaneous date pieces).
+ * MB_PARALLEL (simultaneous date pieces), MB_TIMEZONE (--timezone: the studio's, e.g. Asia/Singapore;
+ * the as-of moment is written on its clock, whatever this machine's is set to).
  *
  * Everything it reads and writes names real people and stays in that private folder.
  */
@@ -30,6 +31,7 @@ import path from 'node:path'
 import { parseArgs } from 'node:util'
 import { config as loadEnv } from 'dotenv'
 import {
+  asOfStamp,
   describePlan,
   exportDir,
   logsDir,
@@ -49,6 +51,7 @@ const USAGE = `usage:
   mindbody:download --login-only [--fresh]
   mindbody:download verify <export folder>
   mindbody:download inspect <file or folder> [--rows N] [--all]
+studio: --timezone (MB_TIMEZONE)
 paths: --root (MB_EXPORT_ROOT)  --login-file (MB_LOGIN_FILE)  --auth-file (MB_AUTH_FILE)`
 
 function main() {
@@ -64,6 +67,7 @@ function main() {
       export: { type: 'string' },
       'login-file': { type: 'string' },
       'auth-file': { type: 'string' },
+      timezone: { type: 'string' },
       rows: { type: 'string', default: '5' },
       all: { type: 'boolean', default: false },
     },
@@ -94,10 +98,10 @@ function main() {
   const only = (command === undefined ? [] : positionals).map(a => a.toLowerCase())
   const reports = profileReports(profile).filter(r => !only.length || only.some(o => r.name.toLowerCase().includes(o)))
   if (only.length && !reports.length) throw new Error(`no report's name contains ${only.join(' or ')}`)
-  // A cutover folder is one moment: only a named report the transform does not read may be added to it later.
+  // A cutover folder is one moment: only a named optional report may be added to it later.
   if (values.export && profile === 'cutover' && (!only.length || reports.some(r => !r.optional))) {
     throw new Error('--export: a cutover download always starts a fresh folder, so nothing older is mixed in; ' +
-      'only named optional reports (not read by the transform) can be added to one')
+      'only named optional reports can be added to one')
   }
 
   const started = new Date()
@@ -110,11 +114,19 @@ function main() {
     return
   }
 
+  // The as-of moment is written on the studio's clock: asked for before the browser opens, not after an hour of downloading.
+  const writesAsOf = !values['login-only'] && !(profile === 'cutover' && values.export)
+  const timeZone = values.timezone || process.env.MB_TIMEZONE || ''
+  if (writesAsOf) {
+    if (!timeZone) throw new Error(`Set MB_TIMEZONE in be/.env (the studio's timezone, e.g. Asia/Singapore), or pass --timezone.\n${USAGE}`)
+    asOfStamp(new Date(), timeZone)
+  }
+
   const files = {
     loginFile: values['login-file'] || process.env.MB_LOGIN_FILE || path.join(root(), '.mindbody-login.env'),
     authFile: values['auth-file'] || process.env.MB_AUTH_FILE || path.join(root(), 'auth.json'),
   }
-  return download({ profile, reports, folder, dates, files, loginOnly: values['login-only'], fresh: values.fresh, force: values.force,
+  return download({ profile, reports, folder, dates, files, timeZone, loginOnly: values['login-only'], fresh: values.fresh, force: values.force,
     addOn: profile === 'cutover' && !!values.export })
 }
 
@@ -130,6 +142,8 @@ async function download(o: {
   folder: string
   dates: ReturnType<typeof runDates>
   files: { loginFile: string; authFile: string }
+  /** The studio's timezone, which the as-of moment is written in. */
+  timeZone: string
   loginOnly: boolean
   fresh: boolean
   force: boolean
@@ -188,16 +202,22 @@ async function download(o: {
   writeFileSync(resultsFile, JSON.stringify(results, null, 1))
   await session.browser.close()
 
-  // The "as of" moment: when the last report landed, in this machine's (the studio's) offset.
-  const end = new Date()
-  const off = -end.getTimezoneOffset()
-  const asOf = `${end.getFullYear()}-${pad2(end.getMonth() + 1)}-${pad2(end.getDate())}T${pad2(end.getHours())}:${pad2(end.getMinutes())}:00${off >= 0 ? '+' : '-'}${pad2(Math.floor(Math.abs(off) / 60))}:${pad2(Math.abs(off) % 60)}`
+  // The "as of" moment: when the last report landed, on the studio's clock.
+  const asOf = asOfStamp(new Date(), o.timeZone)
   writeFileSync(path.join(logsDir(o.folder), 'as-of.txt'), `${asOf}\n`)
 
   if (o.profile === 'cutover') {
     const hard = fails.filter(([, s]) => !s.startsWith('FAIL (optional)'))
     if (hard.length) {
       console.log(`\nCUTOVER DOWNLOAD INCOMPLETE: ${hard.length} required report(s) failed. Do not transform; fix and re-run.`)
+      process.exit(1)
+    }
+    const { checkExportSalesCap } = await import('./sales-cap')
+    const { BIG_SPENDERS_CAP } = await import('./reports')
+    const cap = checkExportSalesCap(o.folder, BIG_SPENDERS_CAP)
+    console.log(`\n${cap.level === 'ok' ? '' : `${cap.level.toUpperCase()}: `}${cap.message}`)
+    if (cap.level === 'refuse') {
+      console.log('\nCUTOVER DOWNLOAD INCOMPLETE: Big Spenders could have left members out. Do not transform; fix and re-run.')
       process.exit(1)
     }
     console.log(`\nCutover download complete. As of ${asOf} (written to _logs/as-of.txt).`)

@@ -46,7 +46,7 @@ import {
 } from './auth-users'
 import type { StaffProfileRow } from './staff-archive'
 
-const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000
+export const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
 export type StaffUserRow = typeof staffUsers.$inferSelect
 export type StaffInvitationRow = typeof staffInvitations.$inferSelect

@@ -6,3 +6,6 @@
 # per-task override for editing committed tests.
 .claude/.hook-state/
 .claude/test-edits.allow
+# Personal Claude Code settings and runtime state. The shared settings.json stays tracked.
+.claude/settings.local.json
+.claude/scheduled_tasks.lock

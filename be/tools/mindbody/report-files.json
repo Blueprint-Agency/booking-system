@@ -4,6 +4,7 @@
     { "kind": "members", "file": "02 Mailing Lists - Mailing List.xls", "single": true, "required": true },
     { "kind": "referrals", "file": "21 Referral Types - <group>.xls", "single": false, "required": true },
     { "kind": "retention", "file": "24 Retention Management.xls", "single": true, "required": true },
+    { "kind": "membership", "file": "01 Membership - New Version Detail.xlsx", "single": true, "required": false },
     { "kind": "phoneBook", "file": "35 Phone Book.xls", "single": true, "required": true },
     { "kind": "holdings", "file": "15 Visits Remaining - Detail.xlsx", "single": true, "required": true },
     { "kind": "optionSales", "file": "13 Pricing Option Expirations.xls", "single": true, "required": true },
@@ -14,6 +15,9 @@
     { "kind": "payRates", "file": "38 Pay Rates.xlsx", "single": true, "required": false },
     { "kind": "attendance", "file": "16 Attendance without Revenue - Date - <year>.xlsx", "single": false, "required": false },
     { "kind": "payroll", "file": "32 Payroll - Detail - <year>.xls", "single": false, "required": false },
-    { "kind": "cancellations", "file": "08 Cancellations - Individual records - <piece>.xls", "single": false, "required": false }
+    { "kind": "cancellations", "file": "08 Cancellations - Individual records - <piece>.xls", "single": false, "required": false },
+    { "kind": "groupCancellations", "file": "08 Cancellations - Group cancellations.xls", "single": true, "required": false },
+    { "kind": "promotions", "file": "23 Promotions - Detail.xls", "single": true, "required": false },
+    { "kind": "autopay", "file": "43 Autopay Detail - Scheduled.xls", "single": true, "required": false }
   ]
 }

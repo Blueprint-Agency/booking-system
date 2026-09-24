@@ -44,11 +44,11 @@ the freeze — decisions 11 and 12 are fixed **in Mindbody**, so they have to be
 | 9 | PT requests | How many days ahead a PT request stays open | 7 |
 | 10 | Staff | Email and role (Admin or Instructor) for each person migrated; who is the owner; which of two records sharing a name is which | Instructor; former teachers archived |
 | 11 | Members with no email | Real email, fixed in Mindbody before the final download | Placeholder email, fixed later by an admin |
-| 12 | Members sharing an email | Which member keeps it; real emails for the others | Most recent visitor keeps it; others get placeholders |
+| 12 | Members sharing an email | Which member keeps it; real emails for the others | The one whose last visit (attendance history) is latest keeps it; others get placeholders |
 | 13 | Two live packages at once | Accept "the one ending soonest runs, the others wait with their days left" | Accepted |
-| 14 | Unlimited Home Location | Location for plans whose name names none | The main Location |
-| 15 | Future workshops and retreats | Which to migrate; tier (room type) prices; how instalments count | All with paid attendees; price = amount paid |
-| 16 | Teacher pay | Use the pay-rate report's per-class amount for future classes; PT pay | Per-class rate; PT Unpriced |
+| 14 | Unlimited Home Location | Location for a member no report places | Retention Management's location, then Membership's, then where their visits were sold, then the plan's name, then the main Location — the preflight counts each |
+| 15 | Workshops and retreats, to come and past | Which to migrate (one `migrate` covers a category's days to come and its past runs inside `history`); tier (room type) prices; which days a tier grants, where not all; how instalments count | All with paid attendees; price = amount paid; every tier grants every day |
+| 16 | Teacher pay | Use the pay-rate report's per-class amount for future classes; what to pay a per-head teacher's classes | Per-class rate, else Unpriced; PT at the trainer's Payroll PT rate |
 | 17 | History | How far back; whether past purchases appear in Finance | None on a quick rehearsal; classes and bookings from opening, purchases off |
 | 18 | Not migrated | How to track live mat storage, lone access passes and corporate balances by hand | Listed in the preflight report |
 | 19 | Class Series | Which weekly classes repeat, and the term end date to extend to | Proposed from the last 4 weeks |
@@ -108,7 +108,9 @@ npm run mindbody:download -- --login-only [--fresh]        # just check (or, --f
 ```
 
 The folder it writes is what `transform --export` is pointed at, as it is; its
-`_logs/as-of.txt` is the config's `asOf`. The downloader takes every cutover file name and its
+`_logs/as-of.txt` is the config's `asOf`, written on the studio's clock (`MB_TIMEZONE` in
+`be/.env`, or `--timezone`; a download refuses to start without it), whatever timezone the
+operator's machine is set to. The downloader takes every cutover file name and its
 single rule from `be/tools/mindbody/report-files.json` — the transform's own list, pinned by a unit
 test against the matchers and the single/required rules (`REPORT_RULES` in `transform.ts`) — and
 `download/plan.test.ts` checks that the names it works out from each report's number, view and page
@@ -120,13 +122,14 @@ date range is computed from the run date:
 | Report (view) | Range |
 |---|---|
 | Mailing Lists (Mailing List), Retention Management, Phone Book, Pay Rates, Account Balances (All balances), Visits Remaining (Detail) | as of the download |
-| Referral Types (each referrer group), Big Spenders (Detail Accrual) | history cutoff → today |
+| Referral Types (each referrer group), Big Spenders (Detail Accrual), Promotions (Detail) | history cutoff → today |
 | Pricing Option Expirations | history cutoff → today + 5 years |
 | Attendance without Revenue (**Date view only**), one file per year | history cutoff → today |
 | Payroll (Detail), one file per year | history cutoff → today |
 | Schedule at a Glance ("Scheduled", all locations, staff and statuses), one file per year | history cutoff → today + 12 months |
 | Staff Schedule (ALL, "Scheduled") | history cutoff → today + 5 years |
-| Membership (New Version Detail), Autopay Detail ("Scheduled"; Reports → Payment Processing — Mindbody has no "AutoPay Schedule" report) | optional, not read by the transform: who is on an autopay, to stop in Mindbody; Autopay Detail runs today → today + 12 months |
+| Membership (New Version Detail) | optional, as of the download |
+| Autopay Detail ("Scheduled"; Reports → Payment Processing — Mindbody has no "AutoPay Schedule" report) | optional, today → today + 12 months: every autopay still to run is a preflight line, to stop in Mindbody; none is imported |
 
 Birthdays, addresses, emergency contacts, client notes and waiver status are in **no** Mindbody
 report: they come, if at all, from a client data export requested from Mindbody, by hand. The
@@ -177,6 +180,7 @@ npm run mindbody -- starter --export <export folder> --out <root>/studio/starter
 npm run mindbody -- fill --export <export folder> --starter <root>/studio/starter-config.json --answers <root>/studio/answers.json
 # 2. Provision the Tenant in the super portal WITHOUT a first admin; copy its id.
 # 3. The archive, for that Tenant: <export folder>/<slug>.zip (or --name <name>, or --out <file.zip>).
+#    Only for a database on this machine: a config with localhost origins needs --local.
 npm run mindbody -- transform --export <export folder> --config <config.json> --tenant <tenant id>
 # 4. Import the zip in the super portal, export the studio from the same page, then:
 npm run mindbody -- verify --expected <studio.expected.json> --export-zip <exported.zip>
@@ -232,7 +236,10 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   where Mindbody files two rooms under one spelling (a studio that relabelled its rooms), each
   Room but one lists the `rooms[].classTypes` it holds under that spelling and the last takes the
   rest; a class's Room decides its Location, so a Room at the wrong Location moves its classes —
-  where they have none, the class is **Unpriced** for an admin to settle. A name marked `***`
+  where they have none, the class is **Unpriced** for an admin to settle (a rate of 0 — every slot
+  0 — is a real 0). A teacher Pay Rates also pays **per client** is named in the preflight with how
+  many future classes that leaves Unpriced (or paying only the per-class part): the platform pays a
+  class one fixed figure, so a per-head rule has nowhere to go. A name marked `***`
   is taught by the substitute it is filed under. Anything under a `workshopCategories` service
   category is left to the workshop import.
 - **Future bookings** come from Schedule at a Glance over future dates, joined to a class on
@@ -245,31 +252,69 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   config's `secret`, so a rerun writes the same ones. A roster row under a
   `ptAppointmentNames` name is a PT appointment instead: a scheduled `pt_request` (its focus the
   `ptClassType` Class Type, made if the config has none by that name), a `pt_session` and a
-  booking per member. PT pay is a percentage in Mindbody, which no report gives: Unpriced.
+  booking per member. Its pay is the trainer's **PT rate from Payroll (Detail)** — the rate header
+  (`PT (50%)`, or a flat `PT`) above their most recent appointment line: flat pays the table's Base
+  Pay; a percentage pays that share of what one session of each member's running PT package is
+  worth (what was paid ÷ its sessions), as Mindbody's "Rev. per Session" does. A trainer with no PT
+  line in Payroll, or a member with no package to value the session by, leaves it Unpriced, named
+  in the preflight.
 - **Workshops and retreats to come** are one config entry per Mindbody **service category** — a
-  workshop, a retreat or a course has one of its own — proposed by `starter` for every category
-  with something still to come. A person sets `migrate`, the Location, the seats per day and the
+  workshop, a retreat or a course has one of its own — proposed by `starter` for every workshop
+  category on the timetable, past or to come, and for every one members hold a pricing option of
+  (a paid retreat with no timetable row still gets an entry). A person sets `migrate`, the Location, the seats per day and the
   price of each **tier** (room type: twin, single, non-resident), which Mindbody sells as pricing
   options; a deposit or a top-up sold under its own option is moved into the tier it buys
   (`tiers[].mindbodyNames`). The category must also be in `workshopCategories`, or its days would
   arrive as classes as well — `transform` refuses a config where it is not. A Workshop is written
   with one **Day** per future occurrence in the schedule report (its Room where the workshop's own
-  Location has one), one Tier per room type granting every day, and its instructors from that
+  Location has one), one Tier per room type granting every day — or only the days listed in
+  `tiers[].days` (1 is the first day), for a day pass or a weekend-only option — and its instructors from that
   report: whoever leads the most days is the main one and the rest are supporting, all Unpriced
   (Mindbody pays a workshop by agreement, which no report gives).
 - **Workshop attendees** are the members holding a live entitlement on one of those pricing
   options: one `kind: 'workshop'` booking each, at the tier they bought, with `amount_paid_sgd` =
   what they paid — so it shows in the member's workshops and in Finance as workshop money on the
-  day of `asOf`. Several holdings (a deposit and its balance, a twin place and a top-up to a
+  day it was **sold**: the first Big Spenders sale of one of its options since the category last
+  ran. A place with no such sale is dated on `asOf`, and counted in the preflight. Several holdings (a deposit and its balance, a twin place and a top-up to a
   single) are one booking whose amount is their sum, at the **dearest** tier held, because a top-up
   is what moves a member up; holding two tiers is a preflight line. A place is not a package, so
   no `client_packages` row is written for it and it is not listed as "not migrated"; a workshop
   with no day left to come is a preflight line instead of an empty Workshop.
-- **Class Series** are proposed by `starter` from what ran at the same weekday, time, Room and
-  name in each of the four weeks up to `asOf`. A person sets `migrate` on each; a confirmed one
-  is written as a series whose imported classes are linked to it and whose last date is the
-  last class that came across, so launch day starts with an extend and nothing is duplicated.
-  Its teacher must be coming across as an active instructor, or the portal could never extend it.
+- **Past workshops and retreats** come across with `history`, for a category whose entry says
+  `migrate: true`. Its days from `history.from` up to the download are split into runs wherever
+  more than 31 days pass between two, and each run is a Workshop of its own (named by its first
+  day where the category has more than one), with its Days, Tiers and instructors as above. Its
+  attendees are the members the Attendance report has on its days: one booking each, at the
+  dearest tier their visits or sale lines name, `attended` and checked in if they came on any
+  day (else a no-show, a late cancel, or a seat never marked, as a class visit is). What they paid
+  is their Big Spenders sale lines of its options since the run before it — returns taken off, a
+  promotion's discount added back for List Price — dated on the first sale. That money is on the
+  place whether or not `history.purchases` is on, as a place to come carries its money: a
+  workshop booking always does. What Payroll paid on its days (lines at one of its start times,
+  or at no set time on one of its dates, and never a PT appointment's) is its instructors' pay —
+  `workshop_instructors.pay_sgd`, a paid teacher not on its timetable a supporting instructor —
+  and not a Manual Payroll Entry, so Instructor Pay adds up to the same total. `verify` counts a
+  workshop's pay on its first day, as Payroll does, and names a past attendee lost on the way in
+  by member and by workshop.
+- A workshop category with `migrate: false` (or with no `workshops` entry) writes nothing, and,
+  with `history`, is a preflight line counting its past visits, sale lines and payroll inside the
+  window. Its payroll still arrives, as Manual Payroll Entries.
+- **Class Series** are proposed by `starter` from the timetable's recurring pattern: what ran at
+  the same weekday, time, Room and name in each of the four weeks up to `asOf`, taught by the
+  latest week's own teacher (not a substitute). A slot that stopped is not proposed. A person
+  sets `migrate` on each; a confirmed one is written as a series whose imported classes are
+  linked to it and whose last date is the last class that came across — or, where none is still
+  to come (the published timetable runs only days past the download), its last class before
+  the download — so launch day starts with an extend and nothing is duplicated. Its teacher must
+  be coming across as an active instructor, or the portal could never extend it.
+  Its pay is the teacher's per-class rate; with none known it is **Unpriced** (null), never 0, so
+  its classes, and every class an extend adds, show up in Finance for pricing. The portal cannot
+  yet change a series' pay, so settle the rate in the answers before the final build.
+- A Class Type with no future class and no Class Series arrives archived; history still names it.
+- A future booking the running package cannot cover (it ends first) is paid by the member's
+  package waiting behind it, where that will still be running then. The rest are preflight
+  lines, split into "unpaid in Mindbody too" and "unmatched" (Mindbody holds something that
+  would pay for it).
 - **The studio's past** is optional and off by default: `history` in the config is `null` for a
   quick rehearsal, and `{ "from": "2019-01-01", "purchases": false }` for a launch that wants it.
   `from` is the first day to bring, on the studio's own calendar. Past classes are the union of
@@ -292,16 +337,30 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   cap them, and history landing inside that cycle would spend an allowance the member never spent
   here — so every member starts on the platform with a clean one.
 - **Past purchases** are a second, separate opt-in (`history.purchases`), because they are
-  pre-launch money and they show in Finance on the day they were bought. They are the
-  pricing-option register's rows that were activated after the cutoff and were not still live at
-  the download — live by the same test the packages use, something left *and* not expired, so a
-  pack bought and used up before launch is counted even though its date had not passed. The live
-  ones already came across as packages. Each is written as an inactive, used-up
-  `client_packages` row. The register carries no client id, so they are joined to members by
-  normalised name, and by phone where a name is held by more than one. **Anything unmatched is
-  listed in the preflight, never guessed.** A past *trial* is the one purchase that cannot come
-  across — a member may hold only one trial ever, which the platform enforces with a unique key,
-  and the one they used is already there — so the money it took is a preflight line instead.
+  pre-launch money and they show in Finance on the day they were sold. They are Big Spenders'
+  sale lines from the cutoff on — keyed by **client id**, so a purchase always lands on the
+  member whose id is on the sale, and two members of one name are never swapped. Each line is
+  joined to the pricing-option register row it created (a member it could be by name and phone,
+  the same option, the latest sale on or before the row's activation, its own price first), which
+  lends it its expiry; a line the register never lists (a day pass, a promo bundle) runs its
+  validity from the sale date. A line whose register row is still live at the download — something
+  left *and* not expired — already came across as a package. Every other line is an inactive
+  `client_packages` row dated on its **sale date**, at its sale Location where the platform holds
+  one (an Unlimited Plan's Home Location). **List Price is what was paid**, plus what a promotion
+  took off it (Promotions, Detail, joined by sale number) — so only a real promotion shows a
+  discount — and a $0 package is **Complimentary** unless it is a Trial the catalogue sells for
+  money. **Anything that cannot be placed** — an item in no catalogue entry, a workshop place, a
+  client not in the member list — is counted in the preflight with its money, never guessed.
+  A past *trial* for a member who already came across holding one cannot come across — a member
+  may hold only one trial ever — so the money it took is a preflight line instead.
+- A **return** (quantity −1) is a Refund on the past purchase it reverses (the same member and
+  option, sold no later than the return, the same amount first). It is written as a
+  provider-less Purchase closed as refunded on the day of the return (`purchases.refunded_at`),
+  which Finance lists as a Refund; the package is tagged Refunded. A migrated package still has
+  no payment row. A return with nothing to reverse is a preflight line. The register row of a
+  returned sale is never a live holding. `verify` compares revenue by month and every Refund.
+- The cutover download checks Big Spenders' client cap against the Member count, and refuses
+  the download where the cap could have left somebody out.
 - A past visit points at the package that paid for it only where the attendance report's pricing
   option is one the member's own history or live holdings actually hold, and where that holding's
   run covered the day. Anything else and the seat names no package: a wrong package would read
@@ -320,15 +379,27 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   the import goes ahead without it.
 - The Tenant must be provisioned with the config's `studio.slug`: the import refuses an archive
   built for another slug, because its email links name that slug.
-- Staff invitations expire 7 days after `asOf` (the download time). Importing later is fine:
-  resend them from the portal's staff page, which extends the link.
+- Staff invitations are good for 7 days from the **import**, not the download: the importer
+  counts a pending invitation in a Mindbody archive from when it arrives. After that, resend
+  them from the portal's staff page, which extends the link.
+- The import keeps the Tenant's branding. The archive says nothing of a logo, theme, copy or
+  mail-from, and whatever the super portal gave the Tenant stays; the display name and reply-to
+  the config gives are written.
+- The email links are built from the config's `originPatterns`. A config whose patterns name
+  `localhost` (or `127.x`) is refused unless `transform` is given `--local`, so a zip built
+  with the local config cannot reach staging or production with links to the operator's machine.
+- `fill` proposes `policy.classWindowHours` from the Cancellations report: the smallest whole
+  hour that parts the members' own early cancels from their late ones. `fill` prints it, with how
+  many cancels were on the wrong side of it; with no early or no late self-cancel, the config's
+  own value stands. `studio.mailReplyTo` and `studio.emailFooter` come from `answers.json`.
 - Same reports + same config + same Tenant id → the same zip, byte for byte. Row ids are
   UUID v5 of the Tenant id and the Mindbody key; invitation tokens are keyed by the config's
   `secret`, which `starter` writes once at random.
 - Reads today: Mailing Lists (Mailing List), Referral Types (detail files: creation date),
   Retention Management (gender), Phone Book (staff), Visits Remaining (Detail `.xlsx`: holdings),
-  Pricing Option Expirations (the catalogue proposal, and past purchases) and Big Spenders
-  (Detail Accrual, the catalogue proposal only), Staff Schedule (ALL, "Scheduled": the
+  Pricing Option Expirations (the catalogue proposal, and each purchase's dates) and Big Spenders
+  (Detail Accrual: the catalogue proposal, past purchases and returns), Promotions (Detail,
+  optional: a sale's discount), Staff Schedule (ALL, "Scheduled": the
   timetable), Schedule at a Glance (`.xlsx`, one per year: who is booked into what) and, if they
   were downloaded, Account Balances (All balances), Pay Rates (`.xlsx`), Attendance without
   Revenue (Date view, `.xlsx`; one file or one per year) and Payroll (Detail, one per year). The
@@ -338,9 +409,16 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
   it (the member or ClassPass → `client`, anyone else → `admin`); without it the cancel is dated
   at the class's start.
 - Payroll pays past PT as well as classes: a past PT session's Instructor Pay is what payroll
-  paid for that appointment. Payroll lines with nothing to belong to — a `TBD` revenue share
-  on a retreat, a class that did not come across — are listed in the preflight with the total
-  placed and not placed, so every dollar is accounted for.
+  paid for that appointment. One with no payroll line whose visits Mindbody marked **not staff
+  paid** (an unpaid no-show) is $0, not Unpriced. Payroll lines with nothing to belong to — a
+  workshop's per-client lines, a `TBD` revenue share on a retreat, a PT line with no session —
+  become **Manual Payroll Entries** for the teacher on their own date (a `TBD` line at the start
+  of its day), one per class or appointment and rate, labelled `Mindbody payroll: …`. So Finance's
+  historical Instructor Pay equals Mindbody's Payroll total: class pay + session pay + Manual
+  Entries. Only a line for a teacher who is not coming across stays behind, named in the preflight
+  beside the totals placed, entered manually and not placed.
+- `verify` compares Instructor Pay month by month (classes, PT sessions and Manual Entries, on the
+  studio's calendar), and names any month that changed on the way in.
 - A holding Visits Remaining shows combined (two packs of one option) is split back into its
   purchases from the pricing-option register where the register accounts for it exactly —
   each with its own expiry, credits and price. A holding that is one purchase takes that
@@ -348,7 +426,10 @@ npm run mindbody -- verify --expected <studio.expected.json> --export-zip <expor
 - Balances are Mindbody's Unbooked. Credits Mindbody set aside for future bookings that do not
   come across (the roster was not downloaded far enough ahead) are given back to the member's
   package and named in the preflight, rather than lost.
-- Phones are stored E.164 (`+65…`), as the member sign-up writes them. The transform can be pointed at the whole download
+- Phones are stored E.164 (`+65…`), as the member sign-up writes them, formatted with the
+  member's Country in the Mailing List (`defaultCountry` where it is blank). Mindbody's dummy
+  phone is empty; a number that cannot be formatted is imported empty and listed in the
+  preflight. Proposed Validity counts both the activation and the expiry day. The transform can be pointed at the whole download
   folder: every other report and view in it is left alone.
 - `starter` names the Locations what the timetable calls them (oldest first, matched to the
   numbers Retention Management prints) and proposes each Room at the Location it holds most
@@ -437,8 +518,8 @@ rehearsal passed and the preflight has been answered.
    `studio.ownerEmail`. Have them do it with you, and confirm they can see the schedule and the
    member list.
 10. **The owner invites staff.** Portal → Staff. Everyone else arrived pending with an
-    invitation; the owner sends or resends each one. Invitations expire 7 days after the "as of"
-    moment, and resending extends the link, so a late one is not a blocker.
+    invitation; the owner sends or resends each one. Invitations expire 7 days after the import,
+    and resending extends the link, so a late one is not a blocker.
 11. **Extend the imported Class Series.** Portal → Schedule → open any class of a series → the
     Series panel → **Extend**, to the term end date from decision 19. The imported timetable
     stops at the last class Mindbody had; this is what carries it forward. Preview shows every

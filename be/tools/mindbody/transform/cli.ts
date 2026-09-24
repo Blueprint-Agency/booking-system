@@ -3,7 +3,7 @@
  *
  *   npm run mindbody -- starter   --export <export folder> --out <config.json> [--as-of <when the download finished>]
  *   npm run mindbody -- fill      --export <export folder> --starter <config.json> --answers <answers.json> [--out-dir <dir>]
- *   npm run mindbody -- transform --export <export folder> --config <config.json> --tenant <uuid> [--name <name>]
+ *   npm run mindbody -- transform --export <export folder> --config <config.json> --tenant <uuid> [--name <name>] [--local]
  *   npm run mindbody -- verify    --expected <studio.expected.json> --export-zip <exported.zip>
  *
  * An export folder is what `npm run mindbody:download` writes: `<root>/<YYYY-MM-DD HHmm>/`
@@ -43,7 +43,8 @@ loadEnv({ path: path.join(__dirname, '..', '..', '..', '.env') })
 const USAGE = `usage:
   mindbody starter   --export <folder> --out <config.json> [--as-of <2026-01-31T02:00:00+08:00>]
   mindbody fill      --export <folder> --starter <config.json> --answers <answers.json> [--out-dir <dir>]
-  mindbody transform --export <folder> --config <config.json> --tenant <uuid> [--name <name> | --out <studio.zip>]
+  mindbody transform --export <folder> --config <config.json> --tenant <uuid> [--name <name> | --out <studio.zip>] [--local]
+    (--local: the archive is for a database on this machine, so localhost email links are meant)
   mindbody verify    --expected <studio.expected.json> --export-zip <exported.zip>
   (--reports <dir> in place of --export reads a reports folder directly)`
 
@@ -66,9 +67,10 @@ async function main() {
       'as-of': { type: 'string' },
       expected: { type: 'string' },
       'export-zip': { type: 'string' },
+      local: { type: 'boolean', default: false },
     },
   })
-  const required = (name: keyof typeof values) => {
+  const required = (name: Exclude<keyof typeof values, 'local'>) => {
     const value = values[name]
     if (!value) throw new Error(`--${name} is required\n${USAGE}`)
     return value
@@ -136,6 +138,13 @@ async function main() {
           `${config.series.filter((s: { migrate: boolean }) => s.migrate).length} series on.`,
       )
     }
+    const w = facts.classWindow
+    console.log(
+      w
+        ? `Class cancellation window: ${w.hours}h, from ${w.early} early and ${w.late} late cancels members made themselves` +
+            `${w.misfits ? ` (${w.misfits} on the wrong side of it)` : ''}.`
+        : 'Class cancellation window: the Cancellations report shows no cut-off, so the config keeps its own.',
+    )
     console.log(`Facts as of ${isoDay(asOf)} in ${path.join(outDir, 'report-facts.json')} and staff-facts.json.`)
     return
   }
@@ -145,7 +154,7 @@ async function main() {
     const folder = exportFolder()
     const out = values.out ?? (folder ? path.join(folder, `${values.name ?? config.studio?.slug ?? 'studio'}.zip`) : null)
     if (!out) throw new Error(`--out is required with --reports\n${USAGE}`)
-    const result = await transformMindbody({ reportsDir: reportsDir(), config, tenantId: required('tenant') })
+    const result = await transformMindbody({ reportsDir: reportsDir(), config, tenantId: required('tenant'), local: values.local })
     const companions = companionPaths(out)
     await writeFile(out, result.zip)
     await writeFile(companions.ids, json(result.ids))

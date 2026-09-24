@@ -60,10 +60,10 @@ const classTypeSchema = z.object({
 
 /**
  * A weekly class, proposed by the starter config from what ran at the same
- * weekday, time and Room under the same name in each of the last four weeks.
- * One a person confirms (`migrate: true`) is written as a Class Series, with
- * the imported future classes it matches linked to it — so the first thing the
- * studio does after launch is extend it.
+ * weekday, time and Room under the same name in each of the last four weeks,
+ * led by the latest week's own teacher. One a person confirms (`migrate: true`)
+ * is written as a Class Series, with any imported future classes it matches
+ * linked to it — so the first thing the studio does after launch is extend it.
  */
 const seriesSchema = z.object({
   /** A class name as Mindbody writes it; its Class Type is looked up like any class's. */
@@ -91,14 +91,23 @@ const workshopTierSchema = z.object({
   mindbodyNames: z.array(z.string()).min(1),
   /** What the tier costs. No report holds a workshop's price list. */
   priceSgd: open(z.number().min(0)),
+  /**
+   * The days of the workshop it grants, by their place in it (1 is the first
+   * day). Absent, it grants every day: a room type is the whole retreat. A day
+   * pass or a weekend-only option says which days it is.
+   */
+  days: z.array(z.number().int().positive()).min(1).optional(),
 })
 
 /**
- * A workshop or a retreat still to come, as the platform is to know it.
+ * A workshop or a retreat, still to come or — for a studio bringing its past —
+ * already held, as the platform is to know it.
  *
  * Identified by the Mindbody service category its occurrences are scheduled
  * under — a workshop, a retreat or a course has one of its own — which must
  * also be in `workshopCategories`, or its days would be imported as classes too.
+ * `migrate` decides both: its days to come, and every past run of it inside
+ * `history`.
  */
 const workshopSchema = z.object({
   category: z.string().min(1),
@@ -244,6 +253,11 @@ export const studioConfigSchema = z.object({
    * classes do (#179).
    */
   defaultLocation: open(z.string().min(1)),
+  /**
+   * The country (ISO code) a member's phone is dialled from where the Mailing
+   * List gives them no Country: the studio's own.
+   */
+  defaultCountry: z.string().regex(/^[A-Za-z]{2}$/).default('SG'),
   rooms: z.array(roomSchema).default([]),
   /** Room spellings that are really off-site venues (outdoors, a company office, a retreat). Not Rooms. */
   offSiteVenues: z.array(z.string()).default([]),
@@ -328,6 +342,7 @@ export type StudioConfig = {
     mindbodyNames: string[]
   }[]
   defaultLocation: string
+  defaultCountry: string
   rooms: { name: string; location: string; capacity: number; mindbodyNames: string[]; classTypes: string[] }[]
   offSiteVenues: string[]
   classTypes: { name: string; mindbodyNames: string[]; capacity: number | null }[]
@@ -338,7 +353,7 @@ export type StudioConfig = {
     location: string
     capacity: number
     migrate: boolean
-    tiers: { name: string; mindbodyNames: string[]; priceSgd: number }[]
+    tiers: { name: string; mindbodyNames: string[]; priceSgd: number; days?: number[] }[]
   }[]
   ptAppointmentNames: string[]
   ptClassType: string
@@ -423,6 +438,9 @@ export function validateConfig(raw: unknown): StudioConfig {
   }
   if (c.studio.ownerEmail && !EMAIL.test(c.studio.ownerEmail.trim())) {
     problems.push(`studio.ownerEmail "${c.studio.ownerEmail}" is not an email address`)
+  }
+  if (c.studio.mailReplyTo && !EMAIL.test(c.studio.mailReplyTo.trim())) {
+    problems.push(`studio.mailReplyTo "${c.studio.mailReplyTo}" is not an email address`)
   }
 
   if (c.locations.length === 0) problems.push('locations: the studio needs at least one Location')
