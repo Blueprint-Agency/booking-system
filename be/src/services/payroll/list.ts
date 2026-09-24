@@ -104,7 +104,7 @@ export async function listPayroll(
   tenantId: string,
   filter: PayrollFilter,
 ): Promise<PayrollRow[]> {
-  // The harness clock, not the wall clock: "held" is a rule that turns on the instant.
+  // The app clock (lib/clock): "held" is a rule that turns on the instant.
   const now = clockNow()
 
   // Every arm below is scoped on the table it reads FROM — the sessions, the

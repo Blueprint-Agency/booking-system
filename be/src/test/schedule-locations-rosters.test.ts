@@ -629,6 +629,17 @@ describe('schedule rules, Locations and rosters over HTTP', { skip: integrationT
     )
     assert.equal((await classRow(movable)).startsAt.getTime(), elsewhere.getTime())
 
+    const into = { starts_at: overlapping.toISOString(), ends_at: new Date(overlapping.getTime() + HOUR).toISOString() }
+    const movableDay = await workshop(north, new Date(day.getTime() + 6 * HOUR))
+    namesTaken(await admin('PATCH', `/workshops/${movableDay.workshopId}/days/${movableDay.dayId}`, adminOne.headers, into))
+    const [dayRow] = await harness.db.select().from(schema.workshopDays).where(eq(schema.workshopDays.id, movableDay.dayId))
+    assert.equal(dayRow!.startsAt.getTime(), day.getTime() + 6 * HOUR)
+
+    const movablePt = await ptSession(north, new Date(day.getTime() + 8 * HOUR))
+    namesTaken(await admin('PATCH', `/pt-sessions/sessions/${movablePt.sessionId}`, adminOne.headers, into))
+    const [ptRow] = await harness.db.select().from(schema.ptSessions).where(eq(schema.ptSessions.id, movablePt.sessionId))
+    assert.equal(ptRow!.startsAt.getTime(), day.getTime() + 8 * HOUR)
+
     // Back to back is not a clash; a cancelled class holds the room no longer.
     await createClass({ starts_at: new Date(day.getTime() + HOUR).toISOString(), main_instructor_id: helper.id })
     expect(await admin('POST', `/schedule/classes/${taken}/cancel`, adminOne.headers), 200)
@@ -786,10 +797,10 @@ describe('schedule rules, Locations and rosters over HTTP', { skip: integrationT
   test('online capacity cannot drop below the members already booked, and a class that has started cannot be edited', async () => {
     const day = slot()
     const classId = await createClass({ starts_at: day.toISOString(), capacity_online: 3 })
-    const booked = [await member(), await member()]
-    for (const who of booked) {
-      await credits(who, 5)
-      await book(who, classId)
+    const held: { bookingId: string; packageId: string }[] = []
+    for (const who of [await member(), await member()]) {
+      const packageId = await credits(who, 5)
+      held.push({ bookingId: await book(who, classId), packageId })
     }
 
     const shrink = await admin('PATCH', `/schedule/classes/${classId}`, adminOne.headers, { capacity_online: 1 })
@@ -807,6 +818,10 @@ describe('schedule rules, Locations and rosters over HTTP', { skip: integrationT
       })
     }
     assert.equal((await classRow(classId)).capacityOnline, 2)
+    for (const { bookingId, packageId } of held) {
+      assert.equal((await bookingRow(bookingId)).state, 'confirmed')
+      assert.equal(await balance(packageId), 4)
+    }
   })
 
   test('cancelling a booked class cancels its bookings and gives every member their credits back', async () => {
@@ -924,7 +939,9 @@ describe('schedule rules, Locations and rosters over HTTP', { skip: integrationT
     expect(await admin('POST', `/locations/${place.locationId}/archive`, adminOne.headers), 200)
 
     const res = await admin('DELETE', `/locations/${place.locationId}`, adminOne.headers)
-    assert.equal(res.status, 409, JSON.stringify(res.body))
+    const body = expect(res, 409)
+    assert.equal(body.error, 'location_in_use')
+    assert.deepEqual(body.client_package_ids, [plan])
     assert.equal((await locationRow(place.locationId)).deletedAt, null)
     const [row] = await harness.db.select().from(schema.clientPackages).where(eq(schema.clientPackages.id, plan))
     assert.equal(row!.locationId, place.locationId)
@@ -1094,7 +1111,15 @@ describe('schedule rules, Locations and rosters over HTTP', { skip: integrationT
     const typeId = await newClassType('Guarded')
     const place = await location('Guarded')
     const who = await member()
+    const requestId = await ptRequest(north, slot())
+    const ws = await workshop(north, slot())
     const routes: [string, string, unknown?][] = [
+      ['POST', '/workshops', { name: `${TAG} Not made`, location_id: north.locationId, main_instructor_id: other.id, main_instructor_pay_sgd: 1 }],
+      ['POST', `/workshops/${ws.workshopId}/days`, workshopDay(north, slot())],
+      ['POST', `/pt-sessions/${requestId}/schedule`, ptSchedule(north, slot())],
+      ['POST', `/pt-sessions/${requestId}/cancel`],
+      ['GET', '/finance'],
+      ['PATCH', `/finance/pay/class/${classId}`, { instructor_pay_sgd: 1 }],
       ['GET', `/schedule${query({ location_id: north.locationId })}`],
       ['GET', `/schedule/classes/${classId}`],
       ['POST', '/schedule/classes', classBody()],
@@ -1125,6 +1150,11 @@ describe('schedule rules, Locations and rosters over HTTP', { skip: integrationT
     const cls = await classRow(classId)
     assert.equal(cls.capacityOnline, 10)
     assert.equal(cls.lifecycle, 'active')
+    assert.equal(Number(cls.instructorPaySgd), 50)
+    const [request_] = await harness.db.select().from(schema.ptRequests).where(eq(schema.ptRequests.id, requestId))
+    assert.equal(request_!.status, 'pending')
+    assert.equal((await harness.db.select().from(schema.workshopDays).where(eq(schema.workshopDays.workshopId, ws.workshopId))).length, 1)
+    assert.deepEqual(await harness.db.select().from(schema.workshops).where(eq(schema.workshops.name, `${TAG} Not made`)), [])
     const type = await classTypeRow(typeId)
     assert.equal(type.name, `${TAG} Guarded`)
     assert.equal(type.archivedAt, null)
@@ -1167,6 +1197,8 @@ describe('schedule rules, Locations and rosters over HTTP', { skip: integrationT
     const borrowed = { location_id: theirOwnLocation, room_id: north.roomId, main_instructor_id: coachTwo.id, class_type_id: classTypeId }
     assert.equal((await admin('POST', '/schedule/classes', adminTwo.headers, classBody(borrowed))).status, 404)
     assert.equal((await admin('POST', '/schedule/series/preview', adminTwo.headers, seriesBody(borrowed))).status, 404)
+    assert.equal((await admin('POST', '/schedule/series', adminTwo.headers, seriesBody(borrowed))).status, 404)
+    assert.equal((await admin('PATCH', `/finance/pay/class/${classId}`, adminTwo.headers, { instructor_pay_sgd: 1 })).status, 404)
     assert.equal((await instructor('POST', '/schedule/classes', coachTwo.headers, classBody(borrowed))).status, 404)
     assert.equal(
       (await admin('POST', `/pt-sessions/${requestId}/schedule`, adminTwo.headers, ptSchedule(north, day, { instructor_id: coachTwo.id }))).status,
@@ -1181,6 +1213,8 @@ describe('schedule rules, Locations and rosters over HTTP', { skip: integrationT
     const cls = await classRow(classId)
     assert.equal(cls.capacityOnline, 10)
     assert.equal(cls.lifecycle, 'active')
+    assert.equal(Number(cls.instructorPaySgd), 50)
+    assert.deepEqual(await harness.db.select().from(schema.classSeries).where(eq(schema.classSeries.tenantId, two.id)).then(r => r.filter(x => x.roomId === north.roomId)), [])
     assert.equal((await classTypeRow(typeId)).archivedAt, null)
     assert.equal((await locationRow(place.locationId)).archivedAt, null)
     const stillArchived = await locationRow(archivedPlace.locationId)
