@@ -46,6 +46,9 @@ import {
   removeComplimentaryPackage,
 } from '../../../services/packages/complimentary'
 import { changeClientEmail } from '../../../services/clients/change-email'
+import { editClientProfile } from '../../../services/clients/edit-profile'
+import { BadRequestError } from '../../../shared/errors'
+import { clientGenderEnum } from '../../../db/enums'
 import {
   listMemberSessions,
   sendMemberSetPasswordLink,
@@ -151,6 +154,29 @@ const issueSchema = z.object({
 const emailSchema = z.object({
   email: z.string().email().max(254),
 })
+// Editing a member's profile (#281): any of the three, gender nullable to clear
+// it. The trimmed 1–160 / 1–40 limits are the service's, so they answer with
+// the same sentence however the profile is edited.
+const profileSchema = z
+  .object({
+    name: z.string({ message: 'A name must be text.' }).optional(),
+    phone: z.string({ message: 'A phone number must be text.' }).optional(),
+    gender: z
+      .enum(clientGenderEnum.enumValues, {
+        message: 'Gender is female, male, non-binary, prefer not to say, or none.',
+      })
+      .nullable()
+      .optional(),
+  })
+  .refine(b => b.name !== undefined || b.phone !== undefined || b.gender !== undefined, {
+    message: 'Change at least one of name, gender and phone.',
+  })
+/** A rejected profile answers with a reason an admin can read, not a raw zod dump. */
+const explainInvalidProfile = (result: { success: boolean; error?: unknown }) => {
+  if (result.success) return
+  const issues = (result.error as z.ZodError | undefined)?.issues
+  throw new BadRequestError('invalid_request', { message: issues?.[0]?.message ?? 'That profile is not valid.' })
+}
 const expirySchema = z.object({
   expires_at: z.string().datetime({ offset: true }).nullable(),
   reason: z.string().min(1).max(2000),
@@ -174,6 +200,7 @@ function clientRow(c: ClientRow) {
     name: c.name,
     email: c.email,
     phone: c.phone,
+    gender: c.gender,
     status: c.status,
     joined_at: c.joinedAt,
     suspended_at: c.suspendedAt,
@@ -407,7 +434,6 @@ const app = new Hono()
     const { current, past: pastPackages } = splitWallet(wallet)
     return c.json({
       ...clientRow(contact.client),
-      gender: contact.client.gender,
       dob: contact.client.dob,
       waiver_signed_at: contact.waiverSignedAt,
       referred_by: contact.referredBy,
@@ -614,6 +640,21 @@ const app = new Hono()
       email: body.email,
       actorStaffId: c.get('staffUserId'),
       from: c.req.raw.headers,
+    })
+    c.set('auditTarget' as any, { table: 'clients', id })
+    return c.json(clientRow(row))
+  })
+  // The member's name, gender and phone (#281), in one save.
+  .patch('/:id/profile', zValidator('param', idParam), zValidator('json', profileSchema, explainInvalidProfile), async c => {
+    const { id } = c.req.valid('param')
+    const body = c.req.valid('json')
+    const row = await editClientProfile({
+      tenantId: tenantId(c),
+      clientId: id,
+      actorStaffId: c.get('staffUserId'),
+      name: body.name,
+      phone: body.phone,
+      gender: body.gender,
     })
     c.set('auditTarget' as any, { table: 'clients', id })
     return c.json(clientRow(row))

@@ -489,6 +489,7 @@ dropped scenario stays, marked `wont-test`, with the reason in its cell.
 | ACC-11 | ACC | member | **Given** a member with a part-paid Purchase, a Purchase they opened but never paid towards, and another member holding a part-paid Purchase **When** they list their unfinished purchases **Then** only their own part-paid one is listed, with its total, amount paid and amount still owed, and they cannot pay towards the other member's _(#93)_ | money | integration | `be/src/test/member-account.test.ts` | covered |
 | ACC-12 | ACC | member | **Given** no session, or an admin's or instructor's session **When** it is sent to any member account page (profile, packages, My Classes, workshops, private sessions, corporate, merch, unfinished purchases) **Then** it is refused `401`, profile edits and paying towards an unfinished purchase included _(prd §2.2)_ | data-loss | integration | `be/src/test/member-account.test.ts` | covered |
 | ACC-13 | ACC | member | **Given** a member of studio A with packages and bookings, and a member of studio B **When** the studio B member opens each of their account pages **Then** none of studio A's rows appear _(prd §2.3)_ | tenancy | integration | `be/src/test/member-account.test.ts` | covered |
+| ACC-14 | ACC | member | **Given** a signed-in member on /account/profile **When** they set, change and then clear their gender, or send a value that is not one **Then** each valid save is what their profile shows on return, and the invalid one is refused _(#281)_ | UX | integration | `be/src/test/member-profile-edit.test.ts` | covered |
 
 ## CUS — Admin customer list & customer profile
 
@@ -509,6 +510,10 @@ dropped scenario stays, marked `wont-test`, with the reason in its cell.
 | CUS-13 | CUS | admin | **Given** a member with upcoming bookings **When** an Admin blocks them **Then** the upcoming bookings stay booked _(admin-restructure §15c)_ | data-loss | integration |  | uncovered |
 | CUS-14 | CUS | admin | **Given** a blocked member **When** an Admin filters by Blocked and unblocks them **Then** they can sign in and book again _(admin-restructure §15c)_ | UX | integration |  | uncovered |
 | CUS-15 | CUS | instructor | **Given** a signed-in Instructor **When** they request a member's profile, invoices, credit balance or a manual adjustment **Then** the request is refused and no member data is returned or changed _(admin-restructure §15d; prd §2.3)_ | data-loss | integration |  | uncovered |
+| CUS-16 | CUS | admin | **Given** a member **When** an Admin changes their name, gender and phone in one save **Then** the customer page shows the new values, trimmed, and one `client_profile_edited` audit entry holds the before and after of only the fields that changed _(#281)_ | data-loss | integration | `be/src/test/member-profile-edit.test.ts` | covered |
+| CUS-17 | CUS | admin | **Given** a member **When** an Admin saves their profile without changing anything **Then** no `client_profile_edited` audit entry is written _(#281)_ | UX | integration | `be/src/test/member-profile-edit.test.ts` | covered |
+| CUS-18 | CUS | admin | **Given** a member **When** an Admin saves a blank name or phone, or edits a blocked member, or another studio's admin or an Instructor edits the profile **Then** the edit is refused with a reason and nothing changes _(#281)_ | tenancy | integration | `be/src/test/member-profile-edit.test.ts` | covered |
+| CUS-19 | CUS | admin | **Given** a member **When** an Admin sets their gender to prefer not to say and later clears it **Then** the profile shows prefer not to say, then none _(#281)_ | UX | integration | `be/src/test/member-profile-edit.test.ts` | covered |
 
 ## STF — Staff, roles & invitations, instructors, archive/removal
 
