@@ -49,6 +49,15 @@ import { SessionsPanel } from "@/components/access/sessions-panel";
 import { runsStudio } from "@/lib/staff-role";
 import { useWorkspace } from "@/lib/workspace-context";
 import { ApiError } from "@/lib/api";
+import {
+  REFUND_PROCESSING_LABEL,
+  refundFailureMessage,
+  refundProgressTag,
+  refundReplyToast,
+  type RefundKind,
+  type RefundProgress,
+  type RefundReply,
+} from "@/lib/refund-copy";
 import { downloadFile } from "@/lib/download";
 import { getPortalToken } from "@/lib/portal-auth";
 import { formatDate, formatRelative } from "@/lib/formatters";
@@ -91,12 +100,23 @@ interface ApiPackage {
    */
   complimentary: boolean;
   /**
-   * Backend-composed — "3 classes attended since 12 Jun 2026", or null when the
-   * purchase is Untouched. A notice, never a gate: the refund is still allowed.
+   * Backend-composed — "3 classes used (attended or no-show) since 12 Jun 2026",
+   * or null when the purchase is Untouched. A notice, never a gate: the refund
+   * is still allowed.
    */
   refund_notice: string | null;
-  /** How many returns the Refund will put on the statement (#93). */
+  /** How many refunds the Refund will put on the statement (#93). */
   refund_payment_count: number;
+  /** Whether a Refund is already on its way — the action is withheld while one is (#275). */
+  refund_progress: RefundProgress;
+  /** What the Refund gives back — the whole Purchase, Add-On included when bought with it. */
+  refund_amount_sgd: string;
+  /** Add-On bought with the plan (true), separately (false), or none (null). */
+  refund_includes_add_on: boolean | null;
+  /** Bookings still ahead on this package — the Refund cancels every one. */
+  refund_upcoming_booking_count: number;
+  /** The Promo Code the Refund frees, or null. */
+  refund_promo_code: string | null;
   /** Backend-derived; decides which list the package is in and its badge. */
   standing: PackageStanding;
   /**
@@ -160,6 +180,8 @@ interface ApiPayment {
   purchase_status: "open" | "paid" | "refunded" | "abandoned";
   receipt_url: string | null;
   refunded_at: string | null;
+  /** A Refund has been issued and Stripe has not yet confirmed it (#275). */
+  refund_processing: boolean;
   created_at: string;
 }
 
@@ -175,6 +197,9 @@ interface ApiWorkshopPurchase {
   refundable: boolean;
   refund_notice: string | null;
   refund_payment_count: number;
+  refund_progress: RefundProgress;
+  refund_amount_sgd: string;
+  refund_promo_code: string | null;
 }
 
 /**
@@ -197,6 +222,19 @@ interface ApiOpenPurchase {
   grants_nothing: boolean;
   /** How many returns one press of Refund will put on the statement (#95). */
   refund_payment_count: number;
+  refund_progress: RefundProgress;
+}
+
+/** What one press of a Refund button answers (#275). */
+interface ApiRefundReply extends RefundReply {
+  /** An unfinished purchase's reply names what went back — "2 payments returned, totalling S$120.00". */
+  returned_line?: string;
+}
+
+/** The badge a purchase wears while its Refund is on its way, or none. */
+function refundProgressBadge(progress: RefundProgress): ReactNode {
+  const tag = refundProgressTag(progress);
+  return tag && <Badge tone={tag.tone}>{tag.label}</Badge>;
 }
 
 interface ApiAdjustment {
@@ -323,9 +361,13 @@ function packageActions(p: ApiPackage): { action: PackageAction; label: string }
   // Only a PT Package has a Bound Instructor — one sold open is bound from here.
   if (p.kind === "pt") out.push({ action: "bound_instructor", label: "Change bound instructor" });
   if (p.kind !== "unlimited") out.push({ action: "adjust", label: "Manual adjustment" });
-  // Always offered on a purchase that reached the payment provider — attendance
-  // is a notice inside the dialog, never a reason to hide the button (§14).
-  if (p.refundable) out.push({ action: "refund", label: "Refund purchase…" });
+  // Always offered on a purchase that reached Stripe — attendance is a notice
+  // inside the dialog, never a reason to hide the button (§14). Withheld only
+  // while a Refund is already on its way and there is nothing left to ask
+  // Stripe for (#275); a part-issued one is offered again to return the rest.
+  if (p.refundable && p.refund_progress !== "processing") {
+    out.push({ action: "refund", label: "Refund purchase…" });
+  }
   // A comp has no money behind it, so it is removed rather than refunded. The
   // backend is what knows whether a class it paid for has been held.
   if (p.complimentary) out.push({ action: "remove", label: "Remove free package…" });
@@ -438,6 +480,27 @@ export default function ClientProfilePage({
         (err instanceof ApiError ? `Update failed (HTTP ${err.status}).` : "Update failed.");
       toast.error(msg);
     }
+  }
+
+  /**
+   * Issue a Refund and say what happened (#275). A Refund that Stripe took for
+   * some payments and refused for the next is not an error — money moved — so
+   * it is a warning naming how much went back. A refusal is reloaded after, so
+   * a purchase refunded in another tab stops offering the button.
+   */
+  async function runRefund(kind: RefundKind, issue: () => Promise<ApiRefundReply>) {
+    try {
+      const res = await issue();
+      const t = refundReplyToast(kind, res, res.returned_line);
+      if (t.tone === "warning") toast.warning(t.message, { duration: 15000 });
+      else toast.success(t.message);
+      setRefundFor(null);
+      setWorkshopRefundFor(null);
+      setOpenPurchaseRefundFor(null);
+    } catch (err) {
+      toast.error(refundFailureMessage(err instanceof ApiError ? err.body : null));
+    }
+    await load();
   }
 
   function onPackageAction(action: PackageAction, p: ApiPackage) {
@@ -841,15 +904,22 @@ export default function ClientProfilePage({
       {canEdit && refundFor && (
         <RefundDialog
           packageName={refundFor.package_name}
+          facts={{
+            kind: "package",
+            amountSgd: refundFor.refund_amount_sgd,
+            crossLocationPaidSgd: refundFor.cross_location_paid_sgd,
+            includesAddOn: refundFor.refund_includes_add_on,
+            upcomingBookingCount: refundFor.refund_upcoming_booking_count,
+            promoCode: refundFor.refund_promo_code,
+          }}
           notice={refundFor.refund_notice}
           paymentCount={refundFor.refund_payment_count}
           onConfirm={(reason) =>
-            runEdit(
-              () =>
-                api!.post(`/portal/admin/clients/${id}/packages/${refundFor.id}/refund`, {
-                  reason,
-                }),
-              "Refund issued. The package is voided once the provider confirms.",
+            runRefund("package", () =>
+              api!.post<ApiRefundReply>(
+                `/portal/admin/clients/${id}/packages/${refundFor.id}/refund`,
+                { reason },
+              ),
             )
           }
           onClose={() => setRefundFor(null)}
@@ -859,17 +929,19 @@ export default function ClientProfilePage({
       {canEdit && workshopRefundFor && (
         <RefundDialog
           packageName={workshopRefundFor.workshop_name}
-          kind="workshop"
+          facts={{
+            kind: "workshop",
+            amountSgd: workshopRefundFor.refund_amount_sgd,
+            promoCode: workshopRefundFor.refund_promo_code,
+          }}
           notice={workshopRefundFor.refund_notice}
           paymentCount={workshopRefundFor.refund_payment_count}
           onConfirm={(reason) =>
-            runEdit(
-              () =>
-                api!.post(
-                  `/portal/admin/clients/${id}/workshop-bookings/${workshopRefundFor.booking_id}/refund`,
-                  { reason },
-                ),
-              "Refund issued. The booking is cancelled once the provider confirms.",
+            runRefund("workshop", () =>
+              api!.post<ApiRefundReply>(
+                `/portal/admin/clients/${id}/workshop-bookings/${workshopRefundFor.booking_id}/refund`,
+                { reason },
+              ),
             )
           }
           onClose={() => setWorkshopRefundFor(null)}
@@ -952,29 +1024,21 @@ export default function ClientProfilePage({
       {canEdit && openPurchaseRefundFor && (
         <RefundDialog
           packageName={openPurchaseRefundFor.item_name}
-          kind="unfinished"
+          facts={{ kind: "unfinished", amountSgd: openPurchaseRefundFor.paid_sgd }}
           notice={null}
           paymentCount={openPurchaseRefundFor.refund_payment_count}
-          onConfirm={async (reason) => {
-            const purchaseId = openPurchaseRefundFor.id;
-            try {
-              const res = await api!.post<{ returned_line: string }>(
-                `/portal/admin/purchases/${purchaseId}/refund`,
+          onConfirm={(reason) =>
+            // The reply carries the backend's own sentence — "2 payments
+            // returned, totalling S$120.00". The number of lines the statement
+            // will grow by is the thing an admin has to reconcile, and it is
+            // not derivable from the amount alone.
+            runRefund("unfinished", () =>
+              api!.post<ApiRefundReply>(
+                `/portal/admin/purchases/${openPurchaseRefundFor.id}/refund`,
                 { reason },
-              );
-              // The backend's own sentence — "2 payments returned, totalling
-              // S$120.00". The number of lines the statement will grow by is
-              // the thing an admin has to reconcile, and it is not derivable
-              // from the amount alone.
-              toast.success(`${res.returned_line}. The purchase closes once the provider confirms.`);
-              setOpenPurchaseRefundFor(null);
-              await load();
-            } catch (err) {
-              toast.error(
-                err instanceof ApiError ? `Refund failed (HTTP ${err.status}).` : "Refund failed.",
-              );
-            }
-          }}
+              ),
+            )
+          }
           onClose={() => setOpenPurchaseRefundFor(null)}
         />
       )}
@@ -1282,6 +1346,7 @@ function PackageCard({
                 discount otherwise, and this one was a gift. */}
             {p.complimentary && <Badge tone="neutral">Free</Badge>}
             {standing && <Badge tone={standing.tone}>{standing.label}</Badge>}
+            {refundProgressBadge(p.refund_progress)}
           </div>
         </div>
         {actions.length > 0 && (
@@ -1429,6 +1494,9 @@ function OpenPurchaseList({
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium text-ink">{p.item_name}</p>
+                {p.refund_progress !== "none" && (
+                  <div className="mt-1">{refundProgressBadge(p.refund_progress)}</div>
+                )}
                 <p className="mt-1 text-xs text-muted">
                   S${p.paid_sgd} paid of S${p.total_sgd}
                   {p.part_paid_at ? ` · since ${formatDate(p.part_paid_at)}` : ""}
@@ -1449,7 +1517,7 @@ function OpenPurchaseList({
             {/* The money's only way out (#95). Nothing was delivered, so there
                 is no plan to void and no booking to cancel — the refund closes
                 the purchase and that is all it does. */}
-            {canEdit && (
+            {canEdit && p.refund_progress !== "processing" && (
               <div className="mt-3 flex justify-end">
                 <Button
                   size="sm"
@@ -1487,7 +1555,10 @@ function WorkshopPurchaseList({
             <div className="font-medium break-words text-ink">{w.workshop_name}</div>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
               <Badge tone="cyan">Workshop</Badge>
-              {w.cancelled && <Badge tone="warning">Cancelled · not refunded</Badge>}
+              {w.cancelled && w.refund_progress === "none" && (
+                <Badge tone="warning">Cancelled · not refunded</Badge>
+              )}
+              {refundProgressBadge(w.refund_progress)}
               {w.tier_name && <span className="text-xs text-muted">{w.tier_name}</span>}
             </div>
             <div className="mt-3 text-xs text-muted">
@@ -1505,7 +1576,7 @@ function WorkshopPurchaseList({
                 <AlertTriangle className="mt-px h-3 w-3 shrink-0" /> {w.refund_notice}
               </div>
             )}
-            {canEdit && w.refundable && (
+            {canEdit && w.refundable && w.refund_progress !== "processing" && (
               <div className="mt-2 flex justify-end">
                 <Button
                   size="sm"
@@ -2039,7 +2110,11 @@ function PaymentsSection({ payments }: { payments: ApiPayment[] }) {
         <div className="overflow-hidden rounded-xl border border-border bg-card shadow-soft">
           <ul className="divide-y divide-border">
             {visible.map((p) => {
-              const s = PAYMENT_STATUS[p.status];
+              // Still "succeeded" until Stripe's confirmation lands (#275), and
+              // "Paid" beside a Refund just issued reads as though it failed.
+              const s = p.refund_processing
+                ? { label: REFUND_PROCESSING_LABEL, tone: "warning" as const }
+                : PAYMENT_STATUS[p.status];
               return (
                 <li key={p.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 sm:px-5">
                   <div className="w-24 shrink-0 text-xs tabular-nums text-muted sm:w-28">

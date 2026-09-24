@@ -258,7 +258,7 @@ function EndDialog({
       open
       onOpenChange={(o) => !o && close()}
       title="End series"
-      description="No more classes are created from this date. Its classes from then on with no bookings are cancelled now; classes with bookings are listed for you to cancel one by one, which refunds the members."
+      description="No more classes are created from this date. Its classes from then on with no bookings are cancelled now; classes with bookings are listed for you to cancel one by one, which returns each member's credit or session to their package."
     >
       {result ? (
         <div className="space-y-3 text-sm">

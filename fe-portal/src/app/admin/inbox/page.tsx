@@ -224,8 +224,10 @@ function InboxRow({
             <span className="font-medium">{payloadString("sessionLabel")}</span>
           </div>
           <div className="mt-1 text-xs text-muted">
-            {(item.payload.clientsRefunded as number) ?? 0} client
-            {(item.payload.clientsRefunded as number) === 1 ? "" : "s"} refunded
+            {/* A class or PT cancel gives credits and sessions back, not money —
+                "refunded" is kept for money going back through Stripe (#275). */}
+            Credit or session returned to {(item.payload.clientsRefunded as number) ?? 0} client
+            {(item.payload.clientsRefunded as number) === 1 ? "" : "s"}
           </div>
         </div>
       )}

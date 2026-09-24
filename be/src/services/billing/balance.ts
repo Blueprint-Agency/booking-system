@@ -79,6 +79,50 @@ export function heldPayments<T extends { status: PaymentEvidence['status'] }>(
   return payments.filter(p => p.status === 'succeeded' || p.status === 'pending')
 }
 
+/**
+ * How far a Refund has got, read off the Purchase's payments (#275).
+ *
+ * `processing` — the provider has been asked for every payment still held, and
+ * the `charge.refunded` that finishes it has not arrived. There is nothing left
+ * to ask for, so the portal withholds the Refund. `incomplete` — some of the
+ * Purchase's money has gone back (or been asked for) and some is still held
+ * with nobody asking: the provider refused a payment part-way through, and a
+ * second press returns the rest. It is still one Refund of the whole — just not
+ * finished. `none` — nothing is in flight.
+ */
+export type RefundProgress = 'none' | 'processing' | 'incomplete'
+
+export interface RefundProgressCounts {
+  /** Payments still at the provider — `succeeded` or `pending`. */
+  held: number
+  /** Of those, how many a Refund has asked for, recently enough to be believed. */
+  heldRequested: number
+  /** Payments already back — `refunded`. */
+  refunded: number
+}
+
+export function refundProgress(c: RefundProgressCounts): RefundProgress {
+  if (c.held === 0) return 'none'
+  if (c.heldRequested >= c.held) return 'processing'
+  return c.heldRequested > 0 || c.refunded > 0 ? 'incomplete' : 'none'
+}
+
+/**
+ * How long a Refund the provider accepted counts as on its way.
+ *
+ * `charge.refunded` normally lands within seconds. A stamp older than this means
+ * the Refund failed at the provider afterwards, or its webhook was lost — and
+ * left alone it would read "Refund processing" and refuse every retry forever.
+ * So it stops counting: the Refund is offered again, and the provider's own
+ * idempotency key (which lives for 24 hours) has expired by then, so a retry is
+ * a fresh request rather than a replay.
+ */
+export const REFUND_IN_FLIGHT_MS = 24 * 60 * 60 * 1000
+
+export function refundInFlight(requestedAt: Date | null, now: Date = new Date()): boolean {
+  return requestedAt != null && now.getTime() - requestedAt.getTime() < REFUND_IN_FLIGHT_MS
+}
+
 /** What is left to pay. Never negative — an overpayment owes nothing, not less than nothing. */
 export function outstandingCents(totalCents: number, paidCents: number): number {
   return Math.max(0, totalCents - paidCents)

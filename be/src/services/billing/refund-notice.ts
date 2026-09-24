@@ -45,13 +45,16 @@ export function isUntouched(attendedCount: number): boolean {
  *
  * Eligibility is a notice, not a gate: the admin reads this and may refund
  * anyway.
+ *
+ * "Used", with both halves named (#275): the count includes no-shows, and a
+ * sentence that said "attended" disagreed with the roster whenever one did.
  */
 export function attendedNotice(attendedCount: number, since: Date | null): string | null {
   if (isUntouched(attendedCount)) return null
   const classes = plural(attendedCount, 'class', 'classes')
   return since
-    ? `${classes} attended since ${SG_DATE.format(since)}`
-    : `${classes} attended on this purchase`
+    ? `${classes} used (attended or no-show) since ${SG_DATE.format(since)}`
+    : `${classes} used (attended or no-show) on this purchase`
 }
 
 /**

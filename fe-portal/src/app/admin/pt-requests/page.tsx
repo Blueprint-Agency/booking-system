@@ -73,7 +73,7 @@ export default function PtRequestsPage() {
       !confirm(
         scheduled
           ? "Cancel this scheduled session? Admin cancellation returns the requester session."
-          : "Cancel this pending request? The held credits are refunded.",
+          : "Cancel this pending request? The sessions it was holding go back to the requester's package.",
       )
     )
       return;

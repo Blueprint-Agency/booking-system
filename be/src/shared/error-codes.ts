@@ -254,6 +254,7 @@ export const ERROR_CODES = {
   rate_limited: 'rate_limited',
   reason_required: 'reason_required',
   record_not_found: 'record_not_found',
+  refund_processing: 'refund_processing',
   remaining_above_pool: 'remaining_above_pool',
   remaining_below_zero: 'remaining_below_zero',
   request_not_found: 'request_not_found',

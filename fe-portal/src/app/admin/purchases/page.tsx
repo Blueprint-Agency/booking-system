@@ -4,11 +4,18 @@ import Link from "next/link";
 import { AlertTriangle, Loader2, Wallet } from "lucide-react";
 import { toast } from "sonner";
 
-import { Button, EmptyState, PageHeader, Pagination, usePaged } from "@/components/ui";
+import { Badge, Button, EmptyState, PageHeader, Pagination, usePaged } from "@/components/ui";
 import { RefundDialog } from "@/components/clients/refund-dialog";
 import { useWorkspace } from "@/lib/workspace-context";
 import { runsStudio } from "@/lib/staff-role";
 import { ApiError } from "@/lib/api";
+import {
+  refundFailureMessage,
+  refundProgressTag,
+  refundReplyToast,
+  type RefundProgress,
+  type RefundReply,
+} from "@/lib/refund-copy";
 import { formatDate } from "@/lib/formatters";
 
 /**
@@ -39,6 +46,8 @@ interface ApiSilentPurchase {
   /** The backend's own sentence. The portal derives no domain rule. */
   silence_notice: string;
   payment_count: number;
+  /** Whether a Refund is already on its way (#275) — the button is withheld while one is. */
+  refund_progress: RefundProgress;
   created_at: string;
   grants_nothing: boolean;
 }
@@ -142,6 +151,13 @@ export default function UnfinishedPurchasesPage() {
                       · started {formatDate(p.created_at)}
                     </p>
                     <p className="mt-1 text-xs text-muted">{p.silence_notice}</p>
+                    {refundProgressTag(p.refund_progress) && (
+                      <div className="mt-1.5">
+                        <Badge tone={refundProgressTag(p.refund_progress)!.tone}>
+                          {refundProgressTag(p.refund_progress)!.label}
+                        </Badge>
+                      </div>
+                    )}
                   </div>
                   <div className="shrink-0 text-right">
                     <p className="text-lg font-semibold text-ink">S${p.paid_sgd}</p>
@@ -159,7 +175,7 @@ export default function UnfinishedPurchasesPage() {
                   </span>
                 </p>
 
-                {canRefund && (
+                {canRefund && p.refund_progress !== "processing" && (
                   <div className="mt-3 flex justify-end">
                     <Button
                       size="sm"
@@ -187,29 +203,28 @@ export default function UnfinishedPurchasesPage() {
       {canRefund && refundFor && (
         <RefundDialog
           packageName={refundFor.item_name}
-          kind="unfinished"
+          facts={{ kind: "unfinished", amountSgd: refundFor.paid_sgd }}
           notice={null}
           paymentCount={refundFor.payment_count}
           onConfirm={async (reason) => {
             const purchaseId = refundFor.id;
             try {
-              const res = await api!.post<{ returned_line: string }>(
+              const res = await api!.post<RefundReply & { returned_line: string }>(
                 `/portal/admin/purchases/${purchaseId}/refund`,
                 { reason },
               );
               // The backend's own sentence — "2 payments returned, totalling
               // S$120.00". One press of the button becomes one return per
-              // payment, and that count is what the statement will show.
-              toast.success(
-                `${res.returned_line}. The purchase closes once the provider confirms.`,
-              );
+              // payment, and that count is what the statement will show. A
+              // Refund Stripe refused part-way is a warning, not a success (#275).
+              const t = refundReplyToast("unfinished", res, res.returned_line);
+              if (t.tone === "warning") toast.warning(t.message, { duration: 15000 });
+              else toast.success(t.message);
               setRefundFor(null);
-              await load();
             } catch (err) {
-              toast.error(
-                err instanceof ApiError ? `Refund failed (HTTP ${err.status}).` : "Refund failed.",
-              );
+              toast.error(refundFailureMessage(err instanceof ApiError ? err.body : null));
             }
+            await load();
           }}
           onClose={() => setRefundFor(null)}
         />

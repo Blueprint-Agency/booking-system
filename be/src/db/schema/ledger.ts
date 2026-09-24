@@ -235,6 +235,16 @@ export const stripePayments = pgTable(
     /** For a card that came through a wallet: which one (`apple_pay`, `google_pay`). */
     wallet: text('wallet'),
     refundedAt: timestamp('refunded_at', { withTimezone: true }),
+    /**
+     * When the portal asked the provider to return this payment (#275).
+     *
+     * A Refund lands only when `charge.refunded` does, and until then the row
+     * still reads `succeeded` — so without this the portal showed the payment
+     * as Paid and offered the Refund again. Set once the provider has accepted
+     * the call, never cleared: `refunded_at` is what says the money is back. A
+     * refund made on the provider's own dashboard never sets it.
+     */
+    refundRequestedAt: timestamp('refund_requested_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   table => ({

@@ -87,7 +87,7 @@ export function PtRequestDrawer({
             </Badge>
           </Row>
           {ptRefundLabel(request.refund_outcome) && (
-            <Row label="Refund outcome">
+            <Row label="Session">
               {ptRefundLabel(request.refund_outcome)}
             </Row>
           )}
