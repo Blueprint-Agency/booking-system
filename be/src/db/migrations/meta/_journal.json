@@ -540,6 +540,13 @@
       "when": 1790178525726,
       "tag": "0076_per_studio_logins",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1790268332863,
+      "tag": "0077_drop_cross_studio_login_checks",
+      "breakpoints": true
     }
   ]
 }

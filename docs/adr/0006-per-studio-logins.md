@@ -51,8 +51,9 @@ sign-up, a block, a deletion, an email change — reaches another.
 - **A member's email change replaces this studio's login**: a fresh login for the new address, and
   the old one deleted with its password and sessions.
 - **Member deletion and Tenant deletion delete the studio's own logins directly.** The cross-Tenant
-  `SECURITY DEFINER` checks (`client_auth_user_is_member`, `staff_auth_user_is_staff`) are no longer
-  called. They are dropped in a later contract step.
+  `SECURITY DEFINER` checks from migrations 0060 and 0072 are no longer called. Migration 0077
+  dropped them, with the single-column `auth_user_id` indexes that served them, once this code was
+  in production (#258).
 - **Export never carries logins, and restore makes fresh ones** (#229). An archive holds no
   password hash, second factor, session or verification. Restoring it — or importing a studio from
   Mindbody — gives every member and staff member a fresh login with no password, and they get back
