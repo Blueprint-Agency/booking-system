@@ -3,6 +3,7 @@ import { db } from '../../db'
 import { classTypes } from '../../db/schema/catalog'
 import { classes } from '../../db/schema/schedule'
 import type { ClassDifficulty } from '../../db/enums'
+import { now as clockNow } from '../../lib/clock'
 import { BadRequestError, ConflictError, NotFoundError } from '../../shared/errors'
 
 export type ClassTypeRow = typeof classTypes.$inferSelect
@@ -141,7 +142,7 @@ async function gatherLinkedDataBlockers(tenantId: string, rootId: string) {
       ),
     )
   const idsToCheck = [rootId, ...children.map(c => c.id)]
-  const now = new Date()
+  const now = clockNow()
 
   const futureClasses = await db
     .select({ id: classes.id, classTypeId: classes.classTypeId })

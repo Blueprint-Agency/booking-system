@@ -5,6 +5,7 @@ import { bookings } from '../../db/schema/bookings'
 import { assertRoomAvailable, assertRoomInLocation } from './room-conflicts'
 import { assertInstructorsAvailable, plannedInstructorIds } from './occupancy'
 import { computeEventState } from '../policy/event-state'
+import { now } from '../../lib/clock'
 import { ConflictError, NotFoundError } from '../../shared/errors'
 import {
   ensureInstructors,
@@ -150,7 +151,7 @@ export async function updateClass(
     startsAt: existing.startsAt,
     endsAt: existing.endsAt,
     lifecycle: existing.lifecycle,
-    now: new Date(),
+    now: now(),
   })
   if (state !== 'scheduled') throw new ConflictError(`class_${state}`)
 
